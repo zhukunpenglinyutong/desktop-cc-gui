@@ -623,11 +623,43 @@
 }
 
 .bash-output-block.normal {
-  color: var(--text-tertiary);
+  color: var(--text-primary, var(--text-quiet));
 }
 
 .bash-output-block.error {
   color: var(--color-error, var(--status-error));
+}
+
+.bash-output-block.normal :is(.token.comment, .token.prolog, .token.doctype, .token.cdata) {
+  color: rgba(150, 170, 200, 0.75);
+}
+
+.bash-output-block.normal .token.punctuation {
+  color: rgba(200, 210, 220, 0.85);
+}
+
+.bash-output-block.normal :is(.token.property, .token.tag, .token.constant, .token.symbol, .token.deleted) {
+  color: #ff7b72;
+}
+
+.bash-output-block.normal :is(.token.boolean, .token.number) {
+  color: #f2cc60;
+}
+
+.bash-output-block.normal :is(.token.selector, .token.attr-name, .token.string, .token.char, .token.builtin, .token.inserted) {
+  color: #7ee787;
+}
+
+.bash-output-block.normal :is(.token.operator, .token.entity, .token.url, .token.variable) {
+  color: rgba(200, 210, 220, 0.9);
+}
+
+.bash-output-block.normal :is(.token.atrule, .token.attr-value, .token.keyword) {
+  color: #8bd5ff;
+}
+
+.bash-output-block.normal :is(.token.function, .token.class-name) {
+  color: #d2a8ff;
 }
 
 .bash-output-line-error {

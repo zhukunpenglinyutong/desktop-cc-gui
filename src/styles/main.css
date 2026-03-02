@@ -32,9 +32,20 @@
   box-shadow: var(--desktop-main-shadow, none);
 }
 
+body[data-panel-resizing="true"] .main {
+  transition: none;
+}
+
 .main.settings-open {
   grid-template-columns: minmax(0, 1fr);
   grid-column: 1 / -1;
+}
+
+.main.settings-open > .settings-embedded {
+  grid-column: 1;
+  grid-row: 1 / -1;
+  height: 100%;
+  min-height: 0;
 }
 
 .main.spec-focus {
@@ -426,22 +437,16 @@
   box-sizing: border-box;
 }
 
-.app.sidebar-collapsed .main-topbar {
-  padding-left: calc(
+.app.windows-desktop.right-panel-collapsed .main-topbar {
+  padding-right: calc(
     var(--main-panel-padding)
-    + var(--titlebar-inset-left, 0px)
-    + var(--titlebar-toggle-size, 28px)
-    + var(--titlebar-toggle-title-offset, -6px)
+    + var(--titlebar-window-controls-width, 116px)
+    + var(--titlebar-toggle-side-gap, 12px)
   );
 }
 
-.app.layout-compact.sidebar-collapsed .main-topbar {
-  padding-left: calc(
-    var(--topbar-compact-padding, 16px)
-    + var(--titlebar-inset-left, 0px)
-    + var(--titlebar-toggle-size, 28px)
-    + var(--titlebar-toggle-title-offset, -6px)
-  );
+.app.windows-desktop.right-panel-collapsed .main-header-actions {
+  margin-right: var(--titlebar-toggle-side-gap, 12px);
 }
 
 .app.reduced-transparency .main-topbar {
@@ -1218,6 +1223,7 @@ body.editor-horizontal-split-resizing * {
   flex: 1;
   min-height: 0;
   overflow: hidden;
+  padding-top: var(--main-topbar-height,44px);
 }
 
 .right-panel-divider {

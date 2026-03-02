@@ -7,6 +7,11 @@
   --sidebar-row-height-workspace: 32px;
   --sidebar-row-height-thread: 28px;
   --sidebar-color-active-primary: var(--surface-hover);
+  --sidebar-color-active-secondary: color-mix(
+    in srgb,
+    var(--surface-active) 35%,
+    transparent
+  );
   padding: 0 var(--sidebar-padding) 12px;
   background: var(--surface-sidebar);
   backdrop-filter: none;
@@ -25,11 +30,15 @@
   height: var(--main-topbar-height);
   min-height: var(--main-topbar-height);
   flex-shrink: 0;
-  margin: 0 calc(-1 * var(--sidebar-padding));
+  /* margin: 0 calc(-1 * var(--sidebar-padding)); */
   border-bottom: 1px solid var(--border-subtle);
   background: var(--surface-topbar);
   box-sizing: border-box;
   -webkit-app-region: drag;
+}
+
+.app.home-active .sidebar-topbar-placeholder {
+  display: none;
 }
 
 .sidebar-topbar-content {
@@ -666,6 +675,7 @@
   flex-direction: column;
   gap: 0;
   position: relative;
+  margin-right: 10px;
 }
 
 .workspace-group + .workspace-group {

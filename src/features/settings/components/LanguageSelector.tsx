@@ -12,7 +12,7 @@ export function LanguageSelector() {
   };
 
   return (
-    <div className="settings-row">
+    <div className="settings-row mb-3">
       <div className="settings-label">{t("settings.language")}</div>
       <div className="settings-control">
         <div className="settings-select-wrap">

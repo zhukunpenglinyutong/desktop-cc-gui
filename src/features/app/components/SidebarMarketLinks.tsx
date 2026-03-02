@@ -51,6 +51,11 @@ export function SidebarMarketLinks({
     });
   };
 
+  const runBottomAction = (action: () => void) => {
+    onAppModeChange("chat");
+    action();
+  };
+
   return (
     <div
       className={`sidebar-market-rail ${isCollapsed ? "is-collapsed" : "is-expanded"}`}
@@ -136,7 +141,7 @@ export function SidebarMarketLinks({
           type="button"
           className="sidebar-market-rail-item"
           data-market-item="spec-hub"
-          onClick={onOpenSpecHub}
+          onClick={() => runBottomAction(onOpenSpecHub)}
           title={t("sidebar.specHub")}
           aria-label={t("sidebar.specHub")}
           data-tauri-drag-region="false"
@@ -149,7 +154,7 @@ export function SidebarMarketLinks({
         <button
           type="button"
           className="sidebar-market-rail-item"
-          onClick={onOpenSettings}
+          onClick={() => runBottomAction(onOpenSettings)}
           title={t("settings.title")}
           aria-label={t("settings.title")}
           data-tauri-drag-region="false"
@@ -163,7 +168,7 @@ export function SidebarMarketLinks({
           <button
             type="button"
             className={`sidebar-market-rail-item ${isTerminalOpen ? "is-active" : ""}`}
-            onClick={onToggleTerminal}
+            onClick={() => runBottomAction(onToggleTerminal)}
             title={t("common.terminal")}
             aria-label={t("common.toggleTerminalPanel")}
             data-tauri-drag-region="false"
@@ -191,7 +196,7 @@ export function SidebarMarketLinks({
           type="button"
           className="sidebar-market-rail-item"
           data-market-item="project-memory"
-          onClick={onOpenProjectMemory}
+          onClick={() => runBottomAction(onOpenProjectMemory)}
           title={t("panels.memory")}
           aria-label={t("panels.memory")}
           data-tauri-drag-region="false"

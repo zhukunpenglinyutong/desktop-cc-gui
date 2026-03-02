@@ -6,6 +6,7 @@
 import { memo, useMemo, useEffect, useRef, useState, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { ConversationItem } from '../../../../types';
+import { highlightLine } from '../../../../utils/syntax';
 import {
   buildCommandSummary,
   truncateText,
@@ -78,6 +79,10 @@ export const BashToolBlock = memo(function BashToolBlock({
     if (lines.length <= MAX_OUTPUT_LINES) return lines;
     return lines.slice(-MAX_OUTPUT_LINES);
   }, [item.output]);
+  const highlightedOutputLines = useMemo(
+    () => outputLines.map((line) => highlightLine(line, 'bash')),
+    [outputLines],
+  );
 
   useEffect(() => {
     if (!isRunning) {
@@ -196,9 +201,15 @@ export const BashToolBlock = memo(function BashToolBlock({
               </div>
               {outputLines.map((line, index) => (
                 <div key={`${index}-${line.slice(0, 20)}`} className="bash-output-line">
-                  <span className={isErrorLine(line) ? 'bash-output-line-error' : undefined}>
-                    {line || ' '}
-                  </span>
+                  {isErrorLine(line) ? (
+                    <span className="bash-output-line-error">{line || ' '}</span>
+                  ) : line.length === 0 ? (
+                    <span>&nbsp;</span>
+                  ) : (
+                    <span
+                      dangerouslySetInnerHTML={{ __html: highlightedOutputLines[index] ?? "" }}
+                    />
+                  )}
                 </div>
               ))}
             </div>

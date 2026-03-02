@@ -5,6 +5,7 @@
 import { memo, useMemo, useRef, useEffect, useState, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { ConversationItem } from '../../../../types';
+import { highlightLine } from '../../../../utils/syntax';
 import {
   buildCommandSummary,
   truncateText,
@@ -146,6 +147,7 @@ export const BashToolGroupBlock = memo(function BashToolGroupBlock({
             const outputLines = entry.output
               ? entry.output.split(/\r?\n/).slice(-MAX_OUTPUT_LINES)
               : [];
+            const highlightedOutputLines = outputLines.map((line) => highlightLine(line, 'bash'));
 
             return (
               <div key={entry.id} className="bash-timeline-item">
@@ -198,11 +200,15 @@ export const BashToolGroupBlock = memo(function BashToolGroupBlock({
                               key={`${i}-${line.slice(0, 20)}`}
                               className="bash-output-line"
                             >
-                              <span
-                                className={ERROR_LINE_PATTERN.test(line) ? 'bash-output-line-error' : undefined}
-                              >
-                                {line || ' '}
-                              </span>
+                              {ERROR_LINE_PATTERN.test(line) ? (
+                                <span className="bash-output-line-error">{line || ' '}</span>
+                              ) : line.length === 0 ? (
+                                <span>&nbsp;</span>
+                              ) : (
+                                <span
+                                  dangerouslySetInnerHTML={{ __html: highlightedOutputLines[i] ?? "" }}
+                                />
+                              )}
                             </div>
                           ))}
                         </div>

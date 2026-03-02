@@ -136,9 +136,12 @@ body {
   transition: grid-template-columns 220ms ease;
   font-family: var(--ui-font-family);
 }
-
 .app.is-resizing,
 .app.is-resizing .main {
+  transition: none;
+}
+
+body[data-panel-resizing="true"] .app {
   transition: none;
 }
 
@@ -147,8 +150,13 @@ body {
   top: 0;
   left: 0;
   right: 0;
-  height: var(--titlebar-height, 24px);
+  height: var(--titlebar-height, 44px);
   z-index: 2;
+  pointer-events: auto;
+}
+
+.app.windows-desktop .drag-strip {
+  pointer-events: none;
 }
 
 .titlebar-controls {
@@ -177,6 +185,41 @@ body {
 
 .titlebar-toggle-right {
   right: 10px;
+}
+
+.titlebar-window-controls {
+  display: inline-flex;
+  gap: 2px;
+}
+
+.titlebar-window-button {
+  width: 34px;
+  height: 24px;
+  border: none;
+  border-radius: 6px;
+  padding: 0;
+  background: transparent;
+  color: var(--text-muted);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.titlebar-window-button:hover {
+  background: var(--surface-control-hover);
+  color: var(--text-stronger);
+}
+
+.titlebar-window-button-close:hover {
+  background: #e81123;
+  color: #ffffff;
+}
+
+.titlebar-window-glyph {
+  font-size: 13px;
+  line-height: 1;
+  pointer-events: none;
 }
 
 

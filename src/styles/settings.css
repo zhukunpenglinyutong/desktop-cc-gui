@@ -17,6 +17,7 @@
 .settings-header {
   display: flex;
   align-items: center;
+  height: var(--main-topbar-height,44px);
   justify-content: space-between;
   padding: 12px 16px;
   border-bottom: 1px solid var(--border-muted);
@@ -88,6 +89,7 @@
 
 .settings-body {
   flex: 1;
+  height: 100%;
   display: grid;
   grid-template-columns: 220px minmax(0, 1fr);
   min-height: 0;
@@ -95,6 +97,8 @@
 }
 
 .settings-sidebar {
+  height: 100%;
+  min-height: 0;
   padding: 12px 10px;
   border-right: 1px solid var(--border-muted);
   background: var(--desktop-sidebar-background, var(--surface-sidebar));

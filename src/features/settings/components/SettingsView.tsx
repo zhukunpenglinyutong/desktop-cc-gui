@@ -18,7 +18,6 @@ import GitBranch from "lucide-react/dist/esm/icons/git-branch";
 import TerminalSquare from "lucide-react/dist/esm/icons/terminal-square";
 import FileText from "lucide-react/dist/esm/icons/file-text";
 import Trash2 from "lucide-react/dist/esm/icons/trash-2";
-
 import FlaskConical from "lucide-react/dist/esm/icons/flask-conical";
 import ExternalLink from "lucide-react/dist/esm/icons/external-link";
 import Store from "lucide-react/dist/esm/icons/store";
@@ -1103,6 +1102,9 @@ export function SettingsView({
 
   return (
     <div className="settings-embedded">
+      <div className="settings-header">
+        <div className="settings-title">{t("settings.title")}</div>
+      </div>
       <div className="settings-body">
         <aside className="settings-sidebar">
             <button

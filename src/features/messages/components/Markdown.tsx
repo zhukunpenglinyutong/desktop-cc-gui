@@ -14,6 +14,7 @@ import {
   remarkFileLinks,
   toFileLink,
 } from "../../../utils/remarkFileLinks";
+import { highlightLine } from "../../../utils/syntax";
 import { detectCodexLeadMarker, type CodexLeadMarkerConfig } from "../constants/codexLeadMarkers";
 
 type MarkdownProps = {
@@ -595,6 +596,10 @@ function CodeBlock({ className, value, copyUseModifier }: CodeBlockProps) {
   const languageTag = extractLanguageTag(className);
   const languageLabel = languageTag ?? "Code";
   const fencedValue = `\`\`\`${languageTag ?? ""}\n${value}\n\`\`\``;
+  const highlightedHtml = useMemo(
+    () => highlightLine(value, languageTag),
+    [value, languageTag],
+  );
 
   useEffect(() => {
     return () => {
@@ -636,7 +641,10 @@ function CodeBlock({ className, value, copyUseModifier }: CodeBlockProps) {
         </button>
       </div>
       <pre>
-        <code className={className}>{value}</code>
+        <code
+          className={className}
+          dangerouslySetInnerHTML={{ __html: highlightedHtml }}
+        />
       </pre>
     </div>
   );
@@ -700,9 +708,13 @@ function PreBlock({ node, children, copyUseModifier }: PreProps) {
   }
   const isSingleLine = !value.includes("\n");
   if (isSingleLine) {
+    const highlightedHtml = highlightLine(value, languageTag);
     return (
       <pre className="markdown-codeblock-single">
-        <code className={className}>{value}</code>
+        <code
+          className={className}
+          dangerouslySetInnerHTML={{ __html: highlightedHtml }}
+        />
       </pre>
     );
   }

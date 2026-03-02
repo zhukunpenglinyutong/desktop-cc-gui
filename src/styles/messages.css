@@ -344,7 +344,7 @@
   justify-content: center;
   position: absolute;
   right: 6px;
-  bottom: -12px;
+  bottom: 0px;
   padding: 4px;
   border-radius: 999px;
   background: var(--surface-card-strong);
@@ -1374,6 +1374,51 @@
   font-size: var(--code-font-size, 11px);
   font-weight: var(--code-font-weight, 400);
   line-height: var(--code-line-height, 1.28);
+}
+
+.message .markdown-codeblock code,
+.message .markdown-codeblock-single code {
+  color: var(--text-primary);
+}
+
+.message .markdown-codeblock :is(.token.comment, .token.prolog, .token.doctype, .token.cdata),
+.message .markdown-codeblock-single :is(.token.comment, .token.prolog, .token.doctype, .token.cdata) {
+  color: rgba(150, 170, 200, 0.75);
+}
+
+.message .markdown-codeblock .token.punctuation,
+.message .markdown-codeblock-single .token.punctuation {
+  color: rgba(200, 210, 220, 0.85);
+}
+
+.message .markdown-codeblock :is(.token.property, .token.tag, .token.constant, .token.symbol, .token.deleted),
+.message .markdown-codeblock-single :is(.token.property, .token.tag, .token.constant, .token.symbol, .token.deleted) {
+  color: #ff7b72;
+}
+
+.message .markdown-codeblock :is(.token.boolean, .token.number),
+.message .markdown-codeblock-single :is(.token.boolean, .token.number) {
+  color: #f2cc60;
+}
+
+.message .markdown-codeblock :is(.token.selector, .token.attr-name, .token.string, .token.char, .token.builtin, .token.inserted),
+.message .markdown-codeblock-single :is(.token.selector, .token.attr-name, .token.string, .token.char, .token.builtin, .token.inserted) {
+  color: #7ee787;
+}
+
+.message .markdown-codeblock :is(.token.operator, .token.entity, .token.url, .token.variable),
+.message .markdown-codeblock-single :is(.token.operator, .token.entity, .token.url, .token.variable) {
+  color: rgba(200, 210, 220, 0.9);
+}
+
+.message .markdown-codeblock :is(.token.atrule, .token.attr-value, .token.keyword),
+.message .markdown-codeblock-single :is(.token.atrule, .token.attr-value, .token.keyword) {
+  color: #8bd5ff;
+}
+
+.message .markdown-codeblock :is(.token.function, .token.class-name),
+.message .markdown-codeblock-single :is(.token.function, .token.class-name) {
+  color: #d2a8ff;
 }
 
 .message .markdown-codeblock-single {

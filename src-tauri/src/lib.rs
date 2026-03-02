@@ -95,7 +95,7 @@ pub fn run() {
 
             #[cfg(target_os = "windows")]
             {
-                win_builder = win_builder.drag_and_drop(true);
+                win_builder = win_builder.drag_and_drop(true).decorations(false);
             }
 
             #[cfg(target_os = "macos")]
@@ -420,6 +420,12 @@ pub fn run() {
 
         #[cfg(not(target_os = "macos"))]
         if let RunEvent::Ready = event {
+            #[cfg(target_os = "windows")]
+            if let Some(window) = app_handle.get_webview_window("main") {
+                // Re-apply frameless mode after startup to avoid any state-restore override.
+                let _ = window.set_decorations(false);
+            }
+
             // Handle command line arguments (Windows/Linux)
             let args: Vec<String> = std::env::args().skip(1).collect();
             let paths: Vec<String> = args

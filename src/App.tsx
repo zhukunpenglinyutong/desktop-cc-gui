@@ -83,6 +83,7 @@ import { useOpenPaths } from "./features/workspaces/hooks/useOpenPaths";
 import { useRenameWorktreePrompt } from "./features/workspaces/hooks/useRenameWorktreePrompt";
 import { useLayoutController } from "./features/app/hooks/useLayoutController";
 import { useWindowLabel } from "./features/layout/hooks/useWindowLabel";
+import { isTauri } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import { ask } from "@tauri-apps/plugin-dialog";
@@ -2370,6 +2371,25 @@ function MainApp() {
 
   useWindowDrag("titlebar");
 
+  const isWindowsDesktop = useMemo(() => {
+    try {
+      if (!isTauri() || typeof navigator === "undefined") {
+        return false;
+      }
+      const platform =
+        (
+          navigator as Navigator & {
+            userAgentData?: { platform?: string };
+          }
+        ).userAgentData?.platform ??
+        navigator.platform ??
+        "";
+      return platform.toLowerCase().includes("win");
+    } catch {
+      return false;
+    }
+  }, []);
+
   useEffect(() => {
     try {
       const title = activeWorkspace
@@ -3520,10 +3540,11 @@ function MainApp() {
   );
 
   const handleOpenSpecHub = useCallback(() => {
+    closeSettings();
     setAppMode("chat");
     setCenterMode("chat");
     setActiveTab((current) => (current === "spec" ? "codex" : "spec"));
-  }, []);
+  }, [closeSettings]);
 
   const handleOpenWorkspaceHome = useCallback(() => {
     exitDiffView();
@@ -3615,10 +3636,14 @@ function MainApp() {
   const appClassName = `app ${isCompact ? "layout-compact" : "layout-desktop"}${
     isPhone ? " layout-phone" : ""
   }${isTablet ? " layout-tablet" : ""}${
+    isWindowsDesktop ? " windows-desktop" : ""
+  }${
     reduceTransparency ? " reduced-transparency" : ""
   }${!isCompact && sidebarCollapsed && !showGitHistory ? " sidebar-collapsed" : ""}${
     !isCompact && rightPanelCollapsed ? " right-panel-collapsed" : ""
   }${shouldShowSidebarTopbarContent ? " sidebar-title-relocated" : ""}${
+    showHome ? " home-active" : ""
+  }${
     showKanban ? " kanban-active" : ""
   }${showGitHistory ? " git-history-active" : ""
   }`;
@@ -3684,11 +3709,13 @@ function MainApp() {
     showDebugButton,
     onAddWorkspace: handleAddWorkspace,
     onSelectHome: () => {
+      closeSettings();
       resetPullRequestSelection();
       setWorkspaceHomeWorkspaceId(null);
       selectHome();
     },
     onSelectWorkspace: (workspaceId) => {
+      closeSettings();
       exitDiffView();
       resetPullRequestSelection();
       setWorkspaceHomeWorkspaceId(null);
@@ -3721,6 +3748,7 @@ function MainApp() {
       });
     },
     onSelectThread: (workspaceId, threadId) => {
+      closeSettings();
       exitDiffView();
       resetPullRequestSelection();
       setWorkspaceHomeWorkspaceId(null);
@@ -4145,8 +4173,13 @@ function MainApp() {
     onWorkspaceDrop: handleWorkspaceDrop,
     appMode,
     onAppModeChange: handleAppModeChange,
-    onOpenMemory: () => setCenterMode("memory"),
+    onOpenMemory: () => {
+      closeSettings();
+      setAppMode("chat");
+      setCenterMode("memory");
+    },
     onOpenProjectMemory: () => {
+      closeSettings();
       setAppMode("chat");
       setCenterMode("chat");
       setFilePanelMode("memory");
