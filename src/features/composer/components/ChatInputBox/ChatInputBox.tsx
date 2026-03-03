@@ -840,19 +840,32 @@ export const ChatInputBox = memo(forwardRef<ChatInputBoxHandle, ChatInputBoxProp
       editableWrapperRef,
     });
 
+    const handleExpandCollapsedInputBox = useCallback(() => {
+      nudge({ wrapperHeightPx: 24 });
+      window.requestAnimationFrame(() => {
+        focusInput();
+      });
+    }, [focusInput, nudge]);
+
     return (
       <div className="chat-input-box-wrapper">
         <div
           className={`chat-input-box ${isResizingInputBox ? 'is-resizing' : ''}${isInputBoxCollapsed ? ' is-collapsed' : ''}`}
           onClick={() => {
-            if (!isInputBoxCollapsed) {
-              focusInput();
-            }
+            if (isInputBoxCollapsed) return;
+            focusInput();
           }}
           ref={containerRef}
           style={containerStyle}
         >
-          {showHeader && <ResizeHandles getHandleProps={getHandleProps} nudge={nudge} />}
+          {showHeader && (
+            <ResizeHandles
+              getHandleProps={getHandleProps}
+              nudge={nudge}
+              isCollapsed={isInputBoxCollapsed}
+              onExpandCollapsed={handleExpandCollapsedInputBox}
+            />
+          )}
 
           {!isInputBoxCollapsed && showHeader && (
             <ChatInputBoxHeader

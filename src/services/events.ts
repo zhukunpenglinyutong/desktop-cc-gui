@@ -1,5 +1,8 @@
 import { listen } from "@tauri-apps/api/event";
 import type { AppServerEvent, DictationEvent, DictationModelStatus } from "../types";
+import type {
+  RuntimeLogSessionSnapshot,
+} from "./tauri";
 
 export type Unsubscribe = () => void;
 
@@ -8,6 +11,8 @@ export type TerminalOutputEvent = {
   terminalId: string;
   data: string;
 };
+
+export type RuntimeLogLineEvent = TerminalOutputEvent;
 
 type SubscriptionOptions = {
   onError?: (error: unknown) => void;
@@ -80,6 +85,9 @@ const appServerHub = createEventHub<AppServerEvent>("app-server-event");
 const dictationDownloadHub = createEventHub<DictationModelStatus>("dictation-download");
 const dictationEventHub = createEventHub<DictationEvent>("dictation-event");
 const terminalOutputHub = createEventHub<TerminalOutputEvent>("terminal-output");
+const runtimeLogLineHub = createEventHub<RuntimeLogLineEvent>("runtime-log:line-appended");
+const runtimeLogStatusHub = createEventHub<RuntimeLogSessionSnapshot>("runtime-log:status-changed");
+const runtimeLogExitedHub = createEventHub<RuntimeLogSessionSnapshot>("runtime-log:session-exited");
 const updaterCheckHub = createEventHub<void>("updater-check");
 const menuNewAgentHub = createEventHub<void>("menu-new-agent");
 const menuNewWorktreeAgentHub = createEventHub<void>("menu-new-worktree-agent");
@@ -133,6 +141,27 @@ export function subscribeTerminalOutput(
   options?: SubscriptionOptions,
 ): Unsubscribe {
   return terminalOutputHub.subscribe(onEvent, options);
+}
+
+export function subscribeRuntimeLogLine(
+  onEvent: (event: RuntimeLogLineEvent) => void,
+  options?: SubscriptionOptions,
+): Unsubscribe {
+  return runtimeLogLineHub.subscribe(onEvent, options);
+}
+
+export function subscribeRuntimeLogStatus(
+  onEvent: (event: RuntimeLogSessionSnapshot) => void,
+  options?: SubscriptionOptions,
+): Unsubscribe {
+  return runtimeLogStatusHub.subscribe(onEvent, options);
+}
+
+export function subscribeRuntimeLogExited(
+  onEvent: (event: RuntimeLogSessionSnapshot) => void,
+  options?: SubscriptionOptions,
+): Unsubscribe {
+  return runtimeLogExitedHub.subscribe(onEvent, options);
 }
 
 export function subscribeUpdaterCheck(

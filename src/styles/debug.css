@@ -4,7 +4,7 @@
   display: flex;
   flex-direction: column;
   grid-column: 1;
-  grid-row: 5;
+  grid-row: 6;
   -webkit-app-region: no-drag;
 }
 .debug-panel.open {

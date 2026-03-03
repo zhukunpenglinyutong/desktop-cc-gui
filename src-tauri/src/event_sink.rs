@@ -19,6 +19,9 @@ impl EventSink for TauriEventSink {
     }
 
     fn emit_terminal_output(&self, event: TerminalOutput) {
-        let _ = self.app.emit("terminal-output", event);
+        let _ = self.app.emit("terminal-output", event.clone());
+        if event.terminal_id == "runtime-console" {
+            let _ = self.app.emit("runtime-log:line-appended", event);
+        }
     }
 }

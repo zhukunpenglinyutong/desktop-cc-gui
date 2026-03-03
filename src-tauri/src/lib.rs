@@ -35,6 +35,7 @@ mod menu;
 mod project_memory;
 mod prompts;
 mod remote_backend;
+mod runtime_log;
 mod rules;
 mod settings;
 mod shared;
@@ -340,6 +341,10 @@ pub fn run() {
             terminal::terminal_write,
             terminal::terminal_resize,
             terminal::terminal_close,
+            runtime_log::runtime_log_start,
+            runtime_log::runtime_log_stop,
+            runtime_log::runtime_log_get_session,
+            runtime_log::runtime_log_mark_exit,
             // Dictation
             dictation::dictation_model_status,
             dictation::dictation_download_model,

@@ -275,6 +275,8 @@ type LayoutNodesOptions = {
   onFilePanelModeChange: (mode: "git" | "files" | "prompts" | "memory") => void;
   fileTreeLoading: boolean;
   onRefreshFiles?: () => void;
+  onToggleRuntimeConsole: () => void;
+  runtimeConsoleVisible: boolean;
   gitStatus: {
     branchName: string;
     files: GitFileStatus[];
@@ -1023,6 +1025,8 @@ export function useLayoutNodes(options: LayoutNodesOptions): LayoutNodesResult {
         openAppIconById={options.openAppIconById}
         selectedOpenAppId={options.selectedOpenAppId}
         onSelectOpenAppId={options.onSelectOpenAppId}
+        onToggleRuntimeConsole={options.onToggleRuntimeConsole}
+        isRuntimeConsoleVisible={options.runtimeConsoleVisible}
         gitStatusFiles={options.gitStatus.files}
         gitignoredFiles={options.gitignoredFiles}
         onRefreshFiles={options.onRefreshFiles}

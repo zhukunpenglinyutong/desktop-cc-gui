@@ -34,6 +34,7 @@ type DesktopLayoutProps = {
   gitDiffPanelNode: ReactNode;
   planPanelNode: ReactNode;
   composerNode: ReactNode;
+  runtimeConsoleDockNode: ReactNode;
   terminalDockNode: ReactNode;
   debugPanelNode: ReactNode;
   hasActivePlan: boolean;
@@ -67,6 +68,7 @@ export function DesktopLayout({
   gitDiffPanelNode,
   planPanelNode,
   composerNode,
+  runtimeConsoleDockNode,
   terminalDockNode,
   debugPanelNode,
   hasActivePlan,
@@ -200,6 +202,7 @@ export function DesktopLayout({
     return (
       <section className="main kanban-fullscreen">
         {kanbanNode}
+        {runtimeConsoleDockNode}
         {terminalDockNode}
       </section>
     );
@@ -332,6 +335,7 @@ export function DesktopLayout({
                   </>
                 )}
                 {composerNode}
+                {runtimeConsoleDockNode}
                 {terminalDockNode}
                 {debugPanelNode}
                 {gitHistoryDockNode}

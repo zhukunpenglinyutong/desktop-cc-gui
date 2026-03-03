@@ -4,7 +4,7 @@
   display: flex;
   flex-direction: column;
   grid-column: 1;
-  grid-row: 4;
+  grid-row: 5;
   height: var(--terminal-panel-height, 220px);
   -webkit-app-region: no-drag;
   --terminal-background: #11151b;

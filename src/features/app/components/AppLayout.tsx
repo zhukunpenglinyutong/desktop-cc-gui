@@ -34,6 +34,7 @@ type AppLayoutProps = {
   gitDiffViewerNode: ReactNode;
   fileViewPanelNode: ReactNode;
   planPanelNode: ReactNode;
+  runtimeConsoleDockNode: ReactNode;
   debugPanelNode: ReactNode;
   debugPanelFullNode: ReactNode;
   terminalDockNode: ReactNode;
@@ -80,6 +81,7 @@ export const AppLayout = memo(function AppLayout({
   gitDiffViewerNode,
   fileViewPanelNode,
   planPanelNode,
+  runtimeConsoleDockNode,
   debugPanelNode,
   debugPanelFullNode,
   terminalDockNode,
@@ -175,6 +177,7 @@ export const AppLayout = memo(function AppLayout({
       gitDiffPanelNode={gitDiffPanelNode}
       planPanelNode={planPanelNode}
       composerNode={composerNode}
+      runtimeConsoleDockNode={runtimeConsoleDockNode}
       terminalDockNode={terminalDockNode}
       debugPanelNode={debugPanelNode}
       hasActivePlan={hasActivePlan}

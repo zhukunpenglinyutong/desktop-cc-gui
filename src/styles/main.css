@@ -1,7 +1,7 @@
 .main {
   display: grid;
   grid-template-columns: minmax(280px, 1fr) var(--right-panel-width, 230px);
-  grid-template-rows: auto 1fr auto auto auto;
+  grid-template-rows: auto 1fr auto auto auto auto;
   gap: 0;
   padding: 0;
   position: relative;

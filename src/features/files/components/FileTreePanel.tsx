@@ -45,6 +45,8 @@ type FileTreePanelProps = {
   openAppIconById: Record<string, string>;
   selectedOpenAppId: string;
   onSelectOpenAppId: (id: string) => void;
+  onToggleRuntimeConsole?: () => void;
+  isRuntimeConsoleVisible?: boolean;
   gitStatusFiles?: GitFileStatus[];
   gitignoredFiles?: Set<string>;
   onRefreshFiles?: () => void;
@@ -339,10 +341,13 @@ export function FileTreePanel({
 
   const resolvePath = useCallback(
     (relativePath: string) => {
-      const base = workspacePath.endsWith("/")
-        ? workspacePath.slice(0, -1)
-        : workspacePath;
-      return `${base}/${relativePath}`;
+      const usesWindowsSeparator = workspacePath.includes("\\");
+      const separator = usesWindowsSeparator ? "\\" : "/";
+      const base = workspacePath.replace(/[\\/]+$/, "");
+      const normalizedRelative = usesWindowsSeparator
+        ? relativePath.replaceAll("/", "\\")
+        : relativePath;
+      return `${base}${separator}${normalizedRelative}`;
     },
     [workspacePath],
   );

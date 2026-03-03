@@ -1,5 +1,6 @@
 import { memo } from "react";
 import { useTranslation } from "react-i18next";
+import Construction from "lucide-react/dist/esm/icons/construction";
 import PanelRightClose from "lucide-react/dist/esm/icons/panel-right-close";
 import PanelRightOpen from "lucide-react/dist/esm/icons/panel-right-open";
 import TerminalSquare from "lucide-react/dist/esm/icons/terminal-square";
@@ -9,6 +10,9 @@ type MainHeaderActionsProps = {
   isCompact: boolean;
   rightPanelCollapsed: boolean;
   sidebarToggleProps: SidebarToggleProps;
+  showRuntimeConsoleButton?: boolean;
+  isRuntimeConsoleVisible?: boolean;
+  onToggleRuntimeConsole?: () => void;
   showTerminalButton?: boolean;
   isTerminalOpen?: boolean;
   onToggleTerminal?: () => void;
@@ -18,6 +22,9 @@ export const MainHeaderActions = memo(function MainHeaderActions({
   isCompact,
   rightPanelCollapsed,
   sidebarToggleProps,
+  showRuntimeConsoleButton = false,
+  isRuntimeConsoleVisible = false,
+  onToggleRuntimeConsole,
   showTerminalButton = false,
   isTerminalOpen = false,
   onToggleTerminal,
@@ -26,9 +33,11 @@ export const MainHeaderActions = memo(function MainHeaderActions({
   const { rightPanelAvailable = true, onCollapseRightPanel, onExpandRightPanel } =
     sidebarToggleProps;
 
+  const canToggleRuntimeConsole =
+    showRuntimeConsoleButton && Boolean(onToggleRuntimeConsole);
   const canToggleTerminal = showTerminalButton && Boolean(onToggleTerminal);
 
-  if (isCompact || (!rightPanelAvailable && !canToggleTerminal)) {
+  if (isCompact || (!rightPanelAvailable && !canToggleRuntimeConsole && !canToggleTerminal)) {
     return null;
   }
 
@@ -37,6 +46,18 @@ export const MainHeaderActions = memo(function MainHeaderActions({
 
   return (
     <>
+      {canToggleRuntimeConsole && (
+        <button
+          type="button"
+          className={`ghost main-header-action${isRuntimeConsoleVisible ? " is-active" : ""}`}
+          onClick={() => onToggleRuntimeConsole?.()}
+          data-tauri-drag-region="false"
+          aria-label={t("files.openRunConsole")}
+          title={t("files.openRunConsole")}
+        >
+          <Construction size={14} aria-hidden />
+        </button>
+      )}
       {canToggleTerminal && (
         <button
           type="button"
