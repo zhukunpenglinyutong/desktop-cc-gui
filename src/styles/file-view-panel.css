@@ -613,6 +613,160 @@
   width: 12px;
 }
 
+.fvp-cm .cm-panels {
+  background: color-mix(in srgb, var(--surface-card) 92%, var(--surface-command));
+  color: var(--text-strong);
+  border-bottom: 1px solid color-mix(in srgb, var(--border-subtle) 85%, transparent);
+}
+
+.fvp-cm .cm-panels-top {
+  border-bottom: 1px solid color-mix(in srgb, var(--border-subtle) 85%, transparent);
+}
+
+.fvp-cm .cm-panels-bottom {
+  border-top: 1px solid color-mix(in srgb, var(--border-subtle) 85%, transparent);
+}
+
+.fvp-cm .cm-search {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  padding: 8px 10px;
+  font-size: 12px;
+}
+
+.fvp-cm .cm-search label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--text-muted);
+}
+
+.fvp-cm .cm-search input[type="text"],
+.fvp-cm .cm-search input:not([type]) {
+  background: color-mix(in srgb, var(--surface-command) 88%, transparent);
+  color: var(--text-strong);
+  border: 1px solid color-mix(in srgb, var(--border-subtle) 90%, transparent);
+  border-radius: 6px;
+  padding: 4px 8px;
+  min-height: 26px;
+}
+
+.fvp-cm .cm-search input[type="text"]:focus,
+.fvp-cm .cm-search input:not([type]):focus {
+  outline: none;
+  border-color: color-mix(in srgb, var(--border-accent) 68%, var(--border-subtle));
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--border-accent) 20%, transparent);
+}
+
+.fvp-cm .cm-search .cm-button {
+  width: auto;
+  height: auto;
+  min-height: 0;
+  padding: 2px 4px;
+  border-radius: 4px;
+  border: none;
+  display: inline-flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 5px;
+  font-size: 12px;
+  line-height: 1.2;
+  font-weight: 600;
+  color: var(--text-muted);
+  cursor: pointer;
+  background: transparent;
+  box-shadow: none;
+  transition:
+    color 120ms ease,
+    background 120ms ease;
+}
+
+.fvp-cm .cm-search .cm-button::before {
+  font-size: 13px;
+  line-height: 1;
+  font-weight: 700;
+  color: var(--text-stronger);
+  letter-spacing: -0.02em;
+}
+
+.fvp-cm .cm-search .cm-button:hover {
+  color: var(--text-strong);
+  background: color-mix(in srgb, var(--surface-control-hover) 55%, transparent);
+}
+
+.fvp-cm .cm-search .cm-button:active {
+  background: color-mix(in srgb, var(--surface-control-hover) 70%, transparent);
+}
+
+.fvp-cm .cm-search .cm-button:focus-visible {
+  outline: none;
+  box-shadow:
+    0 0 0 2px color-mix(in srgb, var(--surface-card) 78%, transparent),
+    0 0 0 4px color-mix(in srgb, var(--border-accent) 45%, transparent);
+}
+
+.fvp-cm .cm-search .cm-button[name="next"]::before {
+  content: "↓";
+}
+
+.fvp-cm .cm-search .cm-button[name="prev"]::before {
+  content: "↑";
+}
+
+.fvp-cm .cm-search .cm-button[name="select"]::before {
+  content: "◎";
+}
+
+.fvp-cm .cm-search .cm-button[name="replace"]::before {
+  content: "\eb3d";
+}
+
+.fvp-cm .cm-search .cm-button[name="replaceAll"]::before {
+  content: "\eb3c";
+}
+
+.fvp-cm .cm-search .cm-button[name="replace"]::before,
+.fvp-cm .cm-search .cm-button[name="replaceAll"]::before {
+  font-family: codicon;
+  font-size: 14px;
+  font-weight: 400;
+  display: inline-block;
+  width: 1em;
+  height: 1em;
+  line-height: 1;
+  text-align: center;
+}
+
+.fvp-cm .cm-search button[name="close"] {
+  min-height: 0;
+  width: auto;
+  height: auto;
+  border-radius: 4px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  padding: 2px 4px;
+  transition: color 120ms ease, background 120ms ease;
+}
+
+.fvp-cm .cm-search button[name="close"]:hover {
+  background: color-mix(in srgb, var(--surface-control-hover) 55%, transparent);
+  color: var(--text-strong);
+}
+
+.fvp-cm .cm-searchMatch {
+  background: color-mix(in srgb, #f59e0b 36%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, #f59e0b 64%, transparent);
+}
+
+.fvp-cm .cm-searchMatch.cm-searchMatch-selected {
+  background: color-mix(in srgb, var(--border-accent) 40%, transparent);
+  border-bottom-color: color-mix(in srgb, var(--border-accent) 72%, transparent);
+}
+
 .fvp-cm .cm-line.cm-git-added-line {
   box-shadow: inset 3px 0 0 color-mix(in srgb, #3fb950 88%, var(--text-strong));
 }
@@ -939,6 +1093,13 @@
 }
 
 .fvp-maximize-toggle {
+  min-width: 20px;
+  min-height: 18px;
+  justify-content: center;
+  padding: 2px 5px;
+}
+
+.fvp-find-toggle {
   min-width: 20px;
   min-height: 18px;
   justify-content: center;

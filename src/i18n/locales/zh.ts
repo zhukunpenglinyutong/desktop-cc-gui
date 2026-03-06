@@ -2288,6 +2288,7 @@ const zh = {
     definitionCandidates: "定义候选",
     referenceResults: "引用结果",
     noReferencesFound: "未找到引用",
+    openFind: "在文件中查找 (⌘/Ctrl+F)",
     closeAllTabs: "关闭全部标签",
     switchToSideBySideSplit: "切换为左右分栏",
     switchToStackedSplit: "切换为上下分栏",

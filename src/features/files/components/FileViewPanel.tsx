@@ -25,6 +25,7 @@ import {
   ViewPlugin,
   type ViewUpdate,
 } from "@codemirror/view";
+import { openSearchPanel, search } from "@codemirror/search";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { RangeSetBuilder, type Extension } from "@codemirror/state";
 import {
@@ -597,6 +598,7 @@ export function FileViewPanel({
   const [fileReferenceShouldRender, setFileReferenceShouldRender] = useState(false);
   const [fileReferenceVisible, setFileReferenceVisible] = useState(false);
   const splitResizeCleanupRef = useRef<(() => void) | null>(null);
+  const pendingOpenFindPanelRef = useRef(false);
 
   const isDirty = content !== savedContentRef.current;
   const gitStatusMap = useMemo(() => {
@@ -750,6 +752,7 @@ export function FileViewPanel({
   // Reset mode when file changes
   useEffect(() => {
     lspRequestIdRef.current += 1;
+    pendingOpenFindPanelRef.current = false;
     recentDefinitionTriggerRef.current = null;
     recentReferencesTriggerRef.current = null;
     setMode(initialMode);
@@ -815,6 +818,7 @@ export function FileViewPanel({
       ]),
     [],
   );
+  const persistentSearchExtension = useMemo(() => search({ top: true }), []);
 
   // Keyboard shortcut: Cmd+S / Ctrl+S (works in any mode, including preview)
   useEffect(() => {
@@ -1137,6 +1141,30 @@ export function FileViewPanel({
     [runDefinitionFromCursor, runReferencesFromCursor],
   );
 
+  const openFindPanelInEditor = useCallback(() => {
+    const view = cmRef.current?.view;
+    if (!view) {
+      return false;
+    }
+    openSearchPanel(view as unknown as EditorView);
+    view.focus();
+    return true;
+  }, []);
+
+  const handleOpenFindPanel = useCallback(() => {
+    if (isBinary || truncated) {
+      return;
+    }
+    pendingOpenFindPanelRef.current = true;
+    if (mode !== "edit") {
+      setMode("edit");
+      return;
+    }
+    if (openFindPanelInEditor()) {
+      pendingOpenFindPanelRef.current = false;
+    }
+  }, [isBinary, mode, openFindPanelInEditor, truncated]);
+
   const ctrlClickDefinitionExt = useMemo(
     () =>
       EditorView.domEventHandlers({
@@ -1201,6 +1229,33 @@ export function FileViewPanel({
     navigationTarget,
   ]);
 
+  useEffect(() => {
+    if (!pendingOpenFindPanelRef.current) {
+      return;
+    }
+    if (mode !== "edit" || isLoading || truncated) {
+      return;
+    }
+    let rafId = 0;
+    let attemptCount = 0;
+    const attemptOpen = () => {
+      attemptCount += 1;
+      if (openFindPanelInEditor()) {
+        pendingOpenFindPanelRef.current = false;
+        return;
+      }
+      if (attemptCount < 10) {
+        rafId = window.requestAnimationFrame(attemptOpen);
+      }
+    };
+    rafId = window.requestAnimationFrame(attemptOpen);
+    return () => {
+      if (rafId) {
+        window.cancelAnimationFrame(rafId);
+      }
+    };
+  }, [isLoading, mode, openFindPanelInEditor, truncated]);
+
   // Syntax highlighted lines for code preview
   const language = useMemo(() => languageFromPath(filePath), [filePath]);
   const lines = useMemo(() => content.split("\n"), [content]);
@@ -1211,6 +1266,22 @@ export function FileViewPanel({
         return html || "&nbsp;";
       }),
     [lines, language],
+  );
+  const editorExtensions = useMemo(
+    () => [
+      saveKeymapExt,
+      editorNavigationKeymapExt,
+      ctrlClickDefinitionExt,
+      persistentSearchExtension,
+      ...cmExtensions,
+    ],
+    [
+      cmExtensions,
+      ctrlClickDefinitionExt,
+      editorNavigationKeymapExt,
+      persistentSearchExtension,
+      saveKeymapExt,
+    ],
   );
 
   const visibleTabs = openTabs && openTabs.length > 0 ? openTabs : [filePath];
@@ -1629,12 +1700,7 @@ export function FileViewPanel({
                   lastReportedLineRangeRef.current = rangeKey;
                   onActiveFileLineRangeChange?.({ startLine, endLine });
                 }}
-                extensions={[
-                  saveKeymapExt,
-                  editorNavigationKeymapExt,
-                  ctrlClickDefinitionExt,
-                  ...cmExtensions,
-                ]}
+                extensions={editorExtensions}
                 theme="dark"
                 className="fvp-cm"
                 basicSetup={{
@@ -1682,12 +1748,7 @@ export function FileViewPanel({
               lastReportedLineRangeRef.current = rangeKey;
               onActiveFileLineRangeChange?.({ startLine, endLine });
             }}
-            extensions={[
-              saveKeymapExt,
-              editorNavigationKeymapExt,
-              ctrlClickDefinitionExt,
-              ...cmExtensions,
-            ]}
+            extensions={editorExtensions}
             theme="dark"
             className="fvp-cm"
             basicSetup={{
@@ -1805,6 +1866,17 @@ export function FileViewPanel({
             {t("files.addToChat")}
           </button>
         )}
+        {!isBinary && !truncated ? (
+          <button
+            type="button"
+            className="ghost fvp-action-btn fvp-find-toggle"
+            aria-label={t("files.openFind")}
+            title={t("files.openFind")}
+            onClick={handleOpenFindPanel}
+          >
+            <Search size={12} aria-hidden />
+          </button>
+        ) : null}
         {onToggleEditorFileMaximized ? (
           <button
             type="button"

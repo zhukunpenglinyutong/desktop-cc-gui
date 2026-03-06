@@ -2337,6 +2337,7 @@ const en = {
     definitionCandidates: "Definition candidates",
     referenceResults: "Reference results",
     noReferencesFound: "No references found",
+    openFind: "Find in file (⌘/Ctrl+F)",
     closeAllTabs: "Close all tabs",
     switchToSideBySideSplit: "Switch to side-by-side split",
     switchToStackedSplit: "Switch to stacked split",
