@@ -197,7 +197,7 @@ describe("useThreadItemEvents", () => {
   });
 
   it("marks processing and appends agent deltas", () => {
-    const { result, dispatch, markProcessing } = makeOptions();
+    const { result, dispatch, markProcessing, safeMessageActivity } = makeOptions();
 
     act(() => {
       result.current.onAgentMessageDelta({
@@ -223,6 +223,7 @@ describe("useThreadItemEvents", () => {
       delta: "Hello",
       hasCustomName: false,
     });
+    expect(safeMessageActivity).toHaveBeenCalled();
   });
 
   it("completes agent messages and updates thread activity", () => {
@@ -277,18 +278,73 @@ describe("useThreadItemEvents", () => {
     nowSpy.mockRestore();
   });
 
-  it("dispatches reasoning summary boundaries", () => {
-    const { result, dispatch } = makeOptions();
+  it("dispatches reasoning summary boundaries through the active processing path", () => {
+    const { result, dispatch, markProcessing, safeMessageActivity } = makeOptions();
 
     act(() => {
-      result.current.onReasoningSummaryBoundary("ws-1", "thread-1", "reasoning-1");
+      result.current.onReasoningSummaryBoundary("ws-1", "claude:session-1", "reasoning-1");
     });
 
-    expect(dispatch).toHaveBeenCalledWith({
+    expect(dispatch).toHaveBeenNthCalledWith(1, {
+      type: "ensureThread",
+      workspaceId: "ws-1",
+      threadId: "claude:session-1",
+      engine: "claude",
+    });
+    expect(markProcessing).toHaveBeenCalledWith("claude:session-1", true);
+    expect(dispatch).toHaveBeenNthCalledWith(2, {
       type: "appendReasoningSummaryBoundary",
-      threadId: "thread-1",
+      threadId: "claude:session-1",
       itemId: "reasoning-1",
     });
+    expect(safeMessageActivity).toHaveBeenCalled();
+  });
+
+  it("dispatches reasoning text deltas through the active processing path", () => {
+    const { result, dispatch, markProcessing, safeMessageActivity } = makeOptions();
+
+    act(() => {
+      result.current.onReasoningTextDelta(
+        "ws-1",
+        "claude:session-1",
+        "reasoning-1",
+        "先检查控制器",
+      );
+    });
+
+    expect(dispatch).toHaveBeenNthCalledWith(1, {
+      type: "ensureThread",
+      workspaceId: "ws-1",
+      threadId: "claude:session-1",
+      engine: "claude",
+    });
+    expect(markProcessing).toHaveBeenCalledWith("claude:session-1", true);
+    expect(dispatch).toHaveBeenCalledWith({
+      type: "appendReasoningContent",
+      threadId: "claude:session-1",
+      itemId: "reasoning-1",
+      delta: "先检查控制器",
+    });
+    expect(safeMessageActivity).toHaveBeenCalled();
+  });
+
+  it("skips reasoning deltas for interrupted threads", () => {
+    const { result, dispatch, markProcessing, safeMessageActivity, interruptedThreadsRef } =
+      makeOptions();
+    interruptedThreadsRef.current.add("claude:session-1");
+
+    act(() => {
+      result.current.onReasoningSummaryDelta(
+        "ws-1",
+        "claude:session-1",
+        "reasoning-1",
+        "晚到的思考",
+      );
+    });
+
+    expect(dispatch).not.toHaveBeenCalled();
+    expect(markProcessing).not.toHaveBeenCalled();
+    expect(safeMessageActivity).not.toHaveBeenCalled();
   });
 
   it("anchors the thread before appending command output deltas", () => {
@@ -411,7 +467,7 @@ describe("useThreadItemEvents", () => {
     });
   });
 
-  it("skips claude reasoning snapshot upsert to avoid duplicate reasoning blocks", () => {
+  it("accepts claude reasoning snapshot upsert so live state can converge to history", () => {
     vi.mocked(buildConversationItem).mockReturnValue({
       id: "reasoning-1",
       kind: "reasoning",
@@ -434,13 +490,18 @@ describe("useThreadItemEvents", () => {
       threadId: "claude:session-1",
       engine: "claude",
     });
-    expect(dispatch).not.toHaveBeenCalledWith(
-      expect.objectContaining({
-        type: "upsertItem",
-        workspaceId: "ws-1",
-        threadId: "claude:session-1",
-      }),
-    );
+    expect(dispatch).toHaveBeenCalledWith({
+      type: "upsertItem",
+      workspaceId: "ws-1",
+      threadId: "claude:session-1",
+      item: {
+        id: "reasoning-1",
+        kind: "reasoning",
+        summary: "思考",
+        content: "思考内容",
+      },
+      hasCustomName: false,
+    });
     expect(safeMessageActivity).toHaveBeenCalled();
   });
 });

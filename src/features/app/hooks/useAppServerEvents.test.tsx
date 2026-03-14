@@ -1311,6 +1311,37 @@ describe("useAppServerEvents", () => {
     });
   });
 
+  it("routes claude text:delta through legacy fallback when normalized adapters are disabled", async () => {
+    const handlers: Handlers = {
+      onAgentMessageDelta: vi.fn(),
+    };
+    const { root } = await mount(handlers);
+
+    act(() => {
+      listener?.({
+        workspace_id: "ws-claude",
+        message: {
+          method: "text:delta",
+          params: {
+            threadId: "claude:session-99",
+            delta: "streaming text",
+          },
+        },
+      });
+    });
+
+    expect(handlers.onAgentMessageDelta).toHaveBeenCalledWith({
+      workspaceId: "ws-claude",
+      threadId: "claude:session-99",
+      itemId: "claude:session-99:text-delta",
+      delta: "streaming text",
+    });
+
+    await act(async () => {
+      root.unmount();
+    });
+  });
+
   it("hydrates tool output from params in legacy item/completed routing", async () => {
     const handlers: Handlers = {
       onItemCompleted: vi.fn(),

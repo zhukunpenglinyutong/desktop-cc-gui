@@ -5,6 +5,8 @@ import { asString } from "../utils/threadNormalize";
 import type { DebugEntry } from "../../../types";
 import type { ThreadAction } from "./useThreadsReducer";
 
+const CLAUDE_STREAM_DEBUG_FLAG_KEY = "mossx.debug.claude.stream";
+
 /**
  * Infer engine type from thread ID.
  * Claude/OpenCode threads use "<engine>:" or "<engine>-pending-" prefixes.
@@ -17,6 +19,36 @@ function inferEngineFromThreadId(threadId: string): "claude" | "codex" | "openco
     return "opencode";
   }
   return "codex";
+}
+
+function isClaudeThread(threadId: string) {
+  return threadId.startsWith("claude:") || threadId.startsWith("claude-pending-");
+}
+
+function isClaudeStreamDebugEnabled() {
+  if (typeof window === "undefined") {
+    return false;
+  }
+  try {
+    const value = window.localStorage.getItem(CLAUDE_STREAM_DEBUG_FLAG_KEY);
+    if (!value) {
+      return false;
+    }
+    const normalized = value.trim().toLowerCase();
+    return normalized === "1" || normalized === "true" || normalized === "on";
+  } catch {
+    return false;
+  }
+}
+
+function createDebugPreview(value: string, maxLength = 160) {
+  const normalized = value.replace(/\s+/g, " ").trim();
+  if (!normalized) {
+    return "";
+  }
+  return normalized.length > maxLength
+    ? `${normalized.slice(0, maxLength)}...`
+    : normalized;
 }
 
 type UseThreadItemEventsOptions = {
@@ -88,6 +120,37 @@ export function useThreadItemEvents({
     [activeThreadId, onDebug],
   );
 
+  const logClaudeStream = useCallback(
+    (
+      label: string,
+      payload: {
+        workspaceId: string;
+        threadId: string;
+        itemId?: string;
+        itemType?: string;
+        deltaLength?: number;
+        textPreview?: string;
+        skipped?: boolean;
+        reason?: string;
+      },
+    ) => {
+      if (!onDebug || !isClaudeThread(payload.threadId) || !isClaudeStreamDebugEnabled()) {
+        return;
+      }
+      onDebug({
+        id: `${Date.now()}-claude-stream-${label}`,
+        timestamp: Date.now(),
+        source: "event",
+        label: `thread/session:claude-stream:${label}`,
+        payload: {
+          ...payload,
+          activeThreadId,
+        },
+      });
+    },
+    [activeThreadId, onDebug],
+  );
+
   const handleItemUpdate = useCallback(
     (
       workspaceId: string,
@@ -102,9 +165,23 @@ export function useThreadItemEvents({
       }
       applyCollabThreadLinks(threadId, item);
       const itemType = asString(item?.type ?? "");
+      const itemId = asString(item?.id ?? "");
       const agentMessageSnapshotText = asString(
         item?.text ?? item?.content ?? item?.output_text ?? item?.outputText ?? "",
       );
+      if (
+        itemType === "agentMessage" ||
+        itemType === "reasoning"
+      ) {
+        logClaudeStream("item-snapshot", {
+          workspaceId,
+          threadId,
+          itemId,
+          itemType,
+          deltaLength: agentMessageSnapshotText.length,
+          textPreview: createDebugPreview(agentMessageSnapshotText),
+        });
+      }
       if (itemType === "enteredReviewMode") {
         markReviewing(threadId, true);
       } else if (itemType === "exitedReviewMode") {
@@ -133,9 +210,17 @@ export function useThreadItemEvents({
             type: "appendAgentDelta",
             workspaceId,
             threadId,
-            itemId: asString(item?.id ?? ""),
+            itemId,
             delta: agentMessageSnapshotText,
             hasCustomName: Boolean(getCustomName(workspaceId, threadId)),
+          });
+          logClaudeStream("agent-snapshot-routed", {
+            workspaceId,
+            threadId,
+            itemId,
+            itemType,
+            deltaLength: agentMessageSnapshotText.length,
+            textPreview: createDebugPreview(agentMessageSnapshotText),
           });
         }
         safeMessageActivity();
@@ -145,19 +230,27 @@ export function useThreadItemEvents({
       const converted = buildConversationItem(item);
       if (converted) {
         const threadEngine = inferEngineFromThreadId(threadId);
-        // Claude can emit reasoning through both snapshot item updates and
-        // reasoning delta channels. Rendering both paths duplicates thinking blocks
-        // during rapid session switching, so Claude relies on delta path only.
+        // Claude reasoning should converge to the persisted history shape.
+        // Accept snapshot items so final/live state can be enriched by the
+        // server snapshot instead of staying delta-only.
         if (threadEngine === "claude" && converted.kind === "reasoning") {
-          logReasoningRoute("reasoning-snapshot-skipped", {
+          logReasoningRoute("reasoning-snapshot-accepted", {
             workspaceId,
             threadId,
             itemId: converted.id,
-            skipped: true,
-            reason: "claude-snapshot-disabled-use-delta-only",
+            skipped: false,
+            reason: "claude-snapshot-enriches-live-state",
           });
-          safeMessageActivity();
-          return;
+          logClaudeStream("reasoning-snapshot-upsert", {
+            workspaceId,
+            threadId,
+            itemId: converted.id,
+            itemType,
+            deltaLength: `${converted.summary}${converted.content}`.length,
+            textPreview: createDebugPreview(
+              converted.content || converted.summary || "",
+            ),
+          });
         }
         const normalizedItem =
           converted.kind === "message" &&
@@ -241,6 +334,15 @@ export function useThreadItemEvents({
     }) => {
       // Skip late-arriving deltas for threads that have been interrupted
       if (interruptedThreadsRef.current.has(threadId)) {
+        logClaudeStream("agent-delta-skipped", {
+          workspaceId,
+          threadId,
+          itemId,
+          deltaLength: delta.length,
+          textPreview: createDebugPreview(delta),
+          skipped: true,
+          reason: "interrupted-thread",
+        });
         return;
       }
       dispatch({ type: "ensureThread", workspaceId, threadId, engine: inferEngineFromThreadId(threadId) });
@@ -254,8 +356,16 @@ export function useThreadItemEvents({
         delta,
         hasCustomName,
       });
+      logClaudeStream("agent-delta", {
+        workspaceId,
+        threadId,
+        itemId,
+        deltaLength: delta.length,
+        textPreview: createDebugPreview(delta),
+      });
+      safeMessageActivity();
     },
-    [dispatch, getCustomName, interruptedThreadsRef, markProcessing],
+    [dispatch, getCustomName, interruptedThreadsRef, logClaudeStream, markProcessing, safeMessageActivity],
   );
 
   const onAgentMessageCompleted = useCallback(
@@ -299,11 +409,19 @@ export function useThreadItemEvents({
         dispatch({ type: "markUnread", threadId, hasUnread: true });
       }
       onAgentMessageCompletedExternal?.({ workspaceId, threadId, itemId, text });
+      logClaudeStream("agent-completed", {
+        workspaceId,
+        threadId,
+        itemId,
+        deltaLength: text.length,
+        textPreview: createDebugPreview(text),
+      });
     },
     [
       activeThreadId,
       dispatch,
       getCustomName,
+      logClaudeStream,
       onAgentMessageCompletedExternal,
       recordThreadActivity,
       safeMessageActivity,
@@ -339,9 +457,31 @@ export function useThreadItemEvents({
         itemId,
         deltaLength: delta.length,
       });
+      if (interruptedThreadsRef.current.has(threadId)) {
+        logClaudeStream("reasoning-summary-delta-skipped", {
+          workspaceId,
+          threadId,
+          itemId,
+          deltaLength: delta.length,
+          textPreview: createDebugPreview(delta),
+          skipped: true,
+          reason: "interrupted-thread",
+        });
+        return;
+      }
+      dispatch({ type: "ensureThread", workspaceId, threadId, engine: inferEngineFromThreadId(threadId) });
+      markProcessing(threadId, true);
       dispatch({ type: "appendReasoningSummary", threadId, itemId, delta });
+      logClaudeStream("reasoning-summary-delta", {
+        workspaceId,
+        threadId,
+        itemId,
+        deltaLength: delta.length,
+        textPreview: createDebugPreview(delta),
+      });
+      safeMessageActivity();
     },
-    [dispatch, logReasoningRoute],
+    [dispatch, interruptedThreadsRef, logClaudeStream, logReasoningRoute, markProcessing, safeMessageActivity],
   );
 
   const onReasoningSummaryBoundary = useCallback(
@@ -351,9 +491,27 @@ export function useThreadItemEvents({
         threadId,
         itemId,
       });
+      if (interruptedThreadsRef.current.has(threadId)) {
+        logClaudeStream("reasoning-summary-boundary-skipped", {
+          workspaceId,
+          threadId,
+          itemId,
+          skipped: true,
+          reason: "interrupted-thread",
+        });
+        return;
+      }
+      dispatch({ type: "ensureThread", workspaceId, threadId, engine: inferEngineFromThreadId(threadId) });
+      markProcessing(threadId, true);
       dispatch({ type: "appendReasoningSummaryBoundary", threadId, itemId });
+      logClaudeStream("reasoning-summary-boundary", {
+        workspaceId,
+        threadId,
+        itemId,
+      });
+      safeMessageActivity();
     },
-    [dispatch, logReasoningRoute],
+    [dispatch, interruptedThreadsRef, logClaudeStream, logReasoningRoute, markProcessing, safeMessageActivity],
   );
 
   const onReasoningTextDelta = useCallback(
@@ -364,9 +522,31 @@ export function useThreadItemEvents({
         itemId,
         deltaLength: delta.length,
       });
+      if (interruptedThreadsRef.current.has(threadId)) {
+        logClaudeStream("reasoning-text-delta-skipped", {
+          workspaceId,
+          threadId,
+          itemId,
+          deltaLength: delta.length,
+          textPreview: createDebugPreview(delta),
+          skipped: true,
+          reason: "interrupted-thread",
+        });
+        return;
+      }
+      dispatch({ type: "ensureThread", workspaceId, threadId, engine: inferEngineFromThreadId(threadId) });
+      markProcessing(threadId, true);
       dispatch({ type: "appendReasoningContent", threadId, itemId, delta });
+      logClaudeStream("reasoning-text-delta", {
+        workspaceId,
+        threadId,
+        itemId,
+        deltaLength: delta.length,
+        textPreview: createDebugPreview(delta),
+      });
+      safeMessageActivity();
     },
-    [dispatch, logReasoningRoute],
+    [dispatch, interruptedThreadsRef, logClaudeStream, logReasoningRoute, markProcessing, safeMessageActivity],
   );
 
   const onCommandOutputDelta = useCallback(

@@ -3,6 +3,7 @@ import type { ConversationItem } from "../types";
 import {
   buildConversationItem,
   buildConversationItemFromThreadItem,
+  buildItemsFromThread,
   getThreadTimestamp,
   mergeThreadItems,
   normalizeItem,
@@ -1146,6 +1147,50 @@ go lang`,
       expect(item.content).toBe("好的，我来帮你回忆一下记忆模块的分析。");
       expect(item.content).not.toContain("\n");
     }
+  });
+
+  it("collapses duplicated reasoning snapshots when rebuilding items from thread history", () => {
+    const items = buildItemsFromThread({
+      turns: [
+        {
+          items: [
+            {
+              type: "userMessage",
+              id: "user-1",
+              content: [{ type: "input_text", text: "分析项目" }],
+            },
+            {
+              type: "reasoning",
+              id: "reasoning-history-1",
+              summary: "项目分析中...",
+              content: "先检查项目目录结构和入口模块。",
+            },
+            {
+              type: "reasoning",
+              id: "reasoning-history-2",
+              summary: "项目分析中...",
+              content: "先检查项目目录结构和入口模块，然后确认核心路由。",
+            },
+            {
+              type: "reasoning",
+              id: "reasoning-history-3",
+              summary: "项目分析中...",
+              content: "先检查项目目录结构和入口模块，然后确认核心路由。",
+            },
+          ],
+        },
+      ],
+    } as Record<string, unknown>);
+
+    const reasoningItems = items.filter(
+      (item): item is Extract<ConversationItem, { kind: "reasoning" }> =>
+        item.kind === "reasoning",
+    );
+    expect(reasoningItems).toHaveLength(1);
+    expect(reasoningItems[0]?.id).toBe("reasoning-history-1");
+    expect(reasoningItems[0]?.content).toBe(
+      "先检查项目目录结构和入口模块，然后确认核心路由。",
+    );
   });
 
   it("merges thread items preferring richer local tool output", () => {

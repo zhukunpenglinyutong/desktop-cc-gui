@@ -379,7 +379,7 @@ impl ClaudeSession {
                 continue;
             }
 
-            match serde_json::from_str::<Value>(&line) {
+            match parse_claude_stream_json_line(&line) {
                 Ok(event) => {
                     // If Claude only emits a final result without streaming deltas,
                     // synthesize a text delta so the frontend still renders a reply.
@@ -460,11 +460,14 @@ impl ClaudeSession {
                     }
                 }
                 Err(_e) => {
+                    let trimmed = line.trim();
+                    if is_claude_stream_control_line(trimmed) {
+                        continue;
+                    }
                     // Non-JSON output, might be error
                     error_output.push_str(&line);
                     error_output.push('\n');
                     if stream_runtime_error.is_none() {
-                        let trimmed = line.trim();
                         if looks_like_claude_runtime_error(trimmed) {
                             stream_runtime_error = Some(trimmed.to_string());
                         }
@@ -774,6 +777,47 @@ impl ClaudeSession {
                 None
             }
 
+            // Compatibility: some runtimes emit explicit delta events instead of
+            // cumulative assistant snapshots.
+            "assistant_message_delta" | "message_delta" | "text_delta" | "output_text_delta" => {
+                if let Some(text) =
+                    extract_delta_text_from_event(event).or_else(|| extract_result_text(event))
+                {
+                    if !text.is_empty() {
+                        return Some(EngineEvent::TextDelta {
+                            workspace_id: self.workspace_id.clone(),
+                            text,
+                        });
+                    }
+                }
+                None
+            }
+
+            // Compatibility: some runtimes emit assistant snapshots as
+            // `assistant_message`/`message`.
+            "assistant_message" | "message" => {
+                let role = event
+                    .get("message")
+                    .and_then(|m| m.get("role"))
+                    .or_else(|| event.get("role"))
+                    .and_then(|value| value.as_str())
+                    .unwrap_or("")
+                    .to_ascii_lowercase();
+                if role == "user" {
+                    return None;
+                }
+                if let Some(cumulative_text) = extract_result_text(event) {
+                    let delta = self.compute_text_delta(&cumulative_text);
+                    if !delta.is_empty() {
+                        return Some(EngineEvent::TextDelta {
+                            workspace_id: self.workspace_id.clone(),
+                            text: delta,
+                        });
+                    }
+                }
+                None
+            }
+
             "user" => {
                 if let Some(message) = event.get("message") {
                     if let Some(content) = message.get("content").and_then(|c| c.as_array()) {
@@ -824,6 +868,16 @@ impl ClaudeSession {
                 Some(EngineEvent::TurnCompleted {
                     workspace_id: self.workspace_id.clone(),
                     result: Some(event.clone()),
+                })
+            }
+
+            "reasoning_delta" | "thinking_delta" => {
+                let text = extract_reasoning_fragment(event)
+                    .map(|value| value.to_string())
+                    .or_else(|| extract_delta_text_from_event(event))?;
+                Some(EngineEvent::ReasoningDelta {
+                    workspace_id: self.workspace_id.clone(),
+                    text,
                 })
             }
 
@@ -1750,6 +1804,42 @@ fn merge_text_chunks(existing: &str, incoming: &str) -> String {
     format!("{}{}", existing, incoming)
 }
 
+fn parse_claude_stream_json_line(line: &str) -> Result<Value, serde_json::Error> {
+    let trimmed = line.trim();
+    if let Some(payload) = trimmed.strip_prefix("data:") {
+        return serde_json::from_str(payload.trim());
+    }
+    serde_json::from_str(trimmed)
+}
+
+fn is_claude_stream_control_line(line: &str) -> bool {
+    let trimmed = line.trim();
+    trimmed == "[DONE]"
+        || trimmed.eq_ignore_ascii_case("data: [DONE]")
+        || trimmed.starts_with("event:")
+}
+
+fn extract_delta_text_from_event(event: &Value) -> Option<String> {
+    let part = event.get("part");
+    for value in [
+        event.get("delta").and_then(|value| value.as_str()),
+        event.get("text").and_then(|value| value.as_str()),
+        part.and_then(|value| value.get("delta"))
+            .and_then(|value| value.as_str()),
+        part.and_then(|value| value.get("text"))
+            .and_then(|value| value.as_str()),
+        part.and_then(|value| value.get("content"))
+            .and_then(|value| value.as_str()),
+    ] {
+        if let Some(text) = value {
+            if !text.is_empty() {
+                return Some(text.to_string());
+            }
+        }
+    }
+    None
+}
+
 fn extract_tool_result_text(value: &Value) -> Option<String> {
     if let Some(text) = value.as_str() {
         let trimmed = text.trim();
@@ -2300,6 +2390,73 @@ mod tests {
             }
             other => panic!("expected reasoning delta, got {:?}", other),
         }
+    }
+
+    #[test]
+    fn convert_event_supports_assistant_message_delta_aliases() {
+        let session = ClaudeSession::new(
+            "test-workspace".to_string(),
+            PathBuf::from("/tmp/test"),
+            None,
+        );
+
+        let event = json!({
+            "type": "assistant_message_delta",
+            "delta": "stream chunk",
+        });
+
+        let converted = session.convert_event("turn-a", &event);
+        match converted {
+            Some(EngineEvent::TextDelta { text, .. }) => assert_eq!(text, "stream chunk"),
+            other => panic!("expected text delta, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn convert_event_supports_message_snapshot_aliases() {
+        let session = ClaudeSession::new(
+            "test-workspace".to_string(),
+            PathBuf::from("/tmp/test"),
+            None,
+        );
+
+        let first = json!({
+            "type": "assistant_message",
+            "message": {
+                "content": [
+                    {"type": "text", "text": "你好"},
+                ]
+            }
+        });
+        let second = json!({
+            "type": "assistant_message",
+            "message": {
+                "content": [
+                    {"type": "text", "text": "你好，世界"},
+                ]
+            }
+        });
+
+        match session.convert_event("turn-a", &first) {
+            Some(EngineEvent::TextDelta { text, .. }) => assert_eq!(text, "你好"),
+            other => panic!("expected first text delta, got {:?}", other),
+        }
+        match session.convert_event("turn-a", &second) {
+            Some(EngineEvent::TextDelta { text, .. }) => assert_eq!(text, "，世界"),
+            other => panic!("expected second text delta, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn parse_claude_stream_json_line_supports_data_prefix() {
+        let parsed = parse_claude_stream_json_line(
+            "data: {\"type\":\"assistant_message_delta\",\"delta\":\"ok\"}",
+        )
+        .expect("expected parser to accept data: prefix");
+        assert_eq!(
+            parsed.get("type").and_then(|value| value.as_str()),
+            Some("assistant_message_delta"),
+        );
     }
 
     #[test]

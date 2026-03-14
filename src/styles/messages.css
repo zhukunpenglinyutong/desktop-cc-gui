@@ -1170,85 +1170,190 @@
 
 /* Thinking Block - Minimalist (synced with idea-claude-code-gui) */
 .thinking-block {
-  margin-bottom: 16px;
+  margin-bottom: 18px;
   font-size: 12.5px;
 }
 
 .thinking-header {
-  display: inline-flex;
+  display: flex;
   align-items: center;
-  gap: 6px;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  padding: 0;
+  border: none;
   cursor: pointer;
   user-select: none;
   color: var(--text-tertiary);
   transition: opacity 0.2s;
   background: transparent;
   font-weight: 500;
-  font-size: 13px;
+  font-size: 12px;
+}
+
+.thinking-header-copy {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+
+.thinking-title {
+  flex: 0 0 auto;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.thinking-block.is-expanded .thinking-title,
+.thinking-block.is-live .thinking-title {
+  color: var(--text-stronger);
 }
 
 .thinking-header:hover {
   opacity: 0.8;
 }
 
+.thinking-glyph {
+  flex: 0 0 auto;
+  font-size: 13px;
+  color: color-mix(in srgb, var(--text-muted) 92%, transparent);
+}
+
 .thinking-icon {
+  flex: 0 0 auto;
   font-size: 10px;
-  opacity: 0.8;
+  color: color-mix(in srgb, var(--text-muted) 90%, transparent);
+  opacity: 0.9;
 }
 
 .thinking-content {
   margin-top: 8px;
-  padding-left: 12px;
-  border-left: 2px solid var(--color-thinking-border);
   color: var(--text-tertiary);
   font-family: inherit;
-  font-size: 12px;
+  font-size: 10px;
   line-height: 1.5;
   word-wrap: break-word;
   overflow-wrap: break-word;
   max-width: 100%;
 }
 
-.thinking-content .markdown {
-  font-size: inherit;
-  line-height: inherit;
-  color: inherit;
+.reasoning-markdown-surface {
+  position: relative;
+  margin-left: 4px;
+  border: none;
+  border-left: 1px solid color-mix(in srgb, var(--color-thinking-border, var(--border-subtle)) 88%, transparent);
+  border-radius: 0;
+  padding: 2px 0 2px 16px;
+  background: transparent;
+  box-shadow: none;
 }
 
-.thinking-content .markdown h1,
-.thinking-content .markdown h2,
-.thinking-content .markdown h3,
-.thinking-content .markdown h4,
-.thinking-content .markdown h5,
-.thinking-content .markdown h6 {
-  color: inherit;
-  font-size: 1em;
+.thinking-block.is-live .reasoning-markdown-surface {
+  border-left-color: color-mix(
+    in srgb,
+    var(--status-success, #57d18c) 44%,
+    var(--color-thinking-border, var(--border-subtle))
+  );
+}
+
+.reasoning-markdown {
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--text-secondary);
+}
+
+.reasoning-markdown > * {
+  min-width: 0;
+}
+
+.reasoning-markdown > * + * {
+  margin-top: 10px;
+}
+
+.reasoning-markdown > :first-child {
   margin-top: 0;
-  margin-bottom: 0;
+  font-size: 1em;
+  line-height: 1.4;
+  font-weight: 500;
+  color: var(--text-stronger);
 }
 
-.thinking-content .markdown code {
-  font-size: inherit;
+/* Keep live-streaming typography stable while markdown AST is still converging. */
+.reasoning-markdown.markdown-live-streaming > :first-child {
+  font-size: 1em;
+  line-height: 1.4;
 }
 
-.thinking-content .markdown pre {
-  font-size: inherit;
-  line-height: inherit;
+.reasoning-markdown :where(h1, h2) {
+  padding-bottom: 0.28em;
+  border-bottom: 1px solid color-mix(in srgb, var(--border-subtle) 88%, transparent);
 }
 
-.thinking-content .markdown p {
-  margin-bottom: 0;
+.reasoning-markdown :where(h1, h2, h3, h4) {
+  font-weight: 650;
+  color: var(--text-strongest, var(--text-stronger));
+  letter-spacing: -0.01em;
+}
+
+.reasoning-markdown :where(h1) {
+  font-size: 1.22em;
+}
+
+.reasoning-markdown :where(h2) {
+  font-size: 1.12em;
+}
+
+.reasoning-markdown :where(h3) {
+  font-size: 1.03em;
+}
+
+.reasoning-markdown.markdown-live-streaming :where(h1, h2, h3, h4) {
+  font-size: 1em;
+}
+
+.reasoning-markdown :where(p, blockquote) {
   white-space: pre-wrap;
 }
 
-.thinking-content .markdown ul,
-.thinking-content .markdown ol {
+.reasoning-markdown :where(ul, ol) {
+  margin: 0.4rem 0;
+  padding-left: 1.5rem;
+}
+
+.reasoning-markdown :where(li) {
+  margin: 0.16rem 0;
+  line-height: 1.4;
+  white-space: normal;
+}
+
+.reasoning-markdown :where(li > p) {
   margin: 0;
+  white-space: normal;
 }
 
-.thinking-content .markdown li {
-  margin-bottom: 0;
-  white-space: pre-wrap;
+.reasoning-markdown :where(blockquote) {
+  margin: 0;
+  padding: 0.45rem 0.9rem;
+  border-left: 4px solid color-mix(in srgb, #0969da 38%, var(--border-subtle));
+  border-radius: 0 10px 10px 0;
+  background: color-mix(in srgb, #0969da 6%, transparent);
+  color: var(--text-muted);
+}
+
+.reasoning-markdown :where(table) {
+  margin: 0.75rem 0;
+}
+
+.reasoning-markdown :where(code) {
+  font-size: 0.95em;
+}
+
+.reasoning-markdown :where(a) {
+  color: color-mix(in srgb, #0969da 82%, var(--message-link-color));
+}
+
+.reasoning-markdown :where(a:hover) {
+  color: color-mix(in srgb, #0550ae 82%, var(--text-stronger));
 }
 
 /* Thinking Status Indicator */

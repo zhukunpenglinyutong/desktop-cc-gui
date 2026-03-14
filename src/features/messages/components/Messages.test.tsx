@@ -302,6 +302,40 @@ describe("Messages", () => {
     ).toBeTruthy();
   });
 
+  it("keeps Claude reasoning title stable while streaming", () => {
+    window.localStorage.removeItem("mossx.claude.hideReasoningModule");
+
+    const items: ConversationItem[] = [
+      {
+        id: "msg-user-streaming",
+        kind: "message",
+        role: "user",
+        text: "继续分析",
+      },
+      {
+        id: "reasoning-streaming",
+        kind: "reasoning",
+        summary: "检查日志模块",
+        content: "先核对 Controller，再核对 Service。",
+      },
+    ];
+
+    render(
+      <Messages
+        items={items}
+        threadId="claude:session-streaming"
+        workspaceId="ws-1"
+        isThinking={true}
+        activeEngine="claude"
+        openTargets={[]}
+        selectedOpenAppId=""
+      />,
+    );
+
+    expect(screen.getByText("messages.thinkingLabel")).toBeTruthy();
+    expect(screen.queryByText("messages.thinkingProcess")).toBeNull();
+  });
+
   it("keeps legacy Claude docked reasoning mode when the flag is explicitly enabled", () => {
     window.localStorage.setItem("mossx.claude.hideReasoningModule", "1");
 
@@ -714,6 +748,54 @@ describe("Messages", () => {
     expect(screen.queryByText("LEGACY-CODEX")).toBeNull();
   });
 
+  it("prefers conversationState items for claude when state and legacy point to the same thread", () => {
+    const legacyItems: ConversationItem[] = [
+      {
+        id: "assistant-legacy-claude-1",
+        kind: "message",
+        role: "assistant",
+        text: "LEGACY-CLAUDE",
+      },
+    ];
+    const stateItems: ConversationItem[] = [
+      {
+        id: "assistant-state-claude-1",
+        kind: "message",
+        role: "assistant",
+        text: "STATE-CLAUDE",
+      },
+    ];
+
+    render(
+      <Messages
+        items={legacyItems}
+        threadId="claude:thread-1"
+        workspaceId="ws-1"
+        isThinking={false}
+        activeEngine="claude"
+        conversationState={{
+          items: stateItems,
+          plan: null,
+          userInputQueue: [],
+          meta: {
+            workspaceId: "ws-1",
+            threadId: "claude:thread-1",
+            engine: "claude",
+            activeTurnId: null,
+            isThinking: false,
+            heartbeatPulse: null,
+            historyRestoredAtMs: null,
+          },
+        }}
+        openTargets={[]}
+        selectedOpenAppId=""
+      />,
+    );
+
+    expect(screen.getByText("STATE-CLAUDE")).toBeTruthy();
+    expect(screen.queryByText("LEGACY-CLAUDE")).toBeNull();
+  });
+
   it("uses conversationState engine as routing source when activeEngine prop is omitted", () => {
     const legacyItems: ConversationItem[] = [
       {
@@ -761,7 +843,7 @@ describe("Messages", () => {
     expect(screen.queryByText("LEGACY-CODEX-DEFAULT")).toBeNull();
   });
 
-  it("prefers legacy items for claude when state and legacy point to the same thread", () => {
+  it("prefers conversationState items for claude when state and legacy point to the same thread", () => {
     const legacyItems: ConversationItem[] = [
       {
         id: "assistant-legacy-claude-1",
@@ -805,8 +887,8 @@ describe("Messages", () => {
       />,
     );
 
-    expect(screen.getByText("LEGACY-CLAUDE")).toBeTruthy();
-    expect(screen.queryByText("STATE-CLAUDE")).toBeNull();
+    expect(screen.getByText("STATE-CLAUDE")).toBeTruthy();
+    expect(screen.queryByText("LEGACY-CLAUDE")).toBeNull();
   });
 
   it("hides TodoWrite tool blocks from chat stream", () => {
@@ -1665,6 +1747,8 @@ describe("Messages", () => {
     );
 
     expect(container.querySelector(".thinking-block")).toBeTruthy();
+    expect(container.querySelector(".reasoning-markdown-surface")).toBeTruthy();
+    expect(container.querySelector(".reasoning-markdown")).toBeTruthy();
     const reasoningDetail = container.querySelector(".thinking-content");
     expect(reasoningDetail?.textContent ?? "").toContain("Looking for entry points");
     const workingText = container.querySelector(".working-text");
@@ -1933,7 +2017,43 @@ describe("Messages", () => {
     );
 
     expect(container.querySelectorAll(".thinking-block").length).toBe(1);
+    expect(container.textContent ?? "").toContain("先读取 README 并识别技术栈");
+    expect(container.textContent ?? "").toContain("继续读取 CLAUDE.md 并整理结论");
     expect(container.textContent ?? "").toContain("输出最终分析报告");
+  });
+
+  it("keeps first multiline claude reasoning content after collapsing runs", () => {
+    const items: ConversationItem[] = [
+      {
+        id: "reasoning-run-multiline-1",
+        kind: "reasoning",
+        summary: "分析计划\n先读取 README",
+        content: "分析计划\n先读取 README",
+      },
+      {
+        id: "reasoning-run-multiline-2",
+        kind: "reasoning",
+        summary: "继续分析\n再检查配置",
+        content: "继续分析\n再检查配置",
+      },
+    ];
+
+    const { container } = render(
+      <Messages
+        items={items}
+        threadId="thread-1"
+        workspaceId="ws-1"
+        isThinking={false}
+        activeEngine="claude"
+        openTargets={[]}
+        selectedOpenAppId=""
+      />,
+    );
+
+    expect(container.querySelectorAll(".thinking-block").length).toBe(1);
+    const reasoningDetailText = container.querySelector(".thinking-content")?.textContent ?? "";
+    expect(reasoningDetailText).toContain("先读取 README");
+    expect(reasoningDetailText).toContain("再检查配置");
   });
 
   it("renders claude live reasoning at the bottom when dock mode is enabled", () => {

@@ -150,10 +150,10 @@ describe("buildWorkspaceSessionActivity", () => {
 
     expect(result.timeline).toHaveLength(2);
     expect(result.timeline.map((event) => event.kind)).toEqual(["command", "reasoning"]);
-    expect(result.timeline[1]?.summary).toBe("Thinking · thinking");
+    expect(result.timeline[1]?.summary).toBe("Thinking · ...");
   });
 
-  it("splits claude realtime multiline reasoning summary into separate activity events", () => {
+  it("normalizes claude multiline reasoning summary into a single activity event", () => {
     const threads: ThreadSummary[] = [{ id: "claude-pending-1", name: "Claude", updatedAt: 1000 }];
     const itemsByThread = {
       "claude-pending-1": [
@@ -174,18 +174,98 @@ describe("buildWorkspaceSessionActivity", () => {
       threadStatusById: { "claude-pending-1": { isProcessing: true } },
     });
 
-    expect(result.timeline).toHaveLength(3);
-    expect(result.timeline.map((event) => event.summary)).toEqual([
-      "Thinking · step 3",
-      "Thinking · step 2",
-      "Thinking · step 1",
-    ]);
-    expect(result.timeline.map((event) => event.status)).toEqual([
-      "running",
-      "completed",
-      "completed",
-    ]);
-    expect(result.timeline[0]?.eventId).toBe("reasoning:reason-claude-1:2");
+    expect(result.timeline).toHaveLength(1);
+    expect(result.timeline[0]?.summary).toBe("Thinking · step 1");
+    expect(result.timeline[0]?.status).toBe("running");
+    expect(result.timeline[0]?.eventId).toBe("reasoning:reason-claude-1");
+  });
+
+  it("keeps claude reasoning timeline append-only when snapshots rewrite same position", () => {
+    const threadId = "claude:session-append-only";
+    const threads: ThreadSummary[] = [{ id: threadId, name: "Claude", updatedAt: 1000 }];
+    const itemsByThread = {
+      [threadId]: [
+        {
+          id: "reason-claude-append-1",
+          kind: "reasoning" as const,
+          summary: "先读取项目结构",
+          content: "先读取 README 和 docs 目录",
+        } satisfies ConversationItem,
+        {
+          id: "reason-claude-append-2",
+          kind: "reasoning" as const,
+          summary: "再检查关键配置",
+          content: "再检查 package.json 和脚本入口",
+        } satisfies ConversationItem,
+      ],
+    };
+
+    const result = buildWorkspaceSessionActivity({
+      activeThreadId: threadId,
+      threads,
+      itemsByThread,
+      threadParentById: {},
+      threadStatusById: { [threadId]: { isProcessing: true } },
+    });
+
+    const reasoningEvents = result.timeline.filter((event) => event.kind === "reasoning");
+    expect(reasoningEvents).toHaveLength(1);
+    const latestReasoning = reasoningEvents[0];
+    expect(latestReasoning?.summary).toContain("先读取项目结构");
+    expect(latestReasoning?.reasoningPreview).toContain("先读取 README 和 docs 目录");
+    expect(latestReasoning?.reasoningPreview).toContain("再检查 package.json 和脚本入口");
+  });
+
+  it("merges claude reasoning nodes into the first timeline node per turn", () => {
+    const threadId = "claude:session-merge-first-node";
+    const threads: ThreadSummary[] = [{ id: threadId, name: "Claude", updatedAt: 1000 }];
+    const itemsByThread = {
+      [threadId]: [
+        {
+          id: "reason-claude-first-node-1",
+          kind: "reasoning" as const,
+          summary: "先看项目结构",
+          content: "先读取 README 和 docs 目录",
+        } satisfies ConversationItem,
+        toolItem("cmd-claude-first-node-1", {
+          toolType: "commandExecution",
+          title: "Command: ls -la",
+          status: "completed",
+          output: "total 8",
+        }),
+        {
+          id: "reason-claude-first-node-2",
+          kind: "reasoning" as const,
+          summary: "再看配置",
+          content: "再检查 package.json 和脚本入口",
+        } satisfies ConversationItem,
+        {
+          id: "reason-claude-first-node-3",
+          kind: "reasoning" as const,
+          summary: "最后看源码",
+          content: "最后阅读关键 Python 文件",
+        } satisfies ConversationItem,
+      ],
+    };
+
+    const result = buildWorkspaceSessionActivity({
+      activeThreadId: threadId,
+      threads,
+      itemsByThread,
+      threadParentById: {},
+      threadStatusById: { [threadId]: { isProcessing: true } },
+    });
+
+    const reasoningEvents = result.timeline.filter((event) => event.kind === "reasoning");
+    expect(reasoningEvents).toHaveLength(1);
+    const mergedReasoning = reasoningEvents[0];
+    expect(mergedReasoning?.eventId).toBe("reasoning:reason-claude-first-node-1");
+    expect(mergedReasoning?.reasoningPreview).toContain("先读取 README 和 docs 目录");
+    expect(mergedReasoning?.reasoningPreview).toContain("再检查 package.json 和脚本入口");
+    expect(mergedReasoning?.reasoningPreview).toContain("最后阅读关键 Python 文件");
+
+    const commandEvents = result.timeline.filter((event) => event.kind === "command");
+    expect(commandEvents).toHaveLength(1);
   });
 
   it("keeps non-claude multiline reasoning summary as a single activity event", () => {
@@ -211,7 +291,92 @@ describe("buildWorkspaceSessionActivity", () => {
 
     expect(result.timeline).toHaveLength(1);
     expect(result.timeline[0]?.eventId).toBe("reasoning:reason-generic-1");
+    expect(result.timeline[0]?.summary).toBe("Thinking · step 1");
     expect(result.timeline[0]?.status).toBe("running");
+  });
+
+  it("collapses consecutive opencode reasoning items like the messages view", () => {
+    const threads: ThreadSummary[] = [{ id: "opencode:session-1", name: "OpenCode", updatedAt: 1000 }];
+    const itemsByThread = {
+      "opencode:session-1": [
+        {
+          id: "reason-opencode-1",
+          kind: "reasoning" as const,
+          summary: "thinking",
+          content: "先读取项目规范文件。",
+        } satisfies ConversationItem,
+        {
+          id: "reason-opencode-2",
+          kind: "reasoning" as const,
+          summary: "thinking",
+          content: "先读取项目规范文件。\n然后检查 src 目录结构。",
+        } satisfies ConversationItem,
+      ],
+    };
+
+    const result = buildWorkspaceSessionActivity({
+      activeThreadId: "opencode:session-1",
+      threads,
+      itemsByThread,
+      threadParentById: {},
+      threadStatusById: { "opencode:session-1": { isProcessing: true } },
+    });
+
+    expect(result.timeline).toHaveLength(1);
+    expect(result.timeline[0]?.eventId).toBe("reasoning:reason-opencode-2");
+    expect(result.timeline[0]?.summary).toBe("Thinking · 先读取项目规范文件。");
+    expect(result.timeline[0]?.reasoningPreview).toContain("然后检查 src 目录结构。");
+  });
+
+  it("keeps interleaved reasoning snapshots as separate activity events like the messages view", () => {
+    const threads: ThreadSummary[] = [{ id: "opencode:session-2", name: "OpenCode", updatedAt: 1000 }];
+    const itemsByThread = {
+      "opencode:session-2": [
+        {
+          id: "user-1",
+          kind: "message" as const,
+          role: "user" as const,
+          text: "重构日志模块",
+        } satisfies ConversationItem,
+        {
+          id: "reason-opencode-3",
+          kind: "reasoning" as const,
+          summary: "现在我了解当前日志模块代码。让我分析一下可以重构的地方：",
+          content: "现在我了解当前日志模块代码。让我分析一下可以重构的地方：",
+        } satisfies ConversationItem,
+        toolItem("cmd-opencode-1", {
+          toolType: "commandExecution",
+          title: "Command: mvn test",
+          status: "completed",
+          output: "ok",
+        }),
+        {
+          id: "reason-opencode-4",
+          kind: "reasoning" as const,
+          summary: "现在重构 LogService，添加分页和筛选功能。",
+          content:
+            "现在我了解当前日志模块代码。让我分析一下可以重构的地方：\n\n现在重构 LogService，添加分页和筛选功能。",
+        } satisfies ConversationItem,
+      ],
+    };
+
+    const result = buildWorkspaceSessionActivity({
+      activeThreadId: "opencode:session-2",
+      threads,
+      itemsByThread,
+      threadParentById: {},
+      threadStatusById: { "opencode:session-2": { isProcessing: false } },
+    });
+
+    const reasoningEvents = result.timeline.filter((event) => event.kind === "reasoning");
+    expect(reasoningEvents).toHaveLength(2);
+    expect(reasoningEvents.map((event) => event.eventId)).toEqual([
+      "reasoning:reason-opencode-4",
+      "reasoning:reason-opencode-3",
+    ]);
+    expect(reasoningEvents[0]?.reasoningPreview).toContain("现在重构 LogService");
+    expect(reasoningEvents[1]?.reasoningPreview).toContain("让我分析一下可以重构的地方");
+    expect(result.timeline.filter((event) => event.kind === "command")).toHaveLength(1);
   });
 
   it("extracts structured command detail for inline expansion", () => {
@@ -335,7 +500,7 @@ describe("buildWorkspaceSessionActivity", () => {
     expect(result.timeline).toHaveLength(2);
     expect(result.timeline.map((event) => event.kind)).toEqual(["task", "task"]);
     expect(result.timeline[0]?.summary).toBe("Search · **/*.py");
-    expect(result.timeline[1]?.summary).toBe("Read · /workspace/package.json");
+    expect(result.timeline[1]?.summary).toBe("Read · package.json");
     expect(result.timeline[1]?.jumpTarget).toEqual({
       type: "file",
       path: "/workspace/package.json",
@@ -368,7 +533,7 @@ describe("buildWorkspaceSessionActivity", () => {
 
     expect(result.timeline).toHaveLength(1);
     expect(result.timeline[0]?.kind).toBe("task");
-    expect(result.timeline[0]?.summary).toBe("Read · /workspace/README.md");
+    expect(result.timeline[0]?.summary).toBe("Read · README.md");
     expect(result.timeline[0]?.jumpTarget).toEqual({
       type: "file",
       path: "/workspace/README.md",
@@ -400,9 +565,7 @@ describe("buildWorkspaceSessionActivity", () => {
     });
 
     expect(result.timeline).toHaveLength(1);
-    expect(result.timeline[0]?.summary).toBe(
-      "Read · dify/mem0-plugin-src/modified/tools/retrieve_memory.py",
-    );
+    expect(result.timeline[0]?.summary).toBe("Read · retrieve_memory.py");
     expect(result.timeline[0]?.jumpTarget).toEqual({
       type: "file",
       path: "dify/mem0-plugin-src/modified/tools/retrieve_memory.py",
@@ -434,9 +597,7 @@ describe("buildWorkspaceSessionActivity", () => {
     });
 
     expect(result.timeline).toHaveLength(1);
-    expect(result.timeline[0]?.summary).toBe(
-      "Read · dify/mem0-plugin-src/modified/tools/retrieve_memory.py",
-    );
+    expect(result.timeline[0]?.summary).toBe("Read · retrieve_memory.py");
     expect(result.timeline[0]?.jumpTarget).toEqual({
       type: "file",
       path: "dify/mem0-plugin-src/modified/tools/retrieve_memory.py",
@@ -468,7 +629,7 @@ describe("buildWorkspaceSessionActivity", () => {
     });
 
     expect(result.timeline).toHaveLength(1);
-    expect(result.timeline[0]?.summary).toBe("Read · C:\\workspace\\repo\\retrieve_memory.py");
+    expect(result.timeline[0]?.summary).toBe("Read · retrieve_memory.py");
     expect(result.timeline[0]?.jumpTarget).toEqual({
       type: "file",
       path: "C:\\workspace\\repo\\retrieve_memory.py",
@@ -540,13 +701,73 @@ describe("buildWorkspaceSessionActivity", () => {
       "explore",
     ]);
     expect(result.timeline[0]?.summary).toBe("wc -l README.md");
-    expect(result.timeline[1]?.summary).toBe("Read · /workspace/README.md");
+    expect(result.timeline[1]?.summary).toBe("Read · README.md");
     expect(result.timeline[1]?.jumpTarget).toEqual({
       type: "file",
       path: "/workspace/README.md",
     });
     expect(result.timeline[2]?.summary).toBe("Search · *.md");
     expect(result.timeline[3]?.summary).toBe("List · /workspace");
+  });
+
+  it("uses explore read detail path for jump target when label is basename", () => {
+    const threads: ThreadSummary[] = [{ id: "root", name: "Root", updatedAt: 1000 }];
+    const itemsByThread = {
+      root: [
+        {
+          id: "explore-read-detail-1",
+          kind: "explore" as const,
+          status: "explored" as const,
+          entries: [
+            { kind: "read" as const, label: "README.md", detail: "/workspace/README.md" },
+          ],
+        } satisfies ConversationItem,
+      ],
+    };
+
+    const result = buildWorkspaceSessionActivity({
+      activeThreadId: "root",
+      threads,
+      itemsByThread,
+      threadParentById: {},
+      threadStatusById: { root: { isProcessing: false } },
+    });
+
+    expect(result.timeline).toHaveLength(1);
+    expect(result.timeline[0]?.summary).toBe("Read · README.md");
+    expect(result.timeline[0]?.jumpTarget).toEqual({
+      type: "file",
+      path: "/workspace/README.md",
+    });
+  });
+
+  it("does not treat semantic explore read labels as file paths", () => {
+    const threads: ThreadSummary[] = [{ id: "root", name: "Root", updatedAt: 1000 }];
+    const itemsByThread = {
+      root: [
+        {
+          id: "explore-read-semantic-1",
+          kind: "explore" as const,
+          status: "explored" as const,
+          entries: [{ kind: "read" as const, label: "读取策略", detail: "优先读取该目录" }],
+        } satisfies ConversationItem,
+      ],
+    };
+
+    const result = buildWorkspaceSessionActivity({
+      activeThreadId: "root",
+      threads,
+      itemsByThread,
+      threadParentById: {},
+      threadStatusById: { root: { isProcessing: false } },
+    });
+
+    expect(result.timeline).toHaveLength(1);
+    expect(result.timeline[0]?.summary).toBe("Read · 读取策略");
+    expect(result.timeline[0]?.jumpTarget).toEqual({
+      type: "thread",
+      threadId: "root",
+    });
   });
 
   it("splits activity events by user conversation turns", () => {
@@ -642,5 +863,29 @@ describe("buildWorkspaceSessionActivity", () => {
     const olderReasoning = result.timeline.find((event) => event.eventId === "reasoning:reason-1");
     expect(latestReasoning?.status).toBe("running");
     expect(olderReasoning?.status).toBe("completed");
+  });
+
+  it("assigns distinct fallback timestamps for consecutive thread events", () => {
+    const threads: ThreadSummary[] = [{ id: "root", name: "Root", updatedAt: 1_000_000 }];
+    const itemsByThread = {
+      root: [
+        toolItem("cmd-1", { status: "completed" }),
+        toolItem("cmd-2", { status: "completed" }),
+        toolItem("cmd-3", { status: "completed" }),
+      ],
+    };
+
+    const result = buildWorkspaceSessionActivity({
+      activeThreadId: "root",
+      threads,
+      itemsByThread,
+      threadParentById: {},
+      threadStatusById: { root: { isProcessing: false } },
+    });
+
+    expect(result.timeline).toHaveLength(3);
+    const occurredAt = result.timeline.map((event) => event.occurredAt);
+    expect(occurredAt[0] - occurredAt[1]).toBeGreaterThanOrEqual(1000);
+    expect(occurredAt[1] - occurredAt[2]).toBeGreaterThanOrEqual(1000);
   });
 });

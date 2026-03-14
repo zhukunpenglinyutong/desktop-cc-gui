@@ -1105,6 +1105,47 @@ describe("threadReducer", () => {
     expect(item?.kind).toBe("reasoning");
   });
 
+  it("appends claude reasoning deltas without replacing same-position content", () => {
+    const threadId = "claude:session-append-only";
+    const processingState: ThreadState = {
+      ...initialState,
+      threadStatusById: {
+        [threadId]: {
+          isProcessing: true,
+          hasUnread: false,
+          isReviewing: false,
+          isContextCompacting: false,
+          processingStartedAt: Date.now(),
+          lastDurationMs: null,
+          heartbeatPulse: 0,
+        },
+      },
+    };
+    const firstDelta = "Inspect workspace and read README before checking hooks.";
+    const secondDelta = "Inspect workspace and read README before checking tests.";
+
+    const withFirst = threadReducer(processingState, {
+      type: "appendReasoningContent",
+      threadId,
+      itemId: "reasoning-append-only-1",
+      delta: firstDelta,
+    });
+    const withSecond = threadReducer(withFirst, {
+      type: "appendReasoningContent",
+      threadId,
+      itemId: "reasoning-append-only-1",
+      delta: secondDelta,
+    });
+
+    const item = withSecond.itemsByThread[threadId]?.[0];
+    expect(item?.kind).toBe("reasoning");
+    if (item?.kind === "reasoning") {
+      expect(item.content.startsWith(firstDelta)).toBe(true);
+      expect(item.content).toContain(secondDelta);
+      expect(item.content).not.toBe(secondDelta);
+    }
+  });
+
   it("drops reasoning items explicitly for transient claude rendering", () => {
     const withReasoning = threadReducer(initialState, {
       type: "appendReasoningContent",
@@ -1364,6 +1405,42 @@ describe("threadReducer", () => {
     if (item?.kind === "reasoning") {
       expect(item.content).toContain("你好！有什么我可以帮你的吗？");
       expect(item.content).not.toContain("\n\n帮\n\n你的");
+    }
+  });
+
+  it("appends non-overlapping reasoning snapshots for the same item id", () => {
+    const withFirstSnapshot = threadReducer(initialState, {
+      type: "upsertItem",
+      workspaceId: "ws-1",
+      threadId: "thread-1",
+      item: {
+        id: "reasoning-upsert-append-1",
+        kind: "reasoning",
+        summary: "先读取项目结构",
+        content: "先读取 README",
+      },
+    });
+    const withSecondSnapshot = threadReducer(withFirstSnapshot, {
+      type: "upsertItem",
+      workspaceId: "ws-1",
+      threadId: "thread-1",
+      item: {
+        id: "reasoning-upsert-append-1",
+        kind: "reasoning",
+        summary: "再检查 Controller",
+        content: "再检查 service 边界条件",
+      },
+    });
+
+    const item = withSecondSnapshot.itemsByThread["thread-1"]?.find(
+      (entry) => entry.kind === "reasoning" && entry.id === "reasoning-upsert-append-1",
+    );
+    expect(item?.kind).toBe("reasoning");
+    if (item?.kind === "reasoning") {
+      expect(item.summary).toContain("先读取项目结构");
+      expect(item.summary).toContain("再检查 Controller");
+      expect(item.content).toContain("先读取 README");
+      expect(item.content).toContain("再检查 service 边界条件");
     }
   });
 

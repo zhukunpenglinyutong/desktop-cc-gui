@@ -101,4 +101,36 @@ describe("useWorkspaceSessionActivity", () => {
       "command:cmd-1",
     ]);
   });
+
+  it("keeps second-level timestamp separation on initial hydration", () => {
+    const nowSpy = vi.spyOn(Date, "now");
+    nowSpy.mockReturnValue(1_700_000_010_000);
+
+    const threads: ThreadSummary[] = [
+      { id: "root", name: "Root", updatedAt: 1_700_000_000_000 },
+    ];
+
+    const { result } = renderHook(() =>
+      useWorkspaceSessionActivity({
+        activeThreadId: "root",
+        threads,
+        itemsByThread: {
+          root: [
+            toolItem("cmd-1", "completed"),
+            toolItem("cmd-2", "completed"),
+            toolItem("cmd-3", "completed"),
+          ],
+        },
+        threadParentById: {},
+        threadStatusById: { root: { isProcessing: false } },
+      }),
+    );
+
+    const occurredAt = result.current.timeline.map((event) => event.occurredAt);
+    expect(occurredAt[0]).toBeGreaterThan(0);
+    expect(occurredAt[1]).toBeGreaterThan(0);
+    expect(occurredAt[2]).toBeGreaterThan(0);
+    expect(Math.abs((occurredAt[0] ?? 0) - (occurredAt[1] ?? 0))).toBeGreaterThanOrEqual(1000);
+    expect(Math.abs((occurredAt[1] ?? 0) - (occurredAt[2] ?? 0))).toBeGreaterThanOrEqual(1000);
+  });
 });

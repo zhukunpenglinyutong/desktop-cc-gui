@@ -41,6 +41,7 @@ export type SessionActivityEvent = {
   commandDescription?: string;
   commandWorkingDirectory?: string;
   commandPreview?: string;
+  explorePreview?: string;
   reasoningPreview?: string;
 };
 

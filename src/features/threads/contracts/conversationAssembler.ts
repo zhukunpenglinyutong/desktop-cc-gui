@@ -40,9 +40,84 @@ function mergeToolSnapshot(
   };
 }
 
-function upsertSnapshotItem(items: ConversationItem[], next: ConversationItem): ConversationItem[] {
+function compactComparableReasoningText(value: string): string {
+  return value
+    .replace(/\s+/g, "")
+    .replace(/[！!]/g, "!")
+    .replace(/[？?]/g, "?")
+    .replace(/[，,]/g, ",")
+    .replace(/[。．.]/g, ".");
+}
+
+function sliceByComparableLength(text: string, targetLength: number): string {
+  if (targetLength <= 0) {
+    return text;
+  }
+  let compactLength = 0;
+  for (let index = 0; index < text.length; index += 1) {
+    if (!/\s/.test(text[index])) {
+      compactLength += 1;
+    }
+    if (compactLength >= targetLength) {
+      return text.slice(index + 1);
+    }
+  }
+  return "";
+}
+
+function appendReasoningSnapshotText(existing: string, incoming: string): string {
+  if (!incoming) {
+    return existing;
+  }
+  if (!existing) {
+    return incoming;
+  }
+  const comparableExisting = compactComparableReasoningText(existing);
+  const comparableIncoming = compactComparableReasoningText(incoming);
+  if (!comparableExisting || !comparableIncoming) {
+    return `${existing}${incoming}`;
+  }
+  if (comparableExisting === comparableIncoming) {
+    return existing;
+  }
+  const maxOverlap = Math.min(comparableExisting.length, comparableIncoming.length);
+  for (let overlapLength = maxOverlap; overlapLength > 0; overlapLength -= 1) {
+    if (!comparableExisting.endsWith(comparableIncoming.slice(0, overlapLength))) {
+      continue;
+    }
+    const suffix = sliceByComparableLength(incoming, overlapLength);
+    return suffix ? `${existing}${suffix}` : existing;
+  }
+  return `${existing}\n\n${incoming}`;
+}
+
+function mergeReasoningSnapshotForClaude(
+  existing: Extract<ConversationItem, { kind: "reasoning" }>,
+  incoming: Extract<ConversationItem, { kind: "reasoning" }>,
+): Extract<ConversationItem, { kind: "reasoning" }> {
+  return {
+    ...existing,
+    ...incoming,
+    summary: appendReasoningSnapshotText(existing.summary, incoming.summary),
+    content: appendReasoningSnapshotText(existing.content, incoming.content),
+  };
+}
+
+function upsertSnapshotItem(
+  items: ConversationItem[],
+  next: ConversationItem,
+  event: NormalizedThreadEvent,
+): ConversationItem[] {
   const existing = items.find((item) => item.id === next.id);
   if (!existing || existing.kind !== "tool" || next.kind !== "tool") {
+    if (
+      existing &&
+      existing.kind === "reasoning" &&
+      next.kind === "reasoning" &&
+      event.engine === "claude"
+    ) {
+      return upsertItem(items, mergeReasoningSnapshotForClaude(existing, next));
+    }
     return upsertItem(items, next);
   }
   return upsertItem(items, mergeToolSnapshot(existing, next));
@@ -238,7 +313,7 @@ export function appendEvent(
     case "itemStarted":
     case "itemUpdated":
     case "itemCompleted":
-      items = upsertSnapshotItem(items, event.item);
+      items = upsertSnapshotItem(items, event.item, event);
       break;
     case "appendAgentMessageDelta":
       items = appendMessageDelta(items, event);

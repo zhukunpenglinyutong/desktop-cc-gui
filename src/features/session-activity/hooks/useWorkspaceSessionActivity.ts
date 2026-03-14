@@ -36,16 +36,53 @@ export function useWorkspaceSessionActivity({
 
       const previousOccurredAtByEventId = eventOccurredAtRef.current;
       const nextOccurredAtByEventId: Record<string, number> = {};
+      const occupiedSeconds = new Set<number>();
       const nowBase = Date.now();
       let eventSequence = eventSequenceRef.current;
+
+      // Reserve second buckets for still-visible historical events first,
+      // so newly appeared events don't collapse into the same HH:mm:ss slot.
+      for (const event of nextViewModel.timeline) {
+        const previousOccurredAt = previousOccurredAtByEventId[event.eventId];
+        if (typeof previousOccurredAt === "number" && Number.isFinite(previousOccurredAt) && previousOccurredAt > 0) {
+          occupiedSeconds.add(Math.floor(previousOccurredAt / 1000));
+        }
+      }
+
+      const reserveDistinctSecond = (timestamp: number) => {
+        let nextTimestamp = timestamp;
+        let secondBucket = Math.floor(nextTimestamp / 1000);
+        while (occupiedSeconds.has(secondBucket)) {
+          nextTimestamp += 1000;
+          secondBucket = Math.floor(nextTimestamp / 1000);
+        }
+        occupiedSeconds.add(secondBucket);
+        return nextTimestamp;
+      };
 
       const timeline = nextViewModel.timeline
         .map((event) => {
           const previousOccurredAt = previousOccurredAtByEventId[event.eventId];
-          const occurredAt =
-            typeof previousOccurredAt === "number" && previousOccurredAt > 0
-              ? previousOccurredAt
-              : nowBase - eventSequence++;
+          if (typeof previousOccurredAt === "number" && previousOccurredAt > 0) {
+            nextOccurredAtByEventId[event.eventId] = previousOccurredAt;
+            if (previousOccurredAt === event.occurredAt) {
+              return event;
+            }
+            return {
+              ...event,
+              occurredAt: previousOccurredAt,
+            };
+          }
+
+          const fromAdapter =
+            typeof event.occurredAt === "number" && Number.isFinite(event.occurredAt)
+              ? event.occurredAt
+              : null;
+          const fallbackTimestamp = nowBase - eventSequence * 1000;
+          if (!fromAdapter) {
+            eventSequence += 1;
+          }
+          const occurredAt = reserveDistinctSecond(fromAdapter ?? fallbackTimestamp);
           nextOccurredAtByEventId[event.eventId] = occurredAt;
           if (occurredAt === event.occurredAt) {
             return event;

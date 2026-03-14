@@ -181,10 +181,12 @@ function extractAgentMessageDeltaPayload(
   method: string,
   params: Record<string, unknown>,
 ): { threadId: string; itemId: string; delta: string } | null {
+  const isTextAliasMethod = method === "text:delta" || method === "text/delta";
   const isAgentDeltaMethod =
     method === "item/agentMessage/delta" ||
     method === "item/agentMessage/textDelta" ||
-    method === "item/agentMessage/text/delta";
+    method === "item/agentMessage/text/delta" ||
+    isTextAliasMethod;
   if (!isAgentDeltaMethod) {
     return null;
   }
@@ -192,23 +194,38 @@ function extractAgentMessageDeltaPayload(
   const turn = (params.turn as Record<string, unknown> | undefined) ?? {};
   const itemObj = (params.item as Record<string, unknown> | undefined) ?? {};
   const messageObj = (params.message as Record<string, unknown> | undefined) ?? {};
+  const partObj = (params.part as Record<string, unknown> | undefined) ?? {};
   const threadId = extractThreadIdFromParams(params);
-  const itemId = asString(
+  if (
+    isTextAliasMethod &&
+    !threadId.startsWith("claude:") &&
+    !threadId.startsWith("claude-pending-")
+  ) {
+    return null;
+  }
+  const rawItemId = asString(
     params.itemId ??
       params.item_id ??
       itemObj.id ??
       messageObj.id ??
+      partObj.itemId ??
+      partObj.item_id ??
       turn.itemId ??
       turn.item_id ??
       turn.id ??
       "",
   ).trim();
+  const itemId =
+    rawItemId || (isTextAliasMethod ? `${threadId}:text-delta` : "");
   const delta = asString(
     params.delta ??
       params.text ??
       params.output_text ??
       params.outputText ??
       params.content ??
+      partObj.delta ??
+      partObj.text ??
+      partObj.content ??
       itemObj.delta ??
       itemObj.text ??
       itemObj.content ??

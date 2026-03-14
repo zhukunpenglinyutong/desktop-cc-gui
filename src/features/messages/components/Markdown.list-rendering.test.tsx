@@ -89,4 +89,33 @@ describe("Markdown list rendering", () => {
     expect(ordered?.querySelectorAll(":scope > li")).toHaveLength(2);
     expect(nestedList?.querySelectorAll(":scope > li")).toHaveLength(2);
   });
+
+  it("normalizes compact ordered markers without whitespace", () => {
+    const value = [
+      "架构特征：",
+      "1.三层结构：Controller -> Service -> Domain Record",
+      "2.无 Repository 层",
+      "3.内存存储",
+    ].join("\n");
+
+    const { container } = render(<Markdown value={value} className="markdown" />);
+
+    const ordered = container.querySelector("ol");
+    expect(ordered).toBeTruthy();
+    expect(ordered?.querySelectorAll(":scope > li")).toHaveLength(3);
+  });
+
+  it("splits sentence-attached ordered markers into markdown list rows", () => {
+    const value = [
+      "根据系统提示，我可以看到：1.当前工作目录是 /tmp/demo",
+      "2.这是一个 git 仓库",
+      "3.最近用户输入是“项目分析”",
+    ].join("\n");
+
+    const { container } = render(<Markdown value={value} className="markdown" />);
+
+    const ordered = container.querySelector("ol");
+    expect(ordered).toBeTruthy();
+    expect(ordered?.querySelectorAll(":scope > li")).toHaveLength(3);
+  });
 });

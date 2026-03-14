@@ -1,6 +1,7 @@
 import { lazy, memo, Suspense, useCallback, useEffect, useMemo, useRef, useState, isValidElement, type ReactNode, type MouseEvent } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import { useTranslation } from "react-i18next";
+import remarkBreaks from "remark-breaks";
 import remarkGfm from "remark-gfm";
 import rehypeRaw from "rehype-raw";
 import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
@@ -23,6 +24,8 @@ type MarkdownProps = {
   codeBlock?: boolean;
   codeBlockStyle?: "default" | "message";
   codeBlockCopyUseModifier?: boolean;
+  streamingThrottleMs?: number;
+  softBreaks?: boolean;
   codexLeadMarkerConfig?: CodexLeadMarkerConfig;
   onOpenFileLink?: (path: string) => void;
   onOpenFileLinkMenu?: (event: React.MouseEvent, path: string) => void;
@@ -58,6 +61,8 @@ function areMarkdownPropsEqual(prev: MarkdownProps, next: MarkdownProps) {
     prev.codeBlock === next.codeBlock &&
     prev.codeBlockStyle === next.codeBlockStyle &&
     prev.codeBlockCopyUseModifier === next.codeBlockCopyUseModifier &&
+    prev.streamingThrottleMs === next.streamingThrottleMs &&
+    prev.softBreaks === next.softBreaks &&
     prev.codexLeadMarkerConfig === next.codexLeadMarkerConfig &&
     prev.onOpenFileLink === next.onOpenFileLink &&
     prev.onOpenFileLinkMenu === next.onOpenFileLinkMenu
@@ -141,15 +146,25 @@ function normalizeListIndentation(value: string) {
       return line;
     }
 
-    const orderedMatch = line.match(/^(\s*)\d+\.\s+/);
-    if (orderedMatch) {
+    const orderedMatch = line.match(/^(\s*)(\d+)\.(\s*)(.*)$/);
+    const orderedContent = orderedMatch?.[4] ?? "";
+    const orderedHasWhitespace = (orderedMatch?.[3].length ?? 0) > 0;
+    const orderedLooksDecimal =
+      Boolean(orderedContent) &&
+      !orderedHasWhitespace &&
+      /^\d/.test(orderedContent);
+    if (orderedMatch && !orderedLooksDecimal) {
       const rawIndent = orderedMatch[1].length;
       const normalizedIndent = rawIndent;
       activeOrderedItem = true;
       orderedBaseIndent = normalizedIndent + 4;
       orderedIndentOffset = null;
-      if (normalizedIndent !== rawIndent) {
-        return `${spaces(normalizedIndent)}${line.trimStart()}`;
+      const normalizedBody = orderedContent.trimStart();
+      const normalizedLine = normalizedBody
+        ? `${spaces(normalizedIndent)}${orderedMatch[2]}. ${normalizedBody}`
+        : `${spaces(normalizedIndent)}${orderedMatch[2]}.`;
+      if (normalizedIndent !== rawIndent || normalizedLine !== line) {
+        return normalizedLine;
       }
       return line;
     }
@@ -205,11 +220,18 @@ function startsWithMarkdownBlockSyntax(value: string) {
   const trimmed = value.trimStart();
   return (
     /^[-*+]\s/.test(trimmed) ||
-    /^\d+\.\s/.test(trimmed) ||
+    /^\d+\.(?:\s|$|(?!\d)\S)/.test(trimmed) ||
     /^>\s?/.test(trimmed) ||
     /^#{1,6}\s/.test(trimmed) ||
     /^```/.test(trimmed) ||
     /^\|/.test(trimmed)
+  );
+}
+
+function normalizeInlineOrderedListBreaks(value: string) {
+  return value.replace(
+    /([：:。！？!?；;])\s*(\d+)\.(?!\d)(\S)/g,
+    "$1\n$2. $3",
   );
 }
 
@@ -741,6 +763,8 @@ export const Markdown = memo(function Markdown({
   codeBlock,
   codeBlockStyle = "default",
   codeBlockCopyUseModifier = false,
+  streamingThrottleMs = 80,
+  softBreaks = false,
   codexLeadMarkerConfig,
   onOpenFileLink,
   onOpenFileLinkMenu,
@@ -760,13 +784,19 @@ export const Markdown = memo(function Markdown({
   const throttleTimerRef = useRef<number>(0);
   const mountedRef = useRef(true);
   const latestValueRef = useRef(value);
+  const resolvedThrottleMs = Math.max(0, streamingThrottleMs);
   latestValueRef.current = value;
 
   useEffect(() => {
     const now = Date.now();
     const elapsed = now - lastUpdateRef.current;
+    if (resolvedThrottleMs === 0) {
+      setThrottledValue(value);
+      lastUpdateRef.current = now;
+      return;
+    }
     // If enough time has passed, update immediately
-    if (elapsed >= 80) {
+    if (elapsed >= resolvedThrottleMs) {
       setThrottledValue(value);
       lastUpdateRef.current = now;
       return;
@@ -785,8 +815,8 @@ export const Markdown = memo(function Markdown({
       }
       setThrottledValue(latestValueRef.current);
       lastUpdateRef.current = Date.now();
-    }, 80 - elapsed);
-  }, [value]);
+    }, resolvedThrottleMs - elapsed);
+  }, [resolvedThrottleMs, value]);
 
   // Clean up only on unmount
   useEffect(() => {
@@ -809,7 +839,9 @@ export const Markdown = memo(function Markdown({
     }
     const normalizeDisplayText = (text: string) =>
       normalizeListIndentation(
-        normalizeFragmentedLineBreaks(normalizeFragmentedParagraphBreaks(text)),
+        normalizeInlineOrderedListBreaks(
+          normalizeFragmentedLineBreaks(normalizeFragmentedParagraphBreaks(text)),
+        ),
       );
     return normalizeOutsideCodeFences(renderValue, normalizeDisplayText);
   }, [renderValue, codeBlock]);
@@ -946,7 +978,10 @@ export const Markdown = memo(function Markdown({
   ]);
 
   // Memoize plugin arrays so ReactMarkdown doesn't re-initialize its processor
-  const remarkPluginsMemo = useMemo(() => [remarkGfm, remarkFileLinks], []);
+  const remarkPluginsMemo = useMemo(
+    () => (softBreaks ? [remarkGfm, remarkBreaks, remarkFileLinks] : [remarkGfm, remarkFileLinks]),
+    [softBreaks],
+  );
   const rehypePluginsMemo = useMemo(
     () => [
       rehypeRaw,

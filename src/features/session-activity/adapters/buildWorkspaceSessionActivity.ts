@@ -38,6 +38,8 @@ type BuildWorkspaceSessionActivityOptions = {
   threadStatusById: Record<string, ThreadStatusSnapshot | undefined>;
 };
 
+const PARAGRAPH_BREAK_SPLIT_REGEX = /\n{2,}/;
+
 function resolveEventStatus(
   status: string | undefined,
   hasOutput: boolean,
@@ -64,6 +66,532 @@ function resolveExploreEventStatus(
     return "completed";
   }
   return "running";
+}
+
+function sanitizeReasoningTitle(title: string) {
+  return title
+    .replace(/[`*_~]/g, "")
+    .replace(/\[(.*?)\]\(.*?\)/g, "$1")
+    .trim();
+}
+
+function compactReasoningText(value: string) {
+  return value.replace(/\s+/g, "");
+}
+
+function compactComparableReasoningText(value: string) {
+  return compactReasoningText(value)
+    .replace(/[！!]/g, "!")
+    .replace(/[？?]/g, "?")
+    .replace(/[，,]/g, ",")
+    .replace(/[。．.]/g, ".");
+}
+
+function sliceByComparableLength(text: string, targetLength: number) {
+  if (targetLength <= 0) {
+    return text;
+  }
+  let compactLength = 0;
+  for (let index = 0; index < text.length; index += 1) {
+    if (!/\s/.test(text[index])) {
+      compactLength += 1;
+    }
+    if (compactLength >= targetLength) {
+      return text.slice(index + 1);
+    }
+  }
+  return "";
+}
+
+function stripLeadingReasoningTitleOverlap(content: string, candidates: string[]) {
+  const trimmedContent = content.trim();
+  if (!trimmedContent) {
+    return trimmedContent;
+  }
+  const normalizedCandidates = candidates
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length >= 8);
+  if (normalizedCandidates.length === 0) {
+    return trimmedContent;
+  }
+
+  for (const candidate of normalizedCandidates) {
+    if (trimmedContent.startsWith(candidate)) {
+      return trimmedContent
+        .slice(candidate.length)
+        .replace(/^[\s，。！？!?:：;；、-]+/, "")
+        .trim();
+    }
+  }
+
+  const compactContent = compactComparableReasoningText(trimmedContent);
+  for (const candidate of normalizedCandidates) {
+    const compactCandidate = compactComparableReasoningText(candidate);
+    if (!compactCandidate || compactCandidate.length < 8) {
+      continue;
+    }
+    if (compactContent === compactCandidate) {
+      return "";
+    }
+    if (compactContent.startsWith(compactCandidate)) {
+      const sliced = sliceByComparableLength(trimmedContent, compactCandidate.length);
+      return sliced.replace(/^[\s，。！？!?:：;；、-]+/, "").trim();
+    }
+  }
+
+  return trimmedContent;
+}
+
+function splitComparableReasoningClauses(value: string) {
+  return value
+    .split(/[。！？!?；;\n]+/)
+    .map((entry) => compactComparableReasoningText(entry.trim()))
+    .filter((entry) => entry.length >= 6);
+}
+
+function hasSharedReasoningClauseSuffix(left: string, right: string) {
+  const leftClauses = splitComparableReasoningClauses(left);
+  const rightClauses = splitComparableReasoningClauses(right);
+  if (leftClauses.length < 3 || rightClauses.length < 3) {
+    return false;
+  }
+  const max = Math.min(leftClauses.length, rightClauses.length);
+  let shared = 0;
+  for (let offset = 1; offset <= max; offset += 1) {
+    if (leftClauses[leftClauses.length - offset] !== rightClauses[rightClauses.length - offset]) {
+      break;
+    }
+    shared += 1;
+  }
+  return shared >= 2;
+}
+
+function dedupeAdjacentReasoningParagraphs(value: string) {
+  const collapseRepeatedParagraph = (paragraph: string) => {
+    const trimmed = paragraph.trim();
+    if (trimmed.length < 12) {
+      return trimmed;
+    }
+    const directRepeat = trimmed.match(/^([\s\S]{6,}?)\s+\1$/);
+    if (directRepeat?.[1]) {
+      return directRepeat[1].trim();
+    }
+    const compact = compactReasoningText(trimmed);
+    if (compact.length >= 12 && compact.length % 2 === 0) {
+      const half = compact.slice(0, compact.length / 2);
+      if (`${half}${half}` === compact) {
+        let compactLength = 0;
+        for (let index = 0; index < trimmed.length; index += 1) {
+          if (!/\s/.test(trimmed[index])) {
+            compactLength += 1;
+          }
+          if (compactLength >= half.length) {
+            return trimmed.slice(0, index + 1).trim();
+          }
+        }
+      }
+    }
+    const sentenceMatches = trimmed.match(/[^。！？!?]+[。！？!?]/g);
+    if (sentenceMatches && sentenceMatches.length >= 4 && sentenceMatches.length % 2 === 0) {
+      const mid = sentenceMatches.length / 2;
+      const left = compactReasoningText(sentenceMatches.slice(0, mid).join(""));
+      const right = compactReasoningText(sentenceMatches.slice(mid).join(""));
+      if (left.length >= 6 && left === right) {
+        return sentenceMatches.slice(0, mid).join("").trim();
+      }
+    }
+    return trimmed;
+  };
+
+  const paragraphs = value
+    .split(PARAGRAPH_BREAK_SPLIT_REGEX)
+    .map((line) => collapseRepeatedParagraph(line))
+    .filter(Boolean);
+  if (paragraphs.length <= 1) {
+    return paragraphs[0] ?? value.trim();
+  }
+  const deduped: string[] = [];
+  for (const paragraph of paragraphs) {
+    const previous = deduped[deduped.length - 1];
+    if (
+      previous &&
+      compactReasoningText(previous) === compactReasoningText(paragraph) &&
+      compactReasoningText(paragraph).length >= 8
+    ) {
+      continue;
+    }
+    deduped.push(paragraph);
+  }
+  return deduped.join("\n\n");
+}
+
+function scoreReasoningTextQuality(value: string) {
+  const paragraphs = value
+    .split(PARAGRAPH_BREAK_SPLIT_REGEX)
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+  if (paragraphs.length <= 1) {
+    return 0;
+  }
+  const shortParagraphs = paragraphs.filter((entry) => entry.length <= 8).length;
+  return shortParagraphs * 3 + paragraphs.length;
+}
+
+function chooseBetterReasoningText(left: string, right: string) {
+  const leftScore = scoreReasoningTextQuality(left);
+  const rightScore = scoreReasoningTextQuality(right);
+  if (leftScore < rightScore) {
+    return left;
+  }
+  if (rightScore < leftScore) {
+    return right;
+  }
+  const leftLength = compactComparableReasoningText(left).length;
+  const rightLength = compactComparableReasoningText(right).length;
+  return rightLength >= leftLength ? right : left;
+}
+
+function isGenericReasoningTitle(title: string) {
+  const normalized = title
+    .trim()
+    .toLowerCase()
+    .replace(/[.:：。!！]+$/g, "");
+  return (
+    normalized === "reasoning" ||
+    normalized === "thinking" ||
+    normalized === "planning" ||
+    normalized === "思考中" ||
+    normalized === "正在思考" ||
+    normalized === "正在规划"
+  );
+}
+
+type ParsedReasoningMeta = {
+  summaryTitle: string;
+  bodyText: string;
+  hasBody: boolean;
+  workingLabel: string | null;
+};
+
+function parseReasoning(item: Extract<ConversationItem, { kind: "reasoning" }>): ParsedReasoningMeta {
+  const summary = item.summary ?? "";
+  const content = item.content ?? "";
+  const hasSummary = summary.trim().length > 0 && !isGenericReasoningTitle(summary);
+  const titleSource = hasSummary ? summary : content;
+  const titleLines = titleSource.split("\n");
+  const trimmedLines = titleLines.map((line) => line.trim());
+  const titleLineIndex = trimmedLines.findIndex(Boolean);
+  const rawTitle = titleLineIndex >= 0 ? trimmedLines[titleLineIndex] : "";
+  const cleanTitle = sanitizeReasoningTitle(rawTitle);
+  const summaryTitle = cleanTitle
+    ? cleanTitle.length > 80
+      ? `${cleanTitle.slice(0, 80)}…`
+      : cleanTitle
+    : "Reasoning";
+  const summaryLines = summary.split("\n");
+  const contentLines = content.split("\n");
+  const summaryBody =
+    hasSummary && titleLineIndex >= 0
+      ? summaryLines
+          .filter((_, index) => index !== titleLineIndex)
+          .join("\n")
+          .trim()
+      : "";
+  let contentBody = hasSummary
+    ? content.trim()
+    : titleLineIndex >= 0
+      ? contentLines
+          .filter((_, index) => index !== titleLineIndex)
+          .join("\n")
+          .trim()
+      : content.trim();
+  if (!hasSummary && !contentBody && content.trim()) {
+    contentBody = content.trim();
+  }
+  const normalizedSummaryBody = summaryBody.trim();
+  const normalizedContentBody = stripLeadingReasoningTitleOverlap(
+    contentBody,
+    [rawTitle, cleanTitle, normalizedSummaryBody],
+  ).trim();
+  const compactSummaryBody = compactReasoningText(normalizedSummaryBody);
+  const compactContentBody = compactReasoningText(normalizedContentBody);
+  let bodyParts: string[] = [];
+  if (normalizedSummaryBody && normalizedContentBody) {
+    if (compactSummaryBody === compactContentBody) {
+      bodyParts = [normalizedContentBody];
+    } else if (compactContentBody.startsWith(compactSummaryBody)) {
+      bodyParts = [normalizedContentBody];
+    } else if (compactSummaryBody.startsWith(compactContentBody)) {
+      bodyParts = [normalizedSummaryBody];
+    } else if (hasSharedReasoningClauseSuffix(normalizedSummaryBody, normalizedContentBody)) {
+      bodyParts = [chooseBetterReasoningText(normalizedSummaryBody, normalizedContentBody)];
+    } else {
+      bodyParts = [normalizedSummaryBody, normalizedContentBody];
+    }
+  } else {
+    bodyParts = [normalizedSummaryBody, normalizedContentBody].filter(Boolean);
+  }
+  const bodyText = dedupeAdjacentReasoningParagraphs(bodyParts.join("\n\n")).trim();
+  const hasBody = bodyText.length > 0;
+  const hasAnyText = titleSource.trim().length > 0;
+  const workingLabel = hasAnyText ? summaryTitle : null;
+  return {
+    summaryTitle,
+    bodyText,
+    hasBody,
+    workingLabel,
+  };
+}
+
+function isReasoningDuplicate(previous: ParsedReasoningMeta, next: ParsedReasoningMeta) {
+  const previousBody = compactComparableReasoningText(previous.bodyText || "");
+  const nextBody = compactComparableReasoningText(next.bodyText || "");
+  if (previousBody && nextBody) {
+    if (previousBody === nextBody) {
+      return true;
+    }
+    if (previousBody.length >= 16 && nextBody.includes(previousBody)) {
+      return true;
+    }
+    if (nextBody.length >= 16 && previousBody.includes(nextBody)) {
+      return true;
+    }
+    return false;
+  }
+
+  const previousTitle = compactComparableReasoningText(
+    previous.summaryTitle || previous.workingLabel || "",
+  );
+  const nextTitle = compactComparableReasoningText(
+    next.summaryTitle || next.workingLabel || "",
+  );
+
+  if (!previousBody && !nextBody) {
+    if (
+      previousTitle &&
+      nextTitle &&
+      previousTitle.length >= 8 &&
+      nextTitle.length >= 8
+    ) {
+      return previousTitle === nextTitle;
+    }
+    return false;
+  }
+
+  if (
+    previousTitle &&
+    nextTitle &&
+    previousTitle.length >= 6 &&
+    nextTitle.length >= 6 &&
+    previousTitle !== nextTitle
+  ) {
+    return false;
+  }
+
+  return false;
+}
+
+function dedupeAdjacentReasoningItems(
+  list: ConversationItem[],
+  reasoningMetaById: Map<string, ParsedReasoningMeta>,
+  appendOnly = false,
+) {
+  const deduped: ConversationItem[] = [];
+  for (const item of list) {
+    const previous = deduped[deduped.length - 1];
+    if (item.kind !== "reasoning" || previous?.kind !== "reasoning") {
+      deduped.push(item);
+      continue;
+    }
+    const previousMeta = reasoningMetaById.get(previous.id) ?? parseReasoning(previous);
+    const nextMeta = reasoningMetaById.get(item.id) ?? parseReasoning(item);
+    if (!isReasoningDuplicate(previousMeta, nextMeta)) {
+      deduped.push(item);
+      continue;
+    }
+    deduped[deduped.length - 1] = {
+      ...item,
+      summary: appendOnly
+        ? appendReasoningRunText(previous.summary, item.summary)
+        : chooseBetterReasoningText(previous.summary, item.summary),
+      content: appendOnly
+        ? appendReasoningRunText(previous.content, item.content)
+        : chooseBetterReasoningText(previous.content, item.content),
+    };
+  }
+  return deduped;
+}
+
+function collapseConsecutiveReasoningRuns(
+  list: ConversationItem[],
+  enabled: boolean,
+  appendOnly = false,
+) {
+  if (!enabled || list.length <= 1) {
+    return list;
+  }
+  const collapsed: ConversationItem[] = [];
+  let index = 0;
+  while (index < list.length) {
+    const item = list[index];
+    if (item.kind !== "reasoning") {
+      collapsed.push(item);
+      index += 1;
+      continue;
+    }
+
+    let end = index + 1;
+    while (end < list.length && list[end].kind === "reasoning") {
+      end += 1;
+    }
+
+    if (end - index === 1) {
+      collapsed.push(item);
+      index = end;
+      continue;
+    }
+
+    const run = list.slice(index, end) as Array<Extract<ConversationItem, { kind: "reasoning" }>>;
+    const latest = run[run.length - 1];
+    let mergedSummary = run[0].summary;
+    let mergedContent = run[0].content;
+    for (let runIndex = 1; runIndex < run.length; runIndex += 1) {
+      const candidate = run[runIndex];
+      mergedSummary = mergeReasoningRunText(
+        mergedSummary,
+        candidate.summary,
+        appendOnly,
+      );
+      mergedContent = mergeReasoningRunText(
+        mergedContent,
+        candidate.content,
+        appendOnly,
+      );
+    }
+    collapsed.push({
+      ...latest,
+      summary: mergedSummary,
+      content: mergedContent,
+    });
+    index = end;
+  }
+  return collapsed;
+}
+
+function appendReasoningRunText(existing: string, incoming: string) {
+  if (!existing) {
+    return incoming;
+  }
+  if (!incoming) {
+    return existing;
+  }
+  const normalizedExisting = existing.trim();
+  const normalizedIncoming = incoming.trim();
+  const compactExisting = compactComparableReasoningText(normalizedExisting);
+  const compactIncoming = compactComparableReasoningText(normalizedIncoming);
+  if (!compactExisting) {
+    return normalizedIncoming;
+  }
+  if (!compactIncoming) {
+    return normalizedExisting;
+  }
+  if (compactExisting === compactIncoming) {
+    return chooseBetterReasoningText(normalizedExisting, normalizedIncoming);
+  }
+  const maxOverlap = Math.min(compactExisting.length, compactIncoming.length);
+  for (let overlapLength = maxOverlap; overlapLength > 0; overlapLength -= 1) {
+    if (!compactExisting.endsWith(compactIncoming.slice(0, overlapLength))) {
+      continue;
+    }
+    const suffix = sliceByComparableLength(normalizedIncoming, overlapLength).trimStart();
+    return suffix ? `${normalizedExisting}${suffix}` : normalizedExisting;
+  }
+  return `${normalizedExisting}\n\n${normalizedIncoming}`;
+}
+
+function mergeReasoningRunText(
+  existing: string,
+  incoming: string,
+  appendOnly = false,
+) {
+  if (appendOnly) {
+    return appendReasoningRunText(existing, incoming);
+  }
+  if (!existing) {
+    return incoming;
+  }
+  if (!incoming) {
+    return existing;
+  }
+  const normalizedExisting = existing.trim();
+  const normalizedIncoming = incoming.trim();
+  const compactExisting = compactComparableReasoningText(normalizedExisting);
+  const compactIncoming = compactComparableReasoningText(normalizedIncoming);
+  if (!compactExisting) {
+    return normalizedIncoming;
+  }
+  if (!compactIncoming) {
+    return normalizedExisting;
+  }
+  if (compactExisting === compactIncoming) {
+    return chooseBetterReasoningText(normalizedExisting, normalizedIncoming);
+  }
+  if (compactIncoming.includes(compactExisting)) {
+    return normalizedIncoming;
+  }
+  if (compactExisting.includes(compactIncoming)) {
+    return normalizedExisting;
+  }
+  return `${normalizedExisting}\n\n${normalizedIncoming}`;
+}
+
+function inferReasoningPresentationEngine(threadId: string) {
+  if (threadId.startsWith("claude:") || threadId.startsWith("claude-pending-")) {
+    return "claude";
+  }
+  if (threadId.startsWith("opencode:") || threadId.startsWith("opencode-pending-")) {
+    return "opencode";
+  }
+  if (threadId.startsWith("gemini:") || threadId.startsWith("gemini-pending-")) {
+    return "gemini";
+  }
+  return "codex";
+}
+
+function normalizeReasoningItemsForTimeline(threadId: string, items: ConversationItem[]) {
+  const sourceReasoningMetaById = new Map<string, ParsedReasoningMeta>();
+  const filtered = items.filter((item) => {
+    if (item.kind !== "reasoning") {
+      return true;
+    }
+    const parsed = parseReasoning(item);
+    sourceReasoningMetaById.set(item.id, parsed);
+    return parsed.hasBody || Boolean(parsed.workingLabel);
+  });
+  const engine = inferReasoningPresentationEngine(threadId);
+  const appendReasoningRuns = engine === "claude";
+  const deduped = dedupeAdjacentReasoningItems(
+    filtered,
+    sourceReasoningMetaById,
+    appendReasoningRuns,
+  );
+  const collapseReasoningRuns = engine !== "codex" && engine !== "gemini";
+  const normalized = collapseConsecutiveReasoningRuns(
+    deduped,
+    collapseReasoningRuns,
+    appendReasoningRuns,
+  );
+  const reasoningMetaById = new Map<string, ParsedReasoningMeta>();
+  normalized.forEach((item) => {
+    if (item.kind !== "reasoning") {
+      return;
+    }
+    reasoningMetaById.set(item.id, parseReasoning(item));
+  });
+  return {
+    items: normalized,
+    reasoningMetaById,
+  };
 }
 
 function extractCommandOutputWindow(output: string | undefined) {
@@ -223,6 +751,36 @@ function resolveReadableFilePath(candidate: string | undefined) {
   return normalized;
 }
 
+function isLikelyFilePath(candidate: string) {
+  const normalized = candidate.trim();
+  if (!normalized) {
+    return false;
+  }
+  if (
+    normalized.includes("/") ||
+    normalized.includes("\\") ||
+    normalized.startsWith("./") ||
+    normalized.startsWith("../") ||
+    normalized.startsWith("~/") ||
+    /^[A-Za-z]:[\\/]/.test(normalized)
+  ) {
+    return true;
+  }
+  return /\.[A-Za-z0-9]{1,16}$/.test(normalized) && !/\s/.test(normalized);
+}
+
+function resolveExploreReadPath(label: string, detail: string) {
+  const detailPath = resolveReadableFilePath(detail);
+  if (detailPath && isLikelyFilePath(detailPath)) {
+    return detailPath;
+  }
+  const labelPath = resolveReadableFilePath(label);
+  if (labelPath && isLikelyFilePath(labelPath)) {
+    return labelPath;
+  }
+  return null;
+}
+
 function joinDirectoryAndFilePath(directory: string, filePath: string) {
   const normalizedDirectory = directory.replace(/\\/g, "/").replace(/\/+$/, "");
   const normalizedFilePath = filePath.replace(/\\/g, "/").replace(/^\.\/+/, "");
@@ -236,6 +794,19 @@ function joinDirectoryAndFilePath(directory: string, filePath: string) {
     return normalizedFilePath;
   }
   return `${normalizedDirectory}/${normalizedFilePath}`;
+}
+
+function extractDisplayFileName(pathValue: string) {
+  const normalized = pathValue.trim();
+  if (!normalized) {
+    return "";
+  }
+  const withoutTrailingSlash = normalized.replace(/[\\/]+$/, "");
+  if (!withoutTrailingSlash) {
+    return normalized;
+  }
+  const segments = withoutTrailingSlash.split(/[\\/]/);
+  return segments[segments.length - 1] || withoutTrailingSlash;
 }
 
 function extractPrimaryChangeDiff(
@@ -308,8 +879,10 @@ function summarizeInspectionTool(item: Extract<ConversationItem, { kind: "tool" 
         ? resolveReadableFilePath(joinDirectoryAndFilePath(resolvedWorkingDirectory, resolvedPath))
         : null;
     const finalPath = combinedPath || resolvedPath;
+    const summaryTarget = finalPath || path || toolLabel || "file";
+    const displayName = extractDisplayFileName(summaryTarget);
     return {
-      summary: `Read · ${finalPath || path || toolLabel || "file"}`,
+      summary: `Read · ${displayName || summaryTarget}`,
       jumpTarget: finalPath
         ? ({ type: "file", path: finalPath } as const)
         : undefined,
@@ -436,28 +1009,6 @@ function resolveRelationshipSource(
   return "directParent";
 }
 
-function isClaudeThread(threadId: string) {
-  return threadId.startsWith("claude:") || threadId.startsWith("claude-pending-");
-}
-
-function splitReasoningSummarySnapshots(summary: string) {
-  const lines = summary
-    .split(/\r?\n+/)
-    .map((line) => line.trim())
-    .filter(Boolean);
-  if (lines.length <= 1) {
-    return lines;
-  }
-  const snapshots: string[] = [];
-  for (const line of lines) {
-    if (snapshots[snapshots.length - 1] === line) {
-      continue;
-    }
-    snapshots.push(line);
-  }
-  return snapshots;
-}
-
 function buildThreadEvents(args: {
   thread: ThreadSummary;
   rootThreadId: string;
@@ -467,15 +1018,29 @@ function buildThreadEvents(args: {
 }) {
   const events: SessionActivityEvent[] = [];
   const occurredBase = getThreadTimestamp(args.thread) || 0;
+  const shouldMergeClaudeReasoningIntoFirstNode =
+    inferReasoningPresentationEngine(args.thread.id) === "claude";
+  const reasoningAnchorIndexByTurnId = new Map<string, number>();
+  const { items: normalizedItems, reasoningMetaById } = normalizeReasoningItemsForTimeline(
+    args.thread.id,
+    args.items,
+  );
+  const fallbackThreadOccurredAt = occurredBase > 0 ? occurredBase : Date.now();
+  const resolveFallbackOccurredAt = (itemIndex: number) => {
+    const reverseIndex = normalizedItems.length - 1 - itemIndex;
+    const safeReverseIndex = reverseIndex > 0 ? reverseIndex : 0;
+    // Keep one-second spacing so HH:mm:ss labels remain distinct per node.
+    return fallbackThreadOccurredAt - safeReverseIndex * 1000;
+  };
   let latestUserMessageIndex = -1;
-  args.items.forEach((item, index) => {
+  normalizedItems.forEach((item, index) => {
     if (item.kind === "message" && item.role === "user") {
       latestUserMessageIndex = index;
     }
   });
   let currentTurnIndex = 0;
   let currentTurnToken = "bootstrap";
-  args.items.forEach((item, index) => {
+  normalizedItems.forEach((item, index) => {
     if (item.kind === "message" && item.role === "user") {
       currentTurnIndex += 1;
       currentTurnToken = item.id || `turn-${currentTurnIndex}`;
@@ -483,43 +1048,42 @@ function buildThreadEvents(args: {
     }
     const sessionRole = args.thread.id === args.rootThreadId ? "root" : "child";
     const threadName = args.thread.name || args.thread.id;
-    const occurredAtBase = occurredBase > 0 ? occurredBase + index : index;
+    const occurredAtBase = resolveFallbackOccurredAt(index);
     const turnIndex = currentTurnIndex > 0 ? currentTurnIndex : 1;
     const turnId = `${args.thread.id}:turn:${currentTurnToken}`;
 
     if (item.kind === "reasoning") {
-      const summary = item.summary.trim() || item.content.trim() || "Thinking";
-      const reasoningPreview = item.content.trim() || item.summary.trim() || "Thinking";
+      const parsed = reasoningMetaById.get(item.id) ?? parseReasoning(item);
+      const summary =
+        parsed.workingLabel || item.summary.trim() || item.content.trim() || "Thinking";
+      const reasoningPreview =
+        parsed.bodyText || item.content.trim() || item.summary.trim() || "Thinking";
       const belongsToLatestTurn =
         latestUserMessageIndex >= 0 ? index > latestUserMessageIndex : true;
-      const summarySnapshots = isClaudeThread(args.thread.id)
-        ? splitReasoningSummarySnapshots(item.summary.trim())
-        : [];
-      if (summarySnapshots.length > 1) {
-        summarySnapshots.forEach((snapshot, snapshotIndex) => {
-          const isLatestSnapshot = snapshotIndex === summarySnapshots.length - 1;
-          events.push({
-            eventId: `reasoning:${item.id}:${snapshotIndex}`,
-            threadId: args.thread.id,
-            threadName,
-            turnId,
-            turnIndex,
-            sessionRole,
-            relationshipSource: args.relationshipSource,
-            kind: "reasoning",
-            occurredAt: occurredAtBase + snapshotIndex / 1_000,
-            summary: `Thinking · ${snapshot}`,
-            status:
-              args.threadIsProcessing && belongsToLatestTurn && isLatestSnapshot
-                ? "running"
-                : "completed",
-            jumpTarget: { type: "thread", threadId: args.thread.id },
-            reasoningPreview,
-          });
-        });
-        return;
+      const reasoningStatus =
+        args.threadIsProcessing && belongsToLatestTurn ? "running" : "completed";
+      if (shouldMergeClaudeReasoningIntoFirstNode) {
+        const anchorIndex = reasoningAnchorIndexByTurnId.get(turnId);
+        if (anchorIndex !== undefined) {
+          const anchorEvent = events[anchorIndex];
+          if (anchorEvent?.kind === "reasoning") {
+            events[anchorIndex] = {
+              ...anchorEvent,
+              occurredAt: Math.max(anchorEvent.occurredAt, occurredAtBase),
+              status:
+                anchorEvent.status === "running" || reasoningStatus === "running"
+                  ? "running"
+                  : "completed",
+              reasoningPreview: appendReasoningRunText(
+                anchorEvent.reasoningPreview ?? "",
+                reasoningPreview,
+              ),
+            };
+            return;
+          }
+        }
       }
-      events.push({
+      const nextReasoningEvent: SessionActivityEvent = {
         eventId: `reasoning:${item.id}`,
         threadId: args.thread.id,
         threadName,
@@ -530,11 +1094,14 @@ function buildThreadEvents(args: {
         kind: "reasoning",
         occurredAt: occurredAtBase,
         summary: `Thinking · ${summary}`,
-        status:
-          args.threadIsProcessing && belongsToLatestTurn ? "running" : "completed",
+        status: reasoningStatus,
         jumpTarget: { type: "thread", threadId: args.thread.id },
         reasoningPreview,
-      });
+      };
+      events.push(nextReasoningEvent);
+      if (shouldMergeClaudeReasoningIntoFirstNode) {
+        reasoningAnchorIndexByTurnId.set(turnId, events.length - 1);
+      }
       return;
     }
 
@@ -544,7 +1111,9 @@ function buildThreadEvents(args: {
       entries.forEach((entry, entryIndex) => {
         const label = entry.label.trim();
         const detail = (entry.detail ?? "").trim();
-        const occurredAt = occurredAtBase + (entryIndex + 1) / 100;
+        const occurredAt =
+          occurredAtBase +
+          Math.floor(((entryIndex + 1) * 900) / (entries.length + 1));
         if (entry.kind === "run") {
           events.push({
             eventId: `explore:run:${item.id}:${entryIndex}`,
@@ -560,6 +1129,7 @@ function buildThreadEvents(args: {
             status: eventStatus,
             commandText: label || "Command",
             commandDescription: detail || undefined,
+            explorePreview: detail || undefined,
           });
           return;
         }
@@ -569,6 +1139,16 @@ function buildThreadEvents(args: {
             : entry.kind === "search"
               ? "Search"
               : "List";
+        const displayLabel =
+          entry.kind === "read"
+            ? (() => {
+                const candidate = resolveExploreReadPath(label, detail);
+                if (!candidate) {
+                  return label || detail || "workspace";
+                }
+                return extractDisplayFileName(candidate) || candidate;
+              })()
+            : label || detail || "workspace";
         events.push({
           eventId: `explore:${entry.kind}:${item.id}:${entryIndex}`,
           threadId: args.thread.id,
@@ -579,12 +1159,13 @@ function buildThreadEvents(args: {
           relationshipSource: args.relationshipSource,
           kind: "explore",
           occurredAt,
-          summary: `${summaryPrefix} · ${label || detail || "workspace"}`,
+          summary: `${summaryPrefix} · ${displayLabel}`,
           status: eventStatus,
+          explorePreview: detail || undefined,
           jumpTarget:
             entry.kind === "read"
               ? (() => {
-                  const resolvedPath = resolveReadableFilePath(label || detail);
+                  const resolvedPath = resolveExploreReadPath(label, detail);
                   return resolvedPath
                     ? ({ type: "file", path: resolvedPath } as const)
                     : ({ type: "thread", threadId: args.thread.id } as const);

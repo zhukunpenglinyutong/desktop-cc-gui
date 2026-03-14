@@ -1,7 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import Activity from "lucide-react/dist/esm/icons/activity";
-import Brain from "lucide-react/dist/esm/icons/brain";
 import Bot from "lucide-react/dist/esm/icons/bot";
 import ChevronDown from "lucide-react/dist/esm/icons/chevron-down";
 import ChevronUp from "lucide-react/dist/esm/icons/chevron-up";
@@ -11,6 +10,7 @@ import ListTodo from "lucide-react/dist/esm/icons/list-todo";
 import Search from "lucide-react/dist/esm/icons/search";
 import Terminal from "lucide-react/dist/esm/icons/terminal";
 import type { ReactNode } from "react";
+import { Markdown } from "../../messages/components/Markdown";
 import type { SessionActivityEvent, WorkspaceSessionActivityViewModel } from "../types";
 
 type WorkspaceSessionActivityPanelProps = {
@@ -42,7 +42,7 @@ const tabIconMap: Record<ActivityTab, ReactNode> = {
   fileChange: <FileCode2 size={14} aria-hidden />,
   task: <ListTodo size={14} aria-hidden />,
   explore: <Search size={14} aria-hidden />,
-  reasoning: <Brain size={14} aria-hidden />,
+  reasoning: <span className="codicon codicon-thinking session-activity-tab-codicon" aria-hidden />,
 };
 
 function formatSignedCount(value: number | undefined, positivePrefix: "+" | "-") {
@@ -95,8 +95,39 @@ function canExpandReasoning(event: SessionActivityEvent) {
   return event.kind === "reasoning" && Boolean(event.reasoningPreview);
 }
 
+function looksLikeNavigablePreviewText(preview: string) {
+  const normalized = preview.trim();
+  if (!normalized || normalized.includes("\n")) {
+    return false;
+  }
+  if (/^[a-z]+:\/\//i.test(normalized)) {
+    return true;
+  }
+  if (
+    normalized.includes("/") ||
+    normalized.includes("\\") ||
+    normalized.startsWith("./") ||
+    normalized.startsWith("../") ||
+    normalized.startsWith("~/") ||
+    /^[A-Za-z]:[\\/]/.test(normalized)
+  ) {
+    return true;
+  }
+  return /\.[A-Za-z0-9]{1,16}$/.test(normalized) && !/\s/.test(normalized);
+}
+
+function canExpandExplore(event: SessionActivityEvent) {
+  if (event.kind !== "explore" || !event.explorePreview) {
+    return false;
+  }
+  if (event.jumpTarget?.type === "file") {
+    return false;
+  }
+  return !looksLikeNavigablePreviewText(event.explorePreview);
+}
+
 function canExpandEvent(event: SessionActivityEvent) {
-  return canExpandCommand(event) || canExpandReasoning(event);
+  return canExpandCommand(event) || canExpandReasoning(event) || canExpandExplore(event);
 }
 
 function unwrapShellCommand(command: string) {
@@ -250,6 +281,20 @@ function getCollapsedCommandSummary(
   return t("activityPanel.commandPendingSummary");
 }
 
+function sortTurnGroupEvents(events: SessionActivityEvent[]) {
+  return [...events].sort((left, right) => {
+    const leftReasoningPriority = left.kind === "reasoning" ? 0 : 1;
+    const rightReasoningPriority = right.kind === "reasoning" ? 0 : 1;
+    if (leftReasoningPriority !== rightReasoningPriority) {
+      return leftReasoningPriority - rightReasoningPriority;
+    }
+    if (left.kind === "reasoning" && right.kind === "reasoning") {
+      return left.occurredAt - right.occurredAt;
+    }
+    return right.occurredAt - left.occurredAt;
+  });
+}
+
 export function WorkspaceSessionActivityPanel({
   workspaceId,
   viewModel,
@@ -278,6 +323,7 @@ export function WorkspaceSessionActivityPanel({
   const collapseDelayTimerByExpandableIdRef = useRef<Record<string, ReturnType<typeof setTimeout>>>(
     {},
   );
+  const reasoningPreviewScrollContainerByEventIdRef = useRef<Record<string, HTMLDivElement>>({});
 
   const emptyCopy = useMemo(() => {
     if (viewModel.emptyState === "running") {
@@ -331,7 +377,12 @@ export function WorkspaceSessionActivityPanel({
         events: [event],
       });
     }
-    return Array.from(groupsById.values()).sort((left, right) => right.occurredAt - left.occurredAt);
+    return Array.from(groupsById.values())
+      .map((group) => ({
+        ...group,
+        events: sortTurnGroupEvents(group.events),
+      }))
+      .sort((left, right) => right.occurredAt - left.occurredAt);
   }, [filteredTimeline]);
 
   const tabCounts = useMemo(
@@ -552,6 +603,31 @@ export function WorkspaceSessionActivityPanel({
     };
   }, []);
 
+  useLayoutEffect(() => {
+    const activeReasoningIds = new Set(
+      viewModel.timeline
+        .filter(
+          (event) =>
+            event.kind === "reasoning" &&
+            event.status === "running" &&
+            Boolean(expandedExpandableIds[event.eventId]),
+        )
+        .map((event) => event.eventId),
+    );
+    for (const [eventId, container] of Object.entries(
+      reasoningPreviewScrollContainerByEventIdRef.current,
+    )) {
+      if (!activeReasoningIds.has(eventId)) {
+        continue;
+      }
+      if (typeof container.scrollTo === "function") {
+        container.scrollTo({ top: container.scrollHeight, behavior: "auto" });
+      } else {
+        container.scrollTop = container.scrollHeight;
+      }
+    }
+  }, [expandedExpandableIds, viewModel.timeline]);
+
   if (!workspaceId) {
     return (
       <div className="session-activity-panel">
@@ -678,6 +754,12 @@ export function WorkspaceSessionActivityPanel({
     const showThreadChip = event.sessionRole === "child";
     const isExpandable = canExpandEvent(event);
     const collapsedSummary = getCollapsedCommandSummary(event, t);
+    const displaySummary =
+      event.kind === "reasoning" ? t("messages.thinkingLabel") : collapsedSummary;
+    const cardMainAriaLabel =
+      event.kind === "reasoning"
+        ? event.summary || displaySummary
+        : undefined;
     return (
       <article
         key={event.eventId}
@@ -694,7 +776,7 @@ export function WorkspaceSessionActivityPanel({
             ) : event.kind === "explore" ? (
               <Search size={13} />
             ) : event.kind === "reasoning" ? (
-              <Brain size={13} />
+              <span className="codicon codicon-thinking session-activity-kind-codicon" />
             ) : (
               <FileCode2 size={13} />
             )}
@@ -707,9 +789,11 @@ export function WorkspaceSessionActivityPanel({
               type="button"
               className="session-activity-card-main"
               onClick={() => handleCardPrimaryAction(event)}
+              aria-label={cardMainAriaLabel}
+              title={cardMainAriaLabel}
             >
               <span className="session-activity-card-copy">
-                <span className="session-activity-card-title">{collapsedSummary}</span>
+                <span className="session-activity-card-title">{displaySummary}</span>
                 <span className="session-activity-card-meta">
                   <time
                     className="session-activity-card-time"
@@ -792,11 +876,36 @@ export function WorkspaceSessionActivityPanel({
                   ) : null}
                 </div>
               ) : null}
-              <pre className="session-activity-preview-text">
-                {event.kind === "reasoning"
-                  ? event.reasoningPreview || t("activityPanel.waitingForReasoning")
-                  : event.commandPreview || t("activityPanel.waitingForOutput")}
-              </pre>
+              {event.kind === "reasoning" ? (
+                <div
+                  className="session-activity-preview-text is-markdown"
+                  ref={(node) => {
+                    if (!node) {
+                      delete reasoningPreviewScrollContainerByEventIdRef.current[event.eventId];
+                      return;
+                    }
+                    reasoningPreviewScrollContainerByEventIdRef.current[event.eventId] = node;
+                  }}
+                >
+                  <div className="session-activity-reasoning-surface">
+                    <Markdown
+                      value={event.reasoningPreview || t("activityPanel.waitingForReasoning")}
+                      className={`markdown reasoning-markdown session-activity-preview-markdown${
+                        event.status === "running" ? " markdown-live-streaming" : ""
+                      }`}
+                      codeBlockStyle="message"
+                      streamingThrottleMs={event.status === "running" ? 220 : 80}
+                      softBreaks
+                    />
+                  </div>
+                </div>
+              ) : (
+                <pre className="session-activity-preview-text">
+                  {event.kind === "explore"
+                    ? event.explorePreview || t("activityPanel.waitingForOutput")
+                    : event.commandPreview || t("activityPanel.waitingForOutput")}
+                </pre>
+              )}
             </div>
           ) : null}
         </div>

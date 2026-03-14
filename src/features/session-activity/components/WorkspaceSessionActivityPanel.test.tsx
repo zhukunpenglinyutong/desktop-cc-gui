@@ -171,7 +171,7 @@ describe("WorkspaceSessionActivityPanel", () => {
         relationshipSource: "directParent",
         kind: "task",
         occurredAt: 40,
-        summary: "Read · /workspace/README.md",
+        summary: "Read · README.md",
         status: "completed",
         jumpTarget: { type: "file", path: "/workspace/README.md" },
       },
@@ -186,7 +186,7 @@ describe("WorkspaceSessionActivityPanel", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: /Read · \/workspace\/README\.md/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Read · README\.md/i }));
 
     expect(onOpenDiffPath).toHaveBeenCalledWith("/workspace/README.md", undefined, undefined);
   });
@@ -212,7 +212,7 @@ describe("WorkspaceSessionActivityPanel", () => {
       },
     ];
 
-    const view = render(
+    const { container } = render(
       <WorkspaceSessionActivityPanel
         workspaceId="workspace-1"
         viewModel={viewModel}
@@ -221,8 +221,8 @@ describe("WorkspaceSessionActivityPanel", () => {
       />,
     );
 
-    const latestGroup = getTurnGroup(view.container, 0);
-    const olderGroup = getTurnGroup(view.container, 1);
+    const latestGroup = getTurnGroup(container, 0);
+    const olderGroup = getTurnGroup(container, 1);
     expect(latestGroup?.querySelector(".session-activity-turn-group-events")).toBeTruthy();
     expect(olderGroup?.querySelector(".session-activity-turn-group-events")).toBeNull();
     expect(screen.queryByRole("button", { name: /Older command/i })).toBeNull();
@@ -249,7 +249,7 @@ describe("WorkspaceSessionActivityPanel", () => {
       },
     ];
 
-    const view = render(
+    const { container } = render(
       <WorkspaceSessionActivityPanel
         workspaceId="workspace-1"
         viewModel={viewModel}
@@ -258,7 +258,7 @@ describe("WorkspaceSessionActivityPanel", () => {
       />,
     );
 
-    const olderGroup = getTurnGroup(view.container, 1);
+    const olderGroup = getTurnGroup(container, 1);
     const olderToggle = olderGroup?.querySelector(
       ".session-activity-turn-group-header",
     ) as HTMLButtonElement | null;
@@ -268,7 +268,7 @@ describe("WorkspaceSessionActivityPanel", () => {
     }
     fireEvent.click(olderToggle);
     expect(screen.getByRole("button", { name: /Older command/i })).toBeTruthy();
-    expect(getTurnGroup(view.container, 1)?.querySelector(".session-activity-turn-group-events")).toBeTruthy();
+    expect(getTurnGroup(container, 1)?.querySelector(".session-activity-turn-group-events")).toBeTruthy();
   });
 
   it("auto-expands a newly arrived latest turn group while older groups stay collapsed", () => {
@@ -577,6 +577,158 @@ describe("WorkspaceSessionActivityPanel", () => {
     expect(screen.queryByRole("button", { name: /Run focused test suite/i })).toBeNull();
   });
 
+  it("pins reasoning to the top of the turn group in summary view", () => {
+    const viewModel = createViewModel();
+
+    render(
+      <WorkspaceSessionActivityPanel
+        workspaceId="workspace-1"
+        viewModel={viewModel}
+        onOpenDiffPath={vi.fn()}
+        onSelectThread={vi.fn()}
+      />,
+    );
+
+    const latestGroup = getTurnGroup(document.body as unknown as HTMLElement, 0);
+    const eventTitles = Array.from(
+      latestGroup?.querySelectorAll(".session-activity-card-title") ?? [],
+    ).map((node) => node.textContent?.trim() ?? "");
+
+    expect(eventTitles[0]).toBe("messages.thinkingLabel");
+  });
+
+  it("keeps reasoning items in chronological order within the reasoning block", () => {
+    const viewModel = createViewModel();
+    viewModel.timeline = [
+      {
+        eventId: "reasoning:reason-older",
+        turnId: "turn-2",
+        turnIndex: 2,
+        threadId: "root-thread",
+        threadName: "Root session",
+        sessionRole: "root",
+        relationshipSource: "directParent",
+        kind: "reasoning",
+        occurredAt: 2,
+        summary: "Thinking · first step",
+        status: "completed",
+        reasoningPreview: "first step preview",
+      },
+      {
+        eventId: "reasoning:reason-newer",
+        turnId: "turn-2",
+        turnIndex: 2,
+        threadId: "root-thread",
+        threadName: "Root session",
+        sessionRole: "root",
+        relationshipSource: "directParent",
+        kind: "reasoning",
+        occurredAt: 4,
+        summary: "Thinking · second step",
+        status: "completed",
+        reasoningPreview: "second step preview",
+      },
+      ...createViewModel().timeline.filter((event) => event.kind !== "reasoning"),
+    ];
+
+    render(
+      <WorkspaceSessionActivityPanel
+        workspaceId="workspace-1"
+        viewModel={viewModel}
+        onOpenDiffPath={vi.fn()}
+        onSelectThread={vi.fn()}
+      />,
+    );
+
+    const latestGroup = getTurnGroup(document.body as unknown as HTMLElement, 0);
+    const reasoningButtons = Array.from(
+      latestGroup?.querySelectorAll(
+        ".session-activity-event-reasoning .session-activity-card-main",
+      ) ?? [],
+    );
+    const reasoningAriaLabels = reasoningButtons.map((node) =>
+      node.getAttribute("aria-label") ?? "",
+    );
+
+    expect(reasoningAriaLabels[0]).toContain("first step");
+    expect(reasoningAriaLabels[1]).toContain("second step");
+  });
+
+  it("supports expanding explore events when detail preview exists", () => {
+    const viewModel = createViewModel();
+    viewModel.timeline = [
+      {
+        eventId: "explore-read-preview-1",
+        turnId: "turn-1",
+        turnIndex: 1,
+        threadId: "root-thread",
+        threadName: "Root session",
+        sessionRole: "root",
+        relationshipSource: "directParent",
+        kind: "explore",
+        occurredAt: 40,
+        summary: "Read · 读取策略",
+        status: "completed",
+        explorePreview: "优先读取该目录，再回退到工作区默认 openspec。",
+        jumpTarget: { type: "thread", threadId: "root-thread" },
+      },
+    ];
+
+    const view = render(
+      <WorkspaceSessionActivityPanel
+        workspaceId="workspace-1"
+        viewModel={viewModel}
+        onOpenDiffPath={vi.fn()}
+        onSelectThread={vi.fn()}
+      />,
+    );
+
+    const previewToggle = view.container.querySelector(".session-activity-preview-toggle");
+    expect(previewToggle).toBeTruthy();
+    fireEvent.click(previewToggle as HTMLElement);
+    expect(view.container.querySelector(".session-activity-preview-text")?.textContent).toContain(
+      "优先读取该目录",
+    );
+  });
+
+  it("does not expand read explore events when the preview is a file path and opens the file instead", () => {
+    const onOpenDiffPath = vi.fn();
+    const viewModel = createViewModel();
+    viewModel.timeline = [
+      {
+        eventId: "explore-read-path-1",
+        turnId: "turn-1",
+        turnIndex: 1,
+        threadId: "root-thread",
+        threadName: "Root session",
+        sessionRole: "root",
+        relationshipSource: "directParent",
+        kind: "explore",
+        occurredAt: 40,
+        summary: "Read · Cargo.toml",
+        status: "completed",
+        explorePreview: "src-tauri/Cargo.toml",
+        jumpTarget: { type: "file", path: "src-tauri/Cargo.toml" },
+      },
+    ];
+
+    const view = render(
+      <WorkspaceSessionActivityPanel
+        workspaceId="workspace-1"
+        viewModel={viewModel}
+        onOpenDiffPath={onOpenDiffPath}
+        onSelectThread={vi.fn()}
+      />,
+    );
+
+    expect(view.container.querySelector(".session-activity-preview-toggle")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: /Read · Cargo\.toml/i }));
+
+    expect(onOpenDiffPath).toHaveBeenCalledWith("src-tauri/Cargo.toml", undefined, undefined);
+    expect(view.container.querySelector(".session-activity-preview-text")).toBeNull();
+  });
+
   it("auto-expands reasoning while running and allows manual collapse/expand", () => {
     const view = render(
       <WorkspaceSessionActivityPanel
@@ -605,6 +757,129 @@ describe("WorkspaceSessionActivityPanel", () => {
     expect(view.container.querySelector(".session-activity-event-reasoning.is-expanded")).toBeTruthy();
   });
 
+  it("renders running reasoning preview with markdown formatting", () => {
+    const viewModel = createViewModel();
+    viewModel.timeline = viewModel.timeline.map((event) =>
+      event.kind === "reasoning"
+        ? {
+            ...event,
+            reasoningPreview:
+              "当前问题：\n1. **异常处理不规范**\n2. `LogEntry` 设计混用\n\n重构计划：\n1. 新建 DTO\n2. 完善测试",
+          }
+        : event,
+    );
+
+    const view = render(
+      <WorkspaceSessionActivityPanel
+        workspaceId="workspace-1"
+        viewModel={viewModel}
+        onOpenDiffPath={vi.fn()}
+        onSelectThread={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("tab", { name: /activityPanel\.tabs\.reasoning1/i }));
+
+    expect(view.container.querySelector(".session-activity-preview-markdown.markdown-live-streaming")).toBeTruthy();
+    expect(view.container.querySelector(".session-activity-reasoning-surface")).toBeTruthy();
+    expect(view.container.querySelector(".session-activity-preview-markdown strong")?.textContent).toBe(
+      "异常处理不规范",
+    );
+    expect(view.container.querySelector(".session-activity-preview-markdown code")?.textContent).toBe(
+      "LogEntry",
+    );
+    expect(view.container.querySelectorAll(".session-activity-preview-markdown ol li")).toHaveLength(4);
+  });
+
+  it("preserves soft line breaks in running reasoning preview", () => {
+    const viewModel = createViewModel();
+    viewModel.timeline = viewModel.timeline.map((event) =>
+      event.kind === "reasoning"
+        ? {
+            ...event,
+            reasoningPreview: "第一行\n第二行\n第三行",
+          }
+        : event,
+    );
+
+    const view = render(
+      <WorkspaceSessionActivityPanel
+        workspaceId="workspace-1"
+        viewModel={viewModel}
+        onOpenDiffPath={vi.fn()}
+        onSelectThread={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("tab", { name: /activityPanel\.tabs\.reasoning1/i }));
+
+    expect(view.container.querySelectorAll(".session-activity-preview-markdown br").length).toBe(2);
+  });
+
+  it("pins running reasoning preview to the bottom while streaming updates", () => {
+    const initialViewModel = createViewModel();
+    initialViewModel.timeline = initialViewModel.timeline.map((event) =>
+      event.kind === "reasoning"
+        ? {
+            ...event,
+            reasoningPreview: "第一段\n第二段",
+          }
+        : event,
+    );
+
+    const view = render(
+      <WorkspaceSessionActivityPanel
+        workspaceId="workspace-1"
+        viewModel={initialViewModel}
+        onOpenDiffPath={vi.fn()}
+        onSelectThread={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("tab", { name: /activityPanel\.tabs\.reasoning1/i }));
+
+    const preview = view.container.querySelector(
+      ".session-activity-event-reasoning .session-activity-preview-text.is-markdown",
+    ) as HTMLDivElement | null;
+    expect(preview).toBeTruthy();
+    if (!preview) {
+      return;
+    }
+
+    let mockedScrollHeight = 360;
+    Object.defineProperty(preview, "scrollHeight", {
+      configurable: true,
+      get: () => mockedScrollHeight,
+    });
+    const scrollToSpy = vi.fn();
+    Object.defineProperty(preview, "scrollTo", {
+      configurable: true,
+      value: scrollToSpy,
+    });
+
+    mockedScrollHeight = 720;
+    const updatedViewModel = createViewModel();
+    updatedViewModel.timeline = updatedViewModel.timeline.map((event) =>
+      event.kind === "reasoning"
+        ? {
+            ...event,
+            reasoningPreview: "第一段\n第二段\n第三段\n第四段",
+          }
+        : event,
+    );
+
+    view.rerender(
+      <WorkspaceSessionActivityPanel
+        workspaceId="workspace-1"
+        viewModel={updatedViewModel}
+        onOpenDiffPath={vi.fn()}
+        onSelectThread={vi.fn()}
+      />,
+    );
+
+    expect(scrollToSpy).toHaveBeenCalledWith({ top: 720, behavior: "auto" });
+  });
+
   it("only auto-expands the latest running reasoning item", () => {
     const viewModel = createViewModel();
     viewModel.timeline.push({
@@ -622,7 +897,7 @@ describe("WorkspaceSessionActivityPanel", () => {
       reasoningPreview: "older reasoning",
     });
 
-    const view = render(
+    render(
       <WorkspaceSessionActivityPanel
         workspaceId="workspace-1"
         viewModel={viewModel}
@@ -633,10 +908,15 @@ describe("WorkspaceSessionActivityPanel", () => {
 
     fireEvent.click(screen.getByRole("tab", { name: /activityPanel\.tabs\.reasoning2/i }));
 
-    const reasoningEvents = view.container.querySelectorAll(".session-activity-event-reasoning");
-    expect(reasoningEvents).toHaveLength(2);
-    expect(reasoningEvents[0]?.classList.contains("is-expanded")).toBe(true);
-    expect(reasoningEvents[1]?.classList.contains("is-expanded")).toBe(false);
+    const latestReasoningCard = screen
+      .getByRole("button", { name: /Thinking · compare recent panel states/i })
+      .closest(".session-activity-event-reasoning");
+    const olderReasoningCard = screen
+      .getByRole("button", { name: /Thinking · older reasoning should stay collapsed/i })
+      .closest(".session-activity-event-reasoning");
+
+    expect(latestReasoningCard?.classList.contains("is-expanded")).toBe(true);
+    expect(olderReasoningCard?.classList.contains("is-expanded")).toBe(false);
   });
 
   it("auto-collapses reasoning 1s after completion", () => {
@@ -698,7 +978,8 @@ describe("WorkspaceSessionActivityPanel", () => {
       "stderr line\nstdout tail",
     );
     expect(
-      view.container.querySelectorAll(".session-activity-card-title")[2]?.textContent,
+      getEventNode(view.container, "command")?.querySelector(".session-activity-card-title")
+        ?.textContent,
     ).toBe(
       "Run focused test suite",
     );
@@ -752,7 +1033,8 @@ describe("WorkspaceSessionActivityPanel", () => {
     );
 
     expect(
-      view.container.querySelectorAll(".session-activity-card-title")[2]?.textContent,
+      getEventNode(view.container, "command")?.querySelector(".session-activity-card-title")
+        ?.textContent,
     ).toBe("activityPanel.commandCategories.test · pnpm vitest --runInBand");
   });
 
@@ -779,7 +1061,8 @@ describe("WorkspaceSessionActivityPanel", () => {
     );
 
     expect(
-      view.container.querySelectorAll(".session-activity-card-title")[2]?.textContent,
+      getEventNode(view.container, "command")?.querySelector(".session-activity-card-title")
+        ?.textContent,
     ).toBe("activityPanel.commandCategories.search · rg -n \\\"TODO\\\" src");
   });
 
@@ -892,7 +1175,8 @@ describe("WorkspaceSessionActivityPanel", () => {
       "activityPanel.waitingForOutput",
     );
     expect(
-      view.container.querySelectorAll(".session-activity-card-title")[2]?.textContent,
+      getEventNode(view.container, "command")?.querySelector(".session-activity-card-title")
+        ?.textContent,
     ).toBe(
       "activityPanel.commandPendingSummary",
     );
@@ -1001,6 +1285,32 @@ describe("WorkspaceSessionActivityPanel", () => {
 
     const toggle = screen.getByRole("button", { name: "activityPanel.liveEditPreview" });
     expect(toggle.getAttribute("aria-pressed")).toBe("true");
+    expect(toggle.className).toContain("session-activity-live-edit-toggle");
+    expect(toggle.className).toContain("is-active");
+    expect(toggle.getAttribute("title")).toBe("activityPanel.disableLiveEditPreview");
+    fireEvent.click(toggle);
+    expect(onToggleLiveEditPreview).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps live edit preview toggle in inactive state by default", () => {
+    const onToggleLiveEditPreview = vi.fn();
+
+    render(
+      <WorkspaceSessionActivityPanel
+        workspaceId="workspace-1"
+        viewModel={createViewModel()}
+        onOpenDiffPath={vi.fn()}
+        onSelectThread={vi.fn()}
+        liveEditPreviewEnabled={false}
+        onToggleLiveEditPreview={onToggleLiveEditPreview}
+      />,
+    );
+
+    const toggle = screen.getByRole("button", { name: "activityPanel.liveEditPreview" });
+    expect(toggle.getAttribute("aria-pressed")).toBe("false");
+    expect(toggle.className).toContain("session-activity-live-edit-toggle");
+    expect(toggle.className).not.toContain("is-active");
+    expect(toggle.getAttribute("title")).toBe("activityPanel.enableLiveEditPreview");
     fireEvent.click(toggle);
     expect(onToggleLiveEditPreview).toHaveBeenCalledTimes(1);
   });

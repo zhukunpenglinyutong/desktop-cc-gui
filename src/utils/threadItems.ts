@@ -301,6 +301,86 @@ function hasVisibleReasoningText(summary: string, content: string): boolean {
   return summary.trim().length > 0 || content.trim().length > 0;
 }
 
+function compactComparableReasoningSnapshotText(value: string) {
+  return value
+    .replace(/\s+/g, "")
+    .replace(/[！!]/g, "!")
+    .replace(/[？?]/g, "?")
+    .replace(/[，,]/g, ",")
+    .replace(/[。．.]/g, ".");
+}
+
+function isReasoningSnapshotDuplicate(previous: string, incoming: string) {
+  const previousCompact = compactComparableReasoningSnapshotText(previous);
+  const incomingCompact = compactComparableReasoningSnapshotText(incoming);
+  if (!previousCompact || !incomingCompact) {
+    return false;
+  }
+  if (previousCompact === incomingCompact) {
+    return true;
+  }
+  if (previousCompact.length >= 8 && incomingCompact.includes(previousCompact)) {
+    return true;
+  }
+  if (incomingCompact.length >= 8 && previousCompact.includes(incomingCompact)) {
+    return true;
+  }
+  const max = Math.min(previousCompact.length, incomingCompact.length);
+  let sharedPrefix = 0;
+  while (
+    sharedPrefix < max &&
+    previousCompact[sharedPrefix] === incomingCompact[sharedPrefix]
+  ) {
+    sharedPrefix += 1;
+  }
+  if (sharedPrefix >= 8 && sharedPrefix >= Math.floor(max * 0.72)) {
+    return true;
+  }
+  return false;
+}
+
+function findDuplicateReasoningSnapshotIndex(
+  list: ConversationItem[],
+  incoming: Extract<ConversationItem, { kind: "reasoning" }>,
+) {
+  const incomingText = (incoming.content || incoming.summary || "").trim();
+  if (!incomingText) {
+    return -1;
+  }
+  for (let index = list.length - 1; index >= 0; index -= 1) {
+    const candidate = list[index];
+    if (candidate.kind === "message" && candidate.role === "user") {
+      break;
+    }
+    if (candidate.kind !== "reasoning") {
+      continue;
+    }
+    const candidateText = (candidate.content || candidate.summary || "").trim();
+    if (!candidateText) {
+      continue;
+    }
+    if (isReasoningSnapshotDuplicate(candidateText, incomingText)) {
+      return index;
+    }
+  }
+  return -1;
+}
+
+function mergeReasoningSnapshot(
+  existing: Extract<ConversationItem, { kind: "reasoning" }>,
+  incoming: Extract<ConversationItem, { kind: "reasoning" }>,
+): Extract<ConversationItem, { kind: "reasoning" }> {
+  const existingSummary = existing.summary.trim();
+  const incomingSummary = incoming.summary.trim();
+  const existingContent = existing.content.trim();
+  const incomingContent = incoming.content.trim();
+  return {
+    ...existing,
+    summary: incomingSummary.length >= existingSummary.length ? incomingSummary : existingSummary,
+    content: incomingContent.length >= existingContent.length ? incomingContent : existingContent,
+  };
+}
+
 function truncateText(text: string, maxLength = MAX_ITEM_TEXT) {
   if (text.length <= maxLength) {
     return text;
@@ -2228,6 +2308,16 @@ export function buildItemsFromThread(thread: Record<string, unknown>) {
     turnItems.forEach((item) => {
       const converted = buildConversationItemFromThreadItem(item);
       if (converted) {
+        if (converted.kind === "reasoning") {
+          const duplicateIndex = findDuplicateReasoningSnapshotIndex(items, converted);
+          if (duplicateIndex >= 0 && items[duplicateIndex]?.kind === "reasoning") {
+            items[duplicateIndex] = mergeReasoningSnapshot(
+              items[duplicateIndex] as Extract<ConversationItem, { kind: "reasoning" }>,
+              converted,
+            );
+            return;
+          }
+        }
         items.push(converted);
       }
     });

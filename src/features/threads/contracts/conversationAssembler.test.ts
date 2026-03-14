@@ -261,6 +261,52 @@ describe("conversationAssembler", () => {
     expect(state.meta.activeTurnId).toBe("turn-1");
   });
 
+  it("keeps claude reasoning snapshots append-only instead of replacing previous content", () => {
+    let state = createState();
+    state = appendEvent(
+      state,
+      createEvent({
+        engine: "claude",
+        threadId: "claude:session-append-only",
+        eventId: "reasoning-snapshot-1",
+        operation: "itemUpdated",
+        itemKind: "reasoning",
+        item: {
+          id: "reasoning-append-only-1",
+          kind: "reasoning",
+          summary: "先读取项目结构",
+          content: "先读取 README 和 docs 目录",
+        },
+      }),
+    );
+    state = appendEvent(
+      state,
+      createEvent({
+        engine: "claude",
+        threadId: "claude:session-append-only",
+        eventId: "reasoning-snapshot-2",
+        operation: "itemUpdated",
+        itemKind: "reasoning",
+        item: {
+          id: "reasoning-append-only-1",
+          kind: "reasoning",
+          summary: "再检查关键配置",
+          content: "再检查 package.json 和脚本入口",
+        },
+      }),
+    );
+
+    const reasoning = state.items.find((item) => item.id === "reasoning-append-only-1");
+    expect(reasoning?.kind).toBe("reasoning");
+    if (reasoning?.kind === "reasoning") {
+      expect(reasoning.summary).toContain("先读取项目结构");
+      expect(reasoning.summary).toContain("再检查关键配置");
+      expect(reasoning.content).toContain("先读取 README 和 docs 目录");
+      expect(reasoning.content).toContain("再检查 package.json 和脚本入口");
+      expect(reasoning.content).not.toBe("再检查 package.json 和脚本入口");
+    }
+  });
+
   it("merges assistant delta snapshots without duplicate concatenation", () => {
     let state = createState();
     state = appendEvent(
