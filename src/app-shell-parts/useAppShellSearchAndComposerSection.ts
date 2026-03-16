@@ -1,10 +1,8 @@
 // @ts-nocheck
-import { useCallback, useEffect } from "react";
 import { useGlobalSearchShortcut } from "../features/app/hooks/useGlobalSearchShortcut";
 import { useInterruptShortcut } from "../features/app/hooks/useInterruptShortcut";
 import { usePullRequestComposer } from "../features/git/hooks/usePullRequestComposer";
 import { recordSearchResultOpen } from "../features/search/ranking/recencyStore";
-import type { SearchContentFilter, SearchResult } from "../features/search/types";
 import { resolveSearchScopeOnOpen } from "../features/search/utils/scope";
 import { toggleSearchContentFilters } from "../features/search/utils/contentFilters";
 

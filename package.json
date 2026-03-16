@@ -5,7 +5,6 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "dev:port:check": "node scripts/ensure-dev-port.mjs --port 1420 --auto-kill-workspace-vite",
     "build": "tsc && vite build",
     "build:appimage": "NO_STRIP=1 tauri build --bundles appimage",
     "build:mac-arm64": "node scripts/build-platform.mjs mac-arm64",
@@ -32,10 +31,10 @@
     "typecheck": "tsc --noEmit",
     "preview": "vite preview",
     "tauri": "tauri",
-    "tauri:dev:hot": "npm run dev:port:check && tauri dev",
-    "tauri:dev": "npm run dev:port:check && npm run doctor:strict && tauri dev",
+    "tauri:dev:hot": "tauri dev",
+    "tauri:dev": "npm run doctor:strict && tauri dev",
     "tauri:build": "npm run doctor:strict && tauri build",
-    "tauri:dev:win": "npm run dev:port:check && npm run doctor:win && tauri dev --config src-tauri/tauri.windows.conf.json",
+    "tauri:dev:win": "npm run doctor:win && tauri dev --config src-tauri/tauri.windows.conf.json",
     "tauri:build:win": "npm run doctor:win && tauri build --config src-tauri/tauri.windows.conf.json"
   },
   "dependencies": {

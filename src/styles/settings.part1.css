@@ -2798,10 +2798,3 @@
   padding: 6px 16px;
   background: var(--vendor-button-primary-soft, transparent);
   border: 1px solid var(--vendor-button-primary-border, var(--border-muted));
-  border-radius: 6px;
-  color: var(--vendor-button-primary, var(--text-primary));
-  font-size: 12px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
-}

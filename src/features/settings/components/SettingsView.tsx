@@ -1,8 +1,6 @@
 // @ts-nocheck
 import { useCallback, useEffect, useMemo, useState } from "react";
-import type { ChangeEvent, KeyboardEvent } from "react";
 import { useTranslation } from "react-i18next";
-import type { DropResult } from "@hello-pangea/dnd";
 import { Switch } from "@/components/ui/switch";
 import { Separator } from "@/components/ui/separator";
 import { Button } from "@/components/ui/button";
@@ -1075,7 +1073,7 @@ export function SettingsView({
   };
 
   const handleSelectBasicFontSizeLevel = useCallback(
-    (event: ChangeEvent<HTMLSelectElement>) => {
+    (event: React.ChangeEvent<HTMLSelectElement>) => {
       const nextValue = event.target.value;
       if (nextValue === "custom") {
         return;
@@ -1164,7 +1162,7 @@ export function SettingsView({
   );
 
   const handleUserMsgColorPickerChange = useCallback(
-    (event: ChangeEvent<HTMLInputElement>) => {
+    (event: React.ChangeEvent<HTMLInputElement>) => {
       const nextColor = normalizeHexColor(event.target.value);
       setUserMsgHexDraft(nextColor);
       void handleSaveUserMsgColor(nextColor);
@@ -1173,7 +1171,7 @@ export function SettingsView({
   );
 
   const handleUserMsgHexInputChange = useCallback(
-    (event: ChangeEvent<HTMLInputElement>) => {
+    (event: React.ChangeEvent<HTMLInputElement>) => {
       const nextValue = event.target.value;
       setUserMsgHexDraft(nextValue);
       if (HEX_COLOR_PATTERN.test(nextValue)) {
@@ -1428,7 +1426,7 @@ export function SettingsView({
   };
 
   const handleShortcutKeyDown = (
-    event: KeyboardEvent<HTMLInputElement>,
+    event: React.KeyboardEvent<HTMLInputElement>,
     key: ShortcutSettingKey,
   ) => {
     if (event.key === "Tab" && key !== "composerCollaborationShortcut") {

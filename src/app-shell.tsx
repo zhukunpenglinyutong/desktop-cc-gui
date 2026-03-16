@@ -165,13 +165,6 @@ import { useAppShellSections } from "./app-shell-parts/useAppShellSections";
 import { useAppShellLayoutNodesSection } from "./app-shell-parts/useAppShellLayoutNodesSection";
 import { renderAppShell } from "./app-shell-parts/renderAppShell";
 
-const GIT_HISTORY_PANEL_MIN_HEIGHT = 260;
-const GIT_HISTORY_PANEL_MIN_TOP_CLEARANCE = 44;
-
-function getViewportHeight(): number {
-  return typeof window === "undefined" ? 0 : window.innerHeight;
-}
-
 const SettingsView = lazy(() =>
   import("./features/settings/components/SettingsView").then((module) => ({
     default: module.SettingsView,
@@ -2184,10 +2177,12 @@ export function AppShell() {
     };
   }, []);
 
-  const activePath = activeWorkspace?.path ?? null;
   const activeWorkspaceKanbanTasks = useMemo(
-    () => (activePath ? kanbanTasks.filter((task) => task.workspaceId === activePath) : []),
-    [activePath, kanbanTasks],
+    () => {
+      const activePath = activeWorkspace?.path;
+      return activePath ? kanbanTasks.filter((task) => task.workspaceId === activePath) : [];
+    },
+    [activeWorkspace, kanbanTasks],
   );
   const activeWorkspaceThreads = useMemo(
     () => (activeWorkspaceId ? threadsByWorkspace[activeWorkspaceId] ?? [] : []),
@@ -2750,102 +2745,6 @@ export function AppShell() {
     t,
   ]);
 
-  // Compatibility placeholders for legacy context keys kept in the giant render context object.
-  // These names are intentionally undefined unless reintroduced by future refactors.
-  const {
-    agent,
-    appRoot,
-    cancelled,
-    defaultModel,
-    delta,
-    dragHandle,
-    effectiveRuntimeMode,
-    effectiveUiMode,
-    engineSelection,
-    entry,
-    existing,
-    filePassword,
-    finishedByAgentUpdate,
-    finishedByDuration,
-    firstAnswer,
-    flushDraggedHeight,
-    force,
-    group,
-    groupId,
-    handlePointerMove,
-    handlePointerUp,
-    handleResize,
-    isProcessingNow,
-    isValid,
-    key,
-    label,
-    lastAgent,
-    lastAgentTimestamp,
-    lastDurationMs,
-    lastFrameAt,
-    latestClampedHeight,
-    latestRawHeight,
-    latestSnippet,
-    main,
-    mainWidth,
-    mappedMode,
-    maxHeight,
-    minHeight,
-    monitor,
-    next,
-    nextDefault,
-    nextFiles,
-    nextHeight,
-    nextSettings,
-    normalized,
-    path,
-    payload,
-    pointerId,
-    prevFiles,
-    previous,
-    previousAgentTimestamp,
-    previousDurationMs,
-    previousTracker,
-    rafId,
-    requestId,
-    requestThreadId,
-    response,
-    result,
-    resumePrompt,
-    runtimeMode,
-    scheduleDraggedHeightFlush,
-    selected,
-    selectedAnswer,
-    selectedPath,
-    selection,
-    sessions,
-    shouldForceResumeInCode,
-    shouldImplementPlan,
-    snapshot,
-    startHeight,
-    startY,
-    stored,
-    target,
-    targetThread,
-    targetWorkspaceIds,
-    threadChanged,
-    threadId,
-    threadMode,
-    threads,
-    title,
-    trimmed,
-    uiMode,
-    uncachedWorkspaceIds,
-    uniquePaths,
-    updatedAt,
-    validModel,
-    viewportHeight,
-    wasProcessing,
-    workspace,
-    workspaceId,
-    workspacePath,
-  } = {} as any;
-
   const appShellContext = {
     GitHubPanelData, RECENT_THREAD_LIMIT, SettingsView, accessMode, accountByWorkspace, accountSwitching, activeAccount, activeDiffError,
     activeDiffLoading, activeDiffs, activeDraft, activeEditorFilePath, activeEditorLineRange, activeEngine, activeGitRoot, activeImages,
@@ -2943,7 +2842,6 @@ export function AppShell() {
     ...appShellContext,
     handleComposerSend: searchAndComposerSection.handleComposerSend,
     isPullRequestComposer: searchAndComposerSection.isPullRequestComposer,
-    composerSendLabel: searchAndComposerSection.composerSendLabel,
     resetPullRequestSelection: searchAndComposerSection.resetPullRequestSelection,
     handleToggleSearchPalette: searchAndComposerSection.handleToggleSearchPalette,
     handleComposerQueue: searchAndComposerSection.handleComposerQueue,

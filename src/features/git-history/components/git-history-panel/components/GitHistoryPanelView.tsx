@@ -865,7 +865,7 @@ export function renderGitHistoryPanelView(scope: any) {
                       paddingLeft: `${treeIndentPx}px`,
                       ["--git-tree-indent-x" as string]: `${Math.max(treeGuideDepth * 14 - 7, 0)}px`,
                       ["--git-tree-line-opacity" as string]: getTreeLineOpacity(treeGuideDepth),
-                    } as Record<string, string>;
+                    } as CSSProperties;
                     if (item.type === "dir") {
                       return (
                         <ActionSurface

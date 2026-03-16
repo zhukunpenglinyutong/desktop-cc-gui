@@ -242,7 +242,7 @@ export function renderGitHistoryPanelDialogs(scope: any) {
                 </button>
                 {pullOptionsMenuOpen ? (
                   <div className="git-history-toolbar-confirm-options-menu">
-                    {(["--rebase", "--ff-only", "--no-ff", "--squash"] as string[]).map((option) => (
+                    {(["--rebase", "--ff-only", "--no-ff", "--squash"] as GitPullStrategyOption[]).map((option) => (
                       <button
                         key={option}
                         type="button"
@@ -643,7 +643,7 @@ export function renderGitHistoryPanelDialogs(scope: any) {
                                   paddingLeft: `${treeIndentPx}px`,
                                   ["--git-tree-indent-x" as string]: `${Math.max(treeGuideDepth * 14 - 7, 0)}px`,
                                   ["--git-tree-line-opacity" as string]: getTreeLineOpacity(treeGuideDepth),
-                                } as Record<string, string>;
+                                } as CSSProperties;
                                 if (item.type === "dir") {
                                   return (
                                     <ActionSurface

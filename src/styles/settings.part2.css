@@ -1,3 +1,11 @@
+  border-radius: 6px;
+  color: var(--vendor-button-primary, var(--text-primary));
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+
 .vendor-btn-cancel:hover {
   border-color: var(--vendor-button-primary, var(--text-accent));
   background: var(--vendor-button-primary, var(--text-accent));

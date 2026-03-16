@@ -9,7 +9,7 @@ import {
 import { homeDir } from "@tauri-apps/api/path";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import { ensureWorkspacePathDir } from "../services/tauri";
-import { resolveKanbanThreadCreationStrategy, type KanbanContextMode } from "../features/kanban/utils/contextMode";
+import { resolveKanbanThreadCreationStrategy } from "../features/kanban/utils/contextMode";
 import { deriveKanbanTaskTitle } from "../features/kanban/utils/taskTitle";
 import { useSoloMode } from "../features/layout/hooks/useSoloMode";
 import { useLiveEditPreview } from "../features/live-edit-preview/hooks/useLiveEditPreview";
@@ -18,9 +18,6 @@ import { useWorkspaceCycling } from "../features/app/hooks/useWorkspaceCycling";
 import { useAppMenuEvents } from "../features/app/hooks/useAppMenuEvents";
 import { useMenuAcceleratorController } from "../features/app/hooks/useMenuAcceleratorController";
 import { useMenuLocalization } from "../features/app/hooks/useMenuLocalization";
-import type { WorkspaceHomeDeleteResult } from "../features/workspaces/components/WorkspaceHome";
-import type { KanbanTask } from "../features/kanban/types";
-import type { EngineType, MessageSendOptions, WorkspaceInfo } from "../types";
 
 export function useAppShellSections(ctx: any) {
   const {
@@ -102,7 +99,6 @@ export function useAppShellSections(ctx: any) {
     getPinTimestamp,
     activeWorkspaceIdRef,
     activeThreadIdRef,
-    activeThreadId,
     activeWorkspaceRef,
     baseWorkspaceRef,
     handleAddWorkspace,
@@ -126,12 +122,6 @@ export function useAppShellSections(ctx: any) {
     setSelectedPullRequest,
     setSelectedCommitSha,
     setDiffSource,
-    setWorkspaceHomeWorkspaceId,
-    selectedKanbanTaskId,
-    isTablet,
-    tabletTab,
-    isWorkspaceDropActive,
-    composerSendLabel,
   } = ctx;
 
   const [selectedComposerKanbanPanelId, setSelectedComposerKanbanPanelId] =
@@ -1315,7 +1305,6 @@ export function useAppShellSections(ctx: any) {
     isSoloMode,
     toggleSoloMode,
     sidebarToggleProps,
-    markLiveEditPreviewManualNavigation,
     handleOpenWorkspaceFile,
     handleActivateWorkspaceFileTab,
     handleCloseWorkspaceFileTab,

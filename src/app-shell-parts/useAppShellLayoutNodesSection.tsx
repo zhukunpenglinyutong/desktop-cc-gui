@@ -1,8 +1,6 @@
 // @ts-nocheck
-import { ask } from "@tauri-apps/plugin-dialog";
 import { useLayoutNodes } from "../features/layout/hooks/useLayoutNodes";
 import { MainHeaderActions } from "../features/app/components/MainHeaderActions";
-import { OPENCODE_VARIANT_OPTIONS } from "./utils";
 
 export function useAppShellLayoutNodesSection(ctx: any) {
   const {
@@ -57,7 +55,7 @@ export function useAppShellLayoutNodesSection(ctx: any) {
     kanbanDeleteTask, kanbanPanels, kanbanReorderTask, kanbanTasks, kanbanUpdatePanel, kanbanUpdateTask, kanbanViewState, key,
     label, lastAgent, lastAgentMessageByThread, lastAgentTimestamp, lastCodexModeSyncThreadRef, lastDurationMs, lastFrameAt, latestAgentRuns,
     latestClampedHeight, latestRawHeight, latestSnippet, launchScriptState, launchScriptsState, listThreadsForWorkspace, listThreadsForWorkspaceTracked, liveEditPreviewEnabled,
-    loadOlderThreadsForWorkspace, lockLiveSessions, main, mainWidth, mappedMode, markLiveEditPreviewManualNavigation, markWorkspaceConnected, maxHeight, minHeight,
+    loadOlderThreadsForWorkspace, lockLiveSessions, main, mainWidth, mappedMode, markWorkspaceConnected, maxHeight, minHeight,
     models, monitor, movePrompt, moveWorkspaceGroup, navigateToThread, next, nextDefault, nextDraft,
     nextFiles, nextHeight, nextScope, nextSettings, normalizePath, normalized, onCloseTerminal, onDebugPanelResizeStart,
     onGitHistoryPanelResizeStart, onKanbanConversationResizeStart, onNewTerminal, onPlanPanelResizeStart, onRightPanelResizeStart, onSelectTerminal, onSidebarResizeStart, onTerminalPanelResizeStart,
@@ -400,7 +398,7 @@ export function useAppShellLayoutNodesSection(ctx: any) {
     onOpenFile: handleOpenWorkspaceFile,
     onExitEditor: handleExitWorkspaceEditor,
     onExitDiff: () => {
-      markLiveEditPreviewManualNavigation?.();
+      markLiveEditPreviewManualNavigation();
       setCenterMode("chat");
       setSelectedDiffPath(null);
     },
