@@ -233,8 +233,13 @@ fn load_codex_session_entries(
     sessions_roots: &[PathBuf],
 ) -> Result<Vec<Value>, String> {
     let session_path = find_codex_session_file(session_id, workspace_path, sessions_roots)?;
-    let file = File::open(&session_path)
-        .map_err(|err| format!("failed to open codex session file {}: {}", session_path.display(), err))?;
+    let file = File::open(&session_path).map_err(|err| {
+        format!(
+            "failed to open codex session file {}: {}",
+            session_path.display(),
+            err
+        )
+    })?;
     let reader = BufReader::new(file);
     let mut entries = Vec::new();
     for line in reader.lines() {
@@ -300,8 +305,13 @@ fn codex_session_file_matches_session_id(path: &Path, session_id: &str) -> Resul
         return Ok(true);
     }
 
-    let file = File::open(path)
-        .map_err(|err| format!("failed to open codex session file {}: {}", path.display(), err))?;
+    let file = File::open(path).map_err(|err| {
+        format!(
+            "failed to open codex session file {}: {}",
+            path.display(),
+            err
+        )
+    })?;
     let reader = BufReader::new(file);
     for line in reader.lines() {
         let line = line.map_err(|err| err.to_string())?;
@@ -312,7 +322,10 @@ fn codex_session_file_matches_session_id(path: &Path, session_id: &str) -> Resul
             Ok(value) => value,
             Err(_) => continue,
         };
-        let entry_type = value.get("type").and_then(|value| value.as_str()).unwrap_or("");
+        let entry_type = value
+            .get("type")
+            .and_then(|value| value.as_str())
+            .unwrap_or("");
         if entry_type != "session_meta" {
             continue;
         }
@@ -332,8 +345,13 @@ fn codex_session_file_matches_workspace(
     path: &Path,
     workspace_path: &Path,
 ) -> Result<Option<bool>, String> {
-    let file = File::open(path)
-        .map_err(|err| format!("failed to open codex session file {}: {}", path.display(), err))?;
+    let file = File::open(path).map_err(|err| {
+        format!(
+            "failed to open codex session file {}: {}",
+            path.display(),
+            err
+        )
+    })?;
     let reader = BufReader::new(file);
 
     for line in reader.lines() {
@@ -345,7 +363,10 @@ fn codex_session_file_matches_workspace(
             Ok(value) => value,
             Err(_) => continue,
         };
-        let entry_type = value.get("type").and_then(|value| value.as_str()).unwrap_or("");
+        let entry_type = value
+            .get("type")
+            .and_then(|value| value.as_str())
+            .unwrap_or("");
         if entry_type != "session_meta" && entry_type != "turn_context" {
             continue;
         }
@@ -1432,9 +1453,37 @@ fn extract_cwd(value: &Value) -> Option<String> {
         .map(|cwd| cwd.to_string())
 }
 
+#[cfg(windows)]
+fn normalize_workspace_match_path(value: &str) -> String {
+    value
+        .trim()
+        .replace('\\', "/")
+        .trim_end_matches('/')
+        .to_ascii_lowercase()
+}
+
 fn path_matches_workspace(cwd: &str, workspace_path: &Path) -> bool {
-    let cwd_path = Path::new(cwd);
-    cwd_path == workspace_path || cwd_path.starts_with(workspace_path)
+    #[cfg(windows)]
+    {
+        let cwd_path = normalize_workspace_match_path(cwd);
+        let workspace = normalize_workspace_match_path(&workspace_path.to_string_lossy());
+        if cwd_path.is_empty() || workspace.is_empty() {
+            return false;
+        }
+        if cwd_path == workspace {
+            return true;
+        }
+        return cwd_path
+            .strip_prefix(&workspace)
+            .map(|rest| rest.starts_with('/'))
+            .unwrap_or(false);
+    }
+
+    #[cfg(not(windows))]
+    {
+        let cwd_path = Path::new(cwd);
+        cwd_path == workspace_path || cwd_path.starts_with(workspace_path)
+    }
 }
 
 fn make_day_keys(days: u32) -> Vec<String> {
@@ -2045,8 +2094,14 @@ mod tests {
             .expect("load session entries");
 
         assert_eq!(entries.len(), 2);
-        assert_eq!(entries[0]["type"], Value::String("session_meta".to_string()));
-        assert_eq!(entries[1]["payload"]["type"], Value::String("reasoning".to_string()));
+        assert_eq!(
+            entries[0]["type"],
+            Value::String("session_meta".to_string())
+        );
+        assert_eq!(
+            entries[1]["payload"]["type"],
+            Value::String("reasoning".to_string())
+        );
     }
 
     #[test]
@@ -2074,6 +2129,24 @@ mod tests {
             entries[0]["payload"]["id"],
             Value::String("session-alpha".to_string())
         );
-        assert_eq!(entries[1]["payload"]["type"], Value::String("reasoning".to_string()));
+        assert_eq!(
+            entries[1]["payload"]["type"],
+            Value::String("reasoning".to_string())
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn path_matches_workspace_handles_drive_case_and_separator_variants() {
+        let workspace = Path::new("C:\\Users\\Chen\\project");
+        assert!(path_matches_workspace("c:/users/chen/project", workspace));
+        assert!(path_matches_workspace(
+            "c:\\users\\chen\\project\\src",
+            workspace
+        ));
+        assert!(!path_matches_workspace(
+            "c:\\users\\chen\\project-other",
+            workspace
+        ));
     }
 }

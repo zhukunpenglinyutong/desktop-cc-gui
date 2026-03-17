@@ -77,6 +77,16 @@ fn build_thread_list_empty_response() -> Value {
     })
 }
 
+fn thread_list_response_is_empty(response: &Value) -> bool {
+    response
+        .get("result")
+        .and_then(|result| result.get("data"))
+        .or_else(|| response.get("data"))
+        .and_then(Value::as_array)
+        .map(|items| items.is_empty())
+        .unwrap_or(true)
+}
+
 fn build_local_codex_session_preview(summary: Option<String>, model: String) -> String {
     let preview = summary
         .map(|value| value.trim().to_string())
@@ -489,7 +499,22 @@ pub(crate) async fn list_threads(
     )
     .await
     {
-        Ok(response) => Ok(response),
+        Ok(response) => {
+            if cursor.is_none() && thread_list_response_is_empty(&response) {
+                if let Some(fallback) =
+                    build_local_codex_thread_fallback_response(&state, &workspace_id, limit).await
+                {
+                    if !thread_list_response_is_empty(&fallback) {
+                        log::info!(
+                            "[list_threads] Using local session fallback after empty list for workspace {}",
+                            workspace_id
+                        );
+                        return Ok(fallback);
+                    }
+                }
+            }
+            Ok(response)
+        }
         Err(error) => {
             if cursor.is_none() && error.contains("workspace not connected") {
                 if let Some(fallback) =
