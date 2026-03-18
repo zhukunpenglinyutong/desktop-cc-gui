@@ -89,7 +89,20 @@ const CODEX_BACKGROUND_HELPER_PROMPT_PREFIXES = [
 ] as const;
 
 function normalizeComparableWorkspacePath(path: string): string {
-  return normalizeRootPath(path).trim();
+  return normalizeWindowsPathForComparison(normalizeRootPath(path).trim());
+}
+
+function normalizeWindowsPathForComparison(path: string): string {
+  if (!path) {
+    return path;
+  }
+  if (path.startsWith("//?/UNC/")) {
+    return `//${path.slice("//?/UNC/".length)}`;
+  }
+  if (path.startsWith("//?/")) {
+    return path.slice("//?/".length);
+  }
+  return path;
 }
 
 function buildWorkspacePathVariants(path: string): Set<string> {
@@ -108,6 +121,9 @@ function buildWorkspacePathVariants(path: string): Set<string> {
     variants.add(`${normalized[0].toLowerCase()}${normalized.slice(1)}`);
     variants.add(normalized.toLowerCase());
   }
+  if (normalized.startsWith("//")) {
+    variants.add(normalized.toLowerCase());
+  }
   return variants;
 }
 
@@ -118,8 +134,16 @@ function matchesWorkspacePath(threadCwd: string, workspacePath: string): boolean
   }
   const threadVariants = buildWorkspacePathVariants(threadCwd);
   for (const candidate of threadVariants) {
-    if (workspaceVariants.has(candidate)) {
-      return true;
+    for (const workspaceCandidate of workspaceVariants) {
+      if (candidate === workspaceCandidate) {
+        return true;
+      }
+      if (
+        candidate.startsWith(workspaceCandidate) &&
+        candidate.charAt(workspaceCandidate.length) === "/"
+      ) {
+        return true;
+      }
     }
   }
   return false;

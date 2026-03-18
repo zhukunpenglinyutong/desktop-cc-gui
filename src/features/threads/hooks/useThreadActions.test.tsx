@@ -816,6 +816,94 @@ describe("useThreadActions", () => {
     });
   });
 
+  it("matches Windows workspace path when thread cwd uses extended-length prefix", async () => {
+    const windowsWorkspace: WorkspaceInfo = {
+      ...workspace,
+      id: "ws-win",
+      path: "C:\\Users\\Chen\\project",
+    };
+    vi.mocked(listThreads).mockResolvedValue({
+      result: {
+        data: [
+          {
+            id: "thread-win-1",
+            cwd: "\\\\?\\C:\\Users\\Chen\\project\\src",
+            preview: "Windows extended path",
+            updated_at: 6200,
+          },
+        ],
+        nextCursor: null,
+      },
+    });
+    vi.mocked(getThreadTimestamp).mockImplementation((thread) => {
+      const value = (thread as Record<string, unknown>).updated_at as number;
+      return value ?? 0;
+    });
+
+    const { result, dispatch } = renderActions();
+
+    await act(async () => {
+      await result.current.listThreadsForWorkspace(windowsWorkspace);
+    });
+
+    expect(dispatch).toHaveBeenCalledWith({
+      type: "setThreads",
+      workspaceId: "ws-win",
+      threads: [
+        {
+          id: "thread-win-1",
+          name: "Windows extended path",
+          updatedAt: 6200,
+          engineSource: "codex",
+        },
+      ],
+    });
+  });
+
+  it("matches Windows UNC workspace path when thread cwd uses \\?\\UNC prefix", async () => {
+    const uncWorkspace: WorkspaceInfo = {
+      ...workspace,
+      id: "ws-unc",
+      path: "\\\\SERVER\\Share\\project",
+    };
+    vi.mocked(listThreads).mockResolvedValue({
+      result: {
+        data: [
+          {
+            id: "thread-unc-1",
+            cwd: "\\\\?\\UNC\\server\\share\\project\\src",
+            preview: "UNC extended path",
+            updated_at: 6300,
+          },
+        ],
+        nextCursor: null,
+      },
+    });
+    vi.mocked(getThreadTimestamp).mockImplementation((thread) => {
+      const value = (thread as Record<string, unknown>).updated_at as number;
+      return value ?? 0;
+    });
+
+    const { result, dispatch } = renderActions();
+
+    await act(async () => {
+      await result.current.listThreadsForWorkspace(uncWorkspace);
+    });
+
+    expect(dispatch).toHaveBeenCalledWith({
+      type: "setThreads",
+      workspaceId: "ws-unc",
+      threads: [
+        {
+          id: "thread-unc-1",
+          name: "UNC extended path",
+          updatedAt: 6300,
+          engineSource: "codex",
+        },
+      ],
+    });
+  });
+
   it("filters archived and Codex helper thread entries while keeping vscode sessions", async () => {
     vi.mocked(listThreads).mockResolvedValue({
       result: {

@@ -1455,11 +1455,13 @@ fn extract_cwd(value: &Value) -> Option<String> {
 
 #[cfg(windows)]
 fn normalize_workspace_match_path(value: &str) -> String {
-    value
-        .trim()
-        .replace('\\', "/")
-        .trim_end_matches('/')
-        .to_ascii_lowercase()
+    let mut normalized = value.trim().replace('\\', "/");
+    if let Some(stripped) = normalized.strip_prefix("//?/UNC/") {
+        normalized = format!("//{stripped}");
+    } else if let Some(stripped) = normalized.strip_prefix("//?/") {
+        normalized = stripped.to_string();
+    }
+    normalized.trim_end_matches('/').to_ascii_lowercase()
 }
 
 fn path_matches_workspace(cwd: &str, workspace_path: &Path) -> bool {
@@ -2144,8 +2146,26 @@ mod tests {
             "c:\\users\\chen\\project\\src",
             workspace
         ));
+        assert!(path_matches_workspace(
+            "\\\\?\\C:\\Users\\Chen\\project\\src",
+            workspace
+        ));
         assert!(!path_matches_workspace(
             "c:\\users\\chen\\project-other",
+            workspace
+        ));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn path_matches_workspace_handles_unc_extended_prefix() {
+        let workspace = Path::new("\\\\SERVER\\Share\\project");
+        assert!(path_matches_workspace(
+            "\\\\?\\UNC\\server\\share\\project\\src",
+            workspace
+        ));
+        assert!(!path_matches_workspace(
+            "\\\\?\\UNC\\server\\share\\project-other",
             workspace
         ));
     }

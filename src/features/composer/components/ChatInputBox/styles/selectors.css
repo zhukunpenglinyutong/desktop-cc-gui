@@ -413,6 +413,53 @@
   visibility: visible;
 }
 
+/* Win + light: keep selector surfaces opaque and text contrast stable */
+:root[data-theme="light"] .app.windows-desktop .selector-dropdown {
+  background: #ffffff;
+  border-color: #d8dee9;
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.16);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+:root[data-theme="light"] .app.windows-desktop .selector-option {
+  color: #111827;
+}
+
+:root[data-theme="light"] .app.windows-desktop .selector-option .model-description,
+:root[data-theme="light"] .app.windows-desktop .selector-option .mode-description,
+:root[data-theme="light"] .app.windows-desktop .selector-dropdown-title {
+  color: #667084;
+}
+
+:root[data-theme="light"] .app.windows-desktop .selector-option.disabled {
+  opacity: 0.68;
+}
+
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme]) .app.windows-desktop .selector-dropdown {
+    background: #ffffff;
+    border-color: #d8dee9;
+    box-shadow: 0 12px 28px rgba(15, 23, 42, 0.16);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+
+  :root:not([data-theme]) .app.windows-desktop .selector-option {
+    color: #111827;
+  }
+
+  :root:not([data-theme]) .app.windows-desktop .selector-option .model-description,
+  :root:not([data-theme]) .app.windows-desktop .selector-option .mode-description,
+  :root:not([data-theme]) .app.windows-desktop .selector-dropdown-title {
+    color: #667084;
+  }
+
+  :root:not([data-theme]) .app.windows-desktop .selector-option.disabled {
+    opacity: 0.68;
+  }
+}
+
 /* ============================================================
    Dark Mode Styles
    ============================================================ */

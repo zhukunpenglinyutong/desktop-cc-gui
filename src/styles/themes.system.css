@@ -105,6 +105,29 @@
     --surface-popover: rgba(255, 255, 255, 0.995);
   }
 
+  /* Win + system-light: avoid washed-out acrylic blending in WebView2 dropdown/popover surfaces */
+  :root:not([data-theme]) .app.windows-desktop {
+    --surface-sidebar: rgba(255, 255, 255, 0.94);
+    --surface-topbar: rgba(255, 255, 255, 0.96);
+    --surface-right-panel: rgba(255, 255, 255, 0.94);
+    --surface-composer: rgba(255, 255, 255, 0.96);
+    --surface-card: rgba(255, 255, 255, 0.9);
+    --surface-card-strong: rgba(255, 255, 255, 0.97);
+    --surface-item: rgba(255, 255, 255, 0.9);
+    --surface-popover: #ffffff;
+    --dropdown-bg: #ffffff;
+    --dropdown-border: #d8dee9;
+    --dropdown-hover-color: #edf1f7;
+    --dropdown-divider-color: #e3e9f2;
+    --dropdown-title-color: #667084;
+    --dropdown-description-color: #667084;
+    --dropdown-add-bg: #eaf0f7;
+    --dropdown-add-hover-bg: #e1e8f2;
+    --dropdown-add-text-color: #1f2937;
+    --dropdown-shadow-color: rgba(15, 23, 42, 0.16);
+    --dropdown-text-color: #111827;
+  }
+
 
   /* Kanban - softer borders in system light mode */
   :root:not([data-theme]) .kanban-column {
