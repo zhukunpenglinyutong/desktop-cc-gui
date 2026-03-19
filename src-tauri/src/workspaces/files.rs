@@ -750,6 +750,51 @@ fn normalize_external_spec_root(spec_root: &str) -> Result<PathBuf, String> {
     Ok(canonical)
 }
 
+struct ResolvedExternalSpecRoot {
+    root: PathBuf,
+    exists: bool,
+}
+
+fn resolve_external_spec_root(spec_root: &str) -> Result<ResolvedExternalSpecRoot, String> {
+    let custom_root = normalize_external_spec_root(spec_root)?;
+    let file_name = custom_root
+        .file_name()
+        .and_then(|value| value.to_str())
+        .unwrap_or_default();
+    if file_name.eq_ignore_ascii_case("openspec") {
+        return Ok(ResolvedExternalSpecRoot {
+            root: custom_root,
+            exists: true,
+        });
+    }
+
+    let nested = custom_root.join("openspec");
+    if nested.is_dir() {
+        let canonical_nested = nested
+            .canonicalize()
+            .map_err(|err| format!("Failed to resolve custom spec root: {err}"))?;
+        return Ok(ResolvedExternalSpecRoot {
+            root: canonical_nested,
+            exists: true,
+        });
+    }
+
+    // Backward compatibility: older clients may pass the openspec root directly
+    // even if directory name is not literally `openspec`.
+    let legacy_root = custom_root.join("changes").is_dir() && custom_root.join("specs").is_dir();
+    if legacy_root {
+        return Ok(ResolvedExternalSpecRoot {
+            root: custom_root,
+            exists: true,
+        });
+    }
+
+    Ok(ResolvedExternalSpecRoot {
+        root: nested,
+        exists: false,
+    })
+}
+
 fn resolve_external_spec_logical_path(
     spec_root: &Path,
     logical_path: &str,
@@ -781,9 +826,18 @@ pub(crate) fn list_external_spec_tree_inner(
     spec_root: &str,
     max_files: usize,
 ) -> Result<WorkspaceFilesResponse, String> {
-    let root = normalize_external_spec_root(spec_root)?;
+    let resolved = resolve_external_spec_root(spec_root)?;
     let mut files = Vec::new();
     let mut directories = vec!["openspec".to_string()];
+    if !resolved.exists {
+        return Ok(WorkspaceFilesResponse {
+            files,
+            directories,
+            gitignored_files: Vec::new(),
+            gitignored_directories: Vec::new(),
+        });
+    }
+    let root = resolved.root;
 
     let walker = WalkBuilder::new(&root)
         .hidden(false)
@@ -842,7 +896,15 @@ pub(crate) fn read_external_spec_file_inner(
     spec_root: &str,
     logical_path: &str,
 ) -> Result<ExternalSpecFileResponse, String> {
-    let root = normalize_external_spec_root(spec_root)?;
+    let resolved = resolve_external_spec_root(spec_root)?;
+    if !resolved.exists {
+        return Ok(ExternalSpecFileResponse {
+            exists: false,
+            content: String::new(),
+            truncated: false,
+        });
+    }
+    let root = resolved.root;
     let candidate = resolve_external_spec_logical_path(&root, logical_path)?;
     if !candidate.exists() {
         return Ok(ExternalSpecFileResponse {
@@ -894,7 +956,8 @@ pub(crate) fn write_external_spec_file_inner(
     if content.len() > MAX_WORKSPACE_FILE_BYTES as usize {
         return Err("File content exceeds maximum allowed size".to_string());
     }
-    let root = normalize_external_spec_root(spec_root)?;
+    let resolved = resolve_external_spec_root(spec_root)?;
+    let root = resolved.root;
     let candidate = resolve_external_spec_logical_path(&root, logical_path)?;
     if candidate == root {
         return Err("Cannot write to external spec root directory directly.".to_string());
@@ -912,10 +975,13 @@ pub(crate) fn write_external_spec_file_inner(
     if let Some(parent) = candidate.parent() {
         std::fs::create_dir_all(parent)
             .map_err(|err| format!("Failed to create external spec parent directory: {err}"))?;
+        let canonical_root = root
+            .canonicalize()
+            .map_err(|err| format!("Failed to resolve external spec root: {err}"))?;
         let canonical_parent = parent
             .canonicalize()
             .map_err(|err| format!("Failed to resolve external spec parent directory: {err}"))?;
-        if !canonical_parent.starts_with(&root) {
+        if !canonical_parent.starts_with(&canonical_root) {
             return Err("Invalid external spec file path.".to_string());
         }
     } else {
@@ -1152,7 +1218,8 @@ fn copy_dir_recursive(src: &std::path::Path, dst: &std::path::Path) -> Result<()
 mod tests {
     use super::{
         compile_search_regex, create_workspace_directory_inner, is_special_directory_path,
-        list_workspace_directory_children_inner, list_workspace_files_inner,
+        list_external_spec_tree_inner, list_workspace_directory_children_inner,
+        list_workspace_files_inner,
         normalize_workspace_relative_path, read_external_spec_file_inner,
         read_workspace_file_inner, search_workspace_text_inner, sort_and_truncate_named_entries,
         WorkspaceTextSearchOptions,
@@ -1382,20 +1449,60 @@ mod tests {
 
     #[test]
     fn read_external_spec_file_decodes_gb18030_text() {
-        let root = std::env::temp_dir().join(format!("mossx-spec-{}", Uuid::new_v4()));
-        std::fs::create_dir_all(&root).expect("create spec root");
+        let project_root = std::env::temp_dir().join(format!("mossx-spec-{}", Uuid::new_v4()));
+        let openspec_root = project_root.join("openspec");
+        std::fs::create_dir_all(&openspec_root).expect("create spec root");
         let (encoded, _, had_errors) = encoding_rs::GB18030.encode("重新插拔usb会恢复");
         assert!(!had_errors, "encode should succeed");
-        std::fs::write(root.join("legacy.c"), encoded.as_ref()).expect("write file");
+        std::fs::write(openspec_root.join("legacy.c"), encoded.as_ref()).expect("write file");
 
-        let response =
-            read_external_spec_file_inner(root.to_str().expect("root path"), "openspec/legacy.c")
-                .expect("read file");
+        let response = read_external_spec_file_inner(
+            project_root.to_str().expect("root path"),
+            "openspec/legacy.c",
+        )
+        .expect("read file");
 
         assert!(response.exists);
         assert_eq!(response.content, "重新插拔usb会恢复");
         assert!(!response.truncated);
 
-        std::fs::remove_dir_all(&root).expect("cleanup root");
+        std::fs::remove_dir_all(&project_root).expect("cleanup root");
+    }
+
+    #[test]
+    fn read_external_spec_file_supports_direct_openspec_root_input() {
+        let project_root =
+            std::env::temp_dir().join(format!("mossx-openspec-direct-{}", Uuid::new_v4()));
+        let openspec_root = project_root.join("openspec");
+        std::fs::create_dir_all(&openspec_root).expect("create spec root");
+        std::fs::write(openspec_root.join("project.md"), "# Project Context").expect("write file");
+
+        let response = read_external_spec_file_inner(
+            openspec_root.to_str().expect("root path"),
+            "openspec/project.md",
+        )
+        .expect("read file");
+
+        assert!(response.exists);
+        assert_eq!(response.content, "# Project Context");
+
+        std::fs::remove_dir_all(&project_root).expect("cleanup root");
+    }
+
+    #[test]
+    fn list_external_spec_tree_returns_placeholder_when_project_root_has_no_openspec() {
+        let project_root =
+            std::env::temp_dir().join(format!("mossx-project-no-openspec-{}", Uuid::new_v4()));
+        std::fs::create_dir_all(&project_root).expect("create project root");
+        std::fs::write(project_root.join("package.json"), "{}").expect("write project file");
+
+        let response =
+            list_external_spec_tree_inner(project_root.to_str().expect("root path"), 100)
+                .expect("list tree");
+
+        assert_eq!(response.files, Vec::<String>::new());
+        assert_eq!(response.directories, vec!["openspec".to_string()]);
+
+        std::fs::remove_dir_all(&project_root).expect("cleanup root");
     }
 }

@@ -648,9 +648,9 @@ const enPart2 = {
         "Auto-collect and update `openspec/project.md` from repository signals.",
       specRootTitle: "Spec Root Location",
       specRootDescription:
-        "Use an absolute path to override default `workspace/openspec`.",
+        "Use an absolute path to your external project root (backend resolves `openspec` automatically).",
       specRootLabel: "Custom Spec root",
-      specRootPlaceholder: "/absolute/path/to/openspec",
+      specRootPlaceholder: "/absolute/path/to/project",
       specRootCurrent: "Active root: {{path}} ({{source}})",
       specRootSourceDefault: "default",
       specRootSourceCustom: "custom",

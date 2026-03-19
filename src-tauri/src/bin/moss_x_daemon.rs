@@ -1211,6 +1211,49 @@ fn normalize_external_spec_root(spec_root: &str) -> Result<PathBuf, String> {
     Ok(canonical)
 }
 
+struct ResolvedExternalSpecRoot {
+    root: PathBuf,
+    exists: bool,
+}
+
+fn resolve_external_spec_root(spec_root: &str) -> Result<ResolvedExternalSpecRoot, String> {
+    let custom_root = normalize_external_spec_root(spec_root)?;
+    let file_name = custom_root
+        .file_name()
+        .and_then(|value| value.to_str())
+        .unwrap_or_default();
+    if file_name.eq_ignore_ascii_case("openspec") {
+        return Ok(ResolvedExternalSpecRoot {
+            root: custom_root,
+            exists: true,
+        });
+    }
+
+    let nested = custom_root.join("openspec");
+    if nested.is_dir() {
+        let canonical_nested = nested
+            .canonicalize()
+            .map_err(|err| format!("Failed to resolve custom spec root: {err}"))?;
+        return Ok(ResolvedExternalSpecRoot {
+            root: canonical_nested,
+            exists: true,
+        });
+    }
+
+    let legacy_root = custom_root.join("changes").is_dir() && custom_root.join("specs").is_dir();
+    if legacy_root {
+        return Ok(ResolvedExternalSpecRoot {
+            root: custom_root,
+            exists: true,
+        });
+    }
+
+    Ok(ResolvedExternalSpecRoot {
+        root: nested,
+        exists: false,
+    })
+}
+
 fn resolve_external_spec_logical_path(
     spec_root: &Path,
     logical_path: &str,
@@ -1242,9 +1285,18 @@ fn list_external_spec_tree_inner(
     spec_root: &str,
     max_files: usize,
 ) -> Result<WorkspaceFilesResponse, String> {
-    let root = normalize_external_spec_root(spec_root)?;
+    let resolved = resolve_external_spec_root(spec_root)?;
     let mut files = Vec::new();
     let mut directories = vec!["openspec".to_string()];
+    if !resolved.exists {
+        return Ok(WorkspaceFilesResponse {
+            files,
+            directories,
+            gitignored_files: Vec::new(),
+            gitignored_directories: Vec::new(),
+        });
+    }
+    let root = resolved.root;
 
     let walker = WalkBuilder::new(&root)
         .hidden(false)
@@ -1598,7 +1650,15 @@ fn read_external_spec_file_inner(
     spec_root: &str,
     logical_path: &str,
 ) -> Result<ExternalSpecFileResponse, String> {
-    let root = normalize_external_spec_root(spec_root)?;
+    let resolved = resolve_external_spec_root(spec_root)?;
+    if !resolved.exists {
+        return Ok(ExternalSpecFileResponse {
+            exists: false,
+            content: String::new(),
+            truncated: false,
+        });
+    }
+    let root = resolved.root;
     let candidate = resolve_external_spec_logical_path(&root, logical_path)?;
     if !candidate.exists() {
         return Ok(ExternalSpecFileResponse {
@@ -1651,7 +1711,8 @@ fn write_external_spec_file_inner(
     if content.len() > MAX_WORKSPACE_FILE_BYTES as usize {
         return Err("File content exceeds maximum allowed size".to_string());
     }
-    let root = normalize_external_spec_root(spec_root)?;
+    let resolved = resolve_external_spec_root(spec_root)?;
+    let root = resolved.root;
     let candidate = resolve_external_spec_logical_path(&root, logical_path)?;
     if candidate == root {
         return Err("Cannot write to external spec root directory directly.".to_string());
@@ -1669,10 +1730,13 @@ fn write_external_spec_file_inner(
     if let Some(parent) = candidate.parent() {
         std::fs::create_dir_all(parent)
             .map_err(|err| format!("Failed to create external spec parent directory: {err}"))?;
+        let canonical_root = root
+            .canonicalize()
+            .map_err(|err| format!("Failed to resolve external spec root: {err}"))?;
         let canonical_parent = parent
             .canonicalize()
             .map_err(|err| format!("Failed to resolve external spec parent directory: {err}"))?;
-        if !canonical_parent.starts_with(&root) {
+        if !canonical_parent.starts_with(&canonical_root) {
             return Err("Invalid external spec file path.".to_string());
         }
     } else {
