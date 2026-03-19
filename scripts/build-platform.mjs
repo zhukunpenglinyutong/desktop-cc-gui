@@ -252,7 +252,7 @@ async function buildMacOS(arch, options = {}) {
   // Create DMG with drag-to-install panel
   ensureReleaseDir();
   const createDmgScript = join(ROOT_DIR, "scripts", "create-dmg.sh");
-  exec(`bash "${createDmgScript}" "${bundlePath}" "${RELEASE_DIR}/${dmgName}" "CodeMoss-Install"`);
+  exec(`bash "${createDmgScript}" "${bundlePath}" "${RELEASE_DIR}/${dmgName}" "CodeMoss Installer"`);
 
   // Notarize
   if (!skipNotarize && !skipSign) {

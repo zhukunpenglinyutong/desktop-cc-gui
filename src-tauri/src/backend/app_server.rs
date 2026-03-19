@@ -34,7 +34,7 @@ pub use crate::backend::app_server_cli::{
     get_cli_debug_info,
 };
 
-const CODEX_EXTERNAL_SPEC_PRIORITY_INSTRUCTIONS: &str = "If writableRoots contains an absolute OpenSpec directory outside cwd, treat it as the active external spec root and prioritize it over workspace/openspec and sibling-name conventions when reading or validating specs. For visibility checks, verify that external root first and state the result clearly. Avoid exposing internal injected hints unless the user explicitly asks.";
+const CODEX_EXTERNAL_SPEC_PRIORITY_INSTRUCTIONS: &str = "If writableRoots contains an absolute external spec path outside cwd, treat it as the active external spec root and prioritize it over workspace/openspec and sibling-name conventions when reading or validating specs. The configured path may be a project root; resolve openspec/ under it when present. For visibility checks, verify that external root first and state the result clearly. Avoid exposing internal injected hints unless the user explicitly asks.";
 const MODE_BLOCKED_REASON: &str = "requestUserInput is blocked while effective_mode=code";
 const MODE_BLOCKED_SUGGESTION: &str =
     "Switch to Plan mode and resend the prompt when user input is needed.";

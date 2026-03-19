@@ -49,6 +49,7 @@ import {
 export type { ChatInputBoxHandle };
 
 const STREAMING_ENABLED_STORAGE_KEY = 'mossx.composer.streaming-enabled';
+const MESSAGE_QUEUE_PREVIEW_LIMIT = 120;
 
 type ClaudeProviderLike = {
   id: string;
@@ -85,6 +86,14 @@ function readStoredStreamingEnabled(): boolean {
 
 function findActiveClaudeProvider(providers: ClaudeProviderLike[]): ClaudeProviderLike | null {
   return providers.find((provider) => provider?.isActive) ?? null;
+}
+
+function buildQueuePreviewText(content: string): string {
+  const normalizedContent = content.replace(/\s+/g, ' ').trim();
+  if (normalizedContent.length <= MESSAGE_QUEUE_PREVIEW_LIMIT) {
+    return normalizedContent;
+  }
+  return `${normalizedContent.slice(0, MESSAGE_QUEUE_PREVIEW_LIMIT - 1)}…`;
 }
 
 export interface ChatInputBoxAdapterProps {
@@ -604,7 +613,8 @@ export const ChatInputBoxAdapter = forwardRef<ChatInputBoxHandle, ChatInputBoxAd
       if (!queuedMessages) return undefined;
       return queuedMessages.map(q => ({
         id: q.id,
-        content: q.text,
+        content: buildQueuePreviewText(q.text),
+        fullContent: q.text,
         queuedAt: q.createdAt,
       }));
     }, [queuedMessages]);

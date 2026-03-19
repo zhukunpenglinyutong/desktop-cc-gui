@@ -1,5 +1,6 @@
 import GitBranch from "lucide-react/dist/esm/icons/git-branch";
 import type { MouseEvent } from "react";
+import { useTranslation } from "react-i18next";
 
 import type { WorkspaceInfo } from "../../../types";
 
@@ -8,6 +9,8 @@ type WorktreeCardProps = {
   isActive: boolean;
   hasPrimaryActiveThread: boolean;
   hasRunningSession?: boolean;
+  runningSessionCount?: number;
+  recentSessionCount?: number;
   threadCount: number;
   hasThreadCursor: boolean;
   isDeleting?: boolean;
@@ -43,6 +46,8 @@ export function WorktreeCard({
   isActive,
   hasPrimaryActiveThread,
   hasRunningSession = false,
+  runningSessionCount = 0,
+  recentSessionCount = 0,
   threadCount,
   hasThreadCursor,
   isDeleting = false,
@@ -52,6 +57,7 @@ export function WorktreeCard({
   onConnectWorkspace,
   children,
 }: WorktreeCardProps) {
+  const { t } = useTranslation();
   const worktreeCollapsed = worktree.settings.sidebarCollapsed;
   const worktreeBranch = worktree.worktree?.branch ?? "";
   const displayName = worktreeBranch || worktree.name;
@@ -102,6 +108,24 @@ export function WorktreeCard({
             <span className="worktree-label-prefix">{parsedName.prefix}</span>
           ) : null}
           <div className="worktree-label">{parsedName.leaf}</div>
+          {runningSessionCount > 0 ? (
+            <span
+              className="worktree-session-signal is-running"
+              aria-label={t("activityPanel.radar.runningCountAria", { count: runningSessionCount })}
+              title={t("activityPanel.radar.runningCountAria", { count: runningSessionCount })}
+            >
+              {runningSessionCount}
+            </span>
+          ) : null}
+          {recentSessionCount > 0 ? (
+            <span
+              className="worktree-session-signal is-recent"
+              aria-label={t("activityPanel.radar.recentCountAria", { count: recentSessionCount })}
+              title={t("activityPanel.radar.recentCountAria", { count: recentSessionCount })}
+            >
+              {recentSessionCount}
+            </span>
+          ) : null}
         </div>
         <div className="worktree-actions">
           {isDeleting ? (

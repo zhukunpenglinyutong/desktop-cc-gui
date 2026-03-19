@@ -873,6 +873,37 @@ describe("useThreadMessaging", () => {
     );
   });
 
+  it("does not prepend spec root hint after first codex turn when thread already has items", async () => {
+    vi.mocked(getClientStoreSync).mockImplementation((_store, key) => {
+      if (key === "specHub.specRoot.ws-1") {
+        return "/tmp/external-openspec";
+      }
+      return undefined;
+    });
+
+    const { result } = makeHook("codex", {
+      itemsByThread: {
+        "thread-1": [{ id: "existing-user", kind: "message", role: "user", text: "existing" }],
+      },
+    });
+
+    await act(async () => {
+      await result.current.sendUserMessageToThread(workspace, "thread-1", "follow up");
+    });
+
+    const calls = vi.mocked(sendUserMessage).mock.calls;
+    expect(calls.length).toBeGreaterThan(0);
+    const latestCall = calls[calls.length - 1];
+    expect(latestCall?.[2]).toBe("follow up");
+    expect(latestCall?.[2]).not.toContain("[Spec Root Priority]");
+    expect(latestCall?.[2]).not.toContain("[Session Spec Link]");
+    expect(latestCall?.[3]).toEqual(
+      expect.objectContaining({
+        customSpecRoot: "/tmp/external-openspec",
+      }),
+    );
+  });
+
   it("normalizes file URI custom spec root before codex send", async () => {
     vi.mocked(getClientStoreSync).mockImplementation((_store, key) => {
       if (key === "specHub.specRoot.ws-1") {

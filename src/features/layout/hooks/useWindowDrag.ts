@@ -7,6 +7,15 @@ export function useWindowDrag(targetId: string) {
     const isWindowsDesktop = isWindowsPlatform();
 
     if (isWindowsDesktop) {
+      let pendingDragTimer: number | null = null;
+
+      const clearPendingDragTimer = () => {
+        if (pendingDragTimer !== null) {
+          window.clearTimeout(pendingDragTimer);
+          pendingDragTimer = null;
+        }
+      };
+
       const getTitlebarHeight = () => {
         const raw = getComputedStyle(document.documentElement)
           .getPropertyValue("--titlebar-height")
@@ -74,11 +83,23 @@ export function useWindowDrag(targetId: string) {
         if (shouldIgnoreTarget(event.target)) {
           return;
         }
-        try {
-          void getCurrentWindow().startDragging();
-        } catch {
-          // Ignore in non-Tauri test/runtime cases.
-        }
+        clearPendingDragTimer();
+        pendingDragTimer = window.setTimeout(() => {
+          void (async () => {
+            try {
+              const windowHandle = getCurrentWindow();
+              const fullscreen = await windowHandle.isFullscreen();
+              if (fullscreen) {
+                return;
+              }
+              await windowHandle.startDragging();
+            } catch {
+              // Ignore in non-Tauri test/runtime cases.
+            } finally {
+              pendingDragTimer = null;
+            }
+          })();
+        }, 140);
       };
 
       const onDoubleClick = (event: MouseEvent) => {
@@ -93,18 +114,37 @@ export function useWindowDrag(targetId: string) {
         if (shouldIgnoreTarget(event.target)) {
           return;
         }
-        try {
-          void getCurrentWindow().toggleMaximize();
-        } catch {
-          // Ignore in non-Tauri test/runtime cases.
+        clearPendingDragTimer();
+        void (async () => {
+          try {
+            const windowHandle = getCurrentWindow();
+            const fullscreen = await windowHandle.isFullscreen();
+            if (fullscreen) {
+              await windowHandle.setFullscreen(false);
+              await new Promise((resolve) => window.setTimeout(resolve, 16));
+            }
+            await windowHandle.toggleMaximize();
+          } catch {
+            // Ignore in non-Tauri test/runtime cases.
+          }
+        })();
+      };
+
+      const onMouseUp = (event: MouseEvent) => {
+        if (event.button !== 0) {
+          return;
         }
+        clearPendingDragTimer();
       };
 
       document.addEventListener("mousedown", onMouseDown);
       document.addEventListener("dblclick", onDoubleClick);
+      document.addEventListener("mouseup", onMouseUp);
       return () => {
+        clearPendingDragTimer();
         document.removeEventListener("mousedown", onMouseDown);
         document.removeEventListener("dblclick", onDoubleClick);
+        document.removeEventListener("mouseup", onMouseUp);
       };
     }
 

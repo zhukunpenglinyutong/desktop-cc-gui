@@ -64,6 +64,8 @@ type SidebarProps = {
     string,
     { isProcessing: boolean; hasUnread: boolean; isReviewing: boolean }
   >;
+  runningSessionCountByWorkspaceId?: Record<string, number>;
+  recentSessionCountByWorkspaceId?: Record<string, number>;
   threadListLoadingByWorkspace: Record<string, boolean>;
   threadListPagingByWorkspace: Record<string, boolean>;
   threadListCursorByWorkspace: Record<string, string | null>;
@@ -140,6 +142,8 @@ export function Sidebar({
   threadsByWorkspace,
   threadParentById,
   threadStatusById,
+  runningSessionCountByWorkspaceId = {},
+  recentSessionCountByWorkspaceId = {},
   threadListLoadingByWorkspace,
   threadListPagingByWorkspace,
   threadListCursorByWorkspace,
@@ -703,7 +707,17 @@ export function Sidebar({
       collapsedWorktreeSections.has(entry.id);
     const hasPrimaryActiveThread =
       entry.id === activeWorkspaceId && Boolean(activeThreadId);
-    const hasRunningSession = hasRunningSessionByProjectId.get(entry.id) ?? false;
+    const runningSessionCount = (runningSessionCountByWorkspaceId[entry.id] ?? 0) +
+      worktrees.reduce(
+        (sum, worktree) => sum + (runningSessionCountByWorkspaceId[worktree.id] ?? 0),
+        0,
+      );
+    const recentSessionCount = (recentSessionCountByWorkspaceId[entry.id] ?? 0) +
+      worktrees.reduce(
+        (sum, worktree) => sum + (recentSessionCountByWorkspaceId[worktree.id] ?? 0),
+        0,
+      );
+    const hasRunningSession = runningSessionCount > 0 || (hasRunningSessionByProjectId.get(entry.id) ?? false);
     return (
       <WorkspaceCard
         key={entry.id}
@@ -712,6 +726,8 @@ export function Sidebar({
         isActive={entry.id === activeWorkspaceId}
         hasPrimaryActiveThread={hasPrimaryActiveThread}
         hasRunningSession={hasRunningSession}
+        runningSessionCount={runningSessionCount}
+        recentSessionCount={recentSessionCount}
         isCollapsed={isCollapsed}
         onSelectWorkspace={onSelectWorkspace}
         onShowWorkspaceMenu={showWorkspaceMenu}
@@ -726,6 +742,8 @@ export function Sidebar({
             deletingWorktreeIds={deletingWorktreeIds}
             threadsByWorkspace={threadsByWorkspace}
             threadStatusById={threadStatusById}
+            runningSessionCountByWorkspaceId={runningSessionCountByWorkspaceId}
+            recentSessionCountByWorkspaceId={recentSessionCountByWorkspaceId}
             threadListLoadingByWorkspace={threadListLoadingByWorkspace}
             threadListPagingByWorkspace={threadListPagingByWorkspace}
             threadListCursorByWorkspace={threadListCursorByWorkspace}
@@ -804,6 +822,8 @@ export function Sidebar({
     isThreadAutoNaming,
     isThreadPinned,
     hasRunningSessionByProjectId,
+    recentSessionCountByWorkspaceId,
+    runningSessionCountByWorkspaceId,
     onCancelDeleteConfirm,
     onConfirmDeleteConfirm,
     onConnectWorkspace,

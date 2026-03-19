@@ -18,7 +18,10 @@ import Rows2 from "lucide-react/dist/esm/icons/rows-2";
 import Save from "lucide-react/dist/esm/icons/save";
 import Search from "lucide-react/dist/esm/icons/search";
 import X from "lucide-react/dist/esm/icons/x";
-import CodeMirror, { type ReactCodeMirrorRef } from "@uiw/react-codemirror";
+import CodeMirror, {
+  type ReactCodeMirrorProps,
+  type ReactCodeMirrorRef,
+} from "@uiw/react-codemirror";
 import {
   keymap,
   Decoration,
@@ -924,11 +927,12 @@ export function FileViewPanel({
     [],
   );
   const persistentSearchExtension = useMemo(() => search({ top: true }), []);
-  const handleCodeMirrorCreate = useCallback((view: EditorView) => {
-    view.dispatch({
-      effects: setGitLineMarkersEffect.of(effectiveGitLineMarkers),
-    });
-  }, [effectiveGitLineMarkers]);
+  const handleCodeMirrorCreate: NonNullable<ReactCodeMirrorProps["onCreateEditor"]> =
+    useCallback((view) => {
+      view.dispatch({
+        effects: setGitLineMarkersEffect.of(effectiveGitLineMarkers),
+      });
+    }, [effectiveGitLineMarkers]);
 
   // Keyboard shortcut: Cmd+S / Ctrl+S (works in any mode, including preview)
   useEffect(() => {

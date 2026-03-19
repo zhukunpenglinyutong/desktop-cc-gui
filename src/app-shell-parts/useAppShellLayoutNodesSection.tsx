@@ -100,6 +100,7 @@ export function useAppShellLayoutNodesSection(ctx: any) {
     wasProcessing, workspace, workspaceActivity, workspaceDropTargetRef, workspaceFilesPollingEnabled, workspaceGroups, workspaceHomeWorkspaceId, workspaceId,
     workspaceNameByPath, workspacePath, workspaceSearchSources, workspaces, workspacesById, workspacesByPath, worktreeApplyError, worktreeApplyLoading,
     worktreeApplySuccess, worktreeCreateResult, worktreeLabel, worktreePrompt, worktreeRename, worktreeSetupScriptState,
+    sessionRadarRunningSessions, sessionRadarRecentCompletedSessions, runningSessionCountByWorkspaceId, recentCompletedSessionCountByWorkspaceId,
   } = ctx;
 
   const {
@@ -134,6 +135,8 @@ export function useAppShellLayoutNodesSection(ctx: any) {
     threadsByWorkspace,
     threadParentById,
     threadStatusById,
+    runningSessionCountByWorkspaceId,
+    recentCompletedSessionCountByWorkspaceId,
     threadListLoadingByWorkspace,
     threadListPagingByWorkspace,
     threadListCursorByWorkspace,
@@ -143,6 +146,8 @@ export function useAppShellLayoutNodesSection(ctx: any) {
     systemProxyUrl: appSettings.systemProxyUrl,
     activeItems,
     threadItemsByThread,
+    sessionRadarRunningSessions,
+    sessionRadarRecentCompletedSessions,
     activeRateLimits,
     usageShowRemaining: appSettings.usageShowRemaining,
     onRefreshAccountRateLimits: handleRefreshAccountRateLimits,

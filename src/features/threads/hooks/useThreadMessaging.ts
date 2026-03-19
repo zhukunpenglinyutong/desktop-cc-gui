@@ -864,8 +864,12 @@ export function useThreadMessaging({
           );
           sessionSpecLinkByThreadRef.current.set(sessionSpecKey, sessionSpecLink);
         }
+        const shouldInjectSpecRootHintInPrompt =
+          resolvedEngine === "codex" &&
+          Boolean(sessionSpecLink) &&
+          threadItems.length === 0;
         const codexEffectiveText =
-          resolvedEngine === "codex" && sessionSpecLink
+          shouldInjectSpecRootHintInPrompt && sessionSpecLink
             ? buildCodexTextWithSpecRootPriority(finalText, sessionSpecLink)
             : finalText;
         const shouldInjectSpecRootCard =

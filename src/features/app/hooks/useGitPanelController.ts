@@ -158,7 +158,7 @@ export function useGitPanelController({
     () => readGitDiffListView(activeWorkspace?.id),
   );
   const [filePanelMode, setFilePanelMode] = useState<
-    "git" | "files" | "search" | "prompts" | "memory" | "activity"
+    "git" | "files" | "search" | "prompts" | "memory" | "activity" | "radar"
   >("files");
   const [selectedPullRequest, setSelectedPullRequest] =
     useState<GitHubPullRequest | null>(null);

@@ -3,10 +3,14 @@ import { useTranslation } from 'react-i18next';
 import { Claude, Gemini } from '@lobehub/icons';
 import openaiColorIcon from '../../../../../assets/model-icons/openai.svg';
 import { AVAILABLE_PROVIDERS } from '../types';
+import type { ProviderId } from '../types';
 
 interface ProviderSelectProps {
   value: string;
   onChange?: (providerId: string) => void;
+  providerAvailability?: Partial<Record<ProviderId, boolean>>;
+  providerVersions?: Partial<Record<ProviderId, string | null>>;
+  iconOnly?: boolean;
 }
 
 /**
@@ -38,7 +42,13 @@ const ProviderIcon = ({ providerId, size = 16 }: { providerId: string; size?: nu
  * ProviderSelect - AI provider selector component
  * Supports switching between Claude, Codex, Gemini, and other providers
  */
-export const ProviderSelect = ({ value, onChange }: ProviderSelectProps) => {
+export const ProviderSelect = ({
+  value,
+  onChange,
+  providerAvailability,
+  providerVersions,
+  iconOnly = false,
+}: ProviderSelectProps) => {
   const { t } = useTranslation();
   const [isOpen, setIsOpen] = useState(false);
   const [showToast, setShowToast] = useState(false);
@@ -46,7 +56,12 @@ export const ProviderSelect = ({ value, onChange }: ProviderSelectProps) => {
   const buttonRef = useRef<HTMLButtonElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
-  const currentProvider = AVAILABLE_PROVIDERS.find(p => p.id === value) || AVAILABLE_PROVIDERS[0];
+  const providers = AVAILABLE_PROVIDERS.map((provider) => ({
+    ...provider,
+    enabled: providerAvailability?.[provider.id] ?? provider.enabled,
+    version: providerVersions?.[provider.id] ?? null,
+  }));
+  const currentProvider = providers.find((p) => p.id === value) || providers[0];
 
   // Helper function to get translated provider label
   const getProviderLabel = (providerId: string) => {
@@ -76,7 +91,7 @@ export const ProviderSelect = ({ value, onChange }: ProviderSelectProps) => {
    * Select provider
    */
   const handleSelect = useCallback((providerId: string) => {
-    const provider = AVAILABLE_PROVIDERS.find(p => p.id === providerId);
+    const provider = providers.find((p) => p.id === providerId);
 
     if (!provider) return;
 
@@ -90,7 +105,7 @@ export const ProviderSelect = ({ value, onChange }: ProviderSelectProps) => {
     // Provider available, perform switch
     onChange?.(providerId);
     setIsOpen(false);
-  }, [onChange, showToastMessage]);
+  }, [onChange, providers, showToastMessage, t]);
 
   /**
    * Close on outside click
@@ -125,13 +140,16 @@ export const ProviderSelect = ({ value, onChange }: ProviderSelectProps) => {
       <div style={{ position: 'relative', display: 'inline-block' }}>
         <button
           ref={buttonRef}
-          className="selector-button"
+          className={`selector-button ${iconOnly ? 'selector-provider-button' : ''}`}
           onClick={handleToggle}
-          title={`${t('config.switchProvider')}: ${getProviderLabel(currentProvider.id)}`}
+          title={`${t('config.switchProvider')}: ${getProviderLabel(currentProvider.id)}${currentProvider.version ? ` (${currentProvider.version})` : ''}`}
+          aria-label={`${t('config.switchProvider')}: ${getProviderLabel(currentProvider.id)}`}
         >
           <ProviderIcon providerId={currentProvider.id} size={12} />
-          <span>{getProviderLabel(currentProvider.id)}</span>
-          <span className={`codicon codicon-chevron-${isOpen ? 'up' : 'down'}`} style={{ fontSize: '10px', marginLeft: '2px' }} />
+          {!iconOnly && <span className="selector-button-text">{getProviderLabel(currentProvider.id)}</span>}
+          {!iconOnly && (
+            <span className={`codicon codicon-chevron-${isOpen ? 'up' : 'down'}`} style={{ fontSize: '10px', marginLeft: '2px' }} />
+          )}
         </button>
 
         {isOpen && (
@@ -146,7 +164,7 @@ export const ProviderSelect = ({ value, onChange }: ProviderSelectProps) => {
               zIndex: 10000,
             }}
           >
-            {AVAILABLE_PROVIDERS.map((provider) => (
+            {providers.map((provider) => (
               <div
                 key={provider.id}
                 className={`selector-option ${provider.id === value ? 'selected' : ''} ${!provider.enabled ? 'disabled' : ''}`}
@@ -157,7 +175,10 @@ export const ProviderSelect = ({ value, onChange }: ProviderSelectProps) => {
                 }}
               >
                 <ProviderIcon providerId={provider.id} size={16}  />
-                <span>{getProviderLabel(provider.id)}</span>
+                <span>
+                  {getProviderLabel(provider.id)}
+                  {provider.version ? ` (${provider.version})` : ''}
+                </span>
                 {provider.id === value && (
                   <span className="codicon codicon-check check-mark" />
                 )}

@@ -148,11 +148,16 @@
   border-bottom: 1px solid var(--input-border);
   background: var(--context-bar-bg);
   max-height: 120px;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  overflow-x: hidden;
   overflow-y: auto;
 }
 
 .message-queue-item {
-  display: flex;
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) 18px;
   align-items: center;
   gap: 8px;
   padding: 4px 8px;
@@ -162,6 +167,10 @@
   font-size: 12px;
   color: var(--text-primary);
   min-height: 28px;
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  overflow: hidden;
 }
 
 .message-queue-number {
@@ -180,7 +189,9 @@
 
 .message-queue-content {
   flex: 1;
+  display: block;
   min-width: 0;
+  max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

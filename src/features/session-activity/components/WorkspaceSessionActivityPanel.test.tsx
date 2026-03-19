@@ -1637,4 +1637,18 @@ describe("WorkspaceSessionActivityPanel", () => {
     fireEvent.click(toggle);
     expect(onToggleLiveEditPreview).toHaveBeenCalledTimes(1);
   });
+
+  it("keeps activity panel scoped to current-task timeline", () => {
+    render(
+      <WorkspaceSessionActivityPanel
+        workspaceId="workspace-1"
+        viewModel={createViewModel()}
+        onOpenDiffPath={vi.fn()}
+        onSelectThread={vi.fn()}
+      />,
+    );
+
+    expect(screen.queryByRole("tab", { name: "activityPanel.radar.modeWorkspaceRadar" })).toBeNull();
+    expect(screen.queryByText("activityPanel.radar.modeWorkspaceRadar")).toBeNull();
+  });
 });

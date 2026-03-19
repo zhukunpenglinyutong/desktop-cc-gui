@@ -2173,12 +2173,18 @@ function stripInjectedProjectMemoryBlock(text: string) {
   if (!text) {
     return "";
   }
-  let normalized = text.trimStart();
-  while (PROJECT_MEMORY_BLOCK_REGEX.test(normalized)) {
-    normalized = normalized.replace(PROJECT_MEMORY_BLOCK_REGEX, "").trimStart();
+  let normalized = text;
+  let changed = false;
+  while (true) {
+    const trimmedLeading = normalized.trimStart();
+    if (!PROJECT_MEMORY_BLOCK_REGEX.test(trimmedLeading)) {
+      break;
+    }
+    normalized = trimmedLeading.replace(PROJECT_MEMORY_BLOCK_REGEX, "");
+    changed = true;
   }
 
-  const blocks = normalized.split(MESSAGE_PARAGRAPH_BREAK_SPLIT_REGEX);
+  const blocks = normalized.trimStart().split(MESSAGE_PARAGRAPH_BREAK_SPLIT_REGEX);
   if (blocks.length >= 2) {
     const firstBlock = blocks[0] ?? "";
     const firstBlockLines = firstBlock
@@ -2190,10 +2196,14 @@ function stripInjectedProjectMemoryBlock(text: string) {
       firstBlockLines.length <= MAX_INJECTED_MEMORY_LINES &&
       firstBlockLines.every((line) => PROJECT_MEMORY_LINE_PREFIX_REGEX.test(line));
     if (looksLikeInjectedMemoryLines) {
-      normalized = blocks.slice(1).join("\n\n").trimStart();
+      normalized = blocks.slice(1).join("\n\n");
+      changed = true;
     }
   }
-  return normalized.trim();
+  if (!changed) {
+    return text;
+  }
+  return normalized.trimStart();
 }
 
 function stripModeFallbackBlock(text: string) {
@@ -2212,21 +2222,64 @@ function parseUserInputs(inputs: Array<Record<string, unknown>>) {
   const textParts: string[] = [];
   const images: string[] = [];
   let collaborationMode: "plan" | "code" | null = null;
+
+  const needsSeparatorBetween = (previous: string, next: string) => {
+    if (!previous || !next) {
+      return false;
+    }
+    if (/\s$/.test(previous) || /^\s/.test(next)) {
+      return false;
+    }
+    if (/\$[^\s]+$/.test(previous.trimEnd())) {
+      return true;
+    }
+    const previousChar = previous[previous.length - 1] ?? "";
+    const nextChar = next[0] ?? "";
+    return /[A-Za-z0-9]/.test(previousChar) && /[A-Za-z0-9]/.test(nextChar);
+  };
+
+  const appendTextPart = (value: string) => {
+    if (!value) {
+      return;
+    }
+    const previous = textParts[textParts.length - 1] ?? "";
+    if (needsSeparatorBetween(previous, value)) {
+      textParts.push(` ${value}`);
+      return;
+    }
+    textParts.push(value);
+  };
+
+  const appendSkillPart = (name: string) => {
+    if (!name) {
+      return;
+    }
+    const token = `$${name}`;
+    const previous = textParts[textParts.length - 1] ?? "";
+    if (!previous) {
+      textParts.push(token);
+      return;
+    }
+    if (/\s$/.test(previous)) {
+      textParts.push(token);
+      return;
+    }
+    textParts.push(` ${token}`);
+  };
+
   inputs.forEach((input) => {
     const type = asString(input.type);
     if (type === "text") {
       const text = asString(input.text);
       if (text) {
         collaborationMode = collaborationMode ?? extractModeFallbackMode(text);
-        textParts.push(stripModeFallbackBlock(stripInjectedProjectMemoryBlock(text)));
+        appendTextPart(stripModeFallbackBlock(stripInjectedProjectMemoryBlock(text)));
       }
       return;
     }
     if (type === "skill") {
       const name = asString(input.name);
-      if (name) {
-        textParts.push(`$${name}`);
-      }
+      appendSkillPart(name);
       return;
     }
     if (type === "image" || type === "localImage") {
@@ -2237,7 +2290,7 @@ function parseUserInputs(inputs: Array<Record<string, unknown>>) {
     }
   });
   return {
-    text: textParts.join(" ").trim(),
+    text: textParts.join("").trim(),
     images,
     collaborationMode,
   };

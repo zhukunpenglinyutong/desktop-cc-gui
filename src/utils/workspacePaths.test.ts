@@ -38,13 +38,13 @@ describe("workspacePaths", () => {
     expect(
       resolveFileReadTarget(
         "/repo",
-        "/spec-root/changes/fix/tasks.md",
+        "/spec-root/openspec/changes/fix/tasks.md",
         "/spec-root",
       ),
     ).toEqual({
       domain: "external-spec",
-      normalizedInputPath: "/spec-root/changes/fix/tasks.md",
-      workspaceRelativePath: "/spec-root/changes/fix/tasks.md",
+      normalizedInputPath: "/spec-root/openspec/changes/fix/tasks.md",
+      workspaceRelativePath: "/spec-root/openspec/changes/fix/tasks.md",
       externalSpecLogicalPath: "openspec/changes/fix/tasks.md",
     });
   });
@@ -55,6 +55,21 @@ describe("workspacePaths", () => {
         "C:/Users/Chen/Project",
         "c:/spec-disk/openspec/changes/fix/tasks.md",
         "C:/Spec-Disk/OpenSpec",
+      ),
+    ).toEqual({
+      domain: "external-spec",
+      normalizedInputPath: "c:/spec-disk/openspec/changes/fix/tasks.md",
+      workspaceRelativePath: "c:/spec-disk/openspec/changes/fix/tasks.md",
+      externalSpecLogicalPath: "openspec/changes/fix/tasks.md",
+    });
+  });
+
+  it("supports Windows project root custom spec paths", () => {
+    expect(
+      resolveFileReadTarget(
+        "C:/Users/Chen/Project",
+        "c:/spec-disk/openspec/changes/fix/tasks.md",
+        "C:/Spec-Disk",
       ),
     ).toEqual({
       domain: "external-spec",

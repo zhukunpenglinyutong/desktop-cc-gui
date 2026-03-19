@@ -1,5 +1,15 @@
 import { useTranslation } from 'react-i18next';
-import type { QueuedMessage } from '../../hooks/useMessageQueue';
+import type { QueuedMessage } from './types';
+
+const MESSAGE_QUEUE_PREVIEW_LIMIT = 120;
+
+function buildMessageQueuePreview(content: string): string {
+  const normalizedContent = content.replace(/\s+/g, ' ').trim();
+  if (normalizedContent.length <= MESSAGE_QUEUE_PREVIEW_LIMIT) {
+    return normalizedContent;
+  }
+  return `${normalizedContent.slice(0, MESSAGE_QUEUE_PREVIEW_LIMIT - 1)}…`;
+}
 
 export interface MessageQueueProps {
   /** Queue items */
@@ -25,11 +35,17 @@ export function MessageQueue({ queue, onRemove }: MessageQueueProps) {
       {[...queue].reverse().map((item, reversedIndex) => {
         // Calculate actual queue position (1-based, from bottom)
         const queuePosition = queue.length - reversedIndex;
+        const fullContent = item.fullContent ?? item.content;
+        const previewContent = buildMessageQueuePreview(item.content);
         return (
           <div key={item.id} className="message-queue-item">
             <span className="message-queue-number">{queuePosition}</span>
-            <span className="message-queue-content" title={item.content}>
-              {item.content}
+            <span
+              className="message-queue-content"
+              title={fullContent}
+              aria-label={fullContent}
+            >
+              {previewContent}
             </span>
             <button
               className="message-queue-remove"

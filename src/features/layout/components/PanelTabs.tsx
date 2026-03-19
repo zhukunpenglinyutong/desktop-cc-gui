@@ -6,8 +6,10 @@ import ScrollText from "lucide-react/dist/esm/icons/scroll-text";
 import Brain from "lucide-react/dist/esm/icons/brain";
 import Search from "lucide-react/dist/esm/icons/search";
 import Activity from "lucide-react/dist/esm/icons/activity";
+import LayoutList from "lucide-react/dist/esm/icons/layout-list";
 
 export type PanelTabId =
+  | "radar"
   | "git"
   | "files"
   | "search"
@@ -33,13 +35,14 @@ const SHOW_PROMPTS_TAB = false;
 // Toggle to show/hide git tab
 const SHOW_GIT_TAB = true;
 
-const tabIds: PanelTabId[] = (["activity", "git", "files", "search", "prompts"] as const).filter(
+const tabIds: PanelTabId[] = (["activity", "radar", "git", "files", "search", "prompts"] as const).filter(
   (id) =>
     (id !== "prompts" || SHOW_PROMPTS_TAB) &&
     (id !== "git" || SHOW_GIT_TAB)
 );
 
 const tabIcons: Record<PanelTabId, ReactNode> = {
+  radar: <LayoutList aria-hidden />,
   git: <GitBranch aria-hidden />,
   files: <Folder aria-hidden />,
   search: <Search aria-hidden />,
@@ -49,6 +52,7 @@ const tabIcons: Record<PanelTabId, ReactNode> = {
 };
 
 const tabI18nKeys: Record<PanelTabId, string> = {
+  radar: "panels.radar",
   git: "panels.git",
   files: "panels.files",
   search: "panels.search",

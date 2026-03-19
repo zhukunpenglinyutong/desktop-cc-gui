@@ -125,7 +125,7 @@ describe("FileTreePanel run action isolation", () => {
   });
 
   it("restores child expansion state after collapsing and re-expanding workspace root", () => {
-    render(
+    const { container } = render(
       <FileTreePanel
         workspaceId="workspace-1"
         workspacePath="/tmp/workspace"
@@ -147,10 +147,12 @@ describe("FileTreePanel run action isolation", () => {
     fireEvent.doubleClick(screen.getByRole("button", { name: /src/ }));
     expect(screen.getByText("index.ts")).toBeTruthy();
 
-    fireEvent.doubleClick(screen.getByRole("button", { name: /workspace/ }));
+    const rootChevron = container.querySelector(".file-tree-root-chevron");
+    expect(rootChevron).toBeTruthy();
+    fireEvent.click(rootChevron as Element);
     expect(screen.queryByText("index.ts")).toBeNull();
 
-    fireEvent.doubleClick(screen.getByRole("button", { name: /workspace/ }));
+    fireEvent.click(rootChevron as Element);
     expect(screen.getByText("index.ts")).toBeTruthy();
   });
 
@@ -403,6 +405,13 @@ describe("FileTreePanel run action isolation", () => {
 
     expect(screen.queryByText("index.ts")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: /src/ }));
+    expect(screen.queryByText("index.ts")).toBeNull();
+    const srcRow = screen.getByRole("button", { name: /src/ });
+    const srcChevron = srcRow.querySelector(".file-tree-chevron");
+    expect(srcChevron).toBeTruthy();
+    fireEvent.click(srcChevron as Element);
+    expect(screen.getByText("index.ts")).toBeTruthy();
+    fireEvent.click(srcChevron as Element);
     expect(screen.queryByText("index.ts")).toBeNull();
     fireEvent.doubleClick(screen.getByRole("button", { name: /src/ }));
     expect(screen.getByText("index.ts")).toBeTruthy();

@@ -68,6 +68,7 @@ import { useClonePrompt } from "./features/workspaces/hooks/useClonePrompt";
 import { useWorkspaceController } from "./features/app/hooks/useWorkspaceController";
 import { useWorkspaceSelection } from "./features/workspaces/hooks/useWorkspaceSelection";
 import { useWorkspaceSessionActivity } from "./features/session-activity/hooks/useWorkspaceSessionActivity";
+import { useSessionRadarFeed } from "./features/session-activity/hooks/useSessionRadarFeed";
 import { useLiveEditPreview } from "./features/live-edit-preview/hooks/useLiveEditPreview";
 import { useGitHubPanelController } from "./features/app/hooks/useGitHubPanelController";
 import { useSettingsModalState } from "./features/app/hooks/useSettingsModalState";
@@ -164,6 +165,14 @@ import { useAppShellSearchAndComposerSection } from "./app-shell-parts/useAppShe
 import { useAppShellSections } from "./app-shell-parts/useAppShellSections";
 import { useAppShellLayoutNodesSection } from "./app-shell-parts/useAppShellLayoutNodesSection";
 import { renderAppShell } from "./app-shell-parts/renderAppShell";
+import {
+  RADAR_STORE_NAME,
+  SESSION_RADAR_RECENT_STORAGE_KEY,
+  type PersistedRadarRecentEntry,
+  buildRadarCompletionId,
+  parsePersistedRadarRecentEntry,
+  resolveLatestUserMessage,
+} from "./features/session-activity/utils/sessionRadarPersistence";
 
 const SettingsView = lazy(() =>
   import("./features/settings/components/SettingsView").then((module) => ({
@@ -179,11 +188,9 @@ const GitHubPanelData = lazy(() =>
 
 const GIT_HISTORY_PANEL_MIN_HEIGHT = 260;
 const GIT_HISTORY_PANEL_MIN_TOP_CLEARANCE = 44;
-
 function getViewportHeight(): number {
   return typeof window === "undefined" ? 0 : window.innerHeight;
 }
-
 
 export function AppShell() {
   const { t } = useTranslation();
@@ -327,11 +334,9 @@ export function AppShell() {
   useEffect(() => {
     gitHistoryPanelHeightRef.current = gitHistoryPanelHeight;
   }, [gitHistoryPanelHeight]);
-
   useEffect(() => {
     writeClientStoreValue("layout", "gitHistoryPanelHeight", gitHistoryPanelHeight);
   }, [gitHistoryPanelHeight]);
-
   useEffect(() => {
     const handleResize = () => {
       setGitHistoryPanelHeight((current) => clampGitHistoryPanelHeight(current));
@@ -341,7 +346,6 @@ export function AppShell() {
       window.removeEventListener("resize", handleResize);
     };
   }, []);
-
   const onGitHistoryPanelResizeStart = useCallback(
     (event: ReactPointerEvent<HTMLDivElement>) => {
       event.preventDefault();
@@ -2128,7 +2132,7 @@ export function AppShell() {
     filesLoading: false,
     files: 0,
     directories: 0,
-    filePanelMode: "git" as "git" | "files" | "search" | "prompts" | "memory" | "activity",
+    filePanelMode: "git" as "git" | "files" | "search" | "prompts" | "memory" | "activity" | "radar",
     rightPanelCollapsed: false,
     isCompact: false,
     draftLength: 0,
@@ -2340,50 +2344,20 @@ export function AppShell() {
     workspaceNameByPath,
   });
 
-  const lockLiveSessions = useMemo(() => {
-    const sessions = workspaces.flatMap((workspace) => {
-      const threads = threadsByWorkspace[workspace.id] ?? [];
-      return threads.flatMap((thread) => {
-        const status = threadStatusById[thread.id];
-        if (!status?.isProcessing) {
-          return [];
-        }
-        const lastAgent = lastAgentMessageByThread[thread.id];
-        const updatedAt = Math.max(
-          thread.updatedAt ?? 0,
-          lastAgent?.timestamp ?? 0,
-          status?.processingStartedAt ?? 0,
-        );
-        return [{
-          id: `${workspace.id}:${thread.id}`,
-          workspaceName: workspace.name,
-          threadName: thread.name?.trim() || t("threads.untitledThread"),
-          engine: (thread.engineSource || "codex").toUpperCase(),
-          preview: resolveLockLivePreview(
-            threadItemsByThread[thread.id],
-            lastAgent?.text,
-          ),
-          updatedAt,
-          isProcessing: status?.isProcessing ?? false,
-        }];
-      });
-    });
-    return sessions
-      .sort((a, b) => b.updatedAt - a.updatedAt)
-      .slice(0, LOCK_LIVE_SESSION_LIMIT);
-  }, [
-    lastAgentMessageByThread,
-    threadItemsByThread,
-    threadStatusById,
-    threadsByWorkspace,
-    t,
+  const sessionRadarFeed = useSessionRadarFeed({
     workspaces,
-  ]);
+    threadsByWorkspace,
+    threadStatusById,
+    threadItemsByThread,
+    lastAgentMessageByThread,
+    runningLimit: LOCK_LIVE_SESSION_LIMIT,
+  });
+  const lockLiveSessions = sessionRadarFeed.runningSessions;
 
   useEffect(() => {
     const previous = completionTrackerBySessionRef.current;
     const next: Record<string, ThreadCompletionTracker> = {};
-    const completed: { workspaceId: string; workspaceName: string; threadId: string; threadName: string }[] = [];
+    const completed: PersistedRadarRecentEntry[] = [];
 
     for (const workspace of workspaces) {
       const threads = threadsByWorkspace[workspace.id] ?? [];
@@ -2408,15 +2382,35 @@ export function AppShell() {
 
         if ((wasProcessing && !isProcessingNow) || finishedByDuration || finishedByAgentUpdate) {
           const lastAgent = lastAgentMessageByThread[thread.id];
-          const latestSnippet =
-            resolveLockLivePreview(threadItemsByThread[thread.id], lastAgent?.text) ||
-            thread.name?.trim() ||
-            t("threads.untitledThread");
+          const completedAt = Math.max(
+            thread.updatedAt ?? 0,
+            lastAgent?.timestamp ?? 0,
+            Date.now(),
+          );
+          const durationMs = typeof lastDurationMs === "number" ? Math.max(0, lastDurationMs) : null;
+          const startedAt =
+            durationMs != null
+              ? Math.max(0, completedAt - durationMs)
+              : (previousTracker?.isProcessing && previousTracker?.lastDurationMs
+                  ? Math.max(0, completedAt - previousTracker.lastDurationMs)
+                  : null);
+          const latestUserMessage = resolveLatestUserMessage(threadItemsByThread[thread.id]);
           completed.push({
+            id: buildRadarCompletionId(workspace.id, thread.id),
             workspaceId: workspace.id,
             workspaceName: workspace.name,
             threadId: thread.id,
-            threadName: latestSnippet,
+            threadName: thread.name?.trim() || t("threads.untitledThread"),
+            engine: (thread.engineSource || "codex").toUpperCase(),
+            preview:
+              latestUserMessage ||
+              resolveLockLivePreview(threadItemsByThread[thread.id], lastAgent?.text) ||
+              thread.name?.trim() ||
+              t("threads.untitledThread"),
+            updatedAt: completedAt,
+            startedAt,
+            completedAt,
+            durationMs,
           });
         }
 
@@ -2438,6 +2432,35 @@ export function AppShell() {
     if (completed.length === 0) {
       return;
     }
+
+    const rawPersistedRecent = getClientStoreSync<unknown>(
+      RADAR_STORE_NAME,
+      SESSION_RADAR_RECENT_STORAGE_KEY,
+    );
+    const persistedRecentList = Array.isArray(rawPersistedRecent)
+      ? rawPersistedRecent
+          .map(parsePersistedRadarRecentEntry)
+          .filter((entry): entry is PersistedRadarRecentEntry => Boolean(entry))
+      : [];
+    const mergedById = new Map<string, PersistedRadarRecentEntry>();
+    for (const entry of persistedRecentList) {
+      mergedById.set(entry.id, entry);
+    }
+    for (const entry of completed) {
+      const previous = mergedById.get(entry.id);
+      if (!previous || previous.completedAt <= entry.completedAt) {
+        mergedById.set(entry.id, entry);
+      }
+    }
+    const nextPersistedRecent = Array.from(mergedById.values()).sort(
+      (left, right) => right.completedAt - left.completedAt,
+    );
+    writeClientStoreValue(
+      RADAR_STORE_NAME,
+      SESSION_RADAR_RECENT_STORAGE_KEY,
+      nextPersistedRecent,
+      { immediate: true },
+    );
 
     // Send a system notification for each completed session.
     if (appSettings.systemNotificationEnabled) {
@@ -2933,6 +2956,10 @@ export function AppShell() {
     workspace, workspaceActivity, workspaceDropTargetRef, workspaceFilesPollingEnabled, workspaceGroups, workspaceHomeWorkspaceId, workspaceId, workspaceNameByPath,
     workspacePath, workspaceSearchSources, workspaces, workspacesById, workspacesByPath, worktreeApplyError, worktreeApplyLoading, worktreeApplySuccess,
     worktreeCreateResult, worktreeLabel, worktreePrompt, worktreeRename, worktreeSetupScriptState,
+    sessionRadarRunningSessions: sessionRadarFeed.runningSessions,
+    sessionRadarRecentCompletedSessions: sessionRadarFeed.recentCompletedSessions,
+    runningSessionCountByWorkspaceId: sessionRadarFeed.runningCountByWorkspaceId,
+    recentCompletedSessionCountByWorkspaceId: sessionRadarFeed.recentCountByWorkspaceId,
   };
 
   const searchAndComposerSection = useAppShellSearchAndComposerSection(

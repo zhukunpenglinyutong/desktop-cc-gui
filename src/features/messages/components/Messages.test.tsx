@@ -171,6 +171,132 @@ describe("Messages", () => {
     expect(userText?.textContent ?? "").toBe("你好啊");
   });
 
+  it("preserves multiline formatting when extracting [User Input] content", () => {
+    const multilineInput = "整理内容为：\n1. 宏观观点\n2. 宏观观点\n\n3. 商品观点";
+    const items: ConversationItem[] = [
+      {
+        id: "msg-assembled-multiline-1",
+        kind: "message",
+        role: "user",
+        text: `[System] spec hints [User Input] ${multilineInput}`,
+      },
+    ];
+
+    const { container } = render(
+      <Messages
+        items={items}
+        threadId="thread-1"
+        workspaceId="ws-1"
+        isThinking={false}
+        openTargets={[]}
+        selectedOpenAppId=""
+      />,
+    );
+
+    const userText = container.querySelector(".user-collapsible-text-content");
+    expect(userText?.textContent ?? "").toBe(multilineInput);
+  });
+
+  it("keeps user multiline input when skill/common/system blocks are present before [User Input]", () => {
+    const multilineInput = "你好\n我是陈湘宁!!";
+    const items: ConversationItem[] = [
+      {
+        id: "msg-assembled-skill-common-multiline-1",
+        kind: "message",
+        role: "user",
+        text:
+          "[System] 你是 MossX 内的 Claude Code Agent。\n" +
+          "[Skill Prompt] # Skill: tr-zh-en-jp\n" +
+          "[Commons Prompt] 规范...\n" +
+          `[User Input] ${multilineInput}`,
+      },
+    ];
+
+    const { container } = render(
+      <Messages
+        items={items}
+        threadId="thread-1"
+        workspaceId="ws-1"
+        isThinking={false}
+        openTargets={[]}
+        selectedOpenAppId=""
+      />,
+    );
+
+    const userText = container.querySelector(".user-collapsible-text-content");
+    expect(userText?.textContent ?? "").toBe(multilineInput);
+  });
+
+  it("keeps license block line structure when extracting [User Input] content", () => {
+    const licenseInput = [
+      "-----BEGIN LICENSE-----",
+      "TEAM HCiSO",
+      "Unlimited User License",
+      "EA7E-2000959661",
+      "5C5E565261BC9146AAAC8783289A74F5",
+      "-----END LICENSE-----",
+    ].join("\n");
+    const items: ConversationItem[] = [
+      {
+        id: "msg-assembled-license-1",
+        kind: "message",
+        role: "user",
+        text: `[System] spec hints [User Input] ${licenseInput}`,
+      },
+    ];
+
+    const { container } = render(
+      <Messages
+        items={items}
+        threadId="thread-1"
+        workspaceId="ws-1"
+        isThinking={false}
+        openTargets={[]}
+        selectedOpenAppId=""
+      />,
+    );
+
+    const userText = container.querySelector(".user-collapsible-text-content");
+    expect(userText?.textContent ?? "").toBe(licenseInput);
+  });
+
+  it("copies extracted user input without collapsing multiline formatting", async () => {
+    const writeTextMock = vi.fn(async () => undefined);
+    Object.defineProperty(navigator, "clipboard", {
+      value: { writeText: writeTextMock },
+      configurable: true,
+    });
+    const multilineInput = "整理内容为：\n1. 宏观观点\n2. 商品观点\n\n3. 技术观点";
+    const items: ConversationItem[] = [
+      {
+        id: "msg-copy-multiline-1",
+        kind: "message",
+        role: "user",
+        text: `[System] spec hints [User Input] ${multilineInput}`,
+      },
+    ];
+
+    const { container } = render(
+      <Messages
+        items={items}
+        threadId="thread-1"
+        workspaceId="ws-1"
+        isThinking={false}
+        openTargets={[]}
+        selectedOpenAppId=""
+      />,
+    );
+
+    const copyButton = container.querySelector(".message-copy-button");
+    expect(copyButton).toBeTruthy();
+    if (copyButton) {
+      fireEvent.click(copyButton);
+    }
+    await waitFor(() => {
+      expect(writeTextMock).toHaveBeenCalledWith(multilineInput);
+    });
+  });
+
   it("hides code fallback prefix and keeps only actual user request", () => {
     const items: ConversationItem[] = [
       {

@@ -1791,6 +1791,7 @@ const enPart1 = {
 
   // Panels
   panels: {
+    radar: "Radar",
     git: "Git",
     files: "Files",
     search: "Search",
@@ -1847,6 +1848,25 @@ const enPart1 = {
       task: "Task",
       explore: "Explore",
       reasoning: "Thinking",
+    },
+    radar: {
+      modeCurrentTask: "Current task",
+      modeWorkspaceRadar: "Workspace radar",
+      runningSection: "Running ({{count}})",
+      recentSection: "Recently completed ({{count}})",
+      emptyRunning: "No running sessions.",
+      emptyRecent: "No recently completed sessions.",
+      openSession: "Open",
+      runningCountAria: "{{count}} running sessions",
+      recentCountAria: "{{count}} recent sessions",
+      startedAt: "Started:",
+      endedAt: "Ended:",
+      totalDuration: "Duration:",
+      timeUnknown: "--:--:--",
+      durationUnknown: "--",
+      unreadBadge: "NEW",
+      unreadMark: "Unread",
+      readMark: "Read",
     },
     status: {
       running: "running",

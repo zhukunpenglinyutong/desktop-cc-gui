@@ -25,20 +25,16 @@ export function debounce<Args extends unknown[]>(
   wait: number
 ): DebouncedFunction<Args> {
   let timeout: ReturnType<typeof setTimeout> | null = null;
-  let lastArgs: Args | null = null;
-  let lastThis: unknown = null;
+  let lastInvocation: { context: unknown; args: Args } | null = null;
 
   const debouncedFn = function (this: unknown, ...args: Args) {
-    lastArgs = args;
-    lastThis = this;
+    lastInvocation = { context: this, args };
     if (timeout) clearTimeout(timeout);
     timeout = setTimeout(() => {
       timeout = null;
-      const a = lastArgs;
-      const ctx = lastThis;
-      lastArgs = null;
-      lastThis = null;
-      if (a) func.apply(ctx, a);
+      const invocation = lastInvocation;
+      lastInvocation = null;
+      if (invocation) func.apply(invocation.context, invocation.args);
     }, wait);
   } as DebouncedFunction<Args>;
 
@@ -47,19 +43,16 @@ export function debounce<Args extends unknown[]>(
       clearTimeout(timeout);
       timeout = null;
     }
-    lastArgs = null;
-    lastThis = null;
+    lastInvocation = null;
   };
 
   debouncedFn.flush = () => {
-    if (timeout && lastArgs) {
+    if (timeout && lastInvocation) {
       clearTimeout(timeout);
       timeout = null;
-      const args = lastArgs;
-      const ctx = lastThis;
-      lastArgs = null;
-      lastThis = null;
-      func.apply(ctx, args);
+      const invocation = lastInvocation;
+      lastInvocation = null;
+      func.apply(invocation.context, invocation.args);
     }
   };
 

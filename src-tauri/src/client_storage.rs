@@ -1,7 +1,7 @@
 use serde_json::Value;
 use std::path::PathBuf;
 
-const ALLOWED_STORES: &[&str] = &["layout", "composer", "threads", "app"];
+const ALLOWED_STORES: &[&str] = &["layout", "composer", "threads", "app", "leida"];
 const PANEL_LOCK_PASSWORD_FILENAME: &str = "pwd.txt";
 
 fn client_storage_dir() -> Result<PathBuf, String> {

@@ -1757,6 +1757,7 @@ const zhPart1 = {
 
   // 面板
   panels: {
+    radar: "雷达",
     git: "Git",
     files: "文件",
     search: "搜索",
@@ -1813,6 +1814,25 @@ const zhPart1 = {
       task: "任务",
       explore: "探索",
       reasoning: "思考",
+    },
+    radar: {
+      modeCurrentTask: "当前任务",
+      modeWorkspaceRadar: "工作区雷达",
+      runningSection: "进行中（{{count}}）",
+      recentSection: "最近完成（{{count}}）",
+      emptyRunning: "当前没有进行中的会话。",
+      emptyRecent: "当前没有最近完成的会话。",
+      openSession: "打开",
+      runningCountAria: "{{count}} 个进行中会话",
+      recentCountAria: "{{count}} 个最近会话",
+      startedAt: "开始：",
+      endedAt: "结束：",
+      totalDuration: "耗时：",
+      timeUnknown: "--:--:--",
+      durationUnknown: "--",
+      unreadBadge: "新",
+      unreadMark: "未读",
+      readMark: "已读",
     },
     status: {
       running: "运行中",

@@ -1,6 +1,7 @@
 import type { MouseEvent } from "react";
 import type { WorkspaceInfo } from "../../../types";
 import { isDefaultWorkspacePath } from "../../workspaces/utils/defaultWorkspace";
+import { useTranslation } from "react-i18next";
 
 type WorkspaceCardProps = {
   workspace: WorkspaceInfo;
@@ -8,6 +9,8 @@ type WorkspaceCardProps = {
   isActive: boolean;
   hasPrimaryActiveThread: boolean;
   hasRunningSession?: boolean;
+  runningSessionCount?: number;
+  recentSessionCount?: number;
   isCollapsed: boolean;
   onSelectWorkspace: (id: string) => void;
   onShowWorkspaceMenu: (event: MouseEvent, workspace: WorkspaceInfo) => void;
@@ -21,12 +24,15 @@ export function WorkspaceCard({
   isActive,
   hasPrimaryActiveThread,
   hasRunningSession = false,
+  runningSessionCount = 0,
+  recentSessionCount = 0,
   isCollapsed,
   onSelectWorkspace,
   onShowWorkspaceMenu,
   onToggleWorkspaceCollapse,
   children,
 }: WorkspaceCardProps) {
+  const { t } = useTranslation();
   const isDefaultWorkspace = isDefaultWorkspacePath(workspace.path);
 
   const handleRowClick = () => {
@@ -70,6 +76,24 @@ export function WorkspaceCard({
           </button>
 
           <span className="workspace-name-text">{workspaceName ?? workspace.name}</span>
+          {runningSessionCount > 0 ? (
+            <span
+              className="workspace-session-signal is-running"
+              aria-label={t("activityPanel.radar.runningCountAria", { count: runningSessionCount })}
+              title={t("activityPanel.radar.runningCountAria", { count: runningSessionCount })}
+            >
+              {runningSessionCount}
+            </span>
+          ) : null}
+          {recentSessionCount > 0 ? (
+            <span
+              className="workspace-session-signal is-recent"
+              aria-label={t("activityPanel.radar.recentCountAria", { count: recentSessionCount })}
+              title={t("activityPanel.radar.recentCountAria", { count: recentSessionCount })}
+            >
+              {recentSessionCount}
+            </span>
+          ) : null}
           {isDefaultWorkspace ? (
             <span className="default-workspace-badge" aria-label="Default Workspace">
               Default

@@ -210,7 +210,17 @@ export function resolveFileReadTarget(
     const specCaseInsensitive = isLikelyWindowsFsPath(normalizedSpecRoot);
     if (isPathInsideRoot(normalizedInputPath, normalizedSpecRoot, specCaseInsensitive)) {
       const suffix = normalizedInputPath.slice(normalizedSpecRoot.length).replace(/^\/+/, "");
-      const externalSpecLogicalPath = suffix ? `openspec/${suffix}` : "openspec";
+      let externalSpecLogicalPath = "openspec";
+      if (suffix) {
+        const normalizedSuffix = suffix.toLowerCase();
+        if (normalizedSuffix === "openspec") {
+          externalSpecLogicalPath = "openspec";
+        } else if (normalizedSuffix.startsWith("openspec/")) {
+          externalSpecLogicalPath = `openspec/${suffix.slice("openspec/".length)}`;
+        } else {
+          externalSpecLogicalPath = `openspec/${suffix}`;
+        }
+      }
       return {
         domain: "external-spec",
         normalizedInputPath,

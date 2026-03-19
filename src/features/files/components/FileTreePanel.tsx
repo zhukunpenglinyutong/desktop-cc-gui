@@ -132,6 +132,7 @@ function setFileTreeDragBridge(paths: string[]) {
   if (typeof window === "undefined") {
     return;
   }
+  document.documentElement.classList.add("file-tree-dragging");
   window.__fileTreeDragPaths = paths;
   window.__fileTreeDragStamp = Date.now();
   window.__fileTreeDragActive = true;
@@ -425,6 +426,7 @@ function clearFileTreeDragBridge() {
   if (typeof window === "undefined") {
     return;
   }
+  document.documentElement.classList.remove("file-tree-dragging");
   if (typeof window.__fileTreeDragCleanup === "function") {
     try {
       window.__fileTreeDragCleanup();
@@ -532,7 +534,7 @@ function buildTree(
     const labels = [start.name];
     let path = start.path;
 
-    while (true) {
+    for (;;) {
       const children = Array.from(node.children.values());
       const hasDirectFile = children.some((child) => child.type === "file");
       const directFolders = children.filter((child) => child.type === "folder");
@@ -1086,6 +1088,17 @@ export function FileTreePanel({
     });
   };
 
+  const toggleFolderExpandedState = useCallback(
+    (path: string, isLazyFolder: boolean) => {
+      const shouldExpand = !expandedFolders.has(path);
+      toggleFolder(path);
+      if (shouldExpand && isLazyFolder) {
+        void loadLazyDirectoryChildren(path);
+      }
+    },
+    [expandedFolders, loadLazyDirectoryChildren],
+  );
+
   const resolvePath = useCallback(
     (relativePath: string) => {
       const usesWindowsSeparator = workspacePath.includes("\\");
@@ -1605,11 +1618,7 @@ export function FileTreePanel({
                 if (!canExpand) {
                   return;
                 }
-                const shouldExpand = !expandedFolders.has(node.path);
-                toggleFolder(node.path);
-                if (shouldExpand && isLazyFolder) {
-                  void loadLazyDirectoryChildren(node.path);
-                }
+                toggleFolderExpandedState(node.path, isLazyFolder);
                 return;
               }
               if (onOpenFile) {
@@ -1683,7 +1692,14 @@ export function FileTreePanel({
             }}
           >
             {isFolder && canExpand ? (
-              <span className={`file-tree-chevron${isExpanded ? " is-open" : ""}`}>
+              <span
+                className={`file-tree-chevron${isExpanded ? " is-open" : ""}`}
+                onClick={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  toggleFolderExpandedState(node.path, isLazyFolder);
+                }}
+              >
                 ›
               </span>
             ) : (
@@ -1757,8 +1773,6 @@ export function FileTreePanel({
               className={`file-tree-row is-folder is-root${selectedNodePaths.has("") ? " is-selected" : ""}${selectedNodePath === "" ? " is-primary" : ""}`}
               onClick={() => {
                 setSingleSelection("", "root");
-              }}
-              onDoubleClick={() => {
                 setRootExpanded((prev) => !prev);
               }}
               onContextMenu={(event) => {
@@ -1773,6 +1787,11 @@ export function FileTreePanel({
             >
               <span
                 className={`file-tree-chevron file-tree-root-chevron${isRootVisibleExpanded ? " is-open" : ""}`}
+                onClick={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  setRootExpanded((prev) => !prev);
+                }}
               >
                 ›
               </span>

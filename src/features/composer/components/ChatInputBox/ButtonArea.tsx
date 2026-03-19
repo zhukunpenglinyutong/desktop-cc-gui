@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { ButtonAreaProps, ModelInfo, PermissionMode, ReasoningEffort } from './types';
-import { ConfigSelect, ModelSelect, ModeSelect, ReasoningSelect } from './selectors';
+import { ConfigSelect, ModelSelect, ModeSelect, ProviderSelect, ReasoningSelect } from './selectors';
 import { CLAUDE_MODELS, CODEX_MODELS } from './types';
 import { STORAGE_KEYS, validateCodexCustomModels } from '../../types/provider';
 import type { CodexCustomModel } from '../../types/provider';
@@ -269,6 +269,15 @@ export const ButtonArea = ({
           onAgentSelect={onAgentSelect}
           onOpenAgentSettings={onOpenAgentSettings}
         />
+        {onProviderSelect && (
+          <ProviderSelect
+            value={currentProvider}
+            onChange={handleProviderSelect}
+            providerAvailability={providerAvailability}
+            providerVersions={providerVersions}
+            iconOnly
+          />
+        )}
         <ModeSelect value={permissionMode} onChange={onModeSelect ?? NOOP_MODE} provider={currentProvider} />
         <ModelSelect
           value={selectedModel}

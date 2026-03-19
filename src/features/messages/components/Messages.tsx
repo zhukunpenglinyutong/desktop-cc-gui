@@ -296,10 +296,25 @@ function extractModeFallbackUserInput(
   if (!markerMatch || markerMatch.index < 0) {
     return { text, mode };
   }
-  const extracted = text
-    .slice(markerMatch.index + markerMatch[0].length)
-    .trim();
-  return { text: extracted || text, mode };
+  const extractedRaw = text.slice(markerMatch.index + markerMatch[0].length);
+  const extracted = extractedRaw.replace(/^\r?\n/, "").replace(/^ /, "");
+  return { text: extracted.trim().length > 0 ? extracted : text, mode };
+}
+
+function extractLatestUserInputTextPreserveFormatting(text: string): string {
+  const userInputMatches = [...text.matchAll(/\[User Input\]\s*/g)];
+  if (userInputMatches.length === 0) {
+    return text;
+  }
+  const lastMatch = userInputMatches[userInputMatches.length - 1];
+  const markerIndex = lastMatch.index ?? -1;
+  if (markerIndex < 0) {
+    return text;
+  }
+  const markerLength = lastMatch[0]?.length ?? 0;
+  const extractedRaw = text.slice(markerIndex + markerLength);
+  const extracted = extractedRaw.replace(/^\r?\n/, "").replace(/^ /, "");
+  return extracted.trim().length > 0 ? extracted : text;
 }
 
 function toConversationEngine(
@@ -1313,18 +1328,7 @@ const MessageRow = memo(function MessageRow({
       ? extractModeFallbackUserInput(originalText).text
       : originalText;
     const filteredCommandText = extractCommandMessageDisplayText(safeText);
-    const userInputMatches = [...filteredCommandText.matchAll(/\[User Input\]\s*/g)];
-    if (userInputMatches.length === 0) {
-      return filteredCommandText;
-    }
-    const lastMatch = userInputMatches[userInputMatches.length - 1];
-    const markerIndex = lastMatch.index ?? -1;
-    if (markerIndex < 0) {
-      return filteredCommandText;
-    }
-    const markerLength = lastMatch[0]?.length ?? 0;
-    const extracted = filteredCommandText.slice(markerIndex + markerLength).trim();
-    return extracted.length > 0 ? extracted : filteredCommandText;
+    return extractLatestUserInputTextPreserveFormatting(filteredCommandText);
   }, [enableCollaborationBadge, item.role, item.text, memorySummary]);
   const hasText = displayText.trim().length > 0;
   const hideCopyButton = item.role === "assistant" && Boolean(memorySummary) && !hasText;

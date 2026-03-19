@@ -2,6 +2,192 @@
 
 ---
 
+##### **2026年3月19日（v0.3.0）**
+
+English:
+
+✨ Features
+- Add Session Radar panel in workspace to aggregate session status and improve at-a-glance visibility
+- Persist Session Radar completion records with stronger cross-workspace recovery
+- Add quick engine switching entry via bottom icon controls in composer
+- Support project-root-based custom Spec path resolution with automatic `openspec` discovery
+
+🔧 Improvements
+- Refine Session Radar read-state icon behavior and selected-state colors under dark theme
+- Polish selected icon style for panel tabs with cleaner border-only visual feedback
+
+🐛 Fixes
+- Fix composer input overflow caused by long `MessageQueue` text blocks
+- Fix `MessageQueue` queue type reference mismatch in chat input path
+- Fix dual-display fullscreen drag freeze issue on Windows
+- Fix file tree root collapse interaction and drag cursor compatibility
+- Fix session badge and `Default` label contrast across light/dark themes
+- Fix desktop light-theme selector consistency and color mismatch on macOS
+- Fix inconsistent worktree info popover color styling
+
+中文：
+
+✨ Features
+- 新增工作区 Session Radar 雷达面板，聚合会话状态并提升全局可观测性
+- 持久化 Session Radar 完成记录，增强跨工作区恢复能力
+- 在输入框底部 icon 区新增引擎快速切换入口
+- 支持以项目根为语义的自定义 Spec 路径，并自动解析 `openspec`
+
+🔧 Improvements
+- 优化 Session Radar 已读状态图标表现与深色主题选中色彩
+- 调整面板 Tab 图标选中态为更简洁的无背景边框风格
+
+🐛 Fixes
+- 修复长文本 `MessageQueue` 场景下输入区布局溢出问题
+- 修复聊天输入链路中 `MessageQueue` 队列类型引用错误
+- 修复 Windows 双屏全屏拖拽导致白屏卡死问题
+- 修复文件树根目录折叠交互并优化拖拽抓取光标兼容性
+- 修复深浅主题下会话徽标与 `Default` 标签对比度问题
+- 统一桌面端浅色主题 selector 下拉样式并修复 macOS 色差
+- 修复工作树信息弹层配色不一致问题
+
+---
+
+##### **2026年3月18日（v0.2.9）**
+
+English:
+
+✨ Features
+- Support drag-and-drop file references from file tree and external files directly into chat composer
+- Add workspace open-mode routing with new-window creation capability
+- Highlight running sessions with project/worktree icon cues in sidebar
+- Support double-click maximize/restore for file tabs
+- Enhance `$` skill picker and scope display in chat input
+- Improve session activity visual system with clearer sub-session grouping and color mapping
+- Improve session activity and Spec Hub entry layout with smoother file-tree interaction
+
+⚡ Performance
+- Land Deferred + JIT strategy for large-file governance and reduce heavy-path startup pressure
+- Complete Bridge cleanup and modularization hardening to improve runtime stability
+
+🐛 Fixes
+- Fix Win10 CLI detection false positives causing engine switch failures
+- Fix Windows light-theme dropdown readability and workspace path matching compatibility
+- Fix occasional style distortion and tag rendering loss after file-tree drag reference
+- Fix Codex history sessions becoming invisible after Windows restart
+- Fix session activity ordering conflicts for same-second events
+- Fix missing child sessions in Codex history and align with real-time activity view
+- Fix default startup sidebar collapsed state by restoring expanded behavior
+- Fix solo mode right-pane width reset and unify processing agent badge display
+- Harden refactor runtime contracts and static import scanning to prevent undefined-reference startup regressions
+- Support opening external spec files from session file changes while preserving workspace compatibility
+
+中文：
+
+✨ Features
+- 支持将文件树与外部文件直接拖拽引用到对话输入框
+- 新增工作区打开模式分流与新建窗口能力
+- 侧边栏为运行中会话增加项目/工作树图标高亮提示
+- 文件 Tab 支持双击最大化与还原
+- 增强输入框 `$` 技能选择器与作用域展示
+- 优化会话活动视觉体系，强化子会话分组与配色映射
+- 调整会话活动与 Spec Hub 入口布局并优化文件树交互
+
+⚡ Performance
+- 落地 Deferred + JIT 大文件治理策略，降低重路径启动压力
+- 完成 Bridge 清理与模块化治理收口，提升运行时稳定性
+
+🐛 Fixes
+- 修复 Win10 下 CLI 探测误判导致引擎切换失败
+- 修复 Windows 浅色下拉可读性与工作区路径匹配兼容性问题
+- 修复文件树拖拽引用后偶发样式失真与标签渲染丢失
+- 修复 Windows 重启后 Codex 历史会话不可见
+- 修复会话活动同秒事件排序冲突
+- 修复 Codex 历史子会话丢失并与实时活动展示对齐
+- 修复客户端启动默认侧栏未展开的问题
+- 修复 solo 模式右侧宽度重置并统一 processing 代理徽章展示
+- 加固重构后的运行时契约与静态导入扫描，修复未定义引用导致的启动回归
+- 支持会话文件变更中打开 external spec 文件并保持 workspace 兼容
+
+---
+
+##### **2026年3月15日（v0.2.8）**
+
+English:
+
+✨ Features
+- Add workspace Session Activity panel and complete tool-event pipeline integration
+- Recover Codex historical session activity and aggregate reasoning events for playback
+- Optimize Session Activity incremental refresh and timeline scanning behavior
+- Enhance file preview UX: richer Markdown rendering, improved toolbar/find interactions, and script/log text fallback opening
+- Support lazy local rendering for Markdown Mermaid modules
+- Optimize right-side file tree density and root alignment
+- Improve HUB panel drag-and-snap interaction and increase right-panel width limits
+- Refresh model modal visual style
+
+🐛 Fixes
+- Improve compatibility with new reasoning events and repair activity rendering chain
+- Improve compatibility with Claude streaming events in Session Activity
+- Fix activity command summaries and `Read` path compatibility
+- Unify command output rendering and fix activity card auto-collapse timing
+- Fix Codex history activity turn-binding mismatch
+- Fix Claude history file-change playback issues
+- Fix engine icon mis-switch on session switch and add timeout error feedback
+- Hide redundant Plan shortcut entry in Codex canvas
+- Fix codex context tooltip being clipped in sidebar scenarios
+- Disable visible console fallback by default on Windows to avoid multiple terminal popups
+- Improve message test assertion type safety
+
+中文：
+
+✨ Features
+- 新增工作区 Session Activity 会话活动面板并补齐工具事件链路
+- 补齐 Codex 历史会话活动恢复与 reasoning 聚合回放能力
+- 优化 Session Activity 增量刷新与时间线扫描机制
+- 增强文件预览体验：提升 Markdown 渲染、编辑器工具栏与查找交互，并支持脚本/日志文本兜底打开
+- 支持 Markdown Mermaid 模块局部懒渲染
+- 优化右侧文件树密度与根节点层级对齐
+- 优化 HUB 面板拖拽吸附交互并提升右侧面板宽度上限
+- 更新模式模型弹窗样式
+
+🐛 Fixes
+- 兼容新版 reasoning 事件并修复会话活动渲染链路
+- 兼容 Claude 流式事件并修复会话活动展示问题
+- 修复会话活动命令摘要与 `Read` 路径兼容性
+- 统一命令输出渲染并修复活动卡片自动收起时序
+- 修复 Codex 历史活动轮次错挂问题
+- 修复 Claude 历史文件改动回放异常
+- 修复会话切换时引擎图标误变更并补齐超时错误反馈
+- 隐藏 Codex 幕布中冗余 Plan 快捷入口
+- 修复侧栏场景下 codex 上下文 tooltip 被遮挡
+- 默认关闭 Windows 可见控制台 fallback，避免多终端弹窗
+- 改进消息测试断言类型安全
+
+---
+
+##### **2026年3月12日（v0.2.7）**
+
+English:
+
+✨ Features
+- Add global network proxy settings and proxy status exposure
+- Optimize compact summary display in Git Diff and history workspaces
+- Improve file viewer Markdown defaults, theme readability, and wide-content no-wrap rendering consistency
+
+🐛 Fixes
+- Fix Codex startup compensation, timeout recovery, and plan presentation regressions
+- Align summary indicator styles across Diff and Git History views
+- Refine diff viewer theme backgrounds for better visual consistency
+
+中文：
+
+✨ Features
+- 新增全局网络代理设置与代理状态透出
+- 优化 Git Diff 与历史工作区紧凑摘要展示
+- 改进文件查看器 Markdown 默认模式、主题可读性与宽内容 no-wrap 渲染一致性
+
+🐛 Fixes
+- 修复 Codex 启动补偿、超时恢复与计划展示回归问题
+- 统一 Diff 与 Git 历史摘要指示器样式对齐
+- 优化 Diff Viewer 主题背景以提升视觉一致性
+
+---
+
 ##### **2026年3月11日（v0.2.6）**
 
 English:

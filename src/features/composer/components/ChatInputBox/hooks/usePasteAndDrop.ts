@@ -494,7 +494,7 @@ export function usePasteAndDrop({
         e.preventDefault();
 
         // Try multiple ways to get text
-        let text =
+        const text =
           e.clipboardData.getData('text/plain') ||
           e.clipboardData.getData('text/uri-list') ||
           e.clipboardData.getData('text/html');

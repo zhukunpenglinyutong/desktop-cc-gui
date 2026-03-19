@@ -8,7 +8,7 @@ set -euo pipefail
 
 APP_PATH="${1:?Usage: $0 <app_path> <output_dmg_path> [volume_name]}"
 OUTPUT_DMG="${2:?Usage: $0 <app_path> <output_dmg_path> [volume_name]}"
-VOLUME_NAME="${3:-CodeMoss-Install}"
+VOLUME_NAME="${3:-CodeMoss Installer}"
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT_DIR="$(dirname "$SCRIPT_DIR")"

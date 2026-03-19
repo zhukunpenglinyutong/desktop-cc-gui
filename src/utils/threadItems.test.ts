@@ -1308,6 +1308,85 @@ go lang`,
     }
   });
 
+  it("preserves multiline structure when user text is split into multiple text inputs", () => {
+    const item = buildConversationItemFromThreadItem({
+      type: "userMessage",
+      id: "msg-multiline-split-1",
+      content: [
+        { type: "text", text: "整理内容为：\n" },
+        { type: "text", text: "1. 宏观观点\n2. 技术观点\n" },
+        { type: "text", text: "\n3. 商品观点" },
+      ],
+    });
+
+    expect(item).not.toBeNull();
+    if (item && item.kind === "message") {
+      expect(item.role).toBe("user");
+      expect(item.text).toBe("整理内容为：\n1. 宏观观点\n2. 技术观点\n\n3. 商品观点");
+    }
+  });
+
+  it("keeps a single separator before skill token without collapsing text structure", () => {
+    const item = buildConversationItemFromThreadItem({
+      type: "userMessage",
+      id: "msg-skill-spacing-1",
+      content: [
+        { type: "text", text: "Please" },
+        { type: "skill", name: "Review" },
+        { type: "text", text: "\nline2" },
+      ],
+    });
+
+    expect(item).not.toBeNull();
+    if (item && item.kind === "message") {
+      expect(item.role).toBe("user");
+      expect(item.text).toBe("Please $Review\nline2");
+    }
+  });
+
+  it("adds a separator after skill token when following text starts inline", () => {
+    const item = buildConversationItemFromThreadItem({
+      type: "userMessage",
+      id: "msg-skill-inline-follow-1",
+      content: [
+        { type: "text", text: "Please" },
+        { type: "skill", name: "Review" },
+        { type: "text", text: "now" },
+      ],
+    });
+
+    expect(item).not.toBeNull();
+    if (item && item.kind === "message") {
+      expect(item.role).toBe("user");
+      expect(item.text).toBe("Please $Review now");
+    }
+  });
+
+  it("preserves multiline [User Input] block when skill token and common/system prefixes coexist", () => {
+    const rawInput = "你好\n我是陈湘宁!!";
+    const item = buildConversationItemFromThreadItem({
+      type: "userMessage",
+      id: "msg-skill-common-user-input-1",
+      content: [
+        { type: "skill", name: "tr-zh-en-jp" },
+        {
+          type: "text",
+          text:
+            "[System] 你是 MossX Agent。\n[Skill Prompt] tr-zh-en-jp\n[Commons Prompt] follow project rules\n[User Input] " +
+            rawInput,
+        },
+      ],
+    });
+
+    expect(item).not.toBeNull();
+    if (item && item.kind === "message") {
+      expect(item.role).toBe("user");
+      expect(item.text).toContain("$tr-zh-en-jp");
+      expect(item.text).toContain("[Commons Prompt]");
+      expect(item.text).toContain(`[User Input] ${rawInput}`);
+    }
+  });
+
   it("strips plan fallback directive prefix from user message content", () => {
     const item = buildConversationItemFromThreadItem({
       type: "userMessage",

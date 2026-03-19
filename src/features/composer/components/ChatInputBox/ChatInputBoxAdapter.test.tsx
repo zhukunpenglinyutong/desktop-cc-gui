@@ -287,6 +287,37 @@ describe('ChatInputBoxAdapter toggle bridge', () => {
     expect(latest.usageMaxTokens).toBe(256_000);
   });
 
+  it('maps queued messages to preview content while preserving full text metadata', async () => {
+    const longMessage = '队列消息'.repeat(60);
+    renderAdapter({
+      queuedMessages: [
+        {
+          id: 'queue-1',
+          text: longMessage,
+          createdAt: 1_700_000_000_000,
+        },
+      ],
+    });
+
+    await waitFor(() => expect(mockState.latestProps).toBeTruthy());
+
+    const latest = mockState.latestProps as {
+      messageQueue?: Array<{
+        id: string;
+        content: string;
+        fullContent?: string;
+        queuedAt: number;
+      }>;
+    };
+
+    const mapped = latest.messageQueue?.[0];
+    expect(mapped?.id).toBe('queue-1');
+    expect(mapped?.queuedAt).toBe(1_700_000_000_000);
+    expect(mapped?.content.length).toBeLessThan(longMessage.length);
+    expect(mapped?.content.endsWith('…')).toBe(true);
+    expect(mapped?.fullContent).toBe(longMessage);
+  });
+
   it('forwards manual context compaction callback to ChatInputBox', async () => {
     const onRequestContextCompaction = vi.fn();
     renderAdapter({

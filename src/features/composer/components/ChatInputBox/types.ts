@@ -826,6 +826,8 @@ export interface QueuedMessage {
   id: string;
   /** Message content */
   content: string;
+  /** Full message content for tooltip/accessibility when content is preview-truncated */
+  fullContent?: string;
   /** Attachments (optional) */
   attachments?: Attachment[];
   /** Timestamp when queued */

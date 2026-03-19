@@ -23,6 +23,20 @@ import type { WorkspaceHomeDeleteResult } from "../features/workspaces/component
 import type { EngineType, MessageSendOptions, WorkspaceInfo } from "../types";
 import type { KanbanContextMode } from "../features/kanban/utils/contextMode";
 
+const KANBAN_TAG_REGEX = /&@[^\s]+/g;
+
+export function stripComposerKanbanTagsPreserveFormatting(text: string): string {
+  if (!text || !text.includes("&@")) {
+    return text;
+  }
+  const stripped = text.replace(KANBAN_TAG_REGEX, "");
+  return stripped
+    .replace(/[ \t]+(\r?\n)/g, "$1")
+    .replace(/(\r?\n)[ \t]+/g, "$1")
+    .replace(/[ \t]{2,}/g, " ")
+    .trim();
+}
+
 export function useAppShellSections(ctx: any) {
   const {
     activeWorkspace,
@@ -222,7 +236,7 @@ export function useAppShellSections(ctx: any) {
         )
           ? selectedComposerKanbanPanelId
           : null);
-      const cleanText = text.replace(/&@[^\s]+/g, " ").replace(/\s+/g, " ").trim();
+      const cleanText = stripComposerKanbanTagsPreserveFormatting(text);
       return { panelId, cleanText };
     },
     [composerLinkedKanbanPanels, selectedComposerKanbanPanelId],

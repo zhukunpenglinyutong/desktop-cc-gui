@@ -17,6 +17,7 @@ import { FileViewPanel } from "../../files/components/FileViewPanel";
 import { PromptPanel } from "../../prompts/components/PromptPanel";
 import { ProjectMemoryPanel } from "../../project-memory/components/ProjectMemoryPanel";
 import { WorkspaceSessionActivityPanel } from "../../session-activity/components/WorkspaceSessionActivityPanel";
+import { WorkspaceSessionRadarPanel } from "../../session-activity/components/WorkspaceSessionRadarPanel";
 import { DebugPanel } from "../../debug/components/DebugPanel";
 import { PlanPanel } from "../../plan/components/PlanPanel";
 import { PanelTabs } from "../components/PanelTabs";
@@ -82,6 +83,7 @@ import type {
 import { resolveDiffPathFromWorkspacePath } from "../../../utils/workspacePaths";
 import { resolvePresentationProfile } from "../../messages/presentation/presentationProfile";
 import { useWorkspaceSessionActivity } from "../../session-activity/hooks/useWorkspaceSessionActivity";
+import type { SessionRadarEntry } from "../../session-activity/hooks/useSessionRadarFeed";
 
 type ThreadActivityStatus = {
   isProcessing: boolean;
@@ -137,6 +139,8 @@ type LayoutNodesOptions = {
   threadsByWorkspace: Record<string, ThreadSummary[]>;
   threadParentById: Record<string, string>;
   threadStatusById: Record<string, ThreadActivityStatus>;
+  runningSessionCountByWorkspaceId: Record<string, number>;
+  recentCompletedSessionCountByWorkspaceId: Record<string, number>;
   threadListLoadingByWorkspace: Record<string, boolean>;
   threadListPagingByWorkspace: Record<string, boolean>;
   threadListCursorByWorkspace: Record<string, string | null>;
@@ -146,6 +150,8 @@ type LayoutNodesOptions = {
   systemProxyUrl?: string | null;
   activeItems: ConversationItem[];
   threadItemsByThread: Record<string, ConversationItem[]>;
+  sessionRadarRunningSessions: SessionRadarEntry[];
+  sessionRadarRecentCompletedSessions: SessionRadarEntry[];
   activeRateLimits: RateLimitSnapshot | null;
   usageShowRemaining: boolean;
   onRefreshAccountRateLimits?: () => Promise<void> | void;
@@ -301,8 +307,8 @@ type LayoutNodesOptions = {
   worktreeApplyError: string | null;
   worktreeApplySuccess: boolean;
   onApplyWorktreeChanges?: () => void | Promise<void>;
-  filePanelMode: "git" | "files" | "search" | "prompts" | "memory" | "activity";
-  onFilePanelModeChange: (mode: "git" | "files" | "search" | "prompts" | "memory" | "activity") => void;
+  filePanelMode: "git" | "files" | "search" | "prompts" | "memory" | "activity" | "radar";
+  onFilePanelModeChange: (mode: "git" | "files" | "search" | "prompts" | "memory" | "activity" | "radar") => void;
   fileTreeLoading: boolean;
   onRefreshFiles?: () => void;
   onToggleRuntimeConsole: () => void;
@@ -681,6 +687,8 @@ export function useLayoutNodes(options: LayoutNodesOptions): LayoutNodesResult {
       threadsByWorkspace={options.threadsByWorkspace}
       threadParentById={options.threadParentById}
       threadStatusById={options.threadStatusById}
+      runningSessionCountByWorkspaceId={options.runningSessionCountByWorkspaceId}
+      recentSessionCountByWorkspaceId={options.recentCompletedSessionCountByWorkspaceId}
       threadListLoadingByWorkspace={options.threadListLoadingByWorkspace}
       threadListPagingByWorkspace={options.threadListPagingByWorkspace}
       threadListCursorByWorkspace={options.threadListCursorByWorkspace}
@@ -1051,7 +1059,10 @@ export function useLayoutNodes(options: LayoutNodesOptions): LayoutNodesResult {
       <PanelTabs
         active={options.filePanelMode}
         onSelect={options.onFilePanelModeChange}
-        liveStates={{ activity: workspaceActivity.isProcessing }}
+        liveStates={{
+          activity: workspaceActivity.isProcessing,
+          radar: options.sessionRadarRunningSessions.length > 0,
+        }}
       />
       <div className="right-panel-toolbar-actions">
         <button
@@ -1140,6 +1151,14 @@ export function useLayoutNodes(options: LayoutNodesOptions): LayoutNodesResult {
         onSelectThread={options.onSelectThread}
         liveEditPreviewEnabled={options.liveEditPreviewEnabled}
         onToggleLiveEditPreview={options.onToggleLiveEditPreview}
+      />
+    );
+  } else if (options.filePanelMode === "radar") {
+    gitDiffPanelNode = (
+      <WorkspaceSessionRadarPanel
+        runningSessions={options.sessionRadarRunningSessions}
+        recentCompletedSessions={options.sessionRadarRecentCompletedSessions}
+        onSelectThread={options.onSelectThread}
       />
     );
   } else {

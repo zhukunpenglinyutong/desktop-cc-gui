@@ -43,6 +43,13 @@
   border-radius: 50%;
 }
 
+.selector-button.selector-provider-button {
+  width: 28px;
+  padding: 0;
+  justify-content: center;
+  border-radius: 50%;
+}
+
 /* Responsive text hiding for selector buttons */
 .selector-button-text {
   white-space: nowrap;
@@ -413,8 +420,8 @@
   visibility: visible;
 }
 
-/* Win + light: keep selector surfaces opaque and text contrast stable */
-:root[data-theme="light"] .app.windows-desktop .selector-dropdown {
+/* Desktop + light: keep selector surfaces opaque and text contrast stable */
+:root[data-theme="light"] .app.layout-desktop .selector-dropdown {
   background: #ffffff;
   border-color: #d8dee9;
   box-shadow: 0 12px 28px rgba(15, 23, 42, 0.16);
@@ -422,22 +429,22 @@
   -webkit-backdrop-filter: none;
 }
 
-:root[data-theme="light"] .app.windows-desktop .selector-option {
+:root[data-theme="light"] .app.layout-desktop .selector-option {
   color: #111827;
 }
 
-:root[data-theme="light"] .app.windows-desktop .selector-option .model-description,
-:root[data-theme="light"] .app.windows-desktop .selector-option .mode-description,
-:root[data-theme="light"] .app.windows-desktop .selector-dropdown-title {
+:root[data-theme="light"] .app.layout-desktop .selector-option .model-description,
+:root[data-theme="light"] .app.layout-desktop .selector-option .mode-description,
+:root[data-theme="light"] .app.layout-desktop .selector-dropdown-title {
   color: #667084;
 }
 
-:root[data-theme="light"] .app.windows-desktop .selector-option.disabled {
+:root[data-theme="light"] .app.layout-desktop .selector-option.disabled {
   opacity: 0.68;
 }
 
 @media (prefers-color-scheme: light) {
-  :root:not([data-theme]) .app.windows-desktop .selector-dropdown {
+  :root:not([data-theme]) .app.layout-desktop .selector-dropdown {
     background: #ffffff;
     border-color: #d8dee9;
     box-shadow: 0 12px 28px rgba(15, 23, 42, 0.16);
@@ -445,17 +452,17 @@
     -webkit-backdrop-filter: none;
   }
 
-  :root:not([data-theme]) .app.windows-desktop .selector-option {
+  :root:not([data-theme]) .app.layout-desktop .selector-option {
     color: #111827;
   }
 
-  :root:not([data-theme]) .app.windows-desktop .selector-option .model-description,
-  :root:not([data-theme]) .app.windows-desktop .selector-option .mode-description,
-  :root:not([data-theme]) .app.windows-desktop .selector-dropdown-title {
+  :root:not([data-theme]) .app.layout-desktop .selector-option .model-description,
+  :root:not([data-theme]) .app.layout-desktop .selector-option .mode-description,
+  :root:not([data-theme]) .app.layout-desktop .selector-dropdown-title {
     color: #667084;
   }
 
-  :root:not([data-theme]) .app.windows-desktop .selector-option.disabled {
+  :root:not([data-theme]) .app.layout-desktop .selector-option.disabled {
     opacity: 0.68;
   }
 }

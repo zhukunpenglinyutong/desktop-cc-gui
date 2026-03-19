@@ -73,6 +73,32 @@ fn normalize_custom_spec_root(path: &str) -> Result<PathBuf, String> {
     Ok(canonical)
 }
 
+fn resolve_effective_spec_root(custom_root: &Path) -> Result<PathBuf, String> {
+    let file_name = custom_root
+        .file_name()
+        .and_then(|value| value.to_str())
+        .unwrap_or_default();
+    if file_name.eq_ignore_ascii_case("openspec") {
+        return Ok(custom_root.to_path_buf());
+    }
+
+    let nested = custom_root.join("openspec");
+    if nested.is_dir() {
+        return nested
+            .canonicalize()
+            .map_err(|err| format!("Failed to resolve custom spec root: {err}"));
+    }
+
+    // Backward compatibility: older clients may pass openspec root directly
+    // with non-standard directory names.
+    let legacy_root = custom_root.join("changes").is_dir() && custom_root.join("specs").is_dir();
+    if legacy_root {
+        return Ok(custom_root.to_path_buf());
+    }
+
+    Ok(nested)
+}
+
 #[cfg(windows)]
 fn normalize_windows_link_path(path: &Path) -> String {
     let raw = path.to_string_lossy().replace('/', "\\");
@@ -98,12 +124,13 @@ fn prepare_spec_command_workdir(
         return Ok((workspace_root.to_path_buf(), None));
     };
     let custom_root = normalize_custom_spec_root(root_input)?;
-    let file_name = custom_root
+    let effective_spec_root = resolve_effective_spec_root(&custom_root)?;
+    let file_name = effective_spec_root
         .file_name()
         .and_then(|value| value.to_str())
         .unwrap_or_default();
     if file_name.eq_ignore_ascii_case("openspec") {
-        let parent = custom_root
+        let parent = effective_spec_root
             .parent()
             .ok_or_else(|| "Custom spec root parent is invalid.".to_string())?;
         return Ok((parent.to_path_buf(), None));
@@ -116,14 +143,14 @@ fn prepare_spec_command_workdir(
 
     #[cfg(unix)]
     {
-        std::os::unix::fs::symlink(&custom_root, &link_target)
+        std::os::unix::fs::symlink(&effective_spec_root, &link_target)
             .map_err(|err| format!("Failed to prepare temporary spec symlink workspace: {err}"))?;
     }
     #[cfg(windows)]
     {
-        if std::os::windows::fs::symlink_dir(&custom_root, &link_target).is_err() {
+        if std::os::windows::fs::symlink_dir(&effective_spec_root, &link_target).is_err() {
             let link_target_path = normalize_windows_link_path(&link_target);
-            let custom_root_path = normalize_windows_link_path(&custom_root);
+            let custom_root_path = normalize_windows_link_path(&effective_spec_root);
             let target_arg = escape_windows_cmd_arg(&link_target_path);
             let source_arg = escape_windows_cmd_arg(&custom_root_path);
             let is_unc_root = custom_root_path.starts_with(r"\\");
@@ -1697,8 +1724,10 @@ pub(crate) async fn get_open_app_icon(app_name: String) -> Result<Option<String>
 #[cfg(test)]
 mod tests {
     use super::{
-        format_open_new_window_failure, normalize_new_window_path, DEFAULT_MACOS_APP_NAME,
+        format_open_new_window_failure, normalize_new_window_path, prepare_spec_command_workdir,
+        DEFAULT_MACOS_APP_NAME,
     };
+    use uuid::Uuid;
 
     #[cfg(target_os = "macos")]
     use super::build_macos_new_window_open_args;
@@ -1726,6 +1755,65 @@ mod tests {
             format_open_new_window_failure(None),
             "Failed to open new app window (open returned terminated by signal)."
         );
+    }
+
+    #[test]
+    fn prepare_spec_command_workdir_accepts_project_root_with_openspec_child() {
+        let project_root = std::env::temp_dir().join(format!("mossx-spec-project-{}", Uuid::new_v4()));
+        std::fs::create_dir_all(project_root.join("openspec")).expect("create openspec dir");
+        let workspace_root = project_root.join("workspace");
+        std::fs::create_dir_all(&workspace_root).expect("create workspace root");
+
+        let (exec_dir, cleanup_dir) = prepare_spec_command_workdir(
+            &workspace_root,
+            Some(project_root.to_str().expect("project root")),
+        )
+        .expect("prepare spec workdir");
+
+        assert_eq!(exec_dir, project_root.canonicalize().expect("canonical project root"));
+        assert_eq!(cleanup_dir, None);
+
+        std::fs::remove_dir_all(&project_root).expect("cleanup");
+    }
+
+    #[test]
+    fn prepare_spec_command_workdir_accepts_project_root_without_openspec_child() {
+        let project_root =
+            std::env::temp_dir().join(format!("mossx-spec-project-empty-{}", Uuid::new_v4()));
+        std::fs::create_dir_all(&project_root).expect("create project root");
+        let workspace_root = project_root.join("workspace");
+        std::fs::create_dir_all(&workspace_root).expect("create workspace root");
+
+        let (exec_dir, cleanup_dir) = prepare_spec_command_workdir(
+            &workspace_root,
+            Some(project_root.to_str().expect("project root")),
+        )
+        .expect("prepare spec workdir");
+
+        assert_eq!(exec_dir, project_root.canonicalize().expect("canonical project root"));
+        assert_eq!(cleanup_dir, None);
+
+        std::fs::remove_dir_all(&project_root).expect("cleanup");
+    }
+
+    #[test]
+    fn prepare_spec_command_workdir_supports_direct_openspec_root_input() {
+        let project_root = std::env::temp_dir().join(format!("mossx-spec-direct-{}", Uuid::new_v4()));
+        let openspec_root = project_root.join("openspec");
+        std::fs::create_dir_all(&openspec_root).expect("create openspec dir");
+        let workspace_root = project_root.join("workspace");
+        std::fs::create_dir_all(&workspace_root).expect("create workspace root");
+
+        let (exec_dir, cleanup_dir) = prepare_spec_command_workdir(
+            &workspace_root,
+            Some(openspec_root.to_str().expect("openspec root")),
+        )
+        .expect("prepare spec workdir");
+
+        assert_eq!(exec_dir, project_root.canonicalize().expect("canonical project root"));
+        assert_eq!(cleanup_dir, None);
+
+        std::fs::remove_dir_all(&project_root).expect("cleanup");
     }
 
     #[cfg(target_os = "macos")]

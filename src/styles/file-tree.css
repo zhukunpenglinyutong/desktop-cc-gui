@@ -579,6 +579,22 @@
   width: 100%;
 }
 
+.file-tree-row[draggable="true"] {
+  cursor: -webkit-grab;
+  cursor: grab;
+}
+
+.file-tree-row[draggable="true"]:active {
+  cursor: -webkit-grabbing;
+  cursor: grabbing;
+}
+
+:root.file-tree-dragging,
+:root.file-tree-dragging * {
+  cursor: -webkit-grabbing !important;
+  cursor: grabbing !important;
+}
+
 .file-tree-row-wrap {
   position: relative;
   display: flex;

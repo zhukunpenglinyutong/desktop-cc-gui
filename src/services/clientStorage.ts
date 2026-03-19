@@ -1,8 +1,8 @@
 import { invoke } from "@tauri-apps/api/core";
 
-export type ClientStoreName = "layout" | "composer" | "threads" | "app";
+export type ClientStoreName = "layout" | "composer" | "threads" | "app" | "leida";
 
-const ALL_STORES: ClientStoreName[] = ["layout", "composer", "threads", "app"];
+const ALL_STORES: ClientStoreName[] = ["layout", "composer", "threads", "app", "leida"];
 
 const cache: Partial<Record<ClientStoreName, Record<string, unknown>>> = {};
 
@@ -59,19 +59,29 @@ export function writeClientStoreValue(
   store: ClientStoreName,
   key: string,
   value: unknown,
+  options?: { immediate?: boolean },
 ): void {
   if (!cache[store]) {
     cache[store] = {};
   }
   cache[store]![key] = value;
+  if (options?.immediate) {
+    flushStoreWrite(store);
+    return;
+  }
   scheduleDiskWrite(store);
 }
 
 export function writeClientStoreData(
   store: ClientStoreName,
   data: Record<string, unknown>,
+  options?: { immediate?: boolean },
 ): void {
   cache[store] = data;
+  if (options?.immediate) {
+    flushStoreWrite(store);
+    return;
+  }
   scheduleDiskWrite(store);
 }
 
@@ -81,11 +91,19 @@ function scheduleDiskWrite(store: ClientStoreName): void {
   }
   pendingTimers[store] = setTimeout(() => {
     delete pendingTimers[store];
-    const data = cache[store] ?? {};
-    invoke("client_store_write", { store, data }).catch((error) => {
-      if (typeof console !== "undefined") {
-        console.error(`Failed to write client store "${store}":`, error);
-      }
-    });
+    flushStoreWrite(store);
   }, WRITE_DEBOUNCE_MS);
+}
+
+function flushStoreWrite(store: ClientStoreName): void {
+  if (pendingTimers[store] != null) {
+    clearTimeout(pendingTimers[store]);
+    delete pendingTimers[store];
+  }
+  const data = cache[store] ?? {};
+  invoke("client_store_write", { store, data }).catch((error) => {
+    if (typeof console !== "undefined") {
+      console.error(`Failed to write client store "${store}":`, error);
+    }
+  });
 }
