@@ -102,6 +102,12 @@ import {
   ProjectSessionManagementSection,
   type ProjectSessionDeleteResult,
 } from "./ProjectSessionManagementSection";
+import { SessionRadarHistoryManagementSection } from "./SessionRadarHistoryManagementSection";
+import type { SessionRadarEntry } from "../../session-activity/hooks/useSessionRadarFeed";
+import {
+  deleteSessionRadarHistoryEntries,
+  type SessionRadarHistoryDeleteResult,
+} from "../../session-activity/utils/sessionRadarHistoryManagement";
 import Settings from "lucide-react/dist/esm/icons/settings";
 import GitCommitHorizontal from "lucide-react/dist/esm/icons/git-commit-horizontal";
 import BookOpen from "lucide-react/dist/esm/icons/book-open";
@@ -193,6 +199,7 @@ export type SettingsViewProps = {
   ) => Promise<void>;
   workspaceThreadsById?: Record<string, ThreadSummary[]>;
   workspaceThreadListLoadingById?: Record<string, boolean>;
+  sessionRadarRecentCompletedSessions?: SessionRadarEntry[];
   onEnsureWorkspaceThreads?: (workspaceId: string) => void;
   onDeleteWorkspaceThreads?: (
     workspaceId: string,
@@ -360,6 +367,7 @@ export function SettingsView({
   onUpdateWorkspaceSettings,
   workspaceThreadsById = {},
   workspaceThreadListLoadingById = {},
+  sessionRadarRecentCompletedSessions = [],
   onEnsureWorkspaceThreads,
   onDeleteWorkspaceThreads,
   scaleShortcutTitle,
@@ -660,6 +668,16 @@ export function SettingsView({
       return onDeleteWorkspaceThreads(workspaceId, threadIds);
     },
     [onDeleteWorkspaceThreads, t],
+  );
+  const handleDeleteSessionRadarHistoryInSettings = useCallback(
+    async (entries: SessionRadarEntry[]) => {
+      const targets = entries.map((entry) => ({
+        id: entry.id,
+        completedAt: entry.completedAt ?? entry.updatedAt,
+      }));
+      return Promise.resolve(deleteSessionRadarHistoryEntries(targets));
+    },
+    [],
   );
   const shouldShowWorkspaceSelector =
     activeSection === "prompts" ||
@@ -2528,6 +2546,11 @@ export function SettingsView({
                   {t("settings.otherDescription")}
                 </div>
                 <HistoryCompletionSettings />
+                <Separator className="my-4" />
+                <SessionRadarHistoryManagementSection
+                  entries={sessionRadarRecentCompletedSessions}
+                  onDeleteEntries={handleDeleteSessionRadarHistoryInSettings}
+                />
                 <Separator className="my-4" />
                 <ProjectSessionManagementSection
                   workspace={selectedProjectSessionWorkspace}

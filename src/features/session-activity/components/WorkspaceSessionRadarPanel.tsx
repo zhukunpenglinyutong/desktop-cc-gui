@@ -8,6 +8,11 @@ import { useTranslation } from "react-i18next";
 import type { SessionRadarEntry } from "../hooks/useSessionRadarFeed";
 import { getClientStoreSync, writeClientStoreValue } from "../../../services/clientStorage";
 import { EngineIcon } from "../../engine/components/EngineIcon";
+import {
+  RADAR_STORE_NAME,
+  SESSION_RADAR_COLLAPSED_DATE_GROUPS_KEY,
+  SESSION_RADAR_READ_STATE_KEY,
+} from "../utils/sessionRadarPersistence";
 
 type WorkspaceSessionRadarPanelProps = {
   runningSessions: SessionRadarEntry[];
@@ -15,9 +20,6 @@ type WorkspaceSessionRadarPanelProps = {
   onSelectThread: (workspaceId: string, threadId: string) => void;
 };
 
-const RADAR_READ_STATE_KEY = "sessionRadar.readStateById";
-const RADAR_DATE_COLLAPSE_STATE_KEY = "sessionRadar.collapsedDateGroups";
-const RADAR_STORE_NAME = "leida";
 const WORKSPACE_ACCENT_PALETTE = [
   "#c2410c",
   "#d97706",
@@ -108,11 +110,16 @@ export function WorkspaceSessionRadarPanel({
   const { t } = useTranslation();
   const [previewExpandedById, setPreviewExpandedById] = useState<Record<string, boolean>>({});
   const [readStateById, setReadStateById] = useState<Record<string, number>>(
-    () => getClientStoreSync<Record<string, number>>(RADAR_STORE_NAME, RADAR_READ_STATE_KEY) ?? {},
+    () =>
+      getClientStoreSync<Record<string, number>>(RADAR_STORE_NAME, SESSION_RADAR_READ_STATE_KEY) ??
+      {},
   );
   const [collapsedDateGroups, setCollapsedDateGroups] = useState<Record<string, boolean>>(
     () =>
-      getClientStoreSync<Record<string, boolean>>(RADAR_STORE_NAME, RADAR_DATE_COLLAPSE_STATE_KEY) ??
+      getClientStoreSync<Record<string, boolean>>(
+        RADAR_STORE_NAME,
+        SESSION_RADAR_COLLAPSED_DATE_GROUPS_KEY,
+      ) ??
       {},
   );
   const headerSummary = useMemo(
@@ -130,7 +137,9 @@ export function WorkspaceSessionRadarPanel({
     }
     setReadStateById((current) => {
       const next = { ...current, [entry.id]: Date.now() };
-      writeClientStoreValue(RADAR_STORE_NAME, RADAR_READ_STATE_KEY, next, { immediate: true });
+      writeClientStoreValue(RADAR_STORE_NAME, SESSION_RADAR_READ_STATE_KEY, next, {
+        immediate: true,
+      });
       return next;
     });
   };
@@ -294,7 +303,7 @@ export function WorkspaceSessionRadarPanel({
                         const next = { ...current, [dateKey]: !isCollapsed };
                         writeClientStoreValue(
                           RADAR_STORE_NAME,
-                          RADAR_DATE_COLLAPSE_STATE_KEY,
+                          SESSION_RADAR_COLLAPSED_DATE_GROUPS_KEY,
                           next,
                           { immediate: true },
                         );

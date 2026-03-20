@@ -216,6 +216,7 @@ pub(crate) fn invoke_handler(
         // Client storage
         crate::client_storage::client_store_read,
         crate::client_storage::client_store_write,
+        crate::client_storage::client_store_patch,
         crate::client_storage::client_panel_lock_password_read,
         crate::client_storage::client_panel_lock_password_write,
         // Input history

@@ -1,5 +1,10 @@
 export const RADAR_STORE_NAME = "leida" as const;
 export const SESSION_RADAR_RECENT_STORAGE_KEY = "sessionRadar.recentCompleted" as const;
+export const SESSION_RADAR_READ_STATE_KEY = "sessionRadar.readStateById" as const;
+export const SESSION_RADAR_COLLAPSED_DATE_GROUPS_KEY = "sessionRadar.collapsedDateGroups" as const;
+export const SESSION_RADAR_DISMISSED_COMPLETED_AT_BY_ID_KEY =
+  "sessionRadar.dismissedCompletedAtById" as const;
+export const SESSION_RADAR_HISTORY_UPDATED_EVENT = "session-radar-history-updated" as const;
 
 export type PersistedRadarRecentEntry = {
   id: string;

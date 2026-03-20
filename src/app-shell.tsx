@@ -167,6 +167,7 @@ import { useAppShellLayoutNodesSection } from "./app-shell-parts/useAppShellLayo
 import { renderAppShell } from "./app-shell-parts/renderAppShell";
 import {
   RADAR_STORE_NAME,
+  SESSION_RADAR_HISTORY_UPDATED_EVENT,
   SESSION_RADAR_RECENT_STORAGE_KEY,
   type PersistedRadarRecentEntry,
   buildRadarCompletionId,
@@ -2461,6 +2462,9 @@ export function AppShell() {
       nextPersistedRecent,
       { immediate: true },
     );
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent(SESSION_RADAR_HISTORY_UPDATED_EVENT));
+    }
 
     // Send a system notification for each completed session.
     if (appSettings.systemNotificationEnabled) {

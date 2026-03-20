@@ -102,6 +102,7 @@ export function renderAppShell(ctx: any) {
     skills, slashToken, snapshot, soloModeEnabled, startExport, startFast, startFork, startHeight,
     startImport, startLsp, startMcp, startMode, startResume, startReview, startShare, startSpecRoot,
     startStatus, startThreadForWorkspace, startUpdate, startY, stored, syncError, syncLoading,
+    sessionRadarRecentCompletedSessions,
     t, tabBarNode, tabletNavNode, tabletTab, target, targetThread, targetWorkspaceIds, task,
     taskProcessingMap, taskWs, terminalDockNode, terminalOpen, terminalPanelHeight, terminalState, terminalTabs, textareaHeight,
     threadAccessMode, threadChanged, threadId, threadItemsByThread, threadListCursorByWorkspace, threadListLoadingByWorkspace, threadListPagingByWorkspace, threadMode,
@@ -368,6 +369,7 @@ export function renderAppShell(ctx: any) {
                 }}
                 workspaceThreadsById={threadsByWorkspace}
                 workspaceThreadListLoadingById={threadListLoadingByWorkspace}
+                sessionRadarRecentCompletedSessions={sessionRadarRecentCompletedSessions}
                 onEnsureWorkspaceThreads={handleEnsureWorkspaceThreadsForSettings}
                 onDeleteWorkspaceThreads={handleDeleteWorkspaceConversationsInSettings}
                 scaleShortcutTitle={scaleShortcutTitle}

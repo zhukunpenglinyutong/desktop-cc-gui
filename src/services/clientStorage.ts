@@ -10,6 +10,9 @@ let preloaded = false;
 
 const WRITE_DEBOUNCE_MS = 300;
 const pendingTimers: Partial<Record<ClientStoreName, ReturnType<typeof setTimeout>>> = {};
+const dirtyKeys: Partial<Record<ClientStoreName, Set<string>>> = {};
+const pendingFullReplace: Partial<Record<ClientStoreName, boolean>> = {};
+const writeChainByStore: Partial<Record<ClientStoreName, Promise<void>>> = {};
 
 export async function preloadClientStores(): Promise<void> {
   if (preloaded) {
@@ -65,6 +68,10 @@ export function writeClientStoreValue(
     cache[store] = {};
   }
   cache[store]![key] = value;
+  if (!dirtyKeys[store]) {
+    dirtyKeys[store] = new Set();
+  }
+  dirtyKeys[store]!.add(key);
   if (options?.immediate) {
     flushStoreWrite(store);
     return;
@@ -78,6 +85,8 @@ export function writeClientStoreData(
   options?: { immediate?: boolean },
 ): void {
   cache[store] = data;
+  pendingFullReplace[store] = true;
+  dirtyKeys[store] = new Set(Object.keys(data));
   if (options?.immediate) {
     flushStoreWrite(store);
     return;
@@ -100,10 +109,45 @@ function flushStoreWrite(store: ClientStoreName): void {
     clearTimeout(pendingTimers[store]);
     delete pendingTimers[store];
   }
-  const data = cache[store] ?? {};
-  invoke("client_store_write", { store, data }).catch((error) => {
-    if (typeof console !== "undefined") {
-      console.error(`Failed to write client store "${store}":`, error);
+
+  const shouldFullReplace = pendingFullReplace[store] === true;
+  pendingFullReplace[store] = false;
+  const dirtySnapshot = new Set(dirtyKeys[store] ?? []);
+  if (dirtyKeys[store]) {
+    for (const key of dirtySnapshot) {
+      dirtyKeys[store]!.delete(key);
     }
-  });
+  }
+  const cacheSnapshot = cache[store] ?? {};
+  const valueSnapshot: Record<string, unknown> = {};
+  for (const key of dirtySnapshot) {
+    valueSnapshot[key] = cacheSnapshot[key];
+  }
+  const fullDataSnapshot = shouldFullReplace ? { ...cacheSnapshot } : null;
+
+  const nextWrite = async () => {
+    if (shouldFullReplace && fullDataSnapshot) {
+      await invoke("client_store_write", { store, data: fullDataSnapshot });
+    } else {
+      await invoke("client_store_patch", { store, patch: valueSnapshot });
+    }
+  };
+
+  writeChainByStore[store] = (writeChainByStore[store] ?? Promise.resolve())
+    .then(nextWrite)
+    .catch((error) => {
+      if (!dirtyKeys[store]) {
+        dirtyKeys[store] = new Set();
+      }
+      for (const key of dirtySnapshot) {
+        dirtyKeys[store]!.add(key);
+      }
+      if (shouldFullReplace) {
+        pendingFullReplace[store] = true;
+      }
+      scheduleDiskWrite(store);
+      if (typeof console !== "undefined") {
+        console.error(`Failed to write client store "${store}":`, error);
+      }
+    });
 }

@@ -1,13 +1,17 @@
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { ConversationItem, ThreadSummary, WorkspaceInfo } from "../../../types";
 import { resolveLockLivePreview } from "../../../app-shell-parts/utils";
 import { getClientStoreSync, writeClientStoreValue } from "../../../services/clientStorage";
+import {
+  SESSION_RADAR_DISMISSED_COMPLETED_AT_BY_ID_KEY,
+  SESSION_RADAR_HISTORY_UPDATED_EVENT,
+  SESSION_RADAR_READ_STATE_KEY,
+  SESSION_RADAR_RECENT_STORAGE_KEY,
+} from "../utils/sessionRadarPersistence";
 
 const DEFAULT_RUNNING_LIMIT = 12;
 const DEFAULT_RECENT_LIMIT = Number.POSITIVE_INFINITY;
 const RADAR_STORE_NAME = "leida";
-const SESSION_RADAR_RECENT_STORAGE_KEY = "sessionRadar.recentCompleted";
-const SESSION_RADAR_READ_STATE_KEY = "sessionRadar.readStateById";
 
 type ThreadStatusSnapshot = {
   isProcessing?: boolean;
@@ -142,6 +146,38 @@ function parsePersistedRecentSessionRef(raw: unknown): PersistedRecentSessionRef
   };
 }
 
+function readDismissedCompletedAtById() {
+  const raw = getClientStoreSync<unknown>(
+    RADAR_STORE_NAME,
+    SESSION_RADAR_DISMISSED_COMPLETED_AT_BY_ID_KEY,
+  );
+  if (!raw || typeof raw !== "object") {
+    return {} as Record<string, number>;
+  }
+  const entries = Object.entries(raw as Record<string, unknown>).filter(
+    ([entryId, value]) =>
+      typeof entryId === "string" &&
+      typeof value === "number" &&
+      Number.isFinite(value) &&
+      value > 0,
+  );
+  return Object.fromEntries(entries) as Record<string, number>;
+}
+
+function isRecentEntryDismissed(
+  entryId: string,
+  completedAt: number | null | undefined,
+  dismissedCompletedAtById: Record<string, number>,
+) {
+  const dismissedCompletedAt = dismissedCompletedAtById[entryId];
+  if (typeof dismissedCompletedAt !== "number" || !Number.isFinite(dismissedCompletedAt)) {
+    return false;
+  }
+  const resolvedCompletedAt =
+    typeof completedAt === "number" && Number.isFinite(completedAt) ? completedAt : 0;
+  return resolvedCompletedAt > 0 && dismissedCompletedAt >= resolvedCompletedAt;
+}
+
 function readPersistedRecentSessions(): PersistedRecentSessionRef[] {
   const raw = getClientStoreSync<unknown>(RADAR_STORE_NAME, SESSION_RADAR_RECENT_STORAGE_KEY);
   if (!Array.isArray(raw) || raw.length === 0) {
@@ -238,7 +274,6 @@ export function buildSessionRadarFeed(input: BuildSessionRadarFeedInput): Sessio
   const runningCountByWorkspaceId: Record<string, number> = {};
   const recentCountByWorkspaceId: Record<string, number> = {};
   const seenRunningIds = new Set<string>();
-  const seenRecentIds = new Set<string>();
 
   for (const workspace of workspaces) {
     const threads = threadsByWorkspace[workspace.id] ?? [];
@@ -276,21 +311,9 @@ export function buildSessionRadarFeed(input: BuildSessionRadarFeedInput): Sessio
         continue;
       }
 
-      const hasCompletionSignal = status?.lastDurationMs != null;
-      if (!hasCompletionSignal) {
-        continue;
-      }
-      const durationMs = clampDurationMs(status?.lastDurationMs);
-      entry.durationMs = durationMs;
-      entry.completedAt = updatedAt;
-      entry.startedAt = durationMs != null ? Math.max(0, updatedAt - durationMs) : null;
-      entry.id = buildRecentCompletionId(workspace.id, thread.id);
-      if (seenRecentIds.has(entry.id)) {
-        continue;
-      }
-      seenRecentIds.add(entry.id);
-      recentCompletedSessions.push(entry);
-      recentCountByWorkspaceId[workspace.id] = (recentCountByWorkspaceId[workspace.id] ?? 0) + 1;
+      // Completed sessions are sourced from persisted completion entries only.
+      // Using thread.updatedAt here would make deleted history entries reappear
+      // after unrelated thread updates or app restarts.
     }
   }
 
@@ -321,6 +344,7 @@ export function useSessionRadarFeed(input: UseSessionRadarFeedInput): SessionRad
     recentLimit,
   } = input;
   const resolvedRecentLimit = recentLimit ?? DEFAULT_RECENT_LIMIT;
+  const [historyMutationVersion, setHistoryMutationVersion] = useState(0);
 
   const liveFeed = useMemo(
     () =>
@@ -344,7 +368,21 @@ export function useSessionRadarFeed(input: UseSessionRadarFeedInput): SessionRad
     ],
   );
 
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    const handleRadarHistoryUpdated = () => {
+      setHistoryMutationVersion((previous) => previous + 1);
+    };
+    window.addEventListener(SESSION_RADAR_HISTORY_UPDATED_EVENT, handleRadarHistoryUpdated);
+    return () => {
+      window.removeEventListener(SESSION_RADAR_HISTORY_UPDATED_EVENT, handleRadarHistoryUpdated);
+    };
+  }, []);
+
   const mergedRecentFeed = useMemo(() => {
+    const dismissedCompletedAtById = readDismissedCompletedAtById();
     const persistedRecent = readPersistedRecentSessions();
     const mergedRecent = mergeRecentSessions(
       liveFeed.recentCompletedSessions,
@@ -354,6 +392,8 @@ export function useSessionRadarFeed(input: UseSessionRadarFeedInput): SessionRad
       threadItemsByThread,
       lastAgentMessageByThread,
       resolvedRecentLimit,
+    ).filter(
+      (entry) => !isRecentEntryDismissed(entry.id, entry.completedAt, dismissedCompletedAtById),
     );
     return {
       ...liveFeed,
@@ -367,6 +407,7 @@ export function useSessionRadarFeed(input: UseSessionRadarFeedInput): SessionRad
     threadItemsByThread,
     threadsByWorkspace,
     workspaces,
+    historyMutationVersion,
   ]);
 
   useEffect(() => {
