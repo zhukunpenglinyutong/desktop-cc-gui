@@ -67,3 +67,32 @@ export function parsePersistedRadarRecentEntry(raw: unknown): PersistedRadarRece
     durationMs: typeof entry.durationMs === "number" ? Math.max(0, entry.durationMs) : null,
   };
 }
+
+export function mergePersistedRadarRecentEntries(
+  rawPersistedRecent: unknown,
+  completedEntries: PersistedRadarRecentEntry[],
+): PersistedRadarRecentEntry[] {
+  const persistedRecentList = Array.isArray(rawPersistedRecent)
+    ? rawPersistedRecent
+        .map(parsePersistedRadarRecentEntry)
+        .filter((entry): entry is PersistedRadarRecentEntry => Boolean(entry))
+    : [];
+
+  const mergedById = new Map<string, PersistedRadarRecentEntry>();
+  for (const entry of persistedRecentList) {
+    mergedById.set(entry.id, entry);
+  }
+  for (const entry of completedEntries) {
+    const previous = mergedById.get(entry.id);
+    if (!previous || previous.completedAt <= entry.completedAt) {
+      mergedById.set(entry.id, entry);
+    }
+  }
+  return Array.from(mergedById.values()).sort((left, right) => right.completedAt - left.completedAt);
+}
+
+export function dispatchSessionRadarHistoryUpdatedEvent() {
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent(SESSION_RADAR_HISTORY_UPDATED_EVENT));
+  }
+}

@@ -89,7 +89,6 @@ import { VendorSettingsPanel } from "../../vendors/components/VendorSettingsPane
 import { useGlobalAgentsMd } from "../hooks/useGlobalAgentsMd";
 import { useGlobalCodexConfigToml } from "../hooks/useGlobalCodexConfigToml";
 import { LanguageSelector } from "./LanguageSelector";
-import { HistoryCompletionSettings } from "./HistoryCompletionSettings";
 import { AgentSettingsSection } from "./AgentSettingsSection";
 import { PlaceholderSection } from "./PlaceholderSection";
 import { CommitSection } from "./CommitSection";
@@ -98,11 +97,7 @@ import { ProxyStatusBadge } from "../../../components/ProxyStatusBadge";
 import { UsageSection } from "./UsageSection";
 import { McpSection } from "./McpSection";
 import { SkillsSection } from "./SkillsSection";
-import {
-  ProjectSessionManagementSection,
-  type ProjectSessionDeleteResult,
-} from "./ProjectSessionManagementSection";
-import { SessionRadarHistoryManagementSection } from "./SessionRadarHistoryManagementSection";
+import type { ProjectSessionDeleteResult } from "./ProjectSessionManagementSection";
 import type { SessionRadarEntry } from "../../session-activity/hooks/useSessionRadarFeed";
 import {
   deleteSessionRadarHistoryEntries,
@@ -136,6 +131,7 @@ import { ComposerSection } from "./settings-view/sections/ComposerSection";
 import { ShortcutsSection } from "./settings-view/sections/ShortcutsSection";
 import { OpenAppsSection } from "./settings-view/sections/OpenAppsSection";
 import { CodexSection } from "./settings-view/sections/CodexSection";
+import { OtherSection } from "./settings-view/sections/OtherSection";
 
 // Feature flags to show/hide settings sidebar entries
 const SHOW_DICTATION_ENTRY = false;
@@ -2540,36 +2536,21 @@ export function SettingsView({
               <SkillsSection activeWorkspace={selectedSettingsWorkspace} />
             )}
             {activeSection === "other" && (
-              <section className="settings-section">
-                <div className="settings-section-title">{t("settings.sidebarOther")}</div>
-                <div className="settings-section-subtitle">
-                  {t("settings.otherDescription")}
-                </div>
-                <HistoryCompletionSettings />
-                <Separator className="my-4" />
-                <SessionRadarHistoryManagementSection
-                  entries={sessionRadarRecentCompletedSessions}
-                  onDeleteEntries={handleDeleteSessionRadarHistoryInSettings}
-                />
-                <Separator className="my-4" />
-                <ProjectSessionManagementSection
-                  workspace={selectedProjectSessionWorkspace}
-                  workspaces={sessionWorkspaceOptions}
-                  groupedWorkspaces={groupedWorkspaces}
-                  selectedWorkspaceId={selectedProjectSessionWorkspace?.id ?? null}
-                  onWorkspaceChange={setProjectSessionWorkspaceId}
-                  threads={selectedWorkspaceThreads}
-                  loading={selectedWorkspaceThreadListLoading}
-                  onRefresh={
-                    onEnsureWorkspaceThreads
-                      ? (workspaceId) => {
-                          onEnsureWorkspaceThreads(workspaceId);
-                        }
-                      : undefined
-                  }
-                  onDeleteSessions={handleDeleteWorkspaceThreadsInSettings}
-                />
-              </section>
+              <OtherSection
+                title={t("settings.sidebarOther")}
+                description={t("settings.otherDescription")}
+                sessionRadarRecentCompletedSessions={sessionRadarRecentCompletedSessions}
+                onDeleteSessionRadarHistory={handleDeleteSessionRadarHistoryInSettings}
+                workspace={selectedProjectSessionWorkspace}
+                workspaces={sessionWorkspaceOptions}
+                groupedWorkspaces={groupedWorkspaces}
+                selectedWorkspaceId={selectedProjectSessionWorkspace?.id ?? null}
+                onWorkspaceChange={setProjectSessionWorkspaceId}
+                threads={selectedWorkspaceThreads}
+                loading={selectedWorkspaceThreadListLoading}
+                onEnsureWorkspaceThreads={onEnsureWorkspaceThreads}
+                onDeleteWorkspaceThreads={handleDeleteWorkspaceThreadsInSettings}
+              />
             )}
             {activeSection === "community" && (
               <section className="settings-section settings-about-section">
