@@ -2,6 +2,57 @@
 
 ---
 
+##### **2026年3月20日（v0.3.1）**
+
+English:
+
+✨ Features
+- Add Session Radar history management in Settings > Other, with batch delete support for completed radar entries
+- Enhance Session Radar recent-completion cards with click-to-expand behavior while preserving direct session navigation
+- Improve recent-completion readability with compact copy and clearer project identity cues
+- Support opening absolute paths outside project root from session activity file-change entries
+- Add shell-script group rendering and edge-case compatibility in file views
+
+🔧 Improvements
+- Introduce locked + atomic client-store write path and key-level patch updates to reduce stale overwrite risk across concurrent clients
+- Extract Settings "Other" section into a dedicated module and factor Radar persistence merge/event helpers for better maintainability
+- Improve Session Radar refresh flow through explicit history-updated event propagation after write/delete actions
+- Align sidebar group/project icon axis and unify mode-navigation text color with better Chinese font appearance
+- Refine model selector popup width behavior to avoid text overflow
+
+🐛 Fixes
+- Fix deleted Session Radar records reappearing after app restart
+- Fix multi-client writeback race that could restore previously deleted radar history
+- Fix large-file governance regression by replacing line-compression workaround with structural module splitting
+- Fix ChatInputBox undo/redo behavior and align shortcuts (`Ctrl+Z`/`Ctrl+Shift+Z`, `Cmd+Z`/`Cmd+Shift+Z`) across platforms
+- Remove redundant bottom border on unselected Git view-switch buttons
+
+中文：
+
+✨ Features
+- 在设置页“其他设置”新增 Session Radar 历史管理，支持对已完成雷达记录进行批量删除
+- 会话雷达删除改为真实落盘到本地客户端存储（`leida`），不再只是界面层移除
+- 优化 Session Radar 最近完成卡片交互：支持点击展开且保留会话跳转能力
+- 精简最近完成卡片文案并强化项目标识，提升扫读效率
+- 支持从会话活动文件变更中打开项目外绝对路径文件
+- 补齐文件视图中 shell 脚本分组渲染并增强边界兼容性
+
+🔧 Improvements
+- 客户端存储写入链路增加加锁与原子写，并支持按 key 的 patch 更新，降低多客户端并发下旧数据覆盖风险
+- 将设置页“其他设置”区块抽离为独立模块，并提取雷达持久化合并/事件辅助函数，提升可维护性
+- 删除与写入后通过显式历史更新事件驱动刷新，优化 Session Radar 视图同步链路
+- 侧栏分组/项目图标轴线对齐，统一模式导航文案颜色并优化中文字体观感
+- 优化模型选择弹窗宽度自适应策略，避免文案溢出
+
+🐛 Fixes
+- 修复删除后的 Session Radar 记录在应用重启后回弹的问题
+- 修复多客户端并发写回导致已删除雷达历史被恢复的问题
+- 修复大文件治理回归，移除“压缩换行”临时方案并改为结构化拆分
+- 修复 ChatInputBox 撤销重做行为，并统一跨平台快捷键（`Ctrl+Z`/`Ctrl+Shift+Z`、`Cmd+Z`/`Cmd+Shift+Z`）
+- 修复 Git 视图切换中未选中按钮残留底部边线问题
+
+---
+
 ##### **2026年3月19日（v0.3.0）**
 
 English:
@@ -15,10 +66,12 @@ English:
 🔧 Improvements
 - Refine Session Radar read-state icon behavior and selected-state colors under dark theme
 - Polish selected icon style for panel tabs with cleaner border-only visual feedback
+- Refactor Session Radar persistence helpers to reduce large-file pressure and improve maintainability
 
 🐛 Fixes
 - Fix composer input overflow caused by long `MessageQueue` text blocks
 - Fix `MessageQueue` queue type reference mismatch in chat input path
+- Preserve raw user input format and restrict Spec prompt injection to first-turn only
 - Fix dual-display fullscreen drag freeze issue on Windows
 - Fix file tree root collapse interaction and drag cursor compatibility
 - Fix session badge and `Default` label contrast across light/dark themes
@@ -36,10 +89,12 @@ English:
 🔧 Improvements
 - 优化 Session Radar 已读状态图标表现与深色主题选中色彩
 - 调整面板 Tab 图标选中态为更简洁的无背景边框风格
+- 抽离 Session Radar 持久化辅助逻辑，降低大文件压力并提升可维护性
 
 🐛 Fixes
 - 修复长文本 `MessageQueue` 场景下输入区布局溢出问题
 - 修复聊天输入链路中 `MessageQueue` 队列类型引用错误
+- 修复用户输入原始格式被破坏，并将 Spec 提示词注入限定为仅首轮
 - 修复 Windows 双屏全屏拖拽导致白屏卡死问题
 - 修复文件树根目录折叠交互并优化拖拽抓取光标兼容性
 - 修复深浅主题下会话徽标与 `Default` 标签对比度问题
