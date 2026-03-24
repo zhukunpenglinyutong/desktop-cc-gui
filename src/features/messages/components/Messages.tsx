@@ -538,6 +538,7 @@ function isGenericReasoningTitle(title: string) {
     normalized === "reasoning" ||
     normalized === "thinking" ||
     normalized === "planning" ||
+    normalized === "思考" ||
     normalized === "思考中" ||
     normalized === "正在思考" ||
     normalized === "正在规划"
@@ -615,6 +616,25 @@ function parseReasoning(item: Extract<ConversationItem, { kind: "reasoning" }>) 
   };
 }
 
+function isGenericPlaceholderReasoningItem(
+  item: Extract<ConversationItem, { kind: "reasoning" }>,
+) {
+  const label = (item.summary || item.content || "").trim();
+  if (!label || !isGenericReasoningTitle(label)) {
+    return false;
+  }
+  const content = (item.content || "").trim();
+  if (!content) {
+    return true;
+  }
+  const compactLabel = compactComparableReasoningText(label);
+  const compactContent = compactComparableReasoningText(content);
+  if (!compactContent) {
+    return true;
+  }
+  return compactContent === compactLabel || isGenericReasoningTitle(content);
+}
+
 function isReasoningDuplicate(
   previous: ReturnType<typeof parseReasoning>,
   next: ReturnType<typeof parseReasoning>,
@@ -670,6 +690,7 @@ function dedupeAdjacentReasoningItems(
   list: ConversationItem[],
   reasoningMetaById: Map<string, ReturnType<typeof parseReasoning>>,
   appendOnly = false,
+  engine: ConversationEngine = "codex",
 ) {
   const deduped: ConversationItem[] = [];
   for (const item of list) {
@@ -682,6 +703,17 @@ function dedupeAdjacentReasoningItems(
       isExplicitReasoningSegmentId(previous.id) ||
       isExplicitReasoningSegmentId(item.id)
     ) {
+      if (engine === "gemini") {
+        if (
+          isGenericPlaceholderReasoningItem(previous) &&
+          isGenericPlaceholderReasoningItem(item)
+        ) {
+          // Collapse repeated placeholder reasoning slices ("思考"/"thinking")
+          // in Gemini realtime, while preserving meaningful segmented slices.
+          deduped[deduped.length - 1] = item;
+          continue;
+        }
+      }
       deduped.push(item);
       continue;
     }
@@ -2105,6 +2137,7 @@ export const Messages = memo(function Messages({
       filtered,
       reasoningMetaById,
       appendReasoningRuns,
+      toConversationEngine(activeEngine),
     );
     const collapseReasoningRuns = activeEngine !== "codex";
     return collapseConsecutiveReasoningRuns(

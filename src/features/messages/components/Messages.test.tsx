@@ -2310,6 +2310,43 @@ describe("Messages", () => {
     expect(container.textContent ?? "").toContain("编写 OperationLogRequest.java");
   });
 
+  it("collapses consecutive placeholder gemini segmented reasoning slices", () => {
+    const items: ConversationItem[] = [
+      {
+        id: "gemini-placeholder-seg-1",
+        kind: "reasoning",
+        summary: "思考",
+        content: "思考",
+      },
+      {
+        id: "gemini-placeholder-seg-2",
+        kind: "reasoning",
+        summary: "思考",
+        content: "思考",
+      },
+      {
+        id: "gemini-placeholder-seg-3",
+        kind: "reasoning",
+        summary: "思考",
+        content: "思考",
+      },
+    ];
+
+    const { container } = render(
+      <Messages
+        items={items}
+        threadId="gemini:thread-1"
+        workspaceId="ws-1"
+        isThinking
+        activeEngine="gemini"
+        openTargets={[]}
+        selectedOpenAppId=""
+      />,
+    );
+
+    expect(container.querySelectorAll(".thinking-block").length).toBe(1);
+  });
+
   it("keeps consecutive claude live reasoning runs segmented while streaming", () => {
     const items: ConversationItem[] = [
       {
