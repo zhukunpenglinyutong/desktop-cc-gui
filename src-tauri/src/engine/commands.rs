@@ -2010,16 +2010,13 @@ pub async fn engine_send_message(
             let has_images = images
                 .as_ref()
                 .is_some_and(|entries| entries.iter().any(|entry| !entry.trim().is_empty()));
-            let continue_session_for_send = continue_session && !has_images;
+            let continue_session_for_send = continue_session;
 
             // Resolve session id according to mode:
             // 1) continue_session=true  -> explicit session_id or tracked session id
             // 2) continue_session=false -> force a fresh unique session id so concurrent
             //    Claude turns never collapse into one shared persisted session.
-            // 3) image attachments          -> force fresh session to isolate image context
-            let resolved_session_id = if has_images {
-                Some(uuid::Uuid::new_v4().to_string())
-            } else if continue_session {
+            let resolved_session_id = if continue_session {
                 if session_id.is_some() {
                     session_id
                 } else {
@@ -2593,11 +2590,9 @@ pub async fn engine_send_message_sync(
             let has_images = images
                 .as_ref()
                 .is_some_and(|entries| entries.iter().any(|entry| !entry.trim().is_empty()));
-            let continue_session_for_send = continue_session && !has_images;
+            let continue_session_for_send = continue_session;
 
-            let resolved_session_id = if has_images {
-                Some(uuid::Uuid::new_v4().to_string())
-            } else if session_id.is_some() {
+            let resolved_session_id = if session_id.is_some() {
                 session_id
             } else if continue_session {
                 session.get_session_id().await

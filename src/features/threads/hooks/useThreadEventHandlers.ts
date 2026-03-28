@@ -284,6 +284,7 @@ export function useThreadEventHandlers({
     onContextCompactionFailed,
     onThreadSessionIdUpdated,
   } = useThreadTurnEvents({
+    activeThreadId,
     dispatch,
     getCustomName,
     isAutoTitlePending,

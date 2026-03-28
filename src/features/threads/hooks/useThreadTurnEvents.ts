@@ -58,6 +58,7 @@ function isCodexBackgroundHelperThread(
 }
 
 type UseThreadTurnEventsOptions = {
+  activeThreadId?: string | null;
   dispatch: Dispatch<ThreadAction>;
   getCustomName: (workspaceId: string, threadId: string) => string | undefined;
   isAutoTitlePending: (workspaceId: string, threadId: string) => boolean;
@@ -97,6 +98,7 @@ type UseThreadTurnEventsOptions = {
 };
 
 export function useThreadTurnEvents({
+  activeThreadId = null,
   dispatch,
   getCustomName,
   isAutoTitlePending,
@@ -510,21 +512,29 @@ export function useThreadTurnEvents({
         || (enginePrefix !== "opencode" && (threadId.startsWith("opencode:") || threadId.startsWith("opencode-pending-")))
       );
 
+      const shouldRebindActiveFinalizedThread =
+        threadId.startsWith(sameEngineFinalizedPrefix)
+        && threadId !== newThreadId
+        && activeThreadId === threadId;
       if (
         threadId.startsWith(sameEngineFinalizedPrefix)
         && threadId !== newThreadId
+        && !shouldRebindActiveFinalizedThread
       ) {
         logSessionTrace("skip:finalized-mismatch", {
           workspaceId,
           threadId,
           newThreadId,
           enginePrefix,
+          activeThreadId,
         });
         return;
       }
 
       let sourceThreadId: string | null = null;
       if (threadId.startsWith(sameEnginePendingPrefix)) {
+        sourceThreadId = threadId;
+      } else if (shouldRebindActiveFinalizedThread) {
         sourceThreadId = threadId;
       } else if (!hasAnyEnginePrefix && !hasForeignEnginePrefix) {
         const pendingThreadId = enginePrefix === "opencode"
@@ -545,6 +555,7 @@ export function useThreadTurnEvents({
           sourceThreadId,
           hasForeignEnginePrefix,
           enginePrefix,
+          shouldRebindActiveFinalizedThread,
         });
         return;
       }
@@ -576,6 +587,7 @@ export function useThreadTurnEvents({
       renamePendingMemoryCaptureKey,
       renameThreadTitleMapping,
       resolvePendingThreadForSession,
+      activeThreadId,
     ],
   );
 

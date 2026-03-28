@@ -25,6 +25,7 @@ vi.mock("../utils/threadNormalize", () => ({
 type SetupOverrides = {
   pendingInterrupts?: string[];
   interruptedThreads?: string[];
+  activeThreadId?: string | null;
 };
 
 const makeOptions = (overrides: SetupOverrides = {}) => {
@@ -52,6 +53,7 @@ const makeOptions = (overrides: SetupOverrides = {}) => {
 
   const { result } = renderHook(() =>
     useThreadTurnEvents({
+      activeThreadId: overrides.activeThreadId ?? null,
       dispatch,
       getCustomName,
       isAutoTitlePending,
@@ -593,6 +595,55 @@ describe("useThreadTurnEvents", () => {
     expect(renameCustomNameKey).not.toHaveBeenCalled();
     expect(renameAutoTitlePendingKey).not.toHaveBeenCalled();
     expect(renameThreadTitleMapping).not.toHaveBeenCalled();
+  });
+
+  it("rebinds active finalized claude thread when session id rotates", () => {
+    const {
+      result,
+      dispatch,
+      renameCustomNameKey,
+      renameAutoTitlePendingKey,
+      renameThreadTitleMapping,
+      renamePendingMemoryCaptureKey,
+      resolvePendingThreadForSession,
+    } = makeOptions({
+      activeThreadId: "claude:session-old",
+    });
+    resolvePendingThreadForSession.mockReturnValue(null);
+
+    act(() => {
+      result.current.onThreadSessionIdUpdated(
+        "ws-1",
+        "claude:session-old",
+        "session-new",
+      );
+    });
+
+    expect(dispatch).toHaveBeenCalledWith({
+      type: "renameThreadId",
+      workspaceId: "ws-1",
+      oldThreadId: "claude:session-old",
+      newThreadId: "claude:session-new",
+    });
+    expect(renameCustomNameKey).toHaveBeenCalledWith(
+      "ws-1",
+      "claude:session-old",
+      "claude:session-new",
+    );
+    expect(renameAutoTitlePendingKey).toHaveBeenCalledWith(
+      "ws-1",
+      "claude:session-old",
+      "claude:session-new",
+    );
+    expect(renamePendingMemoryCaptureKey).toHaveBeenCalledWith(
+      "claude:session-old",
+      "claude:session-new",
+    );
+    expect(renameThreadTitleMapping).toHaveBeenCalledWith(
+      "ws-1",
+      "claude:session-old",
+      "claude:session-new",
+    );
   });
 
   it("infers engine from pending threads when session update thread id has no engine prefix", () => {
