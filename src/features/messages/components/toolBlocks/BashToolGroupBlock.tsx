@@ -154,9 +154,7 @@ export const BashToolGroupBlock = memo(function BashToolGroupBlock({
       >
         <div className="task-title-section">
           <span
-            className={`codicon ${
-              isExpanded ? 'codicon-chevron-down' : 'codicon-chevron-right'
-            } bash-group-chevron`}
+            className="codicon codicon-terminal tool-title-icon bash-group-chevron"
           />
           <span className="tool-title-text">
             {t("tools.bashGroupBatchRun")} ({totalCount})

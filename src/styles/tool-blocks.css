@@ -131,6 +131,22 @@
   margin-right: 4px;
 }
 
+.tool-title-icon-file-change {
+  color: var(--tool-file-change-icon-color, #7a8fb8);
+}
+
+.tool-title-icon-file-change-collapsed {
+  font-size: 16px;
+}
+
+:root[data-theme="light"] .tool-title-icon-file-change {
+  color: #4f83d9;
+}
+
+:root[data-theme="dark"] .tool-title-icon-file-change {
+  color: #8fb7ff;
+}
+
 .tool-title-text {
   font-weight: 500;
   font-size: 13px;
@@ -1088,10 +1104,15 @@
 }
 
 .bash-group-chevron {
-  font-size: 12px;
+  font-size: 14px;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transform: translateY(-0.5px);
   margin-right: 6px;
   color: var(--text-tertiary, var(--text-muted));
-  transition: transform 0.2s ease;
+  transition: color 0.2s ease;
 }
 
 .bash-group-count {

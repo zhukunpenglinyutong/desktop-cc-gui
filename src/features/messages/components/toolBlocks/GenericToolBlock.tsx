@@ -145,6 +145,16 @@ function isDirectoryPath(filePath: string, fileName: string): boolean {
  */
 function getCodiconClass(toolName: string, title: string): string {
   const lower = toolName.toLowerCase();
+  const lowerTitle = title.toLowerCase();
+
+  if (
+    lower === 'filechange' ||
+    lower === 'file change' ||
+    lower === 'file changes' ||
+    lowerTitle.includes('file change')
+  ) {
+    return 'codicon-diff';
+  }
 
   // 直接映射
   if (CODICON_MAP[lower]) return CODICON_MAP[lower];
@@ -162,7 +172,6 @@ function getCodiconClass(toolName: string, title: string): string {
 
   // MCP 工具根据名称猜测
   if (isMcpTool(title)) {
-    const lowerTitle = title.toLowerCase();
     if (lowerTitle.includes('search') || lowerTitle.includes('context')) return 'codicon-search';
     if (lowerTitle.includes('read') || lowerTitle.includes('file')) return 'codicon-eye';
     if (lowerTitle.includes('database') || lowerTitle.includes('sql')) return 'codicon-database';
@@ -571,6 +580,10 @@ export const GenericToolBlock = memo(function GenericToolBlock({
   const [internalExpanded, setInternalExpanded] = useState(false);
   const [copiedOutput, setCopiedOutput] = useState(false);
   const isExpanded = isCollapsible ? internalExpanded : externalExpanded;
+  const isFileChangeTool =
+    item.toolType === 'fileChange' ||
+    toolName.toLowerCase().includes('file change') ||
+    item.title.toLowerCase().includes('file change');
 
   const parsedArgs = useMemo(() => parseToolArgs(item.detail), [item.detail]);
   const fileChangeCandidateArgs = useMemo(() => {
@@ -673,7 +686,15 @@ export const GenericToolBlock = memo(function GenericToolBlock({
         }}
       >
         <div className="task-title-section">
-          <span className={`codicon ${codiconClass} tool-title-icon`} />
+          <span
+            className={`codicon ${codiconClass} tool-title-icon${
+              isFileChangeTool ? ' tool-title-icon-file-change' : ''
+            }${
+              isFileChangeTool && !isExpanded
+                ? ' tool-title-icon-file-change-collapsed'
+                : ''
+            }`}
+          />
           <span className="tool-title-text">{displayName}</span>
           {summary && (
             <span
