@@ -77,11 +77,13 @@ describe("useThreadStorage", () => {
     const { result } = renderHook(() => useThreadStorage());
 
     let pinResult = false;
+    const beforePinGetTimestamp = result.current.getPinTimestamp;
     act(() => {
       pinResult = result.current.pinThread("ws-1", "thread-1");
     });
 
     expect(pinResult).toBe(true);
+    expect(result.current.getPinTimestamp).not.toBe(beforePinGetTimestamp);
     expect(result.current.isThreadPinned("ws-1", "thread-1")).toBe(true);
     expect(savePinnedThreads).toHaveBeenCalledWith({
       "ws-1:thread-1": expect.any(Number),
@@ -89,10 +91,12 @@ describe("useThreadStorage", () => {
 
     const versionAfterPin = result.current.pinnedThreadsVersion;
 
+    const beforeUnpinGetTimestamp = result.current.getPinTimestamp;
     act(() => {
       result.current.unpinThread("ws-1", "thread-1");
     });
 
+    expect(result.current.getPinTimestamp).not.toBe(beforeUnpinGetTimestamp);
     expect(result.current.isThreadPinned("ws-1", "thread-1")).toBe(false);
     expect(savePinnedThreads).toHaveBeenCalledWith({});
     expect(result.current.pinnedThreadsVersion).toBe(versionAfterPin + 1);

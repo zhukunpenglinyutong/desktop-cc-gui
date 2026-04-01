@@ -52,6 +52,9 @@ export function useThreadStorage(): UseThreadStorageResult {
   const threadActivityRef = useRef<ThreadActivityMap>(loadThreadActivity());
   const [initialPinnedThreads] = useState(loadPinnedThreads);
   const pinnedThreadsRef = useRef<PinnedThreadsMap>(initialPinnedThreads);
+  const [pinnedThreads, setPinnedThreads] = useState<PinnedThreadsMap>(
+    initialPinnedThreads,
+  );
   const autoTitlePendingRef = useRef<AutoTitlePendingMap>({});
   const [pinnedThreadsVersion, setPinnedThreadsVersion] = useState(() =>
     Object.keys(initialPinnedThreads).length > 0 ? 1 : 0,
@@ -111,6 +114,7 @@ export function useThreadStorage(): UseThreadStorageResult {
   useEffect(() => {
     const reloaded = loadPinnedThreads();
     pinnedThreadsRef.current = reloaded;
+    setPinnedThreads(reloaded);
     if (Object.keys(reloaded).length > 0) {
       setPinnedThreadsVersion((version) => (version === 0 ? 1 : version));
     }
@@ -131,6 +135,7 @@ export function useThreadStorage(): UseThreadStorageResult {
     }
     const next = { ...pinnedThreadsRef.current, [key]: Date.now() };
     pinnedThreadsRef.current = next;
+    setPinnedThreads(next);
     savePinnedThreads(next);
     setPinnedThreadsVersion((version) => version + 1);
     return true;
@@ -143,6 +148,7 @@ export function useThreadStorage(): UseThreadStorageResult {
     }
     const { [key]: _removed, ...rest } = pinnedThreadsRef.current;
     pinnedThreadsRef.current = rest;
+    setPinnedThreads(rest);
     savePinnedThreads(rest);
     setPinnedThreadsVersion((version) => version + 1);
   }, []);
@@ -158,9 +164,9 @@ export function useThreadStorage(): UseThreadStorageResult {
   const getPinTimestamp = useCallback(
     (workspaceId: string, threadId: string): number | null => {
       const key = makePinKey(workspaceId, threadId);
-      return pinnedThreadsRef.current[key] ?? null;
+      return pinnedThreads[key] ?? null;
     },
-    [],
+    [pinnedThreads],
   );
 
   const markAutoTitlePending = useCallback(
