@@ -10,16 +10,19 @@
 - 新增用户消息 `@路径` 引用提取与独立引用卡片展示，提升上下文可读性
 - 新增 Codex/Claude/Gemini 流式等待与入流特效联动，并增强浅色主题可见性
 - 优化显示设置实时预览与本地字体选择流程，降低个性化配置成本
+- 优化基础设置中的语言切换视觉反馈，提升设置面板状态可辨识性
 
 🔧 Improvements
 - 补齐 Claude 幕布隐藏 run command 卡片的测试用例，收紧消息卡片可见性回归风险
 - 压缩左侧工作区项目的纵向占用，提升侧边栏信息密度与浏览效率
 - 调整侧边栏分组与项目列表的视觉层级和间距，提升信息扫读效率
 - 模块化拆分基础外观设置并收敛气泡样式变量逻辑，提升后续维护稳定性
+- 拆分设置页样式大文件，降低样式维护耦合与回归风险
 
 🐛 Fixes
 - 修复用户引用卡片视觉层级与紧凑度问题，减少消息区噪音
 - 修复用户输入 `@路径` 在相邻文本场景下的解析错误，避免引用提取遗漏
+- 修复项目设置中默认 workspace 显示问题，并合并未分组侧边栏条目
 - 修复提示词增强快捷键跨平台失效问题，并将超时延长至 60 秒
 - 修复跨平台快捷键识别偏差与流式/进程终止边界问题，降低异常中断风险
 - 修复 Codex 幕布下运行命令与批量运行命令卡片误显示问题
@@ -33,16 +36,19 @@ English:
 - Add extraction of user-message `@path` references and render them as standalone reference cards for better context readability
 - Add synchronized streaming wait/arrival effects across Codex, Claude, and Gemini, with improved visibility in light themes
 - Improve display-settings live preview and local-font selection flow to reduce customization friction
+- Improve visual feedback for language switching in base settings to increase state clarity
 
 🔧 Improvements
 - Add coverage for Claude curtain behavior to hide run-command cards, reducing regression risk in message-card visibility
 - Reduce vertical space usage in the left workspace project list to improve sidebar information density and scan efficiency
 - Refine visual hierarchy and spacing between sidebar groups and project lists to improve scanability
 - Modularize base appearance settings and consolidate bubble-style variables to improve maintainability and iteration stability
+- Split oversized settings style files to reduce styling coupling and regression risk
 
 🐛 Fixes
 - Fix visual hierarchy and density issues in user reference cards to reduce chat-area noise
 - Fix parsing failures for user-input `@path` references when adjacent text is present, preventing missed reference extraction
+- Fix default workspace visibility in project settings and merge ungrouped sidebar entries
 - Fix cross-platform prompt-enhancement shortcut failures and extend the timeout to 60 seconds
 - Fix cross-platform shortcut recognition drift and stabilize stream/process-termination boundaries
 - Fix unintended visibility of run-command and batch run-command cards in Codex curtain mode
