@@ -13,6 +13,8 @@
 - 优化 `File changes` 折叠展示与独立展开交互，减少长会话浏览噪音
 - 重构 `MCP` 设置页为按引擎查看的只读展示视图，支持统一查看 Claude Code、Codex、Gemini、OpenCode 的配置入口与运行规则
 - 完善本地统计能力并增强多引擎兼容性，提升跨引擎使用数据的一致性
+- 为 Claude Code 子代理结果新增独立气泡卡片渲染，并支持在幕布中以独立视觉格式展示 agent 完成内容
+- 为右下角子代理列表补充按引擎分流的跳转行为：Claude Code 可定位到当前幕布中的 agent 卡片，Codex 可跳转到对应 session
 
 🔧 Improvements
 - 降低实时会话更新对输入链路的干扰，提升连续输入稳定性
@@ -20,6 +22,8 @@
 - 优化 `MCP` 设置页总览卡、引擎选择与详情区的联动语义，减少跨区域状态错位
 - 补齐 `MCP` 设置中英文文案、图标层次与测试映射，提升展示一致性与可维护性
 - 拆分 Claude 事件转换模块并完成大文件治理，收敛引擎层职责边界并降低维护复杂度
+- 收口右下角子代理点击链路的导航语义，并保留右侧面板展开状态，减少跨区域定位时的视线中断
+- 强化子代理导航目标聚合逻辑，兼容 `taskId` / `task_id` 并优先保留更完整的定位信息
 
 🐛 Fixes
 - 修复启动链异常场景下的黑屏问题，增强冷启动兜底能力
@@ -36,6 +40,8 @@
 - 修复聊天输入框长文本水平溢出问题，提升长输入场景下的可读性
 - 修复 Claude 实时与历史幕布思考正文丢失问题，避免推理内容在流式与回放场景中缺失
 - 调整右侧融合状态面板布局并移除背景框，提升主界面信息层级与视觉融合度
+- 修复 Claude 子代理完成消息仍与当前幕布内容混排的问题，避免 agent 内容缺少独立渲染格式
+- 修复 `task-notification` 在空结果、双重转义和普通 XML 文本场景下的识别边界问题，降低误判与漏渲染风险
 
 English:
 
@@ -46,6 +52,8 @@ English:
 - Improve `File changes` collapsing and standalone expand interactions to reduce noise in long conversations
 - Rebuild the `MCP` settings page into an engine-scoped read-only view that clearly shows config entry points and runtime rules for Claude Code, Codex, Gemini, and OpenCode
 - Improve local usage metrics and strengthen multi-engine compatibility to keep cross-engine usage data consistent
+- Add standalone bubble-card rendering for Claude Code subagent results so completed agent output is presented as an independent canvas element
+- Add engine-aware jump behavior from the bottom-right subagent list: Claude Code scrolls to the in-canvas agent card, while Codex opens the corresponding session
 
 🔧 Improvements
 - Reduce interference from realtime session updates in the composer input flow for steadier typing
@@ -53,6 +61,8 @@ English:
 - Tighten the linkage between the `MCP` overview cards, engine selector, and detail area to prevent cross-section state drift
 - Fill in `MCP` i18n copy, icon hierarchy, and test mappings to improve presentation consistency and maintainability
 - Split Claude event-conversion modules and complete large-file governance to tighten engine-layer boundaries and reduce maintenance complexity
+- Refine the bottom-right subagent click flow to preserve the right-side panel while navigating, reducing context loss during cross-panel inspection
+- Harden subagent navigation-target aggregation by supporting both `taskId` and `task_id` and preferring richer anchor metadata
 
 🐛 Fixes
 - Fix black-screen scenarios during bootstrap failures by adding a safer startup fallback path
@@ -69,6 +79,8 @@ English:
 - Fix horizontal overflow in the chat composer for long-input scenarios
 - Fix missing Claude reasoning body content in both live and historical curtain views so streamed and replayed thinking stays intact
 - Adjust the merged right-side status panel layout and remove its background frame to improve hierarchy and visual integration with the main UI
+- Fix mixed rendering where Claude subagent completion messages were still blended into the main curtain instead of using an independent visual format
+- Fix `task-notification` parsing boundaries for empty results, double-escaped payloads, and ordinary XML-like prose to reduce false positives and missed rendering
 
 ---
 
