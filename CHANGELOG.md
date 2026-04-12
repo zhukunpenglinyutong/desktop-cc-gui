@@ -34,6 +34,8 @@
 - 修复 Claude 会话销毁期间的子进程竞争与残留问题，降低退出阶段资源泄漏风险
 - 修复本地扫描不可用时 Codex 线程已知会话丢失与 `cwd` 回填偏差问题
 - 修复聊天输入框长文本水平溢出问题，提升长输入场景下的可读性
+- 修复 Claude 实时与历史幕布思考正文丢失问题，避免推理内容在流式与回放场景中缺失
+- 调整右侧融合状态面板布局并移除背景框，提升主界面信息层级与视觉融合度
 
 English:
 
@@ -65,6 +67,8 @@ English:
 - Fix subprocess race and residue during Claude session teardown to reduce exit-time resource leaks
 - Fix Codex known-session loss and `cwd` backfill drift when local scanning is unavailable
 - Fix horizontal overflow in the chat composer for long-input scenarios
+- Fix missing Claude reasoning body content in both live and historical curtain views so streamed and replayed thinking stays intact
+- Adjust the merged right-side status panel layout and remove its background frame to improve hierarchy and visual integration with the main UI
 
 ---
 
