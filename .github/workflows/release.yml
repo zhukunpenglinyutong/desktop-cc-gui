@@ -376,11 +376,11 @@ jobs:
 
           platforms = {
             "darwin-aarch64": {
-              "url": "https://github.com/zhukunpenglinyutong/ccgui/releases/download/v${VERSION}/ccgui_aarch64.app.tar.gz",
+              "url": "https://github.com/zhukunpenglinyutong/desktop-cc-gui/releases/download/v${VERSION}/ccgui_aarch64.app.tar.gz",
               "signature": "${SIGNATURE_AARCH64}",
             },
             "darwin-x86_64": {
-              "url": "https://github.com/zhukunpenglinyutong/ccgui/releases/download/v${VERSION}/ccgui_x86_64.app.tar.gz",
+              "url": "https://github.com/zhukunpenglinyutong/desktop-cc-gui/releases/download/v${VERSION}/ccgui_x86_64.app.tar.gz",
               "signature": "${SIGNATURE_X86_64}",
             }
           }
@@ -405,7 +405,7 @@ jobs:
             sig_path = appimage.with_suffix(appimage.suffix + ".sig")
             if sig_path.exists():
               platforms[f"linux-{arch}"] = {
-                "url": f"https://github.com/zhukunpenglinyutong/ccgui/releases/download/v${VERSION}/{appimage.name}",
+                "url": f"https://github.com/zhukunpenglinyutong/desktop-cc-gui/releases/download/v${VERSION}/{appimage.name}",
                 "signature": sig_path.read_text().strip(),
               }
 
@@ -415,7 +415,7 @@ jobs:
             sig_path = Path(str(nsis_exe) + ".sig")
             if sig_path.exists():
               platforms["windows-x86_64"] = {
-                "url": f"https://github.com/zhukunpenglinyutong/ccgui/releases/download/v${VERSION}/{nsis_exe.name}",
+                "url": f"https://github.com/zhukunpenglinyutong/desktop-cc-gui/releases/download/v${VERSION}/{nsis_exe.name}",
                 "signature": sig_path.read_text().strip(),
               }
               break
