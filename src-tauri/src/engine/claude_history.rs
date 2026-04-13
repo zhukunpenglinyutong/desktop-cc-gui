@@ -495,6 +495,43 @@ fn rewrite_session_id_fields(value: &mut Value, source_session_id: &str, forked_
     }
 }
 
+fn resolve_session_file_path(
+    base_dir: &Path,
+    workspace_path: &Path,
+    session_id: &str,
+) -> Result<PathBuf, String> {
+    let project_dirs = claude_project_dirs_for_path(base_dir, workspace_path);
+    for project_dir in project_dirs {
+        let candidate = project_dir.join(format!("{}.jsonl", session_id));
+        if candidate.exists() {
+            return Ok(candidate);
+        }
+    }
+    Err(format!("Session file not found: {}", session_id))
+}
+
+fn is_target_user_message_entry(entry: &Value, target_message_id: &str) -> bool {
+    let role = entry
+        .get("message")
+        .and_then(|message| message.get("role"))
+        .and_then(|value| value.as_str())
+        .unwrap_or("");
+    if role != "user" {
+        return false;
+    }
+    entry
+        .get("uuid")
+        .and_then(|value| value.as_str())
+        .or_else(|| {
+            entry
+                .get("message")
+                .and_then(|message| message.get("id"))
+                .and_then(|value| value.as_str())
+        })
+        .map(|value| value == target_message_id)
+        .unwrap_or(false)
+}
+
 /// Load full message history for a specific Claude Code session.
 ///
 /// Reads the JSONL file and returns all user/assistant messages
@@ -829,19 +866,7 @@ pub async fn fork_claude_session(
     session_id: &str,
 ) -> Result<String, String> {
     let base_dir = claude_projects_dir().ok_or("Cannot determine home directory")?;
-    let project_dirs = claude_project_dirs_for_path(&base_dir, workspace_path);
-
-    let mut source_file: Option<PathBuf> = None;
-    for project_dir in project_dirs {
-        let candidate = project_dir.join(format!("{}.jsonl", session_id));
-        if candidate.exists() {
-            source_file = Some(candidate);
-            break;
-        }
-    }
-
-    let source_file =
-        source_file.ok_or_else(|| format!("Session file not found: {}", session_id))?;
+    let source_file = resolve_session_file_path(&base_dir, workspace_path, session_id)?;
     let target_dir = source_file
         .parent()
         .map(PathBuf::from)
@@ -879,6 +904,85 @@ pub async fn fork_claude_session(
         .map_err(|e| format!("Failed to flush forked session file: {}", e))?;
 
     Ok(forked_session_id)
+}
+
+/// Fork a Claude session from a specific user message.
+///
+/// Clones `{session_id}.jsonl` into a new UUID session file, rewriting all
+/// `session_id/sessionId` fields, and truncating history before the target user
+/// message (exclusive). This preserves rewind semantics as full user+assistant
+/// turn rollback. Returns an error when the target message id cannot be found.
+async fn fork_claude_session_from_message_in_base_dir(
+    base_dir: &Path,
+    workspace_path: &Path,
+    session_id: &str,
+    message_id: &str,
+) -> Result<String, String> {
+    let target_message_id = message_id.trim();
+    if target_message_id.is_empty() {
+        return Err("message_id is required".to_string());
+    }
+
+    let source_file = resolve_session_file_path(base_dir, workspace_path, session_id)?;
+    let target_dir = source_file
+        .parent()
+        .map(PathBuf::from)
+        .ok_or_else(|| "Invalid session file path".to_string())?;
+
+    let forked_session_id = uuid::Uuid::new_v4().to_string();
+    let target_file = target_dir.join(format!("{}.jsonl", forked_session_id));
+
+    let src = fs::File::open(&source_file)
+        .await
+        .map_err(|e| format!("Failed to open source session file: {}", e))?;
+    let mut reader = BufReader::new(src).lines();
+    let mut dst = fs::File::create(&target_file)
+        .await
+        .map_err(|e| format!("Failed to create forked session file: {}", e))?;
+    let mut found_target = false;
+
+    while let Ok(Some(line)) = reader.next_line().await {
+        let mut output = line;
+        if let Ok(mut json_value) = serde_json::from_str::<Value>(&output) {
+            if is_target_user_message_entry(&json_value, target_message_id) {
+                found_target = true;
+                break;
+            }
+            rewrite_session_id_fields(&mut json_value, session_id, &forked_session_id);
+            output = serde_json::to_string(&json_value)
+                .map_err(|e| format!("Failed to serialize forked session entry: {}", e))?;
+        }
+        dst.write_all(output.as_bytes())
+            .await
+            .map_err(|e| format!("Failed to write forked session entry: {}", e))?;
+        dst.write_all(b"\n")
+            .await
+            .map_err(|e| format!("Failed to finalize forked session entry: {}", e))?;
+    }
+
+    if !found_target {
+        let _ = fs::remove_file(&target_file).await;
+        return Err(format!(
+            "Target user message not found in session {}: {}",
+            session_id, target_message_id
+        ));
+    }
+
+    dst.flush()
+        .await
+        .map_err(|e| format!("Failed to flush forked session file: {}", e))?;
+
+    Ok(forked_session_id)
+}
+
+pub async fn fork_claude_session_from_message(
+    workspace_path: &Path,
+    session_id: &str,
+    message_id: &str,
+) -> Result<String, String> {
+    let base_dir = claude_projects_dir().ok_or("Cannot determine home directory")?;
+    fork_claude_session_from_message_in_base_dir(&base_dir, workspace_path, session_id, message_id)
+        .await
 }
 
 /// Delete a Claude Code session by removing its JSONL file from disk.
@@ -927,8 +1031,8 @@ pub async fn delete_claude_session(workspace_path: &Path, session_id: &str) -> R
 #[cfg(test)]
 mod tests {
     use super::{
-        extract_images_from_content, is_encoded_workspace_prefix_match,
-        load_claude_session_from_base_dir,
+        extract_images_from_content, fork_claude_session_from_message_in_base_dir,
+        is_encoded_workspace_prefix_match, load_claude_session_from_base_dir,
     };
     use serde_json::json;
     use uuid::Uuid;
@@ -1056,6 +1160,173 @@ mod tests {
             .messages
             .iter()
             .any(|message| message.kind == "message" && message.text == "Done"));
+
+        let _ = std::fs::remove_dir_all(&temp_root);
+    }
+
+    #[tokio::test]
+    async fn fork_claude_session_from_message_truncates_before_target_user_message() {
+        let unique = Uuid::new_v4().to_string();
+        let temp_root = std::env::temp_dir().join(format!("ccgui-claude-fork-{}", unique));
+        let base_dir = temp_root.join("claude-projects");
+        let workspace_path = temp_root.join("workspace");
+        std::fs::create_dir_all(&workspace_path).expect("create workspace path");
+        std::fs::create_dir_all(&base_dir).expect("create base dir");
+
+        let encoded_workspace = workspace_path
+            .to_string_lossy()
+            .chars()
+            .map(|c| {
+                if c.is_ascii_alphanumeric() || c == '-' {
+                    c
+                } else {
+                    '-'
+                }
+            })
+            .collect::<String>();
+        let project_dir = base_dir.join(encoded_workspace);
+        std::fs::create_dir_all(&project_dir).expect("create project dir");
+
+        let source_session_id = format!("source-session-{}", unique);
+        let source_path = project_dir.join(format!("{}.jsonl", source_session_id));
+        let target_message_id = Uuid::new_v4().to_string();
+        let lines = vec![
+            json!({
+                "uuid": Uuid::new_v4().to_string(),
+                "session_id": source_session_id,
+                "message": { "role": "user", "content": "first user message" }
+            }),
+            json!({
+                "uuid": Uuid::new_v4().to_string(),
+                "sessionId": source_session_id,
+                "message": { "role": "assistant", "content": "assistant reply" }
+            }),
+            json!({
+                "uuid": target_message_id,
+                "session_id": source_session_id,
+                "message": { "role": "user", "content": "target user message" }
+            }),
+            json!({
+                "uuid": Uuid::new_v4().to_string(),
+                "session_id": source_session_id,
+                "message": { "role": "assistant", "content": "must be truncated" }
+            }),
+        ];
+        let payload = lines
+            .iter()
+            .map(|line| line.to_string())
+            .collect::<Vec<String>>()
+            .join("\n");
+        std::fs::write(&source_path, format!("{}\n", payload)).expect("write source session");
+
+        let forked_session_id = fork_claude_session_from_message_in_base_dir(
+            &base_dir,
+            &workspace_path,
+            &source_session_id,
+            &target_message_id,
+        )
+        .await
+        .expect("fork from target message");
+
+        let forked_path = project_dir.join(format!("{}.jsonl", forked_session_id));
+        assert!(forked_path.exists());
+        let forked_text = std::fs::read_to_string(&forked_path).expect("read forked session");
+        let forked_lines: Vec<_> = forked_text
+            .lines()
+            .filter(|line| !line.trim().is_empty())
+            .collect();
+        assert_eq!(forked_lines.len(), 2);
+
+        let parsed_lines: Vec<serde_json::Value> = forked_lines
+            .iter()
+            .map(|line| serde_json::from_str(line).expect("parse forked line"))
+            .collect();
+        for entry in &parsed_lines {
+            let rewritten = entry
+                .get("session_id")
+                .or_else(|| entry.get("sessionId"))
+                .and_then(|value| value.as_str());
+            assert_eq!(rewritten, Some(forked_session_id.as_str()));
+        }
+        assert_eq!(
+            parsed_lines[1]
+                .get("message")
+                .and_then(|message| message.get("role"))
+                .and_then(|value| value.as_str()),
+            Some("assistant")
+        );
+        assert!(!parsed_lines
+            .iter()
+            .any(|entry| entry.get("uuid").and_then(|value| value.as_str())
+                == Some(target_message_id.as_str())));
+
+        let _ = std::fs::remove_dir_all(&temp_root);
+    }
+
+    #[tokio::test]
+    async fn fork_claude_session_from_message_errors_when_target_not_found() {
+        let unique = Uuid::new_v4().to_string();
+        let temp_root = std::env::temp_dir().join(format!("ccgui-claude-fork-miss-{}", unique));
+        let base_dir = temp_root.join("claude-projects");
+        let workspace_path = temp_root.join("workspace");
+        std::fs::create_dir_all(&workspace_path).expect("create workspace path");
+        std::fs::create_dir_all(&base_dir).expect("create base dir");
+
+        let encoded_workspace = workspace_path
+            .to_string_lossy()
+            .chars()
+            .map(|c| {
+                if c.is_ascii_alphanumeric() || c == '-' {
+                    c
+                } else {
+                    '-'
+                }
+            })
+            .collect::<String>();
+        let project_dir = base_dir.join(encoded_workspace);
+        std::fs::create_dir_all(&project_dir).expect("create project dir");
+
+        let source_session_id = format!("source-session-{}", unique);
+        let source_path = project_dir.join(format!("{}.jsonl", source_session_id));
+        let lines = vec![
+            json!({
+                "uuid": Uuid::new_v4().to_string(),
+                "session_id": source_session_id,
+                "message": { "role": "user", "content": "first user message" }
+            }),
+            json!({
+                "uuid": Uuid::new_v4().to_string(),
+                "session_id": source_session_id,
+                "message": { "role": "assistant", "content": "assistant reply" }
+            }),
+        ];
+        let payload = lines
+            .iter()
+            .map(|line| line.to_string())
+            .collect::<Vec<String>>()
+            .join("\n");
+        std::fs::write(&source_path, format!("{}\n", payload)).expect("write source session");
+
+        let before_files: Vec<_> = std::fs::read_dir(&project_dir)
+            .expect("list project files")
+            .filter_map(Result::ok)
+            .map(|entry| entry.path())
+            .collect();
+        let error = fork_claude_session_from_message_in_base_dir(
+            &base_dir,
+            &workspace_path,
+            &source_session_id,
+            "missing-user-message-id",
+        )
+        .await
+        .expect_err("target message should be missing");
+        assert!(error.contains("Target user message not found"));
+        let after_files: Vec<_> = std::fs::read_dir(&project_dir)
+            .expect("list project files")
+            .filter_map(Result::ok)
+            .map(|entry| entry.path())
+            .collect();
+        assert_eq!(after_files.len(), before_files.len());
 
         let _ = std::fs::remove_dir_all(&temp_root);
     }

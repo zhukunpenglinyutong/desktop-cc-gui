@@ -45,7 +45,7 @@ function isMissingTauriInvokeError(error: unknown) {
   return (
     error instanceof TypeError &&
     (error.message.includes("reading 'invoke'") ||
-      error.message.includes("reading \"invoke\""))
+      error.message.includes('reading "invoke"'))
   );
 }
 
@@ -88,7 +88,9 @@ function isEngineRpcFallbackMode(): boolean {
   return shouldUseWebServiceFallback() && daemonEngineRpcSupported === false;
 }
 
-function webServiceEngineFeatures(engineType: EngineType): EngineStatus["features"] {
+function webServiceEngineFeatures(
+  engineType: EngineType,
+): EngineStatus["features"] {
   if (engineType === "codex") {
     return {
       streaming: true,
@@ -161,7 +163,9 @@ export async function listWorkspaces(): Promise<WorkspaceInfo[]> {
     if (isMissingTauriInvokeError(error)) {
       // In non-Tauri environments (e.g., Electron/web previews), the invoke
       // bridge may be missing. Treat this as "no workspaces" instead of crashing.
-      console.warn("Tauri invoke bridge unavailable; returning empty workspaces list.");
+      console.warn(
+        "Tauri invoke bridge unavailable; returning empty workspaces list.",
+      );
       return [];
     }
     throw error;
@@ -250,7 +254,9 @@ export async function readGlobalCodexConfigToml(): Promise<GlobalCodexConfigResp
   return fileRead("global", "config");
 }
 
-export async function writeGlobalCodexConfigToml(content: string): Promise<void> {
+export async function writeGlobalCodexConfigToml(
+  content: string,
+): Promise<void> {
   return fileWrite("global", "config", content);
 }
 
@@ -258,7 +264,9 @@ export async function readGlobalCodexAuthJson(): Promise<GlobalCodexAuthResponse
   return fileRead("global", "auth");
 }
 
-export async function getConfigModel(workspaceId: string): Promise<string | null> {
+export async function getConfigModel(
+  workspaceId: string,
+): Promise<string | null> {
   const response = await invoke<{ model?: string | null }>("get_config_model", {
     workspaceId,
   });
@@ -399,7 +407,9 @@ export async function readPanelLockPasswordFile(): Promise<string | null> {
   return invoke<string | null>("client_panel_lock_password_read");
 }
 
-export async function writePanelLockPasswordFile(password: string): Promise<void> {
+export async function writePanelLockPasswordFile(
+  password: string,
+): Promise<void> {
   return invoke("client_panel_lock_password_write", { password });
 }
 
@@ -408,7 +418,9 @@ export async function connectWorkspace(id: string): Promise<void> {
 }
 
 export async function startThread(workspaceId: string) {
-  return invoke<Record<string, unknown> | null | undefined>("start_thread", { workspaceId });
+  return invoke<Record<string, unknown> | null | undefined>("start_thread", {
+    workspaceId,
+  });
 }
 
 export async function forkThread(workspaceId: string, threadId: string) {
@@ -616,7 +628,9 @@ export type CreateGitPrWorkflowOptions = {
 export async function getGitPrWorkflowDefaults(
   workspaceId: string,
 ): Promise<GitPrWorkflowDefaults> {
-  return invoke<GitPrWorkflowDefaults>("get_git_pr_workflow_defaults", { workspaceId });
+  return invoke<GitPrWorkflowDefaults>("get_git_pr_workflow_defaults", {
+    workspaceId,
+  });
 }
 
 export async function createGitPrWorkflow(
@@ -674,7 +688,9 @@ export async function getGitCommitDiff(
   });
 }
 
-export async function getGitRemote(workspace_id: string): Promise<string | null> {
+export async function getGitRemote(
+  workspace_id: string,
+): Promise<string | null> {
   return invoke("get_git_remote", { workspaceId: workspace_id });
 }
 
@@ -834,7 +850,9 @@ export async function localUsageSnapshot(
   days?: number,
   workspacePath?: string | null,
 ): Promise<LocalUsageSnapshot> {
-  const payload: { days: number; workspacePath?: string } = { days: days ?? 30 };
+  const payload: { days: number; workspacePath?: string } = {
+    days: days ?? 30,
+  };
   if (workspacePath) {
     payload.workspacePath = workspacePath;
   }
@@ -864,10 +882,13 @@ export async function getModelList(workspaceId: string) {
 }
 
 export async function generateRunMetadata(workspaceId: string, prompt: string) {
-  return invoke<{ title: string; worktreeName: string }>("generate_run_metadata", {
-    workspaceId,
-    prompt,
-  });
+  return invoke<{ title: string; worktreeName: string }>(
+    "generate_run_metadata",
+    {
+      workspaceId,
+      prompt,
+    },
+  );
 }
 
 export async function getCollaborationModes(workspaceId: string) {
@@ -875,10 +896,7 @@ export async function getCollaborationModes(workspaceId: string) {
     data?: Record<string, unknown>[];
     result?: { data?: Record<string, unknown>[]; [key: string]: unknown };
     [key: string]: unknown;
-  }>(
-    "collaboration_mode_list",
-    { workspaceId },
-  );
+  }>("collaboration_mode_list", { workspaceId });
 }
 
 export async function getAccountRateLimits(workspaceId: string) {
@@ -891,14 +909,13 @@ export async function getAccountRateLimits(workspaceId: string) {
       [key: string]: unknown;
     };
     [key: string]: unknown;
-  }>(
-    "account_rate_limits",
-    { workspaceId },
-  );
+  }>("account_rate_limits", { workspaceId });
 }
 
 export async function getAccountInfo(workspaceId: string) {
-  return invoke<Record<string, unknown> | null>("account_read", { workspaceId });
+  return invoke<Record<string, unknown> | null>("account_read", {
+    workspaceId,
+  });
 }
 
 export async function runCodexLogin(workspaceId: string) {
@@ -929,14 +946,19 @@ export async function getOpenCodeAgentsList(refresh = false) {
 
 export async function getOpenCodeSessionList(workspaceId: string) {
   return invoke<
-    Array<{ sessionId: string; title: string; updatedLabel: string; updatedAt?: number | null }>
-  >(
-    "opencode_session_list",
-    { workspaceId },
-  );
+    Array<{
+      sessionId: string;
+      title: string;
+      updatedLabel: string;
+      updatedAt?: number | null;
+    }>
+  >("opencode_session_list", { workspaceId });
 }
 
-export async function getOpenCodeStats(workspaceId: string, days?: number | null) {
+export async function getOpenCodeStats(
+  workspaceId: string,
+  days?: number | null,
+) {
   return invoke<string>("opencode_stats", {
     workspaceId,
     days: days ?? null,
@@ -948,14 +970,20 @@ export async function exportOpenCodeSession(
   sessionId: string,
   outputPath?: string | null,
 ) {
-  return invoke<{ sessionId: string; filePath: string }>("opencode_export_session", {
-    workspaceId,
-    sessionId,
-    outputPath: outputPath ?? null,
-  });
+  return invoke<{ sessionId: string; filePath: string }>(
+    "opencode_export_session",
+    {
+      workspaceId,
+      sessionId,
+      outputPath: outputPath ?? null,
+    },
+  );
 }
 
-export async function importOpenCodeSession(workspaceId: string, source: string) {
+export async function importOpenCodeSession(
+  workspaceId: string,
+  source: string,
+) {
   return invoke<{ sessionId?: string | null; source: string; output: string }>(
     "opencode_import_session",
     {
@@ -965,7 +993,10 @@ export async function importOpenCodeSession(workspaceId: string, source: string)
   );
 }
 
-export async function shareOpenCodeSession(workspaceId: string, sessionId: string) {
+export async function shareOpenCodeSession(
+  workspaceId: string,
+  sessionId: string,
+) {
   return invoke<{ sessionId: string; url: string }>("opencode_share_session", {
     workspaceId,
     sessionId,
@@ -1085,10 +1116,13 @@ export async function getOpenCodeLspDiagnostics(
   workspaceId: string,
   filePath: string,
 ) {
-  return invoke<{ filePath: string; result: unknown }>("opencode_lsp_diagnostics", {
-    workspaceId,
-    filePath,
-  });
+  return invoke<{ filePath: string; result: unknown }>(
+    "opencode_lsp_diagnostics",
+    {
+      workspaceId,
+      filePath,
+    },
+  );
 }
 
 export async function getOpenCodeLspSymbols(
@@ -1105,10 +1139,13 @@ export async function getOpenCodeLspDocumentSymbols(
   workspaceId: string,
   fileUri: string,
 ) {
-  return invoke<{ fileUri: string; result: unknown }>("opencode_lsp_document_symbols", {
-    workspaceId,
-    fileUri,
-  });
+  return invoke<{ fileUri: string; result: unknown }>(
+    "opencode_lsp_document_symbols",
+    {
+      workspaceId,
+      fileUri,
+    },
+  );
 }
 
 export async function getCodeIntelDefinition(
@@ -1216,7 +1253,9 @@ export async function getOpenCodeLspReferences(
   });
 }
 
-export async function getPromptsList(workspaceId: string): Promise<CustomPromptOption[]> {
+export async function getPromptsList(
+  workspaceId: string,
+): Promise<CustomPromptOption[]> {
   return invoke<CustomPromptOption[]>("prompts_list", { workspaceId });
 }
 
@@ -1268,7 +1307,10 @@ export async function updatePrompt(
   });
 }
 
-export async function deletePrompt(workspaceId: string, path: string): Promise<void> {
+export async function deletePrompt(
+  workspaceId: string,
+  path: string,
+): Promise<void> {
   return invoke<void>("prompts_delete", { workspaceId, path });
 }
 
@@ -1287,7 +1329,9 @@ export async function getAppSettings(): Promise<AppSettings> {
   return invoke<AppSettings>("get_app_settings");
 }
 
-export async function updateAppSettings(settings: AppSettings): Promise<AppSettings> {
+export async function updateAppSettings(
+  settings: AppSettings,
+): Promise<AppSettings> {
   return invoke<AppSettings>("update_app_settings", { settings });
 }
 
@@ -1404,7 +1448,9 @@ export type DetachedExternalChangeMonitorStatus = {
 };
 
 export async function getWorkspaceFiles(workspaceId: string) {
-  return invoke<WorkspaceFilesResponse>("list_workspace_files", { workspaceId });
+  return invoke<WorkspaceFilesResponse>("list_workspace_files", {
+    workspaceId,
+  });
 }
 
 export async function getWorkspaceDirectoryChildren(
@@ -1421,10 +1467,13 @@ export async function listExternalAbsoluteDirectoryChildren(
   workspaceId: string,
   path: string,
 ) {
-  return invoke<WorkspaceFilesResponse>("list_external_absolute_directory_children", {
-    workspaceId,
-    path,
-  });
+  return invoke<WorkspaceFilesResponse>(
+    "list_external_absolute_directory_children",
+    {
+      workspaceId,
+      path,
+    },
+  );
 }
 
 export async function searchWorkspaceText(
@@ -1449,18 +1498,27 @@ export async function searchWorkspaceText(
   });
 }
 
-export async function listExternalSpecTree(workspaceId: string, specRoot: string) {
-  return invoke<WorkspaceFilesResponse>("list_external_spec_tree", { workspaceId, specRoot });
+export async function listExternalSpecTree(
+  workspaceId: string,
+  specRoot: string,
+) {
+  return invoke<WorkspaceFilesResponse>("list_external_spec_tree", {
+    workspaceId,
+    specRoot,
+  });
 }
 
 export async function readWorkspaceFile(
   workspaceId: string,
   path: string,
 ): Promise<{ content: string; truncated: boolean }> {
-  return invoke<{ content: string; truncated: boolean }>("read_workspace_file", {
-    workspaceId,
-    path,
-  });
+  return invoke<{ content: string; truncated: boolean }>(
+    "read_workspace_file",
+    {
+      workspaceId,
+      path,
+    },
+  );
 }
 
 export async function readExternalSpecFile(
@@ -1479,10 +1537,13 @@ export async function readExternalAbsoluteFile(
   workspaceId: string,
   path: string,
 ): Promise<{ content: string; truncated: boolean }> {
-  return invoke<{ content: string; truncated: boolean }>("read_external_absolute_file", {
-    workspaceId,
-    path,
-  });
+  return invoke<{ content: string; truncated: boolean }>(
+    "read_external_absolute_file",
+    {
+      workspaceId,
+      path,
+    },
+  );
 }
 
 export type FilePreviewHandle = {
@@ -1512,7 +1573,10 @@ export async function readLocalImageDataUrl(
   path: string,
 ): Promise<string | null> {
   try {
-    const result = await invoke<string>("read_local_image_data_url", { workspaceId, path });
+    const result = await invoke<string>("read_local_image_data_url", {
+      workspaceId,
+      path,
+    });
     return typeof result === "string" && result.startsWith("data:image/")
       ? result
       : null;
@@ -1532,6 +1596,29 @@ export async function writeWorkspaceFile(
   return invoke("write_workspace_file", { workspaceId, path, content });
 }
 
+export type ExportRewindFilesParams = {
+  workspaceId: string;
+  engine: "claude" | "codex" | "gemini";
+  sessionId: string;
+  targetMessageId: string;
+  conversationLabel: string;
+  files: Array<{ path: string }>;
+};
+
+export type ExportRewindFilesResult = {
+  outputPath: string;
+  filesPath: string;
+  manifestPath: string;
+  exportId: string;
+  fileCount: number;
+};
+
+export async function exportRewindFiles(
+  params: ExportRewindFilesParams,
+): Promise<ExportRewindFilesResult> {
+  return invoke<ExportRewindFilesResult>("export_rewind_files", params);
+}
+
 export async function createWorkspaceDirectory(
   workspaceId: string,
   path: string,
@@ -1545,7 +1632,12 @@ export async function writeExternalSpecFile(
   path: string,
   content: string,
 ): Promise<void> {
-  return invoke("write_external_spec_file", { workspaceId, specRoot, path, content });
+  return invoke("write_external_spec_file", {
+    workspaceId,
+    specRoot,
+    path,
+    content,
+  });
 }
 
 export async function writeExternalAbsoluteFile(
@@ -1629,21 +1721,31 @@ export async function runSpecCommand(
   });
 }
 
-export async function readAgentMd(workspaceId: string): Promise<AgentMdResponse> {
+export async function readAgentMd(
+  workspaceId: string,
+): Promise<AgentMdResponse> {
   return fileRead("workspace", "agents", workspaceId);
 }
 
-export async function writeAgentMd(workspaceId: string, content: string): Promise<void> {
+export async function writeAgentMd(
+  workspaceId: string,
+  content: string,
+): Promise<void> {
   return fileWrite("workspace", "agents", content, workspaceId);
 }
 
 export type ClaudeMdResponse = TextFileResponse;
 
-export async function readClaudeMd(workspaceId: string): Promise<ClaudeMdResponse> {
+export async function readClaudeMd(
+  workspaceId: string,
+): Promise<ClaudeMdResponse> {
   return fileRead("workspace", "claude", workspaceId);
 }
 
-export async function writeClaudeMd(workspaceId: string, content: string): Promise<void> {
+export async function writeClaudeMd(
+  workspaceId: string,
+  content: string,
+): Promise<void> {
   return fileWrite("workspace", "claude", content, workspaceId);
 }
 
@@ -1666,7 +1768,11 @@ export async function createGitBranchFromBranch(
   name: string,
   sourceBranch: string,
 ) {
-  return invoke("create_git_branch_from_branch", { workspaceId, name, sourceBranch });
+  return invoke("create_git_branch_from_branch", {
+    workspaceId,
+    name,
+    sourceBranch,
+  });
 }
 
 export async function createGitBranchFromCommit(
@@ -1674,7 +1780,11 @@ export async function createGitBranchFromCommit(
   name: string,
   commitHash: string,
 ) {
-  return invoke("create_git_branch_from_commit", { workspaceId, name, commitHash });
+  return invoke("create_git_branch_from_commit", {
+    workspaceId,
+    name,
+    commitHash,
+  });
 }
 
 export async function deleteGitBranch(
@@ -1945,7 +2055,11 @@ export async function listMcpServerStatus(
   cursor?: string | null,
   limit?: number | null,
 ) {
-  return invoke<unknown>("list_mcp_server_status", { workspaceId, cursor, limit });
+  return invoke<unknown>("list_mcp_server_status", {
+    workspaceId,
+    cursor,
+    limit,
+  });
 }
 
 export type GlobalMcpServerEntry = {
@@ -2149,7 +2263,9 @@ export async function getEngineStatus(
   engineType: EngineType,
 ): Promise<EngineStatus | null> {
   try {
-    const status = await invoke<EngineStatus | null>("get_engine_status", { engineType });
+    const status = await invoke<EngineStatus | null>("get_engine_status", {
+      engineType,
+    });
     daemonEngineRpcSupported = true;
     return status;
   } catch (error) {
@@ -2158,7 +2274,11 @@ export async function getEngineStatus(
         throw error;
       }
       daemonEngineRpcSupported = false;
-      return webServiceCodexOnlyStatuses().find((entry) => entry.engineType === engineType) ?? null;
+      return (
+        webServiceCodexOnlyStatuses().find(
+          (entry) => entry.engineType === engineType,
+        ) ?? null
+      );
     }
     throw error;
   }
@@ -2174,7 +2294,9 @@ export async function getEngineModels(
     return [];
   }
   try {
-    const models = await invoke<EngineModelInfo[]>("get_engine_models", { engineType });
+    const models = await invoke<EngineModelInfo[]>("get_engine_models", {
+      engineType,
+    });
     daemonEngineRpcSupported = true;
     return models;
   } catch (error) {
@@ -2271,20 +2393,23 @@ export async function engineSendMessageSync(
     throw new Error(WEB_SERVICE_CLI_ENGINE_MESSAGE);
   }
   try {
-    return await invoke<{ engine: EngineType; text: string }>("engine_send_message_sync", {
-      workspaceId,
-      text: params.text,
-      engine: params.engine ?? null,
-      model: params.model ?? null,
-      effort: params.effort ?? null,
-      images: params.images ?? null,
-      continueSession: params.continueSession ?? false,
-      accessMode: params.accessMode ?? null,
-      sessionId: params.sessionId ?? null,
-      agent: params.agent ?? null,
-      variant: params.variant ?? null,
-      customSpecRoot: params.customSpecRoot ?? null,
-    });
+    return await invoke<{ engine: EngineType; text: string }>(
+      "engine_send_message_sync",
+      {
+        workspaceId,
+        text: params.text,
+        engine: params.engine ?? null,
+        model: params.model ?? null,
+        effort: params.effort ?? null,
+        images: params.images ?? null,
+        continueSession: params.continueSession ?? false,
+        accessMode: params.accessMode ?? null,
+        sessionId: params.sessionId ?? null,
+        agent: params.agent ?? null,
+        variant: params.variant ?? null,
+        customSpecRoot: params.customSpecRoot ?? null,
+      },
+    );
   } catch (error) {
     if (isUnknownMethodError(error, "engine_send_message_sync")) {
       if (!shouldUseWebServiceFallback()) {
@@ -2311,14 +2436,15 @@ export async function engineInterrupt(workspaceId: string): Promise<void> {
 export async function listClaudeSessions(
   workspacePath: string,
   limit?: number | null,
-): Promise<ClaudeSessionSummaryPayload[] | Record<string, unknown> | null | undefined> {
-  return invoke<ClaudeSessionSummaryPayload[] | Record<string, unknown> | null | undefined>(
-    "list_claude_sessions",
-    {
-      workspacePath,
-      limit: limit ?? null,
-    },
-  );
+): Promise<
+  ClaudeSessionSummaryPayload[] | Record<string, unknown> | null | undefined
+> {
+  return invoke<
+    ClaudeSessionSummaryPayload[] | Record<string, unknown> | null | undefined
+  >("list_claude_sessions", {
+    workspacePath,
+    limit: limit ?? null,
+  });
 }
 
 /**
@@ -2341,10 +2467,13 @@ export async function listGeminiSessions(
   workspacePath: string,
   limit?: number | null,
 ): Promise<Record<string, unknown> | unknown[] | null> {
-  return invoke<Record<string, unknown> | unknown[] | null>("list_gemini_sessions", {
-    workspacePath,
-    limit: limit ?? null,
-  });
+  return invoke<Record<string, unknown> | unknown[] | null>(
+    "list_gemini_sessions",
+    {
+      workspacePath,
+      limit: limit ?? null,
+    },
+  );
 }
 
 /**
@@ -2384,6 +2513,24 @@ export async function forkClaudeSession(
     workspacePath,
     sessionId,
   });
+}
+
+/**
+ * Fork a Claude Code session from a target user message.
+ */
+export async function forkClaudeSessionFromMessage(
+  workspacePath: string,
+  sessionId: string,
+  messageId: string,
+): Promise<Record<string, unknown> | null> {
+  return invoke<Record<string, unknown> | null>(
+    "fork_claude_session_from_message",
+    {
+      workspacePath,
+      sessionId,
+      messageId,
+    },
+  );
 }
 
 /**
@@ -2635,7 +2782,9 @@ export async function setClaudeAlwaysThinkingEnabled(
   return invoke("vendor_set_claude_always_thinking_enabled", { enabled });
 }
 
-export async function getCodexProviders(): Promise<VendorCodexProviderConfig[]> {
+export async function getCodexProviders(): Promise<
+  VendorCodexProviderConfig[]
+> {
   return invoke<VendorCodexProviderConfig[]>("vendor_get_codex_providers");
 }
 
@@ -2719,15 +2868,16 @@ export async function getSelectedAgentConfig(): Promise<{
   );
 }
 
-export async function setSelectedAgentConfig(
-  agentId: string | null,
-): Promise<{
+export async function setSelectedAgentConfig(agentId: string | null): Promise<{
   success: boolean;
   agent: AgentConfig | null;
 }> {
-  return invoke<{ success: boolean; agent: AgentConfig | null }>("agent_set_selected", {
-    agentId,
-  });
+  return invoke<{ success: boolean; agent: AgentConfig | null }>(
+    "agent_set_selected",
+    {
+      agentId,
+    },
+  );
 }
 
 export async function exportAgentConfigs(

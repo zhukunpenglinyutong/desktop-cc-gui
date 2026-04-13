@@ -35,7 +35,14 @@ import { useInlineHistoryCompletion } from "../hooks/useInlineHistoryCompletion"
 import { recordHistory as recordInputHistory } from "../hooks/useInputHistoryStore";
 import { ChatInputBoxAdapter } from "./ChatInputBox/ChatInputBoxAdapter";
 import type { ChatInputBoxHandle } from "./ChatInputBox/ChatInputBoxAdapter";
-import { accessModeToPermissionMode, permissionModeToAccessMode } from "./ChatInputBox/types";
+import {
+  accessModeToPermissionMode,
+  permissionModeToAccessMode,
+} from "./ChatInputBox/types";
+import {
+  ClaudeRewindConfirmDialog,
+  type ClaudeRewindPreviewState,
+} from "./ClaudeRewindConfirmDialog";
 import { ReviewInlinePrompt } from "./ReviewInlinePrompt";
 import type {
   ContextCompactionState,
@@ -54,7 +61,11 @@ import {
   mergeUniqueNames,
 } from "../utils/inlineSelections";
 import { useStreamActivityPhase } from "../../threads/hooks/useStreamActivityPhase";
-import { compactThreadContext } from "../../../services/tauri";
+import {
+  compactThreadContext,
+  exportRewindFiles,
+} from "../../../services/tauri";
+import { extractFileChangeSummaries } from "../../operation-facts/operationFacts";
 import { pushErrorToast } from "../../../services/toasts";
 import { getManualMemoryInjectionMode } from "../../project-memory/utils/manualInjectionMode";
 
@@ -105,7 +116,9 @@ type ComposerProps = {
   selectedOpenCodeVariant?: string | null;
   onSelectOpenCodeVariant?: (variant: string | null) => void;
   accessMode: "default" | "read-only" | "current" | "full-access";
-  onSelectAccessMode: (mode: "default" | "read-only" | "current" | "full-access") => void;
+  onSelectAccessMode: (
+    mode: "default" | "read-only" | "current" | "full-access",
+  ) => void;
   skills: { name: string; description?: string; source?: string }[];
   prompts: CustomPromptOption[];
   commands?: CustomCommandOption[];
@@ -199,7 +212,7 @@ type ComposerProps = {
   plan?: TurnPlan | null;
   isPlanMode?: boolean;
   onOpenDiffPath?: (path: string) => void;
-  onRewind?: () => void;
+  onRewind?: (userMessageId: string) => void | Promise<void>;
   statusPanelExpandedOverride?: boolean;
   onToggleStatusPanelOverride?: () => void;
 };
@@ -230,7 +243,103 @@ const MANUAL_MEMORY_USER_INPUT_REGEX =
   /(?:^|\n)\s*用户输入[:：]\s*([\s\S]*?)(?=\n+\s*(?:助手输出摘要|助手输出)[:：]|$)/;
 const MANUAL_MEMORY_ASSISTANT_SUMMARY_REGEX =
   /(?:^|\n)\s*助手输出摘要[:：]\s*([\s\S]*?)(?=\n+\s*(?:助手输出|用户输入)[:：]|$)/;
-const INLINE_FILE_REFERENCE_TOKEN_REGEX = /(📁|📄)\s+([^\n`📁📄]+?)\s+`([^`\n]+)`/gu;
+const INLINE_FILE_REFERENCE_TOKEN_REGEX =
+  /(📁|📄)\s+([^\n`📁📄]+?)\s+`([^`\n]+)`/gu;
+const REWIND_PREVIEW_MAX_CHARS = 72;
+
+type RewindCandidate = {
+  id: string;
+  index: number;
+  preview: string;
+};
+
+type RewindThreadContext = {
+  engine: "claude" | "codex" | "gemini";
+  sessionId: string | null;
+  conversationLabel: string;
+};
+
+function truncateRewindPreview(text: string) {
+  if (text.length <= REWIND_PREVIEW_MAX_CHARS) {
+    return text;
+  }
+  return `${text.slice(0, REWIND_PREVIEW_MAX_CHARS - 1)}…`;
+}
+
+function collectRewindCandidates(items: ConversationItem[]): RewindCandidate[] {
+  const candidates: RewindCandidate[] = [];
+  const seen = new Set<string>();
+  for (let index = items.length - 1; index >= 0; index -= 1) {
+    const item = items[index];
+    if (item.kind !== "message" || item.role !== "user") {
+      continue;
+    }
+    const id = item.id.trim();
+    if (!id || id.startsWith("optimistic-user-") || seen.has(id)) {
+      continue;
+    }
+    const preview = truncateRewindPreview(
+      item.text.replace(/\s+/g, " ").trim(),
+    );
+    candidates.push({
+      id,
+      index,
+      preview: preview || id,
+    });
+    seen.add(id);
+  }
+  return candidates;
+}
+
+function resolveRewindThreadContext(
+  activeThreadId: string | null | undefined,
+  fallbackLabel: string,
+): RewindThreadContext {
+  const normalizedThreadId = activeThreadId?.trim() ?? "";
+  const [rawEngine = "", ...sessionParts] = normalizedThreadId.split(":");
+  const normalizedEngine =
+    rawEngine === "claude" || rawEngine === "codex" || rawEngine === "gemini"
+      ? rawEngine
+      : "claude";
+  const sessionId = sessionParts.join(":").trim() || null;
+  return {
+    engine: normalizedEngine,
+    sessionId,
+    conversationLabel: fallbackLabel.trim() || "rewind",
+  };
+}
+
+function buildLatestClaudeRewindPreview(
+  items: ConversationItem[],
+  activeThreadId?: string | null,
+): ClaudeRewindPreviewState | null {
+  const latestCandidate = collectRewindCandidates(items)[0];
+  if (!latestCandidate) {
+    return null;
+  }
+
+  const impactedItems = items.slice(latestCandidate.index);
+  const threadContext = resolveRewindThreadContext(
+    activeThreadId,
+    latestCandidate.preview,
+  );
+  return {
+    targetMessageId: latestCandidate.id,
+    preview: latestCandidate.preview,
+    engine: threadContext.engine,
+    sessionId: threadContext.sessionId,
+    conversationLabel: threadContext.conversationLabel,
+    removedUserMessageCount: impactedItems.filter(
+      (item) => item.kind === "message" && item.role === "user",
+    ).length,
+    removedAssistantMessageCount: impactedItems.filter(
+      (item) => item.kind === "message" && item.role === "assistant",
+    ).length,
+    removedToolCallCount: impactedItems.filter((item) => item.kind === "tool")
+      .length,
+    affectedFiles: extractFileChangeSummaries(impactedItems),
+  };
+}
 
 function resolveSelectedNamedItems<T extends { name: string }>(
   selectedNames: string[],
@@ -306,16 +415,16 @@ function resolveDualContextUsageModel(
   // total.* is cumulative session usage and can exceed context window after compaction.
   const usedTokens = lastInput + lastCached;
   const hasUsage = usedTokens > 0 && contextWindow > 0;
-  const percent = contextWindow > 0 ? clampUsagePercent((usedTokens / contextWindow) * 100) : 0;
+  const percent =
+    contextWindow > 0
+      ? clampUsagePercent((usedTokens / contextWindow) * 100)
+      : 0;
   return {
     usedTokens,
     contextWindow,
     percent,
     hasUsage,
-    compactionState: resolveCompactionState(
-      items,
-      isContextCompacting,
-    ),
+    compactionState: resolveCompactionState(items, isContextCompacting),
   };
 }
 
@@ -378,9 +487,7 @@ function extractInlineFileReferenceTokens(
     },
   );
   return {
-    cleanedText: cleanedText
-      .replace(/ {3,}/g, "  ")
-      .replace(/[ \t]+\n/g, "\n"),
+    cleanedText: cleanedText.replace(/ {3,}/g, "  ").replace(/[ \t]+\n/g, "\n"),
     extracted,
   };
 }
@@ -552,7 +659,8 @@ export const Composer = memo(function Composer({
   onReviewPromptSelectCommit: _onReviewPromptSelectCommit,
   onReviewPromptSelectCommitAtIndex: _onReviewPromptSelectCommitAtIndex,
   onReviewPromptConfirmCommit: _onReviewPromptConfirmCommit,
-  onReviewPromptUpdateCustomInstructions: _onReviewPromptUpdateCustomInstructions,
+  onReviewPromptUpdateCustomInstructions:
+    _onReviewPromptUpdateCustomInstructions,
   onReviewPromptConfirmCustom: _onReviewPromptConfirmCustom,
   linkedKanbanPanels: _linkedKanbanPanels = [],
   selectedLinkedKanbanPanelId: _selectedLinkedKanbanPanelId = null,
@@ -568,6 +676,7 @@ export const Composer = memo(function Composer({
   threadStatusById,
   plan = null,
   isPlanMode = false,
+  onOpenDiffPath,
   onRewind,
   statusPanelExpandedOverride,
   onToggleStatusPanelOverride,
@@ -590,16 +699,14 @@ export const Composer = memo(function Composer({
     selectedEngine === "claude" ||
     selectedEngine === "codex" ||
     selectedEngine === "gemini";
-  const { todoTotal, subagentTotal, fileChanges, commandTotal } = useStatusPanelData(
-    performanceScopedItems,
-    {
+  const { todoTotal, subagentTotal, fileChanges, commandTotal } =
+    useStatusPanelData(performanceScopedItems, {
       isCodexEngine,
       activeThreadId,
       itemsByThread: threadItemsByThread,
       threadParentById,
       threadStatusById,
-    },
-  );
+    });
   const hasStatusPanelActivity = useMemo(() => {
     const hasLegacyActivity =
       todoTotal > 0 ||
@@ -623,41 +730,45 @@ export const Composer = memo(function Composer({
   const [text, setText] = useState(draftText);
   const [selectionStart, setSelectionStart] = useState<number | null>(null);
   const [selectedSkillNames, setSelectedSkillNames] = useState<string[]>([]);
-  const [selectedCommonsNames, setSelectedCommonsNames] = useState<string[]>([]);
+  const [selectedCommonsNames, setSelectedCommonsNames] = useState<string[]>(
+    [],
+  );
   const [selectedManualMemories, setSelectedManualMemories] = useState<
     ManualMemorySelection[]
   >([]);
-  const [selectedInlineFileReferences, setSelectedInlineFileReferences] = useState<
-    InlineFileReferenceSelection[]
-  >([]);
+  const [selectedInlineFileReferences, setSelectedInlineFileReferences] =
+    useState<InlineFileReferenceSelection[]>([]);
   const [isComposerCollapsed, setIsComposerCollapsed] = useState(false);
   const [statusPanelExpanded, setStatusPanelExpanded] = useState(
     hasStatusPanelActivity,
   );
   const previousStatusPanelActivityRef = useRef(hasStatusPanelActivity);
-  const [dismissedActiveFileReference, setDismissedActiveFileReference] = useState<
-    string | null
-  >(null);
+  const [dismissedActiveFileReference, setDismissedActiveFileReference] =
+    useState<string | null>(null);
   const [openCodeProviderTone, _setOpenCodeProviderTone] = useState<
     "is-ok" | "is-runtime" | "is-fail"
   >("is-fail");
-  const [openCodeProviderToneReady, _setOpenCodeProviderToneReady] = useState(false);
+  const [openCodeProviderToneReady, _setOpenCodeProviderToneReady] =
+    useState(false);
+  const [rewindInFlight, setRewindInFlight] = useState(false);
+  const [rewindPreviewState, setRewindPreviewState] =
+    useState<ClaudeRewindPreviewState | null>(null);
+  const rewindInFlightRef = useRef(false);
   const lastExpandedHeightRef = useRef(
     Math.max(textareaHeight, COMPOSER_EXPAND_HEIGHT),
   );
   const internalRef = useRef<HTMLTextAreaElement | null>(null);
   const textareaRef = externalTextareaRef ?? internalRef;
   const chatInputRef = useRef<ChatInputBoxHandle>(null);
-  const activeFileReferenceSignature =
-    activeFilePath
-      ? activeFileLineRange
-        ? `${activeFilePath}:${activeFileLineRange.startLine}-${activeFileLineRange.endLine}`
-        : `${activeFilePath}:all`
-      : null;
+  const activeFileReferenceSignature = activeFilePath
+    ? activeFileLineRange
+      ? `${activeFilePath}:${activeFileLineRange.startLine}-${activeFileLineRange.endLine}`
+      : `${activeFilePath}:all`
+    : null;
   const hasActiveFileReference = Boolean(
     activeFileReferenceSignature &&
-      fileReferenceMode === "path" &&
-      dismissedActiveFileReference !== activeFileReferenceSignature,
+    fileReferenceMode === "path" &&
+    dismissedActiveFileReference !== activeFileReferenceSignature,
   );
 
   const selectedSkills = useMemo(
@@ -685,7 +796,10 @@ export const Composer = memo(function Composer({
     if (!dismissedActiveFileReference) {
       return;
     }
-    if (!activeFileReferenceSignature || activeFileReferenceSignature !== dismissedActiveFileReference) {
+    if (
+      !activeFileReferenceSignature ||
+      activeFileReferenceSignature !== dismissedActiveFileReference
+    ) {
       setDismissedActiveFileReference(null);
     }
   }, [activeFileReferenceSignature, dismissedActiveFileReference]);
@@ -717,7 +831,9 @@ export const Composer = memo(function Composer({
     return selectedAgent;
   }, [opencodeAgents, selectedAgent, selectedEngine, selectedOpenCodeAgent]);
   const opencodeDisconnected =
-    selectedEngine === "opencode" && openCodeProviderToneReady && openCodeProviderTone === "is-fail";
+    selectedEngine === "opencode" &&
+    openCodeProviderToneReady &&
+    openCodeProviderTone === "is-fail";
 
   const contextSelectionChips = useMemo<ContextSelectionChip[]>(
     () => [
@@ -734,7 +850,6 @@ export const Composer = memo(function Composer({
     ],
     [selectedCommons, selectedSkills],
   );
-
 
   useEffect(() => {
     if (textareaHeight > COMPOSER_MIN_HEIGHT) {
@@ -759,6 +874,17 @@ export const Composer = memo(function Composer({
     setSelectedManualMemories([]);
     setSelectedInlineFileReferences([]);
   }, [activeThreadId, activeWorkspaceId]);
+
+  useEffect(() => {
+    setRewindPreviewState(null);
+  }, [activeThreadId]);
+
+  useEffect(() => {
+    if (selectedEngine === "claude" && onRewind) {
+      return;
+    }
+    setRewindPreviewState(null);
+  }, [onRewind, selectedEngine]);
 
   const handleExpandComposer = useCallback(() => {
     setIsComposerCollapsed(false);
@@ -812,27 +938,33 @@ export const Composer = memo(function Composer({
       cleanedText: cleanedSelectionText,
       matchedSkillNames,
       matchedCommonsNames,
-    } =
-      extractInlineSelections(text, skills, commands);
+    } = extractInlineSelections(text, skills, commands);
     if (matchedSkillNames.length > 0) {
-      setSelectedSkillNames((prev) => mergeUniqueNames(prev, matchedSkillNames));
+      setSelectedSkillNames((prev) =>
+        mergeUniqueNames(prev, matchedSkillNames),
+      );
     }
     if (matchedCommonsNames.length > 0) {
-      setSelectedCommonsNames((prev) => mergeUniqueNames(prev, matchedCommonsNames));
+      setSelectedCommonsNames((prev) =>
+        mergeUniqueNames(prev, matchedCommonsNames),
+      );
     }
     if (cleanedSelectionText !== text) {
       setComposerText(cleanedSelectionText);
     }
   }, [commands, selectedInlineFileReferences, setComposerText, skills, text]);
 
-  const handleSelectManualMemory = useCallback((memory: ManualMemorySelection) => {
-    setSelectedManualMemories((prev) => {
-      if (prev.some((entry) => entry.id === memory.id)) {
-        return prev.filter((entry) => entry.id !== memory.id);
-      }
-      return [...prev, memory];
-    });
-  }, []);
+  const handleSelectManualMemory = useCallback(
+    (memory: ManualMemorySelection) => {
+      setSelectedManualMemories((prev) => {
+        if (prev.some((entry) => entry.id === memory.id)) {
+          return prev.filter((entry) => entry.id !== memory.id);
+        }
+        return [...prev, memory];
+      });
+    },
+    [],
+  );
 
   const handleSelectSkill = useCallback((skillName: string) => {
     const normalized = skillName.trim();
@@ -901,23 +1033,42 @@ export const Composer = memo(function Composer({
         inlineCompletion.clear();
       }
     },
-    [handleHistoryTextChange, handleTextChange, suggestionsOpen, inlineCompletion],
+    [
+      handleHistoryTextChange,
+      handleTextChange,
+      suggestionsOpen,
+      inlineCompletion,
+    ],
   );
 
   const applyActiveFileReference = useCallback(
     (message: string) => {
-      if (!(hasActiveFileReference && fileReferenceMode === "path" && activeFilePath)) {
+      if (
+        !(
+          hasActiveFileReference &&
+          fileReferenceMode === "path" &&
+          activeFilePath
+        )
+      ) {
         return message;
       }
       const referenceTarget = activeFileLineRange
         ? `${activeFilePath}#L${activeFileLineRange.startLine}-L${activeFileLineRange.endLine}`
         : activeFilePath;
-      if (message.includes(referenceTarget) || message.includes(activeFilePath)) {
+      if (
+        message.includes(referenceTarget) ||
+        message.includes(activeFilePath)
+      ) {
         return message;
       }
       return `@file \`${referenceTarget}\`\n${message}`.trim();
     },
-    [activeFileLineRange, activeFilePath, fileReferenceMode, hasActiveFileReference],
+    [
+      activeFileLineRange,
+      activeFilePath,
+      fileReferenceMode,
+      hasActiveFileReference,
+    ],
   );
 
   const handleClearContext = useCallback(() => {
@@ -951,17 +1102,102 @@ export const Composer = memo(function Composer({
     statusPanelExpandedOverride ?? statusPanelExpanded;
   const resolvedToggleStatusPanel =
     onToggleStatusPanelOverride ?? handleToggleStatusPanel;
+  const canRewindClaudeSession = Boolean(
+    onRewind &&
+      activeThreadId &&
+      activeThreadId.trim().startsWith("claude:"),
+  );
+
+  const handleCancelRewind = useCallback(() => {
+    if (rewindInFlight) {
+      return;
+    }
+    setRewindPreviewState(null);
+  }, [rewindInFlight]);
 
   const handleRewind = useCallback(() => {
-    if (onRewind) {
-      onRewind();
+    if (rewindInFlightRef.current || rewindInFlight) {
+      return;
+    }
+    if (canRewindClaudeSession && onRewind) {
+      const preview = buildLatestClaudeRewindPreview(items, activeThreadId);
+      if (!preview) {
+        pushErrorToast({
+          title: t("rewind.title"),
+          message: t("rewind.noEligibleMessage"),
+        });
+        return;
+      }
+      setRewindPreviewState(preview);
       return;
     }
     pushErrorToast({
       title: t("rewind.title"),
       message: t("rewind.notAvailable"),
     });
-  }, [onRewind, t]);
+  }, [activeThreadId, canRewindClaudeSession, items, onRewind, rewindInFlight, t]);
+
+  const handleConfirmRewind = useCallback(async () => {
+    const preview = rewindPreviewState;
+    if (!preview) {
+      return;
+    }
+    if (!onRewind) {
+      pushErrorToast({
+        title: t("rewind.title"),
+        message: t("rewind.notAvailable"),
+      });
+      setRewindPreviewState(null);
+      return;
+    }
+    if (rewindInFlightRef.current || rewindInFlight) {
+      return;
+    }
+
+    rewindInFlightRef.current = true;
+    try {
+      setRewindInFlight(true);
+      await onRewind(preview.targetMessageId);
+      setRewindPreviewState(null);
+    } catch (error) {
+      pushErrorToast({
+        title: t("rewind.title"),
+        message:
+          (error instanceof Error ? error.message : String(error)) ||
+          t("rewind.failed"),
+      });
+    } finally {
+      setRewindInFlight(false);
+      rewindInFlightRef.current = false;
+    }
+  }, [onRewind, rewindInFlight, rewindPreviewState, t]);
+
+  const handleStoreRewindChanges = useCallback(
+    async (preview: ClaudeRewindPreviewState) => {
+      const workspaceId = activeWorkspaceId?.trim() ?? "";
+      const sessionId = preview.sessionId?.trim() ?? "";
+      if (!workspaceId || !sessionId) {
+        throw new Error(t("rewind.storeUnavailable"));
+      }
+      const uniquePaths = Array.from(
+        new Set(
+          preview.affectedFiles.map((file) => file.filePath).filter(Boolean),
+        ),
+      );
+      if (uniquePaths.length === 0) {
+        throw new Error(t("rewind.filesEmpty"));
+      }
+      return exportRewindFiles({
+        workspaceId,
+        engine: preview.engine,
+        sessionId,
+        targetMessageId: preview.targetMessageId,
+        conversationLabel: preview.conversationLabel,
+        files: uniquePaths.map((path) => ({ path })),
+      });
+    },
+    [activeWorkspaceId, t],
+  );
 
   const handleManualCompactContext = useCallback(async () => {
     if (selectedEngine !== "codex") {
@@ -985,110 +1221,122 @@ export const Composer = memo(function Composer({
     }
   }, [activeThreadId, activeWorkspaceId, selectedEngine, t]);
 
-  const handleCodexQuickCommand = useCallback((command: string) => {
-    if (disabled) {
-      return;
-    }
-    const normalized = command.trim().toLowerCase();
-    const isReviewCommand = /^\/review\b/.test(normalized);
-    const isFastCommand = /^\/fast\b/.test(normalized);
-    if (isFastCommand && selectedEngine !== "codex") {
-      return;
-    }
-    if (isReviewCommand && !isReviewQuickActionEngine) {
-      return;
-    }
-    if (!isReviewCommand && !isFastCommand && selectedEngine !== "codex") {
-      return;
-    }
-    void onSend(command, []);
-  }, [disabled, isReviewQuickActionEngine, onSend, selectedEngine]);
+  const handleCodexQuickCommand = useCallback(
+    (command: string) => {
+      if (disabled) {
+        return;
+      }
+      const normalized = command.trim().toLowerCase();
+      const isReviewCommand = /^\/review\b/.test(normalized);
+      const isFastCommand = /^\/fast\b/.test(normalized);
+      if (isFastCommand && selectedEngine !== "codex") {
+        return;
+      }
+      if (isReviewCommand && !isReviewQuickActionEngine) {
+        return;
+      }
+      if (!isReviewCommand && !isFastCommand && selectedEngine !== "codex") {
+        return;
+      }
+      void onSend(command, []);
+    },
+    [disabled, isReviewQuickActionEngine, onSend, selectedEngine],
+  );
 
-  const handleSend = useCallback((submittedText?: string, submittedImages?: string[]) => {
-    if (disabled) {
-      return;
-    }
-    if (opencodeDisconnected) {
-      pushErrorToast({
-        title: "OpenCode 未连接",
-        message: "当前连接状态为红色，请先在 OpenCode 管理面板完成连接后再发送。",
-      });
-      return;
-    }
-    const trimmed = (submittedText ?? text).trim();
-    // Merge images from Composer state (file picker) and ChatInputBox (paste/drop)
-    const mergedImages = Array.from(
-      new Set([...attachedImages, ...(submittedImages ?? [])]),
-    );
-    if (!trimmed && mergedImages.length === 0 && !selectedOpenCodeDirectCommand) {
-      return;
-    }
-    if (selectedOpenCodeDirectCommand) {
-      onSend(`/${selectedOpenCodeDirectCommand}`, []);
-      setSelectedCommonsNames((prev) =>
-        prev.filter(
-          (name) => normalizeCommandChipName(name) !== selectedOpenCodeDirectCommand,
-        ),
+  const handleSend = useCallback(
+    (submittedText?: string, submittedImages?: string[]) => {
+      if (disabled) {
+        return;
+      }
+      if (opencodeDisconnected) {
+        pushErrorToast({
+          title: "OpenCode 未连接",
+          message:
+            "当前连接状态为红色，请先在 OpenCode 管理面板完成连接后再发送。",
+        });
+        return;
+      }
+      const trimmed = (submittedText ?? text).trim();
+      // Merge images from Composer state (file picker) and ChatInputBox (paste/drop)
+      const mergedImages = Array.from(
+        new Set([...attachedImages, ...(submittedImages ?? [])]),
       );
-      setSelectedManualMemories([]);
-      setSelectedInlineFileReferences([]);
+      if (
+        !trimmed &&
+        mergedImages.length === 0 &&
+        !selectedOpenCodeDirectCommand
+      ) {
+        return;
+      }
+      if (selectedOpenCodeDirectCommand) {
+        onSend(`/${selectedOpenCodeDirectCommand}`, []);
+        setSelectedCommonsNames((prev) =>
+          prev.filter(
+            (name) =>
+              normalizeCommandChipName(name) !== selectedOpenCodeDirectCommand,
+          ),
+        );
+        setSelectedManualMemories([]);
+        setSelectedInlineFileReferences([]);
+        inlineCompletion.clear();
+        resetHistoryNavigation();
+        setComposerText("");
+        return;
+      }
+      if (trimmed) {
+        recordHistory(trimmed);
+        recordInputHistory(trimmed);
+      }
       inlineCompletion.clear();
+      const finalText = shouldAssemblePrompt({
+        userInput: trimmed,
+        selectedSkillCount: selectedSkills.length,
+        selectedCommonsCount: selectedCommons.length,
+      })
+        ? assembleSinglePrompt({
+            userInput: trimmed,
+            skills: selectedSkills,
+            commons: selectedCommons.map((item) => ({ name: item.name })),
+          })
+        : trimmed;
+      const finalTextWithReference = applyActiveFileReference(finalText);
+      const resolvedFinalText = replaceVisibleFileReferenceLabels(
+        normalizeInlineFileReferenceTokens(finalTextWithReference),
+        selectedInlineFileReferences,
+      );
+      const selectedMemoryIds = selectedManualMemories.map((entry) => entry.id);
+      const selectedMemoryInjectionMode = getManualMemoryInjectionMode();
+      const sendOptions =
+        selectedMemoryIds.length > 0
+          ? { selectedMemoryIds, selectedMemoryInjectionMode }
+          : undefined;
+      const sendResult = onSend(resolvedFinalText, mergedImages, sendOptions);
+      void Promise.resolve(sendResult).finally(() => {
+        setSelectedManualMemories([]);
+        setSelectedInlineFileReferences([]);
+      });
       resetHistoryNavigation();
       setComposerText("");
-      return;
-    }
-    if (trimmed) {
-      recordHistory(trimmed);
-      recordInputHistory(trimmed);
-    }
-    inlineCompletion.clear();
-    const finalText = shouldAssemblePrompt({
-      userInput: trimmed,
-      selectedSkillCount: selectedSkills.length,
-      selectedCommonsCount: selectedCommons.length,
-    })
-      ? assembleSinglePrompt({
-          userInput: trimmed,
-          skills: selectedSkills,
-          commons: selectedCommons.map((item) => ({ name: item.name })),
-        })
-      : trimmed;
-    const finalTextWithReference = applyActiveFileReference(finalText);
-    const resolvedFinalText = replaceVisibleFileReferenceLabels(
-      normalizeInlineFileReferenceTokens(finalTextWithReference),
+    },
+    [
+      attachedImages,
+      disabled,
+      applyActiveFileReference,
+      opencodeDisconnected,
+      selectedOpenCodeDirectCommand,
+      selectedCommons,
+      selectedSkills,
       selectedInlineFileReferences,
-    );
-    const selectedMemoryIds = selectedManualMemories.map((entry) => entry.id);
-    const selectedMemoryInjectionMode = getManualMemoryInjectionMode();
-    const sendOptions =
-      selectedMemoryIds.length > 0
-        ? { selectedMemoryIds, selectedMemoryInjectionMode }
-        : undefined;
-    const sendResult = onSend(resolvedFinalText, mergedImages, sendOptions);
-    void Promise.resolve(sendResult).finally(() => {
-      setSelectedManualMemories([]);
-      setSelectedInlineFileReferences([]);
-    });
-    resetHistoryNavigation();
-    setComposerText("");
-  }, [
-    attachedImages,
-    disabled,
-    applyActiveFileReference,
-    opencodeDisconnected,
-    selectedOpenCodeDirectCommand,
-    selectedCommons,
-    selectedSkills,
-    selectedInlineFileReferences,
-    selectedManualMemories,
-    onSend,
-    inlineCompletion,
-    recordHistory,
-    resetHistoryNavigation,
-    setComposerText,
-    setSelectedManualMemories,
-    text,
-  ]);
+      selectedManualMemories,
+      onSend,
+      inlineCompletion,
+      recordHistory,
+      resetHistoryNavigation,
+      setComposerText,
+      setSelectedManualMemories,
+      text,
+    ],
+  );
 
   const handleRemoveManualMemory = useCallback((memoryId: string) => {
     setSelectedManualMemories((prev) =>
@@ -1098,10 +1346,14 @@ export const Composer = memo(function Composer({
 
   const handleRemoveContextChip = useCallback((chip: ContextSelectionChip) => {
     if (chip.type === "skill") {
-      setSelectedSkillNames((prev) => prev.filter((name) => name !== chip.name));
+      setSelectedSkillNames((prev) =>
+        prev.filter((name) => name !== chip.name),
+      );
       return;
     }
-    setSelectedCommonsNames((prev) => prev.filter((name) => name !== chip.name));
+    setSelectedCommonsNames((prev) =>
+      prev.filter((name) => name !== chip.name),
+    );
   }, []);
 
   useEffect(() => {
@@ -1175,11 +1427,7 @@ export const Composer = memo(function Composer({
 
   const dualContextUsage = useMemo(
     () =>
-      resolveDualContextUsageModel(
-        contextUsage,
-        items,
-        isContextCompacting,
-      ),
+      resolveDualContextUsageModel(contextUsage, items, isContextCompacting),
     [contextUsage, isContextCompacting, items],
   );
   const codexContextDualViewEnabled = contextDualViewEnabled && isCodexEngine;
@@ -1206,7 +1454,9 @@ export const Composer = memo(function Composer({
 
   return (
     <footer className={`composer${disabled ? " is-disabled" : ""}`}>
-      <div className={`composer-shell${isComposerCollapsed ? " is-collapsed" : ""}`}>
+      <div
+        className={`composer-shell${isComposerCollapsed ? " is-collapsed" : ""}`}
+      >
         {isComposerCollapsed ? (
           <button
             type="button"
@@ -1221,187 +1471,216 @@ export const Composer = memo(function Composer({
               <span />
             </span>
             <span className="composer-shell-collapsed-text">
-              {isProcessing ? t("composer.collapsedProcessing") : t("composer.expandInput")}
+              {isProcessing
+                ? t("composer.collapsedProcessing")
+                : t("composer.expandInput")}
             </span>
           </button>
         ) : (
           <>
-          {/* Management toolbar (help, skill, commons, kanban) removed -- was disabled with {false && ...} */}
+            {/* Management toolbar (help, skill, commons, kanban) removed -- was disabled with {false && ...} */}
 
-        {selectedManualMemories.length > 0 && (
-          <div className="composer-memory-strip">
-            <div className="composer-memory-strip-head">
-              <span className="composer-memory-strip-label">
-                {t("composer.manualMemorySelection", {
-                  count: selectedManualMemories.length,
-                })}
-              </span>
-              <span className="composer-memory-strip-hint">
-                {t("composer.manualMemorySelectionHint")}
-              </span>
-            </div>
-            <div className="composer-memory-chip-list">
-              {selectedManualMemories.map((memory) => {
-                const chipTitle = resolveManualMemoryChipTitle(memory);
-                const chipDetail = resolveManualMemoryChipDetail(memory);
-                return (
-                  <article
-                    key={`manual-memory-${memory.id}`}
-                    className="composer-memory-chip"
-                  >
-                    <button
-                      type="button"
-                      className="composer-memory-chip-remove"
-                      onClick={() => handleRemoveManualMemory(memory.id)}
-                      title={t("composer.manualMemoryRemove", {
-                        title: memory.title,
-                      })}
-                      aria-label={t("composer.manualMemoryRemove", {
-                        title: memory.title,
-                      })}
-                    >
-                      ×
-                    </button>
-                    <div className="composer-memory-chip-main">
-                      <span className="composer-memory-chip-title">{chipTitle}</span>
-                      {chipDetail && (
-                        <span className="composer-memory-chip-summary">{chipDetail}</span>
-                      )}
-                      <span className="composer-memory-chip-meta">
-                        <span>{memory.kind}</span>
-                        <span>{memory.importance}</span>
-                        <span>
-                          {new Date(memory.updatedAt).toLocaleDateString(undefined, {
-                            month: "2-digit",
-                            day: "2-digit",
+            {selectedManualMemories.length > 0 && (
+              <div className="composer-memory-strip">
+                <div className="composer-memory-strip-head">
+                  <span className="composer-memory-strip-label">
+                    {t("composer.manualMemorySelection", {
+                      count: selectedManualMemories.length,
+                    })}
+                  </span>
+                  <span className="composer-memory-strip-hint">
+                    {t("composer.manualMemorySelectionHint")}
+                  </span>
+                </div>
+                <div className="composer-memory-chip-list">
+                  {selectedManualMemories.map((memory) => {
+                    const chipTitle = resolveManualMemoryChipTitle(memory);
+                    const chipDetail = resolveManualMemoryChipDetail(memory);
+                    return (
+                      <article
+                        key={`manual-memory-${memory.id}`}
+                        className="composer-memory-chip"
+                      >
+                        <button
+                          type="button"
+                          className="composer-memory-chip-remove"
+                          onClick={() => handleRemoveManualMemory(memory.id)}
+                          title={t("composer.manualMemoryRemove", {
+                            title: memory.title,
                           })}
-                        </span>
-                      </span>
-                    </div>
-                  </article>
-                );
-              })}
-            </div>
-          </div>
-        )}
+                          aria-label={t("composer.manualMemoryRemove", {
+                            title: memory.title,
+                          })}
+                        >
+                          ×
+                        </button>
+                        <div className="composer-memory-chip-main">
+                          <span className="composer-memory-chip-title">
+                            {chipTitle}
+                          </span>
+                          {chipDetail && (
+                            <span className="composer-memory-chip-summary">
+                              {chipDetail}
+                            </span>
+                          )}
+                          <span className="composer-memory-chip-meta">
+                            <span>{memory.kind}</span>
+                            <span>{memory.importance}</span>
+                            <span>
+                              {new Date(memory.updatedAt).toLocaleDateString(
+                                undefined,
+                                {
+                                  month: "2-digit",
+                                  day: "2-digit",
+                                },
+                              )}
+                            </span>
+                          </span>
+                        </div>
+                      </article>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
 
-        {shouldRenderReviewInlinePrompt && reviewPrompt && (
-          <div
-            className="composer-suggestions popover-surface review-inline-suggestions"
-            role="listbox"
-            style={{
-              position: "relative",
-              left: "auto",
-              right: "auto",
-              top: "auto",
-              bottom: "auto",
-              width: "min(540px, 100%)",
-              maxWidth: "min(540px, 100%)",
-              marginBottom: "4px",
-            }}
-          >
-            <ReviewInlinePrompt
-              reviewPrompt={reviewPrompt}
-              onClose={_onReviewPromptClose!}
-              onShowPreset={_onReviewPromptShowPreset!}
-              onChoosePreset={_onReviewPromptChoosePreset!}
-              highlightedPresetIndex={_highlightedPresetIndex!}
-              onHighlightPreset={_onReviewPromptHighlightPreset!}
-              highlightedBranchIndex={_highlightedBranchIndex!}
-              onHighlightBranch={_onReviewPromptHighlightBranch!}
-              highlightedCommitIndex={_highlightedCommitIndex!}
-              onHighlightCommit={_onReviewPromptHighlightCommit!}
-              onSelectBranch={_onReviewPromptSelectBranch!}
-              onSelectBranchAtIndex={_onReviewPromptSelectBranchAtIndex!}
-              onConfirmBranch={_onReviewPromptConfirmBranch!}
-              onSelectCommit={_onReviewPromptSelectCommit!}
-              onSelectCommitAtIndex={_onReviewPromptSelectCommitAtIndex!}
-              onConfirmCommit={_onReviewPromptConfirmCommit!}
-              onUpdateCustomInstructions={_onReviewPromptUpdateCustomInstructions!}
-              onConfirmCustom={_onReviewPromptConfirmCustom!}
-              onKeyDown={_onReviewPromptKeyDown}
+            {shouldRenderReviewInlinePrompt && reviewPrompt && (
+              <div
+                className="composer-suggestions popover-surface review-inline-suggestions"
+                role="listbox"
+                style={{
+                  position: "relative",
+                  left: "auto",
+                  right: "auto",
+                  top: "auto",
+                  bottom: "auto",
+                  width: "min(540px, 100%)",
+                  maxWidth: "min(540px, 100%)",
+                  marginBottom: "4px",
+                }}
+              >
+                <ReviewInlinePrompt
+                  reviewPrompt={reviewPrompt}
+                  onClose={_onReviewPromptClose!}
+                  onShowPreset={_onReviewPromptShowPreset!}
+                  onChoosePreset={_onReviewPromptChoosePreset!}
+                  highlightedPresetIndex={_highlightedPresetIndex!}
+                  onHighlightPreset={_onReviewPromptHighlightPreset!}
+                  highlightedBranchIndex={_highlightedBranchIndex!}
+                  onHighlightBranch={_onReviewPromptHighlightBranch!}
+                  highlightedCommitIndex={_highlightedCommitIndex!}
+                  onHighlightCommit={_onReviewPromptHighlightCommit!}
+                  onSelectBranch={_onReviewPromptSelectBranch!}
+                  onSelectBranchAtIndex={_onReviewPromptSelectBranchAtIndex!}
+                  onConfirmBranch={_onReviewPromptConfirmBranch!}
+                  onSelectCommit={_onReviewPromptSelectCommit!}
+                  onSelectCommitAtIndex={_onReviewPromptSelectCommitAtIndex!}
+                  onConfirmCommit={_onReviewPromptConfirmCommit!}
+                  onUpdateCustomInstructions={
+                    _onReviewPromptUpdateCustomInstructions!
+                  }
+                  onConfirmCustom={_onReviewPromptConfirmCustom!}
+                  onKeyDown={_onReviewPromptKeyDown}
+                />
+              </div>
+            )}
+
+            <ChatInputBoxAdapter
+              ref={chatInputRef}
+              text={text}
+              disabled={disabled}
+              isProcessing={isProcessing}
+              streamActivityPhase={streamActivityPhase}
+              canStop={canStop}
+              onSend={handleSend}
+              onStop={onStop}
+              onTextChange={handleTextChangeWithHistory}
+              selectedModelId={selectedModelId}
+              selectedEngine={selectedEngine}
+              engines={engines}
+              onSelectEngine={onSelectEngine}
+              models={models}
+              onSelectModel={onSelectModel}
+              reasoningOptions={reasoningOptions}
+              selectedEffort={selectedEffort}
+              onSelectEffort={onSelectEffort}
+              reasoningSupported={reasoningSupported}
+              attachments={attachedImages}
+              onAddAttachment={onPickImages}
+              onAttachImages={onAttachImages}
+              onRemoveAttachment={onRemoveImage}
+              textareaHeight={textareaHeight}
+              onHeightChange={onTextareaHeightChange}
+              contextUsage={legacyContextUsage}
+              contextDualViewEnabled={codexContextDualViewEnabled}
+              dualContextUsage={dualContextUsage}
+              onRequestContextCompaction={handleManualCompactContext}
+              queuedMessages={queuedMessages}
+              onDeleteQueued={onDeleteQueued}
+              onFuseQueued={onFuseQueued}
+              canFuseQueuedMessages={canFuseQueuedMessages}
+              fusingQueuedMessageId={fusingQueuedMessageId}
+              suggestionsOpen={suggestionsOpen}
+              files={files}
+              directories={directories}
+              commands={commands}
+              prompts={prompts}
+              workspaceId={activeWorkspaceId}
+              onManualMemorySelect={handleSelectManualMemory}
+              onSelectSkill={handleSelectSkill}
+              sendShortcut={sendShortcut}
+              placeholder={
+                sendShortcut === "cmdEnter"
+                  ? t("chat.inputPlaceholderCmdEnter")
+                  : t("chat.inputPlaceholderEnter")
+              }
+              activeFile={
+                hasActiveFileReference
+                  ? (activeFilePath ?? undefined)
+                  : undefined
+              }
+              selectedLines={
+                hasActiveFileReference ? activeFileLinesLabel : undefined
+              }
+              onClearContext={
+                hasActiveFileReference ? handleClearContext : undefined
+              }
+              selectedAgent={selectedChatInputAgent}
+              selectedContextChips={contextSelectionChips}
+              selectedManualMemoryIds={selectedManualMemories.map(
+                (entry) => entry.id,
+              )}
+              onRemoveContextChip={handleRemoveContextChip}
+              onAgentSelect={handleAgentSelect}
+              onOpenAgentSettings={onOpenAgentSettings}
+              onOpenPromptSettings={onOpenPromptSettings}
+              onOpenModelSettings={onOpenModelSettings}
+              permissionMode={accessModeToPermissionMode(accessMode)}
+              onModeSelect={handleModeSelect}
+              selectedCollaborationModeId={_selectedCollaborationModeId}
+              onSelectCollaborationMode={_onSelectCollaborationMode}
+              accountRateLimits={accountRateLimits}
+              usageShowRemaining={usageShowRemaining}
+              onRefreshAccountRateLimits={onRefreshAccountRateLimits}
+              onCodexQuickCommand={handleCodexQuickCommand}
+              hasMessages={items.length > 0}
+              onRewind={handleRewind}
+          showRewindEntry={canRewindClaudeSession}
+              statusPanelExpanded={resolvedStatusPanelExpanded}
+              showStatusPanelToggle={showStatusPanel}
+              onToggleStatusPanel={resolvedToggleStatusPanel}
             />
-          </div>
-        )}
-
-        <ChatInputBoxAdapter
-          ref={chatInputRef}
-          text={text}
-          disabled={disabled}
-          isProcessing={isProcessing}
-          streamActivityPhase={streamActivityPhase}
-          canStop={canStop}
-          onSend={handleSend}
-          onStop={onStop}
-          onTextChange={handleTextChangeWithHistory}
-          selectedModelId={selectedModelId}
-          selectedEngine={selectedEngine}
-          engines={engines}
-          onSelectEngine={onSelectEngine}
-          models={models}
-          onSelectModel={onSelectModel}
-          reasoningOptions={reasoningOptions}
-          selectedEffort={selectedEffort}
-          onSelectEffort={onSelectEffort}
-          reasoningSupported={reasoningSupported}
-          attachments={attachedImages}
-          onAddAttachment={onPickImages}
-          onAttachImages={onAttachImages}
-          onRemoveAttachment={onRemoveImage}
-          textareaHeight={textareaHeight}
-          onHeightChange={onTextareaHeightChange}
-          contextUsage={legacyContextUsage}
-          contextDualViewEnabled={codexContextDualViewEnabled}
-          dualContextUsage={dualContextUsage}
-          onRequestContextCompaction={handleManualCompactContext}
-          queuedMessages={queuedMessages}
-          onDeleteQueued={onDeleteQueued}
-          onFuseQueued={onFuseQueued}
-          canFuseQueuedMessages={canFuseQueuedMessages}
-          fusingQueuedMessageId={fusingQueuedMessageId}
-          suggestionsOpen={suggestionsOpen}
-          files={files}
-          directories={directories}
-          commands={commands}
-          prompts={prompts}
-          workspaceId={activeWorkspaceId}
-          onManualMemorySelect={handleSelectManualMemory}
-          onSelectSkill={handleSelectSkill}
-          sendShortcut={sendShortcut}
-          placeholder={
-            sendShortcut === "cmdEnter"
-              ? t("chat.inputPlaceholderCmdEnter")
-              : t("chat.inputPlaceholderEnter")
-          }
-          activeFile={hasActiveFileReference ? (activeFilePath ?? undefined) : undefined}
-          selectedLines={hasActiveFileReference ? activeFileLinesLabel : undefined}
-          onClearContext={hasActiveFileReference ? handleClearContext : undefined}
-          selectedAgent={selectedChatInputAgent}
-          selectedContextChips={contextSelectionChips}
-          selectedManualMemoryIds={selectedManualMemories.map((entry) => entry.id)}
-          onRemoveContextChip={handleRemoveContextChip}
-          onAgentSelect={handleAgentSelect}
-          onOpenAgentSettings={onOpenAgentSettings}
-          onOpenPromptSettings={onOpenPromptSettings}
-          onOpenModelSettings={onOpenModelSettings}
-          permissionMode={accessModeToPermissionMode(accessMode)}
-          onModeSelect={handleModeSelect}
-          selectedCollaborationModeId={_selectedCollaborationModeId}
-          onSelectCollaborationMode={_onSelectCollaborationMode}
-          accountRateLimits={accountRateLimits}
-          usageShowRemaining={usageShowRemaining}
-          onRefreshAccountRateLimits={onRefreshAccountRateLimits}
-          onCodexQuickCommand={handleCodexQuickCommand}
-          hasMessages={items.length > 0}
-          onRewind={handleRewind}
-          showRewindEntry={false}
-          statusPanelExpanded={resolvedStatusPanelExpanded}
-          showStatusPanelToggle={showStatusPanel}
-          onToggleStatusPanel={resolvedToggleStatusPanel}
-        />
           </>
         )}
       </div>
+      <ClaudeRewindConfirmDialog
+        preview={rewindPreviewState}
+        isBusy={rewindInFlight}
+        onOpenDiffPath={onOpenDiffPath}
+        onStoreChanges={handleStoreRewindChanges}
+        onCancel={handleCancelRewind}
+        onConfirm={handleConfirmRewind}
+      />
     </footer>
   );
 });

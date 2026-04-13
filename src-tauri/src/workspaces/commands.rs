@@ -19,12 +19,12 @@ use super::files::{
     list_external_absolute_directory_children_inner, list_external_spec_tree_inner,
     list_workspace_directory_children_inner, list_workspace_files_inner,
     read_external_absolute_file_inner, read_external_spec_file_inner, read_workspace_file_inner,
-    resolve_external_absolute_preview_handle_inner,
-    resolve_external_spec_preview_handle_inner, resolve_workspace_preview_handle_inner,
-    search_workspace_text_inner, trash_workspace_item_inner, write_external_absolute_file_inner,
-    write_external_spec_file_inner, write_workspace_file_inner, ExternalSpecFileResponse,
-    WorkspaceFileResponse, WorkspaceFilesResponse, WorkspacePreviewHandleResponse,
-    WorkspaceTextSearchOptions, WorkspaceTextSearchResponse,
+    resolve_external_absolute_preview_handle_inner, resolve_external_spec_preview_handle_inner,
+    resolve_workspace_preview_handle_inner, search_workspace_text_inner,
+    trash_workspace_item_inner, write_external_absolute_file_inner, write_external_spec_file_inner,
+    write_workspace_file_inner, ExternalSpecFileResponse, WorkspaceFileResponse,
+    WorkspaceFilesResponse, WorkspacePreviewHandleResponse, WorkspaceTextSearchOptions,
+    WorkspaceTextSearchResponse,
 };
 use super::git::{
     git_branch_exists, git_find_remote_for_branch, git_get_origin_url, git_remote_branch_exists,

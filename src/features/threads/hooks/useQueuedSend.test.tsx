@@ -131,6 +131,111 @@ describe("useQueuedSend", () => {
     expect(result.current.activeQueue).toHaveLength(0);
   });
 
+  it("queues while processing on claude pending thread even when steer is enabled", async () => {
+    const options = makeOptions({
+      activeEngine: "claude",
+      activeThreadId: "claude-pending-1700000000000-abc123",
+      isProcessing: true,
+      steerEnabled: true,
+    });
+    const { result } = renderHook((props) => useQueuedSend(props), {
+      initialProps: options,
+    });
+
+    await act(async () => {
+      await result.current.handleSend("Queue until session id is ready");
+    });
+
+    expect(options.sendUserMessage).not.toHaveBeenCalled();
+    expect(result.current.activeQueue).toHaveLength(1);
+    expect(result.current.activeQueue[0]?.text).toBe("Queue until session id is ready");
+  });
+
+  it("does not allow queue fusion while claude thread is still pending", async () => {
+    const interruptTurn = vi.fn().mockResolvedValue(undefined);
+    const sendUserMessage = vi.fn().mockResolvedValue(undefined);
+    const options = makeOptions({
+      activeEngine: "claude",
+      activeThreadId: "claude-pending-1700000000000-def456",
+      isProcessing: true,
+      steerEnabled: true,
+      interruptTurn,
+      sendUserMessage,
+    });
+    const { result } = renderHook((props) => useQueuedSend(props), {
+      initialProps: options,
+    });
+
+    await act(async () => {
+      await result.current.queueMessage("Fuse later");
+    });
+
+    const queuedItem = result.current.activeQueue[0];
+    expect(queuedItem).toBeTruthy();
+    expect(result.current.canFuseActiveQueue).toBe(false);
+
+    await act(async () => {
+      await result.current.fuseQueuedMessage(
+        "claude-pending-1700000000000-def456",
+        queuedItem!.id,
+      );
+    });
+
+    expect(interruptTurn).not.toHaveBeenCalled();
+    expect(sendUserMessage).not.toHaveBeenCalled();
+    expect(result.current.activeQueue).toHaveLength(1);
+    expect(result.current.activeFusingMessageId).toBeNull();
+  });
+
+  it("migrates queued claude pending messages to finalized session thread id", async () => {
+    const options = makeOptions({
+      activeEngine: "claude",
+      activeThreadId: "claude-pending-1700000000000-rename1",
+      isProcessing: true,
+      steerEnabled: true,
+    });
+    const { result, rerender } = renderHook((props) => useQueuedSend(props), {
+      initialProps: options,
+    });
+
+    await act(async () => {
+      await result.current.handleSend("pending queue item");
+    });
+
+    expect(result.current.activeQueue.map((item) => item.text)).toEqual([
+      "pending queue item",
+    ]);
+
+    await act(async () => {
+      rerender({
+        ...options,
+        activeThreadId: "claude:session-rename-1",
+        isProcessing: true,
+      });
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(result.current.activeQueue.map((item) => item.text)).toEqual([
+      "pending queue item",
+    ]);
+
+    await act(async () => {
+      rerender({
+        ...options,
+        activeThreadId: "claude:session-rename-1",
+        isProcessing: false,
+      });
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(options.sendUserMessage).toHaveBeenCalledTimes(1);
+    expect(options.sendUserMessage).toHaveBeenCalledWith("pending queue item", []);
+  });
+
   it("retries queued send after failure", async () => {
     const options = makeOptions({
       sendUserMessage: vi

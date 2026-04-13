@@ -451,6 +451,7 @@ type LayoutNodesOptions = {
     options?: MessageSendOptions,
   ) => void | Promise<void>;
   onStop: () => void;
+  onRewind?: (userMessageId: string) => void | Promise<void>;
   canStop: boolean;
   isReviewing: boolean;
   isProcessing: boolean;
@@ -1235,6 +1236,7 @@ export function useLayoutNodes(options: LayoutNodesOptions): LayoutNodesResult {
       onSend={options.onSend}
       onQueue={options.onQueue}
       onStop={options.onStop}
+      onRewind={options.onRewind}
       canStop={options.canStop}
       disabled={options.isReviewing}
       contextUsage={options.activeTokenUsage}

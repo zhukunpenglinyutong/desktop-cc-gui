@@ -639,6 +639,12 @@ function resolveLiveAssistantMessageId(
   itemId: string,
 ) {
   const segment = state.agentSegmentByThread[threadId] ?? 0;
+  const normalizedItemId = itemId.trim();
+  // Prefer backend item id for local CLI threads to avoid cross-turn overwrite races.
+  // Realtime events may arrive after activeTurnId has advanced to the next turn.
+  if (normalizedItemId.length > 0) {
+    return segment > 0 ? `${normalizedItemId}-seg-${segment}` : normalizedItemId;
+  }
   const activeTurnId = state.activeTurnIdByThread[threadId] ?? null;
   if (isLocalCliReasoningThread(threadId) && activeTurnId) {
     return segment > 0

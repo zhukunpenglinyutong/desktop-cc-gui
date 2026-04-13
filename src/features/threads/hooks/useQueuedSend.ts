@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
   EngineType,
   MessageSendOptions,
@@ -264,6 +264,8 @@ export function useQueuedSend({
   interruptTurn,
   clearActiveImages,
 }: UseQueuedSendOptions): UseQueuedSendResult {
+  const isClaudePendingBootstrapThread =
+    activeEngine === "claude" && Boolean(activeThreadId?.startsWith("claude-pending-"));
   const [queuedByThread, setQueuedByThread] = useState<
     Record<string, QueuedMessage[]>
   >({});
@@ -276,6 +278,7 @@ export function useQueuedSend({
   const [fusionByThread, setFusionByThread] = useState<
     Record<string, ThreadFusionState | null>
   >({});
+  const previousActiveThreadIdRef = useRef<string | null>(activeThreadId);
 
   const activeQueue = useMemo(
     () => (activeThreadId ? queuedByThread[activeThreadId] ?? [] : []),
@@ -293,6 +296,7 @@ export function useQueuedSend({
           activeWorkspace &&
           activeQueue.length > 0 &&
           !activeFusion &&
+          !isClaudePendingBootstrapThread &&
           isProcessing &&
           !isReviewing &&
           (steerEnabled || interruptTurn),
@@ -302,12 +306,83 @@ export function useQueuedSend({
       activeQueue.length,
       activeThreadId,
       activeWorkspace,
+      isClaudePendingBootstrapThread,
       interruptTurn,
       isProcessing,
       isReviewing,
       steerEnabled,
     ],
   );
+
+  useEffect(() => {
+    if (previousActiveThreadIdRef.current === activeThreadId) {
+      return;
+    }
+    const oldThreadId = previousActiveThreadIdRef.current;
+    const newThreadId = activeThreadId;
+    previousActiveThreadIdRef.current = newThreadId;
+    if (!oldThreadId || !newThreadId) {
+      return;
+    }
+    const isClaudeSessionTransition =
+      oldThreadId.startsWith("claude-pending-") && newThreadId.startsWith("claude:");
+    if (!isClaudeSessionTransition) {
+      return;
+    }
+
+    setQueuedByThread((prev) => {
+      const pendingQueue = prev[oldThreadId] ?? [];
+      if (pendingQueue.length < 1) {
+        return prev;
+      }
+      const nextQueue = prev[newThreadId] ?? [];
+      const next = {
+        ...prev,
+        [newThreadId]: [...pendingQueue, ...nextQueue],
+      };
+      delete next[oldThreadId];
+      return next;
+    });
+
+    setInFlightByThread((prev) => {
+      const pendingInFlight = prev[oldThreadId];
+      if (pendingInFlight === undefined) {
+        return prev;
+      }
+      const next = { ...prev };
+      if (next[newThreadId] === undefined) {
+        next[newThreadId] = pendingInFlight;
+      }
+      delete next[oldThreadId];
+      return next;
+    });
+
+    setHasStartedByThread((prev) => {
+      const pendingStarted = prev[oldThreadId];
+      if (pendingStarted === undefined) {
+        return prev;
+      }
+      const next = { ...prev };
+      if (next[newThreadId] === undefined) {
+        next[newThreadId] = pendingStarted;
+      }
+      delete next[oldThreadId];
+      return next;
+    });
+
+    setFusionByThread((prev) => {
+      const pendingFusion = prev[oldThreadId];
+      if (pendingFusion === undefined) {
+        return prev;
+      }
+      const next = { ...prev };
+      if (next[newThreadId] === undefined) {
+        next[newThreadId] = pendingFusion;
+      }
+      delete next[oldThreadId];
+      return next;
+    });
+  }, [activeThreadId]);
 
   const buildQueuedMessage = useCallback(
     (
@@ -607,7 +682,11 @@ export function useQueuedSend({
       if (activeThreadId && isReviewing) {
         return;
       }
-      if (isProcessing && activeThreadId && !steerEnabled) {
+      const shouldQueueWhileProcessing =
+        isProcessing &&
+        activeThreadId &&
+        (!steerEnabled || isClaudePendingBootstrapThread);
+      if (shouldQueueWhileProcessing) {
         const item = buildQueuedMessage(trimmed, nextImages, options);
         enqueueMessage(activeThreadId, item);
         clearActiveImages();
@@ -623,6 +702,7 @@ export function useQueuedSend({
       clearActiveImages,
       dispatchQueuedMessage,
       enqueueMessage,
+      isClaudePendingBootstrapThread,
       isProcessing,
       isReviewing,
       steerEnabled,
@@ -665,6 +745,9 @@ export function useQueuedSend({
   const fuseQueuedMessage = useCallback(
     async (threadId: string, messageId: string) => {
       if (!activeThreadId || threadId !== activeThreadId) {
+        return;
+      }
+      if (isClaudePendingBootstrapThread) {
         return;
       }
       if (!activeWorkspace || !isProcessing || isReviewing) {
@@ -757,6 +840,7 @@ export function useQueuedSend({
       activeWorkspace,
       dispatchQueuedMessage,
       fusionByThread,
+      isClaudePendingBootstrapThread,
       insertQueuedMessageAt,
       interruptTurn,
       isProcessing,

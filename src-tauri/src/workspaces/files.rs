@@ -1148,7 +1148,9 @@ pub(crate) fn read_external_absolute_file_inner(
     Ok(WorkspaceFileResponse { content, truncated })
 }
 
-fn build_preview_handle_response(canonical_path: &Path) -> Result<WorkspacePreviewHandleResponse, String> {
+fn build_preview_handle_response(
+    canonical_path: &Path,
+) -> Result<WorkspacePreviewHandleResponse, String> {
     let metadata = std::fs::metadata(canonical_path)
         .map_err(|err| format!("Failed to read file metadata: {err}"))?;
     if !metadata.is_file() {
@@ -1861,7 +1863,10 @@ mod tests {
         assert_eq!(spec_response.extension.as_deref(), Some("docx"));
 
         let absolute_response = resolve_external_absolute_preview_handle_inner(
-            openspec_root.join("project.docx").to_str().expect("absolute path"),
+            openspec_root
+                .join("project.docx")
+                .to_str()
+                .expect("absolute path"),
             std::slice::from_ref(&project_root),
         )
         .expect("absolute preview handle");

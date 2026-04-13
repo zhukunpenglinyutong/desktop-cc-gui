@@ -2425,6 +2425,14 @@ async fn handle_rpc_request(
             let session_id = parse_string(&params, "sessionId")?;
             state.load_claude_session(workspace_path, session_id).await
         }
+        "fork_claude_session_from_message" => {
+            let workspace_path = parse_string(&params, "workspacePath")?;
+            let session_id = parse_string(&params, "sessionId")?;
+            let message_id = parse_string(&params, "messageId")?;
+            state
+                .fork_claude_session_from_message(workspace_path, session_id, message_id)
+                .await
+        }
         "list_gemini_sessions" => {
             let workspace_path = parse_string(&params, "workspacePath")?;
             let limit = parse_optional_u32(&params, "limit").map(|value| value as usize);

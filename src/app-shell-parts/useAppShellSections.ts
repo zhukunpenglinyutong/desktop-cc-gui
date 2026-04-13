@@ -9,6 +9,7 @@ import {
 import { homeDir } from "@tauri-apps/api/path";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import { ensureWorkspacePathDir, isWebServiceRuntime } from "../services/tauri";
+import { pushErrorToast } from "../services/toasts";
 import { resolveKanbanThreadCreationStrategy } from "../features/kanban/utils/contextMode";
 import { deriveKanbanTaskTitle } from "../features/kanban/utils/taskTitle";
 import { findTaskDownstream } from "../features/kanban/utils/chaining";
@@ -160,6 +161,7 @@ export function useAppShellSections(ctx: any) {
     kanbanCreateTask,
     kanbanUpdateTask,
     forkThreadForWorkspace,
+    forkClaudeSessionFromMessageForWorkspace,
     isCompact,
     centerMode,
     setActiveTab,
@@ -640,6 +642,40 @@ export function useAppShellSections(ctx: any) {
       }
     },
     [centerMode, handleComposerQueue, isCompact, mergeSelectedAgentOption, setCenterMode],
+  );
+
+  const handleRewindFromMessage = useCallback(
+    async (messageId: string) => {
+      const normalizedMessageId = messageId.trim();
+      if (!activeWorkspaceId || !activeThreadId || !normalizedMessageId) {
+        return;
+      }
+      if (!activeThreadId.startsWith("claude:")) {
+        pushErrorToast({
+          title: t("rewind.title"),
+          message: t("rewind.notAvailable"),
+        });
+        return;
+      }
+      const forkedThreadId = await forkClaudeSessionFromMessageForWorkspace(
+        activeWorkspaceId,
+        activeThreadId,
+        normalizedMessageId,
+        { activate: true },
+      );
+      if (!forkedThreadId) {
+        pushErrorToast({
+          title: t("rewind.title"),
+          message: t("rewind.failed"),
+        });
+      }
+    },
+    [
+      activeThreadId,
+      activeWorkspaceId,
+      forkClaudeSessionFromMessageForWorkspace,
+      t,
+    ],
   );
 
   const handleSelectWorkspaceInstance = useCallback(
@@ -2068,6 +2104,7 @@ export function useAppShellSections(ctx: any) {
     handleOpenComposerKanbanPanel,
     handleComposerSendWithEditorFallback,
     handleComposerQueueWithEditorFallback,
+    handleRewindFromMessage,
     handleSelectWorkspaceInstance,
     handleStartWorkspaceConversation,
     handleContinueLatestConversation,

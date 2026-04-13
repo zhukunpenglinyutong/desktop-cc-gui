@@ -14,6 +14,7 @@ import {
   deleteOpenCodeSession as deleteOpenCodeSessionService,
   connectWorkspace as connectWorkspaceService,
   forkClaudeSession as forkClaudeSessionService,
+  forkClaudeSessionFromMessage as forkClaudeSessionFromMessageService,
   forkThread as forkThreadService,
   listThreadTitles as listThreadTitlesService,
   listThreads as listThreadsService,
@@ -92,6 +93,10 @@ const RELATED_THREAD_LOAD_CONCURRENCY = 2;
 const DEFAULT_CLAUDE_CONTEXT_WINDOW = 200_000;
 const GEMINI_SESSION_CACHE_TTL_MS = 60_000;
 const GEMINI_SESSION_FETCH_TIMEOUT_MS = 800;
+const CLAUDE_HISTORY_MESSAGE_ID_REGEX =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+type MessageConversationItem = Extract<ConversationItem, { kind: "message" }>;
+type UserConversationMessage = MessageConversationItem & { role: "user" };
 const CODEX_BACKGROUND_HELPER_PROMPT_PREFIXES = [
   "Generate a concise title for a coding chat thread from the first user message.",
   "You create concise run metadata for a coding task.",
@@ -104,6 +109,100 @@ const CODEX_BACKGROUND_HELPER_PROMPT_PREFIXES = [
 function isWorkspaceNotConnectedError(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error);
   return message.toLowerCase().includes("workspace not connected");
+}
+
+function isUserConversationMessage(
+  item: ConversationItem | undefined,
+): item is UserConversationMessage {
+  return item?.kind === "message" && item.role === "user";
+}
+
+function normalizeComparableRewindText(text: string): string {
+  return text.replace(/\s+/g, " ").trim();
+}
+
+function resolveClaudeRewindMessageIdFromHistory(params: {
+  requestedMessageId: string;
+  threadItems: ConversationItem[];
+  historyItems: ConversationItem[];
+}): string {
+  const requestedMessageId = params.requestedMessageId.trim();
+  if (!requestedMessageId) {
+    return "";
+  }
+  if (CLAUDE_HISTORY_MESSAGE_ID_REGEX.test(requestedMessageId)) {
+    return requestedMessageId;
+  }
+
+  const localUserItems = params.threadItems.filter(isUserConversationMessage);
+  const targetLocalIndex = localUserItems.findIndex(
+    (item) => item.id.trim() === requestedMessageId,
+  );
+  if (targetLocalIndex < 0) {
+    return requestedMessageId;
+  }
+  const targetLocalItem = localUserItems[targetLocalIndex];
+  if (!targetLocalItem) {
+    return requestedMessageId;
+  }
+
+  const historyUserItems = params.historyItems
+    .filter(isUserConversationMessage)
+    .map((item) => ({
+      id: item.id.trim(),
+      text: normalizeComparableRewindText(item.text),
+    }))
+    .filter((item) => item.id.length > 0);
+  if (historyUserItems.length < 1) {
+    return requestedMessageId;
+  }
+  if (historyUserItems.some((item) => item.id === requestedMessageId)) {
+    return requestedMessageId;
+  }
+
+  const targetText = normalizeComparableRewindText(targetLocalItem.text);
+  if (targetText) {
+    const targetOccurrenceByText =
+      localUserItems.reduce((count, item, index) => {
+        if (index > targetLocalIndex) {
+          return count;
+        }
+        return normalizeComparableRewindText(item.text) === targetText
+          ? count + 1
+          : count;
+      }, 0) || 1;
+    const historyMatches = historyUserItems.filter(
+      (item) => item.text === targetText,
+    );
+    if (historyMatches.length >= targetOccurrenceByText) {
+      return historyMatches[targetOccurrenceByText - 1]?.id ?? requestedMessageId;
+    }
+    if (historyMatches.length > 0) {
+      return historyMatches[historyMatches.length - 1]?.id ?? requestedMessageId;
+    }
+  }
+
+  const positionFromLatest = localUserItems.length - 1 - targetLocalIndex;
+  const fallbackIndex = historyUserItems.length - 1 - positionFromLatest;
+  if (fallbackIndex >= 0 && fallbackIndex < historyUserItems.length) {
+    return historyUserItems[fallbackIndex]?.id ?? requestedMessageId;
+  }
+  return historyUserItems[historyUserItems.length - 1]?.id ?? requestedMessageId;
+}
+
+function findLatestHistoryUserMessageId(items: ConversationItem[]): string {
+  for (let index = items.length - 1; index >= 0; index -= 1) {
+    const item = items[index];
+    if (!isUserConversationMessage(item)) {
+      continue;
+    }
+    const id = item.id.trim();
+    if (!id) {
+      continue;
+    }
+    return id;
+  }
+  return "";
 }
 
 type GeminiSessionSummary = {
@@ -640,6 +739,7 @@ export function useThreadActions({
   >({});
   const geminiRefreshAttemptedRef = useRef<Record<string, boolean>>({});
   const threadListRequestSeqRef = useRef<Record<string, number>>({});
+  const claudeRewindInFlightByThreadRef = useRef<Record<string, boolean>>({});
   const latestThreadsByWorkspaceRef = useRef(threadsByWorkspace);
   latestThreadsByWorkspaceRef.current = threadsByWorkspace;
 
@@ -805,6 +905,23 @@ export function useThreadActions({
           label: "thread/resume skipped",
           payload: { workspaceId, threadId, reason: "active-turn" },
         });
+        return threadId;
+      }
+      const shouldPreserveLocalClaudeRealtimeItems =
+        !force &&
+        threadId.startsWith("claude:") &&
+        localItems.length > 0 &&
+        !replaceLocal &&
+        replaceOnResumeRef.current[threadId] !== true;
+      if (shouldPreserveLocalClaudeRealtimeItems) {
+        onDebug?.({
+          id: `${Date.now()}-client-thread-resume-skipped`,
+          timestamp: Date.now(),
+          source: "client",
+          label: "thread/resume skipped",
+          payload: { workspaceId, threadId, reason: "local-claude-realtime-items" },
+        });
+        loadedThreadsRef.current[threadId] = true;
         return threadId;
       }
       if (useUnifiedHistoryLoader) {
@@ -1255,6 +1372,170 @@ export function useThreadActions({
       }
     },
     [dispatch, extractThreadId, loadedThreadsRef, onDebug, resumeThreadForWorkspace],
+  );
+
+  const forkClaudeSessionFromMessageForWorkspace = useCallback(
+    async (
+      workspaceId: string,
+      threadId: string,
+      messageId: string,
+      options?: { activate?: boolean },
+    ) => {
+      if (!threadId.startsWith("claude:")) {
+        return null;
+      }
+      const normalizedMessageId = messageId.trim();
+      if (!normalizedMessageId) {
+        return null;
+      }
+      const workspacePath = workspacePathsByIdRef.current[workspaceId];
+      if (!workspacePath) {
+        return null;
+      }
+      const sessionId = threadId.slice("claude:".length).trim();
+      if (!sessionId) {
+        return null;
+      }
+      const shouldActivate = options?.activate !== false;
+      const rewindLockKey = `${workspaceId}:${threadId}`;
+      if (claudeRewindInFlightByThreadRef.current[rewindLockKey]) {
+        return null;
+      }
+      claudeRewindInFlightByThreadRef.current[rewindLockKey] = true;
+      onDebug?.({
+        id: `${Date.now()}-client-thread-fork-from-message`,
+        timestamp: Date.now(),
+        source: "client",
+        label: "thread/fork from message",
+        payload: { workspaceId, threadId, messageId: normalizedMessageId },
+      });
+      try {
+        const threadItems = itemsByThread[threadId] ?? [];
+        const historyResponse = await loadClaudeSessionService(
+          workspacePath,
+          sessionId,
+        );
+        const historyRecord =
+          historyResponse && typeof historyResponse === "object"
+            ? (historyResponse as Record<string, unknown>)
+            : {};
+        const historyItems = parseClaudeHistoryMessages(historyRecord.messages);
+        const latestHistoryMessageId = findLatestHistoryUserMessageId(historyItems);
+        if (!latestHistoryMessageId) {
+          return null;
+        }
+        const requestedHistoryMessageId = resolveClaudeRewindMessageIdFromHistory({
+          requestedMessageId: normalizedMessageId,
+          threadItems,
+          historyItems,
+        });
+        const resolvedMessageId = requestedHistoryMessageId.trim();
+        if (!resolvedMessageId) {
+          return null;
+        }
+        onDebug?.({
+          id: `${Date.now()}-client-thread-fork-from-message-resolved`,
+          timestamp: Date.now(),
+          source: "client",
+          label: "thread/fork from message resolved",
+          payload: {
+            workspaceId,
+            threadId,
+            requestedMessageId: normalizedMessageId,
+            resolvedMessageId,
+            latestHistoryMessageId,
+          },
+        });
+        const response = await forkClaudeSessionFromMessageService(
+          workspacePath,
+          sessionId,
+          resolvedMessageId,
+        );
+        onDebug?.({
+          id: `${Date.now()}-server-thread-fork-from-message`,
+          timestamp: Date.now(),
+          source: "server",
+          label: "thread/fork from message response",
+          payload: response,
+        });
+        const forkedThreadId = extractThreadId(response);
+        if (!forkedThreadId) {
+          return null;
+        }
+        dispatch({
+          type: "renameThreadId",
+          workspaceId,
+          oldThreadId: threadId,
+          newThreadId: forkedThreadId,
+        });
+        dispatch({
+          type: "hideThread",
+          workspaceId,
+          threadId,
+        });
+        try {
+          await renameThreadTitleKeyService(workspaceId, threadId, forkedThreadId);
+          onRenameThreadTitleMapping?.(workspaceId, threadId, forkedThreadId);
+        } catch {
+          const previousName = getCustomName(workspaceId, threadId);
+          if (previousName) {
+            try {
+              await setThreadTitleService(workspaceId, forkedThreadId, previousName);
+              onRenameThreadTitleMapping?.(workspaceId, threadId, forkedThreadId);
+            } catch {
+              // Best-effort persistence; keep local rename even if title migration fails.
+            }
+          }
+        }
+        if (
+          shouldActivate &&
+          activeThreadIdByWorkspace[workspaceId] !== threadId
+        ) {
+          dispatch({
+            type: "setActiveThreadId",
+            workspaceId,
+            threadId: forkedThreadId,
+          });
+        }
+        delete loadedThreadsRef.current[threadId];
+        loadedThreadsRef.current[forkedThreadId] = false;
+        await resumeThreadForWorkspace(workspaceId, forkedThreadId, true, true);
+        try {
+          await deleteClaudeSessionService(workspacePath, sessionId);
+        } catch (error) {
+          onDebug?.({
+            id: `${Date.now()}-client-thread-fork-from-message-delete-source-error`,
+            timestamp: Date.now(),
+            source: "error",
+            label: "thread/fork from message delete source error",
+            payload: error instanceof Error ? error.message : String(error),
+          });
+        }
+        return forkedThreadId;
+      } catch (error) {
+        onDebug?.({
+          id: `${Date.now()}-client-thread-fork-from-message-error`,
+          timestamp: Date.now(),
+          source: "error",
+          label: "thread/fork from message error",
+          payload: error instanceof Error ? error.message : String(error),
+        });
+        return null;
+      } finally {
+        delete claudeRewindInFlightByThreadRef.current[rewindLockKey];
+      }
+    },
+    [
+      dispatch,
+      extractThreadId,
+      activeThreadIdByWorkspace,
+      getCustomName,
+      itemsByThread,
+      loadedThreadsRef,
+      onDebug,
+      onRenameThreadTitleMapping,
+      resumeThreadForWorkspace,
+    ],
   );
 
   const refreshThread = useCallback(
@@ -2003,6 +2284,7 @@ export function useThreadActions({
   return {
     startThreadForWorkspace,
     forkThreadForWorkspace,
+    forkClaudeSessionFromMessageForWorkspace,
     resumeThreadForWorkspace,
     refreshThread,
     resetWorkspaceThreads,

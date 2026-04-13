@@ -770,7 +770,7 @@ describe("threadReducer", () => {
     expect(next.threadsByWorkspace["ws-1"]?.[0]?.name).toBe("Assistant note");
   });
 
-  it("merges claude live assistant chunks into one row even when item ids change mid-turn", () => {
+  it("keeps claude live assistant chunks keyed by backend item id", () => {
     const base: ThreadState = {
       ...initialState,
       activeTurnIdByThread: { "claude:thread-1": "turn-1" },
@@ -796,9 +796,57 @@ describe("threadReducer", () => {
       (item): item is Extract<ConversationItem, { kind: "message" }> =>
         item.kind === "message" && item.role === "assistant",
     );
-    expect(messages).toHaveLength(1);
-    expect(messages[0]?.id).toBe("assistant-live:turn-1");
-    expect(messages[0]?.text).toBe("高概率这是前端渲染问题。");
+    expect(messages).toHaveLength(2);
+    expect(messages[0]?.id).toBe("assistant-chunk-1");
+    expect(messages[0]?.text).toBe("高");
+    expect(messages[1]?.id).toBe("assistant-chunk-2");
+    expect(messages[1]?.text).toBe("高概率这是前端渲染问题。");
+  });
+
+  it("does not overwrite previous claude turn output when active turn advances", () => {
+    const base: ThreadState = {
+      ...initialState,
+      activeTurnIdByThread: { "claude:thread-race": "turn-1" },
+    };
+    const firstDelta = threadReducer(base, {
+      type: "appendAgentDelta",
+      workspaceId: "ws-1",
+      threadId: "claude:thread-race",
+      itemId: "assistant-turn-1",
+      delta: "第一轮开场",
+      hasCustomName: false,
+    });
+    const switchedTurn = threadReducer(firstDelta, {
+      type: "setActiveTurnId",
+      threadId: "claude:thread-race",
+      turnId: "turn-2",
+    });
+    const lateFirstCompleted = threadReducer(switchedTurn, {
+      type: "completeAgentMessage",
+      workspaceId: "ws-1",
+      threadId: "claude:thread-race",
+      itemId: "assistant-turn-1",
+      text: "第一轮完整回复",
+      hasCustomName: false,
+    });
+    const secondDelta = threadReducer(lateFirstCompleted, {
+      type: "appendAgentDelta",
+      workspaceId: "ws-1",
+      threadId: "claude:thread-race",
+      itemId: "assistant-turn-2",
+      delta: "第二轮开始",
+      hasCustomName: false,
+    });
+
+    const messages = (secondDelta.itemsByThread["claude:thread-race"] ?? []).filter(
+      (item): item is Extract<ConversationItem, { kind: "message" }> =>
+        item.kind === "message" && item.role === "assistant",
+    );
+    expect(messages).toHaveLength(2);
+    expect(messages[0]?.id).toBe("assistant-turn-1");
+    expect(messages[0]?.text).toContain("第一轮完整回复");
+    expect(messages[1]?.id).toBe("assistant-turn-2");
+    expect(messages[1]?.text).toBe("第二轮开始");
   });
 
   it("prefers cumulative snapshot delta when it matches compact text", () => {

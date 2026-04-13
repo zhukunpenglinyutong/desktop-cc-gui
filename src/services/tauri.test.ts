@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import {
   addWorkspace,
   forkClaudeSession,
+  forkClaudeSessionFromMessage,
   forkThread,
   generateThreadTitle,
   getGitHubIssues,
@@ -44,6 +45,7 @@ import {
   getOpenCodeStatusSnapshot,
   detectEngines,
   engineSendMessage,
+  exportRewindFiles,
   listExternalSpecTree,
   setOpenCodeMcpToggle,
   readExternalSpecFile,
@@ -124,6 +126,38 @@ describe("tauri invoke wrappers", () => {
     expect(invokeMock).toHaveBeenCalledWith("reload_codex_runtime_config");
   });
 
+  it("maps rewind export params to export_rewind_files", async () => {
+    const invokeMock = vi.mocked(invoke);
+    invokeMock.mockResolvedValueOnce({
+      outputPath:
+        "/Users/demo/.ccgui/chat-diff/claude/session-1/export-20260413T000000Z-ab12cd34",
+      filesPath:
+        "/Users/demo/.ccgui/chat-diff/claude/session-1/export-20260413T000000Z-ab12cd34/files",
+      manifestPath:
+        "/Users/demo/.ccgui/chat-diff/claude/session-1/export-20260413T000000Z-ab12cd34/manifest.json",
+      exportId: "export-20260413T000000Z-ab12cd34",
+      fileCount: 2,
+    });
+
+    await exportRewindFiles({
+      workspaceId: "ws-1",
+      engine: "claude",
+      sessionId: "session-1",
+      targetMessageId: "user-1",
+      conversationLabel: "test",
+      files: [{ path: "src/App.tsx" }, { path: "/tmp/demo.ts" }],
+    });
+
+    expect(invokeMock).toHaveBeenCalledWith("export_rewind_files", {
+      workspaceId: "ws-1",
+      engine: "claude",
+      sessionId: "session-1",
+      targetMessageId: "user-1",
+      conversationLabel: "test",
+      files: [{ path: "src/App.tsx" }, { path: "/tmp/demo.ts" }],
+    });
+  });
+
   it("maps workspace_id to workspaceId for GitHub issues", async () => {
     const invokeMock = vi.mocked(invoke);
     invokeMock.mockResolvedValueOnce({ total: 0, issues: [] });
@@ -187,6 +221,26 @@ describe("tauri invoke wrappers", () => {
       workspacePath: "/tmp/project",
       sessionId: "claude-session-1",
     });
+  });
+
+  it("maps workspacePath/sessionId/messageId for fork_claude_session_from_message", async () => {
+    const invokeMock = vi.mocked(invoke);
+    invokeMock.mockResolvedValueOnce({});
+
+    await forkClaudeSessionFromMessage(
+      "/tmp/project",
+      "claude-session-1",
+      "550e8400-e29b-41d4-a716-446655440000",
+    );
+
+    expect(invokeMock).toHaveBeenCalledWith(
+      "fork_claude_session_from_message",
+      {
+        workspacePath: "/tmp/project",
+        sessionId: "claude-session-1",
+        messageId: "550e8400-e29b-41d4-a716-446655440000",
+      },
+    );
   });
 
   it("maps workspaceId/cursor/limit for list_mcp_server_status", async () => {
@@ -407,7 +461,11 @@ describe("tauri invoke wrappers", () => {
       truncated: false,
     });
 
-    await readExternalSpecFile("ws-41", "/tmp/external-spec-root", "openspec/project.md");
+    await readExternalSpecFile(
+      "ws-41",
+      "/tmp/external-spec-root",
+      "openspec/project.md",
+    );
 
     expect(invokeMock).toHaveBeenCalledWith("read_external_spec_file", {
       workspaceId: "ws-41",
@@ -504,7 +562,11 @@ describe("tauri invoke wrappers", () => {
 
   it("reads agent.md for a workspace", async () => {
     const invokeMock = vi.mocked(invoke);
-    invokeMock.mockResolvedValueOnce({ exists: true, content: "# Agent", truncated: false });
+    invokeMock.mockResolvedValueOnce({
+      exists: true,
+      content: "# Agent",
+      truncated: false,
+    });
 
     await readAgentMd("ws-agent");
 
@@ -531,7 +593,11 @@ describe("tauri invoke wrappers", () => {
 
   it("reads global AGENTS.md", async () => {
     const invokeMock = vi.mocked(invoke);
-    invokeMock.mockResolvedValueOnce({ exists: true, content: "# Global", truncated: false });
+    invokeMock.mockResolvedValueOnce({
+      exists: true,
+      content: "# Global",
+      truncated: false,
+    });
 
     await readGlobalAgentsMd();
 
@@ -558,7 +624,11 @@ describe("tauri invoke wrappers", () => {
 
   it("reads global config.toml", async () => {
     const invokeMock = vi.mocked(invoke);
-    invokeMock.mockResolvedValueOnce({ exists: true, content: "model = \"gpt-5\"", truncated: false });
+    invokeMock.mockResolvedValueOnce({
+      exists: true,
+      content: 'model = "gpt-5"',
+      truncated: false,
+    });
 
     await readGlobalCodexConfigToml();
 
@@ -573,13 +643,13 @@ describe("tauri invoke wrappers", () => {
     const invokeMock = vi.mocked(invoke);
     invokeMock.mockResolvedValueOnce({});
 
-    await writeGlobalCodexConfigToml("model = \"gpt-5\"");
+    await writeGlobalCodexConfigToml('model = "gpt-5"');
 
     expect(invokeMock).toHaveBeenCalledWith("file_write", {
       scope: "global",
       kind: "config",
       workspaceId: undefined,
-      content: "model = \"gpt-5\"",
+      content: 'model = "gpt-5"',
     });
   });
 
@@ -954,7 +1024,7 @@ describe("tauri invoke wrappers", () => {
     const invokeMock = vi.mocked(invoke);
     invokeMock.mockResolvedValueOnce({
       engine: "codex",
-      text: "{\"projectType\":\"legacy\"}",
+      text: '{"projectType":"legacy"}',
     });
 
     await engineSendMessageSync("ws-21", {
@@ -1012,11 +1082,15 @@ describe("tauri invoke wrappers", () => {
   it("falls back to codex-only engine statuses in web runtime when detect command is unavailable", async () => {
     const invokeMock = vi.mocked(invoke);
     setWebRuntimeFlag(true);
-    invokeMock.mockRejectedValueOnce(new Error("unknown method: detect_engines"));
+    invokeMock.mockRejectedValueOnce(
+      new Error("unknown method: detect_engines"),
+    );
 
     const statuses = await detectEngines();
     const codexStatus = statuses.find((entry) => entry.engineType === "codex");
-    const claudeStatus = statuses.find((entry) => entry.engineType === "claude");
+    const claudeStatus = statuses.find(
+      (entry) => entry.engineType === "claude",
+    );
 
     expect(codexStatus?.installed).toBe(true);
     expect(claudeStatus?.installed).toBe(false);
@@ -1032,7 +1106,10 @@ describe("tauri invoke wrappers", () => {
       engine: "claude",
     });
 
-    expect(invokeMock).not.toHaveBeenCalledWith("engine_send_message", expect.anything());
+    expect(invokeMock).not.toHaveBeenCalledWith(
+      "engine_send_message",
+      expect.anything(),
+    );
     expect(response).toEqual({
       error: {
         message:

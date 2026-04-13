@@ -21,6 +21,7 @@ export type OperationFileChangeSummary = {
   status: "A" | "D" | "R" | "M";
   additions: number;
   deletions: number;
+  diff?: string;
 };
 
 export type OperationFileChangeEventSummary = {
@@ -123,6 +124,7 @@ export function extractFileChangeSummaries(items: ConversationItem[]): Operation
           status,
           additions,
           deletions,
+          diff: change.diff?.trim() || undefined,
         });
         continue;
       }
@@ -131,9 +133,32 @@ export function extractFileChangeSummaries(items: ConversationItem[]): Operation
       if (status === "A") {
         existing.status = "A";
       }
+      existing.diff = pickPreferredDiff(existing.diff, change.diff);
     }
   }
   return Array.from(seen.values());
+}
+
+function pickPreferredDiff(primary?: string, secondary?: string): string | undefined {
+  const left = primary?.trim() ?? "";
+  const right = secondary?.trim() ?? "";
+  if (!left) {
+    return right || undefined;
+  }
+  if (!right) {
+    return left;
+  }
+  const leftStats = collectDiffStats(left);
+  const rightStats = collectDiffStats(right);
+  const leftChurn = leftStats.additions + leftStats.deletions;
+  const rightChurn = rightStats.additions + rightStats.deletions;
+  if (rightChurn > leftChurn) {
+    return right;
+  }
+  if (leftChurn > rightChurn) {
+    return left;
+  }
+  return right.length > left.length ? right : left;
 }
 
 export function summarizeFileChangeItem(

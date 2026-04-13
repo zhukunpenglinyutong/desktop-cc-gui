@@ -62,6 +62,7 @@ describe("operationFacts", () => {
         status: "M",
         additions: 2,
         deletions: 2,
+        diff: "@@ -2 +2 @@\n-older\n+newer",
       },
       {
         filePath: "src/New.tsx",
@@ -69,6 +70,7 @@ describe("operationFacts", () => {
         status: "A",
         additions: 1,
         deletions: 0,
+        diff: "@@ -0,0 +1 @@\n+const x = 1;",
       },
     ]);
 
