@@ -53,6 +53,7 @@ const zhPart2 = {
     engineOpenCode: "OpenCode",
     engineComingSoon: "即将支持",
     startConversation: "新建会话",
+    startSharedConversation: "Claude Code + Codex",
     startingConversation: "正在创建...",
     continueLatestConversation: "继续最近会话",
     guidedStart: "规范与执行引导",
@@ -119,6 +120,7 @@ const zhPart2 = {
     models: "{{count}} 个模型",
     runs: "{{count}} 次运行",
     // 克隆
+    newSharedSession: "Claude Code + Codex",
     newCloneAgent: "新建克隆代理",
     createWorkingCopyOf: "创建 \"{{name}}\" 的新工作副本。",
     copyName: "副本名称",

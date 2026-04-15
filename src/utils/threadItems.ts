@@ -48,6 +48,10 @@ const PROJECT_MEMORY_LINE_PREFIX_REGEX =
 const MODE_FALLBACK_PREFIX_REGEX =
   /^(?:collaboration mode:\s*code\.|execution policy \(default mode\):|execution policy \(plan mode\):)/i;
 const MODE_FALLBACK_MARKER_REGEX = /User request\s*:\s*/i;
+const SHARED_SESSION_SYNC_PREFIX_REGEX =
+  /^Shared session context sync\.\s*Continue from these recent turns before answering the new request:\s*/i;
+const SHARED_SESSION_CURRENT_REQUEST_MARKER_REGEX =
+  /(?:\r?\n){1,2}Current user request:\s*(?:\r?\n)?/i;
 const MAX_INJECTED_MEMORY_LINES = 12;
 const MESSAGE_PARAGRAPH_BREAK_SPLIT_REGEX = /\r?\n[^\S\r\n]*\r?\n+/;
 const ASSISTANT_FRAGMENT_MIN_RUN = 5;
@@ -1646,7 +1650,8 @@ export function previewThreadName(text: string, fallback: string) {
   const strippedAgentPrompt = stripAgentPromptBlockFromTail(text);
   const strippedModeFallback = stripModeFallbackBlock(strippedAgentPrompt);
   const strippedMemory = stripInjectedProjectMemoryBlock(strippedModeFallback);
-  const extractedUserInput = extractLatestUserInputTextPreserveFormatting(strippedMemory);
+  const strippedSharedSync = stripSharedSessionContextSyncBlock(strippedMemory);
+  const extractedUserInput = extractLatestUserInputTextPreserveFormatting(strippedSharedSync);
   const strippedInjectedPrefix = stripInjectedPrefixLines(extractedUserInput);
   const collapsed = strippedInjectedPrefix.replace(/\s+/g, " ").trim();
   if (!collapsed) {
@@ -1816,18 +1821,27 @@ export function buildConversationItem(
       images,
       collaborationMode: fallbackCollaborationMode,
     } = parseUserInputs(content);
+    const fallbackPayload = extractFallbackUserMessagePayload(item);
+    const resolvedText = text || fallbackPayload.text;
+    const resolvedImages = images.length > 0 ? images : fallbackPayload.images;
     const collaborationMode = extractCollaborationModeFromUserMessageItem(
       item,
-      fallbackCollaborationMode,
+      fallbackCollaborationMode ?? fallbackPayload.collaborationMode,
     );
-    const selectedAgentName = extractSelectedAgentNameFromUserMessageItem(item, text);
-    const selectedAgentIcon = extractSelectedAgentIconFromUserMessageItem(item, text);
+    const selectedAgentName = extractSelectedAgentNameFromUserMessageItem(
+      item,
+      resolvedText,
+    );
+    const selectedAgentIcon = extractSelectedAgentIconFromUserMessageItem(
+      item,
+      resolvedText,
+    );
     return {
       id,
       kind: "message",
       role: "user",
-      text,
-      images: images.length > 0 ? images : undefined,
+      text: resolvedText,
+      images: resolvedImages.length > 0 ? resolvedImages : undefined,
       collaborationMode,
       selectedAgentName,
       selectedAgentIcon,
@@ -2203,6 +2217,19 @@ function stripModeFallbackBlock(text: string) {
   return extracted || text;
 }
 
+function stripSharedSessionContextSyncBlock(text: string) {
+  if (!SHARED_SESSION_SYNC_PREFIX_REGEX.test(text.trimStart())) {
+    return text;
+  }
+  const marker = SHARED_SESSION_CURRENT_REQUEST_MARKER_REGEX.exec(text);
+  if (!marker || marker.index < 0) {
+    return text;
+  }
+  const extractedRaw = text.slice(marker.index + marker[0].length);
+  const extracted = extractedRaw.replace(/^\r?\n/, "").replace(/^ /, "");
+  return extracted.trim().length > 0 ? extracted : text;
+}
+
 function extractLatestUserInputTextPreserveFormatting(text: string): string {
   const userInputMatches = [...text.matchAll(USER_INPUT_BLOCK_MARKER_REGEX)];
   if (userInputMatches.length === 0) {
@@ -2397,6 +2424,84 @@ function clipByChars(text: string, maxChars: number): string {
   return Array.from(text).slice(0, maxChars).join("");
 }
 
+function normalizeUserMessageText(text: string): string {
+  return stripSharedSessionContextSyncBlock(
+    stripModeFallbackBlock(stripInjectedProjectMemoryBlock(text)),
+  );
+}
+
+function collectUserMessageFallbackImages(item: Record<string, unknown>): string[] {
+  const collect = (value: unknown): string[] => {
+    if (!Array.isArray(value)) {
+      return [];
+    }
+    return value
+      .map((entry) => {
+        if (typeof entry === "string") {
+          return entry.trim();
+        }
+        const record = asRecord(entry);
+        if (!record) {
+          return "";
+        }
+        return asString(
+          record.url ??
+            record.path ??
+            record.src ??
+            record.image ??
+            record.imageUrl ??
+            "",
+        ).trim();
+      })
+      .filter(Boolean);
+  };
+
+  const direct = collect(item.images);
+  if (direct.length > 0) {
+    return direct;
+  }
+  const urlStyle = collect(item.imageUrls);
+  if (urlStyle.length > 0) {
+    return urlStyle;
+  }
+  return collect(item.image_urls);
+}
+
+function extractFallbackUserMessagePayload(item: Record<string, unknown>): {
+  text: string;
+  collaborationMode: "plan" | "code" | null;
+  images: string[];
+} {
+  const contentRecord = asRecord(item.content);
+  const rawTextCandidates: unknown[] = [
+    item.text,
+    item.inputText,
+    item.input_text,
+    item.prompt,
+    item.message,
+    typeof item.content === "string" ? item.content : null,
+    contentRecord?.text,
+    contentRecord?.value,
+    contentRecord?.content,
+  ];
+  const fallbackImages = collectUserMessageFallbackImages(item);
+  for (const candidate of rawTextCandidates) {
+    if (typeof candidate !== "string") {
+      continue;
+    }
+    const normalizedText = normalizeUserMessageText(candidate).trim();
+    if (!normalizedText) {
+      continue;
+    }
+    return {
+      text: normalizedText,
+      collaborationMode: extractModeFallbackMode(candidate),
+      images: fallbackImages,
+    };
+  }
+  return { text: "", collaborationMode: null, images: fallbackImages };
+}
+
 function parseUserInputs(inputs: Array<Record<string, unknown>>) {
   const textParts: string[] = [];
   const images: string[] = [];
@@ -2452,7 +2557,7 @@ function parseUserInputs(inputs: Array<Record<string, unknown>>) {
       const text = asString(input.text);
       if (text) {
         collaborationMode = collaborationMode ?? extractModeFallbackMode(text);
-        appendTextPart(stripModeFallbackBlock(stripInjectedProjectMemoryBlock(text)));
+        appendTextPart(normalizeUserMessageText(text));
       }
       return;
     }
@@ -2490,18 +2595,27 @@ export function buildConversationItemFromThreadItem(
       images,
       collaborationMode: fallbackCollaborationMode,
     } = parseUserInputs(content);
+    const fallbackPayload = extractFallbackUserMessagePayload(item);
+    const resolvedText = text || fallbackPayload.text;
+    const resolvedImages = images.length > 0 ? images : fallbackPayload.images;
     const collaborationMode = extractCollaborationModeFromUserMessageItem(
       item,
-      fallbackCollaborationMode,
+      fallbackCollaborationMode ?? fallbackPayload.collaborationMode,
     );
-    const selectedAgentName = extractSelectedAgentNameFromUserMessageItem(item, text);
-    const selectedAgentIcon = extractSelectedAgentIconFromUserMessageItem(item, text);
+    const selectedAgentName = extractSelectedAgentNameFromUserMessageItem(
+      item,
+      resolvedText,
+    );
+    const selectedAgentIcon = extractSelectedAgentIconFromUserMessageItem(
+      item,
+      resolvedText,
+    );
     return {
       id,
       kind: "message",
       role: "user",
-      text,
-      images: images.length > 0 ? images : undefined,
+      text: resolvedText,
+      images: resolvedImages.length > 0 ? resolvedImages : undefined,
       collaborationMode,
       selectedAgentName,
       selectedAgentIcon,

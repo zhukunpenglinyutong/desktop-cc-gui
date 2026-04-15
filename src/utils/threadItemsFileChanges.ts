@@ -383,6 +383,279 @@ export function shouldPreferExplicitFileChangeOutput(explicitOutput: string): bo
   return true;
 }
 
+const SHELL_TOKEN_REGEX =
+  /"((?:\\.|[^"\\])*)"|'((?:\\.|[^'\\])*)'|`((?:\\.|[^`\\])*)`|([^\s]+)/g;
+const COMMAND_SEPARATOR_TOKENS = new Set(["&&", "||", "|", ";", "·"]);
+const DELETE_COMMAND_TOKENS = new Set([
+  "rm",
+  "del",
+  "erase",
+  "unlink",
+  "remove-item",
+  "removeitem",
+  "ri",
+]);
+const CREATE_COMMAND_TOKENS = new Set(["touch"]);
+const ADD_REDIRECTION_TOKENS = new Set([">", "1>"]);
+const MODIFY_REDIRECTION_TOKENS = new Set([">>", "1>>"]);
+const IGNORED_REDIRECTION_PATHS = new Set(["/dev/null", "nul"]);
+const INLINE_REDIRECTION_REGEX = /^(.*?)(1>>|1>|>>|>)(.+)$/;
+
+function decodeQuotedToken(value: string): string {
+  return value.replace(/\\(["'`\\])/g, "$1");
+}
+
+function tokenizeShellCommand(command: string): string[] {
+  if (!command.trim()) {
+    return [];
+  }
+  const tokens: string[] = [];
+  for (const match of command.matchAll(SHELL_TOKEN_REGEX)) {
+    const rawToken = (match[1] ?? match[2] ?? match[3] ?? match[4] ?? "").trim();
+    if (!rawToken) {
+      continue;
+    }
+    const decoded = decodeQuotedToken(rawToken).trim();
+    if (decoded) {
+      tokens.push(decoded);
+    }
+  }
+  return tokens;
+}
+
+function normalizeShellToken(token: string): string {
+  return token.replace(/^[()]+|[();]+$/g, "").trim();
+}
+
+function normalizeShellPathToken(token: string): string {
+  return normalizeShellToken(token).replace(/[<>]+$/, "").trim();
+}
+
+function shouldSkipShellPathToken(path: string): boolean {
+  const normalized = path.trim();
+  if (!normalized) {
+    return true;
+  }
+  if (normalized === "--" || normalized.startsWith("-")) {
+    return true;
+  }
+  if (IGNORED_REDIRECTION_PATHS.has(normalized.toLowerCase())) {
+    return true;
+  }
+  if (
+    normalized.startsWith("/") &&
+    normalized.length <= 3 &&
+    /^[a-z]$/i.test(normalized.slice(1))
+  ) {
+    return true;
+  }
+  return false;
+}
+
+function parseInlineRedirectionTarget(token: string) {
+  const normalizedToken = normalizeShellToken(token);
+  if (!normalizedToken) {
+    return null;
+  }
+  const match = INLINE_REDIRECTION_REGEX.exec(normalizedToken);
+  if (!match) {
+    return null;
+  }
+  const operator = match[2]?.trim() ?? "";
+  const rawPath = match[3]?.trim() ?? "";
+  if (!operator || !rawPath) {
+    return null;
+  }
+  return { operator, rawPath };
+}
+
+function inferWriteChangesFromCommand(command: string): FileChangeEntry[] {
+  const tokens = tokenizeShellCommand(command);
+  if (tokens.length === 0) {
+    return [];
+  }
+
+  const inferred: FileChangeEntry[] = [];
+  const seen = new Set<string>();
+  const pushPath = (rawPath: string, kind: "add" | "modified") => {
+    const path = normalizeShellPathToken(rawPath);
+    if (!path) {
+      return;
+    }
+    if (shouldSkipShellPathToken(path)) {
+      return;
+    }
+    if (!looksLikeFilePathToken(path) || seen.has(path)) {
+      return;
+    }
+    seen.add(path);
+    inferred.push({
+      path,
+      kind,
+    });
+  };
+
+  let index = 0;
+  while (index < tokens.length) {
+    const token = normalizeShellToken(tokens[index] ?? "");
+    if (!token) {
+      index += 1;
+      continue;
+    }
+    if (
+      ADD_REDIRECTION_TOKENS.has(token) ||
+      MODIFY_REDIRECTION_TOKENS.has(token)
+    ) {
+      const kind = ADD_REDIRECTION_TOKENS.has(token) ? "add" : "modified";
+      let nextIndex = index + 1;
+      while (nextIndex < tokens.length) {
+        const candidate = normalizeShellPathToken(tokens[nextIndex] ?? "");
+        if (!candidate) {
+          nextIndex += 1;
+          continue;
+        }
+        if (COMMAND_SEPARATOR_TOKENS.has(candidate)) {
+          break;
+        }
+        pushPath(candidate, kind);
+        break;
+      }
+      index += 1;
+      continue;
+    }
+    const inlineRedirection = parseInlineRedirectionTarget(token);
+    if (inlineRedirection) {
+      const kind = ADD_REDIRECTION_TOKENS.has(inlineRedirection.operator)
+        ? "add"
+        : "modified";
+      pushPath(inlineRedirection.rawPath, kind);
+      index += 1;
+      continue;
+    }
+    if (COMMAND_SEPARATOR_TOKENS.has(token)) {
+      index += 1;
+      continue;
+    }
+    if (token.toLowerCase() === "sudo") {
+      index += 1;
+      continue;
+    }
+    if (!CREATE_COMMAND_TOKENS.has(token.toLowerCase())) {
+      index += 1;
+      continue;
+    }
+    index += 1;
+    while (index < tokens.length) {
+      const argument = normalizeShellPathToken(tokens[index] ?? "");
+      if (!argument) {
+        index += 1;
+        continue;
+      }
+      if (COMMAND_SEPARATOR_TOKENS.has(argument)) {
+        break;
+      }
+      if (shouldSkipShellPathToken(argument)) {
+        index += 1;
+        continue;
+      }
+      if (argument.toLowerCase() === "sudo") {
+        break;
+      }
+      pushPath(argument, "add");
+      index += 1;
+    }
+  }
+
+  return inferred;
+}
+
+function inferDeleteChangesFromCommand(command: string): FileChangeEntry[] {
+  const tokens = tokenizeShellCommand(command);
+  if (tokens.length === 0) {
+    return [];
+  }
+
+  const inferred: FileChangeEntry[] = [];
+  const seen = new Set<string>();
+  let index = 0;
+
+  while (index < tokens.length) {
+    const normalizedToken = normalizeShellToken(tokens[index] ?? "");
+    if (!normalizedToken || COMMAND_SEPARATOR_TOKENS.has(normalizedToken)) {
+      index += 1;
+      continue;
+    }
+    if (normalizedToken.toLowerCase() === "sudo") {
+      index += 1;
+      continue;
+    }
+    const isDeleteCommand = DELETE_COMMAND_TOKENS.has(normalizedToken.toLowerCase());
+    if (!isDeleteCommand) {
+      index += 1;
+      continue;
+    }
+
+    index += 1;
+    while (index < tokens.length) {
+      const argument = normalizeShellToken(tokens[index] ?? "");
+      if (!argument) {
+        index += 1;
+        continue;
+      }
+      if (COMMAND_SEPARATOR_TOKENS.has(argument)) {
+        break;
+      }
+      const lowerArgument = argument.toLowerCase();
+      if (
+        argument === "--" ||
+        argument.startsWith("-") ||
+        (argument.startsWith("/") &&
+          argument.length <= 3 &&
+          /^[a-z]$/i.test(argument.slice(1)))
+      ) {
+        index += 1;
+        continue;
+      }
+      if (lowerArgument === "sudo" || DELETE_COMMAND_TOKENS.has(lowerArgument)) {
+        break;
+      }
+      if (looksLikeFilePathToken(argument) && !seen.has(argument)) {
+        seen.add(argument);
+        inferred.push({
+          path: argument,
+          kind: "delete",
+        });
+      }
+      index += 1;
+    }
+  }
+
+  return inferred;
+}
+
+function mergeInferredEntry(
+  byPath: Map<string, FileChangeEntry>,
+  entry: FileChangeEntry,
+) {
+  const normalizedPath = entry.path.trim();
+  if (!normalizedPath) {
+    return;
+  }
+  const existing = byPath.get(normalizedPath);
+  if (!existing) {
+    byPath.set(normalizedPath, { ...entry, path: normalizedPath });
+    return;
+  }
+  const existingKind = normalizeFileChangeKind(existing.kind);
+  const incomingKind = normalizeFileChangeKind(entry.kind);
+  if (!existingKind && incomingKind) {
+    existing.kind = incomingKind;
+  } else if (existingKind === "modified" && incomingKind && incomingKind !== "modified") {
+    existing.kind = incomingKind;
+  }
+  existing.diff = pickRicherDiff(existing.diff, entry.diff);
+}
+
 export function inferFileChangesFromCommandExecutionArtifacts(
   command: string,
   output: string,
@@ -399,36 +672,20 @@ export function inferFileChangesFromCommandExecutionArtifacts(
   ];
   const byPath = new Map<string, FileChangeEntry>();
   for (const entry of fromPatchEntries) {
-    const normalizedPath = entry.path.trim();
-    if (!normalizedPath) {
-      continue;
-    }
-    const existing = byPath.get(normalizedPath);
-    if (!existing) {
-      byPath.set(normalizedPath, { ...entry, path: normalizedPath });
-      continue;
-    }
-    existing.kind = existing.kind || entry.kind;
-    existing.diff = pickRicherDiff(existing.diff, entry.diff);
+    mergeInferredEntry(byPath, entry);
+  }
+  for (const entry of inferWriteChangesFromCommand(normalizedCommand)) {
+    mergeInferredEntry(byPath, entry);
+  }
+  for (const entry of inferDeleteChangesFromCommand(normalizedCommand)) {
+    mergeInferredEntry(byPath, entry);
   }
   if (!normalizedOutput) {
     return Array.from(byPath.values()).filter((entry) => entry.path);
   }
 
   for (const entry of parseStatusPathEntries(normalizedOutput)) {
-    const normalizedPath = entry.path.trim();
-    if (!normalizedPath) {
-      continue;
-    }
-    const existing = byPath.get(normalizedPath);
-    if (!existing) {
-      byPath.set(normalizedPath, { ...entry, path: normalizedPath });
-      continue;
-    }
-    if (!existing.kind && entry.kind) {
-      existing.kind = entry.kind;
-    }
-    existing.diff = pickRicherDiff(existing.diff, entry.diff);
+    mergeInferredEntry(byPath, entry);
   }
 
   const marker = normalizedOutput.match(/updated the following files:\s*([\s\S]*)/i);
@@ -454,14 +711,7 @@ export function inferFileChangesFromCommandExecutionArtifacts(
     if (!path) {
       continue;
     }
-    const existing = byPath.get(path);
-    if (existing) {
-      if (!existing.kind && kind) {
-        existing.kind = kind;
-      }
-      continue;
-    }
-    byPath.set(path, { path, kind: kind || undefined });
+    mergeInferredEntry(byPath, { path, kind: kind || undefined });
   }
 
   return Array.from(byPath.values()).filter((entry) => entry.path);

@@ -1,7 +1,9 @@
 // @ts-nocheck
+import { useCallback } from "react";
 import { ask } from "@tauri-apps/plugin-dialog";
 import { useLayoutNodes } from "../features/layout/hooks/useLayoutNodes";
 import { MainHeaderActions } from "../features/app/components/MainHeaderActions";
+import { normalizeSharedSessionEngine } from "../features/shared-session/utils/sharedSessionEngines";
 import { OPENCODE_VARIANT_OPTIONS } from "./utils";
 
 export function useAppShellLayoutNodesSection(ctx: any) {
@@ -46,7 +48,7 @@ export function useAppShellLayoutNodesSection(ctx: any) {
     handleRenameWorktreeChange, handleRenameWorktreeConfirm, handleResize, handleRevealActiveWorkspace, handleRevealGeneralPrompts, handleRevealWorkspacePrompts, handleRevertAllGitChanges, handleRevertGitFile,
     handleReviewPromptKeyDown, handleRewindFromMessage, handleSearchPaletteMoveSelection, handleSelectAgent, handleSelectCommit, handleSelectDiff, handleSelectDiffForPanel, handleSelectHomeWorkspace, handleSelectModel, handleSelectOpenAppId,
     handleSelectOpenCodeAgent, handleSelectOpenCodeVariant, handleSelectPullRequest, handleSelectSearchResult, handleSelectWorkspaceInstance, handleSelectWorkspacePathForGitHistory, handleSend, handleSendPrompt,
-    handleSendPromptToNewAgent, handleSelectStatusPanelSubagent, handleSetAccessMode, handleSetGitRoot, handleStageGitAll, handleStageGitFile, handleStartGuidedConversation, handleStartWorkspaceConversation, handleSwitchAccount, handleFuseQueued,
+    handleSendPromptToNewAgent, handleSelectStatusPanelSubagent, handleSetAccessMode, handleSetGitRoot, handleStageGitAll, handleStageGitFile, handleStartGuidedConversation, handleStartSharedConversation, handleStartWorkspaceConversation, handleSwitchAccount, handleFuseQueued,
     handleSync, handleTestNotificationSound, handleToggleDictation, handleToggleRuntimeConsole, handleToggleSearchContentFilter, handleToggleSearchPalette, handleToggleTerminal, handleToggleTerminalPanel,
     handleUnlockPanel, handleUnstageGitFile, handleUpdatePrompt, handleUserInputSubmit, handleUserInputSubmitWithPlanApply, handleWorkspaceDragEnter, handleWorkspaceDragLeave, handleWorkspaceDragOver,
     handleWorkspaceDrop, handleWorktreeCreated, hasActivePlan, hasLoaded, hasPlanData, highlightedBranchIndex, highlightedCommitIndex, highlightedPresetIndex,
@@ -95,13 +97,40 @@ export function useAppShellLayoutNodesSection(ctx: any) {
     terminalTabs, textareaHeight, threadAccessMode, threadChanged, threadId, threadItemsByThread, threadListCursorByWorkspace, threadListLoadingByWorkspace,
     threadListPagingByWorkspace, threadMode, threadParentById, threadStatusById, threads, threadsByWorkspace, timelinePlan, title,
     toggleSoloMode, tokenUsageByThread, triggerAutoThreadTitle, trimmed, uiMode, uncachedWorkspaceIds, ungroupedLabel, uniquePaths,
-    unpinThread, updateCloneCopyName, updateCustomInstructions, updatePrompt, updateWorkspaceCodexBin, updateWorkspaceSettings, updateWorktreeBaseRef, updateWorktreeBranch,
+    unpinThread, updateCloneCopyName, updateCustomInstructions, updatePrompt, updateSharedSessionEngineSelection, updateWorkspaceCodexBin, updateWorkspaceSettings, updateWorktreeBaseRef, updateWorktreeBranch,
     updateWorktreePublishToOrigin, updateWorktreeSetupScript, updatedAt, updaterState, useSuggestedCloneCopiesFolder, userInputRequests, validModel, viewportHeight,
     wasProcessing, workspace, workspaceActivity, workspaceDropTargetRef, workspaceFilesPollingEnabled, workspaceGroups, workspaceHomeWorkspaceId, workspaceId,
     workspaceNameByPath, workspacePath, workspaceSearchSources, workspaces, workspacesById, workspacesByPath, worktreeApplyError, worktreeApplyLoading,
     worktreeApplySuccess, worktreeCreateResult, worktreeLabel, worktreePrompt, worktreeRename, worktreeSetupScriptState,
     sessionRadarRunningSessions, sessionRadarRecentCompletedSessions, runningSessionCountByWorkspaceId, recentCompletedSessionCountByWorkspaceId,
   } = ctx;
+  const handleSelectConversationEngine = useCallback(
+    async (engine: "claude" | "codex" | "gemini" | "opencode") => {
+      const thread = activeWorkspaceId && activeThreadId
+        ? (threadsByWorkspace[activeWorkspaceId] ?? []).find(
+            (entry: any) => entry.id === activeThreadId,
+          )
+        : null;
+      const nextEngine =
+        thread?.threadKind === "shared"
+          ? normalizeSharedSessionEngine(engine)
+          : engine;
+      await setActiveEngine(nextEngine);
+      if (!activeWorkspaceId || !activeThreadId) {
+        return;
+      }
+      if (thread?.threadKind === "shared") {
+        updateSharedSessionEngineSelection(activeWorkspaceId, activeThreadId, nextEngine);
+      }
+    },
+    [
+      activeThreadId,
+      activeWorkspaceId,
+      setActiveEngine,
+      threadsByWorkspace,
+      updateSharedSessionEngineSelection,
+    ],
+  );
   const enableMainFileExternalChangeMonitoring = Boolean(
     activeWorkspace &&
       activeEditorFilePath,
@@ -206,6 +235,7 @@ export function useAppShellLayoutNodesSection(ctx: any) {
       }
     },
     onAddAgent: handleAddAgent,
+    onAddSharedAgent: handleStartSharedConversation,
     onAddWorktreeAgent: handleAddWorktreeAgent,
     onAddCloneAgent: handleAddCloneAgent,
     onToggleWorkspaceCollapse: (workspaceId, collapsed) => {
@@ -590,7 +620,7 @@ export function useAppShellLayoutNodesSection(ctx: any) {
     engines: installedEngines,
     selectedEngine: activeEngine,
     usePresentationProfile: appSettings.chatCanvasUsePresentationProfile,
-    onSelectEngine: setActiveEngine,
+    onSelectEngine: handleSelectConversationEngine,
     models: effectiveModels,
     selectedModelId: effectiveSelectedModelId,
     onSelectModel: handleSelectModel,

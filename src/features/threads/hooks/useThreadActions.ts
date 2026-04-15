@@ -44,6 +44,18 @@ import { createCodexHistoryLoader } from "../loaders/codexHistoryLoader";
 import { createGeminiHistoryLoader } from "../loaders/geminiHistoryLoader";
 import { parseGeminiHistoryMessages } from "../loaders/geminiHistoryParser";
 import { createOpenCodeHistoryLoader } from "../loaders/opencodeHistoryLoader";
+import { createSharedHistoryLoader } from "../loaders/sharedHistoryLoader";
+import {
+  deleteSharedSession as deleteSharedSessionService,
+  listSharedSessions as listSharedSessionsService,
+  loadSharedSession as loadSharedSessionService,
+  startSharedSession as startSharedSessionService,
+} from "../../shared-session/services/sharedSessions";
+import {
+  normalizeSharedSessionSummaries,
+  toSharedThreadSummary,
+} from "../../shared-session/runtime/sharedSessionSummaries";
+import { normalizeSharedSessionEngine } from "../../shared-session/utils/sharedSessionEngines";
 import {
   asString,
   asNumber,
@@ -350,6 +362,7 @@ type GeminiSessionSummary = {
   fileSizeBytes?: number;
 };
 
+
 function normalizeThreadSizeBytes(value: unknown) {
   const sizeBytes = asNumber(value);
   return sizeBytes > 0 ? Math.round(sizeBytes) : undefined;
@@ -398,6 +411,7 @@ function normalizeGeminiSessionSummaries(value: unknown): GeminiSessionSummary[]
   });
   return summaries;
 }
+
 
 function mergeGeminiSessionSummaries(
   baseSummaries: ThreadSummary[],
@@ -627,7 +641,7 @@ function collectKnownCodexThreadIds(
 ): Set<string> {
   const known = new Set<string>();
   existingThreads.forEach((thread) => {
-    if (thread.engineSource === "codex" && thread.id) {
+    if (thread.threadKind !== "shared" && thread.engineSource === "codex" && thread.id) {
       known.add(thread.id);
     }
   });
@@ -1058,6 +1072,56 @@ export function useThreadActions({
     [dispatch, extractThreadId, loadedThreadsRef, onDebug],
   );
 
+  const startSharedSessionForWorkspace = useCallback(
+    async (
+      workspaceId: string,
+      options?: { activate?: boolean; initialEngine?: "claude" | "codex" | "gemini" | "opencode" },
+    ) => {
+      const shouldActivate = options?.activate !== false;
+      const initialEngine = normalizeSharedSessionEngine(options?.initialEngine);
+      onDebug?.({
+        id: `${Date.now()}-client-shared-thread-start`,
+        timestamp: Date.now(),
+        source: "client",
+        label: "shared-session/start",
+        payload: { workspaceId, initialEngine },
+      });
+      const response = await startSharedSessionService(workspaceId, initialEngine);
+      const threadId = extractThreadId(response);
+      if (!threadId) {
+        return null;
+      }
+      const result =
+        response?.result && typeof response.result === "object"
+          ? (response.result as Record<string, unknown>)
+          : response;
+      const thread =
+        result?.thread && typeof result.thread === "object"
+          ? (result.thread as Record<string, unknown>)
+          : null;
+      const summary: ThreadSummary = {
+        id: threadId,
+        name: asString(thread?.name).trim() || "Shared Session",
+        updatedAt: asNumber(thread?.updatedAt ?? thread?.updated_at) || Date.now(),
+        engineSource: initialEngine,
+        threadKind: "shared",
+        selectedEngine: initialEngine,
+        nativeThreadIds: [],
+      };
+      dispatch({
+        type: "setThreads",
+        workspaceId,
+        threads: [summary, ...(threadsByWorkspace[workspaceId] ?? [])],
+      });
+      if (shouldActivate) {
+        dispatch({ type: "setActiveThreadId", workspaceId, threadId });
+      }
+      loadedThreadsRef.current[threadId] = true;
+      return threadId;
+    },
+    [dispatch, extractThreadId, loadedThreadsRef, onDebug, threadsByWorkspace],
+  );
+
   const resumeThreadForWorkspace = useCallback(
     async (
       workspaceId: string,
@@ -1101,7 +1165,12 @@ export function useThreadActions({
         try {
           const workspacePath = workspacePathsByIdRef.current[workspaceId] ?? null;
           const createHistoryLoader = (targetThreadId: string) =>
-            targetThreadId.startsWith("claude:")
+            targetThreadId.startsWith("shared:")
+              ? createSharedHistoryLoader({
+                  workspaceId,
+                  loadSharedSession: loadSharedSessionService,
+                })
+              : targetThreadId.startsWith("claude:")
               ? createClaudeHistoryLoader({
                   workspaceId,
                   workspacePath,
@@ -2168,6 +2237,12 @@ export function useThreadActions({
         } catch {
           mappedTitles = {};
         }
+        const sharedSessions = normalizeSharedSessionSummaries(
+          await listSharedSessionsService(workspace.id).catch(() => []),
+        );
+        const hiddenSharedBindingIds = new Set(
+          sharedSessions.flatMap((session) => session.nativeThreadIds),
+        );
         const existingThreads = threadsByWorkspace[workspace.id] ?? [];
         const activeThreadId = activeThreadIdByWorkspace[workspace.id] ?? "";
         const knownCodexThreadIds = collectKnownCodexThreadIds(
@@ -2365,10 +2440,11 @@ export function useThreadActions({
               updatedAt: getThreadTimestamp(thread),
               sizeBytes: extractThreadSizeBytes(thread),
               engineSource,
+              threadKind: "native" as const,
               ...sourceMeta,
             };
           })
-          .filter((entry) => entry.id);
+          .filter((entry) => entry.id && !hiddenSharedBindingIds.has(entry.id));
 
         // Fetch Claude/OpenCode sessions in the critical path.
         // Gemini history is merged from cache first, then refreshed in background,
@@ -2392,6 +2468,9 @@ export function useThreadActions({
               fileSizeBytes?: number;
             }) => {
               const id = `claude:${session.sessionId}`;
+              if (hiddenSharedBindingIds.has(id)) {
+                return;
+              }
               const prev = mergedById.get(id);
               const updatedAt = session.updatedAt;
               const next: ThreadSummary = {
@@ -2403,6 +2482,7 @@ export function useThreadActions({
                 updatedAt,
                 sizeBytes: normalizeThreadSizeBytes(session.fileSizeBytes),
                 engineSource: "claude",
+                threadKind: "native",
               };
               if (!prev || next.updatedAt >= prev.updatedAt) {
                 mergedById.set(id, next);
@@ -2416,6 +2496,9 @@ export function useThreadActions({
             : [];
           opencodeSessions.forEach((session) => {
             const id = `opencode:${session.sessionId}`;
+            if (hiddenSharedBindingIds.has(id)) {
+              return;
+            }
             const prev = mergedById.get(id);
             const sessionUpdatedAt =
               typeof session.updatedAt === "number" && Number.isFinite(session.updatedAt)
@@ -2439,6 +2522,7 @@ export function useThreadActions({
               updatedAt,
               sizeBytes: extractThreadSizeBytes(session as Record<string, unknown>),
               engineSource: "opencode",
+              threadKind: "native",
             };
             if (!prev || next.updatedAt >= prev.updatedAt) {
               mergedById.set(id, next);
@@ -2451,10 +2535,25 @@ export function useThreadActions({
         if (hasFreshGeminiCache && cachedGemini.sessions.length > 0) {
           allSummaries = mergeGeminiSessionSummaries(
             allSummaries,
-            cachedGemini.sessions,
+            cachedGemini.sessions.filter(
+              (session) => !hiddenSharedBindingIds.has(`gemini:${session.sessionId}`),
+            ),
             workspace.id,
             mappedTitles,
             getCustomName,
+          );
+        }
+        if (sharedSessions.length > 0) {
+          const sharedSummaries = sharedSessions.map(toSharedThreadSummary);
+          const merged = new Map<string, ThreadSummary>();
+          [...sharedSummaries, ...allSummaries].forEach((entry) => {
+            const previous = merged.get(entry.id);
+            if (!previous || entry.updatedAt >= previous.updatedAt) {
+              merged.set(entry.id, entry);
+            }
+          });
+          allSummaries = Array.from(merged.values()).sort(
+            (a, b) => b.updatedAt - a.updatedAt,
           );
         }
         if (didChangeActivity) {
@@ -2532,7 +2631,9 @@ export function useThreadActions({
               currentSnapshot.length > 0 ? currentSnapshot : allSummaries;
             const nextSummaries = mergeGeminiSessionSummaries(
               baselineSummaries,
-              normalizedGeminiSessions,
+              normalizedGeminiSessions.filter(
+                (session) => !hiddenSharedBindingIds.has(`gemini:${session.sessionId}`),
+              ),
               workspace.id,
               mappedTitles,
               getCustomName,
@@ -2546,7 +2647,8 @@ export function useThreadActions({
                   prev.id === entry.id &&
                   prev.name === entry.name &&
                   prev.updatedAt === entry.updatedAt &&
-                  prev.engineSource === entry.engineSource
+                  prev.engineSource === entry.engineSource &&
+                  prev.threadKind === entry.threadKind
                 );
               });
             if (!unchanged) {
@@ -2800,6 +2902,11 @@ export function useThreadActions({
       if (threadId.includes("-pending-")) {
         return;
       }
+      const thread = (threadsByWorkspace[workspaceId] ?? []).find((entry) => entry.id === threadId);
+      if (thread?.threadKind === "shared" || threadId.startsWith("shared:")) {
+        await deleteSharedSessionService(workspaceId, threadId);
+        return;
+      }
       if (threadId.startsWith("claude:")) {
         await archiveClaudeThread(workspaceId, threadId);
         return;
@@ -2829,7 +2936,7 @@ export function useThreadActions({
       }
       await deleteCodexSessionService(workspaceId, threadId);
     },
-    [archiveClaudeThread],
+    [archiveClaudeThread, threadsByWorkspace],
   );
 
   const renameThreadTitleMapping = useCallback(
@@ -2855,6 +2962,7 @@ export function useThreadActions({
 
   return {
     startThreadForWorkspace,
+    startSharedSessionForWorkspace,
     forkThreadForWorkspace,
     forkSessionFromMessageForWorkspace,
     forkClaudeSessionFromMessageForWorkspace,

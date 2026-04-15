@@ -1607,7 +1607,10 @@ export type ExportRewindFilesParams = {
   sessionId: string;
   targetMessageId: string;
   conversationLabel: string;
-  files: Array<{ path: string }>;
+  files: Array<{
+    path: string;
+    status?: "A" | "D" | "R" | "M";
+  }>;
 };
 
 export type ExportRewindFilesResult = {

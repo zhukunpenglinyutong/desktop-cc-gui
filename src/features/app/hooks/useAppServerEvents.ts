@@ -14,6 +14,12 @@ import {
   inferRealtimeAdapterEngine,
 } from "../../threads/adapters/realtimeAdapterRegistry";
 import { hydrateToolSnapshotWithEventParams } from "../../threads/adapters/toolSnapshotHydration";
+import {
+  rebindSharedSessionNativeThread,
+  resolvePendingSharedSessionBindingForEngine,
+  resolveSharedSessionBindingByNativeThread,
+} from "../../shared-session/runtime/sharedSessionBridge";
+import { updateSharedSessionNativeBinding as updateSharedSessionNativeBindingService } from "../../shared-session/services/sharedSessions";
 
 type AgentDelta = {
   workspaceId: string;
@@ -83,9 +89,26 @@ type AppServerEventHandlers = {
   onItemStarted?: (workspaceId: string, threadId: string, item: Record<string, unknown>) => void;
   onItemUpdated?: (workspaceId: string, threadId: string, item: Record<string, unknown>) => void;
   onItemCompleted?: (workspaceId: string, threadId: string, item: Record<string, unknown>) => void;
-  onReasoningSummaryDelta?: (workspaceId: string, threadId: string, itemId: string, delta: string) => void;
-  onReasoningSummaryBoundary?: (workspaceId: string, threadId: string, itemId: string) => void;
-  onReasoningTextDelta?: (workspaceId: string, threadId: string, itemId: string, delta: string) => void;
+  onReasoningSummaryDelta?: (
+    workspaceId: string,
+    threadId: string,
+    itemId: string,
+    delta: string,
+    engineHint?: "gemini" | null,
+  ) => void;
+  onReasoningSummaryBoundary?: (
+    workspaceId: string,
+    threadId: string,
+    itemId: string,
+    engineHint?: "gemini" | null,
+  ) => void;
+  onReasoningTextDelta?: (
+    workspaceId: string,
+    threadId: string,
+    itemId: string,
+    delta: string,
+    engineHint?: "gemini" | null,
+  ) => void;
   onCommandOutputDelta?: (workspaceId: string, threadId: string, itemId: string, delta: string) => void;
   onTerminalInteraction?: (
     workspaceId: string,
@@ -241,6 +264,37 @@ function extractAgentMessageDeltaPayload(
   return { threadId, itemId, delta };
 }
 
+function cloneMessageWithThreadId(
+  message: Record<string, unknown>,
+  threadId: string,
+): Record<string, unknown> {
+  const params = ((message.params as Record<string, unknown> | undefined) ?? {});
+  const nextParams: Record<string, unknown> = {
+    ...params,
+    threadId,
+    thread_id: threadId,
+  };
+  const turn = (params.turn as Record<string, unknown> | undefined) ?? null;
+  if (turn) {
+    nextParams.turn = {
+      ...turn,
+      threadId,
+      thread_id: threadId,
+    };
+  }
+  const thread = (params.thread as Record<string, unknown> | undefined) ?? null;
+  if (thread) {
+    nextParams.thread = {
+      ...thread,
+      id: threadId,
+    };
+  }
+  return {
+    ...message,
+    params: nextParams,
+  };
+}
+
 function toNumber(value: unknown): number {
   if (typeof value === "number" && Number.isFinite(value)) {
     return value;
@@ -260,6 +314,19 @@ function isClaudeThreadId(threadId: string): boolean {
 
 function isGeminiThreadId(threadId: string): boolean {
   return threadId.startsWith("gemini:") || threadId.startsWith("gemini-pending-");
+}
+
+function inferGeminiReasoningHintFromThreadId(threadId: string): "gemini" | null {
+  if (!threadId) {
+    return null;
+  }
+  return isGeminiThreadId(threadId) ? "gemini" : null;
+}
+
+function shouldRebindSharedNativeThreadOnStartedEvent(
+  engine: "claude" | "opencode" | "codex" | "gemini",
+): boolean {
+  return engine === "claude";
 }
 
 function isAgentMessageSnapshotMethod(method: string): boolean {
@@ -456,18 +523,47 @@ function routeNormalizedRealtimeEvent({
       if (!delta) {
         return false;
       }
-      handlers.onReasoningSummaryDelta?.(workspaceId, threadId, itemId, delta);
+      if (event.engine === "gemini") {
+        handlers.onReasoningSummaryDelta?.(
+          workspaceId,
+          threadId,
+          itemId,
+          delta,
+          event.engine,
+        );
+      } else {
+        handlers.onReasoningSummaryDelta?.(workspaceId, threadId, itemId, delta);
+      }
       return true;
     }
     case "appendReasoningSummaryBoundary":
-      handlers.onReasoningSummaryBoundary?.(workspaceId, threadId, itemId);
+      if (event.engine === "gemini") {
+        handlers.onReasoningSummaryBoundary?.(
+          workspaceId,
+          threadId,
+          itemId,
+          event.engine,
+        );
+      } else {
+        handlers.onReasoningSummaryBoundary?.(workspaceId, threadId, itemId);
+      }
       return true;
     case "appendReasoningContentDelta": {
       const delta = event.delta ?? "";
       if (!delta) {
         return false;
       }
-      handlers.onReasoningTextDelta?.(workspaceId, threadId, itemId, delta);
+      if (event.engine === "gemini") {
+        handlers.onReasoningTextDelta?.(
+          workspaceId,
+          threadId,
+          itemId,
+          delta,
+          event.engine,
+        );
+      } else {
+        handlers.onReasoningTextDelta?.(workspaceId, threadId, itemId, delta);
+      }
       return true;
     }
     case "appendToolOutputDelta": {
@@ -491,12 +587,16 @@ function tryRouteNormalizedRealtimeEvent({
   handlers,
   workspaceId,
   message,
+  engineOverride,
+  threadIdOverride,
   threadAgentDeltaSeenRef,
   threadAgentCompletedSeenRef,
 }: {
   handlers: AppServerEventHandlers;
   workspaceId: string;
   message: Record<string, unknown>;
+  engineOverride?: "claude" | "codex" | "gemini" | "opencode";
+  threadIdOverride?: string;
   threadAgentDeltaSeenRef: MutableRefObject<Record<string, true>>;
   threadAgentCompletedSeenRef: MutableRefObject<ThreadAgentCompletedItemTracker>;
 }): boolean {
@@ -512,14 +612,27 @@ function tryRouteNormalizedRealtimeEvent({
   if (!threadId) {
     return false;
   }
-  const engine = inferRealtimeAdapterEngine(threadId);
+  const engine = engineOverride ?? inferRealtimeAdapterEngine(threadId);
   const adapter = getRealtimeAdapterByEngine(engine);
   const normalized = adapter.mapEvent({
     workspaceId,
-    message,
+    message: threadIdOverride ? cloneMessageWithThreadId(message, threadIdOverride) : message,
   });
   if (!normalized) {
     return false;
+  }
+  if (threadIdOverride) {
+    normalized.threadId = threadIdOverride;
+    normalized.item = {
+      ...normalized.item,
+      engineSource: engine,
+    };
+    if (normalized.rawItem) {
+      normalized.rawItem = {
+        ...normalized.rawItem,
+        engineSource: engine,
+      };
+    }
   }
   return routeNormalizedRealtimeEvent({
     handlers,
@@ -550,6 +663,10 @@ export function useAppServerEvents(
       }
 
       const params = (message.params as Record<string, unknown>) ?? {};
+      const rawThreadId = extractThreadIdFromParams(params);
+      let sharedBridge = rawThreadId
+        ? resolveSharedSessionBindingByNativeThread(workspace_id, rawThreadId)
+        : null;
       const requestIdValue = message.id ?? params.requestId ?? params.request_id;
       const requestId =
         typeof requestIdValue === "number" || typeof requestIdValue === "string"
@@ -653,6 +770,9 @@ export function useAppServerEvents(
         const fallbackThreadId = handlers.getActiveCodexThreadId?.(workspace_id) ?? "";
         const resolvedThreadId =
           extractThreadIdFromParams(params) || fallbackThreadId;
+        const effectiveThreadId =
+          resolveSharedSessionBindingByNativeThread(workspace_id, resolvedThreadId)?.sharedThreadId
+            ?? resolvedThreadId;
         const completed = Boolean(params.completed);
         const turn = (params.turn as Record<string, unknown> | undefined) ?? {};
         const questionsRaw = Array.isArray(params.questions) ? params.questions : [];
@@ -688,7 +808,7 @@ export function useAppServerEvents(
           workspace_id,
           request_id: requestId,
           params: {
-            thread_id: resolvedThreadId,
+            thread_id: effectiveThreadId,
             turn_id: String(params.turnId ?? params.turn_id ?? turn.id ?? ""),
             item_id: String(params.itemId ?? params.item_id ?? turn.itemId ?? turn.item_id ?? ""),
             questions,
@@ -704,6 +824,12 @@ export function useAppServerEvents(
           handlers,
           workspaceId: workspace_id,
           message,
+          ...(sharedBridge
+            ? {
+                engineOverride: sharedBridge.engine,
+                threadIdOverride: sharedBridge.sharedThreadId,
+              }
+            : {}),
           threadAgentDeltaSeenRef,
           threadAgentCompletedSeenRef,
         })
@@ -713,10 +839,11 @@ export function useAppServerEvents(
 
       const agentDeltaPayload = extractAgentMessageDeltaPayload(method, params);
       if (agentDeltaPayload) {
-        threadAgentDeltaSeenRef.current[agentDeltaPayload.threadId] = true;
+        const effectiveThreadId = sharedBridge?.sharedThreadId ?? agentDeltaPayload.threadId;
+        threadAgentDeltaSeenRef.current[effectiveThreadId] = true;
         handlers.onAgentMessageDelta?.({
           workspaceId: workspace_id,
-          threadId: agentDeltaPayload.threadId,
+          threadId: effectiveThreadId,
           itemId: agentDeltaPayload.itemId,
           delta: agentDeltaPayload.delta,
         });
@@ -726,9 +853,10 @@ export function useAppServerEvents(
       if (method === "turn/started") {
         const params = message.params as Record<string, unknown>;
         const turn = params.turn as Record<string, unknown> | undefined;
-        const threadId = String(
+        const rawTurnThreadId = String(
           params.threadId ?? params.thread_id ?? turn?.threadId ?? turn?.thread_id ?? "",
         );
+        const threadId = sharedBridge?.sharedThreadId ?? rawTurnThreadId;
         const turnId = String(turn?.id ?? params.turnId ?? params.turn_id ?? "");
         if (threadId) {
           delete threadAgentDeltaSeenRef.current[threadId];
@@ -752,6 +880,68 @@ export function useAppServerEvents(
             ? rawEngine
             : null;
 
+        if (
+          !sharedBridge &&
+          threadId &&
+          eventEngine &&
+          (eventEngine === "codex" || eventEngine === "claude")
+        ) {
+          const pendingBinding = resolvePendingSharedSessionBindingForEngine(
+            workspace_id,
+            eventEngine,
+          );
+          if (pendingBinding) {
+            if (pendingBinding.nativeThreadId !== threadId) {
+              const rebound = rebindSharedSessionNativeThread({
+                workspaceId: workspace_id,
+                oldNativeThreadId: pendingBinding.nativeThreadId,
+                newNativeThreadId: threadId,
+              });
+              if (rebound) {
+                sharedBridge = rebound;
+                void updateSharedSessionNativeBindingService(
+                  workspace_id,
+                  rebound.sharedThreadId,
+                  rebound.engine,
+                  pendingBinding.nativeThreadId,
+                  threadId,
+                ).catch(() => {});
+              }
+            } else {
+              sharedBridge = pendingBinding;
+            }
+          }
+        }
+
+        if (sharedBridge) {
+          if (
+            threadId &&
+            sessionId &&
+            sessionId !== "pending" &&
+            eventEngine &&
+            shouldRebindSharedNativeThreadOnStartedEvent(eventEngine)
+          ) {
+            const finalizedNativeThreadId = `${eventEngine}:${sessionId}`;
+            if (threadId !== finalizedNativeThreadId) {
+              const rebound = rebindSharedSessionNativeThread({
+                workspaceId: workspace_id,
+                oldNativeThreadId: threadId,
+                newNativeThreadId: finalizedNativeThreadId,
+              });
+              if (rebound) {
+                void updateSharedSessionNativeBindingService(
+                  workspace_id,
+                  rebound.sharedThreadId,
+                  rebound.engine,
+                  threadId,
+                  finalizedNativeThreadId,
+                ).catch(() => {});
+              }
+            }
+          }
+          return;
+        }
+
         // If we have a real sessionId (not "pending"), notify for thread ID update
         if (threadId && sessionId && sessionId !== "pending") {
           handlers.onThreadSessionIdUpdated?.(
@@ -771,7 +961,8 @@ export function useAppServerEvents(
       if (method === "codex/parseError") {
         const params = (message.params as Record<string, unknown>) ?? {};
         const fallbackThreadId = handlers.getActiveCodexThreadId?.(workspace_id) ?? "";
-        const threadId = extractThreadIdFromParams(params) || fallbackThreadId;
+        const resolvedThreadId = extractThreadIdFromParams(params) || fallbackThreadId;
+        const threadId = sharedBridge?.sharedThreadId ?? resolvedThreadId;
         if (!threadId) {
           return;
         }
@@ -790,7 +981,7 @@ export function useAppServerEvents(
 
       if (method === "turn/error") {
         const params = message.params as Record<string, unknown>;
-        const threadId = String(params.threadId ?? params.thread_id ?? "");
+        const threadId = sharedBridge?.sharedThreadId ?? String(params.threadId ?? params.thread_id ?? "");
         const turnId = String(params.turnId ?? params.turn_id ?? "");
         const willRetry = Boolean(params.willRetry ?? params.will_retry);
         const errorValue = params.error;
@@ -810,6 +1001,9 @@ export function useAppServerEvents(
       }
 
       if (method === "codex/backgroundThread") {
+        if (sharedBridge) {
+          return;
+        }
         const params = message.params as Record<string, unknown>;
         const threadId = String(params.threadId ?? params.thread_id ?? "");
         const action = String(params.action ?? "hide");
@@ -821,7 +1015,7 @@ export function useAppServerEvents(
 
       if (method === "error") {
         const params = message.params as Record<string, unknown>;
-        const threadId = String(params.threadId ?? params.thread_id ?? "");
+        const threadId = sharedBridge?.sharedThreadId ?? String(params.threadId ?? params.thread_id ?? "");
         const turnId = String(params.turnId ?? params.turn_id ?? "");
         const error = (params.error as Record<string, unknown> | undefined) ?? {};
         const messageText = String(error.message ?? "");
@@ -838,9 +1032,10 @@ export function useAppServerEvents(
       if (method === "turn/completed") {
         const params = message.params as Record<string, unknown>;
         const turn = params.turn as Record<string, unknown> | undefined;
-        const threadId = String(
+        const rawCompletedThreadId = String(
           params.threadId ?? params.thread_id ?? turn?.threadId ?? turn?.thread_id ?? "",
         );
+        const threadId = sharedBridge?.sharedThreadId ?? rawCompletedThreadId;
         const turnId = String(turn?.id ?? params.turnId ?? params.turn_id ?? "");
         if (threadId) {
           const seenDelta = Boolean(threadAgentDeltaSeenRef.current[threadId]);
@@ -925,7 +1120,7 @@ export function useAppServerEvents(
 
       if (method === "processing/heartbeat") {
         const params = message.params as Record<string, unknown>;
-        const threadId = String(params.threadId ?? params.thread_id ?? "");
+        const threadId = sharedBridge?.sharedThreadId ?? String(params.threadId ?? params.thread_id ?? "");
         const pulse = Number(params.pulse ?? 0);
         if (threadId && Number.isFinite(pulse) && pulse > 0) {
           handlers.onProcessingHeartbeat?.(workspace_id, threadId, pulse);
@@ -935,7 +1130,7 @@ export function useAppServerEvents(
 
       if (method === "thread/compacted") {
         const params = message.params as Record<string, unknown>;
-        const threadId = String(params.threadId ?? params.thread_id ?? "");
+        const threadId = sharedBridge?.sharedThreadId ?? String(params.threadId ?? params.thread_id ?? "");
         const turnId = String(params.turnId ?? params.turn_id ?? "");
         if (threadId) {
           handlers.onContextCompacted?.(workspace_id, threadId, turnId);
@@ -945,7 +1140,7 @@ export function useAppServerEvents(
 
       if (method === "thread/compacting") {
         const params = message.params as Record<string, unknown>;
-        const threadId = String(params.threadId ?? params.thread_id ?? "");
+        const threadId = sharedBridge?.sharedThreadId ?? String(params.threadId ?? params.thread_id ?? "");
         if (threadId) {
           const usagePercentRaw = Number(params.usagePercent ?? params.usage_percent);
           const thresholdPercentRaw = Number(
@@ -965,7 +1160,7 @@ export function useAppServerEvents(
 
       if (method === "thread/compactionFailed") {
         const params = message.params as Record<string, unknown>;
-        const threadId = String(params.threadId ?? params.thread_id ?? "");
+        const threadId = sharedBridge?.sharedThreadId ?? String(params.threadId ?? params.thread_id ?? "");
         if (threadId) {
           const reason = String(params.reason ?? "").trim();
           handlers.onContextCompactionFailed?.(workspace_id, threadId, reason);
@@ -975,7 +1170,7 @@ export function useAppServerEvents(
 
       if (method === "turn/plan/updated") {
         const params = message.params as Record<string, unknown>;
-        const threadId = String(params.threadId ?? params.thread_id ?? "");
+        const threadId = sharedBridge?.sharedThreadId ?? String(params.threadId ?? params.thread_id ?? "");
         const turnId = String(params.turnId ?? params.turn_id ?? "");
         if (threadId) {
           handlers.onTurnPlanUpdated?.(workspace_id, threadId, turnId, {
@@ -988,7 +1183,7 @@ export function useAppServerEvents(
 
       if (method === "turn/diff/updated") {
         const params = message.params as Record<string, unknown>;
-        const threadId = String(params.threadId ?? params.thread_id ?? "");
+        const threadId = sharedBridge?.sharedThreadId ?? String(params.threadId ?? params.thread_id ?? "");
         const diff = String(params.diff ?? "");
         if (threadId && diff) {
           handlers.onTurnDiffUpdated?.(workspace_id, threadId, diff);
@@ -998,7 +1193,7 @@ export function useAppServerEvents(
 
       if (method === "thread/tokenUsage/updated") {
         const params = message.params as Record<string, unknown>;
-        const threadId = String(params.threadId ?? params.thread_id ?? "");
+        const threadId = sharedBridge?.sharedThreadId ?? String(params.threadId ?? params.thread_id ?? "");
         const tokenUsage =
           (params.tokenUsage as Record<string, unknown> | undefined) ??
           (params.token_usage as Record<string, unknown> | undefined);
@@ -1014,6 +1209,9 @@ export function useAppServerEvents(
         const params = message.params as Record<string, unknown>;
         const info = params.info as Record<string, unknown> | undefined;
         let threadId = String(params.threadId ?? params.thread_id ?? "");
+        if (sharedBridge?.sharedThreadId) {
+          threadId = sharedBridge.sharedThreadId;
+        }
 
         // If no threadId in event, try to resolve from the active Codex thread
         if (!threadId && handlers.getActiveCodexThreadId) {
@@ -1101,7 +1299,11 @@ export function useAppServerEvents(
 
       if (method === "item/completed") {
         const params = message.params as Record<string, unknown>;
-        const threadId = extractThreadIdFromParams(params);
+        const rawItemThreadId = extractThreadIdFromParams(params);
+        const itemBridge = rawItemThreadId
+          ? resolveSharedSessionBindingByNativeThread(workspace_id, rawItemThreadId)
+          : null;
+        const threadId = itemBridge?.sharedThreadId ?? rawItemThreadId;
         const item =
           params.item && typeof params.item === "object"
             ? hydrateToolSnapshotWithEventParams(
@@ -1110,6 +1312,9 @@ export function useAppServerEvents(
               )
             : undefined;
         if (threadId && item) {
+          if (itemBridge) {
+            item.engineSource = itemBridge.engine;
+          }
           handlers.onItemCompleted?.(workspace_id, threadId, item);
 
           // Try to extract usage data from item/completed (Codex may include it here)
@@ -1177,7 +1382,11 @@ export function useAppServerEvents(
 
       if (method === "item/started") {
         const params = message.params as Record<string, unknown>;
-        const threadId = extractThreadIdFromParams(params);
+        const rawItemThreadId = extractThreadIdFromParams(params);
+        const itemBridge = rawItemThreadId
+          ? resolveSharedSessionBindingByNativeThread(workspace_id, rawItemThreadId)
+          : null;
+        const threadId = itemBridge?.sharedThreadId ?? rawItemThreadId;
         const item =
           params.item && typeof params.item === "object"
             ? hydrateToolSnapshotWithEventParams(
@@ -1186,6 +1395,9 @@ export function useAppServerEvents(
               )
             : undefined;
         if (threadId && item) {
+          if (itemBridge) {
+            item.engineSource = itemBridge.engine;
+          }
           if (
             shouldIgnoreAgentMessageSnapshot({
               threadId,
@@ -1203,7 +1415,11 @@ export function useAppServerEvents(
 
       if (method === "item/updated") {
         const params = message.params as Record<string, unknown>;
-        const threadId = extractThreadIdFromParams(params);
+        const rawItemThreadId = extractThreadIdFromParams(params);
+        const itemBridge = rawItemThreadId
+          ? resolveSharedSessionBindingByNativeThread(workspace_id, rawItemThreadId)
+          : null;
+        const threadId = itemBridge?.sharedThreadId ?? rawItemThreadId;
         const item =
           params.item && typeof params.item === "object"
             ? hydrateToolSnapshotWithEventParams(
@@ -1212,6 +1428,9 @@ export function useAppServerEvents(
               )
             : undefined;
         if (threadId && item) {
+          if (itemBridge) {
+            item.engineSource = itemBridge.engine;
+          }
           if (
             shouldIgnoreAgentMessageSnapshot({
               threadId,
@@ -1237,11 +1456,27 @@ export function useAppServerEvents(
       ) {
         const params = message.params as Record<string, unknown>;
         const fallbackThreadId = handlers.getActiveCodexThreadId?.(workspace_id) ?? "";
-        const threadId = extractThreadIdFromParams(params) || fallbackThreadId;
+        const resolvedThreadId = extractThreadIdFromParams(params) || fallbackThreadId;
+        const sharedBridge = resolveSharedSessionBindingByNativeThread(
+          workspace_id,
+          resolvedThreadId,
+        );
+        const threadId = sharedBridge?.sharedThreadId ?? resolvedThreadId;
         const itemId = extractItemIdFromParams(params);
         const delta = extractReasoningDeltaFromParams(params);
         if (threadId && itemId && delta) {
-          handlers.onReasoningSummaryDelta?.(workspace_id, threadId, itemId, delta);
+          const engineHint = inferGeminiReasoningHintFromThreadId(resolvedThreadId);
+          if (engineHint === "gemini") {
+            handlers.onReasoningSummaryDelta?.(
+              workspace_id,
+              threadId,
+              itemId,
+              delta,
+              engineHint,
+            );
+          } else {
+            handlers.onReasoningSummaryDelta?.(workspace_id, threadId, itemId, delta);
+          }
         }
         return;
       }
@@ -1252,10 +1487,25 @@ export function useAppServerEvents(
       ) {
         const params = message.params as Record<string, unknown>;
         const fallbackThreadId = handlers.getActiveCodexThreadId?.(workspace_id) ?? "";
-        const threadId = extractThreadIdFromParams(params) || fallbackThreadId;
+        const resolvedThreadId = extractThreadIdFromParams(params) || fallbackThreadId;
+        const sharedBridge = resolveSharedSessionBindingByNativeThread(
+          workspace_id,
+          resolvedThreadId,
+        );
+        const threadId = sharedBridge?.sharedThreadId ?? resolvedThreadId;
         const itemId = extractItemIdFromParams(params);
         if (threadId && itemId) {
-          handlers.onReasoningSummaryBoundary?.(workspace_id, threadId, itemId);
+          const engineHint = inferGeminiReasoningHintFromThreadId(resolvedThreadId);
+          if (engineHint === "gemini") {
+            handlers.onReasoningSummaryBoundary?.(
+              workspace_id,
+              threadId,
+              itemId,
+              engineHint,
+            );
+          } else {
+            handlers.onReasoningSummaryBoundary?.(workspace_id, threadId, itemId);
+          }
         }
         return;
       }
@@ -1267,11 +1517,27 @@ export function useAppServerEvents(
       ) {
         const params = message.params as Record<string, unknown>;
         const fallbackThreadId = handlers.getActiveCodexThreadId?.(workspace_id) ?? "";
-        const threadId = extractThreadIdFromParams(params) || fallbackThreadId;
+        const resolvedThreadId = extractThreadIdFromParams(params) || fallbackThreadId;
+        const sharedBridge = resolveSharedSessionBindingByNativeThread(
+          workspace_id,
+          resolvedThreadId,
+        );
+        const threadId = sharedBridge?.sharedThreadId ?? resolvedThreadId;
         const itemId = extractItemIdFromParams(params);
         const delta = extractReasoningDeltaFromParams(params);
         if (threadId && itemId && delta) {
-          handlers.onReasoningTextDelta?.(workspace_id, threadId, itemId, delta);
+          const engineHint = inferGeminiReasoningHintFromThreadId(resolvedThreadId);
+          if (engineHint === "gemini") {
+            handlers.onReasoningTextDelta?.(
+              workspace_id,
+              threadId,
+              itemId,
+              delta,
+              engineHint,
+            );
+          } else {
+            handlers.onReasoningTextDelta?.(workspace_id, threadId, itemId, delta);
+          }
         }
         return;
       }
@@ -1281,18 +1547,37 @@ export function useAppServerEvents(
       if (method === "item/reasoning/delta") {
         const params = message.params as Record<string, unknown>;
         const fallbackThreadId = handlers.getActiveCodexThreadId?.(workspace_id) ?? "";
-        const threadId = extractThreadIdFromParams(params) || fallbackThreadId;
+        const resolvedThreadId = extractThreadIdFromParams(params) || fallbackThreadId;
+        const sharedBridge = resolveSharedSessionBindingByNativeThread(
+          workspace_id,
+          resolvedThreadId,
+        );
+        const threadId = sharedBridge?.sharedThreadId ?? resolvedThreadId;
         const itemId = extractItemIdFromParams(params);
         const delta = extractReasoningDeltaFromParams(params);
         if (threadId && itemId && delta) {
-          handlers.onReasoningTextDelta?.(workspace_id, threadId, itemId, delta);
+          const engineHint = inferGeminiReasoningHintFromThreadId(resolvedThreadId);
+          if (engineHint === "gemini") {
+            handlers.onReasoningTextDelta?.(
+              workspace_id,
+              threadId,
+              itemId,
+              delta,
+              engineHint,
+            );
+          } else {
+            handlers.onReasoningTextDelta?.(workspace_id, threadId, itemId, delta);
+          }
         }
         return;
       }
 
       if (method === "item/commandExecution/outputDelta") {
         const params = message.params as Record<string, unknown>;
-        const threadId = extractThreadIdFromParams(params);
+        const resolvedThreadId = extractThreadIdFromParams(params);
+        const threadId =
+          resolveSharedSessionBindingByNativeThread(workspace_id, resolvedThreadId)?.sharedThreadId
+          ?? resolvedThreadId;
         const itemId = extractItemIdFromParams(params);
         const delta = String(params.delta ?? "");
         if (threadId && itemId && delta) {
@@ -1303,7 +1588,10 @@ export function useAppServerEvents(
 
       if (method === "item/commandExecution/terminalInteraction") {
         const params = message.params as Record<string, unknown>;
-        const threadId = extractThreadIdFromParams(params);
+        const resolvedThreadId = extractThreadIdFromParams(params);
+        const threadId =
+          resolveSharedSessionBindingByNativeThread(workspace_id, resolvedThreadId)?.sharedThreadId
+          ?? resolvedThreadId;
         const itemId = extractItemIdFromParams(params);
         const stdin = String(params.stdin ?? "");
         if (threadId && itemId) {

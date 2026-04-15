@@ -23,6 +23,7 @@ import {
 } from "../../../services/tauri";
 import { getClientStoreSync, writeClientStoreValue } from "../../../services/clientStorage";
 import { pushErrorToast } from "../../../services/toasts";
+import { sendSharedSessionTurn } from "../../shared-session/runtime/sendSharedSessionTurn";
 
 vi.mock("../../../services/toasts", () => ({
   pushErrorToast: vi.fn(),
@@ -56,6 +57,10 @@ vi.mock("../../../services/clientStorage", () => ({
   writeClientStoreValue: vi.fn(),
 }));
 
+vi.mock("../../shared-session/runtime/sendSharedSessionTurn", () => ({
+  sendSharedSessionTurn: vi.fn(),
+}));
+
 describe("useThreadMessaging", () => {
   const workspace: WorkspaceInfo = {
     id: "ws-1",
@@ -68,6 +73,13 @@ describe("useThreadMessaging", () => {
     id: "ws-win",
     name: "ccgui-Win",
     path: "C:\\repo\\mossx",
+    connected: true,
+    settings: { sidebarCollapsed: false },
+  };
+  const noPathWorkspace: WorkspaceInfo = {
+    id: "ws-nopath",
+    name: "ccgui-NoPath",
+    path: "",
     connected: true,
     settings: { sidebarCollapsed: false },
   };
@@ -124,6 +136,9 @@ describe("useThreadMessaging", () => {
     vi.mocked(engineInterruptTurn).mockResolvedValue();
     vi.mocked(interruptTurn).mockResolvedValue({});
     vi.mocked(writeClientStoreValue).mockImplementation(() => undefined);
+    vi.mocked(sendSharedSessionTurn).mockResolvedValue({
+      result: { turn: { id: "shared-turn-1" } },
+    });
   });
 
   function makeHook(
@@ -180,6 +195,8 @@ describe("useThreadMessaging", () => {
         getCustomName: () => undefined,
         getThreadEngine: (_workspaceId, threadId) =>
           overrides.threadEngineById?.[threadId] ?? undefined,
+        getThreadKind: (_workspaceId, threadId) =>
+          threadId.startsWith("shared:") ? "shared" : "native",
         markProcessing,
         markReviewing,
         setActiveTurnId,
@@ -227,6 +244,102 @@ describe("useThreadMessaging", () => {
       expect.objectContaining({ engine: "opencode" }),
     );
     expect(sendUserMessage).not.toHaveBeenCalled();
+  });
+
+  it("normalizes unsupported shared-session sends back to claude", async () => {
+    const dispatch = vi.fn();
+    const { result } = makeHook("gemini", {
+      activeThreadId: "shared:thread-1",
+      dispatch,
+    });
+
+    await act(async () => {
+      await result.current.sendUserMessageToThread(
+        workspace,
+        "shared:thread-1",
+        "hello shared",
+      );
+    });
+
+    expect(sendSharedSessionTurn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        workspaceId: "ws-1",
+        threadId: "shared:thread-1",
+        engine: "claude",
+      }),
+    );
+    expect(dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "setThreadEngine",
+        threadId: "shared:thread-1",
+        engine: "claude",
+      }),
+    );
+    expect(engineSendMessage).not.toHaveBeenCalled();
+    expect(sendUserMessage).not.toHaveBeenCalled();
+  });
+
+  it("uses active shared engine selection instead of stale thread engine when sending", async () => {
+    const dispatch = vi.fn();
+    const { result } = makeHook("claude", {
+      activeThreadId: "shared:thread-sticky-engine",
+      dispatch,
+      threadEngineById: {
+        "shared:thread-sticky-engine": "codex",
+      },
+    });
+
+    await act(async () => {
+      await result.current.sendUserMessageToThread(
+        workspace,
+        "shared:thread-sticky-engine",
+        "切回 claude 后继续发送",
+      );
+    });
+
+    expect(sendSharedSessionTurn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        workspaceId: "ws-1",
+        threadId: "shared:thread-sticky-engine",
+        engine: "claude",
+      }),
+    );
+    expect(dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "setThreadEngine",
+        workspaceId: "ws-1",
+        threadId: "shared:thread-sticky-engine",
+        engine: "claude",
+      }),
+    );
+  });
+
+  it("hides shared native thread id returned from shared send response", async () => {
+    const dispatch = vi.fn();
+    vi.mocked(sendSharedSessionTurn).mockResolvedValue({
+      result: { turn: { id: "shared-turn-2" } },
+      nativeThreadId: "550e8400-e29b-41d4-a716-446655440000",
+    });
+    const { result } = makeHook("codex", {
+      activeThreadId: "shared:thread-2",
+      dispatch,
+    });
+
+    await act(async () => {
+      await result.current.sendUserMessageToThread(
+        workspace,
+        "shared:thread-2",
+        "hello shared hide native",
+      );
+    });
+
+    expect(dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "hideThread",
+        workspaceId: "ws-1",
+        threadId: "550e8400-e29b-41d4-a716-446655440000",
+      }),
+    );
   });
 
   it("passes custom spec root through cli engine send when configured", async () => {
@@ -1089,6 +1202,27 @@ describe("useThreadMessaging", () => {
     expect(getOpenCodeLspDocumentSymbols).toHaveBeenCalledWith(
       "ws-win",
       "file:///C:/repo/mossx/src/main.ts",
+    );
+  });
+
+  it("keeps relative LSP document path when workspace path is empty", async () => {
+    vi.mocked(getOpenCodeLspDocumentSymbols).mockResolvedValue({
+      fileUri: "src/main.ts",
+      result: [],
+    });
+    const { result } = makeHook("opencode", {
+      workspace: noPathWorkspace,
+      activeThreadId: "opencode:ses-no-path",
+      ensuredThreadId: "opencode:ses-no-path",
+    });
+
+    await act(async () => {
+      await result.current.startLsp("/lsp document-symbols src/main.ts");
+    });
+
+    expect(getOpenCodeLspDocumentSymbols).toHaveBeenCalledWith(
+      "ws-nopath",
+      "src/main.ts",
     );
   });
 

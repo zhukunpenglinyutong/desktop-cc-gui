@@ -1,5 +1,6 @@
 import type { TopbarSessionTabItem } from "../../layout/hooks/topbarSessionTabs";
 import { EngineIcon } from "../../engine/components/EngineIcon";
+import { SharedSessionIcon } from "../../shared-session/components/SharedSessionIcon";
 
 type TopbarTabMenuPosition = {
   x: number;
@@ -93,7 +94,11 @@ export function TopbarSessionTabs({
           }}
         >
           <span className="topbar-session-tab-engine" aria-hidden="true">
-            <EngineIcon engine={tab.engineType} size={12} />
+            {tab.isShared ? (
+              <SharedSessionIcon size={12} className="topbar-shared-session-icon" />
+            ) : (
+              <EngineIcon engine={tab.engineType} size={12} />
+            )}
           </span>
           <span className="topbar-session-tab-label">{tab.displayLabel}</span>
           <button

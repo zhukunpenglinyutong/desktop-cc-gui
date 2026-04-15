@@ -260,6 +260,106 @@ function looksLikeInlineLatexExpression(value: string) {
   );
 }
 
+function isCjkCharacter(value: string) {
+  return /[\u3400-\u9fff]/u.test(value);
+}
+
+function hasSafeInlineLatexWrapperBoundary(source: string, startIndex: number) {
+  if (startIndex <= 0) {
+    return true;
+  }
+  const previousChar = source[startIndex - 1] ?? "";
+  return (
+    /\s/.test(previousChar) ||
+    /[([{"'“‘`<、，。！？；：,:;!?]/u.test(previousChar) ||
+    isCjkCharacter(previousChar)
+  );
+}
+
+function looksLikeStandaloneLatexFormulaLine(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed || startsWithMarkdownBlockSyntax(trimmed)) {
+    return false;
+  }
+  if (/[\u3400-\u9fff]/u.test(trimmed)) {
+    return false;
+  }
+  const hasLatexCommand = /\\[A-Za-z]+/.test(trimmed);
+  const hasEquationOperator = /[=<>]/.test(trimmed);
+  const hasMathStructure = /[_^{}()+\-*/]/.test(trimmed);
+  if (!(hasLatexCommand || hasEquationOperator) || !hasMathStructure) {
+    return false;
+  }
+  const plainWordTokens = trimmed
+    .replace(/\\[A-Za-z]+/g, " ")
+    .replace(/[{}_^=<>+\-*/()[\],.;:]/g, " ")
+    .match(/[A-Za-z]{3,}/g);
+  return (plainWordTokens?.length ?? 0) === 0;
+}
+
+function looksLikeExplicitInlineMathLine(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return false;
+  }
+  return (
+    /^\$(?!\$)[\s\S]*?(?<!\\)\$[，。！？；：,.;:!?]?$/.test(trimmed) ||
+    /^\\\([\s\S]*?\\\)[，。！？；：,.;:!?]?$/.test(trimmed)
+  );
+}
+
+function normalizeStandaloneMathDisplayLines(value: string) {
+  if (!value.includes("\n")) {
+    return value;
+  }
+  const lines = value.split(/\r?\n/);
+  let inDisplayMathBlock = false;
+  let changed = false;
+  const normalized = lines.flatMap((line) => {
+    const trimmed = line.trim();
+    const leadingWhitespace = line.match(/^\s*/)?.[0] ?? "";
+    if (trimmed === "$$") {
+      inDisplayMathBlock = !inDisplayMathBlock;
+      return [line];
+    }
+    if (!trimmed) {
+      return [line];
+    }
+    if (inDisplayMathBlock) {
+      return [line];
+    }
+
+    const singleLineDisplayMatch = trimmed.match(/^\$\$(?!\s*$)([\s\S]*?)(?<!\\)\$\$$/);
+    if (singleLineDisplayMatch) {
+      const expression = (singleLineDisplayMatch[1] ?? "").trim();
+      if (!expression) {
+        return [line];
+      }
+      changed = true;
+      return [
+        `${leadingWhitespace}$$`,
+        `${leadingWhitespace}${expression}`,
+        `${leadingWhitespace}$$`,
+      ];
+    }
+
+    if (looksLikeExplicitInlineMathLine(trimmed)) {
+      return [line];
+    }
+
+    if (!looksLikeStandaloneLatexFormulaLine(trimmed)) {
+      return [line];
+    }
+    changed = true;
+    return [
+      `${leadingWhitespace}$$`,
+      `${leadingWhitespace}${trimmed}`,
+      `${leadingWhitespace}$$`,
+    ];
+  });
+  return changed ? normalized.join("\n") : value;
+}
+
 function normalizeCommonMathDelimiters(value: string) {
   let changed = false;
   let normalized = value.replace(
@@ -287,8 +387,11 @@ function normalizeCommonMathDelimiters(value: string) {
 
   normalized = normalized.replace(
     /[（(]\s*(\\[A-Za-z][^()\n（）]*?)\s*[）)]/g,
-    (match, inner: string) => {
+    (match, inner: string, offset: number, source: string) => {
       if (!looksLikeInlineLatexExpression(inner)) {
+        return match;
+      }
+      if (!hasSafeInlineLatexWrapperBoundary(source, offset)) {
         return match;
       }
       changed = true;
@@ -965,14 +1068,39 @@ function buildLatexRenderEntries(value: string): LatexRenderEntry[] {
   return fallbackSource ? [{ kind: "formula", source: fallbackSource }] : [];
 }
 
+function unwrapLatexDelimiters(source: string) {
+  const trimmed = source.trim();
+  if (!trimmed) {
+    return trimmed;
+  }
+  const wrappedPatterns = [
+    /^\$\$\s*([\s\S]*?)\s*\$\$$/,
+    /^\\\[\s*([\s\S]*?)\s*\\\]$/,
+    /^\$(?!\$)\s*([\s\S]*?)\s*(?<!\\)\$$/,
+    /^\\\(\s*([\s\S]*?)\s*\\\)$/,
+  ];
+  for (const pattern of wrappedPatterns) {
+    const match = trimmed.match(pattern);
+    if (!match) {
+      continue;
+    }
+    const inner = (match[1] ?? "").trim();
+    if (inner) {
+      return inner;
+    }
+  }
+  return trimmed;
+}
+
 function renderLatexFormula(source: string) {
   try {
-    return katex.renderToString(source, {
+    const renderedHtml = katex.renderToString(unwrapLatexDelimiters(source), {
       displayMode: true,
       throwOnError: false,
       strict: "ignore",
       trust: false,
     });
+    return renderedHtml.includes("katex-error") ? null : renderedHtml;
   } catch {
     return null;
   }
@@ -1353,14 +1481,16 @@ export const Markdown = memo(function Markdown({
     }
     const normalizeDisplayText = (text: string) =>
       normalizeImageTags(
-        normalizeCommonMathDelimiters(
-        normalizeFragmentedResourceReferences(
-        normalizeListIndentation(
-          normalizeInlineOrderedListBreaks(
-            normalizeFragmentedLineBreaks(normalizeFragmentedParagraphBreaks(text)),
+        normalizeStandaloneMathDisplayLines(
+          normalizeCommonMathDelimiters(
+            normalizeFragmentedResourceReferences(
+              normalizeListIndentation(
+                normalizeInlineOrderedListBreaks(
+                  normalizeFragmentedLineBreaks(normalizeFragmentedParagraphBreaks(text)),
+                ),
+              ),
+            ),
           ),
-        ),
-        ),
         ),
       );
     return normalizeOutsideCodeFences(renderValue, normalizeDisplayText);

@@ -221,6 +221,72 @@ describe("operationFacts", () => {
     });
   });
 
+  it("infers delete file from commandExecution rm command when structured changes are missing", () => {
+    const commandItem = toolItem("cmd-delete-inferred", {
+      toolType: "commandExecution",
+      title: "Command: 删除文件",
+      detail: JSON.stringify({
+        command: 'rm "/Users/demo/repo/SPEC_KIT_实战指南.md"',
+        description: "删除 SPEC_KIT_实战指南.md 文件",
+      }),
+      status: "completed",
+      output: "",
+      changes: [],
+    });
+
+    expect(extractFileChangeSummaries([commandItem])).toEqual([
+      {
+        filePath: "/Users/demo/repo/SPEC_KIT_实战指南.md",
+        fileName: "SPEC_KIT_实战指南.md",
+        status: "D",
+        additions: 0,
+        deletions: 0,
+      },
+    ]);
+  });
+
+  it("infers delete and add files from Bash tool entries when structured changes are missing", () => {
+    const bashDeleteItem = toolItem("cmd-bash-delete-inferred", {
+      toolType: "Bash",
+      title: "Bash",
+      detail: JSON.stringify({
+        command: "rm /Users/demo/repo/.specify目录结构说明.md",
+        description: "删除文件",
+      }),
+      status: "completed",
+      output: "",
+      changes: [],
+    });
+    const bashAddItem = toolItem("cmd-bash-add-inferred", {
+      toolType: "Bash",
+      title: "Bash",
+      detail: JSON.stringify({
+        command: "printf '100' > /Users/demo/repo/abc.txt",
+        description: "新增文件",
+      }),
+      status: "completed",
+      output: "",
+      changes: [],
+    });
+
+    expect(extractFileChangeSummaries([bashDeleteItem, bashAddItem])).toEqual([
+      {
+        filePath: "/Users/demo/repo/.specify目录结构说明.md",
+        fileName: ".specify目录结构说明.md",
+        status: "D",
+        additions: 0,
+        deletions: 0,
+      },
+      {
+        filePath: "/Users/demo/repo/abc.txt",
+        fileName: "abc.txt",
+        status: "A",
+        additions: 0,
+        deletions: 0,
+      },
+    ]);
+  });
+
   it("matches absolute/relative path hints when inferring single-change fallback stats", () => {
     const fileItem = toolItem("file-2-pathhint-compat", {
       toolType: "fileChange",

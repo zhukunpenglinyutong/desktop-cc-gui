@@ -81,6 +81,7 @@ export type ConversationItem =
       kind: "message";
       role: "user" | "assistant";
       text: string;
+      engineSource?: EngineType;
       isFinal?: boolean;
       finalCompletedAt?: number;
       finalDurationMs?: number;
@@ -89,13 +90,14 @@ export type ConversationItem =
       selectedAgentName?: string | null;
       selectedAgentIcon?: string | null;
     }
-  | { id: string; kind: "reasoning"; summary: string; content: string }
-  | { id: string; kind: "diff"; title: string; diff: string; status?: string }
-  | { id: string; kind: "review"; state: "started" | "completed"; text: string }
+  | { id: string; kind: "reasoning"; summary: string; content: string; engineSource?: EngineType }
+  | { id: string; kind: "diff"; title: string; diff: string; status?: string; engineSource?: EngineType }
+  | { id: string; kind: "review"; state: "started" | "completed"; text: string; engineSource?: EngineType }
   | {
       id: string;
       kind: "explore";
       status: "exploring" | "explored";
+      engineSource?: EngineType;
       title?: string;
       collapsible?: boolean;
       mergeKey?: string;
@@ -105,6 +107,7 @@ export type ConversationItem =
       id: string;
       kind: "tool";
       toolType: string;
+      engineSource?: EngineType;
       title: string;
       detail: string;
       status?: string;
@@ -120,11 +123,14 @@ export type ThreadSummary = {
   id: string;
   name: string;
   updatedAt: number;
+  threadKind?: "native" | "shared";
   sizeBytes?: number;
   engineSource?: "codex" | "claude" | "gemini" | "opencode";
+  selectedEngine?: "codex" | "claude" | "gemini" | "opencode";
   source?: string;
   provider?: string;
   sourceLabel?: string;
+  nativeThreadIds?: string[];
 };
 
 export type ReviewTarget =

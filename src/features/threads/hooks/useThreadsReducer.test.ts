@@ -89,7 +89,7 @@ describe("threadReducer", () => {
     });
   });
 
-  it("drops oldest optimistic user bubble when backend payload text differs", () => {
+  it("reconciles optimistic user bubble when backend payload wraps user input marker", () => {
     const base: ThreadState = {
       ...initialState,
       itemsByThread: {
@@ -127,6 +127,94 @@ describe("threadReducer", () => {
     if (items[0]?.kind === "message") {
       expect(items[0].role).toBe("user");
     }
+  });
+
+  it("does not drop earlier optimistic user bubbles when incoming real user is unmatched", () => {
+    const base: ThreadState = {
+      ...initialState,
+      itemsByThread: {
+        "thread-1": [
+          {
+            id: "optimistic-user-1",
+            kind: "message",
+            role: "user",
+            text: "1 + 1 = ?",
+          },
+          {
+            id: "assistant-1",
+            kind: "message",
+            role: "assistant",
+            text: "等你下一步",
+          },
+          {
+            id: "optimistic-user-2",
+            kind: "message",
+            role: "user",
+            text: "2 + 2 = ?",
+          },
+        ],
+      },
+      threadsByWorkspace: {
+        "ws-1": [{ id: "thread-1", name: "Agent 1", updatedAt: 1 }],
+      },
+    };
+
+    const next = threadReducer(base, {
+      type: "upsertItem",
+      workspaceId: "ws-1",
+      threadId: "thread-1",
+      item: {
+        id: "user-external-1",
+        kind: "message",
+        role: "user",
+        text: "这是来自历史补帧的另一条消息",
+      },
+      hasCustomName: false,
+    });
+
+    const items = next.itemsByThread["thread-1"] ?? [];
+    expect(items.map((item) => item.id)).toEqual([
+      "optimistic-user-1",
+      "assistant-1",
+      "optimistic-user-2",
+      "user-external-1",
+    ]);
+  });
+
+  it("replaces a single unmatched optimistic user bubble when no real user history exists", () => {
+    const base: ThreadState = {
+      ...initialState,
+      itemsByThread: {
+        "thread-1": [
+          {
+            id: "optimistic-user-1",
+            kind: "message",
+            role: "user",
+            text: "hello codex",
+          },
+        ],
+      },
+      threadsByWorkspace: {
+        "ws-1": [{ id: "thread-1", name: "Agent 1", updatedAt: 1 }],
+      },
+    };
+
+    const next = threadReducer(base, {
+      type: "upsertItem",
+      workspaceId: "ws-1",
+      threadId: "thread-1",
+      item: {
+        id: "user-actual-1",
+        kind: "message",
+        role: "user",
+        text: "Shared session context sync. Continue from these recent turns before answering the new request:\n\nTurn 1\nUser: hi\nclaude: done\n\nCurrent user request:\nhello codex",
+      },
+      hasCustomName: false,
+    });
+
+    const items = next.itemsByThread["thread-1"] ?? [];
+    expect(items).toHaveLength(1);
+    expect(items[0]?.id).toBe("user-actual-1");
   });
 
   it("preserves trailing optimistic user bubble when processing snapshot has not caught up", () => {
@@ -186,6 +274,207 @@ describe("threadReducer", () => {
         kind: "message",
         role: "user",
         text: "新增日志 CRUD",
+      },
+    ]);
+  });
+
+  it("preserves trailing optimistic user bubble when snapshot has no user messages", () => {
+    const base: ThreadState = {
+      ...initialState,
+      itemsByThread: {
+        "thread-1": [
+          {
+            id: "assistant-1",
+            kind: "message",
+            role: "assistant",
+            text: "旧回复",
+          },
+          {
+            id: "optimistic-user-1",
+            kind: "message",
+            role: "user",
+            text: "共享会话用户输入",
+          },
+        ],
+      },
+      threadStatusById: {
+        "thread-1": {
+          isProcessing: false,
+          hasUnread: false,
+          isReviewing: false,
+          isContextCompacting: false,
+          processingStartedAt: null,
+          lastDurationMs: null,
+          heartbeatPulse: 0,
+        },
+      },
+    };
+
+    const next = threadReducer(base, {
+      type: "setThreadItems",
+      threadId: "thread-1",
+      items: [
+        {
+          id: "assistant-1",
+          kind: "message",
+          role: "assistant",
+          text: "旧回复",
+        },
+      ],
+    });
+
+    expect(next.itemsByThread["thread-1"]).toEqual([
+      {
+        id: "assistant-1",
+        kind: "message",
+        role: "assistant",
+        text: "旧回复",
+      },
+      {
+        id: "optimistic-user-1",
+        kind: "message",
+        role: "user",
+        text: "共享会话用户输入",
+      },
+    ]);
+  });
+
+  it("preserves latest optimistic user when snapshot contains only older user history", () => {
+    const base: ThreadState = {
+      ...initialState,
+      itemsByThread: {
+        "thread-1": [
+          {
+            id: "user-older-1",
+            kind: "message",
+            role: "user",
+            text: "hi2",
+          },
+          {
+            id: "assistant-older-1",
+            kind: "message",
+            role: "assistant",
+            text: "你好",
+          },
+          {
+            id: "optimistic-user-1",
+            kind: "message",
+            role: "user",
+            text: "hello2",
+          },
+        ],
+      },
+      threadStatusById: {
+        "thread-1": {
+          isProcessing: false,
+          hasUnread: false,
+          isReviewing: false,
+          isContextCompacting: false,
+          processingStartedAt: null,
+          lastDurationMs: null,
+          heartbeatPulse: 0,
+        },
+      },
+    };
+
+    const next = threadReducer(base, {
+      type: "setThreadItems",
+      threadId: "thread-1",
+      items: [
+        {
+          id: "user-older-1",
+          kind: "message",
+          role: "user",
+          text: "hi2",
+        },
+        {
+          id: "assistant-older-1",
+          kind: "message",
+          role: "assistant",
+          text: "你好",
+        },
+      ],
+    });
+
+    expect(next.itemsByThread["thread-1"]).toEqual([
+      {
+        id: "user-older-1",
+        kind: "message",
+        role: "user",
+        text: "hi2",
+      },
+      {
+        id: "assistant-older-1",
+        kind: "message",
+        role: "assistant",
+        text: "你好",
+      },
+      {
+        id: "optimistic-user-1",
+        kind: "message",
+        role: "user",
+        text: "hello2",
+      },
+    ]);
+  });
+
+  it("preserves optimistic user before assistant when snapshot still has no user messages", () => {
+    const base: ThreadState = {
+      ...initialState,
+      itemsByThread: {
+        "thread-1": [
+          {
+            id: "optimistic-user-1",
+            kind: "message",
+            role: "user",
+            text: "hi",
+          },
+          {
+            id: "assistant-1",
+            kind: "message",
+            role: "assistant",
+            text: "你好",
+          },
+        ],
+      },
+      threadStatusById: {
+        "thread-1": {
+          isProcessing: false,
+          hasUnread: false,
+          isReviewing: false,
+          isContextCompacting: false,
+          processingStartedAt: null,
+          lastDurationMs: null,
+          heartbeatPulse: 0,
+        },
+      },
+    };
+
+    const next = threadReducer(base, {
+      type: "setThreadItems",
+      threadId: "thread-1",
+      items: [
+        {
+          id: "assistant-1",
+          kind: "message",
+          role: "assistant",
+          text: "你好",
+        },
+      ],
+    });
+
+    expect(next.itemsByThread["thread-1"]).toEqual([
+      {
+        id: "optimistic-user-1",
+        kind: "message",
+        role: "user",
+        text: "hi",
+      },
+      {
+        id: "assistant-1",
+        kind: "message",
+        role: "assistant",
+        text: "你好",
       },
     ]);
   });

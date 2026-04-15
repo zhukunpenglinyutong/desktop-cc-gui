@@ -966,4 +966,54 @@ describe('ChatInputBoxAdapter toggle bridge', () => {
 
     expect(latest.selectedModel).toBe('claude-sonnet-4-6');
   });
+
+  it('disables gemini and opencode provider options inside shared sessions', async () => {
+    renderAdapter({
+      isSharedSession: true,
+      engines: [
+        { type: 'claude', installed: true, version: '1.0.0' },
+        { type: 'codex', installed: true, version: '1.0.0' },
+        { type: 'gemini', installed: true, version: '1.0.0' },
+        { type: 'opencode', installed: true, version: '1.0.0' },
+      ],
+    });
+
+    await waitFor(() => expect(mockState.latestProps).toBeTruthy());
+
+    const latest = mockState.latestProps as {
+      providerAvailability?: Record<string, boolean>;
+    };
+
+    expect(latest.providerAvailability).toMatchObject({
+      claude: true,
+      codex: true,
+      gemini: false,
+      opencode: false,
+    });
+  });
+
+  it('keeps gemini and opencode provider options enabled in native sessions', async () => {
+    renderAdapter({
+      isSharedSession: false,
+      engines: [
+        { type: 'claude', installed: true, version: '1.0.0' },
+        { type: 'codex', installed: true, version: '1.0.0' },
+        { type: 'gemini', installed: true, version: '1.0.0' },
+        { type: 'opencode', installed: true, version: '1.0.0' },
+      ],
+    });
+
+    await waitFor(() => expect(mockState.latestProps).toBeTruthy());
+
+    const latest = mockState.latestProps as {
+      providerAvailability?: Record<string, boolean>;
+    };
+
+    expect(latest.providerAvailability).toMatchObject({
+      claude: true,
+      codex: true,
+      gemini: true,
+      opencode: true,
+    });
+  });
 });

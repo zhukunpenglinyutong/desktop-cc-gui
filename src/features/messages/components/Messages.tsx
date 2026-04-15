@@ -192,6 +192,7 @@ function areMessageItemsEqual(
       previous.id === next.id &&
       previous.role === next.role &&
       previous.text === next.text &&
+      previous.engineSource === next.engineSource &&
       previous.isFinal === next.isFinal &&
       previous.finalCompletedAt === next.finalCompletedAt &&
       previous.finalDurationMs === next.finalDurationMs &&
@@ -239,6 +240,10 @@ const OPENCODE_NON_STREAMING_HINT_DELAY_MS = 12_000;
 const MODE_FALLBACK_MARKER_REGEX = /User request\s*:\s*/i;
 const MODE_FALLBACK_PREFIX_REGEX =
   /^(?:collaboration mode:\s*code\.|execution policy \(default mode\):|execution policy \(plan mode\):)/i;
+const SHARED_SESSION_SYNC_PREFIX_REGEX =
+  /^Shared session context sync\.\s*Continue from these recent turns before answering the new request:\s*/i;
+const SHARED_SESSION_CURRENT_REQUEST_MARKER_REGEX =
+  /(?:\r?\n){1,2}Current user request:\s*(?:\r?\n)?/i;
 const AGENT_PROMPT_BLOCK_AT_TAIL_REGEX =
   /(?:\r?\n){2}##\s*Agent Role and Instructions\s*(?:\r?\n){2}([\s\S]*)$/;
 const AGENT_PROMPT_NAME_LINE_REGEX =
@@ -353,6 +358,19 @@ function extractModeFallbackUserInput(
   const extractedRaw = text.slice(markerMatch.index + markerMatch[0].length);
   const extracted = extractedRaw.replace(/^\r?\n/, "").replace(/^ /, "");
   return { text: extracted.trim().length > 0 ? extracted : text, mode };
+}
+
+function stripSharedSessionContextSyncWrapper(text: string): string {
+  if (!SHARED_SESSION_SYNC_PREFIX_REGEX.test(text.trimStart())) {
+    return text;
+  }
+  const markerMatch = SHARED_SESSION_CURRENT_REQUEST_MARKER_REGEX.exec(text);
+  if (!markerMatch || markerMatch.index < 0) {
+    return text;
+  }
+  const extractedRaw = text.slice(markerMatch.index + markerMatch[0].length);
+  const extracted = extractedRaw.replace(/^\r?\n/, "").replace(/^ /, "");
+  return extracted.trim().length > 0 ? extracted : text;
 }
 
 function extractLatestUserInputTextPreserveFormatting(text: string): string {
@@ -531,6 +549,25 @@ function toConversationEngine(
     return engine;
   }
   return "codex";
+}
+
+function resolveProvenanceEngineLabel(
+  engineSource: string | null | undefined,
+): string | null {
+  const normalized = (engineSource ?? "").trim().toLowerCase();
+  if (normalized === "claude") {
+    return "Claude";
+  }
+  if (normalized === "gemini") {
+    return "Gemini";
+  }
+  if (normalized === "opencode") {
+    return "OpenCode";
+  }
+  if (normalized === "codex") {
+    return "Codex";
+  }
+  return null;
 }
 
 function resolveRenderableItems({
@@ -927,7 +964,8 @@ const MessageRow = memo(function MessageRow({
         hasInjectedAgentPromptBlock: false,
       };
     }
-    const originalText = item.role === "user" ? legacyUserMemory?.remainingText ?? item.text : item.text;
+    const rawUserText = item.role === "user" ? item.text : "";
+    const originalText = item.role === "user" ? legacyUserMemory?.remainingText ?? rawUserText : item.text;
     if (item.role !== "user") {
       return {
         displayText: memorySummary ? "" : originalText,
@@ -946,9 +984,22 @@ const MessageRow = memo(function MessageRow({
     const safeText = enableCollaborationBadge
       ? extractModeFallbackUserInput(strippedAgentPrompt.text).text
       : strippedAgentPrompt.text;
-    const filteredCommandText = extractCommandMessageDisplayText(safeText);
+    const strippedSharedSync = stripSharedSessionContextSyncWrapper(safeText);
+    const filteredCommandText = extractCommandMessageDisplayText(strippedSharedSync);
+    const extractedUserInput =
+      extractLatestUserInputTextPreserveFormatting(filteredCommandText);
+    const resolvedDisplayText =
+      extractedUserInput.trim().length > 0
+        ? extractedUserInput
+        : filteredCommandText.trim().length > 0
+          ? filteredCommandText
+          : safeText.trim().length > 0
+            ? safeText
+            : strippedAgentPrompt.text.trim().length > 0
+              ? strippedAgentPrompt.text
+              : rawUserText || originalText;
     return {
-      displayText: extractLatestUserInputTextPreserveFormatting(filteredCommandText),
+      displayText: resolvedDisplayText,
       selectedAgentName:
         strippedAgentPrompt.selectedAgentName
         ?? normalizedSelectedAgentName,
@@ -1017,9 +1068,15 @@ const MessageRow = memo(function MessageRow({
       })
       .filter(Boolean) as MessageImage[];
   }, [item.images]);
+  const provenanceLabel = resolveProvenanceEngineLabel(item.engineSource);
 
   const bubbleNode = (
     <div className={`bubble message-bubble${agentTaskNotification ? " message-bubble-agent-task" : ""}`}>
+      {item.role === "assistant" && provenanceLabel ? (
+        <div className="message-provenance-row">
+          <span className="message-provenance-badge">{provenanceLabel}</span>
+        </div>
+      ) : null}
       {agentTaskNotification && agentTaskDisplay ? (
         <div className="message-agent-task-card">
           <div className="message-agent-task-header">
@@ -1198,6 +1255,7 @@ const ReasoningRow = memo(function ReasoningRow({
     : isLive
     ? t("messages.thinkingProcess")
     : t("messages.thinkingLabel");
+  const provenanceLabel = resolveProvenanceEngineLabel(item.engineSource);
   return (
     <div className={`thinking-block${isExpanded ? " is-expanded" : ""}${isLive ? " is-live" : ""}`}>
       <button
@@ -1208,6 +1266,11 @@ const ReasoningRow = memo(function ReasoningRow({
         <span className="thinking-header-copy">
           <span className="codicon codicon-thinking thinking-glyph" aria-hidden />
           <span className="thinking-title">{title}</span>
+          {provenanceLabel ? (
+            <span className="message-provenance-badge thinking-provenance-badge">
+              {provenanceLabel}
+            </span>
+          ) : null}
         </span>
         <span
           className={`codicon thinking-icon ${isExpanded ? "codicon-chevron-down" : "codicon-chevron-right"}`}
@@ -2526,19 +2589,26 @@ export const Messages = memo(function Messages({
         return null;
       }
       const isExpanded = expandedItems.has(item.id);
+      const provenanceLabel = resolveProvenanceEngineLabel(item.engineSource);
       return (
-        <ToolBlockRenderer
-          key={`tool:${item.id}`}
-          item={item}
-          workspaceId={workspaceId}
-          isExpanded={isExpanded}
-          onToggle={toggleExpanded}
-          onRequestAutoScroll={requestAutoScroll}
-          activeCollaborationModeId={activeCollaborationModeId}
-          activeEngine={activeEngine}
-          hasPendingUserInputRequest={activeUserInputRequestId !== null}
-          onOpenDiffPath={onOpenDiffPath}
-        />
+        <div key={`tool:${item.id}`} className="message-tool-block-shell">
+          {provenanceLabel ? (
+            <div className="message-provenance-row">
+              <span className="message-provenance-badge">{provenanceLabel}</span>
+            </div>
+          ) : null}
+          <ToolBlockRenderer
+            item={item}
+            workspaceId={workspaceId}
+            isExpanded={isExpanded}
+            onToggle={toggleExpanded}
+            onRequestAutoScroll={requestAutoScroll}
+            activeCollaborationModeId={activeCollaborationModeId}
+            activeEngine={activeEngine}
+            hasPendingUserInputRequest={activeUserInputRequestId !== null}
+            onOpenDiffPath={onOpenDiffPath}
+          />
+        </div>
       );
     }
     if (item.kind === "explore") {

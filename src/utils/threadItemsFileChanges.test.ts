@@ -94,4 +94,64 @@ describe("threadItemsFileChanges.mergeToolChanges", () => {
       },
     ]);
   });
+
+  it("infers deleted file paths from rm-style command execution", () => {
+    const inferred = inferFileChangesFromCommandExecutionArtifacts(
+      '删除文件 · rm "/Users/demo/repo/SPEC_KIT_实战指南.md" && echo done',
+      "",
+    );
+
+    expect(inferred).toEqual([
+      {
+        path: "/Users/demo/repo/SPEC_KIT_实战指南.md",
+        kind: "delete",
+        diff: undefined,
+      },
+    ]);
+  });
+
+  it("infers added file paths from shell redirection command execution", () => {
+    const inferred = inferFileChangesFromCommandExecutionArtifacts(
+      "printf '100' > /Users/demo/repo/abc.txt",
+      "",
+    );
+
+    expect(inferred).toEqual([
+      {
+        path: "/Users/demo/repo/abc.txt",
+        kind: "add",
+        diff: undefined,
+      },
+    ]);
+  });
+
+  it("infers added file paths from no-space redirection command execution", () => {
+    const inferred = inferFileChangesFromCommandExecutionArtifacts(
+      "echo 100>/Users/demo/repo/abc-no-space.txt",
+      "",
+    );
+
+    expect(inferred).toEqual([
+      {
+        path: "/Users/demo/repo/abc-no-space.txt",
+        kind: "add",
+        diff: undefined,
+      },
+    ]);
+  });
+
+  it("treats append redirection as modified to avoid destructive false add", () => {
+    const inferred = inferFileChangesFromCommandExecutionArtifacts(
+      "echo 100 >> /Users/demo/repo/existing.txt",
+      "",
+    );
+
+    expect(inferred).toEqual([
+      {
+        path: "/Users/demo/repo/existing.txt",
+        kind: "modified",
+        diff: undefined,
+      },
+    ]);
+  });
 });

@@ -47,6 +47,60 @@ describe("Messages user input parsing", () => {
     expect(userText?.textContent ?? "").toBe("你好啊");
   });
 
+  it("shows only current request when shared-session sync wrapper is present", () => {
+    const items: ConversationItem[] = [
+      {
+        id: "msg-shared-sync-1",
+        kind: "message",
+        role: "user",
+        text:
+          "Shared session context sync. Continue from these recent turns before answering the new request:\n\n" +
+          "Turn 1\nUser: hello\ncodex: world\n\n" +
+          "Current user request:\n继续分析共享会话的上下文问题",
+      },
+    ];
+
+    const { container } = render(
+      <Messages
+        items={items}
+        threadId="shared:thread-1"
+        workspaceId="ws-1"
+        isThinking={false}
+        openTargets={[]}
+        selectedOpenAppId=""
+      />,
+    );
+
+    const userText = container.querySelector(".user-collapsible-text-content");
+    expect(userText?.textContent ?? "").toBe("继续分析共享会话的上下文问题");
+  });
+
+  it("keeps user bubble visible when memory-prefix parsing leaves empty remaining text", () => {
+    const items: ConversationItem[] = [
+      {
+        id: "msg-memory-prefix-only-1",
+        kind: "message",
+        role: "user",
+        text:
+          "<project-memory>\n[记忆] 用户输入：共享上下文修复；助手输出摘要：已更新。\n</project-memory>",
+      },
+    ];
+
+    const { container } = render(
+      <Messages
+        items={items}
+        threadId="shared:thread-2"
+        workspaceId="ws-1"
+        isThinking={false}
+        openTargets={[]}
+        selectedOpenAppId=""
+      />,
+    );
+
+    const userText = container.querySelector(".user-collapsible-text-content");
+    expect((userText?.textContent ?? "").trim().length).toBeGreaterThan(0);
+  });
+
   it("hides agent prompt block in history user bubble and shows selected agent tag", () => {
     const items: ConversationItem[] = [
       {

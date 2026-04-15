@@ -39,6 +39,7 @@ import type { EngineType } from '../../../../types';
 import type { RateLimitSnapshot } from '../../../../types';
 import { formatEngineVersionLabel } from '../../../engine/utils/engineLabels';
 import { projectMemoryFacade } from '../../../project-memory/services/projectMemoryFacade';
+import { isSharedSessionSupportedEngine } from '../../../shared-session/utils/sharedSessionEngines';
 import {
   getClaudeProviders,
   getClaudeAlwaysThinkingEnabled,
@@ -129,6 +130,7 @@ export interface ChatInputBoxAdapterProps {
   // Model/Engine
   selectedModelId: string | null;
   selectedEngine?: EngineType;
+  isSharedSession?: boolean;
   engines?: { type: EngineType; installed: boolean; version: string | null }[];
   onSelectEngine?: (engine: EngineType) => void;
   models?: { id: string; displayName: string; model: string }[];
@@ -519,6 +521,7 @@ export const ChatInputBoxAdapter = memo(forwardRef<ChatInputBoxHandle, ChatInput
       onModeSelect,
       selectedModelId,
       selectedEngine,
+      isSharedSession = false,
       engines,
       onSelectEngine,
       models,
@@ -993,13 +996,16 @@ export const ChatInputBoxAdapter = memo(forwardRef<ChatInputBoxHandle, ChatInput
           .filter((entry) => entry.installed)
           .map((entry) => String(entry.type)),
       );
+      const isEngineEnabled = (engine: EngineType) =>
+        installedEngines.has(engine) &&
+        (!isSharedSession || isSharedSessionSupportedEngine(engine));
       return {
-        claude: installedEngines.has('claude'),
-        codex: installedEngines.has('codex'),
-        opencode: installedEngines.has('opencode'),
-        gemini: installedEngines.has('gemini'),
+        claude: isEngineEnabled('claude'),
+        codex: isEngineEnabled('codex'),
+        opencode: isEngineEnabled('opencode'),
+        gemini: isEngineEnabled('gemini'),
       } as const;
-    }, [engines]);
+    }, [engines, isSharedSession]);
 
     const providerVersions = useMemo(() => {
       if (!engines || engines.length === 0) {

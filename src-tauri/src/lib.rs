@@ -43,6 +43,7 @@ mod rules;
 mod runtime_log;
 mod settings;
 mod shared;
+mod shared_sessions;
 mod skills;
 mod startup_guard;
 mod state;

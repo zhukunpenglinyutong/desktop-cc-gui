@@ -715,6 +715,10 @@ body[data-panel-resizing="true"] .main {
   color: inherit;
 }
 
+.topbar-shared-session-icon {
+  color: #f59e0b;
+}
+
 .topbar-session-tab-label {
   display: block;
   min-width: 0;

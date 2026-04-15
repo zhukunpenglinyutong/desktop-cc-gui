@@ -25,6 +25,7 @@ export type TopbarSessionTabItem = {
   displayLabel: string;
   engineType: EngineType;
   engineLabel: string;
+  isShared?: boolean;
   isActive: boolean;
 };
 
@@ -378,8 +379,12 @@ export function buildTopbarSessionTabItems(
     }
     const label = resolveTopbarSessionTabLabel(thread, untitledLabel);
     const engineType = resolveEngineType(thread.engineSource);
-    const engineLabel =
+    const baseEngineLabel =
       engineLabelByType[engineType] ?? DEFAULT_ENGINE_LABEL_BY_TYPE[engineType];
+    const engineLabel =
+      thread.threadKind === "shared"
+        ? `Shared · ${baseEngineLabel}`
+        : baseEngineLabel;
     items.push({
       workspaceId: tab.workspaceId,
       threadId: tab.threadId,
@@ -387,6 +392,7 @@ export function buildTopbarSessionTabItems(
       displayLabel: truncateSessionLabel(label),
       engineType,
       engineLabel,
+      isShared: thread.threadKind === "shared",
       isActive:
         tab.workspaceId === activeWorkspaceId && tab.threadId === activeThreadId,
     });

@@ -10,7 +10,9 @@ import {
 import {
   getFirstStringField,
   asRecord,
-  extractCommandFromTitle,
+  buildCommandSummary,
+  extractToolName,
+  isBashTool,
   parseToolArgs,
 } from "../../messages/components/toolBlocks/toolConstants";
 import {
@@ -222,6 +224,18 @@ type StructuredToolChange = {
   newText?: string;
 };
 
+function shouldInferCommandToolChanges(item: ToolItem) {
+  const normalizedToolType = item.toolType.trim().toLowerCase();
+  if (normalizedToolType === "commandexecution") {
+    return true;
+  }
+  if (isBashTool(normalizedToolType)) {
+    return true;
+  }
+  const extractedToolName = extractToolName(item.title);
+  return isBashTool(extractedToolName);
+}
+
 function inferKindFromDiff(diff?: string): "add" | "delete" | "rename" | "modified" | undefined {
   const normalizedDiff = diff?.trim();
   if (!normalizedDiff) {
@@ -368,11 +382,16 @@ function extractStructuredToolChanges(
     nestedArgs,
     item.output ?? "",
   ]);
-  const command = extractCommandFromTitle(item.title);
-  const commandChanges =
-    item.toolType === "commandExecution"
-      ? inferFileChangesFromCommandExecutionArtifacts(command, item.output ?? "")
-      : [];
+  const isCommandTool = shouldInferCommandToolChanges(item);
+  const command = isCommandTool
+    ? buildCommandSummary(
+        { title: item.title, detail: item.detail, toolType: "commandExecution" },
+        { includeDetail: false },
+      )
+    : "";
+  const commandChanges = isCommandTool
+    ? inferFileChangesFromCommandExecutionArtifacts(command, item.output ?? "")
+    : [];
   const inferredChanges = commandChanges.length > 0 ? commandChanges : localChanges;
   const mergedChanges =
     mergeToolChanges(

@@ -1269,6 +1269,10 @@
   color: #8b5cf6;
 }
 
+.sidebar-workspace-menu-item-icon-new-shared {
+  color: #f59e0b;
+}
+
 .sidebar-workspace-menu-item-label {
   min-width: 0;
 }
@@ -2098,6 +2102,10 @@
 .thread-row.active .thread-engine-badge {
   opacity: 1;
   color: var(--text-strong);
+}
+
+.thread-engine-badge.thread-engine-shared {
+  color: #f59e0b;
 }
 
 .thread-engine-badge.is-processing {

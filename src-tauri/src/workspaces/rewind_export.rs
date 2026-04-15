@@ -13,6 +13,8 @@ static REWIND_EXPORT_FILE_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(())
 #[serde(rename_all = "camelCase")]
 pub(crate) struct RewindExportFileEntry {
     pub(crate) path: String,
+    #[serde(default)]
+    pub(crate) status: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -29,7 +31,10 @@ pub(crate) struct RewindExportResult {
 #[serde(rename_all = "camelCase")]
 struct RewindExportManifestEntry {
     source_path: String,
-    stored_path: String,
+    stored_path: Option<String>,
+    source_missing: bool,
+    change_status: Option<String>,
+    is_deleted: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -240,6 +245,81 @@ fn build_rewind_export_id(target_message_id: &str) -> String {
     sanitize_rewind_export_segment(target_message_id, "target")
 }
 
+fn resolve_rewind_destination_relative(
+    canonical_workspace_root: &Path,
+    source_path: &Path,
+    raw_path: &str,
+) -> Result<PathBuf, String> {
+    if let Ok(stripped) = source_path.strip_prefix(canonical_workspace_root) {
+        return Ok(stripped.to_path_buf());
+    }
+    if is_explicit_absolute_rewind_path(raw_path) {
+        return Ok(absolute_path_to_export_relative(source_path));
+    }
+    normalize_rewind_relative_source_path(raw_path)
+}
+
+fn normalize_rewind_change_status(raw_status: Option<&str>) -> Option<&'static str> {
+    let normalized = raw_status?.trim();
+    if normalized.is_empty() {
+        return None;
+    }
+    match normalized.to_ascii_lowercase().as_str() {
+        "a" | "add" | "added" => Some("A"),
+        "d" | "delete" | "deleted" | "remove" | "removed" => Some("D"),
+        "r" | "rename" | "renamed" => Some("R"),
+        "m" | "modify" | "modified" | "update" | "updated" => Some("M"),
+        _ => None,
+    }
+}
+
+fn try_read_deleted_file_from_git_head(
+    canonical_workspace_root: &Path,
+    source_path: &Path,
+) -> Result<Option<(Vec<u8>, PathBuf, String)>, String> {
+    let repo = match git2::Repository::discover(canonical_workspace_root) {
+        Ok(repo) => repo,
+        Err(_) => return Ok(None),
+    };
+    let repo_root = match repo.workdir() {
+        Some(path) => path.to_path_buf(),
+        None => return Ok(None),
+    };
+    let canonical_repo_root = repo_root
+        .canonicalize()
+        .unwrap_or_else(|_| repo_root.clone());
+    let source_candidate = if source_path.is_absolute() {
+        source_path.to_path_buf()
+    } else {
+        canonical_workspace_root.join(source_path)
+    };
+    let relative_to_repo = match source_candidate.strip_prefix(&canonical_repo_root) {
+        Ok(relative) => relative.to_path_buf(),
+        Err(_) => return Ok(None),
+    };
+
+    let head_tree = match repo.head().ok().and_then(|head| head.peel_to_tree().ok()) {
+        Some(tree) => tree,
+        None => return Ok(None),
+    };
+    let entry = match head_tree.get_path(&relative_to_repo) {
+        Ok(entry) => entry,
+        Err(_) => return Ok(None),
+    };
+    let blob = match repo.find_blob(entry.id()) {
+        Ok(blob) => blob,
+        Err(_) => return Ok(None),
+    };
+    Ok(Some((
+        blob.content().to_vec(),
+        relative_to_repo.clone(),
+        canonical_repo_root
+            .join(relative_to_repo)
+            .to_string_lossy()
+            .to_string(),
+    )))
+}
+
 fn export_rewind_files_inner(
     workspace_root: &Path,
     app_home: &Path,
@@ -285,32 +365,131 @@ fn export_rewind_files_inner(
     std::fs::create_dir_all(&files_root)
         .map_err(|err| format!("Failed to create rewind export directory: {err}"))?;
 
-    let mut exported_count = 0usize;
     let mut manifest_files = Vec::with_capacity(files.len());
     for file in files {
         let raw_path = file.path.trim();
         if raw_path.is_empty() {
             return Err("Encountered empty rewind file path.".to_string());
         }
+        let change_status = normalize_rewind_change_status(file.status.as_deref())
+            .map(std::string::ToString::to_string);
 
         let source_path = resolve_rewind_source_path(&canonical_workspace_root, raw_path)?;
-        let canonical_source = source_path
-            .canonicalize()
-            .map_err(|err| format!("Failed to resolve rewind source file '{raw_path}': {err}"))?;
-        let metadata = std::fs::metadata(&canonical_source)
-            .map_err(|err| format!("Failed to read rewind source metadata '{raw_path}': {err}"))?;
+        let canonical_source = match source_path.canonicalize() {
+            Ok(path) => path,
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+                let is_deleted = change_status.as_deref() == Some("D");
+                if is_deleted {
+                    if let Some((bytes, _repo_relative_path, canonical_from_git)) =
+                        try_read_deleted_file_from_git_head(
+                            &canonical_workspace_root,
+                            &source_path,
+                        )?
+                    {
+                        let destination_relative = resolve_rewind_destination_relative(
+                            &canonical_workspace_root,
+                            &source_path,
+                            raw_path,
+                        )?;
+                        let stored_relative = PathBuf::from("files").join(&destination_relative);
+                        let destination_path = export_root.join(&stored_relative);
+                        if let Some(parent) = destination_path.parent() {
+                            std::fs::create_dir_all(parent).map_err(|err| {
+                                format!("Failed to create rewind export parent directory: {err}")
+                            })?;
+                        }
+                        std::fs::write(&destination_path, bytes).map_err(|err| {
+                            format!(
+                                "Failed to export rewind file '{raw_path}' from git head: {err}"
+                            )
+                        })?;
+                        manifest_files.push(RewindExportManifestEntry {
+                            source_path: canonical_from_git,
+                            stored_path: Some(stored_relative.to_string_lossy().replace('\\', "/")),
+                            source_missing: true,
+                            change_status: change_status.clone(),
+                            is_deleted: true,
+                        });
+                        continue;
+                    }
+                }
+                manifest_files.push(RewindExportManifestEntry {
+                    source_path: source_path.to_string_lossy().to_string(),
+                    stored_path: None,
+                    source_missing: true,
+                    change_status: change_status.clone(),
+                    is_deleted,
+                });
+                continue;
+            }
+            Err(err) => {
+                return Err(format!(
+                    "Failed to resolve rewind source file '{raw_path}': {err}"
+                ));
+            }
+        };
+        let metadata = match std::fs::metadata(&canonical_source) {
+            Ok(value) => value,
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+                let is_deleted = change_status.as_deref() == Some("D");
+                if is_deleted {
+                    if let Some((bytes, _repo_relative_path, canonical_from_git)) =
+                        try_read_deleted_file_from_git_head(
+                            &canonical_workspace_root,
+                            &canonical_source,
+                        )?
+                    {
+                        let destination_relative = resolve_rewind_destination_relative(
+                            &canonical_workspace_root,
+                            &canonical_source,
+                            raw_path,
+                        )?;
+                        let stored_relative = PathBuf::from("files").join(&destination_relative);
+                        let destination_path = export_root.join(&stored_relative);
+                        if let Some(parent) = destination_path.parent() {
+                            std::fs::create_dir_all(parent).map_err(|err| {
+                                format!("Failed to create rewind export parent directory: {err}")
+                            })?;
+                        }
+                        std::fs::write(&destination_path, bytes).map_err(|err| {
+                            format!(
+                                "Failed to export rewind file '{raw_path}' from git head: {err}"
+                            )
+                        })?;
+                        manifest_files.push(RewindExportManifestEntry {
+                            source_path: canonical_from_git,
+                            stored_path: Some(stored_relative.to_string_lossy().replace('\\', "/")),
+                            source_missing: true,
+                            change_status: change_status.clone(),
+                            is_deleted: true,
+                        });
+                        continue;
+                    }
+                }
+                manifest_files.push(RewindExportManifestEntry {
+                    source_path: canonical_source.to_string_lossy().to_string(),
+                    stored_path: None,
+                    source_missing: true,
+                    change_status: change_status.clone(),
+                    is_deleted,
+                });
+                continue;
+            }
+            Err(err) => {
+                return Err(format!(
+                    "Failed to read rewind source metadata '{raw_path}': {err}"
+                ));
+            }
+        };
         if !metadata.is_file() {
             return Err(format!("Rewind source is not a file: {raw_path}"));
         }
 
-        let destination_relative =
-            if let Ok(stripped) = canonical_source.strip_prefix(&canonical_workspace_root) {
-                stripped.to_path_buf()
-            } else if is_explicit_absolute_rewind_path(raw_path) {
-                absolute_path_to_export_relative(&canonical_source)
-            } else {
-                normalize_rewind_relative_source_path(raw_path)?
-            };
+        let destination_relative = resolve_rewind_destination_relative(
+            &canonical_workspace_root,
+            &canonical_source,
+            raw_path,
+        )?;
         let stored_relative = PathBuf::from("files").join(&destination_relative);
         let destination_path = export_root.join(&stored_relative);
         if let Some(parent) = destination_path.parent() {
@@ -321,14 +500,16 @@ fn export_rewind_files_inner(
             .map_err(|err| format!("Failed to export rewind file '{raw_path}': {err}"))?;
         manifest_files.push(RewindExportManifestEntry {
             source_path: canonical_source.to_string_lossy().to_string(),
-            stored_path: stored_relative.to_string_lossy().replace('\\', "/"),
+            stored_path: Some(stored_relative.to_string_lossy().replace('\\', "/")),
+            source_missing: false,
+            change_status,
+            is_deleted: false,
         });
-        exported_count += 1;
     }
 
     let manifest_path = build_rewind_export_manifest_path(&export_root);
     let manifest = RewindExportManifest {
-        schema_version: 1,
+        schema_version: 2,
         engine: normalized_engine.to_string(),
         session_id: normalized_session_id.to_string(),
         target_message_id: normalized_target_message_id.to_string(),
@@ -337,7 +518,7 @@ fn export_rewind_files_inner(
         exported_at: Utc::now().to_rfc3339(),
         workspace_root: canonical_workspace_root.to_string_lossy().to_string(),
         files_dir: "files".to_string(),
-        file_count: exported_count,
+        file_count: manifest_files.len(),
         files: manifest_files,
     };
     let manifest_json = serde_json::to_string_pretty(&manifest)
@@ -350,7 +531,7 @@ fn export_rewind_files_inner(
         files_path: files_root.to_string_lossy().to_string(),
         manifest_path: manifest_path.to_string_lossy().to_string(),
         export_id,
-        file_count: exported_count,
+        file_count: manifest.file_count,
     })
 }
 
@@ -437,6 +618,7 @@ mod tests {
             "rewind preview",
             &[RewindExportFileEntry {
                 path: "src/features/demo.ts".to_string(),
+                status: Some("M".to_string()),
             }],
         )
         .expect("export rewind files");
@@ -461,6 +643,8 @@ mod tests {
         assert_eq!(manifest["conversationLabel"], "rewind preview");
         assert_eq!(manifest["filesDir"], "files");
         assert_eq!(manifest["fileCount"], 1);
+        assert_eq!(manifest["files"][0]["changeStatus"], "M");
+        assert_eq!(manifest["files"][0]["isDeleted"], false);
         assert_eq!(
             manifest["files"][0]["storedPath"],
             "files/src/features/demo.ts"
@@ -470,13 +654,13 @@ mod tests {
     }
 
     #[test]
-    fn export_rewind_files_inner_rejects_missing_source_file() {
+    fn export_rewind_files_inner_keeps_missing_source_file_in_manifest() {
         let base = std::env::temp_dir().join(format!("rewind-export-missing-{}", Uuid::new_v4()));
         let workspace_root = base.join("workspace");
         let app_home = base.join(".ccgui");
         std::fs::create_dir_all(&workspace_root).expect("create workspace root");
 
-        let error = export_rewind_files_inner(
+        let result = export_rewind_files_inner(
             &workspace_root,
             &app_home,
             "claude",
@@ -485,11 +669,139 @@ mod tests {
             "rewind preview",
             &[RewindExportFileEntry {
                 path: "missing/file.ts".to_string(),
+                status: Some("D".to_string()),
             }],
         )
-        .expect_err("missing file should fail");
+        .expect("missing file should be tolerated");
 
-        assert!(error.contains("missing/file.ts"));
+        let manifest_path = std::path::PathBuf::from(&result.manifest_path);
+        assert_eq!(result.file_count, 1);
+        let manifest: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(manifest_path).expect("read manifest"))
+                .expect("parse manifest");
+        assert_eq!(manifest["fileCount"], 1);
+        assert_eq!(manifest["files"][0]["sourceMissing"], true);
+        assert_eq!(manifest["files"][0]["changeStatus"], "D");
+        assert_eq!(manifest["files"][0]["isDeleted"], true);
+        assert!(manifest["files"][0]["storedPath"].is_null());
+
+        std::fs::remove_dir_all(&base).ok();
+    }
+
+    #[test]
+    fn export_rewind_files_inner_copies_existing_files_and_tolerates_missing_files() {
+        let base = std::env::temp_dir().join(format!("rewind-export-mixed-{}", Uuid::new_v4()));
+        let workspace_root = base.join("workspace");
+        let app_home = base.join(".ccgui");
+        let source_file = workspace_root.join("src/features/demo.ts");
+        std::fs::create_dir_all(source_file.parent().expect("source parent"))
+            .expect("create source parent");
+        std::fs::write(&source_file, "export const demo = true;\n").expect("write source");
+
+        let result = export_rewind_files_inner(
+            &workspace_root,
+            &app_home,
+            "claude",
+            "session-1",
+            "user-1",
+            "rewind preview",
+            &[
+                RewindExportFileEntry {
+                    path: "src/features/demo.ts".to_string(),
+                    status: Some("M".to_string()),
+                },
+                RewindExportFileEntry {
+                    path: "missing/file.ts".to_string(),
+                    status: Some("D".to_string()),
+                },
+            ],
+        )
+        .expect("mixed rewind export");
+
+        let export_root = std::path::PathBuf::from(&result.output_path);
+        let exported_file = export_root.join("files/src/features/demo.ts");
+        let manifest_path = std::path::PathBuf::from(&result.manifest_path);
+        assert_eq!(result.file_count, 2);
+        assert!(exported_file.exists());
+        let manifest: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(manifest_path).expect("read manifest"))
+                .expect("parse manifest");
+        assert_eq!(manifest["fileCount"], 2);
+        assert_eq!(manifest["files"][0]["sourceMissing"], false);
+        assert_eq!(manifest["files"][0]["changeStatus"], "M");
+        assert_eq!(manifest["files"][0]["isDeleted"], false);
+        assert_eq!(
+            manifest["files"][0]["storedPath"],
+            "files/src/features/demo.ts"
+        );
+        assert_eq!(manifest["files"][1]["sourceMissing"], true);
+        assert_eq!(manifest["files"][1]["changeStatus"], "D");
+        assert_eq!(manifest["files"][1]["isDeleted"], true);
+        assert!(manifest["files"][1]["storedPath"].is_null());
+
+        std::fs::remove_dir_all(&base).ok();
+    }
+
+    #[test]
+    fn export_rewind_files_inner_restores_deleted_tracked_file_from_git_head() {
+        let base =
+            std::env::temp_dir().join(format!("rewind-export-deleted-git-{}", Uuid::new_v4()));
+        let workspace_root = base.join("workspace");
+        let app_home = base.join(".ccgui");
+        let deleted_file = workspace_root.join("src/spec/deleted.md");
+        std::fs::create_dir_all(deleted_file.parent().expect("deleted parent"))
+            .expect("create deleted parent");
+        std::fs::write(&deleted_file, "# deleted from worktree\n").expect("write deleted file");
+
+        let repo = git2::Repository::init(&workspace_root).expect("init repo");
+        let mut index = repo.index().expect("open index");
+        index
+            .add_path(std::path::Path::new("src/spec/deleted.md"))
+            .expect("add deleted file");
+        index.write().expect("write index");
+        let tree_id = index.write_tree().expect("write tree");
+        let tree = repo.find_tree(tree_id).expect("find tree");
+        let signature = git2::Signature::now("Rewind Export Test", "rewind-export@test.local")
+            .expect("signature");
+        repo.commit(Some("HEAD"), &signature, &signature, "init", &tree, &[])
+            .expect("commit");
+
+        std::fs::remove_file(&deleted_file).expect("delete file from worktree");
+
+        let result = export_rewind_files_inner(
+            &workspace_root,
+            &app_home,
+            "claude",
+            "session-1",
+            "user-1",
+            "rewind preview",
+            &[RewindExportFileEntry {
+                path: "src/spec/deleted.md".to_string(),
+                status: Some("D".to_string()),
+            }],
+        )
+        .expect("export rewind files");
+
+        let export_root = std::path::PathBuf::from(&result.output_path);
+        let exported_deleted_file = export_root.join("files/src/spec/deleted.md");
+        let manifest_path = std::path::PathBuf::from(&result.manifest_path);
+        assert!(exported_deleted_file.exists());
+        assert_eq!(
+            std::fs::read_to_string(&exported_deleted_file).expect("read deleted snapshot"),
+            "# deleted from worktree\n"
+        );
+
+        let manifest: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(manifest_path).expect("read manifest"))
+                .expect("parse manifest");
+        assert_eq!(manifest["fileCount"], 1);
+        assert_eq!(manifest["files"][0]["sourceMissing"], true);
+        assert_eq!(manifest["files"][0]["changeStatus"], "D");
+        assert_eq!(manifest["files"][0]["isDeleted"], true);
+        assert_eq!(
+            manifest["files"][0]["storedPath"],
+            "files/src/spec/deleted.md"
+        );
 
         std::fs::remove_dir_all(&base).ok();
     }
@@ -521,7 +833,10 @@ mod tests {
             "session-1",
             "user-1",
             "rewind preview",
-            &[RewindExportFileEntry { path: source_uri }],
+            &[RewindExportFileEntry {
+                path: source_uri,
+                status: None,
+            }],
         )
         .expect("export rewind files");
 
@@ -568,9 +883,11 @@ mod tests {
             &[
                 RewindExportFileEntry {
                     path: "src/features/demo.ts".to_string(),
+                    status: None,
                 },
                 RewindExportFileEntry {
                     path: "src/features/stale.ts".to_string(),
+                    status: None,
                 },
             ],
         )
@@ -587,6 +904,7 @@ mod tests {
             "rewind preview",
             &[RewindExportFileEntry {
                 path: "src/features/demo.ts".to_string(),
+                status: None,
             }],
         )
         .expect("export second snapshot");

@@ -14,6 +14,7 @@ import { useTranslation } from "react-i18next";
 import type { ThreadSummary } from "../../../types";
 import { ProxyStatusBadge } from "../../../components/ProxyStatusBadge";
 import { EngineIcon } from "../../engine/components/EngineIcon";
+import { SharedSessionIcon } from "../../shared-session/components/SharedSessionIcon";
 import { ThreadDeleteConfirmBubble } from "../../threads/components/ThreadDeleteConfirmBubble";
 
 type ThreadStatusMap = Record<
@@ -94,15 +95,20 @@ export function PinnedThreadList({
         const isPinned = canPin && isThreadPinned(workspaceId, thread.id);
         const isAutoNaming = isThreadAutoNaming(workspaceId, thread.id);
         const showProxyBadge = systemProxyEnabled && isProcessing;
+        const isSharedThread = thread.threadKind === "shared";
         const engineSource = thread.engineSource ?? "codex";
-        const engineTitle =
+        const baseEngineTitle =
           engineSource === "claude"
             ? "Claude Code"
             : engineSource === "gemini"
               ? "Gemini"
-            : engineSource === "opencode"
-              ? "OpenCode"
-              : "Codex";
+              : engineSource === "opencode"
+                ? "OpenCode"
+                : "Codex";
+        const engineTitle =
+          isSharedThread
+            ? `Shared Session · ${baseEngineTitle}`
+            : baseEngineTitle;
         const isDeleteConfirmOpen =
           deleteConfirmWorkspaceId === workspaceId && deleteConfirmThreadId === thread.id;
 
@@ -160,12 +166,16 @@ export function PinnedThreadList({
                     </span>
                   )}
                   <span
-                    className={`thread-engine-badge thread-engine-${engineSource}${
-                      isProcessing ? " is-processing" : ""
-                    }`}
+                    className={`thread-engine-badge ${
+                      isSharedThread ? "thread-engine-shared" : `thread-engine-${engineSource}`
+                    }${isProcessing ? " is-processing" : ""}`}
                     title={engineTitle}
                   >
-                    <EngineIcon engine={engineSource} size={12} />
+                    {isSharedThread ? (
+                      <SharedSessionIcon size={12} />
+                    ) : (
+                      <EngineIcon engine={engineSource} size={12} />
+                    )}
                   </span>
                   {showProxyBadge && (
                     <ProxyStatusBadge

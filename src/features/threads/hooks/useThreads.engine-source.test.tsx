@@ -2,8 +2,14 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { WorkspaceInfo } from "../../../types";
-import { resumeThread } from "../../../services/tauri";
+import { listThreads, resumeThread } from "../../../services/tauri";
 import type { useAppServerEvents } from "../../app/hooks/useAppServerEvents";
+import {
+  listSharedSessions,
+  setSharedSessionSelectedEngine,
+  startSharedSession,
+  syncSharedSessionSnapshot,
+} from "../../shared-session/services/sharedSessions";
 import { useThreads } from "./useThreads";
 
 type AppServerHandlers = Parameters<typeof useAppServerEvents>[0];
@@ -77,6 +83,17 @@ vi.mock("../../../services/tauri", () => ({
   projectMemoryCreate: vi.fn(),
 }));
 
+vi.mock("../../shared-session/services/sharedSessions", () => ({
+  startSharedSession: vi.fn(),
+  sendSharedSessionMessage: vi.fn(),
+  listSharedSessions: vi.fn(async () => []),
+  loadSharedSession: vi.fn(async () => null),
+  setSharedSessionSelectedEngine: vi.fn(async () => ({})),
+  updateSharedSessionNativeBinding: vi.fn(async () => ({})),
+  syncSharedSessionSnapshot: vi.fn(async () => ({})),
+  deleteSharedSession: vi.fn(async () => ({})),
+}));
+
 const workspace: WorkspaceInfo = {
   id: "ws-1",
   name: "ccgui",
@@ -89,6 +106,20 @@ describe("useThreads engine source", () => {
   beforeEach(() => {
     handlers = null;
     vi.clearAllMocks();
+    vi.mocked(startSharedSession).mockResolvedValue({
+      result: {
+        thread: {
+          id: "shared:session-1",
+          name: "Shared Session",
+          updatedAt: 1_730_000_000_000,
+          threadKind: "shared",
+          selectedEngine: "claude",
+          engineSource: "claude",
+          nativeThreadIds: [],
+        },
+      },
+    });
+    vi.mocked(setSharedSessionSelectedEngine).mockResolvedValue({});
   });
 
   it("keeps thread engine source when selecting an unloaded thread", async () => {
@@ -184,5 +215,83 @@ describe("useThreads engine source", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it("persists shared session engine selection through shared command", async () => {
+    const { result } = renderHook(() =>
+      useThreads({
+        activeWorkspace: workspace,
+        activeEngine: "claude",
+        onWorkspaceConnected: vi.fn(),
+      }),
+    );
+
+    let sharedThreadId: string | null = null;
+    await act(async () => {
+      sharedThreadId = await result.current.startSharedSessionForWorkspace("ws-1", {
+        activate: true,
+        initialEngine: "claude",
+      });
+    });
+
+    expect(sharedThreadId).toBe("shared:session-1");
+
+    act(() => {
+      result.current.updateSharedSessionEngineSelection(
+        "ws-1",
+        sharedThreadId!,
+        "codex",
+      );
+    });
+
+    await waitFor(() => {
+      expect(vi.mocked(setSharedSessionSelectedEngine)).toHaveBeenCalledWith(
+        "ws-1",
+        "shared:session-1",
+        "codex",
+      );
+    });
+  });
+
+  it("does not sync shared snapshot for unloaded historical shared sessions", async () => {
+    vi.mocked(listThreads).mockResolvedValue({
+      result: {
+        data: [],
+        nextCursor: null,
+      },
+    });
+    vi.mocked(listSharedSessions).mockResolvedValue([
+      {
+        id: "shared-session-historical-1",
+        threadId: "shared:shared-session-historical-1",
+        title: "Historical Shared Session",
+        updatedAt: 1_730_000_370_000,
+        selectedEngine: "claude",
+        nativeThreadIds: [],
+      },
+    ]);
+    vi.mocked(syncSharedSessionSnapshot).mockResolvedValue({});
+
+    const { result, unmount } = renderHook(() =>
+      useThreads({
+        activeWorkspace: null,
+        activeEngine: "claude",
+        onWorkspaceConnected: vi.fn(),
+      }),
+    );
+
+    await act(async () => {
+      await result.current.listThreadsForWorkspace(workspace);
+    });
+
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 450));
+    });
+
+    const historicalSyncCalls = vi
+      .mocked(syncSharedSessionSnapshot)
+      .mock.calls.filter((call) => call[1] === "shared:shared-session-historical-1");
+    expect(historicalSyncCalls).toHaveLength(0);
+    unmount();
   });
 });

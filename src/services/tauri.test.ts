@@ -145,7 +145,10 @@ describe("tauri invoke wrappers", () => {
       sessionId: "session-1",
       targetMessageId: "user-1",
       conversationLabel: "test",
-      files: [{ path: "src/App.tsx" }, { path: "/tmp/demo.ts" }],
+      files: [
+        { path: "src/App.tsx", status: "M" },
+        { path: "/tmp/demo.ts", status: "D" },
+      ],
     });
 
     expect(invokeMock).toHaveBeenCalledWith("export_rewind_files", {
@@ -154,7 +157,10 @@ describe("tauri invoke wrappers", () => {
       sessionId: "session-1",
       targetMessageId: "user-1",
       conversationLabel: "test",
-      files: [{ path: "src/App.tsx" }, { path: "/tmp/demo.ts" }],
+      files: [
+        { path: "src/App.tsx", status: "M" },
+        { path: "/tmp/demo.ts", status: "D" },
+      ],
     });
   });
 

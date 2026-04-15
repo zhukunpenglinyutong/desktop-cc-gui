@@ -318,6 +318,102 @@ describe("claudeRewindRestore", () => {
     expect(trashWorkspaceItem).not.toHaveBeenCalled();
   });
 
+  it("falls back to git revert for deleted files inferred from commandExecution detail command", async () => {
+    vi.mocked(readWorkspaceFile).mockRejectedValue(
+      new Error("Failed to open file: No such file or directory"),
+    );
+
+    const impactedItems: ConversationItem[] = [
+      fileToolItem("tool-command-detail-delete", {
+        toolType: "commandExecution",
+        title: "Command: 删除文件",
+        detail: JSON.stringify({
+          command: 'rm "/repo/SPEC_KIT_实战指南.md"',
+          description: "删除 SPEC_KIT_实战指南.md",
+        }),
+        output: "",
+        changes: [],
+      }),
+    ];
+
+    const result = await applyClaudeRewindWorkspaceRestore({
+      workspaceId: "ws-1",
+      workspacePath: "/repo",
+      impactedItems,
+    });
+
+    expect(result?.touchedPaths).toEqual(["SPEC_KIT_实战指南.md"]);
+    expect(result?.skippedPaths).toEqual([]);
+    expect(revertGitFile).toHaveBeenCalledWith("ws-1", "SPEC_KIT_实战指南.md");
+    expect(writeWorkspaceFile).not.toHaveBeenCalled();
+    expect(trashWorkspaceItem).not.toHaveBeenCalled();
+  });
+
+  it("falls back to git revert for deleted files inferred from Bash detail command", async () => {
+    vi.mocked(readWorkspaceFile).mockRejectedValue(
+      new Error("Failed to open file: No such file or directory"),
+    );
+
+    const impactedItems: ConversationItem[] = [
+      fileToolItem("tool-bash-detail-delete", {
+        toolType: "Bash",
+        title: "Bash",
+        detail: JSON.stringify({
+          command: "rm /repo/.specify目录结构说明.md",
+          description: "删除文件",
+        }),
+        output: "",
+        changes: [],
+      }),
+    ];
+
+    const result = await applyClaudeRewindWorkspaceRestore({
+      workspaceId: "ws-1",
+      workspacePath: "/repo",
+      impactedItems,
+    });
+
+    expect(result?.touchedPaths).toEqual([".specify目录结构说明.md"]);
+    expect(result?.skippedPaths).toEqual([]);
+    expect(revertGitFile).toHaveBeenCalledWith(
+      "ws-1",
+      ".specify目录结构说明.md",
+    );
+    expect(writeWorkspaceFile).not.toHaveBeenCalled();
+    expect(trashWorkspaceItem).not.toHaveBeenCalled();
+  });
+
+  it("removes files inferred as added from Bash redirection command", async () => {
+    vi.mocked(readWorkspaceFile).mockResolvedValue({
+      content: "100",
+      truncated: false,
+    });
+
+    const impactedItems: ConversationItem[] = [
+      fileToolItem("tool-bash-detail-add", {
+        toolType: "Bash",
+        title: "Bash",
+        detail: JSON.stringify({
+          command: "printf '100' > /repo/abc.txt",
+          description: "创建 abc.txt",
+        }),
+        output: "",
+        changes: [],
+      }),
+    ];
+
+    const result = await applyClaudeRewindWorkspaceRestore({
+      workspaceId: "ws-1",
+      workspacePath: "/repo",
+      impactedItems,
+    });
+
+    expect(result?.touchedPaths).toEqual(["abc.txt"]);
+    expect(result?.skippedPaths).toEqual([]);
+    expect(trashWorkspaceItem).toHaveBeenCalledWith("ws-1", "abc.txt");
+    expect(writeWorkspaceFile).not.toHaveBeenCalled();
+  });
+
   it("falls back to git revert for @path delete intent when tool payload misses file path", async () => {
     vi.mocked(readWorkspaceFile).mockRejectedValue(
       new Error("Failed to open file: No such file or directory"),

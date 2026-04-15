@@ -28,6 +28,7 @@ type WorkspaceHomeProps = {
   recentThreads: WorkspaceHomeThreadSummary[];
   onSelectConversation: (workspaceId: string, threadId: string) => void;
   onStartConversation: (engine: EngineType) => Promise<void>;
+  onStartSharedConversation?: (engine: EngineType) => Promise<void>;
   onContinueLatestConversation: () => void;
   onStartGuidedConversation: (prompt: string, engine: EngineType) => Promise<void>;
   onOpenSpecHub: () => void;

@@ -62,7 +62,7 @@ export function renderAppShell(ctx: any) {
     handleRevealActiveWorkspace, handleRevealGeneralPrompts, handleRevealWorkspacePrompts, handleRevertAllGitChanges, handleRevertGitFile, handleReviewPromptKeyDown, handleSearchPaletteMoveSelection, handleSelectAgent,
     handleSelectCommit, handleSelectDiff, handleSelectDiffForPanel, handleSelectModel, handleSelectOpenAppId, handleSelectOpenCodeAgent, handleSelectOpenCodeVariant, handleSelectPullRequest,
     handleSelectSearchResult, handleSelectWorkspaceInstance, handleSelectWorkspacePathForGitHistory, handleSend, handleSendPrompt, handleSendPromptToNewAgent, handleSetAccessMode, handleSetGitRoot,
-    handleStageGitAll, handleStageGitFile, handleStartGuidedConversation, handleStartWorkspaceConversation, handleSwitchAccount, handleSync, handleTestNotificationSound, handleToggleDictation,
+    handleStageGitAll, handleStageGitFile, handleStartGuidedConversation, handleStartSharedConversation, handleStartWorkspaceConversation, handleSwitchAccount, handleSync, handleTestNotificationSound, handleToggleDictation,
     handleToggleRuntimeConsole, handleToggleSearchContentFilter, handleToggleSearchPalette, handleToggleTerminal, handleToggleTerminalPanel, handleUnlockPanel, handleUnstageGitFile, handleUpdatePrompt,
     handleUserInputSubmit, handleUserInputSubmitWithPlanApply, handleWorkspaceDragEnter, handleWorkspaceDragLeave, handleWorkspaceDragOver, handleWorkspaceDrop, handleWorktreeCreated, hasActivePlan,
     hasLoaded, hasPlanData, highlightedBranchIndex, highlightedCommitIndex, highlightedPresetIndex, historySearchItems, homeNode, hydratedThreadListWorkspaceIdsRef,
@@ -138,6 +138,7 @@ export function renderAppShell(ctx: any) {
       recentThreads={recentThreads}
       onSelectConversation={handleSelectWorkspaceInstance}
       onStartConversation={handleStartWorkspaceConversation}
+      onStartSharedConversation={handleStartSharedConversation}
       onContinueLatestConversation={handleContinueLatestConversation}
       onStartGuidedConversation={handleStartGuidedConversation}
       onOpenSpecHub={handleOpenSpecHub}

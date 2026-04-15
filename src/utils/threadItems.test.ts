@@ -131,6 +131,14 @@ describe("threadItems", () => {
     expect(previewThreadName(source, "Agent 1")).toBe("工作区代码做一下兼容");
   });
 
+  it("uses current user request after shared-session sync wrapper for default thread title", () => {
+    const source =
+      "Shared session context sync. Continue from these recent turns before answering the new request:\n\n" +
+      "Turn 1\nUser: hello\ncodex: world\n\n" +
+      "Current user request:\n帮我梳理共享会话的上下文同步链路";
+    expect(previewThreadName(source, "Agent 1")).toBe("帮我梳理共享会话的上");
+  });
+
   it("truncates default thread title to 10 characters", () => {
     expect(previewThreadName("123456789012345", "Agent 1")).toBe("1234567890");
   });
@@ -682,6 +690,56 @@ go lang`,
     if (converted?.kind === "message") {
       expect(converted.role).toBe("user");
       expect(converted.text).toBe("我和谁一起回沈阳的");
+    }
+  });
+
+  it("falls back to direct text when userMessage has no content array", () => {
+    const converted = buildConversationItem({
+      id: "user-direct-text-1",
+      type: "userMessage",
+      text: "这是 Claude 直出文本",
+    });
+
+    expect(converted).toBeTruthy();
+    expect(converted?.kind).toBe("message");
+    if (converted?.kind === "message") {
+      expect(converted.role).toBe("user");
+      expect(converted.text).toBe("这是 Claude 直出文本");
+    }
+  });
+
+  it("extracts user request from shared-session wrapper in direct text fallback", () => {
+    const converted = buildConversationItem({
+      id: "user-direct-shared-wrapper-1",
+      type: "userMessage",
+      text:
+        "Shared session context sync. Continue from these recent turns before answering the new request:\n\n" +
+        "Turn 1\nUser: hi2\nclaude: done\n\nCurrent user request:\nhello2",
+    });
+
+    expect(converted).toBeTruthy();
+    expect(converted?.kind).toBe("message");
+    if (converted?.kind === "message") {
+      expect(converted.role).toBe("user");
+      expect(converted.text).toBe("hello2");
+    }
+  });
+
+  it("detects fallback collaboration mode from direct text userMessage payload", () => {
+    const converted = buildConversationItem({
+      id: "user-direct-plan-mode-1",
+      type: "userMessage",
+      text:
+        "Execution policy (plan mode): planning-only. If blocker appears, call requestUserInput.\n\n" +
+        "User request: 只做方案输出",
+    });
+
+    expect(converted).toBeTruthy();
+    expect(converted?.kind).toBe("message");
+    if (converted?.kind === "message") {
+      expect(converted.role).toBe("user");
+      expect(converted.text).toBe("只做方案输出");
+      expect(converted.collaborationMode).toBe("plan");
     }
   });
 
@@ -1639,6 +1697,28 @@ go lang`,
       expect(item.role).toBe("user");
       expect(item.text).toBe("保持默认模式");
       expect(item.collaborationMode).toBe("code");
+    }
+  });
+
+  it("strips shared-session sync wrapper from user message content", () => {
+    const item = buildConversationItemFromThreadItem({
+      type: "userMessage",
+      id: "msg-shared-sync-wrapper-1",
+      content: [
+        {
+          type: "text",
+          text:
+            "Shared session context sync. Continue from these recent turns before answering the new request:\n\n" +
+            "Turn 1\nUser: 第一轮问题\ncodex: 第一轮回答\n\n" +
+            "Current user request:\n请继续分析第3个问题",
+        },
+      ],
+    });
+
+    expect(item).not.toBeNull();
+    if (item && item.kind === "message") {
+      expect(item.role).toBe("user");
+      expect(item.text).toBe("请继续分析第3个问题");
     }
   });
 

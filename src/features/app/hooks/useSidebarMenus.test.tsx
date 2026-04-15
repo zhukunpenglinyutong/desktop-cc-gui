@@ -22,6 +22,7 @@ vi.mock("react-i18next", () => ({
         "threads.unpin": "Unpin",
         "threads.delete": "Delete",
         "sidebar.sessionActionsGroup": "New session",
+        "sidebar.newSharedSession": "Shared Session",
         "sidebar.workspaceActionsGroup": "Workspace actions",
         "workspace.engineClaudeCode": "Claude Code",
         "workspace.engineCodex": "Codex",
@@ -84,6 +85,7 @@ const workspace: WorkspaceInfo = {
 function createHandlers() {
   return {
     onAddAgent: vi.fn(),
+    onAddSharedAgent: vi.fn(),
     onDeleteThread: vi.fn(),
     onSyncThread: vi.fn(),
     onPinThread: vi.fn(),
@@ -189,5 +191,32 @@ describe("useSidebarMenus", () => {
       "Delete",
     ]);
     expect(items[5]?.enabled).toBe(false);
+  });
+
+  it("triggers create action when Shared Session entry is clicked", () => {
+    const handlers = createHandlers();
+    const { result } = renderHook(() => useSidebarMenus(handlers));
+
+    act(() => {
+      const event = {
+        clientX: 180,
+        clientY: 180,
+        preventDefault: vi.fn(),
+        stopPropagation: vi.fn(),
+      } as unknown as Parameters<typeof result.current.showWorkspaceMenu>[0];
+      result.current.showWorkspaceMenu(event, workspace);
+    });
+
+    const sharedAction = result.current.workspaceMenuState?.groups
+      .find((group) => group.id === "new-session")
+      ?.actions.find((action) => action.id === "new-session-shared");
+
+    expect(sharedAction).toBeTruthy();
+    act(() => {
+      result.current.onWorkspaceMenuAction(sharedAction!);
+    });
+
+    expect(handlers.onAddSharedAgent).toHaveBeenCalledTimes(1);
+    expect(handlers.onAddSharedAgent).toHaveBeenCalledWith(workspace);
   });
 });

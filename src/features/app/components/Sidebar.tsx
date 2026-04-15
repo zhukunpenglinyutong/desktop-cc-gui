@@ -26,6 +26,7 @@ import { formatShortcutForPlatform, isMacPlatform } from "../../../utils/shortcu
 import { formatRelativeTimeShort } from "../../../utils/time";
 import { EngineIcon } from "../../engine/components/EngineIcon";
 import { TooltipIconButton } from "../../../components/ui/tooltip-icon-button";
+import { SharedSessionIcon } from "../../shared-session/components/SharedSessionIcon";
 import { pushErrorToast } from "../../../services/toasts";
 import Brain from "lucide-react/dist/esm/icons/brain";
 import BrainCircuit from "lucide-react/dist/esm/icons/brain-circuit";
@@ -90,6 +91,7 @@ type SidebarProps = {
   onSelectWorkspace: (id: string) => void;
   onConnectWorkspace: (workspace: WorkspaceInfo) => void;
   onAddAgent: (workspace: WorkspaceInfo, engine?: EngineType) => void;
+  onAddSharedAgent?: (workspace: WorkspaceInfo) => void;
   onAddWorktreeAgent: (workspace: WorkspaceInfo) => void;
   onAddCloneAgent: (workspace: WorkspaceInfo) => void;
   onToggleWorkspaceCollapse: (workspaceId: string, collapsed: boolean) => void;
@@ -165,6 +167,7 @@ export function Sidebar({
   onSelectWorkspace: _onSelectWorkspace,
   onConnectWorkspace,
   onAddAgent,
+  onAddSharedAgent,
   onAddWorktreeAgent,
   onAddCloneAgent,
   onToggleWorkspaceCollapse,
@@ -258,6 +261,7 @@ export function Sidebar({
   } =
     useSidebarMenus({
       onAddAgent,
+      onAddSharedAgent,
       onDeleteThread,
       onSyncThread,
       onPinThread: pinThread,
@@ -302,6 +306,8 @@ export function Sidebar({
         return <EngineIcon engine="gemini" size={14} />;
       case "reload":
         return <RefreshCw size={13} />;
+      case "new-shared":
+        return <SharedSessionIcon size={13} />;
       case "remove":
         return <Trash2 size={13} />;
       case "new-worktree":

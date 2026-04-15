@@ -69,6 +69,15 @@ function extractRenameText(text: string) {
 }
 
 const OPTIMISTIC_USER_ITEM_PREFIX = "optimistic-user-";
+const USER_INPUT_BLOCK_MARKER_REGEX = /\[User Input\]\s*/gi;
+const PROJECT_MEMORY_BLOCK_REGEX = /^<project-memory>[\s\S]*?<\/project-memory>\s*/i;
+const MODE_FALLBACK_PREFIX_REGEX =
+  /^(?:collaboration mode:\s*code\.|execution policy \(default mode\):|execution policy \(plan mode\):)/i;
+const MODE_FALLBACK_MARKER_REGEX = /User request\s*:\s*/i;
+const SHARED_SESSION_SYNC_PREFIX_REGEX =
+  /^Shared session context sync\.\s*Continue from these recent turns before answering the new request:\s*/i;
+const SHARED_SESSION_CURRENT_REQUEST_MARKER_REGEX =
+  /(?:\r?\n){1,2}Current user request:\s*(?:\r?\n)?/i;
 
 type MessageItem = Extract<ConversationItem, { kind: "message" }>;
 type UserMessageItem = MessageItem & { role: "user" };
@@ -93,8 +102,63 @@ function isOptimisticUserMessage(
   return isUserMessageItem(item) && item.id.startsWith(OPTIMISTIC_USER_ITEM_PREFIX);
 }
 
+function extractLatestUserInputTextPreserveFormatting(text: string): string {
+  const userInputMatches = [...text.matchAll(USER_INPUT_BLOCK_MARKER_REGEX)];
+  if (userInputMatches.length === 0) {
+    return text;
+  }
+  const lastMatch = userInputMatches[userInputMatches.length - 1];
+  if (!lastMatch) {
+    return text;
+  }
+  const markerIndex = lastMatch.index ?? -1;
+  if (markerIndex < 0) {
+    return text;
+  }
+  return text.slice(markerIndex + lastMatch[0].length);
+}
+
+function stripInjectedProjectMemoryBlock(text: string): string {
+  const match = PROJECT_MEMORY_BLOCK_REGEX.exec(text.trimStart());
+  if (!match || match.index !== 0) {
+    return text;
+  }
+  const stripped = text.replace(PROJECT_MEMORY_BLOCK_REGEX, "");
+  return stripped.trim().length > 0 ? stripped : text;
+}
+
+function stripModeFallbackBlock(text: string): string {
+  if (!MODE_FALLBACK_PREFIX_REGEX.test(text.trimStart())) {
+    return text;
+  }
+  const marker = MODE_FALLBACK_MARKER_REGEX.exec(text);
+  if (!marker || marker.index < 0) {
+    return text;
+  }
+  const extractedRaw = text.slice(marker.index + marker[0].length);
+  const extracted = extractedRaw.replace(/^\r?\n/, "").replace(/^ /, "");
+  return extracted.trim().length > 0 ? extracted : text;
+}
+
+function stripSharedSessionContextSyncWrapper(text: string): string {
+  if (!SHARED_SESSION_SYNC_PREFIX_REGEX.test(text.trimStart())) {
+    return text;
+  }
+  const markerMatch = SHARED_SESSION_CURRENT_REQUEST_MARKER_REGEX.exec(text);
+  if (!markerMatch || markerMatch.index < 0) {
+    return text;
+  }
+  const extractedRaw = text.slice(markerMatch.index + markerMatch[0].length);
+  const extracted = extractedRaw.replace(/^\r?\n/, "").replace(/^ /, "");
+  return extracted.trim().length > 0 ? extracted : text;
+}
+
 function normalizeComparableUserText(text: string) {
-  return text.replace(/\s+/g, " ").trim();
+  const latestUserInput = extractLatestUserInputTextPreserveFormatting(text);
+  const normalized = stripSharedSessionContextSyncWrapper(
+    stripModeFallbackBlock(stripInjectedProjectMemoryBlock(latestUserInput)),
+  );
+  return normalized.replace(/\s+/g, " ").trim();
 }
 
 function normalizeUserImages(images: string[] | undefined) {
@@ -113,7 +177,7 @@ function dropMatchingOptimisticUserMessage(
   incoming: UserMessageItem,
 ) {
   let matchedIndex = -1;
-  let fallbackIndex = -1;
+  const optimisticIndexes: number[] = [];
   const incomingText = normalizeComparableUserText(incoming.text);
   const incomingImages = normalizeUserImages(incoming.images);
   for (let index = 0; index < list.length; index += 1) {
@@ -124,9 +188,7 @@ function dropMatchingOptimisticUserMessage(
     if (!isOptimisticUserMessage(item)) {
       continue;
     }
-    if (fallbackIndex < 0) {
-      fallbackIndex = index;
-    }
+    optimisticIndexes.push(index);
     const textMatches = normalizeComparableUserText(item.text) === incomingText;
     const imageMatches = areSameUserImages(
       normalizeUserImages(item.images),
@@ -137,11 +199,20 @@ function dropMatchingOptimisticUserMessage(
       break;
     }
   }
-  const targetIndex = matchedIndex >= 0 ? matchedIndex : fallbackIndex;
-  if (targetIndex < 0) {
-    return list;
+  if (matchedIndex >= 0) {
+    return [...list.slice(0, matchedIndex), ...list.slice(matchedIndex + 1)];
   }
-  return [...list.slice(0, targetIndex), ...list.slice(targetIndex + 1)];
+  // Conservative fallback: when there is only one optimistic user bubble and no
+  // persisted real user messages yet, treat the first real user payload as its
+  // authoritative replacement even if raw text shape differs.
+  const hasRealUserMessage = list.some(
+    (item) => isUserMessageItem(item) && !isOptimisticUserMessage(item),
+  );
+  if (!hasRealUserMessage && optimisticIndexes.length === 1) {
+    const targetIndex = optimisticIndexes[0]!;
+    return [...list.slice(0, targetIndex), ...list.slice(targetIndex + 1)];
+  }
+  return list;
 }
 
 function findMatchingRealUserMessage(
@@ -248,25 +319,57 @@ function mergeThreadItemsPreservingOptimisticUsers(
     };
   });
 
-  if (isProcessing && localItems.length > 0) {
-    const trailingOptimisticUsers: UserMessageItem[] = [];
+  if (localItems.length > 0) {
+    let lastRealUserIndex = -1;
     for (let index = localItems.length - 1; index >= 0; index -= 1) {
-      const item = localItems[index];
-      if (!item) {
-        continue;
-      }
-      if (!isOptimisticUserMessage(item)) {
+      const candidate = localItems[index];
+      if (
+        isUserMessageItem(candidate) &&
+        !isOptimisticUserMessage(candidate)
+      ) {
+        lastRealUserIndex = index;
         break;
       }
-      trailingOptimisticUsers.unshift(item);
     }
-    if (trailingOptimisticUsers.length > 0) {
-      const preservedOptimisticUsers = trailingOptimisticUsers.filter(
-        (item) => !findMatchingRealUserMessage(mergedItems, item),
+    const optimisticCandidates = localItems
+      .map((item, index) => ({ item, index }))
+      .filter(
+        (entry): entry is { item: UserMessageItem; index: number } =>
+          isOptimisticUserMessage(entry.item) && entry.index > lastRealUserIndex,
+      )
+      .map((entry) => entry.item);
+    const preservedOptimisticUsers = optimisticCandidates.filter(
+      (item) => !findMatchingRealUserMessage(mergedItems, item),
+    );
+    if (preservedOptimisticUsers.length > 0) {
+      const preservedOptimisticIds = new Set(
+        preservedOptimisticUsers.map((item) => item.id),
       );
-      if (preservedOptimisticUsers.length > 0) {
-        mergedItems = [...mergedItems, ...preservedOptimisticUsers];
-      }
+      const mergedById = new Map(mergedItems.map((item) => [item.id, item]));
+      const orderedItems: ConversationItem[] = [];
+      const emittedIds = new Set<string>();
+      localItems.forEach((localItem) => {
+        if (preservedOptimisticIds.has(localItem.id)) {
+          if (!emittedIds.has(localItem.id)) {
+            orderedItems.push(localItem);
+            emittedIds.add(localItem.id);
+          }
+          return;
+        }
+        const mergedCandidate = mergedById.get(localItem.id);
+        if (mergedCandidate && !emittedIds.has(localItem.id)) {
+          orderedItems.push(mergedCandidate);
+          emittedIds.add(localItem.id);
+        }
+      });
+      mergedItems.forEach((item) => {
+        if (emittedIds.has(item.id)) {
+          return;
+        }
+        orderedItems.push(item);
+        emittedIds.add(item.id);
+      });
+      mergedItems = orderedItems;
     }
   }
 
@@ -1346,7 +1449,13 @@ export function threadReducer(state: ThreadState, action: ThreadAction): ThreadS
       const list = state.threadsByWorkspace[action.workspaceId] ?? [];
       const next = list.map((thread) =>
         thread.id === action.threadId
-          ? { ...thread, engineSource: action.engine }
+          ? {
+              ...thread,
+              engineSource: action.engine,
+              ...(thread.threadKind === "shared"
+                ? { selectedEngine: action.engine }
+                : {}),
+            }
           : thread,
       );
       return {
@@ -2305,11 +2414,14 @@ export function threadReducer(state: ThreadState, action: ThreadAction): ThreadS
           if (existing) {
             // Preserve engineSource if new thread doesn't have one
             const engineSource = thread.engineSource || existing.engineSource;
+            const threadKind = thread.threadKind || existing.threadKind;
+            const selectedEngine = thread.selectedEngine || existing.selectedEngine;
+            const nativeThreadIds = thread.nativeThreadIds || existing.nativeThreadIds;
             // Keep the better name (prefer non-auto-generated names)
             const existingIsAutoGenerated = existing.name.startsWith("Agent ") || /^[a-f0-9]{4,8}$/i.test(existing.name);
             const newIsAutoGenerated = thread.name.startsWith("Agent ") || /^[a-f0-9]{4,8}$/i.test(thread.name);
             const name = newIsAutoGenerated && !existingIsAutoGenerated ? existing.name : thread.name;
-            return { ...thread, name, engineSource };
+            return { ...thread, name, engineSource, threadKind, selectedEngine, nativeThreadIds };
           }
           return thread;
         });
