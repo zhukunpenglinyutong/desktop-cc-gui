@@ -58,6 +58,11 @@
 - 把 plan mode 退出后的用户可见承接写入 rollout 基线：
   - `ExitPlanMode` 工具卡片使用可折叠的平面卡片承接
   - 原始计划内容按 Markdown 渲染，便于人工回归与后续实现切换
+  - 当用户要从 `plan` 进入执行时，卡片必须明确要求选择执行模式，而不是隐式偷切状态
+  - 当前合法执行入口仅保留两种：
+    - 默认审批模式（`default`）
+    - 全自动（`full-access`）
+  - 用户点击后，conversation selector 必须与实际执行模式同步，再发起执行
 - 把 Claude synthetic approval 的当前可见 UI 基线写入 rollout：
   - 审批卡继续复用现有 approval surface，不新增 Claude 专属行为链
   - 审批卡需要具备明确的审批识别结构（icon / badge / summary band），避免退化成普通 toast
@@ -108,6 +113,10 @@
   - 必须以显著的审批卡样式呈现，而不是弱提示条
   - 必须放在消息幕布底部承接当前 turn
   - 不得默认展开大段文件正文或 patch 内容干扰审批决策
+- `ExitPlanMode` 卡片在 Claude `plan` 场景下：
+  - 必须明确提示“已确认计划。接下来执行需要离开规划模式”
+  - 必须提供“切到默认审批模式并执行”“切到全自动并执行”两个显式动作
+  - 不得出现“UI selector 仍显示 `plan`，但实际已经在执行”的状态错位
 - approval reducer 不得只按单一 `request_id` 删除，必须避免多审批并发误删
 - `npm run check:large-files:gate` 必须继续通过，`claude.rs` 不得重新越过 3000 行门槛
 

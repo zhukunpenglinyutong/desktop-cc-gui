@@ -30,6 +30,11 @@ interface ToolBlockRendererProps {
   activeEngine?: "claude" | "codex" | "gemini" | "opencode";
   hasPendingUserInputRequest?: boolean;
   onOpenDiffPath?: (path: string) => void;
+  selectedExitPlanExecutionMode?: 'default' | 'full-access' | null;
+  onExitPlanModeExecute?: (
+    itemId: string,
+    mode: 'default' | 'full-access',
+  ) => Promise<void> | void;
 }
 
 /**
@@ -46,13 +51,40 @@ export const ToolBlockRenderer = memo(function ToolBlockRenderer({
   activeEngine,
   hasPendingUserInputRequest = false,
   onOpenDiffPath,
+  selectedExitPlanExecutionMode = null,
+  onExitPlanModeExecute,
 }: ToolBlockRendererProps) {
   const toolName = extractToolName(item.title);
   const lower = toolName.toLowerCase();
+  const normalizedToolName = toolName.trim().toLowerCase().replace(/[^a-z0-9]/g, "");
+  const normalizedTitle = item.title.trim().toLowerCase().replace(/[^a-z0-9]/g, "");
+  const isExitPlanModeTool =
+    normalizedToolName === "exitplanmode" ||
+    normalizedToolName.endsWith("exitplanmode") ||
+    normalizedTitle.includes("exitplanmode");
 
   // 0. 已提交的 request user input 历史卡片
   if (item.toolType === 'requestUserInputSubmitted') {
     return <RequestUserInputSubmittedBlock item={item} />;
+  }
+
+  // ExitPlanMode handoff must keep its dedicated card even if the runtime
+  // classifies it as a command-like tool item.
+  if (isExitPlanModeTool) {
+    return (
+      <GenericToolBlock
+        item={item}
+        workspaceId={workspaceId}
+        isExpanded={isExpanded}
+        onToggle={onToggle}
+        activeCollaborationModeId={activeCollaborationModeId}
+        activeEngine={activeEngine}
+        hasPendingUserInputRequest={hasPendingUserInputRequest}
+        onOpenDiffPath={onOpenDiffPath}
+        selectedExitPlanExecutionMode={selectedExitPlanExecutionMode}
+        onExitPlanModeExecute={onExitPlanModeExecute}
+      />
+    );
   }
 
   // 1. 命令执行工具
@@ -120,6 +152,8 @@ export const ToolBlockRenderer = memo(function ToolBlockRenderer({
       activeEngine={activeEngine}
       hasPendingUserInputRequest={hasPendingUserInputRequest}
       onOpenDiffPath={onOpenDiffPath}
+      selectedExitPlanExecutionMode={selectedExitPlanExecutionMode}
+      onExitPlanModeExecute={onExitPlanModeExecute}
     />
   );
 });

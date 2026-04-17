@@ -40,6 +40,8 @@
     - 当前评估见 `openspec/docs/claude-mode-rollout-non-file-approval-bridge-evaluation-2026-04-17.md`
     - 当前结论：generic `Bash/shell/native command` 不建议进入 bridge；结构化 file-change tool 已补齐 `Edit/Rewrite/MultiEdit/Delete` 本地 apply，`NotebookEdit` 仍待评估
   - [x] E.1.d 收敛 Claude inline approval surface：审批卡增强结构识别、移到底部承接，并隐藏大段正文类字段
+  - [x] E.1.e 收敛 `ExitPlanMode` 执行承接：卡片内显式选择“默认审批模式 / 全自动”，并同步 selector 后再执行
+  - [x] E.1.f 修复历史 Claude 会话中切到 `plan` 后仍沿用可写 access mode 的状态泄漏
 - [x] E.2 校验并对齐 `acceptEdits` 的真实 CLI 语义
 - [ ] E.3 在语义确认后开放 Claude `acceptEdits`
 
@@ -57,6 +59,10 @@
   - `default` 命中 command execution / shell 权限阻塞时进入 `modeBlocked` 诊断
   - inline approval 卡片位于消息幕布底部，且视觉上明显区别于普通 toast
   - approval detail 默认不展示 `content` / patch / diff 正文
+  - `ExitPlanMode` 卡片展示“已确认计划。接下来执行需要离开规划模式”
+  - 点击“切到默认审批模式并执行”后，selector 从 `plan` 切到执行态并以 `default` 继续执行
+  - 点击“切到全自动并执行”后，selector 从 `plan` 切到执行态并以 `full-access` 继续执行
+  - 历史 Claude 会话手动切到 `plan` 后继续发送编辑请求时，runtime access mode 必须是 `read-only`，不得再出现创建/修改审批卡
   - `acceptEdits` 在开放前保持禁用
 
 ## 2. 回滚策略

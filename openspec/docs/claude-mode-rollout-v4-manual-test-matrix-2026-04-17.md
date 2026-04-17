@@ -55,6 +55,8 @@
 | V4-08 | inline approval 卡片贴底承接 | 在 `default` 场景触发 approval 后观察消息幕布 | 审批卡出现在消息幕布底部而不是顶部；不打断顶部阅读入口；视觉上明显是审批卡而非普通 toast |
 | V4-09 | approval detail 隐藏正文噪音 | 在 `default` 场景请求改写较长内容文件或触发含正文 payload 的 file change | 审批卡展示路径/工具/摘要，但不直接展示大段 `content` / `patch` / `diff` / rewritten text |
 | V4-10 | `acceptEdits` 仍禁用 | 打开 Claude mode selector | `acceptEdits` 选项存在但 disabled，点击无效 |
+| V4-11 | `ExitPlanMode` 执行模式选择同步 selector | 先在 `Claude -> plan` 产出 `ExitPlanMode` 卡片，再分别点击“默认审批模式并执行 / 全自动并执行” | 卡片明确提示需要离开规划模式；点击后 selector 立即同步为对应执行态；后续实现请求以所选 access mode 继续执行 |
+| V4-12 | 历史会话 plan 状态不泄漏可写权限 | 打开一个已有 Claude 历史线程，手动切到 `plan` 后继续发编辑型请求 | 不应出现 file approval；runtime 必须按只读处理，最多返回 plan/read-only 结果 |
 
 ## 场景细化
 
@@ -211,11 +213,62 @@
 - 样式是 disabled
 - 点击不会切换当前 mode
 
+### V4-11 `ExitPlanMode` 执行模式选择同步 selector
+
+建议输入：
+
+```text
+先给我一个可执行计划，确认后我会让你继续直接落地改动。
+```
+
+在出现 `ExitPlanMode` 卡片后：
+
+1. 点击 `切到默认审批模式并执行`
+2. 再开一轮测试，点击 `切到全自动并执行`
+
+检查点：
+
+- 卡片明确显示：
+  - `已确认计划。接下来执行需要离开规划模式。`
+  - `请选择执行模式`
+- 卡片中存在两个动作按钮：
+  - `切到默认审批模式并执行`
+  - `切到全自动并执行`
+- 点击默认审批按钮后：
+  - collaboration selector 不再显示 `plan`
+  - access selector 显示 `default`
+  - 后续执行进入默认审批链
+- 点击全自动按钮后：
+  - collaboration selector 不再显示 `plan`
+  - access selector 显示 `full-access`
+  - 后续执行不进入 GUI approval，而是直接执行
+
+### V4-12 历史会话 plan 状态不泄漏可写权限
+
+操作：
+
+1. 打开一个已有 Claude 历史线程
+2. 手动把底部 conversation selector 切到 `规划模式`
+3. 发送一个明确编辑请求，例如：
+
+```text
+新建 abc.txt，内容写 100
+```
+
+检查点：
+
+- 不应出现 `Pending file approval`
+- 不应出现本地 apply/写文件审批卡
+- Claude 应按只读约束响应：
+  - 返回 plan / 说明无法直接改
+  - 或提示离开 plan 后再执行
+- 关键是：不得再沿用历史线程之前残留的 `default/full-access` 写权限
+
 ## 通过标准
 
 以下条件全部满足，`V.4` 才能勾选完成：
 
-1. `V4-01` 到 `V4-10` 全部通过。
+1. `V4-01` 到 `V4-12` 全部通过。
 2. 没有出现 raw marker 泄漏。
 3. 没有出现审批后线程中断但文件已写入的半成功状态。
 4. 没有把 command denial 错误映射成 file approval。

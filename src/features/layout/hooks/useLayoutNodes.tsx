@@ -205,6 +205,9 @@ type LayoutNodesOptions = {
     request: RequestUserInputRequest,
     response: RequestUserInputResponse,
   ) => Promise<void> | void;
+  handleExitPlanModeExecute?: (
+    mode: Extract<AccessMode, "default" | "full-access">,
+  ) => Promise<void> | void;
   onOpenSettings: () => void;
   onOpenExperimentalSettings: () => void;
   onOpenDictationSettings?: () => void;
@@ -1158,6 +1161,7 @@ export function useLayoutNodes(options: LayoutNodesOptions): LayoutNodesResult {
       isPlanProcessing={options.isProcessing}
       onOpenDiffPath={handleOpenDiffPath}
       onOpenPlanPanel={options.onOpenPlanPanel}
+      onExitPlanModeExecute={options.handleExitPlanModeExecute}
       onOpenWorkspaceFile={options.onOpenFile}
       agentTaskScrollRequest={options.agentTaskScrollRequest}
       isThinking={isThreadThinking}
@@ -1194,6 +1198,7 @@ export function useLayoutNodes(options: LayoutNodesOptions): LayoutNodesResult {
     options.isProcessing,
     handleOpenDiffPath,
     options.onOpenPlanPanel,
+    options.handleExitPlanModeExecute,
     options.onOpenFile,
     options.agentTaskScrollRequest,
     isThreadThinking,

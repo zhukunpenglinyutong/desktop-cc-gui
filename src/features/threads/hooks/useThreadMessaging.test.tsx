@@ -1301,6 +1301,29 @@ describe("useThreadMessaging", () => {
     });
   });
 
+  it("keeps plan handoff interrupts silent while still stopping the active turn", async () => {
+    const { result, dispatch, markProcessing, setActiveTurnId } = makeHook("claude", {
+      activeThreadId: "claude:session-1",
+      ensuredThreadId: "claude:session-1",
+      activeTurnIdByThread: { "claude:session-1": "turn-1" },
+      threadEngineById: { "claude:session-1": "claude" },
+    });
+
+    await act(async () => {
+      await result.current.interruptTurn({ reason: "plan-handoff" });
+    });
+
+    expect(markProcessing).toHaveBeenCalledWith("claude:session-1", false);
+    expect(setActiveTurnId).toHaveBeenCalledWith("claude:session-1", null);
+    expect(dispatch).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "addAssistantMessage",
+        threadId: "claude:session-1",
+      }),
+    );
+    expect(engineInterruptTurn).toHaveBeenCalledWith("ws-1", "turn-1", "claude");
+  });
+
   it("interrupt routes opencode thread through engine interrupt only", async () => {
     const { result } = makeHook("codex", {
       activeThreadId: "opencode:session-1",
@@ -1351,6 +1374,26 @@ describe("useThreadMessaging", () => {
     expect(engineInterruptTurn).not.toHaveBeenCalled();
     expect(engineInterrupt).not.toHaveBeenCalled();
     expect(interruptTurn).not.toHaveBeenCalled();
+  });
+
+  it("clears queued pending interrupt before starting a new claude send", async () => {
+    const { result, pendingInterruptsRef } = makeHook("claude", {
+      activeThreadId: "claude:session-1",
+      ensuredThreadId: "claude:session-1",
+      activeTurnIdByThread: {},
+    });
+    pendingInterruptsRef.current.add("claude:session-1");
+
+    await act(async () => {
+      await result.current.sendUserMessage("resume execution", [], {
+        accessMode: "default",
+        collaborationMode: { mode: "code", settings: {} },
+        suppressUserMessageRender: true,
+      });
+    });
+
+    expect(pendingInterruptsRef.current.has("claude:session-1")).toBe(false);
+    expect(engineSendMessage).toHaveBeenCalled();
   });
 
   it("creates new opencode pending thread when active thread id is not opencode-prefixed", async () => {
@@ -1675,6 +1718,36 @@ describe("useThreadMessaging", () => {
     expect(optimisticCall).toBeDefined();
     const optimisticAction = optimisticCall?.[0] as { item?: { id?: string } };
     expect(optimisticAction.item?.id).toMatch(/^optimistic-user-/);
+  });
+
+  it("suppresses rendered user bubbles when send opts request silent execution prompts", async () => {
+    const dispatch = vi.fn();
+    const { result } = makeHook("claude", {
+      dispatch,
+      activeThreadId: "claude:session-1",
+      ensuredThreadId: "claude:session-1",
+      threadEngineById: { "claude:session-1": "claude" },
+    });
+
+    await act(async () => {
+      await result.current.sendUserMessageToThread(workspace, "claude:session-1", "Implement this plan.", [], {
+        suppressUserMessageRender: true,
+      });
+    });
+
+    const renderedUserBubbleCalls = dispatch.mock.calls.filter(
+      ([action]) =>
+        action &&
+        typeof action === "object" &&
+        "type" in action &&
+        (action as { type?: string }).type === "upsertItem" &&
+        "item" in action &&
+        (action as { item?: { kind?: string; role?: string } }).item?.kind === "message" &&
+        (action as { item?: { kind?: string; role?: string } }).item?.role === "user",
+    );
+
+    expect(renderedUserBubbleCalls).toHaveLength(0);
+    expect(engineSendMessage).toHaveBeenCalled();
   });
 
   it("does not attach selectedAgentIcon when sending without selected agent", async () => {

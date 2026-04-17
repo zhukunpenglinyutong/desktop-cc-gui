@@ -71,3 +71,29 @@ Claude synthetic approvals MUST remain readable and decision-oriented in the sha
 - **WHEN** Claude synthetic approval payload contains large raw body fields such as `content`, `diff`, `patch`, or equivalent rewritten text
 - **THEN** the inline approval detail MUST hide those raw fields by default
 - **AND** the card MUST continue surfacing compact decision-critical metadata such as path, command summary, tool label, or approval note
+
+### Requirement: Exit Plan Handoff MUST Keep UI Mode And Execution Mode In Sync
+
+When Claude `plan` execution reaches `ExitPlanMode`, the UI MUST require an explicit execution-mode choice and MUST NOT leave the conversation selector showing `plan` after execution starts.
+
+#### Scenario: exit plan card offers explicit execution mode choices
+- **WHEN** Claude renders an `ExitPlanMode` handoff card after plan confirmation
+- **THEN** the card MUST state that continuing execution requires leaving planning mode
+- **AND** it MUST provide explicit actions for `default` and `full-access`
+
+#### Scenario: choosing default approval mode syncs selector before execution
+- **WHEN** user clicks the `default` execution action from the `ExitPlanMode` card
+- **THEN** the collaboration selector MUST leave `plan`
+- **AND** the access selector MUST switch to `default`
+- **AND** the follow-up implementation prompt MUST run with `default` access mode
+
+#### Scenario: choosing full access syncs selector before execution
+- **WHEN** user clicks the `full-access` execution action from the `ExitPlanMode` card
+- **THEN** the collaboration selector MUST leave `plan`
+- **AND** the access selector MUST switch to `full-access`
+- **AND** the follow-up implementation prompt MUST run with `full-access`
+
+#### Scenario: historical claude thread still enforces read-only while plan mode is active
+- **WHEN** user reopens an existing Claude thread, switches conversation UI to `plan`, and sends a follow-up request
+- **THEN** runtime MUST send the follow-up turn as `read-only`
+- **AND** stale writable access state from the same thread MUST NOT leak through and allow file creation or approval prompts

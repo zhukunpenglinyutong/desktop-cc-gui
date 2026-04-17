@@ -1645,30 +1645,58 @@ fn build_mode_blocked_signal_from_error_maps_claude_ask_user_question_denial() {
 }
 
 #[test]
-fn build_mode_blocked_signal_from_error_maps_claude_file_change_denial() {
+fn build_mode_blocked_signal_from_error_maps_claude_file_change_denial_to_approval_request() {
     let session = ClaudeSession::new("test-workspace".to_string(), test_workspace_path(), None);
-    session.register_pending_tool("turn-a", "tool-edit-1", "Edit", None);
+    session.register_pending_tool(
+        "turn-a",
+        "tool-edit-1",
+        "Edit",
+        Some(&json!({
+            "file_path": "demo.txt",
+            "content": "hello from fallback"
+        })),
+    );
+    session.cache_tool_name("tool-edit-1", "Edit");
+    session.cache_tool_input_value(
+        "tool-edit-1",
+        &json!({
+            "file_path": "demo.txt",
+            "content": "hello from fallback"
+        }),
+    );
 
     let event = session
         .build_mode_blocked_signal_from_error("turn-a", "Edit tool permission denied")
-        .expect("expected mode blocked signal");
+        .expect("expected approval request");
 
     match event {
-        EngineEvent::Raw { data, .. } => {
+        EngineEvent::ApprovalRequest {
+            request_id,
+            tool_name,
+            input,
+            message,
+            ..
+        } => {
             assert_eq!(
-                data.get("blockedMethod").and_then(|value| value.as_str()),
-                Some("item/fileChange/requestApproval")
+                request_id,
+                Value::String("tool-edit-1".to_string())
+            );
+            assert_eq!(tool_name, "Edit");
+            assert_eq!(
+                input,
+                Some(json!({
+                    "file_path": "demo.txt",
+                    "content": "hello from fallback"
+                }))
             );
             assert_eq!(
-                data.get("requestId").and_then(|value| value.as_str()),
-                Some("tool-edit-1")
-            );
-            assert_eq!(
-                data.get("reasonCode").and_then(|value| value.as_str()),
-                Some("claude_file_change_permission_denied")
+                message.as_deref(),
+                Some(
+                    "Approve to let the GUI apply this file change locally. Preview currently supports structured file tools plus safe single-path file commands."
+                )
             );
         }
-        other => panic!("expected raw mode-blocked signal, got {:?}", other),
+        other => panic!("expected approval request, got {:?}", other),
     }
 }
 

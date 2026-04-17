@@ -1,5 +1,6 @@
 import type {
   ConversationItem,
+  EngineType,
   RequestUserInputResponse,
   TurnPlan,
   TurnPlanStepStatus,
@@ -21,6 +22,54 @@ export const PLAN_APPLY_ACTION_QUESTION_ID = "plan_apply_action";
 export const PLAN_APPLY_EXECUTE_PROMPT = "Implement this plan.";
 export const CODE_MODE_RESUME_PROMPT =
   "I switched to code mode. Continue from the latest context and execute directly.";
+
+type ResolveThreadScopedCollaborationModeSyncOptions = {
+  activeEngine: EngineType;
+  activeThreadId: string | null;
+  mappedMode: "plan" | "code" | null;
+  selectedCollaborationModeId: string | null;
+  lastSyncedThreadId: string | null;
+};
+
+type ThreadScopedCollaborationModeSyncResult = {
+  nextMode: "plan" | "code" | null;
+  nextSyncedThreadId: string | null;
+  shouldUpdateSelectedMode: boolean;
+};
+
+export function resolveThreadScopedCollaborationModeSync({
+  activeEngine,
+  activeThreadId,
+  mappedMode,
+  selectedCollaborationModeId,
+  lastSyncedThreadId,
+}: ResolveThreadScopedCollaborationModeSyncOptions): ThreadScopedCollaborationModeSyncResult | null {
+  if (activeEngine !== "codex" && activeEngine !== "claude") {
+    return null;
+  }
+  if (mappedMode === "plan" || mappedMode === "code") {
+    return {
+      nextMode: mappedMode,
+      nextSyncedThreadId: activeThreadId,
+      shouldUpdateSelectedMode: selectedCollaborationModeId !== mappedMode,
+    };
+  }
+  if (lastSyncedThreadId === activeThreadId) {
+    return null;
+  }
+  if (!activeThreadId) {
+    return {
+      nextMode: null,
+      nextSyncedThreadId: null,
+      shouldUpdateSelectedMode: false,
+    };
+  }
+  return {
+    nextMode: "code",
+    nextSyncedThreadId: activeThreadId,
+    shouldUpdateSelectedMode: selectedCollaborationModeId !== "code",
+  };
+}
 
 export type ThreadCompletionTracker = {
   isProcessing: boolean;

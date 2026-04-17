@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef } from "react";
 import type { Dispatch, MutableRefObject } from "react";
 import { buildConversationItem } from "../../../utils/threadItems";
 import { asString } from "../utils/threadNormalize";
-import type { DebugEntry } from "../../../types";
+import type { ConversationItem, DebugEntry } from "../../../types";
 import type { ThreadAction } from "./useThreadsReducer";
 import { isRealtimeBatchingEnabled } from "../utils/realtimePerfFlags";
 import {
@@ -119,6 +119,11 @@ type UseThreadItemEventsOptions = {
     itemId: string;
     text: string;
   }) => void;
+  onExitPlanModeToolCompleted?: (payload: {
+    workspaceId: string;
+    threadId: string;
+    itemId: string;
+  }) => void;
 };
 
 type RealtimeDeltaOperation =
@@ -175,11 +180,29 @@ export function useThreadItemEvents({
   interruptedThreadsRef,
   onDebug,
   onAgentMessageCompletedExternal,
+  onExitPlanModeToolCompleted,
 }: UseThreadItemEventsOptions) {
   const enableRealtimeBatchingRef = useRef(isRealtimeBatchingEnabled());
   const pendingRealtimeDeltaOpsRef = useRef<RealtimeDeltaOperation[]>([]);
   const realtimeFlushTimerRef = useRef<number | null>(null);
   const isFlushingRealtimeDeltaOpsRef = useRef(false);
+
+  const normalizeToolIdentifier = useCallback((value: string) => {
+    return value.trim().toLowerCase().replace(/[^a-z0-9]/g, "");
+  }, []);
+
+  const isClaudeExitPlanModeTool = useCallback(
+    (item: Extract<ConversationItem, { kind: "tool" }>) => {
+      const normalizedToolType = normalizeToolIdentifier(item.toolType);
+      const normalizedTitle = normalizeToolIdentifier(item.title);
+      return (
+        normalizedToolType === "exitplanmode" ||
+        normalizedToolType.endsWith("exitplanmode") ||
+        normalizedTitle.includes("exitplanmode")
+      );
+    },
+    [normalizeToolIdentifier],
+  );
 
   const logReasoningRoute = useCallback(
     (
@@ -529,6 +552,18 @@ export function useThreadItemEvents({
           item: normalizedItem,
           hasCustomName: Boolean(getCustomName(workspaceId, threadId)),
         });
+        if (
+          !shouldMarkProcessing &&
+          inferEngineFromThreadId(threadId) === "claude" &&
+          normalizedItem.kind === "tool" &&
+          isClaudeExitPlanModeTool(normalizedItem)
+        ) {
+          onExitPlanModeToolCompleted?.({
+            workspaceId,
+            threadId,
+            itemId: normalizedItem.id,
+          });
+        }
       }
       safeMessageActivity();
     },
@@ -538,9 +573,11 @@ export function useThreadItemEvents({
       flushRealtimeDeltaOps,
       getCustomName,
       interruptedThreadsRef,
+      isClaudeExitPlanModeTool,
       logReasoningRoute,
       markProcessing,
       markReviewing,
+      onExitPlanModeToolCompleted,
       resolveCollaborationUiMode,
       safeMessageActivity,
     ],

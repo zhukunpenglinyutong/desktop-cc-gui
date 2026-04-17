@@ -184,6 +184,32 @@
 - 卡片默认可折叠，header 保持单行，原始计划内容按 Markdown 渲染。
 - 深色主题下保留层次对比，但避免额外装饰性包围。
 
+### Decision 10: `ExitPlanMode` 必须通过显式执行模式选择离开规划态
+
+**Decision**
+
+- 当 Claude `plan` 会话产出 `ExitPlanMode` 卡片时，卡片本身必须承担“离开规划模式并继续执行”的显式确认入口。
+- 当前仅允许两个执行分支：
+  - `default`：默认审批模式
+  - `full-access`：全自动
+- 用户点击任一分支后，前端必须先同步 selector 状态，再发起执行 prompt。
+
+**Why**
+
+- 近期回归暴露的核心问题不是 plan 卡片缺失，而是“系统已经进入执行链，但 selector 还停在 `plan`”，导致用户理解错位。
+- 如果继续依赖隐式切换或让用户自己猜该去点哪个 selector，会让 rollout 在交互层出现伪状态。
+- 显式双按钮既保留安全边界，也能把“离开 plan”与“选择执行权限”合并成一次明确操作。
+
+**Implementation shape**
+
+- `GenericToolBlock.tsx` 为 `ExitPlanMode` 卡片增加 execution mode section 和双按钮动作。
+- `Messages.tsx` / `ToolBlockRenderer.tsx` 透传 `onExitPlanModeExecute` 回调，不在工具卡内直接写线程逻辑。
+- `app-shell.tsx` 负责真正执行：
+  - `applySelectedCollaborationMode("code")`
+  - `handleSetAccessMode("default" | "full-access")`
+  - 用 `PLAN_APPLY_EXECUTE_PROMPT` 复用既有继续执行入口
+- 该流程只改变 UI 展示和状态同步，不额外引入新的 provider command 或 mode id。
+
 ### Decision 9: Claude inline approval card 采用“底部承接 + 强识别 + 去正文噪音”的展示基线
 
 **Decision**
@@ -240,6 +266,7 @@
 - `ExitPlanMode` 输出应渲染为稳定的计划卡片，且原始计划内容在重开线程后仍具备基本可读性。
 - inline approval card 应在消息幕布底部稳定可见，且视觉上可明显区别于普通提示块。
 - approval detail 不应默认暴露大段 `content` / diff / patch 正文，避免审批面板被正文淹没。
+- `ExitPlanMode` 卡片点击执行模式后，selector 必须立即反映为离开 `plan` 后的真实执行模式，且发送的实现请求必须带上对应 access mode。
 
 ### Edge cases
 
