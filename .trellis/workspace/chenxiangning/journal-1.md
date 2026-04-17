@@ -264,3 +264,40 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 6: 兼容 Claude plan 卡片标题变种
+
+**Date**: 2026-04-17
+**Task**: 兼容 Claude plan 卡片标题变种
+**Branch**: `feature/vvvv0.4.2-1`
+
+### Summary
+
+为 GenericToolBlock 增加 Claude exitplanmode 标题小变种兼容，避免 ExitPlanMode 卡片退化为普通工具块，并补充对应回归测试。
+
+### Main Changes
+
+- 变更文件：src/features/messages/components/toolBlocks/GenericToolBlock.tsx；src/features/messages/components/toolBlocks/GenericToolBlock.test.tsx
+- 变更内容：扩展 exitplanmode 判断逻辑，同时参考 toolName 与原始 title；新增带装饰后缀的 Claude 标题回归测试
+- 验证结果：npm run typecheck 通过；npm exec vitest run src/features/messages/components/toolBlocks/GenericToolBlock.test.tsx 通过（23 tests）
+- 备注：npm run lint 存在仓库既有 react-hooks/exhaustive-deps warnings，本次改动未引入新的 lint error
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `eb88587` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

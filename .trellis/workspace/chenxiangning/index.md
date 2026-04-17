@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 5
+- **Total Sessions**: 6
 - **Last Active**: 2026-04-17
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~266 | Active |
+| `journal-1.md` | ~303 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 6 | 2026-04-17 | 兼容 Claude plan 卡片标题变种 | `eb88587` | `feature/vvvv0.4.2-1` |
 | 5 | 2026-04-17 | 补充 v0.4.2 changelog 发布说明 | `a85197c` | `feature/vvvv0.4.2-1` |
 | 4 | 2026-04-17 | Claude 模式审批修复与 Trellis 记录规则补强 | `fd9272e`, `ba0b46d` | `feature/vvvv0.4.2-1` |
 | 3 | 2026-04-17 | 强化 Trellis 提交后记录门禁并补齐 Claude rollout 提案 | `1e3d02c` | `feature/vvvv0.4.2-1` |
