@@ -32,7 +32,8 @@ mod manager;
 mod stream_helpers;
 mod user_input;
 use approval::{
-    classify_claude_mode_blocked_tool, looks_like_claude_permission_denial_message,
+    classify_claude_mode_blocked_tool, command_can_apply_as_local_file_action,
+    extract_claude_command_string, looks_like_claude_permission_denial_message,
     ClaudeModeBlockedKind, SyntheticApprovalSummaryEntry,
 };
 #[cfg(test)]
@@ -1226,7 +1227,34 @@ impl ClaudeSession {
         }
 
         let pending_tool = self.latest_pending_tool_summary(turn_id)?;
+        let tool_input = self.peek_tool_input_value(&pending_tool.tool_id);
         let blocked_kind = classify_claude_mode_blocked_tool(&pending_tool.tool_name)?;
+        let should_emit_synthetic_approval = match blocked_kind {
+            ClaudeModeBlockedKind::FileChange => true,
+            ClaudeModeBlockedKind::CommandExecution => tool_input
+                .as_ref()
+                .and_then(extract_claude_command_string)
+                .as_deref()
+                .map(command_can_apply_as_local_file_action)
+                .unwrap_or(false),
+            ClaudeModeBlockedKind::RequestUserInput => false,
+        };
+
+        if should_emit_synthetic_approval {
+            if let Ok(mut pending) = self.pending_approval_requests.lock() {
+                pending.insert(pending_tool.tool_id.clone(), turn_id.to_string());
+            }
+            return Some(EngineEvent::ApprovalRequest {
+                workspace_id: self.workspace_id.clone(),
+                request_id: Value::String(pending_tool.tool_id.clone()),
+                tool_name: pending_tool.tool_name.clone(),
+                input: tool_input,
+                message: Some(
+                    "Approve to let the GUI apply this file change locally. Preview currently supports structured file tools plus safe single-path file commands.".to_string(),
+                ),
+            });
+        }
+
         let (blocked_method, reason_code, reason, suggestion) = match blocked_kind {
             ClaudeModeBlockedKind::RequestUserInput => (
                 "item/tool/requestUserInput",

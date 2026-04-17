@@ -24,6 +24,7 @@
 - 记录多文件审批、resume continuity、历史恢复去噪的契约。
 - 记录 approval identity 去重/删除的边界，避免再次出现 request race。
 - 记录 large-file governance 触发后的模块拆分结果，为继续演进保留结构边界。
+- 记录 Claude approval surface 当前已经验证过的可见 UI 基线，避免行为没回退但体验退化。
 
 **Non-Goals**
 
@@ -183,6 +184,53 @@
 - 卡片默认可折叠，header 保持单行，原始计划内容按 Markdown 渲染。
 - 深色主题下保留层次对比，但避免额外装饰性包围。
 
+### Decision 10: `ExitPlanMode` 必须通过显式执行模式选择离开规划态
+
+**Decision**
+
+- 当 Claude `plan` 会话产出 `ExitPlanMode` 卡片时，卡片本身必须承担“离开规划模式并继续执行”的显式确认入口。
+- 当前仅允许两个执行分支：
+  - `default`：默认审批模式
+  - `full-access`：全自动
+- 用户点击任一分支后，前端必须先同步 selector 状态，再发起执行 prompt。
+
+**Why**
+
+- 近期回归暴露的核心问题不是 plan 卡片缺失，而是“系统已经进入执行链，但 selector 还停在 `plan`”，导致用户理解错位。
+- 如果继续依赖隐式切换或让用户自己猜该去点哪个 selector，会让 rollout 在交互层出现伪状态。
+- 显式双按钮既保留安全边界，也能把“离开 plan”与“选择执行权限”合并成一次明确操作。
+
+**Implementation shape**
+
+- `GenericToolBlock.tsx` 为 `ExitPlanMode` 卡片增加 execution mode section 和双按钮动作。
+- `Messages.tsx` / `ToolBlockRenderer.tsx` 透传 `onExitPlanModeExecute` 回调，不在工具卡内直接写线程逻辑。
+- `app-shell.tsx` 负责真正执行：
+  - `applySelectedCollaborationMode("code")`
+  - `handleSetAccessMode("default" | "full-access")`
+  - 用 `PLAN_APPLY_EXECUTE_PROMPT` 复用既有继续执行入口
+- 该流程只改变 UI 展示和状态同步，不额外引入新的 provider command 或 mode id。
+
+### Decision 9: Claude inline approval card 采用“底部承接 + 强识别 + 去正文噪音”的展示基线
+
+**Decision**
+
+- Claude synthetic approval 继续复用现有 approval UI 行为链，但其 inline 展示必须满足更明确的审批识别与阅读位置约束：
+  - 卡片放在消息幕布底部承接当前 turn
+  - 卡片具备明显的审批结构，如 icon、status badge、summary band
+  - 默认隐藏大段 `content`、patch、diff 等正文，不把审批卡做成内容预览器
+
+**Why**
+
+- 最近几轮手测暴露的问题不是审批链断裂，而是“卡片特征不明显”“放在顶部打断阅读”“正文噪音过大”。
+- 这类问题虽然不改变 runtime 行为，但会直接影响用户是否能快速识别这是一个待决策的审批节点。
+- rollout 的可用性基线必须覆盖这种用户可见 contract，而不仅是 CLI flag 与事件流。
+
+**Implementation shape**
+
+- `ApprovalToasts.tsx` 在现有行为不变前提下增加更明确的 header / badge / summary 结构。
+- `Messages.tsx` 将 inline approval slot 放在消息幕布底部、`bottomRef` 之前承接。
+- approval detail 过滤继续隐藏大段正文类字段，仅保留路径、命令、说明等决策必要信息。
+
 ## Risks / Trade-offs
 
 - [Risk] synthetic approval 当前只覆盖文件工具，命令审批仍可能退化
@@ -216,6 +264,9 @@
 - 重开线程后，应恢复结构化 `File changes` 卡片。
 - 批准后的中间态应可见，避免“点击后无反馈”的体验断层。
 - `ExitPlanMode` 输出应渲染为稳定的计划卡片，且原始计划内容在重开线程后仍具备基本可读性。
+- inline approval card 应在消息幕布底部稳定可见，且视觉上可明显区别于普通提示块。
+- approval detail 不应默认暴露大段 `content` / diff / patch 正文，避免审批面板被正文淹没。
+- `ExitPlanMode` 卡片点击执行模式后，selector 必须立即反映为离开 `plan` 后的真实执行模式，且发送的实现请求必须带上对应 access mode。
 
 ### Edge cases
 

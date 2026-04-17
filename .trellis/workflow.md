@@ -225,7 +225,8 @@ python3 ./.trellis/scripts/task.py create "<title>" --slug <task-name>
    --> cat << 'EOF' | python3 ./.trellis/scripts/add_session.py --stdin --title "Title" --commit "hash"
        Task goal, main changes, affected modules, validation results, follow-ups
        EOF
-   --> If developer is not initialized, ask the collaborator for a developer id before running init_developer.py
+   --> If developer is not initialized, first auto-resolve from TRELLIS_DEVELOPER / git user.name / git user.email local-part / a unique existing workspace
+   --> Only ask the collaborator for a developer id if those signals still cannot determine one uniquely
    --> Verify the Trellis metadata commit and report both the code commit hash and record commit hash
 
 8. Verify and close spec loop
@@ -275,7 +276,7 @@ Multi-user / multi-machine rules:
 - Run commands from the repository root.
 - Use repo-relative paths such as `./.trellis/scripts/add_session.py`.
 - Do not write user-specific absolute paths into commands or documentation.
-- Do not guess the developer id. Let `.trellis/.developer` drive the active workspace; if missing, ask the collaborator before initializing.
+- Do not guess the developer id. Let `.trellis/.developer` drive the active workspace; if missing, first auto-resolve from `TRELLIS_DEVELOPER`, `git config user.name`, `git config user.email` local-part, or a unique existing workspace, and only ask the collaborator when those signals are insufficient.
 - `add_session.py` auto-detects branch/package where possible and writes to `.trellis/workspace/<active-developer>/`.
 
 ### Pre-end Checklist

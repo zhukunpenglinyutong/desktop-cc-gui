@@ -7,7 +7,7 @@ description: "Records completed work progress to .trellis/workspace/ journal fil
 
 **Do NOT run `git commit` directly** — the scripts below handle their own commits for `.trellis/` metadata. You only need to read git history (`git log`, `git status`, `git diff`) and run the Python scripts.
 
-**Portability rule**: Run all commands from the repository root with repo-relative paths (`./.trellis/scripts/...`). Never hardcode user names, absolute paths, local home directories, or machine-specific workspace paths. The active developer is resolved from `.trellis/.developer`; if it is missing, ask the collaborator for a developer id before running `init_developer.py`.
+**Portability rule**: Run all commands from the repository root with repo-relative paths (`./.trellis/scripts/...`). Never hardcode user names, absolute paths, local home directories, or machine-specific workspace paths. The active developer is resolved from `.trellis/.developer`; if it is missing, first auto-resolve from `TRELLIS_DEVELOPER`, `git config user.name`, `git config user.email` local-part, or a unique existing `.trellis/workspace/<developer>/`. Only ask the collaborator for the developer id when those signals still cannot determine one uniquely.
 
 ---
 
@@ -19,7 +19,7 @@ description: "Records completed work progress to .trellis/workspace/ journal fil
 python3 ./.trellis/scripts/get_context.py --mode record
 ```
 
-If this reports that the developer is not initialized, stop and ask the collaborator for the developer id, then run:
+If this still reports that the developer is not initialized after auto-resolution, ask the collaborator for the developer id, then run:
 
 ```bash
 python3 ./.trellis/scripts/init_developer.py <developer-id>

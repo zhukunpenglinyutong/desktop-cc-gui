@@ -1444,6 +1444,13 @@ const enPart1 = {
       executionHandoff: "Execution handoff",
       executionHandoffDescription:
         "The planning step is complete. Exit Plan mode to continue with implementation against this approved plan.",
+      executionModeLabel: "Choose execution mode",
+      executionModeDescription:
+        "The plan is confirmed. Continuing execution now requires leaving planning mode.",
+      executionModeDefault: "Default approval mode",
+      executionModeFullAccess: "Full auto",
+      executeDefaultAction: "Switch to default approval mode and run",
+      executeFullAccessAction: "Switch to full auto and run",
       planFile: "Plan file",
       rawOutput: "Raw output",
     },

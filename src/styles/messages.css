@@ -29,9 +29,12 @@
 
 .messages-inline-approval-slot {
   position: sticky;
-  top: calc(var(--main-topbar-height) + 8px);
+  bottom: 10px;
   z-index: 4;
-  margin: 0 0 14px;
+  margin: 16px 0 8px;
+  display: flex;
+  justify-content: center;
+  padding-bottom: 4px;
 }
 
 .app.canvas-width-wide .messages-full {

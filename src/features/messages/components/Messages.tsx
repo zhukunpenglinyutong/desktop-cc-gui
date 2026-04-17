@@ -11,6 +11,7 @@ import Terminal from "lucide-react/dist/esm/icons/terminal";
 import { AgentIcon } from "../../../components/AgentIcon";
 import { ProxyStatusBadge } from "../../../components/ProxyStatusBadge";
 import type {
+  AccessMode,
   ApprovalRequest,
   ConversationItem,
   OpenAppTarget,
@@ -71,6 +72,10 @@ import {
   parseReasoning,
 } from "./messagesReasoning";
 import { parseAgentTaskNotification } from "../utils/agentTaskNotification";
+import {
+  dedupeExitPlanItemsKeepFirst,
+  isExitPlanModeConversationTool,
+} from "./messagesExitPlan";
 
 
 type MessagesProps = {
@@ -108,6 +113,9 @@ type MessagesProps = {
   isPlanProcessing?: boolean;
   onOpenDiffPath?: (path: string) => void;
   onOpenPlanPanel?: () => void;
+  onExitPlanModeExecute?: (
+    mode: Extract<AccessMode, "default" | "full-access">,
+  ) => Promise<void> | void;
   conversationState?: ConversationState | null;
   presentationProfile?: PresentationProfile | null;
   onOpenWorkspaceFile?: (path: string) => void;
@@ -675,6 +683,15 @@ function shouldHideCodexCanvasCommandCard(
   activeEngine: "claude" | "codex" | "gemini" | "opencode",
 ) {
   if (activeEngine !== "codex" && activeEngine !== "claude") {
+    return false;
+  }
+  const normalizedToolName = extractToolName(item.title)
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, "");
+  if (
+    normalizedToolName === "exitplanmode" ||
+    normalizedToolName.endsWith("exitplanmode")
+  ) {
     return false;
   }
   if (item.toolType === "commandExecution") {
@@ -1457,6 +1474,7 @@ export const Messages = memo(function Messages({
   conversationState = null,
   presentationProfile = null,
   onOpenWorkspaceFile,
+  onExitPlanModeExecute,
   agentTaskScrollRequest = null,
 }: MessagesProps) {
   const { t } = useTranslation();
@@ -1525,7 +1543,10 @@ export const Messages = memo(function Messages({
     heartbeatPulse: number;
     threadId: string | null;
   } | null>(null);
-  const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set());
+  const [expandedItems, setExpandedItems] = useState<Set<string>>(() => new Set());
+  const [selectedExitPlanExecutionByItemKey, setSelectedExitPlanExecutionByItemKey] = useState<
+    Record<string, Extract<AccessMode, "default" | "full-access">>
+  >({});
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
   const [activeAnchorId, setActiveAnchorId] = useState<string | null>(null);
   const [showAllHistoryItems, setShowAllHistoryItems] = useState(false);
@@ -1544,9 +1565,12 @@ export const Messages = memo(function Messages({
   const frozenItemsRef = useRef<ConversationItem[] | null>(null);
   const latestItemsRef = useRef(items);
   latestItemsRef.current = items;
-  const effectiveItems = isSelectionFrozen
-    ? frozenItemsRef.current ?? items
-    : items;
+  const effectiveItems = useMemo(() => {
+    const baseItems = isSelectionFrozen
+      ? frozenItemsRef.current ?? items
+      : items;
+    return dedupeExitPlanItemsKeepFirst(baseItems);
+  }, [isSelectionFrozen, items]);
   const firstItemIdRef = useRef<string | null>(items[0]?.id ?? null);
   const activeUserInputRequestId =
     threadId && userInputRequests.length
@@ -1769,6 +1793,25 @@ export const Messages = memo(function Messages({
       return next;
     });
   }, []);
+  const handleExitPlanModeExecuteForItem = useCallback(
+    async (
+      itemId: string,
+      mode: Extract<AccessMode, "default" | "full-access">,
+    ) => {
+      const selectionKey = `${threadId ?? "no-thread"}:${itemId}`;
+      setSelectedExitPlanExecutionByItemKey((prev) => {
+        if (prev[selectionKey] === mode) {
+          return prev;
+        }
+        return {
+          ...prev,
+          [selectionKey]: mode,
+        };
+      });
+      await onExitPlanModeExecute?.(mode);
+    },
+    [onExitPlanModeExecute, threadId],
+  );
   useEffect(() => {
     if (isThinking) {
       return;
@@ -2686,6 +2729,8 @@ export const Messages = memo(function Messages({
         return null;
       }
       const isExpanded = expandedItems.has(item.id);
+      const selectedExitPlanExecutionMode =
+        selectedExitPlanExecutionByItemKey[`${threadId ?? "no-thread"}:${item.id}`] ?? null;
       const provenanceLabel = resolveProvenanceEngineLabel(item.engineSource);
       return (
         <div key={`tool:${item.id}`} className="message-tool-block-shell">
@@ -2704,6 +2749,8 @@ export const Messages = memo(function Messages({
             activeEngine={activeEngine}
             hasPendingUserInputRequest={activeUserInputRequestId !== null}
             onOpenDiffPath={onOpenDiffPath}
+            selectedExitPlanExecutionMode={selectedExitPlanExecutionMode}
+            onExitPlanModeExecute={handleExitPlanModeExecuteForItem}
           />
         </div>
       );
@@ -2813,7 +2860,6 @@ export const Messages = memo(function Messages({
         onScroll={updateAutoScroll}
       >
         <div className="messages-full">
-          {approvalNode}
           {shouldCollapseHistoryItems && (
             <div
               className="messages-collapsed-indicator"
@@ -2864,6 +2910,7 @@ export const Messages = memo(function Messages({
               {t("messages.emptyThread")}
             </div>
           )}
+          {approvalNode}
           <div ref={bottomRef} />
         </div>
       </div>

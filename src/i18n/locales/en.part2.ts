@@ -1185,7 +1185,16 @@ const enPart2 = {
     denyAll: "Deny All",
     reviewRequest: "Review Request",
     approvalNeeded: "Approval needed",
+    pendingBadge: "Pending approval",
+    reviewBeforeApply: "Review this request before the local bridge executes it.",
     inputRequested: "Input requested",
+    fileChanges: "File changes",
+    commandExecution: "Command execution",
+    genericApproval: "Approval",
+    toolLabel: "Tool",
+    filePathLabel: "File path",
+    commandLabel: "Command",
+    noteLabel: "Note",
     none: "None",
     noExtraDetails: "No extra details.",
     decline: "Decline",
@@ -1835,9 +1844,15 @@ const enPart2 = {
     impactFollowUp:
       "If files are listed below, their changes happened inside the history segment that will be rewound. Review them before confirming.",
     workspaceRestoreSectionTitle: "Workspace file strategy",
-    restoreWorkspaceFilesLabel: "Restore workspace files",
-    restoreWorkspaceFilesHint:
-      "When disabled, rewind only updates session history and leaves current workspace files untouched.",
+    modeMessagesAndFilesLabel: "Rewind messages + files",
+    modeMessagesAndFilesHint:
+      "Rewind the conversation history and restore the related workspace file changes together.",
+    modeMessagesOnlyLabel: "Messages only",
+    modeMessagesOnlyHint:
+      "Only rewind conversation history and leave current workspace files untouched.",
+    modeFilesOnlyLabel: "Files only",
+    modeFilesOnlyHint:
+      "Only restore the related files and keep the current conversation history unchanged.",
     filesSectionTitle: "Affected files",
     filesRailTitle: "Files",
     filesEmpty: "No file changes were detected in the history segment being rewound.",

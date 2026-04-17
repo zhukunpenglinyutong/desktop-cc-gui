@@ -74,6 +74,12 @@ import {
   matchesWorkspacePath,
   normalizeComparableWorkspacePath,
 } from "./useThreadActions.workspacePath";
+import {
+  normalizeRewindMode,
+  shouldRestoreWorkspaceFiles,
+  shouldRewindMessages,
+  type RewindMode,
+} from "../utils/rewindMode";
 import type { ThreadAction, ThreadState } from "./useThreadsReducer";
 
 type UseThreadActionsOptions = {
@@ -407,7 +413,7 @@ async function mapWithConcurrency<T>(
 type RewindSupportedEngine = "claude" | "codex";
 type RewindFromMessageOptions = {
   activate?: boolean;
-  restoreWorkspaceFiles?: boolean;
+  mode?: RewindMode;
 };
 
 function resolveRewindSupportedEngine(
@@ -1399,8 +1405,9 @@ export function useThreadActions({
         return null;
       }
       const shouldActivate = options?.activate !== false;
-      const shouldRestoreWorkspaceFiles =
-        options?.restoreWorkspaceFiles !== false;
+      const rewindMode = normalizeRewindMode(options?.mode);
+      const shouldRestoreFiles = shouldRestoreWorkspaceFiles(rewindMode);
+      const shouldRewindSession = shouldRewindMessages(rewindMode);
       const rewindLockKey = `${workspaceId}:${threadId}`;
       if (claudeRewindInFlightByThreadRef.current[rewindLockKey]) {
         return null;
@@ -1459,7 +1466,7 @@ export function useThreadActions({
             latestHistoryMessageId,
           },
         });
-        if (shouldRestoreWorkspaceFiles) {
+        if (shouldRestoreFiles) {
           rewindRestoreState = await applyClaudeRewindWorkspaceRestore({
             workspaceId,
             workspacePath,
@@ -1493,6 +1500,9 @@ export function useThreadActions({
             });
           }
         }
+        if (!shouldRewindSession) {
+          return threadId;
+        }
         if (
           firstHistoryMessageId &&
           resolvedMessageId === firstHistoryMessageId
@@ -1521,7 +1531,7 @@ export function useThreadActions({
         const forkedThreadId = extractThreadId(response);
         if (!forkedThreadId) {
           if (
-            shouldRestoreWorkspaceFiles &&
+            shouldRestoreFiles &&
             rewindRestoreState?.originalSnapshots?.length
           ) {
             await restoreClaudeRewindWorkspaceSnapshots(
@@ -1584,7 +1594,7 @@ export function useThreadActions({
       } catch (error) {
         try {
           if (
-            shouldRestoreWorkspaceFiles &&
+            shouldRestoreFiles &&
             rewindRestoreState?.originalSnapshots?.length
           ) {
             await restoreClaudeRewindWorkspaceSnapshots(
@@ -1651,8 +1661,9 @@ export function useThreadActions({
         return null;
       }
       const shouldActivate = options?.activate !== false;
-      const shouldRestoreWorkspaceFiles =
-        options?.restoreWorkspaceFiles !== false;
+      const rewindMode = normalizeRewindMode(options?.mode);
+      const shouldRestoreFiles = shouldRestoreWorkspaceFiles(rewindMode);
+      const shouldRewindSession = shouldRewindMessages(rewindMode);
       const rewindLockKey = `${workspaceId}:${canonicalThreadId}`;
       if (claudeRewindInFlightByThreadRef.current[rewindLockKey]) {
         return null;
@@ -1699,7 +1710,7 @@ export function useThreadActions({
           threadItems,
           normalizedMessageId,
         );
-        if (shouldRestoreWorkspaceFiles) {
+        if (shouldRestoreFiles) {
           rewindRestoreState = await applyClaudeRewindWorkspaceRestore({
             workspaceId,
             workspacePath,
@@ -1732,6 +1743,9 @@ export function useThreadActions({
               },
             });
           }
+        }
+        if (!shouldRewindSession) {
+          return canonicalThreadId;
         }
 
         if (targetUserTurnIndex === 0) {
@@ -1767,7 +1781,7 @@ export function useThreadActions({
         const forkedThreadId = extractThreadId(hardRewindResponse);
         if (!forkedThreadId) {
           if (
-            shouldRestoreWorkspaceFiles &&
+            shouldRestoreFiles &&
             rewindRestoreState?.originalSnapshots?.length
           ) {
             await restoreClaudeRewindWorkspaceSnapshots(
@@ -1831,7 +1845,7 @@ export function useThreadActions({
       } catch (error) {
         try {
           if (
-            shouldRestoreWorkspaceFiles &&
+            shouldRestoreFiles &&
             rewindRestoreState?.originalSnapshots?.length
           ) {
             await restoreClaudeRewindWorkspaceSnapshots(

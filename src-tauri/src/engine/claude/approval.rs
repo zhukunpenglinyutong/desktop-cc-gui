@@ -31,9 +31,38 @@ enum LocalClaudeFileApprovalAction {
         relative_path: String,
         content: String,
     },
+    TouchFile {
+        relative_path: String,
+    },
+    Edit {
+        relative_path: String,
+        old_string: String,
+        new_string: String,
+    },
+    MultiEdit {
+        relative_path: String,
+        edits: Vec<LocalClaudeStructuredEdit>,
+    },
     CreateDirectory {
         relative_path: String,
     },
+    DeletePath {
+        relative_path: String,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct LocalClaudeStructuredEdit {
+    old_string: String,
+    new_string: String,
+    replace_all: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum LocalClaudeFileCommand {
+    Remove { path: String },
+    MakeDirectory { path: String },
+    Touch { path: String },
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
@@ -149,6 +178,11 @@ pub(super) fn classify_claude_mode_blocked_tool(tool_name: &str) -> Option<Claud
         || normalized == "rewrite"
         || normalized == "createfile"
         || normalized == "createdirectory"
+        || normalized == "delete"
+        || normalized == "deletefile"
+        || normalized == "remove"
+        || normalized == "removefile"
+        || normalized == "unlink"
         || normalized == "notebookedit"
     {
         return Some(ClaudeModeBlockedKind::FileChange);
@@ -190,6 +224,170 @@ fn extract_first_non_empty_string(value: &Value, keys: &[&str]) -> Option<String
     })
 }
 
+fn extract_first_bool(value: &Value, keys: &[&str]) -> Option<bool> {
+    let object = value.as_object()?;
+    keys.iter()
+        .find_map(|key| object.get(*key).and_then(Value::as_bool))
+}
+
+pub(super) fn extract_claude_command_string(value: &Value) -> Option<String> {
+    extract_first_non_empty_string(
+        value,
+        &["command", "cmd", "shell_command", "shellCommand", "script"],
+    )
+}
+
+fn shell_split_simple(command: &str) -> Result<Vec<String>, String> {
+    let mut tokens = Vec::new();
+    let mut current = String::new();
+    let mut quote: Option<char> = None;
+    let mut chars = command.chars().peekable();
+
+    while let Some(ch) = chars.next() {
+        if let Some(active_quote) = quote {
+            if active_quote == '"' && ch == '\\' {
+                if let Some(next) = chars.next() {
+                    current.push(next);
+                } else {
+                    current.push('\\');
+                }
+                continue;
+            }
+            if ch == active_quote {
+                quote = None;
+            } else {
+                current.push(ch);
+            }
+            continue;
+        }
+
+        match ch {
+            '\'' | '"' => quote = Some(ch),
+            '\\' => {
+                let Some(&next) = chars.peek() else {
+                    current.push('\\');
+                    continue;
+                };
+                if next.is_whitespace() || matches!(next, '\'' | '"' | '\\') {
+                    current.push(chars.next().unwrap_or(next));
+                } else {
+                    current.push('\\');
+                }
+            }
+            ' ' | '\t' | '\n' | '\r' => {
+                if !current.is_empty() {
+                    tokens.push(std::mem::take(&mut current));
+                }
+            }
+            _ => current.push(ch),
+        }
+    }
+
+    if quote.is_some() {
+        return Err("Command contains an unterminated quote.".to_string());
+    }
+    if !current.is_empty() {
+        tokens.push(current);
+    }
+    Ok(tokens)
+}
+
+fn command_contains_shell_control(command: &str) -> bool {
+    command.contains(';')
+        || command.contains('|')
+        || command.contains('&')
+        || command.contains('>')
+        || command.contains('<')
+        || command.contains('`')
+        || command.contains("$(")
+        || command.contains("${")
+}
+
+fn parse_single_path_file_command(command: &str) -> Option<LocalClaudeFileCommand> {
+    if command_contains_shell_control(command) {
+        return None;
+    }
+    let tokens = shell_split_simple(command).ok()?;
+    let (program, args) = tokens.split_first()?;
+    let normalized_program = program
+        .rsplit('/')
+        .next()
+        .unwrap_or(program)
+        .trim()
+        .to_ascii_lowercase();
+
+    let mut paths = Vec::new();
+    let mut end_of_options = false;
+    for arg in args {
+        if !end_of_options && arg == "--" {
+            end_of_options = true;
+            continue;
+        }
+        if !end_of_options && arg.starts_with('-') {
+            match normalized_program.as_str() {
+                "rm" if matches!(arg.as_str(), "-f" | "-r" | "-rf" | "-fr") => continue,
+                "mkdir" if arg == "-p" => continue,
+                _ => return None,
+            }
+        }
+        paths.push(arg.clone());
+    }
+
+    if paths.len() != 1 {
+        return None;
+    }
+    let path = paths.remove(0);
+    match normalized_program.as_str() {
+        "rm" | "unlink" | "rmdir" => Some(LocalClaudeFileCommand::Remove { path }),
+        "mkdir" => Some(LocalClaudeFileCommand::MakeDirectory { path }),
+        "touch" => Some(LocalClaudeFileCommand::Touch { path }),
+        _ => None,
+    }
+}
+
+pub(super) fn command_can_apply_as_local_file_action(command: &str) -> bool {
+    parse_single_path_file_command(command).is_some()
+}
+
+fn collect_claude_multiedit_operations(
+    value: &Value,
+    operations: &mut Vec<LocalClaudeStructuredEdit>,
+) {
+    match value {
+        Value::Array(items) => {
+            for item in items {
+                collect_claude_multiedit_operations(item, operations);
+            }
+        }
+        Value::Object(object) => {
+            if let Some(old_string) =
+                extract_first_non_empty_string(value, &["old_string", "oldString"])
+            {
+                operations.push(LocalClaudeStructuredEdit {
+                    old_string,
+                    new_string: extract_first_non_empty_string(value, &["new_string", "newString"])
+                        .unwrap_or_default(),
+                    replace_all: extract_first_bool(value, &["replace_all", "replaceAll"])
+                        .unwrap_or(false),
+                });
+            }
+
+            for key in ["edits", "changes", "input", "arguments"] {
+                if let Some(nested) = object.get(key) {
+                    collect_claude_multiedit_operations(nested, operations);
+                }
+            }
+        }
+        _ => {}
+    }
+}
+
+fn extract_claude_multiedit_operations(value: &Value) -> Vec<LocalClaudeStructuredEdit> {
+    let mut operations = Vec::new();
+    collect_claude_multiedit_operations(value, &mut operations);
+    operations
+}
+
 fn normalize_claude_raw_path(raw_path: &str) -> String {
     raw_path.trim().replace('\\', "/")
 }
@@ -197,6 +395,13 @@ fn normalize_claude_raw_path(raw_path: &str) -> String {
 fn resolve_absolute_candidate_against_existing_ancestor(
     candidate: &Path,
 ) -> Result<PathBuf, String> {
+    if candidate.exists() {
+        let metadata = std::fs::symlink_metadata(candidate)
+            .map_err(|error| format!("Failed to read approval path metadata: {error}"))?;
+        if metadata.file_type().is_symlink() {
+            return Ok(candidate.to_path_buf());
+        }
+    }
     let mut existing_ancestor = Some(candidate);
     while let Some(path) = existing_ancestor {
         if path.exists() {
@@ -259,6 +464,22 @@ fn ensure_workspace_path_within_root(
     Ok(())
 }
 
+fn ensure_existing_workspace_target_within_root(
+    candidate: &Path,
+    canonical_root: &Path,
+) -> Result<PathBuf, String> {
+    let metadata = std::fs::symlink_metadata(candidate)
+        .map_err(|error| format!("Failed to read path metadata: {error}"))?;
+    if metadata.file_type().is_symlink() {
+        return Err("Claude approval preview cannot modify symlink targets.".to_string());
+    }
+    let canonical_candidate = candidate
+        .canonicalize()
+        .map_err(|error| format!("Failed to resolve approval path: {error}"))?;
+    ensure_workspace_path_within_root(&canonical_candidate, canonical_root)?;
+    Ok(canonical_candidate)
+}
+
 fn write_claude_approved_workspace_file(
     workspace_root: &Path,
     relative_path: &str,
@@ -269,6 +490,9 @@ fn write_claude_approved_workspace_file(
         .map_err(|error| format!("Failed to resolve workspace root: {error}"))?;
     let candidate = canonical_root.join(relative_path);
     ensure_workspace_path_within_root(&candidate, &canonical_root)?;
+    if candidate.exists() {
+        ensure_existing_workspace_target_within_root(&candidate, &canonical_root)?;
+    }
 
     if content.len() > MAX_CLAUDE_APPROVAL_FILE_BYTES {
         return Err("File content exceeds maximum allowed size".to_string());
@@ -286,6 +510,35 @@ fn write_claude_approved_workspace_file(
     std::fs::write(&candidate, content).map_err(|error| format!("Failed to write file: {error}"))
 }
 
+fn touch_claude_approved_workspace_file(
+    workspace_root: &Path,
+    relative_path: &str,
+) -> Result<(), String> {
+    let canonical_root = workspace_root
+        .canonicalize()
+        .map_err(|error| format!("Failed to resolve workspace root: {error}"))?;
+    let candidate = canonical_root.join(relative_path);
+    ensure_workspace_path_within_root(&candidate, &canonical_root)?;
+    if candidate.exists() {
+        ensure_existing_workspace_target_within_root(&candidate, &canonical_root)?;
+    }
+
+    if let Some(parent) = candidate.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|error| format!("Failed to create parent directories: {error}"))?;
+        let canonical_parent = parent
+            .canonicalize()
+            .map_err(|error| format!("Failed to resolve parent directory: {error}"))?;
+        ensure_workspace_path_within_root(&canonical_parent, &canonical_root)?;
+    }
+
+    if candidate.exists() {
+        return Ok(());
+    }
+
+    std::fs::write(&candidate, "").map_err(|error| format!("Failed to create file: {error}"))
+}
+
 fn create_claude_approved_workspace_directory(
     workspace_root: &Path,
     relative_path: &str,
@@ -297,7 +550,9 @@ fn create_claude_approved_workspace_directory(
     ensure_workspace_path_within_root(&candidate, &canonical_root)?;
 
     if candidate.exists() {
-        let metadata = std::fs::metadata(&candidate)
+        let canonical_candidate =
+            ensure_existing_workspace_target_within_root(&candidate, &canonical_root)?;
+        let metadata = std::fs::metadata(&canonical_candidate)
             .map_err(|error| format!("Failed to read path metadata: {error}"))?;
         if metadata.is_dir() {
             return Ok(());
@@ -311,6 +566,104 @@ fn create_claude_approved_workspace_directory(
         .canonicalize()
         .map_err(|error| format!("Failed to resolve created directory: {error}"))?;
     ensure_workspace_path_within_root(&canonical_dir, &canonical_root)
+}
+
+fn edit_claude_approved_workspace_file(
+    workspace_root: &Path,
+    relative_path: &str,
+    old_string: &str,
+    new_string: &str,
+) -> Result<(), String> {
+    let canonical_root = workspace_root
+        .canonicalize()
+        .map_err(|error| format!("Failed to resolve workspace root: {error}"))?;
+    let candidate = canonical_root.join(relative_path);
+    let canonical_candidate =
+        ensure_existing_workspace_target_within_root(&candidate, &canonical_root)?;
+
+    let current = std::fs::read_to_string(&canonical_candidate)
+        .map_err(|error| format!("Failed to read file for edit approval: {error}"))?;
+    if old_string.is_empty() {
+        return Err("Claude Edit approval is missing old_string.".to_string());
+    }
+    if !current.contains(old_string) {
+        return Err(format!(
+            "Claude Edit approval could not find expected content in {relative_path}."
+        ));
+    }
+
+    let updated = current.replacen(old_string, new_string, 1);
+    std::fs::write(&canonical_candidate, updated)
+        .map_err(|error| format!("Failed to write edited file: {error}"))
+}
+
+fn apply_claude_structured_edits_to_workspace_file(
+    workspace_root: &Path,
+    relative_path: &str,
+    edits: &[LocalClaudeStructuredEdit],
+) -> Result<(), String> {
+    let canonical_root = workspace_root
+        .canonicalize()
+        .map_err(|error| format!("Failed to resolve workspace root: {error}"))?;
+    let candidate = canonical_root.join(relative_path);
+    let canonical_candidate =
+        ensure_existing_workspace_target_within_root(&candidate, &canonical_root)?;
+
+    if edits.is_empty() {
+        return Err("Claude MultiEdit approval did not include any edits.".to_string());
+    }
+
+    let mut current = std::fs::read_to_string(&canonical_candidate)
+        .map_err(|error| format!("Failed to read file for multi-edit approval: {error}"))?;
+    for edit in edits {
+        if edit.old_string.is_empty() {
+            return Err("Claude MultiEdit approval is missing old_string.".to_string());
+        }
+        if !current.contains(&edit.old_string) {
+            return Err(format!(
+                "Claude MultiEdit approval could not find expected content in {relative_path}."
+            ));
+        }
+        current = if edit.replace_all {
+            current.replace(&edit.old_string, &edit.new_string)
+        } else {
+            current.replacen(&edit.old_string, &edit.new_string, 1)
+        };
+    }
+
+    std::fs::write(&canonical_candidate, current)
+        .map_err(|error| format!("Failed to write multi-edited file: {error}"))
+}
+
+fn delete_claude_approved_workspace_path(
+    workspace_root: &Path,
+    relative_path: &str,
+) -> Result<(), String> {
+    let canonical_root = workspace_root
+        .canonicalize()
+        .map_err(|error| format!("Failed to resolve workspace root: {error}"))?;
+    let candidate = canonical_root.join(relative_path);
+    ensure_workspace_path_within_root(&candidate, &canonical_root)?;
+
+    match std::fs::symlink_metadata(&candidate) {
+        Ok(metadata) => {
+            if metadata.file_type().is_symlink() {
+                return Err("Claude approval preview cannot modify symlink targets.".to_string());
+            }
+            let canonical_candidate =
+                ensure_existing_workspace_target_within_root(&candidate, &canonical_root)?;
+            if metadata.is_dir() {
+                std::fs::remove_dir_all(&canonical_candidate)
+                    .map_err(|error| format!("Failed to delete directory: {error}"))?;
+            } else {
+                std::fs::remove_file(&canonical_candidate)
+                    .map_err(|error| format!("Failed to delete file: {error}"))?;
+            }
+            Ok(())
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(format!("Failed to read delete target metadata: {error}")),
+    }
 }
 
 impl ClaudeSession {
@@ -435,6 +788,7 @@ impl ClaudeSession {
                 resolve_absolute_candidate_against_existing_ancestor(&candidate)?;
             let relative = normalized_absolute_candidate
                 .strip_prefix(&canonical_root)
+                .or_else(|_| normalized_absolute_candidate.strip_prefix(&configured_root))
                 .map_err(|_| {
                     format!(
                         "Claude approval path is outside workspace: {}",
@@ -457,13 +811,40 @@ impl ClaudeSession {
         let input = self
             .peek_tool_input_value(tool_id)
             .ok_or_else(|| format!("Missing Claude tool input for approval request: {tool_id}"))?;
-        let raw_path = extract_first_non_empty_string(&input, CLAUDE_FILE_PATH_KEYS)
-            .ok_or_else(|| format!("Claude approval tool `{tool_name}` did not include a path."))?;
-        let relative_path = self.resolve_workspace_relative_tool_path(&raw_path)?;
         let normalized_tool_name = normalize_claude_tool_name_for_local_apply(&tool_name);
 
         match normalized_tool_name.as_str() {
-            "write" | "writefile" | "createfile" => {
+            "bash" | "shell" | "shellcommand" | "nativecommand" | "run" | "exec"
+            | "execcommand" => {
+                let command = extract_claude_command_string(&input).ok_or_else(|| {
+                    format!("Claude approval tool `{tool_name}` did not include a command.")
+                })?;
+                let file_command = parse_single_path_file_command(&command).ok_or_else(|| {
+                    format!(
+                        "Claude approval command `{command}` is not a supported single-file operation."
+                    )
+                })?;
+                match file_command {
+                    LocalClaudeFileCommand::Remove { path } => {
+                        let relative_path = self.resolve_workspace_relative_tool_path(&path)?;
+                        Ok(LocalClaudeFileApprovalAction::DeletePath { relative_path })
+                    }
+                    LocalClaudeFileCommand::MakeDirectory { path } => {
+                        let relative_path = self.resolve_workspace_relative_tool_path(&path)?;
+                        Ok(LocalClaudeFileApprovalAction::CreateDirectory { relative_path })
+                    }
+                    LocalClaudeFileCommand::Touch { path } => {
+                        let relative_path = self.resolve_workspace_relative_tool_path(&path)?;
+                        Ok(LocalClaudeFileApprovalAction::TouchFile { relative_path })
+                    }
+                }
+            }
+            "write" | "writefile" | "createfile" | "rewrite" => {
+                let raw_path = extract_first_non_empty_string(&input, CLAUDE_FILE_PATH_KEYS)
+                    .ok_or_else(|| {
+                        format!("Claude approval tool `{tool_name}` did not include a path.")
+                    })?;
+                let relative_path = self.resolve_workspace_relative_tool_path(&raw_path)?;
                 let content =
                     extract_first_non_empty_string(&input, CLAUDE_FILE_CONTENT_KEYS).unwrap_or_default();
                 Ok(LocalClaudeFileApprovalAction::Write {
@@ -471,11 +852,65 @@ impl ClaudeSession {
                     content,
                 })
             }
-            "createdirectory" => Ok(LocalClaudeFileApprovalAction::CreateDirectory {
-                relative_path,
-            }),
+            "edit" => {
+                let raw_path = extract_first_non_empty_string(&input, CLAUDE_FILE_PATH_KEYS)
+                    .ok_or_else(|| {
+                        format!("Claude approval tool `{tool_name}` did not include a path.")
+                    })?;
+                let relative_path = self.resolve_workspace_relative_tool_path(&raw_path)?;
+                let old_string =
+                    extract_first_non_empty_string(&input, &["old_string", "oldString"])
+                        .ok_or_else(|| {
+                            format!(
+                                "Claude approval tool `{tool_name}` did not include old_string."
+                            )
+                        })?;
+                let new_string =
+                    extract_first_non_empty_string(&input, &["new_string", "newString"])
+                        .unwrap_or_default();
+                Ok(LocalClaudeFileApprovalAction::Edit {
+                    relative_path,
+                    old_string,
+                    new_string,
+                })
+            }
+            "multiedit" => {
+                let raw_path = extract_first_non_empty_string(&input, CLAUDE_FILE_PATH_KEYS)
+                    .ok_or_else(|| {
+                        format!("Claude approval tool `{tool_name}` did not include a path.")
+                    })?;
+                let relative_path = self.resolve_workspace_relative_tool_path(&raw_path)?;
+                let edits = extract_claude_multiedit_operations(&input);
+                if edits.is_empty() {
+                    return Err(format!(
+                        "Claude approval tool `{tool_name}` did not include structured edits."
+                    ));
+                }
+                Ok(LocalClaudeFileApprovalAction::MultiEdit {
+                    relative_path,
+                    edits,
+                })
+            }
+            "createdirectory" => {
+                let raw_path = extract_first_non_empty_string(&input, CLAUDE_FILE_PATH_KEYS)
+                    .ok_or_else(|| {
+                        format!("Claude approval tool `{tool_name}` did not include a path.")
+                    })?;
+                let relative_path = self.resolve_workspace_relative_tool_path(&raw_path)?;
+                Ok(LocalClaudeFileApprovalAction::CreateDirectory {
+                    relative_path,
+                })
+            }
+            "delete" | "deletefile" | "remove" | "removefile" | "unlink" => {
+                let raw_path = extract_first_non_empty_string(&input, CLAUDE_FILE_PATH_KEYS)
+                    .ok_or_else(|| {
+                        format!("Claude approval tool `{tool_name}` did not include a path.")
+                    })?;
+                let relative_path = self.resolve_workspace_relative_tool_path(&raw_path)?;
+                Ok(LocalClaudeFileApprovalAction::DeletePath { relative_path })
+            }
             _ => Err(format!(
-                "Claude preview approval currently supports only Write/CreateFile/CreateDirectory. Tool `{tool_name}` is not supported yet."
+                "Claude preview approval currently supports Write/CreateFile/CreateDirectory/Edit/MultiEdit/Delete/Rewrite. Tool `{tool_name}` is not supported yet."
             )),
         }
     }
@@ -514,12 +949,77 @@ impl ClaudeSession {
                     status: "completed".to_string(),
                 })
             }
+            LocalClaudeFileApprovalAction::TouchFile { relative_path } => {
+                let target_path = self.workspace_path.join(&relative_path);
+                let existed_before_touch = target_path.exists();
+                touch_claude_approved_workspace_file(&self.workspace_path, &relative_path)?;
+                Ok(SyntheticApprovalSummaryEntry {
+                    summary: if existed_before_touch {
+                        format!("Approved and touched {relative_path}")
+                    } else {
+                        format!("Approved and created {relative_path}")
+                    },
+                    path: Some(relative_path),
+                    kind: Some(
+                        if existed_before_touch {
+                            "modified"
+                        } else {
+                            "add"
+                        }
+                        .to_string(),
+                    ),
+                    status: "completed".to_string(),
+                })
+            }
+            LocalClaudeFileApprovalAction::Edit {
+                relative_path,
+                old_string,
+                new_string,
+            } => {
+                edit_claude_approved_workspace_file(
+                    &self.workspace_path,
+                    &relative_path,
+                    &old_string,
+                    &new_string,
+                )?;
+                Ok(SyntheticApprovalSummaryEntry {
+                    summary: format!("Approved and updated {relative_path}"),
+                    path: Some(relative_path),
+                    kind: Some("modified".to_string()),
+                    status: "completed".to_string(),
+                })
+            }
+            LocalClaudeFileApprovalAction::MultiEdit {
+                relative_path,
+                edits,
+            } => {
+                apply_claude_structured_edits_to_workspace_file(
+                    &self.workspace_path,
+                    &relative_path,
+                    &edits,
+                )?;
+                Ok(SyntheticApprovalSummaryEntry {
+                    summary: format!("Approved and updated {relative_path}"),
+                    path: Some(relative_path),
+                    kind: Some("modified".to_string()),
+                    status: "completed".to_string(),
+                })
+            }
             LocalClaudeFileApprovalAction::CreateDirectory { relative_path } => {
                 create_claude_approved_workspace_directory(&self.workspace_path, &relative_path)?;
                 Ok(SyntheticApprovalSummaryEntry {
                     summary: format!("Approved and created directory {relative_path}"),
                     path: Some(relative_path),
                     kind: Some("add".to_string()),
+                    status: "completed".to_string(),
+                })
+            }
+            LocalClaudeFileApprovalAction::DeletePath { relative_path } => {
+                delete_claude_approved_workspace_path(&self.workspace_path, &relative_path)?;
+                Ok(SyntheticApprovalSummaryEntry {
+                    summary: format!("Approved and deleted {relative_path}"),
+                    path: Some(relative_path),
+                    kind: Some("delete".to_string()),
                     status: "completed".to_string(),
                 })
             }
@@ -563,7 +1063,9 @@ impl ClaudeSession {
         let is_file_change = matches!(
             classify_claude_mode_blocked_tool(&tool_name),
             Some(ClaudeModeBlockedKind::FileChange)
-        );
+        ) || self
+            .resolve_local_file_approval_action(&request_key)
+            .is_ok();
 
         if !is_file_change {
             let summary = if decision == "accept" {

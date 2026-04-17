@@ -520,6 +520,7 @@ export function useThreads({
   const pendingAssistantCompletionRef = useRef<Record<string, PendingAssistantCompletion>>({});
   const threadIdAliasRef = useRef<Record<string, string>>({});
   const recentThreadErrorsRef = useRef<Record<string, { message: string; at: number }>>({});
+  const handledClaudeExitPlanToolIdsRef = useRef<Set<string>>(new Set());
   const sharedSessionSyncTimerByThreadRef = useRef<
     Record<string, ReturnType<typeof setTimeout> | null>
   >({});
@@ -1969,6 +1970,20 @@ export function useThreads({
           });
         }
       : undefined,
+    onExitPlanModeToolCompleted: ({ threadId, itemId }) => {
+      if (threadId !== activeThreadId) {
+        return;
+      }
+      if (activeEngine !== "claude" || accessMode !== "read-only") {
+        return;
+      }
+      const handoffKey = `${threadId}:${itemId}`;
+      if (handledClaudeExitPlanToolIdsRef.current.has(handoffKey)) {
+        return;
+      }
+      handledClaudeExitPlanToolIdsRef.current.add(handoffKey);
+      void interruptTurn({ reason: "plan-handoff" });
+    },
   });
 
   useAppServerEvents(handlers, {

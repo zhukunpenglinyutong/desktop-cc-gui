@@ -898,6 +898,58 @@ fn synthetic_claude_command_denial_maps_to_mode_blocked_signal() {
     assert!(!session.has_pending_approval_request(&Value::String("tool-bash-1".to_string())));
 }
 
+#[test]
+fn synthetic_claude_rm_command_denial_emits_file_approval_request() {
+    let session = ClaudeSession::new("test-workspace".to_string(), test_workspace_path(), None);
+    let mut receiver = session.subscribe();
+
+    session.cache_tool_name("tool-bash-rm", "Bash");
+    session.cache_tool_input_value(
+        "tool-bash-rm",
+        &json!({
+            "command": "rm .specify目录结构说明.md",
+            "description": "Delete a workspace file"
+        }),
+    );
+    session.register_pending_tool("turn-rm", "tool-bash-rm", "Bash", None);
+
+    let event = json!({
+        "type": "user",
+        "message": {
+            "role": "user",
+            "content": [{
+                "type": "tool_result",
+                "tool_use_id": "tool-bash-rm",
+                "content": "rm command was blocked for security because it may only write to files in the allowed working directories.",
+                "is_error": true
+            }]
+        }
+    });
+
+    let converted = session.convert_event("turn-rm", &event);
+    assert!(converted.is_none());
+
+    let approval = receiver
+        .try_recv()
+        .expect("expected approval request event");
+    match approval.event {
+        EngineEvent::ApprovalRequest {
+            request_id,
+            tool_name,
+            input,
+            ..
+        } => {
+            assert_eq!(request_id, Value::String("tool-bash-rm".to_string()));
+            assert_eq!(tool_name, "Bash");
+            assert_eq!(
+                input.as_ref().and_then(|value| value.get("command")),
+                Some(&Value::String("rm .specify目录结构说明.md".to_string()))
+            );
+        }
+        other => panic!("expected approval request, got {:?}", other),
+    }
+}
+
 #[tokio::test]
 async fn synthetic_claude_file_approval_accept_writes_file_and_emits_completion() {
     let workspace_root =
@@ -1058,6 +1110,172 @@ async fn synthetic_claude_file_approval_accept_supports_object_decision_payload(
         std::fs::read_to_string(&file_path).expect("file should exist"),
         "object payload"
     );
+    let _ = std::fs::remove_dir_all(&workspace_root);
+}
+
+#[tokio::test]
+async fn synthetic_claude_edit_approval_accept_replaces_expected_text() {
+    let workspace_root =
+        std::env::temp_dir().join(format!("mossx-claude-approval-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&workspace_root).expect("create temp workspace");
+    let file_path = workspace_root.join("edit-target.txt");
+    std::fs::write(&file_path, "hello old world").expect("seed file");
+
+    let session = ClaudeSession::new("test-workspace".to_string(), workspace_root.clone(), None);
+
+    session.cache_tool_name("tool-edit-accept", "Edit");
+    session.cache_tool_input_value(
+        "tool-edit-accept",
+        &json!({
+            "file_path": file_path.to_string_lossy(),
+            "old_string": "old",
+            "new_string": "new"
+        }),
+    );
+    session.register_pending_tool("turn-edit", "tool-edit-accept", "Edit", None);
+    session
+        .pending_approval_requests
+        .lock()
+        .expect("pending approvals lock")
+        .insert("tool-edit-accept".to_string(), "turn-edit".to_string());
+
+    session
+        .respond_to_approval_request(
+            Value::String("tool-edit-accept".to_string()),
+            Value::String("accept".to_string()),
+        )
+        .await
+        .expect("edit approval should succeed");
+
+    assert_eq!(
+        std::fs::read_to_string(&file_path).expect("file should exist"),
+        "hello new world"
+    );
+    let _ = std::fs::remove_dir_all(&workspace_root);
+}
+
+#[tokio::test]
+async fn synthetic_claude_multiedit_approval_accept_applies_structured_edits() {
+    let workspace_root =
+        std::env::temp_dir().join(format!("mossx-claude-approval-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&workspace_root).expect("create temp workspace");
+    let file_path = workspace_root.join("multiedit-target.txt");
+    std::fs::write(&file_path, "alpha beta beta\ngamma").expect("seed file");
+
+    let session = ClaudeSession::new("test-workspace".to_string(), workspace_root.clone(), None);
+
+    session.cache_tool_name("tool-multiedit-accept", "MultiEdit");
+    session.cache_tool_input_value(
+        "tool-multiedit-accept",
+        &json!({
+            "file_path": file_path.to_string_lossy(),
+            "edits": [
+                {
+                    "old_string": "beta",
+                    "new_string": "delta",
+                    "replace_all": true
+                },
+                {
+                    "old_string": "gamma",
+                    "new_string": "omega"
+                }
+            ]
+        }),
+    );
+    session.register_pending_tool("turn-multiedit", "tool-multiedit-accept", "MultiEdit", None);
+    session
+        .pending_approval_requests
+        .lock()
+        .expect("pending approvals lock")
+        .insert(
+            "tool-multiedit-accept".to_string(),
+            "turn-multiedit".to_string(),
+        );
+
+    session
+        .respond_to_approval_request(
+            Value::String("tool-multiedit-accept".to_string()),
+            Value::String("accept".to_string()),
+        )
+        .await
+        .expect("multiedit approval should succeed");
+
+    assert_eq!(
+        std::fs::read_to_string(&file_path).expect("file should exist"),
+        "alpha delta delta\nomega"
+    );
+    let _ = std::fs::remove_dir_all(&workspace_root);
+}
+
+#[tokio::test]
+async fn synthetic_claude_delete_approval_accept_removes_file() {
+    let workspace_root =
+        std::env::temp_dir().join(format!("mossx-claude-approval-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&workspace_root).expect("create temp workspace");
+    let file_path = workspace_root.join("delete-target.txt");
+    std::fs::write(&file_path, "remove me").expect("seed file");
+
+    let session = ClaudeSession::new("test-workspace".to_string(), workspace_root.clone(), None);
+
+    session.cache_tool_name("tool-delete-accept", "Delete");
+    session.cache_tool_input_value(
+        "tool-delete-accept",
+        &json!({
+            "file_path": file_path.to_string_lossy()
+        }),
+    );
+    session.register_pending_tool("turn-delete", "tool-delete-accept", "Delete", None);
+    session
+        .pending_approval_requests
+        .lock()
+        .expect("pending approvals lock")
+        .insert("tool-delete-accept".to_string(), "turn-delete".to_string());
+
+    session
+        .respond_to_approval_request(
+            Value::String("tool-delete-accept".to_string()),
+            Value::String("accept".to_string()),
+        )
+        .await
+        .expect("delete approval should succeed");
+
+    assert!(!file_path.exists());
+    let _ = std::fs::remove_dir_all(&workspace_root);
+}
+
+#[tokio::test]
+async fn synthetic_claude_rm_command_approval_accept_removes_file() {
+    let workspace_root =
+        std::env::temp_dir().join(format!("mossx-claude-approval-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&workspace_root).expect("create temp workspace");
+    let file_path = workspace_root.join(".specify目录结构说明.md");
+    std::fs::write(&file_path, "remove me").expect("seed file");
+
+    let session = ClaudeSession::new("test-workspace".to_string(), workspace_root.clone(), None);
+
+    session.cache_tool_name("tool-rm-accept", "Bash");
+    session.cache_tool_input_value(
+        "tool-rm-accept",
+        &json!({
+            "command": "rm .specify目录结构说明.md"
+        }),
+    );
+    session.register_pending_tool("turn-rm", "tool-rm-accept", "Bash", None);
+    session
+        .pending_approval_requests
+        .lock()
+        .expect("pending approvals lock")
+        .insert("tool-rm-accept".to_string(), "turn-rm".to_string());
+
+    session
+        .respond_to_approval_request(
+            Value::String("tool-rm-accept".to_string()),
+            Value::String("accept".to_string()),
+        )
+        .await
+        .expect("rm approval should succeed");
+
+    assert!(!file_path.exists(), "file should be removed");
     let _ = std::fs::remove_dir_all(&workspace_root);
 }
 
@@ -1427,30 +1645,58 @@ fn build_mode_blocked_signal_from_error_maps_claude_ask_user_question_denial() {
 }
 
 #[test]
-fn build_mode_blocked_signal_from_error_maps_claude_file_change_denial() {
+fn build_mode_blocked_signal_from_error_maps_claude_file_change_denial_to_approval_request() {
     let session = ClaudeSession::new("test-workspace".to_string(), test_workspace_path(), None);
-    session.register_pending_tool("turn-a", "tool-edit-1", "Edit", None);
+    session.register_pending_tool(
+        "turn-a",
+        "tool-edit-1",
+        "Edit",
+        Some(&json!({
+            "file_path": "demo.txt",
+            "content": "hello from fallback"
+        })),
+    );
+    session.cache_tool_name("tool-edit-1", "Edit");
+    session.cache_tool_input_value(
+        "tool-edit-1",
+        &json!({
+            "file_path": "demo.txt",
+            "content": "hello from fallback"
+        }),
+    );
 
     let event = session
         .build_mode_blocked_signal_from_error("turn-a", "Edit tool permission denied")
-        .expect("expected mode blocked signal");
+        .expect("expected approval request");
 
     match event {
-        EngineEvent::Raw { data, .. } => {
+        EngineEvent::ApprovalRequest {
+            request_id,
+            tool_name,
+            input,
+            message,
+            ..
+        } => {
             assert_eq!(
-                data.get("blockedMethod").and_then(|value| value.as_str()),
-                Some("item/fileChange/requestApproval")
+                request_id,
+                Value::String("tool-edit-1".to_string())
+            );
+            assert_eq!(tool_name, "Edit");
+            assert_eq!(
+                input,
+                Some(json!({
+                    "file_path": "demo.txt",
+                    "content": "hello from fallback"
+                }))
             );
             assert_eq!(
-                data.get("requestId").and_then(|value| value.as_str()),
-                Some("tool-edit-1")
-            );
-            assert_eq!(
-                data.get("reasonCode").and_then(|value| value.as_str()),
-                Some("claude_file_change_permission_denied")
+                message.as_deref(),
+                Some(
+                    "Approve to let the GUI apply this file change locally. Preview currently supports structured file tools plus safe single-path file commands."
+                )
             );
         }
-        other => panic!("expected raw mode-blocked signal, got {:?}", other),
+        other => panic!("expected approval request, got {:?}", other),
     }
 }
 
@@ -1627,6 +1873,16 @@ fn normalize_claude_workspace_relative_path_accepts_segmented_path() {
     assert_eq!(normalized, "nested/path/demo.txt");
 }
 
+#[test]
+fn command_can_apply_as_local_file_action_accepts_windows_style_path_and_cmd_alias() {
+    assert!(approval::command_can_apply_as_local_file_action(
+        r#"mkdir nested\windows\dir"#
+    ));
+    assert!(approval::command_can_apply_as_local_file_action(
+        r#"touch nested\windows\file.txt"#
+    ));
+}
+
 #[tokio::test]
 async fn synthetic_claude_file_approval_accept_creates_missing_parent_directories() {
     let workspace_root =
@@ -1691,7 +1947,10 @@ async fn synthetic_claude_file_approval_accepts_absolute_workspace_path() {
         .pending_approval_requests
         .lock()
         .expect("pending approvals lock")
-        .insert("tool-write-absolute".to_string(), "turn-absolute".to_string());
+        .insert(
+            "tool-write-absolute".to_string(),
+            "turn-absolute".to_string(),
+        );
 
     session
         .respond_to_approval_request(
@@ -1706,6 +1965,119 @@ async fn synthetic_claude_file_approval_accepts_absolute_workspace_path() {
         "absolute approval"
     );
     let _ = std::fs::remove_dir_all(&workspace_root);
+}
+
+#[test]
+fn convert_event_treats_cmd_alias_single_path_command_as_file_approval() {
+    let session = ClaudeSession::new("test-workspace".to_string(), test_workspace_path(), None);
+    let mut receiver = session.subscribe();
+
+    session.cache_tool_name("tool-bash-cmd", "Bash");
+    session.cache_tool_input_value(
+        "tool-bash-cmd",
+        &json!({
+            "cmd": r#"mkdir nested\windows\dir"#
+        }),
+    );
+    session.register_pending_tool("turn-cmd", "tool-bash-cmd", "Bash", None);
+
+    let event = json!({
+        "type": "assistant",
+        "message": {
+            "content": [
+                {
+                    "type": "tool_result",
+                    "tool_use_id": "tool-bash-cmd",
+                    "is_error": true,
+                    "content": "This command requires approval"
+                }
+            ]
+        }
+    });
+
+    let converted = session.convert_event("turn-cmd", &event);
+    assert!(converted.is_none());
+
+    let approval = receiver
+        .try_recv()
+        .expect("expected approval request event");
+    match approval.event {
+        EngineEvent::ApprovalRequest {
+            request_id,
+            tool_name,
+            input,
+            ..
+        } => {
+            assert_eq!(request_id, Value::String("tool-bash-cmd".to_string()));
+            assert_eq!(tool_name, "Bash");
+            assert_eq!(
+                input.as_ref().and_then(|value| value.get("cmd")),
+                Some(&Value::String(r#"mkdir nested\windows\dir"#.to_string()))
+            );
+        }
+        other => panic!("expected approval request, got {:?}", other),
+    }
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn synthetic_claude_file_approval_rejects_symlink_targets() {
+    use std::os::unix::fs::symlink;
+
+    let workspace_root =
+        std::env::temp_dir().join(format!("mossx-claude-approval-{}", uuid::Uuid::new_v4()));
+    let outside_root =
+        std::env::temp_dir().join(format!("mossx-claude-outside-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&workspace_root).expect("create temp workspace");
+    std::fs::create_dir_all(&outside_root).expect("create outside workspace");
+    let outside_file = outside_root.join("outside.txt");
+    std::fs::write(&outside_file, "outside").expect("seed outside file");
+    let symlink_path = workspace_root.join("linked.txt");
+    symlink(&outside_file, &symlink_path).expect("create symlink");
+
+    let session = ClaudeSession::new("test-workspace".to_string(), workspace_root.clone(), None);
+    let mut receiver = session.subscribe();
+
+    session.cache_tool_name("tool-write-symlink", "Write");
+    session.cache_tool_input_value(
+        "tool-write-symlink",
+        &json!({
+            "file_path": symlink_path.to_string_lossy(),
+            "content": "modified through symlink"
+        }),
+    );
+    session.register_pending_tool("turn-symlink", "tool-write-symlink", "Write", None);
+    session
+        .pending_approval_requests
+        .lock()
+        .expect("pending approvals lock")
+        .insert("tool-write-symlink".to_string(), "turn-symlink".to_string());
+
+    session
+        .respond_to_approval_request(
+            Value::String("tool-write-symlink".to_string()),
+            Value::String("accept".to_string()),
+        )
+        .await
+        .expect("approval response should complete with tool error");
+
+    let completion = receiver.try_recv().expect("expected tool completion event");
+    match completion.event {
+        EngineEvent::ToolCompleted { error, .. } => {
+            assert_eq!(
+                error.as_deref(),
+                Some("Claude approval preview cannot modify symlink targets.")
+            );
+        }
+        other => panic!("expected tool completed event, got {:?}", other),
+    }
+
+    assert_eq!(
+        std::fs::read_to_string(&outside_file).expect("outside file should stay untouched"),
+        "outside"
+    );
+    let _ = std::fs::remove_dir_all(&workspace_root);
+    let _ = std::fs::remove_dir_all(&outside_root);
 }
 
 #[test]

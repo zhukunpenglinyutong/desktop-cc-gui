@@ -29,6 +29,7 @@ import { useAutoExitEmptyDiff } from "./features/git/hooks/useAutoExitEmptyDiff"
 import { useModels } from "./features/models/hooks/useModels";
 import { useCollaborationModes } from "./features/collaboration/hooks/useCollaborationModes";
 import { useCollaborationModeSelection } from "./features/collaboration/hooks/useCollaborationModeSelection";
+import { MODE_SELECT_FLASH_EVENT } from "./features/composer/components/ChatInputBox/selectors/modeSelectFlash";
 import { useSkills } from "./features/skills/hooks/useSkills";
 import { useCustomCommands } from "./features/commands/hooks/useCustomCommands";
 import { useCustomPrompts } from "./features/prompts/hooks/useCustomPrompts";
@@ -165,6 +166,7 @@ import {
   extractFirstUserInputAnswer,
   isJankDebugEnabled,
   extractPlanFromTimelineItems,
+  resolveThreadScopedCollaborationModeSync,
   resolveLockLivePreview,
 } from "./app-shell-parts/utils";
 import { useAppShellSearchAndComposerSection } from "./app-shell-parts/useAppShellSearchAndComposerSection";
@@ -1260,6 +1262,7 @@ export function AppShell() {
       };
       await sendUserMessage(PLAN_APPLY_EXECUTE_PROMPT, [], {
         collaborationMode: immediateCodeModePayload,
+        suppressUserMessageRender: true,
       });
     },
     [
@@ -1272,6 +1275,36 @@ export function AppShell() {
       resolvedEffort,
       resolvedModel,
       selectedCollaborationModeId,
+      sendUserMessage,
+    ],
+  );
+  const handleExitPlanModeExecute = useCallback(
+    async (mode: Extract<AccessMode, "default" | "full-access">) => {
+      applySelectedCollaborationMode("code");
+      handleSetAccessMode(mode);
+      if (typeof window !== "undefined") {
+        window.setTimeout(() => {
+          window.dispatchEvent(new Event(MODE_SELECT_FLASH_EVENT));
+        }, 0);
+      }
+      const immediateCodeModePayload: Record<string, unknown> = {
+        mode: "code",
+        settings: {
+          model: resolvedModel ?? null,
+          reasoning_effort: resolvedEffort ?? null,
+        },
+      };
+      await sendUserMessage(PLAN_APPLY_EXECUTE_PROMPT, [], {
+        collaborationMode: immediateCodeModePayload,
+        accessMode: mode,
+        suppressUserMessageRender: true,
+      });
+    },
+    [
+      applySelectedCollaborationMode,
+      handleSetAccessMode,
+      resolvedEffort,
+      resolvedModel,
       sendUserMessage,
     ],
   );
@@ -1842,32 +1875,23 @@ export function AppShell() {
   }, [activeThreadId]);
 
   useEffect(() => {
-    if (activeEngine !== "codex") {
+    const syncResult = resolveThreadScopedCollaborationModeSync({
+      activeEngine,
+      activeThreadId,
+      mappedMode: activeThreadId
+        ? collaborationUiModeByThread[activeThreadId] ?? null
+        : null,
+      selectedCollaborationModeId,
+      lastSyncedThreadId: lastCodexModeSyncThreadRef.current,
+    });
+    if (!syncResult) {
       return;
     }
-    const mappedMode = activeThreadId
-      ? collaborationUiModeByThread[activeThreadId] ?? null
-      : null;
-    if (mappedMode === "plan" || mappedMode === "code") {
-      lastCodexModeSyncThreadRef.current = activeThreadId;
-      codexComposerModeRef.current = mappedMode;
-      if (selectedCollaborationModeId !== mappedMode) {
-        setSelectedCollaborationModeId(mappedMode);
-      }
+    lastCodexModeSyncThreadRef.current = syncResult.nextSyncedThreadId;
+    codexComposerModeRef.current = syncResult.nextMode;
+    if (syncResult.shouldUpdateSelectedMode && syncResult.nextMode) {
+      setSelectedCollaborationModeId(syncResult.nextMode);
       return;
-    }
-    const threadChanged = lastCodexModeSyncThreadRef.current !== activeThreadId;
-    if (!threadChanged) {
-      return;
-    }
-    lastCodexModeSyncThreadRef.current = activeThreadId;
-    if (!activeThreadId) {
-      codexComposerModeRef.current = null;
-      return;
-    }
-    codexComposerModeRef.current = "code";
-    if (selectedCollaborationModeId !== "code") {
-      setSelectedCollaborationModeId("code");
     }
   }, [
     activeEngine,
@@ -2789,7 +2813,7 @@ export function AppShell() {
     handleReviewPromptKeyDown, handleSelectAgent, handleSelectCommit, handleSelectDiff, handleSelectModel, handleSelectOpenAppId, handleSelectOpenCodeAgent, handleSelectOpenCodeVariant, handleSelectStatusPanelSubagent,
     handleSend, handleSendPrompt, handleSendPromptToNewAgent, handleSetAccessMode, handleSetGitRoot, handleStageGitAll, handleStageGitFile, handleSwitchAccount, handleFuseQueued,
     handleSync, handleTestNotificationSound, handleToggleDictation, handleToggleRuntimeConsole, handleToggleTerminal, handleToggleTerminalPanel, handleUnlockPanel, handleUnstageGitFile,
-    handleUpdatePrompt, handleUserInputSubmit, handleUserInputSubmitWithPlanApply, handleWorkspaceDragEnter, handleWorkspaceDragLeave, handleWorkspaceDragOver, handleWorkspaceDrop, handleWorktreeCreated,
+    handleUpdatePrompt, handleUserInputSubmit, handleUserInputSubmitWithPlanApply, handleExitPlanModeExecute, handleWorkspaceDragEnter, handleWorkspaceDragLeave, handleWorkspaceDragOver, handleWorkspaceDrop, handleWorktreeCreated,
     hasActivePlan, hasLoaded, hasPlanData, highlightedBranchIndex, highlightedCommitIndex, highlightedPresetIndex, historySearchItems, hydratedThreadListWorkspaceIdsRef,
     installedEngines, interruptTurn, isCompact, isDeleteThreadPromptBusy, isEditorFileMaximized, isFilesLoading, isLoadingLatestAgents, isMacDesktop,
     isPanelLocked, isPhone, isPlanMode, isPlanPanelDismissed, isProcessing, isProcessingNow, isReviewing, isSearchPaletteOpen,

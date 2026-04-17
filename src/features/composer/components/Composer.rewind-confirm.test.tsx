@@ -552,15 +552,225 @@ const REWIND_ITEMS_WITH_CASE_SENSITIVE_MENTION_PATHS: ConversationItem[] = [
   },
 ];
 
+const REWIND_ITEMS_WITH_DISPLAY_DUPLICATED_FILES: ConversationItem[] = [
+  {
+    id: "user-display-duplicate-1",
+    kind: "message",
+    role: "user",
+    text: "@/Users/demo/repo/.specify目录结构说明.md 删除这个文件",
+  },
+  {
+    id: "assistant-display-duplicate-1",
+    kind: "message",
+    role: "assistant",
+    text: "处理中",
+  },
+  {
+    id: "tool-display-duplicate-absolute",
+    kind: "tool",
+    toolType: "Bash",
+    title: "Bash",
+    detail: JSON.stringify({
+      command: "rm /Users/demo/repo/.specify目录结构说明.md",
+      description: "删除绝对路径文件",
+    }),
+    status: "completed",
+    output: "",
+    changes: [],
+  },
+  {
+    id: "tool-display-duplicate-relative",
+    kind: "tool",
+    toolType: "fileChange",
+    title: "Delete file",
+    detail: JSON.stringify({
+      input: {
+        file_path: ".specify目录结构说明.md",
+      },
+    }),
+    status: "completed",
+    changes: [
+      {
+        path: ".specify目录结构说明.md",
+        kind: "delete",
+      },
+    ],
+  },
+];
+
+const REWIND_ITEMS_WITH_PREVIOUS_READ_CONTEXT: ConversationItem[] = [
+  {
+    id: "user-old-context",
+    kind: "message",
+    role: "user",
+    text: "先看看 src/legacy/Old.tsx",
+  },
+  {
+    id: "tool-old-read",
+    kind: "tool",
+    toolType: "readFile",
+    title: "Read file",
+    detail: JSON.stringify({
+      input: {
+        file_path: "src/legacy/Old.tsx",
+      },
+    }),
+    status: "completed",
+    output: "legacy content",
+  },
+  {
+    id: "user-target-rewind",
+    kind: "message",
+    role: "user",
+    text: "把按钮改成提交",
+  },
+  {
+    id: "assistant-target-rewind",
+    kind: "message",
+    role: "assistant",
+    text: "正在修改",
+  },
+  {
+    id: "tool-target-edit",
+    kind: "tool",
+    toolType: "fileChange",
+    title: "Edit file",
+    detail: JSON.stringify({
+      input: {
+        file_path: "src/components/Button.tsx",
+      },
+    }),
+    changes: [
+      {
+        path: "src/components/Button.tsx",
+        kind: "modified",
+        diff: "@@ -1,1 +1,1 @@\n-old\n+new",
+      },
+    ],
+  },
+];
+
+const REWIND_ITEMS_WITH_READ_ONLY_TOOLS_AFTER_ANCHOR: ConversationItem[] = [
+  {
+    id: "user-read-only-after-anchor-1",
+    kind: "message",
+    role: "user",
+    text:
+      "先读取 @/Users/demo/repo/README.md，再修改 @/Users/demo/repo/src/app.ts",
+  },
+  {
+    id: "assistant-read-only-after-anchor-1",
+    kind: "message",
+    role: "assistant",
+    text: "处理中",
+  },
+  {
+    id: "tool-read-only-after-anchor-read",
+    kind: "tool",
+    toolType: "readFile",
+    title: "Read file",
+    detail: JSON.stringify({
+      input: {
+        file_path: "/Users/demo/repo/README.md",
+      },
+    }),
+    status: "completed",
+    output: "readme content",
+  },
+  {
+    id: "tool-read-only-after-anchor-batch-read",
+    kind: "tool",
+    toolType: "batchReadFiles",
+    title: "Batch read files",
+    detail: JSON.stringify({
+      input: {
+        paths: ["/Users/demo/repo/README.md"],
+      },
+    }),
+    status: "completed",
+    output: "batch read content",
+  },
+  {
+    id: "tool-read-only-after-anchor-edit",
+    kind: "tool",
+    toolType: "fileChange",
+    title: "Edit file",
+    detail: JSON.stringify({
+      input: {
+        file_path: "/Users/demo/repo/src/app.ts",
+      },
+    }),
+    status: "completed",
+    changes: [
+      {
+        path: "/Users/demo/repo/src/app.ts",
+        kind: "modified",
+        diff: "@@ -1,1 +1,1 @@\n-old\n+new",
+      },
+    ],
+  },
+];
+
+const REWIND_ITEMS_WITH_SAME_PATH_READ_THEN_EDIT: ConversationItem[] = [
+  {
+    id: "user-same-path-read-then-edit-1",
+    kind: "message",
+    role: "user",
+    text: "先读取 @/Users/demo/repo/src/app.ts，再修改 @/Users/demo/repo/src/app.ts",
+  },
+  {
+    id: "assistant-same-path-read-then-edit-1",
+    kind: "message",
+    role: "assistant",
+    text: "处理中",
+  },
+  {
+    id: "tool-same-path-read",
+    kind: "tool",
+    toolType: "readFile",
+    title: "Read file",
+    detail: JSON.stringify({
+      input: {
+        file_path: "/Users/demo/repo/src/app.ts",
+      },
+    }),
+    status: "completed",
+    output: "old app content",
+  },
+  {
+    id: "tool-same-path-edit",
+    kind: "tool",
+    toolType: "fileChange",
+    title: "Edit file",
+    detail: JSON.stringify({
+      input: {
+        file_path: "/Users/demo/repo/src/app.ts",
+      },
+    }),
+    status: "completed",
+    changes: [
+      {
+        path: "/Users/demo/repo/src/app.ts",
+        kind: "modified",
+        diff: "@@ -1,1 +1,1 @@\n-before\n+after",
+      },
+    ],
+  },
+];
+
 type ComposerHarnessProps = {
   items?: ConversationItem[];
   onRewind?: (
     userMessageId: string,
-    options?: { restoreWorkspaceFiles?: boolean },
+    options?: { mode?: "messages-and-files" | "messages-only" | "files-only" },
   ) => void | Promise<void>;
   onOpenDiffPath?: (path: string) => void;
   activeThreadId?: string | null;
   selectedEngine?: "claude" | "codex" | "gemini";
+  rewindWorkspaceGitState?: {
+    isGitRepository: boolean;
+    hasDetectedChanges: boolean;
+  } | null;
 };
 
 function ComposerHarness({
@@ -569,6 +779,7 @@ function ComposerHarness({
   onOpenDiffPath,
   activeThreadId = "claude:session-1",
   selectedEngine = "claude",
+  rewindWorkspaceGitState = null,
 }: ComposerHarnessProps) {
   const [draftText, setDraftText] = useState("");
 
@@ -603,6 +814,7 @@ function ComposerHarness({
       onDraftChange={setDraftText}
       dictationEnabled={false}
       activeWorkspaceId="ws-1"
+      rewindWorkspaceGitState={rewindWorkspaceGitState}
       activeThreadId={activeThreadId}
       onOpenDiffPath={onOpenDiffPath}
       onRewind={onRewind}
@@ -652,51 +864,154 @@ describe("Composer Claude rewind confirmation", () => {
       expect(onRewind).toHaveBeenCalledTimes(1);
     });
     expect(onRewind).toHaveBeenCalledWith("user-1", {
-      restoreWorkspaceFiles: true,
+      mode: "messages-and-files",
     });
   });
 
-  it("defaults workspace restore toggle to enabled when opening dialog", () => {
+  it("defaults rewind mode to messages and files when opening dialog", () => {
     render(<ComposerHarness />);
 
     fireEvent.click(screen.getByTestId("rewind-trigger"));
 
     expect(
-      (screen.getByTestId("claude-rewind-restore-toggle") as HTMLInputElement)
+      (screen.getByTestId(
+        "claude-rewind-mode-messages-and-files",
+      ) as HTMLInputElement)
         .checked,
     ).toBe(true);
   });
 
-  it("passes disabled workspace restore toggle to rewind callback", async () => {
+  it("passes messages-only mode to rewind callback", async () => {
     const onRewind = vi.fn(async () => {});
 
     render(<ComposerHarness onRewind={onRewind} />);
 
     fireEvent.click(screen.getByTestId("rewind-trigger"));
-    fireEvent.click(screen.getByTestId("claude-rewind-restore-toggle"));
+    fireEvent.click(screen.getByTestId("claude-rewind-mode-messages-only"));
     fireEvent.click(screen.getByTestId("claude-rewind-confirm-button"));
 
     await waitFor(() => {
       expect(onRewind).toHaveBeenCalledTimes(1);
     });
     expect(onRewind).toHaveBeenCalledWith("user-1", {
-      restoreWorkspaceFiles: false,
+      mode: "messages-only",
     });
   });
 
-  it("resets workspace restore toggle to enabled on dialog reopen", () => {
+  it("passes files-only mode to rewind callback", async () => {
+    const onRewind = vi.fn(async () => {});
+
+    render(<ComposerHarness onRewind={onRewind} />);
+
+    fireEvent.click(screen.getByTestId("rewind-trigger"));
+    fireEvent.click(screen.getByTestId("claude-rewind-mode-files-only"));
+    fireEvent.click(screen.getByTestId("claude-rewind-confirm-button"));
+
+    await waitFor(() => {
+      expect(onRewind).toHaveBeenCalledTimes(1);
+    });
+    expect(onRewind).toHaveBeenCalledWith("user-1", {
+      mode: "files-only",
+    });
+  });
+
+  it("hides file review when messages-only mode is selected", () => {
     render(<ComposerHarness />);
 
     fireEvent.click(screen.getByTestId("rewind-trigger"));
-    fireEvent.click(screen.getByTestId("claude-rewind-restore-toggle"));
+    fireEvent.click(screen.getByTestId("claude-rewind-mode-messages-only"));
+
+    expect(
+      screen.getByTestId("claude-rewind-message-impact-section"),
+    ).not.toBeNull();
+    expect(
+      screen.queryByTestId("claude-rewind-file-review-section"),
+    ).toBeNull();
+    expect(screen.queryByTestId("claude-rewind-file-Button.tsx")).toBeNull();
+  });
+
+  it("hides message impact when files-only mode is selected", () => {
+    render(<ComposerHarness />);
+
+    fireEvent.click(screen.getByTestId("rewind-trigger"));
+    fireEvent.click(screen.getByTestId("claude-rewind-mode-files-only"));
+
+    expect(
+      screen.queryByTestId("claude-rewind-message-impact-section"),
+    ).toBeNull();
+    expect(screen.getByTestId("claude-rewind-file-review-section")).not.toBeNull();
+    expect(screen.getByTestId("claude-rewind-file-Button.tsx")).not.toBeNull();
+  });
+
+  it("hides affected file UI when current workspace is a clean git repository", () => {
+    render(
+      <ComposerHarness
+        rewindWorkspaceGitState={{
+          isGitRepository: true,
+          hasDetectedChanges: false,
+        }}
+      />,
+    );
+
+    fireEvent.click(screen.getByTestId("rewind-trigger"));
+
+    expect(screen.queryByTestId("claude-rewind-file-review-section")).toBeNull();
+    expect(screen.queryByTestId("claude-rewind-file-Button.tsx")).toBeNull();
+    expect(screen.queryByText("rewind.impactFiles")).toBeNull();
+    expect(screen.getByTestId("claude-rewind-message-impact-section")).not.toBeNull();
+  });
+
+  it("keeps affected file UI for non-git workspaces", () => {
+    render(
+      <ComposerHarness
+        rewindWorkspaceGitState={{
+          isGitRepository: false,
+          hasDetectedChanges: false,
+        }}
+      />,
+    );
+
+    fireEvent.click(screen.getByTestId("rewind-trigger"));
+
+    expect(screen.getByTestId("claude-rewind-file-review-section")).not.toBeNull();
+    expect(screen.getByTestId("claude-rewind-file-Button.tsx")).not.toBeNull();
+  });
+
+  it("resets rewind mode to messages and files on dialog reopen", () => {
+    render(<ComposerHarness />);
+
+    fireEvent.click(screen.getByTestId("rewind-trigger"));
+    fireEvent.click(screen.getByTestId("claude-rewind-mode-files-only"));
     fireEvent.click(screen.getByTestId("claude-rewind-cancel-button"));
 
     fireEvent.click(screen.getByTestId("rewind-trigger"));
 
     expect(
-      (screen.getByTestId("claude-rewind-restore-toggle") as HTMLInputElement)
+      (screen.getByTestId(
+        "claude-rewind-mode-messages-and-files",
+      ) as HTMLInputElement)
         .checked,
     ).toBe(true);
+  });
+
+  it("does not include files read before the target user message", () => {
+    render(<ComposerHarness items={REWIND_ITEMS_WITH_PREVIOUS_READ_CONTEXT} />);
+
+    fireEvent.click(screen.getByTestId("rewind-trigger"));
+
+    expect(screen.getByTestId("claude-rewind-file-Button.tsx")).not.toBeNull();
+    expect(screen.queryByTestId("claude-rewind-file-Old.tsx")).toBeNull();
+  });
+
+  it("does not include read or batch read files after the target user message", () => {
+    render(
+      <ComposerHarness items={REWIND_ITEMS_WITH_READ_ONLY_TOOLS_AFTER_ANCHOR} />,
+    );
+
+    fireEvent.click(screen.getByTestId("rewind-trigger"));
+
+    expect(screen.getByTestId("claude-rewind-file-app.ts")).not.toBeNull();
+    expect(screen.queryByTestId("claude-rewind-file-README.md")).toBeNull();
   });
 
   it("switches selected file preview and opens standalone diff dialog", () => {
@@ -1045,6 +1360,134 @@ describe("Composer Claude rewind confirmation", () => {
             { path: "/Users/demo/repo/abc.txt", status: "A" },
             { path: "/Users/demo/repo/pom.xml", status: "M" },
           ],
+        }),
+      );
+    });
+  });
+
+  it("keeps a single mutation entry when the same path is read and then edited", () => {
+    render(<ComposerHarness items={REWIND_ITEMS_WITH_SAME_PATH_READ_THEN_EDIT} />);
+
+    fireEvent.click(screen.getByTestId("rewind-trigger"));
+
+    expect(screen.getAllByTestId("claude-rewind-file-app.ts")).toHaveLength(1);
+    expect(screen.getByTestId("claude-rewind-file-app.ts").textContent).toContain(
+      "git.fileModified",
+    );
+  });
+
+  it("deduplicates file list entries when the same file appears as absolute and relative paths", () => {
+    render(
+      <ComposerHarness items={REWIND_ITEMS_WITH_DISPLAY_DUPLICATED_FILES} />,
+    );
+
+    fireEvent.click(screen.getByTestId("rewind-trigger"));
+
+    expect(
+      screen.getAllByTestId("claude-rewind-file-.specify目录结构说明.md"),
+    ).toHaveLength(1);
+  });
+
+  it("preserves stronger delete status and richer diff details when duplicate display entries are merged", () => {
+    render(
+      <ComposerHarness
+        items={[
+          {
+            id: "user-duplicate-merge-1",
+            kind: "message",
+            role: "user",
+            text: "删除 docs/spec.md",
+          },
+          {
+            id: "assistant-duplicate-merge-1",
+            kind: "message",
+            role: "assistant",
+            text: "处理中",
+          },
+          {
+            id: "tool-duplicate-merge-absolute",
+            kind: "tool",
+            toolType: "fileChange",
+            title: "Delete file",
+            detail: JSON.stringify({
+              input: {
+                file_path: "/Users/demo/repo/docs/spec.md",
+              },
+            }),
+            status: "completed",
+            changes: [
+              {
+                path: "/Users/demo/repo/docs/spec.md",
+                kind: "deleted",
+                diff: "@@ -1,2 +0,0 @@\n-old line 1\n-old line 2",
+              },
+            ],
+          },
+          {
+            id: "tool-duplicate-merge-relative",
+            kind: "tool",
+            toolType: "fileChange",
+            title: "Edit file",
+            detail: JSON.stringify({
+              input: {
+                file_path: "docs/spec.md",
+              },
+            }),
+            status: "completed",
+            changes: [
+              {
+                path: "docs/spec.md",
+                kind: "modified",
+                diff: "@@ -1,1 +1,1 @@\n-old\n+new",
+              },
+            ],
+          },
+        ]}
+      />,
+    );
+
+    fireEvent.click(screen.getByTestId("rewind-trigger"));
+
+    const mergedEntry = screen.getByTestId("claude-rewind-file-spec.md");
+    expect(screen.getAllByTestId("claude-rewind-file-spec.md")).toHaveLength(1);
+    expect(mergedEntry.textContent).toContain("git.fileDeleted");
+
+    fireEvent.click(mergedEntry);
+
+    expect(
+      screen.getByText((content) => content.includes("old line 2")),
+    ).not.toBeNull();
+  });
+
+  it("exports the same mutation-only file set shown in preview", async () => {
+    const invokeMock = vi.mocked(invoke);
+    invokeMock.mockResolvedValueOnce({
+      outputPath:
+        "/Users/demo/.ccgui/chat-diff/claude/2026-04-17/session-1/user-read-only-after-anchor-1",
+      filesPath:
+        "/Users/demo/.ccgui/chat-diff/claude/2026-04-17/session-1/user-read-only-after-anchor-1/files",
+      manifestPath:
+        "/Users/demo/.ccgui/chat-diff/claude/2026-04-17/session-1/user-read-only-after-anchor-1/manifest.json",
+      exportId: "user-read-only-after-anchor-1",
+      fileCount: 1,
+    });
+
+    render(
+      <ComposerHarness items={REWIND_ITEMS_WITH_READ_ONLY_TOOLS_AFTER_ANCHOR} />,
+    );
+
+    fireEvent.click(screen.getByTestId("rewind-trigger"));
+    expect(screen.getByTestId("claude-rewind-file-app.ts")).not.toBeNull();
+    expect(screen.queryByTestId("claude-rewind-file-README.md")).toBeNull();
+
+    fireEvent.click(screen.getByTestId("claude-rewind-store-button"));
+
+    await waitFor(() => {
+      expect(invokeMock).toHaveBeenCalledWith(
+        "export_rewind_files",
+        expect.objectContaining({
+          targetMessageId: "user-read-only-after-anchor-1",
+          files: [{ path: "/Users/demo/repo/src/app.ts", status: "M" }],
         }),
       );
     });

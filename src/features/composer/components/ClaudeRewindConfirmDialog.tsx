@@ -7,6 +7,7 @@ import { languageFromPath } from "../../../utils/syntax";
 import FileIcon from "../../../components/FileIcon";
 import type { OperationFileChangeSummary } from "../../operation-facts/operationFacts";
 import { DiffBlock } from "../../git/components/DiffBlock";
+import type { RewindMode } from "../../threads/utils/rewindMode";
 
 export type RewindPreviewState = {
   targetMessageId: string;
@@ -25,8 +26,9 @@ export type ClaudeRewindPreviewState = RewindPreviewState;
 type RewindConfirmDialogProps = {
   preview: RewindPreviewState | null;
   isBusy?: boolean;
-  restoreWorkspaceFiles?: boolean;
-  onRestoreWorkspaceFilesChange?: (value: boolean) => void;
+  rewindMode?: RewindMode;
+  shouldShowAffectedFiles?: boolean;
+  onRewindModeChange?: (value: RewindMode) => void;
   onOpenDiffPath?: (path: string) => void;
   onStoreChanges?: (
     preview: RewindPreviewState,
@@ -54,6 +56,122 @@ function formatFileStatusLabel(
 }
 
 const PREVIEW_CONTEXT_RADIUS = 1;
+
+function normalizeRewindDisplayPath(filePath: string): string {
+  return filePath.trim().replace(/\\/g, "/");
+}
+
+function toRewindDisplayDedupeKey(filePath: string): string {
+  const normalizedPath = normalizeRewindDisplayPath(filePath);
+  if (!normalizedPath) {
+    return "";
+  }
+  if (
+    normalizedPath.includes("\\") ||
+    /^[A-Za-z]:\//.test(normalizedPath) ||
+    /^\/\/[^/]+\/[^/]+/.test(normalizedPath)
+  ) {
+    return normalizedPath.toLowerCase();
+  }
+  return normalizedPath;
+}
+
+function isLikelySameDisplayFile(
+  leftPath: string,
+  rightPath: string,
+  leftFileName: string,
+  rightFileName: string,
+): boolean {
+  if (leftFileName !== rightFileName) {
+    return false;
+  }
+  const normalizedLeft = normalizeRewindDisplayPath(leftPath);
+  const normalizedRight = normalizeRewindDisplayPath(rightPath);
+  if (!normalizedLeft || !normalizedRight) {
+    return false;
+  }
+  return (
+    normalizedLeft.endsWith(`/${normalizedRight}`) ||
+    normalizedRight.endsWith(`/${normalizedLeft}`)
+  );
+}
+
+function resolvePreferredReviewStatus(
+  current: OperationFileChangeSummary["status"],
+  incoming: OperationFileChangeSummary["status"],
+): OperationFileChangeSummary["status"] {
+  const priority: Record<OperationFileChangeSummary["status"], number> = {
+    D: 4,
+    R: 3,
+    A: 2,
+    M: 1,
+  };
+  return priority[incoming] > priority[current] ? incoming : current;
+}
+
+function mergeReviewFileSummaries(
+  current: OperationFileChangeSummary,
+  incoming: OperationFileChangeSummary,
+): OperationFileChangeSummary {
+  const shouldPreferIncomingPath =
+    !current.filePath.trim() ||
+    (incoming.filePath.trim().length > 0 &&
+      incoming.filePath.length > current.filePath.length);
+  const currentDiff = current.diff?.trim() ?? "";
+  const incomingDiff = incoming.diff?.trim() ?? "";
+
+  return {
+    ...current,
+    ...(shouldPreferIncomingPath
+      ? {
+          filePath: incoming.filePath,
+          fileName: incoming.fileName,
+        }
+      : {}),
+    status: resolvePreferredReviewStatus(current.status, incoming.status),
+    additions: Math.max(current.additions, incoming.additions),
+    deletions: Math.max(current.deletions, incoming.deletions),
+    diff: incomingDiff.length > currentDiff.length ? incoming.diff : current.diff,
+  };
+}
+
+function dedupeReviewFiles(
+  files: OperationFileChangeSummary[],
+): OperationFileChangeSummary[] {
+  const deduped: OperationFileChangeSummary[] = [];
+  const indexByKey = new Map<string, number>();
+  for (const file of files) {
+    const exactKey = toRewindDisplayDedupeKey(file.filePath);
+    const exactIndex = exactKey.length > 0 ? indexByKey.get(exactKey) ?? -1 : -1;
+    if (exactIndex >= 0) {
+      deduped[exactIndex] = mergeReviewFileSummaries(
+        deduped[exactIndex]!,
+        file,
+      );
+      continue;
+    }
+    const fuzzyIndex = deduped.findIndex((entry) =>
+      isLikelySameDisplayFile(
+        entry.filePath,
+        file.filePath,
+        entry.fileName,
+        file.fileName,
+      ),
+    );
+    if (fuzzyIndex >= 0) {
+      deduped[fuzzyIndex] = mergeReviewFileSummaries(deduped[fuzzyIndex]!, file);
+      if (exactKey.length > 0) {
+        indexByKey.set(exactKey, fuzzyIndex);
+      }
+      continue;
+    }
+    deduped.push(file);
+    if (exactKey.length > 0) {
+      indexByKey.set(exactKey, deduped.length - 1);
+    }
+  }
+  return deduped;
+}
 
 function resolveRewindEngineLabel(engine: RewindPreviewState["engine"]): string {
   if (engine === "codex") {
@@ -120,8 +238,9 @@ function buildCompactPreviewLines(diff?: string): ParsedDiffLine[] | null {
 export function ClaudeRewindConfirmDialog({
   preview,
   isBusy = false,
-  restoreWorkspaceFiles = true,
-  onRestoreWorkspaceFilesChange,
+  rewindMode = "messages-and-files",
+  shouldShowAffectedFiles = true,
+  onRewindModeChange,
   onOpenDiffPath: _onOpenDiffPath,
   onStoreChanges,
   onCancel,
@@ -135,19 +254,25 @@ export function ClaudeRewindConfirmDialog({
   const [exportResult, setExportResult] =
     useState<ExportRewindFilesResult | null>(null);
   const [exportError, setExportError] = useState<string | null>(null);
+  const reviewFiles = useMemo(() => {
+    if (!preview) {
+      return [];
+    }
+    return dedupeReviewFiles(preview.affectedFiles);
+  }, [preview]);
 
   const selectedFile = useMemo(() => {
-    if (!preview || preview.affectedFiles.length === 0) {
+    if (!preview || reviewFiles.length === 0) {
       return null;
     }
     return (
-      preview.affectedFiles.find(
+      reviewFiles.find(
         (file) => file.filePath === selectedFilePath,
       ) ??
-      preview.affectedFiles[0] ??
+      reviewFiles[0] ??
       null
     );
-  }, [preview, selectedFilePath]);
+  }, [preview, reviewFiles, selectedFilePath]);
 
   const selectedPreviewLines = useMemo(
     () => buildCompactPreviewLines(selectedFile?.diff),
@@ -162,6 +287,34 @@ export function ClaudeRewindConfirmDialog({
     [selectedFile?.diff],
   );
   const hasStructuredFullDiff = selectedFullDiffLines.length > 0;
+  const showMessageImpact = rewindMode !== "files-only";
+  const showFileReview = rewindMode !== "messages-only" && shouldShowAffectedFiles;
+  const impactCards = [
+    {
+      key: "messages",
+      value: preview?.removedUserMessageCount ?? 0,
+      label: t("rewind.impactUserMessages"),
+    },
+    {
+      key: "assistant",
+      value: preview?.removedAssistantMessageCount ?? 0,
+      label: t("rewind.impactAssistantMessages"),
+    },
+    {
+      key: "tools",
+      value: preview?.removedToolCallCount ?? 0,
+      label: t("rewind.impactToolCalls"),
+    },
+    ...(shouldShowAffectedFiles
+      ? [
+          {
+            key: "files",
+            value: reviewFiles.length,
+            label: t("rewind.impactFiles"),
+          },
+        ]
+      : []),
+  ];
 
   useEffect(() => {
     if (!preview || isBusy) {
@@ -178,11 +331,11 @@ export function ClaudeRewindConfirmDialog({
       setExportError(null);
       return;
     }
-    const fallbackPath = preview.affectedFiles[0]?.filePath ?? null;
+    const fallbackPath = reviewFiles[0]?.filePath ?? null;
     setSelectedFilePath((current) => {
       if (
         current &&
-        preview.affectedFiles.some((file) => file.filePath === current)
+        reviewFiles.some((file) => file.filePath === current)
       ) {
         return current;
       }
@@ -191,7 +344,7 @@ export function ClaudeRewindConfirmDialog({
     setIsFullDiffOpen(false);
     setExportResult(null);
     setExportError(null);
-  }, [preview]);
+  }, [preview, reviewFiles]);
 
   useEffect(() => {
     if (!preview) {
@@ -305,223 +458,255 @@ export function ClaudeRewindConfirmDialog({
 
           <section className="claude-rewind-modal-section">
             <div className="claude-rewind-modal-section-label">
-              {t("rewind.impactSectionTitle")}
-            </div>
-            <div className="claude-rewind-modal-impact-grid">
-              <article className="claude-rewind-modal-impact-card">
-                <span className="claude-rewind-modal-impact-value">
-                  {preview.removedUserMessageCount}
-                </span>
-                <span className="claude-rewind-modal-impact-label">
-                  {t("rewind.impactUserMessages")}
-                </span>
-              </article>
-              <article className="claude-rewind-modal-impact-card">
-                <span className="claude-rewind-modal-impact-value">
-                  {preview.removedAssistantMessageCount}
-                </span>
-                <span className="claude-rewind-modal-impact-label">
-                  {t("rewind.impactAssistantMessages")}
-                </span>
-              </article>
-              <article className="claude-rewind-modal-impact-card">
-                <span className="claude-rewind-modal-impact-value">
-                  {preview.removedToolCallCount}
-                </span>
-                <span className="claude-rewind-modal-impact-label">
-                  {t("rewind.impactToolCalls")}
-                </span>
-              </article>
-              <article className="claude-rewind-modal-impact-card">
-                <span className="claude-rewind-modal-impact-value">
-                  {preview.affectedFiles.length}
-                </span>
-                <span className="claude-rewind-modal-impact-label">
-                  {t("rewind.impactFiles")}
-                </span>
-              </article>
-            </div>
-            <div className="claude-rewind-modal-impact-note">
-              <p>{t("rewind.impactSummary")}</p>
-              <p>{t("rewind.impactFollowUp")}</p>
-            </div>
-          </section>
-
-          <section className="claude-rewind-modal-section">
-            <div className="claude-rewind-modal-section-label">
               {t("rewind.workspaceRestoreSectionTitle")}
             </div>
-            <label className="claude-rewind-modal-toggle">
-              <input
-                type="checkbox"
-                checked={restoreWorkspaceFiles}
-                onChange={(event) => {
-                  onRestoreWorkspaceFilesChange?.(event.target.checked);
-                }}
-                disabled={isBusy || isExporting}
-                className="claude-rewind-modal-toggle-input"
-                data-testid="claude-rewind-restore-toggle"
-              />
-              <span className="claude-rewind-modal-toggle-switch" aria-hidden>
-                <span className="claude-rewind-modal-toggle-thumb" />
-              </span>
-              <span className="claude-rewind-modal-toggle-copy">
-                <span className="claude-rewind-modal-toggle-title">
-                  {t("rewind.restoreWorkspaceFilesLabel")}
-                </span>
-                <span className="claude-rewind-modal-toggle-hint">
-                  {t("rewind.restoreWorkspaceFilesHint")}
-                </span>
-              </span>
-            </label>
+            <div
+              className="claude-rewind-modal-mode-list"
+              role="radiogroup"
+              data-testid="claude-rewind-mode-list"
+            >
+              {(
+                [
+                  {
+                    mode: "messages-and-files" as const,
+                    title: t("rewind.modeMessagesAndFilesLabel"),
+                    hint: t("rewind.modeMessagesAndFilesHint"),
+                  },
+                  {
+                    mode: "messages-only" as const,
+                    title: t("rewind.modeMessagesOnlyLabel"),
+                    hint: t("rewind.modeMessagesOnlyHint"),
+                  },
+                  {
+                    mode: "files-only" as const,
+                    title: t("rewind.modeFilesOnlyLabel"),
+                    hint: t("rewind.modeFilesOnlyHint"),
+                  },
+                ] satisfies Array<{
+                  mode: RewindMode;
+                  title: string;
+                  hint: string;
+                }>
+              ).map((option) => (
+                <label
+                  key={option.mode}
+                  className={`claude-rewind-modal-mode-option${rewindMode === option.mode ? " is-selected" : ""}`}
+                >
+                  <input
+                    type="radio"
+                    name="claude-rewind-mode"
+                    value={option.mode}
+                    checked={rewindMode === option.mode}
+                    onChange={() => {
+                      onRewindModeChange?.(option.mode);
+                    }}
+                    disabled={isBusy || isExporting}
+                    className="claude-rewind-modal-mode-input"
+                    data-testid={`claude-rewind-mode-${option.mode}`}
+                  />
+                  <span className="claude-rewind-modal-mode-indicator" aria-hidden>
+                    <span className="claude-rewind-modal-mode-indicator-dot" />
+                  </span>
+                  <span className="claude-rewind-modal-mode-copy">
+                    <span className="claude-rewind-modal-mode-title">
+                      {option.title}
+                    </span>
+                    <span
+                      className="claude-rewind-modal-mode-hint"
+                      aria-hidden="true"
+                    >
+                      {option.hint}
+                    </span>
+                  </span>
+                </label>
+              ))}
+            </div>
           </section>
 
-          <section className="claude-rewind-modal-section">
-            <div className="claude-rewind-modal-section-label">
-              {t("rewind.filesSectionTitle")}
-            </div>
-            {preview.affectedFiles.length > 0 ? (
-              <div className="claude-rewind-modal-review-layout">
-                <div className="claude-rewind-modal-file-rail">
-                  <div className="claude-rewind-modal-file-rail-header">
-                    <span>{t("rewind.filesRailTitle")}</span>
-                    <span className="claude-rewind-modal-file-rail-count">
-                      {preview.affectedFiles.length}
+          {showMessageImpact ? (
+            <section
+              className="claude-rewind-modal-section"
+              data-testid="claude-rewind-message-impact-section"
+            >
+              <div className="claude-rewind-modal-section-label">
+                {t("rewind.impactSectionTitle")}
+              </div>
+              <div
+                className="claude-rewind-modal-impact-grid"
+                data-impact-count={impactCards.length}
+              >
+                {impactCards.map((card) => (
+                  <article
+                    key={card.key}
+                    className="claude-rewind-modal-impact-card"
+                  >
+                    <span className="claude-rewind-modal-impact-value">
+                      {card.value}
                     </span>
-                  </div>
-                  <div className="claude-rewind-modal-file-rail-list">
-                    {preview.affectedFiles.map((file) => {
-                      const isSelected =
-                        file.filePath === selectedFile?.filePath;
-                      return (
-                        <button
-                          key={file.filePath}
-                          type="button"
-                          className={`claude-rewind-modal-file-item${isSelected ? " is-selected" : ""}`}
-                          onClick={() => {
-                            setSelectedFilePath(file.filePath);
-                            setExportError(null);
-                          }}
-                          data-testid={`claude-rewind-file-${file.fileName}`}
-                        >
-                          <span
-                            className="claude-rewind-modal-file-icon"
-                            aria-hidden
-                          >
-                            <FileIcon filePath={file.filePath} />
-                          </span>
-                          <span className="claude-rewind-modal-file-main">
-                            <span className="claude-rewind-modal-file-title-row">
-                              <span
-                                className="claude-rewind-modal-file-name"
-                                title={file.filePath}
-                              >
-                                {file.fileName}
-                              </span>
-                              <span
-                                className={`claude-rewind-modal-file-status-text is-${file.status.toLowerCase()}`}
-                              >
-                                {formatFileStatusLabel(t, file.status)}
-                              </span>
-                            </span>
-                          </span>
-                          <span className="claude-rewind-modal-file-stats">
-                            <span className="is-add">+{file.additions}</span>
-                            <span className="is-del">-{file.deletions}</span>
-                          </span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
+                    <span className="claude-rewind-modal-impact-label">
+                      {card.label}
+                    </span>
+                  </article>
+                ))}
+              </div>
+              <div className="claude-rewind-modal-impact-note">
+                <p>{t("rewind.impactSummary")}</p>
+                <p>{t("rewind.impactFollowUp")}</p>
+              </div>
+            </section>
+          ) : null}
 
-                <div className="claude-rewind-modal-diff-panel">
-                  {selectedFile ? (
-                    <>
-                      <div className="claude-rewind-modal-diff-header">
-                        <div className="claude-rewind-modal-diff-heading">
-                          <div className="claude-rewind-modal-diff-title-row">
+          {showFileReview ? (
+            <section
+              className="claude-rewind-modal-section"
+              data-testid="claude-rewind-file-review-section"
+            >
+              <div className="claude-rewind-modal-section-label">
+                {t("rewind.filesSectionTitle")}
+              </div>
+              {reviewFiles.length > 0 ? (
+                <div className="claude-rewind-modal-review-layout">
+                  <div className="claude-rewind-modal-file-rail">
+                    <div className="claude-rewind-modal-file-rail-header">
+                      <span>{t("rewind.filesRailTitle")}</span>
+                      <span className="claude-rewind-modal-file-rail-count">
+                        {reviewFiles.length}
+                      </span>
+                    </div>
+                    <div className="claude-rewind-modal-file-rail-list">
+                      {reviewFiles.map((file) => {
+                        const isSelected =
+                          file.filePath === selectedFile?.filePath;
+                        return (
+                          <button
+                            key={file.filePath}
+                            type="button"
+                            className={`claude-rewind-modal-file-item${isSelected ? " is-selected" : ""}`}
+                            onClick={() => {
+                              setSelectedFilePath(file.filePath);
+                              setExportError(null);
+                            }}
+                            data-testid={`claude-rewind-file-${file.fileName}`}
+                          >
                             <span
                               className="claude-rewind-modal-file-icon"
                               aria-hidden
                             >
-                              <FileIcon filePath={selectedFile.filePath} />
+                              <FileIcon filePath={file.filePath} />
                             </span>
-                            <div className="claude-rewind-modal-diff-title-group">
-                              <strong title={selectedFile.filePath}>
-                                {selectedFile.fileName}
-                              </strong>
-                              <code>{selectedFile.filePath}</code>
-                            </div>
-                          </div>
-                          <div className="claude-rewind-modal-diff-meta">
-                            <span
-                              className={`claude-rewind-modal-file-status-text is-${selectedFile.status.toLowerCase()}`}
-                            >
-                              {formatFileStatusLabel(t, selectedFile.status)}
+                            <span className="claude-rewind-modal-file-main">
+                              <span className="claude-rewind-modal-file-title-row">
+                                <span
+                                  className="claude-rewind-modal-file-name"
+                                  title={file.filePath}
+                                >
+                                  {file.fileName}
+                                </span>
+                                <span
+                                  className={`claude-rewind-modal-file-status-text is-${file.status.toLowerCase()}`}
+                                >
+                                  {formatFileStatusLabel(t, file.status)}
+                                </span>
+                              </span>
                             </span>
-                            <span className="is-add">
-                              +{selectedFile.additions}
+                            <span className="claude-rewind-modal-file-stats">
+                              <span className="is-add">+{file.additions}</span>
+                              <span className="is-del">-{file.deletions}</span>
                             </span>
-                            <span className="is-del">
-                              -{selectedFile.deletions}
-                            </span>
-                          </div>
-                        </div>
-                        <div className="claude-rewind-modal-diff-actions">
-                          <button
-                            type="button"
-                            className="ghost claude-rewind-modal-inline-button"
-                            onClick={() => setIsFullDiffOpen(true)}
-                            data-testid="claude-rewind-open-diff-button"
-                          >
-                            {t("rewind.openDiffAction")}
                           </button>
-                        </div>
-                      </div>
-                      {selectedPreviewLines ? (
-                        <div
-                          className="claude-rewind-modal-diff-content"
-                          data-testid="claude-rewind-diff-preview"
-                        >
-                          <div className="diff-viewer-output diff-viewer-output-flat claude-rewind-modal-diff-theme">
-                            <div
-                              className="diffs-container"
-                              data-diff-style="unified"
-                            >
-                              <DiffBlock
-                                diff={selectedFile.diff ?? ""}
-                                language={selectedDiffLanguage}
-                                diffStyle="unified"
-                                showLineNumbers
-                                showHunkHeaders={false}
-                                parsedLines={selectedPreviewLines}
-                              />
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  <div className="claude-rewind-modal-diff-panel">
+                    {selectedFile ? (
+                      <>
+                        <div className="claude-rewind-modal-diff-header">
+                          <div className="claude-rewind-modal-diff-heading">
+                            <div className="claude-rewind-modal-diff-title-row">
+                              <span
+                                className="claude-rewind-modal-file-icon"
+                                aria-hidden
+                              >
+                                <FileIcon filePath={selectedFile.filePath} />
+                              </span>
+                              <div className="claude-rewind-modal-diff-title-group">
+                                <strong title={selectedFile.filePath}>
+                                  {selectedFile.fileName}
+                                </strong>
+                                <code>{selectedFile.filePath}</code>
+                              </div>
+                            </div>
+                            <div className="claude-rewind-modal-diff-meta">
+                              <span
+                                className={`claude-rewind-modal-file-status-text is-${selectedFile.status.toLowerCase()}`}
+                              >
+                                {formatFileStatusLabel(t, selectedFile.status)}
+                              </span>
+                              <span className="is-add">
+                                +{selectedFile.additions}
+                              </span>
+                              <span className="is-del">
+                                -{selectedFile.deletions}
+                              </span>
                             </div>
                           </div>
+                          <div className="claude-rewind-modal-diff-actions">
+                            <button
+                              type="button"
+                              className="ghost claude-rewind-modal-inline-button"
+                              onClick={() => setIsFullDiffOpen(true)}
+                              data-testid="claude-rewind-open-diff-button"
+                            >
+                              {t("rewind.openDiffAction")}
+                            </button>
+                          </div>
                         </div>
-                      ) : (
-                        <div className="claude-rewind-modal-empty">
-                          {t("rewind.diffEmpty")}
-                        </div>
-                      )}
-                    </>
-                  ) : (
-                    <div className="claude-rewind-modal-empty">
-                      {t("rewind.filesEmpty")}
-                    </div>
-                  )}
+                        {selectedPreviewLines ? (
+                          <div
+                            className="claude-rewind-modal-diff-content"
+                            data-testid="claude-rewind-diff-preview"
+                          >
+                            <div className="diff-viewer-output diff-viewer-output-flat claude-rewind-modal-diff-theme">
+                              <div
+                                className="diffs-container"
+                                data-diff-style="unified"
+                              >
+                                <DiffBlock
+                                  diff={selectedFile.diff ?? ""}
+                                  language={selectedDiffLanguage}
+                                  diffStyle="unified"
+                                  showLineNumbers
+                                  showHunkHeaders={false}
+                                  parsedLines={selectedPreviewLines}
+                                />
+                              </div>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="claude-rewind-modal-empty">
+                            {t("rewind.diffEmpty")}
+                          </div>
+                        )}
+                      </>
+                    ) : (
+                      <div className="claude-rewind-modal-empty">
+                        {t("rewind.filesEmpty")}
+                      </div>
+                    )}
+                  </div>
                 </div>
+              ) : (
+                <div className="claude-rewind-modal-empty">
+                  {t("rewind.filesEmpty")}
+                </div>
+              )}
+              <div className="claude-rewind-modal-files-hint">
+                {t("rewind.filesHint")}
               </div>
-            ) : (
-              <div className="claude-rewind-modal-empty">
-                {t("rewind.filesEmpty")}
-              </div>
-            )}
-            <div className="claude-rewind-modal-files-hint">
-              {t("rewind.filesHint")}
-            </div>
-          </section>
+            </section>
+          ) : null}
         </div>
 
         <div className="claude-rewind-modal-actions">

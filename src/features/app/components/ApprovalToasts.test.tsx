@@ -117,7 +117,7 @@ describe("ApprovalToasts", () => {
   });
 
   it("hides large file content fields from approval detail view", () => {
-    render(
+    const { container } = render(
       <ApprovalToasts
         approvals={[
           {
@@ -139,13 +139,43 @@ describe("ApprovalToasts", () => {
       />,
     );
 
-    expect(screen.getByText("File path")).toBeTruthy();
+    expect(screen.getByText("approval.filePathLabel")).toBeTruthy();
     expect(screen.getByText("/repo/.env.example")).toBeTruthy();
-    expect(screen.getByText("Tool")).toBeTruthy();
+    expect(screen.getByText("approval.toolLabel")).toBeTruthy();
     expect(screen.getByText("Write")).toBeTruthy();
+    expect(container.querySelector(".approval-toast-icon-wrap")).toBeTruthy();
+    expect(container.querySelector(".approval-toast-summary-band")).toBeTruthy();
+    expect(container.querySelector(".approval-toast-badge")).toBeTruthy();
     expect(screen.queryByText("Content")).toBeNull();
     expect(screen.queryByText("New string")).toBeNull();
     expect(screen.queryByText("SECRET=demo")).toBeNull();
     expect(screen.queryByText("NEXT=demo")).toBeNull();
+  });
+
+  it("reads file path and tool name from nested input payloads", () => {
+    render(
+      <ApprovalToasts
+        approvals={[
+          {
+            workspace_id: "ws-1",
+            request_id: "req-nested-1",
+            method: "item/fileChange/requestApproval",
+            params: {
+              toolName: "Write",
+              input: {
+                file_path: "/repo/nested/demo.txt",
+                tool_name: "NestedWrite",
+              },
+            },
+          },
+        ]}
+        workspaces={[]}
+        onDecision={vi.fn()}
+        variant="inline"
+      />,
+    );
+
+    expect(screen.getByText("/repo/nested/demo.txt")).toBeTruthy();
+    expect(screen.getByText("Write")).toBeTruthy();
   });
 });

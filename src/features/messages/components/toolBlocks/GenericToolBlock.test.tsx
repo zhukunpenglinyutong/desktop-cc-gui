@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ConversationItem } from "../../../../types";
 import * as diffParser from "../../../../utils/diff";
 import { GenericToolBlock } from "./GenericToolBlock";
@@ -214,6 +214,15 @@ PLANFILEPATH
 };
 
 describe("GenericToolBlock", () => {
+  beforeEach(() => {
+    Object.defineProperty(globalThis.navigator, "clipboard", {
+      value: {
+        writeText: vi.fn().mockResolvedValue(undefined),
+      },
+      configurable: true,
+    });
+  });
+
   afterEach(() => {
     cleanup();
   });
@@ -482,58 +491,163 @@ describe("GenericToolBlock", () => {
   });
 
   it("renders exit plan mode as a dedicated plan-ready card", () => {
+    const onExitPlanModeExecute = vi.fn();
+    const onToggle = vi.fn();
     const view = render(
       <GenericToolBlock
         item={exitPlanModeItem}
         isExpanded={false}
-        onToggle={vi.fn()}
+        onToggle={onToggle}
+        activeEngine="claude"
+        selectedExitPlanExecutionMode={null}
+        onExitPlanModeExecute={onExitPlanModeExecute}
       />,
     );
 
     expect(screen.getByText("Execution Plan Ready")).toBeTruthy();
     expect(screen.queryByText("Plan summary")).toBeNull();
-    const header = view.container.querySelector(".tool-exit-plan-card-header");
+    const header = view.container.querySelector(".tool-exit-plan-card-toggle");
     expect(header).toBeTruthy();
     if (header) {
       fireEvent.click(header);
     }
+    expect(onToggle).toHaveBeenCalledWith("tool-5");
+    view.rerender(
+      <GenericToolBlock
+        item={exitPlanModeItem}
+        isExpanded={true}
+        onToggle={onToggle}
+        activeEngine="claude"
+        selectedExitPlanExecutionMode={null}
+        onExitPlanModeExecute={onExitPlanModeExecute}
+      />,
+    );
     expect(screen.getByText("Plan summary")).toBeTruthy();
     expect(screen.getByText("Execution handoff")).toBeTruthy();
+    expect(screen.getByText("Choose execution mode")).toBeTruthy();
+    expect(screen.queryByText("Default approval mode")).toBeNull();
+    expect(screen.queryByText("Full auto")).toBeNull();
+    expect(screen.getByRole("button", { name: "Switch to default approval mode and run" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Switch to full auto and run" })).toBeTruthy();
     expect(screen.getByText("Plan file")).toBeTruthy();
     expect(screen.getByText("/Users/demo/.claude/plans/sample-plan.md")).toBeTruthy();
     expect(view.container.querySelector(".tool-exit-plan-card")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Switch to default approval mode and run" }));
+    expect(onExitPlanModeExecute).toHaveBeenCalledWith("tool-5", "default");
+
+    view.rerender(
+      <GenericToolBlock
+        item={exitPlanModeItem}
+        isExpanded={true}
+        onToggle={onToggle}
+        activeEngine="claude"
+        selectedExitPlanExecutionMode="default"
+        onExitPlanModeExecute={onExitPlanModeExecute}
+      />,
+    );
+    expect(
+      screen.getByRole("button", { name: "Switch to default approval mode and run · 已选" }).hasAttribute("disabled"),
+    ).toBe(true);
+
+    fireEvent.click(screen.getByRole("button", { name: "Switch to full auto and run" }));
+    expect(onExitPlanModeExecute).not.toHaveBeenCalledWith("tool-5", "full-access");
+  });
+
+  it("copies exit plan markdown from the card header without toggling", async () => {
+    const onToggle = vi.fn();
+    render(
+      <GenericToolBlock
+        item={exitPlanModeItem}
+        isExpanded={true}
+        onToggle={onToggle}
+        activeEngine="claude"
+        selectedExitPlanExecutionMode={null}
+        onExitPlanModeExecute={vi.fn()}
+      />,
+    );
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "messages.copy" }));
+    });
+
+    expect(navigator.clipboard.writeText).toHaveBeenCalledWith(
+      expect.stringContaining("# Plan"),
+    );
+    expect(onToggle).not.toHaveBeenCalled();
   });
 
   it("falls back to raw output when exit plan payload has no labeled sections", () => {
+    const onToggle = vi.fn();
     const view = render(
       <GenericToolBlock
         item={exitPlanModeRawFallbackItem}
         isExpanded={false}
-        onToggle={vi.fn()}
+        onToggle={onToggle}
       />,
     );
 
-    const header = view.container.querySelector(".tool-exit-plan-card-header");
+    const header = view.container.querySelector(".tool-exit-plan-card-toggle");
     expect(header).toBeTruthy();
     if (header) {
       fireEvent.click(header);
     }
+    expect(onToggle).toHaveBeenCalledWith("tool-6");
+    view.rerender(
+      <GenericToolBlock
+        item={exitPlanModeRawFallbackItem}
+        isExpanded={true}
+        onToggle={onToggle}
+      />,
+    );
     expect(screen.getByText("Raw output")).toBeTruthy();
     expect(view.container.querySelector(".tool-exit-plan-card-markdown")?.textContent ?? "").toContain(
       "plain exit plan payload without labeled sections",
     );
   });
 
-  it("parses json exit plan payload and renders plan markdown", () => {
-    render(
+  it("hides trivial exit plan raw output noise", () => {
+    const noisyExitPlanItem: Extract<ConversationItem, { kind: "tool" }> = {
+      id: "tool-raw-noise",
+      kind: "tool",
+      toolType: "toolCall",
+      title: "Tool: ExitPlanMode",
+      detail: "{}",
+      status: "completed",
+    };
+    const view = render(
       <GenericToolBlock
-        item={exitPlanModeJsonItem}
-        isExpanded={false}
+        item={noisyExitPlanItem}
+        isExpanded={true}
         onToggle={vi.fn()}
       />,
     );
 
+    expect(screen.queryByText("Raw output")).toBeNull();
+    expect(view.container.querySelector(".tool-exit-plan-card-markdown")?.textContent ?? "").not.toContain(
+      "{}",
+    );
+  });
+
+  it("parses json exit plan payload and renders plan markdown", () => {
+    const onToggle = vi.fn();
+    const view = render(
+      <GenericToolBlock
+        item={exitPlanModeJsonItem}
+        isExpanded={false}
+        onToggle={onToggle}
+      />,
+    );
+
     fireEvent.click(screen.getByRole("button", { name: "Execution Plan ReadyExit Plan mode" }));
+    expect(onToggle).toHaveBeenCalledWith("tool-7");
+    view.rerender(
+      <GenericToolBlock
+        item={exitPlanModeJsonItem}
+        isExpanded={true}
+        onToggle={onToggle}
+      />,
+    );
     expect(screen.getByText("计划")).toBeTruthy();
     expect(screen.getByText("用户要求创建多个简单的文本文件。")).toBeTruthy();
     expect(screen.getByText("/Users/demo/.claude/plans/json-plan.md")).toBeTruthy();
@@ -589,19 +703,28 @@ describe("GenericToolBlock", () => {
   });
 
   it("preserves rich markdown when extracting labeled exit plan payload", () => {
+    const onToggle = vi.fn();
     const view = render(
       <GenericToolBlock
         item={exitPlanModeRichMarkdownItem}
         isExpanded={false}
-        onToggle={vi.fn()}
+        onToggle={onToggle}
       />,
     );
 
-    const header = view.container.querySelector(".tool-exit-plan-card-header");
+    const header = view.container.querySelector(".tool-exit-plan-card-toggle");
     expect(header).toBeTruthy();
     if (header) {
       fireEvent.click(header);
     }
+    expect(onToggle).toHaveBeenCalledWith("tool-9");
+    view.rerender(
+      <GenericToolBlock
+        item={exitPlanModeRichMarkdownItem}
+        isExpanded={true}
+        onToggle={onToggle}
+      />,
+    );
 
     expect(screen.getByText("Rollout")).toBeTruthy();
     expect(screen.getByText("Checklist")).toBeTruthy();

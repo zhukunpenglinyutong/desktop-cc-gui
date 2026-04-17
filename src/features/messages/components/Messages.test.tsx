@@ -24,6 +24,25 @@ describe("Messages", () => {
     }
   });
 
+  const exitPlanToolItem: ConversationItem = {
+    id: "exit-plan-tool",
+    kind: "tool",
+    toolType: "toolCall",
+    title: "Tool: ExitPlanMode",
+    detail: "PLAN\n# Plan\n\n- implement feature\n\nPLANFILEPATH\n/Users/demo/.claude/plans/plan.md",
+    status: "completed",
+  };
+
+  const exitPlanCommandToolItem: ConversationItem = {
+    id: "exit-plan-command-tool",
+    kind: "tool",
+    toolType: "commandExecution",
+    title: "Claude / exitplanmode",
+    detail: "",
+    output: "Exit plan mode?",
+    status: "completed",
+  };
+
   it("renders Claude reasoning inline by default when no legacy dock flag is set", () => {
     window.localStorage.removeItem("ccgui.claude.hideReasoningModule");
 
@@ -71,6 +90,170 @@ describe("Messages", () => {
       reasoningBlock.compareDocumentPosition(assistantMessage) &
         Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
+  });
+
+  it("routes exit plan execution buttons through the message tool chain", async () => {
+    const onExitPlanModeExecute = vi.fn();
+    render(
+      <Messages
+        items={[exitPlanToolItem]}
+        threadId="thread-exit-plan"
+        workspaceId="ws-1"
+        isThinking={false}
+        activeEngine="claude"
+        openTargets={[]}
+        selectedOpenAppId=""
+        onExitPlanModeExecute={onExitPlanModeExecute}
+      />,
+    );
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Execution Plan ReadyExit Plan mode" }),
+    );
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Switch to default approval mode and run" }),
+    );
+
+    expect(onExitPlanModeExecute).toHaveBeenCalledWith("default");
+    expect(
+      screen.getByRole("button", { name: "Switch to default approval mode and run · 已选" }),
+    ).toBeTruthy();
+  });
+
+  it("renders ExitPlanMode cards collapsed by default", () => {
+    render(
+      <Messages
+        items={[exitPlanToolItem]}
+        threadId="thread-exit-plan-collapsed"
+        workspaceId="ws-1"
+        isThinking={false}
+        activeEngine="claude"
+        openTargets={[]}
+        selectedOpenAppId=""
+        onExitPlanModeExecute={vi.fn()}
+      />,
+    );
+
+    const headerButton = screen.getByRole("button", {
+      name: "Execution Plan ReadyExit Plan mode",
+    });
+    expect(headerButton.getAttribute("aria-expanded")).toBe("false");
+    expect(screen.queryByText("Execution handoff")).toBeNull();
+  });
+
+  it("keeps ExitPlanMode card expanded during same-thread streaming updates", () => {
+    const view = render(
+      <Messages
+        items={[exitPlanToolItem]}
+        threadId="thread-exit-plan-streaming-stable"
+        workspaceId="ws-1"
+        isThinking={true}
+        activeEngine="claude"
+        openTargets={[]}
+        selectedOpenAppId=""
+        onExitPlanModeExecute={vi.fn()}
+      />,
+    );
+
+    const headerButton = screen.getByRole("button", {
+      name: "Execution Plan ReadyExit Plan mode",
+    });
+    fireEvent.click(headerButton);
+    expect(headerButton.getAttribute("aria-expanded")).toBe("true");
+    expect(screen.getByText("Execution handoff")).toBeTruthy();
+
+    view.rerender(
+      <Messages
+        items={[
+          exitPlanToolItem,
+          {
+            id: "msg-streaming-followup",
+            kind: "message",
+            role: "assistant",
+            text: "继续执行中",
+          },
+        ]}
+        threadId="thread-exit-plan-streaming-stable"
+        workspaceId="ws-1"
+        isThinking={true}
+        activeEngine="claude"
+        openTargets={[]}
+        selectedOpenAppId=""
+        onExitPlanModeExecute={vi.fn()}
+      />,
+    );
+
+    expect(
+      screen.getByRole("button", { name: "Execution Plan ReadyExit Plan mode" }).getAttribute("aria-expanded"),
+    ).toBe("true");
+    expect(screen.getByText("Execution handoff")).toBeTruthy();
+  });
+
+  it("dedupes repeated ExitPlanMode cards and keeps the first one", () => {
+    const duplicateExitPlanToolItem: ConversationItem = {
+      ...exitPlanToolItem,
+      id: "exit-plan-tool-duplicate",
+    };
+
+    render(
+      <Messages
+        items={[exitPlanToolItem, duplicateExitPlanToolItem]}
+        threadId="thread-exit-plan-dedupe"
+        workspaceId="ws-1"
+        isThinking={false}
+        activeEngine="claude"
+        openTargets={[]}
+        selectedOpenAppId=""
+        onExitPlanModeExecute={vi.fn()}
+      />,
+    );
+
+    expect(screen.getAllByText("Execution Plan Ready")).toHaveLength(1);
+  });
+
+  it("dedupes mixed ExitPlanMode runtime variants and keeps the first card", () => {
+    const duplicateRuntimeVariant: ConversationItem = {
+      id: "exit-plan-tool-runtime-duplicate",
+      kind: "tool",
+      toolType: "commandExecution",
+      title: "Claude / exitplanmode",
+      detail: "",
+      output: "Exit plan mode?",
+      status: "completed",
+    };
+
+    render(
+      <Messages
+        items={[exitPlanToolItem, duplicateRuntimeVariant]}
+        threadId="thread-exit-plan-runtime-dedupe"
+        workspaceId="ws-1"
+        isThinking={false}
+        activeEngine="claude"
+        openTargets={[]}
+        selectedOpenAppId=""
+        onExitPlanModeExecute={vi.fn()}
+      />,
+    );
+
+    expect(screen.getAllByText("Execution Plan Ready")).toHaveLength(1);
+  });
+
+  it("keeps command-like ExitPlanMode items on the dedicated handoff card", () => {
+    render(
+      <Messages
+        items={[exitPlanCommandToolItem]}
+        threadId="thread-exit-plan-command"
+        workspaceId="ws-1"
+        isThinking={false}
+        activeEngine="claude"
+        openTargets={[]}
+        selectedOpenAppId=""
+        onExitPlanModeExecute={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText("Execution Plan Ready")).toBeTruthy();
+    expect(screen.queryByText("Claude / exitplanmode")).toBeNull();
   });
 
   it("keeps Claude reasoning title stable while streaming", () => {

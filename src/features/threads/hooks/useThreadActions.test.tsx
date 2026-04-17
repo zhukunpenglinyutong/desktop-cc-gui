@@ -1050,7 +1050,7 @@ describe("useThreadActions", () => {
         "ws-1",
         "claude:session-1",
         "user-local-no-restore",
-        { restoreWorkspaceFiles: false },
+        { mode: "messages-only" },
       );
     });
 
@@ -1218,11 +1218,85 @@ describe("useThreadActions", () => {
         "ws-1",
         "claude:session-1",
         "user-local-disable-rollback",
-        { restoreWorkspaceFiles: false },
+        { mode: "messages-only" },
       );
     });
 
     expect(writeWorkspaceFile).not.toHaveBeenCalled();
+  });
+
+  it("restores workspace files without rewinding Claude messages in files-only mode", async () => {
+    vi.mocked(listThreads).mockResolvedValue({
+      result: {
+        data: [],
+        nextCursor: null,
+      },
+    } as any);
+    vi.mocked(listClaudeSessions).mockResolvedValue([]);
+    vi.mocked(loadClaudeSession).mockResolvedValue({
+      messages: [
+        {
+          kind: "message",
+          role: "user",
+          id: "550e8400-e29b-41d4-a716-446655440151",
+          text: "回溯目标",
+        },
+      ],
+    } as any);
+    vi.mocked(readWorkspaceFile).mockResolvedValue({
+      content: "const value = 'after';\n",
+      truncated: false,
+    });
+
+    const { result } = renderActions({
+      itemsByThread: {
+        "claude:session-1": [
+          {
+            id: "user-files-only",
+            kind: "message",
+            role: "user",
+            text: "回溯目标",
+          },
+          {
+            id: "tool-file-files-only",
+            kind: "tool",
+            toolType: "fileChange",
+            title: "File changes",
+            detail: "{}",
+            changes: [
+              {
+                path: "src/App.tsx",
+                kind: "modified",
+                diff: "@@ -1,1 +1,1 @@\n-const value = 'before';\n+const value = 'after';",
+              },
+            ],
+          },
+        ],
+      },
+    });
+
+    await act(async () => {
+      await result.current.listThreadsForWorkspace(workspace, { preserveState: true });
+    });
+
+    let output: string | null = null;
+    await act(async () => {
+      output = await result.current.forkClaudeSessionFromMessageForWorkspace(
+        "ws-1",
+        "claude:session-1",
+        "user-files-only",
+        { mode: "files-only" },
+      );
+    });
+
+    expect(output).toBe("claude:session-1");
+    expect(writeWorkspaceFile).toHaveBeenCalledWith(
+      "ws-1",
+      "src/App.tsx",
+      "const value = 'before';\n",
+    );
+    expect(forkClaudeSessionFromMessage).not.toHaveBeenCalled();
+    expect(deleteClaudeSession).not.toHaveBeenCalled();
   });
 
   it("starts a thread without activating when requested", async () => {

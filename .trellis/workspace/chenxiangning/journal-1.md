@@ -361,3 +361,418 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 8: 补录：回溯模式与文件选择策略改造
+
+**Date**: 2026-04-17
+**Task**: 补录：回溯模式与文件选择策略改造
+**Branch**: `feature/vvvv0.4.3`
+
+### Summary
+
+(Add summary)
+
+### Main Changes
+
+任务目标
+- 完成 rewind review surface 的策略改造与 mutation-only 文件选择收口。
+
+主要改动
+- 将回溯确认从旧的文件 toggle 改为 messages-and-files / messages-only / files-only 三态模式。
+- 将回溯文件候选限制为最后一条目标用户消息及其后续 AI 消息范围内的 mutation 文件，排除 read / batch read 等只读操作。
+- 增加 Git clean 隐藏文件区、非 Git 保持现状、展示层去重、异常 git 状态不误判 clean 等边界处理。
+- 同步更新中英文文案、样式与 Claude/Codex 相关测试。
+
+涉及模块
+- src/features/composer/components
+- src/features/threads/hooks
+- src/features/layout/hooks
+- src/i18n/locales
+- src/styles/composer.part1.css
+- openspec/changes/rewind-mutation-only-file-selection
+
+验证结果
+- 用户已手测成功。
+- 已执行 rewind 相关 vitest、typecheck、eslint、large-files near-threshold 检查。
+
+后续事项
+- 将本次 change 的 delta specs 同步到主 specs 并完成 archive。
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `b33862c` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+## Session 9: 补录：同步回溯 specs 并归档变更
+
+**Date**: 2026-04-17
+**Task**: 补录：同步回溯 specs 并归档变更
+**Branch**: `feature/vvvv0.4.3`
+
+### Summary
+
+(Add summary)
+
+### Main Changes
+
+任务目标
+- 将 rewind-mutation-only-file-selection 的 delta specs 合入主 specs，并执行正式归档。
+
+主要改动
+- 更新 claude-rewind-review-surface 主 spec，补入 anchor-bounded、mutation-only、三态策略选择规则。
+- 更新 codex-rewind-review-surface 主 spec，补入三态策略与执行安全语义。
+- 更新 conversation-tool-card-persistence 主 spec，补入 rewind file identity 的锚点尾段与 mutation 优先约束。
+- 将变更目录归档到 openspec/changes/archive/2026-04-17-rewind-mutation-only-file-selection。
+
+涉及模块
+- openspec/specs/claude-rewind-review-surface/spec.md
+- openspec/specs/codex-rewind-review-surface/spec.md
+- openspec/specs/conversation-tool-card-persistence/spec.md
+- openspec/changes/archive/2026-04-17-rewind-mutation-only-file-selection
+
+验证结果
+- openspec change artifacts 全部 done。
+- tasks.md 全部已完成。
+- 已确认 archive 目录内容完整。
+
+后续事项
+- 删除活动 change 目录，确保 archive 为单一事实源。
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `8b5114f` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+## Session 10: 补录：移除已归档的回溯变更目录
+
+**Date**: 2026-04-17
+**Task**: 补录：移除已归档的回溯变更目录
+**Branch**: `feature/vvvv0.4.3`
+
+### Summary
+
+(Add summary)
+
+### Main Changes
+
+任务目标
+- 清理 rewind-mutation-only-file-selection 的活动 change 目录，补齐归档迁移闭环。
+
+主要改动
+- 删除 openspec/changes/rewind-mutation-only-file-selection 下的活动副本。
+- 保持 archive 目录中保留 proposal、design、tasks 与 delta specs，避免 active 与 archive 双写并存。
+- 验证归档语义从“复制”收口为“迁移”。
+
+涉及模块
+- openspec/changes/rewind-mutation-only-file-selection
+- openspec/changes/archive/2026-04-17-rewind-mutation-only-file-selection
+
+验证结果
+- git status 已确认活动目录删除被提交。
+- archive 目录保留完整历史材料。
+- 工作区已恢复干净状态。
+
+后续事项
+- 无，回溯改动与提案归档链路已闭环。
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `57885b0` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+## Session 11: 修复：Trellis record 门禁支持自动初始化 developer
+
+**Date**: 2026-04-17
+**Task**: 修复：Trellis record 门禁支持自动初始化 developer
+**Branch**: `feature/vvvv0.4.3`
+
+### Summary
+
+(Add summary)
+
+### Main Changes
+
+任务目标
+- 修复 commit 后必须 record 与 developer 首次未初始化之间的 workflow 冲突，让门禁规则对团队协作真正可自动执行。
+
+主要改动
+- 在 .trellis/scripts/common/developer.py 中新增 developer id 自动推断与安全自动初始化逻辑。
+- 推断来源限定为 TRELLIS_DEVELOPER、git user.name、git user.email local-part、唯一现存 workspace 目录，避免无依据猜测。
+- 调整 session_context 记录模式，使 get_context.py --mode record 在高置信场景下自动补写 .trellis/.developer。
+- 同步更新 AGENTS.md、.trellis/workflow.md、.agents/skills/record-session/SKILL.md，将团队规则改为先自动识别、后人工兜底。
+- 现场验证当前仓库已能自动初始化 chenxiangning，并成功补录此前遗漏的 3 条 session record。
+
+涉及模块
+- .trellis/scripts/common/developer.py
+- .trellis/scripts/common/session_context.py
+- AGENTS.md
+- .trellis/workflow.md
+- .agents/skills/record-session/SKILL.md
+
+验证结果
+- python3 -m py_compile 通过。
+- python3 ./.trellis/scripts/get_context.py --mode record 已自动初始化 developer 并正常输出 record context。
+- 已补录 b33862c、8b5114f、57885b0 对应 session record。
+
+后续事项
+- 后续新协作者首次在本仓库 commit 后，record 流程应优先自动识别 developer，而不是直接中断询问。
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `f945aca` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+## Session 12: Claude 默认审批桥接边界与审批卡展示收口
+
+**Date**: 2026-04-18
+**Task**: Claude 默认审批桥接边界与审批卡展示收口
+**Branch**: `feature/vvvv0.4.3`
+
+### Summary
+
+(Add summary)
+
+### Main Changes
+
+任务目标：
+- 全面 review 当前工作区关于 Claude mode rollout、synthetic approval bridge 和审批卡 UI 的改动。
+- 修复边界条件、跨平台兼容和审批卡展示契约中的问题，并将 OpenSpec 回写与手测矩阵补齐后提交。
+
+主要改动：
+- 修复 Rust 侧 Claude approval bridge 对 Windows 风格命令路径、cmd/shell_command alias 的识别。
+- 增加 symlink 目标拦截和 macOS /tmp 别名绝对路径解析兜底，避免 workspace 越界或错误报错。
+- 补充 Rust 回归测试，覆盖命令 alias、缺失父目录、绝对路径和 symlink 拒绝场景。
+- 重构 ApprovalToasts 的展示提取逻辑，从嵌套 input/arguments payload 提取路径/说明摘要，并补齐审批卡标签 i18n。
+- 调整 inline 审批卡到底部承接，增强 icon/badge/summary 结构，保持隐藏大段 content/patch/diff 正文。
+- 回写 OpenSpec proposal/design/tasks/spec 和手测矩阵，明确审批卡展示基线与验证项。
+
+涉及模块：
+- src-tauri/src/engine/claude/approval.rs
+- src-tauri/src/engine/claude/event_conversion.rs
+- src-tauri/src/engine/claude/tests_core.rs
+- src/features/app/components/ApprovalToasts.tsx
+- src/features/app/components/ApprovalToasts.test.tsx
+- src/features/messages/components/Messages.tsx
+- src/features/messages/components/Messages.rich-content.test.tsx
+- src/styles/approval-toasts.css
+- src/styles/messages.css
+- src/i18n/locales/en.part2.ts
+- src/i18n/locales/zh.part2.ts
+- openspec/changes/claude-code-mode-progressive-rollout/*
+- openspec/docs/claude-mode-rollout-v4-manual-test-matrix-2026-04-17.md
+
+验证结果：
+- cargo test --manifest-path src-tauri/Cargo.toml synthetic_claude -- --nocapture 通过
+- pnpm vitest run src/features/app/components/ApprovalToasts.test.tsx src/features/messages/components/Messages.rich-content.test.tsx 通过
+- pnpm typecheck 通过
+- pnpm check:large-files:near-threshold 通过（仅存量 near-threshold 告警，无新增超 3000 行文件）
+
+后续事项：
+- 如需进一步降低 large-file 风险，后续可独立拆分 approval.rs 的命令解析/文件 apply helper，但本次未触发 3000 hard gate。
+- 等待后续手测或联调反馈，再决定是否继续开放 acceptEdits 或扩展非文件工具 bridge。
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `66eab13c15f60de2ed95a8b67fe20d44ce273a7b` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+## Session 13: runtime orchestrator pool console proposal
+
+**Date**: 2026-04-18
+**Task**: runtime orchestrator pool console proposal
+**Branch**: `feature/vvvv0.4.3`
+
+### Summary
+
+(Add summary)
+
+### Main Changes
+
+任务目标:
+- 为 runtime 进程治理问题建立独立 OpenSpec 提案，覆盖三阶段改造路线与设置中的 Runtime Pool Console。
+
+主要改动:
+- 新建 openspec/changes/runtime-orchestrator-pool-console/ proposal/design/specs/tasks 全套 artifacts。
+- 定义 runtime-orchestrator 与 runtime-pool-console 两个 capability。
+- 补充 claude-runtime-termination-hardening 与 conversation-lifecycle-contract 的 delta spec。
+- 细化三阶段执行顺序、门禁、实现窗口与验收判断。
+
+涉及模块:
+- openspec/changes/runtime-orchestrator-pool-console/**
+- specs: runtime-orchestrator, runtime-pool-console, claude-runtime-termination-hardening, conversation-lifecycle-contract
+
+验证结果:
+- openspec status --change runtime-orchestrator-pool-console --json 显示 4/4 artifacts complete。
+- git commit 成功，commit hash: d09485a4。
+- 本次提交仅包含 runtime 提案文件，未纳入工作区其他未提交代码改动。
+
+后续事项:
+- 后续实现建议按 Phase 1 -> Phase 2 -> Phase 3 推进。
+- Phase 2 进入前需重新评估当前前端线程链路未提交改动与 restore/acquire 改造的交互风险。
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `d09485a4` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+## Session 14: 完善 Claude 计划模式切换与执行审批链路
+
+**Date**: 2026-04-18
+**Task**: 完善 Claude 计划模式切换与执行审批链路
+**Branch**: `feature/vvvv0.4.3`
+
+### Summary
+
+(Add summary)
+
+### Main Changes
+
+任务目标
+- 修复 Claude 在 plan 模式下点击执行后的模式切换与执行审批衔接问题。
+- 保证 ExitPlanMode handoff 卡片展示稳定、用户选择可追溯，并增强 mode selector 的切换感知。
+- 完成本轮工作区代码 review，补齐边界条件并消除 large-file 治理告警。
+
+主要改动
+- 修正 Rust 侧 claude file-change permission denied fallback，将其映射回 approval request，而不是 modeBlocked，并补充对应测试。
+- 在 app-shell、threads hooks、messages/toolBlocks 链路中补齐 ExitPlanMode handoff 逻辑，支持 plan -> code/default/full-access 的正确切换与后续审批续接。
+- 新增 collaborationModeSync helper 与测试，确保 thread-scoped collaboration mode 在 claude/codex 下同步一致。
+- 优化 ExitPlanMode 卡片：保留首张卡、去除重复卡、保留已选按钮状态、支持复制 plan markdown，并避免 streaming/loading 时展开状态抖动。
+- 为 composer 的 mode selector 增加整块闪烁提示，并处理重复触发时动画重播的边界情况。
+- 抽离 messagesExitPlan helper，将 Messages.tsx 压回 large-file 阈值内。
+- 更新 openspec proposal/design/tasks/spec 以及手工测试矩阵，记录本轮 rollout 行为与验证结果。
+
+涉及模块
+- src-tauri/src/engine/claude.rs
+- src-tauri/src/engine/claude/tests_core.rs
+- src/app-shell.tsx
+- src/app-shell-parts/utils.ts
+- src/app-shell-parts/useAppShellLayoutNodesSection.tsx
+- src/app-shell-parts/collaborationModeSync.test.ts
+- src/features/messages/components/**
+- src/features/threads/hooks/**
+- src/features/composer/components/ChatInputBox/**
+- src/features/layout/hooks/useLayoutNodes.tsx
+- src/styles/tool-blocks.css
+- src/i18n/locales/en.part1.ts
+- src/i18n/locales/zh.part1.ts
+- openspec/changes/claude-code-mode-progressive-rollout/**
+- openspec/docs/claude-mode-rollout-v4-manual-test-matrix-2026-04-17.md
+
+验证结果
+- npx vitest run src/features/composer/components/ChatInputBox/selectors/ModeSelect.test.tsx src/app-shell-parts/collaborationModeSync.test.ts src/features/messages/components/Messages.test.tsx
+- npm run check:large-files
+- 以上检查均已通过；Messages.tsx large-file 告警已消除。
+
+后续事项
+- 建议继续补一组更高层的集成验证，覆盖 ExitPlanMode 选择后到 approval modal 出现的完整线程链路。
+- 若后续继续扩展 Messages/toolBlocks，可考虑按 handoff/tool rendering 继续拆分，避免再次触发 large-file 治理阈值。
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `8ea4647a` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

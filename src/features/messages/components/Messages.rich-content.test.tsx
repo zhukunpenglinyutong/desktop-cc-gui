@@ -215,6 +215,54 @@ describe("Messages rich content", () => {
     expect(screen.getByRole("button", { name: "approval.approveTurnBatch" })).toBeTruthy();
   });
 
+  it("renders inline approval slot at the bottom of the message canvas", () => {
+    const items: ConversationItem[] = [
+      {
+        id: "approval-bottom-user-1",
+        kind: "message",
+        role: "user",
+        text: "update pom",
+      },
+    ];
+    const approvals: ApprovalRequest[] = [
+      {
+        workspace_id: "ws-1",
+        request_id: "req-bottom-1",
+        method: "item/fileChange/requestApproval",
+        params: {
+          file_path: "/tmp/pom.xml",
+          toolName: "Edit",
+        },
+      },
+    ];
+
+    const { container } = render(
+      <Messages
+        items={items}
+        approvals={approvals}
+        workspaces={[{
+          id: "ws-1",
+          name: "workspace",
+          path: "/tmp/workspace",
+          connected: true,
+          settings: { sidebarCollapsed: false },
+        }]}
+        onApprovalDecision={vi.fn()}
+        threadId="claude:thread-1"
+        workspaceId="ws-1"
+        isThinking={false}
+        openTargets={[]}
+        selectedOpenAppId=""
+      />,
+    );
+
+    const messagesFull = container.querySelector(".messages-full");
+    const approvalSlot = container.querySelector(".messages-inline-approval-slot");
+    expect(messagesFull).toBeTruthy();
+    expect(approvalSlot).toBeTruthy();
+    expect(messagesFull?.lastElementChild?.previousElementSibling?.classList.contains("messages-inline-approval-slot")).toBe(true);
+  });
+
   it("renders task-notification user payloads as an independent agent card", () => {
     const items: ConversationItem[] = [
       {

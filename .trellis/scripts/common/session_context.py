@@ -17,6 +17,7 @@ import json
 from pathlib import Path
 
 from .config import get_git_packages
+from .developer import ensure_developer_initialized
 from .git import run_git
 from .packages_context import get_packages_section
 from .tasks import iter_active_tasks, load_task, get_all_statuses, children_progress
@@ -124,7 +125,7 @@ def get_context_json(repo_root: Path | None = None) -> dict:
     if repo_root is None:
         repo_root = get_repo_root()
 
-    developer = get_developer(repo_root)
+    developer = ensure_developer_initialized(repo_root)
     tasks_dir = get_tasks_dir(repo_root)
     journal_file = get_active_journal_file(repo_root)
 
@@ -227,7 +228,7 @@ def get_context_text(repo_root: Path | None = None) -> str:
     lines.append("========================================")
     lines.append("")
 
-    developer = get_developer(repo_root)
+    developer = ensure_developer_initialized(repo_root)
 
     # Developer section
     lines.append("## DEVELOPER")
@@ -385,7 +386,7 @@ def get_context_record_json(repo_root: Path | None = None) -> dict:
     if repo_root is None:
         repo_root = get_repo_root()
 
-    developer = get_developer(repo_root)
+    developer = ensure_developer_initialized(repo_root)
     tasks_dir = get_tasks_dir(repo_root)
 
     # Git info
@@ -473,7 +474,7 @@ def get_context_text_record(repo_root: Path | None = None) -> str:
     lines.append("========================================")
     lines.append("")
 
-    developer = get_developer(repo_root)
+    developer = ensure_developer_initialized(repo_root)
     if not developer:
         lines.append(
             f"ERROR: Not initialized. Run: python3 ./{DIR_WORKFLOW}/{DIR_SCRIPTS}/init_developer.py <name>"

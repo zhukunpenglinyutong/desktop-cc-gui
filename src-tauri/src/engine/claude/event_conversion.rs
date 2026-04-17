@@ -1,7 +1,8 @@
 use serde_json::Value;
 
 use super::approval::{
-    classify_claude_mode_blocked_tool, looks_like_claude_permission_denial_message,
+    classify_claude_mode_blocked_tool, command_can_apply_as_local_file_action,
+    extract_claude_command_string, looks_like_claude_permission_denial_message,
     ClaudeModeBlockedKind,
 };
 use super::stream_helpers::{
@@ -26,10 +27,15 @@ fn is_claude_file_change_tool(tool_name: &str) -> bool {
         "applypatch"
             | "createfile"
             | "createdirectory"
+            | "delete"
+            | "deletefile"
             | "edit"
             | "multiedit"
             | "notebookedit"
+            | "remove"
+            | "removefile"
             | "rewrite"
+            | "unlink"
             | "write"
     )
 }
@@ -46,6 +52,7 @@ fn has_claude_permission_signal(message: &str) -> bool {
 }
 
 fn detect_claude_synthetic_approval_kind(
+    tool_input: Option<&Value>,
     tool_name: &str,
     message: &str,
 ) -> Option<ClaudeSyntheticApprovalKind> {
@@ -58,6 +65,14 @@ fn detect_claude_synthetic_approval_kind(
     }
 
     if is_claude_command_tool(tool_name) {
+        if tool_input
+            .and_then(extract_claude_command_string)
+            .as_deref()
+            .map(command_can_apply_as_local_file_action)
+            .unwrap_or(false)
+        {
+            return Some(ClaudeSyntheticApprovalKind::FileChange);
+        }
         return Some(ClaudeSyntheticApprovalKind::CommandExecution);
     }
 
@@ -110,14 +125,17 @@ impl ClaudeSession {
         let Some(tool_name) = self.peek_tool_name(tool_id) else {
             return None;
         };
-        let Some(kind) = detect_claude_synthetic_approval_kind(&tool_name, output) else {
+        let tool_input = self.peek_tool_input_value(tool_id);
+        let Some(kind) =
+            detect_claude_synthetic_approval_kind(tool_input.as_ref(), &tool_name, output)
+        else {
             return None;
         };
 
         match kind {
             ClaudeSyntheticApprovalKind::FileChange => {
                 let request_id = Value::String(tool_id.to_string());
-                let input = self.peek_tool_input_value(tool_id);
+                let input = tool_input;
                 if let Ok(mut pending) = self.pending_approval_requests.lock() {
                     pending.insert(tool_id.to_string(), turn_id.to_string());
                 }
@@ -129,7 +147,7 @@ impl ClaudeSession {
                         tool_name,
                         input,
                         message: Some(
-                            "Approve to let the GUI apply this file change locally. Preview currently supports Write/CreateFile/CreateDirectory only.".to_string(),
+                            "Approve to let the GUI apply this file change locally. Preview currently supports structured file tools plus safe single-path file commands.".to_string(),
                         ),
                     },
                 );

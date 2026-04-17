@@ -420,7 +420,7 @@ describe("useThreadActions codex rewind", () => {
         "ws-1",
         "thread-codex-1",
         "user-local-target",
-        { restoreWorkspaceFiles: false },
+        { mode: "messages-only" },
       );
     });
 
@@ -752,11 +752,75 @@ describe("useThreadActions codex rewind", () => {
         "ws-1",
         "thread-codex-1",
         "user-local-target",
-        { restoreWorkspaceFiles: false },
+        { mode: "messages-only" },
       );
     });
 
     expect(writeWorkspaceFile).not.toHaveBeenCalled();
+  });
+
+  it("restores workspace files without rewinding Codex messages in files-only mode", async () => {
+    vi.mocked(listThreads).mockResolvedValue({
+      result: {
+        data: [],
+        nextCursor: null,
+      },
+    } as any);
+    vi.mocked(listClaudeSessions).mockResolvedValue([]);
+    vi.mocked(readWorkspaceFile).mockResolvedValue({
+      content: "const value = 'after';\n",
+      truncated: false,
+    });
+
+    const { result } = renderActions({
+      itemsByThread: {
+        "thread-codex-1": [
+          {
+            id: "user-local-target",
+            kind: "message",
+            role: "user",
+            text: "回溯目标",
+          },
+          {
+            id: "tool-local-files-only",
+            kind: "tool",
+            toolType: "fileChange",
+            title: "File changes",
+            detail: "{}",
+            changes: [
+              {
+                path: "src/App.tsx",
+                kind: "modified",
+                diff: "@@ -1,1 +1,1 @@\n-const value = 'before';\n+const value = 'after';",
+              },
+            ],
+          },
+        ],
+      },
+    });
+
+    await act(async () => {
+      await result.current.listThreadsForWorkspace(workspace, { preserveState: true });
+    });
+
+    let output: string | null = null;
+    await act(async () => {
+      output = await result.current.forkSessionFromMessageForWorkspace(
+        "ws-1",
+        "thread-codex-1",
+        "user-local-target",
+        { mode: "files-only" },
+      );
+    });
+
+    expect(output).toBe("thread-codex-1");
+    expect(writeWorkspaceFile).toHaveBeenCalledWith(
+      "ws-1",
+      "src/App.tsx",
+      "const value = 'before';\n",
+    );
+    expect(rewindCodexThread).not.toHaveBeenCalled();
+    expect(deleteCodexSession).not.toHaveBeenCalled();
   });
 
   it("resumes Codex thread without applying persisted hidden-item filtering", async () => {

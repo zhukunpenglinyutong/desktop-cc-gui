@@ -68,7 +68,8 @@ Keep this managed block so 'trellis update' can refresh the instructions.
 - 适用范围：所有开发者、所有电脑、所有 worktree 都遵守同一规则；不得写死用户名、绝对路径、分支名或机器路径。
 - 路径规则：所有 Trellis 命令必须从仓库根目录执行，并使用 repo-relative 路径，例如 `./.trellis/scripts/...`；禁止使用 `/Users/...`、`C:\...`、`~/<project>` 等个人环境路径写入规则或脚本命令。
 - Active developer 规则：执行 record 前必须先运行 `python3 ./.trellis/scripts/get_context.py --mode record`。该命令会读取当前仓库的 `.trellis/.developer` 并定位 `.trellis/workspace/<developer>/`，AI 必须使用该结果，不得猜测 developer 名称。
-- 初始化规则：如果 `get_context.py --mode record` 提示 developer 未初始化，AI 必须暂停并请求当前协作者提供 developer id；只有用户明确给出 id 后，才允许执行 `python3 ./.trellis/scripts/init_developer.py <developer-id>`。禁止用默认姓名或历史姓名自动初始化。
+- 自动初始化规则：如果 `.trellis/.developer` 缺失，AI 必须先尝试安全自动初始化 active developer。允许的高置信来源仅限：`TRELLIS_DEVELOPER` 环境变量、`git config user.name`、`git config user.email` 的 local-part、以及唯一现存的 `.trellis/workspace/<developer>/` 目录匹配。命中任一高置信来源时，AI 应直接执行 `python3 ./.trellis/scripts/init_developer.py <developer-id>`，随后继续 record 流程。
+- 人工兜底规则：只有在上述高置信来源都无法唯一推断 developer id 时，AI 才需要暂停并请求当前协作者提供 developer id；禁止在无法高置信识别时猜测 developer 名称。
 - 执行方式：
   1. 获取刚完成的 commit hash、标题、主要改动与验证结果。
   2. 运行 `python3 ./.trellis/scripts/add_session.py --stdin --title "..." --commit "<hash>"`。

@@ -87,6 +87,7 @@ import {
 type SendMessageOptions = {
   skipPromptExpansion?: boolean;
   skipOptimisticUserBubble?: boolean;
+  suppressUserMessageRender?: boolean;
   model?: string | null;
   effort?: string | null;
   collaborationMode?: Record<string, unknown> | null;
@@ -103,7 +104,7 @@ type SendMessageOptions = {
 };
 
 type InterruptTurnOptions = {
-  reason?: "user-stop" | "queue-fusion";
+  reason?: "user-stop" | "queue-fusion" | "plan-handoff";
 };
 
 const AGENT_PROMPT_HEADER = "## Agent Role and Instructions";
@@ -497,12 +498,18 @@ export function useThreadMessaging({
         "settings" in resolvedCollaborationMode
           ? resolvedCollaborationMode
           : null;
+      const resolvedCollaborationModeIdForSend =
+        resolveCollaborationModeIdFromPayload(sanitizedCollaborationMode);
       const userCollaborationMode =
         resolvedEngine === "codex"
-          ? resolveCollaborationModeIdFromPayload(sanitizedCollaborationMode)
+          ? resolvedCollaborationModeIdForSend
           : null;
+      const accessModeForSend =
+        resolvedEngine === "claude" && resolvedCollaborationModeIdForSend === "plan"
+          ? "read-only"
+          : options?.accessMode !== undefined ? options.accessMode : accessMode;
       const resolvedAccessMode = normalizeAccessMode(
-        options?.accessMode !== undefined ? options.accessMode : accessMode,
+        accessModeForSend,
         resolvedEngine,
       );
       const resolvedOpenCodeAgent =
@@ -630,6 +637,7 @@ export function useThreadMessaging({
       const wasProcessing =
         (threadStatusById[threadId]?.isProcessing ?? false) && steerEnabled;
       const shouldAddOptimisticUserBubble =
+        !options?.suppressUserMessageRender &&
         !options?.skipOptimisticUserBubble &&
         (resolvedEngine === "codex" || wasProcessing || threadKind === "shared");
       let optimisticUserItem: Extract<ConversationItem, { kind: "message" }> | null = null;
@@ -666,11 +674,14 @@ export function useThreadMessaging({
         threadId,
         timestamp,
       });
-        if (interruptedThreadsRef.current.has(threadId)) {
-          interruptedThreadsRef.current.delete(threadId);
-        }
-        markProcessing(threadId, true);
-        safeMessageActivity();
+      if (pendingInterruptsRef.current.has(threadId)) {
+        pendingInterruptsRef.current.delete(threadId);
+      }
+      if (interruptedThreadsRef.current.has(threadId)) {
+        interruptedThreadsRef.current.delete(threadId);
+      }
+      markProcessing(threadId, true);
+      safeMessageActivity();
       onDebug?.({
         id: `${Date.now()}-client-turn-start`,
         timestamp: Date.now(),
@@ -886,23 +897,25 @@ export function useThreadMessaging({
 
         if (cliEngine) {
           // Claude/OpenCode: backend only streams assistant/tool events, so add user item locally.
-          const userMessageId = `user-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-          dispatch({
-            type: "upsertItem",
-            workspaceId: workspace.id,
-            threadId,
-            item: {
-              id: userMessageId,
-              kind: "message",
-              role: "user",
-              text: visibleUserText,
-              images: images.length > 0 ? images : undefined,
-              collaborationMode: userCollaborationMode,
-              selectedAgentName,
-              selectedAgentIcon,
-            },
-            hasCustomName: Boolean(getCustomName(workspace.id, threadId)),
-          });
+          if (!options?.suppressUserMessageRender) {
+            const userMessageId = `user-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+            dispatch({
+              type: "upsertItem",
+              workspaceId: workspace.id,
+              threadId,
+              item: {
+                id: userMessageId,
+                kind: "message",
+                role: "user",
+                text: visibleUserText,
+                images: images.length > 0 ? images : undefined,
+                collaborationMode: userCollaborationMode,
+                selectedAgentName,
+                selectedAgentIcon,
+              },
+              hasCustomName: Boolean(getCustomName(workspace.id, threadId)),
+            });
+          }
 
           const sendRequestedAt = Date.now();
           response = await engineSendMessageService(workspace.id, {
@@ -1411,14 +1424,19 @@ export function useThreadMessaging({
     interruptedThreadsRef.current.add(activeThreadId);
     markProcessing(activeThreadId, false);
     setActiveTurnId(activeThreadId, null);
-    dispatch({
-      type: "addAssistantMessage",
-      threadId: activeThreadId,
-      text:
-        reason === "queue-fusion"
-          ? t("threads.sessionStoppedForFusion")
-          : t("threads.sessionStopped"),
-    });
+    const interruptNotice =
+      reason === "queue-fusion"
+        ? t("threads.sessionStoppedForFusion")
+        : reason === "plan-handoff"
+          ? null
+          : t("threads.sessionStopped");
+    if (interruptNotice) {
+      dispatch({
+        type: "addAssistantMessage",
+        threadId: activeThreadId,
+        text: interruptNotice,
+      });
+    }
     if (!activeTurnId) {
       pendingInterruptsRef.current.add(activeThreadId);
     }

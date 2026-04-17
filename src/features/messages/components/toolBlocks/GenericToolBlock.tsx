@@ -75,6 +75,9 @@ type ExitPlanCardContent = {
   rawText: string;
 };
 
+type ExitPlanExecutionMode = 'default' | 'full-access';
+const EXIT_PLAN_RAW_OUTPUT_NOISE = new Set(['{}', '[]', 'Exit plan mode?', 'Implement this plan.']);
+
 interface GenericToolBlockProps {
   item: Extract<ConversationItem, { kind: 'tool' }>;
   workspaceId?: string | null;
@@ -84,6 +87,11 @@ interface GenericToolBlockProps {
   activeEngine?: "claude" | "codex" | "gemini" | "opencode";
   hasPendingUserInputRequest?: boolean;
   onOpenDiffPath?: (path: string) => void;
+  selectedExitPlanExecutionMode?: ExitPlanExecutionMode | null;
+  onExitPlanModeExecute?: (
+    itemId: string,
+    mode: ExitPlanExecutionMode,
+  ) => Promise<void> | void;
 }
 
 // codicon 图标映射（匹配参考项目）
@@ -476,6 +484,17 @@ function extractExitPlanCardContent(
     planFilePath,
     rawText: normalizedRawText,
   };
+}
+
+function shouldRenderExitPlanRawOutput(content: ExitPlanCardContent): boolean {
+  if (content.planMarkdown || content.planFilePath) {
+    return false;
+  }
+  const normalizedRawText = content.rawText.trim();
+  if (!normalizedRawText) {
+    return false;
+  }
+  return !EXIT_PLAN_RAW_OUTPUT_NOISE.has(normalizedRawText);
 }
 
 function decodeToolPath(value: string): string {
@@ -965,6 +984,8 @@ export const GenericToolBlock = memo(function GenericToolBlock({
   activeEngine,
   hasPendingUserInputRequest = false,
   onOpenDiffPath,
+  selectedExitPlanExecutionMode = null,
+  onExitPlanModeExecute,
 }: GenericToolBlockProps) {
   const { t } = useTranslation();
   const translateWithFallback = useCallback((key: string, fallback: string) => {
@@ -999,6 +1020,30 @@ export const GenericToolBlock = memo(function GenericToolBlock({
         'messages.exitPlanCard.executionHandoffDescription',
         'The planning step is complete. Exit Plan mode to continue with implementation against this approved plan.',
       ),
+      executionModeLabel: translateWithFallback(
+        'messages.exitPlanCard.executionModeLabel',
+        'Choose execution mode',
+      ),
+      executionModeDescription: translateWithFallback(
+        'messages.exitPlanCard.executionModeDescription',
+        'Approved plan confirmed. Continue by leaving Plan mode and choosing how to execute.',
+      ),
+      executionModeDefault: translateWithFallback(
+        'messages.exitPlanCard.executionModeDefault',
+        'Default approval mode',
+      ),
+      executionModeFullAccess: translateWithFallback(
+        'messages.exitPlanCard.executionModeFullAccess',
+        'Full auto',
+      ),
+      executeDefaultAction: translateWithFallback(
+        'messages.exitPlanCard.executeDefaultAction',
+        'Switch to default approval mode and run',
+      ),
+      executeFullAccessAction: translateWithFallback(
+        'messages.exitPlanCard.executeFullAccessAction',
+        'Switch to full auto and run',
+      ),
       planFile: translateWithFallback('messages.exitPlanCard.planFile', 'Plan file'),
       rawOutput: translateWithFallback('messages.exitPlanCard.rawOutput', 'Raw output'),
     }),
@@ -1011,7 +1056,14 @@ export const GenericToolBlock = memo(function GenericToolBlock({
     Record<string, boolean>
   >({});
   const [copiedOutput, setCopiedOutput] = useState(false);
-  const isExpanded = isCollapsible ? internalExpanded : externalExpanded;
+  const [copiedPlanMarkdown, setCopiedPlanMarkdown] = useState(false);
+  const isExpanded = isExitPlanTool
+    ? externalExpanded
+    : isCollapsible ? internalExpanded : externalExpanded;
+  const shouldShowExitPlanRawOutput = exitPlanContent
+    ? shouldRenderExitPlanRawOutput(exitPlanContent)
+    : false;
+  const isExitPlanExecutionLocked = selectedExitPlanExecutionMode !== null;
   const isFileChangeTool =
     item.toolType === 'fileChange' ||
     toolName.toLowerCase().includes('file change') ||
@@ -1136,6 +1188,10 @@ export const GenericToolBlock = memo(function GenericToolBlock({
   }`;
 
   const handleClick = () => {
+    if (isExitPlanTool) {
+      onToggle(item.id);
+      return;
+    }
     if (isCollapsible) {
       setInternalExpanded(prev => !prev);
     } else {
@@ -1149,31 +1205,69 @@ export const GenericToolBlock = memo(function GenericToolBlock({
         className="tool-exit-plan-card"
         aria-label={exitPlanCopy.ariaLabel}
       >
-        <button
-          type="button"
-          className={`tool-exit-plan-card-header${isExpanded ? ' is-expanded' : ''}`}
-          onClick={handleClick}
-          aria-expanded={isExpanded}
-        >
-          <div className="tool-exit-plan-card-title-wrap">
+        <div className={`tool-exit-plan-card-header${isExpanded ? ' is-expanded' : ''}`}>
+          <button
+            type="button"
+            className="tool-exit-plan-card-toggle"
+            onClick={handleClick}
+            aria-expanded={isExpanded}
+          >
+            <div className="tool-exit-plan-card-title-wrap">
+              <span
+                className="codicon codicon-notebook tool-exit-plan-card-icon"
+                aria-hidden
+              />
+              <div className="tool-exit-plan-card-title-copy">
+                <span className="tool-exit-plan-card-title">
+                  {exitPlanCopy.title}
+                </span>
+                <span className="tool-exit-plan-card-subtitle">
+                  {exitPlanCopy.modeLabel}
+                </span>
+              </div>
+            </div>
             <span
-              className="codicon codicon-notebook tool-exit-plan-card-icon"
+              className={`codicon ${isExpanded ? 'codicon-chevron-down' : 'codicon-chevron-right'} tool-exit-plan-card-chevron`}
               aria-hidden
             />
-            <div className="tool-exit-plan-card-title-copy">
-              <span className="tool-exit-plan-card-title">
-                {exitPlanCopy.title}
-              </span>
-              <span className="tool-exit-plan-card-subtitle">
-                {exitPlanCopy.modeLabel}
-              </span>
-            </div>
+          </button>
+          <div className="tool-exit-plan-card-header-actions">
+            {exitPlanContent.planMarkdown ? (
+              <button
+                type="button"
+                className={`tool-exit-plan-card-copy-button${copiedPlanMarkdown ? ' is-copied' : ''}`}
+                title={copiedPlanMarkdown ? t("messages.copied") : t("messages.copy")}
+                aria-label={copiedPlanMarkdown ? t("messages.copied") : t("messages.copy")}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  if (
+                    typeof navigator === "undefined" ||
+                    !navigator.clipboard ||
+                    !exitPlanContent.planMarkdown
+                  ) {
+                    return;
+                  }
+                  void navigator.clipboard.writeText(exitPlanContent.planMarkdown)
+                    .then(() => {
+                      setCopiedPlanMarkdown(true);
+                      window.setTimeout(() => setCopiedPlanMarkdown(false), 1800);
+                    })
+                    .catch(() => {
+                      // clipboard errors are non-critical in restricted contexts
+                    });
+                }}
+              >
+                <span
+                  className={`codicon ${copiedPlanMarkdown ? 'codicon-check' : 'codicon-copy'} tool-exit-plan-card-copy-icon`}
+                  aria-hidden
+                />
+                <span className="tool-exit-plan-card-copy-label">
+                  {copiedPlanMarkdown ? t("messages.copied") : t("messages.copy")}
+                </span>
+              </button>
+            ) : null}
           </div>
-          <span
-            className={`codicon ${isExpanded ? 'codicon-chevron-down' : 'codicon-chevron-right'} tool-exit-plan-card-chevron`}
-            aria-hidden
-          />
-        </button>
+        </div>
 
         {isExpanded ? (
           <div className="tool-exit-plan-card-body">
@@ -1201,6 +1295,65 @@ export const GenericToolBlock = memo(function GenericToolBlock({
               </p>
             </section>
 
+            {activeEngine === 'claude' && onExitPlanModeExecute ? (
+              <section className="tool-exit-plan-card-section tool-exit-plan-card-execution-section">
+                <div className="tool-exit-plan-card-section-label">
+                  {exitPlanCopy.executionModeLabel}
+                </div>
+                <p className="tool-exit-plan-card-handoff-copy">
+                  {exitPlanCopy.executionModeDescription}
+                </p>
+                <div className="tool-exit-plan-card-actions">
+                  <button
+                    type="button"
+                    className={`tool-exit-plan-card-action is-default${
+                      selectedExitPlanExecutionMode === 'default' ? ' is-selected' : ''
+                    }`}
+                    disabled={isExitPlanExecutionLocked}
+                    onClick={() => {
+                      if (isExitPlanExecutionLocked) {
+                        return;
+                      }
+                      void onExitPlanModeExecute?.(item.id, 'default');
+                    }}
+                  >
+                    <span
+                      className="codicon codicon-shield tool-exit-plan-card-action-icon"
+                      aria-hidden
+                    />
+                    <span>
+                      {selectedExitPlanExecutionMode === 'default'
+                        ? `${exitPlanCopy.executeDefaultAction} · 已选`
+                        : exitPlanCopy.executeDefaultAction}
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    className={`tool-exit-plan-card-action is-primary${
+                      selectedExitPlanExecutionMode === 'full-access' ? ' is-selected' : ''
+                    }`}
+                    disabled={isExitPlanExecutionLocked}
+                    onClick={() => {
+                      if (isExitPlanExecutionLocked) {
+                        return;
+                      }
+                      void onExitPlanModeExecute?.(item.id, 'full-access');
+                    }}
+                  >
+                    <span
+                      className="codicon codicon-rocket tool-exit-plan-card-action-icon"
+                      aria-hidden
+                    />
+                    <span>
+                      {selectedExitPlanExecutionMode === 'full-access'
+                        ? `${exitPlanCopy.executeFullAccessAction} · 已选`
+                        : exitPlanCopy.executeFullAccessAction}
+                    </span>
+                  </button>
+                </div>
+              </section>
+            ) : null}
+
             {exitPlanContent.planFilePath ? (
               <section className="tool-exit-plan-card-section">
                 <div className="tool-exit-plan-card-section-label">
@@ -1215,7 +1368,7 @@ export const GenericToolBlock = memo(function GenericToolBlock({
               </section>
             ) : null}
 
-            {!exitPlanContent.planMarkdown && !exitPlanContent.planFilePath ? (
+            {shouldShowExitPlanRawOutput ? (
               <section className="tool-exit-plan-card-section">
                 <div className="tool-exit-plan-card-section-label">
                   {exitPlanCopy.rawOutput}

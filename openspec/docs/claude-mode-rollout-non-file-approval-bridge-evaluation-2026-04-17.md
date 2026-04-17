@@ -28,16 +28,27 @@
 - `CreateDirectory`
 - `NotebookEdit`
 
-但本地真实可执行的 synthetic apply 目前只支持：
+截至本评估首次撰写时，本地真实可执行的 synthetic apply 只支持：
 
 - `Write`
 - `CreateFile`
 - `CreateDirectory`
 
+2026-04-17 修复 `Claude default` 混合审批半成功问题后，结构化 file-change synthetic apply 已扩展到：
+
+- `Write`
+- `Rewrite`
+- `CreateFile`
+- `CreateDirectory`
+- `Edit`
+- `MultiEdit`
+- `Delete` / `DeleteFile` / `Remove` / `RemoveFile` / `Unlink`
+
 这意味着：
 
 - “识别成 file change” 不等于 “GUI 已能安全代执行”
 - 任何下一阶段扩展都必须按 tool semantic 单独评估，不能只看分类桶
+- `NotebookEdit` 仍只进入 file-change 识别，不进入本地 apply
 
 ### 2. command denial 当前只有诊断链，没有 bridge
 
@@ -142,12 +153,12 @@
 - 可以继续复用现有 `fileChange` approval surface
 - history replay 已有 `File changes` 表达模型，落地成本可控
 
-建议顺序：
+建议顺序与当前进度：
 
-1. `Edit`
-2. `Rewrite`
-3. `MultiEdit`
-4. `NotebookEdit`
+1. `Edit`：已实现本地 exact replacement apply
+2. `Rewrite`：已按 whole-file write 语义接入
+3. `MultiEdit`：已实现顺序结构化 edits apply，支持 `replace_all`
+4. `NotebookEdit`：仍待评估，不在本次修复范围
 
 其中 `Edit` 最值得先做，因为语义相对明确，且与现有 diff/file card 体系最接近。
 

@@ -94,6 +94,7 @@ import {
   getHomeWorkspaceOptions,
   resolveHomeWorkspaceId,
 } from "../../home/utils/homeWorkspaceOptions";
+import { deriveRewindWorkspaceGitState } from "./rewindWorkspaceGitState";
 import {
   TOPBAR_SESSION_TAB_MAX,
   buildTopbarSessionTabItems,
@@ -203,6 +204,9 @@ type LayoutNodesOptions = {
   handleUserInputSubmit: (
     request: RequestUserInputRequest,
     response: RequestUserInputResponse,
+  ) => Promise<void> | void;
+  handleExitPlanModeExecute?: (
+    mode: Extract<AccessMode, "default" | "full-access">,
   ) => Promise<void> | void;
   onOpenSettings: () => void;
   onOpenExperimentalSettings: () => void;
@@ -459,7 +463,7 @@ type LayoutNodesOptions = {
   onStop: () => void;
   onRewind?: (
     userMessageId: string,
-    options?: { restoreWorkspaceFiles?: boolean },
+    options?: { mode?: "messages-and-files" | "messages-only" | "files-only" },
   ) => void | Promise<void>;
   canStop: boolean;
   isReviewing: boolean;
@@ -1157,6 +1161,7 @@ export function useLayoutNodes(options: LayoutNodesOptions): LayoutNodesResult {
       isPlanProcessing={options.isProcessing}
       onOpenDiffPath={handleOpenDiffPath}
       onOpenPlanPanel={options.onOpenPlanPanel}
+      onExitPlanModeExecute={options.handleExitPlanModeExecute}
       onOpenWorkspaceFile={options.onOpenFile}
       agentTaskScrollRequest={options.agentTaskScrollRequest}
       isThinking={isThreadThinking}
@@ -1193,6 +1198,7 @@ export function useLayoutNodes(options: LayoutNodesOptions): LayoutNodesResult {
     options.isProcessing,
     handleOpenDiffPath,
     options.onOpenPlanPanel,
+    options.handleExitPlanModeExecute,
     options.onOpenFile,
     options.agentTaskScrollRequest,
     isThreadThinking,
@@ -1251,6 +1257,9 @@ export function useLayoutNodes(options: LayoutNodesOptions): LayoutNodesResult {
         ) ?? null
       : null;
   const isSharedSession = activeThreadSummary?.threadKind === "shared";
+  const rewindWorkspaceGitState = deriveRewindWorkspaceGitState(
+    options.gitStatus,
+  );
 
   const renderComposerNode = (
     showStatusPanelToggleOverride?: boolean,
@@ -1359,6 +1368,7 @@ export function useLayoutNodes(options: LayoutNodesOptions): LayoutNodesResult {
         activeFileLineRange={options.activeComposerFileLineRange}
         fileReferenceMode={options.fileReferenceMode}
         activeWorkspaceId={options.activeWorkspaceId}
+        rewindWorkspaceGitState={rewindWorkspaceGitState}
         plan={options.plan}
         isPlanMode={options.isPlanMode}
         onOpenDiffPath={handleOpenDiffPath}

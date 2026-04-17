@@ -38,6 +38,23 @@ const HIDDEN_APPROVAL_BODY_KEYS = new Set([
   "unifiedDiff",
 ]);
 
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
+function getApprovalCandidateRecords(params: Record<string, unknown>): Record<string, unknown>[] {
+  const nestedInput = asRecord(params.input);
+  const nestedArguments = asRecord(params.arguments);
+  return [params, nestedInput, nestedArguments].filter((record, index, records) => {
+    if (Object.keys(record).length === 0) {
+      return false;
+    }
+    return records.findIndex((candidate) => candidate === record) === index;
+  });
+}
+
 function shouldHideApprovalParamEntry(key: string, value: unknown): boolean {
   if (HIDDEN_APPROVAL_PARAM_KEYS.has(key)) {
     return true;
@@ -51,56 +68,73 @@ function shouldHideApprovalParamEntry(key: string, value: unknown): boolean {
   return false;
 }
 
-function getToolLabel(method: string): string {
+function getToolLabel(method: string, t: (key: string) => string): string {
   if (method.includes("fileChange")) {
-    return "File changes";
+    return t("approval.fileChanges");
   }
   if (method.includes("commandExecution")) {
-    return "Command execution";
+    return t("approval.commandExecution");
   }
-  return "Approval";
+  return t("approval.genericApproval");
 }
 
 function getApprovalPath(params: Record<string, unknown>): string | null {
-  for (const key of [
-    "file_path",
-    "filePath",
-    "filepath",
-    "path",
-    "target_file",
-    "targetFile",
-    "filename",
-    "file",
-    "notebook_path",
-    "notebookPath",
-  ]) {
-    const value = params[key];
-    if (typeof value === "string" && value.trim()) {
-      return value.trim();
+  for (const record of getApprovalCandidateRecords(params)) {
+    for (const key of [
+      "file_path",
+      "filePath",
+      "filepath",
+      "path",
+      "target_file",
+      "targetFile",
+      "filename",
+      "file",
+      "notebook_path",
+      "notebookPath",
+    ]) {
+      const value = record[key];
+      if (typeof value === "string" && value.trim()) {
+        return value.trim();
+      }
     }
   }
   return null;
 }
 
 function getApprovalMessage(params: Record<string, unknown>): string | null {
-  const raw = typeof params.message === "string" ? params.message.trim() : "";
-  if (!raw) {
-    return null;
+  for (const record of getApprovalCandidateRecords(params)) {
+    const raw = typeof record.message === "string" ? record.message.trim() : "";
+    if (!raw) {
+      continue;
+    }
+    if (raw.includes("acknowledges the blocked request")) {
+      return "Claude 需要你的授权才能继续这一步。当前预览阶段授权后可能仍需重试一次。";
+    }
+    return raw;
   }
-  if (raw.includes("acknowledges the blocked request")) {
-    return "Claude 需要你的授权才能继续这一步。当前预览阶段授权后可能仍需重试一次。";
-  }
-  return raw;
+  return null;
 }
 
 function getApprovalToolName(params: Record<string, unknown>): string | null {
-  for (const key of ["toolName", "tool_name"]) {
-    const value = params[key];
-    if (typeof value === "string" && value.trim()) {
-      return value.trim();
+  for (const record of getApprovalCandidateRecords(params)) {
+    for (const key of ["toolName", "tool_name"]) {
+      const value = record[key];
+      if (typeof value === "string" && value.trim()) {
+        return value.trim();
+      }
     }
   }
   return null;
+}
+
+function getApprovalKindIcon(method: string): string {
+  if (method.includes("fileChange")) {
+    return "codicon codicon-files";
+  }
+  if (method.includes("commandExecution")) {
+    return "codicon codicon-terminal";
+  }
+  return "codicon codicon-shield";
 }
 
 export function ApprovalToasts({
@@ -219,34 +253,62 @@ export function ApprovalToasts({
               </div>
             ) : null}
             <div className="approval-toast-header">
-              <div className="approval-toast-title">{t("approval.approvalNeeded")}</div>
+              <div className="approval-toast-header-main">
+                <div className="approval-toast-icon-wrap" aria-hidden>
+                  <span className="codicon codicon-shield approval-toast-icon" />
+                </div>
+                <div className="approval-toast-header-copy">
+                  <div className="approval-toast-title-row">
+                    <div className="approval-toast-title">{t("approval.approvalNeeded")}</div>
+                    <div className="approval-toast-badge">{t("approval.pendingBadge")}</div>
+                  </div>
+                  <div className="approval-toast-subtitle">
+                    {t("approval.reviewBeforeApply")}
+                  </div>
+                </div>
+              </div>
               {workspaceName ? (
                 <div className="approval-toast-workspace">{workspaceName}</div>
               ) : null}
             </div>
-            <div className="approval-toast-method">{getToolLabel(request.method)}</div>
+            <div className="approval-toast-summary-band">
+              <div className="approval-toast-kind">
+                <span className={getApprovalKindIcon(request.method)} aria-hidden />
+                <span>{getToolLabel(request.method, t)}</span>
+              </div>
+              {approvalToolName ? (
+                <div className="approval-toast-summary-meta">
+                  <span className="approval-toast-summary-label">{t("approval.toolLabel")}</span>
+                  <span className="approval-toast-summary-value">{approvalToolName}</span>
+                </div>
+              ) : null}
+            </div>
             <div className="approval-toast-details">
               {approvalPath ? (
-                <div className="approval-toast-detail">
-                  <div className="approval-toast-detail-label">File path</div>
-                  <div className="approval-toast-detail-value">{approvalPath}</div>
+                <div className="approval-toast-detail approval-toast-detail-spotlight">
+                  <div className="approval-toast-detail-label">
+                    {t("approval.filePathLabel")}
+                  </div>
+                  <div className="approval-toast-detail-value approval-toast-path-value">
+                    <span className="codicon codicon-file approval-toast-inline-icon" aria-hidden />
+                    <span>{approvalPath}</span>
+                  </div>
                 </div>
               ) : null}
               {commandInfo ? (
-                <div className="approval-toast-detail">
-                  <div className="approval-toast-detail-label">Command</div>
-                  <div className="approval-toast-detail-value">{commandInfo.preview}</div>
-                </div>
-              ) : null}
-              {approvalToolName ? (
-                <div className="approval-toast-detail">
-                  <div className="approval-toast-detail-label">Tool</div>
-                  <div className="approval-toast-detail-value">{approvalToolName}</div>
+                <div className="approval-toast-detail approval-toast-detail-spotlight">
+                  <div className="approval-toast-detail-label">
+                    {t("approval.commandLabel")}
+                  </div>
+                  <div className="approval-toast-detail-value approval-toast-command-value">
+                    <span className="codicon codicon-terminal approval-toast-inline-icon" aria-hidden />
+                    <span>{commandInfo.preview}</span>
+                  </div>
                 </div>
               ) : null}
               {approvalMessage ? (
-                <div className="approval-toast-detail">
-                  <div className="approval-toast-detail-label">Note</div>
+                <div className="approval-toast-detail approval-toast-note-block">
+                  <div className="approval-toast-detail-label">{t("approval.noteLabel")}</div>
                   <div className="approval-toast-detail-value">{approvalMessage}</div>
                 </div>
               ) : null}

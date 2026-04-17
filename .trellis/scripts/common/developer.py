@@ -10,10 +10,13 @@ Provides:
 
 from __future__ import annotations
 
+import os
+import re
 import sys
 from datetime import datetime
 from pathlib import Path
 
+from .git import run_git
 from .paths import (
     DIR_WORKFLOW,
     DIR_WORKSPACE,
@@ -29,6 +32,96 @@ from .paths import (
 # =============================================================================
 # Developer Initialization
 # =============================================================================
+
+def normalize_developer_name(name: str) -> str:
+    """Normalize a human/git identity into a stable developer id."""
+    normalized = re.sub(r"[^a-z0-9]+", "-", name.strip().lower())
+    normalized = re.sub(r"-{2,}", "-", normalized).strip("-")
+    return normalized
+
+
+def _iter_workspace_names(repo_root: Path) -> list[str]:
+    workspace_root = repo_root / DIR_WORKFLOW / DIR_WORKSPACE
+    if not workspace_root.is_dir():
+        return []
+    return sorted(entry.name for entry in workspace_root.iterdir() if entry.is_dir())
+
+
+def infer_developer_name(repo_root: Path | None = None) -> str | None:
+    """Infer developer id from stable local signals."""
+    if repo_root is None:
+        repo_root = get_repo_root()
+
+    existing = get_developer(repo_root)
+    if existing:
+        return existing
+
+    workspace_names = _iter_workspace_names(repo_root)
+    normalized_workspace = {
+        normalize_developer_name(name): name for name in workspace_names
+    }
+
+    def _match_candidate(raw_value: str | None) -> str | None:
+        if not raw_value:
+            return None
+        candidate = raw_value.strip()
+        if not candidate:
+            return None
+        if candidate in workspace_names:
+            return candidate
+        normalized = normalize_developer_name(candidate)
+        if not normalized:
+            return None
+        if normalized in normalized_workspace:
+            return normalized_workspace[normalized]
+        return normalized
+
+    env_candidate = _match_candidate(os.getenv("TRELLIS_DEVELOPER"))
+    if env_candidate:
+        return env_candidate
+
+    git_name_code, git_name_out, _ = run_git(
+        ["config", "--get", "user.name"],
+        cwd=repo_root,
+    )
+    if git_name_code == 0:
+        git_name_candidate = _match_candidate(git_name_out)
+        if git_name_candidate:
+            return git_name_candidate
+
+    git_email_code, git_email_out, _ = run_git(
+        ["config", "--get", "user.email"],
+        cwd=repo_root,
+    )
+    if git_email_code == 0:
+        local_part = git_email_out.strip().split("@", 1)[0]
+        git_email_candidate = _match_candidate(local_part)
+        if git_email_candidate:
+            return git_email_candidate
+
+    if len(workspace_names) == 1:
+        return workspace_names[0]
+
+    return None
+
+
+def ensure_developer_initialized(repo_root: Path | None = None) -> str | None:
+    """Return current developer, auto-initializing `.trellis/.developer` when safe."""
+    if repo_root is None:
+        repo_root = get_repo_root()
+
+    existing = get_developer(repo_root)
+    if existing:
+        return existing
+
+    inferred = infer_developer_name(repo_root)
+    if not inferred:
+        return None
+
+    if init_developer(inferred, repo_root):
+        return inferred
+
+    return get_developer(repo_root)
 
 def init_developer(name: str, repo_root: Path | None = None) -> bool:
     """Initialize developer.
@@ -157,7 +250,7 @@ def ensure_developer(repo_root: Path | None = None) -> None:
     if repo_root is None:
         repo_root = get_repo_root()
 
-    if not check_developer(repo_root):
+    if not ensure_developer_initialized(repo_root):
         print("Error: Developer not initialized.", file=sys.stderr)
         print(f"Run: python3 ./{DIR_WORKFLOW}/scripts/init_developer.py <your-name>", file=sys.stderr)
         sys.exit(1)
