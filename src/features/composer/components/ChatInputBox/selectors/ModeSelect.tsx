@@ -24,6 +24,11 @@ interface ModeSelectProps {
   provider?: string;
 }
 
+type ModeSelectFlashStyle = CSSProperties & {
+  '--mode-trigger-flash-name'?: string;
+  '--mode-chevron-flash-name'?: string;
+};
+
 /**
  * ModeSelect - Mode selector component
  * Supports switching between default, agent, plan, and auto modes
@@ -161,26 +166,26 @@ export const ModeSelect = ({ value, onChange, provider }: ModeSelectProps) => {
     };
   }, []);
 
-  const flashingButtonStyle = useMemo<CSSProperties | undefined>(() => {
+  const flashingButtonStyle = useMemo<ModeSelectFlashStyle | undefined>(() => {
     if (!isChevronFlashing) {
       return undefined;
     }
     return {
-      ['--mode-trigger-flash-name' as const]:
+      '--mode-trigger-flash-name':
         flashCycle % 2 === 0
           ? 'selector-mode-trigger-flash-a'
           : 'selector-mode-trigger-flash-b',
     };
   }, [flashCycle, isChevronFlashing]);
 
-  const flashingChevronStyle = useMemo<CSSProperties | undefined>(() => {
+  const flashingChevronStyle = useMemo<ModeSelectFlashStyle | undefined>(() => {
     if (!isChevronFlashing) {
       return { fontSize: '10px', marginLeft: '2px' };
     }
     return {
       fontSize: '10px',
       marginLeft: '2px',
-      ['--mode-chevron-flash-name' as const]:
+      '--mode-chevron-flash-name':
         flashCycle % 2 === 0
           ? 'selector-mode-chevron-flash-a'
           : 'selector-mode-chevron-flash-b',
