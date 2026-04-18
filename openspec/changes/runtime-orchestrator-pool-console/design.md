@@ -16,13 +16,29 @@
 
 本设计要把 runtime 从“隐式副作用”拉正为“显式资源”，由统一 Orchestrator 调度，并通过设置页控制台暴露最小但关键的观测与操作面。
 
+## Implementation Alignment
+
+截至 `2026-04-18`，本 change 已经历以下实现收口：
+
+- `cb2db549`: 初次引入 runtime orchestrator、runtime snapshot/mutate command、settings 侧控制台骨架。
+- `d1e17770`: 把 runtime 控制台暴露到可见 settings section，而不是隐藏在已有分组里。
+- `520e7064`: 独立出 `RuntimePoolSection`，补充 summary cards、diagnostics、policy toggles、专属 i18n 与布局收口。
+- `8d617b60`: 重构 orchestrator，引入 startup acquire gate、lease-safe eviction、engine observability，并修复注册前被回收的竞态。
+- `d7b0c022`: 新增 runtime reconnect recovery UI，收紧 runtime budget 输入归一化与 `zombie-suspected` 的前端呈现。
+
+因此本设计文档除了描述目标方案，也必须明确当前 as-built reality：
+
+- `Codex` 已经具备可配置的 budgeted pool。
+- `Claude Code` 已纳入 registry / snapshot / close path / observability，但暂未暴露独立 budget knobs。
+- 用户侧除了 settings console 之外，还新增了消息区 runtime reconnect 恢复入口，用于 runtime 断链后的显式修复。
+
 ## Goals / Non-Goals
 
 **Goals:**
 
 - 建立统一的 runtime registry、state machine、lease source 和 budget 模型。
 - 让 `connect / ensure / restore / exit / orphan sweep` 共享同一套生命周期语义。
-- 将默认 `Codex` 与 `Claude Code` 行为从 per-workspace 常驻改为 budgeted pool。
+- 将默认 `Codex` 行为从 per-workspace 常驻改为 budgeted pool，并让 `Claude Code` 共享统一 lifecycle / lease / shutdown / observability contract。
 - 提供 `Runtime Pool Console` 作为用户可见的观测与干预入口。
 - 三阶段推进，确保可以先止血再演进，不要求一次性大爆改。
 - 明确 `reconcile_pool` 与 `runtime termination` 的职责边界，避免时间驱动回收直接打断 in-flight turn。
@@ -30,7 +46,7 @@
 
 **Non-Goals:**
 
-- 不把所有 engine 在首期就改成完全一致的执行内部实现；但 `Codex` 与 `Claude Code` 必须共享同一套 lifecycle/lease/eviction contract。
+- 不把所有 engine 在首期就改成完全一致的执行内部实现；`Codex` 与 `Claude Code` 共享同一套 lifecycle/lease/shutdown contract，但 budget 配置仍允许分阶段推进。
 - 不改 thread / conversation 数据模型本身。
 - 不实现一个系统级多进程管理器或替代 OS task manager。
 - 不支持同 workspace 的同 engine 多实例并行常驻。
@@ -94,7 +110,7 @@
 - 只在 `connect` 前做一次 `contains_key` 判断
   - 缺点：覆盖不了 race、partial restart、reload、stale handle 替换场景
 
-### Decision 3: `Codex` 与 `Claude Code` 首期采用 `Hot / Warm / Cold / Pinned` 池化模型
+### Decision 3: `Codex` 首期采用 `Hot / Warm / Cold / Pinned` 池化模型，`Claude Code` 同步接入统一 registry / lease / close path
 
 定义：
 
@@ -110,11 +126,15 @@
 默认预算：
 
 - `max_hot_codex = 1`
-- `max_warm_codex = 1`
-- `warm_ttl_seconds = 90`
-- `max_hot_claude = 1`
-- `max_warm_claude = 1`
-- `claude_warm_ttl_seconds = 90`
+- `max_warm_codex = 2`
+- `warm_ttl_seconds = 120`
+
+当前实现边界：
+
+- settings 与 snapshot budget 字段当前只暴露 `Codex` 的 `max_hot / max_warm / warm_ttl`
+- `Claude Code` 已出现在 runtime rows / summary / engine observability 中
+- `mutate_runtime_pool` 可对 `Claude Code` 执行 `close` / `pin`
+- `release-to-cold` 对 `Claude Code` 当前等价于 close，而不是独立 warm/cold budget 调度
 
 驱逐原则：
 
@@ -130,7 +150,7 @@
 
 原因：
 
-- 这能把 `Codex` 与 `Claude Code` runtime 数从“随 workspace 数量增长”切换为“随当前活跃度增长”。
+- 这能先把最严重的 `Codex` runtime 数问题从“随 workspace 数量增长”切换为“随当前活跃度增长”，同时避免 `Claude Code` 继续游离在统一治理面之外。
 
 备选方案：
 
@@ -238,6 +258,13 @@
   - `退出时强制清理 runtime`
   - `启动时 orphan sweep`
 
+当前可见性约束：
+
+- 控制台必须出现在可见的 `Settings > Runtime` section
+- 不能再藏在 `CodexSection` 或 `OtherSection` 的二级区域里
+- engine summary 可以同时显示 `Codex` 与 `Claude`
+- budget 调参文案必须明确是 `Codex-only`
+
 交互约束：
 
 - 手动“增加”仅指增加预算或 pin，不允许创建同 workspace 多实例
@@ -264,6 +291,19 @@
 原因：
 
 - 当前事故的根因之一是“定时回收同时持有决策和执行权限”，导致错误状态下可直接杀进程。
+
+### Decision 9: runtime 断链必须有用户可见恢复面，而不是只依赖后台日志
+
+新增消息区恢复卡片：
+
+- 当错误消息命中 `broken pipe`、`the pipe is being closed`、`workspace not connected` 等模式时
+- 前端在消息区展示 `RuntimeReconnectCard`
+- 用户可直接调用 `ensureRuntimeReady(workspaceId)` 重建 runtime
+
+原因：
+
+- runtime 断链属于这个 change 的自然延伸问题；如果 Orchestrator 解决了后台资源治理，却没有给用户显式恢复面，用户仍然会感知为“对话突然坏了但不知道怎么办”。
+- `d7b0c022` 已经证明这类错误在 UI 层需要单独收口，否则会退化为原始错误文本直接外露。
 
 ## Risks / Trade-offs
 
@@ -305,7 +345,7 @@
 因此首刀应该：
 
 - Phase 1 用统一 shutdown / ledger / diagnostics 收口所有受管 runtime
-- Phase 2 的池化、lease gate 与 lazy acquire 同时覆盖 `Codex` 与 `Claude Code`
+- Phase 2 先把 budgeted pool、lease gate 与 lazy acquire 在 `Codex` 上做实，再让 `Claude Code` 跟进统一 lease / snapshot / close path
 - 其他 engine 后续只复用 orchestrator 骨架，不阻塞本次止血
 
 ### 判断 3: 先修 backend 真值，再改 frontend restore

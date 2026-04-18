@@ -1245,11 +1245,11 @@ fn default_codex_max_hot_runtimes() -> u8 {
 }
 
 fn default_codex_max_warm_runtimes() -> u8 {
-    1
+    2
 }
 
 fn default_codex_warm_ttl_seconds() -> u16 {
-    90
+    120
 }
 
 impl Default for AppSettings {

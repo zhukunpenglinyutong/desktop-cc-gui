@@ -28,6 +28,10 @@
 - [x] 3.2 mutate 操作接入 Coordinator（优先级: P1；依赖: 1.5；输入: close/release/pin 命令；输出: 所有终止走统一执行链；验证: mutate contract tests 覆盖 busy confirm）
 - [x] 3.3 诊断面板补充误杀防线指标（优先级: P1；依赖: 1.6；输入: runtime diagnostics；输出: `leaseBlockedEviction`、`coordinatorAbortCount` 等统计；验证: release-checklist 可读）
 - [x] 3.4 Phase 3 验收（优先级: P1；依赖: 3.1-3.3；输入: console 手测矩阵；输出: 用户可定位“为何未回收/为何被回收”；验证: 发布检查通过）
+- [x] 3.5 将 Runtime Pool Console 暴露到可见 settings runtime section（优先级: P1；依赖: 3.1；输入: `SettingsView` / 既有 section 结构；输出: 用户无需进入隐藏入口即可访问 console；验证: `d1e17770` UI 回归通过）
+- [x] 3.6 独立 `RuntimePoolSection` 并补齐 summary / observability / policy toggles（优先级: P1；依赖: 3.5；输入: runtime snapshot + app settings；输出: 专用 panel 展示 summary cards、engine observability、diagnostics counters、policy switches；验证: `520e7064` 组件与 i18n 回归通过）
+- [x] 3.7 收紧 budget 输入边界与状态呈现（优先级: P1；依赖: 3.6；输入: runtime panel draft inputs；输出: 空值/非法值/越界值归一化，`zombie-suspected` 告警态正确映射；验证: `d7b0c022` 单测通过）
+- [x] 3.8 增加消息区 runtime reconnect 恢复卡片（优先级: P1；依赖: 2.5；输入: broken pipe / workspace not connected 错误；输出: `RuntimeReconnectCard` + `ensureRuntimeReady` 可见恢复链路；验证: `Messages` / runtime reconnect tests 通过）
 
 ## 4. 验证矩阵（必须通过）
 
@@ -36,3 +40,5 @@
 - [x] 4.3 异常清理回归：崩溃后下次启动 orphan sweep 能清理残留
 - [x] 4.4 预算回归：预算超限时仅回收 `Evictable`，不回收持有 lease 的 runtime
 - [x] 4.5 启动进程回归：客户端启动后出现的 `node` 进程必须可归因，且数量不因 hidden restore 出现异常放大
+- [x] 4.6 UI 可达性回归：`Runtime Pool Console` 在可见 settings runtime section 可访问，且不再埋在 `CodexSection`/`OtherSection`
+- [x] 4.7 断链恢复回归：`broken pipe` / `workspace not connected` 错误能展示 reconnect 卡片，并返回可读成功/失败状态
