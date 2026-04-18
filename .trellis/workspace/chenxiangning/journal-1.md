@@ -955,3 +955,67 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 18: 运行时编排与进程治理重构
+
+**Date**: 2026-04-18
+**Task**: 运行时编排与进程治理重构
+**Branch**: `feature/vvvv0.4.3`
+
+### Summary
+
+(Add summary)
+
+### Main Changes
+
+任务目标：
+- 重构 runtime orchestrator，统一纳管 Codex、Claude Code 与相关 node 进程。
+- 修复运行时启动和回收之间的竞态，避免刚启动的有效进程被误杀，也减少空闲时未托管进程残留。
+- 补齐 runtime pool 控制台展示、i18n 和 OpenSpec 文档。
+
+主要改动：
+- 在 src-tauri/src/runtime/mod.rs 引入 acquire gate、进程观测与 host/unmanaged roots 诊断，补齐 Windows/macOS 兼容的进程快照与回收路径。
+- 在 src-tauri/src/codex/mod.rs、src-tauri/src/codex/session_runtime.rs、src-tauri/src/shared/workspaces_core.rs 中重构 Codex session 获取流程，修复 session 注册前被 reconcile 回收的竞态。
+- 在 Claude 相关模块中同步接入运行时管理与状态同步。
+- 前端 Runtime Pool 面板、src/services/tauri.ts、src/types.ts 以及中英文 i18n 文案同步更新，展示新的运行时观测字段。
+- 为满足 large-file governance，将 Codex session runtime 与 OpenCode helper 从超大文件中抽离，避免超过 3000 行门禁。
+- 更新 openspec/changes/runtime-orchestrator-pool-console 下 proposal、design、tasks 与 spec，保持提案与实现一致。
+
+涉及模块：
+- backend/runtime: src-tauri/src/runtime/mod.rs
+- backend/codex: src-tauri/src/codex/mod.rs, src-tauri/src/codex/session_runtime.rs
+- backend/shared: src-tauri/src/shared/workspaces_core.rs, src-tauri/src/state.rs, src-tauri/src/types.rs
+- backend/engine: src-tauri/src/engine/claude.rs, src-tauri/src/engine/claude/manager.rs, src-tauri/src/engine/commands.rs, src-tauri/src/engine/commands_opencode_helpers.rs
+- frontend/runtime-pool: src/features/settings/components/settings-view/sections/RuntimePoolSection.tsx, src/services/tauri.ts, src/types.ts, src/i18n/locales/en.part1.ts, src/i18n/locales/zh.part1.ts
+- spec: openspec/changes/runtime-orchestrator-pool-console/*
+
+验证结果：
+- cargo fmt --manifest-path src-tauri/Cargo.toml 通过
+- cargo test --manifest-path src-tauri/Cargo.toml runtime::tests 通过
+- npm run typecheck 通过
+- npm run check:large-files:gate 通过
+- npm run build:mac-arm64 产出本地 app bundle，但 codesign 因缺少指定签名身份而中止收尾；构建产物已生成，可用于本地验证
+
+后续事项：
+- 继续基于新 bundle 验证安装包场景下的对话创建、恢复与进程回收表现。
+- 若需要正式分发，还需补齐对应 macOS 签名身份或调整打包脚本的签名策略。
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `8d617b60dd0c6b746e36610f41fe4c8aa111c8fa` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

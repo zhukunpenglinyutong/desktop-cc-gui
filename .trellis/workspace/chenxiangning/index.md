@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 17
+- **Total Sessions**: 18
 - **Last Active**: 2026-04-18
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~957 | Active |
+| `journal-1.md` | ~1021 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 18 | 2026-04-18 | 运行时编排与进程治理重构 | `8d617b60dd0c6b746e36610f41fe4c8aa111c8fa` | `feature/vvvv0.4.3` |
 | 17 | 2026-04-18 | dedicated runtime pool settings panel | `520e706406350f6166e0bcb34e01ceeb3623856f` | `feature/vvvv0.4.3` |
 | 16 | 2026-04-18 | runtime pool console visible settings entry | `d1e17770b8e8a0cbab6c701176fbadd8c6c716cb` | `feature/vvvv0.4.3` |
 | 15 | 2026-04-18 | runtime orchestrator pool console | `cb2db54934ba419a7220b746ab1d18f68b455e8c` | `feature/vvvv0.4.3` |
