@@ -126,3 +126,58 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 38: 归档项目会话管理范围修正提案
+
+**Date**: 2026-04-20
+**Task**: 归档项目会话管理范围修正提案
+**Branch**: `feature/vv0.4.4`
+
+### Summary
+
+(Add summary)
+
+### Main Changes
+
+任务目标:
+- 关闭并归档 fix-project-session-management-scope 提案，确认 5.3 手测完成后将规范同步回主 specs。
+
+主要改动:
+- 将 fix-project-session-management-scope 的 delta specs 合并到主规范。
+- 更新 workspace-session-management 主 spec，补齐 main workspace 项目级聚合、worktree-only 范围、owner workspace 路由和来源可解释性约束。
+- 更新 codex-cross-source-history-unification 主 spec，补齐 default/override roots 并扫、项目级 owner workspace 身份和 partial degradation 约束。
+- 将提案目录归档到 openspec/changes/archive/2026-04-20-fix-project-session-management-scope。
+- 记录 tasks.md 中 5.3 手测完成。
+
+涉及模块:
+- openspec/specs/workspace-session-management/spec.md
+- openspec/specs/codex-cross-source-history-unification/spec.md
+- openspec/changes/archive/2026-04-20-fix-project-session-management-scope/
+
+验证结果:
+- 已确认 openspec status --change "fix-project-session-management-scope" --json 在归档前返回 isComplete: true。
+- 已确认 openspec list --json 在归档后不再包含 fix-project-session-management-scope。
+- 本次仅提交 OpenSpec 归档与 spec 同步，未追加运行代码测试。
+
+后续事项:
+- 工作区仍存在其他未提交改动，需与本次 OpenSpec 归档提交分开处理。
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `869e2562668d722ed4f4cbc4fe7d97fc4ae79c3b` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
