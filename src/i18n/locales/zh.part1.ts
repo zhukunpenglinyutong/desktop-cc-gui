@@ -418,6 +418,10 @@ const zhPart1 = {
     globalAgentsMd: "全局 AGENTS.md",
     globalCodexConfig: "全局 Codex 配置",
     openInFinder: "在访达中打开",
+    openInFileManager: "在{{fileManager}}中打开",
+    fileManagerFinder: "访达",
+    fileManagerExplorer: "资源管理器",
+    fileManagerGeneric: "文件管理器",
 
     // 工作区组
     workspaceGroups: "工作区分组",
@@ -1368,16 +1372,14 @@ const zhPart1 = {
     // Experimental 部分
     experimentalTitle: "实验性功能",
     experimentalDescription: "预览可能更改或移除的功能。",
-    experimentalWarning1: "实验性标志存储在默认 CODEX_HOME config.toml 中。",
-    experimentalWarning2: "工作区覆盖不会更新。",
+    experimentalWarning1: "只有“后台终端”会同步到默认 CODEX_HOME config.toml。",
+    experimentalWarning2: "协作模式与引导模式只保存在桌面端本地设置中。",
     configFile: "配置文件",
-    configFileDesc: "在访达中打开 Codex 配置。",
-    multiAgent: "多代理",
-    multiAgentDesc: "开启后：可将复杂任务拆分给多个代理并行执行。",
+    configFileDesc: "在{{fileManager}}中打开官方 Codex 配置。",
     collaborationModes: "协作模式",
     collaborationModesDesc: "开启后：输入框可切换 Code / Plan；Plan 下支持交互提问卡片。",
     backgroundTerminal: "后台终端",
-    backgroundTerminalDesc: "开启后：长时间命令可在后台持续运行，不阻塞对话。",
+    backgroundTerminalDesc: "开启后：同步 official unified_exec，让长时间命令可在后台持续运行。",
     steerMode: "引导模式",
     steerModeDesc: "开启后：可在运行中继续发消息，系统会自动排队处理。",
 

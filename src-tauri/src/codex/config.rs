@@ -8,44 +8,12 @@ use crate::files::policy::{policy_for, FileKind, FileScope};
 
 const FEATURES_TABLE: &str = "[features]";
 
-pub(crate) fn read_steer_enabled() -> Result<Option<bool>, String> {
-    read_feature_flag("steer")
-}
-
-pub(crate) fn read_collab_enabled() -> Result<Option<bool>, String> {
-    read_feature_flag("collab")
-}
-
-pub(crate) fn read_collaboration_modes_enabled() -> Result<Option<bool>, String> {
-    read_feature_flag("collaboration_modes")
-}
-
 pub(crate) fn read_unified_exec_enabled() -> Result<Option<bool>, String> {
     read_feature_flag("unified_exec")
 }
 
-pub(crate) fn read_codex_mode_enforcement_enabled() -> Result<Option<bool>, String> {
-    read_feature_flag("collaboration_mode_enforcement")
-}
-
-pub(crate) fn write_steer_enabled(enabled: bool) -> Result<(), String> {
-    write_feature_flag("steer", enabled)
-}
-
-pub(crate) fn write_collab_enabled(enabled: bool) -> Result<(), String> {
-    write_feature_flag("collab", enabled)
-}
-
-pub(crate) fn write_collaboration_modes_enabled(enabled: bool) -> Result<(), String> {
-    write_feature_flag("collaboration_modes", enabled)
-}
-
 pub(crate) fn write_unified_exec_enabled(enabled: bool) -> Result<(), String> {
     write_feature_flag("unified_exec", enabled)
-}
-
-pub(crate) fn write_codex_mode_enforcement_enabled(enabled: bool) -> Result<(), String> {
-    write_feature_flag("collaboration_mode_enforcement", enabled)
 }
 
 fn read_feature_flag(key: &str) -> Result<Option<bool>, String> {
@@ -212,4 +180,36 @@ fn upsert_feature_flag(contents: &str, key: &str, enabled: bool) -> String {
         updated.push('\n');
     }
     updated
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{find_feature_flag, upsert_feature_flag};
+
+    #[test]
+    fn find_feature_flag_reads_only_requested_key() {
+        let contents = "[features]\ncollab = false\nunified_exec = true\n";
+
+        assert_eq!(find_feature_flag(contents, "unified_exec"), Some(true));
+        assert_eq!(find_feature_flag(contents, "steer"), None);
+    }
+
+    #[test]
+    fn upsert_feature_flag_preserves_other_feature_lines() {
+        let contents = "[features]\ncollab = false\nunified_exec = false\nsteer = true\n";
+
+        let updated = upsert_feature_flag(contents, "unified_exec", true);
+
+        assert!(updated.contains("collab = false"));
+        assert!(updated.contains("unified_exec = true"));
+        assert!(updated.contains("steer = true"));
+    }
+
+    #[test]
+    fn upsert_feature_flag_creates_features_table_when_missing() {
+        assert_eq!(
+            upsert_feature_flag("", "unified_exec", true),
+            "[features]\nunified_exec = true\n"
+        );
+    }
 }

@@ -426,6 +426,65 @@ describe("SettingsView Display", () => {
     expect(screen.getByRole("button", { name: "settings.sidebarWebService" })).toBeTruthy();
   });
 
+  it("removes the dead multi-agent toggle and explains local-vs-official ownership", async () => {
+    cleanup();
+    render(
+      <SettingsView
+        reduceTransparency={false}
+        onToggleTransparency={vi.fn()}
+        appSettings={baseSettings}
+        openAppIconById={{}}
+        onUpdateAppSettings={vi.fn().mockResolvedValue(undefined)}
+        workspaceGroups={[]}
+        groupedWorkspaces={[
+          {
+            id: null,
+            name: "Ungrouped",
+            workspaces: [
+              {
+                ...workspaceA,
+                settings: {
+                  ...workspaceA.settings,
+                  codexHome: "/tmp/custom-codex-home",
+                },
+              },
+            ],
+          },
+        ]}
+        ungroupedLabel="Ungrouped"
+        onClose={vi.fn()}
+        onMoveWorkspace={vi.fn()}
+        onDeleteWorkspace={vi.fn()}
+        onCreateWorkspaceGroup={vi.fn().mockResolvedValue(null)}
+        onRenameWorkspaceGroup={vi.fn().mockResolvedValue(null)}
+        onMoveWorkspaceGroup={vi.fn().mockResolvedValue(null)}
+        onDeleteWorkspaceGroup={vi.fn().mockResolvedValue(null)}
+        onAssignWorkspaceGroup={vi.fn().mockResolvedValue(null)}
+        onRunDoctor={vi.fn().mockResolvedValue(createDoctorResult())}
+        activeWorkspace={null}
+        activeEngine="codex"
+        onUpdateWorkspaceCodexBin={vi.fn().mockResolvedValue(undefined)}
+        onUpdateWorkspaceSettings={vi.fn().mockResolvedValue(undefined)}
+        scaleShortcutTitle="Scale shortcut"
+        scaleShortcutText="Use Command +/-"
+        onTestNotificationSound={vi.fn()}
+        dictationModelStatus={null}
+        onDownloadDictationModel={vi.fn()}
+        onCancelDictationDownload={vi.fn()}
+        onRemoveDictationModel={vi.fn()}
+        initialSection="experimental"
+      />,
+    );
+
+    await flushSettingsViewEffects();
+
+    expect(screen.queryByText("Multi-agent")).toBeNull();
+    expect(screen.getByText(/Only Background terminal syncs/)).toBeTruthy();
+    expect(screen.getByText(/Collaboration modes and Steer mode stay/)).toBeTruthy();
+    expect(screen.getByText("Open the official Codex config in File Manager.")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Open in File Manager" })).toBeTruthy();
+  });
+
   it("renders codex doctor probe metadata including proxy context", async () => {
     cleanup();
     const onRunDoctor = vi.fn().mockResolvedValue({

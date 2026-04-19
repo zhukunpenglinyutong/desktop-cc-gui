@@ -406,6 +406,10 @@ const enPart1 = {
     globalAgentsMd: "Global AGENTS.md",
     globalCodexConfig: "Global Codex Config",
     openInFinder: "Open in Finder",
+    openInFileManager: "Open in {{fileManager}}",
+    fileManagerFinder: "Finder",
+    fileManagerExplorer: "Explorer",
+    fileManagerGeneric: "File Manager",
 
     // Workspace groups
     workspaceGroups: "Workspace Groups",
@@ -1394,18 +1398,18 @@ const enPart1 = {
     // Experimental section
     experimentalTitle: "Experimental",
     experimentalDescription: "Preview features that may change or be removed.",
-    experimentalWarning1: "Experimental flags are stored in the default CODEX_HOME config.toml.",
-    experimentalWarning2: "Workspace overrides are not updated.",
+    experimentalWarning1:
+      "Only Background terminal syncs to the default CODEX_HOME config.toml.",
+    experimentalWarning2:
+      "Collaboration modes and Steer mode stay in desktop-local settings.",
     configFile: "Config file",
-    configFileDesc: "Open the Codex config in Finder.",
-    multiAgent: "Multi-agent",
-    multiAgentDesc: "When enabled: split complex tasks across multiple agents in parallel.",
+    configFileDesc: "Open the official Codex config in {{fileManager}}.",
     collaborationModes: "Collaboration modes",
     collaborationModesDesc:
       "When enabled: switch between Code / Plan in composer; Plan supports interactive question cards.",
     backgroundTerminal: "Background terminal",
     backgroundTerminalDesc:
-      "When enabled: long-running terminal commands continue in background without blocking chat.",
+      "When enabled: sync the official unified_exec passthrough for background terminal runs.",
     steerMode: "Steer mode",
     steerModeDesc:
       "When enabled: keep sending messages during runs and queue them automatically.",

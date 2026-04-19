@@ -111,6 +111,10 @@ import {
   getContrastingTextColor,
 } from "../../../utils/colorUtils";
 import {
+  isMacPlatform,
+  isWindowsPlatform,
+} from "../../../utils/platform";
+import {
   isHistoryCompletionEnabled,
   setHistoryCompletionEnabled,
 } from "../../composer/hooks/useInputHistoryStore";
@@ -809,6 +813,16 @@ export function SettingsView({
         error instanceof Error ? error.message : t("settings.unableToOpenConfig"),
       );
     }
+  }, [t]);
+
+  const configFileManagerLabel = useMemo(() => {
+    if (isMacPlatform()) {
+      return t("settings.fileManagerFinder");
+    }
+    if (isWindowsPlatform()) {
+      return t("settings.fileManagerExplorer");
+    }
+    return t("settings.fileManagerGeneric");
   }, [t]);
 
   useEffect(() => {
@@ -2599,33 +2613,20 @@ export function SettingsView({
                   <div>
                     <div className="settings-toggle-title">{t("settings.configFile")}</div>
                     <div className="settings-toggle-subtitle">
-                      {t("settings.configFileDesc")}
+                      {t("settings.configFileDesc", {
+                        fileManager: configFileManagerLabel,
+                      })}
                     </div>
                   </div>
                   <button type="button" className="ghost" onClick={handleOpenConfig}>
-                    {t("settings.openInFinder")}
+                    {t("settings.openInFileManager", {
+                      fileManager: configFileManagerLabel,
+                    })}
                   </button>
                 </div>
                 {openConfigError && (
                   <div className="settings-help">{openConfigError}</div>
                 )}
-                <div className="settings-toggle-row">
-                  <div>
-                    <div className="settings-toggle-title">{t("settings.multiAgent")}</div>
-                    <div className="settings-toggle-subtitle">
-                      {t("settings.multiAgentDesc")}
-                    </div>
-                  </div>
-                  <Switch
-                    checked={appSettings.experimentalCollabEnabled}
-                    onCheckedChange={(checked) =>
-                      void onUpdateAppSettings({
-                        ...appSettings,
-                        experimentalCollabEnabled: checked,
-                      })
-                    }
-                  />
-                </div>
                 <div
                   className={`settings-toggle-row${
                     highlightedRow === "experimental-collaboration-modes"

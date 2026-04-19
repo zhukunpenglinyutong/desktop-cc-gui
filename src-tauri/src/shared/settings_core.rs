@@ -50,35 +50,15 @@ fn validate_ui_scale(scale: f64) -> Result<(), String> {
 }
 
 fn sync_codex_config_flags(settings: &AppSettings) {
-    let _ = codex_config::write_collab_enabled(settings.experimental_collab_enabled);
-    let _ = codex_config::write_collaboration_modes_enabled(
-        settings.experimental_collaboration_modes_enabled,
-    );
-    let _ = codex_config::write_steer_enabled(settings.experimental_steer_enabled);
     let _ = codex_config::write_unified_exec_enabled(settings.experimental_unified_exec_enabled);
-    let _ =
-        codex_config::write_codex_mode_enforcement_enabled(settings.codex_mode_enforcement_enabled);
 }
 
 pub(crate) async fn get_app_settings_core(app_settings: &Mutex<AppSettings>) -> AppSettings {
     let mut settings = app_settings.lock().await.clone();
     settings.sanitize_runtime_pool_settings();
-    if let Ok(Some(collab_enabled)) = codex_config::read_collab_enabled() {
-        settings.experimental_collab_enabled = collab_enabled;
-    }
-    if let Ok(Some(collaboration_modes_enabled)) = codex_config::read_collaboration_modes_enabled()
-    {
-        settings.experimental_collaboration_modes_enabled = collaboration_modes_enabled;
-    }
-    if let Ok(Some(steer_enabled)) = codex_config::read_steer_enabled() {
-        settings.experimental_steer_enabled = steer_enabled;
-    }
+    settings.experimental_collab_enabled = false;
     if let Ok(Some(unified_exec_enabled)) = codex_config::read_unified_exec_enabled() {
         settings.experimental_unified_exec_enabled = unified_exec_enabled;
-    }
-    if let Ok(Some(mode_enforcement_enabled)) = codex_config::read_codex_mode_enforcement_enabled()
-    {
-        settings.codex_mode_enforcement_enabled = mode_enforcement_enabled;
     }
     settings.ui_scale = sanitize_ui_scale(settings.ui_scale);
     settings.canvas_width_mode = sanitize_canvas_width_mode(&settings.canvas_width_mode);
@@ -92,6 +72,7 @@ pub(crate) async fn update_app_settings_core(
     settings_path: &PathBuf,
 ) -> Result<AppSettings, String> {
     let mut normalized = settings;
+    normalized.experimental_collab_enabled = false;
     normalized.sanitize_runtime_pool_settings();
     normalized.canvas_width_mode = sanitize_canvas_width_mode(&normalized.canvas_width_mode);
     normalized.layout_mode = sanitize_layout_mode(&normalized.layout_mode);
@@ -110,11 +91,13 @@ pub(crate) async fn restore_app_settings_core(
     app_settings: &Mutex<AppSettings>,
     settings_path: &PathBuf,
 ) -> Result<(), String> {
-    sync_codex_config_flags(previous);
-    write_settings(settings_path, previous)?;
-    proxy_core::apply_app_proxy_settings(previous)?;
+    let mut normalized = previous.clone();
+    normalized.experimental_collab_enabled = false;
+    sync_codex_config_flags(&normalized);
+    write_settings(settings_path, &normalized)?;
+    proxy_core::apply_app_proxy_settings(&normalized)?;
     let mut current = app_settings.lock().await;
-    *current = previous.clone();
+    *current = normalized;
     Ok(())
 }
 
@@ -156,10 +139,48 @@ pub(crate) fn get_codex_config_path_core() -> Result<String, String> {
 
 #[cfg(test)]
 mod tests {
+    use std::env;
+    use std::fs;
+    use std::path::Path;
+    use std::sync::Mutex as StdMutex;
+
     use super::{
-        sanitize_canvas_width_mode, sanitize_layout_mode, sanitize_ui_scale, validate_ui_scale,
-        UI_SCALE_DEFAULT,
+        get_app_settings_core, sanitize_canvas_width_mode, sanitize_layout_mode,
+        sanitize_ui_scale, update_app_settings_core, validate_ui_scale, UI_SCALE_DEFAULT,
     };
+    use crate::types::AppSettings;
+    use tokio::sync::Mutex;
+
+    static ENV_LOCK: StdMutex<()> = StdMutex::new(());
+
+    struct CodexHomeTestGuard {
+        previous: Option<String>,
+        cleanup_path: Option<std::path::PathBuf>,
+    }
+
+    impl CodexHomeTestGuard {
+        fn new(path: &Path) -> Self {
+            let previous = env::var("CODEX_HOME").ok();
+            env::set_var("CODEX_HOME", path);
+            Self {
+                previous,
+                cleanup_path: Some(path.to_path_buf()),
+            }
+        }
+    }
+
+    impl Drop for CodexHomeTestGuard {
+        fn drop(&mut self) {
+            if let Some(previous) = self.previous.take() {
+                env::set_var("CODEX_HOME", previous);
+            } else {
+                env::remove_var("CODEX_HOME");
+            }
+            if let Some(path) = self.cleanup_path.take() {
+                let _ = fs::remove_dir_all(path);
+            }
+        }
+    }
 
     #[test]
     fn sanitize_ui_scale_falls_back_for_out_of_range() {
@@ -203,5 +224,73 @@ mod tests {
         assert!(validate_ui_scale(0.7).is_err());
         assert!(validate_ui_scale(2.7).is_err());
         assert!(validate_ui_scale(f64::NAN).is_err());
+    }
+
+    #[tokio::test]
+    async fn get_app_settings_core_ignores_private_external_feature_flags() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        let codex_home = env::temp_dir().join(format!(
+            "mossx-settings-core-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&codex_home);
+        fs::create_dir_all(&codex_home).unwrap();
+        fs::write(
+            codex_home.join("config.toml"),
+            "[features]\ncollab = true\ncollaboration_modes = false\nsteer = true\ncollaboration_mode_enforcement = false\nunified_exec = true\n",
+        )
+        .unwrap();
+        let _codex_home_guard = CodexHomeTestGuard::new(&codex_home);
+
+        let mut settings = AppSettings::default();
+        settings.experimental_collab_enabled = true;
+        settings.experimental_collaboration_modes_enabled = true;
+        settings.experimental_steer_enabled = false;
+        settings.codex_mode_enforcement_enabled = true;
+        settings.experimental_unified_exec_enabled = false;
+
+        let resolved = get_app_settings_core(&Mutex::new(settings)).await;
+
+        assert!(!resolved.experimental_collab_enabled);
+        assert!(resolved.experimental_collaboration_modes_enabled);
+        assert!(!resolved.experimental_steer_enabled);
+        assert!(resolved.codex_mode_enforcement_enabled);
+        assert!(resolved.experimental_unified_exec_enabled);
+    }
+
+    #[tokio::test]
+    async fn update_app_settings_core_only_syncs_unified_exec_to_external_config() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        let test_root = env::temp_dir().join(format!(
+            "mossx-settings-core-update-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&test_root);
+        fs::create_dir_all(&test_root).unwrap();
+        let codex_home = test_root.join("codex-home");
+        fs::create_dir_all(&codex_home).unwrap();
+        let settings_path = test_root.join("settings.json");
+        let _codex_home_guard = CodexHomeTestGuard::new(&codex_home);
+
+        let mut settings = AppSettings::default();
+        settings.experimental_collab_enabled = true;
+        settings.experimental_collaboration_modes_enabled = true;
+        settings.experimental_steer_enabled = true;
+        settings.codex_mode_enforcement_enabled = false;
+        settings.experimental_unified_exec_enabled = true;
+
+        let result =
+            update_app_settings_core(settings, &Mutex::new(AppSettings::default()), &settings_path)
+                .await
+                .unwrap();
+        let config_contents = fs::read_to_string(codex_home.join("config.toml")).unwrap();
+
+        assert!(!result.experimental_collab_enabled);
+        assert!(config_contents.contains("unified_exec = true"));
+        assert!(!config_contents.contains("collab ="));
+        assert!(!config_contents.contains("collaboration_modes ="));
+        assert!(!config_contents.contains("steer ="));
+        assert!(!config_contents.contains("collaboration_mode_enforcement ="));
+        let _ = fs::remove_dir_all(&test_root);
     }
 }

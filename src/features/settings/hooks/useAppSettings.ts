@@ -199,6 +199,7 @@ function normalizeAppSettings(
       : normalizedTargets[0]?.id ?? DEFAULT_OPEN_APP_ID;
   return {
     ...settings,
+    experimentalCollabEnabled: false,
     codexBin: settings.codexBin?.trim() ? settings.codexBin.trim() : null,
     codexArgs: settings.codexArgs?.trim() ? settings.codexArgs.trim() : null,
     webServicePort: normalizeWebServicePort(settings.webServicePort),
