@@ -299,3 +299,64 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 41: 全局会话归档中心与 Codex 配置边界治理落地
+
+**Date**: 2026-04-20
+**Task**: 全局会话归档中心与 Codex 配置边界治理落地
+**Branch**: `feature/vv0.4.4`
+
+### Summary
+
+(Add summary)
+
+### Main Changes
+
+任务目标：落地 global-session-history-archive-center 与 codex-config-flag-boundary-cleanup 两条提案实现，并完成当前工作区 review 中发现的问题修复。
+
+主要改动：
+- 新增全局 Codex 历史与项目相关历史的后端查询命令、catalog 归属字段、分页与治理支持。
+- 更新设置页会话管理视图，支持 project/global 模式切换、strict/related/global 展示与未归属保护。
+- 收紧 Codex config feature flag ownership boundary，补齐对应 OpenSpec proposal/design/tasks/spec。
+- 修复 destructive session_id 边界校验、global 模式刷新禁用条件、前后端 sessionManagement contract 漂移，以及 large-file gate 超限问题。
+
+涉及模块：
+- src-tauri/src/session_management.rs
+- src-tauri/src/local_usage.rs
+- src-tauri/src/local_usage/session_delete.rs
+- src/features/settings/components/settings-view/**
+- src/services/tauri.ts
+- src/services/tauri/sessionManagement.ts
+- openspec/changes/global-session-history-archive-center/**
+- openspec/changes/codex-config-flag-boundary-cleanup/**
+
+验证结果：
+- npx tsc --noEmit
+- npx vitest run src/features/settings/components/settings-view/sections/SessionManagementSection.test.tsx src/features/settings/components/settings-view/hooks/useWorkspaceSessionCatalog.test.tsx src/services/tauri.test.ts
+- cargo test --manifest-path src-tauri/Cargo.toml session_management::tests
+- cargo test --manifest-path src-tauri/Cargo.toml delete_codex_session_for_workspace_rejects_ambiguous_unknown_candidates
+- npm run check:large-files
+
+后续事项：
+- 如需继续收口，可将 src/services/tauri.ts 进一步拆分到更稳定的 service 子模块，避免再次贴近 large-file 阈值。
+- 继续观察 inferred attribution 规则在多 workspace / worktree 场景下的误判率，再决定是否扩展更多归属信号。
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `f9ce0073` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

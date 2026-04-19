@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-2.md`
-- **Total Sessions**: 40
+- **Total Sessions**: 41
 - **Last Active**: 2026-04-20
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-2.md` | ~301 | Active |
+| `journal-2.md` | ~362 | Active |
 | `journal-1.md` | ~1990 | Archived |
 <!-- @@@/auto:active-documents -->
 
@@ -30,6 +30,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 41 | 2026-04-20 | 全局会话归档中心与 Codex 配置边界治理落地 | `f9ce0073` | `feature/vv0.4.4` |
 | 40 | 2026-04-20 | 修正工作树新建会话入口交互 | `05afc70020bfd35be708a8f92d14f44d972b7e3e` | `feature/vv0.4.4` |
 | 39 | 2026-04-20 | 修复 OpenApp 图标懒加载回归并收口启动期开销 | `4d417500` | `feature/vv0.4.4` |
 | 38 | 2026-04-20 | 归档项目会话管理范围修正提案 | `869e2562668d722ed4f4cbc4fe7d97fc4ae79c3b` | `feature/vv0.4.4` |
