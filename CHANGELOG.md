@@ -7,28 +7,42 @@
 中文：
 
 ✨ Features
-- 重构回溯模式与文件选择策略：将回溯确认从二态开关改为三种模式单选（回退消息+相关文件、只回退消息、只回退文件），并严格锚定回溯文件集合在最后一条用户消息及其后续 AI 消息范围内
-
-🐛 Fixes
-- 完善 Claude 计划模式切换与执行审批链路，确保 ExitPlanMode 卡片不会误触发默认模式双按钮逻辑，也不会在切换后吞掉后续审批弹窗
-- 补齐 Claude 默认模式审批桥接边界，增强审批卡结构（增加 icon、badge、summary band），并从嵌套 payload 中提取路径与说明摘要
+- 新增 Runtime Pool Console 与独立设置面板，可集中查看 Codex runtime 池状态、进程观测信息与预算配置，提升运行时诊断与调优能力
+- 重构回溯模式与文件选择策略：将回溯确认改为三种模式单选（回退消息+相关文件、只回退消息、只回退文件），并仅纳入当前用户回合后的真实 mutation 文件
+- 为消息区新增 runtime 恢复卡片，支持断链诊断、一键重连，以及恢复后直接重发上一条用户提示词
 
 🔧 Improvements
-- 增强 ExitPlanMode 交互体验：保留首张 handoff 卡、记录按钮已选状态、支持复制计划 markdown，并在自动切换 mode selector 后提供可感知的闪烁提示
-- 审批卡默认隐藏 content/patch/diff 等正文类字段，减少审批噪音
+- 增强 Claude plan mode 到执行态的切换体验：保留首张 handoff 卡、记录按钮状态、支持复制计划 markdown，并优化模式切换后的可感知反馈
+- 强化 Claude 默认模式审批桥接与审批卡展示：补齐路径摘要提取、默认隐藏 content/patch/diff 正文，并降低审批噪音
+- 优化 runtime 预算面板与恢复提示文案，补齐 Codex-only 预算边界、异常输入归一化和跨平台提示一致性
+- 提升工作区恢复、会话继续与项目会话批量删除后的刷新收敛速度，减少长链路操作中的等待与状态漂移
+
+🐛 Fixes
+- 修复 runtime orchestrator 启动与注册期间的进程回收竞态，避免会话创建、恢复或连接过程中被误判并提前回收
+- 修复会话继续时旧 `threadId` 失效后的恢复失败，并补齐 `thread not found`、`SESSION_NOT_FOUND` 与 stale session 等场景的自动恢复链路
+- 修复运行时断连后的重连卡片误判、重发来源错误、重复用户气泡与无效成功提示等问题
+- 修复项目会话批量删除后设置页可能长期停留在“正在加载会话”状态的问题
+- 修复 Claude 计划模式切换、默认模式审批衔接、迟到线程事件污染与 explore 卡片隐藏边界问题
 
 English:
 
 ✨ Features
-- Refactor rewind mode and file selection strategy: change rewind confirmation from binary toggle to three-mode radio selection (rollback message+related files, message-only, files-only), strictly anchoring rewind file set within the last user message and subsequent AI messages
-
-🐛 Fixes
-- Complete Claude plan-to-execution mode switch and approval flow to prevent ExitPlanMode card from incorrectly triggering default-mode dual-button logic or swallowing subsequent approval dialogs after mode switch
-- Complete Claude default-mode approval bridge boundary handling, enhance approval card structure (icon, badge, summary band), and extract path/summary from nested payloads
+- Add a Runtime Pool Console and dedicated settings panel to inspect Codex runtime-pool state, process observability, and budget settings for easier diagnosis and tuning
+- Refactor rewind mode and file selection strategy into three explicit options (rollback message+related files, message-only, files-only), while limiting file rollback targets to real mutations from the current user turn
+- Add a dedicated runtime recovery card in the message area with disconnect diagnosis, one-click reconnect, and resend-last-prompt support after recovery
 
 🔧 Improvements
-- Enhance ExitPlanMode interaction experience: preserve first handoff card, record button selected state, support copying plan markdown, and add visible flash hint after auto-switching mode selector
-- Approval cards hide content/patch/diff body fields by default to reduce approval noise
+- Improve the Claude plan-to-execution experience by preserving the first handoff card, keeping button state, supporting plan-markdown copy, and adding clearer post-switch feedback
+- Harden the Claude default-mode approval bridge and approval-card presentation with better path summaries and hidden content/patch/diff bodies to reduce noise
+- Refine runtime budget controls and recovery messaging with tighter Codex-only boundaries, invalid-input normalization, and more consistent cross-platform prompts
+- Improve refresh convergence after workspace restore, conversation resume, and bulk session deletion to reduce waiting time and state drift in long-running flows
+
+🐛 Fixes
+- Fix runtime-orchestrator startup and registration races that could misclassify active processes and recycle them too early during session creation, recovery, or connection
+- Fix failed conversation resume when an old `threadId` becomes invalid, and complete automatic recovery for cases such as `thread not found`, `SESSION_NOT_FOUND`, and stale sessions
+- Fix reconnect-card false positives, incorrect resend-source selection, duplicated user bubbles, and ineffective success notices after runtime disconnects
+- Fix the Settings page getting stuck on “loading sessions” after bulk-deleting project sessions
+- Fix Claude plan-mode switching, default-mode approval handoff, late thread-event pollution, and explore-card visibility edge cases
 
 ---
 
