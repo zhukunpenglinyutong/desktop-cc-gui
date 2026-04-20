@@ -825,3 +825,61 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 50: Clarify session management scope hints and preserve commit threads
+
+**Date**: 2026-04-20
+**Task**: Clarify session management scope hints and preserve commit threads
+**Branch**: `feature/vvvv0.4.5`
+
+### Summary
+
+(Add summary)
+
+### Main Changes
+
+## 任务目标
+- review 当前工作区剩余代码改动，修正明显问题后完成本地提交。
+
+## 主要改动
+- 在 `SessionManagementSection` 中补充 project mode 的解释性提示：状态筛选与 main workspace 聚合 child worktree 的说明。
+- 调整 Codex 线程过滤规则，不再把 commit message 生成线程误判为后台 helper 线程并隐藏。
+- 为上述行为补充测试，并清理与已删除首页 recent 入口无关的 i18n/test mock 残留。
+
+## 涉及模块
+- `src/features/settings/components/settings-view/sections/SessionManagementSection.tsx`
+- `src/features/settings/components/settings-view/sections/SessionManagementSection.test.tsx`
+- `src/features/threads/hooks/useThreadActions.helpers.ts`
+- `src/features/threads/hooks/useThreadActions.test.tsx`
+- `src/features/threads/hooks/useThreadTurnEvents.ts`
+- `src/i18n/locales/en.part1.ts`
+- `src/i18n/locales/zh.part1.ts`
+- `src/test/vitest.setup.ts`
+
+## 验证结果
+- `npx vitest run src/features/settings/components/settings-view/sections/SessionManagementSection.test.tsx src/features/threads/hooks/useThreadActions.test.tsx` 通过。
+- `npm run typecheck` 通过。
+- `npm run lint` 无 error；仓库仍有既存 `react-hooks/exhaustive-deps` warnings。
+
+## 后续事项
+- `openspec/changes/workspace-session-catalog-projection-parity/` 目前只有 `.openspec.yaml` scaffold，未纳入本次 commit；后续如要提交，需先补齐 proposal/design/tasks/specs。
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `1c974f34` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

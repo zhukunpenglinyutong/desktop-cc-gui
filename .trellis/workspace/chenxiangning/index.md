@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-2.md`
-- **Total Sessions**: 49
+- **Total Sessions**: 50
 - **Last Active**: 2026-04-20
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-2.md` | ~827 | Active |
+| `journal-2.md` | ~885 | Active |
 | `journal-1.md` | ~1990 | Archived |
 <!-- @@@/auto:active-documents -->
 
@@ -30,6 +30,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 50 | 2026-04-20 | Clarify session management scope hints and preserve commit threads | `1c974f34` | `feature/vvvv0.4.5` |
 | 49 | 2026-04-20 | Hide recent conversations from landing views | `406e26eb` | `feature/vvvv0.4.5` |
 | 48 | 2026-04-20 | 修复会话管理边界校验与列表刷新 | `5cd53303` | `feature/vvvv0.4.5` |
 | 47 | 2026-04-20 | 补充顶部项目切换文件面板回归测试 | `3239d18d` | `feature/vvvv0.4.5` |
