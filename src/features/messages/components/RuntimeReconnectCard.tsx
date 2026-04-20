@@ -39,15 +39,18 @@ export function RuntimeReconnectCard({
   const [lastAction, setLastAction] = useState<"reconnect" | "resend">("reconnect");
   const [reconnectErrorDetail, setReconnectErrorDetail] = useState<string | null>(null);
   const requiresThreadRecovery = hint.reason === "thread-not-found";
-  const reconnectUnavailable = requiresThreadRecovery
-    ? !workspaceId || !threadId || !onRecoverThreadRuntime
-    : !workspaceId;
-  const resendUnavailable =
-    reconnectUnavailable ||
+  const retryMessageUnavailable =
     !retryMessage ||
-    (!retryMessage.text.trim() && (retryMessage.images?.length ?? 0) === 0) ||
-    !threadId ||
-    !onRecoverThreadRuntimeAndResend;
+    (!retryMessage.text.trim() && (retryMessage.images?.length ?? 0) === 0);
+  const reconnectUnavailable = requiresThreadRecovery
+    ? !workspaceId || !threadId || !onRecoverThreadRuntimeAndResend
+    : !workspaceId;
+  const resendUnavailable = requiresThreadRecovery
+    ? reconnectUnavailable || retryMessageUnavailable
+    : reconnectUnavailable ||
+      retryMessageUnavailable ||
+      !threadId ||
+      !onRecoverThreadRuntimeAndResend;
 
   useEffect(() => {
     setIsReconnectRunning(false);
@@ -69,13 +72,14 @@ export function RuntimeReconnectCard({
     setReconnectErrorDetail(null);
     try {
       if (requiresThreadRecovery) {
-        if (!threadId || !onRecoverThreadRuntime) {
+        if (!threadId) {
           setReconnectStatus("error");
           setReconnectErrorDetail(
             t("messages.threadRecoveryUnavailable"),
           );
           return;
         }
+        await ensureRuntimeReady(workspaceId);
         if (mode === "resend") {
           if (!onRecoverThreadRuntimeAndResend || !retryMessage) {
             setReconnectStatus("error");
@@ -92,6 +96,13 @@ export function RuntimeReconnectCard({
             setReconnectErrorDetail(t("messages.threadRecoveryRecoverFailed"));
             return;
           }
+          return;
+        }
+        if (!onRecoverThreadRuntime) {
+          setReconnectStatus("error");
+          setReconnectErrorDetail(
+            t("messages.threadRecoveryUnavailable"),
+          );
           return;
         }
         const recoveredThreadId = await onRecoverThreadRuntime(workspaceId, threadId);
@@ -185,18 +196,20 @@ export function RuntimeReconnectCard({
           <div className="message-runtime-recovery-description">{description}</div>
         </div>
         <div className="message-runtime-recovery-actions">
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            className="message-runtime-recovery-button"
-            onClick={() => {
-              void handleReconnectRuntime("reconnect");
-            }}
-            disabled={reconnectUnavailable || isReconnectRunning}
-          >
-            {reconnectActionLabel}
-          </Button>
+          {!requiresThreadRecovery ? (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="message-runtime-recovery-button"
+              onClick={() => {
+                void handleReconnectRuntime("reconnect");
+              }}
+              disabled={reconnectUnavailable || isReconnectRunning}
+            >
+              {reconnectActionLabel}
+            </Button>
+          ) : null}
           <Button
             type="button"
             size="sm"

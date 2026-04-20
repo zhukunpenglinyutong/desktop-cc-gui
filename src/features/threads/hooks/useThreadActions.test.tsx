@@ -848,6 +848,143 @@ describe("useThreadActions", () => {
     );
   });
 
+  it("recovers stale unified codex threads by message history when generic titles are ambiguous", async () => {
+    vi.mocked(resumeThread).mockImplementation(
+      async (_workspaceId: string, threadId: string) => {
+        if (threadId === "thread-stale") {
+          throw new Error("thread not found: thread-stale");
+        }
+        return {
+          result: {
+            thread: {
+              id: threadId,
+              turns: [{ id: `turn-${threadId}`, items: [] }],
+            },
+          },
+        };
+      },
+    );
+    vi.mocked(listThreads).mockResolvedValue({
+      result: {
+        data: [
+          {
+            id: "thread-a",
+            preview: "hi",
+            updated_at: 100,
+            cwd: "/tmp/codex",
+          },
+          {
+            id: "thread-b",
+            preview: "hi",
+            updated_at: 99,
+            cwd: "/tmp/codex",
+          },
+        ],
+        nextCursor: null,
+      },
+    });
+    vi.mocked(loadCodexSession).mockResolvedValue({ entries: [] });
+    vi.mocked(mergeThreadItems).mockImplementation(
+      (remoteItems: ConversationItem[]) => remoteItems,
+    );
+    vi.mocked(buildItemsFromThread).mockImplementation((thread) => {
+      const id = (thread as { id?: string }).id;
+      if (id === "thread-a") {
+        return [
+          {
+            id: "user-a",
+            kind: "message",
+            role: "user",
+            text: "hi",
+          },
+          {
+            id: "assistant-a",
+            kind: "message",
+            role: "assistant",
+            text: "alpha",
+          },
+        ];
+      }
+      if (id === "thread-b") {
+        return [
+          {
+            id: "user-b",
+            kind: "message",
+            role: "user",
+            text: "hi",
+          },
+          {
+            id: "assistant-b",
+            kind: "message",
+            role: "assistant",
+            text: "beta",
+          },
+        ];
+      }
+      return [];
+    });
+    const rememberThreadAlias = vi.fn();
+
+    const { result, dispatch } = renderActions({
+      useUnifiedHistoryLoader: true,
+      rememberThreadAlias,
+      itemsByThread: {
+        "thread-stale": [
+          {
+            id: "user-stale",
+            kind: "message",
+            role: "user",
+            text: "hi",
+          },
+          {
+            id: "assistant-stale",
+            kind: "message",
+            role: "assistant",
+            text: "alpha",
+          },
+          {
+            id: "assistant-error",
+            kind: "message",
+            role: "assistant",
+            text: "会话启动失败： thread not found: thread-stale",
+          },
+        ],
+      },
+      threadsByWorkspace: {
+        "ws-1": [
+          {
+            id: "thread-stale",
+            name: "hi",
+            updatedAt: 10,
+            engineSource: "codex",
+            threadKind: "native",
+          },
+        ],
+      },
+      activeThreadIdByWorkspace: {
+        "ws-1": "thread-stale",
+      },
+    });
+
+    await act(async () => {
+      await result.current.listThreadsForWorkspace(workspace, { preserveState: true });
+    });
+    dispatch.mockClear();
+
+    let resumed: string | null = null;
+    await act(async () => {
+      resumed = await result.current.resumeThreadForWorkspace("ws-1", "thread-stale");
+    });
+
+    expect(resumed).toBe("thread-a");
+    expect(rememberThreadAlias).toHaveBeenCalledWith("thread-stale", "thread-a");
+    expect(dispatch).toHaveBeenCalledWith({
+      type: "setActiveThreadId",
+      workspaceId: "ws-1",
+      threadId: "thread-a",
+    });
+  });
+
   it("ends loading when live thread list times out during a non-preserved refresh", async () => {
     vi.useFakeTimers();
     vi.mocked(listThreads).mockImplementation(
@@ -857,7 +994,11 @@ describe("useThreadActions", () => {
     const { result, dispatch } = renderActions();
 
     const refreshPromise = result.current.listThreadsForWorkspace(workspace);
-    await vi.advanceTimersByTimeAsync(2_000);
+    const onSettled = vi.fn();
+    void refreshPromise.then(onSettled);
+    await vi.advanceTimersByTimeAsync(20_000);
+    expect(onSettled).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(31_000);
     await refreshPromise;
 
     expect(dispatch).toHaveBeenCalledWith({
@@ -888,7 +1029,11 @@ describe("useThreadActions", () => {
     const { result, dispatch } = renderActions();
 
     const refreshPromise = result.current.listThreadsForWorkspace(workspace);
-    await vi.advanceTimersByTimeAsync(2_000);
+    const onSettled = vi.fn();
+    void refreshPromise.then(onSettled);
+    await vi.advanceTimersByTimeAsync(20_000);
+    expect(onSettled).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(31_000);
     await refreshPromise;
 
     expect(dispatch).toHaveBeenCalledWith({
@@ -2129,6 +2274,65 @@ describe("useThreadActions", () => {
         name: "Claude recovered history",
         updatedAt: 1_730_100_000_000,
         engineSource: "claude",
+      },
+    ]);
+  });
+
+  it("keeps slower codex catalog scans visible in the sidebar", async () => {
+    vi.useFakeTimers();
+    vi.mocked(listThreads)
+      .mockRejectedValueOnce(new Error("workspace not connected"))
+      .mockRejectedValueOnce(new Error("workspace not connected"));
+    vi.mocked(listClaudeSessions).mockResolvedValue([]);
+    vi.mocked(getOpenCodeSessionList).mockResolvedValue([]);
+    vi.mocked(listWorkspaceSessions).mockImplementation(async (_workspaceId, options) => {
+      if (options?.query?.status === "active" && options?.query?.engine === "codex") {
+        await new Promise((resolve) => setTimeout(resolve, 20_000));
+        return {
+          data: [
+            {
+              sessionId: "codex-history-slow",
+              workspaceId: "ws-1",
+              engine: "codex",
+              title: "最近对话你什么时候加进来的.还是显示出来的.之前这里没有才对啊.",
+              updatedAt: 1_730_300_000_000,
+              archivedAt: null,
+              threadKind: "native",
+              source: "mossx",
+              provider: "openai",
+              sourceLabel: "mossx/openai",
+            },
+          ],
+          nextCursor: null,
+          partialSource: null,
+        };
+      }
+      return {
+        data: [],
+        nextCursor: null,
+        partialSource: null,
+      };
+    });
+
+    const { result, dispatch } = renderActions();
+
+    const refreshPromise = result.current.listThreadsForWorkspace(workspace);
+    const onSettled = vi.fn();
+    void refreshPromise.then(onSettled);
+    await vi.advanceTimersByTimeAsync(19_000);
+    expect(onSettled).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(2_000);
+    await refreshPromise;
+
+    expectSetThreadsDispatched(dispatch, "ws-1", [
+      {
+        id: "codex-history-slow",
+        name: "最近对话你什么时候加进来的.还是显示出来的.之前这里没有才对啊.",
+        updatedAt: 1_730_300_000_000,
+        engineSource: "codex",
+        source: "mossx",
+        provider: "openai",
+        sourceLabel: "mossx/openai",
       },
     ]);
   });

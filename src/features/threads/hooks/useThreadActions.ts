@@ -94,6 +94,8 @@ import {
   resolveRewindSupportedEngine,
   resolveThreadSourceMeta,
   restoreThreadParentLinksFromSnapshot,
+  listReplacementThreadCandidates,
+  selectReplacementThreadByMessageHistory,
   selectReplacementThreadSummary,
   shouldIncludeWorkspaceThreadEntry,
   shouldReplaceUserInputQueueFromSnapshot,
@@ -145,15 +147,18 @@ const THREAD_LIST_MAX_EMPTY_PAGES = 5;
 const THREAD_LIST_MAX_EMPTY_PAGES_WITH_ACTIVITY = 20;
 const THREAD_LIST_MAX_TOTAL_PAGES = 40;
 const THREAD_LIST_MAX_EMPTY_PAGES_LOAD_OLDER = 10;
-const THREAD_LIST_MAX_FETCH_DURATION_MS = 1_500;
-const THREAD_LIST_LIVE_REQUEST_TIMEOUT_MS = 1_600;
+const SIDEBAR_THREAD_LIST_TIMEOUT_MS = 30_000;
+const THREAD_LIST_MAX_FETCH_DURATION_MS = SIDEBAR_THREAD_LIST_TIMEOUT_MS;
+const THREAD_LIST_LIVE_REQUEST_TIMEOUT_MS = SIDEBAR_THREAD_LIST_TIMEOUT_MS;
 const THREAD_RECOVERY_MAX_PAGES = 3;
-const THREAD_RECOVERY_MAX_FETCH_DURATION_MS = 800;
+const THREAD_RECOVERY_MAX_FETCH_DURATION_MS = SIDEBAR_THREAD_LIST_TIMEOUT_MS;
+const THREAD_RECOVERY_HISTORY_MATCH_CANDIDATES = 8;
 const RELATED_THREAD_LOAD_CONCURRENCY = 2;
 const DEFAULT_CLAUDE_CONTEXT_WINDOW = 200_000;
 const GEMINI_SESSION_CACHE_TTL_MS = 60_000;
-const GEMINI_SESSION_FETCH_TIMEOUT_MS = 800;
-const NATIVE_SESSION_LIST_FETCH_TIMEOUT_MS = 800;
+const GEMINI_SESSION_FETCH_TIMEOUT_MS = SIDEBAR_THREAD_LIST_TIMEOUT_MS;
+const NATIVE_SESSION_LIST_FETCH_TIMEOUT_MS = SIDEBAR_THREAD_LIST_TIMEOUT_MS;
+const CODEX_SESSION_CATALOG_FETCH_TIMEOUT_MS = SIDEBAR_THREAD_LIST_TIMEOUT_MS;
 const SESSION_CATALOG_PAGE_SIZE = 200;
 const SESSION_CATALOG_MAX_PAGES = 20;
 type RewindFromMessageOptions = {
@@ -191,7 +196,13 @@ export function useThreadActions({
   const claudeRewindInFlightByThreadRef = useRef<Record<string, boolean>>({});
   const latestThreadsByWorkspaceRef = useRef(threadsByWorkspace);
   latestThreadsByWorkspaceRef.current = threadsByWorkspace;
-  const canListWorkspaceSessions = typeof tauriServices.listWorkspaceSessions === "function";
+  const listWorkspaceSessionsService = Object.prototype.hasOwnProperty.call(
+    tauriServices,
+    "listWorkspaceSessions",
+  )
+    ? tauriServices.listWorkspaceSessions
+    : null;
+  const canListWorkspaceSessions = typeof listWorkspaceSessionsService === "function";
 
   const loadArchivedSessionMap = useCallback(
     async (workspaceId: string): Promise<Map<string, number> | null> => {
@@ -203,7 +214,7 @@ export function useThreadActions({
         let cursor: string | null = null;
         let pagesFetched = 0;
         do {
-          const response = await tauriServices.listWorkspaceSessions(workspaceId, {
+          const response = await listWorkspaceSessionsService(workspaceId, {
             query: { status: "all" },
             cursor,
             limit: SESSION_CATALOG_PAGE_SIZE,
@@ -643,7 +654,10 @@ export function useThreadActions({
           }
           loadedThreadsRef.current[effectiveThreadId] = true;
         };
-        const recoverReplacementThreadId = async () => {
+        const recoverReplacementThread = async (): Promise<{
+          threadId: string;
+          snapshot?: Awaited<ReturnType<ReturnType<typeof createHistoryLoader>["load"]>>;
+        } | null> => {
           const existingSummaries =
             latestThreadsByWorkspaceRef.current[workspaceId] ??
             threadsByWorkspace[workspaceId] ??
@@ -799,13 +813,93 @@ export function useThreadActions({
               [workspaceId]: nextSummaries,
             };
           }
-          return (
-            selectReplacementThreadSummary({
-              staleThreadId: threadId,
-              summaries: nextSummaries,
-              staleSummary,
-            })?.id ?? null
+          const summaryMatch = selectReplacementThreadSummary({
+            staleThreadId: threadId,
+            summaries: nextSummaries,
+            staleSummary,
+          });
+          if (summaryMatch) {
+            return { threadId: summaryMatch.id };
+          }
+
+          const staleItems = itemsByThread[threadId] ?? [];
+          if (staleItems.length === 0) {
+            return null;
+          }
+
+          const historyCandidates = listReplacementThreadCandidates({
+            staleThreadId: threadId,
+            summaries: nextSummaries,
+            staleSummary,
+          })
+            .sort((left, right) => right.updatedAt - left.updatedAt)
+            .slice(0, THREAD_RECOVERY_HISTORY_MATCH_CANDIDATES);
+          if (historyCandidates.length === 0) {
+            return null;
+          }
+          const historyCandidateById = new Map(
+            historyCandidates.map((summary) => [summary.id, summary] as const),
           );
+
+          const candidateSnapshots = await mapWithConcurrency(
+            historyCandidates.map((summary) => summary.id),
+            RELATED_THREAD_LOAD_CONCURRENCY,
+            async (candidateThreadId) => {
+              const summary = historyCandidateById.get(candidateThreadId);
+              if (!summary) {
+                return null;
+              }
+              try {
+                const snapshot = await createHistoryLoader(summary.id).load(summary.id);
+                return { summary, snapshot };
+              } catch (candidateError) {
+                onDebug?.({
+                  id: `${Date.now()}-history-loader-recovery-candidate-error`,
+                  timestamp: Date.now(),
+                  source: "error",
+                  label: "thread/history recovery candidate error",
+                  payload: {
+                    workspaceId,
+                    staleThreadId: threadId,
+                    candidateThreadId: summary.id,
+                    error:
+                      candidateError instanceof Error
+                        ? candidateError.message
+                        : String(candidateError),
+                  },
+                });
+                return null;
+              }
+            },
+          );
+          const historyMatch = selectReplacementThreadByMessageHistory({
+            staleItems,
+            candidates: candidateSnapshots
+              .filter(
+                (
+                  candidate,
+                ): candidate is {
+                  summary: typeof historyCandidates[number];
+                  snapshot: Awaited<
+                    ReturnType<ReturnType<typeof createHistoryLoader>["load"]>
+                  >;
+                } => candidate !== null,
+              )
+              .map(({ summary, snapshot }) => ({
+                summary,
+                items: snapshot.items,
+              })),
+          });
+          if (!historyMatch) {
+            return null;
+          }
+          const matchedSnapshot = candidateSnapshots.find(
+            (candidate) => candidate?.summary.id === historyMatch.id,
+          )?.snapshot;
+          return {
+            threadId: historyMatch.id,
+            ...(matchedSnapshot ? { snapshot: matchedSnapshot } : {}),
+          };
         };
         try {
           const snapshot = await createHistoryLoader(threadId).load(threadId);
@@ -814,11 +908,14 @@ export function useThreadActions({
         } catch (error) {
           if (isThreadResumeNotFoundError(error)) {
             try {
-              const replacementThreadId = await recoverReplacementThreadId();
-              if (replacementThreadId) {
-                const replacementSnapshot = await createHistoryLoader(
-                  replacementThreadId,
-                ).load(replacementThreadId);
+              const recoveredThread = await recoverReplacementThread();
+              if (recoveredThread) {
+                const replacementThreadId = recoveredThread.threadId;
+                const replacementSnapshot =
+                  recoveredThread.snapshot ??
+                  (await createHistoryLoader(replacementThreadId).load(
+                    replacementThreadId,
+                  ));
                 await hydrateHistorySnapshot(replacementThreadId, replacementSnapshot);
                 dispatch({
                   type: "clearUserInputRequestsForThread",
@@ -1979,11 +2076,11 @@ export function useThreadActions({
           : Promise.resolve([] as Awaited<ReturnType<typeof getOpenCodeSessionListService>>);
         const codexCatalogSessionsPromise = canListWorkspaceSessions
           ? withTimeout(
-              tauriServices.listWorkspaceSessions(workspace.id, {
+              listWorkspaceSessionsService(workspace.id, {
                 query: { status: "active", engine: "codex" },
                 limit: SESSION_CATALOG_PAGE_SIZE,
               }),
-              NATIVE_SESSION_LIST_FETCH_TIMEOUT_MS,
+              CODEX_SESSION_CATALOG_FETCH_TIMEOUT_MS,
             )
           : Promise.resolve(null);
         const [claudeResult, opencodeResult, codexCatalogResult] = await Promise.allSettled([
@@ -2368,6 +2465,7 @@ export function useThreadActions({
     },
     [
       applySessionArchiveState,
+      canListWorkspaceSessions,
       dispatch,
       getCustomName,
       loadArchivedSessionMap,

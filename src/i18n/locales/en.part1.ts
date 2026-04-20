@@ -134,6 +134,7 @@ const enPart1 = {
     sessionActionsGroup: "New Session",
     activateWorkspace: "Open in main panel",
     workspaceActionsGroup: "Workspace Actions",
+    emptyWorkspaceSessions: "No sessions yet.",
     deprecatedTag: "Deprecated",
     unavailableTag: "Unavailable",
     removeWorkspace: "Remove workspace",
@@ -900,6 +901,8 @@ const enPart1 = {
     sessionManagementRelatedSectionDescription:
       "These sessions are related to the current project, but they are not strict path matches.",
     sessionManagementWorkspaceUnassigned: "Unassigned history",
+    sessionManagementScopeTagProject: "[project]",
+    sessionManagementScopeTagWorktree: "[worktree]",
     sessionManagementSearchPlaceholder: "Search by title, ID, or source...",
     sessionManagementEngineAll: "All engines",
     sessionManagementStatusActive: "Active only",

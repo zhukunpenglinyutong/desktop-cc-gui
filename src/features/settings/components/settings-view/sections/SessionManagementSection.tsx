@@ -53,6 +53,7 @@ type SessionManagementSectionProps = {
 type WorkspaceOption = {
   id: string;
   label: string;
+  pickerLabel: string;
 };
 
 const ENGINE_FILTER_ALL_VALUE = "__all__";
@@ -85,6 +86,10 @@ function getSortOrderValue(value: number | null | undefined) {
 function buildWorkspaceOptions(
   workspaces: WorkspaceInfo[],
   groupedWorkspaces: GroupedWorkspace[],
+  scopeLabels: {
+    project: string;
+    worktree: string;
+  },
 ): WorkspaceOption[] {
   const rootById = new Map<string, WorkspaceInfo>();
   const worktreesByParent = new Map<string, WorkspaceInfo[]>();
@@ -103,9 +108,13 @@ function buildWorkspaceOptions(
     const groupPrefix =
       groupedWorkspaces.find((group) => group.workspaces.some((item) => item.id === workspace.id))
         ?.name ?? "";
+    const baseLabel = groupPrefix ? `${groupPrefix} / ${workspace.name}` : workspace.name;
     output.push({
       id: workspace.id,
-      label: groupPrefix ? `${groupPrefix} / ${workspace.name}` : workspace.name,
+      label: baseLabel,
+      pickerLabel: groupPrefix
+        ? `${groupPrefix} / ${scopeLabels.project} ${workspace.name}`
+        : `${scopeLabels.project} ${workspace.name}`,
     });
     const worktrees = [...(worktreesByParent.get(workspace.id) ?? [])].sort((left, right) => {
       const sortDiff =
@@ -116,9 +125,11 @@ function buildWorkspaceOptions(
       return left.name.localeCompare(right.name);
     });
     worktrees.forEach((worktree) => {
+      const scopedLabel = `${scopeLabels.worktree} ${worktree.name}`;
       output.push({
         id: worktree.id,
-        label: `${groupPrefix ? `${groupPrefix} / ` : ""}[worktree] ${worktree.name}`,
+        label: `${groupPrefix ? `${groupPrefix} / ` : ""}${scopedLabel}`,
+        pickerLabel: `${groupPrefix ? `${groupPrefix} / ` : ""}${scopedLabel}`,
       });
     });
   };
@@ -322,12 +333,23 @@ export function SessionManagementSection({
 }: SessionManagementSectionProps) {
   const { t, i18n } = useTranslation();
   const [expanded, setExpanded] = useState(true);
+  const workspaceScopeLabels = useMemo(
+    () => ({
+      project: t("settings.sessionManagementScopeTagProject"),
+      worktree: t("settings.sessionManagementScopeTagWorktree"),
+    }),
+    [t],
+  );
   const workspaceOptions = useMemo(
-    () => buildWorkspaceOptions(workspaces, groupedWorkspaces),
-    [groupedWorkspaces, workspaces],
+    () => buildWorkspaceOptions(workspaces, groupedWorkspaces, workspaceScopeLabels),
+    [groupedWorkspaces, workspaceScopeLabels, workspaces],
   );
   const workspaceLabelById = useMemo(
     () => new Map(workspaceOptions.map((option) => [option.id, option.label])),
+    [workspaceOptions],
+  );
+  const workspacePickerLabelById = useMemo(
+    () => new Map(workspaceOptions.map((option) => [option.id, option.pickerLabel])),
     [workspaceOptions],
   );
   const [workspaceId, setWorkspaceId] = useState<string | null>(
@@ -666,13 +688,13 @@ export function SessionManagementSection({
               <Select value={workspaceId ?? undefined} onValueChange={handleWorkspaceChange}>
                 <SelectTrigger data-testid="settings-project-sessions-workspace-picker-trigger">
                   <SelectValue placeholder={t("settings.workspacePickerLabel")}>
-                    {workspaceId ? workspaceLabelById.get(workspaceId) : undefined}
+                    {workspaceId ? workspacePickerLabelById.get(workspaceId) : undefined}
                   </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
                   {workspaceOptions.map((option) => (
                     <SelectItem key={option.id} value={option.id}>
-                      {option.label}
+                      {option.pickerLabel}
                     </SelectItem>
                   ))}
                 </SelectContent>

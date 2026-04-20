@@ -1930,46 +1930,15 @@
   margin-left: 0;
 }
 
-.thread-loading {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 6px 6px 4px;
+.thread-empty-state {
+  padding: 6px 10px 4px;
+  color: var(--text-faint, var(--text-muted));
+  font-size: 12px;
+  line-height: 1.4;
 }
 
-.thread-loading-nested {
+.thread-empty-state-nested {
   margin-left: 4px;
-}
-
-.thread-skeleton {
-  height: 8px;
-  width: 62%;
-  border-radius: 999px;
-  background: linear-gradient(
-    110deg,
-    color-mix(in srgb, var(--border-subtle) 70%, transparent) 8%,
-    color-mix(in srgb, var(--text-faint) 34%, transparent) 20%,
-    color-mix(in srgb, var(--border-subtle) 70%, transparent) 33%
-  );
-  background-size: 200% 100%;
-  animation: sidebar-thread-skeleton-shimmer 1.4s ease-in-out infinite;
-}
-
-.thread-skeleton-wide {
-  width: 78%;
-}
-
-.thread-skeleton-short {
-  width: 44%;
-}
-
-@keyframes sidebar-thread-skeleton-shimmer {
-  0% {
-    background-position: 120% 0;
-  }
-  100% {
-    background-position: -80% 0;
-  }
 }
 
 /* Updated Thread Row Styles */

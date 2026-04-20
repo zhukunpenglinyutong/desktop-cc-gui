@@ -174,10 +174,16 @@ describe("Messages runtime reconnect", () => {
     expect(screen.getByRole("group", { name: "messages.runtimeReconnectTitle" })).toBeTruthy();
   });
 
-  it("shows a recovery card for stale thread errors without forcing runtime reconnect", async () => {
-    const onRecoverThreadRuntime = vi.fn().mockResolvedValue("thread-recovered");
+  it("shows only the resend action for stale thread recovery cards", () => {
+    const onRecoverThreadRuntimeAndResend = vi.fn().mockResolvedValue("thread-recovered");
 
     renderMessages([
+      {
+        id: "user-before-thread-not-found",
+        kind: "message",
+        role: "user",
+        text: "继续",
+      },
       {
         id: "assistant-thread-not-found",
         kind: "message",
@@ -186,16 +192,86 @@ describe("Messages runtime reconnect", () => {
       },
     ], {
       threadId: "thread-runtime-stale",
-      onRecoverThreadRuntime,
+      onRecoverThreadRuntimeAndResend,
     });
 
     expect(screen.getByRole("group", { name: "messages.threadRecoveryTitle" })).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "messages.threadRecoveryAction" }));
+    expect(
+      screen.queryByRole("button", { name: "messages.threadRecoveryAction" }),
+    ).toBeNull();
+    expect(
+      screen.getByRole("button", { name: "messages.threadRecoveryResendAction" }),
+    ).toBeTruthy();
+  });
+
+  it("reacquires runtime before resending from a stale thread recovery card", async () => {
+    vi.mocked(ensureRuntimeReady).mockResolvedValue(undefined);
+    const onRecoverThreadRuntime = vi.fn().mockResolvedValue("thread-recovered-resend");
+    const onRecoverThreadRuntimeAndResend = vi.fn().mockResolvedValue("thread-recovered-resend");
+
+    renderMessages([
+      {
+        id: "user-before-thread-recovery-resend",
+        kind: "message",
+        role: "user",
+        text: "继续",
+      },
+      {
+        id: "assistant-thread-not-found-resend",
+        kind: "message",
+        role: "assistant",
+        text: "会话启动失败： thread not found: 019da207-c1ae-7cb3-9cb6-25f281fbfb30",
+      },
+    ], {
+      threadId: "thread-runtime-stale-resend",
+      onRecoverThreadRuntime,
+      onRecoverThreadRuntimeAndResend,
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "messages.threadRecoveryResendAction" }));
 
     await waitFor(() => {
-      expect(onRecoverThreadRuntime).toHaveBeenCalledWith("ws-runtime", "thread-runtime-stale");
+      expect(vi.mocked(ensureRuntimeReady)).toHaveBeenCalledWith("ws-runtime");
+      expect(onRecoverThreadRuntimeAndResend).toHaveBeenCalledWith(
+        "ws-runtime",
+        "thread-runtime-stale-resend",
+        { text: "继续", images: undefined },
+      );
     });
-    expect(vi.mocked(ensureRuntimeReady)).not.toHaveBeenCalled();
+  });
+
+  it("allows stale thread resend when only the resend recovery callback is available", async () => {
+    vi.mocked(ensureRuntimeReady).mockResolvedValue(undefined);
+    const onRecoverThreadRuntimeAndResend = vi.fn().mockResolvedValue("thread-recovered-resend-only");
+
+    renderMessages([
+      {
+        id: "user-before-thread-recovery-resend-only",
+        kind: "message",
+        role: "user",
+        text: "继续",
+      },
+      {
+        id: "assistant-thread-not-found-resend-only",
+        kind: "message",
+        role: "assistant",
+        text: "会话启动失败： thread not found: 019da207-c1ae-7cb3-9cb6-25f281fbfb30",
+      },
+    ], {
+      threadId: "thread-runtime-stale-resend-only",
+      onRecoverThreadRuntimeAndResend,
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "messages.threadRecoveryResendAction" }));
+
+    await waitFor(() => {
+      expect(vi.mocked(ensureRuntimeReady)).toHaveBeenCalledWith("ws-runtime");
+      expect(onRecoverThreadRuntimeAndResend).toHaveBeenCalledWith(
+        "ws-runtime",
+        "thread-runtime-stale-resend-only",
+        { text: "继续", images: undefined },
+      );
+    });
   });
 
   it("does not turn a normal assistant reply quoting broken pipe into a reconnect card", () => {

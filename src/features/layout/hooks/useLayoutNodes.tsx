@@ -166,6 +166,7 @@ type LayoutNodesOptions = {
   threadStatusById: Record<string, ThreadActivityStatus>;
   runningSessionCountByWorkspaceId: Record<string, number>;
   recentCompletedSessionCountByWorkspaceId: Record<string, number>;
+  hydratedThreadListWorkspaceIds: ReadonlySet<string>;
   threadListLoadingByWorkspace: Record<string, boolean>;
   threadListPagingByWorkspace: Record<string, boolean>;
   threadListCursorByWorkspace: Record<string, string | null>;
@@ -1075,6 +1076,7 @@ export function useLayoutNodes(options: LayoutNodesOptions): LayoutNodesResult {
       threadStatusById={options.threadStatusById}
       runningSessionCountByWorkspaceId={options.runningSessionCountByWorkspaceId}
       recentSessionCountByWorkspaceId={options.recentCompletedSessionCountByWorkspaceId}
+      hydratedThreadListWorkspaceIds={options.hydratedThreadListWorkspaceIds}
       threadListLoadingByWorkspace={options.threadListLoadingByWorkspace}
       threadListPagingByWorkspace={options.threadListPagingByWorkspace}
       threadListCursorByWorkspace={options.threadListCursorByWorkspace}

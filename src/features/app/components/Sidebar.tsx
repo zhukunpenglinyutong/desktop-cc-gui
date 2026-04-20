@@ -11,7 +11,7 @@ import type { ReactNode, RefObject } from "react";
 import { useTranslation } from "react-i18next";
 
 import { ThreadList } from "./ThreadList";
-import { ThreadLoading } from "./ThreadLoading";
+import { ThreadEmptyState } from "./ThreadEmptyState";
 import { WorktreeSection } from "./WorktreeSection";
 import { PinnedThreadList } from "./PinnedThreadList";
 import { WorkspaceCard } from "./WorkspaceCard";
@@ -65,6 +65,7 @@ type SidebarProps = {
     string,
     { isProcessing: boolean; hasUnread: boolean; isReviewing: boolean }
   >;
+  hydratedThreadListWorkspaceIds: ReadonlySet<string>;
   runningSessionCountByWorkspaceId?: Record<string, number>;
   recentSessionCountByWorkspaceId?: Record<string, number>;
   threadListLoadingByWorkspace: Record<string, boolean>;
@@ -144,9 +145,10 @@ export function Sidebar({
   threadsByWorkspace,
   threadParentById,
   threadStatusById,
+  hydratedThreadListWorkspaceIds,
   runningSessionCountByWorkspaceId: _runningSessionCountByWorkspaceId = {},
   recentSessionCountByWorkspaceId: _recentSessionCountByWorkspaceId = {},
-  threadListLoadingByWorkspace,
+  threadListLoadingByWorkspace: _threadListLoadingByWorkspace,
   threadListPagingByWorkspace,
   threadListCursorByWorkspace,
   activeWorkspaceId,
@@ -728,14 +730,15 @@ export function Sidebar({
       threadListCursorByWorkspace[entry.id] ?? null;
     const showThreadList =
       !isCollapsed && (threads.length > 0 || Boolean(nextCursor));
-    const isLoadingThreads =
-      threadListLoadingByWorkspace[entry.id] ?? false;
-    const showThreadLoader =
-      !isCollapsed && isLoadingThreads && threads.length === 0;
     const isPaging = threadListPagingByWorkspace[entry.id] ?? false;
     const worktrees = worktreesByParent.get(entry.id) ?? [];
     const isWorktreeSectionCollapsed =
       collapsedWorktreeSections.has(entry.id);
+    const showThreadEmptyState =
+      !isCollapsed &&
+      !showThreadList &&
+      worktrees.length === 0 &&
+      hydratedThreadListWorkspaceIds.has(entry.id);
     const hasPrimaryActiveThread =
       entry.id === activeWorkspaceId && Boolean(activeThreadId);
     const hasRunningSession = hasRunningSessionByProjectId.get(entry.id) ?? false;
@@ -761,7 +764,8 @@ export function Sidebar({
             deletingWorktreeIds={deletingWorktreeIds}
             threadsByWorkspace={threadsByWorkspace}
             threadStatusById={threadStatusById}
-            threadListLoadingByWorkspace={threadListLoadingByWorkspace}
+            hydratedThreadListWorkspaceIds={hydratedThreadListWorkspaceIds}
+            threadListLoadingByWorkspace={_threadListLoadingByWorkspace}
             threadListPagingByWorkspace={threadListPagingByWorkspace}
             threadListCursorByWorkspace={threadListCursorByWorkspace}
             expandedWorkspaces={expandedWorkspaces}
@@ -820,9 +824,7 @@ export function Sidebar({
             onConfirmDeleteConfirm={onConfirmDeleteConfirm}
           />
         )}
-        {showThreadLoader && (
-          <ThreadLoading />
-        )}
+        {showThreadEmptyState ? <ThreadEmptyState /> : null}
       </WorkspaceCard>
     );
   }, [
@@ -857,13 +859,14 @@ export function Sidebar({
     systemProxyUrl,
     onToggleWorkspaceCollapse,
     renderHighlightedName,
+    hydratedThreadListWorkspaceIds,
     threadListCursorByWorkspace,
-    threadListLoadingByWorkspace,
     threadListPagingByWorkspace,
     threadRowsByWorkspace,
     threadStatusById,
     threadsByWorkspace,
     worktreesByParent,
+    _threadListLoadingByWorkspace,
   ]);
 
   return (

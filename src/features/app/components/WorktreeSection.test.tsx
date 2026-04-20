@@ -29,6 +29,7 @@ describe("WorktreeSection", () => {
         deletingWorktreeIds={new Set()}
         threadsByWorkspace={{ [worktree.id]: [] }}
         threadStatusById={{}}
+        hydratedThreadListWorkspaceIds={new Set()}
         threadListLoadingByWorkspace={{ [worktree.id]: false }}
         threadListPagingByWorkspace={{ [worktree.id]: false }}
         threadListCursorByWorkspace={{ [worktree.id]: "cursor" }}
@@ -66,6 +67,97 @@ describe("WorktreeSection", () => {
     ).toBeNull();
   });
 
+  it("shows an empty session message instead of a loading skeleton for empty worktrees", () => {
+    render(
+      <WorktreeSection
+        parentWorkspaceId="workspace-1"
+        worktrees={[worktree]}
+        isSectionCollapsed={false}
+        onToggleSectionCollapse={vi.fn()}
+        deletingWorktreeIds={new Set()}
+        threadsByWorkspace={{ [worktree.id]: [] }}
+        threadStatusById={{}}
+        hydratedThreadListWorkspaceIds={new Set([worktree.id])}
+        threadListLoadingByWorkspace={{ [worktree.id]: true }}
+        threadListPagingByWorkspace={{ [worktree.id]: false }}
+        threadListCursorByWorkspace={{ [worktree.id]: null }}
+        expandedWorkspaces={new Set()}
+        activeWorkspaceId={null}
+        activeThreadId={null}
+        getThreadRows={() => ({
+          pinnedRows: [],
+          unpinnedRows: [],
+          totalRoots: 0,
+          hasMoreRoots: false,
+        })}
+        getThreadTime={() => null}
+        isThreadPinned={() => false}
+        isThreadAutoNaming={() => false}
+        onToggleThreadPin={vi.fn()}
+        getPinTimestamp={() => null}
+        onConnectWorkspace={vi.fn()}
+        onShowWorktreeSessionMenu={vi.fn()}
+        onSelectWorkspace={vi.fn()}
+        onToggleWorkspaceCollapse={vi.fn()}
+        onSelectThread={vi.fn()}
+        onShowThreadMenu={vi.fn()}
+        onShowWorktreeMenu={vi.fn()}
+        onToggleExpanded={vi.fn()}
+        onLoadOlderThreads={vi.fn()}
+      />,
+    );
+
+    expect(
+      screen.getByText(/No sessions yet\.|暂无会话|sidebar\.emptyWorkspaceSessions/i),
+    ).toBeTruthy();
+    expect(screen.queryByLabelText("Loading agents")).toBeNull();
+  });
+
+  it("does not show the empty session message before worktree sessions hydrate", () => {
+    render(
+      <WorktreeSection
+        parentWorkspaceId="workspace-1"
+        worktrees={[worktree]}
+        isSectionCollapsed={false}
+        onToggleSectionCollapse={vi.fn()}
+        deletingWorktreeIds={new Set()}
+        threadsByWorkspace={{ [worktree.id]: [] }}
+        threadStatusById={{}}
+        hydratedThreadListWorkspaceIds={new Set()}
+        threadListLoadingByWorkspace={{ [worktree.id]: true }}
+        threadListPagingByWorkspace={{ [worktree.id]: false }}
+        threadListCursorByWorkspace={{ [worktree.id]: null }}
+        expandedWorkspaces={new Set()}
+        activeWorkspaceId={null}
+        activeThreadId={null}
+        getThreadRows={() => ({
+          pinnedRows: [],
+          unpinnedRows: [],
+          totalRoots: 0,
+          hasMoreRoots: false,
+        })}
+        getThreadTime={() => null}
+        isThreadPinned={() => false}
+        isThreadAutoNaming={() => false}
+        onToggleThreadPin={vi.fn()}
+        getPinTimestamp={() => null}
+        onConnectWorkspace={vi.fn()}
+        onShowWorktreeSessionMenu={vi.fn()}
+        onSelectWorkspace={vi.fn()}
+        onToggleWorkspaceCollapse={vi.fn()}
+        onSelectThread={vi.fn()}
+        onShowThreadMenu={vi.fn()}
+        onShowWorktreeMenu={vi.fn()}
+        onToggleExpanded={vi.fn()}
+        onLoadOlderThreads={vi.fn()}
+      />,
+    );
+
+    expect(
+      screen.queryByText(/No sessions yet\.|暂无会话|sidebar\.emptyWorkspaceSessions/i),
+    ).toBeNull();
+  });
+
   it("toggles the worktree section on double click only", () => {
     const onToggleSectionCollapse = vi.fn();
 
@@ -78,6 +170,7 @@ describe("WorktreeSection", () => {
         deletingWorktreeIds={new Set()}
         threadsByWorkspace={{ [worktree.id]: [] }}
         threadStatusById={{}}
+        hydratedThreadListWorkspaceIds={new Set()}
         threadListLoadingByWorkspace={{ [worktree.id]: false }}
         threadListPagingByWorkspace={{ [worktree.id]: false }}
         threadListCursorByWorkspace={{ [worktree.id]: null }}
@@ -131,6 +224,7 @@ describe("WorktreeSection", () => {
         deletingWorktreeIds={new Set()}
         threadsByWorkspace={{ [worktree.id]: [] }}
         threadStatusById={{}}
+        hydratedThreadListWorkspaceIds={new Set()}
         threadListLoadingByWorkspace={{ [worktree.id]: false }}
         threadListPagingByWorkspace={{ [worktree.id]: false }}
         threadListCursorByWorkspace={{ [worktree.id]: null }}
@@ -183,6 +277,7 @@ describe("WorktreeSection", () => {
         deletingWorktreeIds={new Set()}
         threadsByWorkspace={{ [worktree.id]: [] }}
         threadStatusById={{}}
+        hydratedThreadListWorkspaceIds={new Set()}
         threadListLoadingByWorkspace={{ [worktree.id]: false }}
         threadListPagingByWorkspace={{ [worktree.id]: false }}
         threadListCursorByWorkspace={{ [worktree.id]: null }}
@@ -235,6 +330,7 @@ describe("WorktreeSection", () => {
         deletingWorktreeIds={new Set()}
         threadsByWorkspace={{ [worktree.id]: [] }}
         threadStatusById={{}}
+        hydratedThreadListWorkspaceIds={new Set()}
         threadListLoadingByWorkspace={{ [worktree.id]: false }}
         threadListPagingByWorkspace={{ [worktree.id]: false }}
         threadListCursorByWorkspace={{ [worktree.id]: null }}

@@ -170,6 +170,7 @@ export function useAppShellLayoutNodesSection(ctx: any) {
     threadStatusById,
     runningSessionCountByWorkspaceId,
     recentCompletedSessionCountByWorkspaceId,
+    hydratedThreadListWorkspaceIds: hydratedThreadListWorkspaceIdsRef.current,
     threadListLoadingByWorkspace,
     threadListPagingByWorkspace,
     threadListCursorByWorkspace,
@@ -213,9 +214,7 @@ export function useAppShellLayoutNodesSection(ctx: any) {
       }
       const recoveredThreadId = await refreshThread(workspaceId, threadId);
       const targetThreadId =
-        typeof recoveredThreadId === "string" && recoveredThreadId.trim()
-          ? recoveredThreadId
-          : threadId;
+        typeof recoveredThreadId === "string" ? recoveredThreadId.trim() : "";
       const nextText = message.text.trim();
       const nextImages = message.images ?? [];
       if (!targetThreadId || (!nextText && nextImages.length === 0)) {

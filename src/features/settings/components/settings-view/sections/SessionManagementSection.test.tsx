@@ -150,10 +150,44 @@ describe("SessionManagementSection", () => {
     );
 
     expect(await screen.findByText("Ungrouped / Workspace")).toBeTruthy();
-    expect(await screen.findByText("Ungrouped / [worktree] Workspace Worktree")).toBeTruthy();
+    expect(
+      await screen.findByText(
+        "Ungrouped / settings.sessionManagementScopeTagWorktree Workspace Worktree",
+      ),
+    ).toBeTruthy();
     expect(await screen.findAllByText("cli/codex")).toHaveLength(2);
     expect(await screen.findByText("settings.sessionManagementFilteredTotalCount")).toBeTruthy();
     expect(await screen.findByText("settings.sessionManagementCurrentPageCount")).toBeTruthy();
+  });
+
+  it("marks root workspace picker entries as project scope", async () => {
+    render(
+      <SessionManagementSection
+        title="Session Management"
+        description="Manage sessions"
+        workspaces={[workspace, worktree]}
+        groupedWorkspaces={[{ id: null, name: "Ungrouped", workspaces: [workspace, worktree] }]}
+        initialWorkspaceId="ws-1"
+      />,
+    );
+
+    const trigger = getEnabledButtonByTestId("settings-project-sessions-workspace-picker-trigger");
+    expect(trigger.textContent).toContain(
+      "Ungrouped / settings.sessionManagementScopeTagProject Workspace",
+    );
+
+    fireEvent.click(trigger);
+
+    expect(
+      await screen.findByRole("option", {
+        name: "Ungrouped / settings.sessionManagementScopeTagProject Workspace",
+      }),
+    ).toBeTruthy();
+    expect(
+      await screen.findByRole("option", {
+        name: "Ungrouped / settings.sessionManagementScopeTagWorktree Workspace Worktree",
+      }),
+    ).toBeTruthy();
   });
 
   it("explains filtered total versus current page window for project scope", async () => {

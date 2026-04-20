@@ -134,6 +134,7 @@ const zhPart1 = {
     sessionActionsGroup: "新建会话",
     activateWorkspace: "切到主区",
     workspaceActionsGroup: "工作区操作",
+    emptyWorkspaceSessions: "暂无会话",
     deprecatedTag: "废弃",
     unavailableTag: "未开放",
     removeWorkspace: "移出工作区",
@@ -910,6 +911,8 @@ const zhPart1 = {
     sessionManagementRelatedSectionDescription:
       "这些结果和当前项目有关，但不是 strict path 命中。",
     sessionManagementWorkspaceUnassigned: "未归属历史",
+    sessionManagementScopeTagProject: "[project]",
+    sessionManagementScopeTagWorktree: "[worktree]",
     sessionManagementSearchPlaceholder: "搜索会话标题、ID 或来源…",
     sessionManagementEngineAll: "全部引擎",
     sessionManagementStatusActive: "仅显示活跃",

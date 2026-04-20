@@ -4,7 +4,7 @@ import type { MouseEvent } from "react";
 
 import type { ThreadSummary, WorkspaceInfo } from "../../../types";
 import { ThreadList } from "./ThreadList";
-import { ThreadLoading } from "./ThreadLoading";
+import { ThreadEmptyState } from "./ThreadEmptyState";
 import { WorktreeCard } from "./WorktreeCard";
 
 type ThreadStatusMap = Record<
@@ -27,6 +27,7 @@ type WorktreeSectionProps = {
   deletingWorktreeIds: Set<string>;
   threadsByWorkspace: Record<string, ThreadSummary[]>;
   threadStatusById: ThreadStatusMap;
+  hydratedThreadListWorkspaceIds: ReadonlySet<string>;
   threadListLoadingByWorkspace: Record<string, boolean>;
   threadListPagingByWorkspace: Record<string, boolean>;
   threadListCursorByWorkspace: Record<string, string | null>;
@@ -75,7 +76,8 @@ export function WorktreeSection({
   deletingWorktreeIds,
   threadsByWorkspace,
   threadStatusById,
-  threadListLoadingByWorkspace,
+  hydratedThreadListWorkspaceIds,
+  threadListLoadingByWorkspace: _threadListLoadingByWorkspace,
   threadListPagingByWorkspace,
   threadListCursorByWorkspace,
   expandedWorkspaces,
@@ -175,17 +177,15 @@ export function WorktreeSection({
           worktrees.map((worktree) => {
             const worktreeThreads = threadsByWorkspace[worktree.id] ?? [];
             const worktreeCollapsed = worktree.settings.sidebarCollapsed;
-            const isLoadingWorktreeThreads =
-              threadListLoadingByWorkspace[worktree.id] ?? false;
-            const showWorktreeLoader =
-              !worktreeCollapsed &&
-              isLoadingWorktreeThreads &&
-              worktreeThreads.length === 0;
             const worktreeNextCursor =
               threadListCursorByWorkspace[worktree.id] ?? null;
             const showWorktreeThreadList =
               !worktreeCollapsed &&
               (worktreeThreads.length > 0 || Boolean(worktreeNextCursor));
+            const showWorktreeEmptyState =
+              !worktreeCollapsed &&
+              !showWorktreeThreadList &&
+              hydratedThreadListWorkspaceIds.has(worktree.id);
             const isWorktreePaging =
               threadListPagingByWorkspace[worktree.id] ?? false;
             const isWorktreeExpanded = expandedWorkspaces.has(worktree.id);
@@ -245,7 +245,7 @@ export function WorktreeSection({
                     onConfirmDeleteConfirm={onConfirmDeleteConfirm}
                   />
                 )}
-                {showWorktreeLoader && <ThreadLoading nested />}
+                {showWorktreeEmptyState ? <ThreadEmptyState nested /> : null}
               </WorktreeCard>
             );
           })}

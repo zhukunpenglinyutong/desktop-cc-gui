@@ -15,6 +15,7 @@ vi.mock("react-i18next", () => ({
         "sidebar.toggleSearch": "Toggle search",
         "sidebar.searchProjects": "Search projects",
         "sidebar.activateWorkspace": "Open in main panel",
+        "sidebar.emptyWorkspaceSessions": "No sessions yet.",
         "sidebar.quickNewThread": "Home",
         "sidebar.quickAutomation": "Automation",
         "sidebar.quickSearch": "Search",
@@ -60,6 +61,7 @@ const baseProps = {
   threadsByWorkspace: {},
   threadParentById: {},
   threadStatusById: {},
+  hydratedThreadListWorkspaceIds: new Set<string>(),
   threadListLoadingByWorkspace: {},
   threadListPagingByWorkspace: {},
   threadListCursorByWorkspace: {},
@@ -410,6 +412,70 @@ describe("Sidebar", () => {
     expect(projectIcon?.classList.contains("is-session-running")).toBe(true);
     const worktreeIcon = container.querySelector(".worktree-node-icon");
     expect(worktreeIcon?.classList.contains("is-session-running")).toBe(true);
+  });
+
+  it("shows an empty session message instead of a loading skeleton for empty workspaces", () => {
+    const workspace = {
+      id: "ws-empty",
+      name: "empty-workspace",
+      path: "/tmp/empty-workspace",
+      connected: true,
+      kind: "main" as const,
+      settings: {
+        sidebarCollapsed: false,
+        worktreeSetupScript: null,
+      },
+    };
+
+    render(
+      <Sidebar
+        {...baseProps}
+        workspaces={[workspace]}
+        groupedWorkspaces={[
+          {
+            id: null,
+            name: "Ungrouped",
+            workspaces: [workspace],
+          },
+        ]}
+        hydratedThreadListWorkspaceIds={new Set(["ws-empty"])}
+        threadListLoadingByWorkspace={{ "ws-empty": true }}
+      />,
+    );
+
+    expect(screen.getByText("No sessions yet.")).toBeTruthy();
+    expect(screen.queryByLabelText("Loading agents")).toBeNull();
+  });
+
+  it("does not show the empty session message before the workspace thread list hydrates", () => {
+    const workspace = {
+      id: "ws-loading",
+      name: "loading-workspace",
+      path: "/tmp/loading-workspace",
+      connected: true,
+      kind: "main" as const,
+      settings: {
+        sidebarCollapsed: false,
+        worktreeSetupScript: null,
+      },
+    };
+
+    render(
+      <Sidebar
+        {...baseProps}
+        workspaces={[workspace]}
+        groupedWorkspaces={[
+          {
+            id: null,
+            name: "Ungrouped",
+            workspaces: [workspace],
+          },
+        ]}
+        threadListLoadingByWorkspace={{ "ws-loading": true }}
+      />,
+    );
+
+    expect(screen.queryByText("No sessions yet.")).toBeNull();
   });
 
   it("does not render workspace or worktree session count badges", () => {
