@@ -1576,3 +1576,74 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 63: 提交加载进度弹窗与引擎可用性状态透传
+
+**Date**: 2026-04-20
+**Task**: 提交加载进度弹窗与引擎可用性状态透传
+**Branch**: `feature/vvvv0.4.5`
+
+### Summary
+
+(Add summary)
+
+### Main Changes
+
+任务目标:
+- 继续提交当前工作区剩余改动
+- 在不拆坏中间态的前提下，完成加载进度弹窗与引擎可用性状态透传相关功能提交
+
+主要改动:
+- 新增加载进度弹窗状态 hook、UI 组件、样式文件，并在 AppShell/AppModals 中接入，支持后台运行与请求可见性切换
+- 将 workspace 打开/加项目/创建会话的进度状态链路补齐到前端壳层
+- 为引擎检测结果扩展 availabilityState / availabilityLabelKey，并将状态透传到 Sidebar、EngineSelector、ChatInputBox provider selector
+- 在 Sidebar 工作区菜单增加引擎状态展示与刷新按钮，在 provider selector 中补充 disabled message/status label 展示
+- 补充 Worktree 删除中文案国际化，以及 loading progress、engine availability、provider disabled message 等相关测试
+
+涉及模块:
+- src/app-shell.tsx
+- src/app-shell-parts/renderAppShell.tsx
+- src/app-shell-parts/useAppShellLayoutNodesSection.tsx
+- src/features/app/components/AppModals.tsx
+- src/features/app/components/Sidebar.tsx
+- src/features/composer/components/ChatInputBox/*
+- src/features/engine/hooks/useEngineController.ts
+- src/features/engine/components/EngineSelector.tsx
+- src/features/engine/utils/engineAvailability.ts
+- src/components/ui/LoadingProgressDialog.tsx
+- src/features/app/hooks/useLoadingProgressDialogState.ts
+- src/styles/loading-progress-modal.css
+- src/styles/sidebar.css
+- src/i18n/locales/en.part2.ts
+- src/i18n/locales/zh.part2.ts
+
+验证结果:
+- npx vitest run src/features/app/hooks/useWorkspaceActions.test.tsx src/features/app/hooks/useSidebarMenus.test.tsx src/features/engine/hooks/useEngineController.test.tsx src/features/composer/components/ChatInputBox/selectors/ProviderSelect.test.tsx src/components/ui/LoadingProgressDialog.test.tsx src/features/app/hooks/useLoadingProgressDialogState.test.tsx src/features/threads/components/ThreadDeleteConfirmBubble.test.tsx 通过
+- npm run test 通过（batched 全量 323 test files）
+- npm run typecheck 通过
+- npm run check:large-files 通过
+- 工作区在业务提交后为 clean
+
+后续事项:
+- 如需继续推送/开 PR，可直接基于当前干净工作区进行
+- app-shell.tsx 与 sidebar.css 仍接近 large-file 阈值，后续新增能力建议继续外提
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `835c49c38d2fcd0799da6bb579983afaaaf1077a` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
