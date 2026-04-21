@@ -705,7 +705,8 @@
   contain-intrinsic-block-size: auto 120px;
 }
 
-.messages-live-sticky-user-message {
+.messages-live-sticky-user-message,
+.messages-history-sticky-user-message {
   position: sticky;
   top: 0;
   z-index: 6;
@@ -719,11 +720,13 @@
   );
 }
 
-.messages-live-sticky-user-message .message {
+.messages-live-sticky-user-message .message,
+.messages-history-sticky-user-message .message {
   content-visibility: visible;
 }
 
-.main .messages-live-sticky-user-message {
+.main .messages-live-sticky-user-message,
+.main .messages-history-sticky-user-message {
   top: var(--main-topbar-height);
 }
 

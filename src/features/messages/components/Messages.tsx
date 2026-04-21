@@ -65,6 +65,7 @@ import {
   buildRenderedItemsWindow,
   collapseExpandedExploreItems,
   findLatestOrdinaryUserQuestionId,
+  isOrdinaryUserQuestionItem,
   resolveLiveAutoExpandedExploreId,
 } from "./messagesLiveWindow";
 import {
@@ -2073,28 +2074,43 @@ export const Messages = memo(function Messages({
   const collapsedHistoryItemCount = shouldCollapseHistoryItems
     ? timelineItems.length - VISIBLE_MESSAGE_WINDOW
     : 0;
-  const latestStickyUserMessageId = useMemo(
+  const enableCollaborationBadge = activeEngine === "codex";
+  const historyStickyEnabled =
+    !isThinking || Boolean(conversationState?.meta.historyRestoredAtMs);
+  const latestLiveStickyUserMessageId = useMemo(
     () =>
       isThinking && !conversationState?.meta.historyRestoredAtMs
         ? findLatestOrdinaryUserQuestionId(timelineItems, {
-            enableCollaborationBadge: activeEngine === "codex",
+            enableCollaborationBadge,
           })
         : null,
-    [activeEngine, conversationState?.meta.historyRestoredAtMs, isThinking, timelineItems],
+    [conversationState?.meta.historyRestoredAtMs, enableCollaborationBadge, isThinking, timelineItems],
   );
   const { renderedItems, visibleCollapsedHistoryItemCount } = useMemo(
     () =>
       buildRenderedItemsWindow(
         timelineItems,
         collapsedHistoryItemCount,
-        latestStickyUserMessageId,
+        latestLiveStickyUserMessageId,
       ),
     [
       collapsedHistoryItemCount,
-      latestStickyUserMessageId,
+      latestLiveStickyUserMessageId,
       timelineItems,
     ],
   );
+  const historyStickyUserMessageIds = useMemo(() => {
+    if (!historyStickyEnabled) {
+      return new Set<string>();
+    }
+    const stickyIds = new Set<string>();
+    for (const item of renderedItems) {
+      if (isOrdinaryUserQuestionItem(item, enableCollaborationBadge)) {
+        stickyIds.add(item.id);
+      }
+    }
+    return stickyIds;
+  }, [enableCollaborationBadge, historyStickyEnabled, renderedItems]);
   const messageAnchors = useMemo(() => {
     const messageItems = renderedItems.filter(
       (item): item is Extract<ConversationItem, { kind: "message" }> =>
@@ -2500,7 +2516,16 @@ export const Messages = memo(function Messages({
           )}
           <div
             ref={bindMessageNode}
-            className={item.id === latestStickyUserMessageId ? "messages-live-sticky-user-message" : undefined}
+            className={[
+              item.id === latestLiveStickyUserMessageId
+                ? "messages-live-sticky-user-message"
+                : "",
+              historyStickyUserMessageIds.has(item.id)
+                ? "messages-history-sticky-user-message"
+                : "",
+            ]
+              .filter(Boolean)
+              .join(" ") || undefined}
             data-message-anchor-id={item.id}
             data-agent-task-id={agentTaskNotification?.taskId ?? undefined}
             data-agent-tool-use-id={agentTaskNotification?.toolUseId ?? undefined}

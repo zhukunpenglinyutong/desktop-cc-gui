@@ -532,6 +532,7 @@ describe("Messages live behavior", () => {
 
     const stickyNodes = container.querySelectorAll(".messages-live-sticky-user-message");
     expect(stickyNodes).toHaveLength(1);
+    expect(container.querySelectorAll(".messages-history-sticky-user-message")).toHaveLength(0);
     expect(stickyNodes[0]?.getAttribute("data-message-anchor-id")).toBe(
       "user-live-sticky-latest",
     );
@@ -653,10 +654,57 @@ describe("Messages live behavior", () => {
     expect(container.querySelector(".messages-live-sticky-user-message")).toBeNull();
   });
 
-  it("does not pin restored history user bubbles", () => {
+  it("pins ordinary user questions as section headers during non-realtime history browsing", () => {
+    const items: ConversationItem[] = [
+      {
+        id: "user-history-sticky-1",
+        kind: "message",
+        role: "user",
+        text: "第一个历史问题",
+      },
+      {
+        id: "assistant-history-sticky-1",
+        kind: "message",
+        role: "assistant",
+        text: "第一轮历史回答",
+      },
+      {
+        id: "user-history-sticky-2",
+        kind: "message",
+        role: "user",
+        text: "第二个历史问题",
+      },
+      {
+        id: "assistant-history-sticky-2",
+        kind: "message",
+        role: "assistant",
+        text: "第二轮历史回答",
+      },
+    ];
+
+    const { container } = render(
+      <Messages
+        items={items}
+        threadId="thread-1"
+        workspaceId="ws-1"
+        isThinking={false}
+        openTargets={[]}
+        selectedOpenAppId=""
+      />,
+    );
+
+    const stickyNodes = container.querySelectorAll(".messages-history-sticky-user-message");
+    expect(stickyNodes).toHaveLength(2);
+    expect(container.querySelectorAll(".messages-live-sticky-user-message")).toHaveLength(0);
+    expect(
+      Array.from(stickyNodes).map((node) => node.getAttribute("data-message-anchor-id")),
+    ).toEqual(["user-history-sticky-1", "user-history-sticky-2"]);
+  });
+
+  it("uses history sticky headers for restored history snapshots instead of live sticky", () => {
     const restoredItems: ConversationItem[] = [
       {
-        id: "user-history-sticky-disabled",
+        id: "user-history-sticky-restored",
         kind: "message",
         role: "user",
         text: "历史问题",
@@ -696,6 +744,11 @@ describe("Messages live behavior", () => {
     );
 
     expect(container.querySelector(".messages-live-sticky-user-message")).toBeNull();
+    expect(
+      container
+        .querySelector(".messages-history-sticky-user-message")
+        ?.getAttribute("data-message-anchor-id"),
+    ).toBe("user-history-sticky-restored");
   });
 
   it("does not pin memory-only injected user payloads as the latest live question", () => {
@@ -738,6 +791,88 @@ describe("Messages live behavior", () => {
         .querySelector(".messages-live-sticky-user-message")
         ?.getAttribute("data-message-anchor-id"),
     ).toBe("user-live-real-question");
+  });
+
+  it("excludes pseudo-user rows from history sticky headers", () => {
+    const items: ConversationItem[] = [
+      {
+        id: "user-history-real-question",
+        kind: "message",
+        role: "user",
+        text: "真正的历史问题",
+      },
+      {
+        id: "assistant-history-real-answer",
+        kind: "message",
+        role: "assistant",
+        text: "真实回答",
+      },
+      {
+        id: "user-history-agent-task",
+        kind: "message",
+        role: "user",
+        text: `
+<task-notification>
+  <task-id>task-42</task-id>
+  <summary>Agent "Builder"</summary>
+  <result>done</result>
+</task-notification>`,
+      },
+      {
+        id: "user-history-memory-only",
+        kind: "message",
+        role: "user",
+        text: "<project-memory>\n[项目上下文] 已记录会话摘要\n</project-memory>\n",
+      },
+    ];
+
+    const { container } = render(
+      <Messages
+        items={items}
+        threadId="thread-1"
+        workspaceId="ws-1"
+        isThinking={false}
+        openTargets={[]}
+        selectedOpenAppId=""
+      />,
+    );
+
+    const stickyNodes = container.querySelectorAll(".messages-history-sticky-user-message");
+    expect(stickyNodes).toHaveLength(1);
+    expect(stickyNodes[0]?.getAttribute("data-message-anchor-id")).toBe(
+      "user-history-real-question",
+    );
+  });
+
+  it("does not create phantom history sticky headers for collapsed hidden user questions", () => {
+    const items: ConversationItem[] = [
+      {
+        id: "user-history-hidden-only",
+        kind: "message",
+        role: "user",
+        text: "被窗口裁掉的历史问题",
+      },
+      ...Array.from({ length: 30 }, (_, index): ConversationItem => ({
+        id: `assistant-history-hidden-only-${index}`,
+        kind: "message",
+        role: "assistant",
+        text: `历史回答片段 ${index + 1}`,
+      })),
+    ];
+
+    const { container } = render(
+      <Messages
+        items={items}
+        threadId="thread-1"
+        workspaceId="ws-1"
+        isThinking={false}
+        openTargets={[]}
+        selectedOpenAppId=""
+      />,
+    );
+
+    expect(container.querySelector(".messages-history-sticky-user-message")).toBeNull();
+    expect(container.querySelector(".messages-collapsed-indicator")).toBeTruthy();
   });
 
   it("collapses live middle steps when enabled", () => {

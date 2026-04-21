@@ -16,7 +16,7 @@ function resolveStickyCandidateUserText(
   }).stickyCandidateText.trim();
 }
 
-function isOrdinaryUserQuestionItem(
+export function isOrdinaryUserQuestionItem(
   item: ConversationItem | undefined,
   enableCollaborationBadge: boolean,
 ): item is MessageConversationItem & { role: "user" } {
