@@ -995,3 +995,60 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 120: Split thread actions and thread item hotspots
+
+**Date**: 2026-04-23
+**Task**: Split thread actions and thread item hotspots
+**Branch**: `feature/v-0.4.8`
+
+### Summary
+
+拆分 useThreadActions 的 session runtime 子域和 threadItems 的 assistant text policy 子域，并更新最终 baseline/watchlist。
+
+### Main Changes
+
+任务目标:
+- 继续压缩 threads 域 retained hard debt，并让最终大文件台账与代码状态对齐。
+
+主要改动:
+- 将 useThreadActions 的 start/fork/rewind 生命周期动作抽到 useThreadActionsSessionRuntime。
+- 将 threadItems 的 assistant text normalization / dedupe / readability scoring 抽到 threadItemsAssistantText。
+- 更新 large-file baseline、baseline.json 与 near-threshold watchlist。
+- 补齐两轮 Trellis tasks 与 OpenSpec changes。
+
+涉及模块:
+- src/features/threads/hooks/useThreadActions.ts
+- src/features/threads/hooks/useThreadActionsSessionRuntime.ts
+- src/utils/threadItems.ts
+- src/utils/threadItemsAssistantText.ts
+- docs/architecture/large-file-baseline*
+- docs/architecture/large-file-near-threshold-watchlist.md
+
+验证结果:
+- npm run typecheck 通过
+- npm run check:large-files:gate 通过
+- npx vitest run src/features/threads/loaders/claudeHistoryLoader.test.ts src/features/threads/hooks/threadReducerTextMerge.test.ts src/features/threads/hooks/useThreadActions.test.tsx src/features/threads/hooks/useThreadActions.rewind.test.tsx 通过
+
+后续事项:
+- 继续处理剩余 retained hard debt，优先评估 CSS 热点和 Rust bridge/runtime 大文件。
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `f4deb70d` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

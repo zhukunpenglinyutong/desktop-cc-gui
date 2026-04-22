@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-4.md`
-- **Total Sessions**: 119
+- **Total Sessions**: 120
 - **Last Active**: 2026-04-23
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-4.md` | ~997 | Active |
+| `journal-4.md` | ~1054 | Active |
 | `journal-3.md` | ~1972 | Archived |
 | `journal-2.md` | ~1960 | Archived |
 | `journal-1.md` | ~1990 | Archived |
@@ -32,6 +32,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 120 | 2026-04-23 | Split thread actions and thread item hotspots | `f4deb70d` | `feature/v-0.4.8` |
 | 119 | 2026-04-23 | Split tauri, app shell, and thread messaging hotspots | `1b25ff26` | `feature/v-0.4.8` |
 | 118 | 2026-04-23 | Upgrade large-file governance policy | `6b6dc1c9` | `feature/v-0.4.8` |
 | 117 | 2026-04-22 | 同步 OpenSpec 提案并归档已完成变更 | `73b9256c` | `feature/v-0.4.8` |
