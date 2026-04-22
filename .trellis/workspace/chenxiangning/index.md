@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-3.md`
-- **Total Sessions**: 98
+- **Total Sessions**: 99
 - **Last Active**: 2026-04-22
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-3.md` | ~1799 | Active |
+| `journal-3.md` | ~1861 | Active |
 | `journal-2.md` | ~1960 | Archived |
 | `journal-1.md` | ~1990 | Archived |
 <!-- @@@/auto:active-documents -->
@@ -31,6 +31,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 99 | 2026-04-22 | 补强运行时提示启动链路与边界回写 | `f616a615afb3b7898b48478b4df43ae0cbf4618f` | `feature/v-0.4.7` |
 | 98 | 2026-04-22 | 拆分消息样式并补强桌面渲染守卫 | `7619db05` | `feature/v-0.4.7` |
 | 97 | 2026-04-22 | Harden Claude desktop render-safe mode | `41a12c7b1a3486da89fac055e3169ae8e757c633` | `feature/v-0.4.7` |
 | 96 | 2026-04-22 | OpenSpec 归档六个已完成 change 并回写提案状态 | `708ddc6f77d28abf4dac91b602178d2e52667280` | `feature/v-0.4.7` |

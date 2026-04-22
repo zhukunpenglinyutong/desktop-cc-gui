@@ -1797,3 +1797,65 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 99: 补强运行时提示启动链路与边界回写
+
+**Date**: 2026-04-22
+**Task**: 补强运行时提示启动链路与边界回写
+**Branch**: `feature/v-0.4.7`
+
+### Summary
+
+细化运行时提示启动链路，修复首次 ready 回写与多引擎/空元数据边界。
+
+### Main Changes
+
+任务目标
+- 补强运行时提示框启动链路与边界回写，让客户端启动过程对用户更可见。
+
+主要改动
+- 细化 bootstrap notice 序列，补充本地状态迁移、输入历史恢复、界面资源加载与 shell 挂载提示。
+- 修复 runtime 首次快照为 ready 时未写回 notice 的问题，保证初始化完成后有后续状态闭环。
+- 按 engine 动态生成 runtime notice 文案，避免 Claude/OpenCode 场景被误报为 Codex runtime。
+- 为 workspaceName/workspacePath 为空的场景补充稳定 fallback，兼容 Windows 反斜杠路径解析。
+- 补充启动序列、多引擎回写、空元数据与去重场景测试，并同步更新中英文 locale 与测试字典。
+
+涉及模块
+- src/bootstrapApp.tsx
+- src/features/notifications/hooks/useGlobalRuntimeNoticeDock.ts
+- src/bootstrapApp.test.tsx
+- src/features/notifications/hooks/useGlobalRuntimeNoticeDock.test.tsx
+- src/i18n/locales/zh.part2.ts
+- src/i18n/locales/en.part2.ts
+- src/test/vitest.setup.ts
+
+验证结果
+- 通过：npx vitest run src/bootstrapApp.test.tsx src/features/notifications/hooks/useGlobalRuntimeNoticeDock.test.tsx
+- 通过：npm run typecheck
+- 通过：npm run check:large-files
+- 通过（仅既有 warning）：npm run lint
+  当前仓库仍存在既有 react-hooks/exhaustive-deps warnings 112 条，无新增 lint error。
+
+后续事项
+- useGlobalRuntimeNoticeDock.test.tsx 仍会输出 React act warning，后续可继续整理异步测试 harness。
+- 本次提交未包含 CHANGELOG.md 与其他未跟踪文件。
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `f616a615afb3b7898b48478b4df43ae0cbf4618f` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
