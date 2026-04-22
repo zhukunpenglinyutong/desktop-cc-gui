@@ -175,3 +175,61 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 105: Add codex computer use plugin bridge change
+
+**Date**: 2026-04-22
+**Task**: Add codex computer use plugin bridge change
+**Branch**: `feature/v-0.4.7`
+
+### Summary
+
+(Add summary)
+
+### Main Changes
+
+任务目标：为 Codex Computer Use plugin bridge 创建完整 OpenSpec 提案，限定为独立模块、最小侵入、可插拔、macOS/Windows 分治，并明确当前阶段为 status-only bridge。
+
+主要改动：
+- 新建 OpenSpec change `add-codex-computer-use-plugin-bridge`
+- 完成 proposal、design、3 份 capability specs 与 tasks
+- 根据提案审查结果回填 Phase 1 边界，明确本期不包含 helper invoke
+- 固化 availability status 优先级与最小 blockedReasons contract
+
+涉及模块：
+- openspec/changes/add-codex-computer-use-plugin-bridge/proposal.md
+- openspec/changes/add-codex-computer-use-plugin-bridge/design.md
+- openspec/changes/add-codex-computer-use-plugin-bridge/specs/codex-computer-use-plugin-bridge/spec.md
+- openspec/changes/add-codex-computer-use-plugin-bridge/specs/computer-use-platform-adapter/spec.md
+- openspec/changes/add-codex-computer-use-plugin-bridge/specs/computer-use-availability-surface/spec.md
+- openspec/changes/add-codex-computer-use-plugin-bridge/tasks.md
+
+验证结果：
+- `openspec status --change add-codex-computer-use-plugin-bridge --json` 返回 `isComplete: true`
+- proposal/design/specs/tasks 四个 artifacts 全部为 `done`
+- 本次未执行 lint/typecheck/test，因为只提交 OpenSpec 文档
+
+后续事项：
+- 下一阶段可进入 `openspec-apply-change`
+- 建议从 backend status model、platform adapter、availability surface 开始实现
+- helper invoke 需在后续独立 phase 验证宿主桥接性后再议
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `e8933fdd` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
