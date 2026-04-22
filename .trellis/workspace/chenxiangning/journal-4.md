@@ -115,3 +115,63 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 104: 补齐 Claude 流式延迟诊断并启用定向缓解
+
+**Date**: 2026-04-22
+**Task**: 补齐 Claude 流式延迟诊断并启用定向缓解
+**Branch**: `feature/v-0.4.7`
+
+### Summary
+
+(Add summary)
+
+### Main Changes
+
+任务目标:
+- 为 Claude 桌面流式慢体验补齐可关联的 per-thread latency diagnostics，并在命中特定 provider/platform 指纹时启用更激进的渲染缓解。
+
+主要改动:
+- 新增 src/features/threads/utils/streamLatencyDiagnostics.ts，统一维护 thread 级流式延迟快照、provider 指纹、platform 判定、延迟分类与 mitigation profile 解析。
+- 在线程发送、turn start、首个 delta、首个可见 render、turn completed/error 等链路记录 first token、chunk cadence、render lag 相关证据，并输出 upstream-pending / render-amplification 诊断。
+- 在 Messages / MessagesTimeline 渲染链路下传 stream mitigation profile，让命中 Qwen-compatible Claude provider + Windows 的路径动态提高 assistant/reasoning markdown 的 streaming throttle。
+- 补充 streamLatencyDiagnostics、MessagesRows.stream-mitigation、useThreadEventHandlers 的测试覆盖，验证 provider 命中、未命中、等待首个 delta 与完成态关联维度。
+
+涉及模块:
+- src/features/threads/utils/streamLatencyDiagnostics.ts
+- src/features/threads/utils/streamLatencyDiagnostics.test.ts
+- src/features/threads/hooks/threadMessagingHelpers.ts
+- src/features/threads/hooks/useThreadMessaging.ts
+- src/features/threads/hooks/useThreadEventHandlers.ts
+- src/features/threads/hooks/useThreadEventHandlers.test.ts
+- src/features/messages/components/Messages.tsx
+- src/features/messages/components/MessagesTimeline.tsx
+- src/features/messages/components/MessagesRows.stream-mitigation.test.tsx
+
+验证结果:
+- 本次未额外运行 lint/typecheck/test；仅完成代码提交与范围核对。
+- 提交范围已排除 CHANGELOG、settingsViewConstants、markdownCodeRegions.test.ts 以及其他未完成 OpenSpec 草稿，避免混入无关改动。
+
+后续事项:
+- 如需交付前闭环，建议继续运行针对性 Vitest 以及基础质量门禁。
+- 当前 active task 仍显示 fix-live-inline-code-markdown-rendering，后续可视情况整理任务指向，减少 record 与实际实现主题的偏移。
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `9d16c31953ae2e48919e6da91c6062abe1c8295d` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

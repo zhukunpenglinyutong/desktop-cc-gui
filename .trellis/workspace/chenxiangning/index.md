@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-4.md`
-- **Total Sessions**: 103
+- **Total Sessions**: 104
 - **Last Active**: 2026-04-22
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-4.md` | ~117 | Active |
+| `journal-4.md` | ~177 | Active |
 | `journal-3.md` | ~1972 | Archived |
 | `journal-2.md` | ~1960 | Archived |
 | `journal-1.md` | ~1990 | Archived |
@@ -32,6 +32,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 104 | 2026-04-22 | 补齐 Claude 流式延迟诊断并启用定向缓解 | `9d16c31953ae2e48919e6da91c6062abe1c8295d` | `feature/v-0.4.7` |
 | 103 | 2026-04-22 | docs(openspec): 回写并归档实时 markdown streaming 兼容性提案 | `cd332b84` | `feature/v-0.4.7` |
 | 102 | 2026-04-22 | 新增 Claude 桌面流式慢体验修复提案 | `16a34090253c0409803301c960f585681917c7ee` | `feature/v-0.4.7` |
 | 101 | 2026-04-22 | fix(messages): 修复实时对话中 inline code 的流式渲染错位 | `4f74ea65` | `feature/v-0.4.7` |
