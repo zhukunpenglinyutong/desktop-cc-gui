@@ -14,15 +14,19 @@ const enPart2 = {
     severityError: "Error",
     bootstrap: {
       start: "Initializing local state...",
+      storageMigrationCheck: "Checking local state migration...",
+      inputHistoryRestore: "Restoring input history...",
+      interfaceResources: "Loading interface resources...",
+      mountShell: "Mounting the client shell...",
       localStorageMigrationFailed:
         "Local state migration failed. Startup continues in degraded mode.",
       ready: "Client initialization completed.",
       failed: "Client initialization failed. Reload and try again.",
     },
     runtime: {
-      startupPending: "{{workspace}}: Codex runtime is connecting...",
+      startupPending: "{{workspace}}: {{engine}} runtime is connecting...",
       resumePending: "{{workspace}}: Runtime health check failed. Trying recovery.",
-      ready: "{{workspace}}: Codex runtime is connected",
+      ready: "{{workspace}}: {{engine}} runtime is connected",
       suspectStale: "{{workspace}}: Runtime health check failed. Trying recovery.",
       cooldown: "{{workspace}}: Runtime recovery failed. Cooldown is active.",
       quarantined: "{{workspace}}: Runtime recovery failed and needs attention.",

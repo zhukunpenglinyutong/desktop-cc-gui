@@ -26,16 +26,34 @@ type RuntimeSignalToken =
   | "quarantined"
   | null;
 
-function resolveWorkspaceLabel(row: Pick<RuntimePoolRow, "workspaceName" | "workspacePath">) {
+function resolveWorkspaceLabel(
+  row: Pick<RuntimePoolRow, "workspaceId" | "workspaceName" | "workspacePath">,
+) {
   const trimmedName = row.workspaceName.trim();
   if (trimmedName.length > 0) {
     return trimmedName;
   }
-  const segments = row.workspacePath
+  const trimmedPath = row.workspacePath.trim();
+  const segments = trimmedPath
     .split(/[\\/]/)
     .map((segment) => segment.trim())
     .filter((segment) => segment.length > 0);
-  return segments[segments.length - 1] ?? row.workspacePath;
+  return segments[segments.length - 1] ?? (trimmedPath || row.workspaceId.trim());
+}
+
+function resolveRuntimeEngineLabel(engine: string) {
+  switch (engine.trim().toLowerCase()) {
+    case "claude":
+      return "Claude Code";
+    case "gemini":
+      return "Gemini";
+    case "opencode":
+      return "OpenCode";
+    case "codex":
+      return "Codex";
+    default:
+      return engine.trim() || "Runtime";
+  }
 }
 
 function resolveRuntimeSignalToken(row: RuntimePoolRow): RuntimeSignalToken {
@@ -67,7 +85,7 @@ function shouldPushRuntimeSignal(
     return false;
   }
   if (!previousToken) {
-    return nextToken !== "ready";
+    return true;
   }
   if (nextToken === "ready") {
     return previousToken !== "ready";
@@ -140,6 +158,7 @@ function reconcileRuntimeSnapshot(
       messageKey: signal.messageKey,
       messageParams: {
         workspace: resolveWorkspaceLabel(row),
+        engine: resolveRuntimeEngineLabel(row.engine),
       },
       dedupeKey: `runtime:${row.workspaceId}:${nextToken}`,
     });

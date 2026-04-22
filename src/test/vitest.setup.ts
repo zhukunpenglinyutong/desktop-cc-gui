@@ -69,16 +69,20 @@ vi.mock("react-i18next", () => ({
         "runtimeNotice.severityWarning": "警告",
         "runtimeNotice.severityError": "错误",
         "runtimeNotice.bootstrap.start": "正在初始化本地状态...",
+        "runtimeNotice.bootstrap.storageMigrationCheck": "正在检查本地状态迁移...",
+        "runtimeNotice.bootstrap.inputHistoryRestore": "正在恢复输入历史...",
+        "runtimeNotice.bootstrap.interfaceResources": "正在加载界面资源...",
+        "runtimeNotice.bootstrap.mountShell": "正在挂载客户端界面...",
         "runtimeNotice.bootstrap.localStorageMigrationFailed":
           "本地状态迁移失败，已按降级模式继续启动",
         "runtimeNotice.bootstrap.ready": "客户端初始化完成",
         "runtimeNotice.bootstrap.failed": "客户端初始化失败，请刷新后重试",
         "runtimeNotice.runtime.startupPending":
-          `${String(params?.workspace ?? "")}：Codex runtime 正在连接...`,
+          `${String(params?.workspace ?? "")}：${String(params?.engine ?? "Runtime")} runtime 正在连接...`,
         "runtimeNotice.runtime.resumePending":
           `${String(params?.workspace ?? "")}：Runtime 探活异常，正在尝试恢复`,
         "runtimeNotice.runtime.ready":
-          `${String(params?.workspace ?? "")}：Codex runtime 已连接`,
+          `${String(params?.workspace ?? "")}：${String(params?.engine ?? "Runtime")} runtime 已连接`,
         "runtimeNotice.runtime.suspectStale":
           `${String(params?.workspace ?? "")}：Runtime 探活异常，正在尝试恢复`,
         "runtimeNotice.runtime.cooldown":

@@ -120,7 +120,7 @@ describe("useGlobalRuntimeNoticeDock", () => {
   });
 
   it("maps runtime pool transitions into notices and lets streaming status decay to idle", async () => {
-    tauriMocks.getRuntimePoolSnapshot.mockResolvedValue({
+    const initialSnapshot = {
       ...createEmptyRuntimePoolSnapshot(),
       rows: [
         {
@@ -146,19 +146,23 @@ describe("useGlobalRuntimeNoticeDock", () => {
           startupState: "suspect-stale",
         },
       ],
-    });
+    };
+    tauriMocks.getRuntimePoolSnapshot.mockResolvedValue(initialSnapshot);
 
     const { result } = renderHook(() => useGlobalRuntimeNoticeDock());
+    const initialLoadPromise = tauriMocks.getRuntimePoolSnapshot.mock.results[0]?.value;
 
     await act(async () => {
-      await Promise.resolve();
-      await Promise.resolve();
+      await initialLoadPromise;
     });
 
-    expect(result.current.notices).toHaveLength(1);
     expect(result.current.notices[0]).toEqual(
       expect.objectContaining({
         messageKey: "runtimeNotice.runtime.resumePending",
+        messageParams: {
+          workspace: "Repo A",
+          engine: "Codex",
+        },
       }),
     );
     expect(result.current.status).toBe("streaming");
@@ -169,5 +173,93 @@ describe("useGlobalRuntimeNoticeDock", () => {
 
     expect(result.current.status).toBe("idle");
     expect(resolveGlobalRuntimeNoticeDockStatus(result.current.notices, Date.now())).toBe("idle");
+  });
+
+  it("writes back initial ready runtime snapshots with engine-aware copy and stable path fallback", async () => {
+    const initialSnapshot = {
+      ...createEmptyRuntimePoolSnapshot(),
+      rows: [
+        {
+          workspaceId: "ws-ready",
+          workspaceName: "   ",
+          workspacePath: "C:\\Users\\me\\Workspace Ready\\",
+          engine: "claude",
+          state: "graceful-idle",
+          pid: null,
+          wrapperKind: null,
+          resolvedBin: null,
+          startedAtMs: null,
+          lastUsedAtMs: 0,
+          pinned: false,
+          turnLeaseCount: 0,
+          streamLeaseCount: 0,
+          leaseSources: [],
+          activeWorkProtected: false,
+          evictCandidate: false,
+          evictionReason: null,
+          error: null,
+          foregroundWorkState: null,
+          startupState: "ready",
+        },
+        {
+          workspaceId: "ws-empty",
+          workspaceName: "   ",
+          workspacePath: "   ",
+          engine: "codex",
+          state: "graceful-idle",
+          pid: null,
+          wrapperKind: null,
+          resolvedBin: null,
+          startedAtMs: null,
+          lastUsedAtMs: 0,
+          pinned: false,
+          turnLeaseCount: 0,
+          streamLeaseCount: 0,
+          leaseSources: [],
+          activeWorkProtected: false,
+          evictCandidate: false,
+          evictionReason: null,
+          error: null,
+          foregroundWorkState: null,
+          startupState: "ready",
+        },
+      ],
+    };
+    tauriMocks.getRuntimePoolSnapshot.mockResolvedValue(initialSnapshot);
+
+    const { result } = renderHook(() => useGlobalRuntimeNoticeDock());
+    const initialLoadPromise = tauriMocks.getRuntimePoolSnapshot.mock.results[0]?.value;
+
+    await act(async () => {
+      await initialLoadPromise;
+    });
+
+    expect(result.current.notices).toHaveLength(2);
+    expect(result.current.notices[0]).toEqual(
+      expect.objectContaining({
+        messageKey: "runtimeNotice.runtime.ready",
+        messageParams: {
+          workspace: "Workspace Ready",
+          engine: "Claude Code",
+        },
+      }),
+    );
+    expect(result.current.notices[1]).toEqual(
+      expect.objectContaining({
+        messageKey: "runtimeNotice.runtime.ready",
+        messageParams: {
+          workspace: "ws-empty",
+          engine: "Codex",
+        },
+      }),
+    );
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5000);
+      const nextLoadPromise = tauriMocks.getRuntimePoolSnapshot.mock.results[1]?.value;
+      await nextLoadPromise;
+    });
+
+    expect(result.current.notices).toHaveLength(2);
   });
 });

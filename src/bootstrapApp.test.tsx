@@ -9,6 +9,8 @@ const initInputHistoryStoreMock = vi.hoisted(() => vi.fn());
 const appendRendererDiagnosticMock = vi.hoisted(() => vi.fn());
 const flushRendererDiagnosticsBufferMock = vi.hoisted(() => vi.fn());
 const pushGlobalRuntimeNoticeMock = vi.hoisted(() => vi.fn());
+const invokeMock = vi.hoisted(() => vi.fn());
+const isTauriMock = vi.hoisted(() => vi.fn(() => false));
 
 vi.mock("react-dom/client", () => ({
   default: {
@@ -37,6 +39,17 @@ vi.mock("./services/globalRuntimeNotices", () => ({
   pushGlobalRuntimeNotice: pushGlobalRuntimeNoticeMock,
 }));
 
+vi.mock("./i18n", () => ({}));
+
+vi.mock("./App", () => ({
+  default: () => null,
+}));
+
+vi.mock("@tauri-apps/api/core", () => ({
+  invoke: invokeMock,
+  isTauri: isTauriMock,
+}));
+
 vi.mock("./components/ErrorBoundary", () => ({
   ErrorBoundary: ({ children }: { children: unknown }) => children,
 }));
@@ -53,7 +66,54 @@ describe("startApp", () => {
     appendRendererDiagnosticMock.mockReset();
     flushRendererDiagnosticsBufferMock.mockReset();
     pushGlobalRuntimeNoticeMock.mockReset();
+    invokeMock.mockReset();
+    isTauriMock.mockReset();
+    isTauriMock.mockReturnValue(false);
     createRootMock.mockReturnValue({ render: renderMock });
+  });
+
+  it("pushes detailed bootstrap notices during a successful startup", async () => {
+    const { startApp } = await import("./bootstrapApp");
+
+    await startApp();
+
+    expect(pushGlobalRuntimeNoticeMock.mock.calls).toEqual([
+      [
+        expect.objectContaining({
+          messageKey: "runtimeNotice.bootstrap.start",
+        }),
+      ],
+      [
+        expect.objectContaining({
+          messageKey: "runtimeNotice.bootstrap.storageMigrationCheck",
+        }),
+      ],
+      [
+        expect.objectContaining({
+          messageKey: "runtimeNotice.bootstrap.inputHistoryRestore",
+        }),
+      ],
+      [
+        expect.objectContaining({
+          messageKey: "runtimeNotice.bootstrap.interfaceResources",
+        }),
+      ],
+      [
+        expect.objectContaining({
+          messageKey: "runtimeNotice.bootstrap.mountShell",
+        }),
+      ],
+      [
+        expect.objectContaining({
+          messageKey: "runtimeNotice.bootstrap.ready",
+        }),
+      ],
+    ]);
+    expect(preloadClientStoresMock).toHaveBeenCalledTimes(1);
+    expect(migrateLocalStorageToFileStoreMock).toHaveBeenCalledTimes(1);
+    expect(initInputHistoryStoreMock).toHaveBeenCalledTimes(1);
+    expect(createRootMock).toHaveBeenCalledWith(document.getElementById("root"));
+    expect(renderMock).toHaveBeenCalledTimes(1);
   });
 
   it("renders the bootstrap fallback and flushes diagnostics when preload fails early", async () => {
