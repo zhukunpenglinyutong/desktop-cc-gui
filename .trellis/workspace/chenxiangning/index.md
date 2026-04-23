@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-5.md`
-- **Total Sessions**: 140
+- **Total Sessions**: 141
 - **Last Active**: 2026-04-23
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-5.md` | ~247 | Active |
+| `journal-5.md` | ~302 | Active |
 | `journal-4.md` | ~1975 | Archived |
 | `journal-3.md` | ~1972 | Archived |
 | `journal-2.md` | ~1960 | Archived |
@@ -33,6 +33,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 141 | 2026-04-23 | 清理 cc_gui_daemon 告警面并归档 OpenSpec 变更 | `472e9e7492369f7055b70748dd5628ef353a5de4` | `feature/v-0.4.8` |
 | 140 | 2026-04-23 | clean-tauri-dev-warning-surface | `43c63fbabc8d0b67bcbbdabc2541448b059cee81` | `feature/v-0.4.8` |
 | 139 | 2026-04-23 | 修复 TaskCreateModal 超时并归档尾部告警变更 | `58e82d82` | `feature/v-0.4.8` |
 | 138 | 2026-04-23 | 收敛 exhaustive-deps 尾部告警 | `66661059` | `feature/v-0.4.8` |

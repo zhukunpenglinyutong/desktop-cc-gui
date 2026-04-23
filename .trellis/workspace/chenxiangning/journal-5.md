@@ -245,3 +245,58 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 141: 清理 cc_gui_daemon 告警面并归档 OpenSpec 变更
+
+**Date**: 2026-04-23
+**Task**: 清理 cc_gui_daemon 告警面并归档 OpenSpec 变更
+**Branch**: `feature/v-0.4.8`
+
+### Summary
+
+(Add summary)
+
+### Main Changes
+
+任务目标:
+- 治理 cc_gui_daemon Rust bin target 的 warning surface，并把对应 OpenSpec change 完整归档。
+
+主要改动:
+- 为 daemon target 的 shared-module import boundary 增加窄口 dead_code suppressions，避免 local_usage/runtime/session_management/shared/git_utils 等 desktop-oriented surface 在 cc_gui_daemon 下重复计入 warning debt。
+- 清理 daemon-owned orphaned helpers：删除 cc_gui_daemon git upstream parser、删除 daemon codex runtime retry shim、收口 engine_bridge 本地未用 helper 与字段。
+- 完成 OpenSpec change clean-cc-gui-daemon-warning-surface 的 tasks、archive 和主 spec sync，并补齐 cc-gui-daemon-warning-cleanliness Purpose。
+
+涉及模块:
+- src-tauri/src/bin/cc_gui_daemon.rs
+- src-tauri/src/bin/cc_gui_daemon/engine_bridge.rs
+- src-tauri/src/bin/cc_gui_daemon/git.rs
+- openspec/changes/archive/2026-04-23-clean-cc-gui-daemon-warning-surface/**
+- openspec/specs/cc-gui-daemon-warning-cleanliness/spec.md
+- .trellis/tasks/04-23-clean-cc-gui-daemon-warning-surface/prd.md
+
+验证结果:
+- cargo check --manifest-path src-tauri/Cargo.toml --bin cc_gui_daemon --message-format short 通过，0 warnings
+- cargo test --manifest-path src-tauri/Cargo.toml 通过，lib 738 + daemon 481 + tauri_config 1 全绿
+
+后续事项:
+- 若后续继续做 daemon 深度治理，可考虑把 engine/claude 与 local_usage 再拆成更细的 daemon-facing minimal core，减少 import-boundary allow 的存在感。
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `472e9e7492369f7055b70748dd5628ef353a5de4` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
