@@ -300,3 +300,66 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 142: 清理 Rust test-target 告警面
+
+**Date**: 2026-04-23
+**Task**: 清理 Rust test-target 告警面
+**Branch**: `feature/v-0.4.8`
+
+### Summary
+
+(Add summary)
+
+### Main Changes
+
+任务目标:
+- 清理 `cargo test --manifest-path src-tauri/Cargo.toml --message-format short` 剩余的 Rust test-target warning，并把对应 OpenSpec change 归档闭环。
+
+主要改动:
+- 删除 `client_storage.rs` test 模块中的未用 `write_store` import。
+- 将 `shared/thread_titles_core.rs` 的 `app_paths` import 收窄到 `#[cfg(not(test))]`。
+- 在 `startup_guard.rs` 里把仅 Windows runtime 需要的 `app_paths`、`STARTUP_GUARD_FILENAME`、`STARTUP_GUARD_STATE_LOCK`、`guard_file_path` 以及相关 imports 收窄到 `target_os = "windows"`。
+- 删除 `window.rs` 中未被任何测试引用的 `set_window_appearance_override` test helper。
+- 把 `workspaces/settings.rs` 里的 test-only `sort_workspaces` helper 挪到 `workspaces/tests.rs`，避免 daemon bin test 编译路径产生死代码 warning。
+- 完成 `clean-rust-test-target-warning-surface` 的 OpenSpec archive，并同步主 spec 到 `openspec/specs/rust-test-target-warning-cleanliness/spec.md`。
+
+涉及模块:
+- `src-tauri/src/client_storage.rs`
+- `src-tauri/src/shared/thread_titles_core.rs`
+- `src-tauri/src/startup_guard.rs`
+- `src-tauri/src/window.rs`
+- `src-tauri/src/workspaces/settings.rs`
+- `src-tauri/src/workspaces/tests.rs`
+- `openspec/changes/archive/2026-04-23-clean-rust-test-target-warning-surface/**`
+- `openspec/specs/rust-test-target-warning-cleanliness/spec.md`
+- `.trellis/tasks/04-23-clean-rust-test-target-warning-surface/prd.md`
+
+验证结果:
+- `cargo test --manifest-path src-tauri/Cargo.toml --message-format short` 通过，test-target warning 为 0。
+- `cargo test --manifest-path src-tauri/Cargo.toml` 通过。
+- `openspec status --change clean-rust-test-target-warning-surface` 显示 4/4 artifacts complete。
+- `openspec archive clean-rust-test-target-warning-surface --yes` 成功。
+
+后续事项:
+- 当前 GUI、daemon、test-target 三条 Rust warning 治理线都已闭环；后续如果继续压噪音，建议单独处理未来新增的 test-only warnings，而不要回头扩大这条 change 的范围。
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `30b3680f` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
