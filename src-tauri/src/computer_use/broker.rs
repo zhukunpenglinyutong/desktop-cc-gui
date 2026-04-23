@@ -335,6 +335,7 @@ async fn run_codex_exec_computer_use_broker(
     command
         .arg("exec")
         .arg("--json")
+        .arg("--skip-git-repo-check")
         .arg("--sandbox")
         .arg("read-only")
         .arg("-C")
@@ -554,6 +555,11 @@ fn classify_broker_codex_error(error: &str) -> ComputerUseBrokerFailureKind {
     if normalized.contains("workspace") && normalized.contains("not found") {
         return ComputerUseBrokerFailureKind::WorkspaceMissing;
     }
+    if normalized.contains("not inside a trusted directory")
+        || normalized.contains("skip-git-repo-check")
+    {
+        return ComputerUseBrokerFailureKind::WorkspaceMissing;
+    }
     if normalized.contains("codex") || normalized.contains("runtime") {
         return ComputerUseBrokerFailureKind::CodexRuntimeUnavailable;
     }
@@ -720,6 +726,16 @@ mod tests {
         assert_eq!(
             classify_broker_codex_error(&error),
             ComputerUseBrokerFailureKind::PermissionRequired
+        );
+    }
+
+    #[test]
+    fn broker_error_classifies_trust_gate_as_workspace_failure() {
+        assert_eq!(
+            classify_broker_codex_error(
+                "Reading additional input from stdin... Not inside a trusted directory and --skip-git-repo-check was not specified."
+            ),
+            ComputerUseBrokerFailureKind::WorkspaceMissing
         );
     }
 

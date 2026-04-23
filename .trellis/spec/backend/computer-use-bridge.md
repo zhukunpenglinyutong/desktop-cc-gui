@@ -206,6 +206,7 @@ struct ComputerUseOfficialParentHandoffDiscovery {
 - `run_computer_use_codex_broker` 是显式 Computer Use task handoff 入口：
   - MUST 只在用户输入明确任务后调用，不得由 status refresh / activation / diagnostics 自动链式触发
   - MUST 优先使用 `codex exec --json` 执行显式任务，让 Codex CLI 加载官方 Computer Use plugin
+  - MUST 为 `codex exec` 添加 `--skip-git-repo-check`，允许用户选择的非 Git workspace 执行显式 Computer Use task
   - MUST NOT direct exec `SkyComputerUseClient` 或任何官方 helper 二进制
   - MUST 使用 `--sandbox read-only` 执行 broker prompt，除非未来 spec 明确允许仓库写入
   - MUST 继承 workspace / app 的 `codexBin`、`codexArgs`、`codexHome` 配置

@@ -12,6 +12,7 @@ mossx MUST use the official Codex runtime as the parent that can invoke Computer
 - **WHEN** 用户在 Computer Use surface 显式提交 broker 任务
 - **THEN** mossx MUST run the task through `codex exec --json` for the selected workspace
 - **AND** the Codex CLI execution MUST load the official Computer Use plugin from the user's Codex config/cache
+- **AND** MUST pass `--skip-git-repo-check` so non-repository trusted workspaces can still run explicit Computer Use tasks
 - **AND** MUST NOT direct exec `SkyComputerUseClient`
 
 #### Scenario: broker result is returned as structured outcome
