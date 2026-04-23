@@ -2,6 +2,58 @@
 
 ---
 
+##### **2026年4月23日（v0.4.8）**
+
+中文：
+
+✨ Features
+- 新增 baseline-aware 大文件治理策略，按路径域为热点文件匹配差异化阈值、watchlist 与 fail gate，并把历史技术债基线纳入 CI，对“新增超限”和“旧债继续膨胀”分别做明确拦截
+- 新增 heavy test noise sentry，为重型 Vitest 回归引入独立噪音门禁，自动识别 repo-owned `act(...)` / stdout / stderr 泄漏，并将环境自带 warning 单独归类，减少 CI 误报
+- 推进大文件热点的兼容性拆分治理，围绕 Opencode command、Git branch command、runtime session lifecycle、thread messaging 与 Tauri facade 建立更细粒度模块边界，为后续能力扩展预留更稳的演进基础
+
+🔧 Improvements
+- 拆分 app shell orchestration、thread action / session runtime、assistant 文本归一化与 thread messaging 工具链，降低消息主链路的大文件复杂度与回归面
+- 拆分 settings、composer rewind modal 与 git history branch compare 样式分片，减轻大 CSS 文件维护压力，后续样式调整不再集中挤在单一热点文件
+- 收敛 app shell、threads、git history、file tree、layout、worktree prompt、Search、Project Memory、Spec Hub 与 OpenCode 面板等多处 exhaustive-deps 告警，补齐 dependency array 与 cleanup-safe 模式，减少 stale closure 和重复副作用风险
+- 稳定 ChatInputBox ButtonArea 与 session radar feed 的 sentinel 刷新路径，收敛 model storage 快照与订阅刷新时机，让输入区、模型配置和会话雷达的状态同步更稳
+- 清理 tauri dev、`cc_gui_daemon` 与 Rust test-target 告警面，收口启动、桥接与测试期的无效 warning，提升本地开发与 backend 回归输出可读性
+- 刷新 large-file baseline、near-threshold watchlist 与治理 playbook，并同步归档本轮 OpenSpec / Trellis 变更，让治理规则、实现拆分和文档状态保持一致
+- 对齐回归门禁和线程测试契约，保证大规模拆分之后，已有线程集成测试和门禁脚本仍能准确覆盖关键链路
+
+🐛 Fixes
+- 修复 TaskCreateModal 在打开和提交阶段的 inline completion 清理与依赖处理，避免创建任务弹窗出现超时、焦点延迟或历史建议残留
+- 修复 git-history 尾部 cleanup timer 的清理方式，避免 create-PR 进度清理依赖陈旧 ref 快照而留下状态尾巴
+- 修复 heavy-test-noise 对环境告警的统计偏差，在外层 npm 输出未被完整捕获时，仍能根据环境变量正确归类 `electron_mirror` 等环境噪音，避免误伤 CI
+- 修复多处 repo-owned heavy test 噪音，包括 `AskUserQuestionDialog` 倒计时、SpecHub / Sidebar / Detached File Explorer / GitStatus / Markdown math / runtime notice 等测试边界泄漏，降低回归日志污染
+- 修复 threads、app shell 与 git history 热点 hook 的依赖漂移，减少长链路交互中的重复监听、状态错位和无效重渲染
+- 修复 Tauri service facade、runtime lifecycle 与 Git branch 命令拆分后的兼容性边界，确保现有调用入口与行为契约在重构后继续可用
+
+English:
+
+✨ Features
+- Add a baseline-aware large-file governance policy that assigns domain-specific thresholds, watchlists, and fail gates by path, while bringing legacy debt baselines into CI so new oversize files and growing legacy debt are blocked differently and explicitly
+- Add a dedicated heavy test noise sentry for heavy Vitest regressions, automatically detecting repo-owned `act(...)`, stdout, and stderr leaks while classifying environment-owned warnings separately to reduce CI false positives
+- Advance compatibility-preserving modularization for the largest hotspots by carving out finer-grained boundaries around the Opencode command surface, Git branch commands, runtime session lifecycle, thread messaging, and the Tauri facade
+
+🔧 Improvements
+- Split app-shell orchestration, thread action/session runtime handling, assistant text normalization, and thread messaging tooling to reduce large-file complexity and shrink the regression surface along the main conversation path
+- Split settings, composer rewind-modal, and git-history branch-compare style shards so future styling work is no longer concentrated in a few oversized CSS hotspots
+- Remediate exhaustive-deps hotspots across app shell, threads, git history, file tree, layout, worktree prompt, Search, Project Memory, Spec Hub, and OpenCode surfaces by completing dependency arrays and cleanup-safe patterns, reducing stale closures and repeated side effects
+- Stabilize the sentinel refresh path for ChatInputBox ButtonArea and the session radar feed so model-storage snapshots, subscriptions, and UI refresh timing stay in sync more reliably
+- Clean up warning surfaces across `tauri dev`, `cc_gui_daemon`, and Rust test targets, reducing startup, bridge, and test-phase warning noise and making local/backend regression output easier to read
+- Refresh the large-file baseline, near-threshold watchlist, and governance playbook, while archiving the related OpenSpec and Trellis changes so governance rules, extraction work, and documentation remain aligned
+- Align regression gates with thread test contracts so the existing thread integration coverage and repo guardrails remain trustworthy after the larger extraction batches
+
+🐛 Fixes
+- Fix inline-completion cleanup and effect dependencies in TaskCreateModal during open and submit flows so the create-task modal no longer drifts into timeout-like delays, focus lag, or stale suggestion state
+- Fix git-history tail cleanup timer handling so create-PR progress cleanup no longer depends on stale ref snapshots that can leave trailing state behind
+- Fix heavy-test-noise environment-warning accounting so `electron_mirror`-style environment noise is still classified correctly even when the outer npm warning output is not fully captured, preventing false CI failures
+- Fix multiple repo-owned heavy-test noise sources, including countdown leakage in `AskUserQuestionDialog` and warning leakage around SpecHub, Sidebar, Detached File Explorer, GitStatus, markdown math, and runtime notice coverage
+- Fix dependency drift in hotspot hooks across threads, app shell, and git history to reduce repeated listeners, state skew, and unnecessary re-renders in long-running interaction paths
+- Fix compatibility edges after splitting the Tauri service facade, runtime lifecycle, and Git branch command modules so existing call sites and behavior contracts continue to work after the refactor
+
+---
+
 ##### **2026年4月22日（v0.4.7）**
 
 中文：
