@@ -1776,6 +1776,8 @@ const zhPart1 = {
     queue: "队列",
     send: "发送",
     emptyThread: "今天想构建什么？向AI提问吧",
+    restoringHistory: "正在恢复会话历史…",
+    restoringHistoryHint: "Codex 正在加载本地 transcript 和会话状态。",
     generatingResponse: "正在生成响应...",
     nonStreamingHint: "该模型可能非流式返回，或网络暂不可达，请稍候...",
     proxyBadge: "代理",

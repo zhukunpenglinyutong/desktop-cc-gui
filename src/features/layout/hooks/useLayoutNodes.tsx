@@ -166,6 +166,7 @@ type LayoutNodesOptions = {
   threadsByWorkspace: Record<string, ThreadSummary[]>;
   threadParentById: Record<string, string>;
   threadStatusById: Record<string, ThreadActivityStatus>;
+  historyLoadingByThreadId: Record<string, boolean>;
   runningSessionCountByWorkspaceId: Record<string, number>;
   recentCompletedSessionCountByWorkspaceId: Record<string, number>;
   hydratedThreadListWorkspaceIds: ReadonlySet<string>;
@@ -690,6 +691,9 @@ export function useLayoutNodes(options: LayoutNodesOptions): LayoutNodesResult {
   const activeThreadStatus = options.activeThreadId
     ? options.threadStatusById[options.activeThreadId] ?? null
     : null;
+  const activeThreadHistoryLoading = options.activeThreadId
+    ? options.historyLoadingByThreadId[options.activeThreadId] === true
+    : false;
   const isThreadThinking = activeThreadStatus?.isProcessing ?? false;
   const conversationEngine = useMemo(
     () => toConversationEngine(options.selectedEngine),
@@ -1191,6 +1195,7 @@ export function useLayoutNodes(options: LayoutNodesOptions): LayoutNodesResult {
       onOpenWorkspaceFile={options.onOpenFile}
       agentTaskScrollRequest={options.agentTaskScrollRequest}
       isThinking={isThreadThinking}
+      isHistoryLoading={activeThreadHistoryLoading}
       isContextCompacting={activeThreadStatus?.isContextCompacting ?? false}
       proxyEnabled={options.systemProxyEnabled}
       proxyUrl={options.systemProxyUrl}
@@ -1231,6 +1236,7 @@ export function useLayoutNodes(options: LayoutNodesOptions): LayoutNodesResult {
     options.onOpenFile,
     options.agentTaskScrollRequest,
     isThreadThinking,
+    activeThreadHistoryLoading,
     activeThreadStatus?.isContextCompacting,
     activeThreadStatus?.processingStartedAt,
     activeThreadStatus?.lastDurationMs,

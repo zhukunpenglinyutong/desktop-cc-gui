@@ -96,6 +96,7 @@ type MessagesProps = {
   threadId: string | null;
   workspaceId?: string | null;
   isThinking: boolean;
+  isHistoryLoading?: boolean;
   isContextCompacting?: boolean;
   proxyEnabled?: boolean;
   proxyUrl?: string | null;
@@ -217,6 +218,7 @@ export const Messages = memo(function Messages({
   threadId: legacyThreadId,
   workspaceId: legacyWorkspaceId = null,
   isThinking: legacyIsThinking,
+  isHistoryLoading = false,
   isContextCompacting = false,
   proxyEnabled = false,
   proxyUrl = null,
@@ -1726,6 +1728,10 @@ export const Messages = memo(function Messages({
         />
       )
       : null;
+  const hasVisibleUserInputRequest =
+    shouldRenderUserInputNode &&
+    Boolean(legacyOnUserInputSubmit) &&
+    activeUserInputRequestId !== null;
 
   const scrollToAnchor = useCallback((messageId: string) => {
     const node = messageNodeByIdRef.current.get(messageId);
@@ -1807,6 +1813,7 @@ export const Messages = memo(function Messages({
           handleCopyMessage={handleCopyMessage}
           handleExitPlanModeExecuteForItem={handleExitPlanModeExecuteForItem}
           heartbeatPulse={heartbeatPulse}
+          isHistoryLoading={isHistoryLoading}
           isThinking={isThinking}
           isWorking={isWorking}
           lastDurationMs={lastDurationMs}
@@ -1837,6 +1844,7 @@ export const Messages = memo(function Messages({
           streamActivityPhase={streamActivityPhase}
           threadId={threadId}
           toggleExpanded={toggleExpanded}
+          hasVisibleUserInputRequest={hasVisibleUserInputRequest}
           userInputNode={userInputNode}
           visibleCollapsedHistoryItemCount={presentationCollapsedHistoryItemCount}
           waitingForFirstChunk={waitingForFirstChunk}

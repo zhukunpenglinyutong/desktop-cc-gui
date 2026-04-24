@@ -1777,6 +1777,8 @@ const enPart1 = {
     queue: "Queue",
     send: "Send",
     emptyThread: "Start a thread and send a prompt to the agent.",
+    restoringHistory: "Restoring conversation history…",
+    restoringHistoryHint: "Codex is loading the local transcript and session state.",
     generatingResponse: "Generating response...",
     nonStreamingHint: "This model may return non-streaming output, or the network may be unreachable. Please wait...",
     proxyBadge: "Proxy",

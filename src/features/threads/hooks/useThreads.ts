@@ -63,6 +63,19 @@ const CLAUDE_REALTIME_HISTORY_RECONCILE_RETRY_DELAY_MS = 2_800;
 const THREAD_ITEM_CACHE_MAX = 12;
 const THREAD_ITEM_CACHE_TRIM_WATERMARK = 2;
 
+function isCodexHistorySelectionThreadId(threadId: string) {
+  const normalizedThreadId = threadId.trim().toLowerCase();
+  if (!normalizedThreadId || normalizedThreadId.includes("-pending-")) {
+    return false;
+  }
+  return (
+    !normalizedThreadId.startsWith("shared:") &&
+    !normalizedThreadId.startsWith("claude:") &&
+    !normalizedThreadId.startsWith("gemini:") &&
+    !normalizedThreadId.startsWith("opencode:")
+  );
+}
+
 /** 回合级记忆待合并数据（输入侧采集后暂存，等输出侧压缩后融合写入） */
 type PendingMemoryCapture = {
   workspaceId: string;
@@ -560,6 +573,7 @@ export function useThreads({
   const lazyResumeTimerByWorkspaceRef = useRef<
     Record<string, ReturnType<typeof setTimeout> | null>
   >({});
+  const historyLoadingThreadByWorkspaceRef = useRef<Record<string, string | null>>({});
   const activeThreadIdByWorkspaceRef = useRef(state.activeThreadIdByWorkspace);
   const replaceOnResumeRef = useRef<Record<string, boolean>>({});
   const pendingInterruptsRef = useRef<Set<string>>(new Set());
@@ -692,6 +706,7 @@ export function useThreads({
         }
       });
       lazyResumeTimerByWorkspaceRef.current = {};
+      historyLoadingThreadByWorkspaceRef.current = {};
       Object.values(sharedSessionSyncTimerByThreadRef.current).forEach((timer) => {
         if (timer) {
           clearTimeout(timer);
@@ -923,6 +938,8 @@ export function useThreads({
     loadOlderThreadsForWorkspace,
     deleteThreadForWorkspace,
     renameThreadTitleMapping,
+    setThreadHistoryLoading,
+    historyLoadingByThreadId,
   } = useThreadActions({
     dispatch,
     itemsByThread: state.itemsByThread,
@@ -1910,12 +1927,32 @@ export function useThreads({
       if (!targetId) {
         return;
       }
+      const clearHistoryLoadingForThread = (targetThreadId: string | null) => {
+        if (!targetThreadId) {
+          return;
+        }
+        setThreadHistoryLoading(targetThreadId, false);
+        if (historyLoadingThreadByWorkspaceRef.current[targetId] === targetThreadId) {
+          historyLoadingThreadByWorkspaceRef.current[targetId] = null;
+        }
+      };
       const canonicalThreadId = threadId ? resolveCanonicalThreadId(threadId) : null;
       dispatch({ type: "setActiveThreadId", workspaceId: targetId, threadId: canonicalThreadId });
       const previousTimer = lazyResumeTimerByWorkspaceRef.current[targetId];
       if (previousTimer) {
         clearTimeout(previousTimer);
         lazyResumeTimerByWorkspaceRef.current[targetId] = null;
+      }
+      const previousHistoryLoadingThreadId =
+        historyLoadingThreadByWorkspaceRef.current[targetId] ?? null;
+      if (
+        previousHistoryLoadingThreadId &&
+        previousHistoryLoadingThreadId !== canonicalThreadId
+      ) {
+        clearHistoryLoadingForThread(previousHistoryLoadingThreadId);
+      }
+      if (!canonicalThreadId) {
+        return;
       }
       if (canonicalThreadId) {
         const now = Date.now();
@@ -1930,21 +1967,34 @@ export function useThreads({
           isLoaded && !isProcessing && now - lastRefreshAt >= THREAD_SWITCH_LOADED_REFRESH_MS;
         const shouldScheduleResume = !isLoaded || shouldRefreshLoaded;
         if (!shouldScheduleResume) {
+          clearHistoryLoadingForThread(canonicalThreadId);
           return;
+        }
+        const shouldShowHistoryLoading =
+          !isLoaded && isCodexHistorySelectionThreadId(canonicalThreadId);
+        if (shouldShowHistoryLoading) {
+          setThreadHistoryLoading(canonicalThreadId, true);
+          historyLoadingThreadByWorkspaceRef.current[targetId] = canonicalThreadId;
+        } else {
+          clearHistoryLoadingForThread(canonicalThreadId);
         }
         lazyResumeTimerByWorkspaceRef.current[targetId] = setTimeout(() => {
           lazyResumeTimerByWorkspaceRef.current[targetId] = null;
           const activeThreadIdForWorkspace =
             activeThreadIdByWorkspaceRef.current[targetId] ?? null;
           if (activeThreadIdForWorkspace !== canonicalThreadId) {
+            clearHistoryLoadingForThread(canonicalThreadId);
             return;
           }
           const loadedAtCallback = Boolean(loadedThreadsRef.current[canonicalThreadId]);
           if (!loadedAtCallback) {
             loadedThreadLastRefreshAtRef.current[canonicalThreadId] = Date.now();
-            void resumeThreadForWorkspace(targetId, canonicalThreadId);
+            void resumeThreadForWorkspace(targetId, canonicalThreadId).finally(() => {
+              clearHistoryLoadingForThread(canonicalThreadId);
+            });
             return;
           }
+          clearHistoryLoadingForThread(canonicalThreadId);
           const processingAtCallback = Boolean(
             threadStatusByIdRef.current[canonicalThreadId]?.isProcessing,
           );
@@ -1961,7 +2011,13 @@ export function useThreads({
         }, THREAD_SWITCH_RESUME_DELAY_MS);
       }
     },
-    [activeWorkspaceId, dispatch, resolveCanonicalThreadId, resumeThreadForWorkspace],
+    [
+      activeWorkspaceId,
+      dispatch,
+      resolveCanonicalThreadId,
+      resumeThreadForWorkspace,
+      setThreadHistoryLoading,
+    ],
   );
 
   useEffect(() => {
@@ -2390,6 +2446,7 @@ export function useThreads({
     threadsByWorkspace: state.threadsByWorkspace,
     threadParentById: state.threadParentById,
     threadStatusById: state.threadStatusById,
+    historyLoadingByThreadId,
     threadListLoadingByWorkspace: state.threadListLoadingByWorkspace,
     threadListPagingByWorkspace: state.threadListPagingByWorkspace,
     threadListCursorByWorkspace: state.threadListCursorByWorkspace,

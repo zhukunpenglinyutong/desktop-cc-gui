@@ -77,6 +77,7 @@ type MessagesTimelineProps = {
     mode: Extract<AccessMode, "default" | "full-access">,
   ) => Promise<void>;
   heartbeatPulse: number;
+  isHistoryLoading: boolean;
   isThinking: boolean;
   isWorking: boolean;
   lastDurationMs: number | null;
@@ -117,6 +118,7 @@ type MessagesTimelineProps = {
   streamActivityPhase: "idle" | "waiting" | "ingress";
   threadId: string | null;
   toggleExpanded: (id: string) => void;
+  hasVisibleUserInputRequest: boolean;
   userInputNode: ReactNode;
   visibleCollapsedHistoryItemCount: number;
   waitingForFirstChunk: boolean;
@@ -146,6 +148,7 @@ export function MessagesTimeline({
   handleCopyMessage,
   handleExitPlanModeExecuteForItem,
   heartbeatPulse,
+  isHistoryLoading,
   isThinking,
   isWorking,
   lastDurationMs,
@@ -176,6 +179,7 @@ export function MessagesTimeline({
   streamActivityPhase,
   threadId,
   toggleExpanded,
+  hasVisibleUserInputRequest,
   userInputNode,
   visibleCollapsedHistoryItemCount,
   waitingForFirstChunk,
@@ -514,10 +518,24 @@ export function MessagesTimeline({
           presentationProfile={presentationProfile}
           streamActivityPhase={streamActivityPhase}
         />
-        {!effectiveItemsCount && !userInputNode && (
-          <div className="empty messages-empty">
-            {t("messages.emptyThread")}
-          </div>
+        {!effectiveItemsCount && !hasVisibleUserInputRequest && (
+          isHistoryLoading ? (
+            <div
+              className="empty messages-empty messages-history-loading"
+              role="status"
+              aria-live="polite"
+            >
+              <span className="working-spinner" aria-hidden="true" />
+              <div className="messages-history-loading-copy">
+                <strong>{t("messages.restoringHistory")}</strong>
+                <span>{t("messages.restoringHistoryHint")}</span>
+              </div>
+            </div>
+          ) : (
+            <div className="empty messages-empty">
+              {t("messages.emptyThread")}
+            </div>
+          )
         )}
         {approvalNode}
         <div ref={bottomRef} />

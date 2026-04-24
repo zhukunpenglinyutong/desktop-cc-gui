@@ -2,7 +2,7 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { WorkspaceInfo } from "../../../types";
-import { deleteCodexSessions, listThreads } from "../../../services/tauri";
+import { deleteCodexSessions, listThreads, resumeThread } from "../../../services/tauri";
 import { writeClientStoreData, writeClientStoreValue } from "../../../services/clientStorage";
 import type { useAppServerEvents } from "../../app/hooks/useAppServerEvents";
 import { useThreads } from "./useThreads";
@@ -147,6 +147,121 @@ describe("useThreads sidebar cache", () => {
         expect.objectContaining({ id: "thread-2" }),
       ]);
     });
+  });
+
+  it("tracks Codex history loading while selecting an unloaded thread", async () => {
+    vi.useFakeTimers();
+    let resolveResume:
+      | ((value: {
+          result: {
+            thread: {
+              id: string;
+              preview: string;
+              updated_at: number;
+              turns: unknown[];
+            };
+          };
+        }) => void)
+      | null = null;
+    vi.mocked(resumeThread).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveResume = resolve;
+        }) as never,
+    );
+
+    try {
+      const { result } = renderHook(() =>
+        useThreads({
+          activeWorkspace: workspace,
+          onWorkspaceConnected: vi.fn(),
+        }),
+      );
+
+      act(() => {
+        result.current.setActiveThreadId("thread-history");
+      });
+
+      expect(result.current.historyLoadingByThreadId["thread-history"]).toBe(true);
+
+      await act(async () => {
+        vi.advanceTimersByTime(50);
+      });
+
+      expect(vi.mocked(resumeThread)).toHaveBeenCalledWith("ws-1", "thread-history");
+      expect(result.current.historyLoadingByThreadId["thread-history"]).toBe(true);
+
+      await act(async () => {
+        resolveResume?.({
+          result: {
+            thread: {
+              id: "thread-history",
+              preview: "Loaded thread",
+              updated_at: 456,
+              turns: [],
+            },
+          },
+        });
+        await Promise.resolve();
+      });
+
+      expect(result.current.historyLoadingByThreadId["thread-history"]).toBeUndefined();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("does not mark pending Codex threads as history loading", () => {
+    vi.useFakeTimers();
+
+    try {
+      const { result } = renderHook(() =>
+        useThreads({
+          activeWorkspace: workspace,
+          onWorkspaceConnected: vi.fn(),
+        }),
+      );
+
+      act(() => {
+        result.current.setActiveThreadId("codex-pending-1");
+      });
+
+      expect(result.current.historyLoadingByThreadId["codex-pending-1"]).toBeUndefined();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("clears Codex history loading after resume failure", async () => {
+    vi.useFakeTimers();
+    vi.mocked(resumeThread).mockRejectedValue(new Error("resume failed"));
+
+    try {
+      const { result } = renderHook(() =>
+        useThreads({
+          activeWorkspace: workspace,
+          onWorkspaceConnected: vi.fn(),
+        }),
+      );
+
+      act(() => {
+        result.current.setActiveThreadId("thread-history-error");
+      });
+
+      expect(result.current.historyLoadingByThreadId["thread-history-error"]).toBe(true);
+
+      await act(async () => {
+        vi.advanceTimersByTime(50);
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+
+      expect(
+        result.current.historyLoadingByThreadId["thread-history-error"],
+      ).toBeUndefined();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("batch deletes codex sessions through the settings fast path", async () => {

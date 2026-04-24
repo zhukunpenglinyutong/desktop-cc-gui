@@ -451,6 +451,36 @@
   width: 100%;
 }
 
+.messages-history-loading {
+  min-height: 220px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  color: var(--text-fainter);
+}
+
+.messages-history-loading .working-spinner {
+  flex: 0 0 auto;
+}
+
+.messages-history-loading-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.messages-history-loading-copy strong {
+  color: var(--text-stronger);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.messages-history-loading-copy span {
+  font-size: 12px;
+  line-height: 1.5;
+}
+
 .working {
   display: inline-flex;
   align-items: center;
