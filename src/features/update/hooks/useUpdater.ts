@@ -32,6 +32,11 @@ type UseUpdaterOptions = {
   onDebug?: (entry: DebugEntry) => void;
 };
 
+type CheckForUpdatesOptions = {
+  announceNoUpdate?: boolean;
+  interactive?: boolean;
+};
+
 const AUTO_UPDATE_ENABLED = true;
 
 export function useUpdater({ enabled = true, onDebug }: UseUpdaterOptions) {
@@ -40,6 +45,7 @@ export function useUpdater({ enabled = true, onDebug }: UseUpdaterOptions) {
   const [state, setState] = useState<UpdateState>({ stage: "idle" });
   const updateRef = useRef<Update | null>(null);
   const latestTimeoutRef = useRef<number | null>(null);
+  const checkRequestIdRef = useRef(0);
   const latestToastDurationMs = 2000;
 
   const clearLatestTimeout = useCallback(() => {
@@ -49,24 +55,44 @@ export function useUpdater({ enabled = true, onDebug }: UseUpdaterOptions) {
     }
   }, []);
 
+  const invalidatePendingChecks = useCallback(() => {
+    checkRequestIdRef.current += 1;
+  }, []);
+
   const resetToIdle = useCallback(async () => {
+    invalidatePendingChecks();
     clearLatestTimeout();
     const update = updateRef.current;
     updateRef.current = null;
     setState({ stage: "idle" });
     await update?.close();
-  }, [clearLatestTimeout]);
+  }, [clearLatestTimeout, invalidatePendingChecks]);
 
-  const checkForUpdates = useCallback(async (options?: { announceNoUpdate?: boolean }) => {
+  const checkForUpdates = useCallback(async (options?: CheckForUpdatesOptions) => {
+    const requestId = checkRequestIdRef.current + 1;
+    checkRequestIdRef.current = requestId;
     let update: Awaited<ReturnType<typeof check>> | null = null;
+    const isStaleRequest = () => checkRequestIdRef.current !== requestId;
+
     try {
       clearLatestTimeout();
       setState({ stage: "checking" });
       update = await check();
+      if (isStaleRequest()) {
+        return;
+      }
+
       if (!update) {
+        const currentUpdate = updateRef.current;
+        updateRef.current = null;
+        await currentUpdate?.close();
+
         if (options?.announceNoUpdate) {
           setState({ stage: "latest" });
           latestTimeoutRef.current = window.setTimeout(() => {
+            if (checkRequestIdRef.current !== requestId) {
+              return;
+            }
             latestTimeoutRef.current = null;
             setState({ stage: "idle" });
           }, latestToastDurationMs);
@@ -76,12 +102,20 @@ export function useUpdater({ enabled = true, onDebug }: UseUpdaterOptions) {
         return;
       }
 
+      const currentUpdate = updateRef.current;
       updateRef.current = update;
+      if (currentUpdate && currentUpdate !== update) {
+        await currentUpdate.close();
+      }
       setState({
         stage: "available",
         version: update.version,
       });
     } catch (error) {
+      if (isStaleRequest()) {
+        return;
+      }
+
       const message =
         error instanceof Error ? error.message : JSON.stringify(error);
       onDebug?.({
@@ -91,9 +125,13 @@ export function useUpdater({ enabled = true, onDebug }: UseUpdaterOptions) {
         label: "updater/error",
         payload: message,
       });
-      setState({ stage: "error", error: message });
+      setState(
+        options?.interactive
+          ? { stage: "error", error: message }
+          : { stage: "idle" },
+      );
     } finally {
-      if (!updateRef.current) {
+      if (isStaleRequest() || !updateRef.current) {
         await update?.close();
       }
     }
@@ -102,7 +140,7 @@ export function useUpdater({ enabled = true, onDebug }: UseUpdaterOptions) {
   const startUpdate = useCallback(async () => {
     const update = updateRef.current;
     if (!update) {
-      await checkForUpdates();
+      await checkForUpdates({ announceNoUpdate: true, interactive: true });
       return;
     }
 
@@ -178,9 +216,13 @@ export function useUpdater({ enabled = true, onDebug }: UseUpdaterOptions) {
 
   useEffect(() => {
     return () => {
+      invalidatePendingChecks();
       clearLatestTimeout();
+      const update = updateRef.current;
+      updateRef.current = null;
+      void update?.close();
     };
-  }, [clearLatestTimeout]);
+  }, [clearLatestTimeout, invalidatePendingChecks]);
 
   return {
     state,

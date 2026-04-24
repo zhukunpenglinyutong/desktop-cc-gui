@@ -28,6 +28,7 @@ dist-ssr
 release-local
 CLAUDE.md
 .claude.github/workflows/release.yml
+.spec-workflow
 
 # AI workflow local-only state
 .claude/settings.local.json

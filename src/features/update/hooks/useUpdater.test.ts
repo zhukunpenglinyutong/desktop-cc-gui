@@ -21,6 +21,16 @@ vi.mock("@tauri-apps/plugin-process", () => ({
 const checkMock = vi.mocked(check);
 const relaunchMock = vi.mocked(relaunch);
 
+function createDeferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+}
+
 describe("useUpdater", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -52,12 +62,39 @@ describe("useUpdater", () => {
     );
   });
 
-  it("returns to idle when no update is available", async () => {
+  it("keeps background update check failures silent", async () => {
+    checkMock.mockRejectedValue(new Error("network down"));
+    const onDebug = vi.fn();
+    const { result } = renderHook(() => useUpdater({ onDebug }));
+
+    await act(async () => {
+      await result.current.checkForUpdates();
+    });
+
+    expect(checkMock).toHaveBeenCalledTimes(1);
+    expect(result.current.state.stage).toBe("idle");
+    expect(result.current.state.error).toBeUndefined();
+    expect(onDebug).toHaveBeenCalledWith(
+      expect.objectContaining({
+        label: "updater/error",
+        payload: "network down",
+      } satisfies Partial<DebugEntry>),
+    );
+  });
+
+  it("announces latest and auto-dismisses when a manual check finds no update", async () => {
+    vi.useFakeTimers();
     checkMock.mockResolvedValue(null);
     const { result } = renderHook(() => useUpdater({}));
 
     await act(async () => {
       await result.current.startUpdate();
+    });
+
+    expect(result.current.state.stage).toBe("latest");
+
+    await act(async () => {
+      vi.advanceTimersByTime(2000);
     });
 
     expect(result.current.state.stage).toBe("idle");
@@ -171,5 +208,40 @@ describe("useUpdater", () => {
         payload: "download failed",
       } satisfies Partial<DebugEntry>),
     );
+  });
+
+  it("ignores stale check results from older requests", async () => {
+    vi.useFakeTimers();
+    const staleCheck = createDeferred<null>();
+    checkMock
+      .mockImplementationOnce(() => staleCheck.promise)
+      .mockResolvedValueOnce(null);
+
+    const { result } = renderHook(() => useUpdater({}));
+    let firstCheckPromise: Promise<void> | null = null;
+
+    await act(async () => {
+      firstCheckPromise = result.current.checkForUpdates();
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      await result.current.checkForUpdates({ announceNoUpdate: true, interactive: true });
+    });
+
+    expect(result.current.state.stage).toBe("latest");
+
+    await act(async () => {
+      staleCheck.reject(new Error("stale failure"));
+      await firstCheckPromise;
+    });
+
+    expect(result.current.state.stage).toBe("latest");
+
+    await act(async () => {
+      vi.advanceTimersByTime(2000);
+    });
+
+    expect(result.current.state.stage).toBe("idle");
   });
 });
