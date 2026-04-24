@@ -716,6 +716,162 @@ describe("Messages live behavior", () => {
     });
   });
 
+  it("can collapse the sticky header into a right-side peek tab and expand it again", async () => {
+    const items: ConversationItem[] = [
+      {
+        id: "user-sticky-toggle",
+        kind: "message",
+        role: "user",
+        text: "这是一个可以收起的悬浮问题条",
+      },
+      {
+        id: "assistant-sticky-toggle",
+        kind: "message",
+        role: "assistant",
+        text: "这是回答",
+      },
+    ];
+
+    const { container } = render(
+      <Messages
+        items={items}
+        threadId="thread-sticky-toggle"
+        workspaceId="ws-1"
+        isThinking={false}
+        openTargets={[]}
+        selectedOpenAppId=""
+      />,
+    );
+
+    const scroller = getMessagesScroller(container);
+    setMessageOffsetTop(container, "user-sticky-toggle", 20);
+
+    await scrollMessages(scroller, 20);
+
+    const stickyHeader = await waitFor(() => {
+      const node = container.querySelector(".messages-history-sticky-header");
+      expect(node).toBeTruthy();
+      return node as HTMLElement;
+    });
+
+    expect(stickyHeader.getAttribute("data-history-sticky-collapsed")).toBe("false");
+
+    const collapseButton = container.querySelector(
+      '[data-history-sticky-toggle="collapse"]',
+    ) as HTMLButtonElement | null;
+    expect(collapseButton).toBeTruthy();
+
+    fireEvent.click(collapseButton!);
+
+    await waitFor(() => {
+      expect(stickyHeader.getAttribute("data-history-sticky-collapsed")).toBe("true");
+    });
+
+    expect(
+      container.querySelector('[data-history-sticky-toggle="collapse"]'),
+    ).toBeNull();
+
+    const expandButton = container.querySelector(
+      '[data-history-sticky-toggle="expand"]',
+    ) as HTMLButtonElement | null;
+    expect(expandButton).toBeTruthy();
+
+    fireEvent.click(expandButton!);
+
+    await waitFor(() => {
+      expect(stickyHeader.getAttribute("data-history-sticky-collapsed")).toBe("false");
+    });
+
+    expect(
+      container.querySelector('[data-history-sticky-toggle="expand"]'),
+    ).toBeNull();
+  });
+
+  it("resets sticky header collapse state when switching threads", async () => {
+    const items: ConversationItem[] = [
+      {
+        id: "user-sticky-thread-a",
+        kind: "message",
+        role: "user",
+        text: "线程 A 的问题",
+      },
+      {
+        id: "assistant-sticky-thread-a",
+        kind: "message",
+        role: "assistant",
+        text: "线程 A 的回答",
+      },
+    ];
+
+    const { container, rerender } = render(
+      <Messages
+        items={items}
+        threadId="thread-sticky-a"
+        workspaceId="ws-1"
+        isThinking={false}
+        openTargets={[]}
+        selectedOpenAppId=""
+      />,
+    );
+
+    const scroller = getMessagesScroller(container);
+    setMessageOffsetTop(container, "user-sticky-thread-a", 18);
+    await scrollMessages(scroller, 18);
+
+    const collapseButton = await waitFor(() => {
+      const node = container.querySelector(
+        '[data-history-sticky-toggle="collapse"]',
+      ) as HTMLButtonElement | null;
+      expect(node).toBeTruthy();
+      return node as HTMLButtonElement;
+    });
+
+    fireEvent.click(collapseButton);
+
+    await waitFor(() => {
+      expect(
+        container
+          .querySelector(".messages-history-sticky-header")
+          ?.getAttribute("data-history-sticky-collapsed"),
+      ).toBe("true");
+    });
+
+    rerender(
+      <Messages
+        items={[
+          {
+            id: "user-sticky-thread-b",
+            kind: "message",
+            role: "user",
+            text: "线程 B 的问题",
+          },
+          {
+            id: "assistant-sticky-thread-b",
+            kind: "message",
+            role: "assistant",
+            text: "线程 B 的回答",
+          },
+        ]}
+        threadId="thread-sticky-b"
+        workspaceId="ws-1"
+        isThinking={false}
+        openTargets={[]}
+        selectedOpenAppId=""
+      />,
+    );
+
+    setMessageOffsetTop(container, "user-sticky-thread-b", 18);
+    await scrollMessages(scroller, 18);
+
+    await waitFor(() => {
+      expect(
+        container
+          .querySelector(".messages-history-sticky-header")
+          ?.getAttribute("data-history-sticky-collapsed"),
+      ).toBe("false");
+    });
+  });
+
   it("uses history-style sticky handoff when scrolling back to earlier sections during realtime processing", async () => {
     const items: ConversationItem[] = [
       {

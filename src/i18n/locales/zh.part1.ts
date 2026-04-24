@@ -1849,6 +1849,8 @@ const zhPart1 = {
     collapseMiddleStepsEnable: "默认折叠中间输出过程",
     collapseMiddleStepsDisable: "展开中间输出过程",
     middleStepsCollapsedHint: "已折叠 {{count}} 条中间步骤（实时中）",
+    collapseStickyHeader: "隐藏悬浮问题条",
+    expandStickyHeader: "展开悬浮问题条",
   },
 
   // 编辑器

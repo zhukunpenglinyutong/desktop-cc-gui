@@ -1850,6 +1850,8 @@ const enPart1 = {
     collapseMiddleStepsEnable: "Collapse intermediate output by default",
     collapseMiddleStepsDisable: "Expand intermediate output",
     middleStepsCollapsedHint: "{{count}} middle steps are collapsed during live mode",
+    collapseStickyHeader: "Hide sticky question bar",
+    expandStickyHeader: "Show sticky question bar",
   },
 
   // Composer
