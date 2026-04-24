@@ -1639,3 +1639,76 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 166: 修复 Claude 长文实时渲染与门禁回归
+
+**Date**: 2026-04-24
+**Task**: 修复 Claude 长文实时渲染与门禁回归
+**Branch**: `feature/v-0.4.8`
+
+### Summary
+
+(Add summary)
+
+### Main Changes
+
+| 项目 | 说明 |
+|------|------|
+| 目标 | 修复 Claude Code 长对话中最终长文一次性冒出、completed 后重复追加，以及幕布层 reasoning / assistant 可见性断裂 |
+| OpenSpec | `fix-claude-long-markdown-progressive-reveal` |
+| 范围 | Claude runtime forwarder、conversation assembler、messages curtain、thread history reconcile、测试门禁收尾 |
+
+**主要改动**:
+- 在 Rust runtime 中为 Claude realtime 的 reasoning 与 assistant text 拆分独立 render lane，避免 provider 复用同一 native item id 时在幕布层互相覆盖。
+- 在 `conversationAssembler` 与 history hydrate 中改为按 `kind + id` 做 identity / dedupe，保证 realtime 与 history parity。
+- 为 Claude `text_delta` 与最终 assistant snapshot 增加 emitted-text tracker，避免 completed 前后整段正文重复追加。
+- 扩展 Claude markdown stall recovery 与 `refreshThread()` history reconcile，修复长文中段停滞、收尾重复与 completed 态脏尾巴。
+- 按 large-file governance 将 `useThreadActions.test.tsx` 拆为主文件、Claude history 专项文件、native session bridge 专项文件，消除 hard gate 并移出 near-threshold watch。
+- 修复 `FileTreePanel` lazy-load retry 的 ref/state 竞争，避免失败后快速重试被错误短路。
+
+**涉及模块**:
+- `src-tauri/src/engine/commands.rs`
+- `src-tauri/src/bin/cc_gui_daemon/daemon_state.rs`
+- `src-tauri/src/engine/events.rs`
+- `src-tauri/src/engine/claude.rs`
+- `src-tauri/src/engine/claude/event_conversion.rs`
+- `src/features/threads/contracts/conversationAssembler.ts`
+- `src/features/messages/components/Messages.tsx`
+- `src/features/threads/hooks/useThreads.ts`
+- `src/features/threads/hooks/useThreadActions*.tsx`
+- `src/features/files/components/FileTreePanel.tsx`
+- `openspec/changes/fix-claude-long-markdown-progressive-reveal/**`
+
+**验证结果**:
+- [OK] `npm exec vitest run src/features/threads/hooks/useThreadActions.test.tsx src/features/threads/hooks/useThreadActions.claude-history.test.tsx src/features/threads/hooks/useThreadActions.native-session-bridges.test.tsx`
+- [OK] `npm exec -- vitest run src/features/files/components/FileTreePanel.run.test.tsx`
+- [OK] `npm run check:large-files:near-threshold`
+- [OK] `npm run check:large-files:gate`
+- [OK] `npm run check:heavy-test-noise`
+- [OK] `npm run lint`
+- [OK] `npm run typecheck`
+- [OK] `cargo test --manifest-path src-tauri/Cargo.toml convert_event_ -- --nocapture`
+- [OK] `git diff --check`
+
+**后续事项**:
+- 可以继续做人工长对话回归，重点观察 Claude 长文幕布增长是否稳定，以及 completed 后是否仍有重复段。
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `1571d17c` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
