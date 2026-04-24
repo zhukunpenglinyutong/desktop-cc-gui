@@ -41,7 +41,7 @@ export function useUpdaterController({
   );
 
   useTauriEvent(subscribeUpdaterCheckEvent, () => {
-    void checkForUpdates({ announceNoUpdate: true });
+    void checkForUpdates({ announceNoUpdate: true, interactive: true });
   });
 
   useAgentSoundNotifications({
