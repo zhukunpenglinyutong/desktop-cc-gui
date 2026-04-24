@@ -30,4 +30,4 @@
 - [x] 5.1 [P0] 运行 targeted Vitest：`streamLatencyDiagnostics` + `MessagesRows.stream-mitigation` + `Messages` live behavior + completed duplicate collapse。
 - [x] 5.2 [P0] 运行 targeted `cargo test`，覆盖 Claude streamed delta / final snapshot 收敛。
 - [x] 5.3 [P1] 运行 `npm run typecheck`。
-- [ ] 5.4 [P1] 人工桌面检查 Claude 长对话：确认中后段不再长期停在短文案，末尾不再整段重复，completed 后仍回到最终 Markdown。
+- [x] 5.4 [P1] 人工桌面检查 Claude 长对话：确认中后段不再长期停在短文案，末尾不再整段重复，completed 后仍回到最终 Markdown。

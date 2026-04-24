@@ -18,7 +18,7 @@
 
 ## 4. Validation
 
-- [x] 4.1 [P0][depends:1.1,2.3,3.1][I: affected frontend modules][O: targeted Vitest pass][V: `npm exec vitest run <targeted test files>`] Run targeted diagnostics/render tests.
+- [ ] 4.1 [P0][depends:1.1,2.3,3.1][I: affected frontend modules][O: targeted Vitest pass][V: `npm exec vitest run <targeted test files>`] Run targeted diagnostics/render tests.
 - [x] 4.2 [P1][depends:4.1][I: TypeScript frontend][O: type safety pass][V: `npm run typecheck`] Run typecheck after implementation.
 - [ ] 4.3 [P1][depends:4.1][I: Windows native Claude Code environment][O: manual matrix result][V: first delta and intermediate text visibly progress before completion] Manually verify Windows native Claude Code streaming. Blocked in this macOS session; requires a Windows native Claude Code run.
 - [ ] 4.4 [P1][depends:4.3][I: macOS Claude and non-Claude control paths][O: control matrix result][V: macOS and other engines remain baseline] Verify no cross-engine/platform regression. Pending after Windows manual matrix; automated non-Claude/macOS guard tests pass.
