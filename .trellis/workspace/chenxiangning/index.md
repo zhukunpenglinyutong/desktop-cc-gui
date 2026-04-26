@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-6.md`
-- **Total Sessions**: 187
+- **Total Sessions**: 188
 - **Last Active**: 2026-04-27
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-6.md` | ~989 | Active |
+| `journal-6.md` | ~1047 | Active |
 | `journal-5.md` | ~1949 | Archived |
 | `journal-4.md` | ~1975 | Archived |
 | `journal-3.md` | ~1972 | Archived |
@@ -34,6 +34,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 188 | 2026-04-27 | 收窄吸顶折叠把手 | `13f388ee` | `feature/v0.4.9` |
 | 187 | 2026-04-27 | 完成工作区变更多次提交化与功能拆分 | `cc74d44b` | `feature/v0.4.9` |
 | 186 | 2026-04-26 | 修复 0.4.9 边界审查问题 | `06678e28` | `feature/v0.4.9` |
 | 185 | 2026-04-26 | 修复 Windows UNC 图片路径解析 | `e06fd7541d2f94acab04a736e62594862fd67c56` | `feature/v0.4.9` |

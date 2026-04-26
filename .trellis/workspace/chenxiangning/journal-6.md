@@ -987,3 +987,61 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 188: 收窄吸顶折叠把手
+
+**Date**: 2026-04-27
+**Task**: 收窄吸顶折叠把手
+**Branch**: `feature/v0.4.9`
+
+### Summary
+
+调整用户对话幕布吸顶折叠态为右侧贴边直角抽屉把手。
+
+### Main Changes
+
+任务目标：
+- 用户对话幕布吸顶条折叠后，右上角按钮需要更贴近右侧边缘。
+- 折叠按钮从胶囊/半圆形改为更窄的直角抽屉把手，并加粗把手线条。
+
+主要改动：
+- `src/styles/messages.history-sticky.css`
+  - 折叠态补偿外层 main panel padding，让按钮视觉上贴到幕布右边缘。
+  - 将折叠按钮收窄到 16px，并移除宽标题占位与 translate 偏移。
+  - 改为直角抽屉把手样式，通过 `::before` 绘制 5px 加粗竖向把手。
+  - 折叠态隐藏原 SVG 并移出布局，避免 invisible SVG 继续撑宽。
+- `src/styles/layout-swapped-platform-guard.test.ts`
+  - 补充 CSS contract 检查，覆盖右侧贴边、宽屏补偿、16px 收窄宽度、无 transform 偏移、抽屉把手伪元素与 SVG 不占位。
+
+涉及模块：
+- frontend messages sticky header 样式。
+- CSS platform guard 测试。
+
+验证结果：
+- `npx vitest run src/styles/layout-swapped-platform-guard.test.ts src/features/messages/components/Messages.live-behavior.test.tsx` 通过。
+- `npm run typecheck` 通过。
+- `npm run check:large-files` 通过。
+- review 过程中额外运行 `npx vitest run src/features/messages/components/Messages.explore.test.tsx` 通过。
+
+后续事项：
+- 当前工作区仍有 5 个无关既有改动，未纳入本次业务提交。
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `13f388ee` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
