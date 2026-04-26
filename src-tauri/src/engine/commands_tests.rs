@@ -117,6 +117,7 @@ fn claude_model_passthrough_accepts_custom_model_ids() {
         "anthropic/claude-sonnet-4-6"
     ));
     assert!(is_valid_claude_model_for_passthrough("cxn_test.model-v1"));
+    assert!(is_valid_claude_model_for_passthrough("claude-opus-4-6[1m]"));
 }
 
 #[test]
@@ -126,6 +127,7 @@ fn claude_model_passthrough_rejects_invalid_ids() {
         "bad model with spaces"
     ));
     assert!(!is_valid_claude_model_for_passthrough("bad\nmodel"));
+    assert!(!is_valid_claude_model_for_passthrough("bad\tmodel"));
     assert!(!is_valid_claude_model_for_passthrough(&"a".repeat(129)));
 }
 
