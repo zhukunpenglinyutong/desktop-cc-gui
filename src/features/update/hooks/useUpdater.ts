@@ -32,7 +32,30 @@ type UseUpdaterOptions = {
   onDebug?: (entry: DebugEntry) => void;
 };
 
+type CheckForUpdatesOptions = {
+  announceNoUpdate?: boolean;
+  interactive?: boolean;
+};
+
 const AUTO_UPDATE_ENABLED = true;
+
+function describeError(error: unknown): string {
+  if (error instanceof Error) {
+    return error.message;
+  }
+  if (typeof error === "string") {
+    return error;
+  }
+  try {
+    const serialized = JSON.stringify(error);
+    if (typeof serialized === "string" && serialized.length > 0) {
+      return serialized;
+    }
+  } catch {
+    // Fall back to String(error) for circular or host-owned objects.
+  }
+  return String(error);
+}
 
 export function useUpdater({ enabled = true, onDebug }: UseUpdaterOptions) {
   // Force disable auto update if the global flag is off
@@ -40,7 +63,11 @@ export function useUpdater({ enabled = true, onDebug }: UseUpdaterOptions) {
   const [state, setState] = useState<UpdateState>({ stage: "idle" });
   const updateRef = useRef<Update | null>(null);
   const latestTimeoutRef = useRef<number | null>(null);
+  const checkRequestIdRef = useRef(0);
+  const onDebugRef = useRef(onDebug);
   const latestToastDurationMs = 2000;
+
+  onDebugRef.current = onDebug;
 
   const clearLatestTimeout = useCallback(() => {
     if (latestTimeoutRef.current !== null) {
@@ -49,60 +76,110 @@ export function useUpdater({ enabled = true, onDebug }: UseUpdaterOptions) {
     }
   }, []);
 
+  const invalidatePendingChecks = useCallback(() => {
+    checkRequestIdRef.current += 1;
+  }, []);
+
+  const closeUpdateHandle = useCallback(async (update: Update | null | undefined) => {
+    try {
+      await update?.close();
+    } catch (error) {
+      onDebugRef.current?.({
+        id: `${Date.now()}-client-updater-close-error`,
+        timestamp: Date.now(),
+        source: "error",
+        label: "updater/close-error",
+        payload: describeError(error),
+      });
+    }
+  }, []);
+
   const resetToIdle = useCallback(async () => {
+    invalidatePendingChecks();
     clearLatestTimeout();
     const update = updateRef.current;
     updateRef.current = null;
     setState({ stage: "idle" });
-    await update?.close();
-  }, [clearLatestTimeout]);
+    await closeUpdateHandle(update);
+  }, [clearLatestTimeout, closeUpdateHandle, invalidatePendingChecks]);
 
-  const checkForUpdates = useCallback(async (options?: { announceNoUpdate?: boolean }) => {
-    let update: Awaited<ReturnType<typeof check>> | null = null;
-    try {
-      clearLatestTimeout();
-      setState({ stage: "checking" });
-      update = await check();
-      if (!update) {
-        if (options?.announceNoUpdate) {
-          setState({ stage: "latest" });
-          latestTimeoutRef.current = window.setTimeout(() => {
-            latestTimeoutRef.current = null;
-            setState({ stage: "idle" });
-          }, latestToastDurationMs);
-        } else {
-          setState({ stage: "idle" });
+  const checkForUpdates = useCallback(
+    async (options?: CheckForUpdatesOptions) => {
+      const requestId = checkRequestIdRef.current + 1;
+      checkRequestIdRef.current = requestId;
+      const isStaleRequest = () => checkRequestIdRef.current !== requestId;
+      let update: Awaited<ReturnType<typeof check>> | null = null;
+
+      try {
+        clearLatestTimeout();
+        setState({ stage: "checking" });
+        update = await check();
+
+        if (isStaleRequest()) {
+          return;
         }
-        return;
-      }
 
-      updateRef.current = update;
-      setState({
-        stage: "available",
-        version: update.version,
-      });
-    } catch (error) {
-      const message =
-        error instanceof Error ? error.message : JSON.stringify(error);
-      onDebug?.({
-        id: `${Date.now()}-client-updater-error`,
-        timestamp: Date.now(),
-        source: "error",
-        label: "updater/error",
-        payload: message,
-      });
-      setState({ stage: "error", error: message });
-    } finally {
-      if (!updateRef.current) {
-        await update?.close();
+        if (!update) {
+          const currentUpdate = updateRef.current;
+          updateRef.current = null;
+          await closeUpdateHandle(currentUpdate);
+
+          if (options?.announceNoUpdate) {
+            setState({ stage: "latest" });
+            latestTimeoutRef.current = window.setTimeout(() => {
+              if (checkRequestIdRef.current !== requestId) {
+                return;
+              }
+              latestTimeoutRef.current = null;
+              setState({ stage: "idle" });
+            }, latestToastDurationMs);
+          } else {
+            setState({ stage: "idle" });
+          }
+          return;
+        }
+
+        const currentUpdate = updateRef.current;
+        updateRef.current = update;
+        if (currentUpdate && currentUpdate !== update) {
+          await closeUpdateHandle(currentUpdate);
+        }
+
+        setState({
+          stage: "available",
+          version: update.version,
+        });
+      } catch (error) {
+        if (isStaleRequest()) {
+          return;
+        }
+
+        const message = describeError(error);
+        onDebug?.({
+          id: `${Date.now()}-client-updater-error`,
+          timestamp: Date.now(),
+          source: "error",
+          label: "updater/error",
+          payload: message,
+        });
+        setState(
+          options?.interactive
+            ? { stage: "error", error: message }
+            : { stage: "idle" },
+        );
+      } finally {
+        if (update && (isStaleRequest() || updateRef.current !== update)) {
+          await closeUpdateHandle(update);
+        }
       }
-    }
-  }, [clearLatestTimeout, onDebug]);
+    },
+    [clearLatestTimeout, closeUpdateHandle, onDebug],
+  );
 
   const startUpdate = useCallback(async () => {
     const update = updateRef.current;
     if (!update) {
-      await checkForUpdates();
+      await checkForUpdates({ announceNoUpdate: true, interactive: true });
       return;
     }
 
@@ -152,8 +229,7 @@ export function useUpdater({ enabled = true, onDebug }: UseUpdaterOptions) {
       }));
       await relaunch();
     } catch (error) {
-      const message =
-        error instanceof Error ? error.message : JSON.stringify(error);
+      const message = describeError(error);
       onDebug?.({
         id: `${Date.now()}-client-updater-error`,
         timestamp: Date.now(),
@@ -178,9 +254,13 @@ export function useUpdater({ enabled = true, onDebug }: UseUpdaterOptions) {
 
   useEffect(() => {
     return () => {
+      invalidatePendingChecks();
       clearLatestTimeout();
+      const update = updateRef.current;
+      updateRef.current = null;
+      void closeUpdateHandle(update);
     };
-  }, [clearLatestTimeout]);
+  }, [clearLatestTimeout, closeUpdateHandle, invalidatePendingChecks]);
 
   return {
     state,
