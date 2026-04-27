@@ -1697,3 +1697,57 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 200: 标记 Windows Claude 实测结果
+
+**Date**: 2026-04-27
+**Task**: 标记 Windows Claude 实测结果
+**Branch**: `feature/v0.4.9`
+
+### Summary
+
+(Add summary)
+
+### Main Changes
+
+任务目标：
+- 将 Windows native Claude Code 最新人工测试结论落入 OpenSpec，明确“卡顿 / final-only burst flush”主修复归属。
+
+主要改动：
+- 在 `fix-claude-windows-streaming-latency` 中补充 2026-04-27 当前验证记录，并将 Windows manual matrix 5.3 标记为已通过。
+- 在 `fix-claude-long-thread-render-amplification` 中补充边界说明：普通对话 smoke 已正常，但长线程、prompt overflow compaction、macOS/non-Claude smoke 仍未关闭。
+- 在 `fix-windows-runtime-pool-initial-load` 中标明该 change 是 Runtime Pool 首屏 visibility/bootstrap 支撑项，不用于关闭 Claude streaming latency 验收。
+
+涉及模块：
+- OpenSpec: `fix-claude-windows-streaming-latency`
+- OpenSpec: `fix-claude-long-thread-render-amplification`
+- OpenSpec: `fix-windows-runtime-pool-initial-load`
+
+验证结果：
+- `openspec validate fix-claude-windows-streaming-latency --strict` 通过。
+- `openspec validate fix-claude-long-thread-render-amplification --strict` 通过。
+- `openspec validate fix-windows-runtime-pool-initial-load --strict` 通过。
+
+后续事项：
+- 如需完全关闭 `fix-claude-windows-streaming-latency`，仍需补 macOS Claude 与一个 non-Claude engine smoke。
+- `fix-claude-long-thread-render-amplification` 仍需长线程压力、prompt overflow compaction、macOS/non-Claude smoke。
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `7e4649aa` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
