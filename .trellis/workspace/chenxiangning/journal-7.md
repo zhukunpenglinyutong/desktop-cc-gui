@@ -781,3 +781,59 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 219: 添加邮件发送设置与测试发送
+
+**Date**: 2026-04-29
+**Task**: 添加邮件发送设置与测试发送
+**Branch**: `feature/v0.4.11`
+
+### Summary
+
+归档邮件发送设置提案并提交 SMTP 邮件设置能力
+
+### Main Changes
+
+任务目标：归档并提交邮箱相关 OpenSpec 提案，收口邮件发送设置、secret 存储、收件箱持久化与测试发送能力。
+
+主要改动：
+- 后端新增 email 模块，注册 get/update email settings 与 send test email 命令，SMTP 发送使用已保存配置和 credential store secret。
+- Settings 页面新增邮件发送配置区域，支持 provider preset、启用开关、授权码回显、收件箱保存、清除授权码与测试发送。
+- frontend typed tauri bridge、AppSettings 类型、i18n 文案与 settings 样式同步补齐。
+- OpenSpec change add-email-sending-settings 已归档到 archive/2026-04-28-add-email-sending-settings，并生成主 spec email-sending-settings。
+
+涉及模块：
+- backend: src-tauri/src/email/mod.rs, src-tauri/src/types.rs, src-tauri/src/command_registry.rs, src-tauri/src/lib.rs, src-tauri/Cargo.toml, src-tauri/Cargo.lock
+- frontend: src/features/settings/**, src/services/tauri.ts, src/types.ts, src/i18n/locales/*.part1.ts, src/styles/settings.part2.css
+- spec: openspec/specs/email-sending-settings/spec.md, openspec/changes/archive/2026-04-28-add-email-sending-settings/**
+
+验证结果：
+- cargo test --manifest-path src-tauri/Cargo.toml email：通过
+- npx vitest run src/features/settings/components/settings-view/sections/EmailSenderSettings.test.tsx：通过
+- npm run typecheck：通过
+- openspec validate --specs --strict：194 passed, 0 failed
+- openspec validate email-sending-settings --strict：通过
+- git diff --cached --check：通过
+
+后续事项：
+- 若接入自动提醒策略，需要另开 change 定义触发时机；本次只交付可复用发送能力与设置页测试发送。
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `3c65a668` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
