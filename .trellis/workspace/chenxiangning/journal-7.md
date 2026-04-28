@@ -113,3 +113,61 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 206: 回写 Windows Codex wrapper 启动规范
+
+**Date**: 2026-04-28
+**Task**: 回写 Windows Codex wrapper 启动规范
+**Branch**: `feature/v0.4.11`
+
+### Summary
+
+(Add summary)
+
+### Main Changes
+
+## 任务目标
+
+检查 `fix-windows-codex-app-server-wrapper-launch` 提案是否已正常回写到 OpenSpec 主规范，并将缺失的规范同步落库后提交。
+
+## 主要改动
+
+- 新增主规范 `openspec/specs/codex-app-server-wrapper-launch/spec.md`，沉淀 Windows `.cmd/.bat` wrapper、兼容 retry、doctor/probe 对齐与测试保护的行为契约。
+- 更新 active change delta spec，补充兼容 retry 成功后必须屏蔽 primary pre-connect failure events 的场景，避免 fallback 已连接但用户侧仍看到 primary `runtime/ended` 或 stderr 误报。
+- 保持 change artifacts 完整，便于后续归档或继续验证。
+
+## 涉及模块
+
+- OpenSpec behavior spec：`codex-app-server-wrapper-launch`
+- Active change：`fix-windows-codex-app-server-wrapper-launch`
+
+## 验证结果
+
+- `openspec validate fix-windows-codex-app-server-wrapper-launch --strict` 通过。
+- `git diff --cached --check` 通过。
+- 提交边界仅包含 OpenSpec 回写相关两个文件，未纳入工作区中其它未完成改动。
+
+## 后续事项
+
+- 若后续确认实现与规范完全稳定，可按 OpenSpec 流程归档该 change。
+- 工作区仍存在其它任务的未提交改动，需要在各自任务中单独处理。
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `16555e05256b851cc6cd2341a63b27be2ccbdbc5` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

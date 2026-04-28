@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-7.md`
-- **Total Sessions**: 205
+- **Total Sessions**: 206
 - **Last Active**: 2026-04-28
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-7.md` | ~115 | Active |
+| `journal-7.md` | ~173 | Active |
 | `journal-6.md` | ~1961 | Archived |
 | `journal-5.md` | ~1949 | Archived |
 | `journal-4.md` | ~1975 | Archived |
@@ -35,6 +35,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 206 | 2026-04-28 | 回写 Windows Codex wrapper 启动规范 | `16555e05256b851cc6cd2341a63b27be2ccbdbc5` | `feature/v0.4.11` |
 | 205 | 2026-04-28 | 修复 Windows Codex wrapper 会话启动降级 | `a3d3744b` | `feature/v0.4.11` |
 | 204 | 2026-04-27 | 补充 v0.4.9 发布说明 | `82a4b7a6c0661de6f2acac7cd8c28fb78bb87a73` | `feature/v0.4.9` |
 | 203 | 2026-04-27 | 修复失效会话手动恢复分流 | `85aaefa6` | `feature/v0.4.9` |
