@@ -124,6 +124,10 @@ type UseThreadActionsOptions = {
   useUnifiedHistoryLoader?: boolean;
 };
 
+type ResumeThreadForWorkspaceOptions = {
+  preferLocalCodexHistory?: boolean;
+};
+
 const THREAD_LIST_TARGET_COUNT = 50;
 const THREAD_LIST_PAGE_SIZE = 50;
 const THREAD_LIST_MAX_EMPTY_PAGES = 5;
@@ -363,6 +367,7 @@ export function useThreadActions({
       threadId: string,
       force = false,
       replaceLocal = false,
+      options?: ResumeThreadForWorkspaceOptions,
     ) => {
       if (!threadId) {
         return null;
@@ -424,6 +429,7 @@ export function useThreadActions({
                         workspaceId,
                         resumeThread: resumeThreadService,
                         loadCodexSession: loadCodexSessionService,
+                        preferLocalHistory: options?.preferLocalCodexHistory === true,
                       });
           const hydrateHistorySnapshot = async (
             effectiveThreadId: string,

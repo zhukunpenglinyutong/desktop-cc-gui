@@ -17,6 +17,13 @@ const UNIFIED_CODEX_MAX_THREADS: usize = 5_000;
 const UNIFIED_CODEX_MAX_PAGES: usize = 200;
 const UNIFIED_CODEX_PAGE_SIZE: u32 = 200;
 const LOCAL_SESSION_SCAN_UNAVAILABLE_PARTIAL_SOURCE: &str = "local-session-scan-unavailable";
+const CODEX_BACKGROUND_HELPER_PROMPT_PREFIXES: &[&str] = &[
+    "Generate a concise title for a coding chat thread from the first user message.",
+    "You create concise run metadata for a coding task.",
+    "You are generating OpenSpec project context.",
+    "## Memory Writing Agent: Phase 2",
+    "Memory Writing Agent: Phase 2",
+];
 
 static WORKSPACE_CODEX_SESSION_ID_CACHE: OnceLock<Mutex<HashMap<String, HashSet<String>>>> =
     OnceLock::new();
@@ -111,6 +118,52 @@ fn ensure_thread_entry_workspace_cwd(entry: &mut Map<String, Value>, workspace_p
     entry.insert("cwd".to_string(), Value::String(workspace_path.to_string()));
 }
 
+fn is_codex_background_helper_text(value: &str) -> bool {
+    let preview = value.trim();
+    if preview.is_empty() {
+        return false;
+    }
+    if CODEX_BACKGROUND_HELPER_PROMPT_PREFIXES
+        .iter()
+        .any(|prefix| preview.starts_with(prefix))
+    {
+        return true;
+    }
+    let lower = preview.to_ascii_lowercase();
+    let starts_with_memory_agent_header =
+        lower.starts_with("## memory writing agent:") || lower.starts_with("memory writing agent:");
+    starts_with_memory_agent_header
+        && (lower.contains("consolidation") || lower.contains("phase 2"))
+}
+
+fn is_codex_background_helper_thread_entry(entry: &Value) -> bool {
+    ["preview", "title", "name"].iter().any(|key| {
+        entry
+            .get(*key)
+            .and_then(Value::as_str)
+            .map(is_codex_background_helper_text)
+            .unwrap_or(false)
+    })
+}
+
+fn is_codex_background_helper_session(session: &LocalUsageSessionSummary) -> bool {
+    session
+        .summary
+        .as_deref()
+        .map(is_codex_background_helper_text)
+        .unwrap_or(false)
+}
+
+fn collect_codex_background_helper_session_identifiers(
+    local_sessions: &[LocalUsageSessionSummary],
+) -> HashSet<String> {
+    local_sessions
+        .iter()
+        .filter(|session| is_codex_background_helper_session(session))
+        .flat_map(codex_session_identifier_candidates)
+        .collect()
+}
+
 #[allow(dead_code)]
 fn thread_entry_id(entry: &Value) -> Option<String> {
     normalize_optional_string(entry.get("id").and_then(Value::as_str))
@@ -186,6 +239,7 @@ fn collect_codex_session_identifiers(
 ) -> HashSet<String> {
     local_sessions
         .iter()
+        .filter(|session| !is_codex_background_helper_session(session))
         .flat_map(codex_session_identifier_candidates)
         .collect()
 }
@@ -220,11 +274,18 @@ pub(crate) fn merge_unified_codex_thread_entries(
 ) -> Vec<Value> {
     let mut merged_entries: Vec<Value> = Vec::new();
     let mut id_to_index: HashMap<String, usize> = HashMap::new();
+    let background_helper_session_ids =
+        collect_codex_background_helper_session_identifiers(local_sessions);
 
     for entry in live_entries.drain(..) {
         let Some(id) = thread_entry_id(&entry) else {
             continue;
         };
+        if background_helper_session_ids.contains(&id)
+            || is_codex_background_helper_thread_entry(&entry)
+        {
+            continue;
+        }
         let mut entry = entry;
         if let Some(existing) = entry.as_object_mut() {
             if workspace_session_ids.contains(&id) {
@@ -245,6 +306,9 @@ pub(crate) fn merge_unified_codex_thread_entries(
     }
 
     for session in local_sessions {
+        if is_codex_background_helper_session(session) {
+            continue;
+        }
         let local_entry = build_local_codex_thread_entry(workspace_path, session);
         let ids = codex_session_identifier_candidates(session);
         let Some(_) = ids.first() else {

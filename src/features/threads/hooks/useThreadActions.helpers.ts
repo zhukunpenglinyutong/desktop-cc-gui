@@ -1,16 +1,11 @@
 import type { ConversationItem, ThreadSummary } from "../../../types";
 import { previewThreadName } from "../../../utils/threadItems";
 import { asNumber, asString } from "../utils/threadNormalize";
+import { hasCodexBackgroundHelperPreview } from "../utils/codexBackgroundHelpers";
 import { matchesWorkspacePath } from "./useThreadActions.workspacePath";
 
 const CLAUDE_HISTORY_MESSAGE_ID_REGEX =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-const CODEX_BACKGROUND_HELPER_PROMPT_PREFIXES = [
-  "Generate a concise title for a coding chat thread from the first user message.",
-  "You create concise run metadata for a coding task.",
-  "You are generating OpenSpec project context.",
-] as const;
 
 type MessageConversationItem = Extract<ConversationItem, { kind: "message" }>;
 type UserConversationMessage = MessageConversationItem & { role: "user" };
@@ -702,10 +697,7 @@ export function mergeCodexCatalogSessionSummaries(
   baseSummaries.forEach((entry) => mergedById.set(entry.id, entry));
   codexSessions.forEach((session) => {
     const title = session.title.trim();
-    if (
-      !title ||
-      CODEX_BACKGROUND_HELPER_PROMPT_PREFIXES.some((prefix) => title.startsWith(prefix))
-    ) {
+    if (!title || hasCodexBackgroundHelperPreview([title])) {
       return;
     }
     const prev = mergedById.get(session.sessionId);
@@ -952,11 +944,7 @@ function shouldIncludeThreadEntry(thread: Record<string, unknown>): boolean {
     asString(thread.title).trim(),
     asString(thread.name).trim(),
   ].filter(Boolean);
-  const isCodexHelperThread = previewCandidates.some((preview) =>
-    CODEX_BACKGROUND_HELPER_PROMPT_PREFIXES.some((prefix) =>
-      preview.startsWith(prefix),
-    ),
-  );
+  const isCodexHelperThread = hasCodexBackgroundHelperPreview(previewCandidates);
   if (isCodexHelperThread) {
     return false;
   }

@@ -236,7 +236,7 @@ describe("useThreadTurnEvents", () => {
       result.current.onThreadStarted("ws-1", {
         id: "thread-helper-1",
         preview:
-          "You are generating OpenSpec project context.\nReturn ONLY valid JSON with keys:",
+          "## Memory Writing Agent: Phase 2 (Consolidation)\n\nConsolidate raw memories.",
         updatedAt: 1_700_000_000_250,
       });
     });

@@ -2214,6 +2214,81 @@ mod tests {
     }
 
     #[test]
+    fn merge_unified_codex_thread_entries_filters_background_helper_sessions() {
+        let live_entries = vec![
+            json!({
+                "id": "thread-memory-helper",
+                "preview": "live row should be hidden through local alias",
+                "updatedAt": 120,
+                "createdAt": 120
+            }),
+            json!({
+                "id": "thread-title-helper",
+                "preview": "Generate a concise title for a coding chat thread from the first user message. Return only title text.",
+                "updatedAt": 115,
+                "createdAt": 115
+            }),
+            json!({
+                "id": "thread-visible",
+                "preview": "normal user prompt",
+                "updatedAt": 100,
+                "createdAt": 100
+            }),
+        ];
+        let local_sessions = vec![
+            LocalUsageSessionSummary {
+                session_id: "session-memory-helper".to_string(),
+                session_id_aliases: vec!["thread-memory-helper".to_string()],
+                timestamp: 125,
+                cwd: None,
+                model: "openai/gpt-5".to_string(),
+                usage: LocalUsageUsageData::default(),
+                cost: 0.0,
+                summary: Some(
+                    "## Memory Writing Agent: Phase 2 (Consolidation)\n\nConsolidate raw memories."
+                        .to_string(),
+                ),
+                source: Some("cli".to_string()),
+                provider: Some("openai".to_string()),
+                file_size_bytes: Some(2_048),
+                modified_lines: 0,
+            },
+            LocalUsageSessionSummary {
+                session_id: "thread-visible-local".to_string(),
+                session_id_aliases: Vec::new(),
+                timestamp: 90,
+                cwd: None,
+                model: "openai/gpt-5".to_string(),
+                usage: LocalUsageUsageData::default(),
+                cost: 0.0,
+                summary: Some("normal local prompt".to_string()),
+                source: Some("cli".to_string()),
+                provider: Some("openai".to_string()),
+                file_size_bytes: Some(1_024),
+                modified_lines: 0,
+            },
+        ];
+
+        let workspace_session_ids: HashSet<String> = local_sessions
+            .iter()
+            .flat_map(codex_session_identifier_candidates)
+            .collect();
+        let merged = merge_unified_codex_thread_entries(
+            live_entries,
+            &local_sessions,
+            &workspace_session_ids,
+            "/tmp/workspace",
+            10,
+        );
+        let ids = merged
+            .iter()
+            .filter_map(|entry| entry.get("id").and_then(|value| value.as_str()))
+            .collect::<Vec<_>>();
+
+        assert_eq!(ids, vec!["thread-visible", "thread-visible-local"]);
+    }
+
+    #[test]
     fn merge_unified_codex_thread_entries_does_not_backfill_cwd_for_unmapped_live_rows() {
         let live_entries = vec![json!({
             "id": "thread-live",

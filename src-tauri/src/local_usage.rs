@@ -856,7 +856,20 @@ fn parse_codex_session_summary(
                     .and_then(|value| value.as_str())
                     .unwrap_or("");
 
-                if payload_type == "custom_tool_call" {
+                if payload_type == "message" {
+                    let role = payload
+                        .get("role")
+                        .and_then(|value| value.as_str())
+                        .unwrap_or("");
+                    if role == "user" {
+                        saw_session_signal = true;
+                        if summary.is_none() {
+                            if let Some(message) = extract_codex_message_text(payload) {
+                                summary = truncate_summary(&message);
+                            }
+                        }
+                    }
+                } else if payload_type == "custom_tool_call" {
                     let tool_name = payload
                         .get("name")
                         .and_then(|value| value.as_str())
@@ -1443,6 +1456,46 @@ fn truncate_summary(text: &str) -> Option<String> {
         cleaned
     };
     Some(truncated)
+}
+
+fn extract_codex_message_text(payload: &serde_json::Map<String, Value>) -> Option<String> {
+    if let Some(text) = payload.get("content").and_then(Value::as_str) {
+        let trimmed = text.trim();
+        if !trimmed.is_empty() {
+            return Some(trimmed.to_string());
+        }
+    }
+    let mut parts: Vec<String> = Vec::new();
+    if let Some(content) = payload.get("content").and_then(Value::as_array) {
+        for item in content {
+            let Some(record) = item.as_object() else {
+                continue;
+            };
+            for key in ["text", "value", "content"] {
+                if let Some(text) = record.get(key).and_then(Value::as_str) {
+                    let trimmed = text.trim();
+                    if trimmed.is_empty() {
+                        continue;
+                    }
+                    parts.push(trimmed.to_string());
+                    break;
+                }
+            }
+        }
+    }
+    if !parts.is_empty() {
+        return Some(parts.join("\n\n"));
+    }
+    for key in ["text", "message"] {
+        if let Some(text) = payload.get(key).and_then(Value::as_str) {
+            let trimmed = text.trim();
+            if trimmed.is_empty() {
+                continue;
+            }
+            return Some(trimmed.to_string());
+        }
+    }
+    None
 }
 
 fn scan_claude_session_summaries(

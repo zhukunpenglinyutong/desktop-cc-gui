@@ -1483,6 +1483,63 @@ fn parse_codex_session_summary_keeps_metadata_only_sessions_for_size_enrichment(
 }
 
 #[test]
+fn parse_codex_session_summary_extracts_response_item_user_summary() {
+    let root = make_temp_sessions_root();
+    let day_key = "2026-01-19";
+    let workspace_path = Path::new("/tmp/project-alpha");
+    let session_path = write_named_session_file(
+        &root,
+        day_key,
+        "rollout-2026-01-19T12-00-00-memory-helper",
+        &[
+            r#"{"timestamp":"2026-01-19T12:00:00.000Z","type":"session_meta","payload":{"id":"session-memory-helper","cwd":"/tmp/project-alpha","source":"cli","provider":"openai"}}"#
+                .to_string(),
+            r###"{"timestamp":"2026-01-19T12:00:01.000Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"## Memory Writing Agent: Phase 2 (Consolidation)\n\nConsolidate raw memories."}]}}"###
+                .to_string(),
+        ],
+    );
+
+    let summary = parse_codex_session_summary(session_path.as_path(), Some(workspace_path))
+        .expect("parse summary")
+        .expect("summary exists");
+
+    assert_eq!(summary.session_id, "session-memory-helper");
+    assert!(summary
+        .summary
+        .as_deref()
+        .unwrap_or_default()
+        .starts_with("## Memory Writing Agent: Phase 2"));
+}
+
+#[test]
+fn parse_codex_session_summary_extracts_string_content_user_summary() {
+    let root = make_temp_sessions_root();
+    let day_key = "2026-01-19";
+    let workspace_path = Path::new("/tmp/project-alpha");
+    let session_path = write_named_session_file(
+        &root,
+        day_key,
+        "rollout-2026-01-19T12-05-00-string-content",
+        &[
+            r#"{"timestamp":"2026-01-19T12:05:00.000Z","type":"session_meta","payload":{"id":"session-string-content","cwd":"/tmp/project-alpha","source":"cli","provider":"openai"}}"#
+                .to_string(),
+            r#"{"timestamp":"2026-01-19T12:05:01.000Z","type":"response_item","payload":{"type":"message","role":"user","content":"string content user prompt"}}"#
+                .to_string(),
+        ],
+    );
+
+    let summary = parse_codex_session_summary(session_path.as_path(), Some(workspace_path))
+        .expect("parse summary")
+        .expect("summary exists");
+
+    assert_eq!(summary.session_id, "session-string-content");
+    assert_eq!(
+        summary.summary.as_deref(),
+        Some("string content user prompt")
+    );
+}
+
+#[test]
 fn count_apply_patch_changed_lines_counts_additions_and_deletions() {
     let patch = r#"*** Begin Patch
 *** Update File: /tmp/demo.ts

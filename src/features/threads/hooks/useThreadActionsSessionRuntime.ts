@@ -47,6 +47,7 @@ type ResumeThreadForWorkspace = (
   threadId: string,
   force?: boolean,
   replaceLocal?: boolean,
+  options?: { preferLocalCodexHistory?: boolean },
 ) => Promise<string | null>;
 
 type RewindFromMessageOptions = {

@@ -1810,7 +1810,10 @@ export function useThreads({
           const loadedAtCallback = Boolean(loadedThreadsRef.current[canonicalThreadId]);
           if (!loadedAtCallback) {
             loadedThreadLastRefreshAtRef.current[canonicalThreadId] = Date.now();
-            void resumeThreadForWorkspace(targetId, canonicalThreadId)
+            let resumeLoadingThreadId = canonicalThreadId;
+            void resumeThreadForWorkspace(targetId, canonicalThreadId, false, false, {
+              preferLocalCodexHistory: true,
+            })
               .then((recoveredThreadId) => {
                 const recoveredCanonicalThreadId = recoveredThreadId
                   ? resolveCanonicalThreadId(recoveredThreadId)
@@ -1824,6 +1827,7 @@ export function useThreads({
                   setThreadHistoryLoading(recoveredCanonicalThreadId, true);
                   historyLoadingThreadByWorkspaceRef.current[targetId] =
                     recoveredCanonicalThreadId;
+                  resumeLoadingThreadId = recoveredCanonicalThreadId;
                 }
                 if (
                   recoveredCanonicalThreadId &&
@@ -1849,10 +1853,13 @@ export function useThreads({
                 }
               })
               .finally(() => {
-                clearHistoryLoadingForThread(
-                  historyLoadingThreadByWorkspaceRef.current[targetId] ??
-                    canonicalThreadId,
-                );
+                const currentLoadingThreadId =
+                  historyLoadingThreadByWorkspaceRef.current[targetId] ?? null;
+                if (currentLoadingThreadId === resumeLoadingThreadId) {
+                  clearHistoryLoadingForThread(resumeLoadingThreadId);
+                  return;
+                }
+                setThreadHistoryLoading(canonicalThreadId, false);
               });
             return;
           }
@@ -1869,7 +1876,9 @@ export function useThreads({
             return;
           }
           loadedThreadLastRefreshAtRef.current[canonicalThreadId] = Date.now();
-          void resumeThreadForWorkspace(targetId, canonicalThreadId, true).then(
+          void resumeThreadForWorkspace(targetId, canonicalThreadId, true, false, {
+            preferLocalCodexHistory: true,
+          }).then(
             (recoveredThreadId) => {
               const recoveredCanonicalThreadId = recoveredThreadId
                 ? resolveCanonicalThreadId(recoveredThreadId)

@@ -218,6 +218,90 @@ describe("useThreads sidebar cache", () => {
     }
   });
 
+  it("does not clear the next selected thread loading state when an older resume finishes", async () => {
+    vi.useFakeTimers();
+    const resumeResolvers = new Map<
+      string,
+      (value: {
+        result: {
+          thread: {
+            id: string;
+            preview: string;
+            updated_at: number;
+            turns: unknown[];
+          };
+        };
+      }) => void
+    >();
+    vi.mocked(resumeThread).mockImplementation(
+      (_workspaceId, threadId) =>
+        new Promise((resolve) => {
+          resumeResolvers.set(String(threadId), resolve);
+        }) as never,
+    );
+
+    try {
+      const { result } = renderHook(() =>
+        useThreads({
+          activeWorkspace: workspace,
+          onWorkspaceConnected: vi.fn(),
+        }),
+      );
+
+      act(() => {
+        result.current.setActiveThreadId("thread-history-a");
+      });
+      await act(async () => {
+        vi.advanceTimersByTime(50);
+      });
+      expect(result.current.historyLoadingByThreadId["thread-history-a"]).toBe(true);
+
+      act(() => {
+        result.current.setActiveThreadId("thread-history-b");
+      });
+      expect(result.current.historyLoadingByThreadId["thread-history-a"]).toBeUndefined();
+      expect(result.current.historyLoadingByThreadId["thread-history-b"]).toBe(true);
+
+      await act(async () => {
+        vi.advanceTimersByTime(50);
+      });
+
+      await act(async () => {
+        resumeResolvers.get("thread-history-a")?.({
+          result: {
+            thread: {
+              id: "thread-history-a",
+              preview: "Loaded older thread",
+              updated_at: 456,
+              turns: [],
+            },
+          },
+        });
+        await Promise.resolve();
+      });
+
+      expect(result.current.historyLoadingByThreadId["thread-history-b"]).toBe(true);
+
+      await act(async () => {
+        resumeResolvers.get("thread-history-b")?.({
+          result: {
+            thread: {
+              id: "thread-history-b",
+              preview: "Loaded current thread",
+              updated_at: 457,
+              turns: [],
+            },
+          },
+        });
+        await Promise.resolve();
+      });
+
+      expect(result.current.historyLoadingByThreadId["thread-history-b"]).toBeUndefined();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("tracks Claude history loading while selecting an unloaded session", async () => {
     vi.useFakeTimers();
     vi.mocked(listThreads).mockResolvedValue({

@@ -17,6 +17,7 @@ import {
 } from "../utils/threadNormalize";
 import { previewThreadName } from "../../../utils/threadItems";
 import { resolveThreadStabilityDiagnostic } from "../utils/stabilityDiagnostics";
+import { hasCodexBackgroundHelperPreview } from "../utils/codexBackgroundHelpers";
 import type { ThreadAction } from "./useThreadsReducer";
 
 /**
@@ -36,12 +37,6 @@ function inferEngineFromThreadId(threadId: string): "claude" | "codex" | "gemini
   return "codex";
 }
 
-const CODEX_BACKGROUND_HELPER_PREVIEW_PREFIXES = [
-  "Generate a concise title for a coding chat thread from the first user message.",
-  "You create concise run metadata for a coding task.",
-  "You are generating OpenSpec project context.",
-] as const;
-
 function isCodexBackgroundHelperThread(
   threadId: string,
   thread: Record<string, unknown>,
@@ -53,11 +48,7 @@ function isCodexBackgroundHelperThread(
     asString(thread.preview).trim(),
     asString(thread.title).trim(),
   ].filter(Boolean);
-  return previewCandidates.some((preview) =>
-    CODEX_BACKGROUND_HELPER_PREVIEW_PREFIXES.some((prefix) =>
-      preview.startsWith(prefix),
-    ),
-  );
+  return hasCodexBackgroundHelperPreview(previewCandidates);
 }
 
 type UseThreadTurnEventsOptions = {

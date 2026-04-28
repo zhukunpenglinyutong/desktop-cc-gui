@@ -15,6 +15,7 @@ type CodexHistoryLoaderOptions = {
     threadId: string,
   ) => Promise<Record<string, unknown> | null>;
   loadCodexSession?: (workspaceId: string, threadId: string) => Promise<unknown>;
+  preferLocalHistory?: boolean;
 };
 
 type MessageItem = Extract<ConversationItem, { kind: "message" }>;
@@ -375,10 +376,54 @@ export function createCodexHistoryLoader({
   workspaceId,
   resumeThread,
   loadCodexSession,
+  preferLocalHistory = false,
 }: CodexHistoryLoaderOptions): HistoryLoader {
   return {
     engine: "codex",
     async load(threadId: string) {
+      let fallbackItems: ConversationItem[] = [];
+      let fallbackHistoryLoaded = false;
+      const loadFallbackHistoryItems = async () => {
+        if (!loadCodexSession) {
+          return [];
+        }
+        fallbackHistoryLoaded = true;
+        try {
+          const fallbackHistory = await loadCodexSession(workspaceId, threadId);
+          return parseCodexSessionHistory(fallbackHistory);
+        } catch (error) {
+          console.warn("Failed to load Codex local history fallback", {
+            workspaceId,
+            threadId,
+            error,
+          });
+          return [];
+        }
+      };
+
+      if (preferLocalHistory) {
+        fallbackItems = await loadFallbackHistoryItems();
+        if (fallbackItems.length > 0) {
+          return normalizeHistorySnapshot({
+            engine: "codex",
+            workspaceId,
+            threadId,
+            items: fallbackItems,
+            plan: undefined,
+            userInputQueue: [],
+            meta: {
+              workspaceId,
+              threadId,
+              engine: "codex",
+              activeTurnId: null,
+              isThinking: false,
+              heartbeatPulse: null,
+              historyRestoredAtMs: Date.now(),
+            },
+          });
+        }
+      }
+
       const response = await resumeThread(workspaceId, threadId);
       const result = asRecord(response?.result ?? response);
       const thread = asRecord(result.thread ?? response?.thread);
@@ -387,22 +432,15 @@ export function createCodexHistoryLoader({
       let items = historyItems;
 
       if (loadCodexSession) {
-        try {
-          const fallbackHistory = await loadCodexSession(workspaceId, threadId);
-          const fallbackItems = parseCodexSessionHistory(fallbackHistory);
-          if (areComparableMessageSequencesEqual(historyItems, fallbackItems)) {
-            items = mergeCodexHistoryPreservingTurns(historyItems, fallbackItems);
-          } else if (shouldPreferFallbackMessageHistory(historyItems, fallbackItems)) {
-            items = fallbackItems;
-          } else {
-            items = mergeCodexHistoryPreservingTurns(historyItems, fallbackItems);
-          }
-        } catch (error) {
-          console.warn("Failed to load Codex local history fallback", {
-            workspaceId,
-            threadId,
-            error,
-          });
+        if (!fallbackHistoryLoaded) {
+          fallbackItems = await loadFallbackHistoryItems();
+        }
+        if (areComparableMessageSequencesEqual(historyItems, fallbackItems)) {
+          items = mergeCodexHistoryPreservingTurns(historyItems, fallbackItems);
+        } else if (shouldPreferFallbackMessageHistory(historyItems, fallbackItems)) {
+          items = fallbackItems;
+        } else {
+          items = mergeCodexHistoryPreservingTurns(historyItems, fallbackItems);
         }
       }
 

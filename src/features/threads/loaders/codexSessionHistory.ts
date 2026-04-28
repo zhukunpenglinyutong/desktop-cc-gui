@@ -399,6 +399,11 @@ function extractAgentStatusesFromRecord(value: unknown) {
 }
 
 function extractMessageText(payload: Record<string, unknown>) {
+  const directContent =
+    typeof payload.content === "string" ? payload.content.trim() : "";
+  if (directContent) {
+    return directContent;
+  }
   const content = Array.isArray(payload.content) ? payload.content : [];
   const parts = content
     .map((entry) => {
@@ -466,7 +471,7 @@ function extractCodexMessageId(
 }
 
 function buildUserMessageItem(payload: Record<string, unknown>, fallbackId: string) {
-  const text = asString(payload.message ?? payload.text ?? "").trim();
+  const text = extractMessageText(payload);
   if (!text) {
     return null;
   }
@@ -1077,14 +1082,21 @@ export function parseCodexSessionHistory(input: unknown): ConversationItem[] {
         return;
       }
 
-      if (payloadType === "message" && asString(payload.role).trim() === "assistant") {
-        const message = buildAssistantMessageItem(payload, `codex-assistant-${index + 1}`);
-        if (message) {
-          if (entryTimestampMs !== null) {
-            messageTimestampById.set(message.id, entryTimestampMs);
-          }
-          appendCodexHistoryItem(items, message);
+      if (payloadType === "message") {
+        const role = asString(payload.role).trim();
+        const message =
+          role === "user"
+            ? buildUserMessageItem(payload, `codex-user-message-${index + 1}`)
+            : role === "assistant"
+              ? buildAssistantMessageItem(payload, `codex-assistant-${index + 1}`)
+              : null;
+        if (!message) {
+          return;
         }
+        if (entryTimestampMs !== null) {
+          messageTimestampById.set(message.id, entryTimestampMs);
+        }
+        appendCodexHistoryItem(items, message);
       }
       return;
     }
