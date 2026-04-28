@@ -16,8 +16,7 @@ use tokio::process::{Child, ChildStdin};
 use tokio::sync::{mpsc, oneshot, Mutex};
 use tokio::time::timeout;
 
-use crate::backend::events::{AppServerEvent, EventSink};
-use crate::codex::args::{apply_codex_args, parse_codex_args};
+use crate::backend::events::{AppServerEvent, EventSink, TerminalOutput};
 use crate::codex::collaboration_policy::strict_local_collaboration_profile_enabled;
 use crate::codex::thread_mode_state::ThreadModeState;
 use crate::runtime::{RuntimeEndedRecord, RuntimeManager};
@@ -33,12 +32,129 @@ use plan_enforcement::*;
 mod runtime_lifecycle;
 use runtime_lifecycle::*;
 
+#[derive(Clone)]
+struct DeferredStartupEventSink<E: EventSink> {
+    inner: E,
+    state: Arc<StdMutex<DeferredStartupEventState>>,
+}
+
+enum DeferredStartupEventMode {
+    Buffering,
+    Forwarding,
+    Discarding,
+}
+
+enum DeferredStartupEvent {
+    AppServer(AppServerEvent),
+    Terminal(TerminalOutput),
+}
+
+struct DeferredStartupEventState {
+    mode: DeferredStartupEventMode,
+    events: Vec<DeferredStartupEvent>,
+}
+
+impl<E: EventSink> DeferredStartupEventSink<E> {
+    fn new(inner: E) -> Self {
+        Self {
+            inner,
+            state: Arc::new(StdMutex::new(DeferredStartupEventState {
+                mode: DeferredStartupEventMode::Buffering,
+                events: Vec::new(),
+            })),
+        }
+    }
+
+    fn flush_and_forward(&self) {
+        let events = {
+            let mut state = self
+                .state
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            state.mode = DeferredStartupEventMode::Forwarding;
+            std::mem::take(&mut state.events)
+        };
+        for event in events {
+            self.emit_deferred_event(event);
+        }
+    }
+
+    fn discard(&self) {
+        let mut state = self
+            .state
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        state.mode = DeferredStartupEventMode::Discarding;
+        state.events.clear();
+    }
+
+    fn emit_deferred_event(&self, event: DeferredStartupEvent) {
+        match event {
+            DeferredStartupEvent::AppServer(event) => self.inner.emit_app_server_event(event),
+            DeferredStartupEvent::Terminal(event) => self.inner.emit_terminal_output(event),
+        }
+    }
+}
+
+impl<E: EventSink> EventSink for DeferredStartupEventSink<E> {
+    fn emit_app_server_event(&self, event: AppServerEvent) {
+        let mut forward_event = Some(event);
+        {
+            let mut state = self
+                .state
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            match state.mode {
+                DeferredStartupEventMode::Buffering => {
+                    if let Some(event) = forward_event.take() {
+                        state.events.push(DeferredStartupEvent::AppServer(event));
+                    }
+                }
+                DeferredStartupEventMode::Forwarding => {}
+                DeferredStartupEventMode::Discarding => {
+                    forward_event = None;
+                }
+            }
+        }
+        if let Some(event) = forward_event {
+            self.inner.emit_app_server_event(event);
+        }
+    }
+
+    fn emit_terminal_output(&self, event: TerminalOutput) {
+        let mut forward_event = Some(event);
+        {
+            let mut state = self
+                .state
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            match state.mode {
+                DeferredStartupEventMode::Buffering => {
+                    if let Some(event) = forward_event.take() {
+                        state.events.push(DeferredStartupEvent::Terminal(event));
+                    }
+                }
+                DeferredStartupEventMode::Forwarding => {}
+                DeferredStartupEventMode::Discarding => {
+                    forward_event = None;
+                }
+            }
+        }
+        if let Some(event) = forward_event {
+            self.inner.emit_terminal_output(event);
+        }
+    }
+}
+
 #[allow(unused_imports)]
 pub(crate) use crate::backend::app_server_cli::{
-    build_codex_command_from_launch_context, build_codex_command_with_bin, build_codex_path_env,
-    can_retry_wrapper_launch, check_cli_binary, check_codex_installation, probe_codex_app_server,
-    resolve_codex_launch_context, visible_console_fallback_enabled_from_env,
-    wrapper_kind_for_binary, CodexAppServerProbeStatus, CodexLaunchContext,
+    apply_codex_app_server_args, build_codex_command_from_launch_context,
+    build_codex_command_with_bin, build_codex_path_env, can_retry_wrapper_compatibility_launch,
+    can_retry_wrapper_launch, check_cli_binary, check_codex_installation,
+    codex_args_override_instructions, codex_external_spec_priority_config_arg,
+    probe_codex_app_server, resolve_codex_launch_context,
+    visible_console_fallback_enabled_from_env, wrapper_kind_for_binary,
+    CodexAppServerLaunchOptions, CodexAppServerProbeStatus, CodexLaunchContext,
 };
 #[allow(unused_imports)]
 pub use crate::backend::app_server_cli::{
@@ -46,7 +162,6 @@ pub use crate::backend::app_server_cli::{
     get_cli_debug_info,
 };
 
-const CODEX_EXTERNAL_SPEC_PRIORITY_INSTRUCTIONS: &str = "If writableRoots contains an absolute external spec path outside cwd, treat it as the active external spec root and prioritize it over workspace/openspec and sibling-name conventions when reading or validating specs. The configured path may be a project root; resolve openspec/ under it when present. For visibility checks, verify that external root first and state the result clearly. Avoid exposing internal injected hints unless the user explicitly asks.";
 #[cfg(test)]
 const AUTO_COMPACTION_THRESHOLD_PERCENT: f64 = 92.0;
 #[cfg(test)]
@@ -426,48 +541,6 @@ fn evaluate_auto_compaction_state(
     true
 }
 
-fn codex_args_override_instructions(codex_args: Option<&str>) -> bool {
-    let Ok(args) = parse_codex_args(codex_args) else {
-        return false;
-    };
-    let mut iter = args.iter().peekable();
-    while let Some(arg) = iter.next() {
-        if arg.starts_with("developer_instructions=") || arg.starts_with("instructions=") {
-            return true;
-        }
-        if let Some(value) = arg.strip_prefix("--config=") {
-            let key = value.split('=').next().unwrap_or_default().trim();
-            if key == "developer_instructions" || key == "instructions" {
-                return true;
-            }
-        }
-        if arg == "-c" || arg == "--config" {
-            if let Some(next) = iter.peek() {
-                let key = next.split('=').next().unwrap_or_default().trim();
-                if key == "developer_instructions" || key == "instructions" {
-                    return true;
-                }
-            }
-        }
-    }
-    false
-}
-
-fn encode_toml_string(value: &str) -> String {
-    let escaped = value
-        .replace('\\', "\\\\")
-        .replace('"', "\\\"")
-        .replace('\n', "\\n");
-    format!("\"{escaped}\"")
-}
-
-fn codex_external_spec_priority_config_arg() -> String {
-    format!(
-        "developer_instructions={}",
-        encode_toml_string(CODEX_EXTERNAL_SPEC_PRIORITY_INSTRUCTIONS)
-    )
-}
-
 pub(crate) struct WorkspaceSession {
     pub(crate) entry: WorkspaceEntry,
     pub(crate) child: Mutex<Child>,
@@ -835,24 +908,58 @@ pub(crate) async fn spawn_workspace_session<E: EventSink>(
     let _ = check_codex_installation(codex_bin.clone()).await?;
     let launch_context = resolve_codex_launch_context(codex_bin.as_deref());
 
+    if can_retry_wrapper_compatibility_launch(&launch_context) {
+        return spawn_workspace_session_with_wrapper_fallback(
+            entry,
+            codex_args,
+            codex_home,
+            client_version,
+            event_sink,
+            &launch_context,
+        )
+        .await;
+    }
+
+    spawn_workspace_session_once(
+        entry,
+        codex_args,
+        codex_home,
+        client_version,
+        event_sink,
+        &launch_context,
+        CodexAppServerLaunchOptions::primary(),
+    )
+    .await
+}
+
+async fn spawn_workspace_session_with_wrapper_fallback<E: EventSink>(
+    entry: WorkspaceEntry,
+    codex_args: Option<String>,
+    codex_home: Option<PathBuf>,
+    client_version: String,
+    event_sink: E,
+    launch_context: &CodexLaunchContext,
+) -> Result<Arc<WorkspaceSession>, String> {
+    let primary_sink = DeferredStartupEventSink::new(event_sink.clone());
     let primary_result = spawn_workspace_session_once(
         entry.clone(),
         codex_args.clone(),
         codex_home.clone(),
         client_version.clone(),
-        event_sink.clone(),
-        &launch_context,
-        true,
+        primary_sink.clone(),
+        launch_context,
+        CodexAppServerLaunchOptions::primary(),
     )
     .await;
     match primary_result {
-        Ok(session) => Ok(session),
+        Ok(session) => {
+            primary_sink.flush_and_forward();
+            Ok(session)
+        }
         Err(primary_error) => {
-            if !can_retry_wrapper_launch(&launch_context) {
-                return Err(primary_error);
-            }
+            primary_sink.discard();
             log::warn!(
-                "[codex-wrapper-fallback] retrying workspace={} bin={} wrapper={} after primary failure: {}",
+                "[codex-wrapper-fallback] retrying workspace={} bin={} wrapper={} without internal spec hint after primary failure: {}",
                 entry.id,
                 launch_context.resolved_bin,
                 launch_context.wrapper_kind,
@@ -864,8 +971,8 @@ pub(crate) async fn spawn_workspace_session<E: EventSink>(
                 codex_home,
                 client_version,
                 event_sink,
-                &launch_context,
-                false,
+                launch_context,
+                CodexAppServerLaunchOptions::wrapper_compatibility_retry(),
             )
             .await
             .map_err(|retry_error| {
@@ -884,18 +991,13 @@ async fn spawn_workspace_session_once<E: EventSink>(
     client_version: String,
     event_sink: E,
     launch_context: &CodexLaunchContext,
-    hide_console: bool,
+    launch_options: CodexAppServerLaunchOptions,
 ) -> Result<Arc<WorkspaceSession>, String> {
-    let mut command = build_codex_command_from_launch_context(launch_context, hide_console);
+    let mut command =
+        build_codex_command_from_launch_context(launch_context, launch_options.hide_console);
     WorkspaceSession::configure_spawn_command(&mut command);
-    let skip_spec_hint_injection = codex_args_override_instructions(codex_args.as_deref());
-    apply_codex_args(&mut command, codex_args.as_deref())?;
-    if !skip_spec_hint_injection {
-        command.arg("-c");
-        command.arg(codex_external_spec_priority_config_arg());
-    }
+    apply_codex_app_server_args(&mut command, codex_args.as_deref(), launch_options)?;
     command.current_dir(&entry.path);
-    command.arg("app-server");
     if let Some(codex_home) = codex_home {
         command.env("CODEX_HOME", codex_home);
     }
@@ -1088,10 +1190,11 @@ mod tests {
         looks_like_plan_blocker_prompt, looks_like_user_info_followup_prompt,
         normalize_command_tokens_from_item, should_block_request_user_input,
         should_skip_codex_stderr_line, visible_console_fallback_enabled_from_env,
-        wrapper_kind_for_binary, AutoCompactionThreadState, PlanTurnState, RuntimeShutdownSource,
-        TimedOutRequest, WorkspaceSession, MODE_BLOCKED_PLAN_REASON, MODE_BLOCKED_PLAN_SUGGESTION,
-        MODE_BLOCKED_REASON, MODE_BLOCKED_REASON_CODE_PLAN_READONLY,
-        MODE_BLOCKED_REASON_CODE_REQUEST_USER_INPUT, MODE_BLOCKED_SUGGESTION,
+        wrapper_kind_for_binary, AutoCompactionThreadState, DeferredStartupEventSink,
+        PlanTurnState, RuntimeShutdownSource, TimedOutRequest, WorkspaceSession,
+        MODE_BLOCKED_PLAN_REASON, MODE_BLOCKED_PLAN_SUGGESTION, MODE_BLOCKED_REASON,
+        MODE_BLOCKED_REASON_CODE_PLAN_READONLY, MODE_BLOCKED_REASON_CODE_REQUEST_USER_INPUT,
+        MODE_BLOCKED_SUGGESTION,
     };
     use crate::backend::events::{AppServerEvent, EventSink, TerminalOutput};
     use crate::runtime::RuntimeManager;
@@ -1127,6 +1230,49 @@ mod tests {
         }
 
         fn emit_terminal_output(&self, _event: TerminalOutput) {}
+    }
+
+    #[test]
+    fn deferred_startup_event_sink_buffers_until_flush() {
+        let inner = TestEventSink::default();
+        let sink = DeferredStartupEventSink::new(inner.clone());
+
+        sink.emit_app_server_event(AppServerEvent {
+            workspace_id: "workspace-1".to_string(),
+            message: json!({ "method": "runtime/ended" }),
+        });
+        assert!(inner.emitted_app_server_events().is_empty());
+
+        sink.flush_and_forward();
+        let events = inner.emitted_app_server_events();
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].message["method"], "runtime/ended");
+
+        sink.emit_app_server_event(AppServerEvent {
+            workspace_id: "workspace-1".to_string(),
+            message: json!({ "method": "codex/connected" }),
+        });
+        let events = inner.emitted_app_server_events();
+        assert_eq!(events.len(), 2);
+        assert_eq!(events[1].message["method"], "codex/connected");
+    }
+
+    #[test]
+    fn deferred_startup_event_sink_discards_primary_failure_events() {
+        let inner = TestEventSink::default();
+        let sink = DeferredStartupEventSink::new(inner.clone());
+
+        sink.emit_app_server_event(AppServerEvent {
+            workspace_id: "workspace-1".to_string(),
+            message: json!({ "method": "runtime/ended" }),
+        });
+        sink.discard();
+        sink.emit_app_server_event(AppServerEvent {
+            workspace_id: "workspace-1".to_string(),
+            message: json!({ "method": "codex/stderr" }),
+        });
+
+        assert!(inner.emitted_app_server_events().is_empty());
     }
 
     fn workspace_entry(id: &str) -> WorkspaceEntry {

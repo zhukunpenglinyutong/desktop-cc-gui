@@ -8,7 +8,9 @@ use std::time::Duration;
 use tokio::process::Command;
 use tokio::time::timeout;
 
-use crate::codex::args::apply_codex_args;
+use crate::codex::args::parse_codex_args;
+
+const CODEX_EXTERNAL_SPEC_PRIORITY_INSTRUCTIONS: &str = "If writableRoots contains an absolute external spec path outside cwd, treat it as the active external spec root and prioritize it over workspace/openspec and sibling-name conventions when reading or validating specs. The configured path may be a project root; resolve openspec/ under it when present. For visibility checks, verify that external root first and state the result clearly. Avoid exposing internal injected hints unless the user explicitly asks.";
 
 fn push_unique_path(paths: &mut Vec<PathBuf>, candidate: PathBuf) {
     if !paths
@@ -397,6 +399,28 @@ pub(crate) struct CodexAppServerProbeStatus {
     pub(crate) fallback_retried: bool,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct CodexAppServerLaunchOptions {
+    pub(crate) hide_console: bool,
+    pub(crate) inject_internal_spec_hint: bool,
+}
+
+impl CodexAppServerLaunchOptions {
+    pub(crate) fn primary() -> Self {
+        Self {
+            hide_console: true,
+            inject_internal_spec_hint: true,
+        }
+    }
+
+    pub(crate) fn wrapper_compatibility_retry() -> Self {
+        Self {
+            hide_console: !wrapper_visible_console_retry_requested(),
+            inject_internal_spec_hint: false,
+        }
+    }
+}
+
 fn resolve_codex_binary(codex_bin: Option<&str>) -> String {
     if let Some(custom) = codex_bin {
         let trimmed = custom.trim();
@@ -429,6 +453,80 @@ pub(crate) fn wrapper_kind_for_binary(bin: &str) -> &'static str {
     } else {
         "direct"
     }
+}
+
+#[allow(dead_code)]
+pub(crate) fn launch_context_uses_command_wrapper(launch_context: &CodexLaunchContext) -> bool {
+    launch_context.wrapper_kind != "direct"
+}
+
+fn codex_args_contain_instruction_override(args: &[String]) -> bool {
+    let mut iter = args.iter().peekable();
+    while let Some(arg) = iter.next() {
+        if arg.starts_with("developer_instructions=") || arg.starts_with("instructions=") {
+            return true;
+        }
+        if let Some(value) = arg.strip_prefix("--config=") {
+            let key = value.split('=').next().unwrap_or_default().trim();
+            if key == "developer_instructions" || key == "instructions" {
+                return true;
+            }
+        }
+        if arg == "-c" || arg == "--config" {
+            if let Some(next) = iter.peek() {
+                let key = next.split('=').next().unwrap_or_default().trim();
+                if key == "developer_instructions" || key == "instructions" {
+                    return true;
+                }
+            }
+        }
+    }
+    false
+}
+
+#[allow(dead_code)]
+pub(crate) fn codex_args_override_instructions(codex_args: Option<&str>) -> bool {
+    let Ok(args) = parse_codex_args(codex_args) else {
+        return false;
+    };
+    codex_args_contain_instruction_override(&args)
+}
+
+fn encode_toml_string(value: &str) -> String {
+    let escaped = value
+        .replace('\\', "\\\\")
+        .replace('"', "\\\"")
+        .replace('\n', "\\n");
+    format!("\"{escaped}\"")
+}
+
+pub(crate) fn codex_external_spec_priority_config_arg() -> String {
+    format!(
+        "developer_instructions={}",
+        encode_toml_string(CODEX_EXTERNAL_SPEC_PRIORITY_INSTRUCTIONS)
+    )
+}
+
+pub(crate) fn build_codex_app_server_args(
+    codex_args: Option<&str>,
+    options: CodexAppServerLaunchOptions,
+) -> Result<Vec<String>, String> {
+    let mut args = parse_codex_args(codex_args)?;
+    if options.inject_internal_spec_hint && !codex_args_contain_instruction_override(&args) {
+        args.push("-c".to_string());
+        args.push(codex_external_spec_priority_config_arg());
+    }
+    args.push("app-server".to_string());
+    Ok(args)
+}
+
+pub(crate) fn apply_codex_app_server_args(
+    command: &mut Command,
+    codex_args: Option<&str>,
+    options: CodexAppServerLaunchOptions,
+) -> Result<(), String> {
+    command.args(build_codex_app_server_args(codex_args, options)?);
+    Ok(())
 }
 
 #[cfg(windows)]
@@ -724,14 +822,18 @@ pub(crate) fn visible_console_fallback_enabled_from_env(value: Option<&str>) -> 
     matches!(value, Some("1") | Some("true"))
 }
 
-#[cfg(windows)]
-fn allow_wrapper_visible_console_fallback() -> bool {
+fn wrapper_visible_console_retry_requested() -> bool {
     visible_console_fallback_enabled_from_env(env::var("CODEMOSS_SHOW_CONSOLE").ok().as_deref())
 }
 
 #[cfg(windows)]
+fn allow_wrapper_visible_console_fallback() -> bool {
+    wrapper_visible_console_retry_requested()
+}
+
+#[cfg(windows)]
 pub(crate) fn can_retry_wrapper_launch(launch_context: &CodexLaunchContext) -> bool {
-    launch_context.wrapper_kind != "direct" && allow_wrapper_visible_console_fallback()
+    launch_context_uses_command_wrapper(launch_context) && allow_wrapper_visible_console_fallback()
 }
 
 #[cfg(not(windows))]
@@ -739,14 +841,23 @@ pub(crate) fn can_retry_wrapper_launch(_launch_context: &CodexLaunchContext) -> 
     false
 }
 
+#[cfg(windows)]
+pub(crate) fn can_retry_wrapper_compatibility_launch(launch_context: &CodexLaunchContext) -> bool {
+    launch_context_uses_command_wrapper(launch_context)
+}
+
+#[cfg(not(windows))]
+pub(crate) fn can_retry_wrapper_compatibility_launch(_launch_context: &CodexLaunchContext) -> bool {
+    false
+}
+
 async fn run_codex_app_server_probe_once(
     launch_context: &CodexLaunchContext,
     codex_args: Option<&str>,
-    hide_console: bool,
+    options: CodexAppServerLaunchOptions,
 ) -> Result<(), String> {
-    let mut command = build_codex_command_from_launch_context(launch_context, hide_console);
-    apply_codex_args(&mut command, codex_args)?;
-    command.arg("app-server");
+    let mut command = build_codex_command_from_launch_context(launch_context, options.hide_console);
+    apply_codex_app_server_args(&mut command, codex_args, options)?;
     command.arg("--help");
     command.stdout(std::process::Stdio::piped());
     command.stderr(std::process::Stdio::piped());
@@ -781,7 +892,13 @@ pub(crate) async fn probe_codex_app_server(
     codex_args: Option<&str>,
 ) -> Result<CodexAppServerProbeStatus, String> {
     let launch_context = resolve_codex_launch_context(codex_bin.as_deref());
-    match run_codex_app_server_probe_once(&launch_context, codex_args, true).await {
+    match run_codex_app_server_probe_once(
+        &launch_context,
+        codex_args,
+        CodexAppServerLaunchOptions::primary(),
+    )
+    .await
+    {
         Ok(()) => Ok(CodexAppServerProbeStatus {
             ok: true,
             status: "ok".to_string(),
@@ -789,7 +906,7 @@ pub(crate) async fn probe_codex_app_server(
             fallback_retried: false,
         }),
         Err(primary_error) => {
-            if !can_retry_wrapper_launch(&launch_context) {
+            if !can_retry_wrapper_compatibility_launch(&launch_context) {
                 return Ok(CodexAppServerProbeStatus {
                     ok: false,
                     status: "failed".to_string(),
@@ -798,7 +915,13 @@ pub(crate) async fn probe_codex_app_server(
                 });
             }
 
-            match run_codex_app_server_probe_once(&launch_context, codex_args, false).await {
+            match run_codex_app_server_probe_once(
+                &launch_context,
+                codex_args,
+                CodexAppServerLaunchOptions::wrapper_compatibility_retry(),
+            )
+            .await
+            {
                 Ok(()) => Ok(CodexAppServerProbeStatus {
                     ok: true,
                     status: "fallback-ok".to_string(),
@@ -906,6 +1029,99 @@ mod tests {
         assert!(resolve_npm_global_bin_dir_from_prefix("").is_none());
         assert!(resolve_npm_global_bin_dir_from_prefix("undefined").is_none());
         assert!(resolve_npm_global_bin_dir_from_prefix("null").is_none());
+    }
+
+    #[test]
+    fn launch_context_uses_command_wrapper_only_for_cmd_or_bat() {
+        let direct = CodexLaunchContext {
+            resolved_bin: "codex".to_string(),
+            wrapper_kind: wrapper_kind_for_binary("codex"),
+            path_env: None,
+        };
+        let cmd_wrapper = CodexLaunchContext {
+            resolved_bin: "C:/Users/demo/AppData/Roaming/npm/codex.cmd".to_string(),
+            wrapper_kind: wrapper_kind_for_binary("C:/Users/demo/AppData/Roaming/npm/codex.cmd"),
+            path_env: None,
+        };
+        let bat_wrapper = CodexLaunchContext {
+            resolved_bin: "C:/tools/codex.bat".to_string(),
+            wrapper_kind: wrapper_kind_for_binary("C:/tools/codex.bat"),
+            path_env: None,
+        };
+
+        assert!(!launch_context_uses_command_wrapper(&direct));
+        assert!(launch_context_uses_command_wrapper(&cmd_wrapper));
+        assert!(launch_context_uses_command_wrapper(&bat_wrapper));
+    }
+
+    #[test]
+    fn wrapper_compatibility_retry_is_platform_gated() {
+        let direct = CodexLaunchContext {
+            resolved_bin: "codex".to_string(),
+            wrapper_kind: wrapper_kind_for_binary("codex"),
+            path_env: None,
+        };
+        let cmd_wrapper = CodexLaunchContext {
+            resolved_bin: "C:/Users/demo/AppData/Roaming/npm/codex.cmd".to_string(),
+            wrapper_kind: wrapper_kind_for_binary("C:/Users/demo/AppData/Roaming/npm/codex.cmd"),
+            path_env: None,
+        };
+
+        assert!(!can_retry_wrapper_compatibility_launch(&direct));
+        #[cfg(windows)]
+        assert!(can_retry_wrapper_compatibility_launch(&cmd_wrapper));
+        #[cfg(not(windows))]
+        assert!(!can_retry_wrapper_compatibility_launch(&cmd_wrapper));
+    }
+
+    #[test]
+    fn app_server_primary_args_append_internal_spec_hint() {
+        let args = build_codex_app_server_args(
+            Some("--profile work"),
+            CodexAppServerLaunchOptions::primary(),
+        )
+        .expect("build args");
+
+        assert_eq!(args.first().map(String::as_str), Some("--profile"));
+        assert_eq!(args.get(1).map(String::as_str), Some("work"));
+        assert!(args.iter().any(|arg| arg == "-c"));
+        assert!(args.iter().any(|arg| {
+            arg.starts_with("developer_instructions=\"") && arg.contains("writableRoots")
+        }));
+        assert_eq!(args.last().map(String::as_str), Some("app-server"));
+    }
+
+    #[test]
+    fn app_server_primary_args_respect_user_instruction_override() {
+        let args = build_codex_app_server_args(
+            Some(r#"-c developer_instructions="follow workspace policy""#),
+            CodexAppServerLaunchOptions::primary(),
+        )
+        .expect("build args");
+
+        assert_eq!(args.iter().filter(|arg| arg.as_str() == "-c").count(), 1);
+        assert!(!args.iter().any(|arg| arg.contains("writableRoots")));
+        assert_eq!(args.last().map(String::as_str), Some("app-server"));
+    }
+
+    #[test]
+    fn app_server_wrapper_retry_args_skip_internal_spec_hint_but_keep_user_args() {
+        let args = build_codex_app_server_args(
+            Some("--profile work --sandbox read-only"),
+            CodexAppServerLaunchOptions::wrapper_compatibility_retry(),
+        )
+        .expect("build args");
+
+        assert_eq!(
+            args,
+            vec![
+                "--profile".to_string(),
+                "work".to_string(),
+                "--sandbox".to_string(),
+                "read-only".to_string(),
+                "app-server".to_string(),
+            ]
+        );
     }
 
     #[cfg(unix)]
