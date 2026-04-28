@@ -576,3 +576,41 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 214: 记录线程消息测试拆分提交
+
+**Date**: 2026-04-28
+**Task**: 记录线程消息测试拆分提交
+**Branch**: `feature/v0.4.11`
+
+### Summary
+
+(Add summary)
+
+### Main Changes
+
+- 任务目标：提交 useThreadMessaging spec root 测试拆分，降低大测试文件压力。
+- 主要改动：将 spec root 相关用例迁移到 useThreadMessaging.spec-root.test.tsx，主测试文件移除对应长用例和多余 mock。
+- 涉及模块：src/features/threads/hooks/useThreadMessaging.test.tsx、useThreadMessaging.spec-root.test.tsx。
+- 验证结果：全量前端 batched tests 与 heavy-test-noise 已通过；large-file gate found=0，near-threshold 仍为 watch 级别。
+- 后续事项：继续关注 useThreadMessaging.test.tsx 与其他 near-threshold 测试文件的模块化拆分。
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `be1417f1` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-7.md`
-- **Total Sessions**: 213
+- **Total Sessions**: 214
 - **Last Active**: 2026-04-28
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-7.md` | ~578 | Active |
+| `journal-7.md` | ~616 | Active |
 | `journal-6.md` | ~1961 | Archived |
 | `journal-5.md` | ~1949 | Archived |
 | `journal-4.md` | ~1975 | Archived |
@@ -35,6 +35,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 214 | 2026-04-28 | 记录线程消息测试拆分提交 | `be1417f1` | `feature/v0.4.11` |
 | 213 | 2026-04-28 | 记录侧边栏工作区别名提交 | `ab39debc` | `feature/v0.4.11` |
 | 212 | 2026-04-28 | 记录邮件发送设置提案提交 | `ab8312fc` | `feature/v0.4.11` |
 | 211 | 2026-04-28 | 归档 Codex 会话保活提案 | `05cf919a` | `feature/v0.4.11` |
