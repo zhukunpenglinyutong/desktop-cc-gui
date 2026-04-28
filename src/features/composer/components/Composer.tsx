@@ -121,6 +121,8 @@ type ComposerProps = {
   onOpenAgentSettings?: () => void;
   onOpenPromptSettings?: () => void;
   onOpenModelSettings?: (providerId?: string) => void;
+  onRefreshModelConfig?: (providerId?: string) => Promise<void> | void;
+  isModelConfigRefreshing?: boolean;
   opencodeVariantOptions?: string[];
   selectedOpenCodeVariant?: string | null;
   onSelectOpenCodeVariant?: (variant: string | null) => void;
@@ -1087,6 +1089,8 @@ export const Composer = memo(function Composer({
   onOpenAgentSettings,
   onOpenPromptSettings,
   onOpenModelSettings,
+  onRefreshModelConfig,
+  isModelConfigRefreshing,
   opencodeVariantOptions: _opencodeVariantOptions = [],
   selectedOpenCodeVariant: _selectedOpenCodeVariant = null,
   onSelectOpenCodeVariant: _onSelectOpenCodeVariant,
@@ -2244,6 +2248,8 @@ export const Composer = memo(function Composer({
               onOpenAgentSettings={onOpenAgentSettings}
               onOpenPromptSettings={onOpenPromptSettings}
               onOpenModelSettings={onOpenModelSettings}
+              onRefreshModelConfig={onRefreshModelConfig}
+              isModelConfigRefreshing={isModelConfigRefreshing}
               permissionMode={accessModeToPermissionMode(accessMode)}
               onModeSelect={handleModeSelect}
               selectedCollaborationModeId={_selectedCollaborationModeId}

@@ -295,6 +295,28 @@ describe("StatusPanel", () => {
     ]);
   });
 
+  it("removes hidden dock tabs without clearing available panel data", () => {
+    render(
+      <StatusPanel
+        items={[...latestUserMessageItems, editToolItem]}
+        isProcessing={false}
+        variant="dock"
+        visibleDockTabs={{
+          subagent: false,
+          files: false,
+          latestUserMessage: false,
+        }}
+      />,
+    );
+
+    const labels = Array.from(document.querySelectorAll(".sp-tabs--dock .sp-tab-label")).map(
+      (node) => node.textContent,
+    );
+    expect(labels).toEqual(["statusPanel.tabTodos"]);
+    expect(screen.queryByText("statusPanel.tabEdits")).toBeNull();
+    expect(screen.queryByText("Latest Conversation")).toBeNull();
+  });
+
   it("shows latest user message preview with image summary in dock panel", () => {
     render(
       <StatusPanel

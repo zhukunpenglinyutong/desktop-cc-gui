@@ -1,25 +1,14 @@
 import { useEffect } from "react";
-import { matchesShortcut } from "../../../utils/shortcuts";
+import {
+  isEditableShortcutTarget,
+  matchesShortcutForPlatform,
+} from "../../../utils/shortcuts";
 
 type UseArchiveShortcutOptions = {
   isEnabled: boolean;
   shortcut: string | null;
   onTrigger: () => void;
 };
-
-function isEditableTarget(target: EventTarget | null) {
-  if (!(target instanceof HTMLElement)) {
-    return false;
-  }
-  if (target.isContentEditable) {
-    return true;
-  }
-  return Boolean(
-    target.closest(
-      'input, textarea, select, [contenteditable=""], [contenteditable="true"], [role="textbox"]',
-    ),
-  );
-}
 
 export function useArchiveShortcut({
   isEnabled,
@@ -34,10 +23,13 @@ export function useArchiveShortcut({
       if (event.defaultPrevented || event.repeat) {
         return;
       }
-      if (isEditableTarget(event.target)) {
+      if (
+        isEditableShortcutTarget(event.target) ||
+        isEditableShortcutTarget(document.activeElement)
+      ) {
         return;
       }
-      if (!matchesShortcut(event, shortcut)) {
+      if (!matchesShortcutForPlatform(event, shortcut)) {
         return;
       }
       event.preventDefault();

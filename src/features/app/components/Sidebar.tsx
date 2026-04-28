@@ -144,6 +144,8 @@ type SidebarProps = {
   onOpenWorkspaceHome: () => void;
   onOpenGlobalSearch: () => void;
   globalSearchShortcut: string | null;
+  openChatShortcut: string | null;
+  openKanbanShortcut: string | null;
   topbarNode?: ReactNode;
 };
 
@@ -224,30 +226,23 @@ export function Sidebar({
   onOpenWorkspaceHome: _onOpenWorkspaceHome,
   onOpenGlobalSearch,
   globalSearchShortcut,
+  openChatShortcut,
+  openKanbanShortcut,
   topbarNode,
 }: SidebarProps) {
   const { t } = useTranslation();
   const quickSearchLabel = t("sidebar.quickSearch");
   const isMac = useMemo(() => isMacPlatform(), []);
   const quickChatShortcutLabel = useMemo(
-    () => formatShortcutForPlatform(isMac ? "cmd+j" : "ctrl+j", isMac),
-    [isMac],
+    () => formatShortcutForPlatform(openChatShortcut, isMac),
+    [isMac, openChatShortcut],
   );
   const quickKanbanShortcutLabel = useMemo(
-    () => formatShortcutForPlatform(isMac ? "cmd+k" : "ctrl+k", isMac),
-    [isMac],
+    () => formatShortcutForPlatform(openKanbanShortcut, isMac),
+    [isMac, openKanbanShortcut],
   );
   const quickSearchShortcutLabel = useMemo(
-    () => {
-      const normalizedShortcut = (globalSearchShortcut ?? "")
-        .trim()
-        .toLowerCase()
-        .replace(/\s+/g, "");
-      if (!normalizedShortcut || normalizedShortcut === "cmd+o" || normalizedShortcut === "ctrl+o") {
-        return formatShortcutForPlatform(isMac ? "cmd+f" : "ctrl+f", isMac);
-      }
-      return formatShortcutForPlatform(globalSearchShortcut, isMac);
-    },
+    () => formatShortcutForPlatform(globalSearchShortcut, isMac),
     [globalSearchShortcut, isMac],
   );
 

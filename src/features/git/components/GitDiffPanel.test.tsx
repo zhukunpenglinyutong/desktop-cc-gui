@@ -361,6 +361,55 @@ describe("GitDiffPanel", () => {
     expect(onGitDiffListViewChange).toHaveBeenCalledWith("tree");
   });
 
+  it("uses configured shortcut for list view toggle", () => {
+    const onGitDiffListViewChange = vi.fn();
+    render(
+      <GitDiffPanel
+        {...baseProps}
+        gitDiffListView="flat"
+        onGitDiffListViewChange={onGitDiffListViewChange}
+        toggleGitDiffListViewShortcut="alt+shift+x"
+        unstagedFiles={[
+          { path: "file.txt", status: "M", additions: 1, deletions: 0 },
+        ]}
+      />,
+    );
+
+    const flatButton = screen.getAllByRole("button", { name: "Flat" })[0];
+    if (!flatButton) {
+      throw new Error("Flat button not found");
+    }
+    flatButton.focus();
+    fireEvent.keyDown(window, { key: "V", altKey: true, shiftKey: true });
+    expect(onGitDiffListViewChange).not.toHaveBeenCalled();
+
+    fireEvent.keyDown(window, { key: "X", altKey: true, shiftKey: true });
+    expect(onGitDiffListViewChange).toHaveBeenCalledWith("tree");
+  });
+
+  it("disables list view toggle when configured shortcut is cleared", () => {
+    const onGitDiffListViewChange = vi.fn();
+    render(
+      <GitDiffPanel
+        {...baseProps}
+        gitDiffListView="flat"
+        onGitDiffListViewChange={onGitDiffListViewChange}
+        toggleGitDiffListViewShortcut={null}
+        unstagedFiles={[
+          { path: "file.txt", status: "M", additions: 1, deletions: 0 },
+        ]}
+      />,
+    );
+
+    const flatButton = screen.getAllByRole("button", { name: "Flat" })[0];
+    if (!flatButton) {
+      throw new Error("Flat button not found");
+    }
+    flatButton.focus();
+    fireEvent.keyDown(window, { key: "V", altKey: true, shiftKey: true });
+    expect(onGitDiffListViewChange).not.toHaveBeenCalled();
+  });
+
   it("does not toggle list view shortcut while editing textarea", () => {
     const onGitDiffListViewChange = vi.fn();
     render(

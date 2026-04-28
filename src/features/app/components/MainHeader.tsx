@@ -52,6 +52,8 @@ type MainHeaderProps = {
   onLaunchScriptDraftChange?: (value: string) => void;
   onSaveLaunchScript?: () => void;
   launchScriptsState?: WorkspaceLaunchScriptsState;
+  showLaunchScriptControls?: boolean;
+  showOpenAppMenu?: boolean;
   worktreeRename?: {
     name: string;
     error: string | null;
@@ -106,6 +108,8 @@ export function MainHeader({
   onLaunchScriptDraftChange,
   onSaveLaunchScript,
   launchScriptsState,
+  showLaunchScriptControls = true,
+  showOpenAppMenu = true,
   worktreeRename,
   groupedWorkspaces,
   activeWorkspaceId,
@@ -735,7 +739,8 @@ export function MainHeader({
         </div>
       ) : null}
       <div className="main-header-actions">
-        {onRunLaunchScript &&
+        {showLaunchScriptControls &&
+          onRunLaunchScript &&
           onOpenLaunchScriptEditor &&
           onCloseLaunchScriptEditor &&
           onLaunchScriptDraftChange &&
@@ -787,14 +792,16 @@ export function MainHeader({
               ))}
             </div>
           )}
-        <OpenAppMenu
-          path={resolvedWorktreePath}
-          openTargets={openTargets}
-          selectedOpenAppId={selectedOpenAppId}
-          onSelectOpenAppId={onSelectOpenAppId}
-          iconById={openAppIconById}
-          iconOnly
-        />
+        {showOpenAppMenu ? (
+          <OpenAppMenu
+            path={resolvedWorktreePath}
+            openTargets={openTargets}
+            selectedOpenAppId={selectedOpenAppId}
+            onSelectOpenAppId={onSelectOpenAppId}
+            iconById={openAppIconById}
+            iconOnly
+          />
+        ) : null}
         {extraActionsNode}
       </div>
     </header>

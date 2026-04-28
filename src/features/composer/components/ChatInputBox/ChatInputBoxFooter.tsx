@@ -190,6 +190,8 @@ export function ChatInputBoxFooter({
   onAgentSelect,
   onOpenAgentSettings,
   onAddModel,
+  onRefreshModelConfig,
+  isModelConfigRefreshing,
   onClearAgent,
   fileCompletion,
   memoryCompletion,
@@ -241,6 +243,8 @@ export function ChatInputBoxFooter({
   onAgentSelect?: (agent: SelectedAgent) => void;
   onOpenAgentSettings?: () => void;
   onAddModel?: (providerId?: string) => void;
+  onRefreshModelConfig?: (providerId?: string) => Promise<void> | void;
+  isModelConfigRefreshing?: boolean;
   onClearAgent: () => void;
   fileCompletion: CompletionController;
   memoryCompletion: CompletionController;
@@ -403,6 +407,8 @@ export function ChatInputBoxFooter({
         onAgentSelect={(agent) => onAgentSelect?.(agent)}
         onOpenAgentSettings={onOpenAgentSettings}
         onAddModel={onAddModel}
+        onRefreshModelConfig={onRefreshModelConfig}
+        isModelConfigRefreshing={isModelConfigRefreshing}
         onClearAgent={onClearAgent}
         shortcutActions={shortcutActions}
       />

@@ -716,6 +716,45 @@ describe("Messages live behavior", () => {
     });
   });
 
+  it("can hide the sticky user bubble without removing the user message from the canvas", async () => {
+    const items: ConversationItem[] = [
+      {
+        id: "user-sticky-hidden",
+        kind: "message",
+        role: "user",
+        text: "这个问题仍然在幕布里",
+      },
+      {
+        id: "assistant-sticky-hidden",
+        kind: "message",
+        role: "assistant",
+        text: "回答仍然正常显示",
+      },
+    ];
+
+    const { container } = render(
+      <Messages
+        items={items}
+        threadId="thread-sticky-hidden"
+        workspaceId="ws-1"
+        isThinking={false}
+        openTargets={[]}
+        selectedOpenAppId=""
+        showStickyUserBubble={false}
+      />,
+    );
+
+    const scroller = getMessagesScroller(container);
+    setMessageOffsetTop(container, "user-sticky-hidden", 20);
+
+    await scrollMessages(scroller, 20);
+
+    expect(
+      container.querySelector('[data-message-anchor-id="user-sticky-hidden"]'),
+    ).toBeTruthy();
+    expect(container.querySelector(".messages-history-sticky-header")).toBeNull();
+  });
+
   it("can collapse the sticky header into a right-side peek tab and expand it again", async () => {
     const items: ConversationItem[] = [
       {

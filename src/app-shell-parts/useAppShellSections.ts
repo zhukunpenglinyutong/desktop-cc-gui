@@ -33,6 +33,7 @@ import type {
 import { useSoloMode } from "../features/layout/hooks/useSoloMode";
 import { useLiveEditPreview } from "../features/live-edit-preview/hooks/useLiveEditPreview";
 import { useArchiveShortcut } from "../features/app/hooks/useArchiveShortcut";
+import { useAppSurfaceShortcuts } from "../features/app/hooks/useAppSurfaceShortcuts";
 import { usePrimaryModeShortcuts } from "../features/app/hooks/usePrimaryModeShortcuts";
 import { useWorkspaceCycling } from "../features/app/hooks/useWorkspaceCycling";
 import { useAppMenuEvents } from "../features/app/hooks/useAppMenuEvents";
@@ -262,6 +263,7 @@ export function useAppShellSections(ctx: any) {
     handleAddCloneAgent,
     openSettings,
     handleDebugClick,
+    handleToggleRuntimeConsole,
     handleToggleTerminalPanel,
     handleToggleSearchPalette,
     composerSendLabel,
@@ -2228,10 +2230,50 @@ export function useAppShellSections(ctx: any) {
     closeSettings();
   }, [closeSettings, setAppMode, setHomeOpen]);
 
+  const handleOpenFilesSurface = useCallback(() => {
+    closeSettings();
+    setAppMode("chat");
+    setCenterMode("chat");
+    setFilePanelMode("files");
+    expandRightPanel();
+    if (isCompact) {
+      setActiveTab("git");
+    }
+  }, [
+    closeSettings,
+    expandRightPanel,
+    isCompact,
+    setActiveTab,
+    setAppMode,
+    setCenterMode,
+    setFilePanelMode,
+  ]);
+
   usePrimaryModeShortcuts({
     isEnabled: true,
+    openChatShortcut: appSettings.openChatShortcut,
+    openKanbanShortcut: appSettings.openKanbanShortcut,
     onOpenChat: handleOpenHomeChat,
     onOpenKanban: handleOpenKanbanMode,
+  });
+
+  useAppSurfaceShortcuts({
+    isCompact,
+    rightPanelAvailable,
+    sidebarCollapsed,
+    rightPanelCollapsed,
+    toggleLeftConversationSidebarShortcut:
+      appSettings.toggleLeftConversationSidebarShortcut,
+    toggleRightConversationSidebarShortcut:
+      appSettings.toggleRightConversationSidebarShortcut,
+    toggleRuntimeConsoleShortcut: appSettings.toggleRuntimeConsoleShortcut,
+    toggleFilesSurfaceShortcut: appSettings.toggleFilesSurfaceShortcut,
+    onExpandSidebar: expandSidebar,
+    onCollapseSidebar: collapseSidebar,
+    onExpandRightPanel: expandRightPanel,
+    onCollapseRightPanel: collapseRightPanel,
+    onToggleRuntimeConsole: handleToggleRuntimeConsole,
+    onOpenFilesSurface: handleOpenFilesSurface,
   });
 
   useArchiveShortcut({

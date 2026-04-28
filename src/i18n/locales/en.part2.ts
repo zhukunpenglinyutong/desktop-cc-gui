@@ -1819,6 +1819,9 @@ const enPart2 = {
   models: {
     selectModel: "Select Model",
     addModel: "Add Model",
+    refreshConfig: "Refresh Config",
+    refreshingConfig: "Refreshing...",
+    refreshConfigFailed: "Refresh failed: {{message}}",
     claude: {
       sonnet46: {
         label: "Sonnet 4.6",

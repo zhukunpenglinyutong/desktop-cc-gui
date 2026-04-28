@@ -13,6 +13,8 @@ interface ModelSelectProps {
   models?: ModelInfo[];  // Optional dynamic model list
   currentProvider?: string;  // Current provider type
   onAddModel?: () => void;  // Navigate to model management
+  onRefreshConfig?: () => Promise<void> | void; // Refresh current provider config
+  isRefreshingConfig?: boolean;
 }
 
 const DEFAULT_MODEL_MAP: Record<string, ModelInfo> = AVAILABLE_MODELS.reduce(
@@ -97,9 +99,18 @@ const ModelIcon = ({ provider, size = 16 }: { provider?: string; size?: number }
  * ModelSelect - Model selector component
  * Supports switching between Sonnet 4.5, Opus 4.5, and other models, including Codex models
  */
-export const ModelSelect = ({ value, onChange, models = AVAILABLE_MODELS, currentProvider = 'claude', onAddModel }: ModelSelectProps) => {
+export const ModelSelect = ({
+  value,
+  onChange,
+  models = AVAILABLE_MODELS,
+  currentProvider = 'claude',
+  onAddModel,
+  onRefreshConfig,
+  isRefreshingConfig = false,
+}: ModelSelectProps) => {
   const { t } = useTranslation();
   const [isOpen, setIsOpen] = useState(false);
+  const [refreshConfigError, setRefreshConfigError] = useState<string | null>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
@@ -173,6 +184,24 @@ export const ModelSelect = ({ value, onChange, models = AVAILABLE_MODELS, curren
     onChange(modelId);
     setIsOpen(false);
   }, [onChange]);
+
+  const handleAddModelClick = useCallback((e: React.MouseEvent<HTMLButtonElement>) => {
+    e.stopPropagation();
+    onAddModel?.();
+    setIsOpen(false);
+  }, [onAddModel]);
+
+  const handleRefreshConfigClick = useCallback((e: React.MouseEvent<HTMLButtonElement>) => {
+    e.stopPropagation();
+    if (!onRefreshConfig || isRefreshingConfig) {
+      return;
+    }
+    setRefreshConfigError(null);
+    void Promise.resolve(onRefreshConfig()).catch((error: unknown) => {
+      const message = error instanceof Error ? error.message : String(error);
+      setRefreshConfigError(message);
+    });
+  }, [isRefreshingConfig, onRefreshConfig]);
 
   /**
    * Close on outside click
@@ -248,17 +277,41 @@ export const ModelSelect = ({ value, onChange, models = AVAILABLE_MODELS, curren
               </div>
             </div>
           ))}
-          {onAddModel && (
+          {(onAddModel || onRefreshConfig) && (
             <>
               <div className="selector-divider" />
-              <div className="selector-add-footer">
-                <div
-                  className="selector-option selector-option-add"
-                  onClick={() => { onAddModel(); setIsOpen(false); }}
-                >
-                  <span>{t('models.addModel')}</span>
-                </div>
+              <div className="selector-action-footer">
+                {onAddModel && (
+                  <button
+                    type="button"
+                    className="selector-footer-action selector-footer-action-add"
+                    onClick={handleAddModelClick}
+                  >
+                    {t('models.addModel')}
+                  </button>
+                )}
+                {onRefreshConfig && (
+                  <button
+                    type="button"
+                    className="selector-footer-action selector-footer-action-refresh"
+                    onClick={handleRefreshConfigClick}
+                    disabled={isRefreshingConfig}
+                    aria-busy={isRefreshingConfig}
+                    title={t(isRefreshingConfig ? 'models.refreshingConfig' : 'models.refreshConfig')}
+                  >
+                    <span
+                      className={`codicon codicon-refresh${isRefreshingConfig ? ' selector-refresh-icon-spinning' : ''}`}
+                      aria-hidden
+                    />
+                    <span>{t(isRefreshingConfig ? 'models.refreshingConfig' : 'models.refreshConfig')}</span>
+                  </button>
+                )}
               </div>
+              {refreshConfigError && (
+                <div className="selector-refresh-error" role="status">
+                  {t('models.refreshConfigFailed', { message: refreshConfigError })}
+                </div>
+              )}
             </>
           )}
         </div>

@@ -37,6 +37,10 @@ type UseEngineControllerOptions = {
   onDebug?: (entry: DebugEntry) => void;
 };
 
+type RefreshEngineModelsOptions = {
+  forceRefresh?: boolean;
+};
+
 /**
  * Engine display information for UI
  */
@@ -363,15 +367,19 @@ export function useEngineController({
   const isConnected = Boolean(activeWorkspace?.connected);
 
   const loadModelsForEngine = useCallback(
-    async (engineType: EngineType, fallbackModels: EngineModelInfo[] = []) => {
+    async (
+      engineType: EngineType,
+      fallbackModels: EngineModelInfo[] = [],
+      options: RefreshEngineModelsOptions = {},
+    ) => {
       try {
-        const models = await getEngineModels(engineType);
-        if (models.length > 0) {
-          setEngineModels(models);
-          return;
-        }
+        const models = options.forceRefresh
+          ? await getEngineModels(engineType, { forceRefresh: true })
+          : await getEngineModels(engineType);
+        const nextModels = models.length > 0 ? models : fallbackModels;
         // Keep fallback instead of clearing to empty, avoids transient "-" model state.
-        setEngineModels(fallbackModels);
+        setEngineModels(nextModels);
+        return nextModels;
       } catch (error) {
         onDebug?.({
           id: `${Date.now()}-engine-models-load-error`,
@@ -384,18 +392,35 @@ export function useEngineController({
           },
         });
         setEngineModels(fallbackModels);
+        return fallbackModels;
       }
     },
     [onDebug],
   );
 
   const refreshEngineModels = useCallback(
-    async (engineType: EngineType) => {
+    async (
+      engineType: EngineType,
+      options: RefreshEngineModelsOptions = {},
+    ) => {
       const status = engineStatuses.find((entry) => entry.engineType === engineType);
       if (!status?.installed) {
         return;
       }
-      await loadModelsForEngine(engineType, status.models);
+      const nextModels = await loadModelsForEngine(
+        engineType,
+        status.models,
+        options,
+      );
+      if (options.forceRefresh && nextModels.length > 0) {
+        setEngineStatuses((currentStatuses) =>
+          currentStatuses.map((entry) =>
+            entry.engineType === engineType
+              ? { ...entry, models: nextModels }
+              : entry,
+          ),
+        );
+      }
     },
     [engineStatuses, loadModelsForEngine],
   );

@@ -1790,6 +1790,9 @@ const zhPart2 = {
   models: {
     selectModel: "选择模型",
     addModel: "添加模型",
+    refreshConfig: "刷新配置",
+    refreshingConfig: "刷新中…",
+    refreshConfigFailed: "刷新失败：{{message}}",
     claude: {
       sonnet46: {
         label: "Sonnet 4.6",

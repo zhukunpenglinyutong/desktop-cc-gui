@@ -1591,6 +1591,19 @@ describe("tauri invoke wrappers", () => {
     });
   });
 
+  it("maps get_engine_models force refresh params", async () => {
+    const invokeMock = vi.mocked(invoke);
+    invokeMock.mockResolvedValueOnce([]);
+
+    const models = await getEngineModels("claude", { forceRefresh: true });
+
+    expect(models).toEqual([]);
+    expect(invokeMock).toHaveBeenCalledWith("get_engine_models", {
+      engineType: "claude",
+      forceRefresh: true,
+    });
+  });
+
   it("maps engine_interrupt params", async () => {
     const invokeMock = vi.mocked(invoke);
     invokeMock.mockResolvedValueOnce(undefined);

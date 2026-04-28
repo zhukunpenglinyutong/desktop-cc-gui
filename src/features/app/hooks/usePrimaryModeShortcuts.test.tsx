@@ -11,6 +11,8 @@ type HarnessProps = {
 function ShortcutHarness({ onOpenChat, onOpenKanban }: HarnessProps) {
   usePrimaryModeShortcuts({
     isEnabled: true,
+    openChatShortcut: "cmd+j",
+    openKanbanShortcut: "cmd+k",
     onOpenChat,
     onOpenKanban,
   });

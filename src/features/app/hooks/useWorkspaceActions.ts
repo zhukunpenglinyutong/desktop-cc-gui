@@ -47,6 +47,7 @@ type Params = {
   activeWorkspace: WorkspaceInfo | null;
   isCompact: boolean;
   activeEngine: EngineType;
+  newAgentShortcut: string | null;
   setActiveEngine?: (engine: EngineType) => Promise<void> | void;
   addWorkspace: () => Promise<WorkspaceInfo | null>;
   addWorkspaceFromPath: (path: string) => Promise<WorkspaceInfo | null>;
@@ -71,6 +72,7 @@ export function useWorkspaceActions({
   activeWorkspace,
   isCompact,
   activeEngine,
+  newAgentShortcut,
   setActiveEngine,
   addWorkspace: _addWorkspace,
   addWorkspaceFromPath,
@@ -481,6 +483,7 @@ export function useWorkspaceActions({
 
   useNewAgentShortcut({
     isEnabled: Boolean(activeWorkspace),
+    shortcut: newAgentShortcut,
     onTrigger: () => {
       if (activeWorkspace) {
         void handleAddAgent(activeWorkspace);

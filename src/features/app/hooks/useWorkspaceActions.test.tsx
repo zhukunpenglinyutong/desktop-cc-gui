@@ -74,6 +74,7 @@ function makeOptions(overrides?: Partial<Parameters<typeof useWorkspaceActions>[
     activeWorkspace: baseWorkspace,
     isCompact: false,
     activeEngine: "claude" as const,
+    newAgentShortcut: null,
     setActiveEngine: vi.fn(async () => undefined),
     addWorkspace: vi.fn(async () => null),
     addWorkspaceFromPath: vi.fn(async () => null),

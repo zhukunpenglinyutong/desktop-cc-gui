@@ -1,5 +1,8 @@
 import { useEffect } from "react";
-import { matchesShortcut } from "../../../utils/shortcuts";
+import {
+  isEditableShortcutTarget,
+  matchesShortcutForPlatform,
+} from "../../../utils/shortcuts";
 
 type UseGlobalSearchShortcutOptions = {
   isEnabled: boolean;
@@ -30,26 +33,27 @@ export function useGlobalSearchShortcut({
       return;
     }
 
-    const fallbackShortcuts = ["cmd+f", "ctrl+f", "cmd+o", "ctrl+o"];
     const normalizedConfiguredShortcut = normalizeShortcutValue(shortcut);
     const canUseConfiguredShortcut =
       Boolean(normalizedConfiguredShortcut) &&
       (normalizedConfiguredShortcut
         ? !DISALLOWED_SHORTCUTS.has(normalizedConfiguredShortcut)
         : false);
+    if (!canUseConfiguredShortcut || !normalizedConfiguredShortcut) {
+      return;
+    }
 
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.defaultPrevented || event.repeat) {
         return;
       }
-      let matchesConfiguredShortcut = false;
-      if (canUseConfiguredShortcut && normalizedConfiguredShortcut) {
-        matchesConfiguredShortcut = matchesShortcut(event, normalizedConfiguredShortcut);
+      if (
+        isEditableShortcutTarget(event.target) ||
+        isEditableShortcutTarget(document.activeElement)
+      ) {
+        return;
       }
-      const matchesFallbackShortcut = fallbackShortcuts.some((entry) =>
-        matchesShortcut(event, entry),
-      );
-      if (!matchesConfiguredShortcut && !matchesFallbackShortcut) {
+      if (!matchesShortcutForPlatform(event, normalizedConfiguredShortcut)) {
         return;
       }
       event.preventDefault();

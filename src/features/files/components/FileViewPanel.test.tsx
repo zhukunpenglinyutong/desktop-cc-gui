@@ -1887,7 +1887,9 @@ describe("FileViewPanel external change awareness in detached mode", () => {
     );
 
     await screen.findByTestId("mock-codemirror");
-    expect(vi.mocked(subscribeDetachedExternalFileChanges)).toHaveBeenCalled();
+    await waitFor(() => {
+      expect(vi.mocked(subscribeDetachedExternalFileChanges)).toHaveBeenCalled();
+    });
     detachedExternalFileChangeListener?.({
       workspaceId: "ws-ext-watcher",
       normalizedPath: "src/watcher.ts",

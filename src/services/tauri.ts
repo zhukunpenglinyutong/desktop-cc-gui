@@ -1920,14 +1920,21 @@ export async function getEngineStatus(engineType: EngineType): Promise<EngineSta
 /**
  * Get available models for a specific engine
  */
-export async function getEngineModels(engineType: EngineType): Promise<EngineModelInfo[]> {
+export async function getEngineModels(
+  engineType: EngineType,
+  options: { forceRefresh?: boolean } = {},
+): Promise<EngineModelInfo[]> {
   if (isEngineRpcFallbackMode() && engineType !== "codex") {
     return [];
   }
   try {
-    const models = await invoke<EngineModelInfo[]>("get_engine_models", {
+    const params: { engineType: EngineType; forceRefresh?: boolean } = {
       engineType,
-    });
+    };
+    if (options.forceRefresh) {
+      params.forceRefresh = true;
+    }
+    const models = await invoke<EngineModelInfo[]>("get_engine_models", params);
     daemonEngineRpcSupported = true;
     return models;
   } catch (error) {

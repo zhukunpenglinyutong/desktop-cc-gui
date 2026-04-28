@@ -595,6 +595,10 @@ export interface ChatInputBoxProps {
   onOpenPromptSettings?: () => void;
   /** Open model settings (navigate to provider management to add models) */
   onOpenModelSettings?: (providerId?: string) => void;
+  /** Refresh current provider model/config snapshot */
+  onRefreshModelConfig?: (providerId?: string) => Promise<void> | void;
+  /** Whether current provider model/config refresh is in progress */
+  isModelConfigRefreshing?: boolean;
 
   /** Whether has messages (for rewind button display) */
   hasMessages?: boolean;
@@ -728,6 +732,10 @@ export interface ButtonAreaProps {
   onOpenAgentSettings?: () => void;
   /** Navigate to model management to add models */
   onAddModel?: (providerId?: string) => void;
+  /** Refresh current provider model/config snapshot */
+  onRefreshModelConfig?: (providerId?: string) => Promise<void> | void;
+  /** Whether current provider model/config refresh is in progress */
+  isModelConfigRefreshing?: boolean;
   /** Quick shortcut actions rendered in config panel */
   shortcutActions?: ShortcutAction[];
 }

@@ -68,6 +68,23 @@ describe("PanelTabs", () => {
     expect(radarButton.classList.contains("is-live")).toBe(true);
   });
 
+  it("removes hidden toolbar entries from the DOM", () => {
+    const onSelect = vi.fn();
+
+    render(
+      <PanelTabs
+        active="files"
+        onSelect={onSelect}
+        visibleTabs={{ activity: false, git: false, search: false }}
+      />,
+    );
+
+    expect(screen.queryByRole("button", { name: "panels.activity" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "panels.git" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "panels.search" })).toBeNull();
+    expect(screen.getByRole("button", { name: "panels.files" })).toBeTruthy();
+  });
+
   it("keeps git, files, search, and custom memory tabs selectable after adding activity", () => {
     const onSelect = vi.fn();
 

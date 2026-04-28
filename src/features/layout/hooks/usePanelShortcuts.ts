@@ -1,5 +1,8 @@
 import { useEffect } from "react";
-import { matchesShortcut } from "../../../utils/shortcuts";
+import {
+  isEditableShortcutTarget,
+  matchesShortcutForPlatform,
+} from "../../../utils/shortcuts";
 
 type UsePanelShortcutsOptions = {
   toggleDebugPanelShortcut: string | null;
@@ -19,20 +22,18 @@ export function usePanelShortcuts({
       if (event.repeat || event.defaultPrevented) {
         return;
       }
-      const target = event.target;
       if (
-        target instanceof HTMLElement &&
-        (target.isContentEditable ||
-          target.closest("input, textarea, select, [contenteditable='true']"))
+        isEditableShortcutTarget(event.target) ||
+        isEditableShortcutTarget(document.activeElement)
       ) {
         return;
       }
-      if (matchesShortcut(event, toggleDebugPanelShortcut)) {
+      if (matchesShortcutForPlatform(event, toggleDebugPanelShortcut)) {
         event.preventDefault();
         onToggleDebug();
         return;
       }
-      if (matchesShortcut(event, toggleTerminalShortcut)) {
+      if (matchesShortcutForPlatform(event, toggleTerminalShortcut)) {
         event.preventDefault();
         onToggleTerminal();
       }

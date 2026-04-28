@@ -32,11 +32,17 @@ The Nix frontend build MUST fetch npm dependencies from the committed manifest a
 - **THEN** the build MUST execute `tsc && vite build` or an equivalent command sequence that fails on TypeScript errors
 - **AND** the Nix build MUST NOT replace the repository build with `vite build` only
 
-#### Scenario: npm fetcher settings are justified by Nix validation
+#### Scenario: npm dependency closure uses committed lockfile integrity
 
-- **WHEN** the Nix frontend dependency fetch requires `npmDepsFetcherVersion = 2` or `npmFlags = [ "--legacy-peer-deps" ]`
-- **THEN** those settings MAY be added to `flake.nix`
-- **AND** the implementation MUST document that the setting is needed for lockfile or peer dependency resolution rather than product behavior
+- **WHEN** the Nix frontend dependency fetch is configured
+- **THEN** the flake SHOULD use `importNpmLock` and `importNpmLock.npmConfigHook` so dependency sources come from committed `package-lock.json` integrity data
+- **AND** the frontend derivation MUST NOT require a hand-maintained `npmDepsHash` for the npm dependency closure
+
+#### Scenario: npm install flags are justified by Nix validation
+
+- **WHEN** the Nix frontend dependency install requires `npmFlags = [ "--legacy-peer-deps" ]`
+- **THEN** the setting MAY be added to `flake.nix`
+- **AND** the implementation MUST document that the setting is needed for peer dependency resolution rather than product behavior
 
 #### Scenario: lockfile changes are explainable
 

@@ -112,4 +112,35 @@ describe("MainHeader topbar session tabs integration", () => {
     const dragLane = document.querySelector(".main-header-session-tabs-drag-lane");
     expect(dragLane?.hasAttribute("data-tauri-drag-region")).toBe(true);
   });
+
+  it("removes hidden launch and open-app controls from the header", () => {
+    render(
+      <MainHeader
+        workspace={workspace}
+        openTargets={[]}
+        openAppIconById={{}}
+        selectedOpenAppId=""
+        onSelectOpenAppId={() => {}}
+        branchName="main"
+        branches={[{ name: "main", lastCommit: Date.now() }]}
+        onCheckoutBranch={() => {}}
+        onCreateBranch={() => {}}
+        launchScript="npm test"
+        launchScriptEditorOpen={false}
+        launchScriptDraft="npm test"
+        launchScriptSaving={false}
+        launchScriptError={null}
+        onRunLaunchScript={vi.fn()}
+        onOpenLaunchScriptEditor={vi.fn()}
+        onCloseLaunchScriptEditor={vi.fn()}
+        onLaunchScriptDraftChange={vi.fn()}
+        onSaveLaunchScript={vi.fn()}
+        showLaunchScriptControls={false}
+        showOpenAppMenu={false}
+      />,
+    );
+
+    expect(document.querySelector(".launch-script-cluster")).toBeNull();
+    expect(document.querySelector(".open-app-menu")).toBeNull();
+  });
 });

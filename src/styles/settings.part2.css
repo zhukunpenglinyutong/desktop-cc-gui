@@ -1753,6 +1753,127 @@
   gap: 10px;
 }
 
+.settings-shortcuts-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.settings-shortcuts-group {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.settings-shortcuts-group-header .settings-subsection-title {
+  margin-top: 0;
+}
+
+.settings-shortcuts-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.settings-shortcuts-item {
+  min-width: 0;
+  min-height: 136px;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  padding: 12px;
+  border: 1px solid color-mix(in srgb, var(--border-muted) 90%, transparent);
+  border-radius: 8px;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--surface-card) 92%, transparent), color-mix(in srgb, var(--surface-card) 74%, transparent)),
+    color-mix(in srgb, var(--surface-card) 84%, transparent);
+}
+
+.settings-shortcuts-item:hover {
+  background: color-mix(in srgb, var(--surface-hover) 40%, var(--surface-card));
+  border-color: color-mix(in srgb, var(--border-stronger) 72%, transparent);
+}
+
+.settings-shortcuts-item-heading {
+  min-width: 0;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.settings-shortcuts-item-icon {
+  flex: 0 0 auto;
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 7px;
+  color: var(--text-accent);
+  background: color-mix(in srgb, var(--border-accent) 16%, transparent);
+  border: 1px solid color-mix(in srgb, var(--border-accent) 20%, transparent);
+}
+
+.settings-shortcuts-item-title {
+  min-width: 0;
+  min-height: 34px;
+  color: var(--text-strong);
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 1.35;
+}
+
+.settings-shortcuts-item-input {
+  width: 100%;
+  min-width: 0;
+  padding: 8px 9px;
+  text-align: center;
+}
+
+.settings-shortcuts-item-footer {
+  min-width: 0;
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: auto;
+}
+
+.settings-shortcuts-item-default {
+  min-width: 0;
+  color: var(--text-subtle);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.settings-shortcuts-item-clear {
+  flex: 0 0 auto;
+}
+
+@media (max-width: 1280px) {
+  .settings-shortcuts-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 1040px) {
+  .settings-shortcuts-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 760px) {
+  .settings-shortcuts-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 560px) {
+  .settings-shortcuts-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 .settings-toggle-row {
   min-height: 64px;
   padding: 14px 16px;
@@ -1960,4 +2081,3 @@
     padding-inline: 20px;
   }
 }
-

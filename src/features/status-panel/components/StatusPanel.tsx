@@ -32,16 +32,41 @@ interface StatusPanelProps {
   onOpenDiffPath?: (path: string) => void;
   onSelectSubagent?: (agent: SubagentInfo) => void;
   variant?: "popover" | "dock";
+  visibleDockTabs?: Partial<Record<TabType, boolean>>;
 }
 
 function resolvePreferredTab(
   variant: "popover" | "dock",
   showPlanTab: boolean,
+  visibleDockTabs?: Partial<Record<TabType, boolean>>,
 ): TabType | null {
   if (variant === "dock") {
-    return showPlanTab ? "plan" : "todo";
+    const isVisible = (tab: TabType) => visibleDockTabs?.[tab] !== false;
+    if (showPlanTab && isVisible("plan")) {
+      return "plan";
+    }
+    for (const tab of ["todo", "subagent", "files", "latestUserMessage"] as const) {
+      if (isVisible(tab)) {
+        return tab;
+      }
+    }
   }
   return null;
+}
+
+function isDockTabVisible(
+  variant: "popover" | "dock",
+  tab: TabType,
+  showPlanTab: boolean,
+  visibleDockTabs?: Partial<Record<TabType, boolean>>,
+): boolean {
+  if (variant !== "dock") {
+    return true;
+  }
+  if (tab === "plan" && !showPlanTab) {
+    return false;
+  }
+  return visibleDockTabs?.[tab] !== false;
 }
 
 export const StatusPanel = memo(function StatusPanel({
@@ -58,6 +83,7 @@ export const StatusPanel = memo(function StatusPanel({
   onOpenDiffPath,
   onSelectSubagent,
   variant = "popover",
+  visibleDockTabs,
 }: StatusPanelProps) {
   const { t } = useTranslation();
   const {
@@ -83,7 +109,7 @@ export const StatusPanel = memo(function StatusPanel({
   const hasPlanData = isPlanMode || Boolean(plan);
   const showPlanTab = hasPlanData && !isCodexEngine;
   const [openTab, setOpenTab] = useState<TabType | null>(() =>
-    resolvePreferredTab(variant, showPlanTab),
+    resolvePreferredTab(variant, showPlanTab, visibleDockTabs),
   );
   const panelRef = useRef<HTMLDivElement>(null);
   const planTotal = plan?.steps.length ?? 0;
@@ -143,15 +169,22 @@ export const StatusPanel = memo(function StatusPanel({
     return () => document.removeEventListener("keydown", handleEscape);
   }, [openTab, variant]);
 
+  const preferredTab = resolvePreferredTab(variant, showPlanTab, visibleDockTabs);
+
   useEffect(() => {
-    if (openTab === "plan" && !showPlanTab) {
-      setOpenTab(resolvePreferredTab(variant, showPlanTab));
+    if (variant === "dock") {
+      if (
+        !openTab ||
+        !isDockTabVisible(variant, openTab, showPlanTab, visibleDockTabs)
+      ) {
+        setOpenTab(preferredTab);
+      }
       return;
     }
-    if (variant === "dock" && !openTab) {
-      setOpenTab(resolvePreferredTab(variant, showPlanTab));
+    if (openTab === "plan" && !showPlanTab) {
+      setOpenTab(preferredTab);
     }
-  }, [openTab, showPlanTab, variant]);
+  }, [openTab, preferredTab, showPlanTab, variant, visibleDockTabs]);
 
   const handleTabClick = useCallback(
     (tab: TabType) => {
@@ -167,8 +200,14 @@ export const StatusPanel = memo(function StatusPanel({
 
   if (!expanded) return null;
 
+  if (variant === "dock" && !preferredTab) {
+    return null;
+  }
+
   const activeTab = variant === "dock"
-    ? openTab ?? resolvePreferredTab(variant, showPlanTab)
+    ? openTab && isDockTabVisible(variant, openTab, showPlanTab, visibleDockTabs)
+      ? openTab
+      : preferredTab
     : openTab;
   const contentNode = (
     <>
@@ -216,7 +255,7 @@ export const StatusPanel = memo(function StatusPanel({
       {variant === "dock" ? (
         <>
           <div className="sp-tabs sp-tabs--dock">
-            {isCodexEngine && (
+            {isCodexEngine && isDockTabVisible(variant, "todo", showPlanTab, visibleDockTabs) && (
               <button
                 type="button"
                 className={`sp-tab${activeTab === "todo" ? " sp-tab-active" : ""}`}
@@ -233,7 +272,7 @@ export const StatusPanel = memo(function StatusPanel({
               </button>
             )}
 
-            {isCodexEngine && (
+            {isCodexEngine && isDockTabVisible(variant, "subagent", showPlanTab, visibleDockTabs) && (
               <button
                 type="button"
                 className={`sp-tab${activeTab === "subagent" ? " sp-tab-active" : ""}`}
@@ -250,7 +289,7 @@ export const StatusPanel = memo(function StatusPanel({
               </button>
             )}
 
-            {isCodexEngine && (
+            {isCodexEngine && isDockTabVisible(variant, "files", showPlanTab, visibleDockTabs) && (
               <button
                 type="button"
                 className={`sp-tab${activeTab === "files" ? " sp-tab-active" : ""}`}
@@ -266,7 +305,7 @@ export const StatusPanel = memo(function StatusPanel({
               </button>
             )}
 
-            {!isCodexEngine && (
+            {!isCodexEngine && isDockTabVisible(variant, "todo", showPlanTab, visibleDockTabs) && (
               <button
                 type="button"
                 className={`sp-tab${activeTab === "todo" ? " sp-tab-active" : ""}`}
@@ -283,7 +322,7 @@ export const StatusPanel = memo(function StatusPanel({
               </button>
             )}
 
-            {!isCodexEngine && (
+            {!isCodexEngine && isDockTabVisible(variant, "subagent", showPlanTab, visibleDockTabs) && (
               <button
                 type="button"
                 className={`sp-tab${activeTab === "subagent" ? " sp-tab-active" : ""}`}
@@ -300,7 +339,7 @@ export const StatusPanel = memo(function StatusPanel({
               </button>
             )}
 
-            {!isCodexEngine && (
+            {!isCodexEngine && isDockTabVisible(variant, "files", showPlanTab, visibleDockTabs) && (
               <button
                 type="button"
                 className={`sp-tab${activeTab === "files" ? " sp-tab-active" : ""}`}
@@ -316,17 +355,19 @@ export const StatusPanel = memo(function StatusPanel({
               </button>
             )}
 
-            <button
-              type="button"
-              className={`sp-tab${activeTab === "latestUserMessage" ? " sp-tab-active" : ""}`}
-              onClick={() => handleTabClick("latestUserMessage")}
-              aria-expanded={activeTab === "latestUserMessage"}
-            >
-              <MessageSquareQuote size={14} className="sp-tab-icon" />
-              <span className="sp-tab-label">{t("statusPanel.tabLatestUserMessage")}</span>
-            </button>
+            {isDockTabVisible(variant, "latestUserMessage", showPlanTab, visibleDockTabs) && (
+              <button
+                type="button"
+                className={`sp-tab${activeTab === "latestUserMessage" ? " sp-tab-active" : ""}`}
+                onClick={() => handleTabClick("latestUserMessage")}
+                aria-expanded={activeTab === "latestUserMessage"}
+              >
+                <MessageSquareQuote size={14} className="sp-tab-icon" />
+                <span className="sp-tab-label">{t("statusPanel.tabLatestUserMessage")}</span>
+              </button>
+            )}
 
-            {showPlanTab && (
+            {showPlanTab && isDockTabVisible(variant, "plan", showPlanTab, visibleDockTabs) && (
               <button
                 type="button"
                 className={`sp-tab${activeTab === "plan" ? " sp-tab-active" : ""}`}

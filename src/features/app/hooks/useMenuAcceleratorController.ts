@@ -11,8 +11,16 @@ export function useMenuAcceleratorController({ appSettings, onDebug }: Params) {
   const menuAccelerators = useMemo(
     () => [
       {
+        id: "file_open_settings",
+        shortcut: appSettings.openSettingsShortcut,
+      },
+      {
         id: "file_new_agent",
         shortcut: appSettings.newAgentShortcut,
+      },
+      {
+        id: "file_new_window",
+        shortcut: appSettings.newWindowShortcut,
       },
       {
         id: "file_new_worktree_agent",
@@ -87,9 +95,11 @@ export function useMenuAcceleratorController({ appSettings, onDebug }: Params) {
       appSettings.cycleWorkspaceNextShortcut,
       appSettings.cycleWorkspacePrevShortcut,
       appSettings.experimentalCollaborationModesEnabled,
+      appSettings.newWindowShortcut,
       appSettings.newAgentShortcut,
       appSettings.newCloneAgentShortcut,
       appSettings.newWorktreeAgentShortcut,
+      appSettings.openSettingsShortcut,
       appSettings.toggleGitSidebarShortcut,
       appSettings.toggleGlobalSearchShortcut,
       appSettings.toggleDebugPanelShortcut,

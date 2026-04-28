@@ -1,7 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef } from "react";
 import type { Dispatch, SetStateAction } from "react";
+import { useTranslation } from "react-i18next";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import type { AppSettings } from "../../../types";
+import {
+  formatShortcutForPlatform,
+  isEditableShortcutTarget,
+  matchesShortcutForPlatform,
+} from "../../../utils/shortcuts";
 import { clampUiScale, UI_SCALE_STEP } from "../../../utils/uiScale";
 
 type UseUiScaleShortcutsOptions = {
@@ -22,6 +28,7 @@ export function useUiScaleShortcuts({
   setSettings,
   saveSettings,
 }: UseUiScaleShortcutsOptions): UseUiScaleShortcutsResult {
+  const { t } = useTranslation();
   const uiScale = clampUiScale(settings.uiScale);
 
   useEffect(() => {
@@ -33,15 +40,24 @@ export function useUiScaleShortcuts({
       .catch(() => undefined);
   }, [uiScale]);
 
-  const scaleShortcutLabel = useMemo(() => {
-    if (typeof navigator === "undefined") {
-      return "Ctrl";
-    }
-    return /Mac|iPhone|iPad|iPod/.test(navigator.platform) ? "Cmd" : "Ctrl";
-  }, []);
-
-  const scaleShortcutTitle = `${scaleShortcutLabel}+ and ${scaleShortcutLabel}-, ${scaleShortcutLabel}+0 to reset.`;
-  const scaleShortcutText = `Shortcuts: ${scaleShortcutLabel}+ and ${scaleShortcutLabel}-, ${scaleShortcutLabel}+0 to reset.`;
+  const scaleShortcutTitle = useMemo(() => {
+    const increase = formatShortcutForPlatform(settings.increaseUiScaleShortcut);
+    const decrease = formatShortcutForPlatform(settings.decreaseUiScaleShortcut);
+    const reset = formatShortcutForPlatform(settings.resetUiScaleShortcut);
+    return t("settings.uiScaleShortcutTitle", {
+      increase,
+      decrease,
+      reset,
+    });
+  }, [
+    settings.decreaseUiScaleShortcut,
+    settings.increaseUiScaleShortcut,
+    settings.resetUiScaleShortcut,
+    t,
+  ]);
+  const scaleShortcutText = t("settings.uiScaleShortcutText", {
+    shortcuts: scaleShortcutTitle,
+  });
 
   const saveQueueRef = useRef(Promise.resolve());
   const queueSaveSettings = useCallback(
@@ -91,16 +107,27 @@ export function useUiScaleShortcuts({
 
   useEffect(() => {
     const handleScaleShortcut = (event: KeyboardEvent) => {
-      if (!event.metaKey && !event.ctrlKey) {
+      if (event.defaultPrevented || event.repeat) {
         return;
       }
-      if (event.altKey) {
+      if (
+        isEditableShortcutTarget(event.target) ||
+        isEditableShortcutTarget(document.activeElement)
+      ) {
         return;
       }
-      const key = event.key;
-      const isIncrease = key === "+" || key === "=";
-      const isDecrease = key === "-" || key === "_";
-      const isReset = key === "0";
+      const isIncrease = matchesShortcutForPlatform(
+        event,
+        settings.increaseUiScaleShortcut,
+      );
+      const isDecrease = matchesShortcutForPlatform(
+        event,
+        settings.decreaseUiScaleShortcut,
+      );
+      const isReset = matchesShortcutForPlatform(
+        event,
+        settings.resetUiScaleShortcut,
+      );
       if (!isIncrease && !isDecrease && !isReset) {
         return;
       }
@@ -115,7 +142,13 @@ export function useUiScaleShortcuts({
     return () => {
       window.removeEventListener("keydown", handleScaleShortcut);
     };
-  }, [handleScaleDelta, handleScaleReset]);
+  }, [
+    handleScaleDelta,
+    handleScaleReset,
+    settings.decreaseUiScaleShortcut,
+    settings.increaseUiScaleShortcut,
+    settings.resetUiScaleShortcut,
+  ]);
 
   return {
     uiScale,

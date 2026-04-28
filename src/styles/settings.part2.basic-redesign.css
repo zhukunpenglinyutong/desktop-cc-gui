@@ -450,6 +450,98 @@
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
 }
 
+.settings-section-basic .settings-client-ui-visibility-card {
+  overflow: hidden;
+}
+
+.settings-section-basic .settings-client-ui-visibility-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 16px;
+  align-items: start;
+  padding: 14px 16px 10px;
+}
+
+.settings-section-basic .settings-client-ui-visibility-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.settings-section-basic .settings-client-ui-visibility-reset {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.settings-section-basic .settings-client-ui-visibility-panel {
+  border-top: 1px solid color-mix(in srgb, var(--settings-basic-control-border) 72%, transparent);
+}
+
+.settings-section-basic .settings-client-ui-visibility-panel-row {
+  min-height: 62px;
+}
+
+.settings-section-basic .settings-client-ui-visibility-row-copy {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+  min-width: 0;
+}
+
+.settings-section-basic .settings-client-ui-visibility-row-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  color: color-mix(in srgb, var(--settings-basic-text) 86%, var(--text-muted));
+}
+
+.settings-section-basic .settings-client-ui-visibility-row-icon svg,
+.settings-section-basic .settings-client-ui-visibility-row-icon img {
+  width: 15px;
+  height: 15px;
+}
+
+.settings-section-basic .settings-client-ui-visibility-row-text {
+  min-width: 0;
+}
+
+.settings-section-basic .settings-client-ui-visibility-controls {
+  padding: 0 0 8px 28px;
+}
+
+.settings-section-basic .settings-client-ui-visibility-control-row {
+  min-height: 58px;
+  padding-block: 9px;
+  border-left: 1px solid color-mix(in srgb, var(--settings-basic-control-border) 70%, transparent);
+}
+
+.settings-section-basic .settings-client-ui-visibility-control-row.is-parent-hidden {
+  opacity: 0.74;
+}
+
+.settings-section-basic .settings-client-ui-visibility-parent-hint {
+  color: var(--settings-basic-text);
+}
+
+@media (max-width: 640px) {
+  .settings-section-basic .settings-client-ui-visibility-head {
+    grid-template-columns: 1fr;
+  }
+
+  .settings-section-basic .settings-client-ui-visibility-reset {
+    justify-self: start;
+  }
+
+  .settings-section-basic .settings-client-ui-visibility-controls {
+    padding-left: 12px;
+  }
+}
+
 .settings-section-basic .settings-field.settings-basic-item {
   margin: 0;
   padding: 12px 16px;

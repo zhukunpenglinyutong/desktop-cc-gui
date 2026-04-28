@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import type { AccessMode } from "../../../types";
-import { matchesShortcut } from "../../../utils/shortcuts";
+import { matchesShortcutForPlatform } from "../../../utils/shortcuts";
 
 type ModelOption = { id: string; displayName: string; model: string };
 
@@ -53,7 +53,7 @@ export function useComposerShortcuts({
       if (document.activeElement !== textareaRef.current) {
         return;
       }
-      if (matchesShortcut(event, modelShortcut)) {
+      if (matchesShortcutForPlatform(event, modelShortcut)) {
         event.preventDefault();
         if (models.length === 0) {
           return;
@@ -66,7 +66,7 @@ export function useComposerShortcuts({
         }
         return;
       }
-      if (matchesShortcut(event, accessShortcut)) {
+      if (matchesShortcutForPlatform(event, accessShortcut)) {
         event.preventDefault();
         const currentIndex = ACCESS_ORDER.indexOf(accessMode);
         const nextIndex = currentIndex >= 0 ? (currentIndex + 1) % ACCESS_ORDER.length : 0;
@@ -76,7 +76,7 @@ export function useComposerShortcuts({
         }
         return;
       }
-      if (matchesShortcut(event, reasoningShortcut)) {
+      if (matchesShortcutForPlatform(event, reasoningShortcut)) {
         event.preventDefault();
         if (!reasoningSupported || reasoningOptions.length === 0) {
           return;
@@ -92,7 +92,7 @@ export function useComposerShortcuts({
       }
       if (
         collaborationModes.length > 0 &&
-        matchesShortcut(event, collaborationShortcut)
+        matchesShortcutForPlatform(event, collaborationShortcut)
       ) {
         event.preventDefault();
         const currentIndex = collaborationModes.findIndex(

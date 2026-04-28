@@ -103,6 +103,11 @@ impl EngineManager {
         status
     }
 
+    /// Force-refresh a single engine status and update the cached snapshot.
+    pub async fn refresh_engine_status(&self, engine_type: EngineType) -> EngineStatus {
+        self.detect_single_engine(engine_type).await
+    }
+
     /// Detect all supported engines
     pub async fn detect_engines(&self) -> Vec<EngineStatus> {
         let (claude_bin, codex_bin, gemini_bin, opencode_bin) = {

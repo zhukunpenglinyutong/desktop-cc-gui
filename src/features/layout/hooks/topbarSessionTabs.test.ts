@@ -8,6 +8,7 @@ import {
   dismissTopbarSessionTab,
   dismissTopbarSessionTabsToLeft,
   dismissTopbarSessionTabsToRight,
+  pickAdjacentOpenSessionTab,
   pickAdjacentTopbarSessionFallbackTab,
   pruneTopbarSessionWindows,
   recordTopbarSessionActivation,
@@ -83,6 +84,43 @@ describe("topbarSessionTabs", () => {
     const after = windows.tabs.map((tab) => `${tab.workspaceId}:${tab.threadId}`);
 
     expect(after).toEqual(before);
+  });
+
+  it("picks next and previous open sessions in visible tab order", () => {
+    const windows: TopbarSessionWindows = {
+      tabs: [
+        { workspaceId: "w1", threadId: "a1" },
+        { workspaceId: "w2", threadId: "b1" },
+        { workspaceId: "w1", threadId: "a2" },
+      ],
+      activationOrdinalByTabKey: {},
+      nextActivationOrdinal: 0,
+    };
+
+    expect(pickAdjacentOpenSessionTab(windows, "w2", "b1", "next")).toEqual({
+      workspaceId: "w1",
+      threadId: "a2",
+    });
+    expect(pickAdjacentOpenSessionTab(windows, "w2", "b1", "prev")).toEqual({
+      workspaceId: "w1",
+      threadId: "a1",
+    });
+    expect(pickAdjacentOpenSessionTab(windows, "w1", "a2", "next")).toEqual({
+      workspaceId: "w1",
+      threadId: "a1",
+    });
+  });
+
+  it("returns null when open session navigation is unavailable", () => {
+    const windows: TopbarSessionWindows = {
+      tabs: [{ workspaceId: "w1", threadId: "a1" }],
+      activationOrdinalByTabKey: {},
+      nextActivationOrdinal: 0,
+    };
+
+    expect(pickAdjacentOpenSessionTab(windows, "w1", "a1", "next")).toBeNull();
+    expect(pickAdjacentOpenSessionTab(windows, "w1", "missing", "next")).toBeNull();
+    expect(pickAdjacentOpenSessionTab(windows, null, "a1", "next")).toBeNull();
   });
 
   it("uses deterministic tie-break for equal ordinals", () => {

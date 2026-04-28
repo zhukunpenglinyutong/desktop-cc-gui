@@ -184,6 +184,8 @@ export const ChatInputBox = memo(forwardRef<ChatInputBoxHandle, ChatInputBoxProp
       onOpenAgentSettings,
       onOpenPromptSettings,
       onOpenModelSettings,
+      onRefreshModelConfig,
+      isModelConfigRefreshing,
       hasMessages = false,
       onRewind,
       showRewindEntry = true,
@@ -1442,6 +1444,8 @@ export const ChatInputBox = memo(forwardRef<ChatInputBoxHandle, ChatInputBoxProp
               onAgentSelect={(agent) => onAgentSelect?.(agent)}
               onOpenAgentSettings={onOpenAgentSettings}
               onAddModel={onOpenModelSettings}
+              onRefreshModelConfig={onRefreshModelConfig}
+              isModelConfigRefreshing={isModelConfigRefreshing}
               onClearAgent={() => onAgentSelect?.(null)}
               fileCompletion={fileCompletion}
               memoryCompletion={memoryCompletion}

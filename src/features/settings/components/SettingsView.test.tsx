@@ -17,6 +17,7 @@ import {
   listWorkspaceSessions,
   unarchiveWorkspaceSessions,
 } from "../../../services/tauri";
+import { writeClientStoreValue } from "../../../services/clientStorage";
 import { pushErrorToast } from "../../../services/toasts";
 import { SettingsView } from "./SettingsView";
 
@@ -116,15 +117,31 @@ const baseSettings: AppSettings = {
   composerReasoningShortcut: null,
   composerCollaborationShortcut: null,
   interruptShortcut: null,
+  openSettingsShortcut: null,
+  newWindowShortcut: null,
   newAgentShortcut: null,
   newWorktreeAgentShortcut: null,
   newCloneAgentShortcut: null,
   archiveThreadShortcut: null,
+  openChatShortcut: null,
+  openKanbanShortcut: null,
+  cycleOpenSessionPrevShortcut: null,
+  cycleOpenSessionNextShortcut: null,
+  toggleLeftConversationSidebarShortcut: null,
+  toggleRightConversationSidebarShortcut: null,
   toggleProjectsSidebarShortcut: null,
   toggleGitSidebarShortcut: null,
   toggleGlobalSearchShortcut: null,
   toggleDebugPanelShortcut: null,
   toggleTerminalShortcut: null,
+  toggleRuntimeConsoleShortcut: null,
+  toggleFilesSurfaceShortcut: null,
+  saveFileShortcut: null,
+  findInFileShortcut: null,
+  toggleGitDiffListViewShortcut: null,
+  increaseUiScaleShortcut: null,
+  decreaseUiScaleShortcut: null,
+  resetUiScaleShortcut: null,
   cycleAgentNextShortcut: null,
   cycleAgentPrevShortcut: null,
   cycleWorkspaceNextShortcut: null,
@@ -841,6 +858,72 @@ describe("SettingsView Display", () => {
     await waitFor(() => {
       expect(onUpdateAppSettings).toHaveBeenCalledWith(
         expect.objectContaining({ layoutMode: "default" }),
+      );
+    });
+  });
+
+  it("persists client UI visibility panel and control toggles", async () => {
+    renderDisplaySection();
+
+    expect(screen.getByText("Client UI visibility")).toBeTruthy();
+    expect(screen.getByText("Conversation canvas")).toBeTruthy();
+    expect(screen.getByText("Sticky user bubble")).toBeTruthy();
+
+    const topSessionTabsRow = screen
+      .getByText("Top session tabs")
+      .closest(".settings-toggle-row") as HTMLElement | null;
+    const terminalRow = screen
+      .getByText("Terminal shortcut")
+      .closest(".settings-toggle-row") as HTMLElement | null;
+    const stickyUserBubbleRow = screen
+      .getByText("Sticky user bubble")
+      .closest(".settings-toggle-row") as HTMLElement | null;
+    if (!topSessionTabsRow || !terminalRow || !stickyUserBubbleRow) {
+      throw new Error("Expected client UI visibility rows");
+    }
+    expect(
+      topSessionTabsRow.querySelector(".settings-client-ui-visibility-row-icon svg"),
+    ).toBeTruthy();
+    expect(
+      terminalRow.querySelector(".settings-client-ui-visibility-row-icon svg"),
+    ).toBeTruthy();
+    expect(
+      stickyUserBubbleRow.querySelector(".settings-client-ui-visibility-row-icon svg"),
+    ).toBeTruthy();
+
+    fireEvent.click(within(topSessionTabsRow).getByRole("switch"));
+    await waitFor(() => {
+      expect(writeClientStoreValue).toHaveBeenCalledWith(
+        "app",
+        "clientUiVisibility",
+        expect.objectContaining({
+          panels: expect.objectContaining({ topSessionTabs: false }),
+        }),
+        { immediate: true },
+      );
+    });
+
+    fireEvent.click(within(terminalRow).getByRole("switch"));
+    await waitFor(() => {
+      expect(writeClientStoreValue).toHaveBeenCalledWith(
+        "app",
+        "clientUiVisibility",
+        expect.objectContaining({
+          controls: expect.objectContaining({ "topTool.terminal": false }),
+        }),
+        { immediate: true },
+      );
+    });
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Restore default visibility" }),
+    );
+    await waitFor(() => {
+      expect(writeClientStoreValue).toHaveBeenLastCalledWith(
+        "app",
+        "clientUiVisibility",
+        { panels: {}, controls: {} },
+        { immediate: true },
       );
     });
   });

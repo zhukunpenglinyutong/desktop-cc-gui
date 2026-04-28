@@ -21,6 +21,10 @@ const CLAUDE_MODEL_MAPPING_KEY_BY_ID: Record<string, 'haiku' | 'sonnet' | 'opus'
   'claude-sonnet-4-6': 'sonnet',
   'claude-opus-4-6': 'opus',
 };
+const MODEL_CONFIG_PROVIDERS = new Set(['claude', 'codex', 'gemini']);
+
+const resolveModelConfigProvider = (provider: string) =>
+  provider === 'codex' ? 'codex' : provider === 'gemini' ? 'gemini' : 'claude';
 
 type ClaudeModelMapping = {
   main?: string;
@@ -250,6 +254,8 @@ export const ButtonArea = ({
   onAgentSelect,
   onOpenAgentSettings,
   onAddModel,
+  onRefreshModelConfig,
+  isModelConfigRefreshing,
   shortcutActions,
 }: ButtonAreaProps) => {
   const { t } = useTranslation();
@@ -398,14 +404,17 @@ export const ButtonArea = ({
     if (!onAddModel) {
       return;
     }
-    const targetProvider =
-      currentProvider === "codex"
-        ? "codex"
-        : currentProvider === "gemini"
-          ? "gemini"
-          : "claude";
-    onAddModel(targetProvider);
+    onAddModel(resolveModelConfigProvider(currentProvider));
   }, [currentProvider, onAddModel]);
+
+  const handleRefreshModelConfig = useCallback(() => {
+    if (!onRefreshModelConfig) {
+      return;
+    }
+    return onRefreshModelConfig(resolveModelConfigProvider(currentProvider));
+  }, [currentProvider, onRefreshModelConfig]);
+
+  const supportsModelConfigActions = MODEL_CONFIG_PROVIDERS.has(currentProvider);
 
   return (
     <div className="button-area" data-provider={currentProvider}>
@@ -451,13 +460,12 @@ export const ButtonArea = ({
           models={availableModels}
           currentProvider={currentProvider}
           onAddModel={
-            onAddModel &&
-            (currentProvider === "claude" ||
-              currentProvider === "codex" ||
-              currentProvider === "gemini")
-              ? handleAddModel
-              : undefined
+            onAddModel && supportsModelConfigActions ? handleAddModel : undefined
           }
+          onRefreshConfig={
+            onRefreshModelConfig && supportsModelConfigActions ? handleRefreshModelConfig : undefined
+          }
+          isRefreshingConfig={Boolean(isModelConfigRefreshing)}
         />
         {currentProvider === 'codex' && (
           <ReasoningSelect value={reasoningEffort} onChange={onReasoningChange ?? NOOP_REASONING} />

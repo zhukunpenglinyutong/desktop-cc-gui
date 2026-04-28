@@ -3,6 +3,7 @@ import { useCallback } from "react";
 import { ask } from "@tauri-apps/plugin-dialog";
 import { useLayoutNodes } from "../features/layout/hooks/useLayoutNodes";
 import { MainHeaderActions } from "../features/app/components/MainHeaderActions";
+import { useClientUiVisibility } from "../features/client-ui-visibility/hooks/useClientUiVisibility";
 import { normalizeSharedSessionEngine } from "../features/shared-session/utils/sharedSessionEngines";
 import {
   recoverThreadBindingForManualRecovery,
@@ -11,6 +12,7 @@ import {
 import { OPENCODE_VARIANT_OPTIONS } from "./utils";
 
 export function useAppShellLayoutNodesSection(ctx: any) {
+  const clientUiVisibility = useClientUiVisibility();
   const {
     GitHubPanelData, RECENT_THREAD_LIMIT, SettingsView, accessMode, accountByWorkspace, accountSwitching, activeAccount, activeDiffError,
     activeDiffLoading, activeDiffs, activeDraft, activeEditorFilePath, activeEditorLineRange, activeEngine, activeFusingMessageId, activeGitRoot, activeImages,
@@ -46,7 +48,7 @@ export function useAppShellLayoutNodesSection(ctx: any) {
     handleCopyThread, handleCreateBranch, handleCreatePrompt, handleDebugClick, handleDeletePrompt, handleDeleteQueued, handleDeleteThreadPromptCancel, handleDeleteThreadPromptConfirm,
     handleDeleteWorkspaceConversations, handleDeleteWorkspaceConversationsInSettings, handleDraftChange, handleDragToInProgress, handleDropWorkspacePaths, handleEditQueued, handleEnsureWorkspaceThreadsForSettings, handleExitEditor,
     handleExitWorkspaceEditor, handleGenerateCommitMessage, handleGitIssuesChange, handleGitPanelModeChange, handleGitPullRequestCommentsChange, handleGitPullRequestDiffsChange, handleGitPullRequestsChange, handleInsertComposerText,
-    handleKanbanCreateTask, handleLockPanel, handleMovePrompt, handleMoveWorkspace, handleOpenComposerKanbanPanel, handleOpenDetachedFileExplorer, handleOpenFile, handleOpenHomeChat, handleOpenModelSettings,
+    handleKanbanCreateTask, handleLockPanel, handleMovePrompt, handleMoveWorkspace, handleOpenComposerKanbanPanel, handleOpenDetachedFileExplorer, handleOpenFile, handleOpenHomeChat, handleOpenModelSettings, handleRefreshModelConfig,
     handleOpenRenameWorktree, handleOpenSearchPalette, handleOpenSpecHub, handleOpenTaskConversation, handleOpenWorkspaceFile, handleOpenWorkspaceHome, handlePickGitRoot, handlePointerMove,
     handlePointerUp, handlePush, handleRefreshAccountRateLimits, handleRenamePromptCancel, handleRenamePromptChange, handleRenamePromptConfirm, handleRenameThread, handleRenameWorktreeCancel,
     handleRenameWorktreeChange, handleRenameWorktreeConfirm, handleResize, handleRevealActiveWorkspace, handleRevealGeneralPrompts, handleRevealWorkspacePrompts, handleRevertAllGitChanges, handleRevertGitFile,
@@ -57,7 +59,7 @@ export function useAppShellLayoutNodesSection(ctx: any) {
     handleUnlockPanel, handleUnstageGitFile, handleUpdatePrompt, handleUserInputSubmit, handleUserInputSubmitWithPlanApply, handleExitPlanModeExecute, handleWorkspaceDragEnter, handleWorkspaceDragLeave, handleWorkspaceDragOver,
     handleWorkspaceDrop, handleWorktreeCreated, hasActivePlan, hasLoaded, hasPlanData, highlightedBranchIndex, highlightedCommitIndex, highlightedPresetIndex,
     availableEngines, historySearchItems, hydratedThreadListWorkspaceIdsRef, installedEngines, interruptTurn, isCompact, isDeleteThreadPromptBusy, isEditorFileMaximized, isFilesLoading,
-    isLoadingLatestAgents, isMacDesktop, isPanelLocked, isPhone, isPlanMode, isPlanPanelDismissed, isProcessing, isProcessingNow,
+    isLoadingLatestAgents, isMacDesktop, isModelConfigRefreshing, isPanelLocked, isPhone, isPlanMode, isPlanPanelDismissed, isProcessing, isProcessingNow,
     isPullRequestComposer, isPullRequestComposerFromSections, isReviewing, isSearchPaletteOpen, isSoloMode, isTablet, isThreadAutoNaming, isThreadPinned,
     isValid, isWindowsDesktop, isWorkspaceDropActive, isWorktreeWorkspace, kanbanConversationWidth, kanbanCreatePanel, kanbanCreateTask, kanbanDeletePanel,
     kanbanDeleteTask, kanbanPanels, kanbanReorderTask, kanbanTasks, kanbanUpdatePanel, kanbanUpdateTask, kanbanViewState, key,
@@ -139,6 +141,12 @@ export function useAppShellLayoutNodesSection(ctx: any) {
     activeWorkspace &&
       activeEditorFilePath,
   );
+  const mainHeaderSidebarToggleProps = {
+    ...sidebarToggleProps,
+    rightPanelAvailable:
+      sidebarToggleProps.rightPanelAvailable &&
+      clientUiVisibility.isControlVisible("topTool.rightPanel"),
+  };
 
   const {
     sidebarNode,
@@ -261,6 +269,8 @@ export function useAppShellLayoutNodesSection(ctx: any) {
     onOpenAgentSettings: () => openSettings("agents"),
     onOpenPromptSettings: () => openSettings("prompts"),
     onOpenModelSettings: handleOpenModelSettings,
+    onRefreshModelConfig: handleRefreshModelConfig,
+    isModelConfigRefreshing,
     onOpenDictationSettings: () => openSettings("dictation"),
     onOpenDebug: handleDebugClick,
     showDebugButton,
@@ -479,14 +489,20 @@ export function useAppShellLayoutNodesSection(ctx: any) {
       <MainHeaderActions
         isCompact={isCompact}
         rightPanelCollapsed={rightPanelCollapsed}
-        sidebarToggleProps={sidebarToggleProps}
-        showRuntimeConsoleButton={!isCompact}
+        sidebarToggleProps={mainHeaderSidebarToggleProps}
+        showRuntimeConsoleButton={
+          !isCompact && clientUiVisibility.isControlVisible("topTool.runtimeConsole")
+        }
         isRuntimeConsoleVisible={runtimeRunState.runtimeConsoleVisible}
         onToggleRuntimeConsole={handleToggleRuntimeConsole}
-        showTerminalButton={!isCompact}
+        showTerminalButton={
+          !isCompact && clientUiVisibility.isControlVisible("topTool.terminal")
+        }
         isTerminalOpen={terminalOpen}
         onToggleTerminal={handleToggleTerminalPanel}
-        showSoloButton={soloModeEnabled}
+        showSoloButton={
+          soloModeEnabled && clientUiVisibility.isControlVisible("topTool.focus")
+        }
         isSoloMode={isSoloMode}
         onToggleSoloMode={toggleSoloMode}
       />
@@ -806,6 +822,13 @@ export function useAppShellLayoutNodesSection(ctx: any) {
     },
     onOpenGlobalSearch: handleOpenSearchPalette,
     globalSearchShortcut: appSettings.toggleGlobalSearchShortcut,
+    openChatShortcut: appSettings.openChatShortcut,
+    openKanbanShortcut: appSettings.openKanbanShortcut,
+    cycleOpenSessionPrevShortcut: appSettings.cycleOpenSessionPrevShortcut,
+    cycleOpenSessionNextShortcut: appSettings.cycleOpenSessionNextShortcut,
+    saveFileShortcut: appSettings.saveFileShortcut,
+    findInFileShortcut: appSettings.findInFileShortcut,
+    toggleGitDiffListViewShortcut: appSettings.toggleGitDiffListViewShortcut,
     onOpenWorkspaceHome: handleOpenWorkspaceHome,
   });
 

@@ -635,6 +635,83 @@ describe("useEngineController", () => {
     expect(getOpenCodeCommandsListMock).not.toHaveBeenCalled();
   });
 
+  it("passes force refresh when manually reloading the requested engine catalog", async () => {
+    detectEnginesMock.mockResolvedValue([
+      {
+        engineType: "claude",
+        installed: true,
+        version: "1.0.0",
+        binPath: null,
+        features: {
+          streaming: true,
+          reasoning: true,
+          toolUse: true,
+          imageInput: true,
+          sessionContinuation: true,
+        },
+        models: [
+          {
+            id: "claude-sonnet-4-6",
+            displayName: "Sonnet 4.6",
+            description: "cached",
+            isDefault: true,
+          },
+        ],
+        error: null,
+      },
+      {
+        engineType: "opencode",
+        installed: true,
+        version: "1.4.4",
+        binPath: null,
+        features: {
+          streaming: true,
+          reasoning: true,
+          toolUse: true,
+          imageInput: true,
+          sessionContinuation: true,
+        },
+        models: [],
+        error: null,
+      },
+    ]);
+    getActiveEngineMock.mockResolvedValue("claude");
+    getEngineModelsMock.mockResolvedValueOnce([
+      {
+        id: "claude-sonnet-4-6",
+        displayName: "Sonnet 4.6",
+        description: "cached",
+        isDefault: true,
+      },
+    ]);
+
+    const { result } = renderHook(() =>
+      useEngineController({ activeWorkspace: null }),
+    );
+
+    await waitFor(() => expect(result.current.isInitialized).toBe(true));
+    getEngineModelsMock.mockClear();
+    getEngineModelsMock.mockResolvedValueOnce([
+      {
+        id: "glm-5.1",
+        displayName: "GLM-5.1",
+        description: "Configured in ~/.claude/settings.json",
+        isDefault: true,
+      },
+    ]);
+
+    await act(async () => {
+      await result.current.refreshEngineModels("claude", { forceRefresh: true });
+    });
+
+    expect(getEngineModelsMock).toHaveBeenCalledTimes(1);
+    expect(getEngineModelsMock).toHaveBeenCalledWith("claude", {
+      forceRefresh: true,
+    });
+    expect(getEngineModelsMock).not.toHaveBeenCalledWith("opencode");
+    expect(result.current.engineModelsAsOptions[0]?.id).toBe("glm-5.1");
+  });
+
   it("refreshes active engine models on workspace switch without probing unrelated engines", async () => {
     detectEnginesMock.mockResolvedValue([
       {

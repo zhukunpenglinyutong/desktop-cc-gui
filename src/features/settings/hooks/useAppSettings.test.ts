@@ -94,6 +94,18 @@ describe("useAppSettings", () => {
     expect(result.current.settings.chatCanvasUseUnifiedHistoryLoader).toBe(true);
   });
 
+  it("preserves an explicitly cleared global search shortcut", async () => {
+    getAppSettingsMock.mockResolvedValue({
+      toggleGlobalSearchShortcut: null,
+    } as AppSettings);
+
+    const { result } = renderHook(() => useAppSettings());
+
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    expect(result.current.settings.toggleGlobalSearchShortcut).toBeNull();
+  });
+
   it("keeps defaults when getAppSettings fails", async () => {
     getAppSettingsMock.mockRejectedValue(new Error("boom"));
 

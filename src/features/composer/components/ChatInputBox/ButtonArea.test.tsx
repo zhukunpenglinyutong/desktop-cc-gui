@@ -6,9 +6,32 @@ import { ButtonArea } from "./ButtonArea";
 
 vi.mock("./selectors", () => ({
   ConfigSelect: () => <div data-testid="config-select" />,
-  ModelSelect: ({ models }: { models: Array<{ id: string; label?: string }> }) => (
-    <div data-testid="model-select">
-      {models.map((model) => `${model.id}:${model.label ?? model.id}`).join(",")}
+  ModelSelect: ({
+    models,
+    onAddModel,
+    onRefreshConfig,
+    isRefreshingConfig,
+  }: {
+    models: Array<{ id: string; label?: string }>;
+    onAddModel?: () => void;
+    onRefreshConfig?: () => void;
+    isRefreshingConfig?: boolean;
+  }) => (
+    <div>
+      <div data-testid="model-select">
+        {models.map((model) => `${model.id}:${model.label ?? model.id}`).join(",")}
+      </div>
+      {onAddModel && (
+        <button type="button" data-testid="model-add" onClick={onAddModel}>
+          add
+        </button>
+      )}
+      {onRefreshConfig && (
+        <button type="button" data-testid="model-refresh" onClick={onRefreshConfig}>
+          refresh
+        </button>
+      )}
+      <span data-testid="model-refreshing">{isRefreshingConfig ? "yes" : "no"}</span>
     </div>
   ),
   ModeSelect: () => <div data-testid="mode-select" />,
@@ -105,5 +128,33 @@ describe("ButtonArea custom model storage refresh", () => {
     expect(modelList).toContain("gpt-5.4:My GPT 5.4");
     expect(modelList.match(/gpt-5\.4:/g)).toHaveLength(1);
     expect(modelList).toContain("gpt-5.5:gpt-5.5");
+  });
+
+  it("routes add model and refresh config actions to the current provider", () => {
+    const onAddModel = vi.fn();
+    const onRefreshModelConfig = vi.fn();
+
+    render(
+      <ButtonArea
+        currentProvider="gemini"
+        models={[]}
+        selectedModel=""
+        hasInputContent
+        onSubmit={vi.fn()}
+        onAddModel={onAddModel}
+        onRefreshModelConfig={onRefreshModelConfig}
+        isModelConfigRefreshing
+        shortcutActions={[]}
+      />,
+    );
+
+    act(() => {
+      screen.getByTestId("model-add").click();
+      screen.getByTestId("model-refresh").click();
+    });
+
+    expect(onAddModel).toHaveBeenCalledWith("gemini");
+    expect(onRefreshModelConfig).toHaveBeenCalledWith("gemini");
+    expect(screen.getByTestId("model-refreshing").textContent).toBe("yes");
   });
 });

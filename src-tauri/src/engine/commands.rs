@@ -928,15 +928,17 @@ pub async fn get_available_engines(state: State<'_, AppState>) -> Result<Vec<Eng
 #[tauri::command]
 pub async fn get_engine_models(
     engine_type: EngineType,
+    force_refresh: Option<bool>,
     state: State<'_, AppState>,
     app: AppHandle,
 ) -> Result<Vec<super::ModelInfo>, String> {
+    let force_refresh = force_refresh.unwrap_or(false);
     if remote_backend::is_remote_mode(&*state).await {
         return call_remote_typed(
             &*state,
             &app,
             "get_engine_models",
-            json!({ "engineType": engine_type }),
+            json!({ "engineType": engine_type, "forceRefresh": force_refresh }),
         )
         .await;
     }
@@ -984,6 +986,11 @@ pub async fn get_engine_models(
             Ok(fresh_status.models)
         }
         EngineType::Claude | EngineType::Codex => {
+            if force_refresh {
+                let status = manager.refresh_engine_status(engine_type).await;
+                return Ok(status.models);
+            }
+
             if let Some(status) = manager.get_engine_status(engine_type).await {
                 if !status.models.is_empty() {
                     return Ok(status.models);

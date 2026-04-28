@@ -355,6 +355,32 @@ export function pickAdjacentTopbarSessionFallbackTab(
   return null;
 }
 
+export function pickAdjacentOpenSessionTab(
+  windows: TopbarSessionWindows,
+  activeWorkspaceId: string | null,
+  activeThreadId: string | null,
+  direction: "next" | "prev",
+): TopbarSessionTabReference | null {
+  if (!activeWorkspaceId || !activeThreadId || windows.tabs.length < 2) {
+    return null;
+  }
+  const activeIndex = windows.tabs.findIndex((tab) =>
+    isSameTab(tab, activeWorkspaceId, activeThreadId),
+  );
+  if (activeIndex < 0) {
+    return null;
+  }
+  const nextIndex =
+    direction === "next"
+      ? (activeIndex + 1) % windows.tabs.length
+      : (activeIndex - 1 + windows.tabs.length) % windows.tabs.length;
+  const nextTab = windows.tabs[nextIndex] ?? null;
+  if (!nextTab || isSameTab(nextTab, activeWorkspaceId, activeThreadId)) {
+    return null;
+  }
+  return nextTab;
+}
+
 export function buildTopbarSessionTabItems(
   activeWorkspaceId: string | null,
   activeThreadId: string | null,

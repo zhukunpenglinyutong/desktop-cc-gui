@@ -27,7 +27,7 @@ import Upload from "lucide-react/dist/esm/icons/upload";
 import X from "lucide-react/dist/esm/icons/x";
 import { useMemo, useState, useCallback, useEffect, useRef, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
-import { matchesShortcut } from "../../../utils/shortcuts";
+import { matchesShortcutForPlatform } from "../../../utils/shortcuts";
 import { formatRelativeTime } from "../../../utils/time";
 import type { PanelTabId } from "../../layout/components/PanelTabs";
 import FileIcon from "../../../components/FileIcon";
@@ -72,6 +72,7 @@ type GitDiffPanelProps = {
   }[];
   gitDiffListView?: "flat" | "tree";
   onGitDiffListViewChange?: (view: "flat" | "tree") => void;
+  toggleGitDiffListViewShortcut?: string | null;
   filePanelMode: PanelTabId;
   onFilePanelModeChange: (mode: PanelTabId) => void;
   onOpenGitHistoryPanel?: () => void;
@@ -219,7 +220,6 @@ function renderModeIcon(mode: GitDiffPanelProps["mode"], className: string, size
 }
 
 const DEPTH_OPTIONS = [1, 2, 3, 4, 5, 6];
-const GIT_LIST_VIEW_SHORTCUT = "alt+shift+v";
 const DISALLOWED_GIT_LIST_VIEW_SHORTCUTS = new Set([
   "cmd+f",
   "ctrl+f",
@@ -952,6 +952,7 @@ export function GitDiffPanel({
   diffEntries = [],
   gitDiffListView = "flat",
   onGitDiffListViewChange,
+  toggleGitDiffListViewShortcut = "alt+shift+v",
   filePanelMode: _filePanelMode,
   onFilePanelModeChange: _onFilePanelModeChange,
   onOpenGitHistoryPanel,
@@ -1344,7 +1345,14 @@ export function GitDiffPanel({
     if (mode !== "diff" || !onGitDiffListViewChange) {
       return;
     }
-    if (DISALLOWED_GIT_LIST_VIEW_SHORTCUTS.has(GIT_LIST_VIEW_SHORTCUT)) {
+    const normalizedShortcut = (toggleGitDiffListViewShortcut ?? "")
+      .trim()
+      .toLowerCase()
+      .replace(/\s+/g, "");
+    if (
+      !normalizedShortcut ||
+      DISALLOWED_GIT_LIST_VIEW_SHORTCUTS.has(normalizedShortcut)
+    ) {
       return;
     }
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -1363,7 +1371,7 @@ export function GitDiffPanel({
       ) {
         return;
       }
-      if (!matchesShortcut(event, GIT_LIST_VIEW_SHORTCUT)) {
+      if (!matchesShortcutForPlatform(event, normalizedShortcut)) {
         return;
       }
       event.preventDefault();
@@ -1371,7 +1379,12 @@ export function GitDiffPanel({
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [gitDiffListView, mode, onGitDiffListViewChange]);
+  }, [
+    gitDiffListView,
+    mode,
+    onGitDiffListViewChange,
+    toggleGitDiffListViewShortcut,
+  ]);
 
   const handleDiffListClick = useCallback(
     (event: ReactMouseEvent<HTMLDivElement>) => {

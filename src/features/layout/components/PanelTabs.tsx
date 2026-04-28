@@ -29,6 +29,7 @@ type PanelTabsProps = {
   onSelect: (id: PanelTabId) => void;
   tabs?: PanelTab[];
   liveStates?: Partial<Record<PanelTabId, boolean>>;
+  visibleTabs?: Partial<Record<PanelTabId, boolean>>;
 };
 
 // Toggle to show/hide prompts tab (set to true to re-enable)
@@ -62,7 +63,13 @@ const tabI18nKeys: Record<PanelTabId, string> = {
   prompts: "panels.prompts",
 };
 
-export function PanelTabs({ active, onSelect, tabs, liveStates }: PanelTabsProps) {
+export function PanelTabs({
+  active,
+  onSelect,
+  tabs,
+  liveStates,
+  visibleTabs,
+}: PanelTabsProps) {
   const { t } = useTranslation();
   const resolvedTabs =
     tabs ??
@@ -71,9 +78,15 @@ export function PanelTabs({ active, onSelect, tabs, liveStates }: PanelTabsProps
       label: t(tabI18nKeys[id]),
       icon: tabIcons[id],
     }));
+  const visibleResolvedTabs = resolvedTabs.filter(
+    (tab) => visibleTabs?.[tab.id] !== false,
+  );
+  if (visibleResolvedTabs.length === 0) {
+    return null;
+  }
   return (
     <div className="panel-tabs" role="tablist" aria-label="Panel">
-      {resolvedTabs.map((tab) => {
+      {visibleResolvedTabs.map((tab) => {
         const isActive = active === tab.id;
         const isLive = Boolean(liveStates?.[tab.id]);
         return (

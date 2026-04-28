@@ -64,7 +64,10 @@ function normalizeShortcutValue(value: string | null | undefined): string | null
   return normalized || null;
 }
 
-function normalizeGlobalSearchShortcut(value: string | null | undefined): string {
+function normalizeGlobalSearchShortcut(value: string | null | undefined): string | null {
+  if (value === null) {
+    return null;
+  }
   const normalized = normalizeShortcutValue(value);
   if (!normalized || SEARCH_SHORTCUT_DISALLOWED.has(normalized)) {
     return "cmd+o";
@@ -109,15 +112,31 @@ const defaultSettings: AppSettings = {
   composerReasoningShortcut: "cmd+shift+r",
   composerCollaborationShortcut: "shift+tab",
   interruptShortcut: getDefaultInterruptShortcut(),
+  openSettingsShortcut: "cmd+,",
+  newWindowShortcut: "cmd+shift+n",
   newAgentShortcut: "cmd+n",
   newWorktreeAgentShortcut: "cmd+alt+shift+n",
   newCloneAgentShortcut: "cmd+alt+n",
   archiveThreadShortcut: "cmd+ctrl+a",
+  openChatShortcut: "cmd+j",
+  openKanbanShortcut: "cmd+k",
+  cycleOpenSessionPrevShortcut: "cmd+shift+[",
+  cycleOpenSessionNextShortcut: "cmd+shift+]",
+  toggleLeftConversationSidebarShortcut: "cmd+alt+[",
+  toggleRightConversationSidebarShortcut: "cmd+alt+]",
   toggleProjectsSidebarShortcut: "cmd+shift+p",
   toggleGitSidebarShortcut: "cmd+shift+g",
   toggleGlobalSearchShortcut: "cmd+o",
   toggleDebugPanelShortcut: "cmd+shift+d",
   toggleTerminalShortcut: "cmd+shift+t",
+  toggleRuntimeConsoleShortcut: "cmd+shift+`",
+  toggleFilesSurfaceShortcut: "cmd+shift+e",
+  saveFileShortcut: "cmd+s",
+  findInFileShortcut: "cmd+f",
+  toggleGitDiffListViewShortcut: "alt+shift+v",
+  increaseUiScaleShortcut: "cmd+=",
+  decreaseUiScaleShortcut: "cmd+-",
+  resetUiScaleShortcut: "cmd+0",
   cycleAgentNextShortcut: "cmd+ctrl+down",
   cycleAgentPrevShortcut: "cmd+ctrl+up",
   cycleWorkspaceNextShortcut: "cmd+shift+down",

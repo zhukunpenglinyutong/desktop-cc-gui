@@ -29,6 +29,32 @@ const KEY_LABELS: Record<string, string> = {
   arrowright: "→",
 };
 
+const SHIFTED_KEY_ALIASES: Record<string, string> = {
+  "~": "`",
+  "!": "1",
+  "@": "2",
+  "#": "3",
+  "$": "4",
+  "%": "5",
+  "^": "6",
+  "&": "7",
+  "*": "8",
+  "(": "9",
+  ")": "0",
+  "_": "-",
+  "+": "=",
+  "{": "[",
+  "}": "]",
+  "|": "\\",
+  ":": ";",
+  "\"": "'",
+  "<": ",",
+  ">": ".",
+  "?": "/",
+};
+
+const OPTIONAL_SHIFT_ALIASES = new Set(["+", "_"]);
+
 const ACCELERATOR_KEYS: Record<string, string> = {
   " ": "Space",
   space: "Space",
@@ -52,10 +78,25 @@ function normalizeKey(key: string) {
   if (MODIFIER_KEYS.has(normalized)) {
     return null;
   }
+  const shiftedAlias = SHIFTED_KEY_ALIASES[normalized];
+  if (shiftedAlias) {
+    return shiftedAlias;
+  }
   if (normalized === " ") {
     return "space";
   }
   return normalized;
+}
+
+function matchesShiftModifier(event: KeyboardEvent, parsed: ShortcutDefinition): boolean {
+  if (parsed.shift === event.shiftKey) {
+    return true;
+  }
+  return (
+    !parsed.shift &&
+    event.shiftKey &&
+    OPTIONAL_SHIFT_ALIASES.has(event.key)
+  );
 }
 
 export function parseShortcut(value: string | null | undefined): ShortcutDefinition | null {
@@ -126,7 +167,12 @@ export function formatShortcutForPlatform(
     return formatShortcut(value);
   }
   const modifiers: string[] = [];
-  if (parsed.meta || parsed.ctrl) {
+  if (parsed.meta && parsed.ctrl) {
+    modifiers.push("Meta");
+  } else if (parsed.meta) {
+    modifiers.push(MODIFIER_TEXT_LABELS.ctrl);
+  }
+  if (parsed.ctrl) {
     modifiers.push(MODIFIER_TEXT_LABELS.ctrl);
   }
   if (parsed.alt) {
@@ -180,7 +226,54 @@ export function matchesShortcut(event: KeyboardEvent, value: string | null | und
     parsed.meta === event.metaKey &&
     parsed.ctrl === event.ctrlKey &&
     parsed.alt === event.altKey &&
-    parsed.shift === event.shiftKey
+    matchesShiftModifier(event, parsed)
+  );
+}
+
+export function matchesShortcutForPlatform(
+  event: KeyboardEvent,
+  value: string | null | undefined,
+  isMac: boolean = isMacPlatform(),
+): boolean {
+  const parsed = parseShortcut(value);
+  if (!parsed) {
+    return false;
+  }
+  const key = normalizeKey(event.key);
+  if (!key || key !== parsed.key) {
+    return false;
+  }
+  if (isMac) {
+    return (
+      parsed.meta === event.metaKey &&
+      parsed.ctrl === event.ctrlKey &&
+      parsed.alt === event.altKey &&
+      matchesShiftModifier(event, parsed)
+    );
+  }
+  const wantsPrimary = parsed.meta || parsed.ctrl;
+  const wantsMeta = parsed.meta && parsed.ctrl;
+  return (
+    wantsPrimary === event.ctrlKey &&
+    wantsMeta === event.metaKey &&
+    parsed.alt === event.altKey &&
+    matchesShiftModifier(event, parsed)
+  );
+}
+
+export function isEditableShortcutTarget(
+  target: EventTarget | Element | null | undefined,
+): boolean {
+  if (typeof HTMLElement === "undefined" || !(target instanceof HTMLElement)) {
+    return false;
+  }
+  if (target.isContentEditable) {
+    return true;
+  }
+  return Boolean(
+    target.closest(
+      'input, textarea, select, [contenteditable=""], [contenteditable="true"], [role="textbox"]',
+    ),
   );
 }
 

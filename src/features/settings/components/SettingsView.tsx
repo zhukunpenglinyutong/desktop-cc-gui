@@ -131,7 +131,9 @@ import { DetachedExternalChangeToggles } from "./settings-view/sections/Detached
 import { WebServiceSettings } from "./settings-view/sections/WebServiceSettings";
 import { DictationSection } from "./settings-view/sections/DictationSection";
 import {
+  buildShortcutDrafts,
   shortcutDraftKeyBySetting,
+  type ShortcutDrafts,
   type ShortcutSettingKey,
 } from "./settings-view/settingsViewShortcuts";
 import {
@@ -367,26 +369,9 @@ export function SettingsView({
     message: string | null;
   }>({ status: "idle", message: null });
   const [isSavingSettings, setIsSavingSettings] = useState(false);
-  const [shortcutDrafts, setShortcutDrafts] = useState({
-    model: appSettings.composerModelShortcut ?? "",
-    access: appSettings.composerAccessShortcut ?? "",
-    reasoning: appSettings.composerReasoningShortcut ?? "",
-    collaboration: appSettings.composerCollaborationShortcut ?? "",
-    interrupt: appSettings.interruptShortcut ?? "",
-    newAgent: appSettings.newAgentShortcut ?? "",
-    newWorktreeAgent: appSettings.newWorktreeAgentShortcut ?? "",
-    newCloneAgent: appSettings.newCloneAgentShortcut ?? "",
-    archiveThread: appSettings.archiveThreadShortcut ?? "",
-    projectsSidebar: appSettings.toggleProjectsSidebarShortcut ?? "",
-    gitSidebar: appSettings.toggleGitSidebarShortcut ?? "",
-    globalSearch: appSettings.toggleGlobalSearchShortcut ?? "",
-    debugPanel: appSettings.toggleDebugPanelShortcut ?? "",
-    terminal: appSettings.toggleTerminalShortcut ?? "",
-    cycleAgentNext: appSettings.cycleAgentNextShortcut ?? "",
-    cycleAgentPrev: appSettings.cycleAgentPrevShortcut ?? "",
-    cycleWorkspaceNext: appSettings.cycleWorkspaceNextShortcut ?? "",
-    cycleWorkspacePrev: appSettings.cycleWorkspacePrevShortcut ?? "",
-  });
+  const [shortcutDrafts, setShortcutDrafts] = useState<ShortcutDrafts>(() =>
+    buildShortcutDrafts(appSettings),
+  );
   const normalizedUserMsgColor = useMemo(
     () => normalizeHexColor(appSettings.userMsgColor),
     [appSettings.userMsgColor],
@@ -732,46 +717,8 @@ export function SettingsView({
   }, [appSettings.openAppTargets, appSettings.selectedOpenAppId]);
 
   useEffect(() => {
-    setShortcutDrafts({
-      model: appSettings.composerModelShortcut ?? "",
-      access: appSettings.composerAccessShortcut ?? "",
-      reasoning: appSettings.composerReasoningShortcut ?? "",
-      collaboration: appSettings.composerCollaborationShortcut ?? "",
-      interrupt: appSettings.interruptShortcut ?? "",
-      newAgent: appSettings.newAgentShortcut ?? "",
-      newWorktreeAgent: appSettings.newWorktreeAgentShortcut ?? "",
-      newCloneAgent: appSettings.newCloneAgentShortcut ?? "",
-      archiveThread: appSettings.archiveThreadShortcut ?? "",
-      projectsSidebar: appSettings.toggleProjectsSidebarShortcut ?? "",
-      gitSidebar: appSettings.toggleGitSidebarShortcut ?? "",
-      globalSearch: appSettings.toggleGlobalSearchShortcut ?? "",
-      debugPanel: appSettings.toggleDebugPanelShortcut ?? "",
-      terminal: appSettings.toggleTerminalShortcut ?? "",
-      cycleAgentNext: appSettings.cycleAgentNextShortcut ?? "",
-      cycleAgentPrev: appSettings.cycleAgentPrevShortcut ?? "",
-      cycleWorkspaceNext: appSettings.cycleWorkspaceNextShortcut ?? "",
-      cycleWorkspacePrev: appSettings.cycleWorkspacePrevShortcut ?? "",
-    });
-  }, [
-    appSettings.composerAccessShortcut,
-    appSettings.composerModelShortcut,
-    appSettings.composerReasoningShortcut,
-    appSettings.composerCollaborationShortcut,
-    appSettings.interruptShortcut,
-    appSettings.newAgentShortcut,
-    appSettings.newWorktreeAgentShortcut,
-    appSettings.newCloneAgentShortcut,
-    appSettings.archiveThreadShortcut,
-    appSettings.toggleProjectsSidebarShortcut,
-    appSettings.toggleGitSidebarShortcut,
-    appSettings.toggleGlobalSearchShortcut,
-    appSettings.toggleDebugPanelShortcut,
-    appSettings.toggleTerminalShortcut,
-    appSettings.cycleAgentNextShortcut,
-    appSettings.cycleAgentPrevShortcut,
-    appSettings.cycleWorkspaceNextShortcut,
-    appSettings.cycleWorkspacePrevShortcut,
-  ]);
+    setShortcutDrafts(buildShortcutDrafts(appSettings));
+  }, [appSettings]);
 
   useEffect(() => {
     if (projects.length === 0) {

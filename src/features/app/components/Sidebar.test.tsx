@@ -125,6 +125,8 @@ const baseProps = {
   onOpenReleaseNotes: vi.fn(),
   onOpenGlobalSearch: vi.fn(),
   globalSearchShortcut: "cmd+o",
+  openChatShortcut: "cmd+j",
+  openKanbanShortcut: "cmd+k",
   onOpenSpecHub: vi.fn(),
   onOpenWorkspaceHome: vi.fn(),
 };
@@ -203,7 +205,7 @@ describe("Sidebar", () => {
     expect(container.querySelector(".sidebar-primary-nav-badge")).toBeNull();
   });
 
-  it("keeps only Windows-friendly quick nav shortcuts K/F visible while hiding J", () => {
+  it("keeps Windows quick nav shortcuts in sync with configured settings while hiding J", () => {
     const originalPlatform = window.navigator.platform;
     Object.defineProperty(window.navigator, "platform", {
       value: "Win32",
@@ -213,17 +215,36 @@ describe("Sidebar", () => {
       const { container } = render(<Sidebar {...baseProps} />);
       expect(screen.queryByText("Ctrl+J")).toBeNull();
       expect(screen.getByText("Ctrl+K")).toBeTruthy();
-      expect(screen.getByText("Ctrl+F")).toBeTruthy();
+      expect(screen.getByText("Ctrl+O")).toBeTruthy();
       expect(container.querySelectorAll(".sidebar-primary-nav .sidebar-primary-nav-shortcut")).toHaveLength(2);
       expect(screen.getByRole("button", { name: "Home" }).getAttribute("title")).toContain("Ctrl+J");
       expect(screen.getByRole("button", { name: "Automation" }).getAttribute("title")).toContain("Ctrl+K");
-      expect(screen.getByRole("button", { name: "Search" }).getAttribute("title")).toContain("Ctrl+F");
+      expect(screen.getByRole("button", { name: "Search" }).getAttribute("title")).toContain("Ctrl+O");
     } finally {
       Object.defineProperty(window.navigator, "platform", {
         value: originalPlatform,
         configurable: true,
       });
     }
+  });
+
+  it("reflects cleared quick mode shortcuts in button hints", () => {
+    const { container } = render(
+      <Sidebar
+        {...baseProps}
+        openChatShortcut={null}
+        openKanbanShortcut={null}
+        globalSearchShortcut={null}
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: "Home" }).getAttribute("title")).toContain("Not set");
+    const automationButton = screen.getByRole("button", { name: "Automation" });
+    expect(automationButton.getAttribute("title")).toContain("Not set");
+    expect(
+      container.querySelector(".sidebar-primary-nav-mode-item .sidebar-primary-nav-shortcut")?.textContent,
+    ).toBe("Not set");
+    expect(screen.getByRole("button", { name: "Search" }).getAttribute("title")).toContain("Not set");
   });
 
   it("hides chat/automation/open-home entries in settings dropdown", () => {
