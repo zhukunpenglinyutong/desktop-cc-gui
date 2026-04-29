@@ -296,6 +296,7 @@ type ThreadEventHandlersOptions = {
   activeThreadId: string | null;
   dispatch: Dispatch<ThreadAction>;
   getCustomName: (workspaceId: string, threadId: string) => string | undefined;
+  resolveCanonicalThreadId?: (threadId: string) => string;
   resolveCollaborationUiMode?: (
     threadId: string,
   ) => "plan" | "code" | null;
@@ -304,6 +305,7 @@ type ThreadEventHandlersOptions = {
   markProcessing: (threadId: string, isProcessing: boolean) => void;
   markReviewing: (threadId: string, isReviewing: boolean) => void;
   setActiveTurnId: (threadId: string, turnId: string | null) => void;
+  codexCompactionInFlightByThreadRef: MutableRefObject<Record<string, boolean>>;
   safeMessageActivity: () => void;
   recordThreadActivity: (
     workspaceId: string,
@@ -420,12 +422,14 @@ export function useThreadEventHandlers({
   activeThreadId,
   dispatch,
   getCustomName,
+  resolveCanonicalThreadId,
   resolveCollaborationUiMode,
   isAutoTitlePending,
   isThreadHidden,
   markProcessing,
   markReviewing,
   setActiveTurnId,
+  codexCompactionInFlightByThreadRef,
   safeMessageActivity,
   recordThreadActivity,
   pushThreadErrorMessage,
@@ -1173,11 +1177,13 @@ export function useThreadEventHandlers({
     activeThreadId,
     dispatch,
     getCustomName,
+    resolveCanonicalThreadId,
     isAutoTitlePending,
     isThreadHidden,
     markProcessing: markProcessingTracked,
     markReviewing,
     setActiveTurnId: setActiveTurnIdTracked,
+    codexCompactionInFlightByThreadRef,
     pendingInterruptsRef,
     interruptedThreadsRef,
     pushThreadErrorMessage,

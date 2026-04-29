@@ -32,11 +32,14 @@ type SetupOverrides = {
   interruptedThreads?: string[];
   activeThreadId?: string | null;
   activeTurnIdByThread?: Record<string, string | null>;
+  resolveCanonicalThreadId?: (threadId: string) => string;
 };
 
 const makeOptions = (overrides: SetupOverrides = {}) => {
   const dispatch = vi.fn();
   const getCustomName = vi.fn();
+  const resolveCanonicalThreadId =
+    overrides.resolveCanonicalThreadId ?? ((threadId: string) => threadId);
   const isAutoTitlePending = vi.fn(() => false);
   const isThreadHidden = vi.fn(() => false);
   const markProcessing = vi.fn();
@@ -61,17 +64,22 @@ const makeOptions = (overrides: SetupOverrides = {}) => {
   const interruptedThreadsRef = {
     current: new Set(overrides.interruptedThreads ?? []),
   };
+  const codexCompactionInFlightByThreadRef = {
+    current: {} as Record<string, boolean>,
+  };
 
   const { result } = renderHook(() =>
     useThreadTurnEvents({
       activeThreadId: overrides.activeThreadId ?? null,
       dispatch,
       getCustomName,
+      resolveCanonicalThreadId,
       isAutoTitlePending,
       isThreadHidden,
       markProcessing,
       markReviewing,
       setActiveTurnId,
+      codexCompactionInFlightByThreadRef,
       pendingInterruptsRef,
       interruptedThreadsRef,
       pushThreadErrorMessage,
@@ -91,6 +99,7 @@ const makeOptions = (overrides: SetupOverrides = {}) => {
     result,
     dispatch,
     getCustomName,
+    resolveCanonicalThreadId,
     isAutoTitlePending,
     isThreadHidden,
     markProcessing,
@@ -106,6 +115,7 @@ const makeOptions = (overrides: SetupOverrides = {}) => {
     resolvePendingThreadForTurn,
     getActiveTurnIdForThread,
     renamePendingMemoryCaptureKey,
+    codexCompactionInFlightByThreadRef,
     pendingInterruptsRef,
     interruptedThreadsRef,
   };
@@ -1573,7 +1583,7 @@ describe("useThreadTurnEvents", () => {
     });
 
     expect(dispatch).toHaveBeenCalledWith({
-      type: "upsertCodexCompactionMessage",
+      type: "appendCodexCompactionMessage",
       threadId: "thread-1",
       text: "threads.codexCompactionStarted",
     });
@@ -1585,9 +1595,11 @@ describe("useThreadTurnEvents", () => {
     });
 
     expect(dispatch).toHaveBeenCalledWith({
-      type: "upsertCodexCompactionMessage",
+      type: "settleCodexCompactionMessage",
       threadId: "thread-1",
       text: "threads.codexCompactionCompleted",
+      fallbackMessageId: "context-compacted-codex-compact-thread-1-completed-turn-10",
+      appendIfAlreadyCompleted: false,
     });
     expect(dispatch).not.toHaveBeenCalledWith(
       expect.objectContaining({ type: "appendContextCompacted" }),
@@ -1610,7 +1622,7 @@ describe("useThreadTurnEvents", () => {
     });
 
     expect(dispatch).toHaveBeenCalledWith({
-      type: "upsertCodexCompactionMessage",
+      type: "appendCodexCompactionMessage",
       threadId: "thread-1",
       text: "threads.codexCompactionStarted",
     });
@@ -1622,13 +1634,92 @@ describe("useThreadTurnEvents", () => {
     });
 
     expect(dispatch).toHaveBeenCalledWith({
-      type: "upsertCodexCompactionMessage",
+      type: "settleCodexCompactionMessage",
       threadId: "thread-1",
       text: "threads.codexCompactionCompleted",
+      fallbackMessageId: "context-compacted-codex-compact-thread-1-completed-manual-turn",
+      appendIfAlreadyCompleted: false,
     });
     expect(dispatch).not.toHaveBeenCalledWith(
       expect.objectContaining({ type: "appendContextCompacted" }),
     );
+  });
+
+  it("mirrors Codex compaction lifecycle onto canonical thread aliases", () => {
+    const nowSpy = vi.spyOn(Date, "now").mockReturnValue(6666);
+    const { result, dispatch, recordThreadActivity, pushThreadErrorMessage } = makeOptions({
+      resolveCanonicalThreadId: (threadId) =>
+        threadId === "codex-stale-thread" ? "codex-canonical-thread" : threadId,
+    });
+
+    act(() => {
+      result.current.onContextCompacting("ws-1", "codex-stale-thread", {
+        usagePercent: 131,
+        thresholdPercent: 130,
+        targetPercent: 70,
+      });
+    });
+
+    expect(dispatch).toHaveBeenCalledWith({
+      type: "markContextCompacting",
+      threadId: "codex-stale-thread",
+      isCompacting: true,
+      timestamp: 6666,
+    });
+    expect(dispatch).toHaveBeenCalledWith({
+      type: "markContextCompacting",
+      threadId: "codex-canonical-thread",
+      isCompacting: true,
+      timestamp: 6666,
+    });
+    expect(dispatch).toHaveBeenCalledWith({
+      type: "appendCodexCompactionMessage",
+      threadId: "codex-canonical-thread",
+      text: "threads.codexCompactionStarted",
+    });
+    expect(recordThreadActivity).toHaveBeenCalledWith(
+      "ws-1",
+      "codex-canonical-thread",
+      6666,
+    );
+
+    dispatch.mockClear();
+
+    act(() => {
+      result.current.onContextCompacted("ws-1", "codex-stale-thread", "turn-compact");
+    });
+
+    expect(dispatch).toHaveBeenCalledWith({
+      type: "settleCodexCompactionMessage",
+      threadId: "codex-stale-thread",
+      text: "threads.codexCompactionCompleted",
+      fallbackMessageId: "context-compacted-codex-compact-codex-stale-thread-completed-turn-compact",
+      appendIfAlreadyCompleted: false,
+    });
+    expect(dispatch).toHaveBeenCalledWith({
+      type: "settleCodexCompactionMessage",
+      threadId: "codex-canonical-thread",
+      text: "threads.codexCompactionCompleted",
+      fallbackMessageId: "context-compacted-codex-compact-codex-canonical-thread-completed-turn-compact",
+      appendIfAlreadyCompleted: false,
+    });
+
+    dispatch.mockClear();
+
+    act(() => {
+      result.current.onContextCompactionFailed(
+        "ws-1",
+        "codex-stale-thread",
+        "alias route failed",
+      );
+    });
+
+    expect(pushThreadErrorMessage).toHaveBeenCalledWith(
+      "codex-canonical-thread",
+      "threads.contextCompactionFailedWithMessage",
+    );
+
+    nowSpy.mockRestore();
   });
 
   it("falls back to synthetic turn id when context compacted event has no turn id", () => {
@@ -1646,6 +1737,52 @@ describe("useThreadTurnEvents", () => {
     });
 
     nowSpy.mockRestore();
+  });
+
+  it("treats payload-less completion as Codex compaction when manual compact already marked the thread in flight", () => {
+    const nowSpy = vi.spyOn(Date, "now").mockReturnValue(3333);
+    const { result, dispatch, codexCompactionInFlightByThreadRef } = makeOptions();
+    codexCompactionInFlightByThreadRef.current["thread-1"] = true;
+
+    act(() => {
+      result.current.onContextCompacted("ws-1", "thread-1", "");
+    });
+
+    expect(dispatch).toHaveBeenCalledWith({
+      type: "settleCodexCompactionMessage",
+      threadId: "thread-1",
+      text: "threads.codexCompactionCompleted",
+      fallbackMessageId: "context-compacted-codex-compact-thread-1-completed-auto-3333",
+      appendIfAlreadyCompleted: false,
+    });
+    expect(dispatch).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: "appendContextCompacted" }),
+    );
+    expect(codexCompactionInFlightByThreadRef.current["thread-1"]).toBeUndefined();
+
+    nowSpy.mockRestore();
+  });
+
+  it("appends a fresh completed fallback when Codex completion arrives without a visible start", () => {
+    const { result, dispatch } = makeOptions();
+
+    act(() => {
+      result.current.onContextCompacted("ws-1", "thread-1", "turn-20", {
+        auto: true,
+        manual: false,
+      });
+    });
+
+    expect(dispatch).toHaveBeenCalledWith({
+      type: "settleCodexCompactionMessage",
+      threadId: "thread-1",
+      text: "threads.codexCompactionCompleted",
+      fallbackMessageId: "context-compacted-codex-compact-thread-1-completed-turn-20",
+      appendIfAlreadyCompleted: true,
+    });
+    expect(dispatch).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: "appendContextCompacted" }),
+    );
   });
 
   it("pushes thread error when context compaction fails", () => {

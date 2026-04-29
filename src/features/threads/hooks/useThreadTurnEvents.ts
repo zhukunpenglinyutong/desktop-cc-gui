@@ -1,4 +1,4 @@
-import { useCallback, useRef } from "react";
+import { useCallback } from "react";
 import type { Dispatch, MutableRefObject } from "react";
 import type { DebugEntry } from "../../../types";
 import { useTranslation } from "react-i18next";
@@ -49,6 +49,10 @@ function isCodexContextCompaction(threadId: string): boolean {
   return true;
 }
 
+function buildCodexCompactionCompletionFallbackId(threadId: string, turnId: string) {
+  return `context-compacted-codex-compact-${threadId}-completed-${turnId}`;
+}
+
 function isCodexBackgroundHelperThread(
   threadId: string,
   thread: Record<string, unknown>,
@@ -67,11 +71,13 @@ type UseThreadTurnEventsOptions = {
   activeThreadId?: string | null;
   dispatch: Dispatch<ThreadAction>;
   getCustomName: (workspaceId: string, threadId: string) => string | undefined;
+  resolveCanonicalThreadId?: (threadId: string) => string;
   isAutoTitlePending: (workspaceId: string, threadId: string) => boolean;
   isThreadHidden: (workspaceId: string, threadId: string) => boolean;
   markProcessing: (threadId: string, isProcessing: boolean) => void;
   markReviewing: (threadId: string, isReviewing: boolean) => void;
   setActiveTurnId: (threadId: string, turnId: string | null) => void;
+  codexCompactionInFlightByThreadRef: MutableRefObject<Record<string, boolean>>;
   pendingInterruptsRef: MutableRefObject<Set<string>>;
   interruptedThreadsRef: MutableRefObject<Set<string>>;
   pushThreadErrorMessage: (threadId: string, message: string) => void;
@@ -113,11 +119,13 @@ export function useThreadTurnEvents({
   activeThreadId = null,
   dispatch,
   getCustomName,
+  resolveCanonicalThreadId,
   isAutoTitlePending,
   isThreadHidden,
   markProcessing,
   markReviewing,
   setActiveTurnId,
+  codexCompactionInFlightByThreadRef,
   pendingInterruptsRef,
   interruptedThreadsRef,
   pushThreadErrorMessage,
@@ -133,7 +141,17 @@ export function useThreadTurnEvents({
   onDebug,
 }: UseThreadTurnEventsOptions) {
   const { t } = useTranslation();
-  const codexCompactionInFlightByThreadRef = useRef<Record<string, boolean>>({});
+  const collectCompactionTargetThreadIds = useCallback(
+    (threadId: string) => {
+      const normalizedThreadId = threadId.trim();
+      if (!normalizedThreadId) {
+        return [] as string[];
+      }
+      const canonicalThreadId = resolveCanonicalThreadId?.(normalizedThreadId) ?? normalizedThreadId;
+      return Array.from(new Set([normalizedThreadId, canonicalThreadId].filter(Boolean)));
+    },
+    [resolveCanonicalThreadId],
+  );
   const logSessionTrace = useCallback(
     (label: string, payload: Record<string, unknown>) => {
       onDebug?.({
@@ -643,32 +661,58 @@ export function useThreadTurnEvents({
       payload?: ContextCompactionSourcePayload,
     ) => {
       const timestamp = Date.now();
-      const wasCodexCompacting = codexCompactionInFlightByThreadRef.current[threadId] ?? false;
+      const targetThreadIds = collectCompactionTargetThreadIds(threadId);
+      const wasCodexCompacting = targetThreadIds.some(
+        (targetThreadId) => codexCompactionInFlightByThreadRef.current[targetThreadId] ?? false,
+      );
       const isCodexCompaction = payload
-        ? isCodexContextCompaction(threadId)
+        ? targetThreadIds.some((targetThreadId) => isCodexContextCompaction(targetThreadId))
         : wasCodexCompacting;
-      delete codexCompactionInFlightByThreadRef.current[threadId];
-      dispatch({ type: "ensureThread", workspaceId, threadId, engine: inferEngineFromThreadId(threadId) });
-      dispatch({
-        type: "markContextCompacting",
-        threadId,
-        isCompacting: false,
-        timestamp: timestamp,
+      targetThreadIds.forEach((targetThreadId) => {
+        delete codexCompactionInFlightByThreadRef.current[targetThreadId];
+        dispatch({
+          type: "ensureThread",
+          workspaceId,
+          threadId: targetThreadId,
+          engine: inferEngineFromThreadId(targetThreadId),
+        });
+        dispatch({
+          type: "markContextCompacting",
+          threadId: targetThreadId,
+          isCompacting: false,
+          timestamp,
+        });
       });
       const resolvedTurnId = turnId || `auto-${timestamp}`;
       if (isCodexCompaction) {
-        dispatch({
-          type: "upsertCodexCompactionMessage",
-          threadId,
-          text: t("threads.codexCompactionCompleted"),
+        const shouldAppendCompletedFallback = Boolean(payload) && !wasCodexCompacting;
+        targetThreadIds.forEach((targetThreadId) => {
+          dispatch({
+            type: "settleCodexCompactionMessage",
+            threadId: targetThreadId,
+            text: t("threads.codexCompactionCompleted"),
+            fallbackMessageId: buildCodexCompactionCompletionFallbackId(
+              targetThreadId,
+              resolvedTurnId,
+            ),
+            appendIfAlreadyCompleted: shouldAppendCompletedFallback,
+          });
         });
       } else {
-        dispatch({ type: "appendContextCompacted", threadId, turnId: resolvedTurnId });
+        targetThreadIds.forEach((targetThreadId) => {
+          dispatch({
+            type: "appendContextCompacted",
+            threadId: targetThreadId,
+            turnId: resolvedTurnId,
+          });
+        });
       }
-      recordThreadActivity(workspaceId, threadId, timestamp);
+      targetThreadIds.forEach((targetThreadId) => {
+        recordThreadActivity(workspaceId, targetThreadId, timestamp);
+      });
       safeMessageActivity();
     },
-    [dispatch, recordThreadActivity, safeMessageActivity, t],
+    [collectCompactionTargetThreadIds, dispatch, recordThreadActivity, safeMessageActivity, t],
   );
 
   const onContextCompacting = useCallback(
@@ -683,40 +727,69 @@ export function useThreadTurnEvents({
         manual?: boolean | null;
       },
     ) => {
-      const isCodexCompaction = isCodexContextCompaction(threadId);
+      const targetThreadIds = collectCompactionTargetThreadIds(threadId);
+      const isCodexCompaction = targetThreadIds.some((targetThreadId) =>
+        isCodexContextCompaction(targetThreadId),
+      );
       if (isCodexCompaction) {
-        codexCompactionInFlightByThreadRef.current[threadId] = true;
+        targetThreadIds.forEach((targetThreadId) => {
+          codexCompactionInFlightByThreadRef.current[targetThreadId] = true;
+        });
       } else {
-        delete codexCompactionInFlightByThreadRef.current[threadId];
-      }
-      dispatch({ type: "ensureThread", workspaceId, threadId, engine: inferEngineFromThreadId(threadId) });
-      dispatch({
-        type: "markContextCompacting",
-        threadId,
-        isCompacting: true,
-        timestamp: Date.now(),
-      });
-      if (isCodexCompaction) {
-        dispatch({
-          type: "upsertCodexCompactionMessage",
-          threadId,
-          text: t("threads.codexCompactionStarted"),
+        targetThreadIds.forEach((targetThreadId) => {
+          delete codexCompactionInFlightByThreadRef.current[targetThreadId];
         });
       }
+      const timestamp = Date.now();
+      targetThreadIds.forEach((targetThreadId) => {
+        dispatch({
+          type: "ensureThread",
+          workspaceId,
+          threadId: targetThreadId,
+          engine: inferEngineFromThreadId(targetThreadId),
+        });
+        dispatch({
+          type: "markContextCompacting",
+          threadId: targetThreadId,
+          isCompacting: true,
+          timestamp,
+        });
+      });
+      if (isCodexCompaction) {
+        targetThreadIds.forEach((targetThreadId) => {
+          dispatch({
+            type: "appendCodexCompactionMessage",
+            threadId: targetThreadId,
+            text: t("threads.codexCompactionStarted"),
+          });
+        });
+      }
+      targetThreadIds.forEach((targetThreadId) => {
+        recordThreadActivity(workspaceId, targetThreadId, timestamp);
+      });
       safeMessageActivity();
     },
-    [dispatch, safeMessageActivity, t],
+    [collectCompactionTargetThreadIds, dispatch, recordThreadActivity, safeMessageActivity, t],
   );
 
   const onContextCompactionFailed = useCallback(
     (workspaceId: string, threadId: string, reason: string) => {
-      delete codexCompactionInFlightByThreadRef.current[threadId];
-      dispatch({ type: "ensureThread", workspaceId, threadId, engine: inferEngineFromThreadId(threadId) });
-      dispatch({
-        type: "markContextCompacting",
-        threadId,
-        isCompacting: false,
-        timestamp: Date.now(),
+      const timestamp = Date.now();
+      const targetThreadIds = collectCompactionTargetThreadIds(threadId);
+      targetThreadIds.forEach((targetThreadId) => {
+        delete codexCompactionInFlightByThreadRef.current[targetThreadId];
+        dispatch({
+          type: "ensureThread",
+          workspaceId,
+          threadId: targetThreadId,
+          engine: inferEngineFromThreadId(targetThreadId),
+        });
+        dispatch({
+          type: "markContextCompacting",
+          threadId: targetThreadId,
+          isCompacting: false,
+          timestamp,
+        });
       });
       const message = reason
         ? t("threads.contextCompactionFailedWithMessage", { message: reason })
@@ -732,7 +805,7 @@ export function useThreadTurnEvents({
           label: "thread/stability diagnostic",
           payload: {
             workspaceId,
-            threadId,
+            threadId: targetThreadIds[0] ?? threadId,
             category: stabilityDiagnostic.category,
             rawMessage: stabilityDiagnostic.rawMessage,
             recoveryReason: stabilityDiagnostic.reconnectReason ?? null,
@@ -740,16 +813,18 @@ export function useThreadTurnEvents({
           },
         });
       }
-      pushThreadErrorMessage(threadId, message);
+      targetThreadIds.forEach((targetThreadId) => {
+        pushThreadErrorMessage(targetThreadId, message);
+      });
       pushThreadFailureRuntimeNotice({
         workspaceId,
-        threadId,
-        engine: inferEngineFromThreadId(threadId),
+        threadId: targetThreadIds[0] ?? threadId,
+        engine: inferEngineFromThreadId(targetThreadIds[0] ?? threadId),
         message: reason || message,
       });
       safeMessageActivity();
     },
-    [dispatch, onDebug, pushThreadErrorMessage, safeMessageActivity, t],
+    [collectCompactionTargetThreadIds, dispatch, onDebug, pushThreadErrorMessage, safeMessageActivity, t],
   );
 
   const onThreadSessionIdUpdated = useCallback(

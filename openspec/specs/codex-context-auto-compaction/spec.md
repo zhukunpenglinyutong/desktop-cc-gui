@@ -44,10 +44,17 @@ Codex context compaction MUST be visible in the conversation message surface whe
 - **THEN** the conversation message surface SHALL show a visible message describing that Codex is compacting background information
 - **AND** the thread SHALL continue using the existing compacting state for Composer context indicators
 
-#### Scenario: settle compaction message on completion
+#### Scenario: settle latest compaction message on completion
 - **WHEN** frontend receives `thread/compacted` for the same Codex thread
-- **THEN** the conversation message surface SHALL show a completion message describing that Codex compacted background information
+- **AND** the conversation message surface already contains the latest visible Codex compaction start message for that lifecycle
+- **THEN** the conversation message surface SHALL update that latest compaction message to a completion message describing that Codex compacted background information
 - **AND** duplicate compaction lifecycle events SHALL NOT create duplicate compaction messages for the same thread lifecycle
+
+#### Scenario: append completion fallback when start message is missing
+- **WHEN** frontend receives `thread/compacted` for a Codex thread with compaction source flags
+- **AND** the conversation message surface does not contain a visible Codex compaction start message for that lifecycle
+- **THEN** the conversation message surface SHALL append one completed compaction message for that lifecycle
+- **AND** repeated completion events for the same lifecycle SHALL NOT append duplicate fallback messages
 
 #### Scenario: manual compaction uses the same visible message path
 - **WHEN** frontend receives `thread/compacting` or `thread/compacted` with `manual: true`

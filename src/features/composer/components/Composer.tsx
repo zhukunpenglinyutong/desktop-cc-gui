@@ -62,7 +62,6 @@ import {
 } from "../utils/inlineSelections";
 import { useStreamActivityPhase } from "../../threads/hooks/useStreamActivityPhase";
 import {
-  compactThreadContext,
   exportRewindFiles,
 } from "../../../services/tauri";
 import {
@@ -91,6 +90,7 @@ type ComposerProps = {
     images: string[],
     options?: MessageSendOptions,
   ) => void | Promise<void>;
+  onRequestContextCompaction?: () => Promise<void> | void;
   onStop: () => void;
   canStop: boolean;
   disabled?: boolean;
@@ -1070,6 +1070,7 @@ export const Composer = memo(function Composer({
   items = EMPTY_ITEMS,
   onSend,
   onQueue: _onQueue,
+  onRequestContextCompaction,
   onStop,
   canStop,
   disabled = false,
@@ -1788,7 +1789,7 @@ export const Composer = memo(function Composer({
     if (selectedEngine !== "codex") {
       return;
     }
-    if (!activeWorkspaceId || !activeThreadId) {
+    if (!activeWorkspaceId || !activeThreadId || !onRequestContextCompaction) {
       pushErrorToast({
         title: t("chat.contextDualViewManualCompact"),
         message: t("chat.contextDualViewManualCompactUnavailable"),
@@ -1796,7 +1797,7 @@ export const Composer = memo(function Composer({
       return;
     }
     try {
-      await compactThreadContext(activeWorkspaceId, activeThreadId);
+      await onRequestContextCompaction();
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       pushErrorToast({
@@ -1804,7 +1805,13 @@ export const Composer = memo(function Composer({
         message: message || t("chat.contextDualViewManualCompactFailed"),
       });
     }
-  }, [activeThreadId, activeWorkspaceId, selectedEngine, t]);
+  }, [
+    activeThreadId,
+    activeWorkspaceId,
+    onRequestContextCompaction,
+    selectedEngine,
+    t,
+  ]);
 
   const handleCodexQuickCommand = useCallback(
     (command: string) => {

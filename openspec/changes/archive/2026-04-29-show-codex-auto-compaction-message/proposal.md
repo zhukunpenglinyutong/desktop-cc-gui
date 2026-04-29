@@ -21,8 +21,8 @@ Codex 长对话触发 `/compact` 时，Composer 的 context tooltip 已能显示
 
 - 在前端事件路由中保留 `thread/compacting` / `thread/compacted` 的 `auto/manual` 语义，让下游能区分自动压缩与手动压缩。
 - 对 Codex `/compact` 开始事件，在当前线程消息幕布中追加一条去重状态文案。
-- 对 Codex `/compact` 完成事件，将开始文案收敛为完成文案，避免用户只看到 loading。
-- 保持 `isContextCompacting`、Composer dual context state 与已有 `Context compacted.` 兼容语义不回退。
+- 对 Codex `/compact` 完成事件，优先将最近一次开始文案收敛为完成文案；若只收到 completion，则补一条单次 completed fallback。
+- 保持 `isContextCompacting` 与 Composer dual context state contract 不回退；非 Codex 的 `Context compacted.` 语义链路保持不变。
 - 增加 targeted tests 覆盖 auto/manual 与 Codex/non-Codex 边界。
 
 ## 技术方案对比与取舍
@@ -37,8 +37,9 @@ Codex 长对话触发 `/compact` 时，Composer 的 context tooltip 已能显示
 
 - Codex 自动压缩开始后，消息幕布出现“正在压缩背景信息”的可见文案。
 - Codex 手动 `/compact` 按钮触发后，消息幕布出现同样的压缩可见文案。
-- Codex `/compact` 完成后，消息幕布中的压缩状态收敛为完成文案。
-- 同一次 `/compact` 不会重复刷多条压缩文案。
+- Codex `/compact` 完成后，若本轮已出现 started 文案，则该文案会原地收敛为完成文案。
+- 若只收到 Codex completion、未出现 started 文案，消息幕布仍会补一条 completed 文案。
+- 同一次 `/compact` 不会重复刷多条压缩文案；同一条 completion fallback 也不会重复追加。
 - 非 Codex 线程不显示 Codex 自动压缩文案。
 
 ## Capabilities

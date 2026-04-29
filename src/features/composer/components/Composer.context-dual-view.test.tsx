@@ -1,5 +1,5 @@
 /** @vitest-environment jsdom */
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { EngineType, ThreadTokenUsage } from "../../../types";
 import { Composer } from "./Composer";
@@ -30,6 +30,7 @@ vi.mock("./ChatInputBox/ChatInputBoxAdapter", () => ({
     contextUsage,
     contextDualViewEnabled,
     dualContextUsage,
+    onRequestContextCompaction,
   }: {
     contextUsage?: { used: number; total: number } | null;
     contextDualViewEnabled?: boolean;
@@ -40,6 +41,7 @@ vi.mock("./ChatInputBox/ChatInputBoxAdapter", () => ({
       hasUsage: boolean;
       compactionState: string;
     } | null;
+    onRequestContextCompaction?: () => Promise<void> | void;
   }) => (
     <div
       data-testid="chat-input-box-adapter"
@@ -51,7 +53,17 @@ vi.mock("./ChatInputBox/ChatInputBoxAdapter", () => ({
       data-dual-percent={String(dualContextUsage?.percent ?? "")}
       data-dual-has-usage={String(dualContextUsage?.hasUsage ?? "")}
       data-dual-state={String(dualContextUsage?.compactionState ?? "")}
-    />
+    >
+      <button
+        type="button"
+        data-testid="compact-now"
+        onClick={() => {
+          void onRequestContextCompaction?.();
+        }}
+      >
+        compact
+      </button>
+    </div>
   ),
 }));
 
@@ -62,6 +74,7 @@ function ComposerHarness({
   isProcessing = false,
   isContextCompacting = false,
   items = [],
+  onRequestContextCompaction,
 }: {
   selectedEngine?: EngineType;
   contextUsage?: ThreadTokenUsage | null;
@@ -69,12 +82,14 @@ function ComposerHarness({
   isProcessing?: boolean;
   isContextCompacting?: boolean;
   items?: Array<{ id: string; kind: "message"; role: "assistant" | "user"; text: string }>;
+  onRequestContextCompaction?: () => Promise<void> | void;
 }) {
   return (
     <Composer
       items={items}
       onSend={() => {}}
       onQueue={() => {}}
+      onRequestContextCompaction={onRequestContextCompaction}
       onStop={() => {}}
       canStop={false}
       isProcessing={isProcessing}
@@ -239,5 +254,20 @@ describe("Composer dual context usage model", () => {
 
     const adapter = screen.getByTestId("chat-input-box-adapter");
     expect(adapter.getAttribute("data-dual-state")).toBe("compacting");
+  });
+
+  it("forwards manual compaction requests to the external handler when provided", () => {
+    const onRequestContextCompaction = vi.fn();
+    render(
+      <ComposerHarness
+        selectedEngine="codex"
+        contextDualViewEnabled={true}
+        onRequestContextCompaction={onRequestContextCompaction}
+      />,
+    );
+
+    fireEvent.click(screen.getByTestId("compact-now"));
+
+    expect(onRequestContextCompaction).toHaveBeenCalledTimes(1);
   });
 });

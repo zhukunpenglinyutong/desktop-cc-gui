@@ -116,7 +116,7 @@ export function useAppShellLayoutNodesSection(ctx: any) {
     settingsSection, shouldForceResumeInCode, shouldImplementPlan, shouldLoadDiffs, shouldLoadGitHubPanelData, shouldMountSpecHub, shouldShowSidebarTopbarContent, showComposer,
     showDebugButton, showGitDetail, showGitHistory, showHome, showKanban, showNextReleaseNotes, showPresetStep, showPreviousReleaseNotes,
     showSpecHub, showWorkspaceHome, sidebarCollapsed, sidebarToggleProps, sidebarWidth, skills, slashToken, snapshot,
-    soloModeEnabled, startExport, startFast, startFork, startHeight, startImport, startLsp, startMcp,
+    soloModeEnabled, startCompact, startExport, startFast, startFork, startHeight, startImport, startLsp, startMcp,
     startMode, startResume, startReview, startShare, startSpecRoot, startStatus, startThreadForWorkspace, startUpdate,
     startY, stored, syncError, syncLoading, t, tabletTab, target,
     targetThread, targetWorkspaceIds, task, taskProcessingMap, taskWs, terminalOpen, terminalPanelHeight, terminalState,
@@ -755,6 +755,7 @@ export function useAppShellLayoutNodesSection(ctx: any) {
     canRevealGeneralPrompts: Boolean(activeWorkspace),
     onSend: handleComposerSendWithEditorFallback,
     onQueue: handleComposerQueueWithEditorFallback,
+    onRequestContextCompaction: () => startCompact("/compact"),
     onStop: interruptTurn,
     completionEmailSelected: Boolean(
       activeThreadId && completionEmailIntentByThread?.[activeThreadId],

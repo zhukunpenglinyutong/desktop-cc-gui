@@ -366,6 +366,7 @@ export function useThreads({
   const replaceOnResumeRef = useRef<Record<string, boolean>>({});
   const pendingInterruptsRef = useRef<Set<string>>(new Set());
   const interruptedThreadsRef = useRef<Set<string>>(new Set());
+  const codexCompactionInFlightByThreadRef = useRef<Record<string, boolean>>({});
   const pendingMemoryCaptureRef = useRef<Record<string, PendingMemoryCapture>>({});
   const pendingAssistantCompletionRef = useRef<Record<string, PendingAssistantCompletion>>({});
   const recentThreadErrorsRef = useRef<Record<string, { message: string; at: number }>>({});
@@ -2039,6 +2040,7 @@ export function useThreads({
     codexAcceptedTurnByThread: state.codexAcceptedTurnByThread,
     tokenUsageByThread: state.tokenUsageByThread,
     rateLimitsByWorkspace: state.rateLimitsByWorkspace,
+    codexCompactionInFlightByThreadRef,
     pendingInterruptsRef,
     interruptedThreadsRef,
     dispatch,
@@ -2622,12 +2624,14 @@ export function useThreads({
     activeThreadId,
     dispatch,
     getCustomName,
+    resolveCanonicalThreadId,
     resolveCollaborationUiMode,
     isAutoTitlePending,
     isThreadHidden,
     markProcessing,
     markReviewing,
     setActiveTurnId: setActiveTurnIdWithCompletionEmail,
+    codexCompactionInFlightByThreadRef,
     safeMessageActivity,
     recordThreadActivity,
     pushThreadErrorMessage,

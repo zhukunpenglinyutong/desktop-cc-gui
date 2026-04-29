@@ -500,6 +500,7 @@ type LayoutNodesOptions = {
     images: string[],
     options?: MessageSendOptions,
   ) => void | Promise<void>;
+  onRequestContextCompaction?: () => Promise<void> | void;
   onStop: () => void;
   completionEmailSelected?: boolean;
   completionEmailDisabled?: boolean;
@@ -1467,6 +1468,7 @@ export function useLayoutNodes(options: LayoutNodesOptions): LayoutNodesResult {
         threadStatusById={deferredComposerLiveInputs.threadStatusById}
         onSend={options.onSend}
         onQueue={options.onQueue}
+        onRequestContextCompaction={options.onRequestContextCompaction}
         onStop={options.onStop}
         completionEmailSelected={options.completionEmailSelected}
         completionEmailDisabled={options.completionEmailDisabled}

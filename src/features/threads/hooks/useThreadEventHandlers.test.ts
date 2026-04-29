@@ -160,6 +160,7 @@ function makeOptions(onDebug = vi.fn()) {
     markProcessing: vi.fn(),
     markReviewing: vi.fn(),
     setActiveTurnId: vi.fn(),
+    codexCompactionInFlightByThreadRef: { current: {} as Record<string, boolean> },
     safeMessageActivity: vi.fn(),
     recordThreadActivity: vi.fn(),
     pushThreadErrorMessage: vi.fn(),

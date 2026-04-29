@@ -153,6 +153,7 @@ type UseThreadMessagingOptions = {
   codexAcceptedTurnByThread: ThreadState["codexAcceptedTurnByThread"];
   tokenUsageByThread: Record<string, ThreadTokenUsage>;
   rateLimitsByWorkspace: Record<string, RateLimitSnapshot | null>;
+  codexCompactionInFlightByThreadRef?: MutableRefObject<Record<string, boolean>>;
   pendingInterruptsRef: MutableRefObject<Set<string>>;
   interruptedThreadsRef: MutableRefObject<Set<string>>;
   dispatch: Dispatch<ThreadAction>;
@@ -223,6 +224,7 @@ export function useThreadMessaging({
   codexAcceptedTurnByThread,
   tokenUsageByThread,
   rateLimitsByWorkspace,
+  codexCompactionInFlightByThreadRef,
   pendingInterruptsRef,
   interruptedThreadsRef,
   dispatch,
@@ -249,6 +251,9 @@ export function useThreadMessaging({
   runWithCreateSessionLoading,
 }: UseThreadMessagingOptions) {
   const { t, i18n } = useTranslation();
+  const internalCodexCompactionInFlightByThreadRef = useRef<Record<string, boolean>>({});
+  const effectiveCodexCompactionInFlightByThreadRef =
+    codexCompactionInFlightByThreadRef ?? internalCodexCompactionInFlightByThreadRef;
   const lastOpenCodeModelByThreadRef = useRef<Map<string, string>>(new Map());
   const claudeSessionIdByPendingThreadRef = useRef<Map<string, string>>(new Map());
   const geminiSessionIdByPendingThreadRef = useRef<Map<string, string>>(new Map());
@@ -2071,6 +2076,7 @@ export function useThreadMessaging({
     sessionSpecLinkByThreadRef,
     t,
     threadStatusById,
+    codexCompactionInFlightByThreadRef: effectiveCodexCompactionInFlightByThreadRef,
     tokenUsageByThread,
     updateThreadParent,
   });

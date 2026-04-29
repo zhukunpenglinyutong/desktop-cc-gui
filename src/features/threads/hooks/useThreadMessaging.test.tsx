@@ -175,6 +175,7 @@ describe("useThreadMessaging", () => {
     const onDebug = vi.fn();
     const pendingInterruptsRef = { current: new Set<string>() };
     const interruptedThreadsRef = { current: new Set<string>() };
+    const codexCompactionInFlightByThreadRef = { current: {} as Record<string, boolean> };
 
     const startThreadForWorkspace =
       overrides.startThreadForWorkspace ??
@@ -198,6 +199,7 @@ describe("useThreadMessaging", () => {
         codexAcceptedTurnByThread: overrides.codexAcceptedTurnByThread ?? {},
         tokenUsageByThread: {},
         rateLimitsByWorkspace: {},
+        codexCompactionInFlightByThreadRef,
         pendingInterruptsRef,
         interruptedThreadsRef,
         dispatch,
@@ -232,6 +234,7 @@ describe("useThreadMessaging", () => {
       safeMessageActivity,
       pushThreadErrorMessage,
       onDebug,
+      codexCompactionInFlightByThreadRef,
       pendingInterruptsRef,
       interruptedThreadsRef,
     };
@@ -1054,6 +1057,98 @@ describe("useThreadMessaging", () => {
     expect(sendUserMessage).not.toHaveBeenCalled();
   });
 
+  it("runs manual Codex compaction via dedicated compact RPC and inserts the curtain message immediately", async () => {
+    vi.mocked(compactThreadContext).mockResolvedValue({ status: "queued" });
+    const {
+      result,
+      dispatch,
+      recordThreadActivity,
+      safeMessageActivity,
+      codexCompactionInFlightByThreadRef,
+    } = makeHook("codex", {
+      activeThreadId: "thread-1",
+      ensuredThreadId: "thread-1",
+      threadEngineById: {
+        "thread-1": "codex",
+      },
+    });
+
+    await act(async () => {
+      await result.current.startCompact("/compact");
+    });
+
+    expect(compactThreadContext).toHaveBeenCalledWith("ws-1", "thread-1");
+    expect(dispatch).toHaveBeenCalledWith({
+      type: "appendCodexCompactionMessage",
+      threadId: "thread-1",
+      text: "threads.codexCompactionStarted",
+    });
+    expect(recordThreadActivity).toHaveBeenCalledWith(
+      "ws-1",
+      "thread-1",
+      expect.any(Number),
+    );
+    expect(codexCompactionInFlightByThreadRef.current["thread-1"]).toBe(true);
+    expect(safeMessageActivity).toHaveBeenCalled();
+  });
+
+  it("does not send duplicate Codex compact RPCs while one is already in flight", async () => {
+    const {
+      result,
+      dispatch,
+      codexCompactionInFlightByThreadRef,
+    } = makeHook("codex", {
+      activeThreadId: "thread-1",
+      ensuredThreadId: "thread-1",
+      threadEngineById: {
+        "thread-1": "codex",
+      },
+    });
+    codexCompactionInFlightByThreadRef.current["thread-1"] = true;
+
+    await act(async () => {
+      await result.current.startCompact("/compact");
+    });
+
+    expect(compactThreadContext).not.toHaveBeenCalled();
+    expect(dispatch).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: "appendCodexCompactionMessage" }),
+    );
+  });
+
+  it("rolls back the started Codex compaction curtain message when the compact RPC fails immediately", async () => {
+    vi.mocked(compactThreadContext).mockRejectedValue(new Error("rpc failed"));
+    const {
+      result,
+      dispatch,
+      codexCompactionInFlightByThreadRef,
+      pushThreadErrorMessage,
+      safeMessageActivity,
+    } = makeHook("codex", {
+      activeThreadId: "thread-1",
+      ensuredThreadId: "thread-1",
+      threadEngineById: {
+        "thread-1": "codex",
+      },
+    });
+
+    await act(async () => {
+      await result.current.startCompact("/compact");
+    });
+
+    expect(dispatch).toHaveBeenCalledWith({
+      type: "discardLatestCodexCompactionMessage",
+      threadId: "thread-1",
+      text: "threads.codexCompactionStarted",
+    });
+    expect(pushThreadErrorMessage).toHaveBeenCalledWith(
+      "thread-1",
+      "threads.contextCompactionFailedWithMessage",
+    );
+    expect(codexCompactionInFlightByThreadRef.current["thread-1"]).toBeUndefined();
+    expect(safeMessageActivity).toHaveBeenCalled();
+  });
+
   it("does not create a new thread for /compact when no active claude thread exists", async () => {
     const startThreadForWorkspace = vi.fn(async () => "claude:session-new");
     const { result } = makeHook("claude", {
@@ -1077,13 +1172,13 @@ describe("useThreadMessaging", () => {
     );
   });
 
-  it("rejects /compact on non-claude active thread without rebinding", async () => {
+  it("rejects /compact on unsupported active thread without rebinding", async () => {
     const startThreadForWorkspace = vi.fn(async () => "claude:session-new");
-    const { result } = makeHook("claude", {
+    const { result } = makeHook("gemini", {
       activeThreadId: "thread-1",
       ensuredThreadId: "thread-1",
       threadEngineById: {
-        "thread-1": "codex",
+        "thread-1": "gemini",
       },
       startThreadForWorkspace,
     });

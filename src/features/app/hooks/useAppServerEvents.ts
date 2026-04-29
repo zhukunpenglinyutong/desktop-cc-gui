@@ -200,6 +200,14 @@ function parseOptionalBoolean(value: unknown): boolean | null {
   if (typeof value === "boolean") {
     return value;
   }
+  if (typeof value === "number") {
+    if (value === 1) {
+      return true;
+    }
+    if (value === 0) {
+      return false;
+    }
+  }
   if (typeof value === "string") {
     const normalized = value.trim().toLowerCase();
     if (normalized === "true") {
@@ -263,6 +271,8 @@ function extractThreadIdFromParams(params: Record<string, unknown>): string {
       params.thread_id ??
       turn.threadId ??
       turn.thread_id ??
+      threadObj.threadId ??
+      threadObj.thread_id ??
       threadObj.id ??
       "",
   ).trim();
@@ -1611,8 +1621,8 @@ export function useAppServerEvents(
 
       if (method === "thread/compacted") {
         const params = message.params as Record<string, unknown>;
-        const threadId = sharedBridge?.sharedThreadId ?? String(params.threadId ?? params.thread_id ?? "");
-        const turnId = String(params.turnId ?? params.turn_id ?? "");
+        const threadId = sharedBridge?.sharedThreadId ?? extractThreadIdFromParams(params);
+        const turnId = extractTurnIdFromParams(params);
         if (threadId) {
           const sourceFlags = extractCompactionSourceFlags(params);
           if (sourceFlags) {
@@ -1626,7 +1636,7 @@ export function useAppServerEvents(
 
       if (method === "thread/compacting") {
         const params = message.params as Record<string, unknown>;
-        const threadId = sharedBridge?.sharedThreadId ?? String(params.threadId ?? params.thread_id ?? "");
+        const threadId = sharedBridge?.sharedThreadId ?? extractThreadIdFromParams(params);
         if (threadId) {
           const usagePercentRaw = Number(params.usagePercent ?? params.usage_percent);
           const thresholdPercentRaw = Number(
@@ -1660,7 +1670,7 @@ export function useAppServerEvents(
 
       if (method === "thread/compactionFailed") {
         const params = message.params as Record<string, unknown>;
-        const threadId = sharedBridge?.sharedThreadId ?? String(params.threadId ?? params.thread_id ?? "");
+        const threadId = sharedBridge?.sharedThreadId ?? extractThreadIdFromParams(params);
         if (threadId) {
           const reason = String(params.reason ?? "").trim();
           handlers.onContextCompactionFailed?.(workspace_id, threadId, reason);

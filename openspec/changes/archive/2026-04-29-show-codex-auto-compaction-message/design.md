@@ -2,7 +2,7 @@
 
 Codex 自动压缩已有两条可见面：
 - Composer footer / tooltip 根据 `isContextCompacting` 与 context usage 展示压缩状态。
-- Thread reducer 在 `thread/compacted` 后追加 `Context compacted.`。
+- 非 Codex 线程在 `thread/compacted` 后继续沿用 `Context compacted.` 语义消息。
 
 缺口在消息幕布：`thread/compacting` 只驱动 working indicator，不会写入 timeline item。长会话里自动压缩或用户主动点击 `/compact` 按钮时，用户只能看到泛化 loading，无法判断系统实际在压缩背景信息。
 
@@ -43,13 +43,19 @@ Codex 自动压缩已有两条可见面：
 
 字段缺失时维持兼容：Codex runtime 的自动路径通常不带 `manual`，仍应显示压缩文案；显式手动路径已有 `manual: true`，也进入同一幕布反馈。
 
-### Decision 3: compacting item 在完成时原地收敛
+### Decision 3: compacting item 在完成时优先原地收敛，必要时补 completed fallback
 
 开始事件追加：
-- id: `context-compacted-codex-compact-<threadId>`
+- id: `context-compacted-codex-compact-<threadId>-<timestamp>`
 - text: i18n 后的“正在压缩背景信息”
 
-完成事件更新同一 id 的 text 为“已压缩背景信息”，并继续保留现有 `Context compacted.` 语义消息。这样不破坏已有 composer compacted 检测与历史测试，同时让用户看到明确过程。
+同一 lifecycle 若手动入口与 `thread/compacting` 事件都到达，reducer 只去重相邻、同文本的 started 文案，避免双插。
+
+完成事件分两种情况：
+- 若当前线程最近一条 Codex compaction message 仍是 started，则原地把该 message 的 text 更新为“已压缩背景信息”，保留原消息 id 与时间线位置。
+- 若当前只收到了 `thread/compacted`，但幕布中没有可结算的本轮 started message，则追加 `context-compacted-codex-compact-<threadId>-completed-<turnId>` 形式的 completed fallback。
+
+同一个 fallback id 重复到达时必须 no-op，避免 completion-only 路径重复追加。
 
 ### Decision 4: i18n 在 handler 层解析，reducer 只接收文本
 
@@ -60,8 +66,8 @@ Reducer 不直接依赖 `i18n`。`useThreadTurnEvents` 使用 `t(...)` 生成用
 - [Risk] Codex 事件缺少 `auto/manual` 字段时误判  
   → Mitigation: 只对 Codex compaction lifecycle 事件写幕布文案；字段缺失时按兼容路径显示通用压缩文案。
 
-- [Risk] 与 `Context compacted.` 重复表达  
-  → Mitigation: 新文案表达“Codex 压缩背景信息”，现有文案保留通用 compaction boundary；不删除旧消息以避免回退 composer compacted 检测。
+- [Risk] completion-only 路径错误结算到上一轮 completed  
+  → Mitigation: completion fallback 使用 `completed-<turnId>` 独立 id，仅在当前没有 tracked started 时追加，并对同一 fallback id 去重。
 
 - [Risk] 旧历史会话不会回补压缩过程文案  
   → Mitigation: 本变更只针对实时 lifecycle 可见性；历史恢复保持当前行为。
@@ -69,8 +75,8 @@ Reducer 不直接依赖 `i18n`。`useThreadTurnEvents` 使用 `t(...)` 生成用
 ## Migration Plan
 
 1. 扩展 frontend compaction payload type。
-2. 增加 reducer action：upsert Codex compaction message。
-3. 在 compacting/compacted handler 中按 engine/manual guard 调用 action。
+2. 增加 reducer actions：`appendCodexCompactionMessage` 与 `settleCodexCompactionMessage`。
+3. 在 compacting/compacted handler 中按 engine/manual guard 调用 action，并在 completion-only 场景生成 fallback id。
 4. 补 i18n 与 targeted tests。
 
 Rollback：删除新增 action 调用即可回到旧行为；不涉及数据迁移与 backend 协议回滚。

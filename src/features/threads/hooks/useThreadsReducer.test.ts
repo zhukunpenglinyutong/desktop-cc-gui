@@ -2752,34 +2752,6 @@ describe("threadReducer", () => {
     }
   });
 
-  it("upserts a single Codex compaction message", () => {
-    const compacting = threadReducer(initialState, {
-      type: "upsertCodexCompactionMessage",
-      threadId: "thread-1",
-      text: "Codex 正在压缩背景信息",
-    });
-    const compacted = threadReducer(compacting, {
-      type: "upsertCodexCompactionMessage",
-      threadId: "thread-1",
-      text: "Codex 已压缩背景信息",
-    });
-    const duplicate = threadReducer(compacted, {
-      type: "upsertCodexCompactionMessage",
-      threadId: "thread-1",
-      text: "Codex 已压缩背景信息",
-    });
-
-    const items = duplicate.itemsByThread["thread-1"] ?? [];
-    expect(items).toHaveLength(1);
-    expect(items[0]).toMatchObject({
-      id: "context-compacted-codex-compact-thread-1",
-      kind: "message",
-      role: "assistant",
-      text: "Codex 已压缩背景信息",
-      engineSource: "codex",
-    });
-  });
-
   it("tracks compaction timing for context compaction status", () => {
     const compacting = threadReducer(initialState, {
       type: "markContextCompacting",

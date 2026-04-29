@@ -2208,7 +2208,7 @@ export function AppShell() {
     setHomeOpen, setWorkspaceHomeWorkspaceId, settingsHighlightTarget, settingsOpen, settingsSection, loadingProgressDialog, dismissLoadingProgressDialog, shouldLoadDiffs, shouldLoadGitHubPanelData,
     showLoadingProgressDialog, hideLoadingProgressDialog,
     showDebugButton, showGitHistory, showHome, showKanban, showNextReleaseNotes, showPresetStep, showPreviousReleaseNotes, showWorkspaceHome,
-    sidebarCollapsed, sidebarWidth, skills, startExport, startFast, startFork,
+    sidebarCollapsed, sidebarWidth, skills, startCompact, startExport, startFast, startFork,
     startImport, startLsp, startMcp, startMode, startResume, startReview, startShare, startSpecRoot,
     startStatus, startThreadForWorkspace, startSharedSessionForWorkspace, startUpdate, syncError, syncLoading,
     t, tabletTab, terminalOpen, terminalPanelHeight, terminalState,

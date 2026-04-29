@@ -85,12 +85,46 @@ import type {
 const REDUCER_NOOP_GUARD_ENABLED = isReducerNoopGuardEnabled();
 const INCREMENTAL_DERIVATION_ENABLED = isIncrementalDerivationEnabled();
 const PENDING_THREAD_LAST_AGENT_ANCHOR_TTL_MS = 5 * 60 * 1000;
+const CODEX_COMPACTION_MESSAGE_ID_PREFIX = "context-compacted-codex-compact-";
 
 type MessageItem = Extract<ConversationItem, { kind: "message" }>;
 type UserMessageItem = MessageItem & { role: "user" };
 type AssistantMessageItem = MessageItem & { role: "assistant" };
 type ToolConversationItem = Extract<ConversationItem, { kind: "tool" }>;
 type GeneratedImageItem = Extract<ConversationItem, { kind: "generatedImage" }>;
+
+function getThreadScopedCodexCompactionMessagePrefix(threadId: string) {
+  return `${CODEX_COMPACTION_MESSAGE_ID_PREFIX}${threadId}`;
+}
+
+function isThreadScopedCodexCompactionMessage(
+  item: ConversationItem | undefined,
+  threadId: string,
+): item is AssistantMessageItem {
+  if (
+    item?.kind !== "message" ||
+    item.role !== "assistant" ||
+    item.engineSource !== "codex"
+  ) {
+    return false;
+  }
+  const prefix = getThreadScopedCodexCompactionMessagePrefix(threadId);
+  return item.id === prefix || item.id.startsWith(`${prefix}-`);
+}
+
+function buildCodexCompactionMessage(
+  threadId: string,
+  text: string,
+  id = `${getThreadScopedCodexCompactionMessagePrefix(threadId)}-${Date.now()}`,
+): ConversationItem {
+  return {
+    id,
+    kind: "message",
+    role: "assistant",
+    text,
+    engineSource: "codex",
+  };
+}
 
 function isUserMessageItem(item: ConversationItem | undefined): item is UserMessageItem {
   return item?.kind === "message" && item.role === "user";
@@ -202,7 +236,19 @@ export type ThreadAction =
       timestamp?: number;
     }
   | {
-      type: "upsertCodexCompactionMessage";
+      type: "settleCodexCompactionMessage";
+      threadId: string;
+      text: string;
+      fallbackMessageId?: string | null;
+      appendIfAlreadyCompleted?: boolean;
+    }
+  | {
+      type: "appendCodexCompactionMessage";
+      threadId: string;
+      text: string;
+    }
+  | {
+      type: "discardLatestCodexCompactionMessage";
       threadId: string;
       text: string;
     }
@@ -2112,27 +2158,43 @@ export function threadReducer(state: ThreadState, action: ThreadAction): ThreadS
         },
       };
     }
-    case "upsertCodexCompactionMessage": {
+    case "settleCodexCompactionMessage": {
       const list = state.itemsByThread[action.threadId] ?? [];
-      const id = `context-compacted-codex-compact-${action.threadId}`;
-      const compactionMessage: ConversationItem = {
-        id,
-        kind: "message",
-        role: "assistant",
-        text: action.text,
-        engineSource: "codex",
-      };
-      const existingIndex = list.findIndex((entry) => entry.id === id);
+      const fallbackMessageId = action.fallbackMessageId ?? null;
+      if (action.appendIfAlreadyCompleted) {
+        if (!fallbackMessageId || list.some((entry) => entry.id === fallbackMessageId)) {
+          return state;
+        }
+        return {
+          ...state,
+          itemsByThread: {
+            ...state.itemsByThread,
+            [action.threadId]: prepareThreadItems([
+              ...list,
+              buildCodexCompactionMessage(action.threadId, action.text, fallbackMessageId),
+            ]),
+          },
+        };
+      }
+      let existingIndex = -1;
+      for (let index = list.length - 1; index >= 0; index -= 1) {
+        if (isThreadScopedCodexCompactionMessage(list[index], action.threadId)) {
+          existingIndex = index;
+          break;
+        }
+      }
       if (existingIndex >= 0) {
         const existingItem = list[existingIndex];
-        if (
-          existingItem?.kind === "message" &&
-          existingItem.text === action.text
-        ) {
+        if (!isThreadScopedCodexCompactionMessage(existingItem, action.threadId)) {
+          return state;
+        }
+        if (existingItem.text === action.text) {
           return state;
         }
         const next = list.map((entry, index) =>
-          index === existingIndex ? compactionMessage : entry,
+          index === existingIndex
+            ? buildCodexCompactionMessage(action.threadId, action.text, entry.id)
+            : entry,
         );
         return {
           ...state,
@@ -2146,7 +2208,59 @@ export function threadReducer(state: ThreadState, action: ThreadAction): ThreadS
         ...state,
         itemsByThread: {
           ...state.itemsByThread,
-          [action.threadId]: prepareThreadItems([...list, compactionMessage]),
+          [action.threadId]: prepareThreadItems([
+            ...list,
+            buildCodexCompactionMessage(action.threadId, action.text, fallbackMessageId ?? undefined),
+          ]),
+        },
+      };
+    }
+    case "appendCodexCompactionMessage": {
+      const list = state.itemsByThread[action.threadId] ?? [];
+      const lastItem = list[list.length - 1];
+      if (
+        isThreadScopedCodexCompactionMessage(lastItem, action.threadId) &&
+        lastItem.text === action.text &&
+        !lastItem.id.includes("-completed-")
+      ) {
+        return state;
+      }
+      return {
+        ...state,
+        itemsByThread: {
+          ...state.itemsByThread,
+          [action.threadId]: prepareThreadItems([
+            ...list,
+            buildCodexCompactionMessage(action.threadId, action.text),
+          ]),
+        },
+      };
+    }
+    case "discardLatestCodexCompactionMessage": {
+      const list = state.itemsByThread[action.threadId] ?? [];
+      let existingIndex = -1;
+      for (let index = list.length - 1; index >= 0; index -= 1) {
+        if (isThreadScopedCodexCompactionMessage(list[index], action.threadId)) {
+          existingIndex = index;
+          break;
+        }
+      }
+      if (existingIndex < 0) {
+        return state;
+      }
+      const existingItem = list[existingIndex];
+      if (
+        !isThreadScopedCodexCompactionMessage(existingItem, action.threadId) ||
+        existingItem.text !== action.text
+      ) {
+        return state;
+      }
+      const next = list.filter((_, index) => index !== existingIndex);
+      return {
+        ...state,
+        itemsByThread: {
+          ...state.itemsByThread,
+          [action.threadId]: prepareThreadItems(next),
         },
       };
     }
