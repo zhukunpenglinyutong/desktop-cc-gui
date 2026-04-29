@@ -221,6 +221,13 @@ vi.mock("../../../services/tauri", () => ({
   resolveGitCommitRef: vi.fn(async () => "a".repeat(40)),
   revertCommit: vi.fn(async () => undefined),
   syncGit: vi.fn(async () => undefined),
+  updateGitBranch: vi.fn(async () => ({
+    branch: "main",
+    status: "success",
+    reason: null,
+    message: "updated",
+    worktreePath: null,
+  })),
 }));
 
 import * as tauriService from "../../../services/tauri";
@@ -547,6 +554,205 @@ describe("GitHistoryPanel interactions", () => {
     expect(screen.getByText("main -> origin/main")).toBeTruthy();
     const menuItems = screen.getAllByRole("menuitem");
     expect(menuItems[0]?.textContent).toContain("git.historyBranchMenuCheckout");
+  });
+
+  it("keeps current local branch update on pull path", async () => {
+    render(<GitHistoryPanel workspace={workspace as never} />);
+
+    await waitFor(() => {
+      expect(document.querySelector(".git-history-branch-row .git-history-branch-name")).toBeTruthy();
+    });
+
+    const branchRow = Array.from(document.querySelectorAll(".git-history-branch-row")).find((row) =>
+      row.textContent?.includes("main"),
+    );
+    expect(branchRow).toBeTruthy();
+    fireEvent.contextMenu(branchRow as Element, { clientX: 160, clientY: 180 });
+
+    const updateAction = await screen.findByText("git.historyBranchMenuUpdate");
+    const updateButton = updateAction.closest('[role="menuitem"]');
+    expect(updateButton?.getAttribute("aria-disabled")).not.toBe("true");
+
+    fireEvent.click(updateButton as Element);
+
+    await waitFor(() => {
+      expect(tauriService.pullGit).toHaveBeenCalledWith("w1");
+    });
+    expect(tauriService.updateGitBranch).not.toHaveBeenCalled();
+  });
+
+  it("updates a non-current tracked local branch from branch context menu", async () => {
+    vi.mocked(tauriService.listGitBranches).mockResolvedValue({
+      branches: [],
+      localBranches: [
+        {
+          name: "main",
+          isCurrent: true,
+          isRemote: false,
+          remote: null,
+          upstream: "origin/main",
+          lastCommit: 1739300000,
+          ahead: 0,
+          behind: 0,
+        },
+        {
+          name: "update-target",
+          isCurrent: false,
+          isRemote: false,
+          remote: null,
+          upstream: "origin/update-target",
+          lastCommit: 1739299999,
+          ahead: 0,
+          behind: 2,
+        },
+      ],
+      remoteBranches: [],
+      currentBranch: "main",
+    } as never);
+    vi.mocked(tauriService.updateGitBranch).mockResolvedValueOnce({
+      branch: "update-target",
+      status: "success",
+      reason: null,
+      message: "updated",
+      worktreePath: null,
+    });
+
+    render(<GitHistoryPanel workspace={workspace as never} />);
+    const branchLoadCountBeforeUpdate = vi.mocked(tauriService.listGitBranches).mock.calls.length;
+
+    await waitFor(() => {
+      expect(document.querySelector(".git-history-branch-row .git-history-branch-name")).toBeTruthy();
+    });
+
+    const branchRow = Array.from(document.querySelectorAll(".git-history-branch-row")).find((row) =>
+      row.textContent?.includes("update-target"),
+    );
+    expect(branchRow).toBeTruthy();
+    fireEvent.contextMenu(branchRow as Element, { clientX: 160, clientY: 180 });
+
+    const updateAction = await screen.findByText("git.historyBranchMenuUpdate");
+    const updateButton = updateAction.closest('[role="menuitem"]');
+    expect(updateButton?.getAttribute("aria-disabled")).not.toBe("true");
+
+    fireEvent.click(updateButton as Element);
+
+    await waitFor(() => {
+      expect(tauriService.updateGitBranch).toHaveBeenCalledWith("w1", "update-target");
+    });
+    await waitFor(() => {
+      expect(vi.mocked(tauriService.listGitBranches).mock.calls.length).toBeGreaterThan(branchLoadCountBeforeUpdate);
+    });
+    expect(screen.getByText("git.historyBranchUpdateSuccess")).toBeTruthy();
+  });
+
+  it("disables local branch update without upstream tracking", async () => {
+    vi.mocked(tauriService.listGitBranches).mockResolvedValue({
+      branches: [],
+      localBranches: [
+        {
+          name: "main",
+          isCurrent: true,
+          isRemote: false,
+          remote: null,
+          upstream: "origin/main",
+          lastCommit: 1739300000,
+          ahead: 0,
+          behind: 0,
+        },
+        {
+          name: "no-upstream",
+          isCurrent: false,
+          isRemote: false,
+          remote: null,
+          upstream: null,
+          lastCommit: 1739299999,
+          ahead: 0,
+          behind: 0,
+        },
+      ],
+      remoteBranches: [],
+      currentBranch: "main",
+    } as never);
+
+    render(<GitHistoryPanel workspace={workspace as never} />);
+
+    await waitFor(() => {
+      expect(document.querySelector(".git-history-branch-row .git-history-branch-name")).toBeTruthy();
+    });
+
+    const branchRow = Array.from(document.querySelectorAll(".git-history-branch-row")).find((row) =>
+      row.textContent?.includes("no-upstream"),
+    );
+    expect(branchRow).toBeTruthy();
+    fireEvent.contextMenu(branchRow as Element, { clientX: 160, clientY: 180 });
+
+    const updateAction = await screen.findByText("git.historyBranchMenuUpdate");
+    const updateButton = updateAction.closest('[role="menuitem"]');
+    expect(
+      (updateButton as HTMLButtonElement | null)?.disabled
+      || updateButton?.getAttribute("aria-disabled") === "true",
+    ).toBe(true);
+  });
+
+  it("keeps remote branch update on fetch-only path", async () => {
+    vi.mocked(tauriService.listGitBranches).mockResolvedValue({
+      branches: [],
+      localBranches: [
+        {
+          name: "main",
+          isCurrent: true,
+          isRemote: false,
+          remote: null,
+          upstream: "origin/main",
+          lastCommit: 1739300000,
+          ahead: 0,
+          behind: 0,
+        },
+      ],
+      remoteBranches: [
+        {
+          name: "origin/remote-target",
+          isCurrent: false,
+          isRemote: true,
+          remote: "origin",
+          upstream: null,
+          lastCommit: 1739299999,
+          ahead: 0,
+          behind: 0,
+        },
+      ],
+      currentBranch: "main",
+    } as never);
+
+    render(<GitHistoryPanel workspace={workspace as never} />);
+
+    await waitFor(() => {
+      expect(document.querySelector(".git-history-branch-row .git-history-branch-name")).toBeTruthy();
+    });
+
+    let remoteGroupToggle = screen.queryByLabelText("git.historyToggleRemoteGroup");
+    if (!remoteGroupToggle) {
+      fireEvent.click(screen.getByLabelText("git.historyToggleRemoteBranches"));
+      remoteGroupToggle = await screen.findByLabelText("git.historyToggleRemoteGroup");
+    }
+    fireEvent.click(remoteGroupToggle);
+
+    const branchRow = Array.from(document.querySelectorAll(".git-history-branch-row")).find((row) =>
+      row.textContent?.includes("remote-target"),
+    );
+    expect(branchRow).toBeTruthy();
+    fireEvent.contextMenu(branchRow as Element, { clientX: 160, clientY: 180 });
+
+    const updateAction = await screen.findByText("git.historyBranchMenuUpdate");
+    const updateButton = updateAction.closest('[role="menuitem"]');
+    expect(updateButton?.getAttribute("aria-disabled")).not.toBe("true");
+
+    fireEvent.click(updateButton as Element);
+
+    await waitFor(() => {
+      expect(tauriService.fetchGit).toHaveBeenCalledWith("w1", "origin");
+    });
+    expect(tauriService.updateGitBranch).not.toHaveBeenCalled();
   });
 
   it("runs checkout then rebase from branch context menu", async () => {

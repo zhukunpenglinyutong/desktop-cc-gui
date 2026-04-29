@@ -2060,6 +2060,50 @@ const enPart2 = {
     remaining: "remaining",
     unlimited: "Unlimited",
   },
+
+  // Menu
+  menu: {
+    // App menu
+    about: "About {{appName}}",
+    checkForUpdates: "Check for Updates…",
+    settings: "Settings…",
+    // File menu
+    file: "File",
+    newAgent: "New Agent",
+    newWorktreeAgent: "New Worktree Agent",
+    newCloneAgent: "New Clone Agent",
+    newWindow: "New Window",
+    addWorkspace: "Add Workspace…",
+    closeWindow: "Close Window",
+    quit: "Quit",
+    // Edit menu
+    edit: "Edit",
+    // Composer menu
+    composer: "Composer",
+    cycleModel: "Cycle Model",
+    cycleAccessMode: "Cycle Access Mode",
+    cycleReasoningMode: "Cycle Reasoning Mode",
+    cycleCollaborationMode: "Cycle Collaboration Mode",
+    // View menu
+    view: "View",
+    toggleProjectsSidebar: "Toggle Projects Sidebar",
+    toggleGitSidebar: "Toggle Right Sidebar",
+    toggleGlobalSearch: "Toggle Global Search",
+    toggleDebugPanel: "Toggle Debug Panel",
+    toggleTerminal: "Toggle Terminal",
+    nextAgent: "Next Agent",
+    previousAgent: "Previous Agent",
+    nextWorkspace: "Next Workspace",
+    previousWorkspace: "Previous Workspace",
+    toggleFullScreen: "Toggle Full Screen",
+    // Window menu
+    window: "Window",
+    minimize: "Minimize",
+    maximize: "Maximize",
+    reloadWindow: "Reload Window",
+    // Help menu
+    help: "Help",
+  },
 };
 
 export default enPart2;

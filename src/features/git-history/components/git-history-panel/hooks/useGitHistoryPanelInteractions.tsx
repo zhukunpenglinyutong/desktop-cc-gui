@@ -24,7 +24,7 @@ type BranchContextAction = {
 };
 
 export function useGitHistoryPanelInteractions(scope: any) {
-  const {BRANCHES_MIN_WIDTH,COMMITS_MIN_WIDTH,COMMIT_ROW_ESTIMATED_HEIGHT,COMPACT_LAYOUT_BREAKPOINT,CREATE_PR_PREVIEW_COMMIT_LIMIT,DETAILS_MIN_WIDTH,DETAILS_SPLIT_MAX,DETAILS_SPLIT_MIN,DISABLE_HISTORY_COMMIT_ACTIONS,Download,FileText,FolderTree,GitBranch,GitMerge,OVERVIEW_MIN_WIDTH,Pencil,Plus,RefreshCw,Repeat,Trash2,Upload,VERTICAL_SPLITTER_SIZE,ask,branchCompareDetailsCacheRef,branchContextMenu,branchContextMenuRef,branchDiffCacheRef,branchesWidth,buildCreatePrInitialStages,checkoutGitBranch,cherryPickCommit,clamp,clearOperationNotice,closeBranchContextMenu,commitContextMenu,commitListRef,commits,commitsWidth,createBranchName,createBranchSource,createBranchSourceOptions,createGitBranchFromBranch,createGitBranchFromCommit,createGitPrWorkflow,createOperationErrorState,createPrCanConfirm,createPrCanOpen,createPrDefaultsLoading,createPrDialogOpen,createPrForm,createPrPreviewBaseRef,createPrPreviewBaseRemoteName,createPrPreviewDetailsCacheRef,createPrPreviewDetailsLoadTokenRef,createPrPreviewHeadRef,createPrPreviewLoadTokenRef,createPrPreviewSelectedSha,createPrProgressTimerRef,createPrResult,createPrSubmitting,currentBranch,currentLocalBranchEntry,defaults,deleteGitBranch,desktopSplitLayout,details,detailsBodyRef,extractWorktreePathFromDeleteError,fallbackGitRoots,fallbackGitRootsLoading,fallbackSelectingRoot,fetchGit,getDefaultColumnWidths,getGitBranchCompareCommits,getGitCommitDetails,getGitDiffs,getGitPrWorkflowDefaults,getGitPushPreview,getGitStatus,getGitWorktreeDiffAgainstBranch,getGitWorktreeDiffFileAgainstBranch,getOperationDisplayName,historyHasMore,historyLoading,historyLoadingMore,isBranchDeleteNotFullyMergedError,isBranchDeleteUsedByWorktreeError,listGitRoots,loadHistory,localBranches,localizeKnownGitError,mainGridRef,mapCreatePrStagesFromResult,mergeGitBranch,onOpenDiffPath,onSelectWorkspace,onSelectWorkspacePath,operationLoading,overviewWidth,owner,projectOptions,promptForceDeleteDialog,pullGit,pullNoCommit,pullNoVerify,pullRemote,pullRemoteOptions,pullStrategy,pullTargetBranch,pushCanConfirm,pushCc,pushDialogOpen,pushForceWithLease,pushGit,pushPreviewDetailsLoadTokenRef,pushPreviewLoadTokenRef,pushPreviewSelectedSha,pushRemoteOptions,pushRemoteTrimmed,pushReviewers,pushRunHooks,pushTags,pushTargetBranchTrimmed,pushToGerrit,pushTopic,rebaseGitBranch,refreshAll,renameBranchCanConfirm,renameBranchNameTrimmed,renameBranchSource,renameBranchSubmitting,renameGitBranch,repositoryUnavailable,resetGitCommit,resetMode,resetTargetSha,resolveGitRootPath,resolvePushTargetBranchOptions,resolveUpstreamTarget,revertCommit,runOperation,selectedBranch,selectedCommitSha,setBranchContextMenu,setBranchDiffState,setBranchesWidth,setCommitContextMenu,setCommitContextMoreOpen,setCommitsWidth,setComparePreviewFileKey,setCreateBranchDialogOpen,setCreateBranchName,setCreateBranchSource,setCreatePrCopiedPrUrl,setCreatePrCopiedRetryCommand,setCreatePrDefaults,setCreatePrDefaultsError,setCreatePrDefaultsLoading,setCreatePrDialogOpen,setCreatePrForm,setCreatePrPreviewBaseOnlyCount,setCreatePrPreviewCommits,setCreatePrPreviewDetails,setCreatePrPreviewDetailsError,setCreatePrPreviewDetailsLoading,setCreatePrPreviewError,setCreatePrPreviewExpanded,setCreatePrPreviewLoading,setCreatePrPreviewSelectedSha,setCreatePrResult,setCreatePrStages,setDesktopSplitLayout,setDetailsSplitRatio,setExpandedDirs,setExpandedLocalScopes,setExpandedRemoteScopes,setFallbackGitRoots,setFallbackGitRootsError,setFallbackGitRootsLoading,setFallbackSelectingRoot,setFetchDialogOpen,setIsCreatePrDialogMaximized,setOperationLoading,setOverviewWidth,setPullDialogOpen,setPullNoCommit,setPullNoVerify,setPullOptionsMenuOpen,setPullRemote,setPullRemoteMenuOpen,setPullRemoteMenuPlacement,setPullStrategy,setPullTargetBranch,setPullTargetBranchMenuOpen,setPullTargetBranchMenuPlacement,setPullTargetBranchQuery,setPushCc,setPushDialogOpen,setPushForceWithLease,setPushPreviewCommits,setPushPreviewDetails,setPushPreviewDetailsError,setPushPreviewDetailsLoading,setPushPreviewError,setPushPreviewExpandedDirs,setPushPreviewHasMore,setPushPreviewLoading,setPushPreviewSelectedSha,setPushPreviewTargetFound,setPushRemote,setPushRemoteMenuOpen,setPushReviewers,setPushRunHooks,setPushTags,setPushTargetBranch,setPushTargetBranchMenuOpen,setPushTargetBranchMenuPlacement,setPushTargetBranchQuery,setPushToGerrit,setPushTopic,setRefreshDialogOpen,setRenameBranchDialogOpen,setRenameBranchName,setRenameBranchSource,setResetDialogOpen,setResetMode,setResetTargetSha,setSelectedBranch,setSelectedCommitSha,setSyncDialogOpen,setSyncPreviewCommits,setSyncPreviewError,setSyncPreviewLoading,setSyncPreviewTargetBranch,setSyncPreviewTargetFound,setSyncPreviewTargetRemote,setWorkingTreeChangedFiles,setWorkingTreeTotalAdditions,setWorkingTreeTotalDeletions,setWorkspaceSelectingId,setWorktreePreviewError,setWorktreePreviewFile,setWorktreePreviewLoading,showOperationNotice,splitGitHubRepo,syncDialogOpen,syncGit,syncPreviewTargetBranch,syncPreviewTargetRemote,t,trimmed,useCallback,useEffect,useMemo,useVirtualizer,workbenchGridRef,workspace,workspaceId,workspaceSelectingId,workspaces} = scope;
+  const {BRANCHES_MIN_WIDTH,COMMITS_MIN_WIDTH,COMMIT_ROW_ESTIMATED_HEIGHT,COMPACT_LAYOUT_BREAKPOINT,CREATE_PR_PREVIEW_COMMIT_LIMIT,DETAILS_MIN_WIDTH,DETAILS_SPLIT_MAX,DETAILS_SPLIT_MIN,DISABLE_HISTORY_COMMIT_ACTIONS,Download,FileText,FolderTree,GitBranch,GitMerge,OVERVIEW_MIN_WIDTH,Pencil,Plus,RefreshCw,Repeat,Trash2,Upload,VERTICAL_SPLITTER_SIZE,ask,branchCompareDetailsCacheRef,branchContextMenu,branchContextMenuRef,branchDiffCacheRef,branchesWidth,buildCreatePrInitialStages,checkoutGitBranch,cherryPickCommit,clamp,clearOperationNotice,closeBranchContextMenu,commitContextMenu,commitListRef,commits,commitsWidth,createBranchName,createBranchSource,createBranchSourceOptions,createGitBranchFromBranch,createGitBranchFromCommit,createGitPrWorkflow,createOperationErrorState,createPrCanConfirm,createPrCanOpen,createPrDefaultsLoading,createPrDialogOpen,createPrForm,createPrPreviewBaseRef,createPrPreviewBaseRemoteName,createPrPreviewDetailsCacheRef,createPrPreviewDetailsLoadTokenRef,createPrPreviewHeadRef,createPrPreviewLoadTokenRef,createPrPreviewSelectedSha,createPrProgressTimerRef,createPrResult,createPrSubmitting,currentBranch,currentLocalBranchEntry,defaults,deleteGitBranch,desktopSplitLayout,details,detailsBodyRef,extractWorktreePathFromDeleteError,fallbackGitRoots,fallbackGitRootsLoading,fallbackSelectingRoot,fetchGit,getDefaultColumnWidths,getGitBranchCompareCommits,getGitCommitDetails,getGitDiffs,getGitPrWorkflowDefaults,getGitPushPreview,getGitStatus,getGitWorktreeDiffAgainstBranch,getGitWorktreeDiffFileAgainstBranch,getOperationDisplayName,historyHasMore,historyLoading,historyLoadingMore,isBranchDeleteNotFullyMergedError,isBranchDeleteUsedByWorktreeError,listGitRoots,loadHistory,localBranches,localizeKnownGitError,mainGridRef,mapCreatePrStagesFromResult,mergeGitBranch,onOpenDiffPath,onSelectWorkspace,onSelectWorkspacePath,operationLoading,overviewWidth,owner,projectOptions,promptForceDeleteDialog,pullGit,pullNoCommit,pullNoVerify,pullRemote,pullRemoteOptions,pullStrategy,pullTargetBranch,pushCanConfirm,pushCc,pushDialogOpen,pushForceWithLease,pushGit,pushPreviewDetailsLoadTokenRef,pushPreviewLoadTokenRef,pushPreviewSelectedSha,pushRemoteOptions,pushRemoteTrimmed,pushReviewers,pushRunHooks,pushTags,pushTargetBranchTrimmed,pushToGerrit,pushTopic,rebaseGitBranch,refreshAll,renameBranchCanConfirm,renameBranchNameTrimmed,renameBranchSource,renameBranchSubmitting,renameGitBranch,repositoryUnavailable,resetGitCommit,resetMode,resetTargetSha,resolveGitRootPath,resolvePushTargetBranchOptions,resolveUpstreamTarget,revertCommit,runOperation,selectedBranch,selectedCommitSha,setBranchContextMenu,setBranchDiffState,setBranchesWidth,setCommitContextMenu,setCommitContextMoreOpen,setCommitsWidth,setComparePreviewFileKey,setCreateBranchDialogOpen,setCreateBranchName,setCreateBranchSource,setCreatePrCopiedPrUrl,setCreatePrCopiedRetryCommand,setCreatePrDefaults,setCreatePrDefaultsError,setCreatePrDefaultsLoading,setCreatePrDialogOpen,setCreatePrForm,setCreatePrPreviewBaseOnlyCount,setCreatePrPreviewCommits,setCreatePrPreviewDetails,setCreatePrPreviewDetailsError,setCreatePrPreviewDetailsLoading,setCreatePrPreviewError,setCreatePrPreviewExpanded,setCreatePrPreviewLoading,setCreatePrPreviewSelectedSha,setCreatePrResult,setCreatePrStages,setDesktopSplitLayout,setDetailsSplitRatio,setExpandedDirs,setExpandedLocalScopes,setExpandedRemoteScopes,setFallbackGitRoots,setFallbackGitRootsError,setFallbackGitRootsLoading,setFallbackSelectingRoot,setFetchDialogOpen,setIsCreatePrDialogMaximized,setOperationLoading,setOverviewWidth,setPullDialogOpen,setPullNoCommit,setPullNoVerify,setPullOptionsMenuOpen,setPullRemote,setPullRemoteMenuOpen,setPullRemoteMenuPlacement,setPullStrategy,setPullTargetBranch,setPullTargetBranchMenuOpen,setPullTargetBranchMenuPlacement,setPullTargetBranchQuery,setPushCc,setPushDialogOpen,setPushForceWithLease,setPushPreviewCommits,setPushPreviewDetails,setPushPreviewDetailsError,setPushPreviewDetailsLoading,setPushPreviewError,setPushPreviewExpandedDirs,setPushPreviewHasMore,setPushPreviewLoading,setPushPreviewSelectedSha,setPushPreviewTargetFound,setPushRemote,setPushRemoteMenuOpen,setPushReviewers,setPushRunHooks,setPushTags,setPushTargetBranch,setPushTargetBranchMenuOpen,setPushTargetBranchMenuPlacement,setPushTargetBranchQuery,setPushToGerrit,setPushTopic,setRefreshDialogOpen,setRenameBranchDialogOpen,setRenameBranchName,setRenameBranchSource,setResetDialogOpen,setResetMode,setResetTargetSha,setSelectedBranch,setSelectedCommitSha,setSyncDialogOpen,setSyncPreviewCommits,setSyncPreviewError,setSyncPreviewLoading,setSyncPreviewTargetBranch,setSyncPreviewTargetFound,setSyncPreviewTargetRemote,setWorkingTreeChangedFiles,setWorkingTreeTotalAdditions,setWorkingTreeTotalDeletions,setWorkspaceSelectingId,setWorktreePreviewError,setWorktreePreviewFile,setWorktreePreviewLoading,showOperationNotice,splitGitHubRepo,syncDialogOpen,syncGit,syncPreviewTargetBranch,syncPreviewTargetRemote,t,trimmed,updateGitBranch,useCallback,useEffect,useMemo,useVirtualizer,workbenchGridRef,workspace,workspaceId,workspaceSelectingId,workspaces} = scope;
   const refreshFallbackGitRoots = useCallback(async () => {
     if (!repositoryUnavailable || !workspace) {
       setFallbackGitRoots([]);
@@ -1719,6 +1719,94 @@ export function useGitHistoryPanelInteractions(scope: any) {
     return `${branchName} -> ${trackingTarget}`;
   }, [branchContextMenu, t]);
 
+  const handleUpdateBranchFromContextMenu = useCallback(async (
+    targetBranch: string,
+    options: {
+      isCurrent: boolean;
+      isRemote: boolean;
+      remoteName: string | null;
+      hasUpstream: boolean;
+    },
+  ) => {
+    closeBranchContextMenu();
+    if (options.isRemote && options.remoteName) {
+      await runOperation("fetch", () => fetchGit(workspaceId, options.remoteName));
+      return;
+    }
+    if (options.isCurrent) {
+      await runOperation("pull", () => pullGit(workspaceId));
+      return;
+    }
+    if (!options.hasUpstream) {
+      return;
+    }
+
+    const operationName = "updateBranch";
+    clearOperationNotice();
+    setOperationLoading(operationName);
+    try {
+      const result = await updateGitBranch(workspaceId, targetBranch);
+      await refreshAll();
+      if (result.status === "blocked") {
+        const message = result.reason === "diverged"
+          ? t("git.historyBranchUpdateBlockedDiverged", { branch: targetBranch })
+          : result.reason === "occupied_worktree"
+            ? t("git.historyBranchUpdateBlockedOccupiedWorktree", {
+              branch: targetBranch,
+              path: result.worktreePath ?? "",
+            })
+            : result.reason === "stale_ref"
+              ? t("git.historyBranchUpdateBlockedStaleRef", { branch: targetBranch })
+              : t("git.historyBranchUpdateBlockedNoUpstream", { branch: targetBranch });
+        showOperationNotice({
+          kind: "error",
+          message,
+          debugMessage: result.message,
+        });
+        return;
+      }
+
+      const message = result.status === "no-op"
+        ? result.reason === "ahead_only"
+          ? t("git.historyBranchUpdateAheadOnly", { branch: targetBranch })
+          : t("git.historyBranchUpdateAlreadyUpToDate", { branch: targetBranch })
+        : t("git.historyBranchUpdateSuccess", { branch: targetBranch });
+      showOperationNotice({
+        kind: "success",
+        message,
+        debugMessage: result.message,
+      });
+    } catch (error) {
+      const rawMessage = error instanceof Error ? error.message : String(error);
+      const operationState = createOperationErrorState(rawMessage);
+      showOperationNotice({
+        kind: "error",
+        message: `${t("git.historyOperationFailed", {
+          operation: getOperationDisplayName(operationName),
+        })} ${operationState.userMessage}${
+          operationState.retryable ? ` ${t("git.historyOperationRetryHint")}` : ""
+        }`,
+        debugMessage: operationState.debugMessage,
+      });
+    } finally {
+      setOperationLoading(null);
+    }
+  }, [
+    clearOperationNotice,
+    closeBranchContextMenu,
+    createOperationErrorState,
+    fetchGit,
+    getOperationDisplayName,
+    pullGit,
+    refreshAll,
+    runOperation,
+    setOperationLoading,
+    showOperationNotice,
+    t,
+    updateGitBranch,
+    workspaceId,
+  ]);
+
   const branchContextActions = useMemo<BranchContextAction[]>(() => {
     if (!workspaceId || !branchContextMenu) {
       return [];
@@ -1730,8 +1818,10 @@ export function useGitHistoryPanelInteractions(scope: any) {
     const currentDisabledReason = t("git.historyBranchMenuUnavailableCurrent");
     const remoteDisabledReason = t("git.historyBranchMenuUnavailableRemote");
     const noCurrentBranchDisabledReason = t("git.historyBranchMenuUnavailableNoCurrent");
+    const noUpstreamDisabledReason = t("git.historyBranchMenuNoUpstreamTracking");
     const currentBranchName = currentBranch ?? t("git.unknown");
     const remoteName = branchContextMenu.branch.remote ?? null;
+    const hasUpstream = Boolean(branchContextMenu.branch.upstream?.trim());
 
     const createDisabledReason = createBranchSourceOptions.length === 0
       ? baseDisabledReason
@@ -1842,17 +1932,21 @@ export function useGitHistoryPanelInteractions(scope: any) {
         label: t("git.historyBranchMenuUpdate"),
         icon: <Download size={14} aria-hidden />,
         dividerBefore: true,
-        disabled: Boolean(baseDisabledReason || (isRemote ? !remoteName : !isCurrent)),
+        disabled: Boolean(baseDisabledReason || (isRemote ? !remoteName : !isCurrent && !hasUpstream)),
         disabledReason:
           baseDisabledReason ||
-          (isRemote ? (!remoteName ? remoteDisabledReason : null) : !isCurrent ? currentDisabledReason : null),
+          (isRemote
+            ? (!remoteName ? remoteDisabledReason : null)
+            : !isCurrent && !hasUpstream
+              ? noUpstreamDisabledReason
+              : null),
         onSelect: () => {
-          closeBranchContextMenu();
-          if (isRemote && remoteName) {
-            void runOperation("fetch", () => fetchGit(workspaceId, remoteName));
-            return;
-          }
-          void runOperation("pull", () => pullGit(workspaceId));
+          void handleUpdateBranchFromContextMenu(targetBranch, {
+            isCurrent,
+            isRemote,
+            remoteName,
+            hasUpstream,
+          });
         },
       },
       {
@@ -1909,7 +2003,6 @@ export function useGitHistoryPanelInteractions(scope: any) {
     closeBranchContextMenu,
     createBranchSourceOptions.length,
     currentBranch,
-    fetchGit,
     handleCheckoutAndRebaseCurrent,
     handleCheckoutBranch,
     handleCompareWithCurrentBranch,
@@ -1920,9 +2013,8 @@ export function useGitHistoryPanelInteractions(scope: any) {
     handleRebaseCurrentOntoBranch,
     handleOpenRenameBranchDialog,
     handleShowDiffWithWorktree,
+    handleUpdateBranchFromContextMenu,
     operationLoading,
-    pullGit,
-    runOperation,
     t,
     workspaceId,
   ]);

@@ -244,6 +244,17 @@ pub(crate) struct GitBranchListItem {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
+pub(crate) struct GitBranchUpdateResult {
+    pub(crate) branch: String,
+    pub(crate) status: String,
+    #[serde(default)]
+    pub(crate) reason: Option<String>,
+    pub(crate) message: String,
+    #[serde(default, rename = "worktreePath")]
+    pub(crate) worktree_path: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub(crate) struct GitHubIssue {
     pub(crate) number: u64,
     pub(crate) title: String,

@@ -2475,6 +2475,13 @@ const zhPart1 = {
     historyBranchMenuNoUpstreamTracking: "未设置上游分支",
     historyBranchMenuUnavailableBusy: "操作进行中",
     historyBranchMenuUnavailableNotImplemented: "暂未支持",
+    historyBranchUpdateSuccess: "已更新分支 {{branch}}。",
+    historyBranchUpdateAlreadyUpToDate: "分支 {{branch}} 已是最新。",
+    historyBranchUpdateAheadOnly: "分支 {{branch}} 已领先上游，无需更新。",
+    historyBranchUpdateBlockedNoUpstream: "分支 {{branch}} 未设置上游分支。",
+    historyBranchUpdateBlockedDiverged: "分支 {{branch}} 与上游已分叉，请切换到该分支后手动处理。",
+    historyBranchUpdateBlockedOccupiedWorktree: "分支 {{branch}} 当前正被工作树 {{path}} 使用。",
+    historyBranchUpdateBlockedStaleRef: "分支 {{branch}} 在更新过程中发生变化，请刷新后重试。",
     historyBranchCompareDiffModeBadge: "分支对比",
     historyBranchWorktreeDiffModeBadge: "工作树差异",
     historyBranchCompareDiffTitle: "分支 {{branch}} 与 {{compareBranch}} 差异",
@@ -2589,6 +2596,7 @@ const zhPart1 = {
     historyOperationRebaseCurrentBranch: "当前分支变基",
     historyOperationRevertCommit: "回滚提交",
     historyOperationCherryPick: "拣选提交",
+    historyOperationUpdateBranch: "更新分支",
     historyOperationReset: "重置提交",
     historyOperationCreatePr: "创建 PR",
     historyOperationSucceeded: "{{operation}}成功。",
@@ -2945,48 +2953,6 @@ const zhPart1 = {
     wechatGroupTitle: "扫描作者个人公众号二维码，获取微信交流群二维码，加群获得最新资讯和技术支持",
   },
 
-  // 菜单
-  menu: {
-    // 应用菜单
-    about: "关于 {{appName}}",
-    checkForUpdates: "检查更新…",
-    settings: "设置…",
-    // 文件菜单
-    file: "文件",
-    newAgent: "新建会话",
-    newWorktreeAgent: "新建工作树代理",
-    newCloneAgent: "新建克隆代理",
-    addWorkspace: "添加工作区…",
-    closeWindow: "关闭窗口",
-    quit: "退出",
-    // 编辑菜单
-    edit: "编辑",
-    // 编辑器菜单
-    composer: "编辑器",
-    cycleModel: "切换模型",
-    cycleAccessMode: "切换访问模式",
-    cycleReasoningMode: "切换推理模式",
-    cycleCollaborationMode: "切换协作模式",
-    // 视图菜单
-    view: "视图",
-    toggleProjectsSidebar: "切换项目侧边栏",
-    toggleGitSidebar: "切换右侧边栏",
-    toggleGlobalSearch: "切换全局搜索",
-    toggleDebugPanel: "切换调试面板",
-    toggleTerminal: "切换终端",
-    nextAgent: "下一个代理",
-    previousAgent: "上一个代理",
-    nextWorkspace: "下一个工作区",
-    previousWorkspace: "上一个工作区",
-    toggleFullScreen: "切换全屏",
-    // 窗口菜单
-    window: "窗口",
-    minimize: "最小化",
-    maximize: "最大化",
-    reloadWindow: "重新加载窗口",
-    // 帮助菜单
-    help: "帮助",
-  },
 };
 
 export default zhPart1;

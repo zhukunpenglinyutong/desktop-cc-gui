@@ -19,6 +19,7 @@ import {
   readGlobalCodexConfigToml,
   pushGit,
   pullGit,
+  updateGitBranch,
   runWorkspaceCommand,
   runSpecCommand,
   resetGitCommit,
@@ -793,6 +794,24 @@ describe("tauri invoke wrappers", () => {
       strategy: "--rebase",
       noCommit: false,
       noVerify: true,
+    });
+  });
+
+  it("maps update git branch payload", async () => {
+    const invokeMock = vi.mocked(invoke);
+    invokeMock.mockResolvedValueOnce({
+      branch: "feature/demo",
+      status: "success",
+      reason: null,
+      message: "updated",
+      worktreePath: null,
+    });
+
+    await updateGitBranch("ws-33", "feature/demo");
+
+    expect(invokeMock).toHaveBeenCalledWith("update_git_branch", {
+      workspaceId: "ws-33",
+      branchName: "feature/demo",
     });
   });
 

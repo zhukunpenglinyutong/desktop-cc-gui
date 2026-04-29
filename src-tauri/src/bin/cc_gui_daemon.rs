@@ -161,8 +161,8 @@ use shared::{
 use storage::{read_settings, read_workspaces};
 use types::{
     AppSettings, BranchInfo, GitBranchCompareCommitSets, GitBranchListItem, GitCommitDetails,
-    GitCommitDiff, GitCommitFileChange, GitFileDiff, GitFileStatus, GitHistoryCommit,
-    GitHistoryResponse, GitHubIssue, GitHubIssuesResponse, GitHubPullRequest,
+    GitBranchUpdateResult, GitCommitDiff, GitCommitFileChange, GitFileDiff, GitFileStatus,
+    GitHistoryCommit, GitHistoryResponse, GitHubIssue, GitHubIssuesResponse, GitHubPullRequest,
     GitHubPullRequestComment, GitHubPullRequestDiff, GitHubPullRequestsResponse, GitLogEntry,
     GitLogResponse, GitPrWorkflowDefaults, GitPrWorkflowResult, GitPrWorkflowStage,
     GitPushPreviewResponse, WorkspaceEntry, WorkspaceInfo, WorkspaceSettings, WorktreeSetupStatus,
@@ -1112,6 +1112,13 @@ async fn handle_rpc_request(
             let remote = parse_optional_string(&params, "remote");
             state.git_fetch(workspace_id, remote).await?;
             Ok(json!({ "ok": true }))
+        }
+        "update_git_branch" => {
+            let workspace_id = parse_string(&params, "workspaceId")?;
+            let branch_name = parse_string(&params, "branchName")?;
+            let result: GitBranchUpdateResult =
+                state.update_git_branch(workspace_id, branch_name).await?;
+            serde_json::to_value(result).map_err(|error| error.to_string())
         }
         "cherry_pick_commit" => {
             let workspace_id = parse_string(&params, "workspaceId")?;

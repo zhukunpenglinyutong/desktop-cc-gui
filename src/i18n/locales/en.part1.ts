@@ -2478,6 +2478,13 @@ const enPart1 = {
     historyBranchMenuNoUpstreamTracking: "No upstream branch",
     historyBranchMenuUnavailableBusy: "Operation in progress",
     historyBranchMenuUnavailableNotImplemented: "Not implemented yet",
+    historyBranchUpdateSuccess: "Updated branch {{branch}}.",
+    historyBranchUpdateAlreadyUpToDate: "Branch {{branch}} is already up to date.",
+    historyBranchUpdateAheadOnly: "Branch {{branch}} is ahead of upstream. No update is required.",
+    historyBranchUpdateBlockedNoUpstream: "Branch {{branch}} has no upstream branch configured.",
+    historyBranchUpdateBlockedDiverged: "Branch {{branch}} has diverged from upstream. Checkout the branch and resolve it manually.",
+    historyBranchUpdateBlockedOccupiedWorktree: "Branch {{branch}} is currently used by worktree at {{path}}.",
+    historyBranchUpdateBlockedStaleRef: "Branch {{branch}} changed while updating. Refresh and retry.",
     historyBranchCompareDiffModeBadge: "Branch Compare",
     historyBranchWorktreeDiffModeBadge: "Worktree Diff",
     historyBranchCompareDiffTitle: "Diff: {{branch}} vs {{compareBranch}}",
@@ -2592,6 +2599,7 @@ const enPart1 = {
     historyOperationRebaseCurrentBranch: "rebase current branch",
     historyOperationRevertCommit: "revert commit",
     historyOperationCherryPick: "cherry-pick commit",
+    historyOperationUpdateBranch: "update branch",
     historyOperationReset: "reset commit",
     historyOperationCreatePr: "create PR",
     historyOperationSucceeded: "{{operation}} succeeded.",
@@ -2949,49 +2957,6 @@ const enPart1 = {
     wechatGroupTitle: "Scan to join WeChat Group",
   },
 
-  // Menu
-  menu: {
-    // App menu
-    about: "About {{appName}}",
-    checkForUpdates: "Check for Updates…",
-    settings: "Settings…",
-    // File menu
-    file: "File",
-    newAgent: "New Agent",
-    newWorktreeAgent: "New Worktree Agent",
-    newCloneAgent: "New Clone Agent",
-    newWindow: "New Window",
-    addWorkspace: "Add Workspace…",
-    closeWindow: "Close Window",
-    quit: "Quit",
-    // Edit menu
-    edit: "Edit",
-    // Composer menu
-    composer: "Composer",
-    cycleModel: "Cycle Model",
-    cycleAccessMode: "Cycle Access Mode",
-    cycleReasoningMode: "Cycle Reasoning Mode",
-    cycleCollaborationMode: "Cycle Collaboration Mode",
-    // View menu
-    view: "View",
-    toggleProjectsSidebar: "Toggle Projects Sidebar",
-    toggleGitSidebar: "Toggle Right Sidebar",
-    toggleGlobalSearch: "Toggle Global Search",
-    toggleDebugPanel: "Toggle Debug Panel",
-    toggleTerminal: "Toggle Terminal",
-    nextAgent: "Next Agent",
-    previousAgent: "Previous Agent",
-    nextWorkspace: "Next Workspace",
-    previousWorkspace: "Previous Workspace",
-    toggleFullScreen: "Toggle Full Screen",
-    // Window menu
-    window: "Window",
-    minimize: "Minimize",
-    maximize: "Maximize",
-    reloadWindow: "Reload Window",
-    // Help menu
-    help: "Help",
-  },
 };
 
 export default enPart1;

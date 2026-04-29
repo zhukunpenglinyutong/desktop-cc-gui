@@ -997,6 +997,24 @@ export type GitBranchListResponse = {
   currentBranch?: string | null;
 };
 
+export type GitBranchUpdateStatus = "success" | "no-op" | "blocked";
+
+export type GitBranchUpdateReason =
+  | "already_up_to_date"
+  | "ahead_only"
+  | "no_upstream"
+  | "diverged"
+  | "occupied_worktree"
+  | "stale_ref";
+
+export type GitBranchUpdateResult = {
+  branch: string;
+  status: GitBranchUpdateStatus;
+  reason?: GitBranchUpdateReason | null;
+  message: string;
+  worktreePath?: string | null;
+};
+
 export type GitHubIssue = {
   number: number;
   title: string;

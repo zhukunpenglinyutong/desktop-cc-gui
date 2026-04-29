@@ -113,6 +113,346 @@ pub(crate) async fn list_git_branches(
     }))
 }
 
+const BRANCH_UPDATE_STATUS_SUCCESS: &str = "success";
+const BRANCH_UPDATE_STATUS_NO_OP: &str = "no-op";
+const BRANCH_UPDATE_STATUS_BLOCKED: &str = "blocked";
+const BRANCH_UPDATE_REASON_ALREADY_UP_TO_DATE: &str = "already_up_to_date";
+const BRANCH_UPDATE_REASON_AHEAD_ONLY: &str = "ahead_only";
+const BRANCH_UPDATE_REASON_NO_UPSTREAM: &str = "no_upstream";
+const BRANCH_UPDATE_REASON_DIVERGED: &str = "diverged";
+const BRANCH_UPDATE_REASON_OCCUPIED_WORKTREE: &str = "occupied_worktree";
+const BRANCH_UPDATE_REASON_STALE_REF: &str = "stale_ref";
+
+struct LocalBranchUpdateState {
+    branch_name: String,
+    is_current: bool,
+    local_oid: git2::Oid,
+    upstream_name: Option<String>,
+    upstream_remote: Option<String>,
+    upstream_oid: Option<git2::Oid>,
+    ahead: usize,
+    behind: usize,
+}
+
+fn branch_update_result(
+    branch_name: &str,
+    status: &str,
+    reason: Option<&str>,
+    message: String,
+    worktree_path: Option<String>,
+) -> GitBranchUpdateResult {
+    GitBranchUpdateResult {
+        branch: branch_name.to_string(),
+        status: status.to_string(),
+        reason: reason.map(ToOwned::to_owned),
+        message,
+        worktree_path,
+    }
+}
+
+fn load_local_branch_update_state(
+    repo_root: &Path,
+    branch_name: &str,
+) -> Result<LocalBranchUpdateState, String> {
+    let normalized_branch = normalize_local_branch_ref(branch_name);
+    if normalized_branch.is_empty() {
+        return Err("Branch name cannot be empty.".to_string());
+    }
+
+    let repo = open_repository_at_root(repo_root)?;
+    let branch = repo
+        .find_branch(normalized_branch.as_str(), BranchType::Local)
+        .map_err(|_| format!("Branch not found: {normalized_branch}"))?;
+    let local_oid = branch
+        .get()
+        .target()
+        .ok_or_else(|| format!("Branch '{normalized_branch}' does not point to a commit."))?;
+    let current_branch = current_local_branch(repo_root)?;
+
+    let mut ahead = 0usize;
+    let mut behind = 0usize;
+    let mut upstream_name = None;
+    let mut upstream_remote = None;
+    let mut upstream_oid = None;
+
+    if let Ok(upstream_branch) = branch.upstream() {
+        let upstream_ref = upstream_branch.get();
+        upstream_name = upstream_ref
+            .shorthand()
+            .map(|name| name.to_string())
+            .or_else(|| upstream_ref.name().map(|name| name.to_string()));
+        upstream_remote = upstream_name
+            .as_deref()
+            .and_then(parse_upstream_ref)
+            .map(|(remote, _)| remote);
+        upstream_oid = upstream_ref.target();
+        if let Some(target_oid) = upstream_oid {
+            if let Ok((ahead_count, behind_count)) = repo.graph_ahead_behind(local_oid, target_oid) {
+                ahead = ahead_count;
+                behind = behind_count;
+            }
+        }
+    }
+
+    Ok(LocalBranchUpdateState {
+        branch_name: normalized_branch.clone(),
+        is_current: current_branch.as_deref() == Some(normalized_branch.as_str()),
+        local_oid,
+        upstream_name,
+        upstream_remote,
+        upstream_oid,
+        ahead,
+        behind,
+    })
+}
+
+fn normalize_compare_path(path: &Path) -> String {
+    path.to_string_lossy().replace('\\', "/").to_ascii_lowercase()
+}
+
+async fn find_branch_worktree_path(
+    repo_root: &Path,
+    branch_name: &str,
+) -> Result<Option<String>, String> {
+    let output = crate::shared::git_core::run_git_command(
+        &repo_root.to_path_buf(),
+        &["worktree", "list", "--porcelain"],
+    )
+    .await?;
+    let target_ref = format!("refs/heads/{branch_name}");
+    let repo_root_normalized = normalize_compare_path(repo_root);
+    let mut current_path: Option<String> = None;
+    let mut current_branch: Option<String> = None;
+
+    for line in output.lines().chain(std::iter::once("")) {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            if current_branch.as_deref() == Some(target_ref.as_str()) {
+                if let Some(path) = current_path.as_ref() {
+                    if normalize_compare_path(Path::new(path)) != repo_root_normalized {
+                        return Ok(Some(path.clone()));
+                    }
+                }
+            }
+            current_path = None;
+            current_branch = None;
+            continue;
+        }
+        if let Some(path) = trimmed.strip_prefix("worktree ") {
+            current_path = Some(path.trim().to_string());
+            continue;
+        }
+        if let Some(branch_ref) = trimmed.strip_prefix("branch ") {
+            current_branch = Some(branch_ref.trim().to_string());
+        }
+    }
+
+    Ok(None)
+}
+
+fn is_stale_update_ref_error(raw: &str, branch_name: &str) -> bool {
+    let normalized = raw.to_lowercase();
+    normalized.contains("cannot lock ref")
+        && normalized.contains(&format!("refs/heads/{}", branch_name).to_lowercase())
+        && normalized.contains("expected")
+}
+
+async fn update_non_current_local_branch(
+    repo_root: &Path,
+    branch_name: &str,
+) -> Result<GitBranchUpdateResult, String> {
+    let initial_state = load_local_branch_update_state(repo_root, branch_name)?;
+    let upstream_name = match initial_state.upstream_name.as_deref() {
+        Some(name) if !name.trim().is_empty() => name.to_string(),
+        _ => {
+            return Ok(branch_update_result(
+                initial_state.branch_name.as_str(),
+                BRANCH_UPDATE_STATUS_BLOCKED,
+                Some(BRANCH_UPDATE_REASON_NO_UPSTREAM),
+                format!(
+                    "Branch '{}' has no upstream tracking branch configured.",
+                    initial_state.branch_name
+                ),
+                None,
+            ));
+        }
+    };
+    let upstream_remote = match initial_state.upstream_remote.as_deref() {
+        Some(name) if !name.trim().is_empty() => name.to_string(),
+        _ => {
+            return Ok(branch_update_result(
+                initial_state.branch_name.as_str(),
+                BRANCH_UPDATE_STATUS_BLOCKED,
+                Some(BRANCH_UPDATE_REASON_NO_UPSTREAM),
+                format!(
+                    "Branch '{}' has no upstream tracking branch configured.",
+                    initial_state.branch_name
+                ),
+                None,
+            ));
+        }
+    };
+
+    run_git_command(repo_root, &["fetch", upstream_remote.as_str()]).await?;
+
+    if let Some(worktree_path) = find_branch_worktree_path(repo_root, initial_state.branch_name.as_str()).await? {
+        return Ok(branch_update_result(
+            initial_state.branch_name.as_str(),
+            BRANCH_UPDATE_STATUS_BLOCKED,
+            Some(BRANCH_UPDATE_REASON_OCCUPIED_WORKTREE),
+            format!(
+                "Branch '{}' is currently used by worktree at '{}'.",
+                initial_state.branch_name, worktree_path
+            ),
+            Some(worktree_path),
+        ));
+    }
+
+    let refreshed_state = load_local_branch_update_state(repo_root, initial_state.branch_name.as_str())?;
+    let upstream_oid = match refreshed_state.upstream_oid {
+        Some(oid) => oid,
+        None => {
+            return Ok(branch_update_result(
+                refreshed_state.branch_name.as_str(),
+                BRANCH_UPDATE_STATUS_BLOCKED,
+                Some(BRANCH_UPDATE_REASON_NO_UPSTREAM),
+                format!(
+                    "Branch '{}' has no upstream tracking branch configured.",
+                    refreshed_state.branch_name
+                ),
+                None,
+            ));
+        }
+    };
+
+    if refreshed_state.local_oid == upstream_oid || refreshed_state.behind == 0 {
+        if refreshed_state.ahead > 0 {
+            return Ok(branch_update_result(
+                refreshed_state.branch_name.as_str(),
+                BRANCH_UPDATE_STATUS_NO_OP,
+                Some(BRANCH_UPDATE_REASON_AHEAD_ONLY),
+                format!(
+                    "Branch '{}' is ahead of upstream '{}'; no background update is required.",
+                    refreshed_state.branch_name, upstream_name
+                ),
+                None,
+            ));
+        }
+        return Ok(branch_update_result(
+            refreshed_state.branch_name.as_str(),
+            BRANCH_UPDATE_STATUS_NO_OP,
+            Some(BRANCH_UPDATE_REASON_ALREADY_UP_TO_DATE),
+            format!(
+                "Branch '{}' is already up to date with '{}'.",
+                refreshed_state.branch_name, upstream_name
+            ),
+            None,
+        ));
+    }
+
+    if refreshed_state.ahead > 0 && refreshed_state.behind > 0 {
+        return Ok(branch_update_result(
+            refreshed_state.branch_name.as_str(),
+            BRANCH_UPDATE_STATUS_BLOCKED,
+            Some(BRANCH_UPDATE_REASON_DIVERGED),
+            format!(
+                "Branch '{}' has diverged from upstream '{}'. Checkout the branch and resolve it manually.",
+                refreshed_state.branch_name, upstream_name
+            ),
+            None,
+        ));
+    }
+
+    let target_ref = format!("refs/heads/{}", refreshed_state.branch_name);
+    let args_owned = vec![
+        "update-ref".to_string(),
+        target_ref,
+        upstream_oid.to_string(),
+        refreshed_state.local_oid.to_string(),
+    ];
+    let arg_refs = args_owned.iter().map(String::as_str).collect::<Vec<_>>();
+    if let Err(error) = run_git_command(repo_root, &arg_refs).await {
+        if is_stale_update_ref_error(&error, refreshed_state.branch_name.as_str()) {
+            return Ok(branch_update_result(
+                refreshed_state.branch_name.as_str(),
+                BRANCH_UPDATE_STATUS_BLOCKED,
+                Some(BRANCH_UPDATE_REASON_STALE_REF),
+                format!(
+                    "Branch '{}' changed while updating. Refresh branch state and retry.",
+                    refreshed_state.branch_name
+                ),
+                None,
+            ));
+        }
+        return Err(format!(
+            "failed to update branch '{}': {error}",
+            refreshed_state.branch_name
+        ));
+    }
+
+    let verified_state = load_local_branch_update_state(repo_root, refreshed_state.branch_name.as_str())?;
+    if verified_state.local_oid != upstream_oid {
+        return Err(format!(
+            "failed to verify updated branch '{}': expected {}, found {}",
+            verified_state.branch_name, upstream_oid, verified_state.local_oid
+        ));
+    }
+
+    Ok(branch_update_result(
+        verified_state.branch_name.as_str(),
+        BRANCH_UPDATE_STATUS_SUCCESS,
+        None,
+        format!(
+            "Updated branch '{}' to upstream '{}'.",
+            verified_state.branch_name, upstream_name
+        ),
+        None,
+    ))
+}
+
+#[tauri::command]
+pub(crate) async fn update_git_branch(
+    workspace_id: String,
+    branch_name: String,
+    state: State<'_, AppState>,
+) -> Result<GitBranchUpdateResult, String> {
+    let workspaces = state.workspaces.lock().await;
+    let entry = workspaces
+        .get(&workspace_id)
+        .ok_or("workspace not found")?
+        .clone();
+    drop(workspaces);
+
+    let repo_root = resolve_git_root(&entry)?;
+    let normalized_branch = normalize_local_branch_ref(&branch_name);
+    if normalized_branch.is_empty() {
+        return Err("Branch name cannot be empty.".to_string());
+    }
+
+    let branch_state = load_local_branch_update_state(&repo_root, normalized_branch.as_str())?;
+    if branch_state.is_current {
+        pull_git(
+            workspace_id,
+            None,
+            None,
+            None,
+            None,
+            None,
+            state,
+        )
+        .await?;
+        return Ok(branch_update_result(
+            branch_state.branch_name.as_str(),
+            BRANCH_UPDATE_STATUS_SUCCESS,
+            None,
+            format!("Updated current branch '{}'.", branch_state.branch_name),
+            None,
+        ));
+    }
+
+    update_non_current_local_branch(&repo_root, branch_state.branch_name.as_str()).await
+}
+
 fn has_uncommitted_changes(repo: &Repository) -> Result<bool, String> {
     let mut status_options = StatusOptions::new();
     status_options
@@ -691,6 +1031,348 @@ pub(crate) async fn get_git_branch_file_diff_between_branches(
         old_image_mime: None,
         new_image_mime: None,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use std::path::PathBuf;
+    use std::process::Command;
+    use crate::types::{AppSettings, WorkspaceEntry, WorkspaceKind, WorkspaceSettings};
+
+    fn create_temp_dir(label: &str) -> PathBuf {
+        let path = std::env::temp_dir().join(format!("mossx-{label}-{}", uuid::Uuid::new_v4()));
+        fs::create_dir_all(&path).expect("create temp dir");
+        path
+    }
+
+    fn run_git_sync(current_dir: &Path, args: &[&str]) -> String {
+        let git_bin = resolve_git_binary().expect("resolve git binary");
+        let output = Command::new(git_bin)
+            .args(args)
+            .current_dir(current_dir)
+            .env("PATH", git_env_path())
+            .output()
+            .expect("run git command");
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            panic!(
+                "git {:?} failed: {}",
+                args,
+                if stderr.trim().is_empty() {
+                    stdout.trim().to_string()
+                } else {
+                    stderr.trim().to_string()
+                }
+            );
+        }
+        String::from_utf8_lossy(&output.stdout).trim().to_string()
+    }
+
+    fn write_file(repo_root: &Path, relative_path: &str, content: &str) {
+        let path = repo_root.join(relative_path);
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent).expect("create parent");
+        }
+        fs::write(path, content).expect("write file");
+    }
+
+    fn git_commit(repo_root: &Path, message: &str) {
+        run_git_sync(repo_root, &["add", "-A"]);
+        run_git_sync(
+            repo_root,
+            &[
+                "-c",
+                "user.name=Test User",
+                "-c",
+                "user.email=test@example.com",
+                "commit",
+                "-m",
+                message,
+            ],
+        );
+    }
+
+    fn checkout_tracked(repo_root: &Path, branch_name: &str) {
+        run_git_sync(
+            repo_root,
+            &["checkout", "--track", &format!("origin/{branch_name}")],
+        );
+    }
+
+    fn rev_parse(repo_root: &Path, git_ref: &str) -> String {
+        run_git_sync(repo_root, &["rev-parse", git_ref])
+    }
+
+    fn test_workspace_entry(id: &str, repo_root: &Path) -> WorkspaceEntry {
+        WorkspaceEntry {
+            id: id.to_string(),
+            name: id.to_string(),
+            path: repo_root.to_string_lossy().to_string(),
+            codex_bin: None,
+            kind: WorkspaceKind::Main,
+            parent_id: None,
+            worktree: None,
+            settings: WorkspaceSettings::default(),
+        }
+    }
+
+    fn build_test_app_state(id: &str, repo_root: &Path) -> crate::state::AppState {
+        let data_dir = create_temp_dir("branch-update-app-state");
+        let mut workspaces = std::collections::HashMap::new();
+        workspaces.insert(id.to_string(), test_workspace_entry(id, repo_root));
+        crate::state::AppState {
+            workspaces: tokio::sync::Mutex::new(workspaces),
+            sessions: tokio::sync::Mutex::new(std::collections::HashMap::new()),
+            terminal_sessions: tokio::sync::Mutex::new(std::collections::HashMap::new()),
+            runtime_log_sessions: tokio::sync::Mutex::new(std::collections::HashMap::new()),
+            remote_backend: tokio::sync::Mutex::new(None),
+            storage_path: data_dir.join("workspaces.json"),
+            settings_path: data_dir.join("settings.json"),
+            app_settings: tokio::sync::Mutex::new(AppSettings::default()),
+            codex_runtime_reload_lock: tokio::sync::Mutex::new(()),
+            computer_use_activation_lock: tokio::sync::Mutex::new(()),
+            computer_use_activation_verification: tokio::sync::Mutex::new(None),
+            dictation: tokio::sync::Mutex::new(crate::dictation::DictationState::default()),
+            codex_login_cancels: tokio::sync::Mutex::new(std::collections::HashMap::new()),
+            detached_external_change_runtime: tokio::sync::Mutex::new(
+                crate::workspaces::DetachedExternalChangeRuntime::default(),
+            ),
+            runtime_manager: std::sync::Arc::new(crate::runtime::RuntimeManager::new(&data_dir)),
+            engine_manager: crate::engine::EngineManager::new(),
+        }
+    }
+
+    fn tauri_state<'a>(state: &'a crate::state::AppState) -> tauri::State<'a, crate::state::AppState> {
+        // SAFETY: `tauri::State<'a, T>` in Tauri 2.x is a single-field newtype over `&'a T`.
+        // This test-only helper constructs that wrapper without a full Tauri runtime.
+        unsafe { std::mem::transmute::<&'a crate::state::AppState, tauri::State<'a, crate::state::AppState>>(state) }
+    }
+
+    fn setup_tracked_branch_fixture_with(
+        label: &str,
+        branch_name: &str,
+    ) -> (PathBuf, PathBuf) {
+        let base_dir = create_temp_dir(label);
+        let remote_root = base_dir.join("remote.git");
+        let local_root = base_dir.join("local");
+        let writer_root = base_dir.join("writer");
+
+        run_git_sync(
+            base_dir.as_path(),
+            &["init", "--bare", remote_root.to_string_lossy().as_ref()],
+        );
+        run_git_sync(
+            base_dir.as_path(),
+            &[
+                "clone",
+                remote_root.to_string_lossy().as_ref(),
+                local_root.to_string_lossy().as_ref(),
+            ],
+        );
+
+        run_git_sync(local_root.as_path(), &["checkout", "-b", "main"]);
+        write_file(local_root.as_path(), "README.md", "base\n");
+        git_commit(local_root.as_path(), "init main");
+        run_git_sync(local_root.as_path(), &["push", "-u", "origin", "main"]);
+
+        run_git_sync(local_root.as_path(), &["checkout", "-b", branch_name]);
+        write_file(local_root.as_path(), "feature.txt", "feature base\n");
+        git_commit(local_root.as_path(), "init feature");
+        run_git_sync(
+            local_root.as_path(),
+            &["push", "-u", "origin", branch_name],
+        );
+        run_git_sync(local_root.as_path(), &["checkout", "main"]);
+
+        run_git_sync(
+            base_dir.as_path(),
+            &[
+                "clone",
+                remote_root.to_string_lossy().as_ref(),
+                writer_root.to_string_lossy().as_ref(),
+            ],
+        );
+        checkout_tracked(writer_root.as_path(), branch_name);
+
+        (local_root, writer_root)
+    }
+
+    fn setup_tracked_branch_fixture() -> (PathBuf, PathBuf) {
+        setup_tracked_branch_fixture_with("branch-update-fixture", "feature/update-target")
+    }
+
+    #[tokio::test]
+    async fn update_non_current_local_branch_fast_forwards_without_switching_head() {
+        let (local_root, writer_root) = setup_tracked_branch_fixture();
+        write_file(writer_root.as_path(), "feature.txt", "feature remote advance\n");
+        git_commit(writer_root.as_path(), "advance remote feature");
+        run_git_sync(writer_root.as_path(), &["push", "origin", "feature/update-target"]);
+
+        let before_state =
+            load_local_branch_update_state(local_root.as_path(), "feature/update-target")
+                .expect("load local branch state");
+        let result = update_non_current_local_branch(local_root.as_path(), "feature/update-target")
+            .await
+            .expect("update branch");
+
+        assert_eq!(result.status, BRANCH_UPDATE_STATUS_SUCCESS);
+        assert_eq!(
+            current_local_branch(local_root.as_path()).expect("current branch"),
+            Some("main".to_string())
+        );
+        let after_state =
+            load_local_branch_update_state(local_root.as_path(), "feature/update-target")
+                .expect("reload local branch state");
+        assert_ne!(before_state.local_oid, after_state.local_oid);
+        assert_eq!(after_state.behind, 0);
+    }
+
+    #[tokio::test]
+    async fn update_non_current_local_branch_blocks_diverged_branch() {
+        let (local_root, writer_root) = setup_tracked_branch_fixture();
+        write_file(writer_root.as_path(), "feature.txt", "feature remote advance\n");
+        git_commit(writer_root.as_path(), "advance remote feature");
+        run_git_sync(writer_root.as_path(), &["push", "origin", "feature/update-target"]);
+
+        run_git_sync(local_root.as_path(), &["checkout", "feature/update-target"]);
+        write_file(local_root.as_path(), "local-only.txt", "local change\n");
+        git_commit(local_root.as_path(), "local divergence");
+        run_git_sync(local_root.as_path(), &["checkout", "main"]);
+
+        let result = update_non_current_local_branch(local_root.as_path(), "feature/update-target")
+            .await
+            .expect("update branch");
+
+        assert_eq!(result.status, BRANCH_UPDATE_STATUS_BLOCKED);
+        assert_eq!(result.reason.as_deref(), Some(BRANCH_UPDATE_REASON_DIVERGED));
+    }
+
+    #[tokio::test]
+    async fn update_non_current_local_branch_blocks_occupied_worktree() {
+        let (local_root, _writer_root) = setup_tracked_branch_fixture();
+        let occupied_root = local_root
+            .parent()
+            .expect("fixture parent")
+            .join("occupied-worktree");
+        run_git_sync(
+            local_root.as_path(),
+            &[
+                "worktree",
+                "add",
+                occupied_root.to_string_lossy().as_ref(),
+                "feature/update-target",
+            ],
+        );
+
+        let result = update_non_current_local_branch(local_root.as_path(), "feature/update-target")
+            .await
+            .expect("update branch");
+
+        assert_eq!(result.status, BRANCH_UPDATE_STATUS_BLOCKED);
+        assert_eq!(
+            result.reason.as_deref(),
+            Some(BRANCH_UPDATE_REASON_OCCUPIED_WORKTREE)
+        );
+        let actual_path = result.worktree_path.as_deref().unwrap_or("");
+        assert!(actual_path.ends_with("/occupied-worktree"));
+    }
+
+    #[tokio::test]
+    async fn update_non_current_local_branch_returns_ahead_only_no_op() {
+        let (local_root, _writer_root) = setup_tracked_branch_fixture();
+        run_git_sync(local_root.as_path(), &["checkout", "feature/update-target"]);
+        write_file(local_root.as_path(), "ahead-only.txt", "ahead only\n");
+        git_commit(local_root.as_path(), "ahead only");
+        run_git_sync(local_root.as_path(), &["checkout", "main"]);
+
+        let result = update_non_current_local_branch(local_root.as_path(), "feature/update-target")
+            .await
+            .expect("update branch");
+
+        assert_eq!(result.status, BRANCH_UPDATE_STATUS_NO_OP);
+        assert_eq!(result.reason.as_deref(), Some(BRANCH_UPDATE_REASON_AHEAD_ONLY));
+    }
+
+    #[tokio::test]
+    async fn update_non_current_local_branch_returns_already_up_to_date_no_op() {
+        let (local_root, _writer_root) = setup_tracked_branch_fixture();
+
+        let result = update_non_current_local_branch(local_root.as_path(), "feature/update-target")
+            .await
+            .expect("update branch");
+
+        assert_eq!(result.status, BRANCH_UPDATE_STATUS_NO_OP);
+        assert_eq!(
+            result.reason.as_deref(),
+            Some(BRANCH_UPDATE_REASON_ALREADY_UP_TO_DATE)
+        );
+    }
+
+    #[tokio::test]
+    async fn update_git_branch_updates_current_branch_via_pull_path() {
+        let (local_root, writer_root) = setup_tracked_branch_fixture();
+        run_git_sync(writer_root.as_path(), &["checkout", "main"]);
+        write_file(writer_root.as_path(), "README.md", "main remote advance\n");
+        git_commit(writer_root.as_path(), "advance remote main");
+        run_git_sync(writer_root.as_path(), &["push", "origin", "main"]);
+
+        let before_local_main = rev_parse(local_root.as_path(), "refs/heads/main");
+        let expected_remote_main = rev_parse(writer_root.as_path(), "refs/heads/main");
+        let app_state = build_test_app_state("ws-current-branch", local_root.as_path());
+
+        let result = update_git_branch(
+            "ws-current-branch".to_string(),
+            "main".to_string(),
+            tauri_state(&app_state),
+        )
+        .await
+        .expect("update current branch");
+
+        let after_local_main = rev_parse(local_root.as_path(), "refs/heads/main");
+        assert_eq!(result.status, BRANCH_UPDATE_STATUS_SUCCESS);
+        assert_eq!(before_local_main == after_local_main, false);
+        assert_eq!(after_local_main, expected_remote_main);
+        assert_eq!(
+            current_local_branch(local_root.as_path()).expect("current branch"),
+            Some("main".to_string())
+        );
+    }
+
+    #[tokio::test]
+    async fn update_non_current_local_branch_supports_space_paths_and_nested_branch_names() {
+        let branch_name = "feature/nested-target";
+        let (local_root, writer_root) = setup_tracked_branch_fixture_with(
+            "branch update fixture with spaces",
+            branch_name,
+        );
+        write_file(writer_root.as_path(), "feature.txt", "feature remote advance\n");
+        git_commit(writer_root.as_path(), "advance nested remote feature");
+        run_git_sync(writer_root.as_path(), &["push", "origin", branch_name]);
+
+        let result = update_non_current_local_branch(local_root.as_path(), branch_name)
+            .await
+            .expect("update nested branch");
+
+        assert_eq!(result.status, BRANCH_UPDATE_STATUS_SUCCESS);
+        assert_eq!(
+            current_local_branch(local_root.as_path()).expect("current branch"),
+            Some("main".to_string())
+        );
+        assert_eq!(
+            rev_parse(local_root.as_path(), &format!("refs/heads/{branch_name}")),
+            rev_parse(local_root.as_path(), &format!("refs/remotes/origin/{branch_name}"))
+        );
+    }
+
+    #[test]
+    fn stale_update_ref_error_detection_matches_git_output() {
+        let raw = "fatal: cannot lock ref 'refs/heads/feature/update-target': is at abcdef but expected 123456";
+        assert!(is_stale_update_ref_error(raw, "feature/update-target"));
+        assert!(!is_stale_update_ref_error(raw, "other-branch"));
+    }
 }
 
 #[tauri::command]

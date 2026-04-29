@@ -198,6 +198,7 @@ pub(crate) fn invoke_handler(
         crate::git::git_push,
         crate::git::git_sync,
         crate::git::git_fetch,
+        crate::git::update_git_branch,
         crate::git::cherry_pick_commit,
         crate::git::revert_commit,
         crate::git::reset_git_commit,

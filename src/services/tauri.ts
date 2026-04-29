@@ -26,6 +26,7 @@ import type {
   GitCommitDiff,
   GitBranchCompareCommitSets,
   GitBranchListResponse,
+  GitBranchUpdateResult,
   GitPrWorkflowDefaults,
   GitPrWorkflowResult,
   GitHubIssuesResponse,
@@ -822,6 +823,10 @@ export async function syncGit(workspaceId: string): Promise<void> {
 
 export async function fetchGit(workspaceId: string, remote?: string | null): Promise<void> {
   return invoke("git_fetch", { workspaceId, remote: remote ?? null });
+}
+
+export async function updateGitBranch(workspaceId: string, branchName: string): Promise<GitBranchUpdateResult> {
+  return invoke<GitBranchUpdateResult>("update_git_branch", { workspaceId, branchName });
 }
 
 export async function cherryPickCommit(workspaceId: string, commitHash: string): Promise<void> {

@@ -2028,6 +2028,49 @@ const zhPart2 = {
     remaining: "剩余",
     unlimited: "无限制",
   },
+
+  // 菜单
+  menu: {
+    // 应用菜单
+    about: "关于 {{appName}}",
+    checkForUpdates: "检查更新…",
+    settings: "设置…",
+    // 文件菜单
+    file: "文件",
+    newAgent: "新建会话",
+    newWorktreeAgent: "新建工作树代理",
+    newCloneAgent: "新建克隆代理",
+    addWorkspace: "添加工作区…",
+    closeWindow: "关闭窗口",
+    quit: "退出",
+    // 编辑菜单
+    edit: "编辑",
+    // 编辑器菜单
+    composer: "编辑器",
+    cycleModel: "切换模型",
+    cycleAccessMode: "切换访问模式",
+    cycleReasoningMode: "切换推理模式",
+    cycleCollaborationMode: "切换协作模式",
+    // 视图菜单
+    view: "视图",
+    toggleProjectsSidebar: "切换项目侧边栏",
+    toggleGitSidebar: "切换右侧边栏",
+    toggleGlobalSearch: "切换全局搜索",
+    toggleDebugPanel: "切换调试面板",
+    toggleTerminal: "切换终端",
+    nextAgent: "下一个代理",
+    previousAgent: "上一个代理",
+    nextWorkspace: "下一个工作区",
+    previousWorkspace: "上一个工作区",
+    toggleFullScreen: "切换全屏",
+    // 窗口菜单
+    window: "窗口",
+    minimize: "最小化",
+    maximize: "最大化",
+    reloadWindow: "重新加载窗口",
+    // 帮助菜单
+    help: "帮助",
+  },
 };
 
 export default zhPart2;

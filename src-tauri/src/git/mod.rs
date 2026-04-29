@@ -17,10 +17,11 @@ use crate::git_utils::{
 use crate::state::AppState;
 use crate::types::{
     BranchInfo, GitBranchCompareCommitSets, GitBranchListItem, GitCommitDetails, GitCommitDiff,
-    GitCommitFileChange, GitFileDiff, GitFileStatus, GitHistoryCommit, GitHistoryResponse,
-    GitHubIssue, GitHubIssuesResponse, GitHubPullRequest, GitHubPullRequestComment,
-    GitHubPullRequestDiff, GitHubPullRequestsResponse, GitLogResponse, GitPrExistingPullRequest,
-    GitPrWorkflowDefaults, GitPrWorkflowResult, GitPrWorkflowStage, GitPushPreviewResponse,
+    GitBranchUpdateResult, GitCommitFileChange, GitFileDiff, GitFileStatus, GitHistoryCommit,
+    GitHistoryResponse, GitHubIssue, GitHubIssuesResponse, GitHubPullRequest,
+    GitHubPullRequestComment, GitHubPullRequestDiff, GitHubPullRequestsResponse, GitLogResponse,
+    GitPrExistingPullRequest, GitPrWorkflowDefaults, GitPrWorkflowResult,
+    GitPrWorkflowStage, GitPushPreviewResponse,
 };
 use crate::utils::{git_env_path, normalize_git_path, resolve_git_binary};
 use validation::validate_local_branch_name;
