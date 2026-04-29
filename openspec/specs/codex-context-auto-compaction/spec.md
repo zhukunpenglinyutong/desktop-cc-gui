@@ -6,14 +6,58 @@ TBD - created by archiving change codex-context-auto-compaction-runtime. Update 
 ### Requirement: Codex Auto Compaction Trigger
 The system MUST automatically trigger context compaction for Codex threads when context usage reaches the configured high-watermark.
 
+#### Scenario: Skip auto compaction when disabled
+- **WHEN** Codex auto compaction is disabled in app settings
+- **AND** a Codex thread reports token usage percent greater than or equal to the configured compaction threshold
+- **THEN** the runtime SHALL NOT start automatic context compaction for that thread
+
 #### Scenario: Trigger compaction when threshold exceeded
-- **WHEN** a Codex thread reports token usage percent greater than or equal to the compaction threshold
+- **WHEN** a Codex thread reports token usage percent greater than or equal to the configured compaction threshold
+- **AND** Codex auto compaction is enabled
 - **AND** the thread is not processing a user turn
 - **THEN** the runtime SHALL start auto compaction for that thread
 
 #### Scenario: Do not trigger below threshold
-- **WHEN** a Codex thread reports token usage percent lower than the compaction threshold
+- **WHEN** a Codex thread reports token usage percent lower than the configured compaction threshold
 - **THEN** the runtime SHALL NOT start auto compaction
+
+### Requirement: Codex Auto Compaction Settings
+Users MUST be able to configure Codex auto-compaction enabled state and threshold from the Codex background-info tooltip using bounded percentage choices.
+
+#### Scenario: show enabled toggle in background-info tooltip
+- **WHEN** the user opens the Codex background-info usage tooltip
+- **THEN** the UI SHALL expose a switch for enabling or disabling automatic compaction
+
+#### Scenario: show bounded threshold choices
+- **WHEN** the user opens the Codex background-info usage tooltip
+- **THEN** the UI SHALL offer `92%`, `100%`, `110%`, `120%`, `130%`, `140%`, `150%`, `160%`, `170%`, `180%`, `190%`, and `200%`
+
+#### Scenario: sanitize invalid persisted threshold
+- **WHEN** app settings contain a threshold outside the supported choices
+- **THEN** the system SHALL fall back to `92%`
+
+### Requirement: Codex Compaction Message Surface
+Codex context compaction MUST be visible in the conversation message surface when the frontend receives real compaction lifecycle events, regardless of whether compaction was triggered automatically or by the user.
+
+#### Scenario: show compaction start message
+- **WHEN** frontend receives `thread/compacting` for a Codex thread
+- **THEN** the conversation message surface SHALL show a visible message describing that Codex is compacting background information
+- **AND** the thread SHALL continue using the existing compacting state for Composer context indicators
+
+#### Scenario: settle compaction message on completion
+- **WHEN** frontend receives `thread/compacted` for the same Codex thread
+- **THEN** the conversation message surface SHALL show a completion message describing that Codex compacted background information
+- **AND** duplicate compaction lifecycle events SHALL NOT create duplicate compaction messages for the same thread lifecycle
+
+#### Scenario: manual compaction uses the same visible message path
+- **WHEN** frontend receives `thread/compacting` or `thread/compacted` with `manual: true`
+- **THEN** the conversation message surface SHALL show Codex compaction copy without claiming the trigger was automatic
+- **AND** existing manual compaction state handling SHALL remain unchanged
+
+#### Scenario: non-codex engines are unaffected
+- **WHEN** a non-Codex thread receives compaction lifecycle events
+- **THEN** the system SHALL NOT show Codex automatic compaction copy
+- **AND** existing engine-specific compaction behavior SHALL remain unchanged
 
 ### Requirement: Codex-Only Compaction Scope
 Auto compaction logic MUST be limited to Codex runtime sessions.
@@ -41,4 +85,3 @@ Compaction failures MUST not block normal conversation flow.
 - **WHEN** runtime fails to start compaction for a thread
 - **THEN** the thread SHALL remain available for normal send/receive turns
 - **AND** runtime SHALL record failure diagnostics for observability
-

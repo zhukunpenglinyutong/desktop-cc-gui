@@ -26,7 +26,7 @@
 
 ### Requirement: Hidden Dock MUST Preserve Notice Producers And Restore Continuity
 
-隐藏 global runtime notice dock 只影响 presentation surface，不得中断 notice feed 的 producer、buffer 或 dock mode continuity。
+隐藏 global runtime notice dock 只影响 presentation surface，并 MUST NOT 中断 notice feed 的 producer、buffer 或 dock mode continuity。
 
 #### Scenario: producers continue pushing while the dock is hidden
 
