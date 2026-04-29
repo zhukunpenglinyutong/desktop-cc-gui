@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-7.md`
-- **Total Sessions**: 235
+- **Total Sessions**: 236
 - **Last Active**: 2026-04-30
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-7.md` | ~1836 | Active |
+| `journal-7.md` | ~1887 | Active |
 | `journal-6.md` | ~1961 | Archived |
 | `journal-5.md` | ~1949 | Archived |
 | `journal-4.md` | ~1975 | Archived |
@@ -35,6 +35,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 236 | 2026-04-30 | 同步分支更新提案任务完成状态 | `2cc5fef91d95557c0094e8b6c89aff9a116c0016` | `feature/fix-0.4.12` |
 | 235 | 2026-04-30 | 修复 Codex 压缩文案生命周期边界问题 | `536062ceb85383e060bb83257ac3fb241ba6259e` | `feature/fix-0.4.12` |
 | 234 | 2026-04-30 | 修正分支更新的无上游提示与边界处理 | `3adf51af0ceff9597930e4f85435ef99f4fa96a8` | `feature/fix-0.4.12` |
 | 233 | 2026-04-30 | 支持不切换分支直接更新本地分支 | `f5c183a5d8afe3197dcd6b055f87f101d224d265` | `feature/v0.4.11` |

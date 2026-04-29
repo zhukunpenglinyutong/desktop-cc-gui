@@ -1834,3 +1834,54 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 236: 同步分支更新提案任务完成状态
+
+**Date**: 2026-04-30
+**Task**: 同步分支更新提案任务完成状态
+**Branch**: `feature/fix-0.4.12`
+
+### Summary
+
+补提交通知 OpenSpec task 完成状态
+
+### Main Changes
+
+任务目标
+- 将工作区中剩余的 OpenSpec task 状态变更单独补提交，避免遗留未提交文件。
+
+主要改动
+- 更新 openspec/changes/allow-branch-update-without-checkout/tasks.md。
+- 将 6.4 手工验收与回滚预案核对任务从未完成标记为已完成。
+- 保持本次提交仅为任务状态同步，不混入代码行为变更。
+
+涉及模块
+- OpenSpec change task checklist
+
+验证结果
+- git diff 确认仅 1 个文件、1 处任务状态变更。
+- git status 确认提交前仅剩该文件未提交。
+- 提交后 git status 为 clean。
+
+后续事项
+- 当前工作区已无未提交变更，可直接继续 push 或后续开发。
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `2cc5fef91d95557c0094e8b6c89aff9a116c0016` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
