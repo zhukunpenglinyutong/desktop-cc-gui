@@ -9,6 +9,10 @@ const TEXT_EXTENSIONS = new Set([
   ".tsx",
   ".js",
   ".jsx",
+  ".mjs",
+  ".cjs",
+  ".mts",
+  ".cts",
   ".rs",
   ".css",
   ".scss",
@@ -18,6 +22,8 @@ const TEXT_EXTENSIONS = new Set([
   ".kt",
   ".go",
   ".py",
+  ".yml",
+  ".yaml",
 ]);
 
 const EXCLUDED_DIRS = new Set([

@@ -7,8 +7,8 @@ import process from "node:process";
 import { pathToFileURL } from "node:url";
 
 const ENVIRONMENT_WARNING_PATTERNS = [
-  /Unknown user config "electron_mirror"/,
-  /Unknown env config "electron-mirror"/,
+  /Unknown user config "electron_mirror"/i,
+  /Unknown env config "electron-mirror"/i,
 ];
 const ENVIRONMENT_WARNING_HINTS = [
   {
@@ -42,6 +42,7 @@ const ACT_BOILERPLATE_PREFIXES = [
   "/* assert on the output */",
   "This ensures that you're testing the behavior the user would see in the browser.",
 ];
+const ANSI_ESCAPE_PATTERN = /\u001B\[[0-9;?]*[ -/]*[@-~]/g;
 
 function parseArgs(argv) {
   const config = {
@@ -87,6 +88,10 @@ function parseArgs(argv) {
 
 function matchesAnyPattern(line, patterns) {
   return patterns.some((pattern) => pattern.test(line));
+}
+
+function normalizeLogLine(line) {
+  return line.replace(ANSI_ESCAPE_PATTERN, "").replace(/\r/g, "");
 }
 
 function shouldIgnorePayloadLine(line) {
@@ -139,26 +144,28 @@ export function analyzeHeavyTestNoise(logText, options = {}) {
   let currentStream = null;
 
   for (const line of lines) {
-    if (matchesAnyPattern(line, ENVIRONMENT_WARNING_PATTERNS)) {
-      environmentWarnings.add(line);
+    const normalizedLine = normalizeLogLine(line);
+
+    if (matchesAnyPattern(normalizedLine, ENVIRONMENT_WARNING_PATTERNS)) {
+      environmentWarnings.add(normalizedLine);
       continue;
     }
 
-    if (line.startsWith("stdout | ")) {
-      currentContext = line.slice("stdout | ".length).trim();
+    if (normalizedLine.startsWith("stdout | ")) {
+      currentContext = normalizedLine.slice("stdout | ".length).trim();
       currentStream = "stdout";
       continue;
     }
-    if (line.startsWith("stderr | ")) {
-      currentContext = line.slice("stderr | ".length).trim();
+    if (normalizedLine.startsWith("stderr | ")) {
+      currentContext = normalizedLine.slice("stderr | ".length).trim();
       currentStream = "stderr";
       continue;
     }
 
-    if (matchesAnyPattern(line, ACT_WARNING_PATTERNS)) {
+    if (matchesAnyPattern(normalizedLine, ACT_WARNING_PATTERNS)) {
       report.actWarnings.push({
         context: currentContext ?? "<unknown>",
-        line,
+        line: normalizedLine,
       });
       continue;
     }
@@ -167,13 +174,13 @@ export function analyzeHeavyTestNoise(logText, options = {}) {
       continue;
     }
 
-    if (shouldIgnorePayloadLine(line)) {
+    if (shouldIgnorePayloadLine(normalizedLine)) {
       continue;
     }
 
     const payload = {
       context: currentContext,
-      line,
+      line: normalizedLine,
     };
     if (currentStream === "stdout") {
       report.stdoutPayloads.push(payload);

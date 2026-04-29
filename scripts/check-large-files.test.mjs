@@ -114,3 +114,53 @@ test("scanLargeFiles reports baseline-aware regressions for policy fail scope", 
     assert.equal(scan.results[0]?.delta, 1);
   });
 });
+
+test("scanLargeFiles includes mjs scripts and yaml workflows in governance", async () => {
+  await withTempDir(async (root) => {
+    const policyPath = path.join(root, "policy.json");
+    await fs.writeFile(
+      policyPath,
+      JSON.stringify(
+        {
+          version: "test-policy",
+          policies: [],
+          defaultPolicy: {
+            id: "default-source",
+            priority: "P1",
+            warnThreshold: 8,
+            failThreshold: 12,
+          },
+        },
+        null,
+        2,
+      ),
+      "utf8",
+    );
+
+    await writeLines(path.join(root, "scripts", "check-heavy-test-noise.mjs"), 13);
+    await writeLines(
+      path.join(root, ".github", "workflows", "large-file-governance.yml"),
+      9,
+    );
+
+    const scan = await scanLargeFiles({
+      root,
+      policyFile: "policy.json",
+      baselineFile: null,
+      threshold: 3000,
+      mode: "report",
+      markdownOutput: null,
+      baselineOutput: null,
+      scope: "warn",
+    });
+
+    expectPaths(scan.results.map((item) => item.path));
+  });
+});
+
+function expectPaths(paths) {
+  assert.deepEqual(paths.sort(), [
+    ".github/workflows/large-file-governance.yml",
+    "scripts/check-heavy-test-noise.mjs",
+  ]);
+}
