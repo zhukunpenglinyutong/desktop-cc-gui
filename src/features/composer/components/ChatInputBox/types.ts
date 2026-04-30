@@ -184,6 +184,27 @@ export interface ManualMemoryItem {
   tags: string[];
 }
 
+export interface NoteCardPreviewAttachment {
+  id: string;
+  fileName: string;
+  contentType: string;
+  absolutePath: string;
+}
+
+/**
+ * Note card completion item (for @# trigger)
+ */
+export interface NoteCardItem {
+  id: string;
+  title: string;
+  plainTextExcerpt: string;
+  bodyMarkdown: string;
+  updatedAt: number;
+  archived: boolean;
+  imageCount: number;
+  previewAttachments: NoteCardPreviewAttachment[];
+}
+
 /**
  * Dropdown menu position
  */
@@ -592,6 +613,8 @@ export interface ChatInputBoxProps {
   selectedContextChips?: ContextSelectionChip[];
   /** Selected manual memory IDs for @@ one-shot injection */
   selectedManualMemoryIds?: string[];
+  /** Selected note card IDs for @# one-shot injection */
+  selectedNoteCardIds?: string[];
   /** Remove selected S+/M+ chip callback */
   onRemoveContextChip?: (chip: ContextSelectionChip) => void;
   /** Select agent callback */
@@ -662,8 +685,15 @@ export interface ChatInputBoxProps {
     query: string,
     signal: AbortSignal,
   ) => Promise<ManualMemoryItem[]>;
+  /** Optional note card completion provider override (for @# note linking) */
+  noteCardCompletionProvider?: (
+    query: string,
+    signal: AbortSignal,
+  ) => Promise<NoteCardItem[]>;
   /** Triggered when a manual memory is selected from @@ completion */
   onSelectManualMemory?: (memory: ManualMemoryItem) => void;
+  /** Triggered when a note card is selected from @# completion */
+  onSelectNoteCard?: (noteCard: NoteCardItem) => void;
   /** Triggered when a skill is selected from $ completion */
   onSelectSkill?: (skillName: string) => void;
 }

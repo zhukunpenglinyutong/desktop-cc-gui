@@ -357,6 +357,7 @@ async fn allowed_image_preview_roots(
     }
     roots.push(app_data_dir_for_state(state)?.join("workspaces"));
     roots.extend(app_paths::workspace_root_candidates()?);
+    roots.push(app_paths::note_card_dir()?);
 
     let mut canonical_roots = roots
         .into_iter()

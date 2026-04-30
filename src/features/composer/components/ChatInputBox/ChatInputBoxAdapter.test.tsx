@@ -16,6 +16,7 @@ const mockState = vi.hoisted(() => ({
   updateClaudeProvider: vi.fn(),
   switchClaudeProvider: vi.fn(),
   projectMemoryList: vi.fn(),
+  noteCardList: vi.fn(),
 }));
 
 vi.mock('./ChatInputBox', async () => {
@@ -48,6 +49,12 @@ vi.mock('../../../../services/tauri', () => ({
 vi.mock('../../../project-memory/services/projectMemoryFacade', () => ({
   projectMemoryFacade: {
     list: mockState.projectMemoryList,
+  },
+}));
+
+vi.mock('../../../note-cards/services/noteCardsFacade', () => ({
+  noteCardsFacade: {
+    list: mockState.noteCardList,
   },
 }));
 
@@ -92,6 +99,7 @@ describe('ChatInputBoxAdapter toggle bridge', () => {
     mockState.updateClaudeProvider.mockReset().mockResolvedValue(undefined);
     mockState.switchClaudeProvider.mockReset().mockResolvedValue(undefined);
     mockState.projectMemoryList.mockReset().mockResolvedValue({ items: [], total: 0 });
+    mockState.noteCardList.mockReset().mockResolvedValue({ items: [], total: 0 });
     window.localStorage.clear();
     clearPromptUsageForTests();
   });
@@ -846,6 +854,150 @@ describe('ChatInputBoxAdapter toggle bridge', () => {
       expect.objectContaining({
         id: 'm-1',
         title: '发布步骤',
+      }),
+    );
+  });
+
+  it('bridges @# note card provider and selection callback', async () => {
+    const onNoteCardSelect = vi.fn();
+    mockState.noteCardList
+      .mockResolvedValueOnce({
+        items: [
+          {
+            id: 'note-active-1',
+            title: '发布检查清单',
+            plainTextExcerpt: '确认构建、回归和发布顺序',
+            updatedAt: 1_700_000_000_200,
+            createdAt: 1_700_000_000_100,
+            archived: false,
+            imageCount: 1,
+            previewAttachments: [
+              {
+                id: 'attachment-1',
+                fileName: 'deploy.png',
+                contentType: 'image/png',
+                absolutePath: '/tmp/demo/deploy.png',
+              },
+            ],
+          },
+        ],
+        total: 1,
+      })
+      .mockResolvedValueOnce({
+        items: [
+          {
+            id: 'note-archive-1',
+            title: '旧回滚手册',
+            plainTextExcerpt: '归档版本的回滚说明',
+            updatedAt: 1_700_000_000_050,
+            createdAt: 1_700_000_000_010,
+            archived: true,
+            imageCount: 0,
+          },
+        ],
+        total: 1,
+      });
+
+    renderAdapter({
+      workspaceId: 'ws-1',
+      workspaceName: 'demo-workspace',
+      workspacePath: '/tmp/demo-workspace',
+      onNoteCardSelect,
+    });
+
+    await waitFor(() => expect(mockState.latestProps).toBeTruthy());
+
+    const latest = mockState.latestProps as {
+      noteCardCompletionProvider?: (
+        query: string,
+        signal: AbortSignal,
+      ) => Promise<
+        Array<{
+          id: string;
+          title: string;
+          plainTextExcerpt: string;
+          archived: boolean;
+          imageCount: number;
+          previewAttachments: Array<{
+            id: string;
+            fileName: string;
+            contentType: string;
+            absolutePath: string;
+          }>;
+        }>
+      >;
+      onSelectNoteCard?: (noteCard: {
+        id: string;
+        title: string;
+        plainTextExcerpt: string;
+        bodyMarkdown: string;
+        updatedAt: number;
+        archived: boolean;
+        imageCount: number;
+        previewAttachments: Array<{
+          id: string;
+          fileName: string;
+          contentType: string;
+          absolutePath: string;
+        }>;
+      }) => void;
+    };
+
+    expect(typeof latest.noteCardCompletionProvider).toBe('function');
+    const signal = new AbortController().signal;
+    const results = await latest.noteCardCompletionProvider?.('发布', signal);
+    expect(mockState.noteCardList).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        workspaceId: 'ws-1',
+        workspaceName: 'demo-workspace',
+        workspacePath: '/tmp/demo-workspace',
+        archived: false,
+        query: '发布',
+      }),
+    );
+    expect(mockState.noteCardList).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        workspaceId: 'ws-1',
+        archived: true,
+        query: '发布',
+      }),
+    );
+    expect(results?.map((item) => item.id)).toEqual([
+      'note-active-1',
+      'note-archive-1',
+    ]);
+    expect(results?.[0]?.previewAttachments).toEqual([
+      {
+        id: 'attachment-1',
+        fileName: 'deploy.png',
+        contentType: 'image/png',
+        absolutePath: '/tmp/demo/deploy.png',
+      },
+    ]);
+
+    latest.onSelectNoteCard?.({
+      id: 'note-active-1',
+      title: '发布检查清单',
+      plainTextExcerpt: '确认构建、回归和发布顺序',
+      bodyMarkdown: '确认构建、回归和发布顺序',
+      updatedAt: 1_700_000_000_200,
+      archived: false,
+      imageCount: 1,
+      previewAttachments: [
+        {
+          id: 'attachment-1',
+          fileName: 'deploy.png',
+          contentType: 'image/png',
+          absolutePath: '/tmp/demo/deploy.png',
+        },
+      ],
+    });
+    expect(onNoteCardSelect).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: 'note-active-1',
+        title: '发布检查清单',
       }),
     );
   });

@@ -24,6 +24,7 @@ interface UseCompletionTriggerDetectionParams {
   getTextContent: () => string;
   fileCompletion: CompletionDropdownState;
   memoryCompletion: CompletionDropdownState;
+  noteCardCompletion: CompletionDropdownState;
   commandCompletion: CompletionDropdownState;
   skillCompletion: CompletionDropdownState;
   agentCompletion: CompletionDropdownState;
@@ -41,6 +42,7 @@ export function useCompletionTriggerDetection({
   getTextContent,
   fileCompletion,
   memoryCompletion,
+  noteCardCompletion,
   commandCompletion,
   skillCompletion,
   agentCompletion,
@@ -68,6 +70,7 @@ export function useCompletionTriggerDetection({
       justRenderedTagRef.current = false;
       fileCompletion.close();
       memoryCompletion.close();
+      noteCardCompletion.close();
       commandCompletion.close();
       skillCompletion.close();
       agentCompletion.close();
@@ -83,6 +86,7 @@ export function useCompletionTriggerDetection({
     if (text.length > TEXT_LENGTH_THRESHOLDS.COMPLETION_DETECTION) {
       fileCompletion.close();
       memoryCompletion.close();
+      noteCardCompletion.close();
       commandCompletion.close();
       skillCompletion.close();
       agentCompletion.close();
@@ -102,6 +106,7 @@ export function useCompletionTriggerDetection({
     if (!hasAtSymbol && !hasSlashSymbol && !hasDollarSymbol && !hasHashSymbol && !hasExclamationSymbol) {
       fileCompletion.close();
       memoryCompletion.close();
+      noteCardCompletion.close();
       commandCompletion.close();
       skillCompletion.close();
       agentCompletion.close();
@@ -122,6 +127,7 @@ export function useCompletionTriggerDetection({
     if (!trigger) {
       fileCompletion.close();
       memoryCompletion.close();
+      noteCardCompletion.close();
       commandCompletion.close();
       skillCompletion.close();
       agentCompletion.close();
@@ -140,6 +146,7 @@ export function useCompletionTriggerDetection({
     // Open corresponding completion based on trigger symbol
     if (trigger.trigger === '@@') {
       fileCompletion.close();
+      noteCardCompletion.close();
       commandCompletion.close();
       skillCompletion.close();
       agentCompletion.close();
@@ -150,7 +157,21 @@ export function useCompletionTriggerDetection({
       } else {
         memoryCompletion.updateQuery(trigger);
       }
+    } else if (trigger.trigger === '@#') {
+      fileCompletion.close();
+      memoryCompletion.close();
+      commandCompletion.close();
+      skillCompletion.close();
+      agentCompletion.close();
+      promptCompletion.close();
+      if (!noteCardCompletion.isOpen) {
+        noteCardCompletion.open(position, trigger);
+        noteCardCompletion.updateQuery(trigger);
+      } else {
+        noteCardCompletion.updateQuery(trigger);
+      }
     } else if (trigger.trigger === '@') {
+      noteCardCompletion.close();
       memoryCompletion.close();
       commandCompletion.close();
       skillCompletion.close();
@@ -165,6 +186,7 @@ export function useCompletionTriggerDetection({
     } else if (trigger.trigger === '/') {
       fileCompletion.close();
       memoryCompletion.close();
+      noteCardCompletion.close();
       skillCompletion.close();
       agentCompletion.close();
       promptCompletion.close();
@@ -177,6 +199,7 @@ export function useCompletionTriggerDetection({
     } else if (trigger.trigger === '$') {
       fileCompletion.close();
       memoryCompletion.close();
+      noteCardCompletion.close();
       commandCompletion.close();
       agentCompletion.close();
       promptCompletion.close();
@@ -189,6 +212,7 @@ export function useCompletionTriggerDetection({
     } else if (trigger.trigger === '#') {
       fileCompletion.close();
       memoryCompletion.close();
+      noteCardCompletion.close();
       commandCompletion.close();
       skillCompletion.close();
       promptCompletion.close();
@@ -201,6 +225,7 @@ export function useCompletionTriggerDetection({
     } else if (trigger.trigger === '!') {
       fileCompletion.close();
       memoryCompletion.close();
+      noteCardCompletion.close();
       commandCompletion.close();
       skillCompletion.close();
       agentCompletion.close();
@@ -223,6 +248,7 @@ export function useCompletionTriggerDetection({
     getTriggerPosition,
     fileCompletion,
     memoryCompletion,
+    noteCardCompletion,
     commandCompletion,
     skillCompletion,
     agentCompletion,

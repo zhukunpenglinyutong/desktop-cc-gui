@@ -55,4 +55,27 @@ describe("LocalImage", () => {
       expect(readLocalImageDataUrlMock).toHaveBeenCalledTimes(0);
     });
   });
+
+  it("normalizes windows file urls before requesting backend fallback", async () => {
+    readLocalImageDataUrlMock.mockResolvedValueOnce("data:image/png;base64,BBBB");
+
+    render(
+      <LocalImage
+        src="file:///C:/Users/test/images/example.png"
+        workspaceId="ws-windows"
+        alt="demo-windows"
+      />,
+    );
+
+    const image = screen.getByAltText("demo-windows") as HTMLImageElement;
+    fireEvent.error(image);
+
+    await waitFor(() => {
+      expect(readLocalImageDataUrlMock).toHaveBeenCalledWith(
+        "ws-windows",
+        "C:/Users/test/images/example.png",
+      );
+      expect(image.src).toContain("data:image/png;base64,BBBB");
+    });
+  });
 });

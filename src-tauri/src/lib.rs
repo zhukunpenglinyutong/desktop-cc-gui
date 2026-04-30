@@ -39,6 +39,7 @@ mod input_history;
 mod linux_startup_guard;
 mod local_usage;
 mod menu;
+mod note_cards;
 mod project_memory;
 mod prompts;
 mod remote_backend;

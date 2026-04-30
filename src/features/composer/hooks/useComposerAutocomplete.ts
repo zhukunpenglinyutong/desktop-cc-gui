@@ -8,7 +8,7 @@ export type AutocompleteItem = {
   hint?: string;
   cursorOffset?: number;
   isDirectory?: boolean;
-  kind?: "manual-memory";
+  kind?: "manual-memory" | "note-card";
   memoryId?: string;
   memoryTitle?: string;
   memorySummary?: string;
@@ -17,6 +17,19 @@ export type AutocompleteItem = {
   memoryImportance?: string;
   memoryUpdatedAt?: number;
   memoryTags?: string[];
+  noteCardId?: string;
+  noteCardTitle?: string;
+  noteCardSummary?: string;
+  noteCardBodyMarkdown?: string;
+  noteCardUpdatedAt?: number;
+  noteCardArchived?: boolean;
+  noteCardImageCount?: number;
+  noteCardPreviewAttachments?: Array<{
+    id: string;
+    fileName: string;
+    contentType: string;
+    absolutePath: string;
+  }>;
 };
 
 export type AutocompleteTrigger = {
@@ -179,10 +192,18 @@ function rankItems(items: AutocompleteItem[], query: string) {
     return items.slice();
   }
   const ranked = items
-    .map((item) => ({
-      item,
-      score: scoreMatch(normalized, item.label),
-    }))
+    .map((item) => {
+      const baseScore = Math.max(
+        scoreMatch(normalized, item.label),
+        item.description ? Math.max(scoreMatch(normalized, item.description) - 10, 0) : 0,
+      );
+      const archivedPenalty =
+        item.kind === "note-card" ? (item.noteCardArchived ? -15 : 5) : 0;
+      return {
+        item,
+        score: baseScore + archivedPenalty,
+      };
+    })
     .filter((entry) => entry.score > 0)
     .sort((a, b) => {
       if (a.score !== b.score) {

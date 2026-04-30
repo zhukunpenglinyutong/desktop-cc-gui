@@ -19,6 +19,7 @@ import {
   MessageSquareText,
   Monitor,
   Moon,
+  NotebookPen,
   Palette,
   PanelBottom,
   PanelRightOpen,
@@ -116,6 +117,7 @@ const CLIENT_UI_VISIBILITY_ICON_COMPONENTS: Record<ClientUiVisibilityIconKey, Lu
   play: Play,
   search: Search,
   terminal: TerminalSquare,
+  notebookPen: NotebookPen,
 };
 
 function resolveSelectedOpenAppIconSrc(appSettings: AppSettings) {

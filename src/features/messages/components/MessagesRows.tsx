@@ -6,6 +6,7 @@ import ChevronUp from "lucide-react/dist/esm/icons/chevron-up";
 import Copy from "lucide-react/dist/esm/icons/copy";
 import Terminal from "lucide-react/dist/esm/icons/terminal";
 import { AgentIcon } from "../../../components/AgentIcon";
+import { ImagePreviewOverlay } from "../../../components/common/ImagePreviewOverlay";
 import type { ConversationItem, QueuedMessage } from "../../../types";
 import { DiffBlock } from "../../git/components/DiffBlock";
 import type { StreamActivityPhase } from "../../threads/hooks/useStreamActivityPhase";
@@ -19,6 +20,10 @@ import { ImageLightbox, MessageImageGrid, type MessageImage } from "./MessageMed
 import { LocalImage } from "./LocalImage";
 import { Markdown } from "./Markdown";
 import { parseMemoryContextSummary } from "./messagesMemoryContext";
+import {
+  parseNoteCardContextSummary,
+  type NoteCardContextSummary,
+} from "./messagesNoteCardContext";
 import { parseReasoning } from "./messagesReasoning";
 import { resolveUserMessagePresentation } from "./messagesUserPresentation";
 import { RuntimeReconnectCard } from "./RuntimeReconnectCard";
@@ -88,6 +93,7 @@ type MessageRowProps = {
     itemId: string;
     visibleText: string;
   }) => void;
+  suppressNoteCardSummaryCard?: boolean;
 };
 
 type ReasoningRowProps = {
@@ -193,7 +199,8 @@ function areMessageRowPropsEqual(
     previous.onOpenFileLink === next.onOpenFileLink &&
     previous.onOpenFileLinkMenu === next.onOpenFileLinkMenu &&
     previous.streamMitigationProfile === next.streamMitigationProfile &&
-    previous.onAssistantVisibleTextRender === next.onAssistantVisibleTextRender
+    previous.onAssistantVisibleTextRender === next.onAssistantVisibleTextRender &&
+    previous.suppressNoteCardSummaryCard === next.suppressNoteCardSummaryCard
   );
 }
 
@@ -280,6 +287,232 @@ function areGeneratedImageItemsEqual(
     );
   });
 }
+
+function normalizeNoteCardImageIdentity(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return "";
+  }
+  let withoutFileScheme = trimmed;
+  const lowerCased = trimmed.toLowerCase();
+  if (lowerCased.startsWith("asset://localhost")) {
+    withoutFileScheme = trimmed.slice("asset://localhost".length);
+    if (!withoutFileScheme.startsWith("/")) {
+      withoutFileScheme = `/${withoutFileScheme}`;
+    }
+    if (
+      withoutFileScheme.startsWith("//")
+      && !/^\/\/[^/]+\/[^/]+/.test(withoutFileScheme)
+    ) {
+      withoutFileScheme = withoutFileScheme.slice(1);
+    }
+    try {
+      withoutFileScheme = decodeURIComponent(withoutFileScheme);
+    } catch {
+      // Ignore malformed escape sequences and keep the raw path.
+    }
+  } else if (lowerCased.startsWith("file://")) {
+    try {
+      withoutFileScheme = decodeURIComponent(trimmed.slice("file://".length)).replace(
+        /^localhost\//i,
+        "",
+      );
+    } catch {
+      withoutFileScheme = trimmed.slice("file://".length).replace(/^localhost\//i, "");
+    }
+    if (!withoutFileScheme.startsWith("/") && !/^[A-Za-z]:\//.test(withoutFileScheme)) {
+      withoutFileScheme = `/${withoutFileScheme}`;
+    }
+  }
+  const normalized = withoutFileScheme.replace(/\\/g, "/");
+  if (/^\/[A-Za-z]:\//.test(normalized)) {
+    return normalized.slice(1).toLowerCase();
+  }
+  if (/^[A-Za-z]:\//.test(normalized)) {
+    return normalized.toLowerCase();
+  }
+  return normalized;
+}
+
+const COLLAPSED_NOTE_CARD_IMAGE_PREVIEW_COUNT = 3;
+
+function buildNoteCardBodyPreview(bodyMarkdown: string) {
+  const normalized = bodyMarkdown
+    .replace(/```[\s\S]*?```/g, "[code]")
+    .replace(/`([^`]+)`/g, "$1")
+    .replace(/!\[[^\]]*\]\([^)]+\)/g, "")
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
+    .replace(/^[>\-*\d.\s#]+/gm, "")
+    .replace(/\r?\n+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!normalized) {
+    return "";
+  }
+  return normalized.length > 160
+    ? `${normalized.slice(0, 160).trimEnd()}...`
+    : normalized;
+}
+
+const NoteCardContextSummaryCard = memo(function NoteCardContextSummaryCard({
+  summary,
+  workspaceId = null,
+  codeBlockCopyUseModifier,
+  onOpenFileLink,
+  onOpenFileLinkMenu,
+}: {
+  summary: NoteCardContextSummary;
+  workspaceId?: string | null;
+  codeBlockCopyUseModifier?: boolean;
+  onOpenFileLink?: (path: string) => void;
+  onOpenFileLinkMenu?: (event: React.MouseEvent, path: string) => void;
+}) {
+  const { t } = useTranslation();
+  const [isExpanded, setIsExpanded] = useState(false);
+  const [imagePreview, setImagePreview] = useState<{
+    src: string;
+    localPath: string;
+    alt: string;
+  } | null>(null);
+  const summarySignature = useMemo(
+    () =>
+      summary.notes
+        .map((note) =>
+          [
+            note.title,
+            note.archived ? "1" : "0",
+            note.bodyMarkdown,
+            note.attachments.map((attachment) => attachment.absolutePath).join("|"),
+          ].join("::"),
+        )
+        .join("###"),
+    [summary.notes],
+  );
+
+  useEffect(() => {
+    setIsExpanded(false);
+  }, [summarySignature]);
+
+  return (
+    <>
+      <div className="note-card-context-summary-card">
+        <div className="note-card-context-summary-head">
+          <div className="note-card-context-summary-head-copy">
+            <span className="note-card-context-summary-title">
+              {t("messages.noteCardContextSummary")}
+            </span>
+            <span className="note-card-context-summary-count">
+              {t("messages.noteCardContextSummaryCount", {
+                count: summary.notes.length,
+              })}
+            </span>
+          </div>
+          <button
+            type="button"
+            className="note-card-context-summary-toggle"
+            onClick={() => setIsExpanded((current) => !current)}
+            aria-expanded={isExpanded}
+            aria-label={`${t("messages.noteCardContextSummary")} ${t("messages.toggleDetails")}`}
+            title={t("messages.toggleDetails")}
+          >
+            {isExpanded ? <ChevronUp size={14} aria-hidden /> : <ChevronDown size={14} aria-hidden />}
+          </button>
+        </div>
+        <div className="note-card-context-summary-list">
+          {summary.notes.map((note, index) => {
+            const noteTitle = note.title.trim() || t("noteCards.untitled");
+            const bodyPreview = buildNoteCardBodyPreview(note.bodyMarkdown);
+            const visibleAttachments = isExpanded
+              ? note.attachments
+              : note.attachments.slice(0, COLLAPSED_NOTE_CARD_IMAGE_PREVIEW_COUNT);
+            return (
+              <article
+                key={`${noteTitle}-${index}`}
+                className={`note-card-context-summary-note${isExpanded ? " is-expanded" : " is-collapsed"}`}
+              >
+                <div className="note-card-context-summary-note-head">
+                  <strong>{noteTitle}</strong>
+                  <span className="note-card-context-summary-note-meta">
+                    {note.archived ? (
+                      <span className="note-card-context-summary-note-badge">
+                        {t("composer.noteCardArchivedBadge")}
+                      </span>
+                    ) : null}
+                    {note.attachments.length > 0 ? (
+                      <span className="note-card-context-summary-note-badge">
+                        {t("noteCards.imageCount", { count: note.attachments.length })}
+                      </span>
+                    ) : null}
+                  </span>
+                </div>
+                {isExpanded ? (
+                  note.bodyMarkdown ? (
+                    <Markdown
+                      value={note.bodyMarkdown}
+                      className="markdown note-card-context-summary-markdown"
+                      workspaceId={workspaceId}
+                      codeBlockStyle="message"
+                      codeBlockCopyUseModifier={codeBlockCopyUseModifier}
+                      onOpenFileLink={onOpenFileLink}
+                      onOpenFileLinkMenu={onOpenFileLinkMenu}
+                    />
+                  ) : null
+                ) : bodyPreview ? (
+                  <p className="note-card-context-summary-preview">{bodyPreview}</p>
+                ) : null}
+                {visibleAttachments.length > 0 ? (
+                  <div className="note-card-context-summary-images" role="list">
+                    {visibleAttachments.map((attachment, attachmentIndex) => {
+                      const src =
+                        normalizeMessageImageSrc(attachment.absolutePath)
+                        || attachment.absolutePath;
+                      const alt =
+                        attachment.fileName || `${noteTitle} image ${attachmentIndex + 1}`;
+                      return (
+                        <button
+                          key={`${noteTitle}-${attachment.absolutePath}-${attachmentIndex}`}
+                          type="button"
+                          className="note-card-context-summary-image"
+                          role="listitem"
+                          onClick={() =>
+                            setImagePreview({
+                              src,
+                              localPath: attachment.absolutePath,
+                              alt,
+                            })
+                          }
+                          aria-label={alt}
+                          title={alt}
+                        >
+                          <LocalImage
+                            src={src}
+                            localPath={attachment.absolutePath}
+                            workspaceId={workspaceId}
+                            alt={alt}
+                            loading="lazy"
+                          />
+                        </button>
+                      );
+                    })}
+                  </div>
+                ) : null}
+              </article>
+            );
+          })}
+        </div>
+      </div>
+      {imagePreview ? (
+        <ImagePreviewOverlay
+          src={imagePreview.src}
+          localPath={imagePreview.localPath}
+          workspaceId={workspaceId}
+          alt={imagePreview.alt}
+          onClose={() => setImagePreview(null)}
+        />
+      ) : null}
+    </>
+  );
+});
 
 export const WorkingIndicator = memo(function WorkingIndicator({
   isThinking,
@@ -440,6 +673,7 @@ export const MessageRow = memo(function MessageRow({
   onOpenFileLinkMenu,
   streamMitigationProfile = null,
   onAssistantVisibleTextRender,
+  suppressNoteCardSummaryCard = false,
 }: MessageRowProps) {
   const { t } = useTranslation();
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
@@ -471,6 +705,14 @@ export const MessageRow = memo(function MessageRow({
         : userMessagePresentation?.memorySummary ?? null,
     [item.role, item.text, userMessagePresentation?.memorySummary],
   );
+  const noteCardSummary = useMemo(
+    () =>
+      item.role === "assistant"
+        ? parseNoteCardContextSummary(item.text)
+        : userMessagePresentation?.noteCardSummary ?? null,
+    [item.role, item.text, userMessagePresentation?.noteCardSummary],
+  );
+  const resolvedNoteCardSummary = suppressNoteCardSummaryCard ? null : noteCardSummary;
   const agentTaskNotification = useMemo(
     () => parseAgentTaskNotification(item.text),
     [item.text],
@@ -479,7 +721,7 @@ export const MessageRow = memo(function MessageRow({
     ? agentTaskNotification.resultText
     : item.role === "user"
       ? (userMessagePresentation?.displayText ?? item.text)
-      : memorySummary
+      : memorySummary || resolvedNoteCardSummary
         ? ""
         : item.text;
   const selectedAgentName = userMessagePresentation?.selectedAgentName ?? null;
@@ -507,7 +749,40 @@ export const MessageRow = memo(function MessageRow({
     setIsAgentBadgeExpanded((current) => !current);
   }, []);
   const hasText = displayText.trim().length > 0;
-  const hideCopyButton = item.role === "assistant" && Boolean(memorySummary) && !hasText;
+  const noteCardImagePathSet = useMemo(
+    () =>
+      new Set(
+        (resolvedNoteCardSummary?.imagePaths ?? []).map((path) =>
+          normalizeNoteCardImageIdentity(path),
+        ),
+      ),
+    [resolvedNoteCardSummary?.imagePaths],
+  );
+  const imageItems = useMemo(() => {
+    if (!item.images || item.images.length === 0) {
+      return [];
+    }
+    return item.images
+      .filter((image) => !noteCardImagePathSet.has(normalizeNoteCardImageIdentity(image)))
+      .map((image, index) => {
+        const src = normalizeMessageImageSrc(image);
+        if (!src) {
+          return null;
+        }
+        return { src, label: `Image ${index + 1}` };
+      })
+      .filter(Boolean) as MessageImage[];
+  }, [item.images, noteCardImagePathSet]);
+  const hideCopyButton = (
+    !hasText
+    && imageItems.length === 0
+    && !memorySummary
+  ) || (
+    item.role === "assistant"
+    && (Boolean(memorySummary) || Boolean(resolvedNoteCardSummary))
+    && !hasText
+    && imageItems.length === 0
+  );
   const useCodexCanvasMarkdown = presentationProfile
     ? presentationProfile.codexCanvasMarkdown
     : activeEngine === "codex";
@@ -542,20 +817,6 @@ export const MessageRow = memo(function MessageRow({
     }
     handleRenderedAssistantValue(displayText);
   }, [displayText, handleRenderedAssistantValue, usePlainTextStreamingSurface]);
-  const imageItems = useMemo(() => {
-    if (!item.images || item.images.length === 0) {
-      return [];
-    }
-    return item.images
-      .map((image, index) => {
-        const src = normalizeMessageImageSrc(image);
-        if (!src) {
-          return null;
-        }
-        return { src, label: `Image ${index + 1}` };
-      })
-      .filter(Boolean) as MessageImage[];
-  }, [item.images]);
   const provenanceLabel = resolveProvenanceEngineLabel(item.engineSource);
   const runtimeReconnectHint = useMemo(
     () => (
@@ -706,6 +967,31 @@ export const MessageRow = memo(function MessageRow({
       )}
     </div>
   );
+  const noteCardSummaryNode = resolvedNoteCardSummary ? (
+    <NoteCardContextSummaryCard
+      summary={resolvedNoteCardSummary}
+      workspaceId={workspaceId}
+      codeBlockCopyUseModifier={codeBlockCopyUseModifier}
+      onOpenFileLink={onOpenFileLink}
+      onOpenFileLinkMenu={onOpenFileLinkMenu}
+    />
+  ) : null;
+  const shouldRenderBubble =
+    agentTaskNotification
+    || imageItems.length > 0
+    || Boolean(memorySummary)
+    || (Boolean(runtimeReconnectHint) && showRuntimeReconnectCard)
+    || hasText
+    || !hideCopyButton;
+  if (!noteCardSummaryNode && !shouldRenderBubble) {
+    return null;
+  }
+  const stackedContent = noteCardSummaryNode ? (
+    <div className={`message-context-stack${item.role === "user" ? " is-user" : ""}`}>
+      {noteCardSummaryNode}
+      {shouldRenderBubble ? bubbleNode : null}
+    </div>
+  ) : bubbleNode;
 
   const agentBadgeNode = hasExternalAgentBadge ? (
     <div className={`message-user-agent-rail${isAgentBadgeExpanded ? " is-open" : ""}`}>
@@ -738,9 +1024,9 @@ export const MessageRow = memo(function MessageRow({
       {hasExternalAgentBadge ? (
         <div className="message-user-layout">
           {agentBadgeNode}
-          {bubbleNode}
+          {stackedContent}
         </div>
-      ) : bubbleNode}
+      ) : stackedContent}
     </div>
   );
 }, areMessageRowPropsEqual);

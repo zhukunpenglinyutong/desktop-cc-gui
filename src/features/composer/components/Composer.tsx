@@ -222,6 +222,8 @@ type ComposerProps = {
   activeFileLineRange?: { startLine: number; endLine: number } | null;
   fileReferenceMode?: "path" | "none";
   activeWorkspaceId?: string | null;
+  activeWorkspaceName?: string | null;
+  activeWorkspacePath?: string | null;
   rewindWorkspaceGitState?: {
     isGitRepository: boolean;
     hasDetectedChanges: boolean;
@@ -254,6 +256,22 @@ type ManualMemorySelection = {
   importance: string;
   updatedAt: number;
   tags: string[];
+};
+
+type NoteCardSelection = {
+  id: string;
+  title: string;
+  plainTextExcerpt: string;
+  bodyMarkdown: string;
+  updatedAt: number;
+  archived: boolean;
+  imageCount: number;
+  previewAttachments: Array<{
+    id: string;
+    fileName: string;
+    contentType: string;
+    absolutePath: string;
+  }>;
 };
 
 type InlineFileReferenceSelection = {
@@ -1057,6 +1075,37 @@ function resolveManualMemoryChipDetail(memory: ManualMemorySelection) {
   return "";
 }
 
+function resolveNoteCardChipTitle(noteCard: NoteCardSelection) {
+  const normalizedBody = noteCard.bodyMarkdown.trim();
+  if (normalizedBody) {
+    const firstLine = normalizedBody
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .find((line) => line.length > 0);
+    if (firstLine) {
+      return firstLine.replace(/^#{1,6}\s*/, "");
+    }
+  }
+  const fallbackExcerpt = noteCard.plainTextExcerpt.trim();
+  if (fallbackExcerpt) {
+    return fallbackExcerpt;
+  }
+  return noteCard.title.trim() || "未命名便签";
+}
+
+function resolveNoteCardChipDetail(noteCard: NoteCardSelection) {
+  const normalizedTitle = noteCard.title.trim();
+  const normalizedChipTitle = resolveNoteCardChipTitle(noteCard);
+  if (normalizedTitle && normalizedTitle !== normalizedChipTitle) {
+    return normalizedTitle;
+  }
+  const normalizedExcerpt = noteCard.plainTextExcerpt.trim();
+  if (normalizedExcerpt && normalizedExcerpt !== normalizedChipTitle) {
+    return normalizedExcerpt;
+  }
+  return "";
+}
+
 const OPENCODE_DIRECT_COMMANDS = new Set(["status", "mcp", "export", "share"]);
 
 function normalizeCommandChipName(name: string) {
@@ -1184,6 +1233,8 @@ export const Composer = memo(function Composer({
   activeFileLineRange = null,
   fileReferenceMode = "path",
   activeWorkspaceId = null,
+  activeWorkspaceName = null,
+  activeWorkspacePath = null,
   rewindWorkspaceGitState = null,
   activeThreadId = null,
   threadItemsByThread,
@@ -1255,6 +1306,9 @@ export const Composer = memo(function Composer({
   const [selectedManualMemories, setSelectedManualMemories] = useState<
     ManualMemorySelection[]
   >([]);
+  const [selectedNoteCards, setSelectedNoteCards] = useState<NoteCardSelection[]>(
+    [],
+  );
   const [selectedInlineFileReferences, setSelectedInlineFileReferences] =
     useState<InlineFileReferenceSelection[]>([]);
   const [isComposerCollapsed, setIsComposerCollapsed] = useState(false);
@@ -1419,6 +1473,7 @@ export const Composer = memo(function Composer({
 
   useEffect(() => {
     setSelectedManualMemories([]);
+    setSelectedNoteCards([]);
     setSelectedInlineFileReferences([]);
   }, [activeThreadId, activeWorkspaceId]);
 
@@ -1515,6 +1570,15 @@ export const Composer = memo(function Composer({
     [],
   );
 
+  const handleSelectNoteCard = useCallback((noteCard: NoteCardSelection) => {
+    setSelectedNoteCards((prev) => {
+      if (prev.some((entry) => entry.id === noteCard.id)) {
+        return prev.filter((entry) => entry.id !== noteCard.id);
+      }
+      return [...prev, noteCard];
+    });
+  }, []);
+
   const handleSelectSkill = useCallback((skillName: string) => {
     const normalized = skillName.trim();
     if (!normalized) {
@@ -1545,7 +1609,10 @@ export const Composer = memo(function Composer({
     gitignoredFiles,
     gitignoredDirectories,
     workspaceId: activeWorkspaceId,
+    workspaceName: activeWorkspaceName,
+    workspacePath: activeWorkspacePath,
     onManualMemorySelect: handleSelectManualMemory,
+    onNoteCardSelect: handleSelectNoteCard,
     textareaRef,
     setText: setComposerText,
     setSelectionStart,
@@ -1897,14 +1964,21 @@ export const Composer = memo(function Composer({
         selectedInlineFileReferences,
       );
       const selectedMemoryIds = selectedManualMemories.map((entry) => entry.id);
+      const selectedNoteCardIds = selectedNoteCards.map((entry) => entry.id);
       const selectedMemoryInjectionMode = getManualMemoryInjectionMode();
       const sendOptions =
-        selectedMemoryIds.length > 0
-          ? { selectedMemoryIds, selectedMemoryInjectionMode }
+        selectedMemoryIds.length > 0 || selectedNoteCardIds.length > 0
+          ? {
+              ...(selectedMemoryIds.length > 0
+                ? { selectedMemoryIds, selectedMemoryInjectionMode }
+                : {}),
+              ...(selectedNoteCardIds.length > 0 ? { selectedNoteCardIds } : {}),
+            }
           : undefined;
       const sendResult = onSend(resolvedFinalText, mergedImages, sendOptions);
       void Promise.resolve(sendResult).finally(() => {
         setSelectedManualMemories([]);
+        setSelectedNoteCards([]);
         setSelectedInlineFileReferences([]);
       });
       resetHistoryNavigation();
@@ -1920,6 +1994,7 @@ export const Composer = memo(function Composer({
       selectedSkills,
       selectedInlineFileReferences,
       selectedManualMemories,
+      selectedNoteCards,
       onSend,
       inlineCompletion,
       recordHistory,
@@ -1933,6 +2008,12 @@ export const Composer = memo(function Composer({
   const handleRemoveManualMemory = useCallback((memoryId: string) => {
     setSelectedManualMemories((prev) =>
       prev.filter((entry) => entry.id !== memoryId),
+    );
+  }, []);
+
+  const handleRemoveNoteCard = useCallback((noteCardId: string) => {
+    setSelectedNoteCards((prev) =>
+      prev.filter((entry) => entry.id !== noteCardId),
     );
   }, []);
 
@@ -2047,6 +2128,10 @@ export const Composer = memo(function Composer({
     () => selectedManualMemories.map((entry) => entry.id),
     [selectedManualMemories],
   );
+  const selectedNoteCardIds = useMemo(
+    () => selectedNoteCards.map((entry) => entry.id),
+    [selectedNoteCards],
+  );
   const shouldRenderReviewInlinePrompt =
     isReviewQuickActionEngine &&
     Boolean(reviewPrompt) &&
@@ -2160,6 +2245,78 @@ export const Composer = memo(function Composer({
               </div>
             )}
 
+            {selectedNoteCards.length > 0 && (
+              <div className="composer-memory-strip">
+                <div className="composer-memory-strip-head">
+                  <span className="composer-memory-strip-label">
+                    {t("composer.noteCardSelection", {
+                      count: selectedNoteCards.length,
+                    })}
+                  </span>
+                  <span className="composer-memory-strip-hint">
+                    {t("composer.noteCardSelectionHint")}
+                  </span>
+                </div>
+                <div className="composer-memory-chip-list">
+                  {selectedNoteCards.map((noteCard) => {
+                    const chipTitle = resolveNoteCardChipTitle(noteCard);
+                    const chipDetail = resolveNoteCardChipDetail(noteCard);
+                    return (
+                      <article
+                        key={`note-card-${noteCard.id}`}
+                        className="composer-memory-chip"
+                      >
+                        <button
+                          type="button"
+                          className="composer-memory-chip-remove"
+                          onClick={() => handleRemoveNoteCard(noteCard.id)}
+                          title={t("composer.noteCardRemove", {
+                            title: noteCard.title,
+                          })}
+                          aria-label={t("composer.noteCardRemove", {
+                            title: noteCard.title,
+                          })}
+                        >
+                          ×
+                        </button>
+                        <div className="composer-memory-chip-main">
+                          <span className="composer-memory-chip-title">
+                            {chipTitle}
+                          </span>
+                          {chipDetail && (
+                            <span className="composer-memory-chip-summary">
+                              {chipDetail}
+                            </span>
+                          )}
+                          <span className="composer-memory-chip-meta">
+                            {noteCard.archived ? (
+                              <span>{t("composer.noteCardArchivedBadge")}</span>
+                            ) : null}
+                            <span>
+                              {new Date(noteCard.updatedAt).toLocaleDateString(
+                                undefined,
+                                {
+                                  month: "2-digit",
+                                  day: "2-digit",
+                                },
+                              )}
+                            </span>
+                            {noteCard.imageCount > 0 ? (
+                              <span>
+                                {t("noteCards.imageCount", {
+                                  count: noteCard.imageCount,
+                                })}
+                              </span>
+                            ) : null}
+                          </span>
+                        </div>
+                      </article>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
             {shouldRenderReviewInlinePrompt && reviewPrompt && (
               <div
                 className="composer-suggestions popover-surface review-inline-suggestions"
@@ -2246,7 +2403,10 @@ export const Composer = memo(function Composer({
               commands={commands}
               prompts={prompts}
               workspaceId={activeWorkspaceId}
+              workspaceName={activeWorkspaceName}
+              workspacePath={activeWorkspacePath}
               onManualMemorySelect={handleSelectManualMemory}
+              onNoteCardSelect={handleSelectNoteCard}
               onSelectSkill={handleSelectSkill}
               sendShortcut={sendShortcut}
               placeholder={
@@ -2268,6 +2428,7 @@ export const Composer = memo(function Composer({
               selectedAgent={selectedChatInputAgent}
               selectedContextChips={contextSelectionChips}
               selectedManualMemoryIds={selectedManualMemoryIds}
+              selectedNoteCardIds={selectedNoteCardIds}
               onRemoveContextChip={handleRemoveContextChip}
               onAgentSelect={handleAgentSelect}
               onOpenAgentSettings={onOpenAgentSettings}

@@ -2,6 +2,36 @@
 
 ---
 
+##### **2026年4月30日（v0.4.11）**
+
+中文：
+
+✨ Features
+- 新增 Git 历史分支更新能力，支持在不 checkout 当前分支的前提下直接更新本地分支，降低查看历史或维护分支时的切换打断
+
+🔧 Improvements
+- 同步分支更新提案的 OpenSpec 主规范与任务完成状态，保持 Git 历史交互、行为规范与实际实现对齐
+- 归档已完成提案并补充 Trellis 会话记录，收口这批分支更新与修复交付的规范留痕
+
+🐛 Fixes
+- 修复 Git 历史分支更新时无上游提示与边界处理不准确的问题，避免无 tracking 信息场景下给出误导反馈
+- 修复 Codex 压缩文案生命周期边界问题，避免压缩提示在错误阶段持续暴露或结算不一致
+
+English:
+
+✨ Features
+- Add Git history branch updating without requiring a checkout, so local branches can be refreshed directly from the history workflow without interrupting the current branch
+
+🔧 Improvements
+- Sync the branch-update proposal back into OpenSpec and mark its task flow complete so Git history behavior, specs, and implementation stay aligned
+- Archive the completed proposal and add Trellis session records so the branch-update delivery trail is fully captured
+
+🐛 Fixes
+- Fix missing-upstream prompts and edge handling in Git history branch updates so branches without tracking information no longer surface misleading feedback
+- Fix Codex compaction copy lifecycle boundaries so compression notices do not linger or settle in the wrong stage
+
+---
+
 ##### **2026年4月29日（v0.4.10）**
 
 中文：

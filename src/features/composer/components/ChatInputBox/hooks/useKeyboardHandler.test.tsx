@@ -43,6 +43,7 @@ function Harness({
     sdkInstalled: true,
     fileCompletion: closedCompletion,
     memoryCompletion: closedCompletion,
+    noteCardCompletion: closedCompletion,
     commandCompletion: closedCompletion,
     skillCompletion: closedCompletion,
     agentCompletion: closedCompletion,

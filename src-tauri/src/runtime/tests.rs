@@ -736,7 +736,8 @@ async fn terminal_turn_events_clear_foreground_resume_pending_continuity() {
 }
 
 #[tokio::test]
-async fn settle_foreground_work_timeout_releases_resume_pending_protection_but_keeps_recent_diagnostics() {
+async fn settle_foreground_work_timeout_releases_resume_pending_protection_but_keeps_recent_diagnostics(
+) {
     let manager = RuntimeManager::new(&std::env::temp_dir());
     let entry = workspace_entry("resume-pending-timeout");
     manager.record_starting(&entry, "codex", "test").await;

@@ -160,8 +160,8 @@ use shared::{
 };
 use storage::{read_settings, read_workspaces};
 use types::{
-    AppSettings, BranchInfo, GitBranchCompareCommitSets, GitBranchListItem, GitCommitDetails,
-    GitBranchUpdateResult, GitCommitDiff, GitCommitFileChange, GitFileDiff, GitFileStatus,
+    AppSettings, BranchInfo, GitBranchCompareCommitSets, GitBranchListItem, GitBranchUpdateResult,
+    GitCommitDetails, GitCommitDiff, GitCommitFileChange, GitFileDiff, GitFileStatus,
     GitHistoryCommit, GitHistoryResponse, GitHubIssue, GitHubIssuesResponse, GitHubPullRequest,
     GitHubPullRequestComment, GitHubPullRequestDiff, GitHubPullRequestsResponse, GitLogEntry,
     GitLogResponse, GitPrWorkflowDefaults, GitPrWorkflowResult, GitPrWorkflowStage,

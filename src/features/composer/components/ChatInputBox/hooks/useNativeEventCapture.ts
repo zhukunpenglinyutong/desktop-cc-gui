@@ -46,6 +46,7 @@ export interface UseNativeEventCaptureOptions {
   sendShortcut: 'enter' | 'cmdEnter';
   fileCompletion: CompletionOpenLike;
   memoryCompletion: CompletionOpenLike;
+  noteCardCompletion: CompletionOpenLike;
   commandCompletion: CompletionOpenLike;
   skillCompletion: CompletionOpenLike;
   agentCompletion: CompletionOpenLike;
@@ -73,6 +74,7 @@ export function useNativeEventCapture({
   sendShortcut,
   fileCompletion,
   memoryCompletion,
+  noteCardCompletion,
   commandCompletion,
   skillCompletion,
   agentCompletion,
@@ -94,6 +96,7 @@ export function useNativeEventCapture({
     sendShortcut,
     fileCompletion,
     memoryCompletion,
+    noteCardCompletion,
     commandCompletion,
     skillCompletion,
     agentCompletion,
@@ -112,6 +115,7 @@ export function useNativeEventCapture({
     sendShortcut,
     fileCompletion,
     memoryCompletion,
+    noteCardCompletion,
     commandCompletion,
     skillCompletion,
     agentCompletion,
@@ -166,6 +170,7 @@ export function useNativeEventCapture({
       if (
         latest.fileCompletion.isOpen ||
         latest.memoryCompletion.isOpen ||
+        latest.noteCardCompletion.isOpen ||
         latest.commandCompletion.isOpen ||
         latest.skillCompletion.isOpen ||
         latest.agentCompletion.isOpen ||
@@ -256,6 +261,7 @@ export function useNativeEventCapture({
       if (
         latest.fileCompletion.isOpen ||
         latest.memoryCompletion.isOpen ||
+        latest.noteCardCompletion.isOpen ||
         latest.commandCompletion.isOpen ||
         latest.skillCompletion.isOpen ||
         latest.agentCompletion.isOpen ||

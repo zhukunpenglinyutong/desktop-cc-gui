@@ -4,6 +4,10 @@ import {
   parseInjectedMemoryPrefixFromUser,
   type MemoryContextSummary,
 } from "./messagesMemoryContext";
+import {
+  parseInjectedNoteCardContextFromUser,
+  type NoteCardContextSummary,
+} from "./messagesNoteCardContext";
 import { extractCommandMessageDisplayText } from "../utils/commandMessageTags";
 
 const MODE_FALLBACK_MARKER_REGEX = /User request\s*:\s*/i;
@@ -34,6 +38,7 @@ export type UserMessagePresentation = {
   selectedAgentIcon: string | null;
   hasInjectedAgentPromptBlock: boolean;
   memorySummary: MemoryContextSummary | null;
+  noteCardSummary: NoteCardContextSummary | null;
 };
 
 type ResolveUserMessagePresentationParams = Pick<
@@ -229,7 +234,9 @@ export function resolveUserMessagePresentation({
   enableCollaborationBadge,
 }: ResolveUserMessagePresentationParams): UserMessagePresentation {
   const legacyUserMemory = parseInjectedMemoryPrefixFromUser(text);
-  const originalText = legacyUserMemory?.remainingText ?? text;
+  const afterMemoryText = legacyUserMemory?.remainingText ?? text;
+  const legacyUserNoteCard = parseInjectedNoteCardContextFromUser(afterMemoryText);
+  const originalText = legacyUserNoteCard?.remainingText ?? afterMemoryText;
   const normalizedSelectedAgentName = normalizeSelectedAgentName(selectedAgentName);
   const normalizedSelectedAgentIcon = normalizeSelectedAgentIcon(selectedAgentIcon);
   const strippedAgentPrompt = stripAgentPromptBlockFromUserText(
@@ -254,5 +261,6 @@ export function resolveUserMessagePresentation({
       strippedAgentPrompt.selectedAgentIcon ?? normalizedSelectedAgentIcon,
     hasInjectedAgentPromptBlock: strippedAgentPrompt.hasInjectedAgentPromptBlock,
     memorySummary: legacyUserMemory?.memorySummary ?? null,
+    noteCardSummary: legacyUserNoteCard?.noteCardSummary ?? null,
   };
 }

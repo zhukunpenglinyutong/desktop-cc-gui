@@ -9,6 +9,7 @@ import {
   projectMemoryCaptureAuto,
 } from "../../../services/tauri";
 import { projectMemoryFacade } from "../../project-memory/services/projectMemoryFacade";
+import { noteCardsFacade } from "../../note-cards/services/noteCardsFacade";
 
 vi.mock("@sentry/react", () => ({
   metrics: {
@@ -59,6 +60,12 @@ vi.mock("../../project-memory/services/projectMemoryFacade", () => ({
   },
 }));
 
+vi.mock("../../note-cards/services/noteCardsFacade", () => ({
+  noteCardsFacade: {
+    get: vi.fn(),
+  },
+}));
+
 const workspace: WorkspaceInfo = {
   id: "ws-1",
   name: "ws",
@@ -67,7 +74,7 @@ const workspace: WorkspaceInfo = {
   settings: { sidebarCollapsed: false },
 };
 
-function buildHook(engine: "claude" | "codex") {
+function buildHook(engine: "claude" | "codex", dispatch = vi.fn()) {
   return renderHook(() =>
     useThreadMessaging({
       activeWorkspace: workspace,
@@ -83,7 +90,7 @@ function buildHook(engine: "claude" | "codex") {
       rateLimitsByWorkspace: {},
       pendingInterruptsRef: { current: new Set<string>() },
       interruptedThreadsRef: { current: new Set<string>() },
-      dispatch: vi.fn(),
+      dispatch,
       getCustomName: vi.fn(),
       getThreadEngine: vi.fn(),
       markProcessing: vi.fn(),
@@ -113,6 +120,7 @@ beforeEach(() => {
     total: 0,
   } as never);
   vi.mocked(projectMemoryFacade.get).mockResolvedValue(null);
+  vi.mocked(noteCardsFacade.get).mockResolvedValue(null);
 });
 
 describe("useThreadMessaging context injection", () => {
@@ -241,5 +249,70 @@ describe("useThreadMessaging context injection", () => {
 
     const textArg = vi.mocked(sendUserMessage).mock.calls[0]?.[2] as string;
     expect(textArg).toBe("plain-text");
+  });
+
+  it("inserts a separate note-card context summary item and keeps note images in the injected context", async () => {
+    const dispatch = vi.fn();
+    vi.mocked(sendUserMessage).mockResolvedValue({
+      result: { turn: { id: "turn-note-1" } },
+    } as never);
+    vi.mocked(noteCardsFacade.get).mockResolvedValue({
+      id: "note-1",
+      workspaceId: "ws-1",
+      workspaceName: "ws",
+      workspacePath: "/tmp/ws",
+      projectName: "ws",
+      title: "发布清单",
+      bodyMarkdown: "先构建，再发布",
+      plainTextExcerpt: "先构建，再发布",
+      attachments: [
+        {
+          id: "attachment-1",
+          fileName: "deploy.png",
+          contentType: "image/png",
+          relativePath: "deploy.png",
+          absolutePath: "/tmp/ws/.ccgui/note_card/ws/assets/note-1/deploy.png",
+          sizeBytes: 4,
+        },
+      ],
+      createdAt: 1,
+      updatedAt: 2,
+      archivedAt: null,
+    } as never);
+
+    const { result } = buildHook("codex", dispatch);
+
+    await act(async () => {
+      await result.current.sendUserMessageToThread(
+        workspace,
+        "thread-1",
+        "请按这个执行",
+        [],
+        {
+          skipPromptExpansion: true,
+          selectedNoteCardIds: ["note-1"],
+        },
+      );
+    });
+
+    const textArg = vi.mocked(sendUserMessage).mock.calls[0]?.[2] as string;
+    const optionsArg = vi.mocked(sendUserMessage).mock.calls[0]?.[3] as
+      | { images?: string[] }
+      | undefined;
+    expect(textArg).toContain("<note-card-context>");
+    expect(textArg).toContain('title="发布清单"');
+    expect(optionsArg?.images).toEqual([
+      "/tmp/ws/.ccgui/note_card/ws/assets/note-1/deploy.png",
+    ]);
+    expect(dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "upsertItem",
+        item: expect.objectContaining({
+          kind: "message",
+          role: "assistant",
+          text: expect.stringContaining("【便签上下文】"),
+        }),
+      }),
+    );
   });
 });

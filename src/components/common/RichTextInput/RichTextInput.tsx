@@ -19,6 +19,7 @@ export type RichTextInputProps = {
 
   // 附件管理
   attachments?: string[];
+  attachmentWorkspaceId?: string | null;
   onAddAttachment?: () => void;
   onAttachImages?: (paths: string[]) => void;
   onRemoveAttachment?: (path: string) => void;
@@ -54,6 +55,7 @@ export function RichTextInput({
   placeholder = "",
   disabled = false,
   attachments = [],
+  attachmentWorkspaceId = null,
   onAddAttachment: _onAddAttachment,
   onAttachImages,
   onRemoveAttachment,
@@ -199,12 +201,13 @@ export function RichTextInput({
       >
         <RichTextInputAttachments
           attachments={attachments}
+          workspaceId={attachmentWorkspaceId}
           disabled={disabled}
           onRemoveAttachment={onRemoveAttachment}
           className={attachmentsClassName}
         />
 
-        <div style={{ position: "relative" }}>
+        <div className="rich-text-textarea-shell">
           <textarea
             ref={textareaRef}
             className={`rich-text-textarea ${inputClassName}`.trim()}

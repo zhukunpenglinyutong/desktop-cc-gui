@@ -32,6 +32,7 @@ import type {
   CommandItem,
   PromptItem,
   SkillItem,
+  NoteCardItem,
 } from './types';
 import type { QueuedMessage as ComposerQueuedMessage } from '../../../../types';
 import type { CustomCommandOption, CustomPromptOption } from '../../../../types';
@@ -39,6 +40,7 @@ import type { EngineType } from '../../../../types';
 import type { RateLimitSnapshot } from '../../../../types';
 import { formatEngineVersionLabel } from '../../../engine/utils/engineLabels';
 import { projectMemoryFacade } from '../../../project-memory/services/projectMemoryFacade';
+import { noteCardsFacade } from '../../../note-cards/services/noteCardsFacade';
 import { isSharedSessionSupportedEngine } from '../../../shared-session/utils/sharedSessionEngines';
 import {
   getClaudeProviders,
@@ -86,6 +88,22 @@ type ManualMemorySelection = {
   importance: string;
   updatedAt: number;
   tags: string[];
+};
+
+type NoteCardSelection = {
+  id: string;
+  title: string;
+  plainTextExcerpt: string;
+  bodyMarkdown: string;
+  updatedAt: number;
+  archived: boolean;
+  imageCount: number;
+  previewAttachments: Array<{
+    id: string;
+    fileName: string;
+    contentType: string;
+    absolutePath: string;
+  }>;
 };
 
 type AdapterEngineInfo = {
@@ -233,7 +251,11 @@ function areChatInputBoxAdapterPropsEqual(
       }
       continue;
     }
-    if (propKey === 'attachments' || propKey === 'selectedManualMemoryIds') {
+    if (
+      propKey === 'attachments' ||
+      propKey === 'selectedManualMemoryIds' ||
+      propKey === 'selectedNoteCardIds'
+    ) {
       const previousArray = previousProps[propKey];
       const nextArray = nextProps[propKey];
       if (
@@ -337,7 +359,10 @@ export interface ChatInputBoxAdapterProps {
   commands?: CustomCommandOption[];
   prompts?: CustomPromptOption[];
   workspaceId?: string | null;
+  workspaceName?: string | null;
+  workspacePath?: string | null;
   onManualMemorySelect?: (memory: ManualMemorySelection) => void;
+  onNoteCardSelect?: (noteCard: NoteCardSelection) => void;
   onSelectSkill?: (skillName: string) => void;
 
   // Header/context bar
@@ -349,6 +374,7 @@ export interface ChatInputBoxAdapterProps {
   selectedAgent?: SelectedAgent | null;
   selectedContextChips?: ContextSelectionChip[];
   selectedManualMemoryIds?: string[];
+  selectedNoteCardIds?: string[];
   onRemoveContextChip?: (chip: ContextSelectionChip) => void;
   onAgentSelect?: (agent: SelectedAgent | null) => void;
   onOpenAgentSettings?: () => void;
@@ -747,7 +773,10 @@ export const ChatInputBoxAdapter = memo(forwardRef<ChatInputBoxHandle, ChatInput
       commands,
       prompts = [],
       workspaceId,
+      workspaceName,
+      workspacePath,
       onManualMemorySelect,
+      onNoteCardSelect,
       onSelectSkill,
       placeholder,
       sendShortcut = 'enter',
@@ -757,6 +786,7 @@ export const ChatInputBoxAdapter = memo(forwardRef<ChatInputBoxHandle, ChatInput
       selectedAgent,
       selectedContextChips,
       selectedManualMemoryIds,
+      selectedNoteCardIds,
       onRemoveContextChip,
       onAgentSelect,
       onOpenAgentSettings,
@@ -1156,6 +1186,67 @@ export const ChatInputBoxAdapter = memo(forwardRef<ChatInputBoxHandle, ChatInput
       [workspaceId],
     );
 
+    const noteCardCompletionProvider = useCallback(
+      async (query: string, signal: AbortSignal): Promise<NoteCardItem[]> => {
+        if (!workspaceId) {
+          return [];
+        }
+        if (signal.aborted) {
+          throw new DOMException('Aborted', 'AbortError');
+        }
+        const normalizedQuery = query.trim() || null;
+        const [activeResponse, archivedResponse] = await Promise.all([
+          noteCardsFacade.list({
+            workspaceId,
+            workspaceName,
+            workspacePath,
+            archived: false,
+            query: normalizedQuery,
+            page: 0,
+            pageSize: 25,
+          }),
+          noteCardsFacade.list({
+            workspaceId,
+            workspaceName,
+            workspacePath,
+            archived: true,
+            query: normalizedQuery,
+            page: 0,
+            pageSize: 25,
+          }),
+        ]);
+        if (signal.aborted) {
+          throw new DOMException('Aborted', 'AbortError');
+        }
+        return [...activeResponse.items, ...archivedResponse.items].map((item) => ({
+          id: item.id,
+          title: item.title?.trim() || item.plainTextExcerpt?.trim() || item.id,
+          plainTextExcerpt: item.plainTextExcerpt?.trim() || '',
+          bodyMarkdown: item.plainTextExcerpt?.trim() || '',
+          updatedAt: item.updatedAt || item.createdAt || Date.now(),
+          archived: item.archived,
+          imageCount: item.imageCount || 0,
+          previewAttachments: Array.isArray(item.previewAttachments)
+            ? item.previewAttachments
+                .filter(
+                  (attachment): attachment is NoteCardSelection["previewAttachments"][number] =>
+                    typeof attachment?.id === 'string'
+                    && typeof attachment?.fileName === 'string'
+                    && typeof attachment?.contentType === 'string'
+                    && typeof attachment?.absolutePath === 'string',
+                )
+                .map((attachment) => ({
+                  id: attachment.id,
+                  fileName: attachment.fileName,
+                  contentType: attachment.contentType,
+                  absolutePath: attachment.absolutePath,
+                }))
+            : [],
+        }));
+      },
+      [workspaceId, workspaceName, workspacePath],
+    );
+
     const builtinSlashCommands = useMemo<CommandItem[]>(() => {
       const commands: CommandItem[] = [
         { id: 'clear', label: '/clear', description: t('chat.commands.clear'), category: 'system' },
@@ -1505,6 +1596,7 @@ export const ChatInputBoxAdapter = memo(forwardRef<ChatInputBoxHandle, ChatInput
         selectedAgent={selectedAgent}
         selectedContextChips={selectedContextChips}
         selectedManualMemoryIds={selectedManualMemoryIds}
+        selectedNoteCardIds={selectedNoteCardIds}
         onRemoveContextChip={onRemoveContextChip}
         onAgentSelect={onAgentSelect}
         onClearAgent={onAgentSelect ? () => onAgentSelect?.(null) : undefined}
@@ -1551,7 +1643,9 @@ export const ChatInputBoxAdapter = memo(forwardRef<ChatInputBoxHandle, ChatInput
         skillCompletionProvider={skillCompletionProvider}
         promptCompletionProvider={promptCompletionProvider}
         manualMemoryCompletionProvider={manualMemoryCompletionProvider}
+        noteCardCompletionProvider={noteCardCompletionProvider}
         onSelectManualMemory={onManualMemorySelect}
+        onSelectNoteCard={onNoteCardSelect}
         onSelectSkill={onSelectSkill}
       />
     );

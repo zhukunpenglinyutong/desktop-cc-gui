@@ -15,6 +15,7 @@ import type {
   CommandItem,
   FileItem,
   ManualMemoryItem,
+  NoteCardItem,
   PermissionMode,
   PromptItem,
   SkillItem,
@@ -104,6 +105,36 @@ function manualMemoryToDropdownItem(memory: ManualMemoryItem) {
   };
 }
 
+function noteCardToDropdownItem(noteCard: NoteCardItem) {
+  const label = noteCard.title?.trim() || noteCard.plainTextExcerpt?.trim() || noteCard.id;
+  const summary = noteCard.plainTextExcerpt?.trim() || '';
+  const metaParts = [];
+  if (noteCard.archived) {
+    metaParts.push('archived');
+  }
+  if (noteCard.imageCount > 0) {
+    metaParts.push(`${noteCard.imageCount} image${noteCard.imageCount === 1 ? '' : 's'}`);
+  }
+  const meta = metaParts.join(' · ');
+  const description = summary ? (meta ? `${summary}\n${meta}` : summary) : meta;
+  return {
+    id: `note-card:${noteCard.id}`,
+    label,
+    description,
+    type: 'info' as const,
+    data: {
+      id: noteCard.id,
+      title: noteCard.title,
+      plainTextExcerpt: noteCard.plainTextExcerpt,
+      bodyMarkdown: noteCard.bodyMarkdown,
+      updatedAt: noteCard.updatedAt,
+      archived: noteCard.archived,
+      imageCount: noteCard.imageCount,
+      previewAttachments: noteCard.previewAttachments,
+    },
+  };
+}
+
 function skillToDropdownItem(skill: SkillItem) {
   const label = (skill.name || '').trim();
   const source = (skill.source || '').trim();
@@ -187,6 +218,7 @@ export const ChatInputBox = memo(forwardRef<ChatInputBoxHandle, ChatInputBoxProp
       selectedAgent,
       selectedContextChips,
       selectedManualMemoryIds = [],
+      selectedNoteCardIds = [],
       onRemoveContextChip,
       onAgentSelect,
       onOpenAgentSettings,
@@ -218,7 +250,9 @@ export const ChatInputBox = memo(forwardRef<ChatInputBoxHandle, ChatInputBoxProp
       skillCompletionProvider,
       promptCompletionProvider,
       manualMemoryCompletionProvider,
+      noteCardCompletionProvider,
       onSelectManualMemory,
+      onSelectNoteCard,
       onSelectSkill,
     }: ChatInputBoxProps,
     ref: React.ForwardedRef<ChatInputBoxHandle>
@@ -389,6 +423,30 @@ export const ChatInputBox = memo(forwardRef<ChatInputBoxHandle, ChatInputBoxProp
         });
         handleInput();
         onSelectManualMemory?.(memory);
+      },
+    });
+
+    const noteCardCompletion = useCompletionDropdown<NoteCardItem>({
+      trigger: '@#',
+      provider:
+        noteCardCompletionProvider ??
+        (async () => []),
+      toDropdownItem: noteCardToDropdownItem,
+      onSelect: (noteCard, query) => {
+        if (!editableRef.current || !query) return;
+
+        const text = getTextContent();
+        const newText = noteCardCompletion.replaceText(text, '', query);
+        editableRef.current.innerText = newText;
+        setCursorOffset(editableRef.current, query.start);
+
+        stageNextCommitOptions({
+          source: 'programmatic',
+          forceNewTransaction: true,
+          inputType: 'completion:note-card',
+        });
+        handleInput();
+        onSelectNoteCard?.(noteCard);
       },
     });
 
@@ -571,6 +629,7 @@ export const ChatInputBox = memo(forwardRef<ChatInputBoxHandle, ChatInputBoxProp
     closeAllCompletionsRef.current = () => {
       fileCompletion.close();
       memoryCompletion.close();
+      noteCardCompletion.close();
       commandCompletion.close();
       skillCompletion.close();
       agentCompletion.close();
@@ -660,6 +719,7 @@ export const ChatInputBox = memo(forwardRef<ChatInputBoxHandle, ChatInputBoxProp
       getTextContent,
       fileCompletion,
       memoryCompletion,
+      noteCardCompletion,
       commandCompletion,
       skillCompletion,
       agentCompletion,
@@ -742,6 +802,7 @@ export const ChatInputBox = memo(forwardRef<ChatInputBoxHandle, ChatInputBoxProp
         const isOtherCompletionOpen =
           fileCompletion.isOpen ||
           memoryCompletion.isOpen ||
+          noteCardCompletion.isOpen ||
           commandCompletion.isOpen ||
           skillCompletion.isOpen ||
           agentCompletion.isOpen ||
@@ -796,6 +857,7 @@ export const ChatInputBox = memo(forwardRef<ChatInputBoxHandle, ChatInputBoxProp
         invalidateCache,
         fileCompletion,
         memoryCompletion,
+        noteCardCompletion,
         commandCompletion,
         skillCompletion,
         agentCompletion,
@@ -936,6 +998,7 @@ export const ChatInputBox = memo(forwardRef<ChatInputBoxHandle, ChatInputBoxProp
       setInternalAttachments,
       fileCompletion,
       memoryCompletion,
+      noteCardCompletion,
       commandCompletion,
       skillCompletion,
       agentCompletion,
@@ -1003,6 +1066,7 @@ export const ChatInputBox = memo(forwardRef<ChatInputBoxHandle, ChatInputBoxProp
       sdkInstalled,
       fileCompletion,
       memoryCompletion,
+      noteCardCompletion,
       commandCompletion,
       skillCompletion,
       agentCompletion,
@@ -1050,6 +1114,7 @@ export const ChatInputBox = memo(forwardRef<ChatInputBoxHandle, ChatInputBoxProp
       sendShortcut,
       fileCompletion,
       memoryCompletion,
+      noteCardCompletion,
       commandCompletion,
       skillCompletion,
       agentCompletion,
@@ -1399,6 +1464,7 @@ export const ChatInputBox = memo(forwardRef<ChatInputBoxHandle, ChatInputBoxProp
                     if (
                       fileCompletion.isOpen ||
                       memoryCompletion.isOpen ||
+                      noteCardCompletion.isOpen ||
                       commandCompletion.isOpen ||
                       skillCompletion.isOpen ||
                       agentCompletion.isOpen ||
@@ -1437,6 +1503,7 @@ export const ChatInputBox = memo(forwardRef<ChatInputBoxHandle, ChatInputBoxProp
               models={models}
               permissionMode={permissionMode}
               currentProvider={currentProvider}
+              workspaceId={workspaceId}
               providerAvailability={providerAvailability}
               providerVersions={providerVersions}
               providerStatusLabels={providerStatusLabels}
@@ -1471,11 +1538,13 @@ export const ChatInputBox = memo(forwardRef<ChatInputBoxHandle, ChatInputBoxProp
               onClearAgent={() => onAgentSelect?.(null)}
               fileCompletion={fileCompletion}
               memoryCompletion={memoryCompletion}
+              noteCardCompletion={noteCardCompletion}
               commandCompletion={commandCompletion}
               skillCompletion={skillCompletion}
               agentCompletion={agentCompletion}
               promptCompletion={promptCompletion}
               selectedManualMemoryIds={selectedManualMemoryIds}
+              selectedNoteCardIds={selectedNoteCardIds}
               shortcutActions={settingsShortcutActions}
               tooltip={tooltip}
               promptEnhancer={{

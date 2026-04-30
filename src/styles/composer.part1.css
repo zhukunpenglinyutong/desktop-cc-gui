@@ -1618,6 +1618,23 @@
   margin-top: 1px;
 }
 
+.composer-note-card-picker-thumb {
+  width: 52px;
+  height: 52px;
+  border-radius: 10px;
+  overflow: hidden;
+  flex: 0 0 auto;
+  background: color-mix(in srgb, var(--surface-card) 84%, transparent);
+  border: 1px solid color-mix(in srgb, var(--border-subtle) 72%, transparent);
+}
+
+.composer-note-card-picker-thumb img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
 .composer-memory-picker-card-main {
   display: flex;
   flex-direction: column;
@@ -1705,4 +1722,3 @@
   height: 100%;
   overflow: hidden;
 }
-

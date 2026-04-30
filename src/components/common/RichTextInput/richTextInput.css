@@ -46,6 +46,11 @@
   outline-offset: -2px;
 }
 
+.rich-text-textarea-shell {
+  position: relative;
+  min-height: 0;
+}
+
 /* Textarea */
 .rich-text-textarea {
   width: 100%;
@@ -90,33 +95,12 @@
   max-width: 200px;
 }
 
+.rich-text-attachment.is-clickable {
+  cursor: zoom-in;
+}
+
 .rich-text-attachment:hover {
   background: var(--attachment-hover-bg, #ebebeb);
-}
-
-.rich-text-attachment-preview {
-  display: none;
-  position: absolute;
-  bottom: 100%;
-  left: 0;
-  margin-bottom: 8px;
-  padding: 4px;
-  background: var(--preview-bg, #fff);
-  border: 1px solid var(--preview-border, #ddd);
-  border-radius: 4px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-  z-index: 100;
-  pointer-events: none;
-}
-
-.rich-text-attachment:hover .rich-text-attachment-preview {
-  display: block;
-}
-
-.rich-text-attachment-preview img {
-  max-width: 200px;
-  max-height: 200px;
-  display: block;
 }
 
 .rich-text-attachment-thumb {
@@ -134,7 +118,7 @@
 .rich-text-attachment-thumb img {
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  object-fit: contain;
 }
 
 .rich-text-icon {

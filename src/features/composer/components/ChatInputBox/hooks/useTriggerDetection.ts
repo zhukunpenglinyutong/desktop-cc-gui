@@ -280,6 +280,40 @@ function detectDoubleAtTrigger(
 }
 
 /**
+ * Detect @# note card trigger
+ * Returns range including both @ and # symbols.
+ */
+function detectAtHashTrigger(
+  text: string,
+  cursorPosition: number,
+  element?: HTMLElement,
+): TriggerQuery | null {
+  let index = cursorPosition - 1;
+  while (index >= 1) {
+    const char = text[index] ?? '';
+    if (isWhitespace(char)) {
+      return null;
+    }
+    if (char === '#' && text[index - 1] === '@') {
+      const start = index - 1;
+      if (element && isPositionInFileTag(element, start)) {
+        index -= 1;
+        continue;
+      }
+      const query = text.slice(index + 1, cursorPosition);
+      return {
+        trigger: '@#',
+        query,
+        start,
+        end: cursorPosition,
+      };
+    }
+    index -= 1;
+  }
+  return null;
+}
+
+/**
  * Detect @ file reference trigger
  * Note: Skip rendered file tags to avoid false triggers after file tags
  */
@@ -470,7 +504,7 @@ function detectExclamationTrigger(text: string, cursorPosition: number): Trigger
 
 /**
  * useTriggerDetection - Trigger detection hook
- * Detects @@, @, /, $, # or ! trigger symbols in the input box
+ * Detects @@, @#, @, /, $, # or ! trigger symbols in the input box
  */
 export function useTriggerDetection() {
   /**
@@ -484,6 +518,9 @@ export function useTriggerDetection() {
     // Prioritize @@ detection
     const doubleAtTrigger = detectDoubleAtTrigger(text, cursorPosition, element);
     if (doubleAtTrigger) return doubleAtTrigger;
+
+    const atHashTrigger = detectAtHashTrigger(text, cursorPosition, element);
+    if (atHashTrigger) return atHashTrigger;
 
     // Prioritize @ detection (pass element to skip file tags)
     const atTrigger = detectAtTrigger(text, cursorPosition, element);

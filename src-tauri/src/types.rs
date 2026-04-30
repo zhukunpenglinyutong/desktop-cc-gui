@@ -845,10 +845,7 @@ pub(crate) struct AppSettings {
         rename = "lightThemePresetId"
     )]
     pub(crate) light_theme_preset_id: String,
-    #[serde(
-        default = "default_dark_theme_preset_id",
-        rename = "darkThemePresetId"
-    )]
+    #[serde(default = "default_dark_theme_preset_id", rename = "darkThemePresetId")]
     pub(crate) dark_theme_preset_id: String,
     #[serde(
         default = "default_custom_theme_preset_id",

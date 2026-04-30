@@ -11,6 +11,7 @@ import {
 } from "../../../utils/customPrompts";
 import { isComposingEvent } from "../../../utils/keys";
 import { projectMemoryFacade } from "../../project-memory/services/projectMemoryFacade";
+import { noteCardsFacade } from "../../note-cards/services/noteCardsFacade";
 
 type Skill = { name: string; description?: string };
 type ManualMemorySuggestion = {
@@ -22,6 +23,22 @@ type ManualMemorySuggestion = {
   importance: string;
   updatedAt: number;
   tags: string[];
+};
+
+type NoteCardSuggestion = {
+  id: string;
+  title: string;
+  plainTextExcerpt: string;
+  bodyMarkdown: string;
+  updatedAt: number;
+  archived: boolean;
+  imageCount: number;
+  previewAttachments: Array<{
+    id: string;
+    fileName: string;
+    contentType: string;
+    absolutePath: string;
+  }>;
 };
 
 type UseComposerAutocompleteStateArgs = {
@@ -36,7 +53,10 @@ type UseComposerAutocompleteStateArgs = {
   gitignoredFiles?: Set<string>;
   gitignoredDirectories?: Set<string>;
   workspaceId?: string | null;
+  workspaceName?: string | null;
+  workspacePath?: string | null;
   onManualMemorySelect?: (memory: ManualMemorySuggestion) => void;
+  onNoteCardSelect?: (noteCard: NoteCardSuggestion) => void;
   textareaRef: React.RefObject<HTMLTextAreaElement | null>;
   setText: (next: string) => void;
   setSelectionStart: (next: number | null) => void;
@@ -44,6 +64,7 @@ type UseComposerAutocompleteStateArgs = {
 
 const MAX_FILE_SUGGESTIONS = 200;
 const MAX_MEMORY_SUGGESTIONS = 50;
+const MAX_NOTE_CARD_SUGGESTIONS = 50;
 const FILE_TRIGGER_PREFIX = new RegExp("^(?:\\s|[\"'`]|\\(|\\[|\\{)$");
 
 function normalizeFileQueryPath(value: string) {
@@ -139,6 +160,26 @@ function getMemoryTriggerQuery(text: string, cursor: number | null) {
   return afterAt;
 }
 
+function getNoteCardTriggerQuery(text: string, cursor: number | null) {
+  if (!text || cursor === null) {
+    return null;
+  }
+  const beforeCursor = text.slice(0, cursor);
+  const atIndex = beforeCursor.lastIndexOf("@#");
+  if (atIndex < 0) {
+    return null;
+  }
+  const prevChar = atIndex > 0 ? beforeCursor[atIndex - 1] : "";
+  if (prevChar && !FILE_TRIGGER_PREFIX.test(prevChar)) {
+    return null;
+  }
+  const afterTrigger = beforeCursor.slice(atIndex + 2);
+  if (/\s/.test(afterTrigger)) {
+    return null;
+  }
+  return afterTrigger;
+}
+
 export function useComposerAutocompleteState({
   text,
   selectionStart,
@@ -151,7 +192,10 @@ export function useComposerAutocompleteState({
   gitignoredFiles,
   gitignoredDirectories,
   workspaceId = null,
+  workspaceName = null,
+  workspacePath = null,
   onManualMemorySelect,
+  onNoteCardSelect,
   textareaRef,
   setText,
   setSelectionStart,
@@ -159,9 +203,16 @@ export function useComposerAutocompleteState({
   const [manualMemorySuggestions, setManualMemorySuggestions] = useState<
     ManualMemorySuggestion[]
   >([]);
+  const [noteCardSuggestions, setNoteCardSuggestions] = useState<NoteCardSuggestion[]>(
+    [],
+  );
 
   const manualMemoryQuery = useMemo(
     () => getMemoryTriggerQuery(text, selectionStart),
+    [selectionStart, text],
+  );
+  const noteCardQuery = useMemo(
+    () => getNoteCardTriggerQuery(text, selectionStart),
     [selectionStart, text],
   );
 
@@ -216,6 +267,80 @@ export function useComposerAutocompleteState({
     };
   }, [manualMemoryQuery, workspaceId]);
 
+  useEffect(() => {
+    if (!workspaceId || noteCardQuery === null) {
+      setNoteCardSuggestions([]);
+      return;
+    }
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      const query = noteCardQuery.trim() || null;
+      void Promise.all([
+        noteCardsFacade.list({
+          workspaceId,
+          workspaceName,
+          workspacePath,
+          archived: false,
+          query,
+          page: 0,
+          pageSize: MAX_NOTE_CARD_SUGGESTIONS,
+        }),
+        noteCardsFacade.list({
+          workspaceId,
+          workspaceName,
+          workspacePath,
+          archived: true,
+          query,
+          page: 0,
+          pageSize: MAX_NOTE_CARD_SUGGESTIONS,
+        }),
+      ])
+        .then(([activeResponse, archivedResponse]) => {
+          if (cancelled) {
+            return;
+          }
+          const mergedItems = [...activeResponse.items, ...archivedResponse.items];
+          setNoteCardSuggestions(
+            mergedItems.map((item) => ({
+              id: item.id,
+              title: item.title?.trim() || item.plainTextExcerpt?.trim() || item.id,
+              plainTextExcerpt: item.plainTextExcerpt?.trim() || "",
+              bodyMarkdown: item.plainTextExcerpt?.trim() || "",
+              updatedAt: item.updatedAt || item.createdAt || Date.now(),
+              archived: item.archived,
+              imageCount: item.imageCount || 0,
+              previewAttachments: Array.isArray(item.previewAttachments)
+                ? item.previewAttachments
+                    .filter(
+                      (attachment): attachment is NoteCardSuggestion["previewAttachments"][number] =>
+                        typeof attachment?.id === "string"
+                        && typeof attachment?.fileName === "string"
+                        && typeof attachment?.contentType === "string"
+                        && typeof attachment?.absolutePath === "string",
+                    )
+                    .map((attachment) => ({
+                      id: attachment.id,
+                      fileName: attachment.fileName,
+                      contentType: attachment.contentType,
+                      absolutePath: attachment.absolutePath,
+                    }))
+                : [],
+            })),
+          );
+        })
+        .catch(() => {
+          if (!cancelled) {
+            setNoteCardSuggestions([]);
+          }
+        });
+    }, 120);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [noteCardQuery, workspaceId, workspaceName, workspacePath]);
+
   const manualMemoryItems = useMemo<AutocompleteItem[]>(
     () =>
       manualMemorySuggestions.map((memory) => ({
@@ -233,6 +358,25 @@ export function useComposerAutocompleteState({
         memoryTags: memory.tags,
       })),
     [manualMemorySuggestions],
+  );
+
+  const noteCardItems = useMemo<AutocompleteItem[]>(
+    () =>
+      noteCardSuggestions.map((noteCard) => ({
+        id: `note-card:${noteCard.id}`,
+        label: noteCard.title,
+        description: noteCard.plainTextExcerpt,
+        kind: "note-card",
+        noteCardId: noteCard.id,
+        noteCardTitle: noteCard.title,
+        noteCardSummary: noteCard.plainTextExcerpt,
+        noteCardBodyMarkdown: noteCard.bodyMarkdown,
+        noteCardUpdatedAt: noteCard.updatedAt,
+        noteCardArchived: noteCard.archived,
+        noteCardImageCount: noteCard.imageCount,
+        noteCardPreviewAttachments: noteCard.previewAttachments,
+      })),
+    [noteCardSuggestions],
   );
 
   const skillItems = useMemo<AutocompleteItem[]>(
@@ -412,10 +556,11 @@ export function useComposerAutocompleteState({
     () => [
       { trigger: "/", items: slashItems },
       { trigger: "$", items: skillItems },
+      { trigger: "@#", items: noteCardItems },
       { trigger: "@@", items: manualMemoryItems },
       { trigger: "@", items: fileItems },
     ],
-    [fileItems, manualMemoryItems, skillItems, slashItems],
+    [fileItems, manualMemoryItems, noteCardItems, skillItems, slashItems],
   );
 
   const {
@@ -471,6 +616,34 @@ export function useComposerAutocompleteState({
         });
         return;
       }
+      if (activeTrigger === "@#" && item.kind === "note-card" && item.noteCardId) {
+        const before = text.slice(0, triggerIndex);
+        const after = text.slice(autocompleteRange.end);
+        const nextText = `${before}${after}`;
+        setText(nextText);
+        closeAutocomplete();
+        onNoteCardSelect?.({
+          id: item.noteCardId,
+          title: item.noteCardTitle ?? item.label,
+          plainTextExcerpt: item.noteCardSummary ?? item.description ?? "",
+          bodyMarkdown: item.noteCardBodyMarkdown ?? item.noteCardSummary ?? "",
+          updatedAt: item.noteCardUpdatedAt ?? Date.now(),
+          archived: item.noteCardArchived ?? false,
+          imageCount: item.noteCardImageCount ?? 0,
+          previewAttachments: item.noteCardPreviewAttachments ?? [],
+        });
+        requestAnimationFrame(() => {
+          const textarea = textareaRef.current;
+          if (!textarea) {
+            return;
+          }
+          const nextCursor = before.length;
+          textarea.focus();
+          textarea.setSelectionRange(nextCursor, nextCursor);
+          setSelectionStart(nextCursor);
+        });
+        return;
+      }
       const before =
         activeTrigger === "@"
           ? text.slice(0, triggerIndex)
@@ -511,6 +684,7 @@ export function useComposerAutocompleteState({
       autocompleteRange,
       closeAutocomplete,
       onManualMemorySelect,
+      onNoteCardSelect,
       selectionStart,
       setSelectionStart,
       setText,

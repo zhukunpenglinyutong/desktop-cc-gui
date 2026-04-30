@@ -274,16 +274,20 @@ fn load_local_branch_update_state(
 }
 
 fn normalize_compare_path(path: &Path) -> String {
-    path.to_string_lossy().replace('\\', "/").to_ascii_lowercase()
+    path.to_string_lossy()
+        .replace('\\', "/")
+        .to_ascii_lowercase()
 }
 
 async fn find_branch_worktree_path(
     repo_root: &Path,
     branch_name: &str,
 ) -> Result<Option<String>, String> {
-    let output =
-        git_core::run_git_command(&repo_root.to_path_buf(), &["worktree", "list", "--porcelain"])
-            .await?;
+    let output = git_core::run_git_command(
+        &repo_root.to_path_buf(),
+        &["worktree", "list", "--porcelain"],
+    )
+    .await?;
     let target_ref = format!("refs/heads/{branch_name}");
     let repo_root_normalized = normalize_compare_path(repo_root);
     let mut current_path: Option<String> = None;
@@ -329,15 +333,26 @@ async fn update_non_current_local_branch(
     let initial_state = load_local_branch_update_state(repo_root, branch_name)?;
     let upstream_name = match initial_state.upstream_name.as_deref() {
         Some(name) if !name.trim().is_empty() => name.to_string(),
-        _ => return Ok(no_upstream_branch_update_result(initial_state.branch_name.as_str())),
+        _ => {
+            return Ok(no_upstream_branch_update_result(
+                initial_state.branch_name.as_str(),
+            ))
+        }
     };
     let upstream_remote = match initial_state.upstream_remote.as_deref() {
         Some(name) if !name.trim().is_empty() => name.to_string(),
-        _ => return Ok(no_upstream_branch_update_result(initial_state.branch_name.as_str())),
+        _ => {
+            return Ok(no_upstream_branch_update_result(
+                initial_state.branch_name.as_str(),
+            ))
+        }
     };
 
-    git_core::run_git_command(&repo_root.to_path_buf(), &["fetch", upstream_remote.as_str()])
-        .await?;
+    git_core::run_git_command(
+        &repo_root.to_path_buf(),
+        &["fetch", upstream_remote.as_str()],
+    )
+    .await?;
 
     if let Some(worktree_path) =
         find_branch_worktree_path(repo_root, initial_state.branch_name.as_str()).await?
@@ -354,10 +369,15 @@ async fn update_non_current_local_branch(
         ));
     }
 
-    let refreshed_state = load_local_branch_update_state(repo_root, initial_state.branch_name.as_str())?;
+    let refreshed_state =
+        load_local_branch_update_state(repo_root, initial_state.branch_name.as_str())?;
     let upstream_oid = match refreshed_state.upstream_oid {
         Some(oid) => oid,
-        None => return Ok(no_upstream_branch_update_result(refreshed_state.branch_name.as_str())),
+        None => {
+            return Ok(no_upstream_branch_update_result(
+                refreshed_state.branch_name.as_str(),
+            ))
+        }
     };
 
     if refreshed_state.local_oid == upstream_oid || refreshed_state.behind == 0 {
@@ -440,7 +460,8 @@ async fn update_non_current_local_branch(
         ));
     }
 
-    let verified_state = load_local_branch_update_state(repo_root, refreshed_state.branch_name.as_str())?;
+    let verified_state =
+        load_local_branch_update_state(repo_root, refreshed_state.branch_name.as_str())?;
     if verified_state.local_oid != upstream_oid {
         return Err(format!(
             "failed to verify updated branch '{}': expected {}, found {}",
@@ -1456,7 +1477,9 @@ impl DaemonState {
 
         let branch_state = load_local_branch_update_state(&repo_root, normalized_branch.as_str())?;
         if !branch_update_has_upstream(&branch_state) {
-            return Ok(no_upstream_branch_update_result(branch_state.branch_name.as_str()));
+            return Ok(no_upstream_branch_update_result(
+                branch_state.branch_name.as_str(),
+            ));
         }
         if branch_state.is_current {
             self.pull_git(workspace_id, None, None, None, None, None)

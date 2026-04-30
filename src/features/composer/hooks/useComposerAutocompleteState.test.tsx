@@ -4,9 +4,16 @@ import { act, renderHook } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useComposerAutocompleteState } from "./useComposerAutocompleteState";
 import { projectMemoryFacade } from "../../project-memory/services/projectMemoryFacade";
+import { noteCardsFacade } from "../../note-cards/services/noteCardsFacade";
 
 vi.mock("../../project-memory/services/projectMemoryFacade", () => ({
   projectMemoryFacade: {
+    list: vi.fn(),
+  },
+}));
+
+vi.mock("../../note-cards/services/noteCardsFacade", () => ({
+  noteCardsFacade: {
     list: vi.fn(),
   },
 }));
@@ -24,6 +31,10 @@ describe("useComposerAutocompleteState", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(projectMemoryFacade.list).mockResolvedValue({
+      items: [],
+      total: 0,
+    } as never);
+    vi.mocked(noteCardsFacade.list).mockResolvedValue({
       items: [],
       total: 0,
     } as never);
@@ -273,6 +284,105 @@ describe("useComposerAutocompleteState", () => {
       }),
     );
     expect(setText).toHaveBeenCalledWith("请参考 ");
+    vi.useRealTimers();
+  });
+
+  it("suggests workspace note cards when trigger is @#", async () => {
+    vi.useFakeTimers();
+    vi.mocked(noteCardsFacade.list)
+      .mockResolvedValueOnce({
+        items: [
+          {
+            id: "note-1",
+            title: "发布清单",
+            plainTextExcerpt: "正文里包含部署和回滚步骤",
+            updatedAt: 2,
+            createdAt: 1,
+            archived: false,
+            imageCount: 1,
+            previewAttachments: [
+              {
+                id: "attachment-1",
+                fileName: "deploy.png",
+                contentType: "image/png",
+                absolutePath: "/tmp/demo/deploy.png",
+              },
+            ],
+          },
+        ],
+        total: 1,
+      } as never)
+      .mockResolvedValueOnce({
+        items: [
+          {
+            id: "note-2",
+            title: "发布回滚清单",
+            plainTextExcerpt: "这是归档发布便签",
+            updatedAt: 3,
+            createdAt: 1,
+            archived: true,
+            imageCount: 0,
+          },
+        ],
+        total: 1,
+      } as never);
+    const text = "@#发布";
+    const selectionStart = text.length;
+    const textareaRef = createTextareaRef();
+
+    const { result } = renderHook(() =>
+      useComposerAutocompleteState({
+        text,
+        selectionStart,
+        disabled: false,
+        skills: [],
+        prompts: [],
+        files: [],
+        workspaceId: "ws-1",
+        workspaceName: "demo",
+        workspacePath: "/tmp/demo",
+        textareaRef,
+        setText: vi.fn(),
+        setSelectionStart: vi.fn(),
+      }),
+    );
+
+    await act(async () => {
+      vi.advanceTimersByTime(150);
+      await Promise.resolve();
+    });
+
+    expect(result.current.isAutocompleteOpen).toBe(true);
+    expect(result.current.autocompleteMatches.map((item) => item.label)).toEqual([
+      "发布清单",
+      "发布回滚清单",
+    ]);
+    expect(result.current.autocompleteMatches[0]?.noteCardPreviewAttachments).toEqual([
+      {
+        id: "attachment-1",
+        fileName: "deploy.png",
+        contentType: "image/png",
+        absolutePath: "/tmp/demo/deploy.png",
+      },
+    ]);
+    expect(noteCardsFacade.list).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        workspaceId: "ws-1",
+        workspaceName: "demo",
+        workspacePath: "/tmp/demo",
+        archived: false,
+        query: "发布",
+      }),
+    );
+    expect(noteCardsFacade.list).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        workspaceId: "ws-1",
+        archived: true,
+        query: "发布",
+      }),
+    );
     vi.useRealTimers();
   });
 

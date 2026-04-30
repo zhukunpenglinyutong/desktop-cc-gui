@@ -57,6 +57,7 @@ export interface UseKeyboardHandlerOptions {
   sdkInstalled: boolean;
   fileCompletion: CompletionWithKeyDown;
   memoryCompletion: CompletionWithKeyDown;
+  noteCardCompletion: CompletionWithKeyDown;
   commandCompletion: CompletionWithKeyDown;
   skillCompletion: CompletionWithKeyDown;
   agentCompletion: CompletionWithKeyDown;
@@ -102,6 +103,7 @@ export function useKeyboardHandler({
   sdkInstalled,
   fileCompletion,
   memoryCompletion,
+  noteCardCompletion,
   commandCompletion,
   skillCompletion,
   agentCompletion,
@@ -175,6 +177,16 @@ export function useKeyboardHandler({
 
       if (memoryCompletion.isOpen) {
         const handled = memoryCompletion.handleKeyDown(e.nativeEvent);
+        if (handled) {
+          e.preventDefault();
+          e.stopPropagation();
+          if (e.key === 'Enter') completionSelectedRef.current = true;
+          return;
+        }
+      }
+
+      if (noteCardCompletion.isOpen) {
+        const handled = noteCardCompletion.handleKeyDown(e.nativeEvent);
         if (handled) {
           e.preventDefault();
           e.stopPropagation();
@@ -257,6 +269,7 @@ export function useKeyboardHandler({
       handleMacCursorMovement,
       fileCompletion,
       memoryCompletion,
+      noteCardCompletion,
       commandCompletion,
       skillCompletion,
       agentCompletion,

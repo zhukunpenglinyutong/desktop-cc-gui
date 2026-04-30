@@ -11,8 +11,7 @@ use crate::event_sink::TauriEventSink;
 use crate::remote_backend;
 use crate::shared::settings_core::{
     app_settings_change_requires_codex_restart, get_app_settings_core, get_codex_config_path_core,
-    get_codex_unified_exec_external_status_core,
-    resolve_window_theme_preference,
+    get_codex_unified_exec_external_status_core, resolve_window_theme_preference,
     restart_codex_sessions_for_app_settings_change_core, restore_app_settings_core,
     restore_codex_unified_exec_official_default_core,
     set_codex_unified_exec_official_override_core, update_app_settings_core,

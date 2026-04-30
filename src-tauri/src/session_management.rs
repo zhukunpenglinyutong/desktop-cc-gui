@@ -1730,7 +1730,9 @@ mod tests {
         assert!(should_settle_delete_as_success(
             "[SESSION_NOT_FOUND] Session file not found: stale-session"
         ));
-        assert!(should_settle_delete_as_success("thread not found: stale-thread"));
+        assert!(should_settle_delete_as_success(
+            "thread not found: stale-thread"
+        ));
         assert!(!should_settle_delete_as_success(
             "[SESSION_NOT_FOUND] Invalid OpenCode session id"
         ));

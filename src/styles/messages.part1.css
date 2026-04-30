@@ -1306,6 +1306,177 @@
   color: var(--text-muted);
 }
 
+.message-context-stack {
+  display: grid;
+  gap: 8px;
+  width: min(860px, 100%);
+}
+
+.message-context-stack.is-user {
+  justify-items: end;
+}
+
+.note-card-context-summary-card {
+  width: min(760px, 100%);
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border-radius: 18px;
+  border: 1px solid color-mix(in srgb, var(--border-strong) 82%, transparent);
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--surface-card) 96%, #2563eb 4%),
+      var(--surface-card)
+    );
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.08);
+}
+
+.note-card-context-summary-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.note-card-context-summary-head-copy {
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.note-card-context-summary-title {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: color-mix(in srgb, var(--text-muted) 72%, #2563eb 28%);
+}
+
+.note-card-context-summary-count {
+  font-size: 11px;
+  color: var(--text-faint);
+}
+
+.note-card-context-summary-toggle {
+  margin-left: auto;
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid color-mix(in srgb, var(--border-subtle) 82%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--surface-card) 88%, transparent);
+  color: var(--text-faint);
+  cursor: pointer;
+  transition:
+    border-color 0.18s ease,
+    color 0.18s ease,
+    transform 0.18s ease;
+}
+
+.note-card-context-summary-toggle:hover {
+  color: var(--text-primary);
+  border-color: color-mix(in srgb, var(--accent) 48%, var(--border-strong));
+  transform: translateY(-1px);
+}
+
+.note-card-context-summary-list {
+  display: grid;
+  gap: 10px;
+}
+
+.note-card-context-summary-note {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border-radius: 14px;
+  border: 1px solid color-mix(in srgb, var(--border-subtle) 72%, transparent);
+  background: color-mix(in srgb, var(--surface-item) 78%, transparent);
+}
+
+.note-card-context-summary-note-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.note-card-context-summary-note-head strong {
+  font-size: 14px;
+  color: var(--text-primary);
+}
+
+.note-card-context-summary-note-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.note-card-context-summary-note-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  padding: 0 8px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--border-subtle) 80%, transparent);
+  background: color-mix(in srgb, var(--surface-card) 80%, transparent);
+  font-size: 10px;
+  color: var(--text-faint);
+}
+
+.note-card-context-summary-markdown {
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.note-card-context-summary-markdown > * {
+  margin: 0;
+}
+
+.note-card-context-summary-markdown > * + * {
+  margin-top: 8px;
+}
+
+.note-card-context-summary-preview {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--text-secondary);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.note-card-context-summary-images {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(56px, 64px));
+  gap: 8px;
+}
+
+.note-card-context-summary-image {
+  width: 64px;
+  height: 64px;
+  border: none;
+  padding: 0;
+  border-radius: 12px;
+  overflow: hidden;
+  aspect-ratio: 1 / 1;
+  background: color-mix(in srgb, var(--surface-card) 92%, #0f172a 8%);
+  cursor: zoom-in;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, #ffffff 14%, transparent);
+}
+
+.note-card-context-summary-image img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
 .message-image-grid {
   margin-bottom: 0;
   display: flex;

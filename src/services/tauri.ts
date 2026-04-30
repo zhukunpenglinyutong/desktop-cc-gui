@@ -125,6 +125,7 @@ export {
 } from "./tauri/noteCards";
 export type {
   NoteCardAttachment,
+  NoteCardPreviewAttachment,
   WorkspaceNoteCard,
   WorkspaceNoteCardListResult,
   WorkspaceNoteCardSummary,

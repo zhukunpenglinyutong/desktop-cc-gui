@@ -114,7 +114,8 @@ fn sanitize_theme_settings(settings: &mut AppSettings) {
     settings.theme = sanitize_theme(&settings.theme);
     settings.canvas_width_mode = sanitize_canvas_width_mode(&settings.canvas_width_mode);
     settings.layout_mode = sanitize_layout_mode(&settings.layout_mode);
-    settings.light_theme_preset_id = sanitize_light_theme_preset_id(&settings.light_theme_preset_id);
+    settings.light_theme_preset_id =
+        sanitize_light_theme_preset_id(&settings.light_theme_preset_id);
     settings.dark_theme_preset_id = sanitize_dark_theme_preset_id(&settings.dark_theme_preset_id);
     settings.custom_theme_preset_id = sanitize_theme_preset_id(&settings.custom_theme_preset_id);
 }
@@ -276,8 +277,7 @@ mod tests {
 
     use super::{
         app_settings_change_requires_codex_restart, get_app_settings_core,
-        get_codex_unified_exec_external_status_core,
-        resolve_window_theme_preference,
+        get_codex_unified_exec_external_status_core, resolve_window_theme_preference,
         restore_codex_unified_exec_official_default_core, sanitize_canvas_width_mode,
         sanitize_dark_theme_preset_id, sanitize_layout_mode, sanitize_light_theme_preset_id,
         sanitize_theme, sanitize_theme_preset_id, sanitize_ui_scale,
@@ -379,7 +379,10 @@ mod tests {
             sanitize_dark_theme_preset_id("vscode-light-modern"),
             DARK_THEME_PRESET_MODERN
         );
-        assert_eq!(sanitize_theme_preset_id("invalid"), DARK_THEME_PRESET_MODERN);
+        assert_eq!(
+            sanitize_theme_preset_id("invalid"),
+            DARK_THEME_PRESET_MODERN
+        );
     }
 
     #[test]

@@ -16,12 +16,12 @@ use crate::git_utils::{
 };
 use crate::state::AppState;
 use crate::types::{
-    BranchInfo, GitBranchCompareCommitSets, GitBranchListItem, GitCommitDetails, GitCommitDiff,
-    GitBranchUpdateResult, GitCommitFileChange, GitFileDiff, GitFileStatus, GitHistoryCommit,
-    GitHistoryResponse, GitHubIssue, GitHubIssuesResponse, GitHubPullRequest,
+    BranchInfo, GitBranchCompareCommitSets, GitBranchListItem, GitBranchUpdateResult,
+    GitCommitDetails, GitCommitDiff, GitCommitFileChange, GitFileDiff, GitFileStatus,
+    GitHistoryCommit, GitHistoryResponse, GitHubIssue, GitHubIssuesResponse, GitHubPullRequest,
     GitHubPullRequestComment, GitHubPullRequestDiff, GitHubPullRequestsResponse, GitLogResponse,
-    GitPrExistingPullRequest, GitPrWorkflowDefaults, GitPrWorkflowResult,
-    GitPrWorkflowStage, GitPushPreviewResponse,
+    GitPrExistingPullRequest, GitPrWorkflowDefaults, GitPrWorkflowResult, GitPrWorkflowStage,
+    GitPushPreviewResponse,
 };
 use crate::utils::{git_env_path, normalize_git_path, resolve_git_binary};
 use validation::validate_local_branch_name;
@@ -805,9 +805,7 @@ struct CommitScopeDiffPlan {
 }
 
 fn normalize_commit_scope_path(path: &str) -> String {
-    normalize_git_path(path)
-        .trim_matches('/')
-        .to_string()
+    normalize_git_path(path).trim_matches('/').to_string()
 }
 
 fn build_commit_scope_diff_plan(
@@ -913,11 +911,8 @@ fn collect_commit_scope_diff(
     let plan = build_commit_scope_diff_plan(&repo, explicit_selected_paths)?;
 
     let staged_diff = collect_index_diff(&repo, head_tree.as_ref(), Some(&plan.index_paths))?;
-    let worktree_diff = collect_worktree_diff(
-        &repo,
-        head_tree.as_ref(),
-        Some(&plan.worktree_only_paths),
-    )?;
+    let worktree_diff =
+        collect_worktree_diff(&repo, head_tree.as_ref(), Some(&plan.worktree_only_paths))?;
 
     let mut segments = Vec::new();
     if !staged_diff.trim().is_empty() {
@@ -1659,7 +1654,8 @@ mod tests {
         let nested_dir = root.join("src").join("feature");
         fs::create_dir_all(&nested_dir).expect("create nested dir");
         fs::write(nested_dir.join("file.ts"), "console.log('hi');\n").expect("write nested file");
-        fs::write(root.join("ignored.ts"), "console.log('ignored');\n").expect("write sibling file");
+        fs::write(root.join("ignored.ts"), "console.log('ignored');\n")
+            .expect("write sibling file");
 
         let selected_paths = vec!["src\\feature\\file.ts".to_string()];
         let diff =

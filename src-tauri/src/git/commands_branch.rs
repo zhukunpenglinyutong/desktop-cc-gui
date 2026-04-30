@@ -203,7 +203,8 @@ fn load_local_branch_update_state(
             .map(|(remote, _)| remote);
         upstream_oid = upstream_ref.target();
         if let Some(target_oid) = upstream_oid {
-            if let Ok((ahead_count, behind_count)) = repo.graph_ahead_behind(local_oid, target_oid) {
+            if let Ok((ahead_count, behind_count)) = repo.graph_ahead_behind(local_oid, target_oid)
+            {
                 ahead = ahead_count;
                 behind = behind_count;
             }
@@ -223,7 +224,9 @@ fn load_local_branch_update_state(
 }
 
 fn normalize_compare_path(path: &Path) -> String {
-    path.to_string_lossy().replace('\\', "/").to_ascii_lowercase()
+    path.to_string_lossy()
+        .replace('\\', "/")
+        .to_ascii_lowercase()
 }
 
 async fn find_branch_worktree_path(
@@ -280,16 +283,26 @@ async fn update_non_current_local_branch(
     let initial_state = load_local_branch_update_state(repo_root, branch_name)?;
     let upstream_name = match initial_state.upstream_name.as_deref() {
         Some(name) if !name.trim().is_empty() => name.to_string(),
-        _ => return Ok(no_upstream_branch_update_result(initial_state.branch_name.as_str())),
+        _ => {
+            return Ok(no_upstream_branch_update_result(
+                initial_state.branch_name.as_str(),
+            ))
+        }
     };
     let upstream_remote = match initial_state.upstream_remote.as_deref() {
         Some(name) if !name.trim().is_empty() => name.to_string(),
-        _ => return Ok(no_upstream_branch_update_result(initial_state.branch_name.as_str())),
+        _ => {
+            return Ok(no_upstream_branch_update_result(
+                initial_state.branch_name.as_str(),
+            ))
+        }
     };
 
     run_git_command(repo_root, &["fetch", upstream_remote.as_str()]).await?;
 
-    if let Some(worktree_path) = find_branch_worktree_path(repo_root, initial_state.branch_name.as_str()).await? {
+    if let Some(worktree_path) =
+        find_branch_worktree_path(repo_root, initial_state.branch_name.as_str()).await?
+    {
         return Ok(branch_update_result(
             initial_state.branch_name.as_str(),
             BRANCH_UPDATE_STATUS_BLOCKED,
@@ -302,10 +315,15 @@ async fn update_non_current_local_branch(
         ));
     }
 
-    let refreshed_state = load_local_branch_update_state(repo_root, initial_state.branch_name.as_str())?;
+    let refreshed_state =
+        load_local_branch_update_state(repo_root, initial_state.branch_name.as_str())?;
     let upstream_oid = match refreshed_state.upstream_oid {
         Some(oid) => oid,
-        None => return Ok(no_upstream_branch_update_result(refreshed_state.branch_name.as_str())),
+        None => {
+            return Ok(no_upstream_branch_update_result(
+                refreshed_state.branch_name.as_str(),
+            ))
+        }
     };
 
     if refreshed_state.local_oid == upstream_oid || refreshed_state.behind == 0 {
@@ -388,7 +406,8 @@ async fn update_non_current_local_branch(
         ));
     }
 
-    let verified_state = load_local_branch_update_state(repo_root, refreshed_state.branch_name.as_str())?;
+    let verified_state =
+        load_local_branch_update_state(repo_root, refreshed_state.branch_name.as_str())?;
     if verified_state.local_oid != upstream_oid {
         return Err(format!(
             "failed to verify updated branch '{}': expected {}, found {}",
@@ -429,19 +448,12 @@ pub(crate) async fn update_git_branch(
 
     let branch_state = load_local_branch_update_state(&repo_root, normalized_branch.as_str())?;
     if !branch_update_has_upstream(&branch_state) {
-        return Ok(no_upstream_branch_update_result(branch_state.branch_name.as_str()));
+        return Ok(no_upstream_branch_update_result(
+            branch_state.branch_name.as_str(),
+        ));
     }
     if branch_state.is_current {
-        pull_git(
-            workspace_id,
-            None,
-            None,
-            None,
-            None,
-            None,
-            state,
-        )
-        .await?;
+        pull_git(workspace_id, None, None, None, None, None, state).await?;
         return Ok(branch_update_result(
             branch_state.branch_name.as_str(),
             BRANCH_UPDATE_STATUS_SUCCESS,
@@ -1037,10 +1049,10 @@ pub(crate) async fn get_git_branch_file_diff_between_branches(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::types::{AppSettings, WorkspaceEntry, WorkspaceKind, WorkspaceSettings};
     use std::fs;
     use std::path::PathBuf;
     use std::process::Command;
-    use crate::types::{AppSettings, WorkspaceEntry, WorkspaceKind, WorkspaceSettings};
 
     fn create_temp_dir(label: &str) -> PathBuf {
         let path = std::env::temp_dir().join(format!("mossx-{label}-{}", uuid::Uuid::new_v4()));
@@ -1146,16 +1158,20 @@ mod tests {
         }
     }
 
-    fn tauri_state<'a>(state: &'a crate::state::AppState) -> tauri::State<'a, crate::state::AppState> {
+    fn tauri_state<'a>(
+        state: &'a crate::state::AppState,
+    ) -> tauri::State<'a, crate::state::AppState> {
         // SAFETY: `tauri::State<'a, T>` in Tauri 2.x is a single-field newtype over `&'a T`.
         // This test-only helper constructs that wrapper without a full Tauri runtime.
-        unsafe { std::mem::transmute::<&'a crate::state::AppState, tauri::State<'a, crate::state::AppState>>(state) }
+        unsafe {
+            std::mem::transmute::<
+                &'a crate::state::AppState,
+                tauri::State<'a, crate::state::AppState>,
+            >(state)
+        }
     }
 
-    fn setup_tracked_branch_fixture_with(
-        label: &str,
-        branch_name: &str,
-    ) -> (PathBuf, PathBuf) {
+    fn setup_tracked_branch_fixture_with(label: &str, branch_name: &str) -> (PathBuf, PathBuf) {
         let base_dir = create_temp_dir(label);
         let remote_root = base_dir.join("remote.git");
         let local_root = base_dir.join("local");
@@ -1182,10 +1198,7 @@ mod tests {
         run_git_sync(local_root.as_path(), &["checkout", "-b", branch_name]);
         write_file(local_root.as_path(), "feature.txt", "feature base\n");
         git_commit(local_root.as_path(), "init feature");
-        run_git_sync(
-            local_root.as_path(),
-            &["push", "-u", "origin", branch_name],
-        );
+        run_git_sync(local_root.as_path(), &["push", "-u", "origin", branch_name]);
         run_git_sync(local_root.as_path(), &["checkout", "main"]);
 
         run_git_sync(
@@ -1208,9 +1221,16 @@ mod tests {
     #[tokio::test]
     async fn update_non_current_local_branch_fast_forwards_without_switching_head() {
         let (local_root, writer_root) = setup_tracked_branch_fixture();
-        write_file(writer_root.as_path(), "feature.txt", "feature remote advance\n");
+        write_file(
+            writer_root.as_path(),
+            "feature.txt",
+            "feature remote advance\n",
+        );
         git_commit(writer_root.as_path(), "advance remote feature");
-        run_git_sync(writer_root.as_path(), &["push", "origin", "feature/update-target"]);
+        run_git_sync(
+            writer_root.as_path(),
+            &["push", "origin", "feature/update-target"],
+        );
 
         let before_state =
             load_local_branch_update_state(local_root.as_path(), "feature/update-target")
@@ -1234,9 +1254,16 @@ mod tests {
     #[tokio::test]
     async fn update_non_current_local_branch_blocks_diverged_branch() {
         let (local_root, writer_root) = setup_tracked_branch_fixture();
-        write_file(writer_root.as_path(), "feature.txt", "feature remote advance\n");
+        write_file(
+            writer_root.as_path(),
+            "feature.txt",
+            "feature remote advance\n",
+        );
         git_commit(writer_root.as_path(), "advance remote feature");
-        run_git_sync(writer_root.as_path(), &["push", "origin", "feature/update-target"]);
+        run_git_sync(
+            writer_root.as_path(),
+            &["push", "origin", "feature/update-target"],
+        );
 
         run_git_sync(local_root.as_path(), &["checkout", "feature/update-target"]);
         write_file(local_root.as_path(), "local-only.txt", "local change\n");
@@ -1248,7 +1275,10 @@ mod tests {
             .expect("update branch");
 
         assert_eq!(result.status, BRANCH_UPDATE_STATUS_BLOCKED);
-        assert_eq!(result.reason.as_deref(), Some(BRANCH_UPDATE_REASON_DIVERGED));
+        assert_eq!(
+            result.reason.as_deref(),
+            Some(BRANCH_UPDATE_REASON_DIVERGED)
+        );
     }
 
     #[tokio::test]
@@ -1294,7 +1324,10 @@ mod tests {
             .expect("update branch");
 
         assert_eq!(result.status, BRANCH_UPDATE_STATUS_NO_OP);
-        assert_eq!(result.reason.as_deref(), Some(BRANCH_UPDATE_REASON_AHEAD_ONLY));
+        assert_eq!(
+            result.reason.as_deref(),
+            Some(BRANCH_UPDATE_REASON_AHEAD_ONLY)
+        );
     }
 
     #[tokio::test]
@@ -1347,7 +1380,10 @@ mod tests {
         let temp_dir = create_temp_dir("branch-update-no-upstream");
         let remote_root = temp_dir.join("remote.git");
         let local_root = temp_dir.join("local");
-        run_git_sync(temp_dir.as_path(), &["init", "--bare", remote_root.to_string_lossy().as_ref()]);
+        run_git_sync(
+            temp_dir.as_path(),
+            &["init", "--bare", remote_root.to_string_lossy().as_ref()],
+        );
         run_git_sync(
             temp_dir.as_path(),
             &[
@@ -1358,7 +1394,10 @@ mod tests {
         );
         write_file(local_root.as_path(), "README.md", "init\n");
         git_commit(local_root.as_path(), "initial commit");
-        run_git_sync(local_root.as_path(), &["checkout", "--orphan", "local-only"]);
+        run_git_sync(
+            local_root.as_path(),
+            &["checkout", "--orphan", "local-only"],
+        );
         run_git_sync(local_root.as_path(), &["reset", "--hard"]);
         write_file(local_root.as_path(), "LOCAL.txt", "local only\n");
         git_commit(local_root.as_path(), "local only branch");
@@ -1373,17 +1412,22 @@ mod tests {
         .expect("update current branch without upstream");
 
         assert_eq!(result.status, BRANCH_UPDATE_STATUS_BLOCKED);
-        assert_eq!(result.reason.as_deref(), Some(BRANCH_UPDATE_REASON_NO_UPSTREAM));
+        assert_eq!(
+            result.reason.as_deref(),
+            Some(BRANCH_UPDATE_REASON_NO_UPSTREAM)
+        );
     }
 
     #[tokio::test]
     async fn update_non_current_local_branch_supports_space_paths_and_nested_branch_names() {
         let branch_name = "feature/nested-target";
-        let (local_root, writer_root) = setup_tracked_branch_fixture_with(
-            "branch update fixture with spaces",
-            branch_name,
+        let (local_root, writer_root) =
+            setup_tracked_branch_fixture_with("branch update fixture with spaces", branch_name);
+        write_file(
+            writer_root.as_path(),
+            "feature.txt",
+            "feature remote advance\n",
         );
-        write_file(writer_root.as_path(), "feature.txt", "feature remote advance\n");
         git_commit(writer_root.as_path(), "advance nested remote feature");
         run_git_sync(writer_root.as_path(), &["push", "origin", branch_name]);
 
@@ -1398,7 +1442,10 @@ mod tests {
         );
         assert_eq!(
             rev_parse(local_root.as_path(), &format!("refs/heads/{branch_name}")),
-            rev_parse(local_root.as_path(), &format!("refs/remotes/origin/{branch_name}"))
+            rev_parse(
+                local_root.as_path(),
+                &format!("refs/remotes/origin/{branch_name}")
+            )
         );
     }
 
