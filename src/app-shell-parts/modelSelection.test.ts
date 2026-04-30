@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { EngineType, ModelOption } from "../types";
 import {
   getEffectiveModels,
+  getEffectiveSelectedEffort,
   getEffectiveReasoningSupported,
   getEffectiveSelectedModelId,
   getNextEngineSelectedModelId,
@@ -53,6 +54,45 @@ describe("modelSelection", () => {
         defaultClaudeModelId: "claude-fallback",
       }),
     ).toBe("codex-alt");
+  });
+
+  it("prefers the active codex thread model over the shared codex selection", () => {
+    expect(
+      getEffectiveSelectedModelId({
+        activeEngine: "codex",
+        selectedModelId: "codex-default",
+        activeThreadSelectedModelId: "codex-alt",
+        hasActiveThread: true,
+        engineModelsAsOptions: engineModels,
+        engineSelectedModelIdByType: {},
+        defaultClaudeModelId: "claude-fallback",
+      }),
+    ).toBe("codex-alt");
+  });
+
+  it("uses the active codex thread effort when the thread has its own composer selection", () => {
+    expect(
+      getEffectiveSelectedEffort({
+        activeEngine: "codex",
+        hasActiveThread: true,
+        selectedEffort: "high",
+        activeThreadSelection: {
+          modelId: "codex-alt",
+          effort: null,
+        },
+      }),
+    ).toBeNull();
+  });
+
+  it("falls back to the shared effort when the active codex thread has no composer selection", () => {
+    expect(
+      getEffectiveSelectedEffort({
+        activeEngine: "codex",
+        hasActiveThread: true,
+        selectedEffort: "high",
+        activeThreadSelection: null,
+      }),
+    ).toBe("high");
   });
 
   it("falls back to the configured claude default when no claude models are loaded yet", () => {

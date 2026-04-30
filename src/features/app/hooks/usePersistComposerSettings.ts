@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import type { AppSettings } from "../../../types";
 
 type Params = {
+  enabled: boolean;
   appSettingsLoading: boolean;
   selectedModelId: string | null;
   selectedEffort: string | null;
@@ -10,6 +11,7 @@ type Params = {
 };
 
 export function usePersistComposerSettings({
+  enabled,
   appSettingsLoading,
   selectedModelId,
   selectedEffort,
@@ -17,12 +19,26 @@ export function usePersistComposerSettings({
   queueSaveSettings,
 }: Params) {
   useEffect(() => {
-    void appSettingsLoading;
-    void selectedModelId;
-    void selectedEffort;
-    void setAppSettings;
-    void queueSaveSettings;
+    if (!enabled || appSettingsLoading) {
+      return;
+    }
+    setAppSettings((current) => {
+      if (
+        current.lastComposerModelId === selectedModelId &&
+        current.lastComposerReasoningEffort === selectedEffort
+      ) {
+        return current;
+      }
+      const nextSettings = {
+        ...current,
+        lastComposerModelId: selectedModelId,
+        lastComposerReasoningEffort: selectedEffort,
+      };
+      void queueSaveSettings(nextSettings);
+      return nextSettings;
+    });
   }, [
+    enabled,
     appSettingsLoading,
     queueSaveSettings,
     selectedEffort,

@@ -1,3 +1,4 @@
+import type { ComposerSessionSelection } from "./selectedComposerSession";
 import type { EngineType, ModelOption } from "../types";
 
 type GetEffectiveSelectedModelIdOptions = {
@@ -14,6 +15,13 @@ type GetNextEngineSelectedModelIdOptions = {
   activeEngine: EngineType;
   engineModelsAsOptions: ModelOption[];
   currentSelection: string | null;
+};
+
+type GetEffectiveSelectedEffortOptions = {
+  activeEngine: EngineType;
+  hasActiveThread: boolean;
+  selectedEffort: string | null;
+  activeThreadSelection: ComposerSessionSelection | null;
 };
 
 function findModelById(models: ModelOption[], id: string | null) {
@@ -59,6 +67,9 @@ export function getEffectiveSelectedModelId({
   defaultClaudeModelId,
 }: GetEffectiveSelectedModelIdOptions) {
   if (activeEngine === "codex") {
+    if (hasActiveThread) {
+      return activeThreadSelectedModelId ?? selectedModelId;
+    }
     return selectedModelId;
   }
   const engineSelection = engineSelectedModelIdByType[activeEngine] ?? null;
@@ -78,6 +89,21 @@ export function getEffectiveSelectedModelId({
     findModelById(engineModelsAsOptions, engineSelection)?.id ??
     getDefaultModelId(engineModelsAsOptions)
   );
+}
+
+export function getEffectiveSelectedEffort({
+  activeEngine,
+  hasActiveThread,
+  selectedEffort,
+  activeThreadSelection,
+}: GetEffectiveSelectedEffortOptions) {
+  if (activeEngine !== "codex" || !hasActiveThread) {
+    return selectedEffort;
+  }
+  if (!activeThreadSelection) {
+    return selectedEffort;
+  }
+  return activeThreadSelection.effort;
 }
 
 export function getEffectiveReasoningSupported(

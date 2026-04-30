@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { MutableRefObject } from "react";
 import { getClientStoreSync, writeClientStoreValue } from "../services/clientStorage";
 import type { DebugEntry } from "../types";
@@ -293,7 +293,7 @@ export function useSelectedComposerSession({
     writeSelectionForSessionKey,
   ]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     reloadSelectedComposerSelection();
   }, [reloadSelectedComposerSelection]);
 

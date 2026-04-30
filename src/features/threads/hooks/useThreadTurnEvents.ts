@@ -152,6 +152,23 @@ export function useThreadTurnEvents({
     },
     [resolveCanonicalThreadId],
   );
+  const isCodexCompactionInFlight = useCallback(
+    (threadId: string) => codexCompactionInFlightByThreadRef.current[threadId] ?? false,
+    [codexCompactionInFlightByThreadRef],
+  );
+  const setCodexCompactionInFlight = useCallback(
+    (threadIds: string[], nextInFlight: boolean) => {
+      const compactionStateByThread = codexCompactionInFlightByThreadRef.current;
+      threadIds.forEach((targetThreadId) => {
+        if (nextInFlight) {
+          compactionStateByThread[targetThreadId] = true;
+          return;
+        }
+        delete compactionStateByThread[targetThreadId];
+      });
+    },
+    [codexCompactionInFlightByThreadRef],
+  );
   const logSessionTrace = useCallback(
     (label: string, payload: Record<string, unknown>) => {
       onDebug?.({
@@ -662,14 +679,12 @@ export function useThreadTurnEvents({
     ) => {
       const timestamp = Date.now();
       const targetThreadIds = collectCompactionTargetThreadIds(threadId);
-      const wasCodexCompacting = targetThreadIds.some(
-        (targetThreadId) => codexCompactionInFlightByThreadRef.current[targetThreadId] ?? false,
-      );
+      const wasCodexCompacting = targetThreadIds.some(isCodexCompactionInFlight);
       const isCodexCompaction = payload
         ? targetThreadIds.some((targetThreadId) => isCodexContextCompaction(targetThreadId))
         : wasCodexCompacting;
+      setCodexCompactionInFlight(targetThreadIds, false);
       targetThreadIds.forEach((targetThreadId) => {
-        delete codexCompactionInFlightByThreadRef.current[targetThreadId];
         dispatch({
           type: "ensureThread",
           workspaceId,
@@ -712,7 +727,15 @@ export function useThreadTurnEvents({
       });
       safeMessageActivity();
     },
-    [collectCompactionTargetThreadIds, dispatch, recordThreadActivity, safeMessageActivity, t],
+    [
+      collectCompactionTargetThreadIds,
+      dispatch,
+      isCodexCompactionInFlight,
+      recordThreadActivity,
+      safeMessageActivity,
+      setCodexCompactionInFlight,
+      t,
+    ],
   );
 
   const onContextCompacting = useCallback(
@@ -731,15 +754,7 @@ export function useThreadTurnEvents({
       const isCodexCompaction = targetThreadIds.some((targetThreadId) =>
         isCodexContextCompaction(targetThreadId),
       );
-      if (isCodexCompaction) {
-        targetThreadIds.forEach((targetThreadId) => {
-          codexCompactionInFlightByThreadRef.current[targetThreadId] = true;
-        });
-      } else {
-        targetThreadIds.forEach((targetThreadId) => {
-          delete codexCompactionInFlightByThreadRef.current[targetThreadId];
-        });
-      }
+      setCodexCompactionInFlight(targetThreadIds, isCodexCompaction);
       const timestamp = Date.now();
       targetThreadIds.forEach((targetThreadId) => {
         dispatch({
@@ -769,15 +784,22 @@ export function useThreadTurnEvents({
       });
       safeMessageActivity();
     },
-    [collectCompactionTargetThreadIds, dispatch, recordThreadActivity, safeMessageActivity, t],
+    [
+      collectCompactionTargetThreadIds,
+      dispatch,
+      recordThreadActivity,
+      safeMessageActivity,
+      setCodexCompactionInFlight,
+      t,
+    ],
   );
 
   const onContextCompactionFailed = useCallback(
     (workspaceId: string, threadId: string, reason: string) => {
       const timestamp = Date.now();
       const targetThreadIds = collectCompactionTargetThreadIds(threadId);
+      setCodexCompactionInFlight(targetThreadIds, false);
       targetThreadIds.forEach((targetThreadId) => {
-        delete codexCompactionInFlightByThreadRef.current[targetThreadId];
         dispatch({
           type: "ensureThread",
           workspaceId,
@@ -824,7 +846,15 @@ export function useThreadTurnEvents({
       });
       safeMessageActivity();
     },
-    [collectCompactionTargetThreadIds, dispatch, onDebug, pushThreadErrorMessage, safeMessageActivity, t],
+    [
+      collectCompactionTargetThreadIds,
+      dispatch,
+      onDebug,
+      pushThreadErrorMessage,
+      safeMessageActivity,
+      setCodexCompactionInFlight,
+      t,
+    ],
   );
 
   const onThreadSessionIdUpdated = useCallback(

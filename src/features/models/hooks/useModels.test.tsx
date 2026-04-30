@@ -19,6 +19,24 @@ const workspace: WorkspaceInfo = {
   settings: { sidebarCollapsed: false },
 };
 
+const workspaceTwo: WorkspaceInfo = {
+  id: "workspace-2",
+  name: "ccgui-2",
+  path: "/tmp/codex-2",
+  connected: true,
+  settings: { sidebarCollapsed: false },
+};
+
+function createDeferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+}
+
 describe("useModels", () => {
   beforeEach(() => {
     window.localStorage.clear();
@@ -293,6 +311,80 @@ describe("useModels", () => {
     await waitFor(() => {
       expect(result.current.selectedModelId).toBe("gpt-5.5");
       expect(result.current.selectedEffort).toBe("medium");
+    });
+  });
+
+  it("ignores stale model responses after switching workspaces", async () => {
+    const workspaceOneModels = createDeferred<Awaited<ReturnType<typeof getModelList>>>();
+    const workspaceOneConfig = createDeferred<string | null>();
+
+    vi.mocked(getModelList).mockImplementation((workspaceId: string) => {
+      if (workspaceId === workspace.id) {
+        return workspaceOneModels.promise;
+      }
+      return Promise.resolve({
+        result: {
+          data: [
+            {
+              id: "workspace-2-model",
+              model: "workspace-2-model",
+              displayName: "Workspace 2 Model",
+              supportedReasoningEfforts: [],
+              defaultReasoningEffort: null,
+              isDefault: true,
+            },
+          ],
+        },
+      });
+    });
+    vi.mocked(getConfigModel).mockImplementation((workspaceId: string) => {
+      if (workspaceId === workspace.id) {
+        return workspaceOneConfig.promise;
+      }
+      return Promise.resolve("workspace-2-model");
+    });
+
+    const { result, rerender } = renderHook(
+      ({ activeWorkspace }: { activeWorkspace: WorkspaceInfo }) =>
+        useModels({ activeWorkspace }),
+      {
+        initialProps: {
+          activeWorkspace: workspace,
+        },
+      },
+    );
+
+    await waitFor(() => {
+      expect(getModelList).toHaveBeenCalledWith("workspace-1");
+    });
+
+    rerender({ activeWorkspace: workspaceTwo });
+
+    await waitFor(() => {
+      expect(result.current.selectedModel?.model).toBe("workspace-2-model");
+    });
+
+    await act(async () => {
+      workspaceOneConfig.resolve("workspace-1-model");
+      workspaceOneModels.resolve({
+        result: {
+          data: [
+            {
+              id: "workspace-1-model",
+              model: "workspace-1-model",
+              displayName: "Workspace 1 Model",
+              supportedReasoningEfforts: [],
+              defaultReasoningEffort: null,
+              isDefault: true,
+            },
+          ],
+        },
+      });
+      await Promise.resolve();
+    });
+
+    await waitFor(() => {
+      expect(result.current.selectedModel?.model).toBe("workspace-2-model");
     });
   });
 });

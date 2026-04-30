@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { DebugEntry, ModelOption, WorkspaceInfo } from "../../../types";
 import { getConfigModel, getModelList } from "../../../services/tauri";
 import { CODEX_MODEL_CATALOG } from "../codexModelCatalog";
@@ -154,7 +154,8 @@ export function useModels({
   const [selectedEffort, setSelectedEffortState] = useState<string | null>(null);
   const [modelMappingVersion, setModelMappingVersion] = useState(0);
   const lastFetchedWorkspaceId = useRef<string | null>(null);
-  const inFlight = useRef(false);
+  const inFlightWorkspaceId = useRef<string | null>(null);
+  const latestRefreshRequestId = useRef(0);
   const hasUserSelectedModel = useRef(false);
   const hasUserSelectedEffort = useRef(false);
   const lastWorkspaceId = useRef<string | null>(null);
@@ -162,6 +163,8 @@ export function useModels({
 
   const workspaceId = activeWorkspace?.id ?? null;
   const isConnected = Boolean(activeWorkspace?.connected);
+  const activeWorkspaceIdRef = useRef<string | null>(workspaceId);
+  activeWorkspaceIdRef.current = workspaceId;
 
   // Apply model mapping to raw models
   useEffect(() => {
@@ -210,7 +213,7 @@ export function useModels({
     };
   }, []);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (workspaceId === lastWorkspaceId.current) {
       return;
     }
@@ -220,7 +223,7 @@ export function useModels({
     setConfigModel(null);
   }, [workspaceId]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const nextSelectionScopeKey = selectionScopeKey ?? null;
     if (nextSelectionScopeKey === lastSelectionScopeKey.current) {
       return;
@@ -302,10 +305,13 @@ export function useModels({
     if (!workspaceId || !isConnected) {
       return;
     }
-    if (inFlight.current) {
+    if (inFlightWorkspaceId.current === workspaceId) {
       return;
     }
-    inFlight.current = true;
+    inFlightWorkspaceId.current = workspaceId;
+    const refreshRequestId = latestRefreshRequestId.current + 1;
+    latestRefreshRequestId.current = refreshRequestId;
+    const requestedWorkspaceId = workspaceId;
     onDebug?.({
       id: `${Date.now()}-client-model-list`,
       timestamp: Date.now(),
@@ -355,6 +361,12 @@ export function useModels({
         label: "model/list response",
         payload: response,
       });
+      const isStaleResponse =
+        latestRefreshRequestId.current !== refreshRequestId ||
+        activeWorkspaceIdRef.current !== requestedWorkspaceId;
+      if (isStaleResponse) {
+        return;
+      }
       setConfigModel(configModelFromConfig);
       const rawData = response?.result?.data ?? response?.data ?? [];
       const dataFromServer: ModelOption[] = rawData.map((item: any) => ({
@@ -400,7 +412,7 @@ export function useModels({
       })();
       const selectableData = mergeCodexSelectableModels(data);
       setRawModels(data);
-      lastFetchedWorkspaceId.current = workspaceId;
+      lastFetchedWorkspaceId.current = requestedWorkspaceId;
       if (!preferredSelectionReady && !hasUserSelectedModel.current) {
         return;
       }
@@ -430,7 +442,9 @@ export function useModels({
         }
       }
     } finally {
-      inFlight.current = false;
+      if (inFlightWorkspaceId.current === requestedWorkspaceId) {
+        inFlightWorkspaceId.current = null;
+      }
     }
   }, [
     isConnected,
@@ -469,7 +483,7 @@ export function useModels({
     setSelectedEffortState(nextEffort);
   }, [selectedEffort, selectedModel]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!models.length) {
       return;
     }
