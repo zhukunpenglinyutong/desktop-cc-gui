@@ -43,6 +43,64 @@ describe("conversationNormalization", () => {
     );
   });
 
+  it("treats note-card injected user text and note attachments as the same user intent", () => {
+    const injectedText = [
+      "请按这个执行",
+      "",
+      "<note-card-context>",
+      '<note-card title="发布清单" archived="false">',
+      "先构建，再发布",
+      "",
+      "Images:",
+      "- deploy.png | /tmp/ws/.ccgui/note_card/ws/assets/note-1/deploy.png",
+      "</note-card>",
+      "</note-card-context>",
+    ].join("\n");
+
+    expect(
+      isEquivalentUserObservation(
+        {
+          text: "请按这个执行",
+          images: [],
+        },
+        {
+          text: injectedText,
+          images: [
+            "asset://localhost/tmp/ws/.ccgui/note_card/ws/assets/note-1/deploy.png",
+          ],
+        },
+      ),
+    ).toBe(true);
+  });
+
+  it("does not treat note body bullet lines as injected note attachments", () => {
+    const injectedText = [
+      "请按这个执行",
+      "",
+      "<note-card-context>",
+      '<note-card title="发布清单" archived="false">',
+      "下面这行只是正文，不是图片附件：",
+      "- deploy.png | /tmp/ws/.ccgui/note_card/ws/assets/note-1/deploy.png",
+      "</note-card>",
+      "</note-card-context>",
+    ].join("\n");
+
+    expect(
+      isEquivalentUserObservation(
+        {
+          text: "请按这个执行",
+          images: [],
+        },
+        {
+          text: injectedText,
+          images: [
+            "asset://localhost/tmp/ws/.ccgui/note_card/ws/assets/note-1/deploy.png",
+          ],
+        },
+      ),
+    ).toBe(false);
+  });
+
   it("builds message signature with role-aware normalization", () => {
     expect(
       buildComparableConversationMessageSignature({
@@ -52,6 +110,40 @@ describe("conversationNormalization", () => {
         text: "[User Input] hello codex",
       }),
     ).toContain("hello codex");
+  });
+
+  it("keeps user message signature stable when note-card attachments only differ in image transport form", () => {
+    const injectedText = [
+      "请按这个执行",
+      "",
+      "<note-card-context>",
+      '<note-card title="发布清单" archived="false">',
+      "先构建，再发布",
+      "",
+      "Images:",
+      "- deploy.png | /tmp/ws/.ccgui/note_card/ws/assets/note-1/deploy.png",
+      "</note-card>",
+      "</note-card-context>",
+    ].join("\n");
+
+    expect(
+      buildComparableConversationMessageSignature({
+        id: "user-1",
+        kind: "message",
+        role: "user",
+        text: injectedText,
+        images: [
+          "asset://localhost/tmp/ws/.ccgui/note_card/ws/assets/note-1/deploy.png",
+        ],
+      }),
+    ).toBe(
+      buildComparableConversationMessageSignature({
+        id: "user-2",
+        kind: "message",
+        role: "user",
+        text: injectedText,
+      }),
+    );
   });
 
   it("treats near-duplicate assistant payloads as equivalent", () => {

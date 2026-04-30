@@ -168,6 +168,116 @@ describe("history loaders", () => {
     }
   });
 
+  it("prefers more complete local Codex history when runtime note-card turns only differ by injected attachment images", async () => {
+    const noteCardText = [
+      "请按这个执行",
+      "",
+      "<note-card-context>",
+      '<note-card title="发布清单" archived="false">',
+      "先构建，再发布",
+      "",
+      "Images:",
+      "- deploy.png | /tmp/ws/.ccgui/note_card/ws/assets/note-1/deploy.png",
+      "</note-card>",
+      "</note-card-context>",
+    ].join("\n");
+    const loader = createCodexHistoryLoader({
+      workspaceId: "ws-note-card-history",
+      resumeThread: vi.fn().mockResolvedValue({
+        result: {
+          thread: {
+            turns: [
+              {
+                id: "turn-1",
+                items: [
+                  {
+                    id: "remote-user-1",
+                    type: "userMessage",
+                    content: [{ type: "text", text: noteCardText }],
+                    image_urls: [
+                      "asset://localhost/tmp/ws/.ccgui/note_card/ws/assets/note-1/deploy.png",
+                    ],
+                  },
+                  {
+                    id: "remote-assistant-1",
+                    type: "agentMessage",
+                    text: "第一轮回复",
+                  },
+                ],
+              },
+            ],
+          },
+        },
+      }),
+      loadCodexSession: vi.fn().mockResolvedValue({
+        entries: [
+          {
+            type: "response_item",
+            payload: {
+              type: "message",
+              role: "user",
+              content: [{ type: "input_text", text: noteCardText }],
+            },
+          },
+          {
+            type: "response_item",
+            payload: {
+              type: "message",
+              role: "assistant",
+              content: [{ type: "output_text", text: "第一轮回复" }],
+            },
+          },
+          {
+            type: "response_item",
+            payload: {
+              type: "message",
+              role: "user",
+              content: [{ type: "input_text", text: "继续补充一下" }],
+            },
+          },
+          {
+            type: "response_item",
+            payload: {
+              type: "message",
+              role: "assistant",
+              content: [{ type: "output_text", text: "第二轮回复" }],
+            },
+          },
+        ],
+      }),
+    });
+
+    const snapshot = await loader.load("thread-note-card-history");
+
+    expect(
+      snapshot.items.filter(
+        (item): item is Extract<typeof snapshot.items[number], { kind: "message" }> =>
+          item.kind === "message",
+      ),
+    ).toEqual([
+      expect.objectContaining({
+        kind: "message",
+        role: "user",
+        text: noteCardText,
+      }),
+      expect.objectContaining({
+        kind: "message",
+        role: "assistant",
+        text: "第一轮回复",
+      }),
+      expect.objectContaining({
+        kind: "message",
+        role: "user",
+        text: "继续补充一下",
+      }),
+      expect.objectContaining({
+        kind: "message",
+        role: "assistant",
+        text: "第二轮回复",
+      }),
+    ]);
+  });
+
   it("parses Codex response_item message string content", () => {
     const items = parseCodexSessionHistory({
       entries: [

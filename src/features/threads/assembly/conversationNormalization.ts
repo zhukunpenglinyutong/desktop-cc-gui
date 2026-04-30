@@ -17,6 +17,9 @@ const SHARED_SESSION_SYNC_PREFIX_REGEX =
   /^Shared session context sync\.\s*Continue from these recent turns before answering the new request:\s*/i;
 const SHARED_SESSION_CURRENT_REQUEST_MARKER_REGEX =
   /(?:\r?\n){1,2}Current user request:\s*(?:\r?\n)?/i;
+const NOTE_CARD_CONTEXT_SUFFIX_REGEX =
+  /(?:\r?\n){1,2}(<note-card-context>[\s\S]*<\/note-card-context>)\s*$/i;
+const NOTE_CARD_ATTACHMENT_LINE_REGEX = /^\s*-\s*(.+?)\s*\|\s*(.+?)\s*$/;
 
 function stripInjectedProjectMemoryBlock(text: string): string {
   const match = PROJECT_MEMORY_BLOCK_REGEX.exec(text.trimStart());
@@ -74,6 +77,108 @@ function stripSharedSessionContextSyncWrapper(text: string): string {
   return extracted.trim().length > 0 ? extracted : text;
 }
 
+function normalizeComparableImageIdentity(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return "";
+  }
+  const hasWindowsDrivePrefix = (candidate: string) => /^[A-Za-z][:|][\\/]/.test(candidate);
+  const hasWindowsDriveHost = (candidate: string) => /^[A-Za-z][:|]/.test(candidate);
+  const decodePath = (candidate: string) => {
+    try {
+      return decodeURIComponent(candidate);
+    } catch {
+      return candidate;
+    }
+  };
+
+  let withoutFileScheme = trimmed;
+  const lowerCased = trimmed.toLowerCase();
+  if (lowerCased.startsWith("asset://localhost")) {
+    withoutFileScheme = trimmed.slice("asset://localhost".length);
+    if (!withoutFileScheme.startsWith("/")) {
+      withoutFileScheme = `/${withoutFileScheme}`;
+    }
+    if (withoutFileScheme.startsWith("//")) {
+      withoutFileScheme = withoutFileScheme.slice(1);
+    }
+    withoutFileScheme = decodePath(withoutFileScheme);
+  } else if (lowerCased.startsWith("file://")) {
+    const remainder = trimmed.slice("file://".length).trim();
+    if (!remainder) {
+      return "";
+    }
+    if (/^localhost\//i.test(remainder)) {
+      withoutFileScheme = decodePath(remainder.replace(/^localhost\//i, ""));
+    } else if (
+      !remainder.startsWith("/")
+      && !hasWindowsDrivePrefix(remainder)
+      && !hasWindowsDriveHost(remainder)
+    ) {
+      const slashIndex = remainder.indexOf("/");
+      if (slashIndex === -1) {
+        withoutFileScheme = `//${remainder}`;
+      } else {
+        const host = remainder.slice(0, slashIndex);
+        const tail = remainder.slice(slashIndex);
+        withoutFileScheme = `//${host}${decodePath(tail)}`;
+      }
+    } else {
+      withoutFileScheme = decodePath(remainder.replace(/\|/g, ":"));
+    }
+    if (
+      !withoutFileScheme.startsWith("/")
+      && !hasWindowsDrivePrefix(withoutFileScheme)
+      && !hasWindowsDriveHost(withoutFileScheme)
+    ) {
+      withoutFileScheme = `/${withoutFileScheme}`;
+    }
+  }
+
+  const normalized = withoutFileScheme.replace(/\\/g, "/");
+  if (/^\/[A-Za-z]:\//.test(normalized)) {
+    return normalized.slice(1).toLowerCase();
+  }
+  if (/^[A-Za-z]:\//.test(normalized)) {
+    return normalized.toLowerCase();
+  }
+  return normalized;
+}
+
+function splitInjectedNoteCardContext(text: string) {
+  const normalized = text.trimEnd();
+  const contextMatch = normalized.match(NOTE_CARD_CONTEXT_SUFFIX_REGEX);
+  if (!contextMatch?.[1] || contextMatch.index === undefined) {
+    return {
+      text,
+      attachmentPaths: [] as string[],
+    };
+  }
+  const lines = contextMatch[1].split(/\r?\n/);
+  const attachmentPaths: string[] = [];
+  let isInsideImagesSection = false;
+  for (const line of lines) {
+    const trimmedLine = line.trim();
+    if (trimmedLine === "Images:") {
+      isInsideImagesSection = true;
+      continue;
+    }
+    if (!isInsideImagesSection) {
+      continue;
+    }
+    const matchedAttachment = NOTE_CARD_ATTACHMENT_LINE_REGEX.exec(line)?.[2]?.trim() ?? "";
+    if (matchedAttachment) {
+      attachmentPaths.push(matchedAttachment);
+      continue;
+    }
+    isInsideImagesSection = false;
+  }
+  return {
+    text: normalized.slice(0, contextMatch.index).replace(/\s+$/, ""),
+    attachmentPaths,
+  };
+}
+
 function extractLatestUserInputTextPreserveFormatting(text: string): string {
   const userInputMatches = [...text.matchAll(USER_INPUT_BLOCK_MARKER_REGEX)];
   if (userInputMatches.length === 0) {
@@ -97,11 +202,30 @@ export function normalizeComparableUserText(text: string): string {
       stripModeFallbackBlock(stripInjectedProjectMemoryBlock(latestUserInput)),
     ),
   );
-  return normalized.replace(/\s+/g, " ").trim();
+  return splitInjectedNoteCardContext(normalized).text.replace(/\s+/g, " ").trim();
 }
 
-export function normalizeUserImages(images: string[] | undefined): string[] {
-  return Array.isArray(images) ? images : [];
+export function normalizeUserImages(
+  images: string[] | undefined,
+  text?: string,
+): string[] {
+  const normalizedImages = Array.isArray(images) ? images : [];
+  if (!text) {
+    return normalizedImages;
+  }
+  const { attachmentPaths } = splitInjectedNoteCardContext(text);
+  if (attachmentPaths.length === 0) {
+    return normalizedImages;
+  }
+  const injectedImageIdentitySet = new Set(
+    attachmentPaths.map((path) => normalizeComparableImageIdentity(path)).filter(Boolean),
+  );
+  if (injectedImageIdentitySet.size === 0) {
+    return normalizedImages;
+  }
+  return normalizedImages.filter(
+    (image) => !injectedImageIdentitySet.has(normalizeComparableImageIdentity(image)),
+  );
 }
 
 export function areSameUserImages(left: string[], right: string[]): boolean {
@@ -117,6 +241,7 @@ export function buildComparableUserMessageKey(input: {
 }) {
   return `${normalizeComparableUserText(input.text)}\u0000${normalizeUserImages(
     input.images,
+    input.text,
   ).join("\u0001")}`;
 }
 
@@ -127,8 +252,8 @@ export function isEquivalentUserObservation(
   return (
     normalizeComparableUserText(left.text) === normalizeComparableUserText(right.text) &&
     areSameUserImages(
-      normalizeUserImages(left.images),
-      normalizeUserImages(right.images),
+      normalizeUserImages(left.images, left.text),
+      normalizeUserImages(right.images, right.text),
     )
   );
 }
@@ -156,7 +281,11 @@ export function normalizeComparableMessageTextByRole(
 export function buildComparableConversationMessageSignature(
   item: MessageConversationItem,
 ) {
-  const normalizedImages = Array.isArray(item.images) ? item.images.join("\u0001") : "";
+  const normalizedImages = (
+    item.role === "user"
+      ? normalizeUserImages(item.images, item.text)
+      : (Array.isArray(item.images) ? item.images : [])
+  ).join("\u0001");
   return [
     item.role,
     normalizeComparableMessageTextByRole(item.role, item.text),

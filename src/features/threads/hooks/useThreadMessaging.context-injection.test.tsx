@@ -314,5 +314,16 @@ describe("useThreadMessaging context injection", () => {
         }),
       }),
     );
+    expect(dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "upsertItem",
+        item: expect.objectContaining({
+          kind: "message",
+          role: "user",
+          text: expect.stringContaining("<note-card-context>"),
+          images: ["/tmp/ws/.ccgui/note_card/ws/assets/note-1/deploy.png"],
+        }),
+      }),
+    );
   });
 });

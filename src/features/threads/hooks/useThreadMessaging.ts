@@ -741,8 +741,10 @@ export function useThreadMessaging({
         { kind: "generatedImage" }
       > | null = null;
       if (shouldAddOptimisticUserBubble) {
-        const optimisticText = visibleUserText;
-        if (optimisticText || images.length > 0) {
+        const optimisticDisplayText = visibleUserText;
+        const optimisticText = finalText;
+        const optimisticImages = finalImages;
+        if (optimisticDisplayText || optimisticImages.length > 0) {
           optimisticUserItem = {
             id: `optimistic-user-${Date.now()}-${Math.random()
               .toString(36)
@@ -750,7 +752,7 @@ export function useThreadMessaging({
             kind: "message",
             role: "user",
             text: optimisticText,
-            images: images.length > 0 ? images : undefined,
+            images: optimisticImages.length > 0 ? optimisticImages : undefined,
             collaborationMode: userCollaborationMode,
             selectedAgentName,
             selectedAgentIcon,
@@ -764,7 +766,7 @@ export function useThreadMessaging({
           });
           const optimisticGeneratedImagePrompt =
             resolvedEngine === "codex"
-              ? extractOptimisticGeneratedImagePrompt(optimisticText)
+              ? extractOptimisticGeneratedImagePrompt(optimisticDisplayText)
               : null;
           if (optimisticGeneratedImagePrompt) {
             optimisticGeneratedImageItem = createOptimisticGeneratedImageProcessingItem({

@@ -1,5 +1,6 @@
 import type { ConversationItem } from "../../../types";
 import { NOTE_CARD_CONTEXT_SUMMARY_PREFIX } from "../../note-cards/utils/noteCardContextInjection";
+import { isEquivalentUserObservation } from "../../threads/assembly/conversationNormalization";
 
 export type NoteCardContextAttachment = {
   fileName: string;
@@ -21,6 +22,16 @@ export type NoteCardContextSummary = {
 const NOTE_CARD_CONTEXT_BLOCK_REGEX = /<note-card-context>\s*([\s\S]*?)\s*<\/note-card-context>/i;
 const NOTE_CARD_BLOCK_REGEX = /<note-card\b([^>]*)>([\s\S]*?)<\/note-card>/gi;
 const NOTE_CARD_CONTEXT_SUFFIX_REGEX = /(?:\r?\n){1,2}(<note-card-context>[\s\S]*<\/note-card-context>)\s*$/i;
+const OPTIMISTIC_USER_MESSAGE_PREFIX = "optimistic-user-";
+const QUEUED_HANDOFF_MESSAGE_PREFIX = "queued-handoff-";
+
+function isPendingUserBubbleId(id: string) {
+  return (
+    id.startsWith(OPTIMISTIC_USER_MESSAGE_PREFIX)
+    || id.startsWith(QUEUED_HANDOFF_MESSAGE_PREFIX)
+  );
+}
+
 function dedupeImagePaths(paths: string[]) {
   return Array.from(
     new Set(paths.map((entry) => entry.trim()).filter((entry) => entry.length > 0)),
@@ -185,6 +196,12 @@ export function buildSuppressedUserNoteCardContextMessageIdSet(items: Conversati
         continue;
       }
       if (previousItem.role === "user") {
+        if (
+          isPendingUserBubbleId(previousItem.id)
+          && isEquivalentUserObservation(previousItem, item)
+        ) {
+          continue;
+        }
         break;
       }
       const assistantSummaryKey = buildNoteCardContextSummaryKey(

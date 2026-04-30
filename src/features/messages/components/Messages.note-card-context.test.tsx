@@ -3,6 +3,7 @@ import { cleanup, fireEvent, render } from "@testing-library/react";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import type { ConversationItem } from "../../../types";
 import { Messages } from "./Messages";
+import { buildSuppressedUserNoteCardContextMessageIdSet } from "./messagesNoteCardContext";
 
 describe("Messages note-card context", () => {
   afterEach(() => {
@@ -191,6 +192,42 @@ describe("Messages note-card context", () => {
     expect(userBubble?.textContent ?? "").not.toContain("发布清单");
   });
 
+  it("still filters note-card attachment images from a suppressed live user bubble", () => {
+    const noteCardImagePath = "/tmp/ws/.ccgui/note_card/ws/assets/note-1/deploy.png";
+    const items: ConversationItem[] = [
+      {
+        id: "assistant-note-card-summary-live",
+        kind: "message",
+        role: "assistant",
+        text:
+          '【便签上下文】\n<note-card-context>\n<note-card title="发布清单" archived="false">\n先构建，再发布\n\nImages:\n- deploy.png | /tmp/ws/.ccgui/note_card/ws/assets/note-1/deploy.png\n</note-card>\n</note-card-context>',
+      },
+      {
+        id: "optimistic-user-live",
+        kind: "message",
+        role: "user",
+        text:
+          '请按这个执行\n\n<note-card-context>\n<note-card title="发布清单" archived="false">\n先构建，再发布\n\nImages:\n- deploy.png | /tmp/ws/.ccgui/note_card/ws/assets/note-1/deploy.png\n</note-card>\n</note-card-context>',
+        images: [noteCardImagePath],
+      },
+    ];
+
+    const { container } = render(
+      <Messages
+        items={items}
+        threadId="thread-note-card-live-dedupe"
+        workspaceId="ws-1"
+        isThinking
+        activeEngine="codex"
+        openTargets={[]}
+        selectedOpenAppId=""
+      />,
+    );
+
+    expect(container.querySelectorAll(".note-card-context-summary-card")).toHaveLength(1);
+    expect(container.querySelectorAll(".message-image-thumb")).toHaveLength(0);
+  });
+
   it("does not suppress a later user note-card card when the matching summary belongs to an earlier turn", () => {
     const items: ConversationItem[] = [
       {
@@ -234,5 +271,65 @@ describe("Messages note-card context", () => {
     );
 
     expect(container.querySelectorAll(".note-card-context-summary-card")).toHaveLength(2);
+  });
+
+  it("suppresses duplicated user note-card cards even when pending user bubbles sit between summary and real user", () => {
+    const suppressedIds = buildSuppressedUserNoteCardContextMessageIdSet([
+      {
+        id: "assistant-note-card-summary-1",
+        kind: "message",
+        role: "assistant",
+        text:
+          '【便签上下文】\n<note-card-context>\n<note-card title="发布清单" archived="false">\n先构建，再发布\n</note-card>\n</note-card-context>',
+      },
+      {
+        id: "optimistic-user-1",
+        kind: "message",
+        role: "user",
+        text: "请按这个执行",
+      },
+      {
+        id: "queued-handoff-1",
+        kind: "message",
+        role: "user",
+        text: "请按这个执行",
+      },
+      {
+        id: "real-user-1",
+        kind: "message",
+        role: "user",
+        text:
+          '请按这个执行\n\n<note-card-context>\n<note-card title="发布清单" archived="false">\n先构建，再发布\n</note-card>\n</note-card-context>',
+      },
+    ]);
+
+    expect(Array.from(suppressedIds)).toEqual(["real-user-1"]);
+  });
+
+  it("does not suppress a real user note-card card across an unrelated pending user bubble", () => {
+    const suppressedIds = buildSuppressedUserNoteCardContextMessageIdSet([
+      {
+        id: "assistant-note-card-summary-1",
+        kind: "message",
+        role: "assistant",
+        text:
+          '【便签上下文】\n<note-card-context>\n<note-card title="发布清单" archived="false">\n先构建，再发布\n</note-card>\n</note-card-context>',
+      },
+      {
+        id: "queued-handoff-previous-turn",
+        kind: "message",
+        role: "user",
+        text: "先帮我看上一轮的问题",
+      },
+      {
+        id: "real-user-1",
+        kind: "message",
+        role: "user",
+        text:
+          '请按这个执行\n\n<note-card-context>\n<note-card title="发布清单" archived="false">\n先构建，再发布\n</note-card>\n</note-card-context>',
+      },
+    ]);
+
+    expect(Array.from(suppressedIds)).toEqual([]);
   });
 });

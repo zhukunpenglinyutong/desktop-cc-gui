@@ -70,6 +70,78 @@ describe("threadReducer normalized realtime", () => {
     ]);
   });
 
+  it("replaces first-turn optimistic user when normalized realtime includes injected note-card context", () => {
+    const base: ThreadState = {
+      ...initialState,
+      itemsByThread: {
+        "thread-1": [
+          {
+            id: "optimistic-user-1",
+            kind: "message",
+            role: "user",
+            text: "请结合这条便签分析一下",
+          },
+        ],
+      },
+    };
+
+    const next = threadReducer(base, {
+      type: "applyNormalizedRealtimeEvent",
+      workspaceId: "ws-1",
+      threadId: "thread-1",
+      hasCustomName: false,
+      event: {
+        engine: "codex",
+        workspaceId: "ws-1",
+        threadId: "thread-1",
+        eventId: "evt-user-note-card-1",
+        itemKind: "message",
+        timestampMs: 1000,
+        operation: "itemCompleted",
+        sourceMethod: "item/completed",
+        item: {
+          id: "real-user-note-card-1",
+          kind: "message",
+          role: "user",
+          text: [
+            "请结合这条便签分析一下",
+            "",
+            "<note-card-context>",
+            '<note-card title="发布清单" archived="false">',
+            "先构建，再发布",
+            "",
+            "Images:",
+            "- deploy.png | /tmp/ws/.ccgui/note_card/ws/assets/note-1/deploy.png",
+            "</note-card>",
+            "</note-card-context>",
+          ].join("\n"),
+          images: ["/tmp/ws/.ccgui/note_card/ws/assets/note-1/deploy.png"],
+        },
+      },
+    });
+
+    expect(next.itemsByThread["thread-1"]).toEqual([
+      {
+        id: "real-user-note-card-1",
+        kind: "message",
+        role: "user",
+        text: [
+          "请结合这条便签分析一下",
+          "",
+          "<note-card-context>",
+          '<note-card title="发布清单" archived="false">',
+          "先构建，再发布",
+          "",
+          "Images:",
+          "- deploy.png | /tmp/ws/.ccgui/note_card/ws/assets/note-1/deploy.png",
+          "</note-card>",
+          "</note-card-context>",
+        ].join("\n"),
+        images: ["/tmp/ws/.ccgui/note_card/ws/assets/note-1/deploy.png"],
+      },
+    ]);
+  });
+
   it("strips duplicated leading snapshot while preserving tail", () => {
     const snapshot = "你好！我是你的 AI 联合架构师。有什么可以帮你的吗？";
     const withEchoAndTail = `${snapshot}\n\n${snapshot}\n\n我还可以帮你排查线上问题。`;

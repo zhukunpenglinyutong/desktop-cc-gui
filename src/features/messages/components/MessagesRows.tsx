@@ -789,11 +789,11 @@ export const MessageRow = memo(function MessageRow({
   const noteCardImagePathSet = useMemo(
     () =>
       new Set(
-        (resolvedNoteCardSummary?.imagePaths ?? []).map((path) =>
+        (noteCardSummary?.imagePaths ?? []).map((path) =>
           normalizeNoteCardImageIdentity(path),
         ),
       ),
-    [resolvedNoteCardSummary?.imagePaths],
+    [noteCardSummary?.imagePaths],
   );
   const imageItems = useMemo(() => {
     if (!item.images || item.images.length === 0) {
