@@ -486,6 +486,7 @@ export type AppSettings = {
   claudeBin: string | null;
   codexBin: string | null;
   codexArgs: string | null;
+  terminalShellPath: string | null;
   backendMode: BackendMode;
   remoteBackendHost: string;
   remoteBackendToken: string | null;

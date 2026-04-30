@@ -723,6 +723,13 @@ const enPart1 = {
     // Behavior settings
     behaviorStreaming: "Streaming Output",
     behaviorStreamingDesc: "When enabled, responses appear word by word. Disable to show complete responses at once.",
+    terminalShellPathTitle: "Terminal shell",
+    terminalShellPathDesc: "Choose the executable used when opening the built-in terminal.",
+    terminalShellPathLabel: "Terminal shell path",
+    terminalShellPathPlaceholder: "C:\\Program Files\\PowerShell\\7\\pwsh.exe",
+    terminalShellPathHint: "Leave empty to use COMSPEC on Windows or SHELL on macOS/Linux.",
+    terminalShellPathSave: "Save terminal shell path",
+    terminalShellPathClear: "Clear terminal shell path",
     behaviorProxyTitle: "Network Proxy",
     behaviorProxyDesc: "When enabled, ccgui and its networked child processes prefer this proxy.",
     behaviorProxyEnabled: "Enable network proxy",

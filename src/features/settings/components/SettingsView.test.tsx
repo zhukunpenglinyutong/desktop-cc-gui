@@ -105,6 +105,7 @@ const baseSettings: AppSettings = {
   claudeBin: null,
   codexBin: null,
   codexArgs: null,
+  terminalShellPath: null,
   backendMode: "local",
   remoteBackendHost: "127.0.0.1:4732",
   remoteBackendToken: null,
@@ -808,6 +809,35 @@ describe("SettingsView Display", () => {
     await waitFor(() => {
       expect(onUpdateAppSettings).toHaveBeenCalledWith(
         expect.objectContaining({ theme: "dark" }),
+      );
+    });
+  });
+
+  it("persists terminal shell path from behavior settings", async () => {
+    const onUpdateAppSettings = vi.fn().mockResolvedValue(undefined);
+    renderDisplaySection({ onUpdateAppSettings });
+
+    const basicSection = document.querySelector(".settings-section-basic");
+    const behaviorTab = basicSection?.querySelectorAll(".settings-basic-tab")[1];
+    if (!(behaviorTab instanceof HTMLElement)) {
+      throw new Error("Expected behavior tab");
+    }
+    await act(async () => {
+      fireEvent.click(behaviorTab);
+    });
+    await waitFor(() => {
+      expect(screen.getByText("Terminal shell")).toBeTruthy();
+    });
+    fireEvent.change(screen.getByLabelText("Terminal shell path"), {
+      target: { value: "  C:\\Program Files\\PowerShell\\7\\pwsh.exe  " },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save terminal shell path" }));
+
+    await waitFor(() => {
+      expect(onUpdateAppSettings).toHaveBeenCalledWith(
+        expect.objectContaining({
+          terminalShellPath: "C:\\Program Files\\PowerShell\\7\\pwsh.exe",
+        }),
       );
     });
   });

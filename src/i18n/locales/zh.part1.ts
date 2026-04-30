@@ -742,6 +742,13 @@ const zhPart1 = {
     // 行为设置
     behaviorStreaming: "流式输出",
     behaviorStreamingDesc: "启用后响应将逐字显示。禁用则等待完整响应后一次性展示。",
+    terminalShellPathTitle: "终端 Shell",
+    terminalShellPathDesc: "设置打开内置终端时使用的可执行文件。",
+    terminalShellPathLabel: "终端 Shell 路径",
+    terminalShellPathPlaceholder: "C:\\Program Files\\PowerShell\\7\\pwsh.exe",
+    terminalShellPathHint: "留空时继续使用 Windows COMSPEC 或 macOS/Linux SHELL。",
+    terminalShellPathSave: "保存终端 Shell 路径",
+    terminalShellPathClear: "清除终端 Shell 路径",
     behaviorProxyTitle: "网络代理",
     behaviorProxyDesc: "启用后，ccgui 及其启动的联网子进程将优先使用该代理。",
     behaviorProxyEnabled: "启用网络代理",

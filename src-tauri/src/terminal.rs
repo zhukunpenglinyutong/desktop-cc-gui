@@ -10,6 +10,7 @@ use tokio::sync::Mutex;
 use crate::backend::events::{EventSink, TerminalOutput};
 use crate::event_sink::TauriEventSink;
 use crate::state::AppState;
+use crate::types::AppSettings;
 
 pub(crate) struct TerminalSession {
     pub(crate) id: String,
@@ -27,7 +28,7 @@ fn terminal_key(workspace_id: &str, terminal_id: &str) -> String {
     format!("{workspace_id}:{terminal_id}")
 }
 
-fn shell_path() -> String {
+fn default_shell_path() -> String {
     #[cfg(windows)]
     {
         std::env::var("COMSPEC").unwrap_or_else(|_| "cmd.exe".to_string())
@@ -36,6 +37,16 @@ fn shell_path() -> String {
     {
         std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".to_string())
     }
+}
+
+fn resolve_terminal_shell_path(settings: &AppSettings) -> String {
+    settings
+        .terminal_shell_path
+        .as_deref()
+        .map(str::trim)
+        .filter(|path| !path.is_empty())
+        .map(ToOwned::to_owned)
+        .unwrap_or_else(default_shell_path)
 }
 
 fn resolve_locale() -> String {
@@ -196,7 +207,11 @@ pub(crate) async fn terminal_open(
         .openpty(size)
         .map_err(|e| format!("Failed to open pty: {e}"))?;
 
-    let mut cmd = CommandBuilder::new(shell_path());
+    let shell_path = {
+        let settings = state.app_settings.lock().await;
+        resolve_terminal_shell_path(&settings)
+    };
+    let mut cmd = CommandBuilder::new(shell_path);
     cmd.cwd(cwd);
     // On Unix, pass -i for interactive shell; cmd.exe on Windows doesn't support it
     #[cfg(not(windows))]
@@ -306,4 +321,22 @@ pub(crate) async fn terminal_close(
         .ok_or_else(|| "Terminal session not found".to_string())?;
     kill_terminal_session(session).await;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::resolve_terminal_shell_path;
+    use crate::types::AppSettings;
+
+    #[test]
+    fn resolve_terminal_shell_path_prefers_configured_path() {
+        let mut settings = AppSettings::default();
+        settings.terminal_shell_path =
+            Some("  C:\\Program Files\\PowerShell\\7\\pwsh.exe  ".to_string());
+
+        assert_eq!(
+            resolve_terminal_shell_path(&settings),
+            "C:\\Program Files\\PowerShell\\7\\pwsh.exe"
+        );
+    }
 }

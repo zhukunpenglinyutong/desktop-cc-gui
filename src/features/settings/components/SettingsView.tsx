@@ -309,6 +309,7 @@ export function SettingsView({
   const [claudePathDraft, setClaudePathDraft] = useState(appSettings.claudeBin ?? "");
   const [codexPathDraft, setCodexPathDraft] = useState(appSettings.codexBin ?? "");
   const [codexArgsDraft, setCodexArgsDraft] = useState(appSettings.codexArgs ?? "");
+  const [terminalShellPathDraft, setTerminalShellPathDraft] = useState(appSettings.terminalShellPath ?? "");
   const [remoteHostDraft, setRemoteHostDraft] = useState(appSettings.remoteBackendHost);
   const [remoteTokenDraft, setRemoteTokenDraft] = useState(appSettings.remoteBackendToken ?? "");
   const [uiFontDraft, setUiFontDraft] = useState(() =>
@@ -728,6 +729,10 @@ export function SettingsView({
   }, [appSettings.codexArgs]);
 
   useEffect(() => {
+    setTerminalShellPathDraft(appSettings.terminalShellPath ?? "");
+  }, [appSettings.terminalShellPath]);
+
+  useEffect(() => {
     setRemoteHostDraft(appSettings.remoteBackendHost);
   }, [appSettings.remoteBackendHost]);
 
@@ -855,10 +860,15 @@ export function SettingsView({
   const nextClaudeBin = claudePathDraft.trim() ? claudePathDraft.trim() : null;
   const nextCodexBin = codexPathDraft.trim() ? codexPathDraft.trim() : null;
   const nextCodexArgs = codexArgsDraft.trim() ? codexArgsDraft.trim() : null;
+  const nextTerminalShellPath = terminalShellPathDraft.trim()
+    ? terminalShellPathDraft.trim()
+    : null;
   const claudeDirty = nextClaudeBin !== (appSettings.claudeBin ?? null);
   const codexDirty =
     nextCodexBin !== (appSettings.codexBin ?? null) ||
     nextCodexArgs !== (appSettings.codexArgs ?? null);
+  const terminalShellPathDirty =
+    nextTerminalShellPath !== (appSettings.terminalShellPath ?? null);
 
   const handleSaveClaudeSettings = async () => {
     setIsSavingSettings(true);
@@ -883,6 +893,24 @@ export function SettingsView({
     } finally {
       setIsSavingSettings(false);
     }
+  };
+
+  const handleSaveTerminalShellPath = async () => {
+    await onUpdateAppSettings({
+      ...appSettings,
+      terminalShellPath: nextTerminalShellPath,
+    });
+  };
+
+  const handleClearTerminalShellPath = async () => {
+    setTerminalShellPathDraft("");
+    if (appSettings.terminalShellPath == null) {
+      return;
+    }
+    await onUpdateAppSettings({
+      ...appSettings,
+      terminalShellPath: null,
+    });
   };
 
   const handleCommitRemoteHost = async () => {
@@ -1898,6 +1926,69 @@ export function SettingsView({
                           />
                         </CardAction>
                       </CardHeader>
+                    </Card>
+                    <Card className="settings-basic-group-card settings-basic-shadcn-card settings-basic-terminal-card">
+                      <CardHeader className="settings-basic-sounds-card-header settings-proxy-card-header">
+                        <div className="settings-card-switch-meta">
+                          <CardTitle className="settings-subsection-title">
+                            <span className="settings-proxy-card-title">
+                              <TerminalSquare size={16} aria-hidden />
+                              {t("settings.terminalShellPathTitle")}
+                            </span>
+                          </CardTitle>
+                          <CardDescription className="settings-subsection-subtitle">
+                            {t("settings.terminalShellPathDesc")}
+                          </CardDescription>
+                        </div>
+                      </CardHeader>
+                      <CardContent className="settings-basic-sounds-card-content settings-proxy-card-content">
+                        <div className="settings-proxy-input-row">
+                          <Label
+                            className="settings-visually-hidden"
+                            htmlFor="terminal-shell-path"
+                          >
+                            {t("settings.terminalShellPathLabel")}
+                          </Label>
+                          <div className="settings-proxy-input-shell">
+                            <Input
+                              id="terminal-shell-path"
+                              className="settings-proxy-input"
+                              value={terminalShellPathDraft}
+                              onChange={(event) => setTerminalShellPathDraft(event.target.value)}
+                              placeholder={t("settings.terminalShellPathPlaceholder")}
+                              spellCheck={false}
+                              autoCapitalize="off"
+                              autoCorrect="off"
+                            />
+                          </div>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            className="settings-proxy-save-btn"
+                            onClick={() => void handleSaveTerminalShellPath()}
+                            disabled={!terminalShellPathDirty}
+                            aria-label={t("settings.terminalShellPathSave")}
+                          >
+                            <Save size={14} aria-hidden />
+                            {t("settings.save")}
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            className="settings-button-compact"
+                            onClick={() => void handleClearTerminalShellPath()}
+                            disabled={!terminalShellPathDraft && appSettings.terminalShellPath == null}
+                            aria-label={t("settings.terminalShellPathClear")}
+                          >
+                            {t("settings.clear")}
+                          </Button>
+                        </div>
+                        <div className="settings-help settings-sound-hint settings-sound-hint-shadcn settings-proxy-hint">
+                          <span className="settings-sound-hint-copy">
+                            {t("settings.terminalShellPathHint")}
+                          </span>
+                        </div>
+                      </CardContent>
                     </Card>
                     <Card
                       className={`settings-basic-group-card settings-basic-shadcn-card settings-basic-proxy-card${

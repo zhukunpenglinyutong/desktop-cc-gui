@@ -102,6 +102,32 @@ describe("useAppSettings", () => {
     expect(result.current.settings.codexAutoCompactionThresholdPercent).toBe(150);
   });
 
+  it("normalizes terminal shell path while loading settings", async () => {
+    getAppSettingsMock.mockResolvedValue({
+      terminalShellPath: "  C:\\Program Files\\PowerShell\\7\\pwsh.exe  ",
+    } as AppSettings);
+
+    const { result } = renderHook(() => useAppSettings());
+
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    expect(result.current.settings.terminalShellPath).toBe(
+      "C:\\Program Files\\PowerShell\\7\\pwsh.exe",
+    );
+  });
+
+  it("normalizes blank terminal shell path to null while loading settings", async () => {
+    getAppSettingsMock.mockResolvedValue({
+      terminalShellPath: "   ",
+    } as AppSettings);
+
+    const { result } = renderHook(() => useAppSettings());
+
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    expect(result.current.settings.terminalShellPath).toBeNull();
+  });
+
   it("upgrades legacy warm ttl to the current startup default when loading", async () => {
     getAppSettingsMock.mockResolvedValue({
       codexWarmTtlSeconds: 300,

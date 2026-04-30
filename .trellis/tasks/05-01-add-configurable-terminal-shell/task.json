@@ -1,0 +1,53 @@
+{
+  "id": "add-configurable-terminal-shell",
+  "name": "add-configurable-terminal-shell",
+  "title": "Add configurable built-in terminal shell path",
+  "description": "Allow users to configure the executable path used by the built-in terminal while preserving existing platform fallback behavior.",
+  "status": "planning",
+  "dev_type": "cross-layer",
+  "scope": "settings,terminal",
+  "package": null,
+  "priority": "P1",
+  "creator": "watsonk1998",
+  "assignee": "watsonk1998",
+  "createdAt": "2026-05-01",
+  "completedAt": null,
+  "branch": "fix/configurable-terminal-shell",
+  "base_branch": "main",
+  "worktree_path": null,
+  "current_phase": 3,
+  "next_action": [
+    {
+      "phase": 1,
+      "action": "openspec"
+    },
+    {
+      "phase": 2,
+      "action": "implement"
+    },
+    {
+      "phase": 3,
+      "action": "check"
+    },
+    {
+      "phase": 4,
+      "action": "record-session"
+    }
+  ],
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    "openspec/changes/add-configurable-terminal-shell",
+    "src-tauri/src/terminal.rs",
+    "src-tauri/src/shared/settings_core.rs",
+    "src/features/settings/components/SettingsView.tsx",
+    "src/features/settings/hooks/useAppSettings.ts"
+  ],
+  "notes": "Linked to GitHub issues #445 and #395.",
+  "meta": {
+    "openspecChange": "add-configurable-terminal-shell"
+  }
+}

@@ -734,6 +734,8 @@ pub(crate) struct AppSettings {
     pub(crate) claude_bin: Option<String>,
     #[serde(default, rename = "codexArgs")]
     pub(crate) codex_args: Option<String>,
+    #[serde(default, rename = "terminalShellPath")]
+    pub(crate) terminal_shell_path: Option<String>,
     #[serde(default, rename = "backendMode")]
     pub(crate) backend_mode: BackendMode,
     #[serde(default = "default_remote_backend_host", rename = "remoteBackendHost")]
@@ -1452,6 +1454,7 @@ impl Default for AppSettings {
             codex_bin: None,
             claude_bin: None,
             codex_args: None,
+            terminal_shell_path: None,
             backend_mode: BackendMode::Local,
             remote_backend_host: default_remote_backend_host(),
             remote_backend_token: None,

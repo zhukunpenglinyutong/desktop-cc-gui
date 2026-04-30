@@ -111,6 +111,7 @@ const defaultSettings: AppSettings = {
   claudeBin: null,
   codexBin: null,
   codexArgs: null,
+  terminalShellPath: null,
   backendMode: "local",
   remoteBackendHost: "127.0.0.1:4732",
   remoteBackendToken: null,
@@ -260,6 +261,9 @@ function normalizeAppSettings(
     claudeBin: settings.claudeBin?.trim() ? settings.claudeBin.trim() : null,
     codexBin: settings.codexBin?.trim() ? settings.codexBin.trim() : null,
     codexArgs: settings.codexArgs?.trim() ? settings.codexArgs.trim() : null,
+    terminalShellPath: settings.terminalShellPath?.trim()
+      ? settings.terminalShellPath.trim()
+      : null,
     webServicePort: normalizeWebServicePort(settings.webServicePort),
     systemProxyUrl: settings.systemProxyUrl?.trim()
       ? settings.systemProxyUrl.trim()

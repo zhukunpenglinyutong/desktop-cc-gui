@@ -120,6 +120,15 @@ fn sanitize_theme_settings(settings: &mut AppSettings) {
     settings.custom_theme_preset_id = sanitize_theme_preset_id(&settings.custom_theme_preset_id);
 }
 
+fn sanitize_terminal_shell_path(settings: &mut AppSettings) {
+    settings.terminal_shell_path = settings
+        .terminal_shell_path
+        .as_deref()
+        .map(str::trim)
+        .filter(|path| !path.is_empty())
+        .map(ToOwned::to_owned);
+}
+
 pub(crate) fn resolve_window_theme_preference(settings: &AppSettings) -> String {
     if settings.theme == THEME_CUSTOM {
         return resolve_theme_preset_appearance(&settings.custom_theme_preset_id).to_string();
@@ -147,6 +156,7 @@ pub(crate) async fn get_app_settings_core(app_settings: &Mutex<AppSettings>) -> 
     let mut settings = app_settings.lock().await.clone();
     settings.normalize_unified_exec_policy();
     settings.sanitize_runtime_pool_settings();
+    sanitize_terminal_shell_path(&mut settings);
     settings.experimental_collab_enabled = false;
     settings.ui_scale = sanitize_ui_scale(settings.ui_scale);
     sanitize_theme_settings(&mut settings);
@@ -162,6 +172,7 @@ pub(crate) async fn update_app_settings_core(
     normalized.normalize_unified_exec_policy();
     normalized.experimental_collab_enabled = false;
     normalized.sanitize_runtime_pool_settings();
+    sanitize_terminal_shell_path(&mut normalized);
     sanitize_theme_settings(&mut normalized);
     validate_ui_scale(normalized.ui_scale)?;
     proxy_core::validate_proxy_settings(&normalized)?;
@@ -180,6 +191,7 @@ pub(crate) async fn restore_app_settings_core(
     let mut normalized = previous.clone();
     normalized.normalize_unified_exec_policy();
     normalized.experimental_collab_enabled = false;
+    sanitize_terminal_shell_path(&mut normalized);
     normalized.ui_scale = sanitize_ui_scale(normalized.ui_scale);
     sanitize_theme_settings(&mut normalized);
     write_settings(settings_path, &normalized)?;
@@ -500,6 +512,27 @@ mod tests {
         assert!(!app_settings_change_requires_codex_restart(
             &previous, &updated
         ));
+    }
+
+    #[tokio::test]
+    async fn get_app_settings_core_sanitizes_terminal_shell_path() {
+        let mut settings = AppSettings::default();
+        settings.terminal_shell_path =
+            Some("  C:\\Program Files\\PowerShell\\7\\pwsh.exe  ".to_string());
+
+        let resolved = get_app_settings_core(&Mutex::new(settings)).await;
+
+        assert_eq!(
+            resolved.terminal_shell_path.as_deref(),
+            Some("C:\\Program Files\\PowerShell\\7\\pwsh.exe")
+        );
+
+        let mut blank_settings = AppSettings::default();
+        blank_settings.terminal_shell_path = Some("   ".to_string());
+
+        let resolved_blank = get_app_settings_core(&Mutex::new(blank_settings)).await;
+
+        assert_eq!(resolved_blank.terminal_shell_path, None);
     }
 
     #[tokio::test]
