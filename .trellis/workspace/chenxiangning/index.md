@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-8.md`
-- **Total Sessions**: 240
+- **Total Sessions**: 241
 - **Last Active**: 2026-04-30
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-8.md` | ~204 | Active |
+| `journal-8.md` | ~268 | Active |
 | `journal-7.md` | ~1950 | Archived |
 | `journal-6.md` | ~1961 | Archived |
 | `journal-5.md` | ~1949 | Archived |
@@ -36,6 +36,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 241 | 2026-04-30 | Spec Hub 独立阅读窗体与需求池优化 | `a6dd7b21` | `feature/fix-0.4.12` |
 | 240 | 2026-04-30 | Git 面板显式预览操作 | `da9ea37463ebb530839fdcccf675208f1c306ad6` | `feature/fix-0.4.12` |
 | 239 | 2026-04-30 | 修复 Git 提交区大面板卡死并归档规范 | `df4709b8c110279d3c543feeea1d6156f430a3e9` | `feature/fix-0.4.12` |
 | 238 | 2026-04-30 | 统一提交作用域与历史提交区归一化 | `c2bbf539` | `feature/fix-0.4.12` |

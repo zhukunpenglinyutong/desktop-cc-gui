@@ -202,3 +202,67 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 241: Spec Hub 独立阅读窗体与需求池优化
+
+**Date**: 2026-04-30
+**Task**: Spec Hub 独立阅读窗体与需求池优化
+**Branch**: `feature/fix-0.4.12`
+
+### Summary
+
+(Add summary)
+
+### Main Changes
+
+任务目标:
+- 完成 Spec Hub 本轮视图层优化，补齐需求池、默认折叠执行台语义、独立阅读窗体与阅读导航布局。
+- 收口 detached Spec Hub 的跨平台兼容性，重点复核 macOS 拖拽与 Windows 窗口行为。
+
+主要改动:
+- 新增 detached Spec Hub window 路由、session snapshot、reader-only surface 与恢复链路。
+- 在 Spec Hub reader 中加入默认折叠的阅读导航、左侧变更区折叠与拖宽、任务分组未完成提醒点。
+- 统一主入口直接打开 detached Spec Hub，并补齐需求池/backlog 的筛选、右键迁移与文案。
+- review 阶段额外修复 macOS menubar 拖拽对 Text node target 的兼容问题，并把 detached Spec Hub 默认高度下调到与 detached file explorer 更接近。
+
+涉及模块:
+- openspec/changes/spec-hub-viewer-and-detached-window
+- openspec/changes/archive/2026-04-30-spec-hub-change-backlog-and-console-defaults
+- src/features/spec/**
+- src/features/files/components/FileExplorerWorkspace.tsx
+- src/router.tsx
+- src/services/tauri.ts
+- src/styles/spec-hub.css
+- src/styles/spec-hub.reader-layout.css
+- src/i18n/locales/en.part2.ts
+- src/i18n/locales/zh.part2.ts
+
+验证结果:
+- pnpm vitest run src/features/spec/components/DetachedSpecHubWindow.test.tsx src/features/spec/detachedSpecHub.test.ts src/features/spec/components/spec-hub/reader/SpecHubSurfaceFrame.test.tsx src/features/spec/components/SpecHub.test.tsx src/router.test.tsx 通过
+- openspec validate "spec-hub-viewer-and-detached-window" --type change --strict --no-interactive 通过
+- npm run typecheck 通过
+- npm run lint 存在仓库既有 warning：src/features/threads/hooks/useThreadTurnEvents.ts 中 3 条 react-hooks/exhaustive-deps warning，本次未触碰该文件
+
+后续事项:
+- 视需要继续做 detached Spec Hub 的人工实机验证，重点看 macOS overlay title bar 和 Windows 原生标题栏下的最终交互手感。
+- 当前工作树仍有与 note-card / composer / backend 相关的未提交改动，不属于本次 Spec Hub commit。
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `a6dd7b21` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
