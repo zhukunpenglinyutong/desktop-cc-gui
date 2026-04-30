@@ -227,4 +227,72 @@ describe("useModels", () => {
       expect(result.current.selectedModel?.displayName).toBe("Demo");
     });
   });
+
+  it("resets the user-selected model and effort when the selection scope changes within the same workspace", async () => {
+    vi.mocked(getModelList).mockResolvedValueOnce({
+      result: {
+        data: [
+          {
+            id: "gpt-5.5",
+            model: "gpt-5.5",
+            displayName: "gpt-5.5",
+            supportedReasoningEfforts: [
+              { reasoningEffort: "medium", description: "Medium" },
+            ],
+            defaultReasoningEffort: "medium",
+            isDefault: true,
+          },
+        ],
+      },
+    });
+    vi.mocked(getConfigModel).mockResolvedValueOnce("gpt-5.5");
+
+    type HookProps = {
+      preferredModelId: string | null;
+      preferredEffort: string | null;
+      selectionScopeKey: string;
+    };
+
+    const { result, rerender } = renderHook(
+      ({ preferredModelId, preferredEffort, selectionScopeKey }: HookProps) =>
+        useModels({
+          activeWorkspace: workspace,
+          preferredModelId,
+          preferredEffort,
+          preferredSelectionReady: true,
+          selectionScopeKey,
+        }),
+      {
+        initialProps: {
+          preferredModelId: "gpt-5.5",
+          preferredEffort: "medium",
+          selectionScopeKey: "ws-1:thread-a",
+        },
+      },
+    );
+
+    await waitFor(() => {
+      expect(result.current.selectedModelId).toBe("gpt-5.5");
+      expect(result.current.selectedEffort).toBe("medium");
+    });
+
+    act(() => {
+      result.current.setSelectedEffort("high");
+    });
+
+    await waitFor(() => {
+      expect(result.current.selectedEffort).toBe("high");
+    });
+
+    rerender({
+      preferredModelId: "gpt-5.5",
+      preferredEffort: "medium",
+      selectionScopeKey: "ws-1:thread-b",
+    });
+
+    await waitFor(() => {
+      expect(result.current.selectedModelId).toBe("gpt-5.5");
+      expect(result.current.selectedEffort).toBe("medium");
+    });
+  });
 });

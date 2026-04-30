@@ -3,6 +3,8 @@ import type { EngineType, ModelOption } from "../types";
 type GetEffectiveSelectedModelIdOptions = {
   activeEngine: EngineType;
   selectedModelId: string | null;
+  activeThreadSelectedModelId: string | null;
+  hasActiveThread: boolean;
   engineModelsAsOptions: ModelOption[];
   engineSelectedModelIdByType: Partial<Record<EngineType, string | null>>;
   defaultClaudeModelId: string;
@@ -50,6 +52,8 @@ export function getNextEngineSelectedModelId({
 export function getEffectiveSelectedModelId({
   activeEngine,
   selectedModelId,
+  activeThreadSelectedModelId,
+  hasActiveThread,
   engineModelsAsOptions,
   engineSelectedModelIdByType,
   defaultClaudeModelId,
@@ -59,9 +63,21 @@ export function getEffectiveSelectedModelId({
   }
   const engineSelection = engineSelectedModelIdByType[activeEngine] ?? null;
   if (engineModelsAsOptions.length === 0) {
+    if (hasActiveThread) {
+      return activeThreadSelectedModelId ?? (activeEngine === "claude" ? defaultClaudeModelId : null);
+    }
     return activeEngine === "claude" ? engineSelection ?? defaultClaudeModelId : engineSelection;
   }
-  return findModelById(engineModelsAsOptions, engineSelection)?.id ?? getDefaultModelId(engineModelsAsOptions);
+  if (hasActiveThread) {
+    return (
+      findModelById(engineModelsAsOptions, activeThreadSelectedModelId)?.id ??
+      getDefaultModelId(engineModelsAsOptions)
+    );
+  }
+  return (
+    findModelById(engineModelsAsOptions, engineSelection)?.id ??
+    getDefaultModelId(engineModelsAsOptions)
+  );
 }
 
 export function getEffectiveReasoningSupported(

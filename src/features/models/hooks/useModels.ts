@@ -18,6 +18,7 @@ type UseModelsOptions = {
   preferredModelId?: string | null;
   preferredEffort?: string | null;
   preferredSelectionReady?: boolean;
+  selectionScopeKey?: string;
 };
 
 const CONFIG_MODEL_DESCRIPTION = "Configured in CODEX_HOME/config.toml";
@@ -144,6 +145,7 @@ export function useModels({
   preferredModelId = null,
   preferredEffort = null,
   preferredSelectionReady = true,
+  selectionScopeKey,
 }: UseModelsOptions) {
   const [rawModels, setRawModels] = useState<ModelOption[]>([]);
   const [models, setModels] = useState<ModelOption[]>([]);
@@ -156,6 +158,7 @@ export function useModels({
   const hasUserSelectedModel = useRef(false);
   const hasUserSelectedEffort = useRef(false);
   const lastWorkspaceId = useRef<string | null>(null);
+  const lastSelectionScopeKey = useRef<string | null>(selectionScopeKey ?? null);
 
   const workspaceId = activeWorkspace?.id ?? null;
   const isConnected = Boolean(activeWorkspace?.connected);
@@ -216,6 +219,16 @@ export function useModels({
     lastWorkspaceId.current = workspaceId;
     setConfigModel(null);
   }, [workspaceId]);
+
+  useEffect(() => {
+    const nextSelectionScopeKey = selectionScopeKey ?? null;
+    if (nextSelectionScopeKey === lastSelectionScopeKey.current) {
+      return;
+    }
+    hasUserSelectedModel.current = false;
+    hasUserSelectedEffort.current = false;
+    lastSelectionScopeKey.current = nextSelectionScopeKey;
+  }, [selectionScopeKey]);
 
   useEffect(() => {
     if (selectedEffort === null) {
@@ -494,6 +507,7 @@ export function useModels({
     selectedEffort,
     selectedModelId,
     resolveEffort,
+    selectionScopeKey,
   ]);
 
   return {

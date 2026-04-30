@@ -17,27 +17,11 @@ export function usePersistComposerSettings({
   queueSaveSettings,
 }: Params) {
   useEffect(() => {
-    if (appSettingsLoading) {
-      return;
-    }
-    if (!selectedModelId && selectedEffort === null) {
-      return;
-    }
-    setAppSettings((current) => {
-      if (
-        current.lastComposerModelId === selectedModelId &&
-        current.lastComposerReasoningEffort === selectedEffort
-      ) {
-        return current;
-      }
-      const nextSettings = {
-        ...current,
-        lastComposerModelId: selectedModelId,
-        lastComposerReasoningEffort: selectedEffort,
-      };
-      void queueSaveSettings(nextSettings);
-      return nextSettings;
-    });
+    void appSettingsLoading;
+    void selectedModelId;
+    void selectedEffort;
+    void setAppSettings;
+    void queueSaveSettings;
   }, [
     appSettingsLoading,
     queueSaveSettings,

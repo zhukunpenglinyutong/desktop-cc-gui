@@ -46,6 +46,8 @@ describe("modelSelection", () => {
       getEffectiveSelectedModelId({
         activeEngine: "codex",
         selectedModelId: "codex-alt",
+        activeThreadSelectedModelId: null,
+        hasActiveThread: false,
         engineModelsAsOptions: engineModels,
         engineSelectedModelIdByType: {},
         defaultClaudeModelId: "claude-fallback",
@@ -58,6 +60,8 @@ describe("modelSelection", () => {
       getEffectiveSelectedModelId({
         activeEngine: "claude",
         selectedModelId: "codex-alt",
+        activeThreadSelectedModelId: null,
+        hasActiveThread: false,
         engineModelsAsOptions: [],
         engineSelectedModelIdByType: {},
         defaultClaudeModelId: "claude-fallback",
@@ -73,6 +77,8 @@ describe("modelSelection", () => {
       getEffectiveSelectedModelId({
         activeEngine: "gemini",
         selectedModelId: "codex-alt",
+        activeThreadSelectedModelId: null,
+        hasActiveThread: false,
         engineModelsAsOptions: engineModels,
         engineSelectedModelIdByType,
         defaultClaudeModelId: "claude-fallback",
@@ -88,6 +94,42 @@ describe("modelSelection", () => {
       getEffectiveSelectedModelId({
         activeEngine: "opencode",
         selectedModelId: "codex-alt",
+        activeThreadSelectedModelId: null,
+        hasActiveThread: false,
+        engineModelsAsOptions: engineModels,
+        engineSelectedModelIdByType,
+        defaultClaudeModelId: "claude-fallback",
+      }),
+    ).toBe("engine-default");
+  });
+
+  it("prefers the active thread model over the global engine selection", () => {
+    const engineSelectedModelIdByType: Partial<Record<EngineType, string | null>> = {
+      claude: "engine-default",
+    };
+    expect(
+      getEffectiveSelectedModelId({
+        activeEngine: "claude",
+        selectedModelId: "codex-alt",
+        activeThreadSelectedModelId: "engine-alt",
+        hasActiveThread: true,
+        engineModelsAsOptions: engineModels,
+        engineSelectedModelIdByType,
+        defaultClaudeModelId: "claude-fallback",
+      }),
+    ).toBe("engine-alt");
+  });
+
+  it("ignores the global engine selection for active threads without a stored model", () => {
+    const engineSelectedModelIdByType: Partial<Record<EngineType, string | null>> = {
+      claude: "engine-alt",
+    };
+    expect(
+      getEffectiveSelectedModelId({
+        activeEngine: "claude",
+        selectedModelId: "codex-alt",
+        activeThreadSelectedModelId: null,
+        hasActiveThread: true,
         engineModelsAsOptions: engineModels,
         engineSelectedModelIdByType,
         defaultClaudeModelId: "claude-fallback",

@@ -49,6 +49,7 @@ import {
 import type { WorkspaceHomeDeleteResult } from "../features/workspaces/components/WorkspaceHome";
 import type { EngineType, MessageSendOptions, WorkspaceInfo } from "../types";
 import type { KanbanContextMode } from "../features/kanban/utils/contextMode";
+import type { ComposerSessionSelection } from "./selectedComposerSession";
 
 const KANBAN_TAG_REGEX = /&@[^\s]+/g;
 const KANBAN_SCHEDULER_INTERVAL_MS = 20_000;
@@ -110,33 +111,39 @@ export async function syncKanbanExecutionEngineAndModel(params: {
   engine: "claude" | "codex";
   modelId?: string | null;
   setActiveEngine: (engine: "claude" | "codex") => Promise<void> | void;
-  setSelectedModelId: (modelId: string) => void;
-  setEngineSelectedModelIdByType: (
-    updater: (prev: Record<string, string>) => Record<string, string>,
-  ) => void;
-}): Promise<{ shouldSyncComposerSelection: boolean; outboundModel?: string }> {
+}): Promise<{
+  shouldSyncComposerSelection: boolean;
+  outboundModel?: string;
+  composerSelection: ComposerSessionSelection | null;
+}> {
   const shouldSyncComposerSelection = shouldSyncComposerEngineForKanbanExecution({
     activate: params.activate,
   });
   if (shouldSyncComposerSelection) {
     await params.setActiveEngine(params.engine);
   }
-  let outboundModel: string | undefined;
-  if (params.modelId) {
-    if (shouldSyncComposerSelection) {
-      if (params.engine === "codex") {
-        params.setSelectedModelId(params.modelId);
-      } else {
-        params.setEngineSelectedModelIdByType((prev) => ({
-          ...prev,
-          [params.engine]: params.modelId,
-        }));
-      }
-    } else {
-      outboundModel = params.modelId;
-    }
+  if (!params.modelId) {
+    return {
+      shouldSyncComposerSelection,
+      outboundModel: undefined,
+      composerSelection: null,
+    };
   }
-  return { shouldSyncComposerSelection, outboundModel };
+  if (!shouldSyncComposerSelection) {
+    return {
+      shouldSyncComposerSelection,
+      outboundModel: params.modelId,
+      composerSelection: null,
+    };
+  }
+  return {
+    shouldSyncComposerSelection,
+    outboundModel: undefined,
+    composerSelection: {
+      modelId: params.modelId,
+      effort: null,
+    },
+  };
 }
 
 function isRewindSupportedThreadId(threadId: string): boolean {
@@ -210,8 +217,8 @@ export function useAppShellSections(ctx: any) {
     clearDraftForThread,
     removeImagesForThread,
     t,
-    setSelectedModelId,
-    setEngineSelectedModelIdByType,
+    persistComposerSelectionForThread,
+    resolveComposerSelectionForThread,
     threadItemsByThread,
     threadStatusById,
     kanbanTasks,
@@ -1066,6 +1073,20 @@ export function useAppShellSections(ctx: any) {
     [kanbanUpdateTask],
   );
 
+  const persistKanbanTaskComposerSelection = useCallback(
+    (workspaceId: string, threadId: string, modelId: string | null | undefined) => {
+      if (!modelId) {
+        return;
+      }
+      const currentSelection = resolveComposerSelectionForThread(workspaceId, threadId);
+      persistComposerSelectionForThread(workspaceId, threadId, {
+        modelId,
+        effort: currentSelection?.effort ?? null,
+      });
+    },
+    [persistComposerSelectionForThread, resolveComposerSelectionForThread],
+  );
+
   const launchKanbanTaskExecution = useCallback(
     async (params: {
       taskId: string;
@@ -1120,14 +1141,13 @@ export function useAppShellSections(ctx: any) {
         await connectWorkspace(workspace);
         const engine = (task.engineType ?? activeEngine) as "claude" | "codex";
         const workspaceThreads = threadsByWorkspace[workspace.id] ?? [];
-        const { outboundModel } = await syncKanbanExecutionEngineAndModel({
-          activate: params.activate,
-          engine,
-          modelId: task.modelId,
-          setActiveEngine,
-          setSelectedModelId,
-          setEngineSelectedModelIdByType,
-        });
+        const { outboundModel, shouldSyncComposerSelection, composerSelection } =
+          await syncKanbanExecutionEngineAndModel({
+            activate: params.activate,
+            engine,
+            modelId: task.modelId,
+            setActiveEngine,
+          });
 
         const shouldForceNewThread = Boolean(params.forceNewThread);
         const canonicalTaskThreadId =
@@ -1167,6 +1187,10 @@ export function useAppShellSections(ctx: any) {
             throw new Error("thread_create_failed");
           }
           kanbanUpdateTask(task.id, { threadId });
+        }
+
+        if (shouldSyncComposerSelection && composerSelection?.modelId) {
+          persistKanbanTaskComposerSelection(workspace.id, threadId, composerSelection.modelId);
         }
 
         const executionStartedAt = Date.now();
@@ -1210,9 +1234,8 @@ export function useAppShellSections(ctx: any) {
       activeEngine,
       threadsByWorkspace,
       setActiveEngine,
-      setSelectedModelId,
-      setEngineSelectedModelIdByType,
       startThreadForWorkspace,
+      persistKanbanTaskComposerSelection,
       kanbanUpdateTask,
       sendUserMessageToThread,
       updateTaskExecution,
@@ -1234,18 +1257,6 @@ export function useAppShellSections(ctx: any) {
       const engine = (task.engineType ?? activeEngine) as "claude" | "codex";
       const workspaceThreads = threadsByWorkspace[workspace.id] ?? [];
       await setActiveEngine(engine);
-
-      // Apply the model that was selected when the task was created
-      if (task.modelId) {
-        if (engine === "codex") {
-          setSelectedModelId(task.modelId);
-        } else {
-          setEngineSelectedModelIdByType((prev) => ({
-            ...prev,
-            [engine]: task.modelId,
-          }));
-        }
-      }
 
       if (task.threadId) {
         let resolvedThreadId =
@@ -1306,6 +1317,7 @@ export function useAppShellSections(ctx: any) {
           resolvedThreadId.startsWith("claude-pending-") ||
           resolvedThreadId.startsWith("opencode-pending-");
         if (canActivateExistingThread) {
+          persistKanbanTaskComposerSelection(workspace.id, resolvedThreadId, task.modelId);
           setActiveThreadId(resolvedThreadId, workspace.id);
           return;
         }
@@ -1314,6 +1326,7 @@ export function useAppShellSections(ctx: any) {
       const threadId = await startThreadForWorkspace(workspace.id, { engine });
       if (threadId) {
         kanbanUpdateTask(task.id, { threadId });
+        persistKanbanTaskComposerSelection(workspace.id, threadId, task.modelId);
         setActiveThreadId(threadId, workspace.id);
       }
     },
@@ -1326,8 +1339,7 @@ export function useAppShellSections(ctx: any) {
       kanbanUpdateTask,
       activeEngine,
       setActiveEngine,
-      setSelectedModelId,
-      setEngineSelectedModelIdByType,
+      persistKanbanTaskComposerSelection,
       threadStatusById,
       threadsByWorkspace,
       kanbanTasks,

@@ -161,6 +161,8 @@ import {
 } from "./app-shell-parts/modelSelection";
 import { useOpenCodeSelection } from "./app-shell-parts/useOpenCodeSelection";
 import { useSelectedAgentSession } from "./app-shell-parts/useSelectedAgentSession";
+import { useSelectedComposerSession } from "./app-shell-parts/useSelectedComposerSession";
+import type { ComposerSessionSelection } from "./app-shell-parts/selectedComposerSession";
 import { APP_SHELL_LEGACY_CONTEXT_DEFAULTS } from "./app-shell-parts/legacyContextDefaults";
 import { usePanelLockState } from "./app-shell-parts/usePanelLockState";
 import { usePlanApplyHandlers } from "./app-shell-parts/usePlanApplyHandlers";
@@ -550,6 +552,11 @@ export function AppShell() {
     setDepth: setGitRootScanDepth,
     clear: clearGitRootCandidates,
   } = useGitRepoScan(activeWorkspace);
+  const [composerSelectionScopeKey, setComposerSelectionScopeKey] = useState(
+    `${activeWorkspaceId ?? "__workspace__unknown__"}:__thread__none__`,
+  );
+  const [threadComposerSelection, setThreadComposerSelection] =
+    useState<ComposerSessionSelection | null>(null);
   const {
     models,
     selectedModelId,
@@ -565,6 +572,7 @@ export function AppShell() {
     preferredModelId: appSettings.lastComposerModelId,
     preferredEffort: appSettings.lastComposerReasoningEffort,
     preferredSelectionReady: !appSettingsLoading,
+    selectionScopeKey: composerSelectionScopeKey,
   });
 
   const {
@@ -697,10 +705,21 @@ export function AppShell() {
 
   const [engineSelectedModelIdByType, setEngineSelectedModelIdByType] =
     useState<Partial<Record<EngineType, string | null>>>({});
+  const composerSelectionHandlerRef = useRef<
+    (selection: ComposerSessionSelection | null) => void
+  >(() => {});
+  const persistActiveComposerSelection = useCallback(
+    (selection: ComposerSessionSelection | null) => {
+      composerSelectionHandlerRef.current(selection);
+    },
+    [],
+  );
 
   const handleSelectModel = useCallback(
     (id: string | null) => {
-      if (id === null) return;
+      if (id === null) {
+        return;
+      }
       if (import.meta.env.DEV) {
         console.info("[model/select]", {
           activeEngine,
@@ -709,14 +728,18 @@ export function AppShell() {
       }
       if (activeEngine === "codex") {
         setSelectedModelId(id);
-        return;
+      } else {
+        setEngineSelectedModelIdByType((prev) => ({
+          ...prev,
+          [activeEngine]: id,
+        }));
       }
-      setEngineSelectedModelIdByType((prev) => ({
-        ...prev,
-        [activeEngine]: id,
-      }));
+      persistActiveComposerSelection({
+        modelId: id,
+        effort: selectedEffort,
+      });
     },
-    [activeEngine, setSelectedModelId],
+    [activeEngine, persistActiveComposerSelection, selectedEffort, setSelectedModelId],
   );
 
   const effectiveModels = useMemo(() => {
@@ -745,11 +768,20 @@ export function AppShell() {
     return getEffectiveSelectedModelId({
       activeEngine,
       selectedModelId,
+      activeThreadSelectedModelId: threadComposerSelection?.modelId ?? null,
+      hasActiveThread: !composerSelectionScopeKey.endsWith(":__thread__none__"),
       engineModelsAsOptions,
       engineSelectedModelIdByType,
       defaultClaudeModelId: DEFAULT_CLAUDE_MODEL_ID,
     });
-  }, [activeEngine, engineModelsAsOptions, engineSelectedModelIdByType, selectedModelId]);
+  }, [
+    activeEngine,
+    composerSelectionScopeKey,
+    engineModelsAsOptions,
+    engineSelectedModelIdByType,
+    selectedModelId,
+    threadComposerSelection,
+  ]);
 
   const effectiveReasoningSupported = useMemo(() => {
     return getEffectiveReasoningSupported(activeEngine, reasoningSupported);
@@ -759,6 +791,17 @@ export function AppShell() {
   const effectiveSelectedModel = useMemo(() => {
     return effectiveModels.find((m) => m.id === effectiveSelectedModelId) ?? null;
   }, [effectiveModels, effectiveSelectedModelId]);
+
+  const handleSelectComposerEffort = useCallback(
+    (effort: string | null) => {
+      setSelectedEffort(effort);
+      persistActiveComposerSelection({
+        modelId: effectiveSelectedModelId,
+        effort,
+      });
+    },
+    [effectiveSelectedModelId, persistActiveComposerSelection, setSelectedEffort],
+  );
 
   // Sync accessMode when switching engines (Codex forces full-access, Claude restores saved mode)
   useEffect(() => {
@@ -801,7 +844,7 @@ export function AppShell() {
     onSelectAccessMode: handleSetAccessMode,
     reasoningOptions,
     selectedEffort,
-    onSelectEffort: setSelectedEffort,
+    onSelectEffort: handleSelectComposerEffort,
     reasoningSupported: effectiveReasoningSupported,
   });
 
@@ -816,7 +859,7 @@ export function AppShell() {
     onSelectAccessMode: handleSetAccessMode,
     reasoningOptions,
     selectedEffort,
-    onSelectEffort: setSelectedEffort,
+    onSelectEffort: handleSelectComposerEffort,
     reasoningSupported: effectiveReasoningSupported,
     onFocusComposer: () => composerInputRef.current?.focus(),
   });
@@ -1153,6 +1196,20 @@ export function AppShell() {
   );
 
   const {
+    selectedComposerSelection,
+    handleSelectComposerSelection,
+    persistComposerSelectionForThread,
+    resolveComposerSelectionForThread,
+  } = useSelectedComposerSession({
+    activeThreadId,
+    activeWorkspaceId,
+    resolveCanonicalThreadId,
+    onDebug: addDebugEntry,
+  });
+
+  composerSelectionHandlerRef.current = handleSelectComposerSelection;
+
+  const {
     selectedAgent,
     selectedAgentRef,
     handleSelectAgent,
@@ -1164,6 +1221,39 @@ export function AppShell() {
     resolveCanonicalThreadId,
     onDebug: addDebugEntry,
   });
+
+  useEffect(() => {
+    const nextScopeKey = `${activeWorkspaceId ?? "__workspace__unknown__"}:${activeThreadId ?? "__thread__none__"}`;
+    setComposerSelectionScopeKey((current) =>
+      current === nextScopeKey ? current : nextScopeKey,
+    );
+    setThreadComposerSelection(null);
+  }, [activeThreadId, activeWorkspaceId]);
+
+  useEffect(() => {
+    setThreadComposerSelection(selectedComposerSelection);
+  }, [selectedComposerSelection]);
+
+  useEffect(() => {
+    if (activeEngine !== "codex") {
+      return;
+    }
+    const nextModelId = threadComposerSelection?.modelId ?? null;
+    const nextEffort = threadComposerSelection?.effort ?? null;
+    if (nextModelId && nextModelId !== selectedModelId) {
+      setSelectedModelId(nextModelId);
+    }
+    if (nextEffort !== null && nextEffort !== selectedEffort) {
+      setSelectedEffort(nextEffort);
+    }
+  }, [
+    activeEngine,
+    selectedEffort,
+    selectedModelId,
+    setSelectedEffort,
+    setSelectedModelId,
+    threadComposerSelection,
+  ]);
 
   const claudeModelRefreshThreadKeyRef = useRef<string | null>(null);
 
@@ -2184,7 +2274,7 @@ export function AppShell() {
     normalizePath, onCloseTerminal,
     onDebugPanelResizeStart, onGitHistoryPanelResizeStart, onKanbanConversationResizeStart, onNewTerminal, onPlanPanelResizeStart, onRightPanelResizeStart, onSelectTerminal, onSidebarResizeStart,
     onTerminalPanelResizeStart, onTextareaHeightChange, openAppIconById, openClonePrompt, openCodeAgents, openDeleteThreadPrompt, openFileTabs, openPlanPanel, openReleaseNotes, openRenamePrompt, openRenameWorktreePrompt, openSettings,
-    openTerminal, openWorktreePrompt, perfSnapshotRef, persistProjectCopiesFolder, pickImages, pinThread,
+    openTerminal, openWorktreePrompt, perfSnapshotRef, persistComposerSelectionForThread, persistProjectCopiesFolder, pickImages, pinThread,
     pinnedThreadsVersion, planByThread, planPanelHeight, prefillDraft,
     prompts, pushError, pushLoading, queueGitStatusRefresh, queueMessage,
     queueSaveSettings, rateLimitsByWorkspace, reasoningOptions, reasoningSupported, recentThreads, reduceTransparency, refreshAccountInfo,
@@ -2192,7 +2282,7 @@ export function AppShell() {
     releaseNotesEntries, releaseNotesError, releaseNotesLoading, releaseNotesOpen, reloadSelectedAgent, removeImage, removeImagesForThread, removeThread, removeThreads,
     removeWorkspace, removeWorktree, renamePrompt, renameThread, renameWorkspaceGroup, renameWorktree, renameWorktreeNotice, renameWorktreePrompt,
     renameWorktreeUpstream, renameWorktreeUpstreamPrompt, resetGitHubPanelState, resetSoloSplitToHalf, resetWorkspaceThreads, resolveCloneProjectContext,
-    resolveCanonicalThreadId, resolveCollaborationRuntimeMode, resolveCollaborationUiMode, resolveOpenCodeAgentForThread, resolveOpenCodeVariantForThread, resolvedEffort, resolvedModel, restartTerminalSession,
+    resolveCanonicalThreadId, resolveCollaborationRuntimeMode, resolveCollaborationUiMode, resolveComposerSelectionForThread, resolveOpenCodeAgentForThread, resolveOpenCodeVariantForThread, resolvedEffort, resolvedModel, restartTerminalSession,
     retryReleaseNotesLoad, reviewPrompt, rightPanelCollapsed, rightPanelWidth, runtimeRunState,
     scaleShortcutText, scaleShortcutTitle, scanGitRoots, scopedKanbanTasks, searchContentFilters, searchPaletteQuery, searchPaletteSelectedIndex,
     searchResults, searchScope, selectBranch, selectBranchAtIndex, selectCommit, selectCommitAtIndex, selectHome, selectWorkspace,
@@ -2204,7 +2294,7 @@ export function AppShell() {
     setDiffSource, setEditorSplitLayout, setEngineSelectedModelIdByType, setFilePanelMode, setFileReferenceMode, setGitDiffListView, setGitDiffViewStyle, setGitHistoryPanelHeight,
     setGitPanelMode, setGitRootScanDepth, setGlobalSearchFilesByWorkspace, setHighlightedBranchIndex, setHighlightedCommitIndex, setHighlightedPresetIndex, setIsEditorFileMaximized, setIsPanelLocked,
     setIsPlanPanelDismissed, setIsSearchPaletteOpen, setKanbanViewState, setLiveEditPreviewEnabled, setPrefillDraft, setReduceTransparency, setRightPanelWidth, setSearchContentFilters, setSearchPaletteQuery, setSearchPaletteSelectedIndex, setSearchScope,
-    setSelectedCollaborationModeId, setSelectedCommitSha, setSelectedDiffPath, setSelectedEffort, setSelectedKanbanTaskId, setSelectedModelId, setSelectedPullRequest,
+    setSelectedCollaborationModeId, setSelectedCommitSha, setSelectedDiffPath, setSelectedEffort: handleSelectComposerEffort, setSelectedKanbanTaskId, setSelectedModelId, setSelectedPullRequest,
     setHomeOpen, setWorkspaceHomeWorkspaceId, settingsHighlightTarget, settingsOpen, settingsSection, loadingProgressDialog, dismissLoadingProgressDialog, shouldLoadDiffs, shouldLoadGitHubPanelData,
     showLoadingProgressDialog, hideLoadingProgressDialog,
     showDebugButton, showGitHistory, showHome, showKanban, showNextReleaseNotes, showPresetStep, showPreviousReleaseNotes, showWorkspaceHome,

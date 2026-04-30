@@ -103,73 +103,61 @@ describe("shouldSyncComposerEngineForKanbanExecution", () => {
 describe("syncKanbanExecutionEngineAndModel", () => {
   it("does not sync global composer engine for background execution", async () => {
     const setActiveEngine = vi.fn(async () => undefined);
-    const setSelectedModelId = vi.fn();
-    const setEngineSelectedModelIdByType = vi.fn();
 
     const result = await syncKanbanExecutionEngineAndModel({
       activate: false,
       engine: "claude",
       modelId: "claude-sonnet-4-5",
       setActiveEngine,
-      setSelectedModelId,
-      setEngineSelectedModelIdByType,
     });
 
     expect(setActiveEngine).not.toHaveBeenCalled();
-    expect(setSelectedModelId).not.toHaveBeenCalled();
-    expect(setEngineSelectedModelIdByType).not.toHaveBeenCalled();
     expect(result).toEqual({
       shouldSyncComposerSelection: false,
       outboundModel: "claude-sonnet-4-5",
+      composerSelection: null,
     });
   });
 
-  it("syncs codex model into composer state for foreground execution", async () => {
+  it("returns a codex composer selection for foreground execution without mutating global state", async () => {
     const setActiveEngine = vi.fn(async () => undefined);
-    const setSelectedModelId = vi.fn();
-    const setEngineSelectedModelIdByType = vi.fn();
 
     const result = await syncKanbanExecutionEngineAndModel({
       activate: true,
       engine: "codex",
       modelId: "gpt-5.4",
       setActiveEngine,
-      setSelectedModelId,
-      setEngineSelectedModelIdByType,
     });
 
     expect(setActiveEngine).toHaveBeenCalledWith("codex");
-    expect(setSelectedModelId).toHaveBeenCalledWith("gpt-5.4");
-    expect(setEngineSelectedModelIdByType).not.toHaveBeenCalled();
     expect(result).toEqual({
       shouldSyncComposerSelection: true,
       outboundModel: undefined,
+      composerSelection: {
+        modelId: "gpt-5.4",
+        effort: null,
+      },
     });
   });
 
-  it("syncs claude model into engine model map for foreground execution", async () => {
+  it("returns a claude composer selection for foreground execution without mutating global state", async () => {
     const setActiveEngine = vi.fn(async () => undefined);
-    const setSelectedModelId = vi.fn();
-    const setEngineSelectedModelIdByType = vi.fn(
-      (updater: (prev: Record<string, string>) => Record<string, string>) =>
-      updater({ claude: "claude-sonnet-3-7", codex: "gpt-5.3-codex" }),
-    );
 
-    await syncKanbanExecutionEngineAndModel({
+    const result = await syncKanbanExecutionEngineAndModel({
       activate: true,
       engine: "claude",
       modelId: "claude-sonnet-4-5",
       setActiveEngine,
-      setSelectedModelId,
-      setEngineSelectedModelIdByType,
     });
 
     expect(setActiveEngine).toHaveBeenCalledWith("claude");
-    expect(setSelectedModelId).not.toHaveBeenCalled();
-    expect(setEngineSelectedModelIdByType).toHaveBeenCalledTimes(1);
-    expect(setEngineSelectedModelIdByType.mock.results[0]?.value).toEqual({
-      claude: "claude-sonnet-4-5",
-      codex: "gpt-5.3-codex",
+    expect(result).toEqual({
+      shouldSyncComposerSelection: true,
+      outboundModel: undefined,
+      composerSelection: {
+        modelId: "claude-sonnet-4-5",
+        effort: null,
+      },
     });
   });
 });
