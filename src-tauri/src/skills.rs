@@ -256,17 +256,25 @@ fn discover_skills_in(dir: &Path, source: &str) -> Result<Vec<SkillEntry>, Skill
 
         let path = entry.path();
 
-        // Use symlink_metadata to skip symlinks (won't follow links)
-        let metadata = match fs::symlink_metadata(&path) {
+        let link_metadata = match fs::symlink_metadata(&path) {
             Ok(m) => m,
             Err(err) => {
                 log::warn!("Failed to stat {:?}: {}", path, err);
                 continue;
             }
         };
-        if metadata.file_type().is_symlink() {
-            continue;
-        }
+        let metadata = if link_metadata.file_type().is_symlink() {
+            match fs::metadata(&path) {
+                Ok(m) if m.is_dir() => m,
+                Ok(_) => continue,
+                Err(err) => {
+                    log::warn!("Failed to resolve skill symlink {:?}: {}", path, err);
+                    continue;
+                }
+            }
+        } else {
+            link_metadata
+        };
 
         if metadata.is_dir() {
             let nested_skill_path = path.join("SKILL.md");
@@ -535,6 +543,36 @@ mod tests {
         assert!(!names.contains(&"inner".to_string()));
 
         let _ = fs::remove_dir_all(root);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn discover_skills_follows_symlinked_skill_directories() {
+        use std::os::unix::fs::symlink;
+
+        let root = new_temp_dir("skills-symlink-discovery");
+        let target_root = new_temp_dir("skills-symlink-target");
+        let target_skill = target_root.join("brainstorming");
+        fs::create_dir_all(&target_skill).expect("create target skill dir");
+        fs::write(
+            target_skill.join("SKILL.md"),
+            "---\ndescription: symlinked skill\n---\nbody",
+        )
+        .expect("write symlinked skill");
+        symlink(&target_skill, root.join("brainstorming")).expect("create skill symlink");
+
+        let entries =
+            discover_skills_in(&root, SKILL_SOURCE_GLOBAL_CLAUDE).expect("discover skills");
+
+        let skill = entries
+            .iter()
+            .find(|entry| entry.name == "brainstorming")
+            .expect("symlinked skill directory should be discovered");
+        assert_eq!(skill.description.as_deref(), Some("symlinked skill"));
+        assert!(skill.path.ends_with("brainstorming/SKILL.md"));
+
+        let _ = fs::remove_dir_all(root);
+        let _ = fs::remove_dir_all(target_root);
     }
 
     #[test]
