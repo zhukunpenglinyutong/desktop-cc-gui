@@ -803,3 +803,57 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 251: OpenSpec 回写 Codex composer 启动稳定性提案
+
+**Date**: 2026-05-01
+**Task**: OpenSpec 回写 Codex composer 启动稳定性提案
+**Branch**: `feature/fix-0.4.12`
+
+### Summary
+
+(Add summary)
+
+### Main Changes
+
+任务目标：
+- 为 PR#480 后续修复补齐 OpenSpec 提案记录，沉淀 Codex composer 线程作用域启动恢复稳定性 contract。
+
+主要改动：
+- 新增 openspec change：fix-codex-composer-startup-selection-stability。
+- 补充 proposal，记录问题背景、目标、边界、非目标与影响范围。
+- 补充 design，明确 modelsReady、线程 selection 自愈时机、pending -> canonical 稳定性与全局默认值持久化约束。
+- 补充 capability spec 与 tasks，将 branding 遗留保留为独立后续事项。
+
+涉及模块：
+- openspec/changes/fix-codex-composer-startup-selection-stability/proposal.md
+- openspec/changes/fix-codex-composer-startup-selection-stability/design.md
+- openspec/changes/fix-codex-composer-startup-selection-stability/specs/codex-composer-startup-selection-stability/spec.md
+- openspec/changes/fix-codex-composer-startup-selection-stability/tasks.md
+
+验证结果：
+- openspec validate fix-codex-composer-startup-selection-stability --strict 通过。
+
+后续事项：
+- 单独提交并修复 doctor:strict 暴露的 branding 遗留。
+- branding 提交完成后，再执行整仓 doctor 与相关回归测试。
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `141fd1b4` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

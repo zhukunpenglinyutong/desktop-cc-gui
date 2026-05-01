@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-8.md`
-- **Total Sessions**: 250
+- **Total Sessions**: 251
 - **Last Active**: 2026-05-01
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-8.md` | ~805 | Active |
+| `journal-8.md` | ~859 | Active |
 | `journal-7.md` | ~1950 | Archived |
 | `journal-6.md` | ~1961 | Archived |
 | `journal-5.md` | ~1949 | Archived |
@@ -36,6 +36,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 251 | 2026-05-01 | OpenSpec 回写 Codex composer 启动稳定性提案 | `141fd1b4` | `feature/fix-0.4.12` |
 | 250 | 2026-05-01 | 补充修复 PR#480 启动恢复时序与线程选择自愈问题 | `76632c22` | `feature/fix-0.4.12` |
 | 249 | 2026-05-01 | 补充记录 composer 线程选择链路结构性重构提交 | `28eaec3f062c7e4358e5372960f542fd5ffa3715` | `feature/fix-0.4.12` |
 | 248 | 2026-05-01 | 补充 PR#480 启动恢复与线程作用域持久化修复 | `2fc04893` | `feature/fix-0.4.12` |
