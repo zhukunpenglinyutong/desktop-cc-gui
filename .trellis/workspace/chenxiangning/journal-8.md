@@ -857,3 +857,56 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 252: 清理 branding 遗留并恢复 doctor 严格门禁
+
+**Date**: 2026-05-01
+**Task**: 清理 branding 遗留并恢复 doctor 严格门禁
+**Branch**: `feature/fix-0.4.12`
+
+### Summary
+
+(Add summary)
+
+### Main Changes
+
+任务目标：
+- 单独修复 doctor:strict 暴露的 branding 遗留，恢复严格健康检查通过状态。
+
+主要改动：
+- 将 src-tauri 中测试辅助路径、临时目录命名里的 legacy mossx 前缀替换为当前品牌前缀。
+- 更新 openspec change tasks.md，将 branding 修复后续事项标记为已完成，保持规范与仓库状态一致。
+
+涉及模块：
+- src-tauri/src/git/commands_branch.rs
+- src-tauri/src/skills.rs
+- src-tauri/src/claude_commands.rs
+- src-tauri/src/client_storage.rs
+- openspec/changes/fix-codex-composer-startup-selection-stability/tasks.md
+
+验证结果：
+- npm run check:branding 通过。
+- npm run doctor:strict 通过。
+
+后续事项：
+- 继续执行定向回归测试与质量门禁，确认 composer 修复链和 branding 修复没有相互影响。
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `c54d1610` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
