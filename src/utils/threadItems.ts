@@ -1577,7 +1577,13 @@ export function buildConversationItem(
 function extractImageInputValue(input: Record<string, unknown>) {
   const value =
     asString(input.url ?? "") ||
+    asString(input.image_url ?? "") ||
+    asString(input.imageUrl ?? "") ||
     asString(input.path ?? "") ||
+    asString(input.local_path ?? "") ||
+    asString(input.localPath ?? "") ||
+    asString(input.uri ?? "") ||
+    asString(input.src ?? "") ||
     asString(input.value ?? "") ||
     asString(input.data ?? "") ||
     asString(input.source ?? "");
@@ -1966,8 +1972,8 @@ function parseUserInputs(inputs: Array<Record<string, unknown>>) {
   };
 
   inputs.forEach((input) => {
-    const type = asString(input.type);
-    if (type === "text") {
+    const type = asString(input.type).trim().toLowerCase();
+    if (type === "text" || type === "input_text") {
       const text = asString(input.text);
       if (text) {
         collaborationMode = collaborationMode ?? extractModeFallbackMode(text);
@@ -1980,7 +1986,12 @@ function parseUserInputs(inputs: Array<Record<string, unknown>>) {
       appendSkillPart(name);
       return;
     }
-    if (type === "image" || type === "localImage") {
+    if (
+      type === "image" ||
+      type === "localimage" ||
+      type === "local_image" ||
+      type === "input_image"
+    ) {
       const value = extractImageInputValue(input);
       if (value) {
         images.push(value);

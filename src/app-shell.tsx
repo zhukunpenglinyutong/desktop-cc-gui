@@ -1313,23 +1313,6 @@ export function AppShell() {
     reasoningSupported: effectiveReasoningSupported,
     onFocusComposer: () => composerInputRef.current?.focus(),
   });
-  useEffect(() => {
-    if (!import.meta.env.DEV) {
-      return;
-    }
-    console.info("[model/resolve/app]", {
-      activeEngine,
-      effectiveSelectedModelId,
-      effectiveSelectedModelModel: effectiveSelectedModel?.model ?? null,
-      resolvedModel,
-    });
-  }, [
-    activeEngine,
-    effectiveSelectedModel?.model,
-    effectiveSelectedModelId,
-    resolvedModel,
-  ]);
-
   const {
     selectedAgent,
     selectedAgentRef,

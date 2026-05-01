@@ -142,6 +142,68 @@ describe("threadReducer normalized realtime", () => {
     ]);
   });
 
+  it("replaces first-turn optimistic user when normalized realtime includes attributed project-memory wrapper", () => {
+    const base: ThreadState = {
+      ...initialState,
+      itemsByThread: {
+        "thread-1": [
+          {
+            id: "optimistic-user-1",
+            kind: "message",
+            role: "user",
+            text: "请基于这些记忆继续分析",
+          },
+        ],
+      },
+    };
+
+    const next = threadReducer(base, {
+      type: "applyNormalizedRealtimeEvent",
+      workspaceId: "ws-1",
+      threadId: "thread-1",
+      hasCustomName: false,
+      event: {
+        engine: "codex",
+        workspaceId: "ws-1",
+        threadId: "thread-1",
+        eventId: "evt-user-memory-1",
+        itemKind: "message",
+        timestampMs: 1000,
+        operation: "itemCompleted",
+        sourceMethod: "item/completed",
+        item: {
+          id: "real-user-memory-1",
+          kind: "message",
+          role: "user",
+          text: [
+            '<project-memory source="manual-selection" count="2" truncated="false">',
+            "[对话记录] 第一条",
+            "[项目上下文] 第二条",
+            "</project-memory>",
+            "",
+            "请基于这些记忆继续分析",
+          ].join("\n"),
+        },
+      },
+    });
+
+    expect(next.itemsByThread["thread-1"]).toEqual([
+      {
+        id: "real-user-memory-1",
+        kind: "message",
+        role: "user",
+        text: [
+          '<project-memory source="manual-selection" count="2" truncated="false">',
+          "[对话记录] 第一条",
+          "[项目上下文] 第二条",
+          "</project-memory>",
+          "",
+          "请基于这些记忆继续分析",
+        ].join("\n"),
+      },
+    ]);
+  });
+
   it("strips duplicated leading snapshot while preserving tail", () => {
     const snapshot = "你好！我是你的 AI 联合架构师。有什么可以帮你的吗？";
     const withEchoAndTail = `${snapshot}\n\n${snapshot}\n\n我还可以帮你排查线上问题。`;

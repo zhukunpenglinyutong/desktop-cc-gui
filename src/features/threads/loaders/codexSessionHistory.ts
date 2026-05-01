@@ -483,7 +483,16 @@ function extractCodexMessageId(
 
 function buildUserMessageItem(payload: Record<string, unknown>, fallbackId: string) {
   const text = extractMessageText(payload);
-  if (!text) {
+  const content = Array.isArray(payload.content) ? payload.content : [];
+  const hasUserImages =
+    Array.isArray(payload.images) ||
+    Array.isArray(payload.imageUrls) ||
+    Array.isArray(payload.image_urls) ||
+    content.some((entry) => {
+      const type = asString(asRecord(entry).type).trim().toLowerCase();
+      return type === "image" || type === "localimage" || type === "local_image" || type === "input_image";
+    });
+  if (!text && !hasUserImages) {
     return null;
   }
   const selectedAgentName = asString(
@@ -495,7 +504,11 @@ function buildUserMessageItem(payload: Record<string, unknown>, fallbackId: stri
   return buildConversationItem({
     id: extractCodexMessageId(payload, fallbackId),
     type: "userMessage",
-    content: [{ type: "text", text }],
+    ...(content.length > 0 ? { content } : { content: [{ type: "text", text }] }),
+    ...(text ? { text } : {}),
+    ...(Array.isArray(payload.images) ? { images: payload.images } : {}),
+    ...(Array.isArray(payload.imageUrls) ? { imageUrls: payload.imageUrls } : {}),
+    ...(Array.isArray(payload.image_urls) ? { image_urls: payload.image_urls } : {}),
     ...(selectedAgentName ? { selectedAgentName } : {}),
     ...(selectedAgentIcon ? { selectedAgentIcon } : {}),
   });

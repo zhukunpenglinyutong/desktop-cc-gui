@@ -20,6 +20,8 @@ jobs:
           cache: "npm"
       - name: Install dependencies
         run: npm ci
+      - name: Large file governance parser tests
+        run: node --test scripts/check-large-files.test.mjs
       - name: Large file governance near-threshold watch
         run: npm run check:large-files:near-threshold
       - name: Large file governance hard-debt gate

@@ -8,6 +8,7 @@ import {
   TooltipPopup,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { useCallback, useMemo } from "react";
 import type { CSSProperties, MouseEvent } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -16,6 +17,7 @@ import { ProxyStatusBadge } from "../../../components/ProxyStatusBadge";
 import { EngineIcon } from "../../engine/components/EngineIcon";
 import { SharedSessionIcon } from "../../shared-session/components/SharedSessionIcon";
 import { ThreadDeleteConfirmBubble } from "../../threads/components/ThreadDeleteConfirmBubble";
+import { getExitedSessionRowVisibility } from "../utils/exitedSessionRows";
 
 type ThreadStatusMap = Record<
   string,
@@ -37,6 +39,7 @@ type ThreadListProps = {
   isPaging: boolean;
   nested?: boolean;
   showLoadOlder?: boolean;
+  hideExitedSessions?: boolean;
   activeWorkspaceId: string | null;
   activeThreadId: string | null;
   systemProxyEnabled?: boolean;
@@ -73,6 +76,7 @@ export function ThreadList({
   isPaging,
   nested,
   showLoadOlder = true,
+  hideExitedSessions = false,
   activeWorkspaceId,
   activeThreadId,
   systemProxyEnabled = false,
@@ -94,6 +98,35 @@ export function ThreadList({
 }: ThreadListProps) {
   const { t } = useTranslation();
   const indentUnit = nested ? 10 : 14;
+  const isExitedThread = useCallback((thread: ThreadSummary) => {
+    const status = threadStatusById[thread.id];
+    return !status?.isProcessing && !status?.isReviewing;
+  }, [threadStatusById]);
+  const { visiblePinnedRows, visibleUnpinnedRows, hiddenExitedCount } = useMemo(() => {
+    const pinnedVisibility = getExitedSessionRowVisibility(pinnedRows, {
+      hideExitedSessions,
+      isExitedThread,
+    });
+    const unpinnedVisibility = getExitedSessionRowVisibility(unpinnedRows, {
+      hideExitedSessions,
+      isExitedThread,
+    });
+
+    return {
+      visiblePinnedRows: pinnedVisibility.visibleRows,
+      visibleUnpinnedRows: unpinnedVisibility.visibleRows,
+      hiddenExitedCount:
+        pinnedVisibility.hiddenExitedCount + unpinnedVisibility.hiddenExitedCount,
+    };
+  }, [hideExitedSessions, isExitedThread, pinnedRows, unpinnedRows]);
+  const showHiddenExitedSummary = useMemo(
+    () =>
+      hideExitedSessions &&
+      hiddenExitedCount > 0 &&
+      visiblePinnedRows.length === 0 &&
+      visibleUnpinnedRows.length === 0,
+    [hiddenExitedCount, hideExitedSessions, visiblePinnedRows.length, visibleUnpinnedRows.length],
+  );
   const renderThreadRow = ({ thread, depth }: ThreadRow) => {
     const relativeTime = getThreadTime(thread);
     const isActiveThread =
@@ -244,11 +277,16 @@ export function ThreadList({
 
   return (
     <div className={`thread-list${nested ? " thread-list-nested" : ""}`}>
-      {pinnedRows.map((row) => renderThreadRow(row))}
-      {pinnedRows.length > 0 && unpinnedRows.length > 0 && (
+      {visiblePinnedRows.map((row) => renderThreadRow(row))}
+      {visiblePinnedRows.length > 0 && visibleUnpinnedRows.length > 0 && (
         <div className="thread-list-separator" aria-hidden="true" />
       )}
-      {unpinnedRows.map((row) => renderThreadRow(row))}
+      {visibleUnpinnedRows.map((row) => renderThreadRow(row))}
+      {showHiddenExitedSummary && (
+        <div className="thread-list-hidden-summary">
+          {t("threads.exitedSessionsHidden", { count: hiddenExitedCount })}
+        </div>
+      )}
       {totalThreadRoots > 5 && (
         <button
           className="thread-more"

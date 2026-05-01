@@ -1003,6 +1003,22 @@
   opacity: 0.8;
 }
 
+.workspace-leading-icons {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 6px;
+  min-width: 20px;
+  min-height: 20px;
+  padding-right: 2px;
+  flex: 0 0 auto;
+}
+
+.workspace-leading-icons.has-exited-toggle {
+  min-width: 50px;
+  padding-right: 10px;
+}
+
 .workspace-folder-btn {
   border: none;
   background: transparent;
@@ -1060,6 +1076,73 @@
 .workspace-folder-btn:hover,
 .workspace-folder-btn[aria-expanded="true"] {
   color: var(--text-strong);
+}
+
+.workspace-exited-toggle {
+  position: relative;
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: 1px solid color-mix(in srgb, var(--border-muted, rgba(148, 163, 184, 0.24)) 92%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--surface-panel) 90%, transparent);
+  color: var(--text-muted);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.18);
+  transition:
+    background-color 0.16s ease,
+    border-color 0.16s ease,
+    color 0.16s ease,
+    transform 0.16s ease;
+}
+
+.workspace-exited-toggle:hover,
+.workspace-exited-toggle:focus-visible {
+  color: var(--text-strong);
+  border-color: color-mix(in srgb, var(--border-subtle) 90%, transparent);
+  background: color-mix(in srgb, var(--surface-hover) 92%, var(--surface-panel) 8%);
+  transform: translateY(-1px);
+}
+
+.workspace-exited-toggle:focus-visible {
+  outline: 1px solid color-mix(in srgb, var(--border-accent) 62%, transparent);
+  outline-offset: 1px;
+}
+
+.workspace-exited-toggle.is-active {
+  border-color: color-mix(in srgb, var(--accent-primary, #2563eb) 45%, transparent);
+  background: color-mix(in srgb, var(--accent-primary, #2563eb) 16%, var(--surface-panel) 84%);
+  color: color-mix(in srgb, var(--accent-primary, #2563eb) 78%, var(--text-strong));
+}
+
+.workspace-exited-toggle svg {
+  width: 10px;
+  height: 10px;
+  stroke-width: 2px;
+}
+
+.workspace-exited-toggle-count {
+  position: absolute;
+  top: -7px;
+  right: -8px;
+  min-width: 14px;
+  height: 14px;
+  padding: 0 3px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--surface-panel) 86%, var(--accent-primary, #2563eb) 14%);
+  border: 1px solid color-mix(in srgb, var(--accent-primary, #2563eb) 28%, transparent);
+  color: var(--text-strong);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 8px;
+  font-weight: 650;
+  line-height: 1;
+  letter-spacing: 0;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.18);
 }
 
 .workspace-name-text {
@@ -1691,6 +1774,22 @@
   margin-left: 1px;
 }
 
+.worktree-leading-icons {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 5px;
+  min-width: 14px;
+  min-height: 14px;
+  padding-right: 2px;
+  flex: 0 0 auto;
+}
+
+.worktree-leading-icons.has-exited-toggle {
+  min-width: 42px;
+  padding-right: 10px;
+}
+
 .worktree-node-icon.is-session-running {
   color: inherit;
   opacity: 1;
@@ -1961,6 +2060,13 @@
 
 .thread-list-nested {
   margin-left: 0;
+}
+
+.thread-list-hidden-summary {
+  padding: 4px 10px 2px;
+  color: var(--text-faint, var(--text-muted));
+  font-size: 11px;
+  line-height: 1.4;
 }
 
 .thread-empty-state {
@@ -2594,6 +2700,7 @@
 .workspace-row,
 .workspace-tree-toggle,
 .workspace-folder-btn,
+.workspace-exited-toggle,
 .workspace-action-btn,
 .worktree-header,
 .worktree-row,

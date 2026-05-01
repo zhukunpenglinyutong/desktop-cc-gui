@@ -6,6 +6,7 @@ import type { ThreadSummary, WorkspaceInfo } from "../../../types";
 import { ThreadList } from "./ThreadList";
 import { ThreadEmptyState } from "./ThreadEmptyState";
 import { WorktreeCard } from "./WorktreeCard";
+import { getExitedSessionRowVisibility } from "../utils/exitedSessionRows";
 
 type ThreadStatusMap = Record<
   string,
@@ -52,6 +53,8 @@ type WorktreeSectionProps = {
   onQuickReloadWorkspaceThreads?: (workspaceId: string) => void;
   onSelectWorkspace: (workspaceId: string) => void;
   onToggleWorkspaceCollapse: (workspaceId: string, collapsed: boolean) => void;
+  isExitedSessionsHidden?: (workspacePath: string) => boolean;
+  onToggleExitedSessionsHidden?: (workspacePath: string) => void;
   onSelectThread: (workspaceId: string, threadId: string) => void;
   onShowThreadMenu: (
     event: MouseEvent,
@@ -97,6 +100,8 @@ export function WorktreeSection({
   onQuickReloadWorkspaceThreads,
   onSelectWorkspace,
   onToggleWorkspaceCollapse,
+  isExitedSessionsHidden = () => false,
+  onToggleExitedSessionsHidden = () => undefined,
   onSelectThread,
   onShowThreadMenu,
   deleteConfirmThreadId = null,
@@ -208,6 +213,17 @@ export function WorktreeSection({
             const threadRows = threadRowsByWorktreeId.get(worktree.id);
             const worktreeThreadRows = threadRows?.unpinnedRows ?? [];
             const totalWorktreeRoots = threadRows?.totalRoots ?? 0;
+            const hideExitedSessions = isExitedSessionsHidden(worktree.path);
+            const exitedSessionVisibility = getExitedSessionRowVisibility(
+              worktreeThreadRows,
+              {
+                hideExitedSessions,
+                isExitedThread: (thread) => {
+                  const status = threadStatusById[thread.id];
+                  return !status?.isProcessing && !status?.isReviewing;
+                },
+              },
+            );
 
             return (
               <WorktreeCard
@@ -218,6 +234,12 @@ export function WorktreeSection({
                 isThreadListRefreshing={isThreadListRefreshing}
                 hasPrimaryActiveThread={hasPrimaryActiveThread}
                 hasRunningSession={hasRunningSession}
+                showExitedSessionsToggle={
+                  exitedSessionVisibility.hasExitedSessions
+                  || exitedSessionVisibility.hiddenExitedCount > 0
+                }
+                hideExitedSessions={hideExitedSessions}
+                hiddenExitedSessionsCount={exitedSessionVisibility.hiddenExitedCount}
                 threadCount={totalWorktreeRoots}
                 hasThreadCursor={Boolean(worktreeNextCursor)}
                 isDeleting={deletingWorktreeIds.has(worktree.id)}
@@ -226,6 +248,7 @@ export function WorktreeSection({
                 onQuickReloadWorkspaceThreads={onQuickReloadWorkspaceThreads}
                 onToggleWorkspaceCollapse={onToggleWorkspaceCollapse}
                 onConnectWorkspace={onConnectWorkspace}
+                onToggleExitedSessions={onToggleExitedSessionsHidden}
                 onSelectWorkspace={onSelectWorkspace}
               >
                 {showWorktreeThreadList && (
@@ -239,6 +262,7 @@ export function WorktreeSection({
                     isPaging={isWorktreePaging}
                     nested
                     showLoadOlder={false}
+                    hideExitedSessions={hideExitedSessions}
                     activeWorkspaceId={activeWorkspaceId}
                     activeThreadId={activeThreadId}
                     systemProxyEnabled={systemProxyEnabled}

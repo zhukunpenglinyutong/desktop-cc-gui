@@ -1,7 +1,10 @@
 import { buildItemsFromThread, mergeThreadItems } from "../../../utils/threadItems";
 import type { ConversationItem } from "../../../types";
 import type { HistoryLoader } from "../contracts/conversationCurtainContracts";
-import { buildComparableConversationMessageSignature } from "../assembly/conversationNormalization";
+import {
+  buildComparableConversationMessageSignature,
+  normalizeUserImages,
+} from "../assembly/conversationNormalization";
 import { normalizeHistorySnapshot } from "../contracts/conversationCurtainContracts";
 import { parseCodexSessionHistory } from "./codexSessionHistory";
 import { asRecord } from "./historyLoaderUtils";
@@ -57,13 +60,37 @@ function normalizeTurnAnchorText(value: string) {
   return value.replace(/\s+/g, " ").trim();
 }
 
-function collectComparableMessageSequence(items: ConversationItem[]) {
+function collectComparableMessageSequence(
+  items: ConversationItem[],
+  options?: { ignoreUserImages?: boolean },
+) {
   return items
     .filter(
       (item): item is Extract<ConversationItem, { kind: "message" }> =>
         item.kind === "message",
     )
-    .map(buildComparableConversationMessageSignature);
+    .map((item) => {
+      if (!options?.ignoreUserImages || item.role !== "user") {
+        return buildComparableConversationMessageSignature(item);
+      }
+      return buildComparableConversationMessageSignature({
+        ...item,
+        images: undefined,
+      });
+    });
+}
+
+function areComparableMessageSequencesEqualWithOptions(
+  leftItems: ConversationItem[],
+  rightItems: ConversationItem[],
+  options?: { ignoreUserImages?: boolean },
+) {
+  const left = collectComparableMessageSequence(leftItems, options);
+  const right = collectComparableMessageSequence(rightItems, options);
+  if (left.length !== right.length) {
+    return false;
+  }
+  return left.every((value, index) => value === right[index]);
 }
 
 function isComparableMessageSequencePrefix(prefix: string[], target: string[]) {
@@ -77,12 +104,137 @@ function areComparableMessageSequencesEqual(
   leftItems: ConversationItem[],
   rightItems: ConversationItem[],
 ) {
-  const left = collectComparableMessageSequence(leftItems);
-  const right = collectComparableMessageSequence(rightItems);
-  if (left.length !== right.length) {
+  return areComparableMessageSequencesEqualWithOptions(leftItems, rightItems);
+}
+
+function areComparableMessageSequencesEqualIgnoringUserImages(
+  leftItems: ConversationItem[],
+  rightItems: ConversationItem[],
+) {
+  return areComparableMessageSequencesEqualWithOptions(leftItems, rightItems, {
+    ignoreUserImages: true,
+  });
+}
+
+function mergeUniqueImages(
+  historyImages: string[] | undefined,
+  fallbackImages: string[] | undefined,
+) {
+  const merged: string[] = [];
+  const seen = new Set<string>();
+  for (const image of [...(historyImages ?? []), ...(fallbackImages ?? [])]) {
+    const normalized = image.trim();
+    if (!normalized || seen.has(normalized)) {
+      continue;
+    }
+    seen.add(normalized);
+    merged.push(normalized);
+  }
+  return merged;
+}
+
+function fallbackHasRicherRenderableUserImages(
+  historyItems: ConversationItem[],
+  fallbackItems: ConversationItem[],
+) {
+  const historyUserMessages = historyItems.filter(
+    (item): item is MessageItem => item.kind === "message" && item.role === "user",
+  );
+  const fallbackUserMessages = fallbackItems.filter(
+    (item): item is MessageItem => item.kind === "message" && item.role === "user",
+  );
+  if (historyUserMessages.length === 0 || historyUserMessages.length !== fallbackUserMessages.length) {
     return false;
   }
-  return left.every((value, index) => value === right[index]);
+
+  let sawStrictlyRicherFallback = false;
+
+  for (let index = 0; index < historyUserMessages.length; index += 1) {
+    const historyImages = normalizeUserImages(
+      historyUserMessages[index]?.images,
+      historyUserMessages[index]?.text,
+    );
+    const fallbackImages = normalizeUserImages(
+      fallbackUserMessages[index]?.images,
+      fallbackUserMessages[index]?.text,
+    );
+    if (fallbackImages.length < historyImages.length) {
+      return false;
+    }
+    if (fallbackImages.length > historyImages.length) {
+      sawStrictlyRicherFallback = true;
+    }
+  }
+
+  return sawStrictlyRicherFallback;
+}
+
+function hydrateCodexRemoteUserImagesFromFallback(
+  historyItems: ConversationItem[],
+  fallbackItems: ConversationItem[],
+) {
+  const historyUserMessages = historyItems.flatMap((item, index) =>
+    item.kind === "message" && item.role === "user"
+      ? [{ index, message: item }]
+      : [],
+  );
+  const fallbackUserMessages = fallbackItems.filter(
+    (item): item is MessageItem => item.kind === "message" && item.role === "user",
+  );
+  if (
+    historyUserMessages.length === 0 ||
+    historyUserMessages.length !== fallbackUserMessages.length
+  ) {
+    return historyItems;
+  }
+
+  const hydrated = [...historyItems];
+  let changed = false;
+
+  for (let index = 0; index < historyUserMessages.length; index += 1) {
+    const historyEntry = historyUserMessages[index];
+    const fallbackMessage = fallbackUserMessages[index];
+    if (!historyEntry || !fallbackMessage) {
+      return historyItems;
+    }
+
+    const historyMessageWithoutImages = buildComparableConversationMessageSignature({
+      ...historyEntry.message,
+      images: undefined,
+    });
+    const fallbackMessageWithoutImages = buildComparableConversationMessageSignature({
+      ...fallbackMessage,
+      images: undefined,
+    });
+    if (historyMessageWithoutImages !== fallbackMessageWithoutImages) {
+      return historyItems;
+    }
+
+    const historyImages = normalizeUserImages(
+      historyEntry.message.images,
+      historyEntry.message.text,
+    );
+    const fallbackImages = normalizeUserImages(fallbackMessage.images, fallbackMessage.text);
+    if (fallbackImages.length <= historyImages.length) {
+      continue;
+    }
+
+    const mergedImages = mergeUniqueImages(
+      historyEntry.message.images,
+      fallbackMessage.images,
+    );
+    if (mergedImages.length === 0) {
+      continue;
+    }
+
+    hydrated[historyEntry.index] = {
+      ...historyEntry.message,
+      images: mergedImages,
+    };
+    changed = true;
+  }
+
+  return changed ? hydrated : historyItems;
 }
 
 function shouldPreferFallbackMessageHistory(
@@ -435,12 +587,33 @@ export function createCodexHistoryLoader({
         if (!fallbackHistoryLoaded) {
           fallbackItems = await loadFallbackHistoryItems();
         }
-        if (areComparableMessageSequencesEqual(historyItems, fallbackItems)) {
-          items = mergeCodexHistoryPreservingTurns(historyItems, fallbackItems);
+        const messagesMatchIgnoringUserImages = areComparableMessageSequencesEqualIgnoringUserImages(
+          historyItems,
+          fallbackItems,
+        );
+        const historyItemsWithFallbackUserImages =
+          messagesMatchIgnoringUserImages &&
+          fallbackHasRicherRenderableUserImages(historyItems, fallbackItems)
+            ? hydrateCodexRemoteUserImagesFromFallback(historyItems, fallbackItems)
+            : historyItems;
+
+        if (
+          areComparableMessageSequencesEqual(
+            historyItemsWithFallbackUserImages,
+            fallbackItems,
+          )
+        ) {
+          items = mergeCodexHistoryPreservingTurns(
+            historyItemsWithFallbackUserImages,
+            fallbackItems,
+          );
         } else if (shouldPreferFallbackMessageHistory(historyItems, fallbackItems)) {
           items = fallbackItems;
         } else {
-          items = mergeCodexHistoryPreservingTurns(historyItems, fallbackItems);
+          items = mergeCodexHistoryPreservingTurns(
+            historyItemsWithFallbackUserImages,
+            fallbackItems,
+          );
         }
       }
 

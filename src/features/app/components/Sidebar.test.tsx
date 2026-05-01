@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createRef } from "react";
 import { afterEach } from "vitest";
+import { writeClientStoreData } from "../../../services/clientStorage";
 
 // Mock react-i18next
 vi.mock("react-i18next", () => ({
@@ -43,6 +44,9 @@ vi.mock("react-i18next", () => ({
         "threads.degradedWorkspaceRefreshAriaLabel": "Refresh incomplete thread list",
         "threads.degradedWorkspaceRefreshTooltip":
           "This project's thread list is not fully refreshed yet and may be missing some conversations. Click to refresh it again.",
+        "threads.hideExitedSessions": "Hide exited sessions",
+        "threads.showExitedSessions": "Show exited sessions",
+        "threads.exitedSessionsHidden": "{{count}} exited hidden",
         "workspace.engineClaudeCode": "Claude Code",
         "workspace.engineCodex": "Codex",
         "workspace.engineOpenCode": "OpenCode",
@@ -64,6 +68,10 @@ import { Sidebar } from "./Sidebar";
 
 afterEach(() => {
   cleanup();
+});
+
+beforeEach(() => {
+  writeClientStoreData("threads", {});
 });
 
 const baseProps = {
@@ -509,6 +517,277 @@ describe("Sidebar", () => {
     expect(projectIcon?.classList.contains("is-session-running")).toBe(true);
     const worktreeIcon = container.querySelector(".worktree-node-icon");
     expect(worktreeIcon?.classList.contains("is-session-running")).toBe(true);
+  });
+
+  it("keeps exited-session visibility isolated per workspace", () => {
+    const workspaceAlpha = {
+      id: "ws-alpha",
+      name: "alpha",
+      path: "/tmp/alpha",
+      connected: true,
+      kind: "main" as const,
+      settings: {
+        sidebarCollapsed: false,
+        worktreeSetupScript: null,
+      },
+    };
+    const workspaceBeta = {
+      id: "ws-beta",
+      name: "beta",
+      path: "/tmp/beta",
+      connected: true,
+      kind: "main" as const,
+      settings: {
+        sidebarCollapsed: false,
+        worktreeSetupScript: null,
+      },
+    };
+
+    render(
+      <Sidebar
+        {...baseProps}
+        workspaces={[workspaceAlpha, workspaceBeta]}
+        groupedWorkspaces={[
+          {
+            id: null,
+            name: "Ungrouped",
+            workspaces: [workspaceAlpha, workspaceBeta],
+          },
+        ]}
+        threadsByWorkspace={{
+          "ws-alpha": [
+            { id: "alpha-running", name: "Alpha running", updatedAt: 2 },
+            { id: "alpha-exited", name: "Alpha exited", updatedAt: 1 },
+          ],
+          "ws-beta": [
+            { id: "beta-running", name: "Beta running", updatedAt: 2 },
+            { id: "beta-exited", name: "Beta exited", updatedAt: 1 },
+          ],
+        }}
+        threadStatusById={{
+          "alpha-running": { isProcessing: true, hasUnread: false, isReviewing: false },
+          "alpha-exited": { isProcessing: false, hasUnread: false, isReviewing: false },
+          "beta-running": { isProcessing: true, hasUnread: false, isReviewing: false },
+          "beta-exited": { isProcessing: false, hasUnread: false, isReviewing: false },
+        }}
+      />,
+    );
+
+    const alphaCard = screen.getByText("alpha").closest(".workspace-card") as HTMLElement | null;
+    const betaCard = screen.getByText("beta").closest(".workspace-card") as HTMLElement | null;
+    expect(alphaCard).toBeTruthy();
+    expect(betaCard).toBeTruthy();
+    if (!alphaCard || !betaCard) {
+      throw new Error("Missing workspace cards");
+    }
+
+    fireEvent.click(
+      within(alphaCard).getByRole("button", { name: "Hide exited sessions" }),
+    );
+
+    expect(within(alphaCard).queryByText("Alpha exited")).toBeNull();
+    expect(within(alphaCard).queryByText("Alpha running")).toBeTruthy();
+    expect(
+      within(alphaCard).getByRole("button", { name: /Show exited sessions/ }),
+    ).toBeTruthy();
+    expect(alphaCard.querySelector(".workspace-exited-toggle-count")?.textContent).toBe("1");
+
+    expect(within(betaCard).getByText("Beta exited")).toBeTruthy();
+    expect(within(betaCard).getByText("Beta running")).toBeTruthy();
+  });
+
+  it("does not collapse the workspace row when the exited-session toggle is activated by keyboard", () => {
+    const workspace = {
+      id: "ws-alpha",
+      name: "alpha",
+      path: "/tmp/alpha",
+      connected: true,
+      kind: "main" as const,
+      settings: {
+        sidebarCollapsed: false,
+        worktreeSetupScript: null,
+      },
+    };
+
+    render(
+      <Sidebar
+        {...baseProps}
+        workspaces={[workspace]}
+        groupedWorkspaces={[
+          {
+            id: null,
+            name: "Ungrouped",
+            workspaces: [workspace],
+          },
+        ]}
+        threadsByWorkspace={{
+          "ws-alpha": [
+            { id: "alpha-running", name: "Alpha running", updatedAt: 2 },
+            { id: "alpha-exited", name: "Alpha exited", updatedAt: 1 },
+          ],
+        }}
+        threadStatusById={{
+          "alpha-running": { isProcessing: true, hasUnread: false, isReviewing: false },
+          "alpha-exited": { isProcessing: false, hasUnread: false, isReviewing: false },
+        }}
+      />,
+    );
+
+    const alphaCard = screen.getByText("alpha").closest(".workspace-card") as HTMLElement | null;
+    expect(alphaCard).toBeTruthy();
+    if (!alphaCard) {
+      throw new Error("Missing workspace card");
+    }
+
+    const toggle = within(alphaCard).getByRole("button", { name: "Hide exited sessions" });
+    fireEvent.keyDown(toggle, { key: "Enter" });
+    fireEvent.click(toggle);
+    fireEvent.keyUp(toggle, { key: "Enter" });
+
+    expect(within(alphaCard).queryByText("Alpha exited")).toBeNull();
+    expect(within(alphaCard).getByText("Alpha running")).toBeTruthy();
+  });
+
+  it("lets worktrees toggle exited-session visibility without affecting the parent project", () => {
+    const workspace = {
+      id: "ws-root",
+      name: "root",
+      path: "/tmp/root",
+      connected: true,
+      kind: "main" as const,
+      settings: {
+        sidebarCollapsed: false,
+        worktreeSetupScript: null,
+      },
+    };
+    const worktree = {
+      id: "ws-worktree",
+      name: "root/feature-hidden",
+      path: "/tmp/root-feature-hidden",
+      connected: true,
+      parentId: "ws-root",
+      kind: "worktree" as const,
+      settings: {
+        sidebarCollapsed: false,
+        worktreeSetupScript: null,
+      },
+      worktree: {
+        branch: "feature-hidden",
+      },
+    };
+
+    render(
+      <Sidebar
+        {...baseProps}
+        workspaces={[workspace, worktree]}
+        groupedWorkspaces={[
+          {
+            id: null,
+            name: "Ungrouped",
+            workspaces: [workspace],
+          },
+        ]}
+        threadsByWorkspace={{
+          "ws-root": [
+            { id: "root-running", name: "Root running", updatedAt: 2 },
+            { id: "root-exited", name: "Root exited", updatedAt: 1 },
+          ],
+          "ws-worktree": [
+            { id: "worktree-running", name: "Worktree running", updatedAt: 2 },
+            { id: "worktree-exited", name: "Worktree exited", updatedAt: 1 },
+          ],
+        }}
+        threadStatusById={{
+          "root-running": { isProcessing: true, hasUnread: false, isReviewing: false },
+          "root-exited": { isProcessing: false, hasUnread: false, isReviewing: false },
+          "worktree-running": { isProcessing: true, hasUnread: false, isReviewing: false },
+          "worktree-exited": { isProcessing: false, hasUnread: false, isReviewing: false },
+        }}
+      />,
+    );
+
+    const worktreeCard = screen.getByText("feature-hidden").closest(".worktree-card") as HTMLElement | null;
+    expect(worktreeCard).toBeTruthy();
+    if (!worktreeCard) {
+      throw new Error("Missing worktree card");
+    }
+
+    fireEvent.click(
+      within(worktreeCard).getByRole("button", { name: "Hide exited sessions" }),
+    );
+
+    expect(within(worktreeCard).queryByText("Worktree exited")).toBeNull();
+    expect(within(worktreeCard).getByText("Worktree running")).toBeTruthy();
+    expect(screen.getByText("Root exited")).toBeTruthy();
+  });
+
+  it("does not collapse the worktree row when the exited-session toggle is activated by keyboard", () => {
+    const workspace = {
+      id: "ws-root",
+      name: "root",
+      path: "/tmp/root",
+      connected: true,
+      kind: "main" as const,
+      settings: {
+        sidebarCollapsed: false,
+        worktreeSetupScript: null,
+      },
+    };
+    const worktree = {
+      id: "ws-worktree",
+      name: "root/feature-hidden",
+      path: "/tmp/root-feature-hidden",
+      connected: true,
+      parentId: "ws-root",
+      kind: "worktree" as const,
+      settings: {
+        sidebarCollapsed: false,
+        worktreeSetupScript: null,
+      },
+      worktree: {
+        branch: "feature-hidden",
+      },
+    };
+
+    render(
+      <Sidebar
+        {...baseProps}
+        workspaces={[workspace, worktree]}
+        groupedWorkspaces={[
+          {
+            id: null,
+            name: "Ungrouped",
+            workspaces: [workspace],
+          },
+        ]}
+        threadsByWorkspace={{
+          "ws-root": [{ id: "root-running", name: "Root running", updatedAt: 2 }],
+          "ws-worktree": [
+            { id: "worktree-running", name: "Worktree running", updatedAt: 2 },
+            { id: "worktree-exited", name: "Worktree exited", updatedAt: 1 },
+          ],
+        }}
+        threadStatusById={{
+          "root-running": { isProcessing: true, hasUnread: false, isReviewing: false },
+          "worktree-running": { isProcessing: true, hasUnread: false, isReviewing: false },
+          "worktree-exited": { isProcessing: false, hasUnread: false, isReviewing: false },
+        }}
+      />,
+    );
+
+    const worktreeCard = screen.getByText("feature-hidden").closest(".worktree-card") as HTMLElement | null;
+    expect(worktreeCard).toBeTruthy();
+    if (!worktreeCard) {
+      throw new Error("Missing worktree card");
+    }
+
+    const toggle = within(worktreeCard).getByRole("button", { name: "Hide exited sessions" });
+    fireEvent.keyDown(toggle, { key: "Spacebar" });
+    fireEvent.click(toggle);
+    fireEvent.keyUp(toggle, { key: "Spacebar" });
+
+    expect(within(worktreeCard).queryByText("Worktree exited")).toBeNull();
+    expect(within(worktreeCard).getByText("Worktree running")).toBeTruthy();
   });
 
   it("uses project alias only for the sidebar workspace label", () => {

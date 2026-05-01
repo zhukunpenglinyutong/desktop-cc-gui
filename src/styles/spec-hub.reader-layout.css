@@ -292,6 +292,10 @@
   display: none;
 }
 
+.detached-spec-hub-window .spec-hub-artifacts .spec-hub-panel-compact-action {
+  display: none;
+}
+
 .detached-spec-hub-window.spec-hub-surface .spec-hub-grid {
   grid-template-columns:
     var(--spec-hub-changes-width, clamp(220px, 18vw, 280px))

@@ -228,6 +228,45 @@ describe("Messages note-card context", () => {
     expect(container.querySelectorAll(".message-image-thumb")).toHaveLength(0);
   });
 
+  it("keeps ordinary user screenshots when suppressing the duplicated note-card summary card", () => {
+    const ordinaryScreenshot =
+      "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAFElEQVQImWNgYGD4z8DAwMDEAAUABJ8BB6cJteUAAAAASUVORK5CYII=";
+    const noteCardImagePath = "/tmp/ws/.ccgui/note_card/ws/assets/note-1/deploy.png";
+    const items: ConversationItem[] = [
+      {
+        id: "assistant-note-card-summary-history",
+        kind: "message",
+        role: "assistant",
+        text:
+          '【便签上下文】\n<note-card-context>\n<note-card title="发布清单" archived="false">\n先构建，再发布\n\nImages:\n- deploy.png | /tmp/ws/.ccgui/note_card/ws/assets/note-1/deploy.png\n</note-card>\n</note-card-context>',
+      },
+      {
+        id: "real-user-note-card-history",
+        kind: "message",
+        role: "user",
+        text:
+          '请同时参考便签和这张截图\n\n<note-card-context>\n<note-card title="发布清单" archived="false">\n先构建，再发布\n\nImages:\n- deploy.png | /tmp/ws/.ccgui/note_card/ws/assets/note-1/deploy.png\n</note-card>\n</note-card-context>',
+        images: [ordinaryScreenshot, noteCardImagePath],
+      },
+    ];
+
+    const { container } = render(
+      <Messages
+        items={items}
+        threadId="thread-note-card-history-screenshot"
+        workspaceId="ws-1"
+        isThinking={false}
+        activeEngine="codex"
+        openTargets={[]}
+        selectedOpenAppId=""
+      />,
+    );
+
+    expect(container.querySelectorAll(".note-card-context-summary-card")).toHaveLength(1);
+    expect(container.querySelectorAll(".message-image-thumb")).toHaveLength(1);
+    expect(container.querySelectorAll(".note-card-context-summary-image")).toHaveLength(1);
+  });
+
   it("does not suppress a later user note-card card when the matching summary belongs to an earlier turn", () => {
     const items: ConversationItem[] = [
       {

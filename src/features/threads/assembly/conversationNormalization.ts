@@ -6,7 +6,7 @@ type UserConversationMessage = MessageConversationItem & { role: "user" };
 type ReasoningConversationItem = Extract<ConversationItem, { kind: "reasoning" }>;
 
 const USER_INPUT_BLOCK_MARKER_REGEX = /\[User Input\]\s*/gi;
-const PROJECT_MEMORY_BLOCK_REGEX = /^<project-memory>[\s\S]*?<\/project-memory>\s*/i;
+const PROJECT_MEMORY_BLOCK_REGEX = /^<project-memory\b[\s\S]*?<\/project-memory>\s*/i;
 const MODE_FALLBACK_PREFIX_REGEX =
   /^(?:collaboration mode:\s*code\.|execution policy \(default mode\):|execution policy \(plan mode\):)/i;
 const MODE_FALLBACK_MARKER_REGEX = /User request\s*:\s*/i;

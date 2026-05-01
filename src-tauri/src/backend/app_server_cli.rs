@@ -127,6 +127,89 @@ fn discover_npm_global_bin_dir(seed_paths: &[PathBuf]) -> Option<PathBuf> {
     discover_npm_global_bin_dir_from_npm(seed_paths, None)
 }
 
+#[cfg(any(windows, test))]
+fn build_windows_extra_search_paths(
+    appdata: Option<&Path>,
+    user_profile: Option<&Path>,
+    local_app_data: Option<&Path>,
+    program_files: Option<&Path>,
+    program_files_x86: Option<&Path>,
+) -> Vec<PathBuf> {
+    let mut paths: Vec<PathBuf> = Vec::new();
+
+    if let Some(appdata) = appdata {
+        paths.push(appdata.join("npm"));
+    }
+    if let Some(user_profile) = user_profile {
+        // Fallback: npm global install path via USERPROFILE
+        paths.push(user_profile.join("AppData\\Roaming\\npm"));
+        // Common user-local launcher path used by CLI installers on Windows.
+        paths.push(user_profile.join(".local\\bin"));
+        // Cargo bin
+        paths.push(user_profile.join(".cargo\\bin"));
+        // Bun
+        paths.push(user_profile.join(".bun\\bin"));
+        // fnm (Fast Node Manager)
+        let fnm_root = user_profile.join("AppData\\Local\\fnm\\node-versions");
+        if let Ok(entries) = std::fs::read_dir(&fnm_root) {
+            for entry in entries.flatten() {
+                let bin_path = entry.path().join("installation");
+                if bin_path.is_dir() {
+                    paths.push(bin_path);
+                }
+            }
+        }
+        // nvm-windows
+        let nvm_root = user_profile.join("AppData\\Roaming\\nvm");
+        if let Ok(entries) = std::fs::read_dir(&nvm_root) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_dir()
+                    && path
+                        .file_name()
+                        .map_or(false, |n| n.to_string_lossy().starts_with('v'))
+                {
+                    paths.push(path);
+                }
+            }
+        }
+    }
+    if let Some(local_app_data) = local_app_data {
+        // Volta
+        paths.push(local_app_data.join("Volta\\bin"));
+        // pnpm
+        paths.push(local_app_data.join("pnpm"));
+        // User-scoped Node.js installs (common on Windows when not installed to Program Files)
+        let programs_root = local_app_data.join("Programs");
+        if programs_root.is_dir() {
+            paths.push(programs_root.join("nodejs"));
+            if let Ok(entries) = std::fs::read_dir(&programs_root) {
+                for entry in entries.flatten() {
+                    let candidate = entry.path();
+                    if !candidate.is_dir() {
+                        continue;
+                    }
+                    let folder_name = entry.file_name().to_string_lossy().to_ascii_lowercase();
+                    if folder_name == "nodejs"
+                        || folder_name.starts_with("node-v")
+                        || folder_name.starts_with("nodejs-v")
+                    {
+                        paths.push(candidate);
+                    }
+                }
+            }
+        }
+    }
+    if let Some(program_files) = program_files {
+        paths.push(program_files.join("nodejs"));
+    }
+    if let Some(program_files_x86) = program_files_x86 {
+        paths.push(program_files_x86.join("nodejs"));
+    }
+
+    paths
+}
+
 /// Build extra search paths for CLI tools (cross-platform)
 fn get_extra_search_paths() -> Vec<PathBuf> {
     let mut paths: Vec<PathBuf> = Vec::new();
@@ -134,76 +217,18 @@ fn get_extra_search_paths() -> Vec<PathBuf> {
     #[cfg(windows)]
     {
         // Windows-specific paths
-        // Use APPDATA directly (most reliable for npm global)
-        if let Ok(appdata) = env::var("APPDATA") {
-            paths.push(Path::new(&appdata).join("npm"));
-        }
-        if let Ok(user_profile) = env::var("USERPROFILE") {
-            let user_profile = Path::new(&user_profile);
-            // Fallback: npm global install path via USERPROFILE
-            paths.push(user_profile.join("AppData\\Roaming\\npm"));
-            // Cargo bin
-            paths.push(user_profile.join(".cargo\\bin"));
-            // Bun
-            paths.push(user_profile.join(".bun\\bin"));
-            // fnm (Fast Node Manager)
-            let fnm_root = user_profile.join("AppData\\Local\\fnm\\node-versions");
-            if let Ok(entries) = std::fs::read_dir(&fnm_root) {
-                for entry in entries.flatten() {
-                    let bin_path = entry.path().join("installation");
-                    if bin_path.is_dir() {
-                        paths.push(bin_path);
-                    }
-                }
-            }
-            // nvm-windows
-            let nvm_root = user_profile.join("AppData\\Roaming\\nvm");
-            if let Ok(entries) = std::fs::read_dir(&nvm_root) {
-                for entry in entries.flatten() {
-                    let path = entry.path();
-                    if path.is_dir()
-                        && path
-                            .file_name()
-                            .map_or(false, |n| n.to_string_lossy().starts_with('v'))
-                    {
-                        paths.push(path);
-                    }
-                }
-            }
-        }
-        if let Ok(local_app_data) = env::var("LOCALAPPDATA") {
-            let local_app_data = Path::new(&local_app_data);
-            // Volta
-            paths.push(local_app_data.join("Volta\\bin"));
-            // pnpm
-            paths.push(local_app_data.join("pnpm"));
-            // User-scoped Node.js installs (common on Windows when not installed to Program Files)
-            let programs_root = local_app_data.join("Programs");
-            if programs_root.is_dir() {
-                paths.push(programs_root.join("nodejs"));
-                if let Ok(entries) = std::fs::read_dir(&programs_root) {
-                    for entry in entries.flatten() {
-                        let candidate = entry.path();
-                        if !candidate.is_dir() {
-                            continue;
-                        }
-                        let folder_name = entry.file_name().to_string_lossy().to_ascii_lowercase();
-                        if folder_name == "nodejs"
-                            || folder_name.starts_with("node-v")
-                            || folder_name.starts_with("nodejs-v")
-                        {
-                            paths.push(candidate);
-                        }
-                    }
-                }
-            }
-        }
-        if let Ok(program_files) = env::var("ProgramFiles") {
-            paths.push(Path::new(&program_files).join("nodejs"));
-        }
-        if let Ok(program_files_x86) = env::var("ProgramFiles(x86)") {
-            paths.push(Path::new(&program_files_x86).join("nodejs"));
-        }
+        let appdata = env::var("APPDATA").ok();
+        let user_profile = env::var("USERPROFILE").ok();
+        let local_app_data = env::var("LOCALAPPDATA").ok();
+        let program_files = env::var("ProgramFiles").ok();
+        let program_files_x86 = env::var("ProgramFiles(x86)").ok();
+        paths.extend(build_windows_extra_search_paths(
+            appdata.as_deref().map(Path::new),
+            user_profile.as_deref().map(Path::new),
+            local_app_data.as_deref().map(Path::new),
+            program_files.as_deref().map(Path::new),
+            program_files_x86.as_deref().map(Path::new),
+        ));
     }
 
     #[cfg(not(windows))]
@@ -1226,6 +1251,25 @@ mod tests {
             Some("/tmp/Claude")
         );
         assert_eq!(matching_custom_bin(Some(""), "claude"), None);
+    }
+
+    #[test]
+    fn windows_extra_search_paths_include_user_local_bin() {
+        let paths = build_windows_extra_search_paths(
+            Some(Path::new("C:\\Users\\Administrator\\AppData\\Roaming")),
+            Some(Path::new("C:\\Users\\Administrator")),
+            Some(Path::new("C:\\Users\\Administrator\\AppData\\Local")),
+            Some(Path::new("C:\\Program Files")),
+            Some(Path::new("C:\\Program Files (x86)")),
+        );
+
+        assert!(
+            paths
+                .iter()
+                .any(|path| path.to_string_lossy().replace('/', "\\")
+                    == "C:\\Users\\Administrator\\.local\\bin"),
+            "expected Windows CLI search paths to include ~/.local/bin"
+        );
     }
 
     #[cfg(unix)]

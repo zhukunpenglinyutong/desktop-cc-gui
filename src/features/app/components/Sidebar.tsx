@@ -18,6 +18,7 @@ import { WorkspaceCard } from "./WorkspaceCard";
 import { WorkspaceGroup } from "./WorkspaceGroup";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useCollapsedGroups } from "../hooks/useCollapsedGroups";
+import { useExitedSessionVisibility } from "../hooks/useExitedSessionVisibility";
 import { useSidebarMenus } from "../hooks/useSidebarMenus";
 import { useSidebarScrollFade } from "../hooks/useSidebarScrollFade";
 import { useThreadRows } from "../hooks/useThreadRows";
@@ -51,6 +52,7 @@ import {
   getWorkspaceSidebarAlias,
   getWorkspaceSidebarLabel,
 } from "../utils/workspaceSidebarLabel";
+import { getExitedSessionRowVisibility } from "../utils/exitedSessionRows";
 
 type WorkspaceGroupSection = {
   id: string | null;
@@ -259,6 +261,8 @@ export function Sidebar({
   const [collapsedWorktreeSections, setCollapsedWorktreeSections] = useState(
     new Set<string>(),
   );
+  const { isExitedSessionsHidden, toggleExitedSessionsHidden } =
+    useExitedSessionVisibility();
   const [searchQuery, setSearchQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
   const [isSearchOpen] = useState(false);
@@ -777,6 +781,14 @@ export function Sidebar({
       entry.id === activeWorkspaceId && Boolean(activeThreadId);
     const hasRunningSession = hasRunningSessionByProjectId.get(entry.id) ?? false;
     const workspaceSidebarAlias = getWorkspaceSidebarAlias(entry);
+    const hideExitedSessions = isExitedSessionsHidden(entry.path);
+    const exitedSessionVisibility = getExitedSessionRowVisibility(unpinnedRows, {
+      hideExitedSessions,
+      isExitedThread: (thread) => {
+        const status = threadStatusById[thread.id];
+        return !status?.isProcessing && !status?.isReviewing;
+      },
+    });
     return (
       <WorkspaceCard
         key={entry.id}
@@ -788,11 +800,18 @@ export function Sidebar({
         isThreadListRefreshing={isThreadListRefreshing}
         hasPrimaryActiveThread={hasPrimaryActiveThread}
         hasRunningSession={hasRunningSession}
+        showExitedSessionsToggle={
+          exitedSessionVisibility.hasExitedSessions
+          || exitedSessionVisibility.hiddenExitedCount > 0
+        }
+        hideExitedSessions={hideExitedSessions}
+        hiddenExitedSessionsCount={exitedSessionVisibility.hiddenExitedCount}
         isCollapsed={isCollapsed}
         onShowWorkspaceMenu={showWorkspaceMenu}
         onQuickReloadWorkspaceThreads={onQuickReloadWorkspaceThreads}
         onSelectWorkspace={onSelectWorkspace}
         onToggleWorkspaceCollapse={onToggleWorkspaceCollapse}
+        onToggleExitedSessions={toggleExitedSessionsHidden}
       >
         {!isCollapsed && worktrees.length > 0 && (
           <WorktreeSection
@@ -823,6 +842,8 @@ export function Sidebar({
             onQuickReloadWorkspaceThreads={onQuickReloadWorkspaceThreads}
             onSelectWorkspace={onSelectWorkspace}
             onToggleWorkspaceCollapse={onToggleWorkspaceCollapse}
+            isExitedSessionsHidden={isExitedSessionsHidden}
+            onToggleExitedSessionsHidden={toggleExitedSessionsHidden}
             onSelectThread={onSelectThread}
             onShowThreadMenu={showThreadMenu}
             deleteConfirmThreadId={deleteConfirmThreadId}
@@ -844,6 +865,7 @@ export function Sidebar({
             isExpanded={isExpanded}
             nextCursor={nextCursor}
             isPaging={isPaging}
+            hideExitedSessions={hideExitedSessions}
             activeWorkspaceId={activeWorkspaceId}
             activeThreadId={activeThreadId}
             systemProxyEnabled={systemProxyEnabled}
@@ -902,11 +924,13 @@ export function Sidebar({
     onToggleWorkspaceCollapse,
     renderHighlightedName,
     hydratedThreadListWorkspaceIds,
+    isExitedSessionsHidden,
     threadListCursorByWorkspace,
     threadListPagingByWorkspace,
     threadRowsByWorkspace,
     threadStatusById,
     threadsByWorkspace,
+    toggleExitedSessionsHidden,
     worktreesByParent,
     _threadListLoadingByWorkspace,
   ]);

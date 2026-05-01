@@ -258,6 +258,72 @@ describe('ChatInputBoxAdapter toggle bridge', () => {
     expect(mockState.renderCount).toBe(1);
   });
 
+  it('rerenders ChatInputBox when custom commands are loaded after mount', async () => {
+    const stableProps: ComponentProps<typeof ChatInputBoxAdapter> = {
+      text: '',
+      isProcessing: false,
+      canStop: false,
+      selectedModelId: 'claude-sonnet-4-6',
+      onSend: () => {},
+      onStop: () => {},
+      onTextChange: () => {},
+      selectedEngine: 'claude',
+      commands: [],
+    };
+
+    const view = render(<ChatInputBoxAdapter {...stableProps} />);
+    await waitFor(() => expect(mockState.latestProps).toBeTruthy());
+    expect(mockState.renderCount).toBe(1);
+
+    view.rerender(
+      <ChatInputBoxAdapter
+        {...stableProps}
+        commands={[
+          {
+            name: 'next',
+            path: '/repo/.claude/commands/next.md',
+            description: 'continue with next step',
+            content: 'next',
+          },
+        ]}
+      />,
+    );
+
+    expect(mockState.renderCount).toBe(2);
+  });
+
+  it('matches project custom slash commands by slash name', async () => {
+    renderAdapter({
+      commands: [
+        {
+          name: 'next',
+          path: '/repo/.claude/commands/next.md',
+          description: 'continue with next step',
+          content: 'next',
+        },
+      ],
+    });
+
+    await waitFor(() => expect(mockState.latestProps).toBeTruthy());
+
+    const latest = mockState.latestProps as {
+      commandCompletionProvider?: (
+        query: string,
+        signal: AbortSignal,
+      ) => Promise<Array<{ id: string; label: string; category?: string }>>;
+    };
+
+    const results = await latest.commandCompletionProvider?.('next', new AbortController().signal);
+
+    expect(results).toContainEqual(
+      expect.objectContaining({
+        id: 'next',
+        label: '/next',
+        category: 'custom',
+      }),
+    );
+  });
+
   it('uses external thinking callback when supplied', async () => {
     const onToggleThinking = vi.fn();
     renderAdapter({

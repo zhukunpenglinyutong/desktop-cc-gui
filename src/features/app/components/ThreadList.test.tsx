@@ -8,7 +8,7 @@ import { ThreadList } from "./ThreadList";
 vi.mock("react-i18next", () => ({
   // This mock returns the key as-is for testing
   useTranslation: () => ({
-    t: (key: string) => {
+    t: (key: string, options?: Record<string, unknown>) => {
       const translations: Record<string, string> = {
         "threads.showLess": "Show less",
         "threads.more": "More...",
@@ -21,6 +21,9 @@ vi.mock("react-i18next", () => ({
         "threads.autoNaming": "Auto naming...",
         "threads.pin": "Pin",
         "threads.unpin": "Unpin",
+        "threads.hideExitedSessions": "Hide exited sessions",
+        "threads.showExitedSessions": "Show exited sessions",
+        "threads.exitedSessionsHidden": "{{count}} exited hidden",
         "threads.deleteThreadTitle": "Delete conversation",
         "threads.deleteThreadMessage": "Are you sure you want to delete this thread?",
         "threads.deleteThreadHint": "This cannot be undone.",
@@ -28,7 +31,8 @@ vi.mock("react-i18next", () => ({
         "common.cancel": "Cancel",
         "common.deleting": "Deleting",
       };
-      return translations[key] || key;
+      const template = translations[key] || key;
+      return template.replace(/\{\{(\w+)\}\}/g, (_, token: string) => String(options?.[token] ?? ""));
     },
     i18n: { language: "en", changeLanguage: vi.fn() },
   }),
@@ -231,6 +235,70 @@ describe("ThreadList", () => {
     );
 
     expect(screen.getByText("Auto naming...")).toBeTruthy();
+  });
+
+  it("can hide exited sessions from the workspace thread list", () => {
+    render(
+      <ThreadList
+        {...baseProps}
+        hideExitedSessions
+        unpinnedRows={[
+          { thread: { id: "thread-running", name: "Running", updatedAt: 2 }, depth: 0 },
+          { thread: { id: "thread-exited", name: "Exited", updatedAt: 1 }, depth: 0 },
+        ]}
+        threadStatusById={{
+          "thread-running": { isProcessing: true, hasUnread: false, isReviewing: false },
+          "thread-exited": { isProcessing: false, hasUnread: false, isReviewing: false },
+        }}
+      />,
+    );
+
+    expect(screen.getByText("Running")).toBeTruthy();
+    expect(screen.getByText("Running")).toBeTruthy();
+    expect(screen.queryByText("Exited")).toBeNull();
+    expect(screen.queryByText("1 exited hidden")).toBeNull();
+  });
+
+  it("keeps exited parent rows visible when a running child remains visible", () => {
+    render(
+      <ThreadList
+        {...baseProps}
+        hideExitedSessions
+        unpinnedRows={[
+          { thread: { id: "thread-parent", name: "Parent", updatedAt: 3 }, depth: 0 },
+          { thread: { id: "thread-child", name: "Running child", updatedAt: 2 }, depth: 1 },
+          { thread: { id: "thread-exited", name: "Exited sibling", updatedAt: 1 }, depth: 0 },
+        ]}
+        threadStatusById={{
+          "thread-parent": { isProcessing: false, hasUnread: false, isReviewing: false },
+          "thread-child": { isProcessing: true, hasUnread: false, isReviewing: false },
+          "thread-exited": { isProcessing: false, hasUnread: false, isReviewing: false },
+        }}
+      />,
+    );
+
+    expect(screen.getByText("Parent")).toBeTruthy();
+    expect(screen.getByText("Running child")).toBeTruthy();
+    expect(screen.queryByText("Exited sibling")).toBeNull();
+    expect(screen.queryByText("1 exited hidden")).toBeNull();
+  });
+
+  it("shows a muted hidden summary when all visible rows are filtered out", () => {
+    render(
+      <ThreadList
+        {...baseProps}
+        hideExitedSessions
+        unpinnedRows={[
+          { thread: { id: "thread-exited", name: "Exited", updatedAt: 1 }, depth: 0 },
+        ]}
+        threadStatusById={{
+          "thread-exited": { isProcessing: false, hasUnread: false, isReviewing: false },
+        }}
+      />,
+    );
+
+    expect(screen.queryByText("Exited")).toBeNull();
+    expect(screen.getByText("1 exited hidden")).toBeTruthy();
   });
 
   it("renders only relative time inline when size is available", () => {

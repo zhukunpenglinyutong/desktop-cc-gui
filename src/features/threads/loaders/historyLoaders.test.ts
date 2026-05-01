@@ -278,6 +278,160 @@ describe("history loaders", () => {
     ]);
   });
 
+  it("prefers more complete local Codex history when fallback preserves ordinary user screenshots", async () => {
+    const ordinaryScreenshot = "file:///tmp/ws/screenshots/user-shot-1.png";
+    const loader = createCodexHistoryLoader({
+      workspaceId: "ws-history-user-images",
+      resumeThread: vi.fn().mockResolvedValue({
+        result: {
+          thread: {
+            turns: [
+              {
+                id: "turn-1",
+                items: [
+                  {
+                    id: "remote-user-1",
+                    type: "userMessage",
+                    content: [{ type: "text", text: "看下这张截图" }],
+                  },
+                  {
+                    id: "remote-assistant-1",
+                    type: "agentMessage",
+                    text: "我来看看。",
+                  },
+                ],
+              },
+            ],
+          },
+        },
+      }),
+      loadCodexSession: vi.fn().mockResolvedValue({
+        entries: [
+          {
+            type: "response_item",
+            payload: {
+              type: "message",
+              role: "user",
+              content: [
+                { type: "input_text", text: "看下这张截图" },
+                { type: "input_image", image_url: ordinaryScreenshot },
+              ],
+            },
+          },
+          {
+            type: "response_item",
+            payload: {
+              type: "message",
+              role: "assistant",
+              content: [{ type: "output_text", text: "我来看看。" }],
+            },
+          },
+        ],
+      }),
+    });
+
+    const snapshot = await loader.load("thread-history-user-images");
+    const userMessages = snapshot.items.filter(
+      (item): item is Extract<typeof snapshot.items[number], { kind: "message" }> =>
+        item.kind === "message" && item.role === "user",
+    );
+
+    expect(userMessages).toEqual([
+      expect.objectContaining({
+        kind: "message",
+        role: "user",
+        text: "看下这张截图",
+        images: [ordinaryScreenshot],
+      }),
+    ]);
+  });
+
+  it("merges fallback user screenshots without dropping remote Codex structured history", async () => {
+    const ordinaryScreenshot = "file:///tmp/ws/screenshots/user-shot-2.png";
+    const loader = createCodexHistoryLoader({
+      workspaceId: "ws-history-user-images-structured",
+      resumeThread: vi.fn().mockResolvedValue({
+        result: {
+          thread: {
+            turns: [
+              {
+                id: "turn-1",
+                items: [
+                  {
+                    id: "remote-user-1",
+                    type: "userMessage",
+                    content: [{ type: "text", text: "看下这张截图" }],
+                  },
+                  {
+                    id: "remote-reason-1",
+                    type: "reasoning",
+                    summary: "分析截图",
+                    content: "先看一下用户截图",
+                  },
+                  {
+                    id: "remote-assistant-1",
+                    type: "agentMessage",
+                    text: "我来看看。",
+                    isFinal: true,
+                    finalCompletedAt: 2_000,
+                    finalDurationMs: 800,
+                  },
+                ],
+              },
+            ],
+          },
+        },
+      }),
+      loadCodexSession: vi.fn().mockResolvedValue({
+        entries: [
+          {
+            type: "response_item",
+            payload: {
+              type: "message",
+              role: "user",
+              content: [
+                { type: "input_text", text: "看下这张截图" },
+                { type: "input_image", image_url: ordinaryScreenshot },
+              ],
+            },
+          },
+          {
+            type: "response_item",
+            payload: {
+              type: "message",
+              role: "assistant",
+              content: [{ type: "output_text", text: "我来看看。" }],
+            },
+          },
+        ],
+      }),
+    });
+
+    const snapshot = await loader.load("thread-history-user-images-structured");
+
+    expect(snapshot.items).toEqual([
+      expect.objectContaining({
+        kind: "message",
+        role: "user",
+        text: "看下这张截图",
+        images: [ordinaryScreenshot],
+      }),
+      expect.objectContaining({
+        kind: "reasoning",
+        summary: "分析截图",
+        content: "先看一下用户截图",
+      }),
+      expect.objectContaining({
+        kind: "message",
+        role: "assistant",
+        text: "我来看看。",
+        isFinal: true,
+        finalCompletedAt: 2_000_000,
+        finalDurationMs: 800,
+      }),
+    ]);
+  });
+
   it("parses Codex response_item message string content", () => {
     const items = parseCodexSessionHistory({
       entries: [

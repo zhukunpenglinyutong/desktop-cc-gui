@@ -93,6 +93,7 @@ type MessageRowProps = {
     itemId: string;
     visibleText: string;
   }) => void;
+  suppressMemorySummaryCard?: boolean;
   suppressNoteCardSummaryCard?: boolean;
 };
 
@@ -200,6 +201,7 @@ function areMessageRowPropsEqual(
     previous.onOpenFileLinkMenu === next.onOpenFileLinkMenu &&
     previous.streamMitigationProfile === next.streamMitigationProfile &&
     previous.onAssistantVisibleTextRender === next.onAssistantVisibleTextRender &&
+    previous.suppressMemorySummaryCard === next.suppressMemorySummaryCard &&
     previous.suppressNoteCardSummaryCard === next.suppressNoteCardSummaryCard
   );
 }
@@ -710,6 +712,7 @@ export const MessageRow = memo(function MessageRow({
   onOpenFileLinkMenu,
   streamMitigationProfile = null,
   onAssistantVisibleTextRender,
+  suppressMemorySummaryCard = false,
   suppressNoteCardSummaryCard = false,
 }: MessageRowProps) {
   const { t } = useTranslation();
@@ -749,16 +752,36 @@ export const MessageRow = memo(function MessageRow({
         : userMessagePresentation?.noteCardSummary ?? null,
     [item.role, item.text, userMessagePresentation?.noteCardSummary],
   );
+  const resolvedMemorySummary = suppressMemorySummaryCard ? null : memorySummary;
   const resolvedNoteCardSummary = suppressNoteCardSummaryCard ? null : noteCardSummary;
   const agentTaskNotification = useMemo(
     () => parseAgentTaskNotification(item.text),
     [item.text],
   );
+  const shouldHideSuppressedInjectedContextText =
+    item.role === "user" &&
+    !agentTaskNotification &&
+    (
+      (
+        suppressMemorySummaryCard &&
+        Boolean(userMessagePresentation?.memorySummary) &&
+        (userMessagePresentation?.stickyCandidateText ?? "").trim().length === 0
+      ) ||
+      (
+        suppressNoteCardSummaryCard &&
+        Boolean(userMessagePresentation?.noteCardSummary) &&
+        (userMessagePresentation?.stickyCandidateText ?? "").trim().length === 0
+      )
+    );
   const displayText = agentTaskNotification
     ? agentTaskNotification.resultText
     : item.role === "user"
-      ? (userMessagePresentation?.displayText ?? item.text)
-      : memorySummary || resolvedNoteCardSummary
+      ? (
+          shouldHideSuppressedInjectedContextText
+            ? ""
+            : (userMessagePresentation?.displayText ?? item.text)
+        )
+      : resolvedMemorySummary || resolvedNoteCardSummary
         ? ""
         : item.text;
   const selectedAgentName = userMessagePresentation?.selectedAgentName ?? null;
@@ -813,10 +836,10 @@ export const MessageRow = memo(function MessageRow({
   const hideCopyButton = (
     !hasText
     && imageItems.length === 0
-    && !memorySummary
+    && !resolvedMemorySummary
   ) || (
     item.role === "assistant"
-    && (Boolean(memorySummary) || Boolean(resolvedNoteCardSummary))
+    && (Boolean(resolvedMemorySummary) || Boolean(resolvedNoteCardSummary))
     && !hasText
     && imageItems.length === 0
   );
@@ -913,7 +936,7 @@ export const MessageRow = memo(function MessageRow({
           hasText={hasText}
         />
       )}
-      {memorySummary ? (
+      {resolvedMemorySummary ? (
         <div className="memory-context-summary-card">
           <button
             type="button"
@@ -926,7 +949,7 @@ export const MessageRow = memo(function MessageRow({
             </span>
             <span className="memory-context-summary-count">
               {t("messages.memoryContextSummaryCount", {
-                count: memorySummary.lines.length,
+                count: resolvedMemorySummary.lines.length,
               })}
             </span>
             {memorySummaryExpanded ? (
@@ -937,7 +960,7 @@ export const MessageRow = memo(function MessageRow({
           </button>
           {memorySummaryExpanded && (
             <div className="memory-context-summary-content">
-              {memorySummary.lines.map((line, index) => (
+              {resolvedMemorySummary.lines.map((line, index) => (
                 <p key={`${item.id}-line-${index}`}>{line}</p>
               ))}
             </div>
@@ -1016,7 +1039,7 @@ export const MessageRow = memo(function MessageRow({
   const shouldRenderBubble =
     agentTaskNotification
     || imageItems.length > 0
-    || Boolean(memorySummary)
+    || Boolean(resolvedMemorySummary)
     || (Boolean(runtimeReconnectHint) && showRuntimeReconnectCard)
     || hasText
     || !hideCopyButton;

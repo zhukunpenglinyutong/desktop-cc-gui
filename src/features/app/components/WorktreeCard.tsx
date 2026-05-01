@@ -1,11 +1,17 @@
 import GitBranch from "lucide-react/dist/esm/icons/git-branch";
 import ArrowRight from "lucide-react/dist/esm/icons/arrow-right";
+import Eye from "lucide-react/dist/esm/icons/eye";
+import EyeOff from "lucide-react/dist/esm/icons/eye-off";
 import RefreshCw from "lucide-react/dist/esm/icons/refresh-cw";
 import type { MouseEvent } from "react";
 import { useTranslation } from "react-i18next";
 
 import type { WorkspaceInfo } from "../../../types";
 import { TooltipIconButton } from "../../../components/ui/tooltip-icon-button";
+
+function isActivationKey(key: string) {
+  return key === "Enter" || key === " " || key === "Space" || key === "Spacebar";
+}
 
 type WorktreeCardProps = {
   worktree: WorkspaceInfo;
@@ -14,6 +20,9 @@ type WorktreeCardProps = {
   isThreadListRefreshing?: boolean;
   hasPrimaryActiveThread: boolean;
   hasRunningSession?: boolean;
+  showExitedSessionsToggle?: boolean;
+  hideExitedSessions?: boolean;
+  hiddenExitedSessionsCount?: number;
   threadCount: number;
   hasThreadCursor: boolean;
   isDeleting?: boolean;
@@ -23,6 +32,7 @@ type WorktreeCardProps = {
   onSelectWorkspace: (workspaceId: string) => void;
   onToggleWorkspaceCollapse: (workspaceId: string, collapsed: boolean) => void;
   onConnectWorkspace: (workspace: WorkspaceInfo) => void;
+  onToggleExitedSessions?: (workspacePath: string) => void;
   children?: React.ReactNode;
 };
 
@@ -56,6 +66,9 @@ export function WorktreeCard({
   isThreadListRefreshing = false,
   hasPrimaryActiveThread,
   hasRunningSession = false,
+  showExitedSessionsToggle = false,
+  hideExitedSessions = false,
+  hiddenExitedSessionsCount = 0,
   threadCount,
   hasThreadCursor,
   isDeleting = false,
@@ -65,6 +78,7 @@ export function WorktreeCard({
   onSelectWorkspace,
   onToggleWorkspaceCollapse,
   onConnectWorkspace,
+  onToggleExitedSessions,
   children,
 }: WorktreeCardProps) {
   const { t } = useTranslation();
@@ -74,6 +88,17 @@ export function WorktreeCard({
   const parsedName = parseWorktreeName(displayName);
   const canQuickReloadThreadList =
     isThreadListDegraded && typeof onQuickReloadWorkspaceThreads === "function";
+  const exitedSessionsToggleLabel = hideExitedSessions
+    ? t("threads.showExitedSessions")
+    : t("threads.hideExitedSessions");
+  const exitedSessionsToggleTitle =
+    hideExitedSessions && hiddenExitedSessionsCount > 0
+      ? `${exitedSessionsToggleLabel} · ${t("threads.exitedSessionsHidden", {
+          count: hiddenExitedSessionsCount,
+        })}`
+      : exitedSessionsToggleLabel;
+  const hiddenExitedSessionsCountLabel =
+    hiddenExitedSessionsCount > 99 ? "99+" : String(hiddenExitedSessionsCount);
   const handleToggleCollapse = () => {
     onToggleWorkspaceCollapse(worktree.id, !worktreeCollapsed);
   };
@@ -113,10 +138,48 @@ export function WorktreeCard({
           }
         }}
       >
-        <GitBranch
-          className={`worktree-node-icon${hasRunningSession ? " is-session-running" : ""}`}
-          aria-hidden
-        />
+        <div
+          className={`worktree-leading-icons${showExitedSessionsToggle && onToggleExitedSessions ? " has-exited-toggle" : ""}`}
+        >
+          <GitBranch
+            className={`worktree-node-icon${hasRunningSession ? " is-session-running" : ""}`}
+            aria-hidden
+          />
+          {showExitedSessionsToggle && onToggleExitedSessions ? (
+            <button
+              type="button"
+              className={`workspace-exited-toggle${hideExitedSessions ? " is-active" : ""}`}
+              aria-pressed={hideExitedSessions}
+              aria-label={exitedSessionsToggleTitle}
+              title={exitedSessionsToggleTitle}
+              data-tauri-drag-region="false"
+              onClick={(event) => {
+                event.stopPropagation();
+                onToggleExitedSessions(worktree.path);
+              }}
+              onDoubleClick={(event) => {
+                event.stopPropagation();
+              }}
+              onKeyDown={(event) => {
+                if (isActivationKey(event.key)) {
+                  event.stopPropagation();
+                }
+              }}
+              onKeyUp={(event) => {
+                if (isActivationKey(event.key)) {
+                  event.stopPropagation();
+                }
+              }}
+            >
+              {hideExitedSessions ? <EyeOff size={10} aria-hidden /> : <Eye size={10} aria-hidden />}
+              {hideExitedSessions && hiddenExitedSessionsCount > 0 ? (
+                <span className="workspace-exited-toggle-count" aria-hidden>
+                  {hiddenExitedSessionsCountLabel}
+                </span>
+              ) : null}
+            </button>
+          ) : null}
+        </div>
         <div className="worktree-label-wrap">
           {parsedName.prefix ? (
             <span className="worktree-label-prefix">{parsedName.prefix}</span>

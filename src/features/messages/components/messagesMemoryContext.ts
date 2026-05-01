@@ -1,4 +1,6 @@
+import type { ConversationItem } from "../../../types";
 import { MEMORY_CONTEXT_SUMMARY_PREFIX } from "../../project-memory/utils/memoryMarkers";
+import { isEquivalentUserObservation } from "../../threads/assembly/conversationNormalization";
 
 export type MemoryContextSummary = {
   preview: string;
@@ -12,6 +14,19 @@ const LEGACY_MEMORY_RECORD_HINT_REGEX =
 const PROJECT_MEMORY_XML_PREFIX_REGEX =
   /^<project-memory\b[^>]*>([\s\S]*?)<\/project-memory>\s*/i;
 const PARAGRAPH_BREAK_SPLIT_REGEX = /\r?\n[^\S\r\n]*\r?\n+/;
+const OPTIMISTIC_USER_MESSAGE_PREFIX = "optimistic-user-";
+const QUEUED_HANDOFF_MESSAGE_PREFIX = "queued-handoff-";
+
+function normalizeMemorySummaryKeySegment(value: string) {
+  return value.trim().replace(/\r\n/g, "\n").replace(/\s+/g, " ");
+}
+
+function isPendingUserBubbleId(id: string) {
+  return (
+    id.startsWith(OPTIMISTIC_USER_MESSAGE_PREFIX) ||
+    id.startsWith(QUEUED_HANDOFF_MESSAGE_PREFIX)
+  );
+}
 
 function buildMemorySummary(preview: string): MemoryContextSummary | null {
   const normalizedPreview = preview.trim();
@@ -45,6 +60,27 @@ export function parseMemoryContextSummary(text: string): MemoryContextSummary | 
     preview,
     lines: lines.length > 0 ? lines : [preview],
   };
+}
+
+export function buildMemoryContextSummaryKey(summary: MemoryContextSummary | null) {
+  if (!summary) {
+    return null;
+  }
+  const normalizedLines = summary.lines
+    .map((line) => normalizeMemorySummaryKeySegment(line))
+    .filter(Boolean);
+  if (normalizedLines.length === 0) {
+    return null;
+  }
+  const previewHead = normalizedLines.slice(0, 2).join("；");
+  const previewLooksTruncated =
+    summary.preview.trim().endsWith("...") || normalizedLines.length > 2;
+  if (!previewHead) {
+    return null;
+  }
+  return previewLooksTruncated && !previewHead.endsWith("...")
+    ? `${previewHead}...`
+    : previewHead;
 }
 
 export function parseInjectedMemoryPrefixFromUser(
@@ -116,4 +152,47 @@ export function parseInjectedMemoryPrefixFromUser(
   }
 
   return null;
+}
+
+export function buildSuppressedUserMemoryContextMessageIdSet(items: ConversationItem[]) {
+  const suppressedMessageIds = new Set<string>();
+
+  for (let index = 0; index < items.length; index += 1) {
+    const item = items[index];
+    if (!item || item.kind !== "message" || item.role !== "user") {
+      continue;
+    }
+    const legacyUserMemory = parseInjectedMemoryPrefixFromUser(item.text);
+    const userSummaryKey = buildMemoryContextSummaryKey(
+      legacyUserMemory?.memorySummary ?? null,
+    );
+    if (!userSummaryKey) {
+      continue;
+    }
+
+    for (let previousIndex = index - 1; previousIndex >= 0; previousIndex -= 1) {
+      const previousItem = items[previousIndex];
+      if (!previousItem || previousItem.kind !== "message") {
+        continue;
+      }
+      if (previousItem.role === "user") {
+        if (
+          isPendingUserBubbleId(previousItem.id) &&
+          isEquivalentUserObservation(previousItem, item)
+        ) {
+          continue;
+        }
+        break;
+      }
+      const assistantSummaryKey = buildMemoryContextSummaryKey(
+        parseMemoryContextSummary(previousItem.text),
+      );
+      if (assistantSummaryKey && assistantSummaryKey === userSummaryKey) {
+        suppressedMessageIds.add(item.id);
+        break;
+      }
+    }
+  }
+
+  return suppressedMessageIds;
 }

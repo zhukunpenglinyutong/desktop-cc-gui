@@ -42,7 +42,7 @@ const ACT_BOILERPLATE_PREFIXES = [
   "/* assert on the output */",
   "This ensures that you're testing the behavior the user would see in the browser.",
 ];
-const ANSI_ESCAPE_PATTERN = /\u001B\[[0-9;?]*[ -/]*[@-~]/g;
+const ANSI_ESCAPE_PATTERN = new RegExp(String.raw`\u001B\[[0-9;?]*[ -/]*[@-~]`, "g");
 
 function parseArgs(argv) {
   const config = {
@@ -59,12 +59,20 @@ function parseArgs(argv) {
       continue;
     }
     if (token === "--input") {
-      config.input = argv[index + 1] ?? null;
+      const value = argv[index + 1];
+      if (!value || value.startsWith("--")) {
+        throw new Error("Missing value for --input");
+      }
+      config.input = value;
       index += 1;
       continue;
     }
     if (token === "--log-output") {
-      config.logOutput = argv[index + 1] ?? config.logOutput;
+      const value = argv[index + 1];
+      if (!value || value.startsWith("--")) {
+        throw new Error("Missing value for --log-output");
+      }
+      config.logOutput = value;
       index += 1;
       continue;
     }
@@ -292,7 +300,7 @@ async function main() {
         logText: await readFile(path.resolve(config.input), "utf8"),
       };
 
-  const report = analyzeHeavyTestNoise(logSource.logText);
+  const report = analyzeHeavyTestNoise(logSource.logText, { env: process.env });
   printSummary(report);
   console.log(`  log path: ${logSource.logPath}`);
 

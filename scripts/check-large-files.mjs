@@ -245,8 +245,16 @@ async function loadBaseline(root, baselineFile) {
   try {
     const raw = await fs.readFile(baselinePath, "utf8");
     const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed.entries)) {
-      return null;
+    if (!parsed || typeof parsed !== "object" || !Array.isArray(parsed.entries)) {
+      throw new Error(`Invalid large-file baseline config: ${baselineFile}`);
+    }
+    for (const entry of parsed.entries) {
+      const hasValidPath = entry && typeof entry.path === "string" && entry.path.length > 0;
+      const hasValidLineCount =
+        entry && typeof entry.lines === "number" && Number.isFinite(entry.lines) && entry.lines >= 0;
+      if (!hasValidPath || !hasValidLineCount) {
+        throw new Error(`Invalid large-file baseline entry in ${baselineFile}`);
+      }
     }
     return parsed;
   } catch (error) {

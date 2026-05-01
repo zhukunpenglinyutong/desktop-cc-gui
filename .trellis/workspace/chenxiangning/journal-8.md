@@ -1191,3 +1191,327 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 259: 合并 PR 484 486 487 488 并修复侧边栏过滤边界
+
+**Date**: 2026-05-01
+**Task**: 合并 PR 484 486 487 488 并修复侧边栏过滤边界
+**Branch**: `feature/fix-0.4.12`
+
+### Summary
+
+(Add summary)
+
+### Main Changes
+
+任务目标：按顺序本地合并 PR #484/#486/#487/#488，解决冲突后做整体 review，并修复发现的问题。
+主要改动：合并 Windows 用户 .local/bin CLI discovery；合并 Composer 自定义 slash command 残留清理；合并 symlink skill directory 扫描支持，同时保留 plugin cache/skills root 不跟随 symlink 的安全边界；合并侧边栏隐藏已退出会话入口；review 后修复隐藏已退出会话时父会话 exited、子会话 running 导致树形结构断裂的问题，保留运行子会话的父级上下文并补 aria-pressed。
+涉及模块：src-tauri/src/backend/app_server_cli.rs；src/features/composer/components/Composer.tsx；src/features/composer/components/ChatInputBox/ChatInputBoxAdapter.test.tsx；src/features/composer/components/ComposerEditorHelpers.test.tsx；src-tauri/src/skills.rs；src/features/app/components/ThreadList.tsx；src/features/app/components/ThreadList.test.tsx；src/i18n/locales/en.part2.ts；src/i18n/locales/zh.part2.ts；src/styles/sidebar.css。
+验证结果：cargo test --manifest-path src-tauri/Cargo.toml windows_extra_search_paths_include_user_local_bin 通过；cargo test --manifest-path src-tauri/Cargo.toml skills:: 通过；目标 vitest 覆盖 ThreadList/Sidebar/Composer/ChatInputBoxAdapter/useCustomCommands 通过；npm run typecheck 通过；npm run check:large-files:gate 通过；git diff --check 通过。heavy-test-noise 完整门禁将在记录后继续执行并在最终回复说明结果。
+后续事项：若 backend 后续提供显式 session lifecycle 字段，侧边栏 exited 判定应从 isProcessing/isReviewing 迁移到后端字段。
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `1be5bc00` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+## Session 260: 复审 PR 484 486 487 488 并修复自定义命令 race
+
+**Date**: 2026-05-01
+**Task**: 复审 PR 484 486 487 488 并修复自定义命令 race
+**Branch**: `feature/fix-0.4.12`
+
+### Summary
+
+(Add summary)
+
+### Main Changes
+
+任务目标：对当前分支已合入的 PR #484/#486/#487/#488 再做一次 review，重点检查边界条件、大文件治理、heavy-test-noise 门禁以及 Windows/macOS 兼容性，并直接修复发现的问题。
+主要改动：复审后确认 #484 Windows ~/.local/bin CLI discovery、#487 symlink skill directory 支持、#488 sidebar exited filter 落地逻辑整体可接受；额外发现 #486 在 onSend promise pending 时仍会保留 selected skill/common，可能把 /next 这类隐藏命令残留到下一条消息，因此将 selectedSkillNames/selectedCommonsNames 调整为 onSend 返回后立即清理，并补充 deferred-promise 回归测试。
+涉及模块：src/features/composer/components/Composer.tsx；src/features/composer/components/ComposerEditorHelpers.test.tsx。
+验证结果：cargo test --manifest-path src-tauri/Cargo.toml windows_extra_search_paths_include_user_local_bin 通过；cargo test --manifest-path src-tauri/Cargo.toml skills:: 通过；npm exec vitest -- run src/features/composer/components/ComposerEditorHelpers.test.tsx src/features/composer/components/ChatInputBox/ChatInputBoxAdapter.test.tsx src/features/commands/hooks/useCustomCommands.test.tsx 通过；npm exec vitest -- run src/features/app/components/ThreadList.test.tsx src/features/app/components/Sidebar.test.tsx 通过；npm run typecheck 通过；npm run check:large-files:near-threshold 与 gate 通过；node --test scripts/check-heavy-test-noise.test.mjs 通过；npm run check:heavy-test-noise 完整批跑 403 个 test files 通过；git diff --check 通过。
+后续事项：Composer.tsx、sidebar.css 仍处于 large-file watch 区，后续再变更这两个面板时优先按模块拆分，避免接近 fail 阈值。
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `dda268c9` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+## Session 261: 收口已退出会话显示切换交互
+
+**Date**: 2026-05-01
+**Task**: 收口已退出会话显示切换交互
+**Branch**: `feature/fix-0.4.12`
+
+### Summary
+
+完成 sidebar 已退出会话显示切换的项目级收口、视觉优化与 keyboard 回归修复。
+
+### Main Changes
+
+- 任务目标：把 exited session 的显示/隐藏从 ThreadList 内联条带收口到 workspace/worktree 行级入口，同时保证项目隔离、视觉可读性和 keyboard 可达性。
+- 主要改动：新增 `useExitedSessionVisibility`、`exitedSessionRows`、`exitedSessionVisibility` 三组 helper；将 toggle 入口挂到 `WorkspaceCard` / `WorktreeCard` leading icon；`ThreadList` 改为消费外部 hide 状态并在 all-hidden 时展示弱提示。
+- 视觉处理：移除原列表顶部 pill bar，改为行级 icon button；为 workspace/worktree leading 区预留 badge 安全间距，避免覆盖 folder/branch icon 和标题首字符。
+- 交互修复：补齐 exited toggle 的 `Enter/Space/Spacebar` 键盘冒泡隔离，避免激活 toggle 时触发父级 workspace/worktree row 折叠。
+- 影响模块：`src/features/app/components/*`、`src/features/app/hooks/useExitedSessionVisibility.ts`、`src/features/app/utils/*`、`src/styles/sidebar.css`、`openspec/changes/fix-sidebar-exited-session-visibility-toggle/*`。
+- 验证结果：通过 Sidebar/ThreadList/WorktreeSection 定向 Vitest、`npm run typecheck`、`npm run lint`、`npm run check:large-files`、`openspec validate fix-sidebar-exited-session-visibility-toggle --strict`、`git diff --check`。
+- 后续事项：等待人工确认 sidebar 长标题与 badge 极端场景；本次未处理 messages/threads 相关的其他进行中改动。
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `38f215c7` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+## Session 262: 修复 Codex 记忆摘要与历史截图回归
+
+**Date**: 2026-05-01
+**Task**: 修复 Codex 记忆摘要与历史截图回归
+**Branch**: `feature/fix-0.4.12`
+
+### Summary
+
+修复 Codex 记忆上下文摘要重复、历史普通截图丢失，以及 fallback 覆盖 remote structured history 的回归。
+
+### Main Changes
+
+- 任务目标：修复 Codex 记忆引用导致的同轮重复摘要展示，并恢复历史会话中普通用户截图的可见性。
+- 主要改动：
+  1. 放宽 project-memory wrapper canonicalization，支持带 attributes 的 injected XML。
+  2. 为 memory summary 增加 same-turn suppress，避免 assistant summary 与 user wrapper 双显。
+  3. 收紧 note-card 图片去重边界，只过滤确认来自 injected note-card 的附件。
+  4. 修正 Codex history loader，在 fallback 仅多出普通用户截图时改为 merge richer images，而不是整包覆盖 remote history。
+  5. 修正 suppressed memory-only user row 的 surface，避免泄漏原始 <project-memory ...> XML。
+- 涉及模块：messages、conversationNormalization、codexHistoryLoader、codexSessionHistory、threadItems、OpenSpec change artifacts。
+- 验证结果：
+  - pnpm vitest run src/features/messages/components/Messages.test.tsx src/features/threads/loaders/historyLoaders.test.ts
+  - pnpm vitest run src/features/messages/components/Messages.note-card-context.test.tsx
+  - pnpm exec tsc --noEmit
+- 后续事项：建议手工验证真实 UI 场景，确认同轮只显示一张记忆摘要卡片，且历史普通截图缩略图恢复正常。
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `7177533d0b2ade0c114c5f5fa7afe589d1b03ab8` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+## Session 263: 收紧大文件与测试噪音门禁
+
+**Date**: 2026-05-01
+**Task**: 收紧大文件与测试噪音门禁
+**Branch**: `feature/fix-0.4.12`
+
+### Summary
+
+(Add summary)
+
+### Main Changes
+
+任务目标:
+- review 并修复 large-file governance 与 heavy-test-noise sentry 的边界问题
+- 处理 Messages.test.tsx 超阈值，恢复 large-file hard gate
+
+主要改动:
+- large-file baseline 读取改为 schema fail-fast，异常 baseline 不再静默降级
+- large-file workflow 增加 parser tests 步骤
+- heavy-test-noise CLI 增加参数缺值校验，并在主流程传入 process.env 识别 environment-owned warnings
+- 新增 conversationState 主题测试文件，拆分 Messages.test.tsx 并移除重复 claude routing 用例
+
+涉及模块:
+- .github/workflows/large-file-governance.yml
+- scripts/check-large-files.mjs
+- scripts/check-large-files.test.mjs
+- scripts/check-heavy-test-noise.mjs
+- scripts/check-heavy-test-noise.test.mjs
+- src/features/messages/components/Messages.test.tsx
+- src/features/messages/components/Messages.conversation-state.test.tsx
+
+验证结果:
+- node --test scripts/check-large-files.test.mjs scripts/check-heavy-test-noise.test.mjs
+- npm exec vitest run src/features/messages/components/Messages.test.tsx src/features/messages/components/Messages.conversation-state.test.tsx
+- npm run check:large-files:gate
+- npm exec eslint scripts/check-large-files.mjs scripts/check-large-files.test.mjs scripts/check-heavy-test-noise.mjs scripts/check-heavy-test-noise.test.mjs src/features/messages/components/Messages.test.tsx src/features/messages/components/Messages.conversation-state.test.tsx
+- npm run lint
+- npm run typecheck
+
+后续事项:
+- heavy-test-noise 的整套 --run heavy suite 仍未在本地完整复跑；后续若改动 test-batched 输出格式，应再补一轮端到端验证
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `16c68c95` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+## Session 264: 移除模型解析调试日志避免测试噪音误报
+
+**Date**: 2026-05-01
+**Task**: 移除模型解析调试日志避免测试噪音误报
+**Branch**: `feature/fix-0.4.12`
+
+### Summary
+
+(Add summary)
+
+### Main Changes
+
+任务目标:
+- 修复 CI heavy-test-noise 门禁中 app-shell startup 用例的 stdout 噪音失败
+
+主要改动:
+- 删除 AppShell 启动阶段仅用于开发诊断的 [model/resolve/app] console.info 输出
+- 保持 heavy-test-noise 门禁规则不变，直接消除 repo-owned stdout 泄漏源头
+
+涉及模块:
+- src/app-shell.tsx
+
+验证结果:
+- npm exec vitest run src/app-shell.startup.test.tsx
+- node --test scripts/check-heavy-test-noise.test.mjs
+- npm exec eslint src/app-shell.tsx
+
+后续事项:
+- 若后续仍需模型解析调试信息，建议改走内部 debug sink，而不是 stdout/stderr
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `b6c0d669` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+## Session 265: 隐藏 Spec Hub 独立窗体产物最大化按钮
+
+**Date**: 2026-05-01
+**Task**: 隐藏 Spec Hub 独立窗体产物最大化按钮
+**Branch**: `feature/fix-0.4.12`
+
+### Summary
+
+(Add summary)
+
+### Main Changes
+
+任务目标：
+- 按用户要求移除 Spec Hub 独立窗体中的“最大化产物”按钮，其他行为保持不变。
+
+主要改动：
+- 在 `src/styles/spec-hub.reader-layout.css` 增加 detached window scoped CSS rule。
+- 仅隐藏 `.detached-spec-hub-window .spec-hub-artifacts .spec-hub-panel-compact-action`。
+- 未修改 Spec Hub 产物最大化状态逻辑、嵌入式页面、i18n 文案或 backend/Tauri contract。
+
+涉及模块：
+- Frontend Spec Hub detached window reader layout。
+
+验证结果：
+- `npm run check:large-files` 通过。
+- `pnpm vitest run src/features/spec/components/spec-hub/reader/SpecHubSurfaceFrame.test.tsx src/features/spec/components/DetachedSpecHubWindow.test.tsx` 通过，6 tests passed。
+
+后续事项：
+- 无。
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `3b74b069` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

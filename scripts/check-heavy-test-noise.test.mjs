@@ -1,5 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import os from "node:os";
+import path from "node:path";
+import { spawnSync } from "node:child_process";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { analyzeHeavyTestNoise } from "./check-heavy-test-noise.mjs";
 
 test("allows environment-owned warnings without violations", () => {
@@ -94,4 +98,40 @@ test("ignores ANSI-colored runner lines and normalizes payload contexts", () => 
     report.stderrPayloads[0]?.line,
     "Failed to load git status Error: boom",
   );
+});
+
+test("cli fails fast when --input is missing a path instead of misreading the next flag", () => {
+  const result = spawnSync(process.execPath, ["scripts/check-heavy-test-noise.mjs", "--input", "--mode", "report"], {
+    cwd: process.cwd(),
+    encoding: "utf8",
+  });
+
+  assert.notEqual(result.status, 0);
+  assert.match(`${result.stdout}\n${result.stderr}`, /Missing value for --input/);
+});
+
+test("cli includes environment-owned warnings from process env metadata", async () => {
+  const tempDir = await mkdtemp(path.join(os.tmpdir(), "heavy-test-noise-"));
+  try {
+    const inputPath = path.join(tempDir, "log.txt");
+    await writeFile(inputPath, "[vitest-batch] completed 346 test files.\n", "utf8");
+
+    const result = spawnSync(
+      process.execPath,
+      ["scripts/check-heavy-test-noise.mjs", "--input", inputPath, "--mode", "report"],
+      {
+        cwd: process.cwd(),
+        encoding: "utf8",
+        env: {
+          ...process.env,
+          npm_config_electron_mirror: "https://npmmirror.com/mirrors/electron/",
+        },
+      },
+    );
+
+    assert.equal(result.status, 0);
+    assert.match(result.stdout, /environment warnings: 1/);
+  } finally {
+    await rm(tempDir, { recursive: true, force: true });
+  }
 });

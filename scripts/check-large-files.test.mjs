@@ -158,6 +158,62 @@ test("scanLargeFiles includes mjs scripts and yaml workflows in governance", asy
   });
 });
 
+test("scanLargeFiles rejects malformed baseline entries instead of silently dropping baseline protection", async () => {
+  await withTempDir(async (root) => {
+    const policyPath = path.join(root, "policy.json");
+    const baselinePath = path.join(root, "baseline.json");
+    await fs.writeFile(
+      policyPath,
+      JSON.stringify(
+        {
+          version: "test-policy",
+          policies: [],
+          defaultPolicy: {
+            id: "default-source",
+            priority: "P1",
+            warnThreshold: 8,
+            failThreshold: 12,
+          },
+        },
+        null,
+        2,
+      ),
+      "utf8",
+    );
+    await fs.writeFile(
+      baselinePath,
+      JSON.stringify(
+        {
+          generatedAt: "2026-05-01T00:00:00.000Z",
+          scope: "fail",
+          policyVersion: "test-policy",
+          entries: [{ path: "src/services/tauri.ts", lines: "12" }],
+        },
+        null,
+        2,
+      ),
+      "utf8",
+    );
+
+    await writeLines(path.join(root, "src/services/tauri.ts"), 13);
+
+    await assert.rejects(
+      () =>
+        scanLargeFiles({
+          root,
+          policyFile: "policy.json",
+          baselineFile: "baseline.json",
+          threshold: 3000,
+          mode: "report",
+          markdownOutput: null,
+          baselineOutput: null,
+          scope: "fail",
+        }),
+      /Invalid large-file baseline entry/,
+    );
+  });
+});
+
 function expectPaths(paths) {
   assert.deepEqual(paths.sort(), [
     ".github/workflows/large-file-governance.yml",
