@@ -26,4 +26,4 @@
 - [x] 4.3 [P0][depends: 2-3][input: cross-layer compile contracts][output: frontend/backend type contracts remain valid][verify: `npm run typecheck`] Run TypeScript typecheck because doctor/runtime diagnostics may surface through Tauri service types.
 - [ ] 4.4 [P1][depends: 2-3][input: affected Win11 environment][output: manual smoke notes][verify: manual] Verify affected Windows 11 machine can create Codex session after fallback.
 - [ ] 4.5 [P1][depends: 2-3][input: healthy Win11 wrapper environment][output: no-regression manual notes][verify: manual] Verify a currently healthy Windows wrapper user still succeeds on primary path without fallback.
-- [ ] 4.6 [P1][depends: 2-3][input: macOS environment][output: no-regression manual notes][verify: manual] Verify macOS Codex session creation remains unchanged.
+- [x] 4.6 [P1][depends: 2-3][input: macOS environment][output: no-regression manual notes][verify: manual] Verify macOS Codex session creation remains unchanged. 2026-05-02 macOS local smoke confirmed by Chen Xiangning: desktop Codex session creation remains healthy on macOS.
