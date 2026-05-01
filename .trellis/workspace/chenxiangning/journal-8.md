@@ -1415,3 +1415,53 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 264: 移除模型解析调试日志避免测试噪音误报
+
+**Date**: 2026-05-01
+**Task**: 移除模型解析调试日志避免测试噪音误报
+**Branch**: `feature/fix-0.4.12`
+
+### Summary
+
+(Add summary)
+
+### Main Changes
+
+任务目标:
+- 修复 CI heavy-test-noise 门禁中 app-shell startup 用例的 stdout 噪音失败
+
+主要改动:
+- 删除 AppShell 启动阶段仅用于开发诊断的 [model/resolve/app] console.info 输出
+- 保持 heavy-test-noise 门禁规则不变，直接消除 repo-owned stdout 泄漏源头
+
+涉及模块:
+- src/app-shell.tsx
+
+验证结果:
+- npm exec vitest run src/app-shell.startup.test.tsx
+- node --test scripts/check-heavy-test-noise.test.mjs
+- npm exec eslint src/app-shell.tsx
+
+后续事项:
+- 若后续仍需模型解析调试信息，建议改走内部 debug sink，而不是 stdout/stderr
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `b6c0d669` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
