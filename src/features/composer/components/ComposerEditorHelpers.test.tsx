@@ -76,7 +76,11 @@ type HarnessProps = {
   selectedEngine?: "claude" | "codex" | "gemini" | "opencode";
   commands?: { name: string; path: string; content: string }[];
   attachedImages?: string[];
-  onSend?: (text: string, images: string[], options?: { selectedMemoryIds?: string[] }) => void;
+  onSend?: (
+    text: string,
+    images: string[],
+    options?: { selectedMemoryIds?: string[] },
+  ) => void | Promise<void>;
 };
 
 function ComposerHarness({
@@ -271,6 +275,48 @@ describe("Composer editor helpers", () => {
 
     expect(onSend).toHaveBeenNthCalledWith(1, "/next", [], undefined);
     expect(onSend).toHaveBeenNthCalledWith(2, "follow up", [], undefined);
+    harness.unmount();
+  });
+
+  it("clears selected custom slash commands before a pending send settles", async () => {
+    let resolveFirstSend: (() => void) | null = null;
+    const onSend = vi
+      .fn<(text: string, images: string[], options?: { selectedMemoryIds?: string[] }) => void | Promise<void>>()
+      .mockImplementationOnce(
+        () =>
+          new Promise<void>((resolve) => {
+            resolveFirstSend = resolve;
+          }),
+      )
+      .mockImplementation(() => undefined);
+    const harness = renderComposerHarness({
+      initialText: "/next",
+      commands: [{ name: "next", path: "/repo/.claude/commands/next.md", content: "next" }],
+      onSend,
+    });
+    const submitCommand = harness.container.querySelector(
+      '[data-testid="submit-next-command"]',
+    ) as HTMLButtonElement | null;
+    if (!submitCommand) {
+      throw new Error("Submit command button not found");
+    }
+    const textarea = getTextarea(harness.container);
+
+    await act(async () => {
+      submitCommand.click();
+    });
+
+    await act(async () => {
+      fireEvent.change(textarea, { target: { value: "follow up" } });
+      fireEvent.keyDown(textarea, { key: "Enter" });
+    });
+
+    expect(onSend).toHaveBeenNthCalledWith(1, "/next", [], undefined);
+    expect(onSend).toHaveBeenNthCalledWith(2, "follow up", [], undefined);
+
+    await act(async () => {
+      resolveFirstSend?.();
+    });
     harness.unmount();
   });
 
