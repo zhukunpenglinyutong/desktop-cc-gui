@@ -1,4 +1,4 @@
-import { useState, type ButtonHTMLAttributes, type ReactNode } from "react";
+import { useEffect, useState, type ButtonHTMLAttributes, type ReactNode } from "react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "./tooltip";
 
 type TooltipSide = "top" | "right" | "bottom" | "left";
@@ -29,21 +29,55 @@ export function TooltipIconButton({
   onMouseLeave,
   onFocus,
   onBlur,
+  onClick,
+  onPointerCancel,
+  onPointerDown,
+  disabled,
   ...buttonProps
 }: TooltipIconButtonProps) {
   const [open, setOpen] = useState(false);
 
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+
+    const closeTooltip = () => {
+      setOpen(false);
+    };
+    const closeWhenHidden = () => {
+      if (document.visibilityState === "hidden") {
+        closeTooltip();
+      }
+    };
+
+    window.addEventListener("blur", closeTooltip);
+    document.addEventListener("visibilitychange", closeWhenHidden);
+
+    return () => {
+      window.removeEventListener("blur", closeTooltip);
+      document.removeEventListener("visibilitychange", closeWhenHidden);
+    };
+  }, [open]);
+
+  useEffect(() => {
+    if (disabled) {
+      setOpen(false);
+    }
+  }, [disabled]);
+
   return (
-    <Tooltip open={open}>
+    <Tooltip open={open} onOpenChange={setOpen} disabled={disabled}>
       <TooltipTrigger
         render={<button />}
         delay={delay}
         type={type}
-        title={title ?? label}
+        title={title}
         aria-label={ariaLabel ?? label}
+        disabled={disabled}
         onMouseEnter={(event) => {
           onMouseEnter?.(event);
-          if (!buttonProps.disabled) {
+          if (!disabled) {
             setOpen(true);
           }
         }}
@@ -53,7 +87,7 @@ export function TooltipIconButton({
         }}
         onFocus={(event) => {
           onFocus?.(event);
-          if (!buttonProps.disabled) {
+          if (!disabled) {
             setOpen(true);
           }
         }}
@@ -61,19 +95,33 @@ export function TooltipIconButton({
           onBlur?.(event);
           setOpen(false);
         }}
+        onClick={(event) => {
+          onClick?.(event);
+          setOpen(false);
+        }}
+        onPointerCancel={(event) => {
+          onPointerCancel?.(event);
+          setOpen(false);
+        }}
+        onPointerDown={(event) => {
+          onPointerDown?.(event);
+          setOpen(false);
+        }}
         {...buttonProps}
       >
         {children}
       </TooltipTrigger>
-      <TooltipContent
-        role="tooltip"
-        side={tooltipSide}
-        align={tooltipAlign}
-        sideOffset={tooltipSideOffset}
-        className={tooltipClassName}
-      >
-        {label}
-      </TooltipContent>
+      {open && (
+        <TooltipContent
+          role="tooltip"
+          side={tooltipSide}
+          align={tooltipAlign}
+          sideOffset={tooltipSideOffset}
+          className={tooltipClassName}
+        >
+          {label}
+        </TooltipContent>
+      )}
     </Tooltip>
   );
 }
