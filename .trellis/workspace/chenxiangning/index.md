@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-8.md`
-- **Total Sessions**: 264
+- **Total Sessions**: 265
 - **Last Active**: 2026-05-01
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-8.md` | ~1467 | Active |
+| `journal-8.md` | ~1517 | Active |
 | `journal-7.md` | ~1950 | Archived |
 | `journal-6.md` | ~1961 | Archived |
 | `journal-5.md` | ~1949 | Archived |
@@ -36,6 +36,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 265 | 2026-05-01 | 隐藏 Spec Hub 独立窗体产物最大化按钮 | `3b74b069` | `feature/fix-0.4.12` |
 | 264 | 2026-05-01 | 移除模型解析调试日志避免测试噪音误报 | `b6c0d669` | `feature/fix-0.4.12` |
 | 263 | 2026-05-01 | 收紧大文件与测试噪音门禁 | `16c68c95` | `feature/fix-0.4.12` |
 | 262 | 2026-05-01 | 修复 Codex 记忆摘要与历史截图回归 | `7177533d0b2ade0c114c5f5fa7afe589d1b03ab8` | `feature/fix-0.4.12` |

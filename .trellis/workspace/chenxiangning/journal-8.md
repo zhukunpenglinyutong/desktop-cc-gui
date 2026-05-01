@@ -1465,3 +1465,53 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 265: 隐藏 Spec Hub 独立窗体产物最大化按钮
+
+**Date**: 2026-05-01
+**Task**: 隐藏 Spec Hub 独立窗体产物最大化按钮
+**Branch**: `feature/fix-0.4.12`
+
+### Summary
+
+(Add summary)
+
+### Main Changes
+
+任务目标：
+- 按用户要求移除 Spec Hub 独立窗体中的“最大化产物”按钮，其他行为保持不变。
+
+主要改动：
+- 在 `src/styles/spec-hub.reader-layout.css` 增加 detached window scoped CSS rule。
+- 仅隐藏 `.detached-spec-hub-window .spec-hub-artifacts .spec-hub-panel-compact-action`。
+- 未修改 Spec Hub 产物最大化状态逻辑、嵌入式页面、i18n 文案或 backend/Tauri contract。
+
+涉及模块：
+- Frontend Spec Hub detached window reader layout。
+
+验证结果：
+- `npm run check:large-files` 通过。
+- `pnpm vitest run src/features/spec/components/spec-hub/reader/SpecHubSurfaceFrame.test.tsx src/features/spec/components/DetachedSpecHubWindow.test.tsx` 通过，6 tests passed。
+
+后续事项：
+- 无。
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `3b74b069` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
