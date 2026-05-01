@@ -8,6 +8,7 @@ import {
   TooltipPopup,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { useCallback, useMemo, useState } from "react";
 import type { CSSProperties, MouseEvent } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -93,7 +94,36 @@ export function ThreadList({
   onConfirmDeleteConfirm,
 }: ThreadListProps) {
   const { t } = useTranslation();
+  const [hideExitedSessions, setHideExitedSessions] = useState(false);
   const indentUnit = nested ? 10 : 14;
+  const isExitedThread = useCallback((thread: ThreadSummary) => {
+    const status = threadStatusById[thread.id];
+    return !status?.isProcessing && !status?.isReviewing;
+  }, [threadStatusById]);
+  const { visiblePinnedRows, visibleUnpinnedRows, hiddenExitedCount } = useMemo(() => {
+    if (!hideExitedSessions) {
+      return {
+        visiblePinnedRows: pinnedRows,
+        visibleUnpinnedRows: unpinnedRows,
+        hiddenExitedCount: 0,
+      };
+    }
+
+    const filterRows = (rows: ThreadRow[]) =>
+      rows.filter((row) => !isExitedThread(row.thread));
+    const nextPinnedRows = filterRows(pinnedRows);
+    const nextUnpinnedRows = filterRows(unpinnedRows);
+    return {
+      visiblePinnedRows: nextPinnedRows,
+      visibleUnpinnedRows: nextUnpinnedRows,
+      hiddenExitedCount:
+        pinnedRows.length + unpinnedRows.length - nextPinnedRows.length - nextUnpinnedRows.length,
+    };
+  }, [hideExitedSessions, isExitedThread, pinnedRows, unpinnedRows]);
+  const hasExitedSessions = useMemo(
+    () => [...pinnedRows, ...unpinnedRows].some((row) => isExitedThread(row.thread)),
+    [isExitedThread, pinnedRows, unpinnedRows],
+  );
   const renderThreadRow = ({ thread, depth }: ThreadRow) => {
     const relativeTime = getThreadTime(thread);
     const isActiveThread =
@@ -244,11 +274,32 @@ export function ThreadList({
 
   return (
     <div className={`thread-list${nested ? " thread-list-nested" : ""}`}>
-      {pinnedRows.map((row) => renderThreadRow(row))}
-      {pinnedRows.length > 0 && unpinnedRows.length > 0 && (
+      {hasExitedSessions && (
+        <div className="thread-list-filter-bar">
+          <button
+            type="button"
+            className={`thread-list-filter-toggle${hideExitedSessions ? " is-active" : ""}`}
+            onClick={(event) => {
+              event.stopPropagation();
+              setHideExitedSessions((previous) => !previous);
+            }}
+          >
+            {hideExitedSessions
+              ? t("threads.showExitedSessions")
+              : t("threads.hideExitedSessions")}
+          </button>
+          {hideExitedSessions && hiddenExitedCount > 0 && (
+            <span className="thread-list-filter-summary">
+              {t("threads.exitedSessionsHidden", { count: hiddenExitedCount })}
+            </span>
+          )}
+        </div>
+      )}
+      {visiblePinnedRows.map((row) => renderThreadRow(row))}
+      {visiblePinnedRows.length > 0 && visibleUnpinnedRows.length > 0 && (
         <div className="thread-list-separator" aria-hidden="true" />
       )}
-      {unpinnedRows.map((row) => renderThreadRow(row))}
+      {visibleUnpinnedRows.map((row) => renderThreadRow(row))}
       {totalThreadRoots > 5 && (
         <button
           className="thread-more"

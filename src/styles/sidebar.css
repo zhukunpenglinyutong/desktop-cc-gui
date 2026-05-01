@@ -1963,6 +1963,36 @@
   margin-left: 0;
 }
 
+.thread-list-filter-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 6px 4px;
+}
+
+.thread-list-filter-toggle {
+  border: 1px solid var(--border-muted, rgba(148, 163, 184, 0.24));
+  border-radius: 999px;
+  background: var(--surface-subtle, rgba(148, 163, 184, 0.08));
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 11px;
+  line-height: 1.4;
+  padding: 2px 8px;
+}
+
+.thread-list-filter-toggle.is-active {
+  border-color: var(--accent-muted, rgba(59, 130, 246, 0.45));
+  background: var(--accent-subtle, rgba(59, 130, 246, 0.12));
+  color: var(--accent-strong, #2563eb);
+}
+
+.thread-list-filter-summary {
+  color: var(--text-faint, var(--text-muted));
+  font-size: 11px;
+  line-height: 1.4;
+}
+
 .thread-empty-state {
   padding: 6px 10px 4px;
   color: var(--text-faint, var(--text-muted));
