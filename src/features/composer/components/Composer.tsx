@@ -1977,6 +1977,8 @@ export const Composer = memo(function Composer({
           : undefined;
       const sendResult = onSend(resolvedFinalText, mergedImages, sendOptions);
       void Promise.resolve(sendResult).finally(() => {
+        setSelectedSkillNames([]);
+        setSelectedCommonsNames([]);
         setSelectedManualMemories([]);
         setSelectedNoteCards([]);
         setSelectedInlineFileReferences([]);

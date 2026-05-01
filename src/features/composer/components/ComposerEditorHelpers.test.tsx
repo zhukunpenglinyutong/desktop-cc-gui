@@ -60,6 +60,13 @@ vi.mock("./ChatInputBox/ChatInputBoxAdapter", () => ({
       >
         Submit snapshot with image
       </button>
+      <button
+        type="button"
+        data-testid="submit-next-command"
+        onClick={() => onSend("/next")}
+      >
+        Submit /next
+      </button>
     </>
   ),
 }));
@@ -235,6 +242,35 @@ describe("Composer editor helpers", () => {
       ["persisted-image.png", "child-image.png"],
       undefined,
     );
+    harness.unmount();
+  });
+
+  it("does not reuse a submitted custom slash command as a later common prefix", async () => {
+    const onSend = vi.fn();
+    const harness = renderComposerHarness({
+      initialText: "/next",
+      commands: [{ name: "next", path: "/repo/.claude/commands/next.md", content: "next" }],
+      onSend,
+    });
+    const submitCommand = harness.container.querySelector(
+      '[data-testid="submit-next-command"]',
+    ) as HTMLButtonElement | null;
+    if (!submitCommand) {
+      throw new Error("Submit command button not found");
+    }
+    const textarea = getTextarea(harness.container);
+
+    await act(async () => {
+      submitCommand.click();
+    });
+
+    await act(async () => {
+      fireEvent.change(textarea, { target: { value: "follow up" } });
+      fireEvent.keyDown(textarea, { key: "Enter" });
+    });
+
+    expect(onSend).toHaveBeenNthCalledWith(1, "/next", [], undefined);
+    expect(onSend).toHaveBeenNthCalledWith(2, "follow up", [], undefined);
     harness.unmount();
   });
 
