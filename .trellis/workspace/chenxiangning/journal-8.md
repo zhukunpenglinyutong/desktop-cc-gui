@@ -1229,3 +1229,41 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 260: 复审 PR 484 486 487 488 并修复自定义命令 race
+
+**Date**: 2026-05-01
+**Task**: 复审 PR 484 486 487 488 并修复自定义命令 race
+**Branch**: `feature/fix-0.4.12`
+
+### Summary
+
+(Add summary)
+
+### Main Changes
+
+任务目标：对当前分支已合入的 PR #484/#486/#487/#488 再做一次 review，重点检查边界条件、大文件治理、heavy-test-noise 门禁以及 Windows/macOS 兼容性，并直接修复发现的问题。
+主要改动：复审后确认 #484 Windows ~/.local/bin CLI discovery、#487 symlink skill directory 支持、#488 sidebar exited filter 落地逻辑整体可接受；额外发现 #486 在 onSend promise pending 时仍会保留 selected skill/common，可能把 /next 这类隐藏命令残留到下一条消息，因此将 selectedSkillNames/selectedCommonsNames 调整为 onSend 返回后立即清理，并补充 deferred-promise 回归测试。
+涉及模块：src/features/composer/components/Composer.tsx；src/features/composer/components/ComposerEditorHelpers.test.tsx。
+验证结果：cargo test --manifest-path src-tauri/Cargo.toml windows_extra_search_paths_include_user_local_bin 通过；cargo test --manifest-path src-tauri/Cargo.toml skills:: 通过；npm exec vitest -- run src/features/composer/components/ComposerEditorHelpers.test.tsx src/features/composer/components/ChatInputBox/ChatInputBoxAdapter.test.tsx src/features/commands/hooks/useCustomCommands.test.tsx 通过；npm exec vitest -- run src/features/app/components/ThreadList.test.tsx src/features/app/components/Sidebar.test.tsx 通过；npm run typecheck 通过；npm run check:large-files:near-threshold 与 gate 通过；node --test scripts/check-heavy-test-noise.test.mjs 通过；npm run check:heavy-test-noise 完整批跑 403 个 test files 通过；git diff --check 通过。
+后续事项：Composer.tsx、sidebar.css 仍处于 large-file watch 区，后续再变更这两个面板时优先按模块拆分，避免接近 fail 阈值。
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `dda268c9` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

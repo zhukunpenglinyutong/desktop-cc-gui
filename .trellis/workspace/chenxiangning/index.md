@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-8.md`
-- **Total Sessions**: 259
+- **Total Sessions**: 260
 - **Last Active**: 2026-05-01
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-8.md` | ~1231 | Active |
+| `journal-8.md` | ~1269 | Active |
 | `journal-7.md` | ~1950 | Archived |
 | `journal-6.md` | ~1961 | Archived |
 | `journal-5.md` | ~1949 | Archived |
@@ -36,6 +36,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 260 | 2026-05-01 | 复审 PR 484 486 487 488 并修复自定义命令 race | `dda268c9` | `feature/fix-0.4.12` |
 | 259 | 2026-05-01 | 合并 PR 484 486 487 488 并修复侧边栏过滤边界 | `1be5bc00` | `feature/fix-0.4.12` |
 | 258 | 2026-05-01 | 补充终端 Shell 示例文案 | `5227e431` | `feature/fix-0.4.12` |
 | 257 | 2026-05-01 | Review 合并 PR 边界修复 | `851c1055` | `feature/fix-0.4.12` |
