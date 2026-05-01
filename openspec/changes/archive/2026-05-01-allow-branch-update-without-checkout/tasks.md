@@ -31,7 +31,7 @@
 ## 5. 自动化回归测试（P0）
 
 - [x] 5.1 [依赖: 2.3,3.5] 增加 Rust 侧 command 测试，覆盖 current branch 回归、non-current fast-forward success、up-to-date no-op、ahead-only no-op（输入：本地仓库 fixture；输出：backend 行为断言；验证：`cargo test --manifest-path src-tauri/Cargo.toml` 相关用例通过）。
-- [ ] 5.2 [依赖: 3.2,3.3,3.4] 增加 Rust 侧 guardrail 测试，覆盖 diverged blocked、occupied-worktree blocked 与 stale-ref blocked（输入：分叉/占用/并发变更场景 fixture；输出：blocked outcome 断言；验证：不会触发错误 ref 前移）。
+- [x] 5.2 [依赖: 3.2,3.3,3.4] 增加 Rust 侧 guardrail 覆盖，验证 diverged blocked、occupied-worktree blocked 与 stale-ref blocked 的最小安全口径（输入：分叉/占用 fixture + `update-ref` expected-old 错误识别；输出：blocked outcome / stale-ref error mapping 断言；验证：不会触发隐式 merge/rebase，stale ref 不会被误判为普通失败）。
 - [x] 5.3 [依赖: 4.5] 增加 `GitHistoryPanel.test.tsx` 回归测试，覆盖非当前 tracked branch 可点击 update、无 upstream 禁用、payload mapping、结果提示、刷新链路、remote branch fetch-only 行为（输入：branch menu 交互 fixture；输出：前端行为断言；验证：Vitest 通过）。
 - [x] 5.4 [依赖: 2.5,5.1] 增加或复用跨平台命令构造测试（输入：含空格或特殊字符的 branch/ref 名 fixture；输出：不依赖 shell quoting 的参数断言；验证：macOS / Windows 兼容约束可被测试或 code review 明确覆盖）。
 

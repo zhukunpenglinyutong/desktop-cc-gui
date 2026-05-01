@@ -218,11 +218,29 @@ branch-type-aware availability.
 - **AND** `删除` action SHALL be disabled
 - **AND** disabled actions SHALL present readable reason hints
 
+#### Scenario: Tracked non-current local branch exposes update action
+
+- **WHEN** user right-clicks a non-current local branch row with valid upstream tracking
+- **THEN** `更新 (Update)` action SHALL be enabled when no conflicting workspace-level operation is running
+- **AND** selecting that action SHALL target the chosen local branch instead of the current branch
+
+#### Scenario: Non-current local branch without upstream disables update
+
+- **WHEN** user right-clicks a non-current local branch row without upstream tracking
+- **THEN** `更新 (Update)` action SHALL be disabled
+- **AND** disabled reason SHALL explain that no upstream branch is configured
+
 #### Scenario: Remote branch context actions
 
 - **WHEN** user right-clicks a remote branch row
 - **THEN** menu SHALL only include actions valid for remote branches
 - **AND** actions requiring local writable branch state SHALL be hidden or disabled
+
+#### Scenario: Remote branch update action fetches remote only
+
+- **WHEN** user right-clicks a remote branch row with a resolvable remote name
+- **THEN** `更新 (Update)` action SHALL remain available when no conflicting workspace-level operation is running
+- **AND** selecting that action SHALL fetch the corresponding remote instead of updating the current local branch
 
 #### Scenario: Menu accessibility and dismissal
 
@@ -287,3 +305,4 @@ The system SHALL provide deterministic handling for branch delete failures cause
 - **WHEN** delete branch fails for reasons unrelated to worktree occupancy
 - **THEN** system SHALL skip prune-retry path
 - **AND** system SHALL return original error classification and message mapping
+
