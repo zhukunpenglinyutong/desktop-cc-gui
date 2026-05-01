@@ -152,3 +152,41 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 5: feat(skills): 支持自定义技能目录
+
+**Date**: 2026-05-02
+**Task**: feat(skills): 支持自定义技能目录
+**Branch**: `fix/issue-456-custom-skill-folders`
+
+### Summary
+
+(Add summary)
+
+### Main Changes
+
+任务目标：修复 GitHub issue #456，让桌面端可以读取用户指定的额外 Skills 文件夹。
+主要改动：新增 AppSettings.customSkillDirectories 持久化字段；Settings > Skills 增加每行一个目录的编辑入口；useSkills/getSkillsList/skills_list command 支持传递 customSkillRoots；Rust local scanner 将 custom roots 合并进 skills list；Composer autocomplete 同步使用自定义目录。
+涉及模块：src/features/settings、src/features/skills、src/services/tauri.ts、src/features/composer、src-tauri/src/skills.rs、src-tauri/src/codex/mod.rs、src-tauri/src/types.rs、src-tauri/src/shared/settings_core.rs。
+验证结果：npx vitest run src/features/skills/hooks/useSkills.test.tsx src/features/settings/hooks/useAppSettings.test.ts src/services/tauri.test.ts；npx eslint 相关 TS/TSX 文件；npm run typecheck；cargo test --manifest-path src-tauri/Cargo.toml custom_skill_roots_are_discovered_before_global_skills --lib；npm run check:runtime-contracts 均通过。cargo fmt --manifest-path src-tauri/Cargo.toml --check 仍受未触碰的 src-tauri/src/note_cards.rs 既有格式差异影响。
+后续事项：提交 PR 后在说明中标注 base 分支 origin/chore/bump-version-0.4.12 与 cargo fmt 的无关既有阻塞。
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `4dd1ce9cabd9` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
