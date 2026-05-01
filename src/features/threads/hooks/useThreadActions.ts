@@ -1902,16 +1902,20 @@ export function useThreadActions({
         }
 
         let visibleSummaries = allSummaries;
-        if (visibleSummaries.length === 0 && degradedPartialSource) {
+        const emptyListFallbackSource =
+          visibleSummaries.length === 0
+            ? degradedPartialSource ?? "empty-thread-list"
+            : null;
+        if (emptyListFallbackSource) {
           const fallbackThreads = getLastGoodThreadSummaries(workspace.id);
           if (fallbackThreads.length > 0) {
             visibleSummaries = markThreadSummariesDegraded(
               fallbackThreads,
-              degradedPartialSource,
+              emptyListFallbackSource,
               "last-good-fallback",
             );
             const diagnostic = buildPartialHistoryDiagnostic(
-              `thread list fallback: ${degradedPartialSource}`,
+              `thread list fallback: ${emptyListFallbackSource}`,
             );
             onDebug?.({
               id: `${Date.now()}-client-thread-list-fallback`,
@@ -1927,7 +1931,7 @@ export function useThreadActions({
                   recoveryState: "degraded",
                 },
                 {
-                  partialSource: degradedPartialSource,
+                  partialSource: emptyListFallbackSource,
                   fallbackCount: visibleSummaries.length,
                   diagnosticMessage: diagnostic.rawMessage,
                 },

@@ -2161,6 +2161,56 @@ describe("useThreadActions", () => {
     ]);
   });
 
+  it("falls back to last-good summaries when providers return an unexpected empty list", async () => {
+    vi.mocked(listThreads).mockResolvedValue({
+      result: {
+        data: [],
+        nextCursor: null,
+      },
+    });
+    const onDebug = vi.fn();
+
+    const { result, dispatch } = renderActions({
+      onDebug,
+      threadsByWorkspace: {
+        "ws-1": [
+          {
+            id: "thread-known",
+            name: "Known old",
+            updatedAt: 7000,
+            engineSource: "codex",
+          },
+        ],
+      },
+    });
+
+    await act(async () => {
+      await result.current.listThreadsForWorkspace(workspace);
+    });
+
+    expectSetThreadsDispatched(dispatch, "ws-1", [
+      {
+        id: "thread-known",
+        name: "Known old",
+        updatedAt: 7000,
+        engineSource: "codex",
+        isDegraded: true,
+        degradedReason: "last-good-fallback",
+        partialSource: "empty-thread-list",
+      },
+    ]);
+    const fallbackEntry = onDebug.mock.calls
+      .map(([entry]) => entry as { label: string; payload?: Record<string, unknown> })
+      .find((entry) => entry.label === "thread/list fallback");
+    expect(fallbackEntry?.payload).toMatchObject({
+      workspaceId: "ws-1",
+      engine: "multi",
+      action: "thread-list-fallback",
+      recoveryState: "degraded",
+      partialSource: "empty-thread-list",
+    });
+  });
+
   it("falls back to last-good thread summaries when thread list loading fails", async () => {
     vi.mocked(listThreads).mockRejectedValue(new Error("runtime unavailable"));
     const onDebug = vi.fn();
