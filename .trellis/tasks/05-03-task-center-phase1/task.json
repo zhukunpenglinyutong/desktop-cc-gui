@@ -1,0 +1,69 @@
+{
+  "id": "05-03-task-center-phase1",
+  "name": "05-03-task-center-phase1",
+  "title": "Execute Task Center phase 1",
+  "description": "Execute add-agent-task-center Phase 1 frontend-first run center implementation after Context Ledger is stable.",
+  "status": "planning",
+  "dev_type": "frontend",
+  "scope": "kanban,app-shell,threads",
+  "package": null,
+  "priority": "P1",
+  "creator": "chenxiangning",
+  "assignee": "chenxiangning",
+  "createdAt": "2026-05-03",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "feature/fix-0.4.12",
+  "worktree_path": null,
+  "current_phase": 0,
+  "next_action": [
+    {
+      "phase": 1,
+      "action": "brainstorm"
+    },
+    {
+      "phase": 2,
+      "action": "research"
+    },
+    {
+      "phase": 3,
+      "action": "implement"
+    },
+    {
+      "phase": 4,
+      "action": "check"
+    },
+    {
+      "phase": 5,
+      "action": "update-spec"
+    },
+    {
+      "phase": 6,
+      "action": "record-session"
+    }
+  ],
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    "docs/plans/2026-05-03-context-ledger-then-task-center-implementation.md",
+    "openspec/changes/add-agent-task-center",
+    "src/app-shell-parts/useAppShellSections.ts",
+    "src/app-shell-parts/utils.ts",
+    "src/features/kanban/hooks/useKanbanStore.ts",
+    "src/features/kanban/utils/kanbanStorage.ts",
+    "src/services/clientStorage.ts",
+    "src/services/tauri/sessionManagement.ts",
+    "src/features/workspaces/hooks/useWorkspaceSessionProjectionSummary.ts"
+  ],
+  "notes": "Start only after 05-03-context-ledger-phase1 reaches stable verification. Phase 1 remains frontend-first and must not introduce a new Rust run truth source.",
+  "meta": {
+    "openspecChange": "add-agent-task-center",
+    "executionPlan": "docs/plans/2026-05-03-context-ledger-then-task-center-implementation.md",
+    "phase": "phase1",
+    "executionOrder": 2,
+    "dependsOnTask": "05-03-context-ledger-phase1"
+  }
+}

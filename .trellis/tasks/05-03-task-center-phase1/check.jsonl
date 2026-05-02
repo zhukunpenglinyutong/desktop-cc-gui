@@ -1,0 +1,5 @@
+{"file": ".claude/commands/trellis/finish-work.md", "reason": "Finish work checklist"}
+{"file": ".claude/commands/trellis/check.md", "reason": "Code quality check spec"}
+{"file": "openspec/changes/add-agent-task-center/tasks.md", "reason": "completion checklist during verification"}
+{"file": "src/app-shell-parts/useAppShellSections.ts", "reason": "lifecycle wiring review target"}
+{"file": "src/features/kanban/hooks/useKanbanStore.ts", "reason": "latest-run projection review target"}

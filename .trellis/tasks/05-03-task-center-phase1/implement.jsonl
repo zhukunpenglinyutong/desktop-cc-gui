@@ -1,0 +1,16 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/frontend/index.md", "reason": "Frontend development guide"}
+{"file": "docs/plans/2026-05-03-context-ledger-then-task-center-implementation.md", "reason": "master implementation sequence and phase-one defaults"}
+{"file": "openspec/changes/add-agent-task-center/proposal.md", "reason": "behavior scope and phase-one run-center goals"}
+{"file": "openspec/changes/add-agent-task-center/design.md", "reason": "run model architecture and phase-one storage guardrails"}
+{"file": "openspec/changes/add-agent-task-center/tasks.md", "reason": "execution checklist for the linked OpenSpec change"}
+{"file": ".trellis/spec/frontend/hook-guidelines.md", "reason": "orchestration hook extraction rules"}
+{"file": ".trellis/spec/frontend/state-management.md", "reason": "clientStorage and projection state rules"}
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "frontend regression and UI contract guardrails"}
+{"file": ".trellis/spec/frontend/type-safety.md", "reason": "TaskRun contract typing expectations"}
+{"file": "src/app-shell-parts/useAppShellSections.ts", "reason": "current execution orchestration embedding"}
+{"file": "src/app-shell-parts/utils.ts", "reason": "reusable plan and latest-output projection helpers"}
+{"file": "src/features/kanban/hooks/useKanbanStore.ts", "reason": "task definition store integration point"}
+{"file": "src/features/kanban/utils/kanbanStorage.ts", "reason": "Kanban persistence boundary"}
+{"file": "src/services/clientStorage.ts", "reason": "phase-one run storage backend"}
+{"file": "src/features/workspaces/hooks/useWorkspaceSessionProjectionSummary.ts", "reason": "workspace session summary projection"}
