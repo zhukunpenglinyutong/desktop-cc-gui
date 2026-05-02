@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import os from "node:os";
 import path from "node:path";
+import { spawnSync } from "node:child_process";
 import { promises as fs } from "node:fs";
 
 import { determineHardDebtStatus, loadPolicyConfig, resolvePolicy, scanLargeFiles } from "./check-large-files.mjs";
@@ -212,6 +213,20 @@ test("scanLargeFiles rejects malformed baseline entries instead of silently drop
       /Invalid large-file baseline entry/,
     );
   });
+});
+
+test("cli fails fast when --baseline-file is missing a path instead of consuming the next flag", () => {
+  const result = spawnSync(
+    process.execPath,
+    ["scripts/check-large-files.mjs", "--baseline-file", "--scope", "fail"],
+    {
+      cwd: process.cwd(),
+      encoding: "utf8",
+    },
+  );
+
+  assert.notEqual(result.status, 0);
+  assert.match(`${result.stdout}\n${result.stderr}`, /Missing value for --baseline-file/);
 });
 
 function expectPaths(paths) {

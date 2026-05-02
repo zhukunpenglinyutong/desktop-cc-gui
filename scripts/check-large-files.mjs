@@ -38,6 +38,14 @@ const EXCLUDED_DIRS = new Set([
   ".turbo",
 ]);
 
+function readOptionValue(argv, index, optionName) {
+  const value = argv[index + 1];
+  if (!value || value.startsWith("--")) {
+    throw new Error(`Missing value for ${optionName}`);
+  }
+  return value;
+}
+
 function parseArgs(argv) {
   const config = {
     threshold: 3000,
@@ -53,7 +61,7 @@ function parseArgs(argv) {
   for (let index = 0; index < argv.length; index += 1) {
     const token = argv[index];
     if (token === "--threshold") {
-      const value = Number(argv[index + 1]);
+      const value = Number(readOptionValue(argv, index, "--threshold"));
       if (!Number.isFinite(value) || value <= 0) {
         throw new Error(`Invalid --threshold value: ${argv[index + 1] ?? "<missing>"}`);
       }
@@ -62,7 +70,7 @@ function parseArgs(argv) {
       continue;
     }
     if (token === "--mode") {
-      const value = argv[index + 1];
+      const value = readOptionValue(argv, index, "--mode");
       if (!["report", "warn", "fail"].includes(value)) {
         throw new Error(`Invalid --mode value: ${value ?? "<missing>"}`);
       }
@@ -71,48 +79,33 @@ function parseArgs(argv) {
       continue;
     }
     if (token === "--markdown-output") {
-      config.markdownOutput = argv[index + 1];
-      if (!config.markdownOutput) {
-        throw new Error("Missing value for --markdown-output");
-      }
+      config.markdownOutput = readOptionValue(argv, index, "--markdown-output");
       index += 1;
       continue;
     }
     if (token === "--baseline-output") {
-      config.baselineOutput = argv[index + 1];
-      if (!config.baselineOutput) {
-        throw new Error("Missing value for --baseline-output");
-      }
+      config.baselineOutput = readOptionValue(argv, index, "--baseline-output");
       index += 1;
       continue;
     }
     if (token === "--baseline-file") {
-      config.baselineFile = argv[index + 1];
-      if (!config.baselineFile) {
-        throw new Error("Missing value for --baseline-file");
-      }
+      config.baselineFile = readOptionValue(argv, index, "--baseline-file");
       index += 1;
       continue;
     }
     if (token === "--policy-file") {
-      config.policyFile = argv[index + 1];
-      if (!config.policyFile) {
-        throw new Error("Missing value for --policy-file");
-      }
+      config.policyFile = readOptionValue(argv, index, "--policy-file");
       index += 1;
       continue;
     }
     if (token === "--root") {
-      const root = argv[index + 1];
-      if (!root) {
-        throw new Error("Missing value for --root");
-      }
+      const root = readOptionValue(argv, index, "--root");
       config.root = path.resolve(root);
       index += 1;
       continue;
     }
     if (token === "--scope") {
-      const value = argv[index + 1];
+      const value = readOptionValue(argv, index, "--scope");
       if (!["warn", "fail"].includes(value)) {
         throw new Error(`Invalid --scope value: ${value ?? "<missing>"}`);
       }
