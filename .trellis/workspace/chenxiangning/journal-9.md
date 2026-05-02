@@ -420,3 +420,41 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 282: 修复 Codex 压缩状态文案回写
+
+**Date**: 2026-05-02
+**Task**: 修复 Codex 压缩状态文案回写
+**Branch**: `feature/fix-0.4.12`
+
+### Summary
+
+(Add summary)
+
+### Main Changes
+
+任务目标：修复 Codex 自动/手动压缩在 tooltip 与会话幕布上的状态语义，避免历史回写覆盖当前 compaction lifecycle，并补齐提案回写与归档。
+主要改动：在线程状态中新增 Codex compaction lifecycle/source/completedAt 元数据；completion 缺少 source flags 时继承同一 lifecycle 已知 source；generic turn completion 不再提前清空 completed lifecycle；history reconcile 仅保留当前 lifecycle 最新 compaction message，并在 token usage 刷新后清理；manual /compact 增加 optimistic lifecycle 标记与失败回滚；更新 dual-view tooltip 与 compaction copy/i18n；同步主 specs 并归档 fix-codex-compaction-status-copy。
+涉及模块：src/features/threads/hooks/useThreadsReducer.ts；src/features/threads/hooks/threadReducerOptimisticItemMerge.ts；src/features/threads/hooks/useThreadMessagingSessionTooling.ts；src/features/threads/hooks/useThreadTurnEvents.ts；src/features/composer/components/Composer.tsx；src/features/composer/components/ChatInputBox/ContextBar.tsx；src/features/layout/hooks/useLayoutNodes.tsx；src/i18n/locales/en.part2.ts；src/i18n/locales/zh.part2.ts；openspec/specs/composer-context-dual-view/spec.md；openspec/specs/codex-context-auto-compaction/spec.md；openspec/changes/archive/2026-05-02-fix-codex-compaction-status-copy。
+验证结果：npx vitest run src/features/threads/hooks/useThreadsReducer.test.ts src/features/threads/hooks/useThreadMessaging.test.tsx src/features/threads/hooks/useThreadTurnEvents.test.tsx src/features/threads/hooks/useThreads.memory-race.integration.test.tsx src/features/composer/components/Composer.context-dual-view.test.tsx src/features/composer/components/ChatInputBox/ContextBar.test.tsx src/features/composer/components/ChatInputBox/ChatInputBoxAdapter.test.tsx 通过；npm run typecheck 通过；npm run lint -- src/features/threads/hooks/useThreadsReducer.ts src/features/threads/hooks/threadReducerOptimisticItemMerge.ts src/features/threads/hooks/useThreadMessagingSessionTooling.ts src/features/threads/hooks/useThreadTurnEvents.ts src/features/composer/components/ChatInputBox/ContextBar.tsx src/features/composer/components/ChatInputBox/ChatInputBoxAdapter.tsx src/features/composer/components/Composer.tsx src/features/layout/hooks/useLayoutNodes.tsx scripts/check-large-files.mjs scripts/check-large-files.test.mjs 通过；openspec validate fix-codex-compaction-status-copy 通过。
+后续事项：工作区仍有未提交的无关脚本改动 scripts/check-large-files.mjs 与 scripts/check-large-files.test.mjs，本次未纳入提交。
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `6eba4f43` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

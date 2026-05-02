@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-9.md`
-- **Total Sessions**: 281
+- **Total Sessions**: 282
 - **Last Active**: 2026-05-02
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-9.md` | ~422 | Active |
+| `journal-9.md` | ~460 | Active |
 | `journal-8.md` | ~1996 | Archived |
 | `journal-7.md` | ~1950 | Archived |
 | `journal-6.md` | ~1961 | Archived |
@@ -37,6 +37,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 282 | 2026-05-02 | 修复 Codex 压缩状态文案回写 | `6eba4f43` | `feature/fix-0.4.12` |
 | 281 | 2026-05-02 | 归档剩余 OpenSpec 变更并同步主 specs | `adc601b059510e21038da4f611e0e17f8bdad6bc` | `feature/fix-0.4.12` |
 | 280 | 2026-05-02 | 设置入口收口与 MCP/Skills 合并归档 | `97f3ab40840c0f7edbd8d6ff2fabb71201992766` | `feature/fix-0.4.12` |
 | 279 | 2026-05-02 | 归档核心复杂度治理重构 | `949347d7` | `feature/fix-0.4.12` |
