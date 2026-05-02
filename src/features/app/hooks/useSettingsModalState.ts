@@ -3,27 +3,36 @@ import { useCallback, useState } from "react";
 export type SettingsSection =
   | "basic"
   | "providers"
-  | "projects"
-  | "usage"
+  | "project-management"
   | "mcp"
   | "permissions"
   | "commit"
-  | "agents"
-  | "prompts"
-  | "skills"
+  | "agent-prompt-management"
   | "composer"
   | "dictation"
-  | "shortcuts"
-  | "open-apps"
   | "git"
   | "other"
   | "community"
   | "vendors"
-  | "codex"
+  | "runtime-environment"
   | "experimental"
   | "about";
 
-export type SettingsHighlightTarget = "experimental-collaboration-modes";
+export type SettingsHighlightTarget =
+  | "experimental-collaboration-modes"
+  | "basic-shortcuts"
+  | "basic-open-apps"
+  | "basic-web-service"
+  | "basic-email"
+  | "project-groups"
+  | "project-sessions"
+  | "project-usage"
+  | "agent-management"
+  | "prompt-library"
+  | "mcp-servers"
+  | "mcp-skills"
+  | "runtime-pool"
+  | "cli-validation";
 
 export function useSettingsModalState() {
   const [settingsOpen, setSettingsOpen] = useState(false);

@@ -13,13 +13,18 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type {
   AppSettings,
   DiagnosticsBundleExportResult,
+  LocalUsageStatistics,
   WorkspaceInfo,
 } from "../../../types";
 import {
   archiveWorkspaceSessions,
   deleteWorkspaceSessions,
   exportDiagnosticsBundle,
+  getDaemonStatus,
+  getEmailSenderSettings,
+  getWebServerStatus,
   listWorkspaceSessions,
+  localUsageStatistics,
   unarchiveWorkspaceSessions,
 } from "../../../services/tauri";
 import { writeClientStoreValue } from "../../../services/clientStorage";
@@ -45,6 +50,26 @@ vi.mock("../../../services/toasts", () => ({
   pushErrorToast: vi.fn(),
 }));
 
+vi.mock("@/features/computer-use/components/ComputerUseStatusCard", () => ({
+  ComputerUseStatusCard: () => <div data-testid="computer-use-status-card" />,
+}));
+
+vi.mock("./McpSection", () => ({
+  McpSection: ({ embedded }: { embedded?: boolean }) => (
+    <div data-testid={embedded ? "embedded-mcp-section" : "mcp-section"}>
+      Mock MCP Section
+    </div>
+  ),
+}));
+
+vi.mock("./SkillsSection", () => ({
+  SkillsSection: ({ embedded }: { embedded?: boolean }) => (
+    <div data-testid={embedded ? "embedded-skills-section" : "skills-section"}>
+      Mock Skills Section
+    </div>
+  ),
+}));
+
 vi.mock("../../../services/tauri", async () => {
   const actual = await vi.importActual<typeof import("../../../services/tauri")>(
     "../../../services/tauri",
@@ -56,6 +81,10 @@ vi.mock("../../../services/tauri", async () => {
     unarchiveWorkspaceSessions: vi.fn(),
     deleteWorkspaceSessions: vi.fn(),
     exportDiagnosticsBundle: vi.fn(),
+    localUsageStatistics: vi.fn(),
+    getWebServerStatus: vi.fn(),
+    getDaemonStatus: vi.fn(),
+    getEmailSenderSettings: vi.fn(),
   };
 });
 
@@ -96,6 +125,25 @@ beforeEach(() => {
   vi.mocked(exportDiagnosticsBundle).mockResolvedValue({
     filePath: "/tmp/diagnostics.json",
     generatedAt: "123",
+  });
+  vi.mocked(localUsageStatistics).mockResolvedValue(createLocalUsageStatistics());
+  vi.mocked(getWebServerStatus).mockResolvedValue({
+    running: false,
+    rpcEndpoint: "127.0.0.1:4732",
+    webPort: 3080,
+    addresses: [],
+    webAccessToken: null,
+    lastError: null,
+  });
+  vi.mocked(getDaemonStatus).mockResolvedValue({
+    running: false,
+    host: "127.0.0.1:4732",
+    lastError: null,
+  });
+  vi.mocked(getEmailSenderSettings).mockResolvedValue({
+    settings: baseSettings.emailSender,
+    secretConfigured: false,
+    secret: null,
   });
 });
 
@@ -262,6 +310,33 @@ const createDoctorResult = () => ({
   fallbackRetried: false,
 });
 
+const createLocalUsageStatistics = (): LocalUsageStatistics => ({
+  projectPath: "/tmp/ws-a",
+  projectName: "Workspace A",
+  totalSessions: 1,
+  totalUsage: {
+    inputTokens: 12,
+    outputTokens: 34,
+    cacheWriteTokens: 0,
+    cacheReadTokens: 0,
+    totalTokens: 46,
+  },
+  estimatedCost: 0.0123,
+  sessions: [],
+  dailyUsage: [],
+  weeklyComparison: {
+    currentWeek: { sessions: 1, cost: 0.0123, tokens: 46 },
+    lastWeek: { sessions: 0, cost: 0, tokens: 0 },
+    trends: { sessions: 0, cost: 0, tokens: 0 },
+  },
+  byModel: [],
+  totalEngineUsageCount: 1,
+  engineUsage: [{ engine: "codex", count: 1 }],
+  aiCodeModifiedLines: 0,
+  dailyCodeChanges: [],
+  lastUpdated: Date.now(),
+});
+
 const renderDisplaySection = (
   options: {
     appSettings?: Partial<AppSettings>;
@@ -397,7 +472,8 @@ describe("SettingsView prompts workspace routing", () => {
         onDownloadDictationModel={vi.fn()}
         onCancelDictationDownload={vi.fn()}
         onRemoveDictationModel={vi.fn()}
-        initialSection="prompts"
+        initialSection="agent-prompt-management"
+        initialHighlightTarget="prompt-library"
       />,
     );
 
@@ -459,7 +535,7 @@ describe("SettingsView projects display", () => {
         onDownloadDictationModel={vi.fn()}
         onCancelDictationDownload={vi.fn()}
         onRemoveDictationModel={vi.fn()}
-        initialSection="projects"
+        initialSection="project-management"
       />,
     );
 
@@ -470,15 +546,34 @@ describe("SettingsView projects display", () => {
 });
 
 describe("SettingsView Display", () => {
-  it("shows CLI Validation and keeps dictation, git, and experimental sidebar entries hidden", async () => {
+  it("shows consolidated settings entries and keeps removed sidebar entries hidden", async () => {
     renderDisplaySection();
     await flushSettingsViewEffects();
+    const sidebar = document.querySelector(".settings-sidebar") as HTMLElement | null;
+    if (!sidebar) {
+      throw new Error("Expected settings sidebar");
+    }
+    const sidebarQueries = within(sidebar);
 
-    expect(screen.queryByRole("button", { name: "Dictation" })).toBeNull();
-    expect(screen.queryByRole("button", { name: "Git" })).toBeNull();
-    expect(screen.getByRole("button", { name: "CLI Validation" })).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "Experimental" })).toBeNull();
-    expect(screen.getByRole("button", { name: "settings.sidebarWebService" })).toBeTruthy();
+    expect(sidebarQueries.queryByRole("button", { name: "Dictation" })).toBeNull();
+    expect(sidebarQueries.queryByRole("button", { name: "Git" })).toBeNull();
+    expect(sidebarQueries.queryByRole("button", { name: "Projects" })).toBeNull();
+    expect(sidebarQueries.queryByRole("button", { name: "Sessions" })).toBeNull();
+    expect(sidebarQueries.queryByRole("button", { name: "Agents" })).toBeNull();
+    expect(sidebarQueries.queryByRole("button", { name: "Prompts" })).toBeNull();
+    expect(sidebarQueries.queryByRole("button", { name: "Shortcuts" })).toBeNull();
+    expect(sidebarQueries.queryByRole("button", { name: "Open in" })).toBeNull();
+    expect(sidebarQueries.queryByRole("button", { name: "Usage" })).toBeNull();
+    expect(sidebarQueries.queryByRole("button", { name: "Web Service" })).toBeNull();
+    expect(sidebarQueries.queryByRole("button", { name: "Email" })).toBeNull();
+    expect(sidebarQueries.queryByRole("button", { name: "Runtime Pool" })).toBeNull();
+    expect(sidebarQueries.queryByRole("button", { name: "CLI Validation" })).toBeNull();
+    expect(sidebarQueries.queryByRole("button", { name: "Skills" })).toBeNull();
+    expect(sidebarQueries.getByRole("button", { name: "Project Management" })).toBeTruthy();
+    expect(sidebarQueries.getByRole("button", { name: "MCP / Skills" })).toBeTruthy();
+    expect(sidebarQueries.getByRole("button", { name: "Agents / Prompts" })).toBeTruthy();
+    expect(sidebarQueries.getByRole("button", { name: "Runtime Environment" })).toBeTruthy();
+    expect(sidebarQueries.queryByRole("button", { name: "Experimental" })).toBeNull();
   });
 
   it("removes the dead multi-agent toggle and no longer shows background terminal in experimental", async () => {
@@ -638,7 +733,8 @@ describe("SettingsView Display", () => {
         onDownloadDictationModel={vi.fn()}
         onCancelDictationDownload={vi.fn()}
         onRemoveDictationModel={vi.fn()}
-        initialSection="codex"
+        initialSection="runtime-environment"
+        initialHighlightTarget="cli-validation"
       />,
     );
 
@@ -698,7 +794,8 @@ describe("SettingsView Display", () => {
         onDownloadDictationModel={vi.fn()}
         onCancelDictationDownload={vi.fn()}
         onRemoveDictationModel={vi.fn()}
-        initialSection="codex"
+        initialSection="runtime-environment"
+        initialHighlightTarget="cli-validation"
       />,
     );
 
@@ -749,7 +846,8 @@ describe("SettingsView Display", () => {
         onDownloadDictationModel={vi.fn()}
         onCancelDictationDownload={vi.fn()}
         onRemoveDictationModel={vi.fn()}
-        initialSection="codex"
+        initialSection="runtime-environment"
+        initialHighlightTarget="cli-validation"
       />,
     );
 
@@ -799,7 +897,8 @@ describe("SettingsView Display", () => {
         onDownloadDictationModel={vi.fn()}
         onCancelDictationDownload={vi.fn()}
         onRemoveDictationModel={vi.fn()}
-        initialSection="codex"
+        initialSection="runtime-environment"
+        initialHighlightTarget="cli-validation"
       />,
     );
 
@@ -1599,7 +1698,8 @@ describe("SettingsView Session management", () => {
         onDownloadDictationModel={vi.fn()}
         onCancelDictationDownload={vi.fn()}
         onRemoveDictationModel={vi.fn()}
-        initialSection="session-management"
+        initialSection="project-management"
+        initialHighlightTarget="project-sessions"
       />,
     );
 
@@ -1674,7 +1774,8 @@ describe("SettingsView Session management", () => {
         onDownloadDictationModel={vi.fn()}
         onCancelDictationDownload={vi.fn()}
         onRemoveDictationModel={vi.fn()}
-        initialSection="session-management"
+        initialSection="project-management"
+        initialHighlightTarget="project-sessions"
       />,
     );
 
@@ -1749,7 +1850,8 @@ describe("SettingsView Session management", () => {
         onDownloadDictationModel={vi.fn()}
         onCancelDictationDownload={vi.fn()}
         onRemoveDictationModel={vi.fn()}
-        initialSection="session-management"
+        initialSection="project-management"
+        initialHighlightTarget="project-sessions"
       />,
     );
 
@@ -1765,6 +1867,89 @@ describe("SettingsView Session management", () => {
 });
 
 describe("SettingsView Shortcuts", () => {
+  function expectTabButtonHasIcon(name: string) {
+    const tabButton = screen.getByRole("button", { name });
+    expect(tabButton.querySelector(".settings-basic-tab-icon")).toBeTruthy();
+  }
+
+  it("reaches shortcuts and open-app editors from Basic tabs", async () => {
+    renderDisplaySection();
+    await flushSettingsViewEffects();
+
+    expectTabButtonHasIcon("Appearance");
+    expectTabButtonHasIcon("Behavior");
+    expectTabButtonHasIcon("Shortcuts");
+    expectTabButtonHasIcon("Open in");
+    expectTabButtonHasIcon("Web Service");
+    expectTabButtonHasIcon("Email");
+
+    fireEvent.click(screen.getByRole("button", { name: "Shortcuts" }));
+    await flushSettingsViewEffects();
+    expect(screen.getAllByText("Shortcuts").length).toBeGreaterThanOrEqual(2);
+    expect(screen.getByText("Customize keyboard shortcuts for file actions, composer, panels, and navigation.")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Open in" }));
+    await flushSettingsViewEffects();
+    expect(screen.getAllByText("Open in").length).toBeGreaterThanOrEqual(2);
+    expect(screen.getByDisplayValue("VS Code")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Web Service" }));
+    await flushSettingsViewEffects();
+    expect(screen.getAllByText("Web Service").length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByLabelText("settings.webServicePortAriaLabel")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Email" }));
+    await flushSettingsViewEffects();
+    expect(screen.getAllByText("Email").length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByRole("switch", { name: "settings.emailEnableTitle" })).toBeTruthy();
+  });
+
+  it("reaches all consolidated parent tabs", async () => {
+    renderDisplaySection();
+    await flushSettingsViewEffects();
+
+    fireEvent.click(screen.getByRole("button", { name: "Project Management" }));
+    await flushSettingsViewEffects();
+    expect(screen.getByRole("button", { name: "Groups" })).toBeTruthy();
+    expectTabButtonHasIcon("Groups");
+    expectTabButtonHasIcon("Session Management");
+    expectTabButtonHasIcon("Usage");
+    fireEvent.click(screen.getByRole("button", { name: "Session Management" }));
+    await flushSettingsViewEffects();
+    expect(screen.getByTestId("settings-project-sessions-expand-toggle")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Usage" }));
+    await flushSettingsViewEffects();
+    expect(screen.getAllByText("Usage").length).toBeGreaterThanOrEqual(1);
+
+    fireEvent.click(screen.getByRole("button", { name: "Agents / Prompts" }));
+    await flushSettingsViewEffects();
+    expect(screen.getByRole("button", { name: "Agents" })).toBeTruthy();
+    expectTabButtonHasIcon("Agents");
+    expectTabButtonHasIcon("Prompts");
+    fireEvent.click(screen.getByRole("button", { name: "Prompts" }));
+    await flushSettingsViewEffects();
+    expect(screen.getByText("settings.prompt.title")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "MCP / Skills" }));
+    await flushSettingsViewEffects();
+    expect(screen.getByRole("button", { name: "MCP Servers" })).toBeTruthy();
+    expectTabButtonHasIcon("MCP Servers");
+    expectTabButtonHasIcon("Skills");
+    expect(screen.getByTestId("embedded-mcp-section")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Skills" }));
+    await flushSettingsViewEffects();
+    expect(screen.getByTestId("embedded-skills-section")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Runtime Environment" }));
+    await flushSettingsViewEffects();
+    expect(screen.getByRole("button", { name: "Runtime Pool" })).toBeTruthy();
+    expectTabButtonHasIcon("Runtime Pool");
+    expectTabButtonHasIcon("CLI Validation");
+    fireEvent.click(screen.getByRole("button", { name: "CLI Validation" }));
+    await flushSettingsViewEffects();
+    expect(screen.getAllByText("CLI Validation").length).toBeGreaterThanOrEqual(2);
+  });
+
   it("closes when clicking back to app", async () => {
     const onClose = vi.fn();
     render(

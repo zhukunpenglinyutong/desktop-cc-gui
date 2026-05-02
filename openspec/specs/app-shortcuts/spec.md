@@ -17,8 +17,9 @@ Application-level keyboard shortcuts MUST be represented by stable action metada
 
 #### Scenario: settings renders every configurable app shortcut
 - **WHEN** a shortcut action is configurable
-- **THEN** Settings -> Shortcuts MUST render it in an appropriate group
+- **THEN** Settings -> Basic -> Shortcuts MUST render it in an appropriate group
 - **AND** the user MUST be able to edit or clear the shortcut from that surface
+- **AND** the legacy Settings -> Shortcuts section input MUST be migrated away and removed after Settings -> Basic -> Shortcuts is available
 
 #### Scenario: shortcut display is platform-aware
 - **WHEN** Settings displays a shortcut value

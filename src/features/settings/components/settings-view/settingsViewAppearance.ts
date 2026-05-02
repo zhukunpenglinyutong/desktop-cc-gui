@@ -4,28 +4,20 @@ import { applyUserMessageBubbleCssVars } from "../../../../utils/userMessageBubb
 export type SettingsSection =
   | "basic"
   | "providers"
-  | "projects"
-  | "usage"
-  | "session-management"
+  | "project-management"
   | "mcp"
   | "permissions"
   | "commit"
-  | "agents"
-  | "prompts"
-  | "skills"
+  | "agent-prompt-management"
   | "composer"
   | "dictation"
-  | "shortcuts"
-  | "open-apps"
-  | "email"
-  | "web-service"
   | "git"
-  | "runtime"
+  | "runtime-environment"
   | "other"
   | "community"
   | "vendors";
 
-export type SettingsViewSection = SettingsSection | "codex" | "experimental" | "about";
+export type SettingsViewSection = SettingsSection | "experimental" | "about";
 
 export const USER_MSG_DARK_PRESETS = [
   { color: "#005fb8", label: "Default" },

@@ -45,6 +45,7 @@ import { useSkills } from "../../skills/hooks/useSkills";
 
 type SkillsSectionProps = {
   activeWorkspace: WorkspaceInfo | null;
+  embedded?: boolean;
 };
 
 type GlobalEngine = "claude" | "code" | "gemini" | "agents";
@@ -236,7 +237,10 @@ function removeRecordKey<T>(record: Record<string, T>, keyToDelete: string) {
   return rest;
 }
 
-export function SkillsSection({ activeWorkspace }: SkillsSectionProps) {
+export function SkillsSection({
+  activeWorkspace,
+  embedded = false,
+}: SkillsSectionProps) {
   const { t } = useTranslation();
   const { skills, refreshSkills } = useSkills({ activeWorkspace });
   const [query, setQuery] = useState("");
@@ -813,11 +817,15 @@ export function SkillsSection({ activeWorkspace }: SkillsSectionProps) {
 
   return (
     <section className="settings-section">
-      <div className="settings-section-title">{t("settings.skillsPanel.title")}</div>
+      {!embedded && (
+        <div className="settings-section-title">{t("settings.skillsPanel.title")}</div>
+      )}
 
       {!activeWorkspace?.id ? (
         <>
-          <div className="settings-section-subtitle">{t("settings.skillsPanel.description")}</div>
+          {!embedded && (
+            <div className="settings-section-subtitle">{t("settings.skillsPanel.description")}</div>
+          )}
           <div className="settings-inline-muted">{t("settings.skillsPanel.workspaceRequired")}</div>
         </>
       ) : (

@@ -30,6 +30,7 @@ import {
 type McpSectionProps = {
   activeWorkspace: WorkspaceInfo | null;
   activeEngine: string | null;
+  embedded?: boolean;
 };
 
 type CodexMcpServer = {
@@ -185,7 +186,11 @@ function getEngineStatusBadgeKey(
     : "settings.mcpPanel.engineStatusUnavailable";
 }
 
-export function McpSection({ activeWorkspace, activeEngine }: McpSectionProps) {
+export function McpSection({
+  activeWorkspace,
+  activeEngine,
+  embedded = false,
+}: McpSectionProps) {
   const { t } = useTranslation();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -442,8 +447,12 @@ export function McpSection({ activeWorkspace, activeEngine }: McpSectionProps) {
 
   return (
     <section className="settings-section">
-      <div className="settings-section-title">{t("settings.mcpPanel.title")}</div>
-      <div className="settings-section-subtitle">{t("settings.mcpPanel.description")}</div>
+      {!embedded && (
+        <>
+          <div className="settings-section-title">{t("settings.mcpPanel.title")}</div>
+          <div className="settings-section-subtitle">{t("settings.mcpPanel.description")}</div>
+        </>
+      )}
 
       <div className="settings-mcp-toolbar">
         <div className="settings-inline-muted">

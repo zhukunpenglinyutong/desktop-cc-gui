@@ -1,5 +1,6 @@
 /* === Basic settings redesign (Codex-like dark panel) === */
-.settings-section-basic {
+.settings-section-basic,
+.settings-section-tabbed {
   --settings-basic-text: var(--text-strong);
   --settings-basic-text-muted: var(--text-muted);
   --settings-basic-surface: color-mix(in srgb, var(--surface-card-strong) 84%, var(--surface-messages) 16%);
@@ -13,20 +14,23 @@
   color: var(--settings-basic-text);
 }
 
-.settings-section-basic .settings-section-title {
+.settings-section-basic .settings-section-title,
+.settings-section-tabbed .settings-section-title {
   color: var(--settings-basic-text);
   font-size: 30px;
   font-weight: 700;
   letter-spacing: -0.015em;
 }
 
-.settings-section-basic .settings-section-subtitle {
+.settings-section-basic .settings-section-subtitle,
+.settings-section-tabbed .settings-section-subtitle {
   color: var(--settings-basic-text-muted);
   font-size: 13px;
   margin-bottom: 4px;
 }
 
-.settings-section-basic .settings-basic-tabs {
+.settings-section-basic > .settings-basic-tabs,
+.settings-section-tabbed > .settings-basic-tabs {
   margin-bottom: 12px;
   padding: 4px;
   border-radius: 12px;
@@ -35,7 +39,8 @@
   max-width: none;
 }
 
-.settings-section-basic .settings-basic-tab {
+.settings-section-basic > .settings-basic-tabs > .settings-basic-tab,
+.settings-section-tabbed > .settings-basic-tabs > .settings-basic-tab {
   min-height: 38px;
   border-radius: 8px;
   border: 1px solid transparent;
@@ -44,12 +49,14 @@
   font-weight: 600;
 }
 
-.settings-section-basic .settings-basic-tab:hover {
+.settings-section-basic > .settings-basic-tabs > .settings-basic-tab:hover,
+.settings-section-tabbed > .settings-basic-tabs > .settings-basic-tab:hover {
   color: var(--settings-basic-text);
   background: color-mix(in srgb, var(--settings-basic-control-hover) 72%, transparent);
 }
 
-.settings-section-basic .settings-basic-tab.active {
+.settings-section-basic > .settings-basic-tabs > .settings-basic-tab.active,
+.settings-section-tabbed > .settings-basic-tabs > .settings-basic-tab.active {
   color: #eef2ff;
   border-color: color-mix(in srgb, var(--primary) 42%, #8898b8 58%);
   background: color-mix(in srgb, var(--primary) 24%, var(--settings-basic-control));

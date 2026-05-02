@@ -49,7 +49,8 @@
   width: 100%;
 }
 
-:root[data-theme="light"] .settings-section-basic {
+:root[data-theme="light"] .settings-section-basic,
+:root[data-theme="light"] .settings-section-tabbed {
   --settings-basic-text: #171b23;
   --settings-basic-text-muted: rgba(23, 27, 35, 0.68);
   --settings-basic-surface: rgba(255, 255, 255, 0.94);
@@ -61,7 +62,8 @@
   --settings-basic-control-border: rgba(15, 23, 36, 0.2);
 }
 
-:root[data-theme="light"] .settings-section-basic .settings-basic-tab.active {
+:root[data-theme="light"] .settings-section-basic > .settings-basic-tabs > .settings-basic-tab.active,
+:root[data-theme="light"] .settings-section-tabbed > .settings-basic-tabs > .settings-basic-tab.active {
   color: #12213e;
   border-color: color-mix(in srgb, var(--primary) 45%, #8ba0c8 55%);
   background: color-mix(in srgb, var(--primary) 26%, #d9e3f8);
@@ -103,7 +105,8 @@
 }
 
 @media (prefers-color-scheme: light) {
-  :root:not([data-theme]) .settings-section-basic {
+  :root:not([data-theme]) .settings-section-basic,
+  :root:not([data-theme]) .settings-section-tabbed {
     --settings-basic-text: #171b23;
     --settings-basic-text-muted: rgba(23, 27, 35, 0.68);
     --settings-basic-surface: rgba(255, 255, 255, 0.94);
@@ -115,7 +118,8 @@
     --settings-basic-control-border: rgba(15, 23, 36, 0.2);
   }
 
-  :root:not([data-theme]) .settings-section-basic .settings-basic-tab.active {
+  :root:not([data-theme]) .settings-section-basic > .settings-basic-tabs > .settings-basic-tab.active,
+  :root:not([data-theme]) .settings-section-tabbed > .settings-basic-tabs > .settings-basic-tab.active {
     color: #12213e;
     border-color: color-mix(in srgb, var(--primary) 45%, #8ba0c8 55%);
     background: color-mix(in srgb, var(--primary) 26%, #d9e3f8);

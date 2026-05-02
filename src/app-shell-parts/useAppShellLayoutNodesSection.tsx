@@ -368,8 +368,10 @@ export function useAppShellLayoutNodesSection(ctx: any) {
     },
     handleExitPlanModeExecute,
     onOpenSettings: () => openSettings(),
-    onOpenAgentSettings: () => openSettings("agents"),
-    onOpenPromptSettings: () => openSettings("prompts"),
+    onOpenAgentSettings: () =>
+      openSettings("agent-prompt-management", "agent-management"),
+    onOpenPromptSettings: () =>
+      openSettings("agent-prompt-management", "prompt-library"),
     onOpenModelSettings: handleOpenModelSettings,
     onRefreshModelConfig: handleRefreshModelConfig,
     isModelConfigRefreshing,
