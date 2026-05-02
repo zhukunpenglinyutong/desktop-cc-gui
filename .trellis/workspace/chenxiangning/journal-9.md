@@ -546,3 +546,55 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 285: 修正 Codex 压缩幕布复用
+
+**Date**: 2026-05-03
+**Task**: 修正 Codex 压缩幕布复用
+**Branch**: `feature/fix-0.4.12`
+
+### Summary
+
+(Add summary)
+
+### Main Changes
+
+任务目标
+- 仅提交 Codex compaction reducer 相关的 3 个 threads 文件，避免带入未完成的 openspec 目录。
+
+主要改动
+- 在 useThreadsReducer 中新增 thread-scoped Codex compaction message 的收集与过滤逻辑。
+- 追加/settle compaction message 时先替换同线程旧幕布，避免 completed 幕布与 restarted 状态并存。
+- 补充 compaction lifecycle 与 history restore 测试，覆盖 completed 后重新开始压缩的场景。
+
+涉及模块
+- src/features/threads/hooks/useThreadsReducer.ts
+- src/features/threads/hooks/useThreadsReducer.compaction.test.ts
+- src/features/threads/hooks/useThreadsReducer.history-restore.test.ts
+
+验证结果
+- 已执行：git commit 仅包含上述 3 个文件。
+- 未执行：npm run lint、npm run typecheck、Vitest focused tests。
+
+后续事项
+- 如需严格收口，可补跑 threads reducer 相关测试与基础 lint/typecheck。
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `b24d96c0` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

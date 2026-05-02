@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-9.md`
-- **Total Sessions**: 284
-- **Last Active**: 2026-05-02
+- **Total Sessions**: 285
+- **Last Active**: 2026-05-03
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-9.md` | ~548 | Active |
+| `journal-9.md` | ~600 | Active |
 | `journal-8.md` | ~1996 | Archived |
 | `journal-7.md` | ~1950 | Archived |
 | `journal-6.md` | ~1961 | Archived |
@@ -37,6 +37,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 285 | 2026-05-03 | 修正 Codex 压缩幕布复用 | `b24d96c0` | `feature/fix-0.4.12` |
 | 284 | 2026-05-02 | 修复 Codex 压缩历史消息保留 | `0e62dda0` | `feature/fix-0.4.12` |
 | 283 | 2026-05-02 | 修复大文件检查参数解析 | `e5b78bff` | `feature/fix-0.4.12` |
 | 282 | 2026-05-02 | 修复 Codex 压缩状态文案回写 | `6eba4f43` | `feature/fix-0.4.12` |
