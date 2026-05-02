@@ -2257,15 +2257,12 @@ export function threadReducer(state: ThreadState, action: ThreadAction): ThreadS
       ) {
         return state;
       }
-      const compactedMessagesPruned = list.filter(
-        (entry) => !isThreadScopedCodexCompactionMessage(entry, action.threadId),
-      );
       return {
         ...state,
         itemsByThread: {
           ...state.itemsByThread,
           [action.threadId]: prepareThreadItems([
-            ...compactedMessagesPruned,
+            ...list,
             buildCodexCompactionMessage(action.threadId, action.text),
           ]),
         },
