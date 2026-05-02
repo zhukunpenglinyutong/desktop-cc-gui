@@ -1,4 +1,21 @@
 const zhPart3 = {
+  settings: {
+    performanceCompatibilityTitle: "低性能兼容模式",
+    performanceCompatibilityDesc: "给个别老旧机器准备的兜底开关，用于前台空闲 CPU 异常升高时降低非关键刷新负担。",
+    performanceCompatibilityEnabled: "启用低性能兼容模式",
+    performanceCompatibilityStatusEnabled: "兼容模式已开启",
+    performanceCompatibilityStatusDisabled: "兼容模式已关闭",
+    performanceCompatibilityHint: "开启后，非关键 UI 刷新会降低频率，窗口隐藏时可暂停刷新；消息发送、文件、Git 和 runtime 语义不变。",
+    diagnosticsBundleTitle: "诊断包",
+    diagnosticsBundleDesc: "导出本机 JSON 诊断包，可用于性能、启动、runtime、UI 或配置类 bug 排查。",
+    diagnosticsBundleExport: "导出诊断包",
+    diagnosticsBundleExporting: "正在导出...",
+    diagnosticsBundleExported: "诊断包已导出：{{path}}",
+    diagnosticsBundleExportFailed: "诊断包导出失败：{{error}}",
+    diagnosticsBundleLocalOnly: "仅本机文件",
+    diagnosticsBundleHint: "诊断包包含有界的设置、runtime、renderer、平台和 client store 证据；不会导出 token 和用户消息正文。",
+  },
+
   noteCards: {
     title: "便签池",
     subtitle: "随手记下灵感、片段和临时上下文。",

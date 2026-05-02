@@ -1,4 +1,21 @@
 const enPart3 = {
+  settings: {
+    performanceCompatibilityTitle: "Low-performance compatibility mode",
+    performanceCompatibilityDesc: "Opt-in fallback for older machines that show high foreground CPU while idle.",
+    performanceCompatibilityEnabled: "Enable low-performance compatibility mode",
+    performanceCompatibilityStatusEnabled: "Compatibility mode on",
+    performanceCompatibilityStatusDisabled: "Compatibility mode off",
+    performanceCompatibilityHint: "When enabled, non-critical UI refreshes may update less often or pause while the window is hidden. Sending messages, files, Git, and runtime behavior stay unchanged.",
+    diagnosticsBundleTitle: "Diagnostics bundle",
+    diagnosticsBundleDesc: "Export a local JSON bundle for performance, startup, runtime, UI, or configuration bug reports.",
+    diagnosticsBundleExport: "Export diagnostics",
+    diagnosticsBundleExporting: "Exporting...",
+    diagnosticsBundleExported: "Diagnostics bundle exported: {{path}}",
+    diagnosticsBundleExportFailed: "Failed to export diagnostics: {{error}}",
+    diagnosticsBundleLocalOnly: "Local file only",
+    diagnosticsBundleHint: "The bundle includes bounded settings, runtime, renderer, platform, and client store evidence. It avoids tokens and message text.",
+  },
+
   noteCards: {
     title: "Note pool",
     subtitle: "Capture sparks, snippets, and temporary context without breaking flow.",

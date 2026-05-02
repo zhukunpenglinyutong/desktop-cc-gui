@@ -514,6 +514,18 @@ mod tests {
         ));
     }
 
+    #[test]
+    fn app_settings_change_skips_restart_for_performance_compatibility_mode() {
+        let previous = AppSettings::default();
+        let mut updated = previous.clone();
+        updated.performance_compatibility_mode_enabled =
+            !previous.performance_compatibility_mode_enabled;
+
+        assert!(!app_settings_change_requires_codex_restart(
+            &previous, &updated
+        ));
+    }
+
     #[tokio::test]
     async fn get_app_settings_core_sanitizes_terminal_shell_path() {
         let mut settings = AppSettings::default();

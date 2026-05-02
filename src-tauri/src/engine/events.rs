@@ -335,8 +335,8 @@ pub fn engine_event_to_app_server_event(
 }
 
 /// Convert an EngineEvent to an AppServerEvent and attach the known foreground
-/// turn identity to terminal events. Some engines do not include the MossX
-/// generated turn id in their raw completed payload, but the forwarder already
+/// turn identity to terminal events. Some engines do not include the
+/// app-generated turn id in their raw completed payload, but the forwarder already
 /// knows the accepted turn id from the surrounding TurnEvent.
 pub fn engine_event_to_app_server_event_with_turn_context(
     event: &EngineEvent,

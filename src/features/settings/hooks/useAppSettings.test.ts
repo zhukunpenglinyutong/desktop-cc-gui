@@ -74,6 +74,19 @@ describe("useAppSettings", () => {
     expect(result.current.settings.claudeBin).toBeNull();
     expect(result.current.settings.codexAutoCompactionEnabled).toBe(true);
     expect(result.current.settings.codexAutoCompactionThresholdPercent).toBe(92);
+    expect(result.current.settings.performanceCompatibilityModeEnabled).toBe(false);
+  });
+
+  it("preserves explicitly enabled performance compatibility mode", async () => {
+    getAppSettingsMock.mockResolvedValue({
+      performanceCompatibilityModeEnabled: true,
+    } as AppSettings);
+
+    const { result } = renderHook(() => useAppSettings());
+
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    expect(result.current.settings.performanceCompatibilityModeEnabled).toBe(true);
   });
 
   it("preserves disabled Codex auto-compaction", async () => {
@@ -196,6 +209,7 @@ describe("useAppSettings", () => {
     expect(result.current.settings.backendMode).toBe("local");
     expect(result.current.settings.dictationModelId).toBe("base");
     expect(result.current.settings.interruptShortcut).toBeTruthy();
+    expect(result.current.settings.performanceCompatibilityModeEnabled).toBe(false);
   });
 
   it("persists settings via updateAppSettings and updates local state", async () => {

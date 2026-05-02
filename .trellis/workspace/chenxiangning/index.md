@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-9.md`
-- **Total Sessions**: 275
+- **Total Sessions**: 278
 - **Last Active**: 2026-05-02
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-9.md` | ~55 | Active |
+| `journal-9.md` | ~219 | Active |
 | `journal-8.md` | ~1996 | Archived |
 | `journal-7.md` | ~1950 | Archived |
 | `journal-6.md` | ~1961 | Archived |
@@ -37,6 +37,9 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 278 | 2026-05-02 | 修复 Windows 外部文件监控路径缺失噪声 | `18a69594` | `feature/fix-0.4.12` |
+| 277 | 2026-05-02 | 增加低性能兼容模式与诊断导出 | `6467b10e` | `feature/fix-0.4.12` |
+| 276 | 2026-05-02 | 清理 doctor strict 品牌文案阻塞 | `bed5d920` | `feature/fix-0.4.12` |
 | 275 | 2026-05-02 | 记录 Codex wrapper macOS 验证 | `3eaccb6b` | `feature/fix-0.4.12` |
 | 274 | 2026-05-02 | 归档分支后台更新 OpenSpec 提案 | `82844fcc` | `feature/fix-0.4.12` |
 | 273 | 2026-05-02 | 修复 GitHistoryPanel 无 upstream 阻断提示测试不稳定 | `da25f0fa` | `feature/fix-0.4.12` |

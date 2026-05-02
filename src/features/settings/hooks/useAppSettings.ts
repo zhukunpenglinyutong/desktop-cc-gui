@@ -165,6 +165,7 @@ const defaultSettings: AppSettings = {
   userMsgColor: "",
   usageShowRemaining: false,
   showMessageAnchors: true,
+  performanceCompatibilityModeEnabled: false,
   uiFontFamily: DEFAULT_UI_FONT_FAMILY,
   codeFontFamily: DEFAULT_CODE_FONT_FAMILY,
   codeFontSize: CODE_FONT_SIZE_DEFAULT,
@@ -282,6 +283,8 @@ function normalizeAppSettings(
       ? settings.layoutMode ?? "default"
       : "default",
     userMsgColor: fallbackUserMsgColor,
+    performanceCompatibilityModeEnabled:
+      settings.performanceCompatibilityModeEnabled === true,
     uiFontFamily: normalizeFontFamily(
       settings.uiFontFamily,
       DEFAULT_UI_FONT_FAMILY,

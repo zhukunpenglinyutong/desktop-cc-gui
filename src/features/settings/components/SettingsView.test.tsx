@@ -10,10 +10,15 @@ import {
 } from "@testing-library/react";
 import type { ComponentProps } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { AppSettings, WorkspaceInfo } from "../../../types";
+import type {
+  AppSettings,
+  DiagnosticsBundleExportResult,
+  WorkspaceInfo,
+} from "../../../types";
 import {
   archiveWorkspaceSessions,
   deleteWorkspaceSessions,
+  exportDiagnosticsBundle,
   listWorkspaceSessions,
   unarchiveWorkspaceSessions,
 } from "../../../services/tauri";
@@ -50,6 +55,7 @@ vi.mock("../../../services/tauri", async () => {
     archiveWorkspaceSessions: vi.fn(),
     unarchiveWorkspaceSessions: vi.fn(),
     deleteWorkspaceSessions: vi.fn(),
+    exportDiagnosticsBundle: vi.fn(),
   };
 });
 
@@ -62,6 +68,16 @@ const mockedLocalFonts = [
 const queryLocalFontsMock = vi.fn<() => Promise<Array<{ family: string }>>>(
   () => new Promise<Array<{ family: string }>>(() => {}),
 );
+
+const createDeferred = <T,>() => {
+  let resolve: (value: T) => void = () => {};
+  let reject: (reason?: unknown) => void = () => {};
+  const promise = new Promise<T>((promiseResolve, promiseReject) => {
+    resolve = promiseResolve;
+    reject = promiseReject;
+  });
+  return { promise, resolve, reject };
+};
 
 beforeEach(() => {
   queryLocalFontsMock.mockReset();
@@ -77,6 +93,10 @@ beforeEach(() => {
   vi.mocked(archiveWorkspaceSessions).mockResolvedValue({ results: [] });
   vi.mocked(unarchiveWorkspaceSessions).mockResolvedValue({ results: [] });
   vi.mocked(deleteWorkspaceSessions).mockResolvedValue({ results: [] });
+  vi.mocked(exportDiagnosticsBundle).mockResolvedValue({
+    filePath: "/tmp/diagnostics.json",
+    generatedAt: "123",
+  });
 });
 
 afterEach(() => {
@@ -159,6 +179,7 @@ const baseSettings: AppSettings = {
   userMsgColor: "",
   usageShowRemaining: false,
   showMessageAnchors: true,
+  performanceCompatibilityModeEnabled: false,
   uiFontFamily:
     "Monaco, \"SF Pro Text\", \"SF Pro Display\", -apple-system, \"Helvetica Neue\", sans-serif",
   codeFontFamily:
@@ -284,9 +305,9 @@ const renderDisplaySection = (
     onRemoveDictationModel: vi.fn(),
   };
 
-  render(<SettingsView {...props} />);
+  const view = render(<SettingsView {...props} />);
 
-  return { onUpdateAppSettings, onToggleTransparency };
+  return { ...view, onUpdateAppSettings, onToggleTransparency };
 };
 
 const renderComposerSection = (
@@ -840,6 +861,113 @@ describe("SettingsView Display", () => {
         }),
       );
     });
+  });
+
+  it("toggles low-performance compatibility mode from behavior settings", async () => {
+    const onUpdateAppSettings = vi.fn().mockResolvedValue(undefined);
+    renderDisplaySection({
+      onUpdateAppSettings,
+      appSettings: { performanceCompatibilityModeEnabled: false },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Behavior" }));
+    fireEvent.click(screen.getByRole("switch", {
+      name: "Enable low-performance compatibility mode",
+    }));
+
+    await waitFor(() => {
+      expect(onUpdateAppSettings).toHaveBeenCalledWith(
+        expect.objectContaining({
+          performanceCompatibilityModeEnabled: true,
+        }),
+      );
+    });
+  });
+
+  it("exports diagnostics bundle from behavior settings", async () => {
+    renderDisplaySection();
+
+    fireEvent.click(screen.getByRole("button", { name: "Behavior" }));
+    fireEvent.click(screen.getByRole("button", { name: "Export diagnostics" }));
+
+    await waitFor(() => {
+      expect(exportDiagnosticsBundle).toHaveBeenCalledTimes(1);
+    });
+    expect((await screen.findByRole("status")).textContent ?? "").toContain(
+      "/tmp/diagnostics.json",
+    );
+  });
+
+  it("shows a readable diagnostics bundle export failure", async () => {
+    vi.mocked(exportDiagnosticsBundle).mockRejectedValueOnce(new Error("disk full"));
+    renderDisplaySection();
+
+    fireEvent.click(screen.getByRole("button", { name: "Behavior" }));
+    fireEvent.click(screen.getByRole("button", { name: "Export diagnostics" }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("alert").textContent ?? "").toContain("disk full");
+    });
+  });
+
+  it("keeps the latest diagnostics bundle export result when responses settle out of order", async () => {
+    const firstExport = createDeferred<DiagnosticsBundleExportResult>();
+    const secondExport = createDeferred<DiagnosticsBundleExportResult>();
+    vi.mocked(exportDiagnosticsBundle)
+      .mockReturnValueOnce(firstExport.promise)
+      .mockReturnValueOnce(secondExport.promise);
+    renderDisplaySection();
+
+    fireEvent.click(screen.getByRole("button", { name: "Behavior" }));
+    const exportButton = screen.getByRole("button", { name: "Export diagnostics" });
+    await act(async () => {
+      fireEvent.click(exportButton);
+      fireEvent.click(exportButton);
+    });
+
+    expect(exportDiagnosticsBundle).toHaveBeenCalledTimes(2);
+
+    await act(async () => {
+      secondExport.resolve({
+        filePath: "/tmp/new-diagnostics.json",
+        generatedAt: "2",
+      });
+    });
+    expect((await screen.findByRole("status")).textContent ?? "").toContain(
+      "/tmp/new-diagnostics.json",
+    );
+
+    await act(async () => {
+      firstExport.resolve({
+        filePath: "/tmp/old-diagnostics.json",
+        generatedAt: "1",
+      });
+    });
+    expect(screen.getByRole("status").textContent ?? "").toContain(
+      "/tmp/new-diagnostics.json",
+    );
+    expect(screen.getByRole("status").textContent ?? "").not.toContain(
+      "/tmp/old-diagnostics.json",
+    );
+  });
+
+  it("ignores diagnostics bundle export completion after settings unmount", async () => {
+    const pendingExport = createDeferred<DiagnosticsBundleExportResult>();
+    vi.mocked(exportDiagnosticsBundle).mockReturnValueOnce(pendingExport.promise);
+    const { unmount } = renderDisplaySection();
+
+    fireEvent.click(screen.getByRole("button", { name: "Behavior" }));
+    fireEvent.click(screen.getByRole("button", { name: "Export diagnostics" }));
+    unmount();
+
+    await act(async () => {
+      pendingExport.resolve({
+        filePath: "/tmp/unmounted-diagnostics.json",
+        generatedAt: "1",
+      });
+    });
+
+    expect(screen.queryByText("/tmp/unmounted-diagnostics.json")).toBeNull();
   });
 
   it("updates the active theme preset for dark appearance", async () => {

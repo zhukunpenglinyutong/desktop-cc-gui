@@ -866,6 +866,11 @@ pub(crate) struct AppSettings {
         rename = "showMessageAnchors"
     )]
     pub(crate) show_message_anchors: bool,
+    #[serde(
+        default = "default_performance_compatibility_mode_enabled",
+        rename = "performanceCompatibilityModeEnabled"
+    )]
+    pub(crate) performance_compatibility_mode_enabled: bool,
     #[serde(default = "default_canvas_width_mode", rename = "canvasWidthMode")]
     pub(crate) canvas_width_mode: String,
     #[serde(default = "default_layout_mode", rename = "layoutMode")]
@@ -1113,6 +1118,10 @@ fn default_usage_show_remaining() -> bool {
 
 fn default_show_message_anchors() -> bool {
     true
+}
+
+fn default_performance_compatibility_mode_enabled() -> bool {
+    false
 }
 
 fn default_canvas_width_mode() -> String {
@@ -1491,6 +1500,8 @@ impl Default for AppSettings {
             user_msg_color: default_user_msg_color(),
             usage_show_remaining: default_usage_show_remaining(),
             show_message_anchors: default_show_message_anchors(),
+            performance_compatibility_mode_enabled: default_performance_compatibility_mode_enabled(
+            ),
             canvas_width_mode: default_canvas_width_mode(),
             layout_mode: default_layout_mode(),
             ui_font_family: default_ui_font_family(),
@@ -1686,6 +1697,7 @@ mod tests {
         assert!(settings.user_msg_color.is_empty());
         assert!(!settings.usage_show_remaining);
         assert!(settings.show_message_anchors);
+        assert!(!settings.performance_compatibility_mode_enabled);
         assert_eq!(settings.canvas_width_mode, "narrow");
         assert_eq!(settings.layout_mode, "default");
         assert!(settings.ui_font_family.starts_with("Monaco"));

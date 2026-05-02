@@ -9,6 +9,10 @@ import {
   SESSION_RADAR_READ_STATE_KEY,
   SESSION_RADAR_RECENT_STORAGE_KEY,
 } from "../utils/sessionRadarPersistence";
+import {
+  resolveSessionRadarTickMs,
+  shouldPauseSessionRadarTick,
+} from "../utils/performanceCompatibility";
 
 const DEFAULT_RUNNING_LIMIT = 12;
 const DEFAULT_RECENT_LIMIT = Number.POSITIVE_INFINITY;
@@ -437,6 +441,7 @@ export function buildSessionRadarFeed(input: BuildSessionRadarFeedInput): Sessio
 type UseSessionRadarFeedInput = Omit<BuildSessionRadarFeedInput, "now"> & {
   runningLimit?: number;
   recentLimit?: number;
+  performanceCompatibilityModeEnabled?: boolean;
 };
 
 export function useSessionRadarFeed(input: UseSessionRadarFeedInput): SessionRadarFeed {
@@ -448,6 +453,7 @@ export function useSessionRadarFeed(input: UseSessionRadarFeedInput): SessionRad
     lastAgentMessageByThread,
     runningLimit,
     recentLimit,
+    performanceCompatibilityModeEnabled = false,
   } = input;
   const resolvedRecentLimit = recentLimit ?? DEFAULT_RECENT_LIMIT;
   const [clockNow, setClockNow] = useState(() => Date.now());
@@ -464,14 +470,38 @@ export function useSessionRadarFeed(input: UseSessionRadarFeedInput): SessionRad
     if (!hasRunningThread) {
       return;
     }
+
+    const tickMs = resolveSessionRadarTickMs(performanceCompatibilityModeEnabled);
+    const updateClockIfVisible = () => {
+      if (
+        typeof document !== "undefined" &&
+        shouldPauseSessionRadarTick(
+          performanceCompatibilityModeEnabled,
+          document.visibilityState,
+        )
+      ) {
+        return;
+      }
+      setClockNow(Date.now());
+    };
+    const handleVisibilityChange = () => {
+      updateClockIfVisible();
+    };
+
     setClockNow(Date.now());
     const timerId = window.setInterval(() => {
-      setClockNow(Date.now());
-    }, 1000);
+      updateClockIfVisible();
+    }, tickMs);
+    if (performanceCompatibilityModeEnabled && typeof document !== "undefined") {
+      document.addEventListener("visibilitychange", handleVisibilityChange);
+    }
     return () => {
       window.clearInterval(timerId);
+      if (performanceCompatibilityModeEnabled && typeof document !== "undefined") {
+        document.removeEventListener("visibilitychange", handleVisibilityChange);
+      }
     };
-  }, [hasRunningThread]);
+  }, [hasRunningThread, performanceCompatibilityModeEnabled]);
 
   const liveFeed = useMemo(
     () => {

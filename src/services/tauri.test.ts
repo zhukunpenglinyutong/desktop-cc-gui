@@ -78,6 +78,7 @@ import {
   deleteClaudeSession,
   deleteGeminiSession,
   sendConversationCompletionEmail,
+  exportDiagnosticsBundle,
 } from "./tauri";
 
 vi.mock("@tauri-apps/api/core", () => ({
@@ -177,6 +178,21 @@ describe("tauri invoke wrappers", () => {
     await reloadCodexRuntimeConfig();
 
     expect(invokeMock).toHaveBeenCalledWith("reload_codex_runtime_config");
+  });
+
+  it("invokes diagnostics bundle export command", async () => {
+    const invokeMock = vi.mocked(invoke);
+    invokeMock.mockResolvedValueOnce({
+      filePath: "/tmp/diagnostics.json",
+      generatedAt: "123",
+    });
+
+    await expect(exportDiagnosticsBundle()).resolves.toEqual({
+      filePath: "/tmp/diagnostics.json",
+      generatedAt: "123",
+    });
+
+    expect(invokeMock).toHaveBeenCalledWith("export_diagnostics_bundle");
   });
 
   it("invokes codex_doctor with the provided CLI inputs", async () => {

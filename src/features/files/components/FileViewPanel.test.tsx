@@ -1797,6 +1797,68 @@ describe("FileViewPanel external change awareness in detached mode", () => {
     );
   });
 
+  it("does not show unavailable monitor toast for Windows path-not-found polling errors", async () => {
+    vi.mocked(readWorkspaceFile)
+      .mockResolvedValueOnce({ content: "const value = 1;", truncated: false })
+      .mockRejectedValue(new Error("Failed to open file: 系统找不到指定的路径。 (os error 3)"));
+
+    render(
+      <FileViewPanel
+        workspaceId="ws-ext-poll-win-path-missing"
+        workspacePath="C:/repo"
+        filePath="src/value-missing.ts"
+        openTargets={[]}
+        openAppIconById={{}}
+        selectedOpenAppId=""
+        onSelectOpenAppId={vi.fn()}
+        onClose={vi.fn()}
+        externalChangeMonitoringEnabled
+        externalChangePollIntervalMs={20}
+      />,
+    );
+
+    await screen.findByTestId("mock-codemirror");
+    await waitFor(() => {
+      expect(vi.mocked(readWorkspaceFile).mock.calls.length).toBeGreaterThanOrEqual(4);
+    });
+    expect(vi.mocked(pushErrorToast)).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: "External file monitor is unavailable",
+      }),
+    );
+  });
+
+  it("keeps unavailable monitor toast for non-path missing os error 3 polling errors", async () => {
+    vi.mocked(readWorkspaceFile)
+      .mockResolvedValueOnce({ content: "const value = 1;", truncated: false })
+      .mockRejectedValue(new Error("Unexpected backend failure (os error 3)"));
+
+    render(
+      <FileViewPanel
+        workspaceId="ws-ext-poll-os-error-3"
+        workspacePath="/repo"
+        filePath="src/value-error.ts"
+        openTargets={[]}
+        openAppIconById={{}}
+        selectedOpenAppId=""
+        onSelectOpenAppId={vi.fn()}
+        onClose={vi.fn()}
+        externalChangeMonitoringEnabled
+        externalChangePollIntervalMs={20}
+      />,
+    );
+
+    await screen.findByTestId("mock-codemirror");
+    await waitFor(() => {
+      expect(vi.mocked(pushErrorToast)).toHaveBeenCalledWith(
+        expect.objectContaining({
+          title: "External file monitor is unavailable",
+          message: "Unexpected backend failure (os error 3)",
+        }),
+      );
+    });
+  });
+
   it("shows conflict actions for dirty buffer and can keep local edits", async () => {
     vi.mocked(readWorkspaceFile)
       .mockResolvedValueOnce({ content: "console.log('v1');", truncated: false })

@@ -11,6 +11,7 @@ import type {
   LocalUsageSnapshot,
   LocalUsageStatistics,
   RuntimePoolSnapshot,
+  DiagnosticsBundleExportResult,
   WorkspaceInfo,
   WorkspaceSettings,
   EngineStatus,
@@ -480,6 +481,10 @@ export async function ensureRuntimeReady(workspaceId: string): Promise<void> {
 
 export async function getRuntimePoolSnapshot(): Promise<RuntimePoolSnapshot> {
   return invoke("get_runtime_pool_snapshot");
+}
+
+export async function exportDiagnosticsBundle(): Promise<DiagnosticsBundleExportResult> {
+  return invoke("export_diagnostics_bundle");
 }
 
 export async function mutateRuntimePool(mutation: { action: "close" | "releaseToCold" | "pin"; workspaceId: string; engine?: string; pinned?: boolean }): Promise<RuntimePoolSnapshot> {

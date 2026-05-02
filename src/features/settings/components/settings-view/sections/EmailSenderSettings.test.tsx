@@ -265,6 +265,9 @@ describe("EmailSenderSettings", () => {
     const clearButton = await screen.findByRole("button", {
       name: "settings.emailClearSecret",
     });
+    await waitFor(() => {
+      expect((clearButton as HTMLButtonElement).disabled).toBe(false);
+    });
     fireEvent.click(clearButton);
 
     await waitFor(() => {

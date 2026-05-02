@@ -29,6 +29,12 @@ vi.mock("../features/session-activity/hooks/useSessionRadarFeed", () => ({
   })),
 }));
 
+vi.mock("../features/session-activity/utils/performanceCompatibility", () => ({
+  isPerformanceCompatibilityModeEnabled: vi.fn((settings) =>
+    settings?.performanceCompatibilityModeEnabled === true
+  ),
+}));
+
 vi.mock("../features/workspaces/hooks/useWorkspaceSessionProjectionSummary", () => ({
   useWorkspaceSessionProjectionSummary: vi.fn(() => ({
     summary: { ownerWorkspaceIds: ["ws-1"] },

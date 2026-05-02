@@ -17,6 +17,7 @@ pub(crate) fn invoke_handler(
         crate::computer_use::run_computer_use_activation_probe,
         crate::computer_use::run_computer_use_host_contract_diagnostics,
         crate::computer_use::broker::run_computer_use_codex_broker,
+        crate::diagnostics_bundle::export_diagnostics_bundle,
         crate::runtime::commands::get_runtime_pool_snapshot,
         crate::runtime::commands::mutate_runtime_pool,
         crate::runtime::commands::ensure_runtime_ready,

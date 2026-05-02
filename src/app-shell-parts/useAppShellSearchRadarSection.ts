@@ -8,6 +8,7 @@ import { useUnifiedSearch } from "../features/search/hooks/useUnifiedSearch";
 import type { SearchContentFilter, SearchScope } from "../features/search/types";
 import { useWorkspaceSessionActivity } from "../features/session-activity/hooks/useWorkspaceSessionActivity";
 import { useSessionRadarFeed } from "../features/session-activity/hooks/useSessionRadarFeed";
+import { isPerformanceCompatibilityModeEnabled } from "../features/session-activity/utils/performanceCompatibility";
 import {
   RADAR_STORE_NAME,
   SESSION_RADAR_RECENT_STORAGE_KEY,
@@ -452,6 +453,8 @@ export function useAppShellSearchRadarSection({
     threadItemsByThread,
     lastAgentMessageByThread,
     runningLimit: LOCK_LIVE_SESSION_LIMIT,
+    performanceCompatibilityModeEnabled:
+      isPerformanceCompatibilityModeEnabled(appSettings),
   });
   const lockLiveSessions = sessionRadarFeed.runningSessions;
 

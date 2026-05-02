@@ -540,6 +540,7 @@ export type AppSettings = {
   userMsgColor: string;
   usageShowRemaining: boolean;
   showMessageAnchors: boolean;
+  performanceCompatibilityModeEnabled: boolean;
   uiFontFamily: string;
   codeFontFamily: string;
   codeFontSize: number;
@@ -708,6 +709,11 @@ export type RuntimePoolSnapshot = {
     lastRuntimeEndEngine?: string | null;
   };
   engineObservability: RuntimeEngineObservability[];
+};
+
+export type DiagnosticsBundleExportResult = {
+  filePath: string;
+  generatedAt: string;
 };
 
 export type CodexDoctorResult = {

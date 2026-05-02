@@ -18,7 +18,11 @@ const EXTERNAL_CHANGE_NOTICE_MS = 3_200;
 const EXTERNAL_CHANGE_ERROR_TOAST_THRESHOLD = 3;
 const EXTERNAL_CHANGE_ERROR_TOAST_COOLDOWN_MS = 30_000;
 const MISSING_FILE_ERROR_PATTERN =
-  /no such file or directory|os error 2|enoent|cannot find the file|the system cannot find the file specified/i;
+  /no such file or directory|os error 2|enoent|cannot find the file|cannot find the path|path not found|the system cannot find the file specified|the system cannot find the path specified|系统找不到指定的路径/i;
+const WINDOWS_PATH_NOT_FOUND_ERROR_PATTERN =
+  /os error 3/i;
+const WINDOWS_PATH_NOT_FOUND_TEXT_PATTERN =
+  /cannot find the path|path not found|the system cannot find the path specified|系统找不到指定的路径/i;
 
 export type ExternalChangeConflict = {
   diskContent: string;
@@ -47,7 +51,13 @@ type UseFileExternalSyncArgs = {
 };
 
 function isMissingFileErrorMessage(message: string) {
-  return MISSING_FILE_ERROR_PATTERN.test(message);
+  return (
+    MISSING_FILE_ERROR_PATTERN.test(message) ||
+    (
+      WINDOWS_PATH_NOT_FOUND_ERROR_PATTERN.test(message) &&
+      WINDOWS_PATH_NOT_FOUND_TEXT_PATTERN.test(message)
+    )
+  );
 }
 
 function errorMessageFromUnknown(error: unknown, fallback: string) {

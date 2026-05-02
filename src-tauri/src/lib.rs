@@ -28,6 +28,7 @@ mod code_intel;
 mod codex;
 mod command_registry;
 mod computer_use;
+mod diagnostics_bundle;
 mod dictation;
 mod email;
 mod engine;
