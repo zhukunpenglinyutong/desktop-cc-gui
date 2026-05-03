@@ -1,3 +1,5 @@
+[![MseeP.ai Security Assessment Badge](https://mseep.net/pr/zhukunpenglinyutong-desktop-cc-gui-badge.png)](https://mseep.ai/app/zhukunpenglinyutong-desktop-cc-gui)
+
 <div align="center">
 
 # Desktop CC GUI
