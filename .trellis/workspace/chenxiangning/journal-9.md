@@ -1353,3 +1353,53 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 299: 合并用户对话时间线头部为单行
+
+**Date**: 2026-05-04
+**Task**: 合并用户对话时间线头部为单行
+**Branch**: `feature/v-0.4.13`
+
+### Summary
+
+(Add summary)
+
+### Main Changes
+
+任务目标:
+- 将右下角用户对话时间线卡片顶部信息合并为单行展示。
+
+主要改动:
+- 调整 UserConversationTimelinePanel 结构，把“跳到消息”按钮并入 header 行。
+- 更新 status-panel CSS，限制 header、order 元信息与跳转按钮的换行与收缩行为。
+- 保持消息正文、展开/收起和跳转行为不变。
+
+涉及模块:
+- src/features/status-panel/components/UserConversationTimelinePanel.tsx
+- src/styles/status-panel.css
+
+验证结果:
+- npx vitest run src/features/status-panel/components/UserConversationTimelinePanel.test.tsx src/features/status-panel/components/StatusPanel.test.tsx
+
+后续事项:
+- 如需进一步优化，可继续微调该行的视觉层级与窄宽度下的间距表现。
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `399d387e` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

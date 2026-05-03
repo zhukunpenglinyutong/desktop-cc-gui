@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-9.md`
-- **Total Sessions**: 298
+- **Total Sessions**: 299
 - **Last Active**: 2026-05-04
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-9.md` | ~1355 | Active |
+| `journal-9.md` | ~1405 | Active |
 | `journal-8.md` | ~1996 | Archived |
 | `journal-7.md` | ~1950 | Archived |
 | `journal-6.md` | ~1961 | Archived |
@@ -37,6 +37,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 299 | 2026-05-04 | 合并用户对话时间线头部为单行 | `399d387e` | `feature/v-0.4.13` |
 | 298 | 2026-05-04 | Dock 用户对话时间线 | `2b3ca1f8` | `feature/v-0.4.13` |
 | 297 | 2026-05-03 | 合并 PR494 邮件设置卡片背景修复 | `31b769ea` | `feature/v-0.4.13` |
 | 296 | 2026-05-03 | Task Center 运行态投影与恢复收口 | `23c320ef` | `feature/v-0.4.13` |
