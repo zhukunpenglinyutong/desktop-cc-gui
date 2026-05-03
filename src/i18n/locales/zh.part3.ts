@@ -33,6 +33,11 @@ const zhPart3 = {
     diagnosticsBundleExportFailed: "诊断包导出失败：{{error}}",
     diagnosticsBundleLocalOnly: "仅本机文件",
     diagnosticsBundleHint: "诊断包包含有界的设置、runtime、renderer、平台和 client store 证据；不会导出 token 和用户消息正文。",
+    themeModeHintSystem: "当前跟随系统，实际生效外观为 {{appearance}}。",
+    themeModeHintFixed: "当前固定使用 {{appearance}} 外观。",
+    themeModeHintCustom: "自定义主题会套用所选配色，但运行时仍按 {{appearance}} 外观渲染。",
+    themePresetDescription:
+      "为“自定义”主题选择任意一套 VS Code 风格配色。当前 preset 会按 {{appearance}} 外观生效。",
   },
 
   noteCards: {

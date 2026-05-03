@@ -1390,6 +1390,9 @@ const zhPart2 = {
       snapshot: {
         badge: "结果快照",
       },
+      latestRunSummary: {
+        ariaLabel: "最近一次运行摘要",
+      },
       blocked: "已阻断：{{reason}}",
       detail: {
         runAt: "执行时间 {{time}}",
@@ -1579,10 +1582,12 @@ const zhPart2 = {
   taskCenter: {
     title: "任务中心",
     eyebrow: "Agent Runs",
+    workspaceHero: "当前最需要关注的运行",
     statusFilter: "状态",
     engineFilter: "引擎",
     filterAll: "全部",
     empty: "暂无任务运行记录",
+    summary: "共 {{total}} 条运行，其中 {{attention}} 条需要关注",
     trigger: "触发方式",
     updatedAt: "更新时间",
     currentStep: "当前步骤",
@@ -1607,6 +1612,15 @@ const zhPart2 = {
       resume: "恢复",
       cancel: "取消",
       fork: "派生新运行",
+    },
+    nextStep: {
+      monitor: "运行仍在推进中，先观察当前步骤或必要时取消。",
+      openConversation: "下一步优先进入关联会话，补输入或查看最新输出。",
+      resume: "该运行已被阻塞，优先恢复并继续当前链路。",
+      retry: "本次运行已失败，优先重试或检查失败摘要。",
+      wait: "当前无需额外操作，等待本轮运行收敛。",
+      review: "先查看诊断和产物，再决定是否继续处理。",
+      fork: "可基于当前结果派生一条新运行继续推进。",
     },
   },
 

@@ -930,6 +930,70 @@
   outline-offset: 1px;
 }
 
+.kanban-card-run-summary {
+  display: grid;
+  gap: 4px;
+  margin-top: 8px;
+  padding: 8px 10px;
+  border: 1px solid color-mix(in srgb, var(--border-subtle, #334155) 82%, transparent);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--surface-card-muted, #181a22) 92%, transparent);
+}
+
+.kanban-card-run-summary--active {
+  border-color: color-mix(in srgb, #2563eb 38%, var(--border-subtle, #334155));
+  background: color-mix(in srgb, #2563eb 12%, var(--surface-card-muted, #181a22));
+}
+
+.kanban-card-run-summary--attention {
+  border-color: color-mix(in srgb, var(--status-warning, #f59e0b) 40%, var(--border-subtle, #334155));
+  background: color-mix(in srgb, var(--status-warning, #f59e0b) 12%, var(--surface-card-muted, #181a22));
+}
+
+.kanban-card-run-summary--danger {
+  border-color: color-mix(in srgb, var(--status-error, #ef4444) 40%, var(--border-subtle, #334155));
+  background: color-mix(in srgb, var(--status-error, #ef4444) 12%, var(--surface-card-muted, #181a22));
+}
+
+.kanban-card-run-summary--success {
+  border-color: color-mix(in srgb, var(--status-success, #22c55e) 40%, var(--border-subtle, #334155));
+  background: color-mix(in srgb, var(--status-success, #22c55e) 12%, var(--surface-card-muted, #181a22));
+}
+
+.kanban-card-run-summary__topline {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.kanban-card-run-summary__status,
+.kanban-card-run-summary__hint,
+.kanban-card-run-summary__time {
+  font-size: 11px;
+}
+
+.kanban-card-run-summary__status {
+  color: var(--text-strong, #e5e7eb);
+  font-weight: 700;
+}
+
+.kanban-card-run-summary__time {
+  color: var(--text-muted, #cbd5e1);
+  font-variant-numeric: tabular-nums;
+}
+
+.kanban-card-run-summary__body {
+  color: var(--text-strong, #e5e7eb);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.kanban-card-run-summary__hint {
+  color: var(--text-muted, #cbd5e1);
+  line-height: 1.4;
+}
+
 /* --- Card Tags (hidden in new design) --- */
 .kanban-card-tags {
   display: none;

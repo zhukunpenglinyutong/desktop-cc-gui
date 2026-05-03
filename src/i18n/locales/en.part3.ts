@@ -33,6 +33,13 @@ const enPart3 = {
     diagnosticsBundleExportFailed: "Failed to export diagnostics: {{error}}",
     diagnosticsBundleLocalOnly: "Local file only",
     diagnosticsBundleHint: "The bundle includes bounded settings, runtime, renderer, platform, and client store evidence. It avoids tokens and message text.",
+    themeModeHintSystem:
+      "This follows the system setting and currently resolves to the {{appearance}} appearance.",
+    themeModeHintFixed: "This is pinned to the {{appearance}} appearance.",
+    themeModeHintCustom:
+      "Custom mode applies the selected palette, but runtime surfaces still resolve to the {{appearance}} appearance.",
+    themePresetDescription:
+      "Choose any VS Code-inspired palette for the Custom theme. The current preset resolves to the {{appearance}} appearance.",
   },
 
   noteCards: {

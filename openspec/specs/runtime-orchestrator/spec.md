@@ -209,3 +209,37 @@ The Runtime Orchestrator MUST allow a user-initiated runtime panel bootstrap to 
 - **THEN** any runtime row or diagnostic metadata that records recovery source MUST identify the source as runtime-panel bootstrap or an equivalent explicit runtime-console source
 - **AND** this diagnostic source MUST NOT be required for the runtime readiness request to remain idempotent
 
+### Requirement: Runtime Execution Telemetry SHALL Be Projectable Into Task Runs
+
+Runtime Orchestrator MUST 能把 thread/runtime 侧执行信号投影为 task-run telemetry，而不成为第二套 task truth source。Kanban execution launch path MUST use existing runtime control paths while recording TaskRun lifecycle boundaries.
+
+#### Scenario: task center consumes runtime execution phases as run projection
+
+- **WHEN** runtime / thread 发出 planning、running、waiting-input、failure 或 completion 相关信号
+- **THEN** 系统 SHALL 能将这些信号归一化投影到 task run lifecycle
+- **AND** runtime orchestrator 本身 SHALL NOT 被重写为 task-run store
+
+#### Scenario: task-center action routes through existing runtime control path
+
+- **WHEN** 用户在 Task Center 发起 retry、resume 或 cancel
+- **THEN** 系统 SHALL 继续复用既有 thread/runtime control path
+- **AND** run state SHALL 通过回流的 runtime/thread signal 更新，而不是前端本地伪完成
+
+#### Scenario: kanban launch lifecycle is recorded without new runtime contract
+
+- **WHEN** Kanban execution 通过现有 workspace connect、thread create 与 message send path 启动
+- **THEN** 系统 SHALL 记录对应 TaskRun lifecycle boundary
+- **AND** 该记录 SHALL NOT require a new Tauri command or Rust runtime store
+
+#### Scenario: processing completion settles active task run
+
+- **WHEN** 某条已绑定 thread 的 active TaskRun 经过 `threadStatusById` 观察到 processing 结束
+- **AND** 该 run 之前处于 `planning`、`running` 或 `waiting_input`
+- **THEN** 系统 SHALL 将该 run 收敛到合适的 settled state
+- **AND** latest output summary、diagnostics 与 artifacts SHALL 从现有 thread timeline observable data 中提取
+
+#### Scenario: task run telemetry remains frontend-first projection
+
+- **WHEN** Task Center 更新 run 的 completion、diagnostics 或 artifact summary
+- **THEN** 系统 SHALL 继续基于 frontend 可观察状态 patch 既有 TaskRun store
+- **AND** 该更新 SHALL NOT require a new Tauri command or Rust runtime store

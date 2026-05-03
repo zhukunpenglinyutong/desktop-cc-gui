@@ -1418,6 +1418,9 @@ const enPart2 = {
       snapshot: {
         badge: "Snapshot ready",
       },
+      latestRunSummary: {
+        ariaLabel: "Latest run summary",
+      },
       blocked: "Blocked: {{reason}}",
       detail: {
         runAt: "Run at {{time}}",
@@ -1610,10 +1613,12 @@ const enPart2 = {
   taskCenter: {
     title: "Task Center",
     eyebrow: "Agent Runs",
+    workspaceHero: "Run needing attention now",
     statusFilter: "Status",
     engineFilter: "Engine",
     filterAll: "All",
     empty: "No task runs yet",
+    summary: "{{attention}} of {{total}} runs need attention",
     trigger: "Trigger",
     updatedAt: "Updated",
     currentStep: "Current step",
@@ -1638,6 +1643,15 @@ const enPart2 = {
       resume: "Resume",
       cancel: "Cancel",
       fork: "Fork run",
+    },
+    nextStep: {
+      monitor: "This run is still progressing. Monitor the current step or cancel if needed.",
+      openConversation: "Open the linked conversation next to provide input or inspect the latest output.",
+      resume: "This run is blocked. Resume it first to continue the current path.",
+      retry: "This run failed. Retry it next or inspect the failure summary.",
+      wait: "No action is needed right now. Let the run settle first.",
+      review: "Review diagnostics and artifacts first, then decide the next move.",
+      fork: "You can fork a new run from the current result to continue.",
     },
   },
 

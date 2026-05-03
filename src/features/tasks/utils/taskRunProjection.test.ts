@@ -7,6 +7,7 @@ import {
   mapExecutionSourceToRunTrigger,
   projectLatestRunSummaryToTasks,
 } from "./taskRunProjection";
+import { compareTaskRunSurfacePriority, describeTaskRunSurface } from "./taskRunSurface";
 
 function makeTask(id: string): KanbanTask {
   return {
@@ -97,5 +98,46 @@ describe("taskRunProjection", () => {
     expect(mapExecutionSourceToRunTrigger("chained")).toBe("chained");
     expect(mapExecutionSourceToRunTrigger("manual")).toBe("manual");
     expect(mapExecutionSourceToRunTrigger("autoStart")).toBe("manual");
+  });
+
+  it("derives a shared surface descriptor for blocked and active runs", () => {
+    expect(
+      describeTaskRunSurface(
+        makeRun({
+          status: "blocked",
+          blockedReason: "needs user input",
+          availableRecoveryActions: ["open_conversation", "resume"],
+        }),
+      ),
+    ).toMatchObject({
+      severity: "danger",
+      needsAttention: true,
+      hintKey: "taskCenter.nextStep.resume",
+      summary: "needs user input",
+    });
+
+    expect(
+      describeTaskRunSurface(
+        makeRun({
+          status: "running",
+          latestOutputSummary: "still executing",
+          availableRecoveryActions: ["cancel"],
+        }),
+      ),
+    ).toMatchObject({
+      severity: "active",
+      needsAttention: false,
+      hintKey: "taskCenter.nextStep.monitor",
+      summary: "still executing",
+    });
+  });
+
+  it("sorts higher-attention surfaces before fresher but lower-priority runs", () => {
+    const orderedRuns = [
+      makeRun({ runId: "fresh-running", status: "running", updatedAt: 40 }),
+      makeRun({ runId: "older-blocked", status: "blocked", updatedAt: 10 }),
+    ].sort(compareTaskRunSurfacePriority);
+
+    expect(orderedRuns[0]?.runId).toBe("older-blocked");
   });
 });

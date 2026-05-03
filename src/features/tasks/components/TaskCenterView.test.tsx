@@ -79,8 +79,9 @@ describe("TaskCenterView", () => {
     render(<TaskCenterView runs={[run]} onOpenConversation={onOpenConversation} />);
 
     expect(screen.getByText("Writing tests")).toBeTruthy();
-    expect(screen.getByText("Updated task run model")).toBeTruthy();
+    expect(screen.getAllByText("Updated task run model").length).toBeGreaterThan(0);
     expect(screen.getByText("src/features/tasks/types.ts")).toBeTruthy();
+    expect(screen.getAllByText("taskCenter.nextStep.monitor").length).toBeGreaterThan(0);
 
     fireEvent.click(screen.getByText("taskCenter.action.openConversation"));
 
@@ -92,14 +93,74 @@ describe("TaskCenterView", () => {
     render(
       <TaskCenterView
         runs={[
-          makeRun({ runId: "settled", status: "failed", updatedAt: 10 }),
-          makeRun({ runId: "active", status: "running", updatedAt: 20 }),
+          makeRun({
+            runId: "settled",
+            status: "failed",
+            updatedAt: 10,
+            availableRecoveryActions: ["open_conversation", "retry", "resume"],
+          }),
+          makeRun({
+            runId: "active",
+            status: "running",
+            updatedAt: 20,
+            availableRecoveryActions: ["open_conversation", "cancel"],
+          }),
         ]}
+        onRetryRun={vi.fn()}
+        onForkRun={vi.fn()}
       />,
     );
 
     fireEvent.click(screen.getAllByText("Build release")[1]!);
     expect(screen.getByText("taskCenter.action.retry")).toHaveProperty("disabled", true);
     expect(screen.getByText("taskCenter.action.fork")).toHaveProperty("disabled", true);
+  });
+
+  it("sorts attention-needing runs ahead of lower-priority active runs", () => {
+    render(
+      <TaskCenterView
+        runs={[
+          makeRun({
+            runId: "running",
+            status: "running",
+            updatedAt: 30,
+            task: { taskId: "task-running", source: "kanban", workspaceId: "/repo", title: "Running task" },
+          }),
+          makeRun({
+            runId: "blocked",
+            status: "blocked",
+            blockedReason: "manual intervention required",
+            updatedAt: 10,
+            task: { taskId: "task-blocked", source: "kanban", workspaceId: "/repo", title: "Blocked task" },
+          }),
+        ]}
+      />,
+    );
+
+    const runTitles = screen.getAllByRole("button").map((node) => node.textContent ?? "");
+    expect(runTitles[0]).toContain("Blocked task");
+    expect(screen.getAllByText("taskCenter.nextStep.openConversation").length).toBeGreaterThan(0);
+  });
+
+  it("disables actions that are not available for the selected run", () => {
+    render(
+      <TaskCenterView
+        runs={[
+          makeRun({
+            status: "completed",
+            availableRecoveryActions: ["open_conversation", "fork_new_run"],
+          }),
+        ]}
+        onRetryRun={vi.fn()}
+        onResumeRun={vi.fn()}
+        onCancelRun={vi.fn()}
+        onForkRun={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText("taskCenter.action.retry")).toHaveProperty("disabled", true);
+    expect(screen.getByText("taskCenter.action.resume")).toHaveProperty("disabled", true);
+    expect(screen.getByText("taskCenter.action.cancel")).toHaveProperty("disabled", true);
+    expect(screen.getByText("taskCenter.action.fork")).toHaveProperty("disabled", false);
   });
 });

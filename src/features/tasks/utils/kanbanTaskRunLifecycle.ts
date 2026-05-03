@@ -31,6 +31,7 @@ type PatchRunInput = {
   latestOutputSummary?: string | null;
   blockedReason?: string | null;
   failureReason?: string | null;
+  artifacts?: TaskRunRecord["artifacts"];
   startedAt?: number | null;
   finishedAt?: number | null;
   now?: number;
@@ -95,6 +96,7 @@ export function patchKanbanTaskRunLifecycle(
   assignIfDefined(patch, "latestOutputSummary", input.latestOutputSummary);
   assignIfDefined(patch, "blockedReason", input.blockedReason);
   assignIfDefined(patch, "failureReason", input.failureReason);
+  assignIfDefined(patch, "artifacts", input.artifacts);
   assignIfDefined(patch, "startedAt", input.startedAt);
   assignIfDefined(patch, "finishedAt", input.finishedAt);
   assignIfDefined(patch, "now", input.now);

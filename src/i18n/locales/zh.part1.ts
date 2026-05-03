@@ -302,7 +302,11 @@ const zhPart1 = {
     themeDim: "暗淡",
     themeCustom: "自定义",
     themePreset: "主题配色",
-    themePresetDescription: "为“自定义”主题选择任意一套 VS Code 风格配色。",
+    themeModeHintSystem: "当前跟随系统，实际生效外观为 {{appearance}}。",
+    themeModeHintFixed: "当前固定使用 {{appearance}} 外观。",
+    themeModeHintCustom: "自定义主题会套用所选配色，但运行时仍按 {{appearance}} 外观渲染。",
+    themePresetDescription:
+      "为“自定义”主题选择任意一套 VS Code 风格配色。当前 preset 会按 {{appearance}} 外观生效。",
     themePresetDarkModern: "Dark Modern",
     themePresetDarkPlus: "Dark+",
     themePresetLightModern: "Light Modern",

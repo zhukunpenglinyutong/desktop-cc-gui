@@ -63,6 +63,7 @@ type BasicAppearanceSectionProps = {
   appSettings: AppSettings;
   onUpdateAppSettings: (next: AppSettings) => Promise<void>;
   activeThemePresetId: ThemePresetId;
+  resolvedAppearanceTheme: "light" | "dark";
   themePresetOptions: ReadonlyArray<{ id: ThemePresetId; label: string }>;
   onThemePresetChange: (presetId: ThemePresetId) => Promise<void>;
   uiScaleDraft: number;
@@ -158,6 +159,7 @@ export function BasicAppearanceSection({
   appSettings,
   onUpdateAppSettings,
   activeThemePresetId,
+  resolvedAppearanceTheme,
   themePresetOptions,
   onThemePresetChange,
   uiScaleDraft,
@@ -194,6 +196,15 @@ export function BasicAppearanceSection({
   const { t } = useTranslation();
   const clientUiVisibility = useClientUiVisibility();
   const selectedOpenAppIconSrc = resolveSelectedOpenAppIconSrc(appSettings);
+  const resolvedAppearanceLabel = t(
+    resolvedAppearanceTheme === "light" ? "settings.themeLight" : "settings.themeDark",
+  );
+  const themeModeHint =
+    appSettings.theme === "custom"
+      ? t("settings.themeModeHintCustom", { appearance: resolvedAppearanceLabel })
+      : appSettings.theme === "system"
+        ? t("settings.themeModeHintSystem", { appearance: resolvedAppearanceLabel })
+        : t("settings.themeModeHintFixed", { appearance: resolvedAppearanceLabel });
 
   return (
     <div className="settings-basic-appearance settings-basic-surface">
@@ -286,6 +297,7 @@ export function BasicAppearanceSection({
               <span>{t("settings.themeCustom")}</span>
             </button>
           </div>
+          <div className="settings-help">{themeModeHint}</div>
         </div>
         {appSettings.theme === "custom" ? (
           <div className="settings-field settings-basic-item">
@@ -311,7 +323,11 @@ export function BasicAppearanceSection({
                 </select>
               </div>
             </div>
-            <div className="settings-help">{t("settings.themePresetDescription")}</div>
+            <div className="settings-help">
+              {t("settings.themePresetDescription", {
+                appearance: resolvedAppearanceLabel,
+              })}
+            </div>
           </div>
         ) : null}
         <LanguageSelector rowClassName="settings-basic-item" />

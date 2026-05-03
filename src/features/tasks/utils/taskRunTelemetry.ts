@@ -1,6 +1,11 @@
 import type { ThreadCompletionTracker } from "../../../app-shell-parts/utils";
 import type { ConversationItem, EngineType } from "../../../types";
-import type { TaskRunArtifact, TaskRunRecord, TaskRunStatus } from "../types";
+import type {
+  TaskRunArtifact,
+  TaskRunPatch,
+  TaskRunRecord,
+  TaskRunStatus,
+} from "../types";
 import { isTaskRunActive } from "./taskRunStorage";
 
 export type TaskRunTelemetryInput = {
@@ -9,6 +14,21 @@ export type TaskRunTelemetryInput = {
   items?: ConversationItem[];
   now?: number;
 };
+
+function areArtifactsEqual(left: TaskRunArtifact[], right: TaskRunArtifact[]): boolean {
+  if (left.length !== right.length) {
+    return false;
+  }
+  return left.every((artifact, index) => {
+    const other = right[index];
+    return (
+      artifact?.kind === other?.kind &&
+      artifact?.label === other?.label &&
+      artifact?.ref === other?.ref &&
+      artifact?.summary === other?.summary
+    );
+  });
+}
 
 function compactText(value: string, maxLength = 280): string {
   const compacted = value.replace(/\s+/g, " ").trim();
@@ -100,33 +120,74 @@ export function normalizeTaskRunTelemetry({
   items,
   now = Date.now(),
 }: TaskRunTelemetryInput): TaskRunRecord {
-  const latestOutputSummary = extractLatestReadableOutput(items) ?? run.latestOutputSummary ?? null;
-  const currentStep = inferCurrentStep(items) ?? run.currentStep ?? null;
-  const artifacts = extractArtifacts(items);
-  const nextArtifacts = artifacts.length > 0 ? artifacts : run.artifacts;
-  let status: TaskRunStatus = run.status;
-  if (threadStatus?.isProcessing && isTaskRunActive(run.status)) {
-    status = run.planSnapshot || currentStep ? "running" : "planning";
-  }
-  if (!threadStatus?.isProcessing && (run.status === "running" || run.status === "planning")) {
-    status = "completed";
-  }
+  const patch = deriveTaskRunTelemetryPatch({ run, threadStatus, items, now });
+  const latestOutputSummary = patch?.latestOutputSummary ?? run.latestOutputSummary ?? null;
+  const currentStep = patch?.currentStep ?? run.currentStep ?? null;
+  const artifacts = patch?.artifacts ?? run.artifacts;
+  const status = patch?.status ?? run.status;
+
   return {
     ...run,
+    ...(patch ?? {}),
     status,
     currentStep,
     latestOutputSummary,
-    artifacts: nextArtifacts,
+    artifacts,
     availableRecoveryActions:
       status === "failed" || status === "blocked"
         ? ["open_conversation", "retry", "resume"]
         : status === "completed" || status === "canceled"
           ? ["open_conversation", "fork_new_run"]
           : ["open_conversation", "cancel"],
-    updatedAt: now,
+    updatedAt: patch?.now ?? now,
     finishedAt:
       status === "completed" || status === "failed" || status === "canceled"
-        ? run.finishedAt ?? now
+        ? run.finishedAt ?? patch?.finishedAt ?? now
         : null,
   };
+}
+
+export function deriveTaskRunTelemetryPatch({
+  run,
+  threadStatus,
+  items,
+  now = Date.now(),
+}: TaskRunTelemetryInput): TaskRunPatch | null {
+  const nextLatestOutputSummary =
+    extractLatestReadableOutput(items) ?? run.latestOutputSummary ?? null;
+  const nextCurrentStep = inferCurrentStep(items) ?? run.currentStep ?? null;
+  const extractedArtifacts = extractArtifacts(items);
+  const nextArtifacts = extractedArtifacts.length > 0 ? extractedArtifacts : run.artifacts;
+
+  let nextStatus: TaskRunStatus = run.status;
+  if (threadStatus?.isProcessing && isTaskRunActive(run.status)) {
+    nextStatus = run.planSnapshot || nextCurrentStep || nextLatestOutputSummary ? "running" : "planning";
+  } else if (
+    !threadStatus?.isProcessing &&
+    (run.status === "planning" || run.status === "running" || run.status === "waiting_input")
+  ) {
+    nextStatus = "completed";
+  }
+
+  const patch: TaskRunPatch = {};
+  if (nextStatus !== run.status) {
+    patch.status = nextStatus;
+  }
+  if (nextCurrentStep !== (run.currentStep ?? null)) {
+    patch.currentStep = nextCurrentStep;
+  }
+  if (nextLatestOutputSummary !== (run.latestOutputSummary ?? null)) {
+    patch.latestOutputSummary = nextLatestOutputSummary;
+  }
+  if (!areArtifactsEqual(nextArtifacts, run.artifacts)) {
+    patch.artifacts = nextArtifacts;
+  }
+  if (nextStatus !== run.status && (nextStatus === "completed" || nextStatus === "failed")) {
+    patch.finishedAt = run.finishedAt ?? now;
+  }
+  if (Object.keys(patch).length === 0) {
+    return null;
+  }
+  patch.now = now;
+  return patch;
 }

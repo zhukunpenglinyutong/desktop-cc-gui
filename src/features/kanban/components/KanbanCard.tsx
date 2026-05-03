@@ -27,6 +27,7 @@ import type { EngineType } from "../../../types";
 import { EngineIcon } from "../../engine/components/EngineIcon";
 import { describeSchedule } from "../utils/scheduling";
 import { formatKanbanBlockedReason } from "../utils/blockedReason";
+import { describeTaskRunSurface } from "../../tasks/utils/taskRunSurface";
 
 type KanbanCardProps = {
   task: KanbanTask;
@@ -156,6 +157,14 @@ export function KanbanCard({
     hasBlockedReason && dismissedBlockedReason !== normalizedBlockedReason;
   const recurringSchedule = task.schedule?.mode === "recurring" ? task.schedule : null;
   const onceSchedule = task.schedule?.mode === "once" ? task.schedule : null;
+  const latestRunSurface = task.latestRunSummary ? describeTaskRunSurface(task.latestRunSummary) : null;
+  const latestRunSummaryText =
+    latestRunSurface &&
+    (task.latestRunSummary?.status === "blocked" ||
+      task.latestRunSummary?.status === "failed" ||
+      task.latestRunSummary?.status === "waiting_input")
+      ? latestRunSurface.summary
+      : null;
   const hasActiveSchedule = Boolean(task.schedule && task.schedule.mode !== "manual");
   const isSchedulePaused = Boolean(task.schedule?.paused);
   const recurringRunIndex = resolveRecurringRunIndex(task);
@@ -562,6 +571,27 @@ export function KanbanCard({
               </button>
             </div>
           )}
+          {task.latestRunSummary && latestRunSurface ? (
+            <div
+              className={`kanban-card-run-summary kanban-card-run-summary--${latestRunSurface.severity}`}
+              aria-label={t("kanban.task.latestRunSummary.ariaLabel")}
+            >
+              <div className="kanban-card-run-summary__topline">
+                <span className="kanban-card-run-summary__status">
+                  {t(`taskCenter.status.${task.latestRunSummary.status}`)}
+                </span>
+                <span className="kanban-card-run-summary__time">
+                  {formatMonthDayTime(task.latestRunSummary.updatedAt) ?? "-"}
+                </span>
+              </div>
+              {latestRunSummaryText ? (
+                <div className="kanban-card-run-summary__body">{latestRunSummaryText}</div>
+              ) : null}
+              <div className="kanban-card-run-summary__hint">
+                {t(latestRunSurface.hintKey)}
+              </div>
+            </div>
+          ) : null}
           {isProcessing && (
             <div className="kanban-card-status-row">
               <span className="kanban-card-spinner" />

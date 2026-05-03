@@ -22,6 +22,18 @@ import {
   patchKanbanTaskRunLifecycle,
 } from "../features/tasks/utils/kanbanTaskRunLifecycle";
 import {
+  beginTaskRunRecovery,
+  cancelTaskRunRecovery,
+} from "../features/tasks/utils/taskRunRecovery";
+import { buildLatestRunSummary } from "../features/tasks/utils/taskRunProjection";
+import {
+  deriveTaskRunTelemetryPatch,
+} from "../features/tasks/utils/taskRunTelemetry";
+import {
+  loadTaskRunStore,
+} from "../features/tasks/utils/taskRunStorage";
+import type { TaskRunRecord } from "../features/tasks/types";
+import {
   applyMissedRunPolicy,
   hasReachedRecurringRoundLimit,
   isScheduleDue,
@@ -186,6 +198,7 @@ export function useAppShellSections(ctx: any) {
     selectedAgentRef,
     activeWorkspaceId,
     activeThreadId,
+    interruptTurn,
     normalizePath,
     addWorkspaceFromPath,
     alertError,
@@ -1429,6 +1442,95 @@ export function useAppShellSections(ctx: any) {
     setSelectedKanbanTaskId(null);
   }, [setSelectedKanbanTaskId]);
 
+  const resolveTaskByRun = useCallback((run: TaskRunRecord) => {
+    return kanbanTasksRef.current.find((task) => task.id === run.task.taskId) ?? null;
+  }, []);
+
+  const handleRetryTaskRun = useCallback(
+    (run: TaskRunRecord) => {
+      const task = resolveTaskByRun(run);
+      if (!task) {
+        return;
+      }
+      const recovery = beginTaskRunRecovery({
+        task,
+        trigger: "retry",
+        parentRun: run,
+      });
+      if (!recovery.ok) {
+        if (recovery.latestRunSummary) {
+          kanbanUpdateTask(task.id, { latestRunSummary: recovery.latestRunSummary });
+        }
+        return;
+      }
+      kanbanUpdateTask(task.id, { latestRunSummary: recovery.latestRunSummary });
+      void launchKanbanTaskExecution({
+        taskId: task.id,
+        source: "manual",
+        activate: false,
+        forceNewThread: true,
+      });
+    },
+    [kanbanUpdateTask, launchKanbanTaskExecution, resolveTaskByRun],
+  );
+
+  const handleForkTaskRun = useCallback(
+    (run: TaskRunRecord) => {
+      const task = resolveTaskByRun(run);
+      if (!task) {
+        return;
+      }
+      const recovery = beginTaskRunRecovery({
+        task,
+        trigger: "forked",
+        parentRun: run,
+      });
+      if (!recovery.ok) {
+        if (recovery.latestRunSummary) {
+          kanbanUpdateTask(task.id, { latestRunSummary: recovery.latestRunSummary });
+        }
+        return;
+      }
+      kanbanUpdateTask(task.id, { latestRunSummary: recovery.latestRunSummary });
+      void launchKanbanTaskExecution({
+        taskId: task.id,
+        source: "manual",
+        activate: false,
+        forceNewThread: true,
+      });
+    },
+    [kanbanUpdateTask, launchKanbanTaskExecution, resolveTaskByRun],
+  );
+
+  const handleResumeTaskRun = useCallback(
+    async (run: TaskRunRecord) => {
+      if (!run.linkedThreadId) {
+        return;
+      }
+      const task = resolveTaskByRun(run);
+      if (task) {
+        await handleOpenTaskConversation(task);
+      }
+    },
+    [handleOpenTaskConversation, resolveTaskByRun],
+  );
+
+  const handleCancelTaskRun = useCallback(
+    async (run: TaskRunRecord) => {
+      if (!run.linkedThreadId || !activeThreadId || activeThreadId !== run.linkedThreadId) {
+        return;
+      }
+      await interruptTurn();
+      const canceled = cancelTaskRunRecovery({ runId: run.runId, now: Date.now() });
+      if (canceled.run) {
+        kanbanUpdateTask(run.task.taskId, {
+          latestRunSummary: buildLatestRunSummary(canceled.run),
+        });
+      }
+    },
+    [activeThreadId, interruptTurn, kanbanUpdateTask],
+  );
+
   const handleKanbanCreateTask = useCallback(
     (input: Parameters<typeof kanbanCreateTask>[0]) => {
       const task = kanbanCreateTask(input);
@@ -2023,6 +2125,51 @@ export function useAppShellSections(ctx: any) {
     resolveCanonicalThreadId,
   ]);
 
+  useEffect(() => {
+    const store = loadTaskRunStore();
+    for (const run of store.runs) {
+      if (!run.linkedThreadId) {
+        continue;
+      }
+      if (run.status !== "planning" && run.status !== "running" && run.status !== "waiting_input") {
+        continue;
+      }
+      const canonicalThreadId = resolveTaskThreadId(run.linkedThreadId, resolveCanonicalThreadId);
+      if (!canonicalThreadId) {
+        continue;
+      }
+      const patch = deriveTaskRunTelemetryPatch({
+        run,
+        threadStatus: threadStatusById[canonicalThreadId],
+        items: threadItemsByThread[canonicalThreadId],
+        now: Date.now(),
+      });
+      if (!patch) {
+        continue;
+      }
+      const result = patchTaskRunAndProjectToKanban({
+        runId: run.runId,
+        status: patch.status,
+        currentStep: patch.currentStep,
+        latestOutputSummary: patch.latestOutputSummary,
+        artifacts: patch.artifacts,
+        finishedAt: patch.finishedAt,
+        now: patch.now,
+      } as any);
+      if (result?.latestRunSummary) {
+        kanbanUpdateTask(run.task.taskId, {
+          latestRunSummary: result.latestRunSummary,
+        });
+      }
+    }
+  }, [
+    kanbanUpdateTask,
+    patchTaskRunAndProjectToKanban,
+    resolveCanonicalThreadId,
+    threadItemsByThread,
+    threadStatusById,
+  ]);
+
   // Drag to "inprogress" auto-execute: create thread and send first message (without opening conversation panel)
   const handleDragToInProgress = useCallback(
     (task: KanbanTask) => {
@@ -2493,6 +2640,10 @@ export function useAppShellSections(ctx: any) {
     handleDeleteWorkspaceConversations,
     handleDeleteWorkspaceConversationsInSettings,
     handleOpenTaskConversation,
+    handleRetryTaskRun,
+    handleResumeTaskRun,
+    handleCancelTaskRun,
+    handleForkTaskRun,
     handleCloseTaskConversation,
     handleKanbanCreateTask,
     taskProcessingMap,

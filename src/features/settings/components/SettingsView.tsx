@@ -2337,6 +2337,7 @@ export function SettingsView({
                     appSettings={appSettings}
                     onUpdateAppSettings={onUpdateAppSettings}
                     activeThemePresetId={activeThemePresetId}
+                    resolvedAppearanceTheme={resolvedAppearanceTheme}
                     themePresetOptions={themePresetOptions}
                     onThemePresetChange={handleThemePresetChange}
                     uiScaleDraft={uiScaleDraft}

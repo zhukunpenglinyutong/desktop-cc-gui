@@ -2,6 +2,10 @@ import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { TaskRunRecord, TaskRunStatus } from "../types";
 import { hasActiveRunConflict } from "../utils/taskRunProjection";
+import {
+  compareTaskRunSurfacePriority,
+  describeTaskRunSurface,
+} from "../utils/taskRunSurface";
 
 type TaskCenterViewProps = {
   runs: TaskRunRecord[];
@@ -47,7 +51,7 @@ export function TaskCenterView({
     () =>
       runs
         .filter((run) => !workspaceId || run.task.workspaceId === workspaceId)
-        .sort((left, right) => right.updatedAt - left.updatedAt),
+        .sort(compareTaskRunSurfacePriority),
     [runs, workspaceId],
   );
   const filteredRuns = workspaceRuns.filter(
@@ -58,6 +62,19 @@ export function TaskCenterView({
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
   const selectedRun =
     filteredRuns.find((run) => run.runId === selectedRunId) ?? filteredRuns[0] ?? null;
+  const hasDuplicateConflict = selectedRun
+    ? hasActiveRunConflict(workspaceRuns, selectedRun.task.taskId, selectedRun.runId)
+    : false;
+  const availableActions = new Set(selectedRun?.availableRecoveryActions ?? []);
+  const canOpenConversation = Boolean(selectedRun?.linkedThreadId && onOpenConversation);
+  const canRetry =
+    Boolean(selectedRun && onRetryRun && availableActions.has("retry")) && !hasDuplicateConflict;
+  const canResume = Boolean(selectedRun && onResumeRun && availableActions.has("resume"));
+  const canCancel = Boolean(selectedRun && onCancelRun && availableActions.has("cancel"));
+  const canFork =
+    Boolean(selectedRun && onForkRun && availableActions.has("fork_new_run")) && !hasDuplicateConflict;
+  const selectedRunSurface = selectedRun ? describeTaskRunSurface(selectedRun) : null;
+  const highlightedRuns = filteredRuns.filter((run) => describeTaskRunSurface(run).needsAttention).length;
 
   return (
     <section className="task-center" aria-label={t("taskCenter.title")}>
@@ -65,6 +82,12 @@ export function TaskCenterView({
         <div>
           <p className="task-center__eyebrow">{t("taskCenter.eyebrow")}</p>
           <h2>{t("taskCenter.title")}</h2>
+          <p className="task-center__summary">
+            {t("taskCenter.summary", {
+              total: filteredRuns.length,
+              attention: highlightedRuns,
+            })}
+          </p>
         </div>
         <div className="task-center__filters">
           <label>
@@ -104,29 +127,45 @@ export function TaskCenterView({
             <p className="task-center__empty">{t("taskCenter.empty")}</p>
           ) : (
             filteredRuns.map((run) => (
-              <button
-                key={run.runId}
-                type="button"
-                className={`task-center__run ${selectedRun?.runId === run.runId ? "is-selected" : ""}`}
-                onClick={() => setSelectedRunId(run.runId)}
-              >
-                <span className="task-center__run-title">{run.task.title || run.task.taskId}</span>
-                <span className="task-center__run-meta">
-                  {t(`taskCenter.status.${run.status}`)} · {run.engine}
-                </span>
-              </button>
+              (() => {
+                const surface = describeTaskRunSurface(run);
+                const runSummary = surface.summary || t("taskCenter.unavailable");
+                return (
+                  <button
+                    key={run.runId}
+                    type="button"
+                    className={`task-center__run task-center__run--${surface.severity} ${selectedRun?.runId === run.runId ? "is-selected" : ""}`}
+                    onClick={() => setSelectedRunId(run.runId)}
+                  >
+                    <span className="task-center__run-topline">
+                      <span className="task-center__run-title">{run.task.title || run.task.taskId}</span>
+                      <span className={`task-center__badge task-center__badge--${surface.severity}`}>
+                        {t(`taskCenter.status.${run.status}`)}
+                      </span>
+                    </span>
+                    <span className="task-center__run-meta">
+                      {run.engine} · {formatRunTime(run.updatedAt)}
+                    </span>
+                    <span className="task-center__run-summary">{runSummary}</span>
+                    <span className="task-center__run-hint">{t(surface.hintKey)}</span>
+                  </button>
+                );
+              })()
             ))
           )}
         </div>
 
         {selectedRun ? (
-          <article className="task-center__detail">
+          <article className={`task-center__detail task-center__detail--${selectedRunSurface?.severity ?? "muted"}`}>
             <div className="task-center__detail-head">
               <div>
                 <p className="task-center__eyebrow">{selectedRun.runId}</p>
                 <h3>{selectedRun.task.title || selectedRun.task.taskId}</h3>
+                <p className="task-center__detail-hint">
+                  {selectedRunSurface ? t(selectedRunSurface.hintKey) : null}
+                </p>
               </div>
-              <span className="task-center__badge">
+              <span className={`task-center__badge task-center__badge--${selectedRunSurface?.severity ?? "muted"}`}>
                 {t(`taskCenter.status.${selectedRun.status}`)}
               </span>
             </div>
@@ -167,7 +206,7 @@ export function TaskCenterView({
             <div className="task-center__actions">
               <button
                 type="button"
-                disabled={!selectedRun.linkedThreadId}
+                disabled={!canOpenConversation}
                 onClick={() => {
                   if (selectedRun.linkedThreadId) {
                     onOpenConversation?.(selectedRun.linkedThreadId);
@@ -178,20 +217,20 @@ export function TaskCenterView({
               </button>
               <button
                 type="button"
-                disabled={hasActiveRunConflict(workspaceRuns, selectedRun.task.taskId, selectedRun.runId)}
+                disabled={!canRetry}
                 onClick={() => onRetryRun?.(selectedRun)}
               >
                 {t("taskCenter.action.retry")}
               </button>
-              <button type="button" onClick={() => onResumeRun?.(selectedRun)}>
+              <button type="button" disabled={!canResume} onClick={() => onResumeRun?.(selectedRun)}>
                 {t("taskCenter.action.resume")}
               </button>
-              <button type="button" onClick={() => onCancelRun?.(selectedRun)}>
+              <button type="button" disabled={!canCancel} onClick={() => onCancelRun?.(selectedRun)}>
                 {t("taskCenter.action.cancel")}
               </button>
               <button
                 type="button"
-                disabled={hasActiveRunConflict(workspaceRuns, selectedRun.task.taskId, selectedRun.runId)}
+                disabled={!canFork}
                 onClick={() => onForkRun?.(selectedRun)}
               >
                 {t("taskCenter.action.fork")}

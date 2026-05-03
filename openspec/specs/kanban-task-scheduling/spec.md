@@ -24,12 +24,13 @@ TBD - created by archiving change add-kanban-scheduled-and-chained-tasks. Update
 
 ### Requirement: Scheduled Trigger SHALL Reuse Existing Background Execution Path
 
-系统 MUST 在应用运行期间扫描到期任务，并复用既有 Kanban 执行路径后台启动任务，不得抢占当前用户 active thread。
+系统 MUST 在应用运行期间扫描到期任务，并复用既有 Kanban 执行路径后台启动任务，不得抢占当前用户 active thread。Scheduled execution MUST create a TaskRun with trigger `scheduled` and preserve the same non-reentrant active-run guard as manual execution.
 
 #### Scenario: due one-time task starts in background
 - **WHEN** 某 `todo` 任务 `nextRunAt` 到期且未在执行中
 - **THEN** 系统 MUST 通过既有 thread 创建与首条消息链路启动任务
 - **AND** 系统 MUST NOT 强制切换 active thread
+- **AND** 系统 SHALL 创建 trigger 为 `scheduled` 的 TaskRun
 
 #### Scenario: recurring same-thread task computes next cycle after completion
 - **WHEN** recurring `same_thread` 任务本轮执行完成
@@ -42,7 +43,7 @@ TBD - created by archiving change add-kanban-scheduled-and-chained-tasks. Update
 - **AND** 系统 MUST 新建下一轮 `todo` 调度实例等待下次触发
 
 #### Scenario: due task already running is not re-triggered
-- **WHEN** 计划任务到期时任务已在 `inprogress` 或对应 thread 仍在 processing
+- **WHEN** 计划任务到期时任务已在 `inprogress`、已有 Kanban execution lock、已有 active TaskRun 或对应 thread 仍在 processing
 - **THEN** 系统 MUST 跳过本次触发
 - **AND** 系统 MUST 保持非重入（同窗口不得重复提交执行）
 
@@ -97,4 +98,3 @@ TBD - created by archiving change add-kanban-scheduled-and-chained-tasks. Update
 - **THEN** 系统 MUST 写入开始时间
 - **AND** **WHEN** 任务离开 processing
 - **THEN** 系统 MUST 写入结束时间，并在 `testing/done` 卡片可见
-

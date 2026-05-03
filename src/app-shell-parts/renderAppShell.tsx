@@ -58,7 +58,7 @@ export function renderAppShell(ctx: any) {
     handleDragToInProgress, handleDropWorkspacePaths, handleEditQueued, handleEnsureWorkspaceThreadsForSettings, handleExitEditor, handleExitWorkspaceEditor, handleGenerateCommitMessage, handleGitIssuesChange,
     handleGitPanelModeChange, handleGitPullRequestCommentsChange, handleGitPullRequestDiffsChange, handleGitPullRequestsChange, handleInsertComposerText, handleKanbanCreateTask, handleLockPanel, handleMovePrompt,
     handleMoveWorkspace, handleOpenComposerKanbanPanel, handleOpenFile, handleOpenHomeChat, handleOpenModelSettings, handleOpenRenameWorktree, handleOpenSearchPalette, handleOpenSpecHub,
-    handleOpenTaskConversation, handleOpenWorkspaceFile, handleOpenWorkspaceHome, handlePickGitRoot, handlePointerMove, handlePointerUp, handlePush, handleRefreshAccountRateLimits,
+    handleOpenTaskConversation, handleRetryTaskRun, handleResumeTaskRun, handleCancelTaskRun, handleForkTaskRun, handleOpenWorkspaceFile, handleOpenWorkspaceHome, handlePickGitRoot, handlePointerMove, handlePointerUp, handlePush, handleRefreshAccountRateLimits,
     handleRenamePromptCancel, handleRenamePromptChange, handleRenamePromptConfirm, handleRenameThread, handleRenameWorktreeCancel, handleRenameWorktreeChange, handleRenameWorktreeConfirm, handleResize,
     handleRevealActiveWorkspace, handleRevealGeneralPrompts, handleRevealWorkspacePrompts, handleRevertAllGitChanges, handleRevertGitFile, handleReviewPromptKeyDown, handleSearchPaletteMoveSelection, handleSelectAgent,
     handleSelectCommit, handleSelectDiff, handleSelectDiffForPanel, handleSelectModel, handleSelectOpenAppId, handleSelectOpenCodeAgent, handleSelectOpenCodeVariant, handleSelectPullRequest,
@@ -146,6 +146,10 @@ export function renderAppShell(ctx: any) {
       onOpenSpecHub={handleOpenSpecHub}
       onRevealWorkspace={handleRevealActiveWorkspace}
       onDeleteConversations={handleDeleteWorkspaceConversations}
+      onRetryTaskRun={handleRetryTaskRun}
+      onResumeTaskRun={handleResumeTaskRun}
+      onCancelTaskRun={handleCancelTaskRun}
+      onForkTaskRun={handleForkTaskRun}
     />
   ) : null;
 

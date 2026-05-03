@@ -55,6 +55,7 @@ function createTask(blockedReason: string | null): KanbanTask {
     sortOrder: 1,
     threadId: null,
     execution: blockedReason ? { blockedReason } : {},
+    latestRunSummary: null,
     createdAt: 1,
     updatedAt: 1,
   };
@@ -126,5 +127,96 @@ describe("KanbanCard blocked reason dismiss", () => {
     expect(container.textContent).toContain(
       "kanban.task.blockedReason.chainRequiresHeadTriggerWithOrder",
     );
+  });
+
+  it("renders latest run summary with shared task-center hint copy", () => {
+    const { container } = render(
+      <KanbanCard
+        task={{
+          ...createTask(null),
+          latestRunSummary: {
+            runId: "run-1",
+            status: "failed",
+            trigger: "manual",
+            engine: "codex",
+            linkedThreadId: "thread-1",
+            latestOutputSummary: "unit tests failed",
+            blockedReason: null,
+            failureReason: "unit tests failed",
+            artifactCount: 0,
+            updatedAt: Date.now(),
+            finishedAt: Date.now(),
+          },
+        }}
+        index={0}
+        onSelect={vi.fn()}
+        onDelete={vi.fn()}
+      />,
+    );
+
+    expect(container.querySelector(".kanban-card-run-summary")).not.toBeNull();
+    expect(container.textContent).toContain("taskCenter.nextStep.openConversation");
+    expect(container.textContent).toContain("unit tests failed");
+  });
+
+  it("does not render completed run detail body inside kanban summary card", () => {
+    const { container } = render(
+      <KanbanCard
+        task={{
+          ...createTask(null),
+          latestRunSummary: {
+            runId: "run-2",
+            status: "completed",
+            trigger: "manual",
+            engine: "codex",
+            linkedThreadId: "thread-2",
+            latestOutputSummary: "very long generated analysis body should stay out of kanban",
+            blockedReason: null,
+            failureReason: null,
+            artifactCount: 0,
+            updatedAt: Date.now(),
+            finishedAt: Date.now(),
+          },
+        }}
+        index={0}
+        onSelect={vi.fn()}
+        onDelete={vi.fn()}
+      />,
+    );
+
+    expect(container.querySelector(".kanban-card-run-summary")).not.toBeNull();
+    expect(container.textContent).not.toContain(
+      "very long generated analysis body should stay out of kanban",
+    );
+    expect(container.textContent).not.toContain("taskCenter.unavailable");
+  });
+
+  it("does not render unavailable placeholder for running run summary without detail copy", () => {
+    const { container } = render(
+      <KanbanCard
+        task={{
+          ...createTask(null),
+          latestRunSummary: {
+            runId: "run-3",
+            status: "running",
+            trigger: "manual",
+            engine: "codex",
+            linkedThreadId: "thread-3",
+            latestOutputSummary: null,
+            blockedReason: null,
+            failureReason: null,
+            artifactCount: 0,
+            updatedAt: Date.now(),
+            finishedAt: null,
+          },
+        }}
+        index={0}
+        onSelect={vi.fn()}
+        onDelete={vi.fn()}
+      />,
+    );
+
+    expect(container.querySelector(".kanban-card-run-summary")).not.toBeNull();
+    expect(container.textContent).not.toContain("taskCenter.unavailable");
   });
 });

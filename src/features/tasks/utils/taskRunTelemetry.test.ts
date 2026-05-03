@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
 import type { ConversationItem } from "../../../types";
 import type { TaskRunRecord } from "../types";
-import { inferTaskRunEngine, normalizeTaskRunTelemetry } from "./taskRunTelemetry";
+import {
+  deriveTaskRunTelemetryPatch,
+  inferTaskRunEngine,
+  normalizeTaskRunTelemetry,
+} from "./taskRunTelemetry";
 
 function makeRun(overrides: Partial<TaskRunRecord> = {}): TaskRunRecord {
   return {
@@ -61,6 +65,29 @@ describe("taskRunTelemetry", () => {
     expect(run.status).toBe("completed");
     expect(run.finishedAt).toBe(40);
     expect(run.availableRecoveryActions).toContain("fork_new_run");
+  });
+
+  it("emits a minimal patch for completion telemetry updates", () => {
+    const patch = deriveTaskRunTelemetryPatch({
+      run: makeRun({ status: "running" }),
+      threadStatus: { isProcessing: false, lastDurationMs: 10, lastAgentTimestamp: 20 },
+      items: [
+        {
+          id: "assistant-1",
+          kind: "message",
+          role: "assistant",
+          text: "Completed the remaining Task Center work.",
+        },
+      ],
+      now: 99,
+    });
+
+    expect(patch).toMatchObject({
+      status: "completed",
+      latestOutputSummary: "Completed the remaining Task Center work.",
+      finishedAt: 99,
+      now: 99,
+    });
   });
 
   it("infers supported engines from thread identity", () => {
