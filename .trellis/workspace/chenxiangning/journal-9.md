@@ -1131,3 +1131,60 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 295: Task Center 运行生命周期接入
+
+**Date**: 2026-05-03
+**Task**: Task Center 运行生命周期接入
+**Branch**: `feature/v-0.4.13`
+
+### Summary
+
+(Add summary)
+
+### Main Changes
+
+任务目标：继续执行 Task Center 剩余阶段，将 Phase 1 的 TaskRun store/surface 接入真实 Kanban execution lifecycle。
+
+主要改动：
+- 新建 OpenSpec 变更 connect-task-center-runtime-lifecycle，补齐 proposal/design/spec/tasks，并完成 9/9 tasks。
+- 新增 src/features/tasks/utils/kanbanTaskRunLifecycle.ts，集中处理 Kanban TaskRun begin、patch、blocked/failed 诊断与 latestRunSummary 投影。
+- 新增 src/features/tasks/utils/kanbanTaskRunLifecycle.test.ts，覆盖 run 创建、active-run 冲突、running 状态更新、blocked/failed recovery summary。
+- 更新 src/app-shell-parts/useAppShellSections.ts，将 launchKanbanTaskExecution 接入 TaskRun lifecycle：manual/scheduled/chained 启动创建 run，thread 绑定和首条消息发送更新 planning/running，启动异常更新 failed。
+- 保持 Phase 2 frontend-first 边界：没有新增 Rust store，没有修改 Tauri command 或 src/services/tauri.ts contract；TaskRun 写入失败时降级记录 console error，不中断原 Kanban 执行。
+
+涉及模块：
+- OpenSpec：openspec/changes/connect-task-center-runtime-lifecycle/**
+- Task Center：src/features/tasks/utils/kanbanTaskRunLifecycle.ts
+- Kanban/AppShell orchestration：src/app-shell-parts/useAppShellSections.ts
+
+验证结果：
+- openspec validate connect-task-center-runtime-lifecycle --strict --no-interactive：通过
+- npx vitest run src/features/tasks/utils/kanbanTaskRunLifecycle.test.ts src/features/tasks/utils/taskRunCoordinator.test.ts src/features/tasks/utils/taskRunProjection.test.ts src/features/tasks/utils/taskRunStorage.test.ts src/features/kanban/utils/kanbanStorage.test.ts src/features/kanban/utils/scheduling.test.ts src/features/kanban/utils/chaining.test.ts：7 files / 43 tests 通过
+- npm run typecheck：通过
+- npm run lint：通过
+- npm run test -- src/features/tasks/utils/kanbanTaskRunLifecycle.test.ts src/features/tasks/utils/taskRunCoordinator.test.ts src/features/tasks/utils/taskRunProjection.test.ts src/features/tasks/utils/taskRunStorage.test.ts：batched runner 完整完成 423 test files，通过
+
+后续事项：
+- 当前 OpenSpec change 已 all_done，可进入 verify/archive gate。
+- 下一阶段建议接 Task Center recovery actions 到真实 open/retry/resume/cancel/fork runtime control path，并补 completion telemetry 从 thread status/items 回流到 TaskRun completed/failed/canceled。
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `76c4a4aa` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
