@@ -16,6 +16,8 @@ let latestProjection: {
   }>;
 } | null = null;
 let latestComparisonBasis: string | null = null;
+let contextLedgerControlVisible = true;
+let forceLedgerProjectionVisible = false;
 
 vi.mock("../../../services/dragDrop", () => ({
   subscribeWindowDragDrop: vi.fn(() => () => {}),
@@ -29,6 +31,63 @@ vi.mock("@tauri-apps/api/core", () => ({
 vi.mock("../../engine/components/EngineSelector", () => ({
   EngineSelector: () => null,
 }));
+
+vi.mock("../../client-ui-visibility/hooks/useClientUiVisibility", () => ({
+  useClientUiVisibility: () => ({
+    preference: { panels: {}, controls: {} },
+    isPanelVisible: () => true,
+    isControlVisible: (controlId: string) =>
+      controlId === "curtain.contextLedger" ? contextLedgerControlVisible : true,
+    isControlPreferenceVisible: () => true,
+    setPanelVisible: vi.fn(),
+    setControlVisible: vi.fn(),
+    resetVisibility: vi.fn(),
+  }),
+}));
+
+vi.mock("../../context-ledger/utils/contextLedgerProjection", async () => {
+  const actual =
+    await vi.importActual<typeof import("../../context-ledger/utils/contextLedgerProjection")>(
+      "../../context-ledger/utils/contextLedgerProjection",
+    );
+  return {
+    ...actual,
+    buildContextLedgerProjection: (input: Parameters<typeof actual.buildContextLedgerProjection>[0]) => {
+      if (!forceLedgerProjectionVisible) {
+        return actual.buildContextLedgerProjection(input);
+      }
+      return {
+        visible: true,
+        totalBlockCount: 1,
+        totalGroupCount: 1,
+        totalUsageTokens: null,
+        contextWindowTokens: null,
+        groups: [
+          {
+            kind: "helper_selection",
+            blocks: [
+              {
+                id: "helper-skill-doc-backup",
+                kind: "helper_selection",
+                title: "doc-backup",
+                detail: "backup docs",
+                sourceRef: "skill:doc-backup",
+                sourcePath: null,
+                backendSource: "global_claude",
+                attributionKind: "engine_injected",
+                attributionConfidence: "coarse",
+                participationState: "selected",
+                carryOverReason: null,
+                freshness: "fresh",
+                estimate: { kind: "unknown", value: null },
+              },
+            ],
+          },
+        ],
+      };
+    },
+  };
+});
 
 vi.mock("../../opencode/components/OpenCodeControlPanel", () => ({
   OpenCodeControlPanel: () => null,
@@ -208,6 +267,8 @@ describe("Composer context ledger governance", () => {
     cleanup();
     latestProjection = null;
     latestComparisonBasis = null;
+    contextLedgerControlVisible = true;
+    forceLedgerProjectionVisible = false;
   });
 
   it("keeps a pinned manual memory for exactly one additional send", async () => {
@@ -323,6 +384,15 @@ describe("Composer context ledger governance", () => {
     expect(firstCall?.[2]).toBeUndefined();
     expect(screen.queryByTestId("ledger-manual-count")).toBeNull();
     expect(screen.queryByTestId("ledger-comparison-basis")).toBeNull();
+    expect(view.container.querySelector(".composer-context-stack")).toBeNull();
+  });
+
+  it("does not render the context ledger card when curtain visibility disables it", async () => {
+    contextLedgerControlVisible = false;
+    forceLedgerProjectionVisible = true;
+    const view = renderComposer();
+
+    expect(screen.queryByTestId("context-ledger-mock")).toBeNull();
     expect(view.container.querySelector(".composer-context-stack")).toBeNull();
   });
 });

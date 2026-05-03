@@ -1050,6 +1050,7 @@ const enPart1 = {
         bottomActivityEdits: "Edits tab",
         bottomActivityLatestConversation: "Latest conversation tab",
         curtainStickyUserBubble: "Sticky user bubble",
+        curtainContextLedger: "Context sources card",
         cornerStatusMessageAnchors: "Message anchors",
       },
       controlDescriptions: {
@@ -1070,6 +1071,8 @@ const enPart1 = {
         bottomActivityEdits: "Hides the edit summary tab.",
         bottomActivityLatestConversation: "Hides the latest conversation tab.",
         curtainStickyUserBubble: "Hides the sticky user bubble at the top of the conversation canvas.",
+        curtainContextLedger:
+          "Hides the context sources card above the composer without disabling ledger calculations.",
         cornerStatusMessageAnchors: "Hides message anchor dots from the conversation canvas.",
       },
     },

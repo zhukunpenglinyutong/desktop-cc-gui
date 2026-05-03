@@ -1224,6 +1224,7 @@ describe("SettingsView Display", () => {
     expect(screen.getByText("Conversation canvas")).toBeTruthy();
     expect(screen.getByText("Runtime notice dock")).toBeTruthy();
     expect(screen.getByText("Sticky user bubble")).toBeTruthy();
+    expect(screen.getByText("Context sources card")).toBeTruthy();
 
     const topSessionTabsRow = screen
       .getByText("Top session tabs")
@@ -1234,10 +1235,19 @@ describe("SettingsView Display", () => {
     const stickyUserBubbleRow = screen
       .getByText("Sticky user bubble")
       .closest(".settings-toggle-row") as HTMLElement | null;
+    const contextSourcesCardRow = screen
+      .getByText("Context sources card")
+      .closest(".settings-toggle-row") as HTMLElement | null;
     const runtimeNoticeDockRow = screen
       .getByText("Runtime notice dock")
       .closest(".settings-toggle-row") as HTMLElement | null;
-    if (!topSessionTabsRow || !terminalRow || !stickyUserBubbleRow || !runtimeNoticeDockRow) {
+    if (
+      !topSessionTabsRow ||
+      !terminalRow ||
+      !stickyUserBubbleRow ||
+      !contextSourcesCardRow ||
+      !runtimeNoticeDockRow
+    ) {
       throw new Error("Expected client UI visibility rows");
     }
     expect(
@@ -1248,6 +1258,9 @@ describe("SettingsView Display", () => {
     ).toBeTruthy();
     expect(
       stickyUserBubbleRow.querySelector(".settings-client-ui-visibility-row-icon svg"),
+    ).toBeTruthy();
+    expect(
+      contextSourcesCardRow.querySelector(".settings-client-ui-visibility-row-icon svg"),
     ).toBeTruthy();
     expect(
       runtimeNoticeDockRow.querySelector(".settings-client-ui-visibility-row-icon svg"),
@@ -1272,6 +1285,18 @@ describe("SettingsView Display", () => {
         "clientUiVisibility",
         expect.objectContaining({
           controls: expect.objectContaining({ "topTool.terminal": false }),
+        }),
+        { immediate: true },
+      );
+    });
+
+    fireEvent.click(within(contextSourcesCardRow).getByRole("switch"));
+    await waitFor(() => {
+      expect(writeClientStoreValue).toHaveBeenCalledWith(
+        "app",
+        "clientUiVisibility",
+        expect.objectContaining({
+          controls: expect.objectContaining({ "curtain.contextLedger": false }),
         }),
         { immediate: true },
       );

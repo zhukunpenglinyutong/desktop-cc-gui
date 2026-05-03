@@ -52,6 +52,7 @@ import type {
   SelectedAgent as ChatInputSelectedAgent,
 } from "./ChatInputBox/types";
 import { useStatusPanelData } from "../../status-panel/hooks/useStatusPanelData";
+import { useClientUiVisibility } from "../../client-ui-visibility/hooks/useClientUiVisibility";
 import {
   assembleSinglePrompt,
   shouldAssemblePrompt,
@@ -1161,6 +1162,7 @@ export const Composer = memo(function Composer({
   onToggleCompletionEmail,
 }: ComposerProps) {
   const { t } = useTranslation();
+  const clientUiVisibility = useClientUiVisibility();
   const isCodexEngine = selectedEngine === "codex";
   const deferredItems = useDeferredValue(items);
   const performanceScopedItems = isProcessing ? deferredItems : items;
@@ -2255,6 +2257,11 @@ export const Composer = memo(function Composer({
   ]);
   const contextLedgerVisible =
     contextLedgerProjection.visible || Boolean(contextLedgerComparison);
+  const contextLedgerControlVisible = clientUiVisibility.isControlVisible(
+    "curtain.contextLedger",
+  );
+  const shouldRenderContextLedgerPanel =
+    contextLedgerVisible && contextLedgerControlVisible;
   useEffect(() => {
     if (previousContextLedgerSessionKeyRef.current !== contextLedgerSessionKey) {
       previousContextLedgerSessionKeyRef.current = contextLedgerSessionKey;
@@ -2326,7 +2333,7 @@ export const Composer = memo(function Composer({
   const hasScrollableContextStack =
     selectedManualMemories.length > 0 ||
     selectedNoteCards.length > 0 ||
-    contextLedgerVisible ||
+    shouldRenderContextLedgerPanel ||
     shouldRenderReviewInlinePrompt;
 
   return (
@@ -2512,25 +2519,27 @@ export const Composer = memo(function Composer({
                   </div>
                 )}
 
-                <ContextLedgerPanel
-                  projection={{
-                    ...contextLedgerProjection,
-                    visible: contextLedgerVisible,
-                  }}
-                  comparison={contextLedgerComparison}
-                  expanded={contextLedgerExpanded}
-                  hidden={contextLedgerHidden}
-                  onToggle={() => setContextLedgerExpanded((prev) => !prev)}
-                onHide={() => setContextLedgerHidden(true)}
-                onShow={() => setContextLedgerHidden(false)}
-                onExcludeBlock={handleExcludeLedgerBlock}
-                onClearCarryOverBlock={handleClearCarryOverLedgerBlock}
-                onBatchKeepBlocks={handleBatchKeepLedgerBlocks}
-                onBatchExcludeBlocks={handleBatchExcludeLedgerBlocks}
-                onBatchClearCarryOverBlocks={handleBatchClearCarryOverLedgerBlocks}
-                onTogglePinBlock={handleToggleLedgerPin}
-                onOpenBlockSource={handleOpenLedgerSource}
-              />
+                {shouldRenderContextLedgerPanel ? (
+                  <ContextLedgerPanel
+                    projection={{
+                      ...contextLedgerProjection,
+                      visible: contextLedgerVisible,
+                    }}
+                    comparison={contextLedgerComparison}
+                    expanded={contextLedgerExpanded}
+                    hidden={contextLedgerHidden}
+                    onToggle={() => setContextLedgerExpanded((prev) => !prev)}
+                    onHide={() => setContextLedgerHidden(true)}
+                    onShow={() => setContextLedgerHidden(false)}
+                    onExcludeBlock={handleExcludeLedgerBlock}
+                    onClearCarryOverBlock={handleClearCarryOverLedgerBlock}
+                    onBatchKeepBlocks={handleBatchKeepLedgerBlocks}
+                    onBatchExcludeBlocks={handleBatchExcludeLedgerBlocks}
+                    onBatchClearCarryOverBlocks={handleBatchClearCarryOverLedgerBlocks}
+                    onTogglePinBlock={handleToggleLedgerPin}
+                    onOpenBlockSource={handleOpenLedgerSource}
+                  />
+                ) : null}
 
                 {shouldRenderReviewInlinePrompt && reviewPrompt && (
                   <div

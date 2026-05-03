@@ -32,6 +32,7 @@ describe("clientUiVisibility", () => {
       controls: {
         "topTool.terminal": false,
         "curtain.stickyUserBubble": false,
+        "curtain.contextLedger": false,
         "future.control": false,
       },
     });
@@ -41,12 +42,14 @@ describe("clientUiVisibility", () => {
       controls: {
         "topTool.terminal": false,
         "curtain.stickyUserBubble": false,
+        "curtain.contextLedger": false,
       },
     });
     expect(isClientUiPanelVisible(preference, "topSessionTabs")).toBe(false);
     expect(isClientUiPanelVisible(preference, "globalRuntimeNoticeDock")).toBe(false);
     expect(isClientUiControlVisible(preference, "topTool.terminal")).toBe(false);
     expect(isClientUiControlVisible(preference, "curtain.stickyUserBubble")).toBe(false);
+    expect(isClientUiControlVisible(preference, "curtain.contextLedger")).toBe(false);
   });
 
   it("lets parent panel hiding override child visibility without erasing child preference", () => {

@@ -1068,6 +1068,7 @@ const zhPart1 = {
         bottomActivityEdits: "编辑 Tab",
         bottomActivityLatestConversation: "最新对话 Tab",
         curtainStickyUserBubble: "用户气泡吸顶",
+        curtainContextLedger: "本轮上下文来源卡片",
         cornerStatusMessageAnchors: "消息锚点",
       },
       controlDescriptions: {
@@ -1088,6 +1089,8 @@ const zhPart1 = {
         bottomActivityEdits: "隐藏编辑汇总 Tab。",
         bottomActivityLatestConversation: "隐藏最新对话 Tab。",
         curtainStickyUserBubble: "隐藏对话幕布顶部的用户气泡吸顶条。",
+        curtainContextLedger:
+          "隐藏 Composer 上方的本轮上下文来源卡片，但不影响账本计算和来源治理能力。",
         cornerStatusMessageAnchors: "隐藏对话幕布中的消息锚点。",
       },
     },

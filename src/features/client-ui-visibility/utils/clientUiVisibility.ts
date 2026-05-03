@@ -33,6 +33,7 @@ export const CLIENT_UI_CONTROL_IDS = [
   "bottomActivity.edits",
   "bottomActivity.latestConversation",
   "curtain.stickyUserBubble",
+  "curtain.contextLedger",
   "cornerStatus.messageAnchors",
 ] as const;
 
@@ -214,6 +215,13 @@ export const CLIENT_UI_CONTROL_REGISTRY: readonly ClientUiControlDefinition[] = 
     iconKey: "messageSquareText",
   },
   {
+    id: "curtain.contextLedger",
+    parentPanelId: "cornerStatusIndicator",
+    labelKey: "settings.clientUiVisibility.controls.curtainContextLedger",
+    descriptionKey: "settings.clientUiVisibility.controlDescriptions.curtainContextLedger",
+    iconKey: "layoutList",
+  },
+  {
     id: "cornerStatus.messageAnchors",
     parentPanelId: "cornerStatusIndicator",
     labelKey: "settings.clientUiVisibility.controls.cornerStatusMessageAnchors",
@@ -285,7 +293,11 @@ export const CLIENT_UI_PANEL_REGISTRY: readonly ClientUiPanelDefinition[] = [
     labelKey: "settings.clientUiVisibility.panels.cornerStatusIndicator",
     descriptionKey: "settings.clientUiVisibility.panelDescriptions.cornerStatusIndicator",
     iconKey: "messageSquareText",
-    controls: ["curtain.stickyUserBubble", "cornerStatus.messageAnchors"],
+    controls: [
+      "curtain.stickyUserBubble",
+      "curtain.contextLedger",
+      "cornerStatus.messageAnchors",
+    ],
   },
   {
     id: "globalRuntimeNoticeDock",
