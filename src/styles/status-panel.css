@@ -244,7 +244,7 @@
   padding: 20px 12px;
 }
 
-.sp-latest-user-message {
+.sp-user-conversation-timeline {
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -252,7 +252,43 @@
   padding: 8px 4px;
 }
 
-.sp-latest-user-message-text {
+.sp-user-conversation-item {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 10px 12px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--surface-elevated, rgba(255, 255, 255, 0.04)) 82%, transparent);
+  border: 1px solid color-mix(in srgb, var(--border-subtle, rgba(255, 255, 255, 0.08)) 88%, transparent);
+}
+
+.sp-user-conversation-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.sp-user-conversation-order {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.sp-user-conversation-order-primary {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+.sp-user-conversation-order-secondary {
+  color: var(--text-faint);
+  font-size: 11px;
+}
+
+.sp-user-conversation-text {
   margin: 0;
   color: var(--text-strong);
   font-size: 12px;
@@ -262,19 +298,20 @@
   font-family: inherit;
 }
 
-.sp-latest-user-message-text.is-collapsed {
+.sp-user-conversation-text.is-collapsed {
   display: -webkit-box;
   overflow: hidden;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 4;
 }
 
-.sp-latest-user-message-meta {
+.sp-user-conversation-meta {
   color: var(--text-muted);
   font-size: 11px;
 }
 
-.sp-latest-user-message-toggle {
+.sp-user-conversation-jump,
+.sp-user-conversation-toggle {
   align-self: flex-start;
   padding: 0;
   border: none;
@@ -284,7 +321,8 @@
   cursor: pointer;
 }
 
-.sp-latest-user-message-toggle:hover {
+.sp-user-conversation-jump:hover,
+.sp-user-conversation-toggle:hover {
   text-decoration: underline;
 }
 

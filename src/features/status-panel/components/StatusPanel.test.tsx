@@ -82,8 +82,20 @@ const latestUserMessageItems: ConversationItem[] = [
     id: "u1",
     kind: "message",
     role: "user",
-    text: "第一行\n第二行\n第三行\n第四行\n第五行",
+    text: "第一条消息\n第二行\n第三行\n第四行\n第五行",
     images: ["diagram.png", "bug.png"],
+  },
+  {
+    id: "a1",
+    kind: "message",
+    role: "assistant",
+    text: "assistant",
+  },
+  {
+    id: "u2",
+    kind: "message",
+    role: "user",
+    text: "第二条用户消息",
   },
 ];
 
@@ -230,7 +242,7 @@ describe("StatusPanel", () => {
       />,
     );
 
-    expect(screen.getByText("Latest Conversation")).toBeTruthy();
+    expect(screen.getByText("User Conversation")).toBeTruthy();
 
     rerender(
       <StatusPanel
@@ -239,7 +251,7 @@ describe("StatusPanel", () => {
       />,
     );
 
-    expect(screen.queryByText("Latest Conversation")).toBeNull();
+    expect(screen.queryByText("User Conversation")).toBeNull();
   });
 
   it("renders latest user message tab for codex dock threads without selecting it by default", () => {
@@ -252,7 +264,7 @@ describe("StatusPanel", () => {
       />,
     );
 
-    expect(screen.getByText("Latest Conversation")).toBeTruthy();
+    expect(screen.getByText("User Conversation")).toBeTruthy();
     expect(screen.queryByText("Images: 2")).toBeNull();
   });
 
@@ -272,7 +284,7 @@ describe("StatusPanel", () => {
       "statusPanel.tabTodos",
       "statusPanel.tabSubagents",
       "statusPanel.tabEdits",
-      "Latest Conversation",
+      "User Conversation",
     ]);
 
     rerender(
@@ -291,7 +303,7 @@ describe("StatusPanel", () => {
       "statusPanel.tabTodos",
       "statusPanel.tabAgents",
       "statusPanel.tabEdits",
-      "Latest Conversation",
+      "User Conversation",
     ]);
   });
 
@@ -314,10 +326,10 @@ describe("StatusPanel", () => {
     );
     expect(labels).toEqual(["statusPanel.tabTodos"]);
     expect(screen.queryByText("statusPanel.tabEdits")).toBeNull();
-    expect(screen.queryByText("Latest Conversation")).toBeNull();
+    expect(screen.queryByText("User Conversation")).toBeNull();
   });
 
-  it("shows latest user message preview with image summary in dock panel", () => {
+  it("shows user conversation timeline in reverse chronological order with image summary", () => {
     render(
       <StatusPanel
         items={latestUserMessageItems}
@@ -326,10 +338,14 @@ describe("StatusPanel", () => {
       />,
     );
 
-    fireEvent.click(screen.getByText("Latest Conversation"));
+    fireEvent.click(screen.getByText("User Conversation"));
 
-    expect(screen.getByText(/第一行/)).toBeTruthy();
+    const renderedMessages = screen.getAllByText(/用户消息|第一条消息/).map((node) => node.textContent);
+    expect(renderedMessages[0]).toContain("第二条用户消息");
+    expect(renderedMessages[1]).toContain("第一条消息");
     expect(screen.getByText("Images: 2")).toBeTruthy();
+    expect(screen.getByText("Newest to oldest 1/2")).toBeTruthy();
+    expect(screen.getByText("Original order #2")).toBeTruthy();
     expect(screen.getByText("Expand")).toBeTruthy();
   });
 
@@ -352,7 +368,7 @@ describe("StatusPanel", () => {
         items={[
           ...latestUserMessageItems,
           {
-            id: "u2",
+            id: "u3",
             kind: "message",
             role: "user",
             text: "新的问题",
@@ -378,8 +394,9 @@ describe("StatusPanel", () => {
       />,
     );
 
-    fireEvent.click(screen.getByText("Latest Conversation"));
-    expect(screen.getByText(/第一行/)).toBeTruthy();
+    fireEvent.click(screen.getByText("User Conversation"));
+    expect(screen.getByText(/第一条消息/)).toBeTruthy();
+    expect(screen.getByText("第二条用户消息")).toBeTruthy();
 
     rerender(
       <StatusPanel
@@ -397,7 +414,25 @@ describe("StatusPanel", () => {
     );
 
     expect(screen.getByText("thread 2 latest")).toBeTruthy();
-    expect(screen.queryByText(/第一行/)).toBeNull();
+    expect(screen.queryByText(/第一条消息/)).toBeNull();
+  });
+
+  it("emits message jump when clicking a user conversation timeline item action", () => {
+    const onJumpToConversationMessage = vi.fn();
+
+    render(
+      <StatusPanel
+        items={latestUserMessageItems}
+        isProcessing={false}
+        variant="dock"
+        onJumpToConversationMessage={onJumpToConversationMessage}
+      />,
+    );
+
+    fireEvent.click(screen.getByText("User Conversation"));
+    fireEvent.click(screen.getAllByText("Jump to message")[0]);
+
+    expect(onJumpToConversationMessage).toHaveBeenCalledWith("u2");
   });
 
   it("keeps dock tab content visible when clicking the active tab again", () => {

@@ -41,7 +41,7 @@ vi.mock("../../client-ui-visibility/hooks/useClientUiVisibility", () => ({
         topRunControls: false,
         topToolControls: false,
         rightActivityToolbar: false,
-        bottomActivityPanel: false,
+        bottomActivityPanel: true,
         cornerStatusIndicator: false,
         globalRuntimeNoticeDock: false,
       },

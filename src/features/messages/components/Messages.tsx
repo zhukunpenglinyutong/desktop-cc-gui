@@ -99,6 +99,8 @@ import {
   type RuntimeReconnectRecoveryCallbackResult,
 } from "./runtimeReconnect";
 
+const MESSAGE_JUMP_EVENT_NAME = "mossx:jump-to-message";
+
 type MessagesProps = {
   items: ConversationItem[];
   threadId: string | null;
@@ -385,6 +387,7 @@ export const Messages = memo(function Messages({
   const [activeAnchorId, setActiveAnchorId] = useState<string | null>(null);
   const [activeStickyMessageId, setActiveStickyMessageId] = useState<string | null>(null);
   const [showAllHistoryItems, setShowAllHistoryItems] = useState(false);
+  const [pendingJumpMessageId, setPendingJumpMessageId] = useState<string | null>(null);
   const [liveAutoFollowEnabled, setLiveAutoFollowEnabled] = useState(() =>
     readLocalBooleanFlag(MESSAGES_LIVE_AUTO_FOLLOW_FLAG_KEY, true),
   );
@@ -1780,6 +1783,41 @@ export const Messages = memo(function Messages({
     });
     setActiveAnchorId((previous) => (previous === messageId ? previous : messageId));
   }, []);
+
+  useEffect(() => {
+    if (!pendingJumpMessageId) {
+      return;
+    }
+    const targetNode = messageNodeByIdRef.current.get(pendingJumpMessageId);
+    if (!targetNode) {
+      return;
+    }
+    scrollToAnchor(pendingJumpMessageId);
+    setPendingJumpMessageId(null);
+  }, [pendingJumpMessageId, presentationRenderedItems, scrollToAnchor]);
+
+  useEffect(() => {
+    if (typeof document === "undefined") {
+      return undefined;
+    }
+    const handleJumpToMessage = (event: Event) => {
+      const messageId =
+        event instanceof CustomEvent && typeof event.detail === "string" ? event.detail : "";
+      if (!messageId) {
+        return;
+      }
+      if (!messageNodeByIdRef.current.get(messageId) && !showAllHistoryItems) {
+        setPendingJumpMessageId(messageId);
+        handleShowAllHistoryItems();
+        return;
+      }
+      scrollToAnchor(messageId);
+    };
+    document.addEventListener(MESSAGE_JUMP_EVENT_NAME, handleJumpToMessage);
+    return () => {
+      document.removeEventListener(MESSAGE_JUMP_EVENT_NAME, handleJumpToMessage);
+    };
+  }, [handleShowAllHistoryItems, scrollToAnchor, showAllHistoryItems]);
 
   return (
     <div

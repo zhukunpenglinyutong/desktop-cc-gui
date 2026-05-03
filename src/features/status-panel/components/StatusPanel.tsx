@@ -15,8 +15,8 @@ import { SubagentList } from "./SubagentList";
 import { FileChangesList } from "./FileChangesList";
 import { PlanList } from "./PlanList";
 import type { SubagentInfo } from "../types";
-import { resolveLatestUserMessagePreview } from "../utils/latestUserMessage";
-import { LatestUserMessagePanel } from "./LatestUserMessagePanel";
+import { resolveUserConversationTimeline } from "../utils/userConversationTimeline";
+import { UserConversationTimelinePanel } from "./UserConversationTimelinePanel";
 
 interface StatusPanelProps {
   items: ConversationItem[];
@@ -31,6 +31,7 @@ interface StatusPanelProps {
   threadStatusById?: Record<string, { isProcessing?: boolean } | undefined>;
   onOpenDiffPath?: (path: string) => void;
   onSelectSubagent?: (agent: SubagentInfo) => void;
+  onJumpToConversationMessage?: (messageId: string) => void;
   variant?: "popover" | "dock";
   visibleDockTabs?: Partial<Record<TabType, boolean>>;
 }
@@ -82,6 +83,7 @@ export const StatusPanel = memo(function StatusPanel({
   threadStatusById,
   onOpenDiffPath,
   onSelectSubagent,
+  onJumpToConversationMessage,
   variant = "popover",
   visibleDockTabs,
 }: StatusPanelProps) {
@@ -138,8 +140,8 @@ export const StatusPanel = memo(function StatusPanel({
   );
   const codexTaskTotal = codexTaskItems.length;
   const codexTaskInProgress = codexTaskItems.some((item) => item.status === "in_progress");
-  const latestUserMessagePreview = useMemo(
-    () => resolveLatestUserMessagePreview(items),
+  const userConversationTimeline = useMemo(
+    () => resolveUserConversationTimeline(items),
     [items],
   );
 
@@ -237,7 +239,10 @@ export const StatusPanel = memo(function StatusPanel({
         />
       )}
       {activeTab === "latestUserMessage" && variant === "dock" && (
-        <LatestUserMessagePanel preview={latestUserMessagePreview} />
+        <UserConversationTimelinePanel
+          timeline={userConversationTimeline}
+          onJumpToMessage={onJumpToConversationMessage}
+        />
       )}
       {activeTab === "plan" && (
         <PlanList

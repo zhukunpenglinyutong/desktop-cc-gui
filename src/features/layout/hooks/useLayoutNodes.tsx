@@ -148,6 +148,19 @@ type GitDiffViewerItem = {
   newImageMime?: string | null;
 };
 
+const MESSAGE_JUMP_EVENT_NAME = "mossx:jump-to-message";
+
+function dispatchMessageJumpEvent(messageId: string) {
+  if (!messageId || typeof document === "undefined") {
+    return;
+  }
+  document.dispatchEvent(
+    new CustomEvent<string>(MESSAGE_JUMP_EVENT_NAME, {
+      detail: messageId,
+    }),
+  );
+}
+
 type GitDiffListView = "flat" | "tree";
 
 type WorktreeRenameState = {
@@ -2049,6 +2062,7 @@ export function useLayoutNodes(options: LayoutNodesOptions): LayoutNodesResult {
       threadStatusById={options.threadStatusById}
       onOpenDiffPath={handleOpenDiffPath}
       onSelectSubagent={options.onSelectSubagent}
+      onJumpToConversationMessage={dispatchMessageJumpEvent}
       variant="dock"
       visibleDockTabs={bottomActivityVisibleTabs}
     />

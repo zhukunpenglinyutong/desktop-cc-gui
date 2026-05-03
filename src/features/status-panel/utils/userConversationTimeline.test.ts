@@ -1,37 +1,38 @@
 import { describe, expect, it } from "vitest";
 import type { ConversationItem } from "../../../types";
-import { resolveLatestUserMessagePreview } from "./latestUserMessage";
+import { resolveUserConversationTimeline } from "./userConversationTimeline";
 
-describe("resolveLatestUserMessagePreview", () => {
+describe("resolveUserConversationTimeline", () => {
   it("returns empty state when there is no user message", () => {
-    const preview = resolveLatestUserMessagePreview([
+    const timeline = resolveUserConversationTimeline([
       { id: "a1", kind: "message", role: "assistant", text: "done" },
     ]);
 
-    expect(preview).toEqual({
-      text: "",
-      imageCount: 0,
+    expect(timeline).toEqual({
+      items: [],
       hasMessage: false,
     });
   });
 
-  it("returns the latest text-only user message", () => {
+  it("returns user messages in reverse chronological order", () => {
     const items: ConversationItem[] = [
       { id: "u1", kind: "message", role: "user", text: "older" },
       { id: "a1", kind: "message", role: "assistant", text: "done" },
       { id: "u2", kind: "message", role: "user", text: " latest question " },
     ];
 
-    const preview = resolveLatestUserMessagePreview(items);
+    const timeline = resolveUserConversationTimeline(items);
 
-    expect(preview).toEqual({
-      text: "latest question",
-      imageCount: 0,
+    expect(timeline).toEqual({
+      items: [
+        { id: "u2", text: "latest question", imageCount: 0, chronologicalIndex: 2 },
+        { id: "u1", text: "older", imageCount: 0, chronologicalIndex: 1 },
+      ],
       hasMessage: true,
     });
   });
 
-  it("returns image-only user message as meaningful preview", () => {
+  it("keeps image-only user messages as meaningful timeline items", () => {
     const items: ConversationItem[] = [
       {
         id: "u1",
@@ -42,11 +43,10 @@ describe("resolveLatestUserMessagePreview", () => {
       },
     ];
 
-    const preview = resolveLatestUserMessagePreview(items);
+    const timeline = resolveUserConversationTimeline(items);
 
-    expect(preview).toEqual({
-      text: "",
-      imageCount: 2,
+    expect(timeline).toEqual({
+      items: [{ id: "u1", text: "", imageCount: 2, chronologicalIndex: 1 }],
       hasMessage: true,
     });
   });
@@ -62,11 +62,10 @@ describe("resolveLatestUserMessagePreview", () => {
       },
     ];
 
-    const preview = resolveLatestUserMessagePreview(items);
+    const timeline = resolveUserConversationTimeline(items);
 
-    expect(preview).toEqual({
-      text: "Please check",
-      imageCount: 1,
+    expect(timeline).toEqual({
+      items: [{ id: "u1", text: "Please check", imageCount: 1, chronologicalIndex: 1 }],
       hasMessage: true,
     });
   });
