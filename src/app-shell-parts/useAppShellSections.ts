@@ -18,6 +18,10 @@ import { deriveKanbanTaskTitle } from "../features/kanban/utils/taskTitle";
 import { findTaskDownstream } from "../features/kanban/utils/chaining";
 import { buildChainedPromptPrefix, extractKanbanResultSnapshot } from "../features/kanban/utils/resultSnapshot";
 import {
+  beginKanbanTaskRunLifecycle,
+  patchKanbanTaskRunLifecycle,
+} from "../features/tasks/utils/kanbanTaskRunLifecycle";
+import {
   applyMissedRunPolicy,
   hasReachedRecurringRoundLimit,
   isScheduleDue,
@@ -1073,6 +1077,25 @@ export function useAppShellSections(ctx: any) {
     [kanbanUpdateTask],
   );
 
+  const patchTaskRunAndProjectToKanban = useCallback(
+    (input: Parameters<typeof patchKanbanTaskRunLifecycle>[0]) => {
+      let result: ReturnType<typeof patchKanbanTaskRunLifecycle> = null;
+      try {
+        result = patchKanbanTaskRunLifecycle(input);
+      } catch (error) {
+        console.error("Failed to patch Kanban task run lifecycle", error);
+        return null;
+      }
+      if (result?.latestRunSummary) {
+        kanbanUpdateTask(result.run.task.taskId, {
+          latestRunSummary: result.latestRunSummary,
+        });
+      }
+      return result;
+    },
+    [kanbanUpdateTask],
+  );
+
   const persistKanbanTaskComposerSelection = useCallback(
     (workspaceId: string, threadId: string, modelId: string | null | undefined) => {
       if (!modelId) {
@@ -1099,6 +1122,7 @@ export function useAppShellSections(ctx: any) {
       if (!task) {
         return { ok: false, reason: "task_not_found" };
       }
+      let taskRunId: string | null = null;
       let launchedSuccessfully = false;
       if (params.source !== "chained" && task.chain?.previousTaskId) {
         setTaskChainBlockedReason(task.id, "chain_requires_head_trigger");
@@ -1118,6 +1142,33 @@ export function useAppShellSections(ctx: any) {
           blockedReason: "non_reentrant_trigger_blocked",
         });
         return { ok: false, reason: "non_reentrant_trigger_blocked" };
+      }
+      let taskRunResult: ReturnType<typeof beginKanbanTaskRunLifecycle> | null = null;
+      try {
+        taskRunResult = beginKanbanTaskRunLifecycle({
+          task,
+          source: params.source,
+        });
+      } catch (error) {
+        console.error("Failed to begin Kanban task run lifecycle", error);
+      }
+      if (taskRunResult && !taskRunResult.ok) {
+        if (taskRunResult.latestRunSummary) {
+          kanbanUpdateTask(task.id, {
+            latestRunSummary: taskRunResult.latestRunSummary,
+          });
+        }
+        updateTaskExecution(task.id, {
+          lastSource: params.source,
+          blockedReason: taskRunResult.reason,
+        });
+        return { ok: false, reason: taskRunResult.reason };
+      }
+      if (taskRunResult) {
+        taskRunId = taskRunResult.run.runId;
+        kanbanUpdateTask(task.id, {
+          latestRunSummary: taskRunResult.latestRunSummary,
+        });
       }
 
       const lock = {
@@ -1177,6 +1228,12 @@ export function useAppShellSections(ctx: any) {
           canReuseExistingThread
         ) {
           kanbanUpdateTask(task.id, { threadId: canonicalTaskThreadId });
+          patchTaskRunAndProjectToKanban({
+            runId: taskRunId,
+            status: "planning",
+            linkedThreadId: canonicalTaskThreadId,
+            currentStep: "reuse_existing_thread",
+          });
         }
         if (!threadId) {
           threadId = await startThreadForWorkspace(workspace.id, {
@@ -1187,6 +1244,12 @@ export function useAppShellSections(ctx: any) {
             throw new Error("thread_create_failed");
           }
           kanbanUpdateTask(task.id, { threadId });
+          patchTaskRunAndProjectToKanban({
+            runId: taskRunId,
+            status: "planning",
+            linkedThreadId: threadId,
+            currentStep: "thread_created",
+          });
         }
 
         if (shouldSyncComposerSelection && composerSelection?.modelId) {
@@ -1205,6 +1268,13 @@ export function useAppShellSections(ctx: any) {
         }
 
         kanbanUpdateTask(task.id, { status: "inprogress" });
+        patchTaskRunAndProjectToKanban({
+          runId: taskRunId,
+          status: "running",
+          linkedThreadId: threadId,
+          currentStep: "first_message_sent",
+          startedAt: executionStartedAt,
+        });
         updateTaskExecution(task.id, {
           lastSource: params.source,
           lock: null,
@@ -1220,6 +1290,12 @@ export function useAppShellSections(ctx: any) {
           lastSource: params.source,
           lock: null,
           blockedReason: reason,
+        });
+        patchTaskRunAndProjectToKanban({
+          runId: taskRunId,
+          status: "failed",
+          failureReason: reason,
+          finishedAt: Date.now(),
         });
         return { ok: false, reason };
       } finally {
@@ -1241,6 +1317,7 @@ export function useAppShellSections(ctx: any) {
       updateTaskExecution,
       setTaskChainBlockedReason,
       resolveCanonicalThreadId,
+      patchTaskRunAndProjectToKanban,
     ],
   );
 
