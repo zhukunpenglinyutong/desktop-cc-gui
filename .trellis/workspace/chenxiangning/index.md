@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-10.md`
-- **Total Sessions**: 310
+- **Total Sessions**: 311
 - **Last Active**: 2026-05-04
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-10.md` | ~66 | Active |
+| `journal-10.md` | ~120 | Active |
 | `journal-9.md` | ~1977 | Archived |
 | `journal-8.md` | ~1996 | Archived |
 | `journal-7.md` | ~1950 | Archived |
@@ -38,6 +38,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 311 | 2026-05-04 | 记录右侧面板拖拽提交优化 | `87845311acf113c3fa2909224321fe8d2c476a0f` | `feature/v-0.4.13-1` |
 | 310 | 2026-05-04 | 补齐第一阶段人工场景回归测试 | `72b36a97` | `feature/v-0.4.13-1` |
 | 309 | 2026-05-04 | 归档已验证 OpenSpec 提案 | `d4e783e6` | `feature/v-0.4.13-1` |
 | 308 | 2026-05-04 | 记录第一阶段架构硬化收敛 | `9ba009e7` | `feature/v-0.4.13` |

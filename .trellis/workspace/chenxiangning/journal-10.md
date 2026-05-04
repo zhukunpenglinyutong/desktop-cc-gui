@@ -64,3 +64,57 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 311: 记录右侧面板拖拽提交优化
+
+**Date**: 2026-05-04
+**Task**: 记录右侧面板拖拽提交优化
+**Branch**: `feature/v-0.4.13-1`
+
+### Summary
+
+(Add summary)
+
+### Main Changes
+
+任务目标：
+- 按用户选择的方案，将右侧面板上下拖拽改为“拖动中只显示预览，松手后才提交尺寸”。
+- 避免拖动过程中实时修改 plan panel 高度引发持续布局重排和卡顿。
+
+主要改动：
+- src/features/layout/hooks/useResizablePanels.ts：plan-panel mousemove 不再调用 scheduleResizeApply，也不再实时写入 --plan-panel-height；只更新 liveSizesRef 与 divider transform 预览。mouseup 时一次性提交 --plan-panel-height、React state 和 clientStorage。
+- src/features/layout/hooks/useResizablePanels.test.ts：新增回归测试，断言拖动中不写入 --plan-panel-height，松手后提交最终高度并清理拖拽样式。
+- src/styles/main.css：补齐 right-panel-divider 的竖向拖拽视觉，沿用左右拖拽的 glow line / capsule handle 风格。
+
+涉及模块：
+- layout hook
+- desktop layout resize interaction
+- global stylesheet resize handle
+
+验证结果：
+- npx vitest run src/features/layout/hooks/useResizablePanels.test.ts src/features/layout/components/DesktopLayout.test.tsx src/styles/layout-swapped-platform-guard.test.ts：通过，21 tests passed。
+- npm run typecheck：通过。
+- npm run check:large-files：通过，found=0。
+
+后续事项：
+- 需要用户继续进行桌面端人工测试，重点验证右侧面板上下拖拽松手提交是否符合预期，以及主界面拖动期间是否明显减少卡顿。
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `87845311acf113c3fa2909224321fe8d2c476a0f` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
