@@ -596,6 +596,40 @@ describe("streamLatencyDiagnostics", () => {
     )).toBeNull();
   });
 
+  it("does not report baseline profile activation as stream mitigation", async () => {
+    mocks.isWindowsPlatform.mockReturnValue(false);
+    mocks.isMacPlatform.mockReturnValue(true);
+    await primeThreadStreamLatencyContext({
+      workspaceId: "ws-1",
+      threadId: "thread-baseline-profile",
+      engine: "gemini",
+      model: "gemini-2.5-pro",
+    });
+    noteThreadTurnStarted({
+      workspaceId: "ws-1",
+      threadId: "thread-baseline-profile",
+      turnId: "turn-baseline-profile",
+      startedAt: 5_900,
+    });
+    noteThreadDeltaReceived("thread-baseline-profile", 5_940);
+    noteThreadVisibleTextRendered("thread-baseline-profile", {
+      itemId: "assistant-baseline-profile",
+      visibleTextLength: 12,
+      renderAt: 5_960,
+    });
+
+    const snapshot = getThreadStreamLatencySnapshot("thread-baseline-profile");
+
+    expect(snapshot?.candidateMitigationProfile).toBeNull();
+    expect(snapshot?.mitigationProfile).toBeNull();
+    expect(snapshot?.mitigationReason).toBeNull();
+    expect(resolveActiveThreadStreamMitigation(snapshot)).toBeNull();
+    expect(mocks.appendRendererDiagnostic).not.toHaveBeenCalledWith(
+      "stream-latency/mitigation-activated",
+      expect.anything(),
+    );
+  });
+
   it("keeps diagnostics while the rollback flag suppresses the active mitigation profile", async () => {
     const getItem = vi.fn((key: string) =>
       key === "ccgui.debug.streamMitigation.disabled" ? "true" : null,

@@ -459,6 +459,9 @@ describe("Messages", () => {
           codexCanvasMarkdown: true,
           showReasoningLiveDot: true,
           heartbeatWaitingHint: false,
+          assistantMarkdownStreamingThrottleMs: 80,
+          reasoningStreamingThrottleMs: 180,
+          useCodexStagedMarkdownThrottle: true,
         }}
         openTargets={[]}
         selectedOpenAppId=""
@@ -1266,6 +1269,40 @@ describe("Messages", () => {
 
     const markdownParagraph = container.querySelector(".message.assistant .markdown p");
     expect(markdownParagraph?.textContent ?? "").toContain("高概率这是前端渲染问题");
+    expect(container.querySelector(".message.assistant .markdown-live-streaming")).toBeTruthy();
+  });
+
+  it("renders the latest gemini assistant row as live markdown while streaming", () => {
+    const items: ConversationItem[] = [
+      {
+        id: "user-gemini-live-1",
+        kind: "message",
+        role: "user",
+        text: "总结这次检查",
+      },
+      {
+        id: "assistant-gemini-live-1",
+        kind: "message",
+        role: "assistant",
+        text: "Gemini 正在流式输出结论。",
+      },
+    ];
+
+    const { container } = render(
+      <Messages
+        items={items}
+        threadId="gemini:thread-1"
+        workspaceId="ws-1"
+        isThinking
+        processingStartedAt={Date.now() - 1_000}
+        activeEngine="gemini"
+        openTargets={[]}
+        selectedOpenAppId=""
+      />,
+    );
+
+    const markdownParagraph = container.querySelector(".message.assistant .markdown p");
+    expect(markdownParagraph?.textContent ?? "").toContain("Gemini 正在流式输出结论");
     expect(container.querySelector(".message.assistant .markdown-live-streaming")).toBeTruthy();
   });
 

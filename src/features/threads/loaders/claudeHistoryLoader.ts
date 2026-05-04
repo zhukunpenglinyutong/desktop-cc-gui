@@ -5,6 +5,10 @@ import {
 } from "../../../utils/threadItems";
 import type { HistoryLoader } from "../contracts/conversationCurtainContracts";
 import { normalizeHistorySnapshot } from "../contracts/conversationCurtainContracts";
+import {
+  areEquivalentReasoningTexts,
+  compactComparableConversationText,
+} from "../assembly/conversationNormalization";
 import { computeDiff } from "../../messages/utils/diffUtils";
 import { asString } from "./historyLoaderUtils";
 
@@ -61,36 +65,13 @@ function asRecord(value: unknown): Record<string, unknown> | null {
   return value as Record<string, unknown>;
 }
 
-function compactComparableReasoningText(value: string) {
-  return value
-    .replace(/\s+/g, "")
-    .replace(/[！!]/g, "!")
-    .replace(/[？?]/g, "?")
-    .replace(/[，,]/g, ",")
-    .replace(/[。．.]/g, ".");
-}
-
 function isReasoningSnapshotDuplicate(previous: string, incoming: string) {
-  const previousCompact = compactComparableReasoningText(previous);
-  const incomingCompact = compactComparableReasoningText(incoming);
-  if (!previousCompact || !incomingCompact) {
-    return false;
-  }
-  if (previousCompact === incomingCompact) {
-    return true;
-  }
-  if (previousCompact.length >= 16 && incomingCompact.includes(previousCompact)) {
-    return true;
-  }
-  if (incomingCompact.length >= 16 && previousCompact.includes(incomingCompact)) {
-    return true;
-  }
-  return false;
+  return areEquivalentReasoningTexts(previous, incoming);
 }
 
 function preferLongerReasoningText(previous: string, incoming: string) {
-  const previousCompactLength = compactComparableReasoningText(previous).length;
-  const incomingCompactLength = compactComparableReasoningText(incoming).length;
+  const previousCompactLength = compactComparableConversationText(previous).length;
+  const incomingCompactLength = compactComparableConversationText(incoming).length;
   return incomingCompactLength >= previousCompactLength ? incoming : previous;
 }
 

@@ -107,6 +107,7 @@ type ReasoningRowProps = {
   onToggle: (id: string) => void;
   onOpenFileLink?: (path: string) => void;
   onOpenFileLinkMenu?: (event: React.MouseEvent, path: string) => void;
+  presentationProfile?: PresentationProfile | null;
   streamMitigationProfile?: StreamMitigationProfile | null;
 };
 
@@ -211,6 +212,7 @@ function resolveAssistantMessageStreamingThrottleMs(
   isStreaming: boolean,
   activeEngine: MessagesEngine,
   mitigationProfile: StreamMitigationProfile | null | undefined,
+  presentationProfile: PresentationProfile | null | undefined,
   displayText: string,
 ) {
   if (!isStreaming) {
@@ -219,12 +221,17 @@ function resolveAssistantMessageStreamingThrottleMs(
   if (mitigationProfile?.messageStreamingThrottleMs) {
     return mitigationProfile.messageStreamingThrottleMs;
   }
-  if (item.role !== "assistant" || activeEngine !== "codex") {
-    return LIVE_ASSISTANT_MARKDOWN_THROTTLE_MS;
+  const baselineThrottleMs =
+    presentationProfile?.assistantMarkdownStreamingThrottleMs ??
+    LIVE_ASSISTANT_MARKDOWN_THROTTLE_MS;
+  const useStagedMarkdownThrottle =
+    presentationProfile?.useCodexStagedMarkdownThrottle ?? activeEngine === "codex";
+  if (item.role !== "assistant" || !useStagedMarkdownThrottle) {
+    return baselineThrottleMs;
   }
   const trimmedText = displayText.trim();
   if (!trimmedText) {
-    return LIVE_ASSISTANT_MARKDOWN_THROTTLE_MS;
+    return baselineThrottleMs;
   }
   const lineCount = trimmedText.split(/\r?\n/).length;
   if (
@@ -239,17 +246,22 @@ function resolveAssistantMessageStreamingThrottleMs(
   ) {
     return CODEX_MEDIUM_STREAMING_THROTTLE_MS;
   }
-  return LIVE_ASSISTANT_MARKDOWN_THROTTLE_MS;
+  return baselineThrottleMs;
 }
 
 function resolveReasoningStreamingThrottleMs(
   isLive: boolean,
   mitigationProfile: StreamMitigationProfile | null | undefined,
+  presentationProfile: PresentationProfile | null | undefined,
 ) {
   if (!isLive) {
     return 80;
   }
-  return mitigationProfile?.reasoningStreamingThrottleMs ?? 180;
+  return (
+    mitigationProfile?.reasoningStreamingThrottleMs ??
+    presentationProfile?.reasoningStreamingThrottleMs ??
+    180
+  );
 }
 
 function shouldUsePlainTextStreamingSurface(
@@ -996,6 +1008,7 @@ export const MessageRow = memo(function MessageRow({
               isStreaming,
               activeEngine,
               streamMitigationProfile,
+              presentationProfile,
               displayText,
             )}
             onOpenFileLink={onOpenFileLink}
@@ -1101,6 +1114,7 @@ export const ReasoningRow = memo(function ReasoningRow({
   onToggle,
   onOpenFileLink,
   onOpenFileLinkMenu,
+  presentationProfile = null,
   streamMitigationProfile = null,
 }: ReasoningRowProps) {
   const { t } = useTranslation();
@@ -1155,6 +1169,7 @@ export const ReasoningRow = memo(function ReasoningRow({
               streamingThrottleMs={resolveReasoningStreamingThrottleMs(
                 isLive,
                 streamMitigationProfile,
+                presentationProfile,
               )}
               onOpenFileLink={onOpenFileLink}
               onOpenFileLinkMenu={onOpenFileLinkMenu}

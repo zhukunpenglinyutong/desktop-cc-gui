@@ -756,6 +756,135 @@ describe("realtime/history parity", () => {
     ).toEqual(historyState.items.map(projectSemanticItem));
   });
 
+  it("keeps Claude long Markdown realtime completion and history replay to one assistant row", async () => {
+    const workspaceId = "ws-claude-markdown-parity";
+    const threadId = "claude:session-markdown-parity";
+    const markdownText = [
+      "# 幕布提案",
+      "",
+      "## 实施",
+      "",
+      "- history first",
+      "- realtime parity",
+      "",
+      "```ts",
+      "const engine = \"claude\";",
+      "```",
+    ].join("\n");
+    const historySnapshot: NormalizedHistorySnapshot = {
+      engine: "claude",
+      workspaceId,
+      threadId,
+      items: [
+        {
+          id: "assistant-1",
+          kind: "message",
+          role: "assistant",
+          text: markdownText,
+        },
+        {
+          id: "assistant-history-1",
+          kind: "message",
+          role: "assistant",
+          text: markdownText,
+        },
+      ],
+      plan: null,
+      userInputQueue: [],
+      meta: {
+        workspaceId,
+        threadId,
+        engine: "claude",
+        activeTurnId: null,
+        isThinking: false,
+        heartbeatPulse: null,
+        historyRestoredAtMs: 1,
+      },
+      fallbackWarnings: [],
+    };
+    const historyState = hydrateHistory(historySnapshot);
+    const realtimeState = createRealtimeState("claude", workspaceId, threadId, [
+      {
+        method: "item/agentMessage/delta",
+        params: { threadId, itemId: "assistant-1", delta: markdownText },
+      },
+      {
+        method: "item/completed",
+        params: {
+          threadId,
+          item: {
+            id: "assistant-1",
+            type: "agentMessage",
+            text: markdownText,
+            status: "completed",
+          },
+        },
+      },
+    ]);
+
+    expect(historyState.items.filter((item) => item.kind === "message")).toHaveLength(1);
+    expect(realtimeState.items.filter((item) => item.kind === "message")).toHaveLength(1);
+    const realtimeAssistant = realtimeState.items.find(
+      (item): item is Extract<ConversationItem, { kind: "message" }> =>
+        item.kind === "message" && item.role === "assistant",
+    );
+    const historyAssistant = historyState.items.find(
+      (item): item is Extract<ConversationItem, { kind: "message" }> =>
+        item.kind === "message" && item.role === "assistant",
+    );
+    expect(realtimeAssistant?.text).toBe(markdownText);
+    expect(historyAssistant?.text).toBe(markdownText);
+  });
+
+  it("keeps Claude approval file changes replay cardinality stable through assembler", async () => {
+    const workspaceId = "ws-claude-approval-parity";
+    const threadId = "claude:session-approval-parity";
+    const loader = createClaudeHistoryLoader({
+      workspaceId,
+      workspacePath: "/tmp/ws-claude",
+      loadClaudeSession: vi.fn().mockResolvedValue({
+        messages: [
+          {
+            kind: "message",
+            role: "assistant",
+            id: "assistant-approval-marker-1",
+            text: [
+              '<ccgui-approval-resume>[{"summary":"Approved and wrote a.ts","path":"a.ts","kind":"add","status":"completed"},{"summary":"Approved and updated b.ts","path":"b.ts","kind":"modified","status":"completed"}]</ccgui-approval-resume>',
+              "Completed approved operations:",
+              "- Approved and wrote ignored.ts",
+            ].join("\n"),
+          },
+        ],
+      }),
+    });
+    const historyState = hydrateHistory(await loader.load(threadId));
+    const replayedState = hydrateHistory({
+      engine: "claude",
+      workspaceId,
+      threadId,
+      items: historyState.items.flatMap((item) => [item, item]),
+      plan: null,
+      userInputQueue: [],
+      meta: {
+        workspaceId,
+        threadId,
+        engine: "claude",
+        activeTurnId: null,
+        isThinking: false,
+        heartbeatPulse: null,
+        historyRestoredAtMs: 1,
+      },
+      fallbackWarnings: [],
+    });
+    const fileChanges = replayedState.items.filter(
+      (item): item is Extract<ConversationItem, { kind: "tool" }> =>
+        item.kind === "tool" && item.toolType === "fileChange",
+    );
+
+    expect(fileChanges).toHaveLength(2);
+    expect(fileChanges.map((item) => item.changes?.[0]?.path)).toEqual(["a.ts", "b.ts"]);
+  });
+
   it("keeps gemini realtime and history semantics aligned for tool and reasoning", async () => {
     const workspaceId = "ws-gemini";
     const threadId = "gemini:session-parity";
@@ -865,6 +994,74 @@ describe("realtime/history parity", () => {
     expect(
       realtimeState.items.map(projectSemanticItem),
     ).toEqual(historyState.items.map(projectSemanticItem));
+  });
+
+  it("keeps Gemini assistant, reasoning, and tool history replay cardinality stable", async () => {
+    const workspaceId = "ws-gemini-replay-cardinality";
+    const threadId = "gemini:session-replay-cardinality";
+    const loader = createGeminiHistoryLoader({
+      workspaceId,
+      workspacePath: "/tmp/ws-gemini",
+      loadGeminiSession: vi.fn().mockResolvedValue({
+        messages: [
+          { kind: "message", id: "user-1", role: "user", text: "Run checks" },
+          {
+            kind: "reasoning",
+            id: "reasoning-1",
+            role: "assistant",
+            text: "先读取目录",
+          },
+          {
+            kind: "reasoning",
+            id: "reasoning-2",
+            role: "assistant",
+            text: "再检查配置",
+          },
+          {
+            kind: "tool",
+            id: "tool-1",
+            toolType: "commandExecution",
+            title: "Command",
+            toolInput: { command: ["pnpm", "vitest"], cwd: "/repo" },
+          },
+          {
+            kind: "tool",
+            id: "tool-1-result",
+            toolType: "result",
+            title: "Result",
+            text: "ok",
+            toolOutput: { output: "ok" },
+          },
+          { kind: "message", id: "assistant-1", role: "assistant", text: "Done." },
+        ],
+      }),
+    });
+    const historyState = hydrateHistory(await loader.load(threadId));
+    const replayedState = hydrateHistory({
+      engine: "gemini",
+      workspaceId,
+      threadId,
+      items: [...historyState.items, ...historyState.items],
+      plan: null,
+      userInputQueue: [],
+      meta: {
+        workspaceId,
+        threadId,
+        engine: "gemini",
+        activeTurnId: null,
+        isThinking: false,
+        heartbeatPulse: null,
+        historyRestoredAtMs: 1,
+      },
+      fallbackWarnings: [],
+    });
+
+    expect(replayedState.items.filter((item) => item.kind === "message")).toHaveLength(2);
+    expect(replayedState.items.filter((item) => item.kind === "reasoning")).toHaveLength(1);
+    expect(replayedState.items.filter((item) => item.kind === "tool")).toHaveLength(1);
+    expect(replayedState.items.map(projectSemanticItem)).toEqual(
+      historyState.items.map(projectSemanticItem),
+    );
   });
 
   it("keeps opencode realtime and history semantics aligned for tool/plan/userInput/reasoning", async () => {

@@ -263,7 +263,9 @@ export function MessagesTimeline({
               workspaceId={workspaceId}
               threadId={threadId}
               isStreaming={
-                (activeEngine === "claude" || activeEngine === "codex") &&
+                (activeEngine === "claude" ||
+                  activeEngine === "codex" ||
+                  activeEngine === "gemini") &&
                 item.role === "assistant" &&
                 item.id === liveAssistantMessageId
               }
@@ -324,6 +326,7 @@ export function MessagesTimeline({
           onToggle={toggleExpanded}
           onOpenFileLink={openFileLink}
           onOpenFileLinkMenu={showFileLinkMenu}
+          presentationProfile={presentationProfile}
           streamMitigationProfile={streamMitigationProfile}
         />
       );
@@ -509,6 +512,7 @@ export function MessagesTimeline({
             onToggle={toggleExpanded}
             onOpenFileLink={openFileLink}
             onOpenFileLinkMenu={showFileLinkMenu}
+            presentationProfile={presentationProfile}
             streamMitigationProfile={streamMitigationProfile}
           />
         ))}

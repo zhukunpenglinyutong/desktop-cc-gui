@@ -16,6 +16,7 @@ import {
   getRealtimeAdapterByEngine,
   inferRealtimeAdapterEngine,
 } from "../../threads/adapters/realtimeAdapterRegistry";
+import { resolveConversationAssemblyMigrationGate } from "../../threads/assembly/conversationMigrationGates";
 import { hydrateToolSnapshotWithEventParams } from "../../threads/adapters/toolSnapshotHydration";
 import { isGeneratedImageToolName } from "../../../utils/generatedImageArtifacts";
 import {
@@ -941,6 +942,10 @@ function tryRouteNormalizedRealtimeEvent({
     return false;
   }
   const engine = engineOverride ?? inferRealtimeAdapterEngine(effectiveThreadId);
+  const migrationGate = resolveConversationAssemblyMigrationGate(engine);
+  if (migrationGate && !migrationGate.assemblerEnabled) {
+    return false;
+  }
   const adapter = getRealtimeAdapterByEngine(engine);
   const shouldInjectThreadId = Boolean(threadIdOverride);
   const normalized = adapter.mapEvent({

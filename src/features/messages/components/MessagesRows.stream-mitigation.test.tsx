@@ -218,6 +218,37 @@ describe("MessagesRows stream mitigation", () => {
     expect(screen.getByTestId("markdown").getAttribute("data-throttle")).toBe("48");
   });
 
+  it("uses the Gemini baseline profile for assistant streaming without Codex staged throttle", () => {
+    const messageItem = {
+      id: "assistant-gemini-large",
+      kind: "message" as const,
+      role: "assistant" as const,
+      text: Array.from({ length: 14 }, (_, index) => `- 第 ${index + 1} 条 Gemini streaming 内容`).join("\n"),
+    };
+
+    render(
+      <MessageRow
+        item={messageItem}
+        isStreaming
+        activeEngine="gemini"
+        isCopied={false}
+        onCopy={vi.fn()}
+        presentationProfile={{
+          engine: "gemini",
+          preferCommandSummary: false,
+          codexCanvasMarkdown: false,
+          showReasoningLiveDot: false,
+          heartbeatWaitingHint: false,
+          assistantMarkdownStreamingThrottleMs: 80,
+          reasoningStreamingThrottleMs: 180,
+          useCodexStagedMarkdownThrottle: false,
+        }}
+      />,
+    );
+
+    expect(screen.getByTestId("markdown").getAttribute("data-throttle")).toBe("80");
+  });
+
   it("uses a medium markdown throttle for medium Codex streaming output", () => {
     const messageItem = {
       id: "assistant-codex-medium",

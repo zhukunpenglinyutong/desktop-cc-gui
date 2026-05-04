@@ -1,5 +1,9 @@
 import type { ConversationItem } from "../../../types";
 import { buildConversationItemFromThreadItem } from "../../../utils/threadItems";
+import {
+  areEquivalentReasoningTexts,
+  compactComparableConversationText,
+} from "../assembly/conversationNormalization";
 import { asRecord, asString } from "./historyLoaderUtils";
 import { parseClaudeHistoryMessages } from "./claudeHistoryLoader";
 
@@ -16,15 +20,6 @@ const FILE_CHANGE_TOOL_KEYWORDS = ["apply", "patch", "write", "edit"];
 const GEMINI_OUTPUT_LANGUAGE_HINT_PATTERN =
   /^Output language:[^\r\n]*(?:\r?\n)+Prefer this language for reasoning and final answer unless the user explicitly requests another language\.(?:\r?\n){1,2}/i;
 
-function compactComparableReasoningText(value: string): string {
-  return value
-    .replace(/\s+/g, "")
-    .replace(/[！!]/g, "!")
-    .replace(/[？?]/g, "?")
-    .replace(/[，,]/g, ",")
-    .replace(/[。．.]/g, ".");
-}
-
 function mergeAdjacentReasoningText(existing: string, incoming: string): string {
   const normalizedExisting = existing.trim();
   const normalizedIncoming = incoming.trim();
@@ -35,24 +30,18 @@ function mergeAdjacentReasoningText(existing: string, incoming: string): string 
     return normalizedExisting;
   }
 
-  const compactExisting = compactComparableReasoningText(normalizedExisting);
-  const compactIncoming = compactComparableReasoningText(normalizedIncoming);
+  const compactExisting = compactComparableConversationText(normalizedExisting);
+  const compactIncoming = compactComparableConversationText(normalizedIncoming);
   if (!compactExisting) {
     return normalizedIncoming;
   }
   if (!compactIncoming) {
     return normalizedExisting;
   }
-  if (compactExisting === compactIncoming) {
+  if (areEquivalentReasoningTexts(normalizedExisting, normalizedIncoming)) {
     return normalizedExisting.length >= normalizedIncoming.length
       ? normalizedExisting
       : normalizedIncoming;
-  }
-  if (compactIncoming.includes(compactExisting)) {
-    return normalizedIncoming;
-  }
-  if (compactExisting.includes(compactIncoming)) {
-    return normalizedExisting;
   }
   return `${normalizedExisting}\n\n${normalizedIncoming}`;
 }

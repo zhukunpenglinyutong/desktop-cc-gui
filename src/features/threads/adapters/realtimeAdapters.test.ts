@@ -520,6 +520,36 @@ describe("realtime adapters", () => {
     expect(event?.delta).toBe("streaming text");
   });
 
+  it("maps Claude ExitPlanMode completion as a structured tool snapshot", () => {
+    const event = claudeRealtimeAdapter.mapEvent({
+      workspaceId: "ws-claude",
+      message: {
+        method: "item/completed",
+        params: {
+          threadId: "claude:session-plan",
+          item: {
+            id: "exit-plan-1",
+            type: "toolCall",
+            toolType: "ExitPlanMode",
+            title: "Claude / ExitPlanMode",
+            text: "PLAN\n\n- inspect\n- implement",
+            status: "completed",
+          },
+        },
+      },
+    });
+
+    expect(event).toBeTruthy();
+    expect(event?.engine).toBe("claude");
+    expect(event?.operation).toBe("itemCompleted");
+    expect(event?.item.kind).toBe("tool");
+    if (event?.item.kind === "tool") {
+      expect(event.item.id).toBe("exit-plan-1");
+      expect(event.item.status).toBe("completed");
+      expect(`${event.item.toolType} ${event.item.title}`).toMatch(/exitplanmode/i);
+    }
+  });
+
   it("returns null when required fields are missing", () => {
     const event = codexRealtimeAdapter.mapEvent({
       workspaceId: "ws-1",

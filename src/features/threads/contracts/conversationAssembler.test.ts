@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
-import type { ConversationItem } from "../../../types";
-import type { ConversationState, NormalizedThreadEvent } from "./conversationCurtainContracts";
+import type { ConversationItem, TurnPlan } from "../../../types";
+import type {
+  ConversationState,
+  NormalizedHistorySnapshot,
+  NormalizedThreadEvent,
+} from "./conversationCurtainContracts";
 import {
   appendEvent,
   findConversationStateDiffs,
@@ -653,7 +657,7 @@ describe("conversationAssembler", () => {
   });
 
   it("hydrates history with dedupe and keeps plan/userInput/meta", () => {
-    const snapshot = {
+    const snapshot: NormalizedHistorySnapshot = {
       engine: "claude" as const,
       workspaceId: "ws-2",
       threadId: "claude:session-1",
@@ -704,7 +708,7 @@ describe("conversationAssembler", () => {
   });
 
   it("hydrates history without collapsing same-id items across different kinds", () => {
-    const snapshot = {
+    const snapshot: NormalizedHistorySnapshot = {
       engine: "claude" as const,
       workspaceId: "ws-2",
       threadId: "claude:session-1",
@@ -714,13 +718,13 @@ describe("conversationAssembler", () => {
           kind: "reasoning",
           summary: "先探索目录",
           content: "先看 README。",
-        } as const,
+        },
         {
           id: "shared-1",
           kind: "message",
           role: "assistant",
           text: "# 报告\n\n项目结构如下。",
-        } as const,
+        },
       ],
       plan: null,
       userInputQueue: [],
@@ -749,7 +753,7 @@ describe("conversationAssembler", () => {
   });
 
   it("hydrates history by collapsing equivalent assistant snapshots with different ids", () => {
-    const snapshot = {
+    const snapshot: NormalizedHistorySnapshot = {
       engine: "codex" as const,
       workspaceId: "ws-assistant-hydrate",
       threadId: "thread-assistant-hydrate",
@@ -759,13 +763,13 @@ describe("conversationAssembler", () => {
           kind: "message",
           role: "assistant",
           text: "我先检查仓库结构。",
-        } as const,
+        },
         {
           id: "assistant-history-canonical-1",
           kind: "message",
           role: "assistant",
           text: "我先检查仓库结构。 我先检查仓库结构。",
-        } as const,
+        },
       ],
       plan: null,
       userInputQueue: [],
@@ -794,7 +798,7 @@ describe("conversationAssembler", () => {
   });
 
   it("hydrates history by collapsing equivalent reasoning snapshots with different ids", () => {
-    const snapshot = {
+    const snapshot: NormalizedHistorySnapshot = {
       engine: "codex" as const,
       workspaceId: "ws-reasoning-hydrate",
       threadId: "thread-reasoning-hydrate",
@@ -804,13 +808,13 @@ describe("conversationAssembler", () => {
           kind: "reasoning",
           summary: "先读取目录",
           content: "先读取目录",
-        } as const,
+        },
         {
           id: "reasoning-history-canonical-1",
           kind: "reasoning",
           summary: "先读取目录",
           content: "先读取目录\n再检查入口文件",
-        } as const,
+        },
       ],
       plan: null,
       userInputQueue: [],
@@ -836,6 +840,219 @@ describe("conversationAssembler", () => {
         content: "先读取目录\n再检查入口文件",
       }),
     );
+  });
+
+  it("hydrates Claude long Markdown replay into one stable assistant row", () => {
+    const finalMarkdown = [
+      "# 重构方案",
+      "",
+      "## 目标",
+      "",
+      "- 收口 normalized observation",
+      "- 复用 ConversationAssembler",
+      "",
+      "```ts",
+      "const boundary = \"assembler\";",
+      "```",
+    ].join("\n");
+    const snapshot: NormalizedHistorySnapshot = {
+      engine: "claude" as const,
+      workspaceId: "ws-claude-markdown",
+      threadId: "claude:session-markdown",
+      items: [
+        {
+          id: "assistant-stream-1",
+          kind: "message",
+          role: "assistant",
+          text: finalMarkdown,
+        },
+        {
+          id: "assistant-completed-1",
+          kind: "message",
+          role: "assistant",
+          text: finalMarkdown,
+        },
+      ],
+      plan: null,
+      userInputQueue: [],
+      meta: {
+        workspaceId: "ws-claude-markdown",
+        threadId: "claude:session-markdown",
+        engine: "claude" as const,
+        activeTurnId: null,
+        isThinking: false,
+        heartbeatPulse: null,
+        historyRestoredAtMs: 20,
+      },
+      fallbackWarnings: [],
+    };
+
+    const state = hydrateHistory(snapshot);
+    const assistantRows = state.items.filter(
+      (item): item is Extract<ConversationItem, { kind: "message" }> =>
+        item.kind === "message" && item.role === "assistant",
+    );
+    expect(assistantRows).toHaveLength(1);
+    expect(assistantRows[0]?.text).toBe(finalMarkdown);
+  });
+
+  it("hydrates Claude ExitPlanMode and approval replay without duplicate plan or approval rows", () => {
+    const planText = "PLAN\n\n- inspect\n- implement";
+    const plan: TurnPlan = {
+      turnId: "turn-plan-1",
+      explanation: planText,
+      steps: [
+        { step: "inspect", status: "completed" },
+        { step: "implement", status: "inProgress" },
+      ],
+    };
+    const snapshot: NormalizedHistorySnapshot = {
+      engine: "claude" as const,
+      workspaceId: "ws-claude-plan",
+      threadId: "claude:session-plan",
+      items: [
+        {
+          id: "exit-plan-1",
+          kind: "tool",
+          toolType: "ExitPlanMode",
+          title: "Claude / ExitPlanMode",
+          detail: planText,
+          output: planText,
+          status: "completed",
+        },
+        {
+          id: "exit-plan-1",
+          kind: "tool",
+          toolType: "ExitPlanMode",
+          title: "Claude / ExitPlanMode",
+          detail: planText,
+          output: planText,
+          status: "completed",
+        },
+        {
+          id: "approval-1",
+          kind: "tool",
+          toolType: "fileChange",
+          title: "Approved file change",
+          detail: "Approved and wrote a.ts",
+          output: "Approved and wrote a.ts",
+          status: "completed",
+          changes: [{ path: "a.ts", kind: "add" }],
+        },
+        {
+          id: "approval-1",
+          kind: "tool",
+          toolType: "fileChange",
+          title: "Approved file change",
+          detail: "Approved and wrote a.ts",
+          output: "Approved and wrote a.ts",
+          status: "completed",
+          changes: [{ path: "a.ts", kind: "add" }],
+        },
+      ],
+      plan,
+      userInputQueue: [],
+      meta: {
+        workspaceId: "ws-claude-plan",
+        threadId: "claude:session-plan",
+        engine: "claude" as const,
+        activeTurnId: "turn-plan-1",
+        isThinking: false,
+        heartbeatPulse: null,
+        historyRestoredAtMs: 22,
+      },
+      fallbackWarnings: [],
+    };
+
+    const state = hydrateHistory(snapshot);
+    const exitPlanRows = state.items.filter(
+      (item): item is Extract<ConversationItem, { kind: "tool" }> =>
+        item.kind === "tool" && /exitplanmode/i.test(`${item.toolType} ${item.title}`),
+    );
+    const approvalRows = state.items.filter(
+      (item): item is Extract<ConversationItem, { kind: "tool" }> =>
+        item.kind === "tool" && item.toolType === "fileChange",
+    );
+
+    expect(state.plan).toEqual(plan);
+    expect(exitPlanRows).toHaveLength(1);
+    expect(approvalRows).toHaveLength(1);
+    expect(approvalRows[0]?.changes?.[0]?.path).toBe("a.ts");
+  });
+
+  it("hydrates Gemini assistant/reasoning/tool replay with stable cardinality", () => {
+    const snapshot = {
+      engine: "gemini" as const,
+      workspaceId: "ws-gemini-cardinality",
+      threadId: "gemini:session-cardinality",
+      items: [
+        {
+          id: "assistant-alias-1",
+          kind: "message",
+          role: "assistant",
+          text: "检查完成。",
+        } as const,
+        {
+          id: "assistant-final-1",
+          kind: "message",
+          role: "assistant",
+          text: "检查完成。",
+        } as const,
+        {
+          id: "reasoning-alias-1",
+          kind: "reasoning",
+          summary: "先读取目录",
+          content: "先读取目录",
+        } as const,
+        {
+          id: "reasoning-final-1",
+          kind: "reasoning",
+          summary: "先读取目录",
+          content: "先读取目录\n再检查测试",
+        } as const,
+        {
+          id: "tool-1",
+          kind: "tool",
+          toolType: "commandExecution",
+          title: "Command",
+          detail: "pnpm vitest",
+          output: "running...\n",
+          status: "started",
+        } as const,
+        {
+          id: "tool-1",
+          kind: "tool",
+          toolType: "commandExecution",
+          title: "Command",
+          detail: "pnpm vitest",
+          output: "running...\nok",
+          status: "completed",
+        } as const,
+      ],
+      plan: null,
+      userInputQueue: [],
+      meta: {
+        workspaceId: "ws-gemini-cardinality",
+        threadId: "gemini:session-cardinality",
+        engine: "gemini" as const,
+        activeTurnId: null,
+        isThinking: false,
+        heartbeatPulse: null,
+        historyRestoredAtMs: 21,
+      },
+      fallbackWarnings: [],
+    };
+
+    const state = hydrateHistory(snapshot);
+    expect(state.items.filter((item) => item.kind === "message")).toHaveLength(1);
+    expect(state.items.filter((item) => item.kind === "reasoning")).toHaveLength(1);
+    expect(state.items.filter((item) => item.kind === "tool")).toHaveLength(1);
+    const tool = state.items.find(
+      (item): item is Extract<ConversationItem, { kind: "tool" }> =>
+        item.kind === "tool",
+    );
+    expect(tool?.status).toBe("completed");
+    expect(tool?.output).toBe("running...\nok");
   });
 
   it("does not merge assistant replies across a reasoning boundary", () => {

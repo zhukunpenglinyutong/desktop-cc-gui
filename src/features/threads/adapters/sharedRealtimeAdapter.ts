@@ -81,6 +81,57 @@ function stringifyUnknown(value: unknown): string {
   }
 }
 
+function normalizeToolIdentifier(value: string) {
+  return value.trim().toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+function buildGenericToolCallItem(
+  rawItem: Record<string, unknown>,
+  itemId: string,
+): Extract<ConversationItem, { kind: "tool" }> | null {
+  const rawToolType = asString(
+    rawItem.toolType ??
+      rawItem.tool_type ??
+      rawItem.name ??
+      rawItem.tool ??
+      rawItem.title ??
+      rawItem.type ??
+      "",
+  ).trim();
+  const rawTitle = asString(rawItem.title ?? rawItem.name ?? rawItem.tool ?? rawToolType).trim();
+  const normalizedToolIdentity = normalizeToolIdentifier(`${rawToolType} ${rawTitle}`);
+  if (
+    normalizeToolIdentifier(asString(rawItem.type ?? "")) !== "toolcall" &&
+    !normalizedToolIdentity.includes("exitplanmode")
+  ) {
+    return null;
+  }
+  const detail = asString(
+    rawItem.detail ??
+      rawItem.input ??
+      rawItem.arguments ??
+      rawItem.parameters ??
+      "",
+  );
+  const output = asString(
+    rawItem.output ??
+      rawItem.result ??
+      rawItem.aggregatedOutput ??
+      rawItem.text ??
+      rawItem.content ??
+      "",
+  );
+  return {
+    id: itemId,
+    kind: "tool",
+    toolType: rawToolType || "toolCall",
+    title: rawTitle || "Tool call",
+    detail,
+    status: asString(rawItem.status ?? ""),
+    output,
+  };
+}
+
 function parseJsonLikeRecord(value: unknown): unknown {
   if (typeof value !== "string") {
     return value;
@@ -624,7 +675,7 @@ export function mapCommonRealtimeEvent(
         timestampMs,
       });
     }
-    const converted = buildConversationItem(rawItem);
+    const converted = buildConversationItem(rawItem) ?? buildGenericToolCallItem(rawItem, itemId);
     if (!converted) {
       return null;
     }

@@ -62,6 +62,7 @@
 - `StreamMitigationProfile` SHOULD 允许 engine-level recovery profile（例如 `claude-markdown-stream-recovery`），用于 provider/platform 之外的 Claude long-markdown visible stall 恢复。
 - `ThreadStreamLatencySnapshot` 可区分 `candidateMitigationProfile` 与 `mitigationProfile`：前者允许 UI 在 first delta 后立即使用 safe live surface，后者只能在 render lag / visible stall evidence 出现后写入。
 - `MessageRow` / `MessagesRows` MAY 为 `Codex` latest assistant row 使用 staged `streamingThrottleMs`（例如 short/medium/large 三档），但 MUST 继续维持同一条 live assistant row 的 progressive reveal。
+- `PresentationProfile` MUST 表达 normal baseline render cadence（例如 assistant Markdown throttle、reasoning throttle、Codex staged Markdown 开关）；provider-scoped `StreamMitigationProfile` 只能作为 evidence-triggered override。
 
 ### 3. Contracts
 
@@ -74,6 +75,7 @@
 - plain-text live surface 只允许用于 streaming 中间态；turn 完成后必须回到完整 Markdown 渲染，保持 final output 语义。
 - `Codex` realtime assistant snapshot SHOULD 优先使用 staged Markdown throttle，而不是默认退回 plain-text live surface；只有已有 mitigation profile 显式要求时才可强制 plain-text。
 - realtime 末段的 Markdown throttle / staged rendering MUST 在 turn 完成时收敛到同一条 final Markdown 语义；不得依赖 history reconcile 才恢复结构。
+- `Claude` / `Gemini` normal Markdown 与 reasoning pacing MUST come from baseline `PresentationProfile` first; mitigation activation MUST require render lag / visible stall evidence and MUST NOT be inferred from baseline profile selection alone.
 - 当用户正在 composer 中输入时，live message render MAY 进一步 defer 或降频，但 MUST 保持可见 assistant text 单调增长，且 final output 语义不变。
 - rollback flag 只能关闭 active mitigation，不应关闭 diagnostics 记录。
 
@@ -85,6 +87,7 @@
 | Windows native Claude | 可启用 engine-level profile，无需 Qwen/provider fingerprint | 把 provider/model 当根因 gate |
 | macOS Claude / non-Claude | 保持 baseline render path | 泄漏 Windows Claude mitigation |
 | Codex large streaming | 允许 staged Markdown throttle，结构可渐进出现 | streaming 中默认整段退回 plain text，直到 completion 才恢复结构 |
+| Claude/Gemini baseline profile | 使用 baseline throttle，保持 row cardinality 不变 | 把正常 profile 激活记录成 mitigation |
 | Codex streaming + active typing | composer 输入仍可操作，幕布更新可适度 defer | 输入框与幕布同步卡死，必须等尾段 render 完成才能继续输入 |
 | rollback flag 开启 | active profile 不进入 UI，diagnostics 仍记录 | 直接吞掉 evidence |
 
