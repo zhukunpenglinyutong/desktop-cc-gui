@@ -202,6 +202,52 @@ describe("streamLatencyDiagnostics", () => {
     );
   });
 
+  it("classifies Gemini visible output stall without activating mitigation by default", async () => {
+    await primeThreadStreamLatencyContext({
+      workspaceId: "ws-gemini",
+      threadId: "thread-gemini-visible-stall",
+      engine: "gemini",
+      model: "gemini-2.5-pro",
+    });
+
+    noteThreadTurnStarted({
+      workspaceId: "ws-gemini",
+      threadId: "thread-gemini-visible-stall",
+      turnId: "turn-gemini-visible-stall",
+      startedAt: 4_100,
+    });
+    noteThreadDeltaReceived("thread-gemini-visible-stall", 4_150);
+    noteThreadVisibleTextRendered("thread-gemini-visible-stall", {
+      itemId: "assistant-gemini-visible-stall",
+      visibleTextLength: 3,
+      renderAt: 4_170,
+    });
+    noteThreadDeltaReceived("thread-gemini-visible-stall", 4_220);
+
+    reportThreadVisibleOutputStallAfterFirstDelta("thread-gemini-visible-stall", {
+      stallAt: 4_950,
+      reason: "test-gemini-visible-gap",
+    });
+
+    const snapshot = getThreadStreamLatencySnapshot("thread-gemini-visible-stall");
+
+    expect(snapshot?.latencyCategory).toBe("visible-output-stall-after-first-delta");
+    expect(snapshot?.engine).toBe("gemini");
+    expect(snapshot?.mitigationProfile).toBeNull();
+    expect(resolveActiveThreadStreamMitigation(snapshot)).toBeNull();
+    expect(mocks.appendRendererDiagnostic).toHaveBeenCalledWith(
+      "stream-latency/visible-output-stall-after-first-delta",
+      expect.objectContaining({
+        workspaceId: "ws-gemini",
+        threadId: "thread-gemini-visible-stall",
+        engine: "gemini",
+        model: "gemini-2.5-pro",
+        latencyCategory: "visible-output-stall-after-first-delta",
+        reason: "test-gemini-visible-gap",
+      }),
+    );
+  });
+
   it("activates engine-level Claude markdown stream recovery on macOS after visible stall evidence", async () => {
     mocks.isWindowsPlatform.mockReturnValue(false);
     mocks.isMacPlatform.mockReturnValue(true);

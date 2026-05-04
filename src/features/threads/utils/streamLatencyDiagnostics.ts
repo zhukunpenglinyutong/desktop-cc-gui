@@ -267,6 +267,16 @@ function isCodexStream(
   return snapshot.engine === "codex";
 }
 
+function isVisibleTextDiagnosticsStream(
+  snapshot: Pick<ThreadStreamLatencySnapshot, "engine">,
+) {
+  return (
+    snapshot.engine === "claude" ||
+    snapshot.engine === "codex" ||
+    snapshot.engine === "gemini"
+  );
+}
+
 export function matchesQwenCompatibleClaudeWindowsFingerprint(
   snapshot: Pick<
     ThreadStreamLatencySnapshot,
@@ -825,7 +835,7 @@ export function reportThreadVisibleOutputStallAfterFirstDelta(
   const stallAt = input.stallAt ?? Date.now();
   updateThreadSnapshot(threadId, (current) => {
     if (
-      (!isClaudeStream(current) && !isCodexStream(current)) ||
+      !isVisibleTextDiagnosticsStream(current) ||
       current.startedAt === null ||
       current.firstDeltaAt === null ||
       current.pendingVisibleTextSinceDeltaAt === null ||

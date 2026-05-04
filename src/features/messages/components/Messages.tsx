@@ -1595,7 +1595,7 @@ export const Messages = memo(function Messages({
 
   useEffect(() => {
     if (
-      (activeEngine !== "claude" && activeEngine !== "codex") ||
+      (activeEngine !== "claude" && activeEngine !== "codex" && activeEngine !== "gemini") ||
       !isThinking ||
       !threadId
     ) {
@@ -1609,7 +1609,7 @@ export const Messages = memo(function Messages({
   const handleAssistantVisibleTextRender = useCallback(
     (payload: { itemId: string; visibleText: string }) => {
       if (
-        (activeEngine !== "claude" && activeEngine !== "codex") ||
+        (activeEngine !== "claude" && activeEngine !== "codex" && activeEngine !== "gemini") ||
         !isThinking ||
         !threadId
       ) {

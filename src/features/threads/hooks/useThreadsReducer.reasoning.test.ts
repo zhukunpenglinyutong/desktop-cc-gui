@@ -1,4 +1,8 @@
 import { describe, expect, it } from "vitest";
+import {
+  __getPrepareThreadItemsCallCountForTests,
+  __resetPrepareThreadItemsCallCountForTests,
+} from "../../../utils/threadItems";
 import { initialState, threadReducer } from "./useThreadsReducer";
 import type { ThreadState } from "./useThreadsReducer";
 
@@ -314,6 +318,85 @@ describe("threadReducer reasoning", () => {
       expect(item.content).toBe("先读取目录，再检查配置。");
       expect(item.content).not.toContain("\n\n");
     }
+  });
+
+  it("uses a fast path for repeated same-item reasoning content deltas", () => {
+    const threadId = "gemini:session-reasoning-fast-path";
+    const liveState: ThreadState = {
+      ...initialState,
+      itemsByThread: {
+        [threadId]: [
+          {
+            id: "reasoning-fast-1",
+            kind: "reasoning",
+            summary: "",
+            content: "先读取目录",
+          },
+        ],
+      },
+      threadStatusById: {
+        [threadId]: {
+          isProcessing: true,
+          hasUnread: false,
+          isReviewing: false,
+          isContextCompacting: false,
+          processingStartedAt: Date.now(),
+          lastDurationMs: null,
+          heartbeatPulse: 1,
+        },
+      },
+      activeTurnIdByThread: {
+        [threadId]: "gemini-turn-fast-path",
+      },
+    };
+
+    __resetPrepareThreadItemsCallCountForTests();
+    const next = threadReducer(liveState, {
+      type: "appendReasoningContent",
+      threadId,
+      itemId: "reasoning-fast-1",
+      delta: "，再检查配置。",
+    });
+
+    expect(__getPrepareThreadItemsCallCountForTests()).toBe(0);
+    const items = next.itemsByThread[threadId] ?? [];
+    expect(items).toHaveLength(1);
+    expect(items[0]?.kind).toBe("reasoning");
+    if (items[0]?.kind === "reasoning") {
+      expect(items[0].content).toBe("先读取目录，再检查配置。");
+    }
+  });
+
+  it("keeps canonical derivation for new reasoning item insertion", () => {
+    const threadId = "gemini:session-reasoning-insert-canonical";
+    const liveState: ThreadState = {
+      ...initialState,
+      threadStatusById: {
+        [threadId]: {
+          isProcessing: true,
+          hasUnread: false,
+          isReviewing: false,
+          isContextCompacting: false,
+          processingStartedAt: Date.now(),
+          lastDurationMs: null,
+          heartbeatPulse: 1,
+        },
+      },
+      activeTurnIdByThread: {
+        [threadId]: "gemini-turn-insert-canonical",
+      },
+    };
+
+    __resetPrepareThreadItemsCallCountForTests();
+    const next = threadReducer(liveState, {
+      type: "appendReasoningContent",
+      threadId,
+      itemId: "reasoning-new-1",
+      delta: "新 reasoning 仍需 canonical normalize",
+    });
+
+    expect(__getPrepareThreadItemsCallCountForTests()).toBe(1);
+    expect(next.itemsByThread[threadId]?.[0]?.kind).toBe("reasoning");
   });
 
   it("accepts claude reasoning deltas while processing", () => {

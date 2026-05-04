@@ -182,7 +182,6 @@ function isCodexAssistantMessageItem(
 
 function shouldBatchNormalizedRealtimeEvent(event: NormalizedThreadEvent) {
   return (
-    event.engine === "codex" &&
     isCodexAssistantMessageItem(event.item) &&
     (event.operation === "itemStarted" || event.operation === "itemUpdated")
   );
@@ -410,11 +409,6 @@ export function useThreadItemEvents({
 
   const enqueueRealtimeDeltaOperation = useCallback(
     (operation: RealtimeDeltaOperation) => {
-      if (operation.kind === "agentDelta" && isGeminiThread(operation.threadId)) {
-        applyRealtimeDeltaOperation(operation);
-        safeMessageActivity();
-        return;
-      }
       if (!enableRealtimeBatchingRef.current) {
         applyRealtimeDeltaOperation(operation);
         safeMessageActivity();

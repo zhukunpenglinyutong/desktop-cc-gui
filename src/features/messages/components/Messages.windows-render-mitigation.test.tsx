@@ -121,6 +121,34 @@ describe("Messages desktop render-safe mode", () => {
     expect(container.firstElementChild?.className).not.toContain("claude-render-safe");
   });
 
+  it("records visible render diagnostics for Gemini live conversations", async () => {
+    renderMessages({
+      activeEngine: "gemini",
+      items: [
+        {
+          id: "user-gemini",
+          kind: "message",
+          role: "user",
+          text: "继续",
+        },
+        {
+          id: "assistant-gemini",
+          kind: "message",
+          role: "assistant",
+          text: "Gemini 正在输出",
+        },
+      ],
+    });
+
+    expect(mocks.noteThreadVisibleRender).toHaveBeenCalledWith("thread-1", {
+      visibleItemCount: expect.any(Number),
+    });
+    expect(mocks.noteThreadVisibleTextRendered).toHaveBeenCalledWith("thread-1", {
+      itemId: "assistant-gemini",
+      visibleTextLength: "Gemini 正在输出".length,
+    });
+  });
+
   it("uses normalized conversation state when prop thinking flag is stale", () => {
     mocks.isMacPlatform.mockReturnValue(true);
 

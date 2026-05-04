@@ -1,5 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 import type { ConversationItem, ThreadSummary } from "../../../types";
+import {
+  __getPrepareThreadItemsCallCountForTests,
+  __resetPrepareThreadItemsCallCountForTests,
+} from "../../../utils/threadItems";
 import { initialState, threadReducer } from "./useThreadsReducer";
 import type { ThreadState } from "./useThreadsReducer";
 
@@ -1904,6 +1908,53 @@ describe("threadReducer", () => {
       delta: "hello",
     });
     expect(next).toBe(baseState);
+  });
+
+  it("uses a fast path for repeated same-item running tool output deltas", () => {
+    const baseTool: ConversationItem = {
+      id: "cmd-1",
+      kind: "tool",
+      toolType: "commandExecution",
+      title: "Command",
+      detail: "",
+      status: "running",
+      output: "hello",
+    };
+    const baseState: ThreadState = {
+      ...initialState,
+      itemsByThread: {
+        "thread-1": [baseTool],
+      },
+    };
+
+    __resetPrepareThreadItemsCallCountForTests();
+    const next = threadReducer(baseState, {
+      type: "appendToolOutput",
+      threadId: "thread-1",
+      itemId: "cmd-1",
+      delta: " world",
+    });
+
+    expect(__getPrepareThreadItemsCallCountForTests()).toBe(0);
+    const item = next.itemsByThread["thread-1"]?.[0];
+    expect(item?.kind).toBe("tool");
+    if (item?.kind === "tool") {
+      expect(item.output).toBe("hello world");
+      expect(item.status).toBe("running");
+    }
+  });
+
+  it("keeps canonical derivation when creating a tool output placeholder", () => {
+    __resetPrepareThreadItemsCallCountForTests();
+    const next = threadReducer(initialState, {
+      type: "appendToolOutput",
+      threadId: "thread-1",
+      itemId: "cmd-1",
+      delta: "initial output",
+    });
+
+    expect(__getPrepareThreadItemsCallCountForTests()).toBe(1);
+    expect(next.itemsByThread["thread-1"]?.[0]?.kind).toBe("tool");
   });
 
   it("tracks request user input queue", () => {

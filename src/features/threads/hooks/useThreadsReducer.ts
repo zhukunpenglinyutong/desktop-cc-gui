@@ -2133,6 +2133,17 @@ export function threadReducer(state: ThreadState, action: ThreadAction): ThreadS
         ...base,
         summary: nextSummary,
       } as ConversationItem;
+      if (INCREMENTAL_DERIVATION_ENABLED && index >= 0) {
+        const next = [...list];
+        next[index] = normalizeItem(updated);
+        return {
+          ...state,
+          itemsByThread: {
+            ...state.itemsByThread,
+            [action.threadId]: next,
+          },
+        };
+      }
       const next = insertLiveReasoningItem(
         list,
         index,
@@ -2184,6 +2195,17 @@ export function threadReducer(state: ThreadState, action: ThreadAction): ThreadS
         ...base,
         summary: nextSummary,
       } as ConversationItem;
+      if (INCREMENTAL_DERIVATION_ENABLED && index >= 0) {
+        const next = [...list];
+        next[index] = normalizeItem(updated);
+        return {
+          ...state,
+          itemsByThread: {
+            ...state.itemsByThread,
+            [action.threadId]: next,
+          },
+        };
+      }
       const next = insertLiveReasoningItem(
         list,
         index,
@@ -2356,6 +2378,17 @@ export function threadReducer(state: ThreadState, action: ThreadAction): ThreadS
         ...base,
         content: nextContent,
       } as ConversationItem;
+      if (INCREMENTAL_DERIVATION_ENABLED && index >= 0) {
+        const next = [...list];
+        next[index] = normalizeItem(updated);
+        return {
+          ...state,
+          itemsByThread: {
+            ...state.itemsByThread,
+            [action.threadId]: next,
+          },
+        };
+      }
       const next = insertLiveReasoningItem(
         list,
         index,
@@ -2422,6 +2455,15 @@ export function threadReducer(state: ThreadState, action: ThreadAction): ThreadS
       } as ConversationItem;
       const next = [...list];
       next[index] = updated;
+      if (INCREMENTAL_DERIVATION_ENABLED) {
+        return {
+          ...state,
+          itemsByThread: {
+            ...state.itemsByThread,
+            [action.threadId]: next,
+          },
+        };
+      }
       return {
         ...state,
         itemsByThread: {

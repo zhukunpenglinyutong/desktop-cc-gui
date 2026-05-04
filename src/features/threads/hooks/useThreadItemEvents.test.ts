@@ -437,6 +437,84 @@ describe("useThreadItemEvents", () => {
     vi.useRealTimers();
   });
 
+  it("batches gemini normalized assistant snapshots by item identity", () => {
+    vi.useFakeTimers();
+    window.localStorage.setItem("ccgui.perf.realtimeBatching", "1");
+    const { result, dispatch, markProcessing, safeMessageActivity } = makeOptions();
+
+    act(() => {
+      result.current.onNormalizedRealtimeEvent({
+        engine: "gemini",
+        workspaceId: "ws-1",
+        threadId: "gemini:session-1",
+        eventId: "evt-1",
+        itemKind: "message",
+        timestampMs: 1,
+        operation: "itemUpdated",
+        sourceMethod: "item/updated",
+        item: {
+          id: "assistant-1",
+          kind: "message",
+          role: "assistant",
+          text: "第一段",
+          engineSource: "gemini",
+        },
+      });
+      result.current.onNormalizedRealtimeEvent({
+        engine: "gemini",
+        workspaceId: "ws-1",
+        threadId: "gemini:session-1",
+        eventId: "evt-2",
+        itemKind: "message",
+        timestampMs: 2,
+        operation: "itemUpdated",
+        sourceMethod: "item/updated",
+        item: {
+          id: "assistant-1",
+          kind: "message",
+          role: "assistant",
+          text: "第一段\n第二段",
+          engineSource: "gemini",
+        },
+      });
+    });
+
+    expect(dispatch).not.toHaveBeenCalled();
+    expect(markProcessing).not.toHaveBeenCalled();
+    expect(safeMessageActivity).not.toHaveBeenCalled();
+
+    act(() => {
+      vi.advanceTimersByTime(20);
+    });
+
+    expect(dispatch).toHaveBeenNthCalledWith(1, {
+      type: "ensureThread",
+      workspaceId: "ws-1",
+      threadId: "gemini:session-1",
+      engine: "gemini",
+    });
+    expect(markProcessing).toHaveBeenCalledTimes(1);
+    expect(markProcessing).toHaveBeenCalledWith("gemini:session-1", true);
+    expect(dispatch).toHaveBeenNthCalledWith(2, {
+      type: "applyNormalizedRealtimeEvent",
+      workspaceId: "ws-1",
+      threadId: "gemini:session-1",
+      event: expect.objectContaining({
+        operation: "itemUpdated",
+        item: expect.objectContaining({
+          id: "assistant-1",
+          kind: "message",
+          role: "assistant",
+          text: "第一段\n第二段",
+        }),
+      }),
+      hasCustomName: false,
+    });
+    expect(safeMessageActivity).toHaveBeenCalledTimes(1);
+
+    vi.useRealTimers();
+  });
+
   it("flushes pending codex assistant snapshots before final completed payloads", () => {
     vi.useFakeTimers();
     window.localStorage.setItem("ccgui.perf.realtimeBatching", "1");
@@ -903,9 +981,52 @@ describe("useThreadItemEvents", () => {
     expect(onAgentMessageCompletedExternal).not.toHaveBeenCalled();
   });
 
-  it("bypasses realtime batching for gemini agent deltas", () => {
+  it("batches gemini agent deltas in the realtime flush window", () => {
     vi.useFakeTimers();
     window.localStorage.setItem("ccgui.perf.realtimeBatching", "1");
+    const { result, dispatch, markProcessing, safeMessageActivity } = makeOptions();
+
+    act(() => {
+      result.current.onAgentMessageDelta({
+        workspaceId: "ws-1",
+        threadId: "gemini:session-1",
+        itemId: "assistant-1",
+        delta: "第一段",
+      });
+    });
+
+    expect(dispatch).not.toHaveBeenCalled();
+    expect(markProcessing).not.toHaveBeenCalled();
+    expect(safeMessageActivity).not.toHaveBeenCalled();
+
+    act(() => {
+      vi.advanceTimersByTime(20);
+    });
+
+    expect(dispatch).toHaveBeenNthCalledWith(1, {
+      type: "ensureThread",
+      workspaceId: "ws-1",
+      threadId: "gemini:session-1",
+      engine: "gemini",
+    });
+    expect(markProcessing).toHaveBeenCalledWith("gemini:session-1", true);
+    expect(dispatch).toHaveBeenNthCalledWith(2, {
+      type: "appendAgentDelta",
+      workspaceId: "ws-1",
+      threadId: "gemini:session-1",
+      itemId: "assistant-1",
+      delta: "第一段",
+      hasCustomName: false,
+    });
+    expect(safeMessageActivity).toHaveBeenCalledTimes(1);
+
+    expect(dispatch).toHaveBeenCalledTimes(2);
+    vi.useRealTimers();
+  });
+
+  it("dispatches gemini agent deltas immediately when realtime batching is disabled", () => {
+    vi.useFakeTimers();
+    window.localStorage.setItem("ccgui.perf.realtimeBatching", "0");
     const { result, dispatch, markProcessing, safeMessageActivity } = makeOptions();
 
     act(() => {
