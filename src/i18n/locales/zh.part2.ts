@@ -1748,7 +1748,6 @@ const zhPart2 = {
     collapseLatestUserMessage: "收起",
     jumpToConversationMessage: "跳到消息",
     userConversationSequence: "新→旧 {{index}}",
-    userConversationChronologicalIndex: "原始顺序 {{index}}",
     planGenerating: "正在生成计划...",
     planSwitchHint: "切换到 Plan 模式后可查看计划",
     expand: "展开状态面板",

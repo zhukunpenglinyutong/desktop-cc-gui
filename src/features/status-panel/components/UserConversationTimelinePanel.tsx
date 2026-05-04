@@ -1,4 +1,5 @@
 import { memo, useEffect, useMemo, useState } from "react";
+import { ArrowUpRight, ChevronDown, ChevronUp, Images, ListOrdered } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import type { UserConversationTimeline } from "../utils/userConversationTimeline";
 
@@ -64,60 +65,86 @@ export const UserConversationTimelinePanel = memo(function UserConversationTimel
         );
         return (
           <article key={item.id} className="sp-user-conversation-item">
-            <div className="sp-user-conversation-header">
-              <div className="sp-user-conversation-order">
-                <span className="sp-user-conversation-order-primary">
-                  {t("statusPanel.userConversationSequence", {
-                    index: newestToOldestLabel,
-                  })}
-                </span>
-                <span className="sp-user-conversation-order-secondary">
-                  {t("statusPanel.userConversationChronologicalIndex", {
-                    index: chronologicalLabel,
-                  })}
-                </span>
-              </div>
-              <button
-                type="button"
-                className="sp-user-conversation-jump"
-                onClick={() => onJumpToMessage?.(item.id)}
-              >
-                {t("statusPanel.jumpToConversationMessage")}
-              </button>
+            <div className="sp-user-conversation-rail" aria-hidden="true">
+              <span className="sp-user-conversation-node" />
+              <span className="sp-user-conversation-stem" />
             </div>
-
-            {hasText ? (
-              <pre
-                className={`sp-user-conversation-text${
-                  !item.expanded && item.isExpandable ? " is-collapsed" : ""
-                }`}
-              >
-                {item.text}
-              </pre>
-            ) : null}
-
-            {hasImages ? (
-              <div className="sp-user-conversation-meta">
-                {t("statusPanel.latestUserMessageImages", { count: item.imageCount })}
+            <div className="sp-user-conversation-card">
+              <div className="sp-user-conversation-header">
+                <div className="sp-user-conversation-order">
+                  <span className="sp-user-conversation-order-primary">
+                    <ListOrdered size={12} className="sp-user-conversation-inline-icon" aria-hidden="true" />
+                    {t("statusPanel.userConversationSequence", {
+                      index: newestToOldestLabel,
+                    })}
+                  </span>
+                  <span className="sp-user-conversation-order-secondary">
+                    <span className="sp-user-conversation-order-index">{chronologicalLabel}</span>
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  className="sp-user-conversation-jump"
+                  onClick={() => onJumpToMessage?.(item.id)}
+                >
+                  <ArrowUpRight size={12} className="sp-user-conversation-inline-icon" aria-hidden="true" />
+                  {t("statusPanel.jumpToConversationMessage")}
+                </button>
               </div>
-            ) : null}
 
-            {item.isExpandable ? (
-              <button
-                type="button"
-                className="sp-user-conversation-toggle"
-                onClick={() =>
-                  setExpandedIds((current) => ({
-                    ...current,
-                    [item.id]: !current[item.id],
-                  }))
-                }
-              >
-                {item.expanded
-                  ? t("statusPanel.collapseLatestUserMessage")
-                  : t("statusPanel.expandLatestUserMessage")}
-              </button>
-            ) : null}
+              {hasText ? (
+                <pre
+                  className={`sp-user-conversation-text${
+                    !item.expanded && item.isExpandable ? " is-collapsed" : ""
+                  }`}
+                >
+                  {item.text}
+                </pre>
+              ) : null}
+
+              {(hasImages || item.isExpandable) && (
+                <div className="sp-user-conversation-footer">
+                  {hasImages ? (
+                    <div className="sp-user-conversation-meta">
+                      <Images size={12} className="sp-user-conversation-inline-icon" aria-hidden="true" />
+                      {t("statusPanel.latestUserMessageImages", { count: item.imageCount })}
+                    </div>
+                  ) : (
+                    <span />
+                  )}
+
+                  {item.isExpandable ? (
+                    <button
+                      type="button"
+                      className="sp-user-conversation-toggle"
+                      onClick={() =>
+                        setExpandedIds((current) => ({
+                          ...current,
+                          [item.id]: !current[item.id],
+                        }))
+                      }
+                    >
+                      {item.expanded ? (
+                        <ChevronUp
+                          size={12}
+                          className="sp-user-conversation-inline-icon"
+                          aria-hidden="true"
+                        />
+                      ) : (
+                        <ChevronDown
+                          size={12}
+                          className="sp-user-conversation-inline-icon"
+                          aria-hidden="true"
+                        />
+                      )}
+                      {item.expanded
+                        ? t("statusPanel.collapseLatestUserMessage")
+                        : t("statusPanel.expandLatestUserMessage")}
+                    </button>
+                  ) : null}
+                </div>
+              )}
+            </div>
           </article>
         );
       })}

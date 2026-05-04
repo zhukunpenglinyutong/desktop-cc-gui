@@ -10,6 +10,7 @@ use crate::backend::app_server::WorkspaceSession;
 use crate::codex::args::resolve_workspace_codex_args;
 use crate::codex::home::resolve_workspace_codex_home;
 use crate::runtime::RuntimeAcquireDisposition;
+use crate::shared::workspace_snapshot::resolve_workspace_and_parent;
 use crate::storage::{write_workspaces, write_workspaces_preserving_existing};
 use crate::types::{
     AppSettings, WorkspaceEntry, WorkspaceInfo, WorkspaceKind, WorkspaceSettings, WorktreeInfo,
@@ -117,23 +118,6 @@ pub(crate) fn workspace_requires_persistent_session(entry: &WorkspaceEntry) -> b
         .as_deref()
         .map(|value| value.eq_ignore_ascii_case("codex"))
         .unwrap_or(false)
-}
-
-async fn resolve_entry_and_parent(
-    workspaces: &Mutex<HashMap<String, WorkspaceEntry>>,
-    workspace_id: &str,
-) -> Result<(WorkspaceEntry, Option<WorkspaceEntry>), String> {
-    let workspaces = workspaces.lock().await;
-    let entry = workspaces
-        .get(workspace_id)
-        .cloned()
-        .ok_or_else(|| "workspace not found".to_string())?;
-    let parent_entry = entry
-        .parent_id
-        .as_ref()
-        .and_then(|parent_id| workspaces.get(parent_id))
-        .cloned();
-    Ok((entry, parent_entry))
 }
 
 pub(crate) async fn restart_all_connected_sessions_core<F, Fut>(
@@ -602,7 +586,7 @@ where
     F: Fn(WorkspaceEntry, Option<String>, Option<String>, Option<PathBuf>) -> Fut,
     Fut: Future<Output = Result<Arc<WorkspaceSession>, String>>,
 {
-    let (entry, parent_entry) = resolve_entry_and_parent(workspaces, &workspace_id).await?;
+    let (entry, parent_entry) = resolve_workspace_and_parent(workspaces, &workspace_id).await?;
     loop {
         let existing_session = {
             let sessions = sessions.lock().await;

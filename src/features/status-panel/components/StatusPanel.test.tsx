@@ -27,6 +27,17 @@ const taskToolItem: Extract<ConversationItem, { kind: "tool" }> = {
   output: "done",
 };
 
+const todoWriteToolItem: Extract<ConversationItem, { kind: "tool" }> = {
+  id: "tool-todo-1",
+  kind: "tool",
+  toolType: "unknown",
+  title: "Tool: TodoWrite",
+  detail: JSON.stringify({
+    todos: [{ content: "review plan", status: "completed" }],
+  }),
+  status: "completed",
+};
+
 const claudeAgentToolItem: Extract<ConversationItem, { kind: "tool" }> = {
   id: "call_fa8bd06e774141c4a7f29a79",
   kind: "tool",
@@ -161,19 +172,19 @@ describe("StatusPanel", () => {
     expect(container.querySelector(".sp-root")).toBeNull();
   });
 
-  it("shows legacy tabs when expanded even without status data", () => {
+  it("shows only edits tab when expanded without status data", () => {
     render(
       <StatusPanel
         items={[]}
         isProcessing={false}
       />,
     );
-    expect(screen.getByText("statusPanel.tabTodos")).toBeTruthy();
-    expect(screen.getByText("statusPanel.tabSubagents")).toBeTruthy();
     expect(screen.getByText("statusPanel.tabEdits")).toBeTruthy();
+    expect(screen.queryByText("statusPanel.tabTodos")).toBeNull();
+    expect(screen.queryByText("statusPanel.tabSubagents")).toBeNull();
   });
 
-  it("shows legacy tabs and plan together without half split", () => {
+  it("shows edits and plan together without half split when todo and subagent are empty", () => {
     render(
       <StatusPanel
         items={[editToolItem]}
@@ -182,8 +193,8 @@ describe("StatusPanel", () => {
         isPlanMode
       />,
     );
-    expect(screen.getByText("statusPanel.tabTodos")).toBeTruthy();
-    expect(screen.getByText("statusPanel.tabSubagents")).toBeTruthy();
+    expect(screen.queryByText("statusPanel.tabTodos")).toBeNull();
+    expect(screen.queryByText("statusPanel.tabSubagents")).toBeNull();
     const editTab = screen.getByText("statusPanel.tabEdits").closest("button");
     const planTab = screen.getByText("Plan").closest("button");
     expect(editTab?.className).not.toContain("sp-tab-half");
@@ -265,10 +276,10 @@ describe("StatusPanel", () => {
     );
 
     expect(screen.getByText("User Conversation")).toBeTruthy();
-    expect(screen.queryByText("Images: 2")).toBeNull();
+    expect(screen.getByText("Images: 2")).toBeTruthy();
   });
 
-  it("keeps latest user message tab after edits for both codex and non-codex dock layouts", () => {
+  it("keeps latest user message tab before edits for both codex and non-codex dock layouts", () => {
     const { rerender } = render(
       <StatusPanel
         items={latestUserMessageItems}
@@ -281,10 +292,8 @@ describe("StatusPanel", () => {
       (node) => node.textContent,
     );
     expect(labels).toEqual([
-      "statusPanel.tabTodos",
-      "statusPanel.tabSubagents",
-      "statusPanel.tabEdits",
       "User Conversation",
+      "statusPanel.tabEdits",
     ]);
 
     rerender(
@@ -300,15 +309,13 @@ describe("StatusPanel", () => {
       (node) => node.textContent,
     );
     expect(labels).toEqual([
-      "statusPanel.tabTodos",
-      "statusPanel.tabAgents",
-      "statusPanel.tabEdits",
       "User Conversation",
+      "statusPanel.tabEdits",
     ]);
   });
 
   it("removes hidden dock tabs without clearing available panel data", () => {
-    render(
+    const { container } = render(
       <StatusPanel
         items={[...latestUserMessageItems, editToolItem]}
         isProcessing={false}
@@ -324,9 +331,40 @@ describe("StatusPanel", () => {
     const labels = Array.from(document.querySelectorAll(".sp-tabs--dock .sp-tab-label")).map(
       (node) => node.textContent,
     );
-    expect(labels).toEqual(["statusPanel.tabTodos"]);
+    expect(labels).toEqual([]);
+    expect(container.querySelector(".sp-root--dock")).toBeNull();
     expect(screen.queryByText("statusPanel.tabEdits")).toBeNull();
     expect(screen.queryByText("User Conversation")).toBeNull();
+  });
+
+  it("shows dock todo and subagent tabs again once status data exists", () => {
+    render(
+      <StatusPanel
+        items={[todoWriteToolItem, collabSpawnToolItem, ...latestUserMessageItems]}
+        isProcessing={false}
+        variant="dock"
+        isCodexEngine
+        activeThreadId="thread-root"
+        itemsByThread={{
+          "thread-root": [collabSpawnToolItem],
+          "agent-7": [],
+        }}
+        threadParentById={{ "agent-7": "thread-root" }}
+        threadStatusById={{ "agent-7": { isProcessing: true } }}
+      />,
+    );
+
+    const labels = Array.from(document.querySelectorAll(".sp-tabs--dock .sp-tab-label")).map(
+      (node) => node.textContent,
+    );
+    expect(labels).toEqual([
+      "User Conversation",
+      "statusPanel.tabTodos",
+      "statusPanel.tabAgents",
+      "statusPanel.tabEdits",
+    ]);
+    expect(screen.getByText("1/1")).toBeTruthy();
+    expect(screen.getByText("0/1")).toBeTruthy();
   });
 
   it("shows user conversation timeline in reverse chronological order with image summary", () => {
@@ -345,7 +383,7 @@ describe("StatusPanel", () => {
     expect(renderedMessages[1]).toContain("第一条消息");
     expect(screen.getByText("Images: 2")).toBeTruthy();
     expect(screen.getByText("Newest to oldest 1/2")).toBeTruthy();
-    expect(screen.getByText("Original order #2")).toBeTruthy();
+    expect(screen.getByText("#2")).toBeTruthy();
     expect(screen.getByText("Expand")).toBeTruthy();
   });
 
@@ -466,6 +504,7 @@ describe("StatusPanel", () => {
 
     expect(screen.queryByText("Plan")).toBeNull();
     expect(screen.getByText("statusPanel.tabTodos")).toBeTruthy();
+    fireEvent.click(screen.getByText("statusPanel.tabTodos"));
     expect(screen.getByText("step 1")).toBeTruthy();
     expect(screen.getByText("step 2")).toBeTruthy();
   });
@@ -482,8 +521,8 @@ describe("StatusPanel", () => {
     );
 
     expect(screen.getByText("statusPanel.tabTodos")).toBeTruthy();
-    expect(screen.getByText("statusPanel.tabAgents")).toBeTruthy();
     expect(screen.getByText("statusPanel.tabEdits")).toBeTruthy();
+    expect(screen.queryByText("statusPanel.tabAgents")).toBeNull();
     expect(screen.queryByText("Plan")).toBeNull();
   });
 
@@ -503,7 +542,7 @@ describe("StatusPanel", () => {
     expect(screen.getByText("step 2")).toBeTruthy();
   });
 
-  it("shows zero-state codex tabs when there is no status data", () => {
+  it("hides zero-state tabs when there is no status data", () => {
     render(
       <StatusPanel
         items={[]}
@@ -512,10 +551,10 @@ describe("StatusPanel", () => {
       />,
     );
 
-    expect(screen.getByText("statusPanel.tabTodos")).toBeTruthy();
-    expect(screen.getAllByText("0/0").length).toBeGreaterThanOrEqual(2);
-    expect(screen.getByText("statusPanel.tabAgents")).toBeTruthy();
     expect(screen.getByText("statusPanel.tabEdits")).toBeTruthy();
+    expect(screen.queryByText("statusPanel.tabTodos")).toBeNull();
+    expect(screen.queryByText("statusPanel.tabAgents")).toBeNull();
+    expect(screen.queryByText("0/0")).toBeNull();
   });
 
   it("aggregates collab agents from the current root subtree", () => {

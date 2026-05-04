@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-9.md`
-- **Total Sessions**: 305
+- **Total Sessions**: 308
 - **Last Active**: 2026-05-04
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-9.md` | ~1749 | Active |
+| `journal-9.md` | ~1920 | Active |
 | `journal-8.md` | ~1996 | Archived |
 | `journal-7.md` | ~1950 | Archived |
 | `journal-6.md` | ~1961 | Archived |
@@ -37,6 +37,9 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 308 | 2026-05-04 | 记录第一阶段架构硬化收敛 | `9ba009e7` | `feature/v-0.4.13` |
+| 307 | 2026-05-04 | 调整状态面板零态标签显示规则 | `b8a950b2` | `feature/v-0.4.13` |
+| 306 | 2026-05-04 | 重构用户对话时间线样式 | `c873a539` | `feature/v-0.4.13` |
 | 305 | 2026-05-04 | 优化 Codex 实时幕布收敛 | `c90f5183` | `feature/v-0.4.13` |
 | 304 | 2026-05-04 | 优化 Codex 长幕布流式渲染 | `72db8824` | `feature/v-0.4.13` |
 | 303 | 2026-05-04 | 优化实时对话客户端性能 | `bb58e69c` | `feature/v-0.4.13` |

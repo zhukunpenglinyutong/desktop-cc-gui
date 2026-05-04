@@ -17,6 +17,9 @@ use crate::codex::config as codex_config;
 use crate::codex::home::{resolve_default_codex_home, resolve_workspace_codex_home};
 use crate::rules;
 use crate::shared::account::{build_account_response, read_auth_account};
+use crate::shared::workspace_snapshot::{
+    resolve_workspace_and_parent, resolve_workspace_parent_and_settings,
+};
 use crate::types::{AppSettings, WorkspaceEntry};
 
 const THREAD_COMPACTION_METHOD_CANDIDATES: [&str; 3] = [
@@ -332,23 +335,6 @@ async fn get_session_clone(
         .get(workspace_id)
         .cloned()
         .ok_or_else(|| "workspace not connected".to_string())
-}
-
-async fn resolve_workspace_and_parent(
-    workspaces: &Mutex<HashMap<String, WorkspaceEntry>>,
-    workspace_id: &str,
-) -> Result<(WorkspaceEntry, Option<WorkspaceEntry>), String> {
-    let workspaces = workspaces.lock().await;
-    let entry = workspaces
-        .get(workspace_id)
-        .cloned()
-        .ok_or_else(|| "workspace not found".to_string())?;
-    let parent_entry = entry
-        .parent_id
-        .as_ref()
-        .and_then(|parent_id| workspaces.get(parent_id))
-        .cloned();
-    Ok((entry, parent_entry))
 }
 
 async fn resolve_codex_home_for_workspace_core(
@@ -1002,20 +988,8 @@ pub(crate) async fn codex_login_core(
     codex_login_cancels: &Mutex<HashMap<String, oneshot::Sender<()>>>,
     workspace_id: String,
 ) -> Result<Value, String> {
-    let (entry, parent_entry, settings) = {
-        let workspaces = workspaces.lock().await;
-        let entry = workspaces
-            .get(&workspace_id)
-            .ok_or_else(|| "workspace not found".to_string())?
-            .clone();
-        let parent_entry = entry
-            .parent_id
-            .as_ref()
-            .and_then(|parent_id| workspaces.get(parent_id))
-            .cloned();
-        let settings = app_settings.lock().await.clone();
-        (entry, parent_entry, settings)
-    };
+    let (entry, parent_entry, settings) =
+        resolve_workspace_parent_and_settings(workspaces, app_settings, &workspace_id).await?;
 
     let codex_bin = entry
         .codex_bin

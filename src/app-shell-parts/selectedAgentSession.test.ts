@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  getThreadAgentSelectionStorageKey,
+  normalizeSelectedAgentOption,
+  parseStoredThreadAgentSelectionEntry,
   shouldApplyDraftAgentToThread,
   shouldMigrateSelectedAgentBetweenThreadIds,
 } from "./selectedAgentSession";
@@ -38,6 +41,43 @@ describe("shouldApplyDraftAgentToThread", () => {
         activeThreadId: "claude-pending-123",
       }),
     ).toBe(false);
+  });
+});
+
+describe("agent session persistence helpers", () => {
+  it("normalizes stored agent options and resolves blank prompt to null", () => {
+    expect(
+      normalizeSelectedAgentOption({
+        id: " backend ",
+        name: " 后端架构师 ",
+        prompt: "   ",
+      }),
+    ).toEqual({
+      id: "backend",
+      name: "后端架构师",
+      prompt: null,
+      icon: "agent-robot-02",
+    });
+  });
+
+  it("parses missing and invalid stored entries safely", () => {
+    expect(parseStoredThreadAgentSelectionEntry(undefined)).toEqual({
+      exists: false,
+      value: null,
+    });
+    expect(parseStoredThreadAgentSelectionEntry({ broken: true })).toEqual({
+      exists: true,
+      value: null,
+    });
+  });
+
+  it("builds workspace-scoped agent selection storage keys", () => {
+    expect(getThreadAgentSelectionStorageKey("ws-1", "claude:thread-1")).toBe(
+      "composer.selectedAgentByThread.ws-1:claude:thread-1",
+    );
+    expect(getThreadAgentSelectionStorageKey(null, "claude:thread-1")).toBe(
+      "composer.selectedAgentByThread.__workspace__unknown__:claude:thread-1",
+    );
   });
 });
 

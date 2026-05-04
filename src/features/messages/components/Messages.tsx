@@ -99,7 +99,7 @@ import {
   type RuntimeReconnectRecoveryCallbackResult,
 } from "./runtimeReconnect";
 
-const MESSAGE_JUMP_EVENT_NAME = "mossx:jump-to-message";
+const MESSAGE_JUMP_EVENT_NAME = "ccgui:jump-to-message";
 const ASSISTANT_FINALIZING_LIVE_WINDOW_MS = 320;
 const CODEX_FINALIZING_LIVE_WINDOW_MS = 6_000;
 

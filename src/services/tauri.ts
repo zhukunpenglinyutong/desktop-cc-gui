@@ -10,10 +10,7 @@ import type {
   UpdateEmailSenderSettingsRequest,
   LocalUsageSnapshot,
   LocalUsageStatistics,
-  RuntimePoolSnapshot,
-  DiagnosticsBundleExportResult,
   WorkspaceInfo,
-  WorkspaceSettings,
   EngineStatus,
   EngineType,
   EngineModelInfo,
@@ -180,78 +177,43 @@ export {
   setSelectedAgentConfig,
   updateAgentConfig,
 } from "./tauri/agents";
-
-function isMissingTauriInvokeError(error: unknown) {
-  return error instanceof TypeError && (error.message.includes("reading 'invoke'") || error.message.includes('reading "invoke"'));
-}
-
-const WEB_SERVICE_CLI_ENGINE_MESSAGE = "Web 服务当前仅支持 Codex CLI。请切换到 Codex CLI（Web service currently supports Codex CLI only）.";
-let daemonEngineRpcSupported: boolean | null = null;
-
-function normalizeInvokeErrorMessage(error: unknown): string {
-  if (error instanceof Error) {
-    return error.message;
-  }
-  if (typeof error === "string") {
-    return error;
-  }
-  try {
-    return JSON.stringify(error);
-  } catch {
-    return String(error);
-  }
-}
-
-function isUnknownMethodError(error: unknown, method: string): boolean {
-  return normalizeInvokeErrorMessage(error).toLowerCase().includes(`unknown method: ${method}`);
-}
-
-function shouldUseWebServiceFallback(): boolean {
-  return isWebServiceRuntime();
-}
-
-export function isWebServiceRuntime(): boolean {
-  if (typeof window === "undefined") {
-    return false;
-  }
-  return window.__MOSSX_WEB_SERVICE__ === true;
-}
-
-function isEngineRpcFallbackMode(): boolean {
-  return shouldUseWebServiceFallback() && daemonEngineRpcSupported === false;
-}
-
-function webServiceEngineFeatures(engineType: EngineType): EngineStatus["features"] {
-  if (engineType === "codex") {
-    return {
-      streaming: true,
-      reasoning: true,
-      toolUse: true,
-      imageInput: true,
-      sessionContinuation: true,
-    };
-  }
-  return {
-    streaming: true,
-    reasoning: true,
-    toolUse: true,
-    imageInput: false,
-    sessionContinuation: true,
-  };
-}
-
-function webServiceCodexOnlyStatuses(): EngineStatus[] {
-  const types: EngineType[] = ["claude", "codex", "gemini", "opencode"];
-  return types.map((engineType) => ({
-    engineType,
-    installed: engineType === "codex",
-    version: engineType === "codex" ? "web-service" : null,
-    binPath: null,
-    features: webServiceEngineFeatures(engineType),
-    models: [],
-    error: engineType === "codex" ? null : WEB_SERVICE_CLI_ENGINE_MESSAGE,
-  }));
-}
+export type { WorktreeSetupStatus } from "./tauri/workspaceRuntime";
+export {
+  addClone,
+  addWorkspace,
+  addWorktree,
+  applyWorktreeChanges,
+  connectWorkspace,
+  ensureRuntimeReady,
+  ensureWorkspacePathDir,
+  exportDiagnosticsBundle,
+  getOpenAppIcon,
+  getRuntimePoolSnapshot,
+  getWorktreeSetupStatus,
+  isWorkspacePathDir,
+  markWorktreeSetupRan,
+  mutateRuntimePool,
+  openNewWindow,
+  openWorkspaceIn,
+  readPanelLockPasswordFile,
+  removeWorkspace,
+  removeWorktree,
+  renameWorktree,
+  renameWorktreeUpstream,
+  updateWorkspaceCodexBin,
+  updateWorkspaceSettings,
+  writePanelLockPasswordFile,
+} from "./tauri/workspaceRuntime";
+export { isWebServiceRuntime } from "./tauri/runtimeMode";
+import {
+  isEngineRpcFallbackMode,
+  isMissingTauriInvokeError,
+  isUnknownMethodError,
+  markDaemonEngineRpcSupported,
+  shouldUseWebServiceFallback,
+  WEB_SERVICE_CLI_ENGINE_MESSAGE,
+  webServiceCodexOnlyStatuses,
+} from "./tauri/runtimeMode";
 
 export async function pickWorkspacePath(): Promise<string | null> {
   const selection = await open({ directory: true, multiple: false });
@@ -335,143 +297,6 @@ export async function getConfigModel(workspaceId: string): Promise<string | null
   }
   const trimmed = model.trim();
   return trimmed.length > 0 ? trimmed : null;
-}
-
-export async function addWorkspace(path: string, codex_bin: string | null): Promise<WorkspaceInfo> {
-  return invoke<WorkspaceInfo>("add_workspace", { path, codex_bin });
-}
-
-export async function isWorkspacePathDir(path: string): Promise<boolean> {
-  return invoke<boolean>("is_workspace_path_dir", { path });
-}
-
-export async function ensureWorkspacePathDir(path: string): Promise<void> {
-  return invoke("ensure_workspace_path_dir", { path });
-}
-
-export async function addClone(sourceWorkspaceId: string, copiesFolder: string, copyName: string): Promise<WorkspaceInfo> {
-  return invoke<WorkspaceInfo>("add_clone", {
-    sourceWorkspaceId,
-    copiesFolder,
-    copyName,
-  });
-}
-
-export async function addWorktree(
-  parentId: string,
-  branch: string,
-  options?: {
-    baseRef?: string | null;
-    publishToOrigin?: boolean;
-  },
-): Promise<WorkspaceInfo> {
-  return invoke<WorkspaceInfo>("add_worktree", {
-    parentId,
-    branch,
-    baseRef: options?.baseRef ?? null,
-    publishToOrigin: options?.publishToOrigin ?? true,
-  });
-}
-
-export type WorktreeSetupStatus = {
-  shouldRun: boolean;
-  script: string | null;
-};
-
-export async function getWorktreeSetupStatus(workspaceId: string): Promise<WorktreeSetupStatus> {
-  return invoke<WorktreeSetupStatus>("worktree_setup_status", { workspaceId });
-}
-
-export async function markWorktreeSetupRan(workspaceId: string): Promise<void> {
-  return invoke("worktree_setup_mark_ran", { workspaceId });
-}
-
-export async function updateWorkspaceSettings(id: string, settings: WorkspaceSettings): Promise<WorkspaceInfo> {
-  return invoke<WorkspaceInfo>("update_workspace_settings", { id, settings });
-}
-
-export async function updateWorkspaceCodexBin(id: string, codex_bin: string | null): Promise<WorkspaceInfo> {
-  return invoke<WorkspaceInfo>("update_workspace_codex_bin", { id, codex_bin });
-}
-
-export async function removeWorkspace(id: string): Promise<void> {
-  return invoke("remove_workspace", { id });
-}
-
-export async function removeWorktree(id: string): Promise<void> {
-  return invoke("remove_worktree", { id });
-}
-
-export async function renameWorktree(id: string, branch: string): Promise<WorkspaceInfo> {
-  return invoke<WorkspaceInfo>("rename_worktree", { id, branch });
-}
-
-export async function renameWorktreeUpstream(id: string, oldBranch: string, newBranch: string): Promise<void> {
-  return invoke("rename_worktree_upstream", { id, oldBranch, newBranch });
-}
-
-export async function applyWorktreeChanges(workspaceId: string): Promise<void> {
-  return invoke("apply_worktree_changes", { workspaceId });
-}
-
-export async function openWorkspaceIn(
-  path: string,
-  options: {
-    appName?: string | null;
-    command?: string | null;
-    args?: string[];
-  },
-): Promise<void> {
-  return invoke("open_workspace_in", {
-    path,
-    app: options.appName ?? null,
-    command: options.command ?? null,
-    args: options.args ?? [],
-  });
-}
-
-export async function openNewWindow(path?: string | null): Promise<void> {
-  return invoke("open_new_window", {
-    path: path ?? null,
-  });
-}
-
-export async function getOpenAppIcon(appName: string): Promise<string | null> {
-  return invoke<string | null>("get_open_app_icon", { appName });
-}
-
-export async function readPanelLockPasswordFile(): Promise<string | null> {
-  return invoke<string | null>("client_panel_lock_password_read");
-}
-
-export async function writePanelLockPasswordFile(password: string): Promise<void> {
-  return invoke("client_panel_lock_password_write", { password });
-}
-
-export async function connectWorkspace(id: string, recoverySource?: string): Promise<void> {
-  return invoke("connect_workspace", { id, recoverySource });
-}
-
-export async function ensureRuntimeReady(workspaceId: string): Promise<void> {
-  return invoke("ensure_runtime_ready", { workspaceId });
-}
-
-export async function getRuntimePoolSnapshot(): Promise<RuntimePoolSnapshot> {
-  return invoke("get_runtime_pool_snapshot");
-}
-
-export async function exportDiagnosticsBundle(): Promise<DiagnosticsBundleExportResult> {
-  return invoke("export_diagnostics_bundle");
-}
-
-export async function mutateRuntimePool(mutation: { action: "close" | "releaseToCold" | "pin"; workspaceId: string; engine?: string; pinned?: boolean }): Promise<RuntimePoolSnapshot> {
-  const { workspaceId, ...rest } = mutation;
-  return invoke("mutate_runtime_pool", {
-    mutation: {
-      ...rest,
-      workspace_id: workspaceId,
-    },
-  });
 }
 
 export async function startThread(workspaceId: string) {
@@ -1892,14 +1717,14 @@ export async function generateThreadTitle(workspaceId: string, threadId: string,
 export async function detectEngines(): Promise<EngineStatus[]> {
   try {
     const statuses = await invoke<EngineStatus[]>("detect_engines");
-    daemonEngineRpcSupported = true;
+    markDaemonEngineRpcSupported(true);
     return statuses;
   } catch (error) {
     if (isUnknownMethodError(error, "detect_engines")) {
       if (!shouldUseWebServiceFallback()) {
         throw error;
       }
-      daemonEngineRpcSupported = false;
+      markDaemonEngineRpcSupported(false);
       return webServiceCodexOnlyStatuses();
     }
     throw error;
@@ -1912,14 +1737,14 @@ export async function detectEngines(): Promise<EngineStatus[]> {
 export async function getActiveEngine(): Promise<EngineType> {
   try {
     const engine = await invoke<EngineType>("get_active_engine");
-    daemonEngineRpcSupported = true;
+    markDaemonEngineRpcSupported(true);
     return engine;
   } catch (error) {
     if (isUnknownMethodError(error, "get_active_engine")) {
       if (!shouldUseWebServiceFallback()) {
         throw error;
       }
-      daemonEngineRpcSupported = false;
+      markDaemonEngineRpcSupported(false);
       return "codex";
     }
     throw error;
@@ -1935,14 +1760,14 @@ export async function switchEngine(engineType: EngineType): Promise<void> {
   }
   try {
     await invoke("switch_engine", { engineType });
-    daemonEngineRpcSupported = true;
+    markDaemonEngineRpcSupported(true);
     return;
   } catch (error) {
     if (isUnknownMethodError(error, "switch_engine")) {
       if (!shouldUseWebServiceFallback()) {
         throw error;
       }
-      daemonEngineRpcSupported = false;
+      markDaemonEngineRpcSupported(false);
       if (engineType === "codex") {
         return;
       }
@@ -1960,14 +1785,14 @@ export async function getEngineStatus(engineType: EngineType): Promise<EngineSta
     const status = await invoke<EngineStatus | null>("get_engine_status", {
       engineType,
     });
-    daemonEngineRpcSupported = true;
+    markDaemonEngineRpcSupported(true);
     return status;
   } catch (error) {
     if (isUnknownMethodError(error, "get_engine_status")) {
       if (!shouldUseWebServiceFallback()) {
         throw error;
       }
-      daemonEngineRpcSupported = false;
+      markDaemonEngineRpcSupported(false);
       return webServiceCodexOnlyStatuses().find((entry) => entry.engineType === engineType) ?? null;
     }
     throw error;
@@ -1992,14 +1817,14 @@ export async function getEngineModels(
       params.forceRefresh = true;
     }
     const models = await invoke<EngineModelInfo[]>("get_engine_models", params);
-    daemonEngineRpcSupported = true;
+    markDaemonEngineRpcSupported(true);
     return models;
   } catch (error) {
     if (isUnknownMethodError(error, "get_engine_models")) {
       if (!shouldUseWebServiceFallback()) {
         throw error;
       }
-      daemonEngineRpcSupported = false;
+      markDaemonEngineRpcSupported(false);
       return [];
     }
     throw error;
@@ -2054,7 +1879,7 @@ export async function engineSendMessage(
       if (!shouldUseWebServiceFallback()) {
         throw error;
       }
-      daemonEngineRpcSupported = false;
+      markDaemonEngineRpcSupported(false);
       return {
         error: {
           message: WEB_SERVICE_CLI_ENGINE_MESSAGE,
@@ -2107,7 +1932,7 @@ export async function engineSendMessageSync(
       if (!shouldUseWebServiceFallback()) {
         throw error;
       }
-      daemonEngineRpcSupported = false;
+      markDaemonEngineRpcSupported(false);
       throw new Error(WEB_SERVICE_CLI_ENGINE_MESSAGE);
     }
     throw error;

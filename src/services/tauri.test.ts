@@ -83,6 +83,7 @@ import {
   sendConversationCompletionEmail,
   exportDiagnosticsBundle,
 } from "./tauri";
+import { resetRuntimeModeStateForTests } from "./tauri/runtimeMode";
 
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: vi.fn(),
@@ -137,6 +138,7 @@ describe("tauri invoke wrappers", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     clearWebRuntimeFlag();
+    resetRuntimeModeStateForTests();
   });
 
   it("uses codex_bin for addWorkspace", async () => {
@@ -1643,21 +1645,48 @@ describe("tauri invoke wrappers", () => {
     expect(claudeStatus?.error).toContain("Codex CLI");
   });
 
-  it("returns a friendly error when web runtime tries unsupported CLI engine", async () => {
+  it("returns a friendly error after web runtime fallback state is learned", async () => {
     const invokeMock = vi.mocked(invoke);
     setWebRuntimeFlag(true);
+    invokeMock.mockRejectedValueOnce(new Error("unknown method: detect_engines"));
+
+    await detectEngines();
 
     const response = await engineSendMessage("ws-web", {
       text: "hello",
       engine: "claude",
     });
 
-    expect(invokeMock).not.toHaveBeenCalledWith("engine_send_message", expect.anything());
+    expect(invokeMock).toHaveBeenCalledTimes(1);
     expect(response).toEqual({
       error: {
         message: "Web 服务当前仅支持 Codex CLI。请切换到 Codex CLI（Web service currently supports Codex CLI only）.",
       },
     });
+  });
+
+  it("blocks non-codex engine switch after web runtime fallback state is learned", async () => {
+    const invokeMock = vi.mocked(invoke);
+    setWebRuntimeFlag(true);
+    invokeMock.mockRejectedValueOnce(new Error("unknown method: detect_engines"));
+
+    await detectEngines();
+
+    await expect(switchEngine("claude")).rejects.toThrow(
+      "Web 服务当前仅支持 Codex CLI。请切换到 Codex CLI（Web service currently supports Codex CLI only）.",
+    );
+    expect(invokeMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("returns empty models for non-codex engine after web runtime fallback state is learned", async () => {
+    const invokeMock = vi.mocked(invoke);
+    setWebRuntimeFlag(true);
+    invokeMock.mockRejectedValueOnce(new Error("unknown method: detect_engines"));
+
+    await detectEngines();
+
+    await expect(getEngineModels("claude")).resolves.toEqual([]);
+    expect(invokeMock).toHaveBeenCalledTimes(1);
   });
 
   it("invokes get_active_engine", async () => {

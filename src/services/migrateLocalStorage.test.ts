@@ -57,4 +57,17 @@ describe("migrateLocalStorageToFileStore", () => {
       }),
     );
   });
+
+  it("skips migration when file store already contains normalized data", () => {
+    clientStorageMocks.getClientStoreFullSync.mockReturnValue({
+      __schemaVersion: 1,
+      sidebarWidth: 320,
+    });
+    window.localStorage.setItem("mossx.sidebarWidth", "280");
+
+    migrateLocalStorageToFileStore();
+
+    expect(clientStorageMocks.writeClientStoreData).not.toHaveBeenCalled();
+    expect(window.localStorage.getItem("ccgui.clientStorageMigrated")).toBe("true");
+  });
 });

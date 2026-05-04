@@ -3,65 +3,13 @@ import type { MutableRefObject } from "react";
 import { getClientStoreSync, writeClientStoreValue } from "../services/clientStorage";
 import { listAgentConfigs } from "../services/tauri";
 import type { DebugEntry, SelectedAgentOption } from "../types";
-import { resolveAgentIconForAgent } from "../utils/agentIcons";
 import {
+  getThreadAgentSelectionStorageKey,
+  normalizeSelectedAgentOption,
+  parseStoredThreadAgentSelectionEntry,
   shouldApplyDraftAgentToThread,
   shouldMigrateSelectedAgentBetweenThreadIds,
 } from "./selectedAgentSession";
-
-const THREAD_AGENT_SELECTION_STORAGE_KEY_PREFIX = "composer.selectedAgentByThread.";
-
-function normalizeSelectedAgentOption(value: unknown): SelectedAgentOption | null {
-  if (!value || typeof value !== "object") {
-    return null;
-  }
-  const record = value as Record<string, unknown>;
-  const id = typeof record.id === "string" ? record.id.trim() : "";
-  const name = typeof record.name === "string" ? record.name.trim() : "";
-  if (!id || !name) {
-    return null;
-  }
-  const prompt =
-    typeof record.prompt === "string"
-      ? record.prompt
-      : record.prompt == null
-        ? null
-        : String(record.prompt);
-  const icon = resolveAgentIconForAgent({ id, name, icon: record.icon });
-  return {
-    id,
-    name,
-    prompt: prompt && prompt.trim().length > 0 ? prompt : null,
-    icon,
-  };
-}
-
-function getThreadAgentSelectionStorageKey(
-  workspaceId: string | null,
-  threadId: string,
-): string {
-  const workspaceKey =
-    typeof workspaceId === "string" && workspaceId.trim().length > 0
-      ? workspaceId.trim()
-      : "__workspace__unknown__";
-  return `${THREAD_AGENT_SELECTION_STORAGE_KEY_PREFIX}${workspaceKey}:${threadId}`;
-}
-
-function readStoredThreadAgentSelectionEntryBySessionKey(
-  sessionKey: string,
-): { exists: boolean; value: SelectedAgentOption | null } {
-  const raw = getClientStoreSync<unknown>("app", sessionKey);
-  if (raw === undefined) {
-    return {
-      exists: false,
-      value: null,
-    };
-  }
-  return {
-    exists: true,
-    value: normalizeSelectedAgentOption(raw),
-  };
-}
 
 function resolveSelectedAgentFromCatalog(
   candidate: SelectedAgentOption | null,
@@ -198,7 +146,9 @@ export function useSelectedAgentSession({
       candidate = selectedAgentBySessionKey[sessionKey] ?? null;
       hasCandidate = true;
     } else {
-      const stored = readStoredThreadAgentSelectionEntryBySessionKey(sessionKey);
+      const stored = parseStoredThreadAgentSelectionEntry(
+        getClientStoreSync<unknown>("app", sessionKey),
+      );
       candidate = stored.value;
       hasCandidate = stored.exists;
       const shouldApplyDraftSelection =
@@ -295,11 +245,15 @@ export function useSelectedAgentSession({
         : null;
     const previousSelectedAgentFromStore =
       previousSelectedAgentSessionKey
-        ? readStoredThreadAgentSelectionEntryBySessionKey(previousSelectedAgentSessionKey).value
+        ? parseStoredThreadAgentSelectionEntry(
+            getClientStoreSync<unknown>("app", previousSelectedAgentSessionKey),
+          ).value
         : null;
     const activeSelectedAgentFromStore =
       activeSelectedAgentSessionKey
-        ? readStoredThreadAgentSelectionEntryBySessionKey(activeSelectedAgentSessionKey).value
+        ? parseStoredThreadAgentSelectionEntry(
+            getClientStoreSync<unknown>("app", activeSelectedAgentSessionKey),
+          ).value
         : null;
     const previousSelectedAgentValue =
       previousSelectedAgentFromMemory ?? previousSelectedAgentFromStore;

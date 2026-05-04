@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   resolvePendingThreadIdForSession,
   resolvePendingThreadIdForTurn,
-} from "./useThreads";
+} from "../utils/threadPendingResolution";
 
 describe("resolvePendingThreadIdForSession", () => {
   const workspaceId = "ws-1";
@@ -142,6 +142,24 @@ describe("resolvePendingThreadIdForSession", () => {
     expect(resolved).toBeNull();
   });
 
+  it("does not treat a blank active turn id as a pending anchor", () => {
+    const resolved = resolvePendingThreadIdForSession({
+      workspaceId,
+      engine: "claude",
+      threadsByWorkspace: {
+        "ws-1": [{ id: "claude-pending-a" }],
+      },
+      activeThreadIdByWorkspace: { "ws-1": "claude-pending-a" },
+      threadStatusById: {},
+      activeTurnIdByThread: {
+        "claude-pending-a": "   ",
+      },
+      itemsByThread: {},
+    });
+
+    expect(resolved).toBeNull();
+  });
+
   it("returns null for ambiguous pending candidates without active/timestamp hints", () => {
     const resolved = resolvePendingThreadIdForSession({
       workspaceId,
@@ -232,5 +250,22 @@ describe("resolvePendingThreadIdForTurn", () => {
     });
 
     expect(resolved).toBeNull();
+  });
+
+  it("normalizes stored active turn ids before matching", () => {
+    const resolved = resolvePendingThreadIdForTurn({
+      workspaceId,
+      engine: "claude",
+      turnId: "turn-target",
+      threadsByWorkspace: {
+        "ws-1": [{ id: "claude-pending-a" }],
+      },
+      activeThreadIdByWorkspace: { "ws-1": "claude-pending-a" },
+      activeTurnIdByThread: {
+        "claude-pending-a": "  turn-target  ",
+      },
+    });
+
+    expect(resolved).toBe("claude-pending-a");
   });
 });

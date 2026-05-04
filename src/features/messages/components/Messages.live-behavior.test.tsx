@@ -130,7 +130,7 @@ describe("Messages live behavior", () => {
 
     act(() => {
       document.dispatchEvent(
-        new CustomEvent<string>("mossx:jump-to-message", {
+        new CustomEvent<string>("ccgui:jump-to-message", {
           detail: "u2",
         }),
       );
@@ -185,7 +185,7 @@ describe("Messages live behavior", () => {
 
     act(() => {
       document.dispatchEvent(
-        new CustomEvent<string>("mossx:jump-to-message", {
+        new CustomEvent<string>("ccgui:jump-to-message", {
           detail: "u1",
         }),
       );

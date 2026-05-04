@@ -1,4 +1,61 @@
 import type { SelectedAgentOption } from "../types";
+import { resolveAgentIconForAgent } from "../utils/agentIcons";
+
+const THREAD_AGENT_SELECTION_STORAGE_KEY_PREFIX = "composer.selectedAgentByThread.";
+
+export function normalizeSelectedAgentOption(
+  value: unknown,
+): SelectedAgentOption | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+  const record = value as Record<string, unknown>;
+  const id = typeof record.id === "string" ? record.id.trim() : "";
+  const name = typeof record.name === "string" ? record.name.trim() : "";
+  if (!id || !name) {
+    return null;
+  }
+  const prompt =
+    typeof record.prompt === "string"
+      ? record.prompt
+      : record.prompt == null
+        ? null
+        : String(record.prompt);
+  const icon = resolveAgentIconForAgent({ id, name, icon: record.icon });
+  return {
+    id,
+    name,
+    prompt: prompt && prompt.trim().length > 0 ? prompt : null,
+    icon,
+  };
+}
+
+export function getThreadAgentSelectionStorageKey(
+  workspaceId: string | null,
+  threadId: string,
+): string {
+  const workspaceKey =
+    typeof workspaceId === "string" && workspaceId.trim().length > 0
+      ? workspaceId.trim()
+      : "__workspace__unknown__";
+  return `${THREAD_AGENT_SELECTION_STORAGE_KEY_PREFIX}${workspaceKey}:${threadId}`;
+}
+
+export function parseStoredThreadAgentSelectionEntry(raw: unknown): {
+  exists: boolean;
+  value: SelectedAgentOption | null;
+} {
+  if (raw === undefined) {
+    return {
+      exists: false,
+      value: null,
+    };
+  }
+  return {
+    exists: true,
+    value: normalizeSelectedAgentOption(raw),
+  };
+}
 
 function resolveThreadEngine(threadId: string): "claude" | "gemini" | "opencode" | "codex" | null {
   if (threadId.startsWith("claude:") || threadId.startsWith("claude-pending-")) {

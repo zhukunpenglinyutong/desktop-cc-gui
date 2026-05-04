@@ -1,8 +1,10 @@
 import { invoke } from "@tauri-apps/api/core";
-
-export type ClientStoreName = "layout" | "composer" | "threads" | "app" | "leida";
-
-const ALL_STORES: ClientStoreName[] = ["layout", "composer", "threads", "app", "leida"];
+import {
+  ALL_CLIENT_STORES,
+  normalizeClientStoreSnapshot,
+  serializeClientStoreSnapshot,
+  type ClientStoreName,
+} from "./clientStorageSchema";
 
 const cache: Partial<Record<ClientStoreName, Record<string, unknown>>> = {};
 
@@ -19,13 +21,19 @@ export async function preloadClientStores(): Promise<void> {
     return;
   }
   const results = await Promise.all(
-    ALL_STORES.map(async (store) => {
+    ALL_CLIENT_STORES.map(async (store) => {
       try {
-        const data = await invoke<Record<string, unknown> | null>(
+        const raw = await invoke<unknown>(
           "client_store_read",
           { store },
         );
-        return [store, data ?? {}] as const;
+        const normalized = normalizeClientStoreSnapshot(raw);
+        if (normalized.recoveryReason) {
+          queueMicrotask(() => {
+            writeClientStoreData(store, normalized.data, { immediate: true });
+          });
+        }
+        return [store, normalized.data] as const;
       } catch {
         return [store, {}] as const;
       }
@@ -39,6 +47,20 @@ export async function preloadClientStores(): Promise<void> {
 
 export function isPreloaded(): boolean {
   return preloaded;
+}
+
+export function resetClientStorageForTests(): void {
+  preloaded = false;
+  for (const store of ALL_CLIENT_STORES) {
+    delete cache[store];
+    if (pendingTimers[store] != null) {
+      clearTimeout(pendingTimers[store]);
+      delete pendingTimers[store];
+    }
+    delete dirtyKeys[store];
+    delete pendingFullReplace[store];
+    delete writeChainByStore[store];
+  }
 }
 
 export function getClientStoreSync<T = unknown>(
@@ -127,9 +149,15 @@ function flushStoreWrite(store: ClientStoreName): void {
 
   const nextWrite = async () => {
     if (shouldFullReplace && fullDataSnapshot) {
-      await invoke("client_store_write", { store, data: fullDataSnapshot });
+      await invoke("client_store_write", {
+        store,
+        data: serializeClientStoreSnapshot(fullDataSnapshot),
+      });
     } else {
-      await invoke("client_store_patch", { store, patch: valueSnapshot });
+      await invoke("client_store_patch", {
+        store,
+        patch: serializeClientStoreSnapshot(valueSnapshot),
+      });
     }
   };
 

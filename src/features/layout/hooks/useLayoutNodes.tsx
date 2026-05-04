@@ -148,7 +148,7 @@ type GitDiffViewerItem = {
   newImageMime?: string | null;
 };
 
-const MESSAGE_JUMP_EVENT_NAME = "mossx:jump-to-message";
+const MESSAGE_JUMP_EVENT_NAME = "ccgui:jump-to-message";
 
 function dispatchMessageJumpEvent(messageId: string) {
   if (!messageId || typeof document === "undefined") {
