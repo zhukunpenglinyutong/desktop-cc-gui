@@ -1624,3 +1624,64 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 304: 优化 Codex 长幕布流式渲染
+
+**Date**: 2026-05-04
+**Task**: 优化 Codex 长幕布流式渲染
+**Branch**: `feature/v-0.4.13`
+
+### Summary
+
+(Add summary)
+
+### Main Changes
+
+任务目标：继续推进 realtime conversation client performance change，针对用户反馈的 Codex 幕布最后阶段大段落输出卡顿进行二次优化。
+
+主要改动：
+- 在 `MessagesRows` 中调整 Codex assistant 大文本 streaming surface 判定：长 Codex streaming 输出不再进入 ReactMarkdown 全量实时解析，而是使用 lightweight plain-text live surface。
+- 保留短 Codex streaming 的 live Markdown 行为，避免把所有 Codex 输出降级。
+- streaming completion 后自然恢复最终 Markdown surface，保持最终标题、列表、代码块等语义收敛。
+- 更新 `Messages.codex-live-streaming.test.tsx` 与 `MessagesRows.stream-mitigation.test.tsx`，把旧的“长输出必须 live Markdown”契约改为“长 streaming 期间 lightweight live surface，completion 后 Markdown”。
+- 在 OpenSpec tasks 中补充 `Codex Curtain Final Chunk Smoothness` 阶段记录。
+
+涉及模块：
+- `src/features/messages/components/MessagesRows.tsx`
+- `src/features/messages/components/MessagesRows.stream-mitigation.test.tsx`
+- `src/features/messages/components/Messages.codex-live-streaming.test.tsx`
+- `openspec/changes/optimize-realtime-conversation-client-performance/tasks.md`
+
+验证结果：
+- `openspec validate optimize-realtime-conversation-client-performance --strict --no-interactive` 通过。
+- `npx vitest run src/features/messages/components/MessagesRows.stream-mitigation.test.tsx src/features/messages/components/Messages.codex-live-streaming.test.tsx` 通过。
+- `npx vitest run src/features/messages/components/Messages.test.tsx src/features/messages/components/MessagesRows.stream-mitigation.test.tsx src/features/messages/components/Messages.codex-live-streaming.test.tsx src/features/messages/presentation/presentationProfile.test.ts` 通过，83 tests。
+- `npm run typecheck` 通过。
+- `npm run lint` 通过。
+- `npm run check:large-files` 通过。
+- `git diff --check` 通过。
+- 曾使用 `npm run test -- ...` 触发 batched runner，跑到消息模块时旧测试按预期失败；已更新旧测试并用 targeted Vitest 验证通过。
+
+后续事项：
+- 建议用户人工复测 Codex 长 Markdown 输出，观察最后 snapshot/complete 阶段是否仍有明显卡顿。
+- 若仍有卡顿，下一步应采集 profiler/diagnostics，区分 scroll anchoring、row layout、copy/codeblock hydration、final Markdown parse 哪一段占主线程。
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `72db8824` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-9.md`
-- **Total Sessions**: 303
+- **Total Sessions**: 304
 - **Last Active**: 2026-05-04
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-9.md` | ~1626 | Active |
+| `journal-9.md` | ~1687 | Active |
 | `journal-8.md` | ~1996 | Archived |
 | `journal-7.md` | ~1950 | Archived |
 | `journal-6.md` | ~1961 | Archived |
@@ -37,6 +37,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 304 | 2026-05-04 | 优化 Codex 长幕布流式渲染 | `72db8824` | `feature/v-0.4.13` |
 | 303 | 2026-05-04 | 优化实时对话客户端性能 | `bb58e69c` | `feature/v-0.4.13` |
 | 302 | 2026-05-04 | 归档 Claude Gemini 幕布提案 | `0750ed03` | `feature/v-0.4.13` |
 | 301 | 2026-05-04 | 完善 Claude 和 Gemini 通用幕布组装 | `1b1a4c0f` | `feature/v-0.4.13` |
