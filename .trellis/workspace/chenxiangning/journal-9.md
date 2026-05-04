@@ -1563,3 +1563,64 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 303: 优化实时对话客户端性能
+
+**Date**: 2026-05-04
+**Task**: 优化实时对话客户端性能
+**Branch**: `feature/v-0.4.13`
+
+### Summary
+
+(Add summary)
+
+### Main Changes
+
+任务目标：推进 codex/claude code 为主的实时对话客户端性能优化提案与实现，覆盖流式输出、幕布更新、reducer 热路径、诊断与回滚门禁；Gemini 作为兼容性与回归验证对象。
+
+主要改动：
+- 新增 OpenSpec change `optimize-realtime-conversation-client-performance`，包含 proposal、design、delta specs、兼容性门禁、review 与人工测试矩阵。
+- 移除 Gemini agent delta 对 realtime batching 的直接绕过；normalized assistant snapshot batching 从 Codex-only 收敛为基于语义安全条件。
+- 为 reasoning summary/content 与 running tool output 的 same-item live update 增加 reducer incremental derivation fast path，结构边界仍回 canonical `prepareThreadItems(...)`。
+- 将 Gemini 纳入 visible text diagnostics 覆盖，但不默认激活 mitigation；Codex / Claude Code 仍是主要性能优化与人工验证方向。
+- 补充 batching、rollback flag、reasoning/tool fast path、visible diagnostics、Windows render mitigation 等测试。
+
+涉及模块：
+- `src/features/threads/hooks/useThreadItemEvents.ts`
+- `src/features/threads/hooks/useThreadsReducer.ts`
+- `src/features/messages/components/Messages.tsx`
+- `src/features/threads/utils/streamLatencyDiagnostics.ts`
+- `openspec/changes/optimize-realtime-conversation-client-performance/**`
+
+验证结果：
+- `openspec validate optimize-realtime-conversation-client-performance --strict --no-interactive` 通过。
+- `npm run typecheck` 通过。
+- `npm run lint` 通过。
+- `npm run check:large-files` 通过。
+- `git diff --check` 通过。
+- `npm run test -- src/features/threads/hooks/useThreadItemEvents.test.ts src/features/threads/hooks/useThreadsReducer.test.ts src/features/threads/hooks/useThreadsReducer.reasoning.test.ts src/features/messages/components/Messages.windows-render-mitigation.test.tsx src/features/threads/utils/streamLatencyDiagnostics.test.ts` 触发仓库 batched runner，完成 427 个 test files，全部通过。
+- 人工测试：用户已按提示完成，方向确认收敛到 Codex / Claude Code 为主。
+
+后续事项：
+- OpenSpec change 尚未归档；若需要归档，先确认主 specs 同步/归档门禁。
+- 下一轮性能深挖优先关注 Codex / Claude Code 的 assistant id canonicalization、tool truncation 边界与可观测 profiler 指标，不建议在本轮继续扩大 Gemini 专属逻辑。
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `bb58e69c` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
