@@ -295,3 +295,68 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 315: 打磨 dock 对话标签导航样式
+
+**Date**: 2026-05-05
+**Task**: 打磨 dock 对话标签导航样式
+**Branch**: `feature/v-0.4.13-1`
+
+### Summary
+
+(Add summary)
+
+### Main Changes
+
+## 任务目标
+- 对底部 dock 状态面板顶部 tab 做纯 UI 打磨。
+- 在不改行为前提下，收口为更轻量的导航样式，并为 `用户对话` 显示当前可见轮次数量。
+
+## Review 结论
+- 针对本轮未提交改动做了 focused review，未发现需要拦住提交的真实问题。
+- `用户对话` count 最终接到 `userConversationTimeline.items.length`，避免把伪用户消息或错误字段计入。
+- 样式改动限定在 dock tab 导航，不影响 popover 版本与时间线行为。
+
+## 主要改动
+- `src/styles/status-panel.css`
+  - 将 dock 顶部 tab 从胶囊按钮视觉收口为更轻量的横向导航。
+  - 多轮微调 tab 高度、间距、下划线与 icon 比例，最终将 icon 收敛到 `16px`。
+- `src/features/status-panel/components/StatusPanel.tsx`
+  - 在 `用户对话` tab 后追加当前可见用户轮次数字。
+- `src/features/status-panel/components/StatusPanel.test.tsx`
+  - 新增 dock tab count 测试，断言过滤伪用户消息后显示正确条数。
+
+## 涉及模块
+- `src/styles/status-panel.css`
+- `src/features/status-panel/components/StatusPanel.tsx`
+- `src/features/status-panel/components/StatusPanel.test.tsx`
+
+## 验证结果
+- `npm run lint`
+- `npm run typecheck`
+- `npx vitest run src/features/status-panel/components/StatusPanel.test.tsx src/features/status-panel/components/UserConversationTimelinePanel.test.tsx src/features/status-panel/utils/userConversationTimeline.test.ts`
+- `npm run check:large-files`
+- 全部通过。
+
+## 后续事项
+- 当前停留在未扩散范围；如还要继续打磨视觉，建议只在 `status-panel.css` 内按明确尺寸目标继续微调，避免来回震荡其它行为层。
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `cc5ce9e9` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
