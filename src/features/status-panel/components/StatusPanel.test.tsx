@@ -387,6 +387,68 @@ describe("StatusPanel", () => {
     expect(screen.getByText("Expand")).toBeTruthy();
   });
 
+  it("filters pseudo-user payloads out of the dock conversation timeline while keeping image-only turns", () => {
+    render(
+      <StatusPanel
+        items={[
+          {
+            id: "u-memory-only",
+            kind: "message",
+            role: "user",
+            text: "<project-memory>\n[项目上下文] 已记录会话摘要\n</project-memory>\n",
+          },
+          {
+            id: "u-image-only",
+            kind: "message",
+            role: "user",
+            text: "",
+            images: ["diagram.png"],
+          },
+          {
+            id: "u-real",
+            kind: "message",
+            role: "user",
+            text: "真实用户问题",
+          },
+        ]}
+        isProcessing={false}
+        variant="dock"
+      />,
+    );
+
+    fireEvent.click(screen.getByText("User Conversation"));
+
+    expect(screen.getByText("真实用户问题")).toBeTruthy();
+    expect(screen.getByText("Images: 1")).toBeTruthy();
+    expect(screen.queryByText(/\[项目上下文\]/)).toBeNull();
+  });
+
+  it("uses Codex user-message cleanup rules inside the dock conversation timeline", () => {
+    render(
+      <StatusPanel
+        items={[
+          {
+            id: "u-codex-wrapper",
+            kind: "message",
+            role: "user",
+            text:
+              "Collaboration mode: code. Do not ask the user follow-up questions.\n\nUser request: 真正的问题",
+          },
+        ]}
+        isProcessing={false}
+        variant="dock"
+        isCodexEngine
+      />,
+    );
+
+    fireEvent.click(screen.getByText("User Conversation"));
+
+    expect(screen.getByText("真正的问题")).toBeTruthy();
+    expect(screen.queryByText(/Collaboration mode:/)).toBeNull();
+    expect(screen.getByText("Newest to oldest 1/1")).toBeTruthy();
+    expect(screen.getByText("#1")).toBeTruthy();
+  });
+
   it("keeps the current dock tab active when a new user message arrives", () => {
     const { rerender } = render(
       <StatusPanel

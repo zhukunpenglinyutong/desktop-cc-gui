@@ -55,12 +55,14 @@ import {
   parseReasoning,
 } from "./messagesReasoning";
 import {
+  buildAssistantFinalBoundarySet,
+  buildAssistantFinalWithVisibleProcessSet,
+  buildHistoryStickyCandidates,
+  resolveActiveStickyHeaderCandidate,
   buildLiveTailWorkingSet,
   buildRenderedItemsWindow,
   collapseExpandedExploreItems,
-  isOrdinaryUserQuestionItem,
   resolveStreamingPresentationItems,
-  resolveOrdinaryUserStickyText,
   resolveLiveAutoExpandedExploreId,
   suppressCompletedExploreItemsBetweenLatestUserTurns,
 } from "./messagesLiveWindow";
@@ -85,7 +87,6 @@ import {
   logMessagesPerf,
   MESSAGES_SLOW_ANCHOR_WARN_MS,
   MESSAGES_SLOW_RENDER_WARN_MS,
-  normalizeHistoryStickyHeaderText,
   resolveRenderableItems,
   resolveWorkingActivityLabel,
   SCROLL_THRESHOLD_PX,
@@ -1448,34 +1449,30 @@ export const Messages = memo(function Messages({
     [isThinking, latestReasoningId, renderSourceItems],
   );
   const historyStickyCandidates = useMemo(() => {
-    const candidates: HistoryStickyCandidate[] = [];
-    for (const item of timelinePresentationItems) {
-      if (!isOrdinaryUserQuestionItem(item, enableCollaborationBadge)) {
-        continue;
-      }
-      const text = normalizeHistoryStickyHeaderText(
-        resolveOrdinaryUserStickyText(item, enableCollaborationBadge),
-      );
-      if (!text) {
-        continue;
-      }
-      candidates.push({
-        id: item.id,
-        text,
-      });
-    }
-    return candidates;
+    return buildHistoryStickyCandidates(
+      timelinePresentationItems,
+      enableCollaborationBadge,
+    ) satisfies HistoryStickyCandidate[];
   }, [enableCollaborationBadge, timelinePresentationItems]);
-  const stickyCandidateById = useMemo(
-    () => new Map(historyStickyCandidates.map((candidate) => [candidate.id, candidate])),
-    [historyStickyCandidates],
-  );
   const activeStickyHeaderCandidate = useMemo(
-    () =>
-      showStickyUserBubble && activeStickyMessageId
-        ? stickyCandidateById.get(activeStickyMessageId) ?? null
-        : null,
-    [activeStickyMessageId, showStickyUserBubble, stickyCandidateById],
+    () => {
+      if (!showStickyUserBubble) {
+        return null;
+      }
+      return resolveActiveStickyHeaderCandidate(
+        historyStickyCandidates,
+        activeStickyMessageId,
+        renderSourceItems,
+        enableCollaborationBadge,
+      );
+    },
+    [
+      activeStickyMessageId,
+      enableCollaborationBadge,
+      historyStickyCandidates,
+      renderSourceItems,
+      showStickyUserBubble,
+    ],
   );
   const messageAnchors = useMemo(() => {
     const messageItems = timelinePresentationItems.filter(
@@ -1912,66 +1909,13 @@ export const Messages = memo(function Messages({
     setExpandedItems((prev) => collapseExpandedExploreItems(prev, effectiveItems));
   }, [effectiveItems, isThinking, liveAutoExpandedExploreId]);
   const assistantFinalBoundarySet = useMemo(() => {
-    const ids = new Set<string>();
-    let lastFinalAssistantIdInTurn: string | null = null;
-    timelinePresentationItems.forEach((entry) => {
-      if (entry.kind === "message" && entry.role === "user") {
-        if (lastFinalAssistantIdInTurn) {
-          ids.add(lastFinalAssistantIdInTurn);
-        }
-        lastFinalAssistantIdInTurn = null;
-        return;
-      }
-      if (
-        entry.kind === "message" &&
-        entry.role === "assistant" &&
-        entry.isFinal === true
-      ) {
-        lastFinalAssistantIdInTurn = entry.id;
-      }
-    });
-    if (lastFinalAssistantIdInTurn) {
-      ids.add(lastFinalAssistantIdInTurn);
-    }
-    return ids;
+    return buildAssistantFinalBoundarySet(timelinePresentationItems);
   }, [timelinePresentationItems]);
   const assistantFinalWithVisibleProcessSet = useMemo(() => {
-    const ids = new Set<string>();
-    let hasVisibleProcessItemsInTurn = false;
-    let lastFinalAssistantIdInTurn: string | null = null;
-    let lastFinalAssistantHasProcessInTurn = false;
-    const flushTurn = () => {
-      if (
-        lastFinalAssistantIdInTurn &&
-        lastFinalAssistantHasProcessInTurn &&
-        assistantFinalBoundarySet.has(lastFinalAssistantIdInTurn)
-      ) {
-        ids.add(lastFinalAssistantIdInTurn);
-      }
-      lastFinalAssistantIdInTurn = null;
-      lastFinalAssistantHasProcessInTurn = false;
-    };
-    timelinePresentationItems.forEach((entry) => {
-      if (entry.kind === "message" && entry.role === "user") {
-        flushTurn();
-        hasVisibleProcessItemsInTurn = false;
-        return;
-      }
-      if (entry.kind === "reasoning" || entry.kind === "tool") {
-        hasVisibleProcessItemsInTurn = true;
-        return;
-      }
-      if (
-        entry.kind === "message" &&
-        entry.role === "assistant" &&
-        entry.isFinal === true
-      ) {
-        lastFinalAssistantIdInTurn = entry.id;
-        lastFinalAssistantHasProcessInTurn = hasVisibleProcessItemsInTurn;
-      }
-    });
-    flushTurn();
-    return ids;
+    return buildAssistantFinalWithVisibleProcessSet(
+      timelinePresentationItems,
+      assistantFinalBoundarySet,
+    );
   }, [assistantFinalBoundarySet, timelinePresentationItems]);
   const assistantLiveTurnFinalBoundarySuppressedSet = useMemo(() => {
     const ids = new Set<string>();

@@ -41,6 +41,13 @@ export type UserMessagePresentation = {
   noteCardSummary: NoteCardContextSummary | null;
 };
 
+export type UserConversationSummary = {
+  previewText: string;
+  stickyCandidateText: string;
+  imageCount: number;
+  hasRenderableConversationContent: boolean;
+};
+
 type ResolveUserMessagePresentationParams = Pick<
   MessageConversationItem,
   "text" | "selectedAgentName" | "selectedAgentIcon"
@@ -262,5 +269,30 @@ export function resolveUserMessagePresentation({
     hasInjectedAgentPromptBlock: strippedAgentPrompt.hasInjectedAgentPromptBlock,
     memorySummary: legacyUserMemory?.memorySummary ?? null,
     noteCardSummary: legacyUserNoteCard?.noteCardSummary ?? null,
+  };
+}
+
+export function resolveUserConversationSummary({
+  text,
+  images,
+  selectedAgentName,
+  selectedAgentIcon,
+  enableCollaborationBadge,
+}: Pick<MessageConversationItem, "text" | "images" | "selectedAgentName" | "selectedAgentIcon"> & {
+  enableCollaborationBadge: boolean;
+}): UserConversationSummary {
+  const presentation = resolveUserMessagePresentation({
+    text,
+    selectedAgentName,
+    selectedAgentIcon,
+    enableCollaborationBadge,
+  });
+  const previewText = presentation.stickyCandidateText.trim();
+  const imageCount = Array.isArray(images) ? images.length : 0;
+  return {
+    previewText,
+    stickyCandidateText: presentation.stickyCandidateText,
+    imageCount,
+    hasRenderableConversationContent: previewText.length > 0 || imageCount > 0,
   };
 }

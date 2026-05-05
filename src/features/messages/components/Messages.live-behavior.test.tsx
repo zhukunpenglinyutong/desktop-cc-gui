@@ -1371,6 +1371,71 @@ describe("Messages live behavior", () => {
     });
   });
 
+  it("refreshes the active history sticky header text from the latest live snapshot without waiting for timeline convergence", async () => {
+    const initialItems: ConversationItem[] = [
+      {
+        id: "user-history-sticky-live-copy",
+        kind: "message",
+        role: "user",
+        text: "旧问题文案",
+      },
+      {
+        id: "assistant-history-sticky-live-copy",
+        kind: "message",
+        role: "assistant",
+        text: "回答中",
+      },
+    ];
+
+    const { container, rerender } = render(
+      <Messages
+        items={initialItems}
+        threadId="thread-1"
+        workspaceId="ws-1"
+        isThinking={false}
+        openTargets={[]}
+        selectedOpenAppId=""
+      />,
+    );
+
+    const scroller = getMessagesScroller(container);
+    setMessageOffsetTop(container, "user-history-sticky-live-copy", 18);
+
+    await scrollMessages(scroller, 18);
+    await waitFor(() => {
+      const stickyHeader = container.querySelector(".messages-history-sticky-header");
+      expect(stickyHeader?.textContent ?? "").toContain("旧问题文案");
+    });
+
+    rerender(
+      <Messages
+        items={[
+          {
+            id: "user-history-sticky-live-copy",
+            kind: "message",
+            role: "user",
+            text: "新问题文案",
+          },
+          {
+            id: "assistant-history-sticky-live-copy",
+            kind: "message",
+            role: "assistant",
+            text: "回答中",
+          },
+        ]}
+        threadId="thread-1"
+        workspaceId="ws-1"
+        isThinking={false}
+        openTargets={[]}
+        selectedOpenAppId=""
+      />,
+    );
+
+    expect(
+      container.querySelector(".messages-history-sticky-header")?.textContent ?? "",
+    ).toContain("新问题文案");
+  });
+
   it("uses history sticky headers for restored history snapshots instead of live sticky", async () => {
     const restoredItems: ConversationItem[] = [
       {

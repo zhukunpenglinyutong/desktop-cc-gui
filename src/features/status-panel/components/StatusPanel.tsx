@@ -150,8 +150,11 @@ export const StatusPanel = memo(function StatusPanel({
   const codexTaskTotal = codexTaskItems.length;
   const codexTaskInProgress = codexTaskItems.some((item) => item.status === "in_progress");
   const userConversationTimeline = useMemo(
-    () => resolveUserConversationTimeline(effectiveItems),
-    [effectiveItems],
+    () =>
+      resolveUserConversationTimeline(effectiveItems, {
+        enableCollaborationBadge: isCodexEngine,
+      }),
+    [effectiveItems, isCodexEngine],
   );
   const shouldShowTodoTab = isCodexEngine
     ? hasTabData(codexTaskCompleted, codexTaskTotal)

@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { resolveUserMessagePresentation } from "./messagesUserPresentation";
+import {
+  resolveUserConversationSummary,
+  resolveUserMessagePresentation,
+} from "./messagesUserPresentation";
 
 describe("resolveUserMessagePresentation", () => {
   it("extracts only actual user input from assembled prompt payloads", () => {
@@ -54,5 +57,32 @@ describe("resolveUserMessagePresentation", () => {
 
     expect(result.displayText).toBe("你好");
     expect(result.stickyCandidateText).toBe("你好");
+  });
+
+  it("excludes memory-only user payloads from conversation summaries", () => {
+    const result = resolveUserConversationSummary({
+      text: "<project-memory>\n[项目上下文] 已记录会话摘要\n</project-memory>\n",
+      images: [],
+      selectedAgentName: null,
+      selectedAgentIcon: null,
+      enableCollaborationBadge: false,
+    });
+
+    expect(result.previewText).toBe("");
+    expect(result.hasRenderableConversationContent).toBe(false);
+  });
+
+  it("keeps image-only user payloads renderable in conversation summaries", () => {
+    const result = resolveUserConversationSummary({
+      text: "",
+      images: ["diagram.png", "trace.png"],
+      selectedAgentName: null,
+      selectedAgentIcon: null,
+      enableCollaborationBadge: false,
+    });
+
+    expect(result.previewText).toBe("");
+    expect(result.imageCount).toBe(2);
+    expect(result.hasRenderableConversationContent).toBe(true);
   });
 });

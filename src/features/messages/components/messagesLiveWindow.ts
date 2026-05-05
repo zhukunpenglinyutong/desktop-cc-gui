@@ -3,6 +3,7 @@ import type { GroupedEntry } from "../utils/groupToolItems";
 import { parseAgentTaskNotification } from "../utils/agentTaskNotification";
 import type { MessageConversationItem } from "./messageItemPredicates";
 import { resolveUserMessagePresentation } from "./messagesUserPresentation";
+import { normalizeHistoryStickyHeaderText } from "./messagesRenderUtils";
 
 export function resolveOrdinaryUserStickyText(
   item: MessageConversationItem,
@@ -75,6 +76,58 @@ export function findLatestOrdinaryUserQuestionId(
     }
   }
   return null;
+}
+
+export function buildHistoryStickyCandidates(
+  items: ConversationItem[],
+  enableCollaborationBadge: boolean,
+) {
+  const candidates: Array<{ id: string; text: string }> = [];
+  for (const item of items) {
+    if (!isOrdinaryUserQuestionItem(item, enableCollaborationBadge)) {
+      continue;
+    }
+    const text = normalizeHistoryStickyHeaderText(
+      resolveOrdinaryUserStickyText(item, enableCollaborationBadge),
+    );
+    if (!text) {
+      continue;
+    }
+    candidates.push({
+      id: item.id,
+      text,
+    });
+  }
+  return candidates;
+}
+
+export function resolveActiveStickyHeaderCandidate(
+  candidates: Array<{ id: string; text: string }>,
+  activeStickyMessageId: string | null,
+  liveItems: ConversationItem[],
+  enableCollaborationBadge: boolean,
+) {
+  if (!activeStickyMessageId) {
+    return null;
+  }
+  const stableCandidate = candidates.find((candidate) => candidate.id === activeStickyMessageId);
+  if (!stableCandidate) {
+    return null;
+  }
+  const liveItem = liveItems.find((item) => item.id === activeStickyMessageId);
+  if (!isOrdinaryUserQuestionItem(liveItem, enableCollaborationBadge)) {
+    return stableCandidate;
+  }
+  const liveText = normalizeHistoryStickyHeaderText(
+    resolveOrdinaryUserStickyText(liveItem, enableCollaborationBadge),
+  );
+  if (!liveText || liveText === stableCandidate.text) {
+    return stableCandidate;
+  }
+  return {
+    id: stableCandidate.id,
+    text: liveText,
+  };
 }
 
 function findLatestOrdinaryUserQuestionIndex(
@@ -174,6 +227,73 @@ export function resolveStreamingPresentationItems(
   return appendedCurrentItems.length > 0
     ? [...deferredItems, ...appendedCurrentItems]
     : deferredItems;
+}
+
+export function buildAssistantFinalBoundarySet(items: ConversationItem[]) {
+  const ids = new Set<string>();
+  let lastFinalAssistantIdInTurn: string | null = null;
+  items.forEach((entry) => {
+    if (entry.kind === "message" && entry.role === "user") {
+      if (lastFinalAssistantIdInTurn) {
+        ids.add(lastFinalAssistantIdInTurn);
+      }
+      lastFinalAssistantIdInTurn = null;
+      return;
+    }
+    if (
+      entry.kind === "message" &&
+      entry.role === "assistant" &&
+      entry.isFinal === true
+    ) {
+      lastFinalAssistantIdInTurn = entry.id;
+    }
+  });
+  if (lastFinalAssistantIdInTurn) {
+    ids.add(lastFinalAssistantIdInTurn);
+  }
+  return ids;
+}
+
+export function buildAssistantFinalWithVisibleProcessSet(
+  items: ConversationItem[],
+  assistantFinalBoundarySet: Set<string>,
+) {
+  const ids = new Set<string>();
+  let hasVisibleProcessItemsInTurn = false;
+  let lastFinalAssistantIdInTurn: string | null = null;
+  let lastFinalAssistantHasProcessInTurn = false;
+  const flushTurn = () => {
+    if (
+      lastFinalAssistantIdInTurn &&
+      lastFinalAssistantHasProcessInTurn &&
+      assistantFinalBoundarySet.has(lastFinalAssistantIdInTurn)
+    ) {
+      ids.add(lastFinalAssistantIdInTurn);
+    }
+    lastFinalAssistantIdInTurn = null;
+    lastFinalAssistantHasProcessInTurn = false;
+  };
+  items.forEach((entry) => {
+    if (entry.kind === "message" && entry.role === "user") {
+      flushTurn();
+      hasVisibleProcessItemsInTurn = false;
+      return;
+    }
+    if (entry.kind === "reasoning" || entry.kind === "tool") {
+      hasVisibleProcessItemsInTurn = true;
+      return;
+    }
+    if (
+      entry.kind === "message" &&
+      entry.role === "assistant" &&
+      entry.isFinal === true
+    ) {
+      lastFinalAssistantIdInTurn = entry.id;
+      lastFinalAssistantHasProcessInTurn = hasVisibleProcessItemsInTurn;
+    }
+  });
+  flushTurn();
+  return ids;
 }
 
 export function buildLiveTailWorkingSet(

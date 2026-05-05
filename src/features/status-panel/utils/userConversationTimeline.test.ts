@@ -69,4 +69,44 @@ describe("resolveUserConversationTimeline", () => {
       hasMessage: true,
     });
   });
+
+  it("re-numbers chronological indices after pseudo-user rows are filtered out", () => {
+    const items: ConversationItem[] = [
+      {
+        id: "u-memory-only",
+        kind: "message",
+        role: "user",
+        text: "<project-memory>\n[项目上下文] 已记录会话摘要\n</project-memory>\n",
+      },
+      { id: "u-real", kind: "message", role: "user", text: "real question" },
+    ];
+
+    const timeline = resolveUserConversationTimeline(items);
+
+    expect(timeline).toEqual({
+      items: [{ id: "u-real", text: "real question", imageCount: 0, chronologicalIndex: 1 }],
+      hasMessage: true,
+    });
+  });
+
+  it("uses the Codex conversation cleaning rules when collaboration badge mode is enabled", () => {
+    const items: ConversationItem[] = [
+      {
+        id: "u-codex",
+        kind: "message",
+        role: "user",
+        text:
+          "Collaboration mode: code. Do not ask the user follow-up questions.\n\nUser request: 你好",
+      },
+    ];
+
+    const timeline = resolveUserConversationTimeline(items, {
+      enableCollaborationBadge: true,
+    });
+
+    expect(timeline).toEqual({
+      items: [{ id: "u-codex", text: "你好", imageCount: 0, chronologicalIndex: 1 }],
+      hasMessage: true,
+    });
+  });
 });
