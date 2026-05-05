@@ -535,6 +535,7 @@ export type AppSettings = {
   lightThemePresetId?: LightThemePresetId;
   darkThemePresetId?: DarkThemePresetId;
   customThemePresetId?: ThemePresetId;
+  customSkillDirectories?: string[];
   canvasWidthMode: CanvasWidthMode;
   layoutMode?: LayoutMode;
   userMsgColor: string;

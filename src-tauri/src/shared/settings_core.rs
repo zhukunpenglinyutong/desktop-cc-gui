@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -129,6 +130,21 @@ fn sanitize_terminal_shell_path(settings: &mut AppSettings) {
         .map(ToOwned::to_owned);
 }
 
+fn sanitize_custom_skill_directories(settings: &mut AppSettings) {
+    let mut seen = HashSet::new();
+    settings.custom_skill_directories = settings
+        .custom_skill_directories
+        .iter()
+        .filter_map(|path| {
+            let normalized = path.trim();
+            if normalized.is_empty() || !seen.insert(normalized.to_string()) {
+                return None;
+            }
+            Some(normalized.to_string())
+        })
+        .collect();
+}
+
 pub(crate) fn resolve_window_theme_preference(settings: &AppSettings) -> String {
     if settings.theme == THEME_CUSTOM {
         return resolve_theme_preset_appearance(&settings.custom_theme_preset_id).to_string();
@@ -157,6 +173,7 @@ pub(crate) async fn get_app_settings_core(app_settings: &Mutex<AppSettings>) -> 
     settings.normalize_unified_exec_policy();
     settings.sanitize_runtime_pool_settings();
     sanitize_terminal_shell_path(&mut settings);
+    sanitize_custom_skill_directories(&mut settings);
     settings.experimental_collab_enabled = false;
     settings.ui_scale = sanitize_ui_scale(settings.ui_scale);
     sanitize_theme_settings(&mut settings);
@@ -173,6 +190,7 @@ pub(crate) async fn update_app_settings_core(
     normalized.experimental_collab_enabled = false;
     normalized.sanitize_runtime_pool_settings();
     sanitize_terminal_shell_path(&mut normalized);
+    sanitize_custom_skill_directories(&mut normalized);
     sanitize_theme_settings(&mut normalized);
     validate_ui_scale(normalized.ui_scale)?;
     proxy_core::validate_proxy_settings(&normalized)?;
@@ -192,6 +210,7 @@ pub(crate) async fn restore_app_settings_core(
     normalized.normalize_unified_exec_policy();
     normalized.experimental_collab_enabled = false;
     sanitize_terminal_shell_path(&mut normalized);
+    sanitize_custom_skill_directories(&mut normalized);
     normalized.ui_scale = sanitize_ui_scale(normalized.ui_scale);
     sanitize_theme_settings(&mut normalized);
     write_settings(settings_path, &normalized)?;

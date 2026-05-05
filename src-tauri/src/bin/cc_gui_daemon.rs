@@ -54,6 +54,7 @@ mod state {
         pub(crate) sessions: Mutex<HashMap<String, Arc<WorkspaceSession>>>,
         pub(crate) app_settings: Mutex<AppSettings>,
         pub(crate) storage_path: PathBuf,
+        pub(crate) settings_path: PathBuf,
         pub(crate) runtime_manager: RuntimeManager,
         pub(crate) engine_manager: EngineManager,
     }
@@ -72,6 +73,9 @@ mod session_management;
 #[allow(dead_code)]
 #[path = "../shared/mod.rs"]
 mod shared;
+#[allow(dead_code)]
+#[path = "../skills.rs"]
+mod skills;
 #[path = "../storage.rs"]
 mod storage;
 #[path = "../text_encoding.rs"]
@@ -1731,7 +1735,9 @@ async fn handle_rpc_request(
         }
         "skills_list" => {
             let workspace_id = parse_string(&params, "workspaceId")?;
-            state.skills_list(workspace_id).await
+            let custom_skill_roots =
+                parse_optional_string_array(&params, "customSkillRoots").unwrap_or_default();
+            state.skills_list(workspace_id, custom_skill_roots).await
         }
         "list_thread_titles" => {
             let workspace_id = parse_string(&params, "workspaceId")?;

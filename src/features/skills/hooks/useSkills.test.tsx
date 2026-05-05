@@ -79,4 +79,41 @@ describe("useSkills", () => {
       },
     ]);
   });
+
+  it("passes custom skill directories and refreshes when they change", async () => {
+    vi.mocked(getSkillsList).mockResolvedValue([]);
+
+    const { rerender } = renderHook(
+      ({ customSkillDirectories }) =>
+        useSkills({
+          activeWorkspace: workspace,
+          customSkillDirectories,
+        }),
+      {
+        initialProps: {
+          customSkillDirectories: [
+            "/opt/skills",
+            "  /opt/skills  ",
+            "",
+            "~/shared-skills",
+          ],
+        },
+      },
+    );
+
+    await waitFor(() => {
+      expect(getSkillsList).toHaveBeenCalledWith("workspace-1", [
+        "/opt/skills",
+        "~/shared-skills",
+      ]);
+    });
+
+    rerender({ customSkillDirectories: ["/new/skills"] });
+
+    await waitFor(() => {
+      expect(getSkillsList).toHaveBeenLastCalledWith("workspace-1", [
+        "/new/skills",
+      ]);
+    });
+  });
 });

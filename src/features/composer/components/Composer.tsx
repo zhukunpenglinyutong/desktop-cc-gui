@@ -131,6 +131,7 @@ type ComposerProps = {
     mode: "default" | "read-only" | "current" | "full-access",
   ) => void;
   skills: { name: string; description?: string; source?: string }[];
+  customSkillDirectories?: string[];
   prompts: CustomPromptOption[];
   commands?: CustomCommandOption[];
   files: string[];
@@ -1156,6 +1157,7 @@ export const Composer = memo(function Composer({
   accessMode,
   onSelectAccessMode,
   skills,
+  customSkillDirectories,
   prompts,
   commands = [],
   files,
@@ -2401,6 +2403,7 @@ export const Composer = memo(function Composer({
               fusingQueuedMessageId={fusingQueuedMessageId}
               suggestionsOpen={suggestionsOpen}
               files={files}
+              customSkillDirectories={customSkillDirectories}
               directories={directories}
               commands={commands}
               prompts={prompts}

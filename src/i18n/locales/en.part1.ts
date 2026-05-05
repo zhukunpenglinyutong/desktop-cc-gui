@@ -917,6 +917,11 @@ const enPart1 = {
       filterAll: "All sources",
       enginePicker: "Engine",
       globalDirs: "Global directories: .claude/skills · .codex/skills · .gemini/skills · .agents/skills",
+      customDirsTitle: "Custom Skills folders",
+      customDirsDescription: "Add one local folder per line. Saved folders join the current workspace skills list.",
+      customDirsPlaceholder: "/Users/me/team-skills\n~/shared-skills",
+      customDirsSave: "Save folders",
+      customDirsSaved: "Saved",
       activeGlobalDir: "Current directory: {{path}}",
       treeTitle: "File tree",
       treeSkillRootTag: "skill",
@@ -949,6 +954,7 @@ const enPart1 = {
       engineCode: "Codex",
       engineGemini: "Gemini",
       engineAgents: "Agents",
+      engineCustom: "Custom",
     },
 
     // Commit AI

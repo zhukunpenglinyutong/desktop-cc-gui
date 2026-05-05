@@ -853,6 +853,7 @@ export function useAppShellLayoutNodesSection(ctx: any) {
     accessMode,
     onSelectAccessMode: handleSetAccessMode,
     skills,
+    customSkillDirectories: appSettings.customSkillDirectories ?? [],
     prompts,
     commands,
     files,

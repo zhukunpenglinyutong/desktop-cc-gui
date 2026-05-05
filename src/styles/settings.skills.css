@@ -106,6 +106,44 @@
   margin-bottom: 8px;
 }
 
+.settings-skills-custom-dirs {
+  display: grid;
+  grid-template-columns: minmax(180px, 260px) minmax(280px, 1fr) auto;
+  align-items: start;
+  gap: 10px;
+  margin: 10px 0;
+  padding: 10px;
+  border: 1px solid var(--border-muted);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--surface-card) 72%, transparent);
+}
+
+.settings-skills-custom-dirs-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.settings-skills-custom-dirs-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-strong);
+}
+
+.settings-skills-custom-dirs-input {
+  min-height: 72px;
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 12px;
+  resize: vertical;
+}
+
+.settings-skills-custom-dirs-actions {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+}
+
 .settings-skills-summary-chip {
   display: inline-flex;
   align-items: center;

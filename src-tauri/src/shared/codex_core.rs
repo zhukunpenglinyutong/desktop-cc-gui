@@ -1163,9 +1163,14 @@ pub(crate) async fn codex_login_cancel_core(
 pub(crate) async fn skills_list_core(
     sessions: &Mutex<HashMap<String, Arc<WorkspaceSession>>>,
     workspace_id: String,
+    custom_skill_roots: Vec<String>,
 ) -> Result<Value, String> {
     let session = get_session_clone(sessions, &workspace_id).await?;
-    let params = json!({ "cwd": session.entry.path, "forceReload": true });
+    let params = json!({
+        "cwd": session.entry.path,
+        "forceReload": true,
+        "customSkillRoots": custom_skill_roots,
+    });
     session.send_request("skills/list", params).await
 }
 

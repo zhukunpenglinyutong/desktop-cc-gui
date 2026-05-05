@@ -599,7 +599,11 @@ export function AppShell() {
     setSelectedCollaborationModeId,
   });
 
-  const { skills } = useSkills({ activeWorkspace, onDebug: addDebugEntry });
+  const { skills } = useSkills({
+    activeWorkspace,
+    customSkillDirectories: appSettings.customSkillDirectories,
+    onDebug: addDebugEntry,
+  });
   const {
     activeEngine,
     availableEngines,

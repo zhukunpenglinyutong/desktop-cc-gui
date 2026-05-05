@@ -2315,7 +2315,11 @@ export function SettingsView({
               />
             )}
             {activeSection === "skills" && (
-              <SkillsSection activeWorkspace={selectedSettingsWorkspace} />
+              <SkillsSection
+                activeWorkspace={selectedSettingsWorkspace}
+                appSettings={appSettings}
+                onUpdateAppSettings={onUpdateAppSettings}
+              />
             )}
             {activeSection === "session-management" && (
               <SessionManagementSection

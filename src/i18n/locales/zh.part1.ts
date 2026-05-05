@@ -936,6 +936,11 @@ const zhPart1 = {
       filterAll: "全部来源",
       enginePicker: "引擎",
       globalDirs: "全局目录：.claude/skills · .codex/skills · .gemini/skills · .agents/skills",
+      customDirsTitle: "自定义 Skills 文件夹",
+      customDirsDescription: "每行一个本机文件夹；保存后会加入当前工作区的 Skills 列表。",
+      customDirsPlaceholder: "/Users/me/team-skills\n~/shared-skills",
+      customDirsSave: "保存目录",
+      customDirsSaved: "已保存",
       activeGlobalDir: "当前目录：{{path}}",
       treeTitle: "文件树",
       treeSkillRootTag: "skill",
@@ -968,6 +973,7 @@ const zhPart1 = {
       engineCode: "Codex",
       engineGemini: "Gemini",
       engineAgents: "Agents",
+      engineCustom: "Custom",
     },
 
     // 提交 AI

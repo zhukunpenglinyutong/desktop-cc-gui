@@ -2221,8 +2221,47 @@ impl DaemonState {
         codex_core::codex_login_cancel_core(&self.codex_login_cancels, workspace_id).await
     }
 
-    pub(super) async fn skills_list(&self, workspace_id: String) -> Result<Value, String> {
-        codex_core::skills_list_core(&self.sessions, workspace_id).await
+    pub(super) async fn skills_list(
+        &self,
+        workspace_id: String,
+        custom_skill_roots: Vec<String>,
+    ) -> Result<Value, String> {
+        let workspaces = self.workspaces.lock().await;
+        match skills::skills_list_local_core(
+            &self.settings_path,
+            &workspaces,
+            &workspace_id,
+            custom_skill_roots.clone(),
+        )
+        .await
+        {
+            Ok(entries) => {
+                let skills_json: Vec<Value> = entries
+                    .into_iter()
+                    .map(|entry| {
+                        json!({
+                            "name": entry.name,
+                            "path": entry.path,
+                            "source": entry.source,
+                            "description": entry.description,
+                            "enabled": true,
+                        })
+                    })
+                    .collect();
+                Ok(json!(skills_json))
+            }
+            Err(skills::SkillScanError::WorkspaceNotFound(_)) => {
+                Err("workspace not found".to_string())
+            }
+            Err(err) => {
+                log::warn!(
+                    "Daemon local skills scan failed for workspace {}: {}, falling back to Codex CLI",
+                    workspace_id,
+                    err
+                );
+                codex_core::skills_list_core(&self.sessions, workspace_id, custom_skill_roots).await
+            }
+        }
     }
 
     pub(super) async fn list_workspace_sessions(

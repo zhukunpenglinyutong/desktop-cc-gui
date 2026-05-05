@@ -955,8 +955,14 @@ export async function cancelCodexLogin(workspaceId: string) {
   return invoke<{ canceled: boolean }>("codex_login_cancel", { workspaceId });
 }
 
-export async function getSkillsList(workspaceId: string) {
-  return invoke<unknown>("skills_list", { workspaceId });
+export async function getSkillsList(
+  workspaceId: string,
+  customSkillRoots?: string[],
+) {
+  return invoke<unknown>("skills_list", {
+    workspaceId,
+    customSkillRoots: customSkillRoots ?? [],
+  });
 }
 
 export async function getClaudeCommandsList(workspaceId?: string | null) {

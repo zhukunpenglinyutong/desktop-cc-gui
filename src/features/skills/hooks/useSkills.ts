@@ -4,6 +4,7 @@ import { getSkillsList } from "../../../services/tauri";
 
 type UseSkillsOptions = {
   activeWorkspace: WorkspaceInfo | null;
+  customSkillDirectories?: string[];
   onDebug?: (entry: DebugEntry) => void;
 };
 
@@ -54,13 +55,42 @@ function normalizeSkillName(value: unknown) {
     .replace(/^[/$]+/, "");
 }
 
-export function useSkills({ activeWorkspace, onDebug }: UseSkillsOptions) {
+function normalizeCustomSkillDirectories(value: readonly string[] | undefined) {
+  const seen = new Set<string>();
+  const directories: string[] = [];
+  for (const item of value ?? []) {
+    const normalized = String(item ?? "").trim();
+    if (!normalized || seen.has(normalized)) {
+      continue;
+    }
+    seen.add(normalized);
+    directories.push(normalized);
+  }
+  return directories;
+}
+
+export function useSkills({
+  activeWorkspace,
+  customSkillDirectories,
+  onDebug,
+}: UseSkillsOptions) {
   const [skills, setSkills] = useState<SkillOption[]>([]);
-  const lastFetchedWorkspaceId = useRef<string | null>(null);
+  const lastFetchedKey = useRef<string | null>(null);
   const inFlight = useRef(false);
 
   const workspaceId = activeWorkspace?.id ?? null;
   const isConnected = Boolean(activeWorkspace?.connected);
+  const normalizedCustomSkillDirectories = useMemo(
+    () => normalizeCustomSkillDirectories(customSkillDirectories),
+    [customSkillDirectories],
+  );
+  const fetchKey = useMemo(
+    () =>
+      workspaceId
+        ? `${workspaceId}\n${normalizedCustomSkillDirectories.join("\n")}`
+        : null,
+    [normalizedCustomSkillDirectories, workspaceId],
+  );
 
   const refreshSkills = useCallback(async () => {
     if (!workspaceId || !isConnected) {
@@ -75,10 +105,16 @@ export function useSkills({ activeWorkspace, onDebug }: UseSkillsOptions) {
       timestamp: Date.now(),
       source: "client",
       label: "skills/list",
-      payload: { workspaceId },
+      payload: {
+        workspaceId,
+        customSkillRoots: normalizedCustomSkillDirectories,
+      },
     });
     try {
-      const response = await getSkillsList(workspaceId);
+      const response = await getSkillsList(
+        workspaceId,
+        normalizedCustomSkillDirectories,
+      );
       onDebug?.({
         id: `${Date.now()}-server-skills-list`,
         timestamp: Date.now(),
@@ -110,7 +146,7 @@ export function useSkills({ activeWorkspace, onDebug }: UseSkillsOptions) {
         })
         .filter((entry: SkillOption | null): entry is SkillOption => Boolean(entry));
       setSkills(data);
-      lastFetchedWorkspaceId.current = workspaceId;
+      lastFetchedKey.current = fetchKey;
     } catch (error) {
       onDebug?.({
         id: `${Date.now()}-client-skills-list-error`,
@@ -122,17 +158,23 @@ export function useSkills({ activeWorkspace, onDebug }: UseSkillsOptions) {
     } finally {
       inFlight.current = false;
     }
-  }, [isConnected, onDebug, workspaceId]);
+  }, [
+    fetchKey,
+    isConnected,
+    normalizedCustomSkillDirectories,
+    onDebug,
+    workspaceId,
+  ]);
 
   useEffect(() => {
-    if (!workspaceId || !isConnected) {
+    if (!workspaceId || !isConnected || !fetchKey) {
       return;
     }
-    if (lastFetchedWorkspaceId.current === workspaceId && skills.length > 0) {
+    if (lastFetchedKey.current === fetchKey) {
       return;
     }
     refreshSkills();
-  }, [isConnected, refreshSkills, skills.length, workspaceId]);
+  }, [fetchKey, isConnected, refreshSkills, workspaceId]);
 
   const skillOptions = useMemo(
     () => skills.filter((skill) => skill.name),

@@ -854,6 +854,11 @@ pub(crate) struct AppSettings {
         rename = "customThemePresetId"
     )]
     pub(crate) custom_theme_preset_id: String,
+    #[serde(
+        default = "default_custom_skill_directories",
+        rename = "customSkillDirectories"
+    )]
+    pub(crate) custom_skill_directories: Vec<String>,
     #[serde(default = "default_user_msg_color", rename = "userMsgColor")]
     pub(crate) user_msg_color: String,
     #[serde(
@@ -1101,6 +1106,10 @@ fn default_dark_theme_preset_id() -> String {
 
 fn default_custom_theme_preset_id() -> String {
     "vscode-dark-modern".to_string()
+}
+
+fn default_custom_skill_directories() -> Vec<String> {
+    Vec::new()
 }
 
 fn default_user_msg_color() -> String {
@@ -1488,6 +1497,7 @@ impl Default for AppSettings {
             light_theme_preset_id: default_light_theme_preset_id(),
             dark_theme_preset_id: default_dark_theme_preset_id(),
             custom_theme_preset_id: default_custom_theme_preset_id(),
+            custom_skill_directories: default_custom_skill_directories(),
             user_msg_color: default_user_msg_color(),
             usage_show_remaining: default_usage_show_remaining(),
             show_message_anchors: default_show_message_anchors(),
@@ -1616,6 +1626,7 @@ mod tests {
         assert_eq!(settings.remote_backend_host, "127.0.0.1:4732");
         assert!(settings.remote_backend_token.is_none());
         assert_eq!(settings.web_service_port, 3080);
+        assert!(settings.custom_skill_directories.is_empty());
         assert!(!settings.system_proxy_enabled);
         assert!(settings.system_proxy_url.is_none());
         assert_eq!(settings.default_access_mode, "full-access");
