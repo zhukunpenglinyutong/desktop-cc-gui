@@ -360,3 +360,55 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 316: 记录消息推理与更新修复提交
+
+**Date**: 2026-05-05
+**Task**: 记录消息推理与更新修复提交
+**Branch**: `feature/v-0.4.13-1`
+
+### Summary
+
+(Add summary)
+
+### Main Changes
+
+任务目标：将当前工作区按语义拆分为两条中文 Conventional Commits，并补齐 Trellis session record。
+
+主要改动：
+- 提交 24fad58f：修复 Codex 在仅返回 Encrypted reasoning 占位文案时仍渲染 thinking 卡片的问题，避免无意义推理块污染消息流。
+- 提交 e55fc787：修复 updater 将同版本 payload 误判为可升级版本的问题，引入版本标准化比较与 app version 读取缓存，并保留版本读取失败时的真实更新可见性。
+
+涉及模块：
+- src/features/messages/components/MessagesRows.tsx
+- src/features/messages/components/Messages.test.tsx
+- src/features/update/hooks/useUpdater.ts
+- src/features/update/hooks/useUpdater.test.ts
+
+验证结果：
+- npx vitest run src/features/messages/components/Messages.test.tsx
+- npx vitest run src/features/update/hooks/useUpdater.test.ts
+- 两组目标测试均通过。
+
+后续事项：
+- 如需发 PR，可在描述中分别强调消息流可读性修复与 updater 同版本误报修复，便于 reviewer 按 commit 逐条验收。
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `e55fc787` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
