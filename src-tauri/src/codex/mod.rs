@@ -1118,10 +1118,11 @@ pub(crate) async fn skills_list(
     }
 
     // Local mode: try local file scanning first
+    let custom_skill_roots_vec = custom_skill_roots.unwrap_or_default();
     match crate::skills::skills_list_local_for_workspace(
         &*state,
         &workspace_id,
-        custom_skill_roots.unwrap_or_default(),
+        custom_skill_roots_vec.clone(),
     )
     .await
     {
@@ -1149,7 +1150,8 @@ pub(crate) async fn skills_list(
                 workspace_id,
                 err
             );
-            codex_core::skills_list_core(&state.sessions, workspace_id).await
+            codex_core::skills_list_core(&state.sessions, workspace_id, custom_skill_roots_vec)
+                .await
         }
     }
 }

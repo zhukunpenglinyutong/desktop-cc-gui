@@ -198,9 +198,11 @@ fn default_gemini_skills_dir() -> Option<PathBuf> {
     resolve_default_gemini_home().map(|home| home.join("skills"))
 }
 
-fn workspace_skills_dir(state: &AppState, entry: &WorkspaceEntry) -> Result<PathBuf, String> {
-    let data_dir = state
-        .settings_path
+fn workspace_skills_dir_from_path(
+    settings_path: &Path,
+    entry: &WorkspaceEntry,
+) -> Result<PathBuf, String> {
+    let data_dir = settings_path
         .parent()
         .map(|path| path.to_path_buf())
         .ok_or_else(|| "Unable to resolve app data dir.".to_string())?;
@@ -468,12 +470,12 @@ fn merge_skills_by_priority(sources: Vec<Vec<SkillEntry>>) -> Vec<SkillEntry> {
     merged
 }
 
-/// Scan local skills directories for a specific workspace.
-/// Priority order:
-/// workspace-managed > project .claude > project .codex > project .agents >
-/// custom > global .claude > global Claude plugins > global .codex > global .agents.
-pub(crate) async fn skills_list_local_for_workspace(
-    state: &AppState,
+/// Core local skill scanning that works with individual fields.
+/// Used by both `skills_list_local_for_workspace` (Tauri command path)
+/// and the daemon path to avoid duplicating scanning logic.
+pub(crate) async fn skills_list_local_core(
+    settings_path: &Path,
+    workspaces: &HashMap<String, WorkspaceEntry>,
     workspace_id: &str,
     custom_skill_roots: Vec<String>,
 ) -> Result<Vec<SkillEntry>, SkillScanError> {
@@ -490,16 +492,15 @@ pub(crate) async fn skills_list_local_for_workspace(
         agents_global_dir,
         gemini_global_dir,
     ) = {
-        let workspaces = state.workspaces.lock().await;
         let entry = workspaces
             .get(workspace_id)
             .ok_or_else(|| SkillScanError::WorkspaceNotFound(workspace_id.to_string()))?;
-        let ws_dir = workspace_skills_dir(state, entry).ok();
+        let ws_dir = workspace_skills_dir_from_path(settings_path, entry).ok();
         let project_claude_dir = project_claude_skills_dir(entry);
         let project_codex_dir = project_codex_skills_dir(entry);
         let project_agents_dir = project_agents_skills_dir(entry);
         let project_gemini_dir = PathBuf::from(&entry.path).join(".gemini").join("skills");
-        let codex_dir = default_skills_dir_for_workspace(&workspaces, entry);
+        let codex_dir = default_skills_dir_for_workspace(workspaces, entry);
         let claude_dir = default_claude_skills_dir();
         let claude_plugin_dirs = default_claude_plugin_skills_roots();
         let agents_dir = default_agents_skills_dir();
@@ -603,6 +604,23 @@ pub(crate) async fn skills_list_local_for_workspace(
     })
     .await
     .map_err(|_| SkillScanError::Join)?
+}
+
+/// Scan local skills directories for a specific workspace.
+/// Wrapper around `skills_list_local_core` for the Tauri command path.
+pub(crate) async fn skills_list_local_for_workspace(
+    state: &AppState,
+    workspace_id: &str,
+    custom_skill_roots: Vec<String>,
+) -> Result<Vec<SkillEntry>, SkillScanError> {
+    let workspaces = state.workspaces.lock().await;
+    skills_list_local_core(
+        &state.settings_path,
+        &workspaces,
+        workspace_id,
+        custom_skill_roots,
+    )
+    .await
 }
 
 #[cfg(test)]
