@@ -178,3 +178,60 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 313: 打磨流式消息展示与用户对话时间线
+
+**Date**: 2026-05-05
+**Task**: 打磨流式消息展示与用户对话时间线
+**Branch**: `feature/v-0.4.13-1`
+
+### Summary
+
+(Add summary)
+
+### Main Changes
+
+## 任务目标
+- 打磨消息流式展示链路与右下角 dock 用户对话时间线，处理真实可见问题，不扩散到无关模块。
+
+## 主要改动
+- 抽出并复用 user conversation summary 逻辑，统一主幕布与 dock 时间线摘要来源。
+- 抽出 Messages live window 纯函数，稳定 sticky header / assistant final boundary / visible process 计算。
+- 修复 dock 用户对话时间线未传入 Codex cleanup mode，导致协作包装残留的问题。
+- 修复时间线编号先于可见项过滤计算，导致 `#n` 与 `1/1` 标签错误的问题。
+- 补齐对应 focused tests，覆盖 live behavior、timeline numbering、StatusPanel 集成与 presentation 逻辑。
+
+## 涉及模块
+- `src/features/messages/components/Messages.tsx`
+- `src/features/messages/components/messagesLiveWindow.ts`
+- `src/features/messages/components/messagesUserPresentation.ts`
+- `src/features/status-panel/components/StatusPanel.tsx`
+- `src/features/status-panel/utils/userConversationTimeline.ts`
+
+## 验证结果
+- 人工测试：用户已手测通过，反馈“没啥问题”。
+- 自动化测试：`npx vitest run src/features/status-panel/utils/userConversationTimeline.test.ts src/features/status-panel/components/UserConversationTimelinePanel.test.tsx src/features/status-panel/components/StatusPanel.test.tsx src/features/messages/components/messagesUserPresentation.test.ts src/features/messages/components/messagesLiveWindow.test.ts src/features/messages/components/Messages.streaming-presentation.test.tsx src/features/messages/components/Messages.live-behavior.test.tsx`
+- 质量门禁：`npm run lint`、`npm run typecheck`、`git diff --check` 通过。
+
+## 后续事项
+- 可继续观察 `openspec/specs/status-panel-latest-user-message-tab/spec.md` 与已归档 change 是否需要补一次主 spec 同步，避免 archived change 与主 specs 文案分叉。
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `2e87c819` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
