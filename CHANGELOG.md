@@ -8,35 +8,57 @@
 
 ✨ Features
 - 新增低性能兼容模式与诊断导出能力，在设置页提供面向性能敏感场景的兼容开关与诊断信息导出入口，便于在低性能机器上更稳定地使用并快速反馈问题
+- 新增 Context Ledger 分阶段治理与来源联动能力，补齐账本归因、来源追踪与幕布区域显隐管理，让上下文来源在会话中更可见、更易管理
+- 新增 Task Center 基础能力并接入任务运行生命周期，打通运行态投影、恢复收口与状态承接，让任务运行过程可以被持续追踪
+- 新增用户对话时间线样式，将状态面板改造成更聚焦的对话时间线视图，提升会话进展的可读性
+- 完善 Claude 与 Gemini 通用幕布组装，并优化实时对话客户端性能，降低长会话和多事件流场景下的卡顿感
 
 🔧 Improvements
 - 重构设置页一级入口与父级 Tab 导航，收口原本分散的设置入口，降低查找不同配置项时的跳转成本
 - 降低核心模块复杂度并同步归档相关 OpenSpec 提案，减少热点模块继续膨胀的风险，为后续功能迭代留出更稳定的演进空间
 - 补齐 Context Ledger 与 Task Center 一阶段提案与执行准备，明确两项后续能力的实施顺序、阶段边界与行为契约
 - 归档性能诊断与超时调整等已完成变更，并恢复 `useThreads` 集成测试覆盖，提升规范留痕与回归验证稳定性
+- 收敛第一阶段架构硬化边界，减少核心链路复杂度继续扩散的风险，为后续演进保留更清晰的模块分层
+- 优化状态面板时间线头部结构与零态展示规则，让会话时间线在有内容和空状态之间都保持一致的视觉节奏
 
 🐛 Fixes
 - 修复 Windows 外部文件监控噪声问题，减少文件系统监控在 Windows 环境下的误报和无效提示
 - 修复 Codex 压缩状态文案回写问题，让压缩状态在幕布与相关 UI 中保持一致
 - 修复 Codex 压缩历史消息丢失与幕布复用异常，避免压缩后历史上下文缺失或错误复用旧幕布内容
 - 修复大文件检查脚本参数解析问题，降低 CI 与本地门禁在大文件治理场景下的误判概率
+- 修复 Context Ledger 卡片布局压缩与详情渲染异常，减少上下文来源卡片在幕布中的排版错位
+- 修复邮件设置卡片背景合并问题，避免设置页局部卡片在视觉上出现不一致
+- 修复 Task Center 运行恢复与状态收敛问题，降低任务从运行态回放或恢复时的状态漂移
+- 改善 Codex 实时幕布与长幕布流式渲染收敛，减少长线程消息持续生成时的抖动和结构漂移
+- 修复右侧面板拖拽提交时机，降低布局调整过程中误触发或交互节奏不稳定的问题
 
 English:
 
 ✨ Features
 - Add a low-performance compatibility mode and diagnostic export entry in Settings, making it easier to stabilize the app on slower machines and share actionable troubleshooting information
+- Add phased Context Ledger governance and source-linking so attribution, source tracing, and curtain-area visibility controls are easier to follow during conversations
+- Add foundational Task Center capabilities with runtime lifecycle integration, including run-state projection, recovery handoff, and status continuity
+- Add a user-conversation timeline presentation in the status panel so session progress is easier to scan
+- Improve shared curtain assembly for Claude and Gemini while also optimizing realtime conversation performance for longer, event-heavy sessions
 
 🔧 Improvements
 - Rework top-level Settings entry points and parent-tab navigation so related configuration surfaces are easier to find without unnecessary jumps
 - Reduce core-module complexity and archive the related OpenSpec proposals, lowering hotspot growth risk and leaving a cleaner base for follow-up iteration
 - Fill in the phase-one proposals and execution prep for Context Ledger and Task Center, clarifying rollout order, stage boundaries, and behavior contracts for the next wave of work
 - Archive completed diagnostics and timeout-adjustment changes while restoring `useThreads` integration-test coverage, improving delivery traceability and regression confidence
+- Tighten first-phase architecture hardening boundaries so core runtime paths stay easier to evolve without spreading complexity
+- Refine timeline header structure and empty-state display rules in the status panel so the conversation timeline keeps a steadier visual rhythm
 
 🐛 Fixes
 - Fix noisy Windows external file-monitor behavior so filesystem watching surfaces fewer false alarms and less redundant noise
 - Fix Codex compaction status copy write-back so compression state stays consistent across the curtain and related UI surfaces
 - Fix missing Codex compaction history messages and incorrect curtain reuse, preventing compressed conversations from losing context or reusing stale curtain content
 - Fix large-file check argument parsing so CI and local gates are less likely to misfire during large-file governance checks
+- Fix compressed Context Ledger card layout and detail rendering issues so context-source cards stay more stable in the curtain
+- Fix merged email-settings card background issues to keep settings-page cards visually consistent
+- Fix Task Center run recovery and state convergence so restored or replayed task runs are less likely to drift
+- Improve Codex realtime and long-curtain streaming convergence, reducing jitter and structural drift during long-running message streams
+- Fix right-panel drag commit timing so layout adjustments feel more predictable and less error-prone
 
 ---
 
