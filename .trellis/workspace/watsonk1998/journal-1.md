@@ -152,3 +152,41 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 5: 隔离会话技能选择状态
+
+**Date**: 2026-05-02
+**Task**: 隔离会话技能选择状态
+**Branch**: `fix/issue-293-clear-composer-skills`
+
+### Summary
+
+(Add summary)
+
+### Main Changes
+
+任务目标：修复 #293 中一个会话选择 skill 后会泄漏到其他会话的问题。
+主要改动：切换 active workspace/thread 时同步清理 selectedSkillNames 与 selectedCommonsNames。
+涉及模块：Composer 状态管理与上下文来源回归测试。
+验证结果：npx vitest run src/features/composer/components/Composer.context-source-grouping.test.tsx；npx eslint src/features/composer/components/Composer.tsx src/features/composer/components/Composer.context-source-grouping.test.tsx；npm run typecheck。
+后续事项：无。
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `df3ae9a3cb1d36a33d9d0e826fcffa3bbaf3ce60` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

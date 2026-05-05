@@ -1472,6 +1472,8 @@ export const Composer = memo(function Composer({
   }, [hasStatusPanelActivity, statusPanelExpandedOverride]);
 
   useEffect(() => {
+    setSelectedSkillNames([]);
+    setSelectedCommonsNames([]);
     setSelectedManualMemories([]);
     setSelectedNoteCards([]);
     setSelectedInlineFileReferences([]);

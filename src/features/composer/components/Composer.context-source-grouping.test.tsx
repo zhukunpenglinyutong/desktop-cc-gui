@@ -50,9 +50,15 @@ type HarnessProps = {
   skills?: SkillOption[];
   commands?: CustomCommandOption[];
   onSend?: (text: string, images: string[]) => void;
+  activeThreadId?: string;
 };
 
-function ComposerHarness({ skills = [], commands = [], onSend = () => {} }: HarnessProps) {
+function ComposerHarness({
+  skills = [],
+  commands = [],
+  onSend = () => {},
+  activeThreadId = "thread-1",
+}: HarnessProps) {
   const [draftText, setDraftText] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
@@ -99,7 +105,7 @@ function ComposerHarness({ skills = [], commands = [], onSend = () => {} }: Harn
       dictationEnabled={false}
       editorSettings={editorSettings}
       activeWorkspaceId="ws-1"
-      activeThreadId="thread-1"
+      activeThreadId={activeThreadId}
     />
   );
 }
@@ -202,5 +208,48 @@ describe("Composer context source grouping", () => {
     expect(sentText).toBe("/build-review /team-lint 检查一下");
     expect(sentText).not.toContain("project_claude");
     expect(sentText).not.toContain("User .claude");
+  });
+
+  it("clears selected skill chips when switching threads before sending", async () => {
+    const onSend = vi.fn();
+    const skill: SkillOption = {
+      name: "review-code",
+      path: "/repo/.claude/skills/review-code/SKILL.md",
+      source: "project_claude",
+      description: "review",
+    };
+    const view = render(
+      <ComposerHarness
+        onSend={onSend}
+        skills={[skill]}
+        activeThreadId="thread-1"
+      />,
+    );
+
+    const textarea = getTextarea(view.container);
+    const value = "/review-code 帮我看一下";
+    await act(async () => {
+      fireEvent.change(textarea, {
+        target: {
+          value,
+          selectionStart: value.length,
+        },
+      });
+    });
+
+    view.rerender(
+      <ComposerHarness
+        onSend={onSend}
+        skills={[skill]}
+        activeThreadId="thread-2"
+      />,
+    );
+
+    const switchedTextarea = getTextarea(view.container);
+    await act(async () => {
+      fireEvent.keyDown(switchedTextarea, { key: "Enter", bubbles: true });
+    });
+
+    expect(onSend.mock.calls[0]?.[0]).toBe("帮我看一下");
   });
 });
