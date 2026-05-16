@@ -248,3 +248,101 @@ tailwindcss-language-server 建议 Tailwind v4 canonical class：`size-[13px]→
 ### Next Steps
 
 - None - task complete
+
+
+## Session 4: Phase 3 Threads/Messages 切到 Tailwind/coss token
+
+**Date**: 2026-05-16
+**Task**: Phase 3 Threads/Messages 切到 Tailwind/coss token
+**Branch**: `chore/bump-version-0.5`
+
+### Summary
+
+(Add summary)
+
+### Main Changes
+
+本会话完成 coss UI 全量迁移 Phase 3。Scope 显著收缩——layout-swapped-platform-guard.test.ts 字面值测试 pin 了 6 个 messages.* 文件，推到 Phase 3.5/3.6 与字面值测试改造一并完成。
+
+## Phase 3 实际产出
+
+- 删除：prompts.css（295 行）+ messages.streaming.css（15 行）
+- 新增：prompts-animations.css（54 行，保留 3 个 @keyframes + 4 个触发选择器 + reduced-motion override）
+- 改写：PromptPanel（46 处 className 补 Tailwind utility）、PromptEnhancerDialog（justify-between）、MessagesRows / WorkspaceSessionActivityPanel（live streaming/plain-text class 补 wrap 规则）
+- bootstrap.ts：prompts.css 1:1 替换为 prompts-animations.css，imports 仍 46
+
+## Sticky header 4 条 carry-forward verification
+
+非干预策略——MessagesTimeline.tsx / messagesUserPresentation.ts / useStickyMessageSelector / messagesLiveWindow / 全部 reducer hook 不动。45/45 Messages.live-behavior.test.tsx 通过覆盖 4 条 acceptance：
+1. realtime 不再渲染 .messages-live-sticky-user-message（7 处 toBeNull）
+2. realtime/history 共用同一 sticky 出口（30 处 messages-history-sticky-header selector 同一）
+3. realtime 回看历史 sections 时 history-style handoff 接棒（7 处测试）
+4. trimmed live latest question 仍驱动 sticky（7 处测试）
+
+## Scope 收缩理由
+
+| 文件 | 状态 | 原因 |
+|---|---|---|
+| messages.history-sticky.css | 推 Phase 3.5 | layout-swapped-platform-guard.test.ts:143-186 7 处字面值断言 + Messages.live-behavior.test.tsx 30 处 selector |
+| messages.part1-shell.css | 推 Phase 3.6 | .claude-render-safe 字面值 pin |
+| messages.part1.css | 推 Phase 3.6 | .messages-live-controls + .claude-render-safe 字面值 + 2301 LOC |
+| messages.part2.css | 推 Phase 3.6 | 875 LOC，thinking-block / reasoning / tools 需结构 rewrite |
+| messages.status-shell.css | 推 Phase 3.6 | .claude-render-safe .working-spinner 字面值 |
+
+## 0 coss primitive 替换
+
+与 Phase 2 precedent 一致——纯样式 rebase。Card/Field/Input/Textarea/Button/Select 推 Phase 4；Disclosure/Accordion 替 thinking-block 推 Phase 3.6。
+
+## 验证
+
+- npm run lint pass
+- npm run typecheck baseline 不变（3 个 pre-existing）
+- npm run test pass（ComposerInput.collaboration 3 个 failure 是 pre-existing）
+- npm run test:layout-guard 10/10
+- npm run check:large-files:gate found=0
+- vitest src/styles/ 16/16
+- vitest messages feature 419/419
+- vitest Messages.live-behavior 45/45
+- vitest WorkspaceSessionActivityPanel 54/54
+
+Net delta：10 files，+132 -376（-244 LOC）。
+
+## IDE 诊断告警（非阻塞）
+
+- WorkspaceSessionActivityPanel.tsx:1727 break-words 与 [overflow-wrap:anywhere] cssConflict（同义重复）+ Tailwind v4 canonical class 建议（wrap-break-word / wrap-anywhere）。followup 队列。
+
+## Follow-up（已写入 docs/migration-to-coss-ui.md）
+
+1. Phase 3.5 sticky header coss migration：先把 layout-swapped-platform-guard.test.ts:143-186 字面值断言重构为行为断言（jsdom render + data-*/className flag check），再 Tailwind-inline MessagesTimeline.tsx:478-530 删 messages.history-sticky.css
+2. Phase 3.6 message bodies coss migration：先重构 layout-swapped-platform-guard.test.ts:135-201（.messages-shell.claude-render-safe 与 .messages-live-controls 字面值），再分 2-3 sub-PR 拆 messages.part1/part1-shell/part2/status-shell.css
+3. Phase 4 PromptEnhancerDialog 用 coss Dialog 替换时同步 enhance-prompt.css 内 .prompt-section* 规则，回收 Phase 3 临时加的 justify-between
+
+**Updated Files**:
+
+- 删除：src/styles/prompts.css、src/styles/messages.streaming.css
+- 新增：src/styles/prompts-animations.css、.trellis/tasks/05-16-migrate-css-to-coss-ui/phase-3-messages-plan.md
+- 修改：src/styles/messages.css、src/bootstrap.ts
+- 修改：src/features/prompts/components/PromptPanel.tsx
+- 修改：src/features/composer/components/ChatInputBox/PromptEnhancerDialog.tsx
+- 修改：src/features/messages/components/MessagesRows.tsx
+- 修改：src/features/session-activity/components/WorkspaceSessionActivityPanel.tsx
+- 更新：.trellis/tasks/05-16-migrate-css-to-coss-ui/prd.md、docs/migration-to-coss-ui.md
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `137fe522` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
