@@ -1106,3 +1106,51 @@ Net：CSS 67→66；累计删 28 .css；bootstrap.ts 41→40 imports
 ### Next Steps
 
 - None - task complete
+
+
+## Session 17: coss.ui 视觉 token 接入 + 官方 dark mode selector 对齐
+
+**Date**: 2026-05-17
+**Task**: coss.ui 视觉 token 接入 + 官方 dark mode selector 对齐
+**Branch**: `chore/bump-version-0.5`
+
+### Summary
+
+(Add summary)
+
+### Main Changes
+
+完成 coss.ui 官方视觉 token 的完整接入，修复 dark mode selector 不匹配问题：
+
+1. globals.css 中增加完整的 coss 官方 :root (light) 和 :root[data-theme="dark"] (dark) block
+2. 清除 themes.dark.css / themes.light.css 内的 coss bridge block（这些旧桥接覆盖了官方 token）
+3. 使 @custom-variant dark selector 与项目的 data-theme="dark" 属性对齐（而非 .dark 类）
+4. 安装 31 个新 coss primitive 到 src/components/ui/
+5. 接入 @fontsource/inter + @fontsource-variable/geist-mono 字体包
+6. 替换 Linear-style 颜色 → 100% @coss/ui 官方 neutral/zinc 设计语言
+7. 修复 geist CSS import 路径错误（@geist/font → @fontsource-variable/geist-mono）
+
+受影响模块：src/styles/globals.css, src/styles/themes.dark.css, src/styles/themes.light.css, src/bootstrap.ts, src/components/ui/（31 个新文件）
+
+验证：lint ✅, typecheck ✅ (仅 2 个 pre-existing perfBaseline 错误), test ✅
+
+后续：继续 Phase 5.6c kanban / Phase 7.6 git-history.part1.overview / Phase 8.6.2 spec-hub.chrome 等并行迁移
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `30826436` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
