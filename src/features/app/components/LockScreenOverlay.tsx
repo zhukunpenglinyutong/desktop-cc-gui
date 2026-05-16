@@ -2,6 +2,16 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import Lock from "lucide-react/dist/esm/icons/lock";
 import appIcon from "../../../../icon.png";
+import { cn } from "@/lib/utils";
+
+const PANEL_CLASS =
+  "panel-lock-panel rounded-2xl border border-border bg-card/85 shadow-2xl";
+
+const FACT_CLASS =
+  "panel-lock-fact rounded-xl border border-border bg-muted/80 px-2.5 py-2 [&>span]:block [&>span]:mb-1 [&>span]:text-muted-foreground [&>span]:text-[11px] [&>strong]:text-foreground [&>strong]:text-[13px]";
+
+const CONTENT_CARD_CLASS =
+  "rounded-xl border border-border bg-muted/70 px-2.5 py-2 [&_h4]:m-0 [&_h4]:text-foreground [&_h4]:text-[13px] [&_p]:m-0 [&_p]:mt-1 [&_p]:text-muted-foreground [&_p]:text-xs [&_p]:leading-snug";
 
 type FeatureCard = {
   titleKey: string;
@@ -191,81 +201,133 @@ export function LockScreenOverlay({
   };
 
   return (
-    <div className="panel-lock-overlay" role="dialog" aria-modal="true">
-      <div className="panel-lock-overlay-backdrop" />
-      <div className="panel-lock-shell" data-tauri-drag-region="false">
-        <section className="panel-lock-atlas panel-lock-panel">
-          <header className="panel-lock-hero">
-            <div className="panel-lock-brand">
-              <img src={appIcon} alt="ccgui" className="panel-lock-logo" />
+    <div
+      className={cn(
+        "panel-lock-overlay fixed inset-0 z-[120]",
+        "flex items-center justify-center p-3 overflow-hidden [-webkit-app-region:no-drag]",
+      )}
+      role="dialog"
+      aria-modal="true"
+    >
+      <div className="panel-lock-overlay-backdrop absolute inset-0 backdrop-blur-xl bg-background/80" />
+      <div
+        className={cn(
+          "panel-lock-shell relative z-[1] w-full max-w-[1120px]",
+          "max-h-[min(760px,calc(100vh-24px))] h-[min(760px,calc(100vh-24px))]",
+          "grid gap-3",
+          "grid-cols-1 lg:grid-cols-[minmax(0,1.35fr)_minmax(280px,360px)]",
+        )}
+        data-tauri-drag-region="false"
+      >
+        <section className={cn("panel-lock-atlas grid grid-rows-[auto_auto_minmax(0,1fr)] gap-2.5 p-3.5 min-h-0", PANEL_CLASS)}>
+          <header className="panel-lock-hero flex flex-col gap-2.5">
+            <div className="panel-lock-brand flex items-center gap-3">
+              <img
+                src={appIcon}
+                alt="ccgui"
+                className="panel-lock-logo size-[68px] rounded-2xl border border-border shadow-xl"
+              />
               <div>
-                <p className="panel-lock-brand-kicker">{t("lockScreen.brandKicker")}</p>
-                <h2>{t("lockScreen.title")}</h2>
+                <p className="panel-lock-brand-kicker m-0 text-[11px] tracking-widest uppercase text-primary">
+                  {t("lockScreen.brandKicker")}
+                </p>
+                <h2 className="mt-0.5 text-foreground text-[38px] leading-[1.08] tracking-tight font-heading">
+                  {t("lockScreen.title")}
+                </h2>
               </div>
             </div>
-            <p className="panel-lock-hero-description">{t("lockScreen.description")}</p>
-            <div className="panel-lock-facts">
-              <article className="panel-lock-fact">
+            <p className="panel-lock-hero-description m-0 text-muted-foreground text-[13px] leading-relaxed">
+              {t("lockScreen.description")}
+            </p>
+            <div className="panel-lock-facts grid grid-cols-1 sm:grid-cols-3 gap-2">
+              <article className={FACT_CLASS}>
                 <span>{t("lockScreen.facts.integrationsLabel")}</span>
                 <strong>{t("lockScreen.facts.integrationsValue")}</strong>
               </article>
-              <article className="panel-lock-fact">
+              <article className={FACT_CLASS}>
                 <span>{t("lockScreen.facts.workflowLabel")}</span>
                 <strong>{t("lockScreen.facts.workflowValue")}</strong>
               </article>
-              <article className="panel-lock-fact">
+              <article className={FACT_CLASS}>
                 <span>{t("lockScreen.facts.runtimeLabel")}</span>
                 <strong>{t("lockScreen.facts.runtimeValue")}</strong>
               </article>
             </div>
           </header>
 
-          <div className="panel-lock-tabs" role="tablist" aria-label={t("lockScreen.tabLabel")}>
-            {tabItems.map((tab) => (
-              <button
-                key={tab.id}
-                type="button"
-                role="tab"
-                aria-selected={activeTab === tab.id}
-                className={`panel-lock-tab${activeTab === tab.id ? " is-active" : ""}`}
-                onClick={() => setActiveTab(tab.id)}
-                data-tauri-drag-region="false"
-              >
-                {tab.label}
-              </button>
-            ))}
+          <div
+            className="panel-lock-tabs grid grid-cols-2 sm:grid-cols-4 gap-2"
+            role="tablist"
+            aria-label={t("lockScreen.tabLabel")}
+          >
+            {tabItems.map((tab) => {
+              const active = activeTab === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={active}
+                  className={cn(
+                    "panel-lock-tab rounded-xl px-2.5 py-2 text-xs font-bold transition-colors border",
+                    active
+                      ? "is-active border-primary bg-secondary text-foreground"
+                      : "border-border bg-card/85 text-muted-foreground hover:text-foreground",
+                  )}
+                  onClick={() => setActiveTab(tab.id)}
+                  data-tauri-drag-region="false"
+                >
+                  {tab.label}
+                </button>
+              );
+            })}
           </div>
 
           <div
-            className={`panel-lock-content${activeTab === "live" ? " is-live" : ""}`}
+            className={cn(
+              "panel-lock-content min-h-0 rounded-xl border border-border bg-muted/70 p-3 overflow-auto",
+              activeTab === "live" && "is-live flex flex-col overflow-hidden",
+            )}
             role="tabpanel"
           >
             {activeTab === "live" ? (
               <>
                 <div className="panel-lock-content-header">
-                  <h3>{t("lockScreen.liveTitle")}</h3>
-                  <p>{t("lockScreen.liveDesc")}</p>
+                  <h3 className="m-0 text-foreground text-xl tracking-tight font-heading">
+                    {t("lockScreen.liveTitle")}
+                  </h3>
+                  <p className="m-0 mt-1.5 text-muted-foreground text-xs leading-snug">
+                    {t("lockScreen.liveDesc")}
+                  </p>
                 </div>
                 {displayedLiveSessions.length === 0 ? (
-                  <div className="panel-lock-live-empty">{t("lockScreen.liveEmpty")}</div>
+                  <div className="panel-lock-live-empty mt-2.5 rounded-xl border border-dashed border-border bg-muted/70 px-3 py-3 text-muted-foreground text-xs">
+                    {t("lockScreen.liveEmpty")}
+                  </div>
                 ) : (
                   <div
-                    className="panel-lock-live-list"
+                    className="panel-lock-live-list mt-2.5 grid gap-2 flex-1 min-h-0 overflow-auto"
                     ref={liveListRef}
                     style={{
-                      gridTemplateRows: `repeat(${liveRowCount}, minmax(var(--panel-lock-live-item-min-height), 1fr))`,
+                      gridTemplateRows: `repeat(${liveRowCount}, minmax(var(--panel-lock-live-item-min-height,126px), 1fr))`,
                     }}
                   >
                     {displayedLiveSessions.map((session) => (
-                      <article key={session.id} className="panel-lock-live-item">
-                        <div className="panel-lock-live-item-head">
+                      <article
+                        key={session.id}
+                        className="panel-lock-live-item rounded-xl border border-border bg-muted/60 px-2.5 py-2"
+                      >
+                        <div className="panel-lock-live-item-head grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2">
                           <span
-                            className={`panel-lock-live-status${
-                              session.isProcessing ? " is-running" : ""
-                            }`}
+                            className={cn(
+                              "panel-lock-live-status size-2 rounded-full",
+                              session.isProcessing
+                                ? "is-running bg-green-500 shadow-[0_0_0_4px_rgba(34,197,94,0.14)]"
+                                : "bg-muted-foreground/80",
+                            )}
                           />
-                          <h4>{session.threadName}</h4>
-                          <span className="panel-lock-live-time">
+                          <h4 className="m-0 text-foreground text-[13px] truncate">{session.threadName}</h4>
+                          <span className="panel-lock-live-time text-muted-foreground text-[11px]">
                             {new Date(session.updatedAt).toLocaleTimeString([], {
                               hour: "2-digit",
                               minute: "2-digit",
@@ -273,10 +335,12 @@ export function LockScreenOverlay({
                             })}
                           </span>
                         </div>
-                        <p className="panel-lock-live-meta">
+                        <p className="panel-lock-live-meta mt-1.5 text-muted-foreground text-[11px]">
                           {session.workspaceName} · {session.engine} · {t("lockScreen.liveRunning")}
                         </p>
-                        <p className="panel-lock-live-preview">{session.preview}</p>
+                        <p className="panel-lock-live-preview mt-1.5 text-muted-foreground/80 text-xs leading-snug max-h-[3em] overflow-hidden">
+                          {session.preview}
+                        </p>
                       </article>
                     ))}
                   </div>
@@ -287,25 +351,37 @@ export function LockScreenOverlay({
             {activeTab === "capabilities" ? (
               <>
                 <div className="panel-lock-content-header">
-                  <h3>{t("lockScreen.capabilityTitle")}</h3>
-                  <p>{t("lockScreen.capabilityDesc")}</p>
+                  <h3 className="m-0 text-foreground text-xl tracking-tight font-heading">
+                    {t("lockScreen.capabilityTitle")}
+                  </h3>
+                  <p className="m-0 mt-1.5 text-muted-foreground text-xs leading-snug">
+                    {t("lockScreen.capabilityDesc")}
+                  </p>
                 </div>
-                <article className="panel-lock-capability-core">
-                  <h4>ccgui Core</h4>
-                  <p>{t("lockScreen.facts.workflowValue")}</p>
+                <article className="panel-lock-capability-core mt-2.5 rounded-xl border border-primary bg-secondary/60 px-3 py-2.5">
+                  <h4 className="m-0 text-foreground text-[13px]">ccgui Core</h4>
+                  <p className="m-0 mt-1.5 text-muted-foreground text-xs">
+                    {t("lockScreen.facts.workflowValue")}
+                  </p>
                 </article>
-                <div className="panel-lock-capability-grid">
+                <div className="panel-lock-capability-grid mt-2 grid grid-cols-1 sm:grid-cols-2 gap-2">
                   {capabilityNodes.map((card) => (
-                    <article key={card.titleKey} className="panel-lock-capability-card">
+                    <article
+                      key={card.titleKey}
+                      className={cn("panel-lock-capability-card", CONTENT_CARD_CLASS)}
+                    >
                       <h4>{t(card.titleKey)}</h4>
                       <p>{t(card.descriptionKey)}</p>
                     </article>
                   ))}
                 </div>
 
-                <div className="panel-lock-highlight-row">
+                <div className="panel-lock-highlight-row mt-2 grid grid-cols-1 sm:grid-cols-2 gap-2">
                   {capabilityHighlights.map((card) => (
-                    <article key={card.titleKey} className="panel-lock-highlight-card">
+                    <article
+                      key={card.titleKey}
+                      className={cn("panel-lock-highlight-card", CONTENT_CARD_CLASS)}
+                    >
                       <h4>{t(card.titleKey)}</h4>
                       <p>{t(card.descriptionKey)}</p>
                     </article>
@@ -317,13 +393,22 @@ export function LockScreenOverlay({
             {activeTab === "workflow" ? (
               <>
                 <div className="panel-lock-content-header">
-                  <h3>{t("lockScreen.journeyTitle")}</h3>
-                  <p>{t("lockScreen.journeyDesc")}</p>
+                  <h3 className="m-0 text-foreground text-xl tracking-tight font-heading">
+                    {t("lockScreen.journeyTitle")}
+                  </h3>
+                  <p className="m-0 mt-1.5 text-muted-foreground text-xs leading-snug">
+                    {t("lockScreen.journeyDesc")}
+                  </p>
                 </div>
-                <div className="panel-lock-workflow-list">
+                <div className="panel-lock-workflow-list mt-2.5 grid gap-2">
                   {workflowSteps.map((step, index) => (
-                    <article key={step.titleKey} className="panel-lock-workflow-item">
-                      <span className="panel-lock-workflow-index">{index + 1}</span>
+                    <article
+                      key={step.titleKey}
+                      className="panel-lock-workflow-item grid grid-cols-[26px_minmax(0,1fr)] gap-2 rounded-xl border border-border bg-muted/60 px-2.5 py-2 [&_h4]:m-0 [&_h4]:text-foreground [&_h4]:text-[13px] [&_p]:m-0 [&_p]:mt-1 [&_p]:text-muted-foreground [&_p]:text-xs [&_p]:leading-snug"
+                    >
+                      <span className="panel-lock-workflow-index size-6 rounded-full inline-flex items-center justify-center text-primary bg-secondary/70 text-[11px] font-bold">
+                        {index + 1}
+                      </span>
                       <div>
                         <h4>{t(step.titleKey)}</h4>
                         <p>{t(step.descriptionKey)}</p>
@@ -337,14 +422,23 @@ export function LockScreenOverlay({
             {activeTab === "elements" ? (
               <>
                 <div className="panel-lock-content-header">
-                  <h3>{t("lockScreen.elementsTitle")}</h3>
-                  <p>{t("lockScreen.elementsDesc")}</p>
+                  <h3 className="m-0 text-foreground text-xl tracking-tight font-heading">
+                    {t("lockScreen.elementsTitle")}
+                  </h3>
+                  <p className="m-0 mt-1.5 text-muted-foreground text-xs leading-snug">
+                    {t("lockScreen.elementsDesc")}
+                  </p>
                 </div>
-                <div className="panel-lock-card-grid">
+                <div className="panel-lock-card-grid mt-2.5 grid grid-cols-1 sm:grid-cols-2 gap-2">
                   {elementCards.map((card, index) => (
-                    <article key={card.titleKey} className="panel-lock-card">
-                      <span className="panel-lock-card-index">{(index + 1).toString().padStart(2, "0")}</span>
-                      <h4>{t(card.titleKey)}</h4>
+                    <article
+                      key={card.titleKey}
+                      className={cn("panel-lock-card", CONTENT_CARD_CLASS)}
+                    >
+                      <span className="panel-lock-card-index inline-flex rounded-full px-1.5 py-px bg-secondary/70 text-primary text-[10px]">
+                        {(index + 1).toString().padStart(2, "0")}
+                      </span>
+                      <h4 className="mt-1.5">{t(card.titleKey)}</h4>
                       <p>{t(card.descriptionKey)}</p>
                     </article>
                   ))}
@@ -354,15 +448,22 @@ export function LockScreenOverlay({
           </div>
         </section>
 
-        <aside className="panel-lock-auth panel-lock-panel" data-tauri-drag-region="false">
-          <span className="panel-lock-badge">
+        <aside
+          className={cn("panel-lock-auth min-h-0 p-3.5 flex flex-col overflow-auto lg:overflow-visible", PANEL_CLASS)}
+          data-tauri-drag-region="false"
+        >
+          <span className="panel-lock-badge w-fit inline-flex items-center gap-1.5 rounded-full border border-primary/30 bg-secondary/70 text-primary px-2.5 py-1 text-xs font-semibold">
             <Lock size={14} />
             {t("lockScreen.locked")}
           </span>
-          <h3>{t("lockScreen.unlockTitle")}</h3>
-          <p>{t("lockScreen.unlockDesc")}</p>
+          <h3 className="mt-3 mb-0 text-foreground text-[26px] leading-[1.1] tracking-tight font-heading">
+            {t("lockScreen.unlockTitle")}
+          </h3>
+          <p className="mt-2 mb-0 text-muted-foreground text-[13px] leading-relaxed">
+            {t("lockScreen.unlockDesc")}
+          </p>
 
-          <label className="panel-lock-label" htmlFor="panel-lock-password">
+          <label className="panel-lock-label mt-3.5 mb-1.5 text-muted-foreground text-xs font-semibold" htmlFor="panel-lock-password">
             {t("lockScreen.passwordInput")}
           </label>
           <input
@@ -377,19 +478,26 @@ export function LockScreenOverlay({
                 void handleUnlock();
               }
             }}
-            className="panel-lock-input"
+            className={cn(
+              "panel-lock-input w-full rounded-xl border border-border bg-input text-foreground text-[13px] px-3 py-2.5",
+              "focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/30",
+            )}
             placeholder={t("lockScreen.passwordPlaceholder")}
             data-tauri-drag-region="false"
           />
           {unlockError ? (
-            <p className="panel-lock-error">{unlockError}</p>
+            <p className="panel-lock-error mt-2 text-xs text-destructive">{unlockError}</p>
           ) : (
-            <p className="panel-lock-hint">{t("lockScreen.passwordHint")}</p>
+            <p className="panel-lock-hint mt-2 text-xs text-muted-foreground">{t("lockScreen.passwordHint")}</p>
           )}
 
           <button
             type="button"
-            className="panel-lock-button"
+            className={cn(
+              "panel-lock-button mt-2.5 w-full rounded-xl border border-primary text-primary-foreground bg-primary",
+              "px-3 py-2.5 text-[13px] font-bold transition-opacity",
+              "hover:opacity-90 disabled:opacity-60 disabled:cursor-not-allowed",
+            )}
             onClick={() => {
               void handleUnlock();
             }}
@@ -399,11 +507,17 @@ export function LockScreenOverlay({
             {t("lockScreen.unlock")}
           </button>
 
-          <div className="panel-lock-divider" />
-          <h4>{t("lockScreen.storageTitle")}</h4>
-          <p className="panel-lock-storage-note">{t("lockScreen.storageDesc")}</p>
-          <p className="panel-lock-storage-label">{t("lockScreen.storagePathLabel")}</p>
-          <code className="panel-lock-storage-path">{PASSWORD_STORAGE_PATH}</code>
+          <div className="panel-lock-divider my-3 border-t border-border" />
+          <h4 className="m-0 text-foreground text-[13px]">{t("lockScreen.storageTitle")}</h4>
+          <p className="panel-lock-storage-note mt-2 text-muted-foreground text-xs">
+            {t("lockScreen.storageDesc")}
+          </p>
+          <p className="panel-lock-storage-label mt-2 mb-1 text-muted-foreground text-[11px] uppercase tracking-wider">
+            {t("lockScreen.storagePathLabel")}
+          </p>
+          <code className="panel-lock-storage-path block px-2.5 py-2 rounded-lg border border-border bg-muted/70 text-foreground text-[11px] leading-snug break-all font-mono">
+            {PASSWORD_STORAGE_PATH}
+          </code>
         </aside>
       </div>
     </div>

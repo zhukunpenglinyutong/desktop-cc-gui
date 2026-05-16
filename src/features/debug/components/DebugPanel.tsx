@@ -2,6 +2,7 @@ import { useMemo, useRef } from "react";
 import type { MouseEvent as ReactMouseEvent } from "react";
 import { useTranslation } from "react-i18next";
 import type { DebugEntry } from "../../../types";
+import { cn } from "@/lib/utils";
 
 type DebugPanelProps = {
   entries: DebugEntry[];
@@ -91,20 +92,32 @@ export function DebugPanel({
 
   return (
     <section
-      className={`debug-panel ${variant === "full" ? "full" : isOpen ? "open" : ""}`}
+      className={cn(
+        "debug-panel flex flex-col [-webkit-app-region:no-drag]",
+        "border-t border-border bg-muted/50",
+        "col-start-1 row-start-6",
+        variant === "full" && "full h-full border-t-0",
+        variant !== "full" && isOpen && "open h-[var(--debug-panel-height,180px)] border-t-0",
+      )}
     >
       {variant !== "full" && isOpen && onResizeStart ? (
         <div
-          className="debug-panel-resizer"
+          className={cn(
+            "debug-panel-resizer h-1.5 cursor-row-resize relative shrink-0",
+            "after:content-[''] after:absolute after:inset-x-0 after:top-0 after:h-px after:bg-border after:opacity-40",
+            "hover:after:opacity-90",
+          )}
           role="separator"
           aria-orientation="horizontal"
           aria-label="Resize debug panel"
           onMouseDown={onResizeStart}
         />
       ) : null}
-      <div className="debug-header">
-        <div className="debug-title">{t("debug.title")}</div>
-        <div className="debug-actions">
+      <div className="debug-header flex items-center justify-between gap-3 px-5 py-1.5 text-xs">
+        <div className="debug-title font-semibold tracking-widest uppercase text-muted-foreground">
+          {t("debug.title")}
+        </div>
+        <div className="debug-actions flex gap-2">
           <button className="ghost" onClick={onCopy}>
             {t("debug.copy")}
           </button>
@@ -114,21 +127,31 @@ export function DebugPanel({
         </div>
       </div>
       {isOpen ? (
-        <div className="debug-list">
+        <div className="debug-list overflow-y-auto px-4 pt-2 pb-3 flex flex-col gap-2.5 min-h-0 flex-1">
           {formattedEntries.length === 0 ? (
-            <div className="debug-empty">{t("debug.noDebugEventsYet")}</div>
+            <div className="debug-empty text-xs text-muted-foreground/70">
+              {t("debug.noDebugEventsYet")}
+            </div>
           ) : null}
           {formattedEntries.map((entry) => (
-            <div key={entry.id} className="debug-row">
-              <div className="debug-meta">
-                <span className={`debug-source ${entry.source}`}>
+            <div key={entry.id} className="debug-row flex flex-col gap-1.5">
+              <div className="debug-meta flex gap-2.5 items-center text-[11px] text-muted-foreground">
+                <span
+                  className={cn(
+                    "debug-source uppercase tracking-widest text-[10px] px-1.5 py-0.5 rounded-full bg-secondary",
+                    entry.source === "error" && "error bg-destructive/20 text-destructive",
+                    entry.source === "stderr" && "stderr bg-yellow-500/20 text-yellow-600 dark:text-yellow-300",
+                  )}
+                >
                   {entry.source}
                 </span>
                 <span className="debug-time">{entry.timeLabel}</span>
-                <span className="debug-label">{entry.label}</span>
+                <span className="debug-label font-semibold">{entry.label}</span>
               </div>
               {entry.payloadText !== undefined ? (
-                <pre className="debug-payload">{entry.payloadText}</pre>
+                <pre className="debug-payload m-0 text-[11px] leading-tight text-foreground whitespace-pre-wrap break-words font-mono">
+                  {entry.payloadText}
+                </pre>
               ) : null}
             </div>
           ))}

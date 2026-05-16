@@ -30,7 +30,7 @@
 |---|---|---|---|
 | 0 | Preflight & Foundation | 本 README、`src/components/ui/README.md`、4 个 superseded task archive | ✅ done (2026-05-16, commit `48baf63d`) |
 | 1 | coss Token 收尾 + globals.css 清理 | `--font-heading` 补齐、`globals.css` 167→60 行、抽 `proxy-status-badge.css`、`__coss-smoke__` 自测 | ✅ done (2026-05-16, 待 commit) |
-| 2 | Global Chrome | sidebar / tabbar / panel-lock / panel-tabs / search-palette / compact-tablet / debug | ☐ |
+| 2 | Global Chrome | tabbar / panel-lock / panel-tabs / search-palette / compact-* / debug（sidebar 推迟到后续 phase 与业务一起处理） | ✅ done (2026-05-16, 待 commit) |
 | 3 | Threads + Messages（含 sticky header carry-forward） | messages.* / messages.streaming / history-sticky / prompts | ☐ |
 | 4 | Composer & Interaction Dialogs | composer.* / ask-user-question / approval-toasts / loading-progress / request-user-input | ☐ |
 | 5 | Home & Workspace | home / home-chat / workspace-home / note-cards / kanban / release-notes / update-toasts | ☐ |
@@ -67,6 +67,8 @@ archive 位置：`.trellis/tasks/archive/2026-05/`。
 - [ ] 评估 `src/features/<feature>/components/` 下与 `src/components/ui/` 重复的组件，做去重 / 提升。
 - [ ] 评估是否引入 coss `Form` + Zod 重写 settings / composer 表单（本次只换基础原语，不重写表单整体）。
 - [ ] 评估是否引入 coss `Command` 重写 search-palette（本次 Phase 2 只换皮）。
+- [ ] **Phase 4**：评估是否引入 coss `Dialog` 替换 LockScreenOverlay 自实现的 overlay 结构（Phase 2 只完成纯样式换皮，结构沿用旧 div 树）。
+- [ ] **Phase 3+**：sidebar.css / sidebar.chrome.css / sidebar-shell.css 内的 chrome 部分（topbar placeholder、search toggle、primary nav 等）随 Threads/Workspace 业务拆解一起迁移。两个 CSS 字面值测试（`layout-swapped-platform-guard.test.ts` 与 `sidebar-titlebar-drag-region.test.ts`）届时需要按拆解结果改造或归档。
 
 ### 工程
 - [ ] 删除 `@radix-ui/*` 等 legacy 依赖（迁移完成后跑 `npx depcheck`）。

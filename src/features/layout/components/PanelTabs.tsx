@@ -9,6 +9,7 @@ import Activity from "lucide-react/dist/esm/icons/activity";
 import LayoutList from "lucide-react/dist/esm/icons/layout-list";
 import NotebookPen from "lucide-react/dist/esm/icons/notebook-pen";
 import { TooltipIconButton } from "../../../components/ui/tooltip-icon-button";
+import { cn } from "@/lib/utils";
 
 export type PanelTabId =
   | "radar"
@@ -89,20 +90,42 @@ export function PanelTabs({
     return null;
   }
   return (
-    <div className="panel-tabs" role="tablist" aria-label="Panel">
+    <div
+      className={cn(
+        "panel-tabs inline-flex items-center gap-2 px-2",
+        "border-r border-border",
+      )}
+      role="tablist"
+      aria-label="Panel"
+    >
       {visibleResolvedTabs.map((tab) => {
         const isActive = active === tab.id;
         const isLive = Boolean(liveStates?.[tab.id]);
         return (
           <TooltipIconButton
             key={tab.id}
-            className={`panel-tab${isActive ? " is-active" : ""}${isLive ? " is-live" : ""}`}
+            className={cn(
+              "panel-tab relative inline-flex items-center justify-center",
+              "min-w-5 min-h-5 p-0.5",
+              "border border-transparent rounded-md bg-transparent",
+              "transition-[color,opacity] duration-150",
+              isActive
+                ? "is-active text-foreground border-border"
+                : "text-muted-foreground hover:text-foreground",
+              isLive && "is-live",
+            )}
             onClick={() => onSelect(tab.id)}
             aria-current={isActive ? "page" : undefined}
             data-tauri-drag-region="false"
             label={tab.label}
           >
-            <span className={`panel-tab-icon${isLive ? " is-live" : ""}`} aria-hidden>
+            <span
+              className={cn(
+                "panel-tab-icon relative inline-flex items-center [&>svg]:size-[13px] [&>svg]:stroke-[2.2]",
+                isLive && "is-live text-[#57d18c] drop-shadow-[0_0_8px_rgba(87,209,140,0.45)]",
+              )}
+              aria-hidden
+            >
               {tab.icon}
             </span>
           </TooltipIconButton>

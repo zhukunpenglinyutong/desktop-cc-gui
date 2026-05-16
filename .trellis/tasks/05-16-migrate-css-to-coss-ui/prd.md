@@ -175,6 +175,26 @@ DoD：
 - 用 coss Sidebar / Tabs / Command / Tooltip 等原语替换；删对应 .css。
 - DoD：旅程 = 启动 → 切 tab → 命令面板。
 
+#### Phase 2 完成状态（2026-05-16）
+
+实际产出（implement agent）：
+- 新增：`.trellis/tasks/05-16-migrate-css-to-coss-ui/phase-2-chrome-plan.md`(discovery + plan + scope decision)
+- 删除 8 个 .css 文件：`tabbar.css`、`panel-tabs.css`、`panel-lock.css`、`search-palette.css`、`compact-base.css`、`compact-phone.css`、`compact-tablet.css`、`debug.css`
+- 修改 8 个 .tsx 文件：`TabBar.tsx`、`PanelTabs.tsx`、`LockScreenOverlay.tsx`、`SearchPalette.tsx`、`PhoneLayout.tsx`、`TabletLayout.tsx`、`TabletNav.tsx`、`DebugPanel.tsx`、`useLayoutNodes.tsx`、`DebugPanel.tsx`
+- 修改：`src/styles/base.css`（419 → 502 行，吸收 compact-base/phone/tablet 的 cross-cutting 选择器）
+- 修改：`src/bootstrap.ts`（54 → 46 个 CSS import）
+
+Scope 调整（写在 plan doc）：
+- **未处理**：`sidebar.css`、`sidebar.chrome.css`、`sidebar-shell.css`。原因：sidebar.css 2448 行中 80% 是 workspace/thread/worktree 业务样式，又被 `layout-swapped-platform-guard.test.ts` 与 `sidebar-titlebar-drag-region.test.ts` 钉死字面 CSS。归 Phase 3+ 配合 Threads/Workspace 拆解时一起处理。
+- **未引入 coss primitive**：本 phase 决策为「纯 styling pass」，原因详见 plan doc；`Command`（SearchPalette）与 `Dialog`（LockScreenOverlay）的结构性替换转入 Phase 4 follow-up。
+
+验证：
+- `npm run lint` ✅ pass
+- `npm run typecheck` ✅ 仅 3 个 pre-existing baseline 错（input.tsx + perfBaseline×2），无新错
+- `npm run test` ✅ 仅 `ComposerInput.collaboration.test.tsx` 的 3 个 pre-existing failure（已通过 `git stash` 确认与 Phase 2 无关）
+- `npm run test:layout-guard` ✅ 10/10 pass
+- `npm run check:large-files:gate` ✅ pass
+
 ### Phase 3 — Threads + Messages
 - 覆盖：`messages.part1/2`、`messages.streaming`、`messages.history-sticky`、`messages.status-shell`、`messages.part1-shell`、`messages.part2.css`、`prompts.css`。
 - 严格遵守 `.trellis/spec/frontend/messages-streaming-render-contract.md`（stable snapshot + live row override）。

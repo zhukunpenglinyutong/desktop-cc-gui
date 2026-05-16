@@ -2406,7 +2406,7 @@ export function useLayoutNodes(options: LayoutNodesOptions): LayoutNodesResult {
   );
 
   const compactEmptyCodexNode = (
-    <div className="compact-empty">
+    <div className="compact-empty flex-1 flex flex-col items-center justify-center gap-2.5 px-6 text-center text-muted-foreground [&_h3]:m-0 [&_h3]:text-base [&_h3]:text-foreground [&_p]:m-0 [&_p]:text-[13px]">
       <h3>{t("workspace.noWorkspaceSelected")}</h3>
       <p>{t("workspace.chooseProjectToChat")}</p>
       <button className="ghost" onClick={options.onGoProjects}>
@@ -2416,7 +2416,7 @@ export function useLayoutNodes(options: LayoutNodesOptions): LayoutNodesResult {
   );
 
   const compactEmptyGitNode = (
-    <div className="compact-empty">
+    <div className="compact-empty flex-1 flex flex-col items-center justify-center gap-2.5 px-6 text-center text-muted-foreground [&_h3]:m-0 [&_h3]:text-base [&_h3]:text-foreground [&_p]:m-0 [&_p]:text-[13px]">
       <h3>{t("workspace.noWorkspaceSelected")}</h3>
       <p>{t("workspace.selectProjectToInspect")}</p>
       <button className="ghost" onClick={options.onGoProjects}>
@@ -2426,7 +2426,7 @@ export function useLayoutNodes(options: LayoutNodesOptions): LayoutNodesResult {
   );
 
   const compactEmptySpecNode = (
-    <div className="compact-empty">
+    <div className="compact-empty flex-1 flex flex-col items-center justify-center gap-2.5 px-6 text-center text-muted-foreground [&_h3]:m-0 [&_h3]:text-base [&_h3]:text-foreground [&_p]:m-0 [&_p]:text-[13px]">
       <h3>{t("workspace.noWorkspaceSelected")}</h3>
       <p>{t("workspace.selectProjectToReadSpecs")}</p>
       <button className="ghost" onClick={options.onGoProjects}>
@@ -2436,7 +2436,7 @@ export function useLayoutNodes(options: LayoutNodesOptions): LayoutNodesResult {
   );
 
   const compactGitBackNode = (
-    <div className="compact-git-back">
+    <div className="compact-git-back flex items-center gap-2 px-3 py-2 border-b border-border bg-card [&>button]:border-none [&>button]:bg-transparent [&>button]:text-foreground [&>button]:text-sm [&>button]:cursor-pointer">
       <button onClick={options.onBackFromDiff}>&#8249; {t("workspace.back")}</button>
       <span className="workspace-title">{t("workspace.diff")}</span>
     </div>

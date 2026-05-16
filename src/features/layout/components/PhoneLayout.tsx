@@ -1,5 +1,13 @@
 import type { ReactNode } from "react";
 import { MainTopbar } from "../../app/components/MainTopbar";
+import { cn } from "@/lib/utils";
+
+const COMPACT_PANEL_CLASS = "compact-panel flex flex-col flex-1 min-h-0";
+const COMPACT_CONTENT_CLASS = "compact-content flex flex-col flex-1 min-h-0";
+const COMPACT_GIT_CLASS = "compact-git flex flex-col gap-3 flex-1 min-h-0";
+const COMPACT_GIT_LIST_CLASS = "compact-git-list flex-1 min-h-0 overflow-hidden";
+const COMPACT_GIT_VIEWER_CLASS =
+  "compact-git-viewer flex-1 min-h-0 overflow-hidden [&_.diff-viewer]:h-full";
 
 type PhoneLayoutProps = {
   approvalToastsNode: ReactNode;
@@ -53,20 +61,22 @@ export function PhoneLayout({
   settingsNode,
 }: PhoneLayoutProps) {
   return (
-    <div className="compact-shell">
+    <div className="compact-shell relative flex flex-col h-full min-h-0">
       {approvalToastsNode}
       {updateToastNode}
       {errorToastsNode}
       {globalRuntimeNoticeDockNode}
-      {!settingsOpen && showGitHistory && <div className="compact-panel">{gitHistoryNode}</div>}
-      {settingsOpen && <div className="compact-panel">{settingsNode}</div>}
-      {!settingsOpen && !showGitHistory && activeTab === "projects" && <div className="compact-panel">{sidebarNode}</div>}
+      {!settingsOpen && showGitHistory && <div className={COMPACT_PANEL_CLASS}>{gitHistoryNode}</div>}
+      {settingsOpen && <div className={COMPACT_PANEL_CLASS}>{settingsNode}</div>}
+      {!settingsOpen && !showGitHistory && activeTab === "projects" && (
+        <div className={COMPACT_PANEL_CLASS}>{sidebarNode}</div>
+      )}
       {!showGitHistory && activeTab === "codex" && (
-        <div className="compact-panel">
+        <div className={COMPACT_PANEL_CLASS}>
           {activeWorkspace ? (
             <>
-              <MainTopbar leftNode={topbarLeftNode} className="compact-topbar" />
-              <div className="content compact-content">{messagesNode}</div>
+              <MainTopbar leftNode={topbarLeftNode} className="compact-topbar px-4 pt-2.5 pb-2" />
+              <div className={cn("content", COMPACT_CONTENT_CLASS)}>{messagesNode}</div>
               {composerNode}
             </>
           ) : (
@@ -75,11 +85,11 @@ export function PhoneLayout({
         </div>
       )}
       {!showGitHistory && activeTab === "spec" && (
-        <div className="compact-panel">
+        <div className={COMPACT_PANEL_CLASS}>
           {activeWorkspace ? (
             <>
-              <MainTopbar leftNode={topbarLeftNode} className="compact-topbar" />
-              <div className="content compact-content">{messagesNode}</div>
+              <MainTopbar leftNode={topbarLeftNode} className="compact-topbar px-4 pt-2.5 pb-2" />
+              <div className={cn("content", COMPACT_CONTENT_CLASS)}>{messagesNode}</div>
             </>
           ) : (
             compactEmptySpecNode
@@ -87,26 +97,26 @@ export function PhoneLayout({
         </div>
       )}
       {!showGitHistory && activeTab === "git" && (
-        <div className="compact-panel">
+        <div className={COMPACT_PANEL_CLASS}>
           {!activeWorkspace && compactEmptyGitNode}
           {activeWorkspace && showGitDetail && (
             <>
               {compactGitBackNode}
-              <div className="compact-git-viewer">{gitDiffViewerNode}</div>
+              <div className={COMPACT_GIT_VIEWER_CLASS}>{gitDiffViewerNode}</div>
             </>
           )}
           {activeWorkspace && !showGitDetail && (
             <>
-              <MainTopbar leftNode={topbarLeftNode} className="compact-topbar" />
-              <div className="compact-git">
-                <div className="compact-git-list">{gitDiffPanelNode}</div>
+              <MainTopbar leftNode={topbarLeftNode} className="compact-topbar px-4 pt-2.5 pb-2" />
+              <div className={COMPACT_GIT_CLASS}>
+                <div className={COMPACT_GIT_LIST_CLASS}>{gitDiffPanelNode}</div>
               </div>
             </>
           )}
         </div>
       )}
       {!showGitHistory && activeTab === "log" && (
-        <div className="compact-panel">{debugPanelNode}</div>
+        <div className={COMPACT_PANEL_CLASS}>{debugPanelNode}</div>
       )}
       {tabBarNode}
     </div>
