@@ -983,3 +983,44 @@ Net：CSS 71→69，累计删 24 个 .css + 7 keeper。
 ### Next Steps
 
 - None - task complete
+
+
+## Session 14: Phase 4.5b composer.part2 + 6.5b vendor 收尾 + 9.4 terminal 并行批次
+
+**Date**: 2026-05-17
+**Task**: Phase 4.5b composer.part2 + 6.5b vendor 收尾 + 9.4 terminal 并行批次
+**Branch**: `chore/bump-version-0.5`
+
+### Summary
+
+(Add summary)
+
+### Main Changes
+
+3 个并行 agent：
+- 4.5b composer.part2 2247→1188（-1059 dead CSS in-place trim）；Composer +3 / GhostText +8；保留 ledger/memory-chip/context-usage 等到 follow-up
+- 6.5b vendor cluster 收尾：删 vendor-panels (863) + vendor-models (330)，12 tsx 迁；settings.css + settings.part2.css 各删 1 @import；codex-unified-exec contract 严格保留；vendor 4 文件全部完成
+- 9.4 terminal.css 删（193）+ 新 terminal-xterm-keepers.css（66）：xterm runtime DOM cascade + --terminal-* 自定义属性 + 主 grid 契约 keeper
+
+验证：lint pass / typecheck 0 / layout-guard 46/46 / large-files retained / composer 453 / settings 全过 / terminal 全过 / 全量 4168/0
+
+Net：CSS 69→67；累计删 27 .css + 9 keeper；bootstrap.ts imports 41。
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `3361fc18` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
