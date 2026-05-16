@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-0.md`
-- **Total Sessions**: 7
+- **Total Sessions**: 8
 - **Last Active**: 2026-05-16
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-0.md` | ~585 | Active |
+| `journal-0.md` | ~670 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 8 | 2026-05-16 | Phase 7+8+9 并行 worktree 批次 (scope 大幅收缩) | `72574e14` | `chore/bump-version-0.5` |
 | 7 | 2026-05-16 | Phase 6 Settings 切到 Tailwind/coss token (scope 收缩) | `dfbc0b07` | `chore/bump-version-0.5` |
 | 6 | 2026-05-16 | Phase 5 Home/Workspace 切到 Tailwind/coss token | `d83363f2` | `chore/bump-version-0.5` |
 | 5 | 2026-05-16 | Phase 4 Composer/Dialogs/Toasts 切到 Tailwind/coss token | `cef9fb11` | `chore/bump-version-0.5` |

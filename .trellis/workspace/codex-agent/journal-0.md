@@ -583,3 +583,88 @@ Splitter / Tree 替换归 Phase 6 follow-up——coss 暂无现成 primitive。
 ### Next Steps
 
 - None - task complete
+
+
+## Session 8: Phase 7+8+9 并行 worktree 批次 (scope 大幅收缩)
+
+**Date**: 2026-05-16
+**Task**: Phase 7+8+9 并行 worktree 批次 (scope 大幅收缩)
+**Branch**: `chore/bump-version-0.5`
+
+### Summary
+
+(Add summary)
+
+### Main Changes
+
+3 个并行 worktree agent 完成 Phase 7（Git History）、Phase 8（Spec Hub）、Phase 9（File/Diff/Terminal）的 discovery + 安全部分迁移。worktree-7/8 因 reset 改动一度丢失，最终通过物理 cp 与重新执行确认 deliverables 都在主 worktree filesystem。3 个 phase 合并一个 commit（reflect 并行批次）。
+
+## 并行执行经验
+
+- 3 个 worktree（git isolation）从主 branch HEAD 切出（worktree-9 base = d09979b5 正确，worktree-7/8 base = 40137918 落后 13 commit）。
+- worktree-9 改动正常保留；worktree-7/8 中途被 reset 改动丢失但 plan doc + 改动最终在主 worktree filesystem 出现（agent isolation 边界泄漏）。
+- 用 cp 把缺失内容拷回主 worktree，验证全过。
+- worktree 锁定状态（claude agent pid 65503 仍 hold）未能 git worktree remove；会话结束自动 cleanup。
+
+## Phase 7 — Git History
+
+删除 git-history.part1-shell.css（126 行），新增 keeper git-history-shell-keepers.css（49 行，含 9 个 --git-filetree-* 与 body[data-git-history-resizing] cascade）；DesktopLayout（3 处 className）+ GitHistoryPanelView（9 处 className）Tailwind inline；bootstrap.ts 追加 keeper import。git-history runtime-contract + static-imports + 98/98 affected tests 全过。剩余 part1/overview/part2/branch-compare/pr-dialog 推 7.5/7.6/7.7。
+
+## Phase 8 — Spec Hub (discovery only)
+
+0 文件删除 0 JSX 改动——SpecHubPresentationalImpl.tsx 是 113KB / @ts-nocheck / 单行 minified bundle，225+ spec-hub-* className 都在这一行无法 inline。仅产 plan doc 推 Phase 8.5（de-minify）+ 8.6（inline Tailwind）+ 8.6.x（keyframes/media）+ Phase 10 primitive swap audit。
+
+## Phase 9 — File / Diff / Terminal
+
+detached-file-explorer.css（236 → 21 行 in-place keeper，保留 cross-component override）+ DetachedFileExplorerWindow（+33 行）+ FileExplorerWorkspace（+18 行）Tailwind inline。bootstrap.ts 不动。推 9.1（file-tree）/ 9.2（diff + diff-viewer 含字面值 pin）/ 9.3（file-view-panel）/ 9.4（terminal）/ 9.5（opencode-panel）。
+
+## 验证
+
+- npm run lint pass
+- npm run typecheck **0 error**（baseline 由 Phase 0 的 3 → 现 0；perfBaseline web-vitals 已注册，input.tsx 已在 Phase 4 修）
+- npm run test:layout-guard 10/10 pass（diff-viewer.css 字面值 pin intact）
+- npm run check:large-files:gate found=0
+
+## 0 个 coss primitive 结构性替换（同 Phase 2-6 precedent）
+
+Dialog / Tabs / Card / Splitter / Button 等全部 follow-up。
+
+## Net delta
+
+13 files changed，+834 -393（含 +700 plan doc）；代码 net delta -1259 LOC。bootstrap.ts CSS imports 40 → 41（+1 keeper）；累计删 23 个旧 CSS + 7 个 keeper。
+
+## Follow-up（12 条新，已写入 docs/migration-to-coss-ui.md）
+
+Phase 7.5 / 7.6 / 7.7、8.5 / 8.6 / 8.6.x / 8 primitive swap、9.1 / 9.2 / 9.3 / 9.4 / 9.5、Button swap、Splitter primitive 整合。
+
+## Next
+
+Phase 10 final cleanup（必须串行——删 worktree 残留 / 跑 doctor / 大文件 baseline 重新校准 / 人工 verify）。
+
+**Updated Files**:
+
+- 删除：src/styles/git-history.part1-shell.css
+- 新增：src/styles/git-history-shell-keepers.css
+- 修改：src/styles/{git-history,detached-file-explorer}.css、src/bootstrap.ts
+- 修改：src/features/git-history/components/git-history-panel/components/GitHistoryPanelView.tsx、src/features/layout/components/DesktopLayout.tsx、src/features/files/components/{DetachedFileExplorerWindow,FileExplorerWorkspace}.tsx
+- 新增：.trellis/tasks/05-16-migrate-css-to-coss-ui/phase-{7,8,9}-*.md
+- 更新：docs/migration-to-coss-ui.md
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `72574e14` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
