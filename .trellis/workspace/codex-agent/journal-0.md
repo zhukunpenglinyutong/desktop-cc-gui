@@ -885,3 +885,60 @@ lint pass / typecheck 0 / test:layout-guard 46/46 / check:large-files:gate found
 ### Next Steps
 
 - None - task complete
+
+
+## Session 12: P0-1 深化删 sticky.css + 8.6.1 部分 spec-hub-header + 9.2 阻塞分析
+
+**Date**: 2026-05-17
+**Task**: P0-1 深化删 sticky.css + 8.6.1 部分 spec-hub-header + 9.2 阻塞分析
+**Branch**: `chore/bump-version-0.5`
+
+### Summary
+
+(Add summary)
+
+### Main Changes
+
+3 个并行 agent 完成本轮。关键产出：
+
+## P0-1 深化 ✅
+彻底删 messages.history-sticky.css（394 行）。新增 MessagesHistoryStickyHeader.tsx（412 行）抽出 sticky 渲染段，内联 60+ rule 为 style 与 Tailwind utility，新增 useAncestorCanvasWidthWide hook 替代 canvas-width-wide cascade。layout-swapped-platform-guard 9 个 sticky test 改为 inline style 断言（彻底脱离 css 依赖），文件重命名 .test.ts → .test.tsx。Messages.live-behavior 45/45 + layout-guard 46/46 全过，sticky 4 条 carry-forward 全保。
+
+## Phase 8.6.1 部分 ⚠️
+spec-hub-header.css 删 6 个 badge variant rule（142 → 106），inline Tailwind 到 SpecHubPresentationalImpl mo/ho ternary。9 selector 推 8.6.1b（受 SpecHubPresentationalImpl 6111 baseline 限制，继续 inline 会撑大 +21 行）。
+
+## Phase 9.2 anchor + header 阻塞 ⚠️
+0 code 改动，仅 plan doc。Anchor 4 个 swap rule 仍是 layout-guard 强 pin（即使 P0-1 深化也只解锁 sticky，不解锁 anchor）；Header 30+ selector 被 ImageDiffCard.tsx + git-history.part1.css 跨组件共用。建议从 sub-PR 队列移除或重新归类为「跨组件 cluster 重构」。
+
+## 验证
+lint pass / typecheck 0 / test:layout-guard 46/46 / check:large-files:gate retained delta=0 / messages 419/419 / styles 52/52 / spec 120/120 / 全量 vitest 4168 PASS / 0 FAIL
+
+## Net delta
+src/styles/*.css: 72 → 71（−1 sticky）；累计删 22 .css；bootstrap.ts 不动。
+
+## Follow-up
+- Phase 8.6.1b（spec-hub-header 剩 9 selector，需 baseline regen）
+- 8.6.1c（reader-layout + macOS keeper）
+- 8.6.2（chrome + controls 872 行）
+- 8.6.3（spec-hub.css 1854 行 + media + keyframes）
+- 9.2 anchor/header sub-PR 队列调整（不适合 inline）
+- 9.2 body/list/row/item/output/sticky/mode/loading/empty discovery
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `b7eaf8b9` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
