@@ -2033,7 +2033,7 @@ export function useLayoutNodes(options: LayoutNodesOptions): LayoutNodesResult {
 
   const rightPanelToolbarNode =
     showRightActivityToolbar && hasVisibleRightToolbarControl ? (
-    <div className="right-panel-toolbar">
+    <div className="right-panel-toolbar flex items-center gap-2 min-h-[var(--main-topbar-height,44px)] h-[var(--main-topbar-height,44px)] flex-[0_0_auto] px-2 border-b border-(--border-subtle) box-border relative z-[3] [-webkit-app-region:no-drag]">
       <PanelTabs
         active={options.filePanelMode}
         onSelect={options.onFilePanelModeChange}

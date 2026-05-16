@@ -295,12 +295,12 @@ export function MainHeader({
 
   return (
     <header
-      className={`main-header${sessionTabsNode ? " has-session-tabs" : ""}`}
+      className={`main-header w-full flex justify-between items-center gap-4 min-w-0 [-webkit-app-region:drag] **:select-none [&_input]:select-text [&_textarea]:select-text [&_[contenteditable=true]]:select-text${sessionTabsNode ? " has-session-tabs gap-2.5" : ""}`}
       data-tauri-drag-region
     >
-      <div className="workspace-header">
+      <div className="workspace-header flex items-center min-w-0 flex-1">
         <div
-          className={`workspace-title-line${
+          className={`workspace-title-line flex items-center gap-2 min-w-0 whitespace-nowrap flex-1${
             showProjectMenu ? " has-project-menu" : ""
           }${isProjectDetailVisible ? " is-project-detail-visible" : ""}`}
           onMouseEnter={() => {
@@ -327,14 +327,14 @@ export function MainHeader({
         >
           {showProjectMenu ? (
             <div
-              className="workspace-project-menu"
+              className="workspace-project-menu relative inline-flex items-center min-w-0"
               ref={projectMenuRef}
               onFocusCapture={showProjectDetails}
               onBlurCapture={handleProjectScopeBlur}
             >
               <button
                 type="button"
-                className="workspace-project-button"
+                className="workspace-project-button inline-flex items-center gap-1 bg-transparent border-none cursor-pointer py-0.5 px-1 rounded-md min-w-0 hover:bg-(--surface-control-hover)"
                 onClick={() => {
                   setProjectMenuOpen((prev) => !prev);
                   if (menuOpen) setMenuOpen(false);
@@ -343,59 +343,59 @@ export function MainHeader({
                 aria-expanded={projectMenuOpen}
                 data-tauri-drag-region="false"
               >
-                <span className="workspace-project-icon" aria-hidden>
+                <span className="workspace-project-icon inline-flex items-center justify-center text-(--text-muted) shrink-0" aria-hidden>
                   <Folder size={14} />
                 </span>
-                <span className="workspace-title">
+                <span className="workspace-title text-[15px] font-semibold tracking-[0.2px] max-w-[min(32vw,420px)] overflow-hidden text-ellipsis whitespace-nowrap">
                   {parentName ? parentName : workspace.name}
                 </span>
-                <span className="workspace-project-caret" aria-hidden>
+                <span className="workspace-project-caret text-(--text-faint) text-xs shrink-0 leading-none" aria-hidden>
                   ›
                 </span>
               </button>
               {projectMenuOpen && (
                 <div
-                  className="workspace-project-dropdown popover-surface"
+                  className="workspace-project-dropdown popover-surface absolute top-[calc(100%+6px)] left-0 min-w-65 max-w-[min(86vw,360px)] max-h-105 z-10 rounded-[18px] p-2.5 flex flex-col gap-2 overflow-hidden"
                   role="menu"
                   data-tauri-drag-region="false"
                 >
-                  <label className="workspace-project-search">
-                    <span className="workspace-project-search-icon" aria-hidden>
+                  <label className="workspace-project-search flex items-center gap-2 min-h-9.5 px-2.5 rounded-xl border">
+                    <span className="workspace-project-search-icon inline-flex items-center justify-center text-(--text-faint) shrink-0" aria-hidden>
                       <Search size={14} />
                     </span>
                     <input
                       value={projectQuery}
                       onChange={(event) => setProjectQuery(event.target.value)}
                       placeholder={t("workspace.searchProjects")}
-                      className="workspace-project-search-input"
+                      className="workspace-project-search-input w-full h-full border-0 outline-none p-0 bg-transparent text-(--text-stronger) text-sm leading-[1.3] placeholder:text-(--text-faint)"
                       autoFocus
                       data-tauri-drag-region="false"
                       aria-label={t("workspace.searchProjects")}
                     />
                   </label>
-                  <div className="workspace-project-list" role="none">
+                  <div className="workspace-project-list overflow-y-auto max-h-85 flex flex-col gap-2.5 p-0.5" role="none">
                     {filteredGroups.map((group) => (
-                      <div key={group.id ?? "ungrouped"} className="workspace-project-group">
+                      <div key={group.id ?? "ungrouped"} className="workspace-project-group flex flex-col gap-0.75">
                         {group.name && (
-                          <div className="workspace-project-group-label">{group.name}</div>
+                          <div className="workspace-project-group-label text-xs text-(--text-muted) py-0.75 px-2.5 tracking-[0.01em] font-semibold">{group.name}</div>
                         )}
                         {group.workspaces.map((ws) => (
                           <button
                             key={ws.id}
                             type="button"
-                            className={`workspace-project-item${
-                              ws.kind === "worktree" ? " is-worktree" : ""
+                            className={`workspace-project-item w-full min-h-9 text-left px-2.5 rounded-[11px] border-none bg-transparent text-(--text-normal) text-sm leading-[1.3] cursor-pointer inline-flex items-center gap-2.25 transition-colors duration-150 hover:text-(--text-stronger)${
+                              ws.kind === "worktree" ? " is-worktree pl-5" : ""
                             }${
-                              ws.id === activeWorkspaceId ? " is-active" : ""
+                              ws.id === activeWorkspaceId ? " is-active font-semibold text-white" : ""
                             }`}
                             onClick={() => handleSelectProject(ws.id)}
                             role="menuitem"
                             data-tauri-drag-region="false"
                           >
-                            <span className="workspace-project-item-icon" aria-hidden>
+                            <span className="workspace-project-item-icon inline-flex items-center justify-center flex-[0_0_14px]" aria-hidden>
                               {ws.kind === "worktree" ? <GitBranch size={14} /> : <Folder size={14} />}
                             </span>
-                            <span className="workspace-project-item-label">
+                            <span className="workspace-project-item-label min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">
                               {ws.kind === "worktree" ? (ws.worktree?.branch ?? ws.name) : ws.name}
                             </span>
                           </button>
@@ -403,7 +403,7 @@ export function MainHeader({
                       </div>
                     ))}
                     {filteredGroups.length === 0 && (
-                      <div className="workspace-project-empty">
+                      <div className="workspace-project-empty py-3 px-2 text-(--text-quiet) text-xs text-center">
                         {t("workspace.noProjectsFound")}
                       </div>
                     )}
@@ -412,25 +412,25 @@ export function MainHeader({
               )}
             </div>
           ) : (
-            <span className="workspace-title">
+            <span className="workspace-title text-[15px] font-semibold tracking-[0.2px] max-w-[min(32vw,420px)] overflow-hidden text-ellipsis whitespace-nowrap">
               {parentName ? parentName : workspace.name}
             </span>
           )}
           {!showProjectMenu ? (
-            <span className="workspace-separator" aria-hidden>
+            <span className="workspace-separator text-(--text-faint) text-xs" aria-hidden>
               ›
             </span>
           ) : null}
           {disableBranchMenu ? (
             <div
-              className="workspace-branch-static-row"
+              className="workspace-branch-static-row relative inline-flex items-center gap-1.5"
               ref={infoRef}
               onFocusCapture={showProjectDetails}
               onBlurCapture={handleProjectScopeBlur}
             >
               <button
                 type="button"
-                className="workspace-branch-static-button"
+                className="workspace-branch-static-button border border-(--border-muted) bg-(--surface-card-strong) text-(--text-stronger) rounded-full py-0.5 px-2.5 inline-flex items-center justify-center cursor-pointer text-xs font-semibold max-w-[min(44vw,520px)] overflow-hidden text-ellipsis whitespace-nowrap hover:border-(--border-strong) hover:bg-(--surface-control-hover)"
                 onClick={() => setInfoOpen((prev) => !prev)}
                 aria-haspopup="dialog"
                 aria-expanded={infoOpen}
@@ -440,14 +440,14 @@ export function MainHeader({
                 {worktreeLabel || branchName}
               </button>
               {infoOpen && (
-                <div className="worktree-info-popover popover-surface" role="dialog">
+                <div className="worktree-info-popover popover-surface absolute top-[calc(100%+8px)] left-0 min-w-70 max-w-[min(360px,80vw)] z-12 rounded-[10px] p-2.5 flex flex-col gap-2" role="dialog">
                   {worktreeRename && (
-                    <div className="worktree-info-rename">
-                      <span className="worktree-info-label">{t("common.name")}</span>
-                      <div className="worktree-info-command">
+                    <div className="worktree-info-rename flex flex-col gap-1.5">
+                      <span className="worktree-info-label text-[10px] uppercase tracking-[0.08em] text-(--text-faint)">{t("common.name")}</span>
+                      <div className="worktree-info-command flex items-center gap-1.5">
                         <input
                           ref={renameInputRef}
-                          className="worktree-info-input"
+                          className="worktree-info-input border border-(--border-muted) bg-(--surface-card) text-(--text-stronger) rounded-lg py-1.5 px-2 text-xs flex-1 focus:outline-none focus:border-(--border-strong)"
                           value={worktreeRename.name}
                           onFocus={() => {
                             worktreeRename.onFocus();
@@ -484,7 +484,7 @@ export function MainHeader({
                         />
                         <button
                           type="button"
-                          className="icon-button worktree-info-confirm"
+                          className="icon-button worktree-info-confirm border border-(--border-muted) bg-(--surface-card-strong) text-(--text-stronger) rounded-lg w-7 h-7 p-0 enabled:hover:border-(--border-strong)"
                           ref={renameConfirmRef}
                           onClick={() => worktreeRename.onCommit()}
                           disabled={
@@ -497,28 +497,28 @@ export function MainHeader({
                         </button>
                       </div>
                       {worktreeRename.error && (
-                        <div className="worktree-info-error">{worktreeRename.error}</div>
+                        <div className="worktree-info-error text-[11px] text-(--text-danger)">{worktreeRename.error}</div>
                       )}
                       {worktreeRename.notice && (
-                        <span className="worktree-info-subtle">
+                        <span className="worktree-info-subtle text-wrap text-[11px] text-(--text-faint)">
                           {worktreeRename.notice}
                         </span>
                       )}
                       {worktreeRename.upstream && (
-                        <div className="worktree-info-upstream">
-                          <span className="worktree-info-subtle">
+                        <div className="worktree-info-upstream flex flex-col gap-1.5">
+                          <span className="worktree-info-subtle text-wrap text-[11px] text-(--text-faint)">
                             {t("workspace.updateUpstreamBranchTo", { branch: worktreeRename.upstream.newBranch })}
                           </span>
                           <button
                             type="button"
-                            className="ghost worktree-info-upstream-button"
+                            className="ghost worktree-info-upstream-button self-start py-1.5 px-2.5 text-xs font-semibold rounded-lg"
                             onClick={worktreeRename.upstream.onConfirm}
                             disabled={worktreeRename.upstream.isSubmitting}
                           >
                             {t("workspace.updateUpstream")}
                           </button>
                           {worktreeRename.upstream.error && (
-                            <div className="worktree-info-error">
+                            <div className="worktree-info-error text-[11px] text-(--text-danger)">
                               {worktreeRename.upstream.error}
                             </div>
                           )}
@@ -526,18 +526,18 @@ export function MainHeader({
                       )}
                     </div>
                   )}
-                  <div className="worktree-info-title">{t("workspace.worktree")}</div>
-                  <div className="worktree-info-row">
-                    <span className="worktree-info-label">
+                  <div className="worktree-info-title text-xs font-semibold text-(--text-stronger)">{t("workspace.worktree")}</div>
+                  <div className="worktree-info-row flex flex-col gap-1">
+                    <span className="worktree-info-label text-[10px] uppercase tracking-[0.08em] text-(--text-faint)">
                       {t("common.terminal")}{parentPath ? ` (${t("workspace.repoRoot")})` : ""}
                     </span>
-                    <div className="worktree-info-command">
-                      <code className="worktree-info-code">
+                    <div className="worktree-info-command flex items-center gap-1.5">
+                      <code className="worktree-info-code text-[11px] text-(--text-stronger) bg-(--surface-card) border border-(--border-muted) py-1.5 px-2 rounded-lg whitespace-nowrap overflow-hidden text-ellipsis flex-1">
                         {cdCommand}
                       </code>
                       <button
                         type="button"
-                        className="worktree-info-copy"
+                        className="worktree-info-copy border border-(--border-muted) bg-(--surface-card-strong) text-(--text-subtle) rounded-lg w-7 h-7 p-0 inline-flex items-center justify-center cursor-pointer hover:text-(--text-stronger) hover:border-(--border-strong) [&>svg]:w-3.5 [&>svg]:h-3.5"
                         onClick={async () => {
                           await navigator.clipboard.writeText(cdCommand);
                         }}
@@ -548,15 +548,15 @@ export function MainHeader({
                         <Copy aria-hidden />
                       </button>
                     </div>
-                    <span className="worktree-info-subtle">
+                    <span className="worktree-info-subtle text-wrap text-[11px] text-(--text-faint)">
                       {t("workspace.openInTerminal")}
                     </span>
                   </div>
-                  <div className="worktree-info-row">
-                    <span className="worktree-info-label">{t("workspace.reveal")}</span>
+                  <div className="worktree-info-row flex flex-col gap-1">
+                    <span className="worktree-info-label text-[10px] uppercase tracking-[0.08em] text-(--text-faint)">{t("workspace.reveal")}</span>
                     <button
                       type="button"
-                      className="worktree-info-reveal"
+                      className="worktree-info-reveal border border-(--border-muted) bg-(--surface-card-strong) text-(--text-stronger) rounded-lg py-1.5 px-2.5 text-xs font-semibold cursor-pointer text-left hover:border-(--border-strong)"
                       onClick={async () => {
                         await revealItemInDir(resolvedWorktreePath);
                       }}
@@ -570,32 +570,32 @@ export function MainHeader({
             </div>
           ) : (
             <div
-              className="workspace-branch-menu"
+              className="workspace-branch-menu relative inline-flex items-center"
               ref={menuRef}
               onFocusCapture={showProjectDetails}
               onBlurCapture={handleProjectScopeBlur}
             >
               <button
                 type="button"
-                className="workspace-branch-button"
+                className="workspace-branch-button inline-flex items-center gap-1.5 border-none bg-transparent py-0.5 px-1 rounded-md cursor-pointer text-(--text-subtle) max-w-[min(24vw,260px)] min-w-0 hover:bg-(--surface-control-hover) hover:text-(--text-stronger)"
                 onClick={() => setMenuOpen((prev) => !prev)}
                 aria-haspopup="menu"
                 aria-expanded={menuOpen}
                 data-tauri-drag-region="false"
               >
-                <span className="workspace-branch">{branchName}</span>
-                <span className="workspace-branch-caret" aria-hidden>
+                <span className="workspace-branch text-(--text-subtle) text-xs font-medium min-w-0 overflow-hidden text-ellipsis whitespace-nowrap block">{branchName}</span>
+                <span className="workspace-branch-caret text-[11px] text-(--text-faint) inline-flex rotate-90 items-center leading-none mt-px" aria-hidden>
                   ›
                 </span>
               </button>
               {menuOpen && (
                 <div
-                  className="workspace-branch-dropdown popover-surface"
+                  className="workspace-branch-dropdown popover-surface absolute top-[calc(100%+6px)] left-0 min-w-55 max-w-80 z-10 rounded-[10px] p-1.5 flex flex-col gap-1.5"
                   role="menu"
                   data-tauri-drag-region="false"
                 >
-                  <div className="branch-actions">
-                    <div className="branch-search">
+                  <div className="branch-actions flex flex-col gap-1.5">
+                    <div className="branch-search flex gap-1.5 items-center min-w-0">
                       <input
                         value={branchQuery}
                         onChange={(event) => {
@@ -638,14 +638,14 @@ export function MainHeader({
                           }
                         }}
                         placeholder={t("workspace.searchOrCreateBranch")}
-                        className="branch-input"
+                        className="branch-input flex-1 min-w-0 border border-(--border-muted) rounded-lg bg-(--surface-card) text-(--text-stronger) py-1.5 px-2 text-xs focus:outline-1 focus:outline-(--border-strong)"
                         autoFocus
                         data-tauri-drag-region="false"
                         aria-label={t("workspace.searchBranches")}
                       />
                       <button
                         type="button"
-                        className="branch-create-button"
+                        className="branch-create-button border-none rounded-lg bg-(--surface-card-strong) text-(--text-stronger) py-1.5 px-2 text-xs cursor-pointer hover:bg-(--surface-control-hover) disabled:cursor-not-allowed disabled:opacity-60 disabled:bg-(--surface-card)"
                         disabled={!canCreate || Boolean(branchValidationMessage)}
                         onClick={async () => {
                           if (branchValidationMessage) {
@@ -672,21 +672,21 @@ export function MainHeader({
                       </button>
                     </div>
                     {branchValidationMessage && (
-                      <div className="branch-error">{branchValidationMessage}</div>
+                      <div className="branch-error text-[11px] text-[rgba(255,160,160,0.9)] py-1.5 px-2 pb-0.5 whitespace-pre-wrap">{branchValidationMessage}</div>
                     )}
                     {canCreate && !branchValidationMessage && (
-                      <div className="branch-create-hint">
+                      <div className="branch-create-hint text-[11px] text-(--text-faint) py-0.5 px-2">
                         {t("workspace.createBranchNamed", { name: trimmedQuery })}
                       </div>
                     )}
                   </div>
-                  <div className="branch-list" role="none">
+                  <div className="branch-list flex flex-col gap-1 max-h-55 overflow-y-auto overflow-x-hidden" role="none">
                     {filteredBranches.map((branch) => (
                       <button
                         key={branch.name}
                         type="button"
-                        className={`branch-item${
-                          branch.name === branchName ? " is-active" : ""
+                        className={`branch-item text-left border-none bg-transparent py-1.5 px-2 rounded-lg text-(--text-muted) text-xs cursor-pointer hover:bg-(--surface-item) hover:text-(--text-stronger)${
+                          branch.name === branchName ? " is-active bg-(--surface-item) text-(--text-stronger)" : ""
                         }`}
                         onClick={async () => {
                           if (branch.name === branchName) {
@@ -710,10 +710,10 @@ export function MainHeader({
                       </button>
                     ))}
                     {filteredBranches.length === 0 && (
-                      <div className="branch-empty">{t("workspace.noBranchesFound")}</div>
+                      <div className="branch-empty text-[11px] text-(--text-faint) py-1 px-2">{t("workspace.noBranchesFound")}</div>
                     )}
                   </div>
-                  {error ? <div className="branch-error">{error}</div> : null}
+                  {error ? <div className="branch-error text-[11px] text-[rgba(255,160,160,0.9)] py-1.5 px-2 pb-0.5 whitespace-pre-wrap">{error}</div> : null}
                 </div>
               )}
             </div>
@@ -722,30 +722,30 @@ export function MainHeader({
       </div>
       {sessionTabsNode ? (
         <div
-          className="main-header-session-tabs-slot"
+          className="main-header-session-tabs-slot flex items-center flex-1 min-w-0 [-webkit-app-region:no-drag]"
           data-tauri-drag-region="false"
         >
           <div
-            className="main-header-session-tabs-interactive"
+            className="main-header-session-tabs-interactive flex items-center flex-[0_1_auto] min-w-0 max-w-full [-webkit-app-region:no-drag]"
             data-tauri-drag-region="false"
           >
             {sessionTabsNode}
           </div>
           <div
-            className="main-header-session-tabs-drag-lane"
+            className="main-header-session-tabs-drag-lane flex-[1_1_auto] min-w-3 self-stretch [-webkit-app-region:drag]"
             data-tauri-drag-region
             aria-hidden="true"
           />
         </div>
       ) : null}
-      <div className="main-header-actions">
+      <div className="main-header-actions flex items-center gap-0.75 [-webkit-app-region:no-drag] shrink-0">
         {showLaunchScriptControls &&
           onRunLaunchScript &&
           onOpenLaunchScriptEditor &&
           onCloseLaunchScriptEditor &&
           onLaunchScriptDraftChange &&
           onSaveLaunchScript && (
-            <div className="launch-script-cluster">
+            <div className="launch-script-cluster inline-flex items-center gap-px">
               <LaunchScriptButton
                 launchScript={launchScript}
                 editorOpen={launchScriptEditorOpen}

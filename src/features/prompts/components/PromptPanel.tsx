@@ -443,10 +443,10 @@ export function PromptPanel({
           {hasPrompts ? t("prompts.promptCount", { count: totalCount }) : t("prompts.noPrompts")}
         </div>
       </div>
-      <div className="file-tree-search">
-        <Search className="file-tree-search-icon" aria-hidden />
+      <div className="file-tree-search flex items-center gap-2 py-1.5 px-2 bg-transparent text-(--text-faint) focus-within:text-(--text-emphasis)">
+        <Search className="file-tree-search-icon w-3.5 h-3.5" aria-hidden />
         <input
-          className="file-tree-search-input"
+          className="file-tree-search-input flex-auto min-w-0 border-none bg-transparent text-inherit text-xs outline-none placeholder:text-(--text-faint)"
           type="search"
           placeholder={t("prompts.filterPrompts")}
           value={query}

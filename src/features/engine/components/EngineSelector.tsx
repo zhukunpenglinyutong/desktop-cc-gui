@@ -63,18 +63,24 @@ export function EngineSelector({
   };
 
   return (
-    <div className="composer-select-wrap" title={selectedEngineInfo?.shortName || selectedEngine}>
-      <span className="composer-icon" aria-hidden>
+    <div className="composer-select-wrap relative inline-flex w-max max-w-full min-w-0 min-h-6 cursor-pointer items-center gap-[5px] rounded-lg border border-transparent px-2 py-0.5 text-[11px] font-medium text-[var(--text-muted)] transition-[background-color,color,border-color] duration-[180ms] ease-in-out" title={selectedEngineInfo?.shortName || selectedEngine}>
+      <span className="composer-icon flex items-center text-inherit [&_svg]:h-3.5 [&_svg]:w-3.5" aria-hidden>
         <EngineIcon engine={selectedEngine} size={16} />
       </span>
       {showLabel && selectedEngineInfo && (
-        <span className="composer-select-value">
+        <span className="composer-select-value max-w-55 overflow-hidden text-ellipsis whitespace-nowrap">
           {selectedEngineInfo.shortName}
         </span>
       )}
       {selectedEngine === "opencode" && opencodeStatusTone && (
         <span
-          className={`composer-engine-status-dot ${opencodeStatusTone}`}
+          className={`composer-engine-status-dot ml-0.5 h-2.5 w-2.5 flex-[0_0_0.625rem] rounded-full ${
+            opencodeStatusTone === "is-ok"
+              ? "bg-[#22c55e]"
+              : opencodeStatusTone === "is-runtime"
+                ? "bg-[#f59e0b]"
+                : "bg-[#ef4444]"
+          } ${opencodeStatusTone}`}
           aria-hidden
           title={
             opencodeStatusTone === "is-ok"

@@ -1,6 +1,24 @@
 @import "./composer.memory-picker.css";
 
 /**
+ * composer.part2.css — keeper (Phase 4.5b/4.5e Tailwind 迁移后保留段)
+ *
+ * Phase 4.5e (本次) 内联到 TSX：
+ *   composer-context-menu-panel{,--portal} / composer-context-backdrop
+ *   composer-memory-strip{,-head,-label,-hint}
+ *   composer-memory-chip-list (in code-annotation list path)
+ *
+ * 保留原因：
+ *   1. ContextUsageIndicator — radial-gradient + conic-gradient + ::after/::before tooltip 伪元素
+ *   2. @container composer-footer queries — cross-cluster responsive
+ *   3. .composer-shell .composer-input{,:focus-within} — 父级 context-dependent 覆盖
+ *   4. composer-memory-reference-popover* — ButtonArea (state hover/armed/disabled + close hover)
+ *   5. composer-memory-chip{,-main,-title,-summary,-meta,-state,-remove} + 状态 (.is-carry/.is-retained)
+ *      + descendant `.composer-code-annotation-chip` overrides
+ *   6. composer-context-ledger* — ContextLedgerPanel 单文件大型 cascade（kind 变体 + 选中态 + dialog）
+ */
+
+/**
  * ContextUsageIndicator 样式
  * ─────────────────────────────────────────
  * 奶奶请看：这里定义了"上下文使用量指示器"的外观
@@ -224,6 +242,7 @@
   }
 }
 
+/* composer-shell context: when ComposerInput is rendered inside Composer.composer-shell */
 .composer-shell .composer-input {
   border: none;
   box-shadow: none;
@@ -236,12 +255,7 @@
   background: transparent;
 }
 
-.composer-memory-strip {
-  display: grid;
-  gap: 8px;
-  margin: 6px 0 10px;
-}
-
+/* ---------- composer-memory-reference-popover (ButtonArea) ---------- */
 .composer-memory-reference-control {
   display: inline-flex;
   align-items: center;
@@ -415,25 +429,11 @@
   background: color-mix(in srgb, var(--button-primary, var(--input-focus-border, var(--accent-primary))) 88%, var(--text-primary) 12%);
 }
 
-.composer-memory-strip-head {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 10px;
-  flex-wrap: wrap;
-}
-
-.composer-memory-strip-label {
-  font-size: 12px;
-  font-weight: 700;
-  color: var(--text-strong);
-  white-space: nowrap;
-}
-
-.composer-memory-strip-hint {
-  font-size: 10px;
-  color: var(--text-muted);
-  white-space: nowrap;
+/* ---------- composer-memory-strip (chip list grid) ---------- */
+.composer-memory-strip {
+  display: grid;
+  gap: 8px;
+  margin: 6px 0 10px;
 }
 
 .composer-memory-chip-list {
@@ -537,14 +537,6 @@
   margin-left: 0;
 }
 
-.composer-code-annotation-list {
-  display: flex;
-  flex-wrap: nowrap;
-  gap: 6px;
-  overflow-x: auto;
-  overflow-y: hidden;
-}
-
 .composer-code-annotation-list .composer-code-annotation-chip {
   flex: 1 0 min(420px, 50%);
 }
@@ -574,6 +566,7 @@
   color: var(--text-strong);
 }
 
+/* ---------- composer-context-ledger (ContextLedgerPanel, large single-file cascade) ---------- */
 .composer-context-ledger {
   display: grid;
   gap: 10px;
@@ -1150,39 +1143,3 @@
   color: var(--text-faint);
   word-break: break-all;
 }
-
-/* Moved to end of file to fix width override */
-
-.composer-context-menu-panel {
-  position: absolute;
-  z-index: 1200;
-  bottom: calc(100% + 8px);
-  left: 0;
-  min-width: 900px;
-  width: min(1120px, 94vw);
-  max-height: min(570px, 66vh);
-  overflow-x: hidden;
-  overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 8px;
-  border: 1px solid var(--border-subtle);
-  border-radius: 12px;
-  background: color-mix(in srgb, var(--surface-elevated) 96%, #0b1020);
-  backdrop-filter: blur(8px);
-  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.4);
-}
-
-.composer-context-menu-panel--portal {
-  position: fixed;
-  bottom: auto;
-}
-
-.composer-context-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 1190;
-  background: transparent;
-}
-

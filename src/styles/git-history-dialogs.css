@@ -27,7 +27,35 @@
  * Same pattern as `git-history-shell-keepers.css` (Phase 7.5).
  */
 
-@import "./git-history.part2.pr-dialog.css";
+/* ── Shared backdrop + branch-dialog base ─────────────────────────────────
+ * Migrated from git-history.part2.pr-dialog.css (Phase 9.1c).
+ * These two classes are shared across many dialogs (create-branch, rename-branch,
+ * discard-all, pull, push, sync, fetch, refresh, create-pr) and rely on a single
+ * shared definition; inlining at every callsite would force duplication.
+ */
+
+.git-history-create-branch-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 12;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: color-mix(in srgb, #020617 52%, transparent);
+}
+
+.git-history-create-branch-dialog {
+  width: min(440px, 100%);
+  border-radius: 12px;
+  border: 1px solid color-mix(in srgb, var(--border-default) 78%, transparent);
+  background: color-mix(in srgb, var(--surface-card-muted, #111725) 92%, #0b1220);
+  box-shadow: 0 14px 42px rgba(0, 0, 0, 0.34);
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
 
 .git-history-reset-dialog {
   width: min(640px, 100%);

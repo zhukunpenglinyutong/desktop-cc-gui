@@ -2068,20 +2068,20 @@ export const Composer = memo(function Composer({
                 )}
 
                 {selectedCodeAnnotations.length > 0 && (
-                  <div className="composer-memory-strip composer-code-annotation-strip">
-                    <div className="composer-memory-strip-head">
-                      <span className="composer-memory-strip-label">
+                  <div className="composer-memory-strip composer-code-annotation-strip grid gap-2 my-1.5 mb-2.5">
+                    <div className="composer-memory-strip-head flex flex-wrap items-baseline justify-between gap-2.5">
+                      <span className="composer-memory-strip-label whitespace-nowrap text-xs font-bold text-[var(--text-strong)]">
                         {t("composer.codeAnnotationSelection", {
                           count: selectedCodeAnnotations.length,
                         })}
                       </span>
-                      <span className="composer-memory-strip-hint">
+                      <span className="composer-memory-strip-hint whitespace-nowrap text-[10px] text-[var(--text-muted)]">
                         {t("composer.codeAnnotationSelectionHint", {
                           count: selectedCodeAnnotations.length,
                         })}
                       </span>
                     </div>
-                    <div className="composer-memory-chip-list composer-code-annotation-list">
+                    <div className="composer-memory-chip-list composer-code-annotation-list flex flex-nowrap gap-1.5 overflow-x-auto overflow-y-hidden">
                       {selectedCodeAnnotations.map((annotation) => {
                         const lineLabel = formatCodeAnnotationLineRange(
                           annotation.lineRange,

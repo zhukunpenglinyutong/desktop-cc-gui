@@ -774,23 +774,23 @@ export function ComposerInput({
   );
 
   return (
-    <div className={`composer-input${isDragging ? " is-resizing" : ""}`}>
+    <div className={`composer-input flex flex-col gap-2 rounded-2xl border border-[var(--border-muted)] bg-[var(--surface-messages)] p-3 shadow-none transition-all duration-200 ease-in-out focus-within:border-[var(--border-strong)] focus-within:bg-[var(--surface-messages)] focus-within:shadow-none${isDragging ? " is-resizing cursor-ns-resize select-none" : ""}`}>
       {/* Resize handle at the top */}
       {onHeightChange && (
         <div
           ref={resizeHandleRef}
-          className="composer-resize-handle"
+          className="composer-resize-handle -mx-2 -mt-2 flex cursor-grab items-center justify-center py-1 touch-none active:cursor-grabbing"
           onMouseDown={handleResizeStart}
           onTouchStart={handleResizeStart}
           aria-label={t("composer.dragToResize")}
           role="separator"
           aria-orientation="horizontal"
         >
-          <div className="composer-resize-handle-bar" />
+          <div className="composer-resize-handle-bar h-1 w-9 rounded-sm bg-[var(--border-muted)] transition-[background,width] duration-150 ease-in-out" />
         </div>
       )}
       <div
-        className={`composer-input-area${isDragOver ? " is-drag-over" : ""}`}
+        className={`composer-input-area relative flex min-w-0 flex-col gap-2${isDragOver ? " is-drag-over" : ""}`}
         ref={dropTargetRef}
         onDragOver={handleDragOver}
         onDragEnter={handleDragEnter}
@@ -802,10 +802,10 @@ export function ComposerInput({
           disabled={disabled}
           onRemoveAttachment={onRemoveAttachment}
         />
-        <div className="composer-textarea-wrapper">
+        <div className="composer-textarea-wrapper relative">
           <textarea
             ref={textareaRef}
-            className="composer-textarea"
+            className="composer-textarea [-webkit-app-region:no-drag] w-full min-h-5 resize-none border-none bg-transparent p-0 text-sm leading-normal text-inherit outline-none"
             placeholder={
               disabled
                 ? "Review in progress. Chat will re-enable when it completes."
@@ -833,12 +833,12 @@ export function ComposerInput({
           )}
         </div>
         
-        <div className="composer-input-footer">
-          <div className="composer-input-footer-left">
-            <div className="composer-footer-cluster composer-footer-cluster--attach">
+        <div className="composer-input-footer mt-1.5 flex items-center justify-start gap-2 [container-name:composer-footer] [container-type:inline-size]">
+          <div className="composer-input-footer-left flex flex-1 min-w-0 items-center gap-[5px] overflow-x-auto overflow-y-hidden [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            <div className="composer-footer-cluster composer-footer-cluster--attach inline-flex min-w-0 items-center gap-0.5 rounded-[10px] border border-[color-mix(in_srgb,var(--border-subtle)_82%,transparent)] bg-[color-mix(in_srgb,var(--surface-card)_82%,transparent)] p-px shadow-[inset_0_1px_0_color-mix(in_srgb,var(--surface-elevated,var(--surface-card))_60%,transparent)]">
               <button
                 type="button"
-                className="composer-attach"
+                className="composer-attach inline-flex h-6 w-6 cursor-pointer items-center justify-center rounded-[7px] border border-transparent bg-transparent p-0 text-[var(--text-muted)] transition-[background-color,color,border-color] duration-[180ms] ease-in-out disabled:cursor-not-allowed disabled:opacity-55"
                 onClick={onAddAttachment}
                 disabled={disabled || !onAddAttachment}
                 aria-label={t("composer.addImage")}
@@ -847,8 +847,8 @@ export function ComposerInput({
                 <ImagePlus size={14} aria-hidden />
               </button>
               {showPlanModeToggle && (
-                <label className="composer-plan-mode-toggle">
-                  <span className="composer-plan-mode-toggle-label">
+                <label className="composer-plan-mode-toggle ml-1 inline-flex items-center gap-1.5 whitespace-nowrap px-1 text-[11px] text-[var(--text-muted)]">
+                  <span className="composer-plan-mode-toggle-label leading-none">
                     {t("composer.planModeToggle")}
                   </span>
                   <Switch
@@ -856,14 +856,14 @@ export function ComposerInput({
                     checked={isPlanModeEnabled}
                     disabled={collaborationModeDisabled}
                     onCheckedChange={handlePlanModeToggle}
-                    className="composer-plan-mode-switch"
+                    className="composer-plan-mode-switch flex-none"
                   />
                 </label>
               )}
             </div>
 
             {hasEngineCluster && (
-              <div className="composer-footer-cluster composer-footer-cluster--engine">
+              <div className="composer-footer-cluster composer-footer-cluster--engine inline-flex min-w-0 max-w-[min(62vw,860px)] items-center gap-0.5 rounded-[10px] border border-[color-mix(in_srgb,var(--border-subtle)_82%,transparent)] bg-[color-mix(in_srgb,var(--surface-card)_82%,transparent)] p-px shadow-[inset_0_1px_0_color-mix(in_srgb,var(--surface-elevated,var(--surface-card))_60%,transparent)]">
                 {showEngineSelector && engines && selectedEngine && onSelectEngine && (
                   <EngineSelector
                     engines={engines}
@@ -878,7 +878,7 @@ export function ComposerInput({
 
                 {showOpenCodeModelIndicator && (
                   <div
-                    className={`composer-select-wrap composer-opencode-model-indicator${canOpenOpenCodePanelFromModelIndicator ? " is-clickable" : ""}`}
+                    className={`composer-select-wrap composer-opencode-model-indicator relative inline-flex w-max max-w-full min-w-0 min-h-6 cursor-default items-center gap-[5px] rounded-lg border border-[#bfdbfe] bg-[color-mix(in_srgb,#dbeafe_78%,transparent)] px-2 py-0.5 text-[11px] font-medium text-[#1d4ed8] transition-[background-color,color,border-color] duration-[180ms] ease-in-out${canOpenOpenCodePanelFromModelIndicator ? " is-clickable cursor-pointer" : ""}`}
                     title={selectedModelLabelRaw}
                     role={canOpenOpenCodePanelFromModelIndicator ? "button" : undefined}
                     tabIndex={canOpenOpenCodePanelFromModelIndicator ? 0 : undefined}
@@ -886,22 +886,22 @@ export function ComposerInput({
                     onClick={canOpenOpenCodePanelFromModelIndicator ? onOpenOpenCodePanel : undefined}
                     onKeyDown={canOpenOpenCodePanelFromModelIndicator ? handleOpenCodeModelIndicatorKeyDown : undefined}
                   >
-                    <span className="composer-icon" aria-hidden>
+                    <span className="composer-icon flex items-center text-inherit [&_svg]:h-3.5 [&_svg]:w-3.5" aria-hidden>
                       <Cpu size={14} />
                     </span>
-                    <span className="composer-select-value">{selectedModelDisplay}</span>
+                    <span className="composer-select-value max-w-[220px] overflow-hidden text-ellipsis whitespace-nowrap">{selectedModelDisplay}</span>
                   </div>
                 )}
 
                 {showModelPicker && (
                   <div
-                    className="composer-select-wrap"
+                    className="composer-select-wrap relative inline-flex w-max max-w-full min-w-0 min-h-6 cursor-pointer items-center gap-[5px] rounded-lg border border-transparent px-2 py-0.5 text-[11px] font-medium text-[var(--text-muted)] transition-[background-color,color,border-color] duration-[180ms] ease-in-out"
                     title={selectedModelLabelRaw}
                   >
-                    <span className="composer-icon" aria-hidden>
+                    <span className="composer-icon flex items-center text-inherit [&_svg]:h-3.5 [&_svg]:w-3.5" aria-hidden>
                       <Cpu size={14} />
                     </span>
-                    <span className="composer-select-value">
+                    <span className="composer-select-value max-w-[220px] overflow-hidden text-ellipsis whitespace-nowrap">
                       {selectedModelLabelRaw}
                     </span>
                     <Select
@@ -950,8 +950,8 @@ export function ComposerInput({
                 )}
 
                 {showOpenCodeAgentPicker && (
-                  <div className="composer-select-wrap" title={selectedOpenCodeAgent || t("composer.agent")}>
-                    <span className="composer-icon" aria-hidden>
+                  <div className="composer-select-wrap relative inline-flex w-max max-w-full min-w-0 min-h-6 cursor-pointer items-center gap-[5px] rounded-lg border border-transparent px-2 py-0.5 text-[11px] font-medium text-[var(--text-muted)] transition-[background-color,color,border-color] duration-[180ms] ease-in-out" title={selectedOpenCodeAgent || t("composer.agent")}>
+                    <span className="composer-icon flex items-center text-inherit [&_svg]:h-3.5 [&_svg]:w-3.5" aria-hidden>
                       <Bot size={14} />
                     </span>
                     <span
@@ -1011,8 +1011,8 @@ export function ComposerInput({
                 )}
 
                 {showOpenCodeVariantPicker && (
-                  <div className="composer-select-wrap" title={selectedOpenCodeVariant || t("composer.effortDefault")}>
-                    <span className="composer-icon" aria-hidden>
+                  <div className="composer-select-wrap relative inline-flex w-max max-w-full min-w-0 min-h-6 cursor-pointer items-center gap-[5px] rounded-lg border border-transparent px-2 py-0.5 text-[11px] font-medium text-[var(--text-muted)] transition-[background-color,color,border-color] duration-[180ms] ease-in-out" title={selectedOpenCodeVariant || t("composer.effortDefault")}>
+                    <span className="composer-icon flex items-center text-inherit [&_svg]:h-3.5 [&_svg]:w-3.5" aria-hidden>
                       <Brain size={14} />
                     </span>
                     <span
@@ -1061,17 +1061,17 @@ export function ComposerInput({
             )}
 
             {showOpenCodeDock && (
-              <div className="composer-footer-inline-dock">{openCodeDock}</div>
+              <div className="composer-footer-inline-dock inline-flex flex-[0_1_auto] min-w-0 items-center">{openCodeDock}</div>
             )}
 
             {hasPolicyCluster && (
-              <div className="composer-footer-cluster composer-footer-cluster--policy">
+              <div className="composer-footer-cluster composer-footer-cluster--policy inline-flex min-w-0 max-w-[min(46vw,620px)] items-center gap-0.5 rounded-[10px] border border-[color-mix(in_srgb,var(--border-subtle)_82%,transparent)] bg-[color-mix(in_srgb,var(--surface-card)_82%,transparent)] p-px shadow-[inset_0_1px_0_color-mix(in_srgb,var(--surface-elevated,var(--surface-card))_60%,transparent)]">
                 {showAccessPicker && (
-                  <div className="composer-select-wrap" title={accessDisplayLabel}>
-                    <span className="composer-icon" aria-hidden>
+                  <div className="composer-select-wrap relative inline-flex w-max max-w-full min-w-0 min-h-6 cursor-pointer items-center gap-[5px] rounded-lg border border-transparent px-2 py-0.5 text-[11px] font-medium text-[var(--text-muted)] transition-[background-color,color,border-color] duration-[180ms] ease-in-out" title={accessDisplayLabel}>
+                    <span className="composer-icon flex items-center text-inherit [&_svg]:h-3.5 [&_svg]:w-3.5" aria-hidden>
                       <AccessModeIcon size={14} />
                     </span>
-                    <span className="composer-select-value">
+                    <span className="composer-select-value max-w-[220px] overflow-hidden text-ellipsis whitespace-nowrap">
                       {accessDisplayLabel}
                     </span>
                     <Select
@@ -1121,11 +1121,11 @@ export function ComposerInput({
                 )}
 
                 {showEffortPicker && (
-                  <div className="composer-select-wrap" title={selectedEffort || effortDefaultLabel}>
-                    <span className="composer-icon" aria-hidden>
+                  <div className="composer-select-wrap relative inline-flex w-max max-w-full min-w-0 min-h-6 cursor-pointer items-center gap-[5px] rounded-lg border border-transparent px-2 py-0.5 text-[11px] font-medium text-[var(--text-muted)] transition-[background-color,color,border-color] duration-[180ms] ease-in-out" title={selectedEffort || effortDefaultLabel}>
+                    <span className="composer-icon flex items-center text-inherit [&_svg]:h-3.5 [&_svg]:w-3.5" aria-hidden>
                       <Gauge size={14} />
                     </span>
-                    <span className="composer-select-value">
+                    <span className="composer-select-value max-w-[220px] overflow-hidden text-ellipsis whitespace-nowrap">
                       {selectedEffort || effortDefaultLabel}
                     </span>
                     <Select
@@ -1169,11 +1169,11 @@ export function ComposerInput({
             )}
           </div>
           
-          <div className="composer-input-footer-right">
+          <div className="composer-input-footer-right ml-auto flex flex-none items-center gap-2">
             {showPlanModeToggle && (
               <button
                 type="button"
-                className={`composer-mode-badge${isPlanModeEnabled ? " is-plan" : ""}`}
+                className={`composer-mode-badge inline-flex h-6 cursor-pointer items-center gap-1 rounded-full border border-[color-mix(in_srgb,var(--border-subtle)_84%,transparent)] bg-[color-mix(in_srgb,var(--surface-card)_88%,transparent)] px-2 text-[11px] font-medium text-[var(--text-muted)] transition-[background-color,border-color,color] duration-[180ms] ease-in-out disabled:cursor-not-allowed disabled:opacity-50${isPlanModeEnabled ? " is-plan" : ""}`}
                 onClick={() => handlePlanModeToggle(!isPlanModeEnabled)}
                 disabled={collaborationModeDisabled}
                 aria-label={t("composer.planModeToggle")}
@@ -1185,7 +1185,7 @@ export function ComposerInput({
             )}
             {isCodexEngine && (
               <div
-                className="composer-usage-popover"
+                className="composer-usage-popover relative inline-flex items-center"
                 onMouseEnter={handleUsageEnter}
                 onMouseLeave={handleUsageLeave}
                 onFocus={handleUsageEnter}
@@ -1193,8 +1193,8 @@ export function ComposerInput({
               >
                 <button
                   type="button"
-                  className={`composer-action composer-action--usage${
-                    usageLoading ? " is-loading" : ""
+                  className={`composer-action composer-action--usage relative inline-flex h-6 w-6 cursor-pointer items-center justify-center rounded-full border border-[#808080] bg-transparent p-0 text-xs text-white [&_svg]:h-3 [&_svg]:w-3${
+                    usageLoading ? " is-loading [&_svg]:[animation:composer-action-spin_0.8s_linear_infinite]" : ""
                   }`}
                   aria-label={t("home.usageSnapshot")}
                   title={t("home.usageSnapshot")}
@@ -1206,17 +1206,17 @@ export function ComposerInput({
                   <Gauge size={14} aria-hidden />
                 </button>
                 {usagePopoverOpen && (
-                  <div className="composer-usage-tooltip" role="status" aria-live="polite">
-                    <div className="composer-usage-tooltip-header">
+                  <div className="composer-usage-tooltip absolute right-0 bottom-[calc(100%+8px)] z-40 w-[220px] rounded-[10px] border border-[color-mix(in_srgb,var(--border-subtle)_82%,transparent)] bg-[color-mix(in_srgb,var(--surface-popover)_92%,var(--surface-card))] p-2.5 text-[var(--text-strong)] shadow-[0_10px_22px_rgba(0,0,0,0.25)]" role="status" aria-live="polite">
+                    <div className="composer-usage-tooltip-header mb-2 flex items-center justify-between text-[11px] font-semibold">
                       <span>{t("home.usageSnapshot")}</span>
                       {usageLoading && (
-                        <span className="composer-usage-tooltip-refreshing">
+                        <span className="composer-usage-tooltip-refreshing text-[10px] font-medium text-[var(--text-muted)]">
                           {t("common.refresh")}
                         </span>
                       )}
                     </div>
-                    <div className="composer-usage-row">
-                      <div className="composer-usage-row-top">
+                    <div className="composer-usage-row grid gap-1 [&_+_.composer-usage-row]:mt-2">
+                      <div className="composer-usage-row-top flex items-center justify-between text-[11px] text-[var(--text-subtle)]">
                         <span>5h limit</span>
                         <span>
                           {usageSnapshot.sessionPercent === null
@@ -1226,19 +1226,19 @@ export function ComposerInput({
                               )}`}
                         </span>
                       </div>
-                      <div className="composer-usage-progress-track" aria-hidden>
+                      <div className="composer-usage-progress-track h-1.5 overflow-hidden rounded-full bg-[color-mix(in_srgb,var(--surface-item)_80%,transparent)]" aria-hidden>
                         <span
-                          className="composer-usage-progress-fill"
+                          className="composer-usage-progress-fill block h-full w-0 rounded-full bg-linear-to-r from-[#2563eb] to-[#60a5fa] transition-[width] duration-200 ease-in-out"
                           style={{ width: `${usageSnapshot.sessionPercent ?? 0}%` }}
                         />
                       </div>
                       {usageSnapshot.sessionResetLabel && (
-                        <div className="composer-usage-reset">{usageSnapshot.sessionResetLabel}</div>
+                        <div className="composer-usage-reset text-[10px] text-[var(--text-muted)]">{usageSnapshot.sessionResetLabel}</div>
                       )}
                     </div>
                     {usageSnapshot.showWeekly && (
-                      <div className="composer-usage-row">
-                        <div className="composer-usage-row-top">
+                      <div className="composer-usage-row grid gap-1 mt-2">
+                        <div className="composer-usage-row-top flex items-center justify-between text-[11px] text-[var(--text-subtle)]">
                           <span>Weekly limit</span>
                           <span>
                             {usageSnapshot.weeklyPercent === null
@@ -1248,14 +1248,14 @@ export function ComposerInput({
                                 )}`}
                           </span>
                         </div>
-                        <div className="composer-usage-progress-track" aria-hidden>
+                        <div className="composer-usage-progress-track h-1.5 overflow-hidden rounded-full bg-[color-mix(in_srgb,var(--surface-item)_80%,transparent)]" aria-hidden>
                           <span
-                            className="composer-usage-progress-fill"
+                            className="composer-usage-progress-fill block h-full w-0 rounded-full bg-linear-to-r from-[#2563eb] to-[#60a5fa] transition-[width] duration-200 ease-in-out"
                             style={{ width: `${usageSnapshot.weeklyPercent ?? 0}%` }}
                           />
                         </div>
                         {usageSnapshot.weeklyResetLabel && (
-                          <div className="composer-usage-reset">{usageSnapshot.weeklyResetLabel}</div>
+                          <div className="composer-usage-reset text-[10px] text-[var(--text-muted)]">{usageSnapshot.weeklyResetLabel}</div>
                         )}
                       </div>
                     )}
@@ -1265,7 +1265,7 @@ export function ComposerInput({
             )}
             <ContextUsageIndicator contextUsage={contextUsage} />
             <button
-              className={`composer-action composer-action--mic${
+              className={`composer-action composer-action--mic relative inline-flex h-6 w-6 cursor-pointer items-center justify-center rounded-full border border-[#808080] bg-transparent p-0 text-xs text-white [&_svg]:h-3 [&_svg]:w-3${
                 isDictationBusy ? " is-active" : ""
               }${dictationState === "processing" ? " is-processing" : ""}${
                 micDisabled ? " is-disabled" : ""
@@ -1282,7 +1282,7 @@ export function ComposerInput({
               {isDictating ? <Square aria-hidden /> : <Mic aria-hidden />}
             </button>
             <button
-              className={`composer-action${canStop ? " is-stop" : " is-send"}${
+              className={`composer-action relative inline-flex h-6 w-6 cursor-pointer items-center justify-center rounded-full border border-[#808080] bg-transparent p-0 text-xs text-white [&_svg]:h-3 [&_svg]:w-3${canStop ? " is-stop" : " is-send"}${
                 canStop && isProcessing ? " is-loading" : ""
               }`}
               onClick={handleActionClick}
@@ -1291,9 +1291,9 @@ export function ComposerInput({
             >
               {canStop ? (
                 <>
-                  <span className="composer-action-stop-square" aria-hidden />
+                  <span className="composer-action-stop-square h-1.5 w-1.5 rounded-[2px] bg-current" aria-hidden />
                   {isProcessing && (
-                    <span className="composer-action-spinner" aria-hidden />
+                    <span className="composer-action-spinner absolute h-[18px] w-[18px] rounded-full border-2 border-[#5a2828] border-t-[#cc5555] [animation:composer-action-spin_0.8s_linear_infinite]" aria-hidden />
                   )}
                 </>
               ) : (
@@ -1318,11 +1318,11 @@ export function ComposerInput({
           />
         )}
         {dictationError && (
-          <div className="composer-dictation-error" role="status">
+          <div className="composer-dictation-error mt-2 flex items-center justify-between gap-2.5 rounded-[10px] border border-[#7a3a3a] bg-[#2a1a1a] px-2.5 py-2 text-xs text-[var(--text-strong)]" role="status">
             <span>{t(dictationError, { defaultValue: dictationError })}</span>
             <button
               type="button"
-              className="ghost composer-dictation-error-dismiss"
+              className="ghost composer-dictation-error-dismiss px-2 py-1 text-[11px]"
               onClick={onDismissDictationError}
             >
               {t("common.dismiss")}
@@ -1330,12 +1330,12 @@ export function ComposerInput({
           </div>
         )}
         {dictationHint && (
-          <div className="composer-dictation-hint" role="status">
+          <div className="composer-dictation-hint mt-2 flex items-center justify-between gap-2.5 rounded-[10px] border border-[#3a5a7a] bg-[#1a2640] px-2.5 py-2 text-xs text-[var(--text-strong)]" role="status">
             <span>{dictationHint}</span>
             {onDismissDictationHint && (
               <button
                 type="button"
-                className="ghost composer-dictation-error-dismiss"
+                className="ghost composer-dictation-error-dismiss px-2 py-1 text-[11px]"
                 onClick={onDismissDictationHint}
               >
                 {t("common.dismiss")}
@@ -1345,10 +1345,10 @@ export function ComposerInput({
         )}
         {suggestionsOpen && (
           <div
-            className={`composer-suggestions popover-surface${
+            className={`composer-suggestions popover-surface absolute left-0 z-10 grid w-[min(100%,420px)] max-h-[220px] gap-1 overflow-x-hidden overflow-y-auto rounded-[10px] p-1.5 bottom-[calc(100%+6px)] right-auto top-auto${
               reviewPromptOpen ? " review-inline-suggestions" : ""
             }${
-              manualMemoryPickerEnabled ? " composer-suggestions--manual-memory" : ""
+              manualMemoryPickerEnabled ? " composer-suggestions--manual-memory !w-[min(92vw,760px)] !max-h-[min(58vh,460px)] !p-2 !overflow-hidden" : ""
             }`}
             role="listbox"
             ref={suggestionListRef}

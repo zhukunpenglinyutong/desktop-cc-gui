@@ -2218,12 +2218,16 @@ export function FileTreePanel({
               }}
             />
             <div className="new-file-prompt-actions flex justify-end gap-2 mt-0.5">
-              <button type="button" className="ghost" onClick={cancelNewFile}>
+              <button
+                type="button"
+                className="ghost py-1.5 px-3.5 rounded-lg text-[13px] font-medium"
+                onClick={cancelNewFile}
+              >
                 {t("files.cancel")}
               </button>
               <button
                 type="button"
-                className="primary"
+                className="primary py-1.5 px-3.5 rounded-lg text-[13px] font-medium"
                 disabled={!newFileName.trim()}
                 onClick={() => void confirmNewFile()}
               >
@@ -2260,12 +2264,16 @@ export function FileTreePanel({
               }}
             />
             <div className="new-file-prompt-actions flex justify-end gap-2 mt-0.5">
-              <button type="button" className="ghost" onClick={cancelNewFolder}>
+              <button
+                type="button"
+                className="ghost py-1.5 px-3.5 rounded-lg text-[13px] font-medium"
+                onClick={cancelNewFolder}
+              >
                 {t("files.cancel")}
               </button>
               <button
                 type="button"
-                className="primary"
+                className="primary py-1.5 px-3.5 rounded-lg text-[13px] font-medium"
                 disabled={!newFolderName.trim()}
                 onClick={() => void confirmNewFolder()}
               >

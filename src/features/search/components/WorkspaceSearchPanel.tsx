@@ -141,29 +141,29 @@ export function WorkspaceSearchPanel({
   const renderResult = (result: WorkspaceTextSearchFileResult) => {
     const isExpanded = expandedFiles.has(result.path);
     return (
-      <div key={result.path} className="workspace-search-result-group">
+      <div key={result.path} className="workspace-search-result-group flex flex-col gap-0.5">
         <button
           type="button"
-          className="workspace-search-result-file"
+          className="workspace-search-result-file w-full border border-transparent bg-transparent text-(--text-emphasis) text-left flex items-center gap-2 py-1 px-1.5 rounded-lg hover:bg-(--surface-hover) hover:border-(--border-subtle) focus-visible:bg-(--surface-hover) focus-visible:border-(--border-subtle)"
           onClick={() => toggleExpanded(result.path)}
         >
           <span className={`file-tree-chevron${isExpanded ? " is-open" : ""}`}>›</span>
-          <span className="workspace-search-result-path">{result.path}</span>
-          <span className="workspace-search-result-count">{result.match_count}</span>
+          <span className="workspace-search-result-path flex-auto min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-xs">{result.path}</span>
+          <span className="workspace-search-result-count flex-none min-w-5.5 py-px px-1.5 rounded-full bg-[color-mix(in_srgb,var(--surface-hover)_75%,transparent)] text-(--text-faint) text-[11px] text-center">{result.match_count}</span>
         </button>
         {isExpanded ? (
-          <div className="workspace-search-result-matches">
+          <div className="workspace-search-result-matches flex flex-col gap-0.5 pl-4.5">
             {result.matches.map((match, index) => (
               <button
                 key={`${result.path}-${match.line}-${match.column}-${index}`}
                 type="button"
-                className="workspace-search-result-match"
+                className="workspace-search-result-match w-full border border-transparent bg-transparent text-(--text-emphasis) text-left grid grid-cols-[56px_minmax(0,1fr)] gap-2 items-start py-1 px-1.5 rounded-lg hover:bg-(--surface-hover) hover:border-(--border-subtle) focus-visible:bg-(--surface-hover) focus-visible:border-(--border-subtle)"
                 onClick={() => onOpenFile(result.path, { line: match.line, column: match.column })}
               >
-                <span className="workspace-search-result-location">
+                <span className="workspace-search-result-location text-(--text-faint) text-[11px]">
                   {match.line}:{match.column}
                 </span>
-                <span className="workspace-search-result-preview">{match.preview}</span>
+                <span className="workspace-search-result-preview min-w-0 text-xs text-(--text-emphasis) whitespace-nowrap overflow-hidden text-ellipsis">{match.preview}</span>
               </button>
             ))}
           </div>
@@ -173,12 +173,12 @@ export function WorkspaceSearchPanel({
   };
 
   return (
-    <section className="diff-panel workspace-search-panel">
-      <div className="workspace-search-body">
-        <div className="workspace-search-bar">
-          <SearchIcon className="workspace-search-icon" aria-hidden />
+    <section className="diff-panel workspace-search-panel flex flex-col gap-0 overflow-hidden">
+      <div className="workspace-search-body flex flex-col gap-2 min-h-0 flex-1">
+        <div className="workspace-search-bar flex items-center gap-2 min-w-0 py-1.5 px-2 rounded-[10px] border border-(--border-subtle) bg-[color-mix(in_srgb,var(--surface-secondary)_86%,transparent)] text-(--text-faint) focus-within:text-(--text-emphasis)">
+          <SearchIcon className="workspace-search-icon w-3.5 h-3.5" aria-hidden />
           <input
-            className="workspace-search-input"
+            className="workspace-search-input flex-auto min-w-0 border-none outline-none bg-transparent text-inherit text-xs"
             type="search"
             placeholder={t("files.filterPlaceholder")}
             value={query}
@@ -188,7 +188,7 @@ export function WorkspaceSearchPanel({
           />
           <button
             type="button"
-            className={`ghost workspace-search-option${searchCaseSensitive ? " is-active" : ""}`}
+            className={`ghost workspace-search-option flex-none min-w-6 h-6 py-0 px-1.5 rounded-md border border-transparent text-(--text-faint) text-[11px] hover:text-(--text-emphasis) hover:border-(--border-subtle) hover:bg-(--surface-hover) focus-visible:text-(--text-emphasis) focus-visible:border-(--border-subtle) focus-visible:bg-(--surface-hover)${searchCaseSensitive ? " is-active text-(--text-emphasis) border-(--border-subtle) bg-(--surface-hover)" : ""}`}
             onClick={() => setSearchCaseSensitive((prev) => !prev)}
             aria-label={t("files.matchCase")}
             title={t("files.matchCase")}
@@ -198,7 +198,7 @@ export function WorkspaceSearchPanel({
           </button>
           <button
             type="button"
-            className={`ghost workspace-search-option${searchWholeWord ? " is-active" : ""}`}
+            className={`ghost workspace-search-option flex-none min-w-6 h-6 py-0 px-1.5 rounded-md border border-transparent text-(--text-faint) text-[11px] hover:text-(--text-emphasis) hover:border-(--border-subtle) hover:bg-(--surface-hover) focus-visible:text-(--text-emphasis) focus-visible:border-(--border-subtle) focus-visible:bg-(--surface-hover)${searchWholeWord ? " is-active text-(--text-emphasis) border-(--border-subtle) bg-(--surface-hover)" : ""}`}
             onClick={() => setSearchWholeWord((prev) => !prev)}
             aria-label={t("files.matchWholeWord")}
             title={t("files.matchWholeWord")}
@@ -208,7 +208,7 @@ export function WorkspaceSearchPanel({
           </button>
           <button
             type="button"
-            className={`ghost workspace-search-option${searchRegex ? " is-active" : ""}`}
+            className={`ghost workspace-search-option flex-none min-w-6 h-6 py-0 px-1.5 rounded-md border border-transparent text-(--text-faint) text-[11px] hover:text-(--text-emphasis) hover:border-(--border-subtle) hover:bg-(--surface-hover) focus-visible:text-(--text-emphasis) focus-visible:border-(--border-subtle) focus-visible:bg-(--surface-hover)${searchRegex ? " is-active text-(--text-emphasis) border-(--border-subtle) bg-(--surface-hover)" : ""}`}
             onClick={() => setSearchRegex((prev) => !prev)}
             aria-label={t("files.useRegex")}
             title={t("files.useRegex")}
@@ -218,7 +218,7 @@ export function WorkspaceSearchPanel({
           </button>
           <button
             type="button"
-            className={`ghost workspace-search-option${searchDetailsVisible ? " is-active" : ""}`}
+            className={`ghost workspace-search-option flex-none min-w-6 h-6 py-0 px-1.5 rounded-md border border-transparent text-(--text-faint) text-[11px] hover:text-(--text-emphasis) hover:border-(--border-subtle) hover:bg-(--surface-hover) focus-visible:text-(--text-emphasis) focus-visible:border-(--border-subtle) focus-visible:bg-(--surface-hover)${searchDetailsVisible ? " is-active text-(--text-emphasis) border-(--border-subtle) bg-(--surface-hover)" : ""}`}
             onClick={() => setSearchDetailsVisible((prev) => !prev)}
             aria-label={t("files.searchDetails")}
             title={t("files.searchDetails")}
@@ -229,9 +229,9 @@ export function WorkspaceSearchPanel({
         </div>
 
         {(searchDetailsVisible || isSearchMode) && workspaceId ? (
-          <div className="workspace-search-details">
+          <div className="workspace-search-details grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-2">
             <input
-              className="workspace-search-details-input"
+              className="workspace-search-details-input min-w-0 h-7.5 rounded-lg border border-(--border-subtle) bg-[color-mix(in_srgb,var(--surface-secondary)_86%,transparent)] text-(--text-emphasis) text-xs py-0 px-2.5 outline-none"
               type="text"
               placeholder={t("files.includePattern")}
               value={includePattern}
@@ -239,7 +239,7 @@ export function WorkspaceSearchPanel({
               aria-label={t("files.includePattern")}
             />
             <input
-              className="workspace-search-details-input"
+              className="workspace-search-details-input min-w-0 h-7.5 rounded-lg border border-(--border-subtle) bg-[color-mix(in_srgb,var(--surface-secondary)_86%,transparent)] text-(--text-emphasis) text-xs py-0 px-2.5 outline-none"
               type="text"
               placeholder={t("files.excludePattern")}
               value={excludePattern}
@@ -249,15 +249,15 @@ export function WorkspaceSearchPanel({
           </div>
         ) : null}
 
-        <div className="workspace-search-summary">{summaryText}</div>
+        <div className="workspace-search-summary text-xs text-(--text-faint)">{summaryText}</div>
         {searchResults?.limit_hit ? (
-          <div className="workspace-search-limit">{t("files.searchLimitReached")}</div>
+          <div className="workspace-search-limit text-xs text-(--text-warning,#fbbf24)">{t("files.searchLimitReached")}</div>
         ) : null}
 
-        <div className="workspace-search-results">
+        <div className="workspace-search-results flex flex-col gap-1 overflow-y-auto min-h-0 pr-0.5">
           {!workspaceId ? null : !isSearchMode ? null : searchLoading || searchError ? null :
             !searchResults || searchResults.files.length === 0 ? (
-              <div className="workspace-search-empty">{t("files.noMatchesFound")}</div>
+              <div className="workspace-search-empty text-xs text-(--text-faint)">{t("files.noMatchesFound")}</div>
             ) : (
               searchResults.files.map((result) => renderResult(result))
             )}

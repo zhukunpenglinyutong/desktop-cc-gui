@@ -146,6 +146,7 @@ export function ComposerContextMenuPopover({
   const mergedClassName = [
     "composer-context-menu-panel",
     "composer-context-menu-panel--portal",
+    "fixed bottom-auto z-[1200] flex min-w-[900px] w-[min(1120px,94vw)] max-h-[min(570px,66vh)] flex-col gap-1.5 overflow-x-hidden overflow-y-auto rounded-xl border border-[var(--border-subtle)] bg-[color-mix(in_srgb,var(--surface-elevated)_96%,#0b1020)] p-2 shadow-[0_16px_40px_rgba(0,0,0,0.4)] backdrop-blur-lg",
     panelClassName,
     panelPropsClassName,
     position?.placement ? `is-placement-${position.placement}` : "",
@@ -156,7 +157,7 @@ export function ComposerContextMenuPopover({
   return createPortal(
     <>
       <div
-        className="composer-context-backdrop"
+        className="composer-context-backdrop fixed inset-0 z-[1190] bg-transparent"
         onClick={closeOnBackdropClick ? onClose : undefined}
         style={closeOnBackdropClick ? undefined : { pointerEvents: "none" }}
         aria-hidden="true"

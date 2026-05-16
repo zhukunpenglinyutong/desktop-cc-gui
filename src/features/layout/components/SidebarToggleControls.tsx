@@ -36,7 +36,7 @@ export function SidebarCollapseButton({
   const labelKey = isCollapsed ? "sidebar.showThreadsSidebar" : "sidebar.hideThreadsSidebar";
   return (
     <TooltipIconButton
-      className="ghost main-header-action"
+      className="ghost main-header-action p-1.5 rounded-lg inline-flex items-center justify-center"
       onClick={isCollapsed ? onExpandSidebar : onCollapseSidebar}
       data-tauri-drag-region="false"
       label={t(labelKey)}
@@ -63,7 +63,7 @@ export function RightPanelCollapseButton({
   return (
     <button
       type="button"
-      className="ghost main-header-action"
+      className="ghost main-header-action p-1.5 rounded-lg inline-flex items-center justify-center"
       onClick={onCollapseRightPanel}
       data-tauri-drag-region="false"
       aria-label={t("sidebar.hideGitSidebar")}

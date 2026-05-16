@@ -49,14 +49,14 @@ export function DictationWaveform({
 
   return (
     <div
-      className={`composer-waveform${processing ? " is-processing" : ""}`}
+      className={`composer-waveform relative mt-2.5 flex h-10 items-end gap-[3px] rounded-[10px] border border-[var(--border-muted)] bg-card px-2 py-1.5${processing ? " is-processing" : ""}`}
       aria-hidden
     >
-      {processing && <span className="composer-waveform-label">{t("messages.processing")}</span>}
+      {processing && <span className="composer-waveform-label pointer-events-none absolute inset-0 flex items-center justify-center text-[11px] uppercase tracking-[0.02em] text-[var(--text-subtle)]">{t("messages.processing")}</span>}
       {barHeights.map((height, index) => (
         <span
           key={index}
-          className="composer-waveform-bar"
+          className="composer-waveform-bar min-w-0.5 flex-1 rounded-full bg-[#7aaccc] transition-[height] duration-[120ms] ease-in-out"
           style={{ height }}
         />
       ))}

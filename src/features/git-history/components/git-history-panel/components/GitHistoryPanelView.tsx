@@ -1680,7 +1680,7 @@ export function renderGitHistoryPanelView(scope: any) {
         {createPrDialogOpen && typeof document !== "undefined"
           ? createPortal(
               <div
-                className="git-history-create-branch-backdrop git-history-create-pr-backdrop"
+                className="git-history-create-branch-backdrop git-history-create-pr-backdrop fixed z-[68] bg-[#0b1220] inset-0 flex items-center justify-center p-4"
                 onMouseDown={(event) => {
                   if (event.target === event.currentTarget) {
                     closeCreatePrDialog();
@@ -1688,22 +1688,22 @@ export function renderGitHistoryPanelView(scope: any) {
                 }}
               >
                 <section
-                  className={`git-history-create-pr-dialog ${isCreatePrDialogMaximized ? "is-maximized" : ""}`}
+                  className={`git-history-create-pr-dialog w-[min(1360px,98vw)] max-h-[min(90vh,920px)] rounded-[14px] border border-[color-mix(in_srgb,var(--border-default)_88%,transparent)] bg-(--surface-sidebar-opaque,#ffffff) shadow-[0_18px_46px_color-mix(in_srgb,#0f172a_26%,transparent),0_1px_0_color-mix(in_srgb,#ffffff_36%,transparent)_inset] p-3.5 flex flex-col gap-2.5 overflow-auto ${isCreatePrDialogMaximized ? "is-maximized w-[calc(100vw-32px)] max-h-[calc(100vh-32px)] rounded-[10px]" : ""}`}
                   role="dialog"
                   aria-modal="true"
                   aria-label={t("git.historyCreatePrDialogTitle")}
                 >
-              <div className="git-history-create-pr-header">
-                <div className="git-history-create-pr-title-wrap">
-                  <span className="git-history-create-pr-title-icon">
+              <div className="git-history-create-pr-header flex items-start justify-between gap-2.5">
+                <div className="git-history-create-pr-title-wrap inline-flex items-start gap-2.5 min-w-0">
+                  <span className="git-history-create-pr-title-icon w-[34px] h-[34px] rounded-[10px] border border-[color-mix(in_srgb,var(--accent-primary,#2563eb)_36%,transparent)] bg-[color-mix(in_srgb,var(--accent-primary,#2563eb)_12%,transparent)] text-[color-mix(in_srgb,var(--accent-primary,#2563eb)_84%,#dbeafe)] inline-flex items-center justify-center flex-none">
                     <GitPullRequestCreate size={16} />
                   </span>
-                  <div className="git-history-create-pr-title-copy">
+                  <div className="git-history-create-pr-title-copy min-w-0 flex flex-col gap-[3px] [&_strong]:text-[15px] [&_strong]:text-(--text-stronger) [&_p]:m-0 [&_p]:text-xs [&_p]:text-(--text-secondary) [&_p]:leading-[1.45]">
                     <strong>{t("git.historyCreatePrDialogTitle")}</strong>
                     <p>{t("git.historyCreatePrDialogSubtitle")}</p>
                   </div>
                 </div>
-                <div className="git-history-create-pr-header-actions">
+                <div className="git-history-create-pr-header-actions inline-flex items-center gap-2">
                   <button
                     type="button"
                     className="git-history-force-delete-close inline-flex items-center justify-center w-[26px] h-[26px] rounded-full border border-(--border-default)/72 bg-[color-mix(in_srgb,var(--surface-control,#1a2230)_66%,transparent)] text-(--text-secondary) cursor-pointer hover:[&:not(:disabled)]:text-(--text-primary) hover:[&:not(:disabled)]:border-[color-mix(in_srgb,var(--accent-primary,#2563eb)_56%,transparent)] disabled:opacity-100 disabled:text-[color-mix(in_srgb,var(--text-secondary)_78%,var(--text-muted))] [&_svg]:block [&_svg]:w-3.5 [&_svg]:h-3.5 [&_svg]:stroke-current [&_svg]:[stroke-width:2.35]"
@@ -1731,12 +1731,12 @@ export function renderGitHistoryPanelView(scope: any) {
               </div>
 
               {createPrDefaultsLoading ? (
-                <div className="git-history-create-pr-inline-hint">
+                <div className="git-history-create-pr-inline-hint text-xs text-(--text-secondary) border border-(--border-default)/66 bg-[color-mix(in_srgb,var(--surface-control,#f8fafc)_70%,transparent)] rounded-[10px] py-2 px-2.5">
                   {t("git.historyCreatePrLoadingDefaults")}
                 </div>
               ) : null}
               {createPrDefaultsError ? (
-                <div className="git-history-create-pr-warning">
+                <div className="git-history-create-pr-warning rounded-[10px] border border-[color-mix(in_srgb,#ef4444_36%,transparent)] bg-[color-mix(in_srgb,#ef4444_14%,transparent)] text-[color-mix(in_srgb,#991b1b_72%,var(--text-primary))] inline-flex items-start gap-2 py-2 px-2.5 text-xs leading-[1.45]">
                   <CircleAlert size={14} />
                   <span>
                     {t("git.historyCreatePrLoadDefaultsFailed")}{" "}
@@ -1745,15 +1745,15 @@ export function renderGitHistoryPanelView(scope: any) {
                 </div>
               ) : null}
 
-              <section className="git-history-create-pr-compare-card">
-                <div className="git-history-create-pr-compare-bar">
-                  <span className="git-history-create-pr-compare-icon" aria-hidden>
+              <section className="git-history-create-pr-compare-card rounded-xl border border-(--border-default)/70 bg-[linear-gradient(180deg,color-mix(in_srgb,var(--surface-control,#f8fafc)_88%,transparent)_0%,color-mix(in_srgb,var(--surface-control,#f8fafc)_72%,transparent)_100%)] py-2.5 px-3">
+                <div className="git-history-create-pr-compare-bar grid grid-cols-[auto_minmax(0,1.45fr)_minmax(0,1.05fr)_auto_minmax(0,1.45fr)_minmax(0,1.05fr)] gap-2.5 items-center">
+                  <span className="git-history-create-pr-compare-icon w-[38px] h-10 rounded-[11px] border border-[color-mix(in_srgb,var(--accent-primary,#2563eb)_34%,transparent)] bg-[color-mix(in_srgb,var(--accent-primary,#2563eb)_10%,transparent)] text-[color-mix(in_srgb,var(--accent-primary,#2563eb)_84%,var(--text-primary))] inline-flex items-center justify-center" aria-hidden>
                     <GitPullRequestCreate size={14} />
                   </span>
-                  <label className="git-history-create-pr-compare-field">
+                  <label className="git-history-create-pr-compare-field flex flex-col-reverse items-stretch justify-center gap-1 min-w-0 min-h-[52px] rounded-xl border border-(--border-default)/68 bg-[color-mix(in_srgb,var(--surface-card-muted,#ffffff)_92%,transparent)] py-[7px] px-2.5 relative transition-[border-color,box-shadow,background-color] duration-[140ms] ease focus-within:border-[color-mix(in_srgb,var(--accent-primary,#2563eb)_52%,transparent)] focus-within:shadow-[0_0_0_2px_color-mix(in_srgb,var(--accent-primary,#2563eb)_17%,transparent),0_8px_20px_color-mix(in_srgb,#0f172a_8%,transparent)] [&>span]:w-fit [&>span]:max-w-full [&>span]:inline-flex [&>span]:items-center [&>span]:gap-[5px] [&>span]:py-px [&>span]:px-1.5 [&>span]:rounded-full [&>span]:border [&>span]:border-(--border-default)/72 [&>span]:bg-[color-mix(in_srgb,var(--surface-control,#f8fafc)_65%,transparent)] [&>span]:text-[10px] [&>span]:font-[620] [&>span]:text-[color-mix(in_srgb,var(--text-secondary)_90%,var(--text-primary))] [&>span]:whitespace-nowrap [&>span]:tracking-[0.004em] [&>span]:leading-[1.25] [&>span]:overflow-hidden [&>span]:text-ellipsis">
                     <span>
-                      <HardDrive size={11} className="git-history-create-pr-field-chip-icon" />
-                      <span className="git-history-create-pr-field-chip-text">
+                      <HardDrive size={11} className="git-history-create-pr-field-chip-icon flex-none text-[color-mix(in_srgb,var(--text-secondary)_84%,var(--accent-primary,#2563eb))]" />
+                      <span className="git-history-create-pr-field-chip-text min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">
                         {t("git.historyCreatePrCompareBaseRepo")}
                       </span>
                     </span>
@@ -1773,10 +1773,10 @@ export function renderGitHistoryPanelView(scope: any) {
                         }))}
                     />
                   </label>
-                  <label className="git-history-create-pr-compare-field">
+                  <label className="git-history-create-pr-compare-field flex flex-col-reverse items-stretch justify-center gap-1 min-w-0 min-h-[52px] rounded-xl border border-(--border-default)/68 bg-[color-mix(in_srgb,var(--surface-card-muted,#ffffff)_92%,transparent)] py-[7px] px-2.5 relative transition-[border-color,box-shadow,background-color] duration-[140ms] ease focus-within:border-[color-mix(in_srgb,var(--accent-primary,#2563eb)_52%,transparent)] focus-within:shadow-[0_0_0_2px_color-mix(in_srgb,var(--accent-primary,#2563eb)_17%,transparent),0_8px_20px_color-mix(in_srgb,#0f172a_8%,transparent)] [&>span]:w-fit [&>span]:max-w-full [&>span]:inline-flex [&>span]:items-center [&>span]:gap-[5px] [&>span]:py-px [&>span]:px-1.5 [&>span]:rounded-full [&>span]:border [&>span]:border-(--border-default)/72 [&>span]:bg-[color-mix(in_srgb,var(--surface-control,#f8fafc)_65%,transparent)] [&>span]:text-[10px] [&>span]:font-[620] [&>span]:text-[color-mix(in_srgb,var(--text-secondary)_90%,var(--text-primary))] [&>span]:whitespace-nowrap [&>span]:tracking-[0.004em] [&>span]:leading-[1.25] [&>span]:overflow-hidden [&>span]:text-ellipsis">
                     <span>
-                      <GitBranch size={11} className="git-history-create-pr-field-chip-icon" />
-                      <span className="git-history-create-pr-field-chip-text">
+                      <GitBranch size={11} className="git-history-create-pr-field-chip-icon flex-none text-[color-mix(in_srgb,var(--text-secondary)_84%,var(--accent-primary,#2563eb))]" />
+                      <span className="git-history-create-pr-field-chip-text min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">
                         {t("git.historyCreatePrCompareBase")}
                       </span>
                     </span>
@@ -1796,13 +1796,13 @@ export function renderGitHistoryPanelView(scope: any) {
                         }))}
                     />
                   </label>
-                  <span className="git-history-create-pr-compare-separator" aria-hidden>
+                  <span className="git-history-create-pr-compare-separator w-[38px] h-10 rounded-[11px] border border-(--border-default)/68 bg-[color-mix(in_srgb,var(--surface-card-muted,#ffffff)_90%,transparent)] text-(--text-secondary) inline-flex items-center justify-center" aria-hidden>
                     <ChevronLeft size={14} />
                   </span>
-                  <label className="git-history-create-pr-compare-field">
+                  <label className="git-history-create-pr-compare-field flex flex-col-reverse items-stretch justify-center gap-1 min-w-0 min-h-[52px] rounded-xl border border-(--border-default)/68 bg-[color-mix(in_srgb,var(--surface-card-muted,#ffffff)_92%,transparent)] py-[7px] px-2.5 relative transition-[border-color,box-shadow,background-color] duration-[140ms] ease focus-within:border-[color-mix(in_srgb,var(--accent-primary,#2563eb)_52%,transparent)] focus-within:shadow-[0_0_0_2px_color-mix(in_srgb,var(--accent-primary,#2563eb)_17%,transparent),0_8px_20px_color-mix(in_srgb,#0f172a_8%,transparent)] [&>span]:w-fit [&>span]:max-w-full [&>span]:inline-flex [&>span]:items-center [&>span]:gap-[5px] [&>span]:py-px [&>span]:px-1.5 [&>span]:rounded-full [&>span]:border [&>span]:border-(--border-default)/72 [&>span]:bg-[color-mix(in_srgb,var(--surface-control,#f8fafc)_65%,transparent)] [&>span]:text-[10px] [&>span]:font-[620] [&>span]:text-[color-mix(in_srgb,var(--text-secondary)_90%,var(--text-primary))] [&>span]:whitespace-nowrap [&>span]:tracking-[0.004em] [&>span]:leading-[1.25] [&>span]:overflow-hidden [&>span]:text-ellipsis">
                     <span>
-                      <HardDrive size={11} className="git-history-create-pr-field-chip-icon" />
-                      <span className="git-history-create-pr-field-chip-text">
+                      <HardDrive size={11} className="git-history-create-pr-field-chip-icon flex-none text-[color-mix(in_srgb,var(--text-secondary)_84%,var(--accent-primary,#2563eb))]" />
+                      <span className="git-history-create-pr-field-chip-text min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">
                         {t("git.historyCreatePrCompareHeadRepo")}
                       </span>
                     </span>
@@ -1818,10 +1818,10 @@ export function renderGitHistoryPanelView(scope: any) {
                       onSelect={handleCreatePrHeadRepositoryChange}
                     />
                   </label>
-                  <label className="git-history-create-pr-compare-field">
+                  <label className="git-history-create-pr-compare-field flex flex-col-reverse items-stretch justify-center gap-1 min-w-0 min-h-[52px] rounded-xl border border-(--border-default)/68 bg-[color-mix(in_srgb,var(--surface-card-muted,#ffffff)_92%,transparent)] py-[7px] px-2.5 relative transition-[border-color,box-shadow,background-color] duration-[140ms] ease focus-within:border-[color-mix(in_srgb,var(--accent-primary,#2563eb)_52%,transparent)] focus-within:shadow-[0_0_0_2px_color-mix(in_srgb,var(--accent-primary,#2563eb)_17%,transparent),0_8px_20px_color-mix(in_srgb,#0f172a_8%,transparent)] [&>span]:w-fit [&>span]:max-w-full [&>span]:inline-flex [&>span]:items-center [&>span]:gap-[5px] [&>span]:py-px [&>span]:px-1.5 [&>span]:rounded-full [&>span]:border [&>span]:border-(--border-default)/72 [&>span]:bg-[color-mix(in_srgb,var(--surface-control,#f8fafc)_65%,transparent)] [&>span]:text-[10px] [&>span]:font-[620] [&>span]:text-[color-mix(in_srgb,var(--text-secondary)_90%,var(--text-primary))] [&>span]:whitespace-nowrap [&>span]:tracking-[0.004em] [&>span]:leading-[1.25] [&>span]:overflow-hidden [&>span]:text-ellipsis">
                     <span>
-                      <GitPullRequestCreate size={11} className="git-history-create-pr-field-chip-icon" />
-                      <span className="git-history-create-pr-field-chip-text">
+                      <GitPullRequestCreate size={11} className="git-history-create-pr-field-chip-icon flex-none text-[color-mix(in_srgb,var(--text-secondary)_84%,var(--accent-primary,#2563eb))]" />
+                      <span className="git-history-create-pr-field-chip-text min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">
                         {t("git.historyCreatePrCompare")}
                       </span>
                     </span>
@@ -1845,24 +1845,24 @@ export function renderGitHistoryPanelView(scope: any) {
               </section>
 
               <section
-                className={`git-history-create-pr-preview-card${createPrPreviewExpanded ? " is-expanded" : ""}`}
+                className={`git-history-create-pr-preview-card rounded-[10px] border bg-[color-mix(in_srgb,var(--surface-control,#f8fafc)_78%,transparent)] py-2 px-2.5 flex flex-col gap-2 transition-[border-color,box-shadow] duration-[140ms] ease ${createPrPreviewExpanded ? "is-expanded border-[color-mix(in_srgb,var(--accent-primary,#2563eb)_44%,transparent)] shadow-[0_8px_20px_color-mix(in_srgb,var(--accent-primary,#2563eb)_14%,transparent)] [&_.git-history-create-pr-preview-caret]:rotate-180 [&_.git-history-create-pr-preview-caret]:text-(--text-secondary) [&_.git-history-create-pr-preview-caret]:border-[color-mix(in_srgb,var(--accent-primary,#2563eb)_44%,transparent)] [&_.git-history-create-pr-preview-collapsible]:max-h-[1300px] [&_.git-history-create-pr-preview-collapsible]:opacity-100 [&_.git-history-create-pr-preview-collapsible]:overflow-visible [&_.git-history-create-pr-preview-collapsible]:pointer-events-auto [&_.git-history-create-pr-preview-collapsible]:translate-y-0" : "border-(--border-default)/72"}`}
               >
-                <div className="git-history-create-pr-preview-head">
-                  <div className="git-history-create-pr-preview-title-wrap">
-                    <span className="git-history-create-pr-preview-title">
+                <div className="git-history-create-pr-preview-head flex items-center justify-between gap-2.5">
+                  <div className="git-history-create-pr-preview-title-wrap min-w-0 flex flex-col gap-0.5">
+                    <span className="git-history-create-pr-preview-title text-xs text-(--text-secondary) font-semibold">
                       {t("git.historyCreatePrPreviewTitle")}
                     </span>
-                    <span className="git-history-create-pr-preview-range">
+                    <span className="git-history-create-pr-preview-range text-[11px] text-(--text-muted) overflow-hidden text-ellipsis whitespace-nowrap">
                       {t("git.historyCreatePrPreviewRange", {
                         base: createPrPreviewBaseRef || "upstream/HEAD",
                         head: createPrPreviewHeadRef || "HEAD",
                       })}
                     </span>
                   </div>
-                  <div className="git-history-create-pr-preview-actions">
+                  <div className="git-history-create-pr-preview-actions inline-flex items-center gap-1.5">
                     <button
                       type="button"
-                      className="git-history-create-pr-preview-caret"
+                      className="git-history-create-pr-preview-caret w-5 h-5 p-0 rounded-md border border-(--border-default)/64 bg-[color-mix(in_srgb,var(--surface-card-muted,#ffffff)_86%,transparent)] text-(--text-muted) inline-flex items-center justify-center cursor-pointer transition-[transform,color,border-color] duration-[220ms] ease hover:text-(--text-secondary) hover:border-[color-mix(in_srgb,var(--accent-primary,#2563eb)_44%,transparent)]"
                       onClick={() => setCreatePrPreviewExpanded((previous) => !previous)}
                       aria-label={
                         createPrPreviewExpanded
@@ -1879,7 +1879,7 @@ export function renderGitHistoryPanelView(scope: any) {
                     </button>
                     <button
                       type="button"
-                      className="git-history-create-pr-mini-btn"
+                      className="git-history-create-pr-mini-btn border border-(--border-default)/68 rounded-full bg-[color-mix(in_srgb,var(--surface-control,#f8fafc)_86%,transparent)] text-(--text-secondary) min-h-7 py-0 px-2.5 inline-flex items-center gap-1.5 text-xs cursor-pointer hover:border-[color-mix(in_srgb,var(--accent-primary,#2563eb)_54%,transparent)] hover:text-(--text-primary)"
                       onClick={() => void loadCreatePrCommitPreview()}
                       disabled={
                         createPrSubmitting
@@ -1894,8 +1894,8 @@ export function renderGitHistoryPanelView(scope: any) {
                     </button>
                   </div>
                 </div>
-                <div className="git-history-create-pr-preview-collapsible">
-                  <div className="git-history-create-pr-preview-summary">
+                <div className="git-history-create-pr-preview-collapsible flex flex-col gap-2 max-h-0 opacity-0 overflow-hidden pointer-events-none -translate-y-[3px] transition-[max-height,opacity,transform] duration-[260ms] ease">
+                  <div className="git-history-create-pr-preview-summary inline-flex items-center gap-2 flex-wrap [&>span]:text-[11px] [&>span]:text-(--text-secondary) [&>span]:py-0.5 [&>span]:px-[7px] [&>span]:rounded-full [&>span]:border [&>span]:border-(--border-default)/68 [&>span]:bg-[color-mix(in_srgb,var(--surface-card-muted,#ffffff)_88%,transparent)]">
                     <span>{t("git.historyCreatePrPreviewOutgoingCount", { count: createPrPreviewCommits.length })}</span>
                     <span>{t("git.historyCreatePrPreviewBaseOnlyCount", { count: createPrPreviewBaseOnlyCount })}</span>
                   </div>
@@ -1972,7 +1972,7 @@ export function renderGitHistoryPanelView(scope: any) {
                             </span>
                           </div>
                           {extractCommitBody(createPrPreviewDetails.summary, createPrPreviewDetails.message) ? (
-                            <pre className="git-history-create-pr-preview-message">
+                            <pre className="git-history-create-pr-preview-message m-0 py-2 px-[9px] rounded-lg border border-(--border-default)/58 bg-[color-mix(in_srgb,var(--surface-card-muted,#ffffff)_90%,transparent)] text-(--text-secondary) text-xs leading-[1.45] whitespace-pre-wrap overflow-auto max-h-[120px]">
                               {extractCommitBody(createPrPreviewDetails.summary, createPrPreviewDetails.message)}
                             </pre>
                           ) : null}
@@ -1981,14 +1981,14 @@ export function renderGitHistoryPanelView(scope: any) {
                             <span>{t("git.historyPushDialogPreviewFiles")}</span>
                             <i>{createPrPreviewDetails.files.length}</i>
                           </div>
-                          <div className="git-history-create-pr-preview-file-list">
+                          <div className="git-history-create-pr-preview-file-list rounded-lg border border-(--border-default)/58 bg-[color-mix(in_srgb,var(--surface-card-muted,#ffffff)_90%,transparent)] max-h-[240px] overflow-auto">
                             {createPrPreviewDetails.files.length > 0 ? (
                               createPrPreviewDetails.files.map((file) => {
                                 const fileKey = buildFileKey(file);
                                 return (
                                   <div
                                     key={`create-pr-preview-file-${fileKey}`}
-                                    className="git-history-create-pr-preview-file-item"
+                                    className="git-history-create-pr-preview-file-item py-2 px-2.5 text-xs leading-[1.35] text-(--text-primary) border-b border-(--border-default)/44 [overflow-wrap:anywhere] last:border-b-0"
                                     title={file.path}
                                   >
                                     {file.path}
@@ -2006,7 +2006,7 @@ export function renderGitHistoryPanelView(scope: any) {
                     </div>
                   </div>
                   {!createPrPreviewError && !createPrPreviewLoading && createPrPreviewHasMore ? (
-                    <div className="git-history-create-pr-preview-hint">
+                    <div className="git-history-create-pr-preview-hint text-[11px] text-(--text-muted)">
                       {t("git.historyCreatePrPreviewTruncated", { count: CREATE_PR_PREVIEW_COMMIT_LIMIT })}
                     </div>
                   ) : null}
@@ -2029,7 +2029,7 @@ export function renderGitHistoryPanelView(scope: any) {
               <label className="git-history-create-branch-field">
                 <span>{t("git.historyCreatePrFieldBody")}</span>
                 <textarea
-                  className="git-history-create-pr-textarea"
+                  className="git-history-create-pr-textarea min-h-[98px] resize-y rounded-[10px] border border-(--border-default)/66 bg-[color-mix(in_srgb,var(--surface-control,#f8fafc)_82%,transparent)] text-(--text-primary) py-2 px-2.5 text-xs leading-[1.45]"
                   value={createPrForm.body}
                   disabled={createPrSubmitting || createPrDefaultsLoading}
                   onChange={(event) =>
@@ -2060,7 +2060,7 @@ export function renderGitHistoryPanelView(scope: any) {
                 <label className="git-history-create-branch-field">
                   <span>{t("git.historyCreatePrCommentBody")}</span>
                   <textarea
-                    className="git-history-create-pr-textarea is-compact"
+                    className="git-history-create-pr-textarea is-compact min-h-[64px] resize-y rounded-[10px] border border-(--border-default)/66 bg-[color-mix(in_srgb,var(--surface-control,#f8fafc)_82%,transparent)] text-(--text-primary) py-2 px-2.5 text-xs leading-[1.45]"
                     value={createPrForm.commentBody}
                     disabled={createPrSubmitting || createPrDefaultsLoading}
                     onChange={(event) =>
@@ -2072,9 +2072,9 @@ export function renderGitHistoryPanelView(scope: any) {
                 </label>
               ) : null}
 
-              <div className="git-history-create-pr-stage-card">
-                <div className="git-history-create-pr-stage-title">{t("git.historyCreatePrStageProgress")}</div>
-                <div className="git-history-create-pr-stage-list">
+              <div className="git-history-create-pr-stage-card rounded-[10px] border border-(--border-default)/72 bg-[color-mix(in_srgb,var(--surface-control,#f8fafc)_78%,transparent)] py-2 px-2.5 flex flex-col gap-2">
+                <div className="git-history-create-pr-stage-title text-xs text-(--text-secondary) font-semibold">{t("git.historyCreatePrStageProgress")}</div>
+                <div className="git-history-create-pr-stage-list grid grid-cols-4 gap-1.5">
                   {createPrStages.map((stage) => {
                     const statusLabel =
                       stage.status === "running"
@@ -2086,12 +2086,28 @@ export function renderGitHistoryPanelView(scope: any) {
                             : stage.status === "skipped"
                               ? t("git.historyCreatePrStageSkipped")
                               : t("git.historyCreatePrStagePending");
+                    const stageBorder =
+                      stage.status === "success"
+                        ? "border-[color-mix(in_srgb,#22c55e_34%,transparent)]"
+                        : stage.status === "failed"
+                          ? "border-[color-mix(in_srgb,#ef4444_36%,transparent)]"
+                          : stage.status === "running"
+                            ? "border-[color-mix(in_srgb,var(--accent-primary,#2563eb)_42%,transparent)]"
+                            : "border-(--border-default)/62";
+                    const stageIconColor =
+                      stage.status === "success"
+                        ? "text-[color-mix(in_srgb,#16a34a_84%,var(--text-primary))]"
+                        : stage.status === "failed"
+                          ? "text-[color-mix(in_srgb,#dc2626_84%,var(--text-primary))]"
+                          : stage.status === "running"
+                            ? "text-[color-mix(in_srgb,var(--accent-primary,#2563eb)_88%,var(--text-primary))] [&_svg]:animate-spin"
+                            : "text-(--text-secondary)";
                     return (
                       <div
                         key={stage.key}
-                        className={`git-history-create-pr-stage-item is-${stage.status}`}
+                        className={`git-history-create-pr-stage-item is-${stage.status} grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 rounded-lg border bg-[color-mix(in_srgb,var(--surface-card-muted,#ffffff)_88%,transparent)] py-[7px] px-2 ${stageBorder}`}
                       >
-                        <span className="git-history-create-pr-stage-icon" aria-hidden>
+                        <span className={`git-history-create-pr-stage-icon w-4 h-4 inline-flex items-center justify-center ${stageIconColor}`} aria-hidden>
                           {stage.status === "success" ? (
                             <CircleCheck size={14} />
                           ) : stage.status === "failed" ? (
@@ -2099,14 +2115,14 @@ export function renderGitHistoryPanelView(scope: any) {
                           ) : stage.status === "running" ? (
                             <LoaderCircle size={14} />
                           ) : (
-                            <span className="git-history-create-pr-stage-dot" />
+                            <span className="git-history-create-pr-stage-dot w-[7px] h-[7px] rounded-full bg-(--border-default)/80" />
                           )}
                         </span>
-                        <span className="git-history-create-pr-stage-main">
-                          <span className="git-history-create-pr-stage-label">{stage.label}</span>
-                          <span className="git-history-create-pr-stage-detail">{stage.detail}</span>
+                        <span className="git-history-create-pr-stage-main min-w-0 flex flex-col gap-0.5">
+                          <span className="git-history-create-pr-stage-label text-xs text-(--text-primary) font-semibold">{stage.label}</span>
+                          <span className="git-history-create-pr-stage-detail text-[11px] text-(--text-muted) leading-[1.35] [overflow-wrap:anywhere]">{stage.detail}</span>
                         </span>
-                        <span className="git-history-create-pr-stage-status">{statusLabel}</span>
+                        <span className="git-history-create-pr-stage-status text-[11px] text-(--text-secondary)">{statusLabel}</span>
                       </div>
                     );
                   })}
@@ -2115,27 +2131,27 @@ export function renderGitHistoryPanelView(scope: any) {
 
               {createPrResult ? (
                 <div
-                  className={`git-history-create-pr-result ${
-                    createPrResult.ok ? "is-success" : "is-failed"
+                  className={`git-history-create-pr-result rounded-[10px] border bg-[color-mix(in_srgb,var(--surface-control,#f8fafc)_80%,transparent)] py-2 px-2.5 flex flex-col gap-[7px] ${
+                    createPrResult.ok ? "is-success border-[color-mix(in_srgb,#22c55e_34%,transparent)]" : "is-failed border-[color-mix(in_srgb,#ef4444_38%,transparent)]"
                   }`}
                 >
-                  <div className="git-history-create-pr-result-head">
-                    <span className="git-history-create-pr-result-title">{createPrResultHeadline}</span>
+                  <div className="git-history-create-pr-result-head inline-flex items-center gap-2 min-w-0 [&>code]:border [&>code]:border-(--border-default)/60 [&>code]:rounded-full [&>code]:py-px [&>code]:px-[7px] [&>code]:text-[11px]">
+                    <span className="git-history-create-pr-result-title text-[13px] text-(--text-primary) font-bold">{createPrResultHeadline}</span>
                     {createPrResult.prNumber ? (
                       <code>#{createPrResult.prNumber}</code>
                     ) : null}
                   </div>
-                  <div className="git-history-create-pr-result-message">{createPrResult.message}</div>
+                  <div className="git-history-create-pr-result-message text-xs leading-[1.45] text-(--text-primary) [overflow-wrap:anywhere]">{createPrResult.message}</div>
                   {createPrResult.nextActionHint ? (
-                    <div className="git-history-create-pr-result-hint">
+                    <div className="git-history-create-pr-result-hint text-xs text-[color-mix(in_srgb,#b45309_84%,var(--text-secondary))]">
                       {createPrResult.nextActionHint}
                     </div>
                   ) : null}
                   {createPrResult.prUrl ? (
-                    <div className="git-history-create-pr-result-actions">
+                    <div className="git-history-create-pr-result-actions inline-flex flex-wrap gap-2">
                       <button
                         type="button"
-                        className="git-history-create-pr-mini-btn"
+                        className="git-history-create-pr-mini-btn border border-(--border-default)/68 rounded-full bg-[color-mix(in_srgb,var(--surface-control,#f8fafc)_86%,transparent)] text-(--text-secondary) min-h-7 py-0 px-2.5 inline-flex items-center gap-1.5 text-xs cursor-pointer hover:border-[color-mix(in_srgb,var(--accent-primary,#2563eb)_54%,transparent)] hover:text-(--text-primary)"
                         onClick={() => void handleCopyCreatePrUrl()}
                       >
                         <Copy size={13} />
@@ -2146,12 +2162,12 @@ export function renderGitHistoryPanelView(scope: any) {
                     </div>
                   ) : null}
                   {createPrResult.retryCommand ? (
-                    <div className="git-history-create-pr-retry-command">
+                    <div className="git-history-create-pr-retry-command rounded-lg border border-dashed border-(--border-default)/66 bg-[color-mix(in_srgb,var(--surface-card-muted,#ffffff)_82%,transparent)] p-2 flex flex-col gap-[7px] [&>span]:text-xs [&>span]:text-(--text-secondary) [&>span]:font-semibold [&>code]:text-xs [&>code]:leading-[1.4] [&>code]:text-(--text-primary) [&>code]:[overflow-wrap:anywhere]">
                       <span>{t("git.historyCreatePrRetryCommand")}</span>
                       <code>{createPrResult.retryCommand}</code>
                       <button
                         type="button"
-                        className="git-history-create-pr-mini-btn"
+                        className="git-history-create-pr-mini-btn border border-(--border-default)/68 rounded-full bg-[color-mix(in_srgb,var(--surface-control,#f8fafc)_86%,transparent)] text-(--text-secondary) min-h-7 py-0 px-2.5 inline-flex items-center gap-1.5 text-xs cursor-pointer hover:border-[color-mix(in_srgb,var(--accent-primary,#2563eb)_54%,transparent)] hover:text-(--text-primary)"
                         onClick={() => void handleCopyCreatePrRetryCommand()}
                       >
                         <Copy size={13} />

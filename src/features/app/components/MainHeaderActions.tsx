@@ -86,7 +86,7 @@ export const MainHeaderActions = memo(function MainHeaderActions({
     <>
       {canToggleRuntimeConsole && (
         <TooltipIconButton
-          className={`ghost main-header-action${isRuntimeConsoleVisible ? " is-active" : ""}`}
+          className={`ghost main-header-action p-1.5 rounded-lg inline-flex items-center justify-center${isRuntimeConsoleVisible ? " is-active" : ""}`}
           onClick={() => onToggleRuntimeConsole?.()}
           data-tauri-drag-region="false"
           label={t("files.openRunConsole")}

@@ -165,9 +165,9 @@ export function OpenAppMenu({
 
   if (iconOnly) {
     return (
-      <div className="open-app-menu is-icon-only" ref={openMenuRef}>
+      <div className="open-app-menu is-icon-only relative inline-flex items-center [-webkit-app-region:no-drag]" ref={openMenuRef}>
         <TooltipIconButton
-          className="ghost main-header-action open-app-fusion-trigger"
+          className="ghost main-header-action open-app-fusion-trigger p-1.5 rounded-lg inline-flex items-center justify-center gap-[7px] h-7 px-2 border border-(--border-strong) bg-transparent text-(--text-muted) leading-none hover:bg-(--surface-control-hover) hover:text-(--text-stronger)"
           onClick={() => setOpenMenuOpen((prev) => !prev)}
           data-tauri-drag-region="false"
           aria-haspopup="menu"
@@ -175,7 +175,7 @@ export function OpenAppMenu({
           label={selectedOpenLabel}
         >
           <img
-            className="open-app-icon open-app-fusion-icon"
+            className="open-app-icon open-app-fusion-icon w-[19px] h-[19px] rounded-[3px] shrink-0"
             src={selectedOpenTarget.icon}
             alt=""
             aria-hidden
@@ -183,12 +183,12 @@ export function OpenAppMenu({
           <ChevronDown size={14} aria-hidden />
         </TooltipIconButton>
         {openMenuOpen && (
-          <div className="open-app-secondary-group popover-surface" role="menu">
+          <div className="open-app-secondary-group popover-surface absolute left-1/2 top-[calc(100%+6px)] -translate-x-1/2 inline-flex items-center gap-1 p-1 rounded-[10px] z-20" role="menu">
             {resolvedOpenTargets.map((target) => (
               <button
                 key={target.id}
                 type="button"
-                className={`open-app-secondary-option${
+                className={`open-app-secondary-option w-6 h-6 border border-transparent rounded-[7px] bg-transparent inline-flex items-center justify-center p-0 text-(--text-muted) hover:bg-(--surface-control-hover) hover:text-(--text-stronger) [&_.open-app-icon]:w-[18px] [&_.open-app-icon]:h-[18px]${
                   target.id === resolvedOpenAppId ? " is-active" : ""
                 }`}
                 onClick={() => handleSelectOpenTarget(target)}
@@ -197,7 +197,7 @@ export function OpenAppMenu({
                 aria-label={target.label}
                 title={target.label}
               >
-                <img className="open-app-icon" src={target.icon} alt="" aria-hidden />
+                <img className="open-app-icon w-3.5 h-3.5 rounded-[3px] shrink-0" src={target.icon} alt="" aria-hidden />
               </button>
             ))}
           </div>
@@ -207,11 +207,11 @@ export function OpenAppMenu({
   }
 
   return (
-    <div className="open-app-menu" ref={openMenuRef}>
-      <div className={`open-app-button${iconOnly ? " is-icon-only" : ""}`}>
+    <div className="open-app-menu relative inline-flex items-center" ref={openMenuRef}>
+      <div className={`open-app-button inline-flex items-stretch gap-0 border border-(--border-strong) rounded-md overflow-hidden${iconOnly ? " is-icon-only h-7 items-center" : ""}`}>
         <button
           type="button"
-          className={`ghost main-header-action open-app-action${iconOnly ? " is-icon-only" : ""}`}
+          className={`ghost main-header-action open-app-action p-1.5 rounded-lg inline-flex items-center justify-center py-1 px-2.5 border-none bg-transparent shadow-none${iconOnly ? " is-icon-only px-1.5 min-w-7 h-[26px]" : ""}`}
           onClick={handleOpen}
           data-tauri-drag-region="false"
           aria-label={selectedOpenLabel}
@@ -219,20 +219,20 @@ export function OpenAppMenu({
         >
           {iconOnly ? (
             <img
-              className="open-app-icon"
+              className="open-app-icon w-3.5 h-3.5 rounded-[3px] shrink-0"
               src={selectedOpenTarget.icon}
               alt=""
               aria-hidden
             />
           ) : (
-            <span className="open-app-label">
+            <span className="open-app-label inline-flex items-center gap-1.5 text-xs leading-none">
               <img
-                className="open-app-icon"
+                className="open-app-icon w-3.5 h-3.5 rounded-[3px] shrink-0"
                 src={selectedOpenTarget.icon}
                 alt=""
                 aria-hidden
               />
-              <span className="open-app-label-text">
+              <span className="open-app-label-text inline">
                 {selectedOpenTarget.label}
               </span>
             </span>
@@ -240,7 +240,7 @@ export function OpenAppMenu({
         </button>
         <button
           type="button"
-          className={`ghost main-header-action open-app-toggle${iconOnly ? " is-icon-only" : ""}`}
+          className={`ghost main-header-action open-app-toggle p-1 px-2 rounded-none border-l border-(--border-subtle) inline-flex items-center justify-center bg-transparent shadow-none${iconOnly ? " is-icon-only px-1 min-w-[21px] h-[26px] border-l border-(--border-subtle)" : ""}`}
           onClick={() => setOpenMenuOpen((prev) => !prev)}
           data-tauri-drag-region="false"
           aria-haspopup="menu"
@@ -252,19 +252,19 @@ export function OpenAppMenu({
         </button>
       </div>
       {openMenuOpen && (
-        <div className="open-app-dropdown" role="menu">
+        <div className="open-app-dropdown absolute right-0 top-[calc(100%+8px)] min-w-40 p-1.5 rounded-xl bg-(--surface-popover) border border-(--border-muted) shadow-[0_14px_34px_rgba(0,0,0,0.3)] z-[5]" role="menu">
           {resolvedOpenTargets.map((target) => (
             <button
               key={target.id}
               type="button"
-              className={`open-app-option${
-                target.id === resolvedOpenAppId ? " is-active" : ""
+              className={`open-app-option w-full inline-flex items-center gap-2 py-1.5 px-2 rounded-lg bg-transparent text-(--text-muted) text-xs text-left hover:bg-(--surface-hover) hover:text-(--text-stronger)${
+                target.id === resolvedOpenAppId ? " is-active bg-(--surface-hover) text-(--text-stronger)" : ""
               }`}
               onClick={() => handleSelectOpenTarget(target)}
               role="menuitem"
               data-tauri-drag-region="false"
             >
-              <img className="open-app-icon" src={target.icon} alt="" aria-hidden />
+              <img className="open-app-icon w-3.5 h-3.5 rounded-[3px] shrink-0" src={target.icon} alt="" aria-hidden />
               {target.label}
             </button>
           ))}

@@ -389,12 +389,12 @@ export function GitHistoryInlinePicker({
 
   return (
     <div
-      className={`git-history-create-pr-picker${open ? " is-open" : ""}${disabled ? " is-disabled" : ""}`}
+      className={`git-history-create-pr-picker flex-auto min-w-0 static${open ? " is-open" : ""}${disabled ? " is-disabled" : ""}`}
       ref={pickerRef}
     >
       <button
         type="button"
-        className="git-history-create-pr-picker-trigger"
+        className="git-history-create-pr-picker-trigger w-full min-w-0 min-h-6 border-0 bg-transparent text-(--text-primary) p-0 text-[13px] outline-none cursor-pointer inline-flex items-center gap-1.5"
         aria-label={label}
         title={trimmedValue}
         aria-haspopup="listbox"
@@ -408,24 +408,24 @@ export function GitHistoryInlinePicker({
         }}
       >
         {triggerIcon ? (
-          <span className="git-history-create-pr-picker-leading-icon" aria-hidden>
+          <span className="git-history-create-pr-picker-leading-icon flex-none inline-flex items-center justify-center text-[color-mix(in_srgb,var(--text-secondary)_80%,var(--accent-primary,#2563eb))]" aria-hidden>
             {triggerIcon}
           </span>
         ) : null}
-        <span className="git-history-create-pr-picker-value">
-          <span className="git-history-create-pr-picker-value-title">
+        <span className="git-history-create-pr-picker-value flex-auto min-w-0 text-left flex flex-col items-start justify-center gap-px">
+          <span className="git-history-create-pr-picker-value-title min-w-0 max-w-full overflow-hidden text-ellipsis whitespace-nowrap leading-[1.32] text-[13px] font-[680] text-[color-mix(in_srgb,var(--text-primary)_96%,#0f172a_4%)]">
             {(selectedOption?.label ?? trimmedValue) || "-"}
           </span>
           {selectedOption?.description ? (
-            <span className="git-history-create-pr-picker-value-hint">{selectedOption.description}</span>
+            <span className="git-history-create-pr-picker-value-hint hidden">{selectedOption.description}</span>
           ) : null}
         </span>
-        <ChevronDown size={12} className="git-history-create-pr-picker-caret" />
+        <ChevronDown size={12} className="git-history-create-pr-picker-caret flex-none text-[color-mix(in_srgb,var(--text-muted)_88%,var(--text-secondary))]" />
       </button>
 
       {open ? (
-        <div className="git-history-create-pr-picker-dropdown popover-surface" role="listbox" aria-label={label}>
-          <label className="git-history-create-pr-picker-search">
+        <div className="git-history-create-pr-picker-dropdown popover-surface absolute top-[calc(100%+6px)] left-0 right-auto min-w-full w-max max-w-[min(86vw,980px)] z-[32] border border-(--border-default)/72 rounded-[11px] bg-(--surface-sidebar-opaque,#ffffff) shadow-[0_14px_28px_color-mix(in_srgb,#0f172a_18%,transparent)] flex flex-col overflow-hidden" role="listbox" aria-label={label}>
+          <label className="git-history-create-pr-picker-search inline-flex items-center gap-[7px] border-b border-(--border-default)/64 py-2.5 px-2.5 text-(--text-muted) [&>input]:flex-auto [&>input]:min-w-0 [&>input]:border-0 [&>input]:bg-transparent [&>input]:text-(--text-primary) [&>input]:text-xs [&>input]:outline-none">
             <Search size={12} />
             <input
               ref={inputRef}
@@ -435,14 +435,14 @@ export function GitHistoryInlinePicker({
               aria-label={searchPlaceholder}
             />
           </label>
-          <div className="git-history-create-pr-picker-list">
+          <div className="git-history-create-pr-picker-list max-h-[250px] overflow-y-auto overflow-x-auto flex flex-col">
             {groupedOptions.map((groupEntry) => (
               <div
                 key={groupEntry.group || "__ungrouped__"}
-                className="git-history-create-pr-picker-group"
+                className="git-history-create-pr-picker-group flex flex-col [&+&]:border-t [&+&]:border-(--border-default)/56"
               >
                 {showGroupLabel && groupEntry.group ? (
-                  <div className="git-history-create-pr-picker-group-label">{groupEntry.group}</div>
+                  <div className="git-history-create-pr-picker-group-label pt-2 pb-[5px] px-3 text-[10px] font-bold tracking-[0.03em] uppercase text-[color-mix(in_srgb,var(--text-muted)_90%,var(--text-secondary))]">{groupEntry.group}</div>
                 ) : null}
                 {groupEntry.items.map((option) => {
                   const selected = option.value === trimmedValue;
@@ -450,7 +450,7 @@ export function GitHistoryInlinePicker({
                     <button
                       key={option.value}
                       type="button"
-                      className={`git-history-create-pr-picker-item${selected ? " is-active" : ""}`}
+                      className={`git-history-create-pr-picker-item border-0 bg-transparent text-(--text-primary) text-left py-[11px] px-3 flex w-max min-w-full box-border items-start gap-2.5 text-[13px] cursor-pointer transition-[background-color] duration-[120ms] ease hover:bg-[color-mix(in_srgb,var(--accent-primary,#2563eb)_11%,transparent)]${selected ? " is-active bg-[color-mix(in_srgb,var(--accent-primary,#2563eb)_15%,transparent)]" : ""}`}
                       role="option"
                       aria-selected={selected}
                       title={option.value}
@@ -461,19 +461,19 @@ export function GitHistoryInlinePicker({
                       }}
                     >
                       {optionIcon ? (
-                        <span className="git-history-create-pr-picker-item-icon" aria-hidden>
+                        <span className="git-history-create-pr-picker-item-icon flex-none inline-flex items-center justify-center text-[color-mix(in_srgb,var(--text-secondary)_78%,var(--accent-primary,#2563eb))] mt-px" aria-hidden>
                           {optionIcon}
                         </span>
                       ) : null}
-                      <span className="git-history-create-pr-picker-item-main">
-                        <span className="git-history-create-pr-picker-item-title">{option.label}</span>
+                      <span className="git-history-create-pr-picker-item-main order-1 flex-auto min-w-max flex flex-col items-start gap-px">
+                        <span className="git-history-create-pr-picker-item-title w-full min-w-0 overflow-visible text-clip whitespace-nowrap leading-[1.35] font-[620]">{option.label}</span>
                         {option.description ? (
-                          <span className="git-history-create-pr-picker-item-description">
+                          <span className="git-history-create-pr-picker-item-description w-full min-w-0 overflow-visible text-clip whitespace-nowrap leading-[1.25] text-[11px] font-medium text-(--text-secondary)">
                             {option.description}
                           </span>
                         ) : null}
                       </span>
-                      <span className="git-history-create-pr-picker-item-check" aria-hidden>
+                      <span className="git-history-create-pr-picker-item-check order-2 ml-auto w-4 text-right text-[color-mix(in_srgb,var(--accent-primary,#2563eb)_84%,var(--text-primary))] font-bold pt-0.5" aria-hidden>
                         {selected ? "✓" : ""}
                       </span>
                     </button>
@@ -482,7 +482,7 @@ export function GitHistoryInlinePicker({
               </div>
             ))}
             {groupedOptions.length === 0 ? (
-              <div className="git-history-create-pr-picker-empty">{emptyText}</div>
+              <div className="git-history-create-pr-picker-empty p-2.5 text-xs text-(--text-muted)">{emptyText}</div>
             ) : null}
           </div>
         </div>

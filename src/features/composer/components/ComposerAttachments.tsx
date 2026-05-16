@@ -71,7 +71,7 @@ export function ComposerAttachments({
                 <img src={previewSrc} alt="" />
               </span>
             ) : (
-              <span className="composer-icon" aria-hidden>
+              <span className="composer-icon flex items-center text-inherit [&_svg]:h-3.5 [&_svg]:w-3.5" aria-hidden>
                 <Image size={14} />
               </span>
             )}
