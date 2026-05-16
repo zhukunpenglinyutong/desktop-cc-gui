@@ -11,14 +11,12 @@ type InputProps = Omit<
 > & {
   size?: "sm" | "default" | "lg" | number;
   unstyled?: boolean;
-  nativeInput?: boolean;
 };
 
 function Input({
   className,
   size = "default",
   unstyled = false,
-  nativeInput = false,
   ...props
 }: InputProps) {
   const inputClassName = cn(
@@ -44,21 +42,12 @@ function Input({
       data-size={size}
       data-slot="input-control"
     >
-      {nativeInput ? (
-        <input
-          className={inputClassName}
-          data-slot="input"
-          size={typeof size === "number" ? size : undefined}
-          {...props}
-        />
-      ) : (
-        <InputPrimitive
-          className={inputClassName}
-          data-slot="input"
-          size={typeof size === "number" ? size : undefined}
-          {...props}
-        />
-      )}
+      <InputPrimitive
+        className={inputClassName}
+        data-slot="input"
+        size={typeof size === "number" ? size : undefined}
+        {...props}
+      />
     </span>
   );
 }

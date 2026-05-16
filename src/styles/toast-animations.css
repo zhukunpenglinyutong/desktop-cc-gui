@@ -1,0 +1,67 @@
+/*
+ * Toast & dialog keyframes — extracted during Phase 4 of the coss.ui migration
+ * (2026-05-16). The original .css files (approval-toasts.css, error-toasts.css,
+ * update-toasts.css, ask-user-question-dialog.css) were deleted; only their
+ * keyframes remain because they cannot be expressed inline as Tailwind
+ * utilities. Triggered via `animation` shorthands also kept here since
+ * referencing them inline would require declaring duration/easing on every
+ * call site.
+ *
+ * No-op semantic class markers (.update-toast, .error-toast, .approval-toast,
+ * .ask-user-question-card, etc.) live directly on the tsx elements alongside
+ * Tailwind utilities; they are kept here only when bound to an animation.
+ */
+
+@keyframes update-toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes error-toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes approval-toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes ask-dialog-slide-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes ask-timer-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.65;
+  }
+}

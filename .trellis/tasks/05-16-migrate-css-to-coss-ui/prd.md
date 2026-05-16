@@ -94,9 +94,7 @@
 
 stash 我的改动后 `npm run typecheck` 仍报相同 3 处错，确认与 Phase 0 无关：
 
-1. `src/components/ui/input.tsx:48` — `Type '...InputState => CSSProperties...' is not assignable to ...DetailedHTMLProps`
-   - 性质：input.tsx 已被某人尝试改成 Base UI 风格 (`(state: InputState) => CSSProperties`)，但未完成迁移。
-   - 处置：**Phase 4（Composer & Interaction Dialogs）** 或 Phase 2 接入 coss `Input` primitive 时自然修复。
+1. ~~`src/components/ui/input.tsx:48`~~ — **✅ Phase 4（2026-05-16）已修复**：移除 dead `nativeInput` prop + 对应分支，单 render path 化为 `<InputPrimitive>` only。typecheck baseline 从 3 → 2 errors。
 2-3. `src/services/perfBaseline/index.ts:1, 81` — `Cannot find module 'web-vitals'`
    - 性质：perfBaseline 缺依赖，与本次 coss 迁移无关。
    - 处置：列入 `docs/migration-to-coss-ui.md` follow-up；本 task 不处理。
@@ -250,6 +248,45 @@ Scope 调整（写在 plan doc）：
 - 覆盖：`composer.part1/2`、`ask-user-question-dialog`、`approval-toasts`、`request-user-input`、`loading-progress-modal`。
 - 用 coss Dialog / AlertDialog / Toast / Form / Field 替换。
 - DoD：旅程 = 发送消息 → 触发 ask-user-question → 触发 approval。
+
+#### Phase 4 完成状态（2026-05-16）
+
+**Scope 调整**（在 plan-time，非 execution-time）— 见 `phase-4-composer-plan.md` 的 "Discovery summary" 与 "Skip list"。原 PRD 列出的 composer.part1/part2 体量过大（5476 行 CSS / 404 个 selector / 5500+ 行 tsx consumers），单 phase 内不可行，**整体推迟到 Phase 4.5**（4 个 sub-PR：part1 / part2 / memory-picker / rewind-modal）。本 phase 实际处理 6 个 dialog/toast 文件 + 1 个 input.tsx baseline bonus fix：
+
+实际产出（implement agent）：
+- 新增：`.trellis/tasks/05-16-migrate-css-to-coss-ui/phase-4-composer-plan.md`（discovery + per-file plan + coss primitive 决策矩阵 + execution-time 结果）
+- 新增：`src/styles/toast-animations.css`（68 行，保留 5 个 `@keyframes`：`update-toast-in` / `error-toast-in` / `approval-toast-in` / `ask-dialog-slide-in` / `ask-timer-pulse`——同 Phase 1 `proxy-status-badge.css` 与 Phase 3 `prompts-animations.css` pattern）
+- 删除 6 个 .css 文件（共 1486 行 CSS）：
+  - `loading-progress-modal.css`（117 行）→ 内联 Tailwind 到 `LoadingProgressDialog.tsx`
+  - `update-toasts.css`（126 行）→ 内联到 `UpdateToast.tsx`
+  - `error-toasts.css`（141 行）→ 内联到 `ErrorToasts.tsx`
+  - `request-user-input.css`（230 行）→ 内联到 `RequestUserInputMessage.tsx` + `RequestUserInputSubmittedBlock.tsx`
+  - `approval-toasts.css`（314 行）→ 内联到 `ApprovalToasts.tsx`
+  - `ask-user-question-dialog.css`（458 行）→ 内联到 `AskUserQuestionDialog.tsx`；该文件 execution-time 验证为 dead CSS（无 bootstrap.ts 或其它 import 引用），意味着 dialog 之前在运行时是 unstyled，Phase 4 反而**恢复**了原始视觉意图
+- 修改：`src/bootstrap.ts`（46 → 42 个 CSS import，−5 删除 + 1 添加 `toast-animations.css`；ask-user-question-dialog.css 不在 bootstrap 故不算）
+- 修改：`src/components/ui/input.tsx`（Bonus fix：移除 dead `nativeInput` prop + 对应分支；Phase 0 baseline typecheck error 自然修复）
+- 6 个 .tsx 全部沿用 `保留 class name 作为 no-op marker + 追加 Tailwind utility` pattern（与 Phase 2/3 一致）
+
+未处理（推迟到 Phase 4.5）——已在 `docs/migration-to-coss-ui.md` follow-up 落档：
+- `composer.part1.css`（1749 行）
+- `composer.part2.css`（2247 行）
+- `composer.memory-picker.css`（247 行，被 `composer.part2.css:1` 链式 import）
+- `composer.rewind-modal.css`（1233 行，前有 archived task `04-23-split-composer-rewind-modal-styles`）
+- `composer.css`（entry）
+
+未引入 coss primitive structural swap（同 Phase 2/3 决策）——本 phase 决策为「纯 styling pass」，详见 plan doc 的 coss primitive 决策矩阵。`Dialog`（LoadingProgressDialog、AskUserQuestionDialog）、`Toast`（ErrorToasts、UpdateToast、ApprovalToasts）、`RadioGroup`/`CheckboxGroup`（option lists）的结构性替换转入 Phase 4 follow-up（需 `npx shadcn add @coss/dialog` 等新 dep + 行为契约 re-validation pass）。
+
+验证（同 Phase 2/3 baseline，无新错；仅 input.tsx baseline 自然修复）：
+- `npm run lint` ✅ pass
+- `npm run typecheck` ✅ 2 个 pre-existing baseline 错（perfBaseline×2；input.tsx baseline 已修复 ⇒ 3 → 2）
+- `npm run test` ✅ 仅 `ComposerInput.collaboration.test.tsx` 的 3 个 pre-existing failure（已通过 `git stash` 二次确认与 Phase 4 无关）
+- `npm run test:layout-guard` ✅ 10/10 pass
+- `npm run check:large-files:gate` ✅ found=0
+- 单独跑 6 个 phase-4 affected component test ✅ 40/40 pass
+
+后续 phase 影响：
+- bootstrap.ts CSS import 数从 46 → 42（−5 + 1 添加）。
+- 4 条新 follow-up 入 `docs/migration-to-coss-ui.md`：Phase 4.5 composer migration / Dialog primitive swap / Toast primitive swap / RadioGroup 引入。
 
 ### Phase 5 — Home & Workspace
 - 覆盖：`home.css`、`home-chat.css`、`workspace-home.css`、`note-cards.css`、`kanban.css`、`release-notes.css`、`update-toasts.css`。

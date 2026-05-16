@@ -72,13 +72,13 @@ export const RequestUserInputSubmittedBlock = memo(
 
     if (!payload || payload.questions.length === 0) {
       return (
-        <div className="message request-user-input-message request-user-input-history">
-          <div className="bubble request-user-input-card is-submitted">
-            <div className="request-user-input-header">
-              <div className="request-user-input-title">{t('approval.inputRequested')}</div>
-              <div className="request-user-input-badge">{t('approval.submitted')}</div>
+        <div className="message request-user-input-message request-user-input-history items-end">
+          <div className="bubble request-user-input-card is-submitted w-[min(760px,92%)] max-w-full bg-[color:var(--surface-card-strong)] border border-[color:color-mix(in_srgb,var(--border-stronger)_80%,#5b9dff_20%)] shadow-[0_8px_20px_color-mix(in_srgb,#5b9dff_16%,transparent)] rounded-2xl py-2.5 px-3 flex flex-col gap-2">
+            <div className="request-user-input-header flex justify-between items-baseline gap-2">
+              <div className="request-user-input-title text-[13px] font-semibold text-[color:var(--text-strong)]">{t('approval.inputRequested')}</div>
+              <div className="request-user-input-badge text-[11px] font-semibold text-[#1d4ed8] bg-[color:color-mix(in_srgb,#bfdbfe_78%,transparent)] border border-[color:color-mix(in_srgb,#93c5fd_82%,transparent)] rounded-full py-0.5 px-2">{t('approval.submitted')}</div>
             </div>
-            <div className="request-user-input-submitted-fallback">
+            <div className="request-user-input-submitted-fallback text-xs text-[color:var(--text)] whitespace-pre-wrap leading-[1.45]">
               {item.output || t('approval.none')}
             </div>
           </div>
@@ -87,17 +87,17 @@ export const RequestUserInputSubmittedBlock = memo(
     }
 
     return (
-      <div className="message request-user-input-message request-user-input-history">
+      <div className="message request-user-input-message request-user-input-history items-end">
         <div
-          className="bubble request-user-input-card is-submitted"
+          className="bubble request-user-input-card is-submitted w-[min(760px,92%)] max-w-full bg-[color:var(--surface-card-strong)] border border-[color:color-mix(in_srgb,var(--border-stronger)_80%,#5b9dff_20%)] shadow-[0_8px_20px_color-mix(in_srgb,#5b9dff_16%,transparent)] rounded-2xl py-2.5 px-3 flex flex-col gap-2"
           role="group"
           aria-label={t('approval.userInputRequested')}
         >
-          <div className="request-user-input-header">
-            <div className="request-user-input-title">{t('approval.inputRequested')}</div>
-            <div className="request-user-input-badge">{t('approval.submitted')}</div>
+          <div className="request-user-input-header flex justify-between items-baseline gap-2">
+            <div className="request-user-input-title text-[13px] font-semibold text-[color:var(--text-strong)]">{t('approval.inputRequested')}</div>
+            <div className="request-user-input-badge text-[11px] font-semibold text-[#1d4ed8] bg-[color:color-mix(in_srgb,#bfdbfe_78%,transparent)] border border-[color:color-mix(in_srgb,#93c5fd_82%,transparent)] rounded-full py-0.5 px-2">{t('approval.submitted')}</div>
           </div>
-          <div className="request-user-input-body">
+          <div className="request-user-input-body grid gap-2">
             {payload.questions.map((question, index) => {
               const questionId = question.id || `submitted-question-${index}`;
               const selectedSet = new Set(question.selectedOptions);
@@ -112,38 +112,45 @@ export const RequestUserInputSubmittedBlock = memo(
               const hasNote = question.note.trim().length > 0;
               const hasAnswer = hasSelectedOptions || hasNote;
               return (
-                <section key={questionId} className="request-user-input-question">
+                <section key={questionId} className="request-user-input-question grid gap-1">
                   {question.header ? (
-                    <div className="request-user-input-question-header">{question.header}</div>
+                    <div className="request-user-input-question-header text-[10.5px] uppercase tracking-[0.06em] text-[color:var(--text-faint)]">{question.header}</div>
                   ) : null}
-                  <div className="request-user-input-question-text">{question.question}</div>
+                  <div className="request-user-input-question-text text-xs text-[color:var(--text)]">{question.question}</div>
                   {hasOptions ? (
-                    <div className="request-user-input-options">
-                      {question.options?.map((option, optionIndex) => (
-                        <div
-                          key={`${questionId}-${optionIndex}`}
-                          className={`request-user-input-option${
-                            selectedSet.has(option.label) ? ' is-selected' : ''
-                          }`}
-                        >
-                          <div className="request-user-input-option-label">
-                            {option.label}
-                          </div>
-                          {option.description ? (
-                            <div className="request-user-input-option-description">
-                              {option.description}
+                    <div className="request-user-input-options grid gap-1">
+                      {question.options?.map((option, optionIndex) => {
+                        const isSelected = selectedSet.has(option.label);
+                        return (
+                          <div
+                            key={`${questionId}-${optionIndex}`}
+                            className={`request-user-input-option${
+                              isSelected ? ' is-selected' : ''
+                            } border rounded-xl py-1.5 px-2 grid gap-0.5 ${
+                              isSelected
+                                ? 'border-[rgba(77,163,255,0.7)] bg-[rgba(77,163,255,0.12)]'
+                                : 'border-[color:var(--border-subtle)] bg-[color:var(--surface-card-muted)]'
+                            }`}
+                          >
+                            <div className="request-user-input-option-label text-xs font-semibold text-[color:var(--text-strong)]">
+                              {option.label}
                             </div>
-                          ) : null}
-                        </div>
-                      ))}
+                            {option.description ? (
+                              <div className="request-user-input-option-description text-[11px] text-[color:var(--text-subtle)]">
+                                {option.description}
+                              </div>
+                            ) : null}
+                          </div>
+                        );
+                      })}
                     </div>
                   ) : null}
                   {hasSelectedOptions && !hasOptions ? (
-                    <div className="request-user-input-submitted-answer-list">
+                    <div className="request-user-input-submitted-answer-list flex flex-wrap gap-1.5">
                       {question.selectedOptions.map((answer, answerIndex) => (
                         <div
                           key={`${questionId}-answer-${answerIndex}`}
-                          className="request-user-input-submitted-answer-chip"
+                          className="request-user-input-submitted-answer-chip border border-[color:color-mix(in_srgb,#93c5fd_68%,transparent)] bg-[color:color-mix(in_srgb,#bfdbfe_74%,transparent)] text-[#1e3a8a] rounded-full text-xs font-semibold leading-[1.2] py-1 px-2.5"
                         >
                           {answer}
                         </div>
@@ -151,11 +158,11 @@ export const RequestUserInputSubmittedBlock = memo(
                     </div>
                   ) : null}
                   {hasOptions && unmatchedSelectedOptions.length > 0 ? (
-                    <div className="request-user-input-submitted-answer-list">
+                    <div className="request-user-input-submitted-answer-list flex flex-wrap gap-1.5">
                       {unmatchedSelectedOptions.map((answer, answerIndex) => (
                         <div
                           key={`${questionId}-unmatched-${answerIndex}`}
-                          className="request-user-input-submitted-answer-chip"
+                          className="request-user-input-submitted-answer-chip border border-[color:color-mix(in_srgb,#93c5fd_68%,transparent)] bg-[color:color-mix(in_srgb,#bfdbfe_74%,transparent)] text-[#1e3a8a] rounded-full text-xs font-semibold leading-[1.2] py-1 px-2.5"
                         >
                           {answer}
                         </div>
@@ -163,12 +170,12 @@ export const RequestUserInputSubmittedBlock = memo(
                     </div>
                   ) : null}
                   {hasNote ? (
-                    <div className="request-user-input-notes is-readonly">
+                    <div className="request-user-input-notes is-readonly rounded-xl border border-[color:var(--border-subtle)] bg-[color:var(--surface-card-muted)] text-[color:var(--text-strong)] py-1.5 px-2 text-xs leading-snug min-h-[38px] whitespace-pre-wrap cursor-default">
                       {question.note}
                     </div>
                   ) : null}
                   {!hasAnswer ? (
-                    <div className="request-user-input-answer-empty">
+                    <div className="request-user-input-answer-empty text-xs text-[color:var(--text-muted)]">
                       {t('approval.none')}
                     </div>
                   ) : null}

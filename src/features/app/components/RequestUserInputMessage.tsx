@@ -246,10 +246,10 @@ export function RequestUserInputMessage({
   };
 
   return (
-    <div className="message request-user-input-message">
+    <div className="message request-user-input-message items-start">
       <div
         id={requestAnchorId}
-        className="bubble request-user-input-card"
+        className="bubble request-user-input-card w-[min(520px,72%)] max-w-full bg-[color:var(--surface-card-strong)] border border-[color:var(--border-stronger)] rounded-2xl py-2.5 px-3 flex flex-col gap-2"
         role="group"
         tabIndex={-1}
         data-request-user-input-id={String(activeRequest.request_id)}
@@ -258,15 +258,15 @@ export function RequestUserInputMessage({
         data-thread-id={activeRequest.params.thread_id}
         aria-label={t("approval.userInputRequested")}
       >
-        <div className="request-user-input-header">
-          <div className="request-user-input-title">{t("approval.inputRequested")}</div>
+        <div className="request-user-input-header flex justify-between items-baseline gap-2">
+          <div className="request-user-input-title text-[13px] font-semibold text-[color:var(--text-strong)]">{t("approval.inputRequested")}</div>
           {totalRequests > 1 ? (
-            <div className="request-user-input-queue">
+            <div className="request-user-input-queue text-[11px] text-[color:var(--text-subtle)]">
               {t("approval.requestOf", { current: 1, total: totalRequests })}
             </div>
           ) : null}
         </div>
-        <div className="request-user-input-body">
+        <div className="request-user-input-body grid gap-2">
           {questions.length ? (
             questions.map((question, index) => {
               const questionId = question.id || `question-${index}`;
@@ -278,17 +278,17 @@ export function RequestUserInputMessage({
                 ? t("approval.addNotesOptional")
                 : t("approval.typeAnswerOptional");
               return (
-                <section key={questionId} className="request-user-input-question">
+                <section key={questionId} className="request-user-input-question grid gap-1">
                   {question.header ? (
-                    <div className="request-user-input-question-header">
+                    <div className="request-user-input-question-header text-[10.5px] uppercase tracking-[0.06em] text-[color:var(--text-faint)]">
                       {question.header}
                     </div>
                   ) : null}
-                  <div className="request-user-input-question-text">
+                  <div className="request-user-input-question-text text-xs text-[color:var(--text)]">
                     {question.question}
                   </div>
                   {options.length ? (
-                    <div className="request-user-input-options">
+                    <div className="request-user-input-options grid gap-1">
                       {options.map((option, optionIndex) => {
                         const isSelected = Boolean(selectedIndex?.has(optionIndex));
                         return (
@@ -297,6 +297,10 @@ export function RequestUserInputMessage({
                           type="button"
                           className={`request-user-input-option${
                             isSelected ? " is-selected" : ""
+                          } border rounded-xl py-1.5 px-2 text-left grid gap-0.5 transition-[border-color,background] duration-150 ${
+                            isSelected
+                              ? "border-[rgba(77,163,255,0.7)] bg-[rgba(77,163,255,0.12)]"
+                              : "border-[color:var(--border-subtle)] bg-[color:var(--surface-card-muted)]"
                           }`}
                           onClick={() =>
                             handleSelect(
@@ -306,11 +310,11 @@ export function RequestUserInputMessage({
                             )
                           }
                         >
-                          <div className="request-user-input-option-label">
+                          <div className="request-user-input-option-label text-xs font-semibold text-[color:var(--text-strong)]">
                             {option.label}
                           </div>
                           {option.description ? (
-                            <div className="request-user-input-option-description">
+                            <div className="request-user-input-option-description text-[11px] text-[color:var(--text-subtle)]">
                               {option.description}
                             </div>
                           ) : null}
@@ -320,9 +324,9 @@ export function RequestUserInputMessage({
                     </div>
                   ) : null}
                   {question.isSecret ? (
-                    <div className="request-user-input-secret-field">
+                    <div className="request-user-input-secret-field flex gap-1.5 items-center">
                       <input
-                        className="request-user-input-notes"
+                        className="request-user-input-notes rounded-xl border border-[color:var(--border-subtle)] bg-[color:var(--surface-card-muted)] text-[color:var(--text-strong)] py-1.5 px-2 text-xs leading-snug focus:outline-2 focus:[outline-color:rgba(77,163,255,0.35)] focus:[outline-offset:1px]"
                         type={secretVisible[questionId] ? "text" : "password"}
                         placeholder={notePlaceholder}
                         value={notes[questionId] ?? ""}
@@ -332,7 +336,7 @@ export function RequestUserInputMessage({
                       />
                       <button
                         type="button"
-                        className="request-user-input-toggle-secret"
+                        className="request-user-input-toggle-secret border border-[color:var(--border-subtle)] rounded-[10px] bg-[color:var(--surface-card-muted)] text-[color:var(--text-subtle)] text-[11px] py-1 px-2 cursor-pointer hover:text-[color:var(--text-strong)]"
                         onClick={() => handleToggleSecretVisible(questionId)}
                       >
                         {secretVisible[questionId]
@@ -342,7 +346,7 @@ export function RequestUserInputMessage({
                     </div>
                   ) : (
                     <textarea
-                      className="request-user-input-notes"
+                      className="request-user-input-notes rounded-xl border border-[color:var(--border-subtle)] bg-[color:var(--surface-card-muted)] text-[color:var(--text-strong)] py-1.5 px-2 text-xs leading-snug resize-y focus:outline-2 focus:[outline-color:rgba(77,163,255,0.35)] focus:[outline-offset:1px]"
                       placeholder={notePlaceholder}
                       value={notes[questionId] ?? ""}
                       onChange={(event) => handleNotesChange(questionId, event.target.value)}
@@ -353,18 +357,18 @@ export function RequestUserInputMessage({
               );
             })
           ) : (
-            <div className="request-user-input-empty">
+            <div className="request-user-input-empty text-xs text-[color:var(--text-muted)]">
               {t("approval.noQuestionsProvided")}
             </div>
           )}
         </div>
-        <div className="request-user-input-actions">
+        <div className="request-user-input-actions flex items-center justify-end gap-2">
           {submitError ? (
-            <div className="request-user-input-error">{submitError}</div>
+            <div className="request-user-input-error text-[11px] text-[color:var(--error-text,#ef4444)]">{submitError}</div>
           ) : null}
           {onDismiss ? (
             <button
-              className="request-user-input-dismiss"
+              className="request-user-input-dismiss border border-[color:var(--border-subtle)] bg-[color:var(--surface-card)] text-[color:var(--text-subtle)] rounded-[10px] text-xs font-semibold leading-none py-2 px-2.5 enabled:hover:border-[color:var(--border-stronger)] enabled:hover:text-[color:var(--text)] disabled:cursor-not-allowed disabled:opacity-[0.58]"
               type="button"
               onClick={handleDismiss}
               disabled={isSubmitting}

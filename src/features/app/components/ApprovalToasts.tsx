@@ -216,9 +216,15 @@ export function ApprovalToasts({
     return { text: JSON.stringify(value, null, 2), isCode: true };
   };
 
+  const isInline = variant === "inline";
+
   return (
     <div
-      className={`approval-toasts${variant === "inline" ? " approval-toasts-inline" : ""}`}
+      className={`approval-toasts grid gap-3 overflow-auto pointer-events-auto [-webkit-app-region:no-drag] ${
+        isInline
+          ? "approval-toasts-inline relative w-[min(920px,100%)] max-w-none max-h-none z-auto"
+          : "fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[min(460px,calc(100vw-48px))] max-h-[min(520px,calc(100vh-140px))] z-[5]"
+      }`}
       role="region"
       aria-live="assertive"
     >
@@ -244,36 +250,40 @@ export function ApprovalToasts({
         return (
           <div
             key={`${request.workspace_id}-${request.request_id}`}
-            className="approval-toast"
+            className={`approval-toast relative overflow-hidden max-w-full bg-[linear-gradient(180deg,color-mix(in_srgb,var(--surface-context-core)_94%,white_6%)_0%,var(--surface-context-core)_100%)] border border-[color:color-mix(in_srgb,var(--accent-primary,#2563eb)_24%,var(--border-subtle))] pointer-events-auto animate-[approval-toast-in_0.2s_ease-out] pt-3.5 px-3.5 pb-3 before:content-[''] before:absolute before:inset-y-0 before:left-0 before:w-1 before:bg-[linear-gradient(180deg,#f59e0b_0%,#f97316_100%)] ${
+              isInline
+                ? "w-full box-border rounded-[18px] shadow-[0_16px_40px_rgba(0,0,0,0.24)] [backdrop-filter:none]"
+                : "rounded-2xl shadow-[0_16px_32px_rgba(0,0,0,0.25)]"
+            }`}
             role="alert"
           >
             {remainingCount > 0 ? (
-              <div className="approval-toast-queue-summary">
+              <div className="approval-toast-queue-summary mb-2.5 text-xs text-[color:color-mix(in_srgb,var(--text)_68%,var(--text-muted))] font-semibold">
                 {t("approval.remainingRequests", { count: remainingCount })}
               </div>
             ) : null}
-            <div className="approval-toast-header">
-              <div className="approval-toast-header-main">
-                <div className="approval-toast-icon-wrap" aria-hidden>
-                  <span className="codicon codicon-shield approval-toast-icon" />
+            <div className="approval-toast-header flex justify-between items-start gap-4 mb-3">
+              <div className="approval-toast-header-main flex items-start gap-3 min-w-0">
+                <div className="approval-toast-icon-wrap w-[34px] h-[34px] rounded-[10px] inline-flex items-center justify-center bg-[color:color-mix(in_srgb,#f59e0b_18%,transparent)] border border-[color:color-mix(in_srgb,#f59e0b_34%,transparent)] text-[#fbbf24] shrink-0" aria-hidden>
+                  <span className="codicon codicon-shield approval-toast-icon text-lg" />
                 </div>
-                <div className="approval-toast-header-copy">
-                  <div className="approval-toast-title-row">
-                    <div className="approval-toast-title">{t("approval.approvalNeeded")}</div>
-                    <div className="approval-toast-badge">{t("approval.pendingBadge")}</div>
+                <div className="approval-toast-header-copy grid gap-1 min-w-0">
+                  <div className="approval-toast-title-row flex items-center gap-2 flex-wrap">
+                    <div className="approval-toast-title text-lg leading-tight tracking-[0.01em] text-[color:var(--text)] font-bold">{t("approval.approvalNeeded")}</div>
+                    <div className="approval-toast-badge inline-flex items-center min-h-[22px] px-2 rounded-full bg-[color:color-mix(in_srgb,#f59e0b_18%,transparent)] border border-[color:color-mix(in_srgb,#f59e0b_30%,transparent)] text-[#fbbf24] text-[11px] font-bold tracking-[0.04em] uppercase">{t("approval.pendingBadge")}</div>
                   </div>
-                  <div className="approval-toast-subtitle">
+                  <div className="approval-toast-subtitle text-xs leading-[1.45] text-[color:var(--text-muted)]">
                     {t("approval.reviewBeforeApply")}
                   </div>
                 </div>
               </div>
-              <div className="approval-toast-header-side">
+              <div className="approval-toast-header-side inline-flex items-start justify-end gap-2 shrink-0">
                 {workspaceName ? (
-                  <div className="approval-toast-workspace">{workspaceName}</div>
+                  <div className="approval-toast-workspace text-xs text-[color:var(--text-faint)] rounded-full py-1.5 px-2.5 border border-[color:var(--border-subtle)] bg-[color:color-mix(in_srgb,var(--surface-card-muted)_78%,transparent)] max-w-[min(280px,40%)] overflow-hidden text-ellipsis whitespace-nowrap">{workspaceName}</div>
                 ) : null}
                 <button
                   type="button"
-                  className="ghost approval-toast-close"
+                  className="ghost approval-toast-close w-8 h-8 rounded-[10px] p-0 inline-flex items-center justify-center"
                   onClick={() => onDecision(request, "dismiss")}
                   aria-label={t("approval.close")}
                   title={t("approval.close")}
@@ -282,61 +292,61 @@ export function ApprovalToasts({
                 </button>
               </div>
             </div>
-            <div className="approval-toast-summary-band">
-              <div className="approval-toast-kind">
+            <div className="approval-toast-summary-band flex justify-between items-center gap-3 flex-wrap mb-3 py-2.5 px-3 rounded-xl bg-[color:color-mix(in_srgb,var(--surface-card-muted)_84%,transparent)] border border-[color:color-mix(in_srgb,var(--border-subtle)_82%,transparent)]">
+              <div className="approval-toast-kind inline-flex items-center gap-2 text-[13px] font-bold text-[color:var(--text)]">
                 <span className={getApprovalKindIcon(request.method)} aria-hidden />
                 <span>{getToolLabel(request.method, t)}</span>
               </div>
               {approvalToolName ? (
-                <div className="approval-toast-summary-meta">
-                  <span className="approval-toast-summary-label">{t("approval.toolLabel")}</span>
-                  <span className="approval-toast-summary-value">{approvalToolName}</span>
+                <div className="approval-toast-summary-meta inline-flex items-center gap-2 min-w-0">
+                  <span className="approval-toast-summary-label text-[11px] text-[color:var(--text-faint)] uppercase tracking-[0.06em]">{t("approval.toolLabel")}</span>
+                  <span className="approval-toast-summary-value text-[13px] text-[color:var(--text)] font-semibold">{approvalToolName}</span>
                 </div>
               ) : null}
             </div>
-            <div className="approval-toast-details">
+            <div className="approval-toast-details grid gap-2.5 mb-3">
               {approvalPath ? (
-                <div className="approval-toast-detail approval-toast-detail-spotlight">
-                  <div className="approval-toast-detail-label">
+                <div className="approval-toast-detail approval-toast-detail-spotlight grid gap-1.5 py-2.5 px-3 rounded-xl border border-[color:color-mix(in_srgb,var(--border-subtle)_82%,transparent)] bg-[color:color-mix(in_srgb,var(--surface-card-muted)_70%,var(--surface-context-core))]">
+                  <div className="approval-toast-detail-label text-[11px] text-[color:var(--text-faint)] uppercase tracking-[0.06em]">
                     {t("approval.filePathLabel")}
                   </div>
-                  <div className="approval-toast-detail-value approval-toast-path-value">
-                    <span className="codicon codicon-file approval-toast-inline-icon" aria-hidden />
+                  <div className="approval-toast-detail-value approval-toast-path-value flex items-start gap-2 text-[13px] leading-normal text-[color:var(--text)] [overflow-wrap:break-word] break-words">
+                    <span className="codicon codicon-file approval-toast-inline-icon mt-0.5 text-[color:var(--text-muted)] shrink-0" aria-hidden />
                     <span>{approvalPath}</span>
                   </div>
                 </div>
               ) : null}
               {commandInfo ? (
-                <div className="approval-toast-detail approval-toast-detail-spotlight">
-                  <div className="approval-toast-detail-label">
+                <div className="approval-toast-detail approval-toast-detail-spotlight grid gap-1.5 py-2.5 px-3 rounded-xl border border-[color:color-mix(in_srgb,var(--border-subtle)_82%,transparent)] bg-[color:color-mix(in_srgb,var(--surface-card-muted)_70%,var(--surface-context-core))]">
+                  <div className="approval-toast-detail-label text-[11px] text-[color:var(--text-faint)] uppercase tracking-[0.06em]">
                     {t("approval.commandLabel")}
                   </div>
-                  <div className="approval-toast-detail-value approval-toast-command-value">
-                    <span className="codicon codicon-terminal approval-toast-inline-icon" aria-hidden />
+                  <div className="approval-toast-detail-value approval-toast-command-value flex items-start gap-2 text-[13px] leading-normal text-[color:var(--text)] [overflow-wrap:break-word] break-words">
+                    <span className="codicon codicon-terminal approval-toast-inline-icon mt-0.5 text-[color:var(--text-muted)] shrink-0" aria-hidden />
                     <span>{commandInfo.preview}</span>
                   </div>
                 </div>
               ) : null}
               {approvalMessage ? (
-                <div className="approval-toast-detail approval-toast-note-block">
-                  <div className="approval-toast-detail-label">{t("approval.noteLabel")}</div>
-                  <div className="approval-toast-detail-value">{approvalMessage}</div>
+                <div className="approval-toast-detail approval-toast-note-block grid gap-1.5 py-2.5 px-3 rounded-xl border border-dashed border-[color:color-mix(in_srgb,var(--border-subtle)_82%,transparent)] bg-[color:color-mix(in_srgb,var(--surface-card-muted)_62%,transparent)]">
+                  <div className="approval-toast-detail-label text-[11px] text-[color:var(--text-faint)] uppercase tracking-[0.06em]">{t("approval.noteLabel")}</div>
+                  <div className="approval-toast-detail-value text-[13px] leading-normal text-[color:var(--text)] [overflow-wrap:break-word] break-words">{approvalMessage}</div>
                 </div>
               ) : null}
               {entries.length ? (
                 entries.map(([key, value]) => {
                   const rendered = renderParamValue(value);
                   return (
-                    <div key={key} className="approval-toast-detail">
-                      <div className="approval-toast-detail-label">
+                    <div key={key} className="approval-toast-detail grid gap-1.5 py-2.5 px-3 rounded-xl border border-[color:color-mix(in_srgb,var(--border-subtle)_82%,transparent)] bg-[color:color-mix(in_srgb,var(--surface-card-muted)_62%,transparent)]">
+                      <div className="approval-toast-detail-label text-[11px] text-[color:var(--text-faint)] uppercase tracking-[0.06em]">
                         {formatLabel(key)}
                       </div>
                       {rendered.isCode ? (
-                        <pre className="approval-toast-detail-code">
+                        <pre className="approval-toast-detail-code font-mono text-[11px] text-[color:var(--text-muted)] whitespace-pre-wrap max-h-40 overflow-auto rounded-lg bg-[color:var(--surface-card-muted)] p-2 m-0 [overflow-wrap:break-word] break-words">
                           {rendered.text}
                         </pre>
                       ) : (
-                        <div className="approval-toast-detail-value">
+                        <div className="approval-toast-detail-value text-[13px] leading-normal text-[color:var(--text)] [overflow-wrap:break-word] break-words">
                           {rendered.text}
                         </div>
                       )}
@@ -344,12 +354,12 @@ export function ApprovalToasts({
                   );
                 })
               ) : !approvalPath && !commandInfo && !approvalMessage ? (
-                <div className="approval-toast-detail approval-toast-detail-empty">
+                <div className="approval-toast-detail approval-toast-detail-empty grid gap-1.5 py-2.5 px-3 rounded-xl border border-[color:color-mix(in_srgb,var(--border-subtle)_82%,transparent)] bg-[color:color-mix(in_srgb,var(--surface-card-muted)_62%,transparent)] text-xs text-[color:var(--text-muted)]">
                   {t("approval.noExtraDetails")}
                 </div>
               ) : null}
             </div>
-            <div className="approval-toast-actions">
+            <div className="approval-toast-actions flex gap-2 justify-end flex-wrap pt-0.5">
               <button
                 type="button"
                 className="secondary"
@@ -369,7 +379,7 @@ export function ApprovalToasts({
               {commandInfo && onRemember ? (
                 <button
                   type="button"
-                  className="ghost approval-toast-remember"
+                  className="ghost approval-toast-remember whitespace-nowrap"
                   onClick={() => onRemember(request, commandInfo.tokens)}
                   title={t("approval.allowCommandsStartWith", { prefix: commandInfo.preview })}
                 >
