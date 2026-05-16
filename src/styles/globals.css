@@ -5,7 +5,7 @@
 /*
  ---break---
  */
-@custom-variant dark (&:is(.dark *));
+@custom-variant dark (&:is(:root[data-theme="dark"] *));
 
 /*
  * Theme entry — coss.ui token registration only.
@@ -256,7 +256,7 @@
  ---break---
  */
 
-.dark {
+:root[data-theme="dark"] {
   --destructive-foreground: var(--color-red-400);
   --info: var(--color-blue-500);
   --info-foreground: var(--color-blue-400);

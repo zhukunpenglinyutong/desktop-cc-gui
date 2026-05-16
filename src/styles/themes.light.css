@@ -64,38 +64,7 @@
   --status-unknown: rgba(17, 20, 28, 0.25);
   --select-caret: rgba(15, 23, 36, 0.45);
 
-  /* @coss/ui standard theme variables — Linear-style refresh (2026-05-17) */
-  --background: #fafafa;
-  --foreground: #09090b;
-  --card: #ffffff;
-  --card-foreground: #09090b;
-  --popover: #ffffff;
-  --popover-foreground: #09090b;
-  --primary: #6366f1;
-  --primary-foreground: #ffffff;
-  --secondary: #f4f4f5;
-  --secondary-foreground: #18181b;
-  --muted: #f4f4f5;
-  --muted-foreground: #71717a;
-  --accent: #f4f4f5;
-  --accent-foreground: #18181b;
-  --destructive: #ef4444;
-  --destructive-foreground: #ffffff;
-  --success: #10b981;
-  --success-foreground: #ffffff;
-  --warning: #f59e0b;
-  --warning-foreground: #0c0a09;
-  --info: #3b82f6;
-  --info-foreground: #ffffff;
-  --border: #e4e4e7;
-  --input: #e4e4e7;
-  --ring: rgba(99, 102, 241, 0.5);
-  --radius: 0.625rem;
-  --sidebar-background: #f4f4f5;
-  --sidebar-foreground: #3f3f46;
-  --sidebar-border: #e4e4e7;
-  --sidebar-accent: #ffffff;
-  --sidebar-accent-foreground: #09090b;
+  /* coss 官方标准 token 在 globals.css :root 内定义，本块已删除以避免覆盖 */
 
   /* 滚动条颜色 - Scrollbar colors */
   --scrollbar-track: transparent;

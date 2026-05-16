@@ -77,38 +77,7 @@
   --tabbar-height: 56px;
   --ui-scale: 1;
 
-  /* @coss/ui standard theme variables — Linear-style refresh (2026-05-17) */
-  --background: #09090b;
-  --foreground: #fafafa;
-  --card: #18181b;
-  --card-foreground: #fafafa;
-  --popover: #18181b;
-  --popover-foreground: #fafafa;
-  --primary: #818cf8;
-  --primary-foreground: #1e1b4b;
-  --secondary: #27272a;
-  --secondary-foreground: #fafafa;
-  --muted: #27272a;
-  --muted-foreground: #a1a1aa;
-  --accent: #27272a;
-  --accent-foreground: #fafafa;
-  --destructive: #ef4444;
-  --destructive-foreground: #ffffff;
-  --success: #10b981;
-  --success-foreground: #ffffff;
-  --warning: #f59e0b;
-  --warning-foreground: #0c0a09;
-  --info: #60a5fa;
-  --info-foreground: #0c0a09;
-  --border: #27272a;
-  --input: #27272a;
-  --ring: rgba(129, 140, 248, 0.55);
-  --radius: 0.625rem;
-  --sidebar-background: #18181b;
-  --sidebar-foreground: #a1a1aa;
-  --sidebar-border: #27272a;
-  --sidebar-accent: #27272a;
-  --sidebar-accent-foreground: #fafafa;
+  /* coss 官方标准 token 在 globals.css :root[data-theme="dark"] 内定义，本块已删除以避免覆盖 */
 
   /* 滚动条颜色 - Scrollbar colors */
   --scrollbar-track: #1a1a1a;
