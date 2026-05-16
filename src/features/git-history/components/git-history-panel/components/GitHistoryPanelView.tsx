@@ -116,7 +116,7 @@ export function renderGitHistoryPanelView(scope: any) {
           {onRequestClose ? (
             <div className="git-history-toolbar-actions inline-flex items-center gap-2 flex-wrap justify-end">
               <ActionSurface
-                className="git-history-close-chip"
+                className="git-history-close-chip w-6 h-6 rounded-full border border-[color-mix(in_srgb,var(--border-default)_72%,transparent)] bg-[color-mix(in_srgb,var(--surface-control,#1a2230)_66%,transparent)]"
                 onActivate={() => onRequestClose()}
                 title={t("git.historyClosePanel")}
               >
@@ -318,7 +318,7 @@ export function renderGitHistoryPanelView(scope: any) {
         <div className="git-history-toolbar-actions inline-flex items-center gap-2 flex-wrap justify-end">
           <div className="git-history-toolbar-action-group inline-flex items-center gap-1 p-0.5 border border-[color-mix(in_srgb,var(--border-default)_78%,transparent)] rounded-full bg-[color-mix(in_srgb,var(--surface-control,#1a2230)_42%,transparent)] opacity-0 pointer-events-none translate-x-[18px] transition-[opacity_160ms_ease,transform_180ms_ease] group-hover/toolbar:opacity-100 group-hover/toolbar:pointer-events-auto group-hover/toolbar:translate-x-0 group-focus-within/toolbar:opacity-100 group-focus-within/toolbar:pointer-events-auto group-focus-within/toolbar:translate-x-0 motion-reduce:translate-x-0 motion-reduce:transition-[opacity_120ms_ease]">
             <ActionSurface
-              className="git-history-chip git-history-chip-pr"
+              className="git-history-chip git-history-chip-pr h-6 px-2 text-[11px] font-medium rounded-full border-transparent bg-transparent text-[color-mix(in_srgb,var(--accent-primary,#2563eb)_80%,var(--text-secondary))] hover:text-[color-mix(in_srgb,var(--accent-primary,#2563eb)_88%,var(--text-primary))] hover:bg-[color-mix(in_srgb,var(--accent-primary,#2563eb)_20%,transparent)] [&.is-active]:border-[color-mix(in_srgb,var(--accent-primary,#2563eb)_34%,transparent)] [&.is-active]:bg-[color-mix(in_srgb,var(--accent-primary,#2563eb)_12%,transparent)] [&.is-active]:text-[color-mix(in_srgb,var(--accent-primary,#2563eb)_88%,var(--text-primary))]"
               active={createPrDialogOpen}
               onActivate={handleOpenCreatePrDialog}
               disabled={!createPrCanOpen}
@@ -328,7 +328,7 @@ export function renderGitHistoryPanelView(scope: any) {
               <span>{t("git.historyCreatePr")}</span>
             </ActionSurface>
             <ActionSurface
-              className="git-history-chip"
+              className="git-history-chip h-6 px-2 text-[11px] font-medium rounded-full border-transparent bg-transparent text-(--text-secondary) hover:text-(--text-stronger) hover:bg-[color-mix(in_srgb,var(--surface-control-hover,#263044)_85%,transparent)]"
               active={pullDialogOpen}
               onActivate={handleOpenPullDialog}
               disabled={Boolean(operationLoading)}
@@ -338,7 +338,7 @@ export function renderGitHistoryPanelView(scope: any) {
               <span>{t("git.pull")}</span>
             </ActionSurface>
             <ActionSurface
-              className="git-history-chip"
+              className="git-history-chip h-6 px-2 text-[11px] font-medium rounded-full border-transparent bg-transparent text-(--text-secondary) hover:text-(--text-stronger) hover:bg-[color-mix(in_srgb,var(--surface-control-hover,#263044)_85%,transparent)]"
               active={pushDialogOpen}
               onActivate={handleOpenPushDialog}
               disabled={Boolean(operationLoading)}
@@ -348,7 +348,7 @@ export function renderGitHistoryPanelView(scope: any) {
               <span>{t("git.push")}</span>
             </ActionSurface>
             <ActionSurface
-              className="git-history-chip"
+              className="git-history-chip h-6 px-2 text-[11px] font-medium rounded-full border-transparent bg-transparent text-(--text-secondary) hover:text-(--text-stronger) hover:bg-[color-mix(in_srgb,var(--surface-control-hover,#263044)_85%,transparent)]"
               active={syncDialogOpen}
               onActivate={handleOpenSyncDialog}
               disabled={Boolean(operationLoading)}
@@ -358,7 +358,7 @@ export function renderGitHistoryPanelView(scope: any) {
               <span>{t("git.sync")}</span>
             </ActionSurface>
             <ActionSurface
-              className="git-history-chip"
+              className="git-history-chip h-6 px-2 text-[11px] font-medium rounded-full border-transparent bg-transparent text-(--text-secondary) hover:text-(--text-stronger) hover:bg-[color-mix(in_srgb,var(--surface-control-hover,#263044)_85%,transparent)]"
               active={fetchDialogOpen}
               onActivate={handleOpenFetchDialog}
               disabled={Boolean(operationLoading)}
@@ -368,7 +368,7 @@ export function renderGitHistoryPanelView(scope: any) {
               <span>{t("git.fetch")}</span>
             </ActionSurface>
             <ActionSurface
-              className="git-history-chip"
+              className="git-history-chip h-6 px-2 text-[11px] font-medium rounded-full border-transparent bg-transparent text-(--text-secondary) hover:text-(--text-stronger) hover:bg-[color-mix(in_srgb,var(--surface-control-hover,#263044)_85%,transparent)]"
               active={refreshDialogOpen}
               onActivate={handleOpenRefreshDialog}
               disabled={Boolean(operationLoading) || historyLoading}
@@ -379,7 +379,7 @@ export function renderGitHistoryPanelView(scope: any) {
             </ActionSurface>
           </div>
           <ActionSurface
-            className="git-history-close-chip"
+            className="git-history-close-chip w-6 h-6 rounded-full border border-[color-mix(in_srgb,var(--border-default)_72%,transparent)] bg-[color-mix(in_srgb,var(--surface-control,#1a2230)_66%,transparent)]"
             onActivate={() => onRequestClose?.()}
             title={t("git.historyClosePanel")}
           >
@@ -497,12 +497,12 @@ export function renderGitHistoryPanelView(scope: any) {
           ref={mainGridRef}
           style={mainGridStyle}
         >
-        <section className="git-history-branches">
-          <div className="git-history-column-header">
+        <section className="git-history-branches min-w-0 min-h-0 flex flex-col border-r border-(--border-default) overflow-hidden bg-(--git-history-pane-bg)">
+          <div className="git-history-column-header flex items-center justify-between gap-2 py-[7px] px-2.5 border-b border-(--border-default) text-[11px] text-(--text-secondary) bg-[color-mix(in_srgb,var(--surface-card-muted,#111725)_72%,transparent)] min-h-11 box-border [&>span]:inline-flex [&>span]:items-center [&>span]:gap-1.5 [&>span]:font-semibold">
             <span>
               <GitBranch size={14} /> {t("git.historyBranches")}
             </span>
-            <div className="git-history-branch-actions">
+            <div className="git-history-branch-actions inline-flex items-center gap-0.5 p-0.5 rounded-full border border-[color-mix(in_srgb,var(--border-default)_72%,transparent)] bg-[color-mix(in_srgb,var(--surface-control,#1a2230)_74%,transparent)] shadow-[inset_0_1px_0_color-mix(in_srgb,#ffffff_10%,transparent)] [&_.git-history-mini-chip]:w-7 [&_.git-history-mini-chip]:h-[26px] [&_.git-history-mini-chip]:p-0 [&_.git-history-mini-chip]:border-none [&_.git-history-mini-chip]:rounded-full [&_.git-history-mini-chip]:bg-transparent [&_.git-history-mini-chip]:text-(--text-secondary) [&_.git-history-mini-chip]:font-semibold [&_.git-history-mini-chip]:transition-[background-color,color,opacity] [&_.git-history-mini-chip]:duration-[140ms] [&_.git-history-mini-chip]:ease [&_.git-history-mini-chip_svg]:w-3.5 [&_.git-history-mini-chip_svg]:h-3.5 [&_.git-history-mini-chip_svg]:[stroke-width:2.1] [&_.git-history-mini-chip:hover:not(.is-disabled)]:bg-[color-mix(in_srgb,var(--surface-control-hover,#263044)_86%,transparent)] [&_.git-history-mini-chip:hover:not(.is-disabled)]:text-(--text-stronger)">
               <ActionSurface
                 className="git-history-mini-chip"
                 onActivate={() => void handleCreateBranch()}
@@ -539,7 +539,7 @@ export function renderGitHistoryPanelView(scope: any) {
               </ActionSurface>
             </div>
           </div>
-          <label className="git-history-search">
+          <label className="git-history-search flex items-center gap-1.5 my-2 mx-2.5 py-1.5 px-2 border border-(--border-default) rounded-[7px] bg-(--surface-control,#1a2130) text-(--text-muted) [&_input]:border-none [&_input]:bg-transparent [&_input]:w-full [&_input]:min-w-0 [&_input]:text-inherit [&_input]:outline-none [&_input]:text-xs">
             <Search size={14} />
             <input
               value={branchQuery}
@@ -547,18 +547,18 @@ export function renderGitHistoryPanelView(scope: any) {
               placeholder={t("git.historySearchBranches")}
             />
           </label>
-          <div className="git-history-branch-list">
+          <div className="git-history-branch-list flex-1 min-h-0 overflow-auto">
             <ActionSurface
-              className="git-history-branch-item git-history-branch-all-item"
+              className="git-history-branch-item git-history-branch-all-item w-full justify-start border-none flex items-center justify-between gap-2 my-0.5 mx-1 mb-2 py-1.5 px-2 text-(--text-secondary) text-[11px] rounded-lg"
               active={selectedBranch === "all"}
               onActivate={() => setSelectedBranch("all")}
             >
               <span>{t("git.historyAllBranches")}</span>
             </ActionSurface>
 
-            <div className="git-history-tree-section">
+            <div className="git-history-tree-section mb-1.5">
               <ActionSurface
-                className="git-history-tree-section-toggle"
+                className="git-history-tree-section-toggle w-full justify-start border-none mx-1 py-[5px] px-2 gap-1.5 text-(--text-secondary) text-[10px] uppercase tracking-[0.06em] font-bold rounded-lg [&_svg]:text-[color-mix(in_srgb,var(--text-muted)_86%,transparent)]"
                 onActivate={() => setLocalSectionExpanded((prev) => !prev)}
                 ariaLabel={t("git.historyToggleLocalBranches")}
               >
@@ -567,41 +567,41 @@ export function renderGitHistoryPanelView(scope: any) {
                 <span>{t("git.historyLocal")}</span>
               </ActionSurface>
               {localSectionExpanded && (
-                <div className="git-history-tree-section-body">
+                <div className="git-history-tree-section-body flex flex-col gap-0.5 mt-[3px]">
                   {groupedLocalBranches.map((group) => {
                     const scopeExpanded = expandedLocalScopes.has(group.key);
                     return (
-                      <div key={`local-group-${group.key}`} className="git-history-tree-scope-group">
+                      <div key={`local-group-${group.key}`} className="git-history-tree-scope-group flex flex-col gap-px">
                         <ActionSurface
-                          className="git-history-tree-scope-toggle"
+                          className="git-history-tree-scope-toggle w-full justify-start border-none mx-1 py-[5px] pr-2 pl-[22px] gap-1.5 rounded-lg text-(--text-muted) text-[10px] tracking-[0.06em] uppercase font-semibold"
                           onActivate={() => handleToggleLocalScope(group.key)}
                           ariaLabel={t("git.historyToggleLocalGroup", { group: group.label })}
                         >
                           {scopeExpanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
                           {scopeExpanded ? <FolderOpen size={12} /> : <Folder size={12} />}
-                          <span className="git-history-tree-scope-label">{group.label}</span>
+                          <span className="git-history-tree-scope-label min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">{group.label}</span>
                         </ActionSurface>
                         {scopeExpanded &&
                           group.items.map((entry) => (
                             <div
                               key={`local-${entry.name}`}
-                              className="git-history-branch-row"
+                              className="git-history-branch-row block my-0 mx-2.5 ml-9"
                               onContextMenu={(event) => handleOpenBranchContextMenu(event, entry, "local")}
                             >
                               <ActionSurface
-                                className={`git-history-branch-item git-history-branch-item-tree ${
-                                  entry.isCurrent ? "is-head-branch" : ""
-                                }`}
+                                className={`git-history-branch-item git-history-branch-item-tree w-full justify-start border-none flex items-center justify-between gap-2 py-1.5 px-2 text-xs rounded-lg min-h-7 pl-2.5 pr-3 border-l-2 border-l-transparent${
+                                  entry.isCurrent ? " is-head-branch border-l-[color-mix(in_srgb,var(--accent-primary,#2563eb)_76%,transparent)] [&_.git-history-branch-name]:text-[color-mix(in_srgb,var(--accent-primary,#2563eb)_88%,var(--text-stronger))] [&_.git-history-branch-name]:font-bold" : ""
+                                }${selectedBranch === entry.name ? " is-active bg-[color-mix(in_srgb,var(--accent-primary,#2563eb)_17%,transparent)]" : ""}`}
                                 active={selectedBranch === entry.name}
                                 onActivate={() => setSelectedBranch(entry.name)}
                               >
-                                <span className="git-history-tree-branch-main">
+                                <span className="git-history-tree-branch-main flex-1 min-w-0 inline-flex items-center gap-1.5 [&_svg]:text-[color-mix(in_srgb,var(--text-muted)_82%,transparent)] [&_svg]:flex-none">
                                   <GitBranch size={11} />
-                                  <span className="git-history-branch-name">
+                                  <span className="git-history-branch-name min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">
                                     {getBranchLeafName(entry.name)}
                                   </span>
                                 </span>
-                                <span className="git-history-branch-badges">
+                                <span className="git-history-branch-badges inline-flex items-center gap-1.5 mr-2 flex-none [&_em]:not-italic [&_em]:text-[10px] [&_em]:font-semibold [&_em]:rounded-full [&_em]:py-0 [&_em]:px-1.5 [&_em]:border [&_em]:border-transparent [&_i]:not-italic [&_i]:text-[10px] [&_i]:font-semibold [&_i]:rounded-full [&_i]:py-0 [&_i]:px-1.5 [&_i]:border [&_i]:border-transparent [&_.is-head]:!border-none [&_.is-head]:!bg-transparent [&_.is-head]:!p-0 [&_.is-head]:tracking-[0.02em] [&_.is-head]:text-[color-mix(in_srgb,var(--accent-primary,#2563eb)_92%,#bfdbfe)] [&_.is-special]:text-[color-mix(in_srgb,var(--text-muted)_82%,var(--text-secondary))] [&_.is-special]:border-[color-mix(in_srgb,var(--border-default)_62%,transparent)] [&_.is-special]:bg-[color-mix(in_srgb,var(--surface-control,#1a2230)_66%,transparent)] [&_.is-ahead]:text-[#16a34a] [&_.is-ahead]:border-[color-mix(in_srgb,#16a34a_45%,transparent)] [&_.is-ahead]:bg-[color-mix(in_srgb,#16a34a_14%,transparent)] [&_.is-behind]:text-[#dc2626] [&_.is-behind]:border-[color-mix(in_srgb,#dc2626_45%,transparent)] [&_.is-behind]:bg-[color-mix(in_srgb,#dc2626_14%,transparent)]">
                                   {entry.isCurrent ? <em className="is-head">HEAD</em> : null}
                                   {getSpecialBranchBadges(entry.name, t).map((badge) => (
                                     <i key={`${entry.name}-${badge}`} className="is-special">
@@ -621,9 +621,9 @@ export function renderGitHistoryPanelView(scope: any) {
               )}
             </div>
 
-            <div className="git-history-tree-section">
+            <div className="git-history-tree-section mb-1.5">
               <ActionSurface
-                className="git-history-tree-section-toggle"
+                className="git-history-tree-section-toggle w-full justify-start border-none mx-1 py-[5px] px-2 gap-1.5 text-(--text-secondary) text-[10px] uppercase tracking-[0.06em] font-bold rounded-lg [&_svg]:text-[color-mix(in_srgb,var(--text-muted)_86%,transparent)]"
                 onActivate={() => setRemoteSectionExpanded((prev) => !prev)}
                 ariaLabel={t("git.historyToggleRemoteBranches")}
               >
@@ -632,39 +632,39 @@ export function renderGitHistoryPanelView(scope: any) {
                 <span>{t("git.historyRemote")}</span>
               </ActionSurface>
               {remoteSectionExpanded && (
-                <div className="git-history-tree-section-body">
+                <div className="git-history-tree-section-body flex flex-col gap-0.5 mt-[3px]">
                   {groupedRemoteBranches.map((group) => {
                     const scopeExpanded = expandedRemoteScopes.has(group.remote);
                     return (
-                      <div key={`remote-group-${group.remote}`} className="git-history-tree-scope-group">
+                      <div key={`remote-group-${group.remote}`} className="git-history-tree-scope-group flex flex-col gap-px">
                         <ActionSurface
-                          className="git-history-tree-scope-toggle"
+                          className="git-history-tree-scope-toggle w-full justify-start border-none mx-1 py-[5px] pr-2 pl-[22px] gap-1.5 rounded-lg text-(--text-muted) text-[10px] tracking-[0.06em] uppercase font-semibold"
                           onActivate={() => handleToggleRemoteScope(group.remote)}
                           ariaLabel={t("git.historyToggleRemoteGroup", { group: group.remote })}
                         >
                           {scopeExpanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
                           {scopeExpanded ? <FolderOpen size={12} /> : <Folder size={12} />}
-                          <span className="git-history-tree-scope-label">{group.remote}</span>
+                          <span className="git-history-tree-scope-label min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">{group.remote}</span>
                         </ActionSurface>
                         {scopeExpanded &&
                           group.items.map((entry) => (
                             <div
                               key={`remote-${entry.name}`}
-                              className="git-history-branch-row git-history-branch-row-remote"
+                              className="git-history-branch-row git-history-branch-row-remote block my-0 mx-2.5 ml-9"
                               onContextMenu={(event) => handleOpenBranchContextMenu(event, entry, "remote")}
                             >
                               <ActionSurface
-                                className="git-history-branch-item git-history-branch-item-remote-tree"
+                                className={`git-history-branch-item git-history-branch-item-remote-tree w-full justify-start border-none flex items-center justify-between gap-2 py-1.5 px-2 text-xs rounded-lg m-0 min-w-0 box-border min-h-7 pl-2.5 pr-3 text-(--text-secondary) [&_.git-history-branch-badges]:mr-0${selectedBranch === entry.name ? " is-active bg-[color-mix(in_srgb,var(--accent-primary,#2563eb)_17%,transparent)]" : ""}`}
                                 active={selectedBranch === entry.name}
                                 onActivate={() => setSelectedBranch(entry.name)}
                               >
-                                <span className="git-history-tree-branch-main">
+                                <span className="git-history-tree-branch-main flex-1 min-w-0 inline-flex items-center gap-1.5 [&_svg]:text-[color-mix(in_srgb,var(--text-muted)_82%,transparent)] [&_svg]:flex-none">
                                   <GitBranch size={11} />
-                                  <span className="git-history-branch-name">
+                                  <span className="git-history-branch-name min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">
                                     {trimRemotePrefix(entry.name, group.remote)}
                                   </span>
                                 </span>
-                                <span className="git-history-branch-badges">
+                                <span className="git-history-branch-badges inline-flex items-center gap-1.5 flex-none [&_i]:not-italic [&_i]:text-[10px] [&_i]:font-semibold [&_i]:rounded-full [&_i]:py-0 [&_i]:px-1.5 [&_i]:border [&_i]:border-transparent [&_.is-special]:text-[color-mix(in_srgb,var(--text-muted)_82%,var(--text-secondary))] [&_.is-special]:border-[color-mix(in_srgb,var(--border-default)_62%,transparent)] [&_.is-special]:bg-[color-mix(in_srgb,var(--surface-control,#1a2230)_66%,transparent)]">
                                   {getSpecialBranchBadges(entry.name, t).map((badge) => (
                                     <i key={`${entry.name}-${badge}`} className="is-special">
                                       {badge}
@@ -697,13 +697,13 @@ export function renderGitHistoryPanelView(scope: any) {
           />
         )}
 
-        <section className="git-history-commits">
-          <div className="git-history-column-header">
+        <section className="git-history-commits min-w-0 min-h-0 flex flex-col border-r border-(--border-default) overflow-hidden bg-(--git-history-pane-bg)">
+          <div className="git-history-column-header flex items-center justify-between gap-2 py-[7px] px-2.5 border-b border-(--border-default) text-[11px] text-(--text-secondary) bg-[color-mix(in_srgb,var(--surface-card-muted,#111725)_72%,transparent)] min-h-11 box-border [&>span]:inline-flex [&>span]:items-center [&>span]:gap-1.5 [&>span]:font-semibold">
             <span>
               <GitCommit size={14} /> {t("git.historyCommits")}
             </span>
           </div>
-          <label className="git-history-search">
+          <label className="git-history-search flex items-center gap-1.5 my-2 mx-2.5 py-1.5 px-2 border border-(--border-default) rounded-[7px] bg-(--surface-control,#1a2130) text-(--text-muted) [&_input]:border-none [&_input]:bg-transparent [&_input]:w-full [&_input]:min-w-0 [&_input]:text-inherit [&_input]:outline-none [&_input]:text-xs">
             <Search size={14} />
             <input
               value={commitQuery}
@@ -718,15 +718,15 @@ export function renderGitHistoryPanelView(scope: any) {
             </div>
           )}
           {!historyError && historyLoading && (
-            <div className="git-history-empty">{t("git.historyLoadingCommits")}</div>
+            <div className="git-history-empty p-4 text-(--text-muted) text-xs">{t("git.historyLoadingCommits")}</div>
           )}
           {!historyLoading && !commits.length && (
-            <div className="git-history-empty">{t("git.historyNoCommitsFound")}</div>
+            <div className="git-history-empty p-4 text-(--text-muted) text-xs">{t("git.historyNoCommitsFound")}</div>
           )}
 
-          <div className="git-history-commit-list" ref={commitListRef}>
+          <div className="git-history-commit-list flex-1 min-h-0 overflow-auto relative" ref={commitListRef}>
             <div
-              className="git-history-commit-list-virtual"
+              className="git-history-commit-list-virtual relative"
               style={{ height: `${commitRowVirtualizer.getTotalSize()}px` }}
             >
               {virtualCommitRows.map((virtualRow) => {
@@ -746,7 +746,7 @@ export function renderGitHistoryPanelView(scope: any) {
               return (
                 <ActionSurface
                   key={entry.sha}
-                  className="git-history-commit-row"
+                  className={`git-history-commit-row w-full justify-start rounded-none border-none grid [grid-template-columns:18px_minmax(0,1fr)] gap-[7px] items-start py-[7px] px-2.5 border-b border-b-[color-mix(in_srgb,var(--border-default)_48%,transparent)]${active ? " bg-[color-mix(in_srgb,var(--accent-primary,#2563eb)_17%,transparent)]" : ""}`}
                   active={active}
                   onActivate={() => setSelectedCommitSha(entry.sha)}
                   onContextMenu={(event) => handleOpenCommitContextMenu(event, entry.sha)}
@@ -758,24 +758,24 @@ export function renderGitHistoryPanelView(scope: any) {
                       transform: `translateY(${virtualRow.start}px)`,
                     }}
                 >
-                  <span className={graphClassName} aria-hidden>
-                    <i className="git-history-graph-line" />
-                    <i className="git-history-graph-dot" />
+                  <span className={`${graphClassName} relative block h-full min-h-[34px] [&.is-first_.git-history-graph-line]:top-2 [&.is-last_.git-history-graph-line]:bottom-2`} aria-hidden>
+                    <i className="git-history-graph-line absolute left-[7px] -top-2 -bottom-2 w-0.5 bg-[color-mix(in_srgb,var(--text-muted)_45%,transparent)]" />
+                    <i className="git-history-graph-dot absolute left-[3px] top-[11px] w-2.5 h-2.5 rounded-full bg-(--accent-primary,#2563eb)" />
                   </span>
-                  <span className="git-history-commit-content">
+                  <span className="git-history-commit-content min-w-0 flex flex-col gap-0.5">
                     <span
-                      className="git-history-commit-summary"
+                      className="git-history-commit-summary text-xs leading-[1.35] whitespace-nowrap overflow-hidden text-ellipsis"
                       title={entry.summary || t("git.historyNoMessage")}
                     >
                       {entry.summary || t("git.historyNoMessage")}
                     </span>
-                    <span className="git-history-commit-meta">
+                    <span className="git-history-commit-meta inline-flex items-center gap-[7px] text-(--text-muted) text-[10px]">
                       <code>{entry.shortSha}</code>
                       <em>{entry.author || t("git.unknown")}</em>
                       <time>{formatRelativeTime(entry.timestamp, t)}</time>
                     </span>
                     {entry.refs.length > 0 && (
-                      <span className="git-history-commit-refs" title={entry.refs.join(", ")}>
+                      <span className="git-history-commit-refs text-[color-mix(in_srgb,var(--accent-primary,#2563eb)_62%,var(--text-muted))] text-[10px] whitespace-nowrap overflow-hidden text-ellipsis" title={entry.refs.join(", ")}>
                         {entry.refs.slice(0, 3).join(" · ")}
                       </span>
                     )}
@@ -787,9 +787,9 @@ export function renderGitHistoryPanelView(scope: any) {
           </div>
 
           {historyHasMore && (
-            <div className="git-history-load-more">
+            <div className="git-history-load-more py-2 px-2.5 border-t border-(--border-default) flex justify-center">
               <ActionSurface
-                className="git-history-load-more-chip"
+                className="git-history-load-more-chip h-6 px-2 text-[11px] rounded-full border-[color-mix(in_srgb,var(--border-default)_72%,transparent)] bg-[color-mix(in_srgb,var(--surface-control,#1a2230)_72%,transparent)]"
                 disabled={historyLoadingMore}
                 onActivate={() => void loadHistory(true, commits.length)}
               >
@@ -812,14 +812,14 @@ export function renderGitHistoryPanelView(scope: any) {
           />
         )}
 
-        <section className="git-history-details">
-          <div className="git-history-column-header">
+        <section className="git-history-details min-w-0 min-h-0 flex flex-col overflow-hidden bg-(--git-history-pane-bg)">
+          <div className="git-history-column-header flex items-center justify-between gap-2 py-[7px] px-2.5 border-b border-(--border-default) text-[11px] text-(--text-secondary) bg-[color-mix(in_srgb,var(--surface-card-muted,#111725)_72%,transparent)] min-h-11 box-border [&>span]:inline-flex [&>span]:items-center [&>span]:gap-1.5 [&>span]:font-semibold">
             <span>
               {details ? <FolderTree size={14} /> : <FileText size={14} />}
               {details ? t("git.historyChangedFiles") : t("git.historyCommitDetails")}
             </span>
             {details && (
-              <span className="git-history-file-tree-head-summary">
+              <span className="git-history-file-tree-head-summary inline-flex items-center gap-0 whitespace-nowrap">
                 {renderChangedFilesSummary(
                   t,
                   details.files.length,
@@ -836,24 +836,24 @@ export function renderGitHistoryPanelView(scope: any) {
             </div>
           )}
           {!detailsError && detailsLoading && (
-            <div className="git-history-empty">{t("git.historyLoadingCommitDetails")}</div>
+            <div className="git-history-empty p-4 text-(--text-muted) text-xs">{t("git.historyLoadingCommitDetails")}</div>
           )}
           {!detailsLoading && !details && (
-            <div className="git-history-empty">{t("git.historySelectCommitToViewDetails")}</div>
+            <div className="git-history-empty p-4 text-(--text-muted) text-xs">{t("git.historySelectCommitToViewDetails")}</div>
           )}
 
           {details && (
             <>
               <div
-                className="git-history-details-body"
+                className="git-history-details-body grid min-h-0 h-full"
                 ref={detailsBodyRef}
                 style={{
                   gridTemplateRows: `minmax(140px, ${detailsSplitRatio}%) 8px minmax(0, 1fr)`,
                 }}
               >
-                <div className="git-history-file-list git-filetree-section">
+                <div className="git-history-file-list git-filetree-section flex-1 min-h-0 overflow-auto border border-(--git-filetree-section-border) rounded-(--git-filetree-section-radius) bg-transparent shadow-none">
                   {!fileTreeItems.length && (
-                    <div className="git-history-empty">
+                    <div className="git-history-empty p-4 text-(--text-muted) text-xs">
                       {t("git.historyNoFileChangesInCommit")}
                     </div>
                   )}
@@ -870,17 +870,17 @@ export function renderGitHistoryPanelView(scope: any) {
                       return (
                         <ActionSurface
                           key={item.id}
-                          className="git-history-tree-item git-history-tree-dir git-filetree-folder-row"
+                          className="git-history-tree-item git-history-tree-dir git-filetree-folder-row w-full justify-start border-none grid [grid-template-columns:12px_auto_minmax(0,1fr)] items-center min-h-(--git-filetree-row-min-height) gap-(--git-filetree-row-gap) py-(--git-filetree-row-pad-y) px-(--git-filetree-row-pad-x) border border-transparent rounded-(--git-filetree-row-radius) bg-transparent text-[13px] relative font-[560] text-(--text-secondary)"
                           onActivate={() => handleFileTreeDirToggle(item.path)}
                           style={treeRowStyle}
                         >
-                          <span className="git-history-tree-caret" aria-hidden>
+                          <span className="git-history-tree-caret text-(--text-muted) inline-flex items-center justify-center w-(--git-filetree-icon-size)" aria-hidden>
                             {item.expanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
                           </span>
-                          <span className="git-history-tree-icon" aria-hidden>
+                          <span className="git-history-tree-icon inline-flex items-center justify-center text-[color-mix(in_srgb,var(--text-muted)_86%,transparent)] w-4 h-4 [&_.file-icon]:w-4 [&_.file-icon]:h-4 [&_.file-icon_svg]:w-4 [&_.file-icon_svg]:h-4" aria-hidden>
                             <FileIcon filePath={item.path} isFolder isOpen={item.expanded} />
                           </span>
-                          <span className="git-history-tree-label">{item.label}</span>
+                          <span className="git-history-tree-label min-w-0 overflow-hidden whitespace-nowrap text-ellipsis">{item.label}</span>
                         </ActionSurface>
                       );
                     }
@@ -890,7 +890,7 @@ export function renderGitHistoryPanelView(scope: any) {
                     return (
                       <ActionSurface
                         key={item.id}
-                        className="git-history-tree-item git-history-file-item git-filetree-row"
+                        className="git-history-tree-item git-history-file-item git-filetree-row w-full justify-start border-none grid [grid-template-columns:auto_auto_minmax(0,1fr)_auto] items-center min-h-(--git-filetree-row-min-height) gap-(--git-filetree-row-gap) py-(--git-filetree-row-pad-y) px-(--git-filetree-row-pad-x) border border-transparent rounded-(--git-filetree-row-radius) bg-transparent text-[13px] relative"
                         active={active}
                         onActivate={() => {
                           const fileKey = buildFileKey(file);
@@ -901,15 +901,15 @@ export function renderGitHistoryPanelView(scope: any) {
                         title={statusLabel(file)}
                       >
                         <span
-                          className={`git-history-file-status git-status-${file.status.toLowerCase()}`}
+                          className={`git-history-file-status git-status-${file.status.toLowerCase()} inline-flex items-center justify-center w-[19px] h-[19px] rounded-full text-[10px] font-bold bg-[color-mix(in_srgb,var(--surface-control,#1a2230)_85%,transparent)]`}
                         >
                           {file.status}
                         </span>
-                        <span className="git-history-tree-icon is-file" aria-hidden>
+                        <span className="git-history-tree-icon is-file inline-flex items-center justify-center text-[color-mix(in_srgb,var(--text-secondary)_84%,transparent)] w-4 h-4 [&_.file-icon]:w-4 [&_.file-icon]:h-4 [&_.file-icon_svg]:w-4 [&_.file-icon_svg]:h-4" aria-hidden>
                           <FileIcon filePath={file.path} />
                         </span>
-                        <span className="git-history-file-path">{item.label}</span>
-                        <span className="git-history-file-stats git-filetree-badge">
+                        <span className="git-history-file-path min-w-0 overflow-hidden whitespace-nowrap text-ellipsis">{item.label}</span>
+                        <span className="git-history-file-stats git-filetree-badge text-(--git-filetree-badge-font-size) whitespace-nowrap inline-flex items-center gap-(--git-filetree-badge-gap) py-(--git-filetree-badge-pad-y) px-(--git-filetree-badge-pad-x) rounded-(--git-filetree-badge-radius) border border-[color-mix(in_srgb,var(--border-default)_58%,transparent)] bg-[color-mix(in_srgb,var(--surface-control,#1a2230)_64%,transparent)] font-(family-name:--code-font-family) [font-variant-numeric:tabular-nums] [&_.is-add]:text-[#22c55e] [&_.is-del]:text-[#f87171] [&_.is-sep]:text-(--text-muted)">
                           <span className="is-add">+{file.additions}</span>
                           <span className="is-sep">/</span>
                           <span className="is-del">-{file.deletions}</span>
@@ -920,7 +920,7 @@ export function renderGitHistoryPanelView(scope: any) {
                 </div>
 
                 <div
-                  className="git-history-details-resizer"
+                  className="git-history-details-resizer relative cursor-row-resize bg-[color-mix(in_srgb,var(--surface-control,#1a2230)_58%,transparent)] after:content-[''] after:absolute after:left-0 after:right-0 after:top-1/2 after:h-px after:bg-[color-mix(in_srgb,var(--border-default)_88%,transparent)] after:-translate-y-[0.5px]"
                   role="separator"
                   aria-orientation="horizontal"
                   aria-label={t("git.historyResizeFileListAndDiff")}
@@ -928,30 +928,30 @@ export function renderGitHistoryPanelView(scope: any) {
                   onDoubleClick={() => setDetailsSplitRatio(DEFAULT_DETAILS_SPLIT)}
                 />
 
-                <div className="git-history-diff-view">
-                  <div className="git-history-message-panel">
-                    <div className="git-history-message-row">
-                      <span className="git-history-message-label">{t("git.historyCommitMetaTitleLabel")}</span>
-                      <strong className="git-history-message-title">
+                <div className="git-history-diff-view flex-1 min-h-0 overflow-auto">
+                  <div className="git-history-message-panel flex flex-col gap-2.5 p-2.5">
+                    <div className="git-history-message-row flex flex-col gap-1">
+                      <span className="git-history-message-label text-[11px] text-(--text-muted) tracking-[0.02em]">{t("git.historyCommitMetaTitleLabel")}</span>
+                      <strong className="git-history-message-title text-[15px] leading-[1.35] text-(--text-stronger)">
                         {details.summary || t("git.historyNoMessage")}
                       </strong>
                     </div>
-                    <div className="git-history-message-row">
-                      <span className="git-history-message-label">{t("git.historyCommitMetaContentLabel")}</span>
-                      <div className="git-history-message-content">
+                    <div className="git-history-message-row flex flex-col gap-1">
+                      <span className="git-history-message-label text-[11px] text-(--text-muted) tracking-[0.02em]">{t("git.historyCommitMetaContentLabel")}</span>
+                      <div className="git-history-message-content text-[13px] leading-[1.45] text-(--text-secondary) whitespace-pre-wrap wrap-break-word">
                         {detailsMessageContent}
                       </div>
                     </div>
-                    <div className="git-history-message-meta-row">
-                      <span className="git-history-message-meta-item">
+                    <div className="git-history-message-meta-row flex flex-wrap gap-2.5 items-center">
+                      <span className="git-history-message-meta-item inline-flex items-center gap-1.5 text-[11px] text-(--text-muted) [&_i]:not-italic [&_i]:text-[color-mix(in_srgb,var(--text-muted)_84%,transparent)] [&_code]:text-[11px]">
                         <i>{t("git.historyCommitMetaAuthorLabel")}</i>
                         <span>{details.author || t("git.unknown")}</span>
                       </span>
-                      <span className="git-history-message-meta-item">
+                      <span className="git-history-message-meta-item inline-flex items-center gap-1.5 text-[11px] text-(--text-muted) [&_i]:not-italic [&_i]:text-[color-mix(in_srgb,var(--text-muted)_84%,transparent)] [&_code]:text-[11px]">
                         <i>{t("git.historyCommitMetaTimeLabel")}</i>
                         <time>{new Date(details.commitTime * 1000).toLocaleString()}</time>
                       </span>
-                      <span className="git-history-message-meta-item">
+                      <span className="git-history-message-meta-item inline-flex items-center gap-1.5 text-[11px] text-(--text-muted) [&_i]:not-italic [&_i]:text-[color-mix(in_srgb,var(--text-muted)_84%,transparent)] [&_code]:text-[11px]">
                         <i>{t("git.historyCommitMetaIdLabel")}</i>
                         <code>{details.sha}</code>
                       </span>
@@ -962,49 +962,49 @@ export function renderGitHistoryPanelView(scope: any) {
 
               {previewDetailFile && (
                 <div
-                  className="git-history-diff-modal-overlay"
+                  className="git-history-diff-modal-overlay fixed inset-0 z-50 bg-[rgba(7,11,18,0.42)] flex items-center justify-center p-6 animate-[git-history-modal-fade-in_130ms_ease]"
                   role="presentation"
                   onClick={() => setPreviewFileKey(null)}
                 >
                   <div
-                    className={`git-history-diff-modal ${isHistoryDiffModalMaximized ? "is-maximized" : ""}`}
+                    className={`git-history-diff-modal w-[min(1080px,calc(100vw-48px))] max-h-[calc(100vh-64px)] rounded-xl border border-[color-mix(in_srgb,var(--border-strong,var(--border-default))_82%,transparent)] bg-(--surface-popover,var(--surface-messages,#0d0f14)) text-(--text-primary) shadow-[0_22px_64px_rgba(0,0,0,0.4)] overflow-hidden flex flex-col animate-[git-history-modal-pop-in_160ms_ease]${isHistoryDiffModalMaximized ? " is-maximized w-[calc(100vw-16px)] max-h-[calc(100vh-16px)] rounded-lg" : ""}`}
                     role="dialog"
                     aria-modal="true"
                     aria-label={previewDetailFile.path}
                     onClick={(event) => event.stopPropagation()}
                   >
-                    <div className="git-history-diff-modal-header">
-                      <div className="git-history-diff-modal-title">
+                    <div className="git-history-diff-modal-header min-h-9 flex items-center justify-between gap-3 py-1.5 px-2.5 border-b border-b-[color-mix(in_srgb,var(--border-default)_48%,transparent)]">
+                      <div className="git-history-diff-modal-title min-w-0 flex-1 inline-flex items-center gap-2 text-xs text-(--text-muted)">
                         <span
-                          className={`git-history-file-status git-status-${previewDetailFile.status.toLowerCase()}`}
+                          className={`git-history-file-status git-status-${previewDetailFile.status.toLowerCase()} inline-flex items-center justify-center w-[19px] h-[19px] rounded-full text-[10px] font-bold bg-[color-mix(in_srgb,var(--surface-control,#1a2230)_85%,transparent)]`}
                         >
                           {previewDetailFile.status}
                         </span>
-                        <span className="git-history-tree-icon is-file" aria-hidden>
+                        <span className="git-history-tree-icon is-file inline-flex items-center justify-center text-[color-mix(in_srgb,var(--text-secondary)_84%,transparent)] w-4 h-4 [&_.file-icon]:w-4 [&_.file-icon]:h-4 [&_.file-icon_svg]:w-4 [&_.file-icon_svg]:h-4" aria-hidden>
                           <FileIcon filePath={previewDetailFile.path} />
                         </span>
-                        <span className="git-history-diff-modal-path">{previewDetailFile.path}</span>
-                        <span className="git-history-diff-modal-stats">
+                        <span className="git-history-diff-modal-path min-w-0 flex-1 whitespace-nowrap overflow-hidden text-ellipsis text-(--text-strong)">{previewDetailFile.path}</span>
+                        <span className="git-history-diff-modal-stats text-[11px] whitespace-nowrap inline-flex items-center gap-[3px] [&_.is-add]:text-[#22c55e] [&_.is-del]:text-[#f87171] [&_.is-sep]:text-(--text-muted)">
                           <span className="is-add">+{previewDetailFile.additions}</span>
                           <span className="is-sep">/</span>
                           <span className="is-del">-{previewDetailFile.deletions}</span>
                         </span>
                       </div>
-                      <div className="git-history-diff-modal-actions">
+                      <div className="git-history-diff-modal-actions inline-flex flex-none items-center gap-2.5 whitespace-nowrap">
                         <button
                           type="button"
-                          className="git-history-diff-modal-close"
+                          className="git-history-diff-modal-close w-[26px] h-[26px] border border-[color-mix(in_srgb,var(--border-default)_72%,transparent)] rounded-lg bg-[color-mix(in_srgb,var(--surface-control,#1a2230)_72%,transparent)] text-(--text-emphasis,#111827) inline-flex items-center justify-center cursor-pointer leading-none hover:text-(--text-strong,#0f172a) hover:border-[color-mix(in_srgb,var(--border-default)_92%,transparent)] [&>svg]:w-3.5 [&>svg]:h-3.5 [&>svg]:block [&>svg]:flex-none [&>svg]:stroke-current [&>svg]:[stroke-width:2.2]"
                           onClick={() => setIsHistoryDiffModalMaximized((value) => !value)}
                           aria-label={isHistoryDiffModalMaximized ? t("common.restore") : t("menu.maximize")}
                           title={isHistoryDiffModalMaximized ? t("common.restore") : t("menu.maximize")}
                         >
-                          <span className="git-history-diff-modal-close-glyph" aria-hidden>
+                          <span className="git-history-diff-modal-close-glyph inline-flex items-center justify-center w-3.5 h-3.5 text-base font-bold leading-none" aria-hidden>
                             {isHistoryDiffModalMaximized ? "❐" : "□"}
                           </span>
                         </button>
                         <button
                           type="button"
-                          className="git-history-diff-modal-close"
+                          className="git-history-diff-modal-close w-[26px] h-[26px] border border-[color-mix(in_srgb,var(--border-default)_72%,transparent)] rounded-lg bg-[color-mix(in_srgb,var(--surface-control,#1a2230)_72%,transparent)] text-(--text-emphasis,#111827) inline-flex items-center justify-center cursor-pointer leading-none hover:text-(--text-strong,#0f172a) hover:border-[color-mix(in_srgb,var(--border-default)_92%,transparent)] [&>svg]:w-3.5 [&>svg]:h-3.5 [&>svg]:block [&>svg]:flex-none [&>svg]:stroke-current [&>svg]:[stroke-width:2.2]"
                           onClick={() => setPreviewFileKey(null)}
                           aria-label={t("common.close")}
                           title={t("common.close")}
@@ -1015,16 +1015,16 @@ export function renderGitHistoryPanelView(scope: any) {
                     </div>
 
                     {previewDetailFile.truncated && !previewDetailFile.isBinary && (
-                      <div className="git-history-warning">
+                      <div className="git-history-warning m-2 py-2 px-2.5 rounded-lg bg-[color-mix(in_srgb,#f59e0b_18%,transparent)] text-(--text-secondary) text-xs">
                         {t("git.historyDiffTooLargeTruncated", {
                           lineCount: previewDetailFile.lineCount,
                         })}
                       </div>
                     )}
                     {previewDetailFile.isBinary ? (
-                      <pre className="git-history-diff-modal-code">{previewDetailFileDiff}</pre>
+                      <pre className="git-history-diff-modal-code m-0 p-3 overflow-auto text-xs leading-[1.45] text-(--text-primary) bg-[color-mix(in_srgb,var(--surface-control,#1a2230)_56%,transparent)] whitespace-pre font-(family-name:--code-font-family,ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,'Liberation_Mono','Courier_New',monospace)">{previewDetailFileDiff}</pre>
                     ) : (
-                      <div className="git-history-diff-modal-viewer">
+                      <div className="git-history-diff-modal-viewer flex flex-col min-h-[280px] h-[calc(100vh-180px)] max-h-[calc(100vh-180px)] min-w-0 overflow-hidden [.is-maximized_&]:h-[calc(100vh-128px)] [.is-maximized_&]:max-h-[calc(100vh-128px)] [&>.diff-viewer-frame]:flex-1 [&>.diff-viewer-frame]:min-h-0 [&>.diff-viewer-frame]:min-w-0">
                         <GitDiffViewer
                           workspaceId={workspaceId}
                           diffs={previewDiffEntries}
@@ -1054,47 +1054,47 @@ export function renderGitHistoryPanelView(scope: any) {
         </section>
         {worktreePreviewFile && (
           <div
-            className="git-history-diff-modal-overlay"
+            className="git-history-diff-modal-overlay fixed inset-0 z-50 bg-[rgba(7,11,18,0.42)] flex items-center justify-center p-6 animate-[git-history-modal-fade-in_130ms_ease]"
             role="presentation"
             onClick={closeWorktreePreview}
           >
             <div
-              className={`git-history-diff-modal ${isHistoryDiffModalMaximized ? "is-maximized" : ""}`}
+              className={`git-history-diff-modal w-[min(1080px,calc(100vw-48px))] max-h-[calc(100vh-64px)] rounded-xl border border-[color-mix(in_srgb,var(--border-strong,var(--border-default))_82%,transparent)] bg-(--surface-popover,var(--surface-messages,#0d0f14)) text-(--text-primary) shadow-[0_22px_64px_rgba(0,0,0,0.4)] overflow-hidden flex flex-col animate-[git-history-modal-pop-in_160ms_ease]${isHistoryDiffModalMaximized ? " is-maximized w-[calc(100vw-16px)] max-h-[calc(100vh-16px)] rounded-lg" : ""}`}
               role="dialog"
               aria-modal="true"
               aria-label={worktreePreviewFile.path}
               onClick={(event) => event.stopPropagation()}
             >
-              <div className="git-history-diff-modal-header">
-                <div className="git-history-diff-modal-title">
-                  <span className={`git-history-file-status git-status-${worktreePreviewFile.status.toLowerCase()}`}>
+              <div className="git-history-diff-modal-header min-h-9 flex items-center justify-between gap-3 py-1.5 px-2.5 border-b border-b-[color-mix(in_srgb,var(--border-default)_48%,transparent)]">
+                <div className="git-history-diff-modal-title min-w-0 flex-1 inline-flex items-center gap-2 text-xs text-(--text-muted)">
+                  <span className={`git-history-file-status git-status-${worktreePreviewFile.status.toLowerCase()} inline-flex items-center justify-center w-[19px] h-[19px] rounded-full text-[10px] font-bold bg-[color-mix(in_srgb,var(--surface-control,#1a2230)_85%,transparent)]`}>
                     {worktreePreviewFile.status}
                   </span>
-                  <span className="git-history-tree-icon is-file" aria-hidden>
+                  <span className="git-history-tree-icon is-file inline-flex items-center justify-center text-[color-mix(in_srgb,var(--text-secondary)_84%,transparent)] w-4 h-4 [&_.file-icon]:w-4 [&_.file-icon]:h-4 [&_.file-icon_svg]:w-4 [&_.file-icon_svg]:h-4" aria-hidden>
                     <FileIcon filePath={worktreePreviewFile.path} />
                   </span>
-                  <span className="git-history-diff-modal-path">{worktreePreviewFile.path}</span>
-                  <span className="git-history-diff-modal-stats">
+                  <span className="git-history-diff-modal-path min-w-0 flex-1 whitespace-nowrap overflow-hidden text-ellipsis text-(--text-strong)">{worktreePreviewFile.path}</span>
+                  <span className="git-history-diff-modal-stats text-[11px] whitespace-nowrap inline-flex items-center gap-[3px] [&_.is-add]:text-[#22c55e] [&_.is-del]:text-[#f87171] [&_.is-sep]:text-(--text-muted)">
                     <span className="is-add">+{worktreePreviewFile.additions}</span>
                     <span className="is-sep">/</span>
                     <span className="is-del">-{worktreePreviewFile.deletions}</span>
                   </span>
                 </div>
-                <div className="git-history-diff-modal-actions">
+                <div className="git-history-diff-modal-actions inline-flex flex-none items-center gap-2.5 whitespace-nowrap">
                   <button
                     type="button"
-                    className="git-history-diff-modal-close"
+                    className="git-history-diff-modal-close w-[26px] h-[26px] border border-[color-mix(in_srgb,var(--border-default)_72%,transparent)] rounded-lg bg-[color-mix(in_srgb,var(--surface-control,#1a2230)_72%,transparent)] text-(--text-emphasis,#111827) inline-flex items-center justify-center cursor-pointer leading-none hover:text-(--text-strong,#0f172a) hover:border-[color-mix(in_srgb,var(--border-default)_92%,transparent)] [&>svg]:w-3.5 [&>svg]:h-3.5 [&>svg]:block [&>svg]:flex-none [&>svg]:stroke-current [&>svg]:[stroke-width:2.2]"
                     onClick={() => setIsHistoryDiffModalMaximized((value) => !value)}
                     aria-label={isHistoryDiffModalMaximized ? t("common.restore") : t("menu.maximize")}
                     title={isHistoryDiffModalMaximized ? t("common.restore") : t("menu.maximize")}
                   >
-                    <span className="git-history-diff-modal-close-glyph" aria-hidden>
+                    <span className="git-history-diff-modal-close-glyph inline-flex items-center justify-center w-3.5 h-3.5 text-base font-bold leading-none" aria-hidden>
                       {isHistoryDiffModalMaximized ? "❐" : "□"}
                     </span>
                   </button>
                   <button
                     type="button"
-                    className="git-history-diff-modal-close"
+                    className="git-history-diff-modal-close w-[26px] h-[26px] border border-[color-mix(in_srgb,var(--border-default)_72%,transparent)] rounded-lg bg-[color-mix(in_srgb,var(--surface-control,#1a2230)_72%,transparent)] text-(--text-emphasis,#111827) inline-flex items-center justify-center cursor-pointer leading-none hover:text-(--text-strong,#0f172a) hover:border-[color-mix(in_srgb,var(--border-default)_92%,transparent)] [&>svg]:w-3.5 [&>svg]:h-3.5 [&>svg]:block [&>svg]:flex-none [&>svg]:stroke-current [&>svg]:[stroke-width:2.2]"
                     onClick={closeWorktreePreview}
                     aria-label={t("common.close")}
                     title={t("common.close")}
@@ -1109,11 +1109,11 @@ export function renderGitHistoryPanelView(scope: any) {
                 </div>
               ) : null}
               {worktreePreviewLoading ? (
-                <div className="git-history-empty">{t("common.loading")}</div>
+                <div className="git-history-empty p-4 text-(--text-muted) text-xs">{t("common.loading")}</div>
               ) : worktreePreviewFile.isBinary || !(worktreePreviewFile.diff ?? "").trim() ? (
-                <pre className="git-history-diff-modal-code">{worktreePreviewDiffText}</pre>
+                <pre className="git-history-diff-modal-code m-0 p-3 overflow-auto text-xs leading-[1.45] text-(--text-primary) bg-[color-mix(in_srgb,var(--surface-control,#1a2230)_56%,transparent)] whitespace-pre font-(family-name:--code-font-family,ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,'Liberation_Mono','Courier_New',monospace)">{worktreePreviewDiffText}</pre>
               ) : (
-                <div className="git-history-diff-modal-viewer">
+                <div className="git-history-diff-modal-viewer flex flex-col min-h-[280px] h-[calc(100vh-180px)] max-h-[calc(100vh-180px)] min-w-0 overflow-hidden [.is-maximized_&]:h-[calc(100vh-128px)] [.is-maximized_&]:max-h-[calc(100vh-128px)] [&>.diff-viewer-frame]:flex-1 [&>.diff-viewer-frame]:min-h-0 [&>.diff-viewer-frame]:min-w-0">
                   <GitDiffViewer
                     workspaceId={workspaceId}
                     diffs={worktreePreviewDiffEntries}
@@ -1141,55 +1141,55 @@ export function renderGitHistoryPanelView(scope: any) {
         </div>
         {branchDiffState ? (
           <div
-            className="git-history-diff-modal-overlay"
+            className="git-history-diff-modal-overlay fixed inset-0 z-50 bg-[rgba(7,11,18,0.42)] flex items-center justify-center p-6 animate-[git-history-modal-fade-in_130ms_ease]"
             role="presentation"
             onClick={closeBranchDiff}
           >
             <div
-              className={`git-history-diff-modal ${
+              className={`git-history-diff-modal w-[min(1080px,calc(100vw-48px))] max-h-[calc(100vh-64px)] rounded-xl border bg-(--surface-popover,var(--surface-messages,#0d0f14)) text-(--text-primary) shadow-[0_22px_64px_rgba(0,0,0,0.4)] overflow-hidden flex flex-col animate-[git-history-modal-pop-in_160ms_ease] ${
                 branchDiffState.mode === "worktree"
-                  ? `git-history-branch-worktree-diff-modal ${branchDiffModeClassName}`
-                  : "git-history-branch-compare-modal"
-              } ${isHistoryDiffModalMaximized ? "is-maximized" : ""}`}
+                  ? `git-history-branch-worktree-diff-modal ${branchDiffModeClassName} [--git-history-branch-diff-accent:var(--accent-primary,#2563eb)] [&.is-worktree-mode]:[--git-history-branch-diff-accent:#0ea5e9] [&.is-branch-mode]:[--git-history-branch-diff-accent:#f59e0b] !w-[min(1320px,calc(100vw-24px))] max-h-[calc(100vh-28px)] !rounded-[14px] border-[color-mix(in_srgb,var(--git-history-branch-diff-accent)_24%,color-mix(in_srgb,var(--border-default)_86%,transparent))]`
+                  : "git-history-branch-compare-modal border-[color-mix(in_srgb,var(--border-strong,var(--border-default))_82%,transparent)]"
+              } ${isHistoryDiffModalMaximized ? "is-maximized w-[calc(100vw-16px)] max-h-[calc(100vh-16px)] rounded-lg" : ""}`}
               role="dialog"
               aria-modal="true"
               aria-label={branchDiffTitle}
               onClick={(event) => event.stopPropagation()}
             >
-              <div className="git-history-diff-modal-header">
-                <div className="git-history-diff-modal-title git-history-branch-worktree-diff-title">
-                  <span className="git-history-branch-worktree-diff-title-main">
+              <div className="git-history-diff-modal-header min-h-9 flex items-center justify-between gap-3 py-1.5 px-2.5 border-b border-b-[color-mix(in_srgb,var(--border-default)_48%,transparent)] [.git-history-branch-worktree-diff-modal_&]:min-h-12 [.git-history-branch-worktree-diff-modal_&]:p-2.5 [.git-history-branch-worktree-diff-modal_&]:px-3 [.git-history-branch-worktree-diff-modal_&]:border-b-[color-mix(in_srgb,var(--git-history-branch-diff-accent)_24%,var(--border-default))] [.git-history-branch-worktree-diff-modal_&]:bg-linear-to-r [.git-history-branch-worktree-diff-modal_&]:from-[color-mix(in_srgb,var(--git-history-branch-diff-accent)_16%,transparent)] [.git-history-branch-worktree-diff-modal_&]:to-[color-mix(in_srgb,var(--surface-control,#1a2230)_46%,transparent)]">
+                <div className="git-history-diff-modal-title git-history-branch-worktree-diff-title min-w-0 flex flex-col items-start gap-1">
+                  <span className="git-history-branch-worktree-diff-title-main min-w-0 inline-flex items-center gap-2">
                     <span
-                      className={`git-history-branch-worktree-diff-title-icon ${branchDiffModeClassName}`}
+                      className={`git-history-branch-worktree-diff-title-icon ${branchDiffModeClassName} w-[22px] h-[22px] rounded-full inline-flex items-center justify-center shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--git-history-branch-diff-accent)_35%,transparent)] ${isWorktreeDiffMode ? "text-[color-mix(in_srgb,#0ea5e9_88%,#cffafe)] bg-[color-mix(in_srgb,#0ea5e9_20%,transparent)]" : "text-[color-mix(in_srgb,#f59e0b_88%,#fef3c7)] bg-[color-mix(in_srgb,#f59e0b_20%,transparent)]"}`}
                       aria-hidden
                     >
                       {isWorktreeDiffMode ? <FolderTree size={14} /> : <GitCommit size={14} />}
                     </span>
-                    <span className={`git-history-branch-worktree-diff-mode-badge ${branchDiffModeClassName}`}>
+                    <span className={`git-history-branch-worktree-diff-mode-badge ${branchDiffModeClassName} py-0.5 px-2 rounded-full text-[10px] font-bold tracking-[0.02em] ${isWorktreeDiffMode ? "border border-[color-mix(in_srgb,#0ea5e9_34%,transparent)] text-[color-mix(in_srgb,#0ea5e9_88%,#e0f2fe)] bg-[color-mix(in_srgb,#0ea5e9_16%,transparent)]" : "border border-[color-mix(in_srgb,#f59e0b_38%,transparent)] text-[color-mix(in_srgb,#f59e0b_90%,#fef3c7)] bg-[color-mix(in_srgb,#f59e0b_18%,transparent)]"}`}>
                       {branchDiffModeLabel}
                     </span>
-                    <span className="git-history-branch-worktree-diff-title-text">{branchDiffTitle}</span>
+                    <span className="git-history-branch-worktree-diff-title-text min-w-0 whitespace-nowrap overflow-hidden text-ellipsis text-(--text-strong) text-[12.5px]">{branchDiffTitle}</span>
                   </span>
-                  <span className="git-history-branch-worktree-diff-subtitle">{branchDiffSubtitle}</span>
-                  <span className="git-history-diff-modal-stats git-history-branch-worktree-diff-stats">
+                  <span className="git-history-branch-worktree-diff-subtitle min-w-0 max-w-full text-(--text-muted) text-[11px] whitespace-nowrap overflow-hidden text-ellipsis">{branchDiffSubtitle}</span>
+                  <span className="git-history-diff-modal-stats git-history-branch-worktree-diff-stats py-0.5 px-2 rounded-full !text-[11px] !font-semibold !border !border-[color-mix(in_srgb,var(--git-history-branch-diff-accent)_34%,transparent)] !bg-[color-mix(in_srgb,var(--git-history-branch-diff-accent)_16%,transparent)] !text-[color-mix(in_srgb,var(--git-history-branch-diff-accent)_88%,#dbeafe)]">
                     {branchDiffStatsLabel}
                   </span>
                 </div>
-                <div className="git-history-diff-modal-actions">
+                <div className="git-history-diff-modal-actions inline-flex flex-none items-center gap-2.5 whitespace-nowrap">
                   <button
                     type="button"
-                    className="git-history-diff-modal-close"
+                    className="git-history-diff-modal-close w-[26px] h-[26px] border border-[color-mix(in_srgb,var(--border-default)_72%,transparent)] rounded-lg bg-[color-mix(in_srgb,var(--surface-control,#1a2230)_72%,transparent)] text-(--text-emphasis,#111827) inline-flex items-center justify-center cursor-pointer leading-none hover:text-(--text-strong,#0f172a) hover:border-[color-mix(in_srgb,var(--border-default)_92%,transparent)] [&>svg]:w-3.5 [&>svg]:h-3.5 [&>svg]:block [&>svg]:flex-none [&>svg]:stroke-current [&>svg]:[stroke-width:2.2]"
                     onClick={() => setIsHistoryDiffModalMaximized((value) => !value)}
                     aria-label={isHistoryDiffModalMaximized ? t("common.restore") : t("menu.maximize")}
                     title={isHistoryDiffModalMaximized ? t("common.restore") : t("menu.maximize")}
                   >
-                    <span className="git-history-diff-modal-close-glyph" aria-hidden>
+                    <span className="git-history-diff-modal-close-glyph inline-flex items-center justify-center w-3.5 h-3.5 text-base font-bold leading-none" aria-hidden>
                       {isHistoryDiffModalMaximized ? "❐" : "□"}
                     </span>
                   </button>
                   <button
                     type="button"
-                    className="git-history-diff-modal-close"
+                    className="git-history-diff-modal-close w-[26px] h-[26px] border border-[color-mix(in_srgb,var(--border-default)_72%,transparent)] rounded-lg bg-[color-mix(in_srgb,var(--surface-control,#1a2230)_72%,transparent)] text-(--text-emphasis,#111827) inline-flex items-center justify-center cursor-pointer leading-none hover:text-(--text-strong,#0f172a) hover:border-[color-mix(in_srgb,var(--border-default)_92%,transparent)] [&>svg]:w-3.5 [&>svg]:h-3.5 [&>svg]:block [&>svg]:flex-none [&>svg]:stroke-current [&>svg]:[stroke-width:2.2]"
                     onClick={closeBranchDiff}
                     aria-label={t("common.close")}
                     title={t("common.close")}
@@ -1200,25 +1200,25 @@ export function renderGitHistoryPanelView(scope: any) {
               </div>
 
               {branchDiffState.loading ? (
-                <div className="git-history-empty">{t("common.loading")}</div>
+                <div className="git-history-empty p-4 text-(--text-muted) text-xs">{t("common.loading")}</div>
               ) : branchDiffState.error ? (
                 <div className="git-history-error">{branchDiffState.error}</div>
               ) : branchDiffState.mode === "worktree" ? (
                 branchDiffState.files.length === 0 ? (
-                  <div className="git-history-empty">{t("git.historyBranchWorktreeDiffEmpty")}</div>
+                  <div className="git-history-empty p-4 text-(--text-muted) text-xs">{t("git.historyBranchWorktreeDiffEmpty")}</div>
                 ) : (
-                  <div className="git-history-branch-worktree-diff-layout">
-                    <div className="git-history-branch-worktree-diff-detail">
+                  <div className="git-history-branch-worktree-diff-layout flex-1 min-h-[420px] h-[min(78vh,860px)] max-h-[calc(100vh-120px)] grid [grid-template-columns:minmax(0,1fr)_minmax(320px,34%)] border-t border-t-[color-mix(in_srgb,var(--border-default)_44%,transparent)] overflow-hidden">
+                    <div className="git-history-branch-worktree-diff-detail order-1 h-full min-w-0 min-h-0 flex flex-col overflow-hidden bg-[color-mix(in_srgb,var(--surface-popover,#0d0f14)_94%,transparent)] [&_.git-history-diff-modal-viewer]:flex-1 [&_.git-history-diff-modal-viewer]:min-h-0 [&_.git-history-diff-modal-viewer]:max-h-none">
                       {!branchDiffState.selectedPath ? (
-                        <div className="git-history-empty">
+                        <div className="git-history-empty p-4 text-(--text-muted) text-xs">
                           {t("git.historyBranchWorktreeDiffSelectFile")}
                         </div>
                       ) : branchDiffState.selectedDiffLoading ? (
-                        <div className="git-history-empty">{t("common.loading")}</div>
+                        <div className="git-history-empty p-4 text-(--text-muted) text-xs">{t("common.loading")}</div>
                       ) : branchDiffState.selectedDiffError ? (
                         <div className="git-history-error">{branchDiffState.selectedDiffError}</div>
                       ) : branchDiffState.selectedDiff ? (
-                        <div className="git-history-diff-modal-viewer">
+                        <div className="git-history-diff-modal-viewer flex flex-col min-h-[280px] h-[calc(100vh-180px)] max-h-[calc(100vh-180px)] min-w-0 overflow-hidden [&>.diff-viewer-frame]:flex-1 [&>.diff-viewer-frame]:min-h-0 [&>.diff-viewer-frame]:min-w-0">
                           <GitDiffViewer
                             workspaceId={workspaceId}
                             diffs={[branchDiffState.selectedDiff]}
@@ -1238,20 +1238,20 @@ export function renderGitHistoryPanelView(scope: any) {
                           />
                         </div>
                       ) : (
-                        <div className="git-history-empty">{t("git.diffUnavailable")}</div>
+                        <div className="git-history-empty p-4 text-(--text-muted) text-xs">{t("git.diffUnavailable")}</div>
                       )}
                     </div>
-                    <div className="git-history-branch-worktree-diff-files">
-                      <div className="git-history-branch-worktree-diff-files-title">
+                    <div className="git-history-branch-worktree-diff-files order-2 h-full min-h-0 min-w-0 flex flex-col border-l border-l-[color-mix(in_srgb,var(--git-history-branch-diff-accent)_18%,var(--border-default))] bg-[color-mix(in_srgb,var(--surface-control,#1a2230)_42%,transparent)]">
+                      <div className="git-history-branch-worktree-diff-files-title pt-2.5 px-3 pb-2 text-[11px] font-semibold text-(--text-secondary) border-b border-b-[color-mix(in_srgb,var(--border-default)_38%,transparent)]">
                         {t("git.historyBranchWorktreeDiffFilesTitle")}
                       </div>
-                      <div className="git-history-branch-worktree-diff-files-list">
+                      <div className="git-history-branch-worktree-diff-files-list flex-1 min-h-0 overflow-y-auto overflow-x-hidden [scrollbar-gutter:stable_both-edges] p-1 [scrollbar-width:thin] [scrollbar-color:transparent_transparent] hover:[scrollbar-color:color-mix(in_srgb,var(--git-history-branch-diff-accent)_36%,transparent)_transparent] hover:[--sb-thumb-color:color-mix(in_srgb,var(--text-muted)_56%,transparent)] [&::-webkit-scrollbar]:w-[9px] [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:border-2 [&::-webkit-scrollbar-thumb]:border-transparent [&::-webkit-scrollbar-thumb]:[background-clip:content-box] [&::-webkit-scrollbar-thumb]:bg-(--sb-thumb-color) hover:[&::-webkit-scrollbar-thumb:hover]:bg-[color-mix(in_srgb,var(--git-history-branch-diff-accent)_54%,transparent)]">
                         {branchDiffState.files.map((entry) => (
                           <button
                             key={entry.path}
                             type="button"
-                            className={`git-history-branch-worktree-diff-file${
-                              branchDiffState.selectedPath === entry.path ? " is-active" : ""
+                            className={`git-history-branch-worktree-diff-file w-full border-none bg-transparent text-(--text-primary) inline-flex items-center gap-2 text-left rounded-lg py-[7px] px-2 cursor-pointer hover:bg-[color-mix(in_srgb,var(--surface-control-hover,#263044)_72%,transparent)] [&_.git-history-file-status]:!w-[21px] [&_.git-history-file-status]:!h-[21px] [&_.git-history-file-status]:text-[10.5px] [&_.git-history-file-status]:shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--border-default)_58%,transparent)] [&_.git-status-a]:!text-[#15803d] [&_.git-status-a]:!bg-[color-mix(in_srgb,#22c55e_24%,transparent)] [&_.git-status-m]:!text-[#1d4ed8] [&_.git-status-m]:!bg-[color-mix(in_srgb,#2563eb_24%,transparent)] [&_.git-status-d]:!text-[#b91c1c] [&_.git-status-d]:!bg-[color-mix(in_srgb,#ef4444_26%,transparent)]${
+                              branchDiffState.selectedPath === entry.path ? " is-active bg-[color-mix(in_srgb,var(--git-history-branch-diff-accent)_18%,transparent)] shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--git-history-branch-diff-accent)_24%,transparent)]" : ""
                             }`}
                             onClick={() => {
                               void handleSelectWorktreeDiffFile(
@@ -1262,11 +1262,11 @@ export function renderGitHistoryPanelView(scope: any) {
                             }}
                           >
                             <span
-                              className={`git-history-file-status git-status-${entry.status.toLowerCase()}`}
+                              className={`git-history-file-status git-status-${entry.status.toLowerCase()} inline-flex items-center justify-center w-[19px] h-[19px] rounded-full text-[10px] font-bold bg-[color-mix(in_srgb,var(--surface-control,#1a2230)_85%,transparent)]`}
                             >
                               {entry.status}
                             </span>
-                            <span className="git-history-branch-worktree-diff-file-path">
+                            <span className="git-history-branch-worktree-diff-file-path min-w-0 text-xs overflow-hidden text-ellipsis whitespace-nowrap">
                               {entry.path}
                             </span>
                           </button>
@@ -1294,7 +1294,7 @@ export function renderGitHistoryPanelView(scope: any) {
                         </span>
                       </header>
                       {branchDiffState.targetOnlyCommits.length === 0 ? (
-                        <div className="git-history-empty">
+                        <div className="git-history-empty p-4 text-(--text-muted) text-xs">
                           {t("git.historyBranchCompareDirectionEmpty")}
                         </div>
                       ) : (
@@ -1348,7 +1348,7 @@ export function renderGitHistoryPanelView(scope: any) {
                         </span>
                       </header>
                       {branchDiffState.currentOnlyCommits.length === 0 ? (
-                        <div className="git-history-empty">
+                        <div className="git-history-empty p-4 text-(--text-muted) text-xs">
                           {t("git.historyBranchCompareDirectionEmpty")}
                         </div>
                       ) : (
@@ -1389,11 +1389,11 @@ export function renderGitHistoryPanelView(scope: any) {
 
                   <div className="git-history-branch-compare-detail">
                     {!branchDiffState.selectedCommitSha ? (
-                      <div className="git-history-empty">
+                      <div className="git-history-empty p-4 text-(--text-muted) text-xs">
                         {t("git.historyBranchCompareSelectCommit")}
                       </div>
                     ) : branchDiffState.selectedCommitLoading ? (
-                      <div className="git-history-empty">{t("common.loading")}</div>
+                      <div className="git-history-empty p-4 text-(--text-muted) text-xs">{t("common.loading")}</div>
                     ) : branchDiffState.selectedCommitError ? (
                       <div className="git-history-error">{branchDiffState.selectedCommitError}</div>
                     ) : branchDiffState.selectedCommitDetails ? (
@@ -1422,7 +1422,7 @@ export function renderGitHistoryPanelView(scope: any) {
                           )}
                         </div>
                         {branchDiffState.selectedCommitDetails.files.length === 0 ? (
-                          <div className="git-history-empty">{t("git.historyNoFileChangesInCommit")}</div>
+                          <div className="git-history-empty p-4 text-(--text-muted) text-xs">{t("git.historyNoFileChangesInCommit")}</div>
                         ) : (
                           <div className="git-history-branch-compare-files-list">
                             {branchDiffState.selectedCommitDetails.files.map((file) => {
@@ -1455,7 +1455,7 @@ export function renderGitHistoryPanelView(scope: any) {
                         )}
                       </div>
                     ) : (
-                      <div className="git-history-empty">{t("git.diffUnavailable")}</div>
+                      <div className="git-history-empty p-4 text-(--text-muted) text-xs">{t("git.diffUnavailable")}</div>
                     )}
                   </div>
                 </div>
@@ -1465,44 +1465,44 @@ export function renderGitHistoryPanelView(scope: any) {
         ) : null}
         {comparePreviewDetailFile ? (
           <div
-            className="git-history-diff-modal-overlay"
+            className="git-history-diff-modal-overlay fixed inset-0 z-50 bg-[rgba(7,11,18,0.42)] flex items-center justify-center p-6 animate-[git-history-modal-fade-in_130ms_ease]"
             role="presentation"
             onClick={() => setComparePreviewFileKey(null)}
           >
             <div
-              className={`git-history-diff-modal ${isHistoryDiffModalMaximized ? "is-maximized" : ""}`}
+              className={`git-history-diff-modal w-[min(1080px,calc(100vw-48px))] max-h-[calc(100vh-64px)] rounded-xl border border-[color-mix(in_srgb,var(--border-strong,var(--border-default))_82%,transparent)] bg-(--surface-popover,var(--surface-messages,#0d0f14)) text-(--text-primary) shadow-[0_22px_64px_rgba(0,0,0,0.4)] overflow-hidden flex flex-col animate-[git-history-modal-pop-in_160ms_ease]${isHistoryDiffModalMaximized ? " is-maximized w-[calc(100vw-16px)] max-h-[calc(100vh-16px)] rounded-lg" : ""}`}
               role="dialog"
               aria-modal="true"
               aria-label={comparePreviewDetailFile.path}
               onClick={(event) => event.stopPropagation()}
             >
-              <div className="git-history-diff-modal-header">
-                <div className="git-history-diff-modal-title">
+              <div className="git-history-diff-modal-header min-h-9 flex items-center justify-between gap-3 py-1.5 px-2.5 border-b border-b-[color-mix(in_srgb,var(--border-default)_48%,transparent)]">
+                <div className="git-history-diff-modal-title min-w-0 flex-1 inline-flex items-center gap-2 text-xs text-(--text-muted)">
                   <span
-                    className={`git-history-file-status git-status-${comparePreviewDetailFile.status.toLowerCase()}`}
+                    className={`git-history-file-status git-status-${comparePreviewDetailFile.status.toLowerCase()} inline-flex items-center justify-center w-[19px] h-[19px] rounded-full text-[10px] font-bold bg-[color-mix(in_srgb,var(--surface-control,#1a2230)_85%,transparent)]`}
                   >
                     {comparePreviewDetailFile.status}
                   </span>
-                  <span className="git-history-diff-modal-path">{comparePreviewDetailFile.path}</span>
-                  <span className="git-history-diff-modal-stats">
+                  <span className="git-history-diff-modal-path min-w-0 flex-1 whitespace-nowrap overflow-hidden text-ellipsis text-(--text-strong)">{comparePreviewDetailFile.path}</span>
+                  <span className="git-history-diff-modal-stats text-[11px] whitespace-nowrap inline-flex items-center gap-[3px]">
                     +{comparePreviewDetailFile.additions} / -{comparePreviewDetailFile.deletions}
                   </span>
                 </div>
-                <div className="git-history-diff-modal-actions">
+                <div className="git-history-diff-modal-actions inline-flex flex-none items-center gap-2.5 whitespace-nowrap">
                   <button
                     type="button"
-                    className="git-history-diff-modal-close"
+                    className="git-history-diff-modal-close w-[26px] h-[26px] border border-[color-mix(in_srgb,var(--border-default)_72%,transparent)] rounded-lg bg-[color-mix(in_srgb,var(--surface-control,#1a2230)_72%,transparent)] text-(--text-emphasis,#111827) inline-flex items-center justify-center cursor-pointer leading-none hover:text-(--text-strong,#0f172a) hover:border-[color-mix(in_srgb,var(--border-default)_92%,transparent)] [&>svg]:w-3.5 [&>svg]:h-3.5 [&>svg]:block [&>svg]:flex-none [&>svg]:stroke-current [&>svg]:[stroke-width:2.2]"
                     onClick={() => setIsHistoryDiffModalMaximized((value) => !value)}
                     aria-label={isHistoryDiffModalMaximized ? t("common.restore") : t("menu.maximize")}
                     title={isHistoryDiffModalMaximized ? t("common.restore") : t("menu.maximize")}
                   >
-                    <span className="git-history-diff-modal-close-glyph" aria-hidden>
+                    <span className="git-history-diff-modal-close-glyph inline-flex items-center justify-center w-3.5 h-3.5 text-base font-bold leading-none" aria-hidden>
                       {isHistoryDiffModalMaximized ? "❐" : "□"}
                     </span>
                   </button>
                   <button
                     type="button"
-                    className="git-history-diff-modal-close"
+                    className="git-history-diff-modal-close w-[26px] h-[26px] border border-[color-mix(in_srgb,var(--border-default)_72%,transparent)] rounded-lg bg-[color-mix(in_srgb,var(--surface-control,#1a2230)_72%,transparent)] text-(--text-emphasis,#111827) inline-flex items-center justify-center cursor-pointer leading-none hover:text-(--text-strong,#0f172a) hover:border-[color-mix(in_srgb,var(--border-default)_92%,transparent)] [&>svg]:w-3.5 [&>svg]:h-3.5 [&>svg]:block [&>svg]:flex-none [&>svg]:stroke-current [&>svg]:[stroke-width:2.2]"
                     onClick={() => setComparePreviewFileKey(null)}
                     aria-label={t("common.close")}
                     title={t("common.close")}
@@ -1513,16 +1513,16 @@ export function renderGitHistoryPanelView(scope: any) {
               </div>
 
               {comparePreviewDetailFile.truncated && !comparePreviewDetailFile.isBinary && (
-                <div className="git-history-warning">
+                <div className="git-history-warning m-2 py-2 px-2.5 rounded-lg bg-[color-mix(in_srgb,#f59e0b_18%,transparent)] text-(--text-secondary) text-xs">
                   {t("git.historyDiffTooLargeTruncated", {
                     lineCount: comparePreviewDetailFile.lineCount,
                   })}
                 </div>
               )}
               {comparePreviewDetailFile.isBinary ? (
-                <pre className="git-history-diff-modal-code">{comparePreviewDetailFileDiff}</pre>
+                <pre className="git-history-diff-modal-code m-0 p-3 overflow-auto text-xs leading-[1.45] text-(--text-primary) bg-[color-mix(in_srgb,var(--surface-control,#1a2230)_56%,transparent)] whitespace-pre font-(family-name:--code-font-family,ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,'Liberation_Mono','Courier_New',monospace)">{comparePreviewDetailFileDiff}</pre>
               ) : (
-                <div className="git-history-diff-modal-viewer">
+                <div className="git-history-diff-modal-viewer flex flex-col min-h-[280px] h-[calc(100vh-180px)] max-h-[calc(100vh-180px)] min-w-0 overflow-hidden [.is-maximized_&]:h-[calc(100vh-128px)] [.is-maximized_&]:max-h-[calc(100vh-128px)] [&>.diff-viewer-frame]:flex-1 [&>.diff-viewer-frame]:min-h-0 [&>.diff-viewer-frame]:min-w-0">
                   <GitDiffViewer
                     workspaceId={workspaceId}
                     diffs={comparePreviewDiffEntries}
@@ -1546,17 +1546,17 @@ export function renderGitHistoryPanelView(scope: any) {
           </div>
         ) : null}
         {branchContextMenu ? (
-          <div className="git-history-branch-context-backdrop">
+          <div className="git-history-branch-context-backdrop fixed inset-0 z-[1200] pointer-events-none">
             <div
               ref={branchContextMenuRef}
-              className="git-history-branch-context-menu"
+              className="git-history-branch-context-menu fixed pointer-events-auto w-max min-w-[min(276px,calc(100vw-16px))] max-w-[min(520px,calc(100vw-16px))] max-h-[min(560px,calc(100vh-16px))] overflow-auto rounded-[14px] border border-[color-mix(in_srgb,var(--border-default)_82%,transparent)] bg-[color-mix(in_srgb,var(--surface-card,#121926)_92%,#0b111c)] backdrop-blur-[14px] shadow-[0_24px_46px_color-mix(in_srgb,#000_45%,transparent),0_1px_0_color-mix(in_srgb,#fff_10%,transparent)_inset] p-2"
               role="menu"
               style={branchContextMenuStyle}
               onKeyDown={handleBranchContextMenuKeyDown}
             >
               {branchContextTrackingSummary ? (
-                <div className="git-history-branch-context-tracking" aria-label={t("git.upstream")}>
-                  <span className="git-history-branch-context-tracking-text">
+                <div className="git-history-branch-context-tracking my-0.5 mx-0.5 mb-2 py-2 px-2.5 rounded-[10px] border border-[color-mix(in_srgb,var(--border-default)_64%,transparent)] bg-[color-mix(in_srgb,var(--surface-control,#1a2230)_72%,transparent)]" aria-label={t("git.upstream")}>
+                  <span className="git-history-branch-context-tracking-text block min-w-0 text-xs font-semibold leading-[1.35] text-[color-mix(in_srgb,var(--text-muted)_86%,var(--text-secondary))] whitespace-normal [overflow-wrap:anywhere]">
                     {branchContextTrackingSummary}
                   </span>
                 </div>
@@ -1564,12 +1564,12 @@ export function renderGitHistoryPanelView(scope: any) {
               {branchContextActions.map((action) => (
                 <div
                   key={action.id}
-                  className={`git-history-branch-context-item-wrap${action.dividerBefore ? " with-divider" : ""}`}
+                  className={`git-history-branch-context-item-wrap${action.dividerBefore ? " with-divider mt-1.5 pt-2 relative before:content-[''] before:absolute before:left-2.5 before:right-2.5 before:top-0 before:h-px before:bg-[linear-gradient(90deg,color-mix(in_srgb,var(--border-default)_38%,transparent),color-mix(in_srgb,var(--border-default)_78%,transparent)_30%,color-mix(in_srgb,var(--border-default)_78%,transparent)_70%,color-mix(in_srgb,var(--border-default)_38%,transparent))]" : ""}`}
                 >
                   <button
                     type="button"
-                    className={`git-history-branch-context-item${action.disabled ? " is-disabled" : ""}${
-                      action.tone === "danger" ? " is-danger" : ""
+                    className={`git-history-branch-context-item w-full border-none bg-transparent text-(--text-primary) text-[13px] leading-[1.3] text-left rounded-[10px] py-[9px] px-2.5 cursor-pointer transition-[background-color,color] duration-[140ms] ease hover:[&:not(:disabled)]:bg-[color-mix(in_srgb,var(--surface-control-hover,#263044)_86%,transparent)] hover:[&:not(:disabled)_.git-history-branch-context-item-icon]:text-[color-mix(in_srgb,var(--accent-primary,#2563eb)_84%,var(--text-strong))] focus-visible:outline focus-visible:outline-[color-mix(in_srgb,var(--accent-primary,#2563eb)_74%,transparent)] focus-visible:[outline-offset:-1px] disabled:text-(--text-muted) disabled:opacity-[0.54] disabled:cursor-not-allowed${action.disabled ? " is-disabled" : ""}${
+                      action.tone === "danger" ? " is-danger [&:not(:disabled)]:text-[color-mix(in_srgb,#ef4444_86%,var(--text-primary))] [&:not(:disabled)_.git-history-branch-context-item-icon]:text-[color-mix(in_srgb,#ef4444_72%,var(--text-muted))]" : ""
                     }`}
                     role="menuitem"
                     disabled={action.disabled}
@@ -1578,9 +1578,9 @@ export function renderGitHistoryPanelView(scope: any) {
                       action.onSelect();
                     }}
                   >
-                    <span className="git-history-branch-context-item-main">
-                      <span className="git-history-branch-context-item-icon">{action.icon}</span>
-                      <span className="git-history-branch-context-item-label">{action.label}</span>
+                    <span className="git-history-branch-context-item-main grid [grid-template-columns:16px_minmax(0,1fr)] items-center gap-[9px]">
+                      <span className="git-history-branch-context-item-icon inline-flex items-center justify-center text-[color-mix(in_srgb,var(--text-muted)_84%,transparent)]">{action.icon}</span>
+                      <span className="git-history-branch-context-item-label min-w-0 whitespace-normal [overflow-wrap:anywhere]">{action.label}</span>
                     </span>
                   </button>
                 </div>

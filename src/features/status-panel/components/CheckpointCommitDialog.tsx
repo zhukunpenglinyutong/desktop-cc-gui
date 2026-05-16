@@ -216,7 +216,7 @@ export function CheckpointCommitDialog({
           </div>
           <button
             type="button"
-            className="git-history-diff-modal-close"
+            className="git-history-diff-modal-close w-[26px] h-[26px] border border-[color-mix(in_srgb,var(--border-default)_72%,transparent)] rounded-lg bg-[color-mix(in_srgb,var(--surface-control,#1a2230)_72%,transparent)] text-(--text-emphasis,#111827) inline-flex items-center justify-center cursor-pointer leading-none hover:text-(--text-strong,#0f172a) hover:border-[color-mix(in_srgb,var(--border-default)_92%,transparent)] [&>svg]:w-3.5 [&>svg]:h-3.5 [&>svg]:block [&>svg]:flex-none [&>svg]:stroke-current [&>svg]:[stroke-width:2.2]"
             aria-label={t("common.close")}
             title={t("common.close")}
             onClick={onClose}

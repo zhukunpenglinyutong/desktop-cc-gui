@@ -207,7 +207,7 @@ export function BasicAppearanceSection({
         : t("settings.themeModeHintFixed", { appearance: resolvedAppearanceLabel });
 
   return (
-    <div className="settings-basic-appearance settings-basic-surface">
+    <div className="settings-basic-appearance settings-basic-surface flex flex-col gap-2.5">
       <div className="settings-basic-group-card settings-basic-group-card--list">
         <div className="settings-subsection-title">{t("settings.displaySubtitle")}</div>
         <div className="settings-subsection-subtitle">

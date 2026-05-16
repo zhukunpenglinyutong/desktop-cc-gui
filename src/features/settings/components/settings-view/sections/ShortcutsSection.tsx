@@ -118,9 +118,9 @@ export function ShortcutsSection({
     .filter((group) => group.items.length > 0);
 
   return (
-    <section className="settings-section settings-shortcuts-section">
-      <div className="settings-section-title">{t("settings.shortcutsTitle")}</div>
-      <div className="settings-section-subtitle">
+    <section className="settings-section settings-shortcuts-section w-full max-w-[980px]">
+      <div className="settings-section-title text-[15px] font-semibold text-(--text-strong) mb-1">{t("settings.shortcutsTitle")}</div>
+      <div className="settings-section-subtitle text-xs text-(--text-subtle) mb-4">
         {t("settings.shortcutsDescription")}
       </div>
       <div className="settings-shortcuts-groups">

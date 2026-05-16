@@ -273,8 +273,8 @@ export function EmailSenderSettings({
 
   return (
     <div className="settings-email-section">
-      <div className="settings-section-title">{t("settings.emailTitle")}</div>
-      <div className="settings-section-subtitle">{t("settings.emailDescription")}</div>
+      <div className="settings-section-title text-[30px] font-bold text-(--text-strong) tracking-tight mb-1">{t("settings.emailTitle")}</div>
+      <div className="settings-section-subtitle text-[13px] text-(--text-muted) mb-1">{t("settings.emailDescription")}</div>
 
       <Card className={`settings-basic-group-card settings-basic-shadcn-card settings-email-card${draft.enabled ? " is-enabled" : ""}`}>
         <CardHeader className="settings-card-switch-header">

@@ -648,17 +648,17 @@ export function renderGitHistoryPanelDialogs(scope: any) {
                                   return (
                                     <ActionSurface
                                       key={`push-preview-${item.id}`}
-                                      className="git-history-tree-item git-history-tree-dir git-filetree-folder-row"
+                                      className="git-history-tree-item git-history-tree-dir git-filetree-folder-row w-full justify-start border-none grid [grid-template-columns:12px_auto_minmax(0,1fr)] items-center min-h-(--git-filetree-row-min-height) gap-(--git-filetree-row-gap) py-(--git-filetree-row-pad-y) px-(--git-filetree-row-pad-x) border border-transparent rounded-(--git-filetree-row-radius) bg-transparent text-[13px] relative font-[560] text-(--text-secondary)"
                                       onActivate={() => handlePushPreviewDirToggle(item.path)}
                                       style={treeRowStyle}
                                     >
-                                      <span className="git-history-tree-caret" aria-hidden>
+                                      <span className="git-history-tree-caret text-(--text-muted) inline-flex items-center justify-center w-(--git-filetree-icon-size)" aria-hidden>
                                         {item.expanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
                                       </span>
-                                      <span className="git-history-tree-icon" aria-hidden>
+                                      <span className="git-history-tree-icon inline-flex items-center justify-center text-[color-mix(in_srgb,var(--text-muted)_86%,transparent)] w-4 h-4 [&_.file-icon]:w-4 [&_.file-icon]:h-4 [&_.file-icon_svg]:w-4 [&_.file-icon_svg]:h-4" aria-hidden>
                                         <FileIcon filePath={item.path} isFolder isOpen={item.expanded} />
                                       </span>
-                                      <span className="git-history-tree-label">{item.label}</span>
+                                      <span className="git-history-tree-label min-w-0 overflow-hidden whitespace-nowrap text-ellipsis">{item.label}</span>
                                     </ActionSurface>
                                   );
                                 }
@@ -668,7 +668,7 @@ export function renderGitHistoryPanelDialogs(scope: any) {
                                 return (
                                   <ActionSurface
                                     key={`push-preview-${item.id}`}
-                                    className="git-history-tree-item git-history-file-item git-filetree-row"
+                                    className="git-history-tree-item git-history-file-item git-filetree-row w-full justify-start border-none grid [grid-template-columns:auto_auto_minmax(0,1fr)_auto] items-center min-h-(--git-filetree-row-min-height) gap-(--git-filetree-row-gap) py-(--git-filetree-row-pad-y) px-(--git-filetree-row-pad-x) border border-transparent rounded-(--git-filetree-row-radius) bg-transparent text-[13px] relative"
                                     active={active}
                                     onActivate={() => {
                                       setPushPreviewSelectedFileKey(fileKey);
@@ -678,15 +678,15 @@ export function renderGitHistoryPanelDialogs(scope: any) {
                                     title={statusLabel(file)}
                                   >
                                     <span
-                                      className={`git-history-file-status git-status-${file.status.toLowerCase()}`}
+                                      className={`git-history-file-status git-status-${file.status.toLowerCase()} inline-flex items-center justify-center w-[19px] h-[19px] rounded-full text-[10px] font-bold bg-[color-mix(in_srgb,var(--surface-control,#1a2230)_85%,transparent)]`}
                                     >
                                       {file.status}
                                     </span>
-                                    <span className="git-history-tree-icon is-file" aria-hidden>
+                                    <span className="git-history-tree-icon is-file inline-flex items-center justify-center text-[color-mix(in_srgb,var(--text-secondary)_84%,transparent)] w-4 h-4 [&_.file-icon]:w-4 [&_.file-icon]:h-4 [&_.file-icon_svg]:w-4 [&_.file-icon_svg]:h-4" aria-hidden>
                                       <FileIcon filePath={file.path} />
                                     </span>
-                                    <span className="git-history-file-path">{item.label}</span>
-                                    <span className="git-history-file-stats git-filetree-badge">
+                                    <span className="git-history-file-path min-w-0 overflow-hidden whitespace-nowrap text-ellipsis">{item.label}</span>
+                                    <span className="git-history-file-stats git-filetree-badge text-(--git-filetree-badge-font-size) whitespace-nowrap inline-flex items-center gap-(--git-filetree-badge-gap) py-(--git-filetree-badge-pad-y) px-(--git-filetree-badge-pad-x) rounded-(--git-filetree-badge-radius) border border-[color-mix(in_srgb,var(--border-default)_58%,transparent)] bg-[color-mix(in_srgb,var(--surface-control,#1a2230)_64%,transparent)] font-(family-name:--code-font-family) [font-variant-numeric:tabular-nums] [&_.is-add]:text-[#22c55e] [&_.is-del]:text-[#f87171] [&_.is-sep]:text-(--text-muted)">
                                       <span className="is-add">+{file.additions}</span>
                                       <span className="is-sep">/</span>
                                       <span className="is-del">-{file.deletions}</span>
@@ -743,49 +743,49 @@ export function renderGitHistoryPanelDialogs(scope: any) {
               {pushPreviewModalFile && typeof document !== "undefined"
                 ? createPortal(
                     <div
-                      className="git-history-diff-modal-overlay is-popup"
+                      className="git-history-diff-modal-overlay is-popup fixed inset-0 z-50 bg-[rgba(7,11,18,0.42)] flex items-center justify-center p-6 animate-[git-history-modal-fade-in_130ms_ease] backdrop-blur-[1.5px]"
                       role="presentation"
                       onClick={() => setPushPreviewModalFileKey(null)}
                     >
                       <div
-                        className={`git-history-diff-modal ${isHistoryDiffModalMaximized ? "is-maximized" : ""}`}
+                        className={`git-history-diff-modal w-[min(1080px,calc(100vw-48px))] max-h-[calc(100vh-64px)] rounded-xl border border-[color-mix(in_srgb,var(--border-strong,var(--border-default))_82%,transparent)] bg-(--surface-popover,var(--surface-messages,#0d0f14)) text-(--text-primary) shadow-[0_22px_64px_rgba(0,0,0,0.4)] overflow-hidden flex flex-col animate-[git-history-modal-pop-in_160ms_ease]${isHistoryDiffModalMaximized ? " is-maximized w-[calc(100vw-16px)] max-h-[calc(100vh-16px)] rounded-lg" : ""}`}
                         role="dialog"
                         aria-modal="true"
                         aria-label={pushPreviewModalFile.path}
                         onClick={(event) => event.stopPropagation()}
                       >
-                        <div className="git-history-diff-modal-header">
-                          <div className="git-history-diff-modal-title">
+                        <div className="git-history-diff-modal-header min-h-9 flex items-center justify-between gap-3 py-1.5 px-2.5 border-b border-b-[color-mix(in_srgb,var(--border-default)_48%,transparent)]">
+                          <div className="git-history-diff-modal-title min-w-0 flex-1 inline-flex items-center gap-2 text-xs text-(--text-muted)">
                             <span
-                              className={`git-history-file-status git-status-${pushPreviewModalFile.status.toLowerCase()}`}
+                              className={`git-history-file-status git-status-${pushPreviewModalFile.status.toLowerCase()} inline-flex items-center justify-center w-[19px] h-[19px] rounded-full text-[10px] font-bold bg-[color-mix(in_srgb,var(--surface-control,#1a2230)_85%,transparent)]`}
                             >
                               {pushPreviewModalFile.status}
                             </span>
-                            <span className="git-history-tree-icon is-file" aria-hidden>
+                            <span className="git-history-tree-icon is-file inline-flex items-center justify-center text-[color-mix(in_srgb,var(--text-secondary)_84%,transparent)] w-4 h-4 [&_.file-icon]:w-4 [&_.file-icon]:h-4 [&_.file-icon_svg]:w-4 [&_.file-icon_svg]:h-4" aria-hidden>
                               <FileIcon filePath={pushPreviewModalFile.path} />
                             </span>
-                            <span className="git-history-diff-modal-path">{pushPreviewModalFile.path}</span>
-                            <span className="git-history-diff-modal-stats">
+                            <span className="git-history-diff-modal-path min-w-0 flex-1 whitespace-nowrap overflow-hidden text-ellipsis text-(--text-strong)">{pushPreviewModalFile.path}</span>
+                            <span className="git-history-diff-modal-stats text-[11px] whitespace-nowrap inline-flex items-center gap-[3px] [&_.is-add]:text-[#22c55e] [&_.is-del]:text-[#f87171] [&_.is-sep]:text-(--text-muted)">
                               <span className="is-add">+{pushPreviewModalFile.additions}</span>
                               <span className="is-sep">/</span>
                               <span className="is-del">-{pushPreviewModalFile.deletions}</span>
                             </span>
                           </div>
-                          <div className="git-history-diff-modal-actions">
+                          <div className="git-history-diff-modal-actions inline-flex flex-none items-center gap-2.5 whitespace-nowrap">
                             <button
                               type="button"
-                              className="git-history-diff-modal-close"
+                              className="git-history-diff-modal-close w-[26px] h-[26px] border border-[color-mix(in_srgb,var(--border-default)_72%,transparent)] rounded-lg bg-[color-mix(in_srgb,var(--surface-control,#1a2230)_72%,transparent)] text-(--text-emphasis,#111827) inline-flex items-center justify-center cursor-pointer leading-none hover:text-(--text-strong,#0f172a) hover:border-[color-mix(in_srgb,var(--border-default)_92%,transparent)] [&>svg]:w-3.5 [&>svg]:h-3.5 [&>svg]:block [&>svg]:flex-none [&>svg]:stroke-current [&>svg]:[stroke-width:2.2]"
                               onClick={() => setIsHistoryDiffModalMaximized((value) => !value)}
                               aria-label={isHistoryDiffModalMaximized ? t("common.restore") : t("menu.maximize")}
                               title={isHistoryDiffModalMaximized ? t("common.restore") : t("menu.maximize")}
                             >
-                              <span className="git-history-diff-modal-close-glyph" aria-hidden>
+                              <span className="git-history-diff-modal-close-glyph inline-flex items-center justify-center w-3.5 h-3.5 text-base font-bold leading-none" aria-hidden>
                                 {isHistoryDiffModalMaximized ? "❐" : "□"}
                               </span>
                             </button>
                             <button
                               type="button"
-                              className="git-history-diff-modal-close"
+                              className="git-history-diff-modal-close w-[26px] h-[26px] border border-[color-mix(in_srgb,var(--border-default)_72%,transparent)] rounded-lg bg-[color-mix(in_srgb,var(--surface-control,#1a2230)_72%,transparent)] text-(--text-emphasis,#111827) inline-flex items-center justify-center cursor-pointer leading-none hover:text-(--text-strong,#0f172a) hover:border-[color-mix(in_srgb,var(--border-default)_92%,transparent)] [&>svg]:w-3.5 [&>svg]:h-3.5 [&>svg]:block [&>svg]:flex-none [&>svg]:stroke-current [&>svg]:[stroke-width:2.2]"
                               onClick={() => setPushPreviewModalFileKey(null)}
                               aria-label={t("common.close")}
                               title={t("common.close")}
@@ -796,16 +796,16 @@ export function renderGitHistoryPanelDialogs(scope: any) {
                         </div>
 
                         {pushPreviewModalFile.truncated && !pushPreviewModalFile.isBinary ? (
-                          <div className="git-history-warning">
+                          <div className="git-history-warning m-2 py-2 px-2.5 rounded-lg bg-[color-mix(in_srgb,#f59e0b_18%,transparent)] text-(--text-secondary) text-xs">
                             {t("git.historyDiffTooLargeTruncated", {
                               lineCount: pushPreviewModalFile.lineCount,
                             })}
                           </div>
                         ) : null}
                         {pushPreviewModalFile.isBinary ? (
-                          <pre className="git-history-diff-modal-code">{pushPreviewModalFileDiff}</pre>
+                          <pre className="git-history-diff-modal-code m-0 p-3 overflow-auto text-xs leading-[1.45] text-(--text-primary) bg-[color-mix(in_srgb,var(--surface-control,#1a2230)_56%,transparent)] whitespace-pre font-(family-name:--code-font-family,ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,'Liberation_Mono','Courier_New',monospace)">{pushPreviewModalFileDiff}</pre>
                         ) : (
-                          <div className="git-history-diff-modal-viewer">
+                          <div className="git-history-diff-modal-viewer flex flex-col min-h-[280px] h-[calc(100vh-180px)] max-h-[calc(100vh-180px)] min-w-0 overflow-hidden [.is-maximized_&]:h-[calc(100vh-128px)] [.is-maximized_&]:max-h-[calc(100vh-128px)] [&>.diff-viewer-frame]:flex-1 [&>.diff-viewer-frame]:min-h-0 [&>.diff-viewer-frame]:min-w-0 [.git-history-diff-modal-overlay.is-popup_.editable-diff-review-surface.is-toolbar-inline-actions_.diff-viewer-header-sticky]:hidden [.git-history-diff-modal-overlay.is-popup_.editable-diff-review-surface.is-toolbar-inline-actions_.diff-viewer-item>.diff-viewer-header]:hidden">
                             <GitDiffViewer
                               workspaceId={workspaceId}
                               diffs={pushPreviewModalDiffEntries}
@@ -1189,7 +1189,7 @@ export function renderGitHistoryPanelDialogs(scope: any) {
                 ))}
               </div>
               {resetMode === "hard" ? (
-                <div className="git-history-warning">{t("git.historyResetHardWarning")}</div>
+                <div className="git-history-warning m-2 py-2 px-2.5 rounded-lg bg-[color-mix(in_srgb,#f59e0b_18%,transparent)] text-(--text-secondary) text-xs">{t("git.historyResetHardWarning")}</div>
               ) : null}
               <div className="git-history-create-branch-actions flex justify-end gap-2">
                 <button

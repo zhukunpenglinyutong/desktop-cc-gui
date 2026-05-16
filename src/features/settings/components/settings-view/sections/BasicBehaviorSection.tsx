@@ -116,7 +116,7 @@ export function BasicBehaviorSection({
   }
 
   return (
-    <div className="settings-basic-behavior settings-basic-surface">
+    <div className="settings-basic-behavior settings-basic-surface flex flex-col gap-2.5">
       <div className="settings-basic-group-card">
         <div className="settings-subsection-title">{t("settings.sendShortcutSubtitle")}</div>
         <div className="settings-subsection-subtitle">

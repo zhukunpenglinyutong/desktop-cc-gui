@@ -511,9 +511,9 @@ export function RuntimePoolSection({
   };
 
   return (
-    <section className="settings-section">
-      <div className="settings-section-title">{t("settings.runtimePanelTitle")}</div>
-      <div className="settings-section-subtitle">
+    <section className="settings-section w-full max-w-[980px]">
+      <div className="settings-section-title text-[15px] font-semibold text-(--text-strong) mb-1">{t("settings.runtimePanelTitle")}</div>
+      <div className="settings-section-subtitle text-xs text-(--text-subtle) mb-4">
         {t("settings.runtimePanelDescription")}
       </div>
 

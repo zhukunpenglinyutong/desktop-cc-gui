@@ -1348,7 +1348,7 @@ export function ComposerInput({
             className={`composer-suggestions popover-surface absolute left-0 z-10 grid w-[min(100%,420px)] max-h-[220px] gap-1 overflow-x-hidden overflow-y-auto rounded-[10px] p-1.5 bottom-[calc(100%+6px)] right-auto top-auto${
               reviewPromptOpen ? " review-inline-suggestions" : ""
             }${
-              manualMemoryPickerEnabled ? " composer-suggestions--manual-memory !w-[min(92vw,760px)] !max-h-[min(58vh,460px)] !p-2 !overflow-hidden" : ""
+              manualMemoryPickerEnabled ? " composer-suggestions--manual-memory !w-[min(92vw,760px)] !max-h-[min(58vh,460px)] !p-2 !overflow-hidden max-[960px]:!w-[min(96vw,640px)]" : ""
             }`}
             role="listbox"
             ref={suggestionListRef}
@@ -1394,7 +1394,7 @@ export function ComposerInput({
                 onConfirmCustom={onReviewPromptConfirmCustom}
               />
             ) : manualMemoryPickerEnabled ? (
-              <div className="composer-memory-picker">
+              <div className="composer-memory-picker max-[960px]:!grid-cols-[1fr] max-[960px]:!h-[clamp(220px,64vh,520px)]">
                 <div className="composer-memory-picker-list">
                   <div className="composer-memory-picker-head">
                     <span className="composer-memory-picker-title">
@@ -1474,45 +1474,45 @@ export function ComposerInput({
                     );
                   })}
                 </div>
-                <aside className="composer-memory-picker-preview">
+                <aside className="composer-memory-picker-preview max-[960px]:!max-h-[190px]">
                   {activeManualMemory ? (
                     <>
-                      <div className="composer-memory-picker-preview-head">
-                        <span className="composer-memory-picker-preview-title">
+                      <div className="composer-memory-picker-preview-head flex items-center justify-between gap-2 pb-2 border-b border-(--border-subtle)/72">
+                        <span className="composer-memory-picker-preview-title text-[15px] font-bold text-(--text-strong) min-w-0 whitespace-nowrap text-ellipsis overflow-hidden">
                           {activeManualMemory.memoryTitle || activeManualMemory.label}
                         </span>
-                        <span className="composer-memory-picker-preview-shortcut">
+                        <span className="composer-memory-picker-preview-shortcut flex-none text-[11px] text-(--text-muted) border border-(--border-subtle)/70 rounded-full px-2 py-0.5 bg-(--surface-item)/86">
                           {selectedManualMemoryIdSet.has(activeManualMemory.memoryId || "")
                             ? t("composer.manualMemoryPickerShortcutUnselect")
                             : t("composer.manualMemoryPickerShortcutSelect")}
                         </span>
                       </div>
                       <div
-                        className={`composer-memory-picker-preview-body${
-                          activeManualMemoryPreviewExpanded ? " is-expanded" : ""
+                        className={`composer-memory-picker-preview-body flex flex-col gap-2.5 min-h-0 max-h-[228px] overflow-hidden pt-2.5 [mask-image:linear-gradient(180deg,#000_84%,transparent_100%)] [-webkit-mask-image:linear-gradient(180deg,#000_84%,transparent_100%)]${
+                          activeManualMemoryPreviewExpanded ? " is-expanded !max-h-none !overflow-y-auto ![mask-image:none] ![-webkit-mask-image:none]" : ""
                         }`}
                       >
                         {activeManualMemoryPreviewSections.length > 0 ? (
-                          <div className="composer-memory-picker-preview-sections">
+                          <div className="composer-memory-picker-preview-sections flex flex-col gap-2">
                             {activeManualMemoryPreviewSections.map((section, index) => (
                               <div
                                 key={`${section.label}-${index}`}
-                                className="composer-memory-picker-preview-section"
+                                className="composer-memory-picker-preview-section rounded-[10px] border border-(--border-subtle)/70 bg-(--surface-item)/85 px-2.5 py-2 flex flex-col gap-1.5"
                               >
-                                <div className="composer-memory-picker-preview-section-label">
+                                <div className="composer-memory-picker-preview-section-label text-[11px] font-bold text-(--text-strong)">
                                   {section.label}
                                 </div>
                                 <Markdown
-                                  className="markdown composer-memory-picker-preview-markdown"
+                                  className="markdown composer-memory-picker-preview-markdown m-0 text-xs text-(--text-muted) leading-[1.58] break-words [overflow-wrap:anywhere] [&>*]:m-0 [&>*+*]:mt-1.5 [&_:where(h1,h2,h3,h4)]:text-[13px] [&_:where(h1,h2,h3,h4)]:text-(--text-strong) [&_:where(ul,ol)]:m-0 [&_:where(ul,ol)]:pl-[18px] [&_:where(li+li)]:mt-[3px]"
                                   value={section.content}
                                 />
                               </div>
                             ))}
                           </div>
                         ) : (
-                          <div className="composer-memory-picker-preview-text">
+                          <div className="composer-memory-picker-preview-text rounded-[10px] border border-(--border-subtle)/68 bg-(--surface-item)/84 px-2.5 py-2">
                             <Markdown
-                              className="markdown composer-memory-picker-preview-markdown"
+                              className="markdown composer-memory-picker-preview-markdown m-0 text-xs text-(--text-muted) leading-[1.58] break-words [overflow-wrap:anywhere] [&>*]:m-0 [&>*+*]:mt-1.5 [&_:where(h1,h2,h3,h4)]:text-[13px] [&_:where(h1,h2,h3,h4)]:text-(--text-strong) [&_:where(ul,ol)]:m-0 [&_:where(ul,ol)]:pl-[18px] [&_:where(li+li)]:mt-[3px]"
                               value={
                                 activeManualMemoryPreview ||
                                 t("composer.manualMemoryPickerPreviewEmpty")
@@ -1524,7 +1524,7 @@ export function ComposerInput({
                       {activeManualMemoryPreviewLong && (
                         <button
                           type="button"
-                          className="composer-memory-picker-preview-toggle"
+                          className="composer-memory-picker-preview-toggle self-start border border-(--border-subtle)/76 rounded-full bg-(--surface-item)/82 text-(--text-muted) text-[10px] px-2 py-0.5 cursor-pointer"
                           onMouseDown={(event) => event.preventDefault()}
                           onClick={() =>
                             setExpandedPreviewMemoryId((prev) =>
@@ -1537,17 +1537,17 @@ export function ComposerInput({
                             : t("composer.manualMemoryPreviewExpand")}
                         </button>
                       )}
-                      <div className="composer-memory-picker-preview-meta">
-                        <span className="composer-memory-picker-preview-meta-item">
+                      <div className="composer-memory-picker-preview-meta flex flex-wrap gap-2 pt-0.5">
+                        <span className="composer-memory-picker-preview-meta-item inline-flex items-center gap-1 text-[10px] text-(--text-faint)">
                           <Layers3 size={12} />
                           {activeManualMemory.memoryKind || "note"}
                         </span>
-                        <span className="composer-memory-picker-preview-meta-item">
+                        <span className="composer-memory-picker-preview-meta-item inline-flex items-center gap-1 text-[10px] text-(--text-faint)">
                           <Clock3 size={12} />
                           {formatMemoryDate(activeManualMemory.memoryUpdatedAt)}
                         </span>
                         {(activeManualMemory.memoryTags || []).length > 0 && (
-                          <span className="composer-memory-picker-preview-meta-item">
+                          <span className="composer-memory-picker-preview-meta-item inline-flex items-center gap-1 text-[10px] text-(--text-faint)">
                             <Tag size={12} />
                             {(activeManualMemory.memoryTags || []).slice(0, 5).join(" · ")}
                           </span>
@@ -1555,7 +1555,7 @@ export function ComposerInput({
                       </div>
                     </>
                   ) : (
-                    <span className="composer-memory-picker-preview-empty">
+                    <span className="composer-memory-picker-preview-empty text-[11px] text-(--text-muted)">
                       {t("composer.manualMemoryPickerPreviewFallback")}
                     </span>
                   )}
@@ -1566,8 +1566,8 @@ export function ComposerInput({
                 <button
                   key={item.id}
                   type="button"
-                  className={`composer-suggestion${
-                    index === highlightIndex ? " is-active" : ""
+                  className={`composer-suggestion flex flex-col gap-0.5 text-left border border-transparent rounded-lg px-2 py-1.5 bg-transparent text-(--text-strong) cursor-pointer w-full min-w-0 hover:bg-(--surface-item) hover:border-(--border-muted)${
+                    index === highlightIndex ? " is-active bg-(--surface-item) border-(--border-muted)" : ""
                   }`}
                   role="option"
                   aria-selected={index === highlightIndex}
@@ -1586,14 +1586,14 @@ export function ComposerInput({
                       const isDirectory = item.isDirectory === true;
                       const displayPath = isDirectory ? item.label.replace(/\/$/, "") : item.label;
                       return (
-                        <span className="composer-suggestion-row">
-                          <span className="composer-suggestion-icon" aria-hidden>
+                        <span className="composer-suggestion-row flex items-start gap-2 min-w-0">
+                          <span className="composer-suggestion-icon inline-flex w-4 h-4 text-(--text-muted) flex-none mt-px [&_svg]:w-3.5 [&_svg]:h-3.5" aria-hidden>
                             <FileIcon filePath={displayPath} isFolder={isDirectory} isOpen={false} />
                           </span>
-                          <span className="composer-suggestion-content">
-                            <span className="composer-suggestion-title">{title}</span>
+                          <span className="composer-suggestion-content flex flex-col gap-0.5 min-w-0 flex-1">
+                            <span className="composer-suggestion-title text-xs font-semibold w-full whitespace-nowrap overflow-hidden text-ellipsis">{title}</span>
                             {description && (
-                              <span className="composer-suggestion-description">
+                              <span className="composer-suggestion-description text-[10px] text-(--text-muted) w-full whitespace-nowrap overflow-hidden text-ellipsis">
                                 {description}
                               </span>
                             )}
@@ -1603,19 +1603,19 @@ export function ComposerInput({
                     }
                     const Icon = suggestionIcon(item);
                     return (
-                      <span className="composer-suggestion-row">
-                        <span className="composer-suggestion-icon" aria-hidden>
+                      <span className="composer-suggestion-row flex items-start gap-2 min-w-0">
+                        <span className="composer-suggestion-icon inline-flex w-4 h-4 text-(--text-muted) flex-none mt-px [&_svg]:w-3.5 [&_svg]:h-3.5" aria-hidden>
                           <Icon size={14} />
                         </span>
-                        <span className="composer-suggestion-content">
-                          <span className="composer-suggestion-title">{title}</span>
+                        <span className="composer-suggestion-content flex flex-col gap-0.5 min-w-0 flex-1">
+                          <span className="composer-suggestion-title text-xs font-semibold w-full whitespace-nowrap overflow-hidden text-ellipsis">{title}</span>
                           {description && (
-                            <span className="composer-suggestion-description">
+                            <span className="composer-suggestion-description text-[10px] text-(--text-muted) w-full whitespace-nowrap overflow-hidden text-ellipsis">
                               {description}
                             </span>
                           )}
                           {item.hint && (
-                            <span className="composer-suggestion-description">
+                            <span className="composer-suggestion-description text-[10px] text-(--text-muted) w-full whitespace-nowrap overflow-hidden text-ellipsis">
                               {item.hint}
                             </span>
                           )}

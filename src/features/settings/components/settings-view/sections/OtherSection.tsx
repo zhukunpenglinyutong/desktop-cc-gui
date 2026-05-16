@@ -20,9 +20,9 @@ export function OtherSection({
   onDeleteSessionRadarHistory,
 }: OtherSectionProps) {
   return (
-    <section className="settings-section">
-      <div className="settings-section-title">{title}</div>
-      <div className="settings-section-subtitle">{description}</div>
+    <section className="settings-section w-full max-w-[980px]">
+      <div className="settings-section-title text-[15px] font-semibold text-(--text-strong) mb-1">{title}</div>
+      <div className="settings-section-subtitle text-xs text-(--text-subtle) mb-4">{description}</div>
       <HistoryCompletionSettings />
       <Separator className="my-4" />
       <SessionRadarHistoryManagementSection

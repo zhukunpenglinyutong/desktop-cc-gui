@@ -656,45 +656,45 @@ export function ChatInputBoxFooter({
                 );
               })}
             </div>
-            <aside className="composer-memory-picker-preview">
+            <aside className="composer-memory-picker-preview max-[960px]:!max-h-[190px]">
               {activeNoteCard ? (
                 <>
-                  <div className="composer-memory-picker-preview-head">
-                    <span className="composer-memory-picker-preview-title">
+                  <div className="composer-memory-picker-preview-head flex items-center justify-between gap-2 pb-2 border-b border-(--border-subtle)/72">
+                    <span className="composer-memory-picker-preview-title text-[15px] font-bold text-(--text-strong) min-w-0 whitespace-nowrap text-ellipsis overflow-hidden">
                       {activeNoteCard.title}
                     </span>
-                    <span className="composer-memory-picker-preview-shortcut">
+                    <span className="composer-memory-picker-preview-shortcut flex-none text-[11px] text-(--text-muted) border border-(--border-subtle)/70 rounded-full px-2 py-0.5 bg-(--surface-item)/86">
                       {selectedNoteCardIdSet.has(activeNoteCard.id)
                         ? t('composer.noteCardPickerShortcutUnselect')
                         : t('composer.noteCardPickerShortcutSelect')}
                     </span>
                   </div>
                   <div
-                    className={`composer-memory-picker-preview-body${
-                      activeNoteCardPreviewExpanded ? ' is-expanded' : ''
+                    className={`composer-memory-picker-preview-body flex flex-col gap-2.5 min-h-0 max-h-[228px] overflow-hidden pt-2.5 [mask-image:linear-gradient(180deg,#000_84%,transparent_100%)] [-webkit-mask-image:linear-gradient(180deg,#000_84%,transparent_100%)]${
+                      activeNoteCardPreviewExpanded ? ' is-expanded !max-h-none !overflow-y-auto ![mask-image:none] ![-webkit-mask-image:none]' : ''
                     }`}
                   >
                     {activeNoteCardPreview ? (
-                      <div className="composer-memory-picker-preview-text">
+                      <div className="composer-memory-picker-preview-text rounded-[10px] border border-(--border-subtle)/68 bg-(--surface-item)/84 px-2.5 py-2">
                         <Markdown
-                          className="markdown composer-memory-picker-preview-markdown"
+                          className="markdown composer-memory-picker-preview-markdown m-0 text-xs text-(--text-muted) leading-[1.58] break-words [overflow-wrap:anywhere] [&>*]:m-0 [&>*+*]:mt-1.5 [&_:where(h1,h2,h3,h4)]:text-[13px] [&_:where(h1,h2,h3,h4)]:text-(--text-strong) [&_:where(ul,ol)]:m-0 [&_:where(ul,ol)]:pl-[18px] [&_:where(li+li)]:mt-[3px]"
                           value={activeNoteCardPreview}
                         />
                       </div>
                     ) : activeNoteCardVisiblePreviewAttachments.length === 0 ? (
-                      <div className="composer-memory-picker-preview-text">
+                      <div className="composer-memory-picker-preview-text rounded-[10px] border border-(--border-subtle)/68 bg-(--surface-item)/84 px-2.5 py-2">
                         <Markdown
-                          className="markdown composer-memory-picker-preview-markdown"
+                          className="markdown composer-memory-picker-preview-markdown m-0 text-xs text-(--text-muted) leading-[1.58] break-words [overflow-wrap:anywhere] [&>*]:m-0 [&>*+*]:mt-1.5 [&_:where(h1,h2,h3,h4)]:text-[13px] [&_:where(h1,h2,h3,h4)]:text-(--text-strong) [&_:where(ul,ol)]:m-0 [&_:where(ul,ol)]:pl-[18px] [&_:where(li+li)]:mt-[3px]"
                           value={t('composer.noteCardPickerPreviewEmpty')}
                         />
                       </div>
                     ) : null}
                     {activeNoteCardVisiblePreviewAttachments.length > 0 ? (
-                      <div className="composer-note-card-preview-images" role="list">
+                      <div className="composer-note-card-preview-images grid grid-cols-[repeat(auto-fill,minmax(72px,72px))] gap-2 justify-start content-start" role="list">
                         {activeNoteCardVisiblePreviewAttachments.map((attachment) => (
                           <span
                             key={attachment.id}
-                            className="composer-note-card-preview-image"
+                            className="composer-note-card-preview-image block w-[72px] rounded-[10px] overflow-hidden min-h-[72px] bg-(--surface-item)/84 border border-(--border-subtle)/70 [&_img]:block [&_img]:w-full [&_img]:h-full [&_img]:min-h-[72px] [&_img]:object-cover"
                             role="listitem"
                             title={attachment.fileName}
                           >
@@ -713,7 +713,7 @@ export function ChatInputBoxFooter({
                   {activeNoteCardPreviewLong && (
                     <button
                       type="button"
-                      className="composer-memory-picker-preview-toggle"
+                      className="composer-memory-picker-preview-toggle self-start border border-(--border-subtle)/76 rounded-full bg-(--surface-item)/82 text-(--text-muted) text-[10px] px-2 py-0.5 cursor-pointer"
                       onMouseDown={(event) => event.preventDefault()}
                       onClick={() =>
                         setExpandedPreviewNoteCardId((prev) =>
@@ -726,19 +726,19 @@ export function ChatInputBoxFooter({
                         : t('composer.noteCardPreviewExpand')}
                     </button>
                   )}
-                  <div className="composer-memory-picker-preview-meta">
-                    <span className="composer-memory-picker-preview-meta-item">
+                  <div className="composer-memory-picker-preview-meta flex flex-wrap gap-2 pt-0.5">
+                    <span className="composer-memory-picker-preview-meta-item inline-flex items-center gap-1 text-[10px] text-(--text-faint)">
                       <Clock3 size={12} />
                       {formatMemoryDate(activeNoteCard.updatedAt)}
                     </span>
                     {activeNoteCard.archived ? (
-                      <span className="composer-memory-picker-preview-meta-item">
+                      <span className="composer-memory-picker-preview-meta-item inline-flex items-center gap-1 text-[10px] text-(--text-faint)">
                         <Layers3 size={12} />
                         {t('composer.noteCardArchivedBadge')}
                       </span>
                     ) : null}
                     {activeNoteCard.imageCount > 0 && (
-                      <span className="composer-memory-picker-preview-meta-item">
+                      <span className="composer-memory-picker-preview-meta-item inline-flex items-center gap-1 text-[10px] text-(--text-faint)">
                         <Tag size={12} />
                         {t('noteCards.imageCount', { count: activeNoteCard.imageCount })}
                       </span>
@@ -746,7 +746,7 @@ export function ChatInputBoxFooter({
                   </div>
                 </>
               ) : (
-                <span className="composer-memory-picker-preview-empty">
+                <span className="composer-memory-picker-preview-empty text-[11px] text-(--text-muted)">
                   {t('composer.noteCardPickerPreviewFallback')}
                 </span>
               )}
@@ -843,45 +843,45 @@ export function ChatInputBoxFooter({
                 );
               })}
             </div>
-            <aside className="composer-memory-picker-preview">
+            <aside className="composer-memory-picker-preview max-[960px]:!max-h-[190px]">
               {activeMemory ? (
                 <>
-                  <div className="composer-memory-picker-preview-head">
-                    <span className="composer-memory-picker-preview-title">
+                  <div className="composer-memory-picker-preview-head flex items-center justify-between gap-2 pb-2 border-b border-(--border-subtle)/72">
+                    <span className="composer-memory-picker-preview-title text-[15px] font-bold text-(--text-strong) min-w-0 whitespace-nowrap text-ellipsis overflow-hidden">
                       {activeMemory.title}
                     </span>
-                    <span className="composer-memory-picker-preview-shortcut">
+                    <span className="composer-memory-picker-preview-shortcut flex-none text-[11px] text-(--text-muted) border border-(--border-subtle)/70 rounded-full px-2 py-0.5 bg-(--surface-item)/86">
                       {selectedManualMemoryIdSet.has(activeMemory.id)
                         ? t('composer.manualMemoryPickerShortcutUnselect')
                         : t('composer.manualMemoryPickerShortcutSelect')}
                     </span>
                   </div>
                   <div
-                    className={`composer-memory-picker-preview-body${
-                      activeMemoryPreviewExpanded ? ' is-expanded' : ''
+                    className={`composer-memory-picker-preview-body flex flex-col gap-2.5 min-h-0 max-h-[228px] overflow-hidden pt-2.5 [mask-image:linear-gradient(180deg,#000_84%,transparent_100%)] [-webkit-mask-image:linear-gradient(180deg,#000_84%,transparent_100%)]${
+                      activeMemoryPreviewExpanded ? ' is-expanded !max-h-none !overflow-y-auto ![mask-image:none] ![-webkit-mask-image:none]' : ''
                     }`}
                   >
                     {activeMemoryPreviewSections.length > 0 ? (
-                      <div className="composer-memory-picker-preview-sections">
+                      <div className="composer-memory-picker-preview-sections flex flex-col gap-2">
                         {activeMemoryPreviewSections.map((section, index) => (
                           <div
                             key={`${section.label}-${index}`}
-                            className="composer-memory-picker-preview-section"
+                            className="composer-memory-picker-preview-section rounded-[10px] border border-(--border-subtle)/70 bg-(--surface-item)/85 px-2.5 py-2 flex flex-col gap-1.5"
                           >
-                            <div className="composer-memory-picker-preview-section-label">
+                            <div className="composer-memory-picker-preview-section-label text-[11px] font-bold text-(--text-strong)">
                               {section.label}
                             </div>
                             <Markdown
-                              className="markdown composer-memory-picker-preview-markdown"
+                              className="markdown composer-memory-picker-preview-markdown m-0 text-xs text-(--text-muted) leading-[1.58] break-words [overflow-wrap:anywhere] [&>*]:m-0 [&>*+*]:mt-1.5 [&_:where(h1,h2,h3,h4)]:text-[13px] [&_:where(h1,h2,h3,h4)]:text-(--text-strong) [&_:where(ul,ol)]:m-0 [&_:where(ul,ol)]:pl-[18px] [&_:where(li+li)]:mt-[3px]"
                               value={section.content}
                             />
                           </div>
                         ))}
                       </div>
                     ) : (
-                      <div className="composer-memory-picker-preview-text">
+                      <div className="composer-memory-picker-preview-text rounded-[10px] border border-(--border-subtle)/68 bg-(--surface-item)/84 px-2.5 py-2">
                         <Markdown
-                          className="markdown composer-memory-picker-preview-markdown"
+                          className="markdown composer-memory-picker-preview-markdown m-0 text-xs text-(--text-muted) leading-[1.58] break-words [overflow-wrap:anywhere] [&>*]:m-0 [&>*+*]:mt-1.5 [&_:where(h1,h2,h3,h4)]:text-[13px] [&_:where(h1,h2,h3,h4)]:text-(--text-strong) [&_:where(ul,ol)]:m-0 [&_:where(ul,ol)]:pl-[18px] [&_:where(li+li)]:mt-[3px]"
                           value={activeMemoryPreview || t('composer.manualMemoryPickerPreviewEmpty')}
                         />
                       </div>
@@ -890,7 +890,7 @@ export function ChatInputBoxFooter({
                   {activeMemoryPreviewLong && (
                     <button
                       type="button"
-                      className="composer-memory-picker-preview-toggle"
+                      className="composer-memory-picker-preview-toggle self-start border border-(--border-subtle)/76 rounded-full bg-(--surface-item)/82 text-(--text-muted) text-[10px] px-2 py-0.5 cursor-pointer"
                       onMouseDown={(event) => event.preventDefault()}
                       onClick={() =>
                         setExpandedPreviewMemoryId((prev) =>
@@ -903,17 +903,17 @@ export function ChatInputBoxFooter({
                         : t('composer.manualMemoryPreviewExpand')}
                     </button>
                   )}
-                  <div className="composer-memory-picker-preview-meta">
-                    <span className="composer-memory-picker-preview-meta-item">
+                  <div className="composer-memory-picker-preview-meta flex flex-wrap gap-2 pt-0.5">
+                    <span className="composer-memory-picker-preview-meta-item inline-flex items-center gap-1 text-[10px] text-(--text-faint)">
                       <Layers3 size={12} />
                       {activeMemory.kind || 'note'}
                     </span>
-                    <span className="composer-memory-picker-preview-meta-item">
+                    <span className="composer-memory-picker-preview-meta-item inline-flex items-center gap-1 text-[10px] text-(--text-faint)">
                       <Clock3 size={12} />
                       {formatMemoryDate(activeMemory.updatedAt)}
                     </span>
                     {activeMemory.tags.length > 0 && (
-                      <span className="composer-memory-picker-preview-meta-item">
+                      <span className="composer-memory-picker-preview-meta-item inline-flex items-center gap-1 text-[10px] text-(--text-faint)">
                         <Tag size={12} />
                         {activeMemory.tags.slice(0, 5).join(' · ')}
                       </span>
@@ -921,7 +921,7 @@ export function ChatInputBoxFooter({
                   </div>
                 </>
               ) : (
-                <span className="composer-memory-picker-preview-empty">
+                <span className="composer-memory-picker-preview-empty text-[11px] text-(--text-muted)">
                   {t('composer.manualMemoryPickerPreviewFallback')}
                 </span>
               )}

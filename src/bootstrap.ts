@@ -23,8 +23,6 @@ import "./styles/session-activity.css";
 import "./styles/prompts-animations.css";
 import "./styles/note-cards-rich-input.css";
 import "./styles/terminal-xterm-keepers.css";
-import "./styles/plan.css";
-import "./styles/clone-modal.css";
 import "./styles/settings.css";
 import "./styles/tool-blocks-shell.css";
 import "./styles/tool-blocks.css";

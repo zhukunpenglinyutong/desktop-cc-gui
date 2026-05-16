@@ -1465,10 +1465,10 @@ export function SettingsView({
   };
 
   return (
-    <div className="settings-embedded">
-      <div className="settings-header" />
-      <div className={`settings-body${sidebarCollapsed ? " is-sidebar-collapsed" : ""}`}>
-        <aside className={`settings-sidebar${sidebarCollapsed ? " is-collapsed" : ""}`}>
+    <div className="settings-embedded flex flex-col w-full h-full overflow-hidden bg-(--surface-card-strong)">
+      <div className="settings-header flex items-center justify-between h-11 px-4 py-3 border-b border-(--border-muted) bg-(--surface-topbar) shrink-0" />
+      <div className={`settings-body grid h-full flex-1 min-h-0 overflow-hidden grid-cols-[220px_minmax(0,1fr)]${sidebarCollapsed ? " is-sidebar-collapsed" : ""}`}>
+        <aside className={`settings-sidebar h-full min-h-0 px-2.5 py-3 border-r border-(--border-muted) bg-(--desktop-sidebar-background) flex flex-col gap-0.5${sidebarCollapsed ? " is-collapsed" : ""}`}>
             <button
               type="button"
               className="settings-nav settings-nav-return"
@@ -1637,7 +1637,7 @@ export function SettingsView({
               <span className={`codicon ${sidebarCollapsed ? "codicon-chevron-right" : "codicon-chevron-left"}`} />
             </button>
           </aside>
-          <ScrollArea className="settings-content">
+          <ScrollArea className="settings-content bg-(--surface-messages)">
             {shouldShowWorkspaceSelector && (
               <div className="settings-workspace-picker">
                 <div className="settings-workspace-picker-label">
@@ -1665,9 +1665,9 @@ export function SettingsView({
               </div>
             )}
             {activeSection === "basic" && (
-              <section className="settings-section settings-section-basic" data-basic-tab={basicSubTab}>
-                <div className="settings-section-title">{t("settings.sidebarBasic")}</div>
-                <div className="settings-section-subtitle">
+              <section className="settings-section settings-section-basic w-full max-w-[980px] text-(--text-strong)" data-basic-tab={basicSubTab}>
+                <div className="settings-section-title text-[30px] font-bold text-(--text-strong) tracking-tight mb-1">{t("settings.sidebarBasic")}</div>
+                <div className="settings-section-subtitle text-[13px] text-(--text-muted) mb-1">
                   {t("settings.basicDescription")}
                 </div>
                 <div className="settings-basic-tabs">
@@ -1830,13 +1830,13 @@ export function SettingsView({
             )}
             {activeSection === "project-management" && (
               <section
-                className="settings-section settings-section-tabbed"
+                className="settings-section settings-section-tabbed w-full max-w-[980px] text-(--text-strong)"
                 data-settings-tab={projectManagementSubTab}
               >
-                <div className="settings-section-title">
+                <div className="settings-section-title text-[30px] font-bold text-(--text-strong) tracking-tight mb-1">
                   {t("settings.sidebarProjectManagement")}
                 </div>
-                <div className="settings-section-subtitle">
+                <div className="settings-section-subtitle text-[13px] text-(--text-muted) mb-1">
                   {t("settings.projectManagementDescription")}
                 </div>
                 <div className="settings-basic-tabs">
@@ -1922,13 +1922,13 @@ export function SettingsView({
             )}
             {activeSection === "mcp" && (
               <section
-                className="settings-section settings-section-tabbed"
+                className="settings-section settings-section-tabbed w-full max-w-[980px] text-(--text-strong)"
                 data-settings-tab={mcpManagementSubTab}
               >
-                <div className="settings-section-title">
+                <div className="settings-section-title text-[30px] font-bold text-(--text-strong) tracking-tight mb-1">
                   {t("settings.sidebarMcpSkills")}
                 </div>
-                <div className="settings-section-subtitle">
+                <div className="settings-section-subtitle text-[13px] text-(--text-muted) mb-1">
                   {t("settings.mcpSkillsDescription")}
                 </div>
                 <div className="settings-basic-tabs">
@@ -1982,13 +1982,13 @@ export function SettingsView({
             )}
             {activeSection === "agent-prompt-management" && (
               <section
-                className="settings-section settings-section-tabbed"
+                className="settings-section settings-section-tabbed w-full max-w-[980px] text-(--text-strong)"
                 data-settings-tab={agentPromptSubTab}
               >
-                <div className="settings-section-title">
+                <div className="settings-section-title text-[30px] font-bold text-(--text-strong) tracking-tight mb-1">
                   {t("settings.sidebarAgentPromptManagement")}
                 </div>
-                <div className="settings-section-subtitle">
+                <div className="settings-section-subtitle text-[13px] text-(--text-muted) mb-1">
                   {t("settings.agentPromptManagementDescription")}
                 </div>
                 <div className="settings-basic-tabs">
@@ -2038,13 +2038,13 @@ export function SettingsView({
             )}
             {activeSection === "runtime-environment" && (
               <section
-                className="settings-section settings-section-tabbed"
+                className="settings-section settings-section-tabbed w-full max-w-[980px] text-(--text-strong)"
                 data-settings-tab={runtimeEnvironmentSubTab}
               >
-                <div className="settings-section-title">
+                <div className="settings-section-title text-[30px] font-bold text-(--text-strong) tracking-tight mb-1">
                   {t("settings.sidebarRuntimeEnvironment")}
                 </div>
-                <div className="settings-section-subtitle">
+                <div className="settings-section-subtitle text-[13px] text-(--text-muted) mb-1">
                   {t("settings.runtimeEnvironmentDescription")}
                 </div>
                 <div className="settings-basic-tabs">
@@ -2115,7 +2115,7 @@ export function SettingsView({
               </section>
             )}
             {activeSection === "community" && (
-              <section className="settings-section settings-about-section">
+              <section className="settings-section settings-about-section w-full max-w-[980px] text-(--text-strong)">
                 <div className="settings-about-name">
                   ccgui
                   {appVersion && (
@@ -2166,9 +2166,9 @@ export function SettingsView({
               onRemoveDictationModel={onRemoveDictationModel}
             />
             {activeSection === "git" && (
-              <section className="settings-section">
-                <div className="settings-section-title">{t("settings.gitTitle")}</div>
-                <div className="settings-section-subtitle">
+              <section className="settings-section w-full max-w-[980px]">
+                <div className="settings-section-title text-[15px] font-semibold text-(--text-strong) mb-1">{t("settings.gitTitle")}</div>
+                <div className="settings-section-subtitle text-xs text-(--text-subtle) mb-4">
                   {t("settings.gitDescription")}
                 </div>
                 <DetachedExternalChangeToggles
@@ -2181,9 +2181,9 @@ export function SettingsView({
             {/* vendors is now mapped to providers above */}
             {/* about is now mapped to community above */}
             {activeSection === "experimental" && (
-              <section className="settings-section">
-                <div className="settings-section-title">{t("settings.experimentalTitle")}</div>
-                <div className="settings-section-subtitle">
+              <section className="settings-section w-full max-w-[980px]">
+                <div className="settings-section-title text-[15px] font-semibold text-(--text-strong) mb-1">{t("settings.experimentalTitle")}</div>
+                <div className="settings-section-subtitle text-xs text-(--text-subtle) mb-4">
                   {t("settings.experimentalDescription")}
                 </div>
                 {hasCodexHomeOverrides && (
