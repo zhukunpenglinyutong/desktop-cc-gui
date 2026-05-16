@@ -1430,8 +1430,8 @@ export function WorkspaceSessionActivityPanel({
 
   if (!workspaceId) {
     return (
-      <div className="session-activity-panel">
-        <div className="session-activity-empty">{t("activityPanel.selectWorkspace")}</div>
+      <div className="session-activity-panel flex flex-col min-h-0 h-full bg-(--surface-right-panel) [background:color-mix(in_srgb,var(--surface-right-panel,transparent)_92%,transparent)] [--session-activity-expanded-card-max-height:min(60vh,320px)]">
+        <div className="session-activity-empty flex items-center justify-center min-h-40 px-4 py-6 text-muted-foreground text-center text-[12px] leading-relaxed">{t("activityPanel.selectWorkspace")}</div>
       </div>
     );
   }
@@ -1439,37 +1439,38 @@ export function WorkspaceSessionActivityPanel({
   const followBubbleNode =
     shouldShowFollowBubble && followBubbleGeometry ? (
       <div
-        className={`session-activity-follow-bubble is-floating${
-          showFollowErrorBubble ? " is-error" : ""
+        className={`session-activity-follow-bubble fixed top-0 left-0 right-auto z-[1400] w-[min(300px,calc(100vw-24px))] flex flex-col gap-[7px] p-[10px_11px] rounded-xl border border-[color-mix(in_srgb,var(--status-info,#3b82f6)_44%,var(--border-subtle))] bg-(--session-follow-bubble-surface) [box-shadow:0_10px_24px_color-mix(in_srgb,#000000_14%,transparent),inset_0_1px_0_color-mix(in_srgb,#ffffff_22%,transparent)] pointer-events-auto${
+          showFollowErrorBubble ? " is-error border-[color-mix(in_srgb,var(--status-error,#ef4444)_48%,var(--border-subtle))] [background:color-mix(in_srgb,var(--session-follow-bubble-surface)_97%,#2a1111_3%)]" : ""
         }${
-          showInlineFollowCopy ? " is-inline-layout" : ""
+          showInlineFollowCopy ? " is-inline-layout flex-row items-center gap-2.5" : ""
         }`}
         style={{
           top: `${followBubbleGeometry.top}px`,
           left: `${followBubbleGeometry.left}px`,
           width: `${followBubbleGeometry.width}px`,
           "--session-follow-bubble-arrow-left": `${followBubbleGeometry.arrowLeft}px`,
+          "--session-follow-bubble-surface": "var(--surface-sidebar-opaque, var(--surface-popover, #ffffff))",
         } as CSSProperties}
         role={showFollowErrorBubble ? "alert" : "status"}
       >
         {showInlineFollowCopy ? (
-          <p className="session-activity-follow-bubble-inline-copy">
-            <span className="session-activity-follow-bubble-inline-body">
+          <p className="session-activity-follow-bubble-inline-copy m-0 text-[12px] flex-[1_1_auto] min-w-0 whitespace-nowrap">
+            <span className="session-activity-follow-bubble-inline-body font-semibold text-(--text-muted)">
               {showFollowCoachBubble ? t("activityPanel.followCoachBody") : t("activityPanel.followNudgeBody")}
             </span>
           </p>
         ) : (
           <>
-            <div className="session-activity-follow-bubble-title">
+            <div className="session-activity-follow-bubble-title text-[12px] font-bold text-(--text-strong)">
               {showFollowErrorBubble ? t("activityPanel.followNudgeErrorTitle") : t("activityPanel.followNudgeTitle")}
             </div>
-            <p className="session-activity-follow-bubble-copy">{followNudgeError ?? t("activityPanel.followNudgeBody")}</p>
+            <p className="session-activity-follow-bubble-copy m-0 text-[11px] leading-[1.42] text-(--text-muted)">{followNudgeError ?? t("activityPanel.followNudgeBody")}</p>
           </>
         )}
-        <div className="session-activity-follow-bubble-actions">
+        <div className="session-activity-follow-bubble-actions inline-flex items-center gap-2 flex-none">
           <button
             type="button"
-            className="session-activity-follow-bubble-primary"
+            className="session-activity-follow-bubble-primary min-h-6 px-2.5 rounded-lg border border-[color-mix(in_srgb,var(--status-success)_40%,var(--border-subtle))] bg-[color-mix(in_srgb,var(--surface-control)_70%,transparent)] text-[color-mix(in_srgb,var(--status-success)_80%,var(--text-strong))] text-[11px] font-semibold"
             onClick={() => {
               void handleToggleLiveFollow(showFollowCoachBubble ? "coach" : "nudge");
             }}
@@ -1483,7 +1484,7 @@ export function WorkspaceSessionActivityPanel({
           {!showFollowErrorBubble ? (
             <button
               type="button"
-              className="session-activity-follow-bubble-secondary"
+              className="session-activity-follow-bubble-secondary min-h-6 px-2.5 rounded-lg border border-border bg-[color-mix(in_srgb,var(--surface-control)_70%,transparent)] text-(--text-muted) text-[11px] font-semibold"
               onClick={showFollowCoachBubble ? dismissFollowCoach : handleFollowNudgeLater}
             >
               {showFollowCoachBubble
@@ -1516,12 +1517,14 @@ export function WorkspaceSessionActivityPanel({
     return (
       <article
         key={event.eventId}
-        className={`session-activity-event session-activity-event-${event.kind}${
+        className={`session-activity-event session-activity-event-${event.kind} relative grid grid-cols-[18px_minmax(0,1fr)] gap-1 items-center before:content-[''] before:absolute before:left-2 before:top-3.5 before:-bottom-[3px] before:w-px before:[background:linear-gradient(180deg,rgba(148,163,184,0.42),rgba(148,163,184,0.14))] before:pointer-events-none last:before:bottom-[calc(100%-14px)]${
           isExpanded ? " is-expanded" : ""
-        }${isRunning ? " is-live" : ""}`}
+        }${isRunning ? " is-live before:[background:linear-gradient(180deg,rgba(87,209,140,0.55),rgba(87,209,140,0.14))]" : ""}`}
       >
-        <div className="session-activity-rail" aria-hidden>
-          <span className={`session-activity-kind session-activity-kind-${event.kind}`}>
+        <div className={`session-activity-rail relative z-[1] flex items-center justify-center pt-0${isExpanded ? " self-start pt-[5px]" : ""}`} aria-hidden>
+          <span className={`session-activity-kind session-activity-kind-${event.kind} inline-flex items-center justify-center w-[18px] h-[18px] rounded-none flex-none relative z-[1] bg-transparent [&_svg]:w-[13px] [&_svg]:h-[13px] [&_svg]:[stroke-width:2.55] [&_.codicon]:text-[13px] [&_.codicon]:font-extrabold [&_.codicon]:leading-none${
+            event.kind === "command" ? (isRunning ? " text-[#57d18c]" : " text-[#61afef]") : ""
+          }${event.kind === "task" ? " text-[#d9b86c]" : ""}${event.kind === "fileChange" ? " text-[#7cd992]" : ""}`}>
             {event.kind === "command" ? (
               <Terminal size={13} />
             ) : event.kind === "subagent" ? (
@@ -1538,20 +1541,24 @@ export function WorkspaceSessionActivityPanel({
           </span>
         </div>
 
-        <div className="session-activity-card">
-          <div className="session-activity-card-top">
+        <div className={`session-activity-card flex flex-col min-h-7 border border-transparent rounded-xl bg-transparent overflow-hidden shadow-none hover:[background:color-mix(in_srgb,var(--surface-card,#ffffff)_60%,transparent)]${
+          isExpanded ? " h-auto max-h-[var(--session-activity-expanded-card-max-height)] border-x-0 border-y border-border rounded-none [background:color-mix(in_srgb,var(--surface-card,#ffffff)_96%,#f8fafc)] hover:[background:color-mix(in_srgb,var(--surface-card,#ffffff)_96%,#f8fafc)] shadow-[0_1px_0_rgba(15,23,42,0.03)]" : ""
+        }`}>
+          <div className="session-activity-card-top flex items-stretch min-h-7">
             <button
               type="button"
-              className="session-activity-card-main"
+              className="session-activity-card-main flex-[1_1_auto] flex items-center gap-1.5 min-w-0 px-2 py-0.5 text-inherit text-left"
               onClick={() => handleCardPrimaryAction(event)}
               aria-label={cardMainAriaLabel}
               title={cardMainAriaLabel}
             >
-              <span className="session-activity-card-copy">
-                <span className="session-activity-card-title">
+              <span className="session-activity-card-copy flex flex-row items-center flex-[1_1_auto] min-w-0 gap-[3px]">
+                <span className={`session-activity-card-title inline-flex items-center gap-2 ${isExpanded ? "flex-none max-w-[46%] whitespace-nowrap" : "flex-[1_1_auto]"} min-w-0 text-[12px] leading-[1.35] text-(--text-strong) whitespace-nowrap overflow-hidden text-ellipsis`}>
                   {event.kind === "fileChange" && event.fileChangeStatusLetter ? (
                     <span
-                      className={`session-activity-file-kind-badge is-${event.fileChangeStatusLetter.toLowerCase()}`}
+                      className={`session-activity-file-kind-badge is-${event.fileChangeStatusLetter.toLowerCase()} flex-none inline-flex items-center justify-center w-4 h-4 p-0 rounded-full border border-[color-mix(in_srgb,currentColor_38%,var(--border-subtle))] [background:color-mix(in_srgb,currentColor_10%,var(--surface-secondary))] [box-shadow:inset_0_0_0_1px_color-mix(in_srgb,currentColor_8%,transparent)] text-[8px] font-bold leading-none${
+                        event.fileChangeStatusLetter.toLowerCase() === "a" ? " text-(--color-success,var(--status-success,#107c10))" : ""
+                      }${event.fileChangeStatusLetter.toLowerCase() === "d" ? " text-(--color-error,var(--status-error,#e81123))" : ""}${event.fileChangeStatusLetter.toLowerCase() === "r" ? " text-(--color-warning,var(--status-warning,#f7630c))" : ""}${event.fileChangeStatusLetter.toLowerCase() === "m" ? " text-(--color-info,var(--color-tool-icon,#0078d4))" : ""}`}
                       aria-hidden
                     >
                       {event.fileChangeStatusLetter}
@@ -1559,26 +1566,28 @@ export function WorkspaceSessionActivityPanel({
                   ) : null}
                   <span>{displaySummary}</span>
                 </span>
-                <span className="session-activity-card-meta">
+                <span className={`session-activity-card-meta inline-flex items-center gap-1 ${isExpanded ? "flex-none max-w-[46%] whitespace-nowrap" : "flex-none max-w-[46%] whitespace-nowrap"} max-w-full overflow-hidden text-[10px] text-(--text-muted)`}>
                   <time
-                    className="session-activity-card-time"
+                    className="session-activity-card-time flex-none text-[10px] text-(--text-muted) [font-variant-numeric:tabular-nums] whitespace-nowrap"
                     dateTime={new Date(event.occurredAt).toISOString()}
                   >
                     {formatActivityTime(event.occurredAt)}
                   </time>
-                  <span className={`session-activity-chip is-status-${event.status}`}>
+                  <span className={`session-activity-chip is-status-${event.status} inline-flex items-center whitespace-nowrap min-w-0 max-w-full px-1.5 py-px rounded-full border border-[color-mix(in_srgb,var(--border-subtle)_86%,transparent)] [background:color-mix(in_srgb,var(--surface-card,#ffffff)_96%,#f3f6fa)] overflow-hidden text-ellipsis${
+                    event.status === "running" ? " text-[#57d18c] border-[rgba(87,209,140,0.28)] bg-[rgba(87,209,140,0.12)]" : ""
+                  }${event.status === "completed" ? " text-(--text-stronger)" : ""}${event.status === "failed" ? " text-[#ff8d88] border-[rgba(255,141,136,0.26)] bg-[rgba(255,141,136,0.12)]" : ""}`}>
                     {t(`activityPanel.status.${event.status}`)}
                   </span>
                   {showThreadChip ? (
                     <span
-                      className="session-activity-chip"
+                      className="session-activity-chip inline-flex items-center whitespace-nowrap min-w-0 max-w-full px-1.5 py-px rounded-full border border-[color-mix(in_srgb,var(--border-subtle)_86%,transparent)] [background:color-mix(in_srgb,var(--surface-card,#ffffff)_96%,#f3f6fa)] overflow-hidden text-ellipsis"
                       title={event.threadName}
                     >
                       {event.threadName}
                     </span>
                   ) : null}
                   {event.relationshipSource === "fallbackLinking" ? (
-                    <span className="session-activity-chip is-fallback">
+                    <span className="session-activity-chip is-fallback inline-flex items-center whitespace-nowrap min-w-0 max-w-full px-1.5 py-px rounded-full overflow-hidden text-ellipsis text-[#d9b86c] border border-[rgba(217,184,108,0.24)] bg-[rgba(217,184,108,0.12)]">
                       {t("activityPanel.fallbackLinking")}
                     </span>
                   ) : null}
@@ -1586,7 +1595,7 @@ export function WorkspaceSessionActivityPanel({
               </span>
 
               {event.kind === "fileChange" && (signedAdditions || signedDeletions) ? (
-                <span className="session-activity-file-stats">
+                <span className="session-activity-file-stats inline-flex items-center gap-1 flex-none self-center text-[11px] font-mono [font-variant-numeric:tabular-nums] [&_.is-add]:text-[#7cd992] [&_.is-del]:text-[#ff8d88]">
                   {signedAdditions ? <span className="is-add">{signedAdditions}</span> : null}
                   {signedDeletions ? <span className="is-del">{signedDeletions}</span> : null}
                 </span>
@@ -1596,7 +1605,7 @@ export function WorkspaceSessionActivityPanel({
             {isExpandable ? (
               <button
                 type="button"
-                className="session-activity-preview-toggle"
+                className="session-activity-preview-toggle inline-flex items-center justify-center self-center flex-none w-7 h-7 mt-px mr-1 mb-0 ml-0 p-0 text-(--text-muted) border-none rounded-lg bg-transparent hover:text-(--text-emphasis) hover:[background:color-mix(in_srgb,var(--surface-card,#ffffff)_74%,#eaf3ff)]"
                 onClick={(toggleEvent) => {
                   toggleEvent.stopPropagation();
                   handleToggleExpand(event.eventId, { isRunning });
@@ -1618,18 +1627,18 @@ export function WorkspaceSessionActivityPanel({
           </div>
 
           {event.kind === "fileChange" && event.fileChanges?.length ? (
-            <div className="session-activity-file-list">
+            <div className="session-activity-file-list flex flex-col gap-1 pr-2 pb-1.5 pl-[22px]">
               {event.fileChanges.map((fileChangeEntry) => {
                 const fileSignedAdditions = formatSignedCount(fileChangeEntry.additions, "+");
                 const fileSignedDeletions = formatSignedCount(fileChangeEntry.deletions, "-");
                 return (
                   <div
                     key={`${event.eventId}:${fileChangeEntry.filePath}`}
-                    className="session-activity-file-row"
+                    className="session-activity-file-row flex items-center gap-0.5"
                   >
                     <button
                       type="button"
-                      className="session-activity-file-row-main"
+                      className="session-activity-file-row-main flex items-center gap-[7px] min-w-0 flex-[1_1_auto] min-h-[34px] py-1.5 px-2.5 rounded-[11px] border border-(--session-activity-file-row-border) bg-(--session-activity-file-row-surface) text-inherit text-left transition-[border-color,background,transform] duration-[140ms] ease-linear hover:border-(--session-activity-file-row-border-hover) hover:bg-(--session-activity-file-row-surface-hover) hover:-translate-y-px"
                       title={fileChangeEntry.filePath}
                       onClick={(clickEvent) => {
                         clickEvent.stopPropagation();
@@ -1637,21 +1646,23 @@ export function WorkspaceSessionActivityPanel({
                       }}
                     >
                       <span
-                        className={`session-activity-file-kind-badge is-${fileChangeEntry.statusLetter.toLowerCase()}`}
+                        className={`session-activity-file-kind-badge is-${fileChangeEntry.statusLetter.toLowerCase()} flex-none inline-flex items-center justify-center w-4 h-4 p-0 rounded-full border border-[color-mix(in_srgb,currentColor_38%,var(--border-subtle))] [background:color-mix(in_srgb,currentColor_10%,var(--surface-secondary))] [box-shadow:inset_0_0_0_1px_color-mix(in_srgb,currentColor_8%,transparent)] text-[8px] font-bold leading-none${
+                          fileChangeEntry.statusLetter.toLowerCase() === "a" ? " text-(--color-success,var(--status-success,#107c10))" : ""
+                        }${fileChangeEntry.statusLetter.toLowerCase() === "d" ? " text-(--color-error,var(--status-error,#e81123))" : ""}${fileChangeEntry.statusLetter.toLowerCase() === "r" ? " text-(--color-warning,var(--status-warning,#f7630c))" : ""}${fileChangeEntry.statusLetter.toLowerCase() === "m" ? " text-(--color-info,var(--color-tool-icon,#0078d4))" : ""}`}
                         aria-hidden
                       >
                         {fileChangeEntry.statusLetter}
                       </span>
-                      <span className="session-activity-file-row-icon" aria-hidden>
+                      <span className="session-activity-file-row-icon inline-flex items-center justify-center flex-none text-(--session-activity-file-row-icon-color)" aria-hidden>
                         <FileIcon filePath={fileChangeEntry.filePath} />
                       </span>
-                      <span className="session-activity-file-row-copy">
-                        <span className="session-activity-file-row-name">
+                      <span className="session-activity-file-row-copy flex items-center min-w-0 flex-[1_1_auto]">
+                        <span className="session-activity-file-row-name min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-[11px] font-semibold text-(--session-activity-file-row-name-color)">
                           {fileChangeEntry.fileName}
                         </span>
                       </span>
                       {fileSignedAdditions || fileSignedDeletions ? (
-                        <span className="session-activity-file-row-stats">
+                        <span className="session-activity-file-row-stats inline-flex items-center gap-1 flex-none ml-auto pl-1.5 self-center text-[10px] font-mono [font-variant-numeric:tabular-nums] [&_.is-add]:text-(--session-activity-file-row-add-color) [&_.is-del]:text-(--session-activity-file-row-del-color)">
                           {fileSignedAdditions ? (
                             <span className="is-add">{fileSignedAdditions}</span>
                           ) : null}
@@ -1663,7 +1674,7 @@ export function WorkspaceSessionActivityPanel({
                     </button>
                     <button
                       type="button"
-                      className="session-activity-file-row-action"
+                      className="session-activity-file-row-action inline-flex items-center justify-center w-[30px] min-w-[30px] h-[30px] p-0 border-none rounded-lg bg-transparent shadow-none text-(--session-activity-file-row-action-color) transition-[transform,background,color,box-shadow] duration-[140ms] ease-linear enabled:hover:-translate-y-px enabled:hover:[background:color-mix(in_srgb,var(--surface-hover,var(--surface-control,transparent))_46%,transparent)] enabled:hover:text-(--session-activity-file-row-action-color-hover) focus-visible:outline-none focus-visible:[background:color-mix(in_srgb,var(--surface-hover,var(--surface-control,transparent))_52%,transparent)] focus-visible:[box-shadow:0_0_0_1px_color-mix(in_srgb,var(--status-info,#3b82f6)_52%,transparent)] disabled:opacity-[0.52] disabled:cursor-not-allowed disabled:shadow-none"
                       aria-label={t("git.previewModalAction")}
                       title={t("git.previewModalAction")}
                       disabled={!fileChangeEntry.diff?.trim() && !workspaceId}
@@ -1676,7 +1687,7 @@ export function WorkspaceSessionActivityPanel({
                         size={18}
                         strokeWidth={2.25}
                         aria-hidden
-                        className="session-activity-file-row-action-icon"
+                        className="session-activity-file-row-action-icon block"
                       />
                     </button>
                   </div>
@@ -1686,23 +1697,23 @@ export function WorkspaceSessionActivityPanel({
           ) : null}
 
           {isExpandable && isExpanded ? (
-            <div className="session-activity-preview">
+            <div className="session-activity-preview flex flex-col gap-1 flex-[1_1_auto] min-h-0 pr-2 pb-1.5 pl-[22px]">
               {event.kind === "command" ? (
-                <div className="session-activity-command-detail">
+                <div className="session-activity-command-detail flex flex-col gap-0.5 flex-none">
                   {event.commandText && !isPlaceholderCommandText(event.commandText) ? (
-                    <div className="session-activity-command-row">
-                      <span className="session-activity-command-label">
+                    <div className="session-activity-command-row grid grid-cols-[48px_minmax(0,1fr)] gap-1 items-start">
+                      <span className="session-activity-command-label pt-0.5 text-[10px] text-(--text-muted) whitespace-nowrap">
                         {t("activityPanel.command")}
                       </span>
-                      <code className="session-activity-command-value">{event.commandText}</code>
+                      <code className="session-activity-command-value min-w-0 py-1 px-0 rounded-none border-none bg-transparent text-(--text-stronger) text-[11px] leading-[1.4] whitespace-pre-wrap break-words font-mono">{event.commandText}</code>
                     </div>
                   ) : null}
                   {event.commandWorkingDirectory ? (
-                    <div className="session-activity-command-row">
-                      <span className="session-activity-command-label">
+                    <div className="session-activity-command-row grid grid-cols-[48px_minmax(0,1fr)] gap-1 items-start">
+                      <span className="session-activity-command-label pt-0.5 text-[10px] text-(--text-muted) whitespace-nowrap">
                         {t("activityPanel.cwd")}
                       </span>
-                      <code className="session-activity-command-value">
+                      <code className="session-activity-command-value min-w-0 py-1 px-0 rounded-none border-none bg-transparent text-(--text-stronger) text-[11px] leading-[1.4] whitespace-pre-wrap break-words font-mono">
                         {event.commandWorkingDirectory}
                       </code>
                     </div>
@@ -1711,7 +1722,7 @@ export function WorkspaceSessionActivityPanel({
               ) : null}
               {event.kind === "reasoning" ? (
                 <div
-                  className="session-activity-preview-text is-markdown"
+                  className="session-activity-preview-text is-markdown m-0 flex-[1_1_auto] min-h-0 max-h-full overflow-auto pt-1 px-0 pb-0 rounded-none bg-transparent text-(--text-stronger) text-[11px] leading-[1.45] whitespace-normal break-words font-sans border-none shadow-none"
                   ref={(node) => {
                     if (!node) {
                       delete reasoningPreviewScrollContainerByEventIdRef.current[event.eventId];
@@ -1720,10 +1731,10 @@ export function WorkspaceSessionActivityPanel({
                     reasoningPreviewScrollContainerByEventIdRef.current[event.eventId] = node;
                   }}
                 >
-                  <div className="session-activity-reasoning-surface">
+                  <div className="session-activity-reasoning-surface relative ml-1 border-none border-l-0 rounded-none py-0.5 px-0 pl-4 bg-transparent shadow-none">
                     <Markdown
                       value={event.reasoningPreview || t("activityPanel.waitingForReasoning")}
-                      className={`markdown reasoning-markdown session-activity-preview-markdown${
+                      className={`markdown reasoning-markdown session-activity-preview-markdown text-(--text-secondary) text-[11px] leading-[1.4]${
                         event.status === "running" ? " markdown-live-streaming break-words [overflow-wrap:anywhere]" : ""
                       }`}
                       codeBlockStyle="message"
@@ -1734,10 +1745,10 @@ export function WorkspaceSessionActivityPanel({
                 </div>
               ) : event.kind === "command" ? (
                 event.commandPreview && commandRenderMeta?.mode === "markdown" ? (
-                  <div className="session-activity-preview-text is-markdown is-command-markdown">
+                  <div className="session-activity-preview-text is-markdown is-command-markdown m-0 flex-[1_1_auto] min-h-0 max-h-full overflow-auto pt-1 rounded-none bg-transparent text-(--text-stronger) text-[11px] leading-[1.45] whitespace-normal break-words font-sans border-none shadow-none">
                     <Markdown
                       value={normalizeCommandMarkdownOutput(event.commandPreview)}
-                      className="markdown session-activity-preview-markdown"
+                      className="markdown session-activity-preview-markdown text-(--text-secondary) text-[11px] leading-[1.4]"
                       codeBlockStyle="message"
                       streamingThrottleMs={80}
                       softBreaks
@@ -1745,7 +1756,7 @@ export function WorkspaceSessionActivityPanel({
                   </div>
                 ) : event.commandPreview && commandRenderMeta?.mode === "code" ? (
                   <pre
-                    className="session-activity-preview-text is-command-output is-command-code"
+                    className="session-activity-preview-text is-command-output is-command-code m-0 flex-[1_1_auto] min-h-0 max-h-full overflow-auto py-1.5 px-2 rounded-md border border-(--session-activity-command-output-border) bg-(--session-activity-command-output-bg) shadow-none leading-[1.52] text-(--text-stronger) text-[11px] whitespace-pre-wrap break-words font-mono [font-feature-settings:'tnum'_1,'zero'_1]"
                     dangerouslySetInnerHTML={{
                       __html: renderCodeOutputHtml(
                         event.commandPreview,
@@ -1755,18 +1766,18 @@ export function WorkspaceSessionActivityPanel({
                   />
                 ) : event.commandPreview ? (
                   <pre
-                    className="session-activity-preview-text is-command-output"
+                    className="session-activity-preview-text is-command-output m-0 flex-[1_1_auto] min-h-0 max-h-full overflow-auto py-1.5 px-2 rounded-md border border-(--session-activity-command-output-border) bg-(--session-activity-command-output-bg) shadow-none leading-[1.52] text-(--text-stronger) text-[11px] whitespace-pre-wrap break-words font-mono [font-feature-settings:'tnum'_1,'zero'_1]"
                     dangerouslySetInnerHTML={{
                       __html: renderShellOutputHtml(event.commandPreview),
                     }}
                   />
                 ) : (
-                  <pre className="session-activity-preview-text is-command-output">
+                  <pre className="session-activity-preview-text is-command-output m-0 flex-[1_1_auto] min-h-0 max-h-full overflow-auto py-1.5 px-2 rounded-md border border-(--session-activity-command-output-border) bg-(--session-activity-command-output-bg) shadow-none leading-[1.52] text-(--text-stronger) text-[11px] whitespace-pre-wrap break-words font-mono [font-feature-settings:'tnum'_1,'zero'_1]">
                     {t("activityPanel.waitingForOutput")}
                   </pre>
                 )
               ) : (
-                <pre className="session-activity-preview-text">
+                <pre className="session-activity-preview-text m-0 flex-[1_1_auto] min-h-0 max-h-full overflow-auto pt-1.5 px-0 pb-0 rounded-none bg-transparent text-(--text-stronger) text-[11px] leading-[1.45] whitespace-pre-wrap break-words font-mono border-none shadow-none">
                   {event.explorePreview || t("activityPanel.waitingForOutput")}
                 </pre>
               )}
@@ -1778,12 +1789,12 @@ export function WorkspaceSessionActivityPanel({
   };
 
   return (
-    <div className="session-activity-panel" ref={panelRootRef}>
-      <div className="session-activity-header" ref={panelHeaderRef}>
-        <div className="session-activity-title-group">
-          <div className="session-activity-heading-row">
+    <div className="session-activity-panel flex flex-col min-h-0 h-full bg-(--surface-right-panel) [background:color-mix(in_srgb,var(--surface-right-panel,transparent)_92%,transparent)] [--session-activity-expanded-card-max-height:min(60vh,320px)]" ref={panelRootRef}>
+      <div className="session-activity-header relative z-[2] overflow-visible flex items-center justify-between gap-3 px-3.5 pt-3 pb-2.5 border-b border-border" ref={panelHeaderRef}>
+        <div className="session-activity-title-group flex items-center gap-3.5 flex-[1_1_auto] min-w-0 overflow-visible">
+          <div className="session-activity-heading-row relative flex items-center gap-2.5 min-w-0 overflow-visible">
             <div
-              className={`session-activity-title-row${viewModel.isProcessing ? " is-live" : ""}`}
+              className={`session-activity-title-row inline-flex items-center gap-2 text-[13px] font-semibold text-(--text-strong)${viewModel.isProcessing ? " is-live" : ""}`}
             >
               <span>{t("activityPanel.title")}</span>
             </div>
@@ -1791,8 +1802,8 @@ export function WorkspaceSessionActivityPanel({
               <button
                 ref={liveEditToggleButtonRef}
                 type="button"
-                className={`session-activity-live-edit-toggle${
-                  liveEditPreviewEnabled ? " is-active" : ""
+                className={`session-activity-live-edit-toggle relative inline-flex items-center justify-center h-6 w-6 p-0 border-none rounded-none bg-transparent text-(--text-muted) transition-[color,filter] duration-[160ms] ease-linear [animation:session-activity-live-toggle-breathe_2.9s_cubic-bezier(0.22,1,0.36,1)_infinite] [&_svg]:[stroke-width:2.4] [&_svg]:[transform-origin:center] [&_svg]:[animation:session-activity-live-toggle-heartbeat_2.9s_cubic-bezier(0.22,1,0.36,1)_infinite] hover:text-[color-mix(in_srgb,var(--status-success)_62%,var(--text-strong))] hover:[filter:drop-shadow(0_0_12px_rgba(87,209,140,0.24))] hover:[animation-duration:1.8s] hover:[&_svg]:[animation-duration:1.25s] motion-reduce:!animate-none motion-reduce:[&_svg]:!animate-none motion-reduce:transform-none${
+                  liveEditPreviewEnabled ? " is-active text-(--status-success) [filter:drop-shadow(0_0_8px_rgba(87,209,140,0.28))_drop-shadow(0_0_16px_rgba(87,209,140,0.16))] [animation:session-activity-live-toggle-pulse_1.8s_ease-in-out_infinite] [&_svg]:[animation-duration:1.05s]" : ""
                 }`}
                 aria-pressed={liveEditPreviewEnabled}
                 aria-label={t("activityPanel.liveEditPreview")}
@@ -1811,7 +1822,7 @@ export function WorkspaceSessionActivityPanel({
           </div>
           {viewModel.timeline.length > 0 ? (
             <div
-              className="session-activity-tabs"
+              className="session-activity-tabs flex items-center gap-2.5 p-0 flex-[1_1_auto] min-w-0 overflow-x-auto"
               role="tablist"
               aria-label={t("activityPanel.tabs.ariaLabel")}
             >
@@ -1821,18 +1832,18 @@ export function WorkspaceSessionActivityPanel({
                   type="button"
                   role="tab"
                   aria-selected={activeTab === tab.id}
-                  className={`session-activity-tab${activeTab === tab.id ? " is-active" : ""}`}
+                  className={`session-activity-tab flex-none inline-flex items-center gap-[5px] min-h-[22px] p-0 border-none bg-transparent text-(--text-muted) text-[12px] font-semibold whitespace-nowrap rounded-none border-b-2 border-b-transparent transition-[color,border-color] duration-[120ms] ease-linear hover:text-(--text-strong) [&_.session-activity-tab-icon]:hover:text-(--text-strong) [&_.session-activity-tab-count]:hover:text-(--text-strong)${activeTab === tab.id ? " is-active text-(--text-strong) border-b-[color-mix(in_srgb,var(--status-success,#57d18c)_56%,transparent)] [&_.session-activity-tab-icon]:text-[color-mix(in_srgb,var(--status-success,#57d18c)_62%,var(--text-strong))] [&_.session-activity-tab-count]:text-[color-mix(in_srgb,var(--text-strong)_78%,var(--status-success,#57d18c))]" : " not-[:is-active]:gap-1"}`}
                   onClick={() => setActiveTab(tab.id)}
                 >
-                  <span className="session-activity-tab-icon">{tabIconMap[tab.id]}</span>
-                  <span className="session-activity-tab-label">{tab.label}</span>
-                  <span className="session-activity-tab-count">{tabCounts[tab.id]}</span>
+                  <span className="session-activity-tab-icon inline-flex items-center text-(--text-muted) [color:color-mix(in_srgb,var(--text-muted)_88%,var(--text-strong))]">{tabIconMap[tab.id]}</span>
+                  <span className="session-activity-tab-label text-inherit">{tab.label}</span>
+                  <span className="session-activity-tab-count [font-variant-numeric:tabular-nums] text-(--text-muted) [color:color-mix(in_srgb,var(--text-muted)_82%,transparent)]">{tabCounts[tab.id]}</span>
                 </button>
               ))}
             </div>
           ) : null}
         </div>
-        <div className="session-activity-summary">{headerSummary}</div>
+        <div className="session-activity-summary inline-flex items-center justify-end flex-[0_1_auto] min-w-0 max-w-full text-[11px] text-(--text-muted) [font-variant-numeric:tabular-nums] whitespace-nowrap overflow-hidden text-ellipsis">{headerSummary}</div>
       </div>
       {followBubbleNode && typeof document !== "undefined"
         ? createPortal(followBubbleNode, document.body)
@@ -1940,18 +1951,21 @@ export function WorkspaceSessionActivityPanel({
         : null}
       {stickyChildSessionSummaries.length > 0 ? (
         <div
-          className="session-activity-related-toolbar"
+          className="session-activity-related-toolbar flex items-center gap-2 px-3.5 py-[9px] pb-[11px] border-b border-border min-w-0"
           aria-label={t("activityPanel.relatedSessions")}
         >
-          <div className="session-activity-related-toolbar-scroller">
+          <div className="session-activity-related-toolbar-scroller inline-flex items-center gap-2 flex-[1_1_auto] min-w-0 overflow-x-auto py-px pr-0.5 pb-0.5 scroll-smooth [scrollbar-width:thin]">
             {stickyChildSessionSummaries.map((session, index) => {
               const fixedLabel = resolveChildSessionPillLabel(session, index, t);
               const pillStyle = resolveSessionPillStyle(session, index);
               return (
                 <div
                   key={session.threadId}
-                  className={`session-activity-session-pill${session.isProcessing ? " is-processing" : ""}`}
-                  style={pillStyle}
+                  className={`session-activity-session-pill flex-none inline-flex items-center gap-1.5 h-[22px] px-2.5 rounded-full cursor-pointer border bg-card [background:color-mix(in_srgb,var(--surface-card,#ffffff)_90%,#f2f6fb)] text-(--text-strong) transition-[border-color,background,color,box-shadow] duration-[180ms] ease-linear [box-shadow:inset_0_1px_0_color-mix(in_srgb,#ffffff_68%,transparent),0_1px_2px_color-mix(in_srgb,hsl(var(--session-pill-accent-h)_var(--session-pill-accent-s)_var(--session-pill-accent-l))_12%,transparent)] hover:[box-shadow:inset_0_1px_0_color-mix(in_srgb,#ffffff_72%,transparent),0_3px_8px_color-mix(in_srgb,hsl(var(--session-pill-accent-h)_var(--session-pill-accent-s)_var(--session-pill-accent-l))_18%,transparent)]${session.isProcessing ? " is-processing relative [animation:session-activity-processing-pill_1.45s_ease-in-out_infinite]" : ""}`}
+                  style={{
+                    ...pillStyle,
+                    borderColor: `color-mix(in srgb, hsl(var(--session-pill-accent-h) var(--session-pill-accent-s) var(--session-pill-accent-l)) 26%, var(--border-subtle))`,
+                  } as CSSProperties}
                   role="button"
                   tabIndex={0}
                   aria-label={fixedLabel}
@@ -1965,9 +1979,9 @@ export function WorkspaceSessionActivityPanel({
                   }}
                 >
                   <Bot size={12} aria-hidden />
-                  <span className="session-activity-session-name">{fixedLabel}</span>
+                  <span className="session-activity-session-name text-[11px] font-semibold leading-none whitespace-nowrap">{fixedLabel}</span>
                   {session.relationshipSource === "fallbackLinking" ? (
-                    <span className="session-activity-session-meta">
+                    <span className="session-activity-session-meta text-[10px] text-(--text-muted) whitespace-nowrap">
                       {t("activityPanel.fallbackLinking")}
                     </span>
                   ) : null}
@@ -1979,14 +1993,14 @@ export function WorkspaceSessionActivityPanel({
       ) : null}
 
       {filteredTimeline.length === 0 ? (
-        <div className="session-activity-empty">{emptyCopy}</div>
+        <div className="session-activity-empty flex items-center justify-center min-h-40 px-4 py-6 text-(--text-muted) text-center text-[12px] leading-relaxed">{emptyCopy}</div>
       ) : (
-        <div className="session-activity-timeline">
+        <div className="session-activity-timeline flex flex-col gap-2.5 px-3.5 pt-3 pb-5 overflow-y-auto min-h-0">
           {groupedTimeline.map((group) => (
-            <section key={group.id} className="session-activity-turn-group">
+            <section key={group.id} className="session-activity-turn-group flex flex-col gap-1 pt-1.5 px-2 pb-2 rounded-xl border border-[color-mix(in_srgb,var(--border-subtle)_84%,transparent)] [background:color-mix(in_srgb,var(--surface-card,#ffffff)_86%,transparent)]">
               <button
                 type="button"
-                className="session-activity-turn-group-header"
+                className="session-activity-turn-group-header flex items-center justify-between gap-2 min-h-5 w-full px-1 border-none bg-transparent text-inherit text-left rounded-[10px] hover:[background:color-mix(in_srgb,var(--surface-control)_48%,transparent)]"
                 onClick={() => handleToggleTurnGroup(group.id)}
                 aria-expanded={!collapsedTurnGroupIds[group.id]}
                 aria-label={
@@ -1996,8 +2010,8 @@ export function WorkspaceSessionActivityPanel({
                 }
               >
                 <span
-                  className={`session-activity-turn-group-title${
-                    group.sessionRole === "child" ? " is-child" : ""
+                  className={`session-activity-turn-group-title inline-flex items-center px-1.5 min-h-[18px] rounded-full [background:color-mix(in_srgb,var(--surface-control)_72%,transparent)] text-(--text-muted) text-[10px] font-bold tracking-[0.02em] whitespace-nowrap${
+                    group.sessionRole === "child" ? " is-child border border-[color-mix(in_srgb,hsl(var(--session-pill-accent-h)_var(--session-pill-accent-s)_var(--session-pill-accent-l))_36%,var(--border-subtle))] text-[color-mix(in_srgb,hsl(var(--session-pill-accent-h)_var(--session-pill-accent-s)_calc(var(--session-pill-accent-l)-10%))_32%,var(--text-strong))]" : ""
                   }`}
                   style={
                     group.sessionRole === "child"
@@ -2009,19 +2023,19 @@ export function WorkspaceSessionActivityPanel({
                     ? t("activityPanel.turnGroup", { index: group.turnIndex })
                     : t("activityPanel.turnGroupFallback")}
                 </span>
-                <span className="session-activity-turn-group-header-tail">
+                <span className="session-activity-turn-group-header-tail inline-flex items-center gap-2 min-w-0">
                   {group.sessionRole === "child" ? (
-                    <span className="session-activity-turn-group-meta" title={group.threadName}>
+                    <span className="session-activity-turn-group-meta text-(--text-muted) text-[10px] font-semibold whitespace-nowrap overflow-hidden text-ellipsis" title={group.threadName}>
                       {group.threadName}
                     </span>
                   ) : null}
-                  <span className="session-activity-turn-group-toggle" aria-hidden>
+                  <span className="session-activity-turn-group-toggle inline-flex items-center justify-center w-[18px] h-[18px] text-(--text-muted) flex-none" aria-hidden>
                     {collapsedTurnGroupIds[group.id] ? <ChevronDown size={13} /> : <ChevronUp size={13} />}
                   </span>
                 </span>
               </button>
               {!collapsedTurnGroupIds[group.id] ? (
-                <div className="session-activity-turn-group-events">
+                <div className="session-activity-turn-group-events flex flex-col gap-[3px]">
                   {group.events.map((event) => renderTimelineEvent(event))}
                 </div>
               ) : null}

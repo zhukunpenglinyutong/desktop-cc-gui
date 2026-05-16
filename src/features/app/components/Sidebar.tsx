@@ -1910,10 +1910,16 @@ export function Sidebar({
           </div>
         ) : null}
       </div>
-      <div className={`sidebar-search${isSearchOpen ? " is-open" : ""}`}>
+      <div
+        className={`sidebar-search sticky top-0 z-[4] ${
+          isSearchOpen
+            ? "is-open py-1.5 px-1 pt-1.5 pb-2.5"
+            : "h-0 overflow-hidden px-1"
+        }`}
+      >
         {isSearchOpen && (
           <input
-            className="sidebar-search-input"
+            className="sidebar-search-input w-full pl-2.5 pr-[26px] py-1.5 rounded-lg border border-(--border-quiet) text-(--text-strong) text-xs outline-none placeholder:text-(--text-muted) focus:border-(--border-accent) focus:shadow-[0_0_0_2px_var(--border-accent-soft)]"
             value={searchQuery}
             onChange={(event) => setSearchQuery(event.target.value)}
             placeholder={t("sidebar.searchProjects")}
@@ -1925,7 +1931,7 @@ export function Sidebar({
         {isSearchOpen && searchQuery.length > 0 && (
           <button
             type="button"
-            className="sidebar-search-clear"
+            className="sidebar-search-clear absolute right-3.5 top-1/2 -translate-y-1/2 w-5 h-5 inline-flex items-center justify-center border-none bg-transparent text-(--text-muted) text-base leading-none cursor-pointer p-0 rounded-none font-semibold shadow-none transition-none hover:bg-transparent hover:text-(--text-strong) hover:-translate-y-1/2 hover:shadow-none focus-visible:outline focus-visible:outline-1 focus-visible:outline-(--border-accent) focus-visible:outline-offset-2"
             onClick={() => setSearchQuery("")}
             aria-label={t("sidebar.clearSearch")}
             data-tauri-drag-region="false"
@@ -1935,18 +1941,23 @@ export function Sidebar({
         )}
       </div>
       <div
-        className={`workspace-drop-overlay${
-          isWorkspaceDropActive ? " is-active" : ""
+        className={`workspace-drop-overlay absolute inset-0 z-[8] flex items-center justify-center bg-black/70 backdrop-blur-[4px] pointer-events-none transition-opacity duration-200 ease-out ${
+          isWorkspaceDropActive ? "is-active opacity-100" : "opacity-0"
         }`}
         aria-hidden
       >
         <div
-          className={`workspace-drop-overlay-text${
-            workspaceDropText === "Adding Project..." ? " is-busy" : ""
+          className={`workspace-drop-overlay-text text-base font-semibold tracking-[0.02em] inline-flex items-center gap-2.5 ${
+            workspaceDropText === "Adding Project..."
+              ? "is-busy text-transparent bg-[linear-gradient(90deg,rgba(255,255,255,0.25),rgba(255,255,255,0.85),rgba(255,255,255,0.25))] bg-[length:200%_100%] bg-clip-text [-webkit-background-clip:text] animate-[drop-text-shimmer_1.2s_ease-in-out_infinite]"
+              : "text-(--text-strong)"
           }`}
         >
           {workspaceDropText === "Drop Project Here" && (
-            <span className="codicon codicon-folder-opened workspace-drop-overlay-icon" aria-hidden />
+            <span
+              className="codicon codicon-folder-opened workspace-drop-overlay-icon w-[18px] h-[18px] opacity-80"
+              aria-hidden
+            />
           )}
           {workspaceDropText === "Drop Project Here"
             ? t("sidebar.dropProjectHere")
@@ -1955,9 +1966,12 @@ export function Sidebar({
               : workspaceDropText}
         </div>
       </div>
-      <div className="sidebar-body">
-        <div className="sidebar-body-layout">
-          <nav className="sidebar-primary-nav" aria-label={t("tabbar.primaryNavigation")}>
+      <div className="sidebar-body flex-1 min-h-0 overflow-hidden [-webkit-app-region:no-drag]">
+        <div className="sidebar-body-layout flex flex-col gap-2 h-full min-h-0 items-stretch">
+          <nav
+            className="sidebar-primary-nav flex flex-col gap-0.5 px-0.5 pt-2"
+            aria-label={t("tabbar.primaryNavigation")}
+          >
             <button
               type="button"
               className={`sidebar-primary-nav-item sidebar-primary-nav-mode-item ${appMode === "chat" ? "is-active" : ""}`}
@@ -2006,9 +2020,9 @@ export function Sidebar({
             </button>
           </nav>
           <ScrollArea
-            className={`sidebar-content-column${scrollFade.top ? " fade-top" : ""}${
-              scrollFade.bottom ? " fade-bottom" : ""
-            }`}
+            className={`sidebar-content-column flex-1 min-w-0 min-h-0 self-stretch overflow-hidden pr-0 pt-0 [-webkit-app-region:no-drag] [scrollbar-gutter:auto] [&>[data-slot=scroll-area-viewport]]:overflow-y-auto [&>[data-slot=scroll-area-viewport]]:overflow-x-hidden [&>[data-slot=scroll-area-viewport]]:[scrollbar-gutter:auto] [&>[data-slot=scroll-area-viewport]]:[scrollbar-width:none] [&>[data-slot=scroll-area-viewport]::-webkit-scrollbar]:w-0 [&>[data-slot=scroll-area-viewport]::-webkit-scrollbar]:h-0 [&>[data-slot=scroll-area-scrollbar]]:hidden [&>[data-slot=scroll-area-corner]]:hidden${
+              scrollFade.top ? " fade-top" : ""
+            }${scrollFade.bottom ? " fade-bottom" : ""}`}
             onViewportScroll={updateScrollFade}
             viewportRef={sidebarBodyRef}
           >
@@ -2041,7 +2055,7 @@ export function Sidebar({
                 {t("sidebar.projects")}
               </div>
               <button
-                className="sidebar-title-add sidebar-title-toggle-all"
+                className="sidebar-title-add sidebar-title-toggle-all hidden inline-flex items-center justify-center w-6 h-6 p-0 border-none bg-transparent text-(--text-muted) leading-none rounded-md shadow-none transform-none transition-colors duration-150 ease-out hover:bg-(--surface-hover) hover:text-(--text-strong) hover:shadow-none hover:transform-none focus-visible:bg-(--surface-hover) focus-visible:text-(--text-strong) focus-visible:shadow-none focus-visible:transform-none [&_svg]:w-4 [&_svg]:h-4"
                 onClick={handleToggleCollapseAll}
                 data-tauri-drag-region="false"
                 aria-label={
@@ -2059,7 +2073,7 @@ export function Sidebar({
                 <ChevronsDownUp size={14} aria-hidden />
               </button>
               <TooltipIconButton
-                className="sidebar-title-add"
+                className="sidebar-title-add inline-flex items-center justify-center w-6 h-6 p-0 border-none bg-transparent text-(--text-muted) leading-none rounded-md shadow-none transform-none transition-colors duration-150 ease-out hover:bg-(--surface-hover) hover:text-(--text-strong) hover:shadow-none hover:transform-none focus-visible:bg-(--surface-hover) focus-visible:text-(--text-strong) focus-visible:shadow-none focus-visible:transform-none [&_svg]:w-4 [&_svg]:h-4"
                 onClick={onAddWorkspace}
                 data-tauri-drag-region="false"
                 label={t("sidebar.addWorkspace")}

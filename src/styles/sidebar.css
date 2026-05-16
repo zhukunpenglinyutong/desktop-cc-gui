@@ -1,4 +1,154 @@
-@import "./sidebar.chrome.css";
+/*
+ * Chrome keeper rules (migrated from sidebar.chrome.css).
+ *
+ * These rules cannot be safely inlined as Tailwind utilities because they
+ * either:
+ *   1. depend on a global `.app.*` ancestor class set outside Sidebar.tsx, or
+ *   2. cascade into descendants injected via the `topbarNode` prop / via the
+ *      SidebarCollapseButton component (external children we don't control), or
+ *   3. apply user-select policy to every descendant under `.sidebar`.
+ *
+ * Layout-guard tests (sidebar-titlebar-drag-region.test.ts +
+ * layout-swapped-platform-guard.test.tsx) inline these rules from disk and
+ * verify them via cssRules / getComputedStyle.
+ */
+
+.sidebar-topbar-placeholder {
+  height: var(--main-topbar-height);
+  min-height: var(--main-topbar-height);
+  flex-shrink: 0;
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--surface-topbar);
+  box-sizing: border-box;
+  -webkit-app-region: drag;
+  position: relative;
+  z-index: 3;
+}
+
+.app.windows-desktop .sidebar-topbar-placeholder {
+  display: none;
+}
+
+.sidebar-topbar-content {
+  display: flex;
+  align-items: center;
+  height: 100%;
+  min-width: 0;
+  width: 100%;
+  justify-content: flex-end;
+  padding: 0;
+  -webkit-app-region: drag;
+  position: relative;
+  box-sizing: border-box;
+}
+
+.sidebar-topbar-content .topbar-leading {
+  display: flex;
+  justify-content: flex-end;
+  width: 100%;
+  min-width: 0;
+  padding-right: 12px;
+}
+
+.sidebar-topbar-content .main-header-actions {
+  display: none;
+}
+
+.sidebar-topbar-content .main-header-session-tabs-slot,
+.sidebar-topbar-content .topbar-session-tabs {
+  display: none;
+}
+
+.sidebar-topbar-content .main-header {
+  justify-content: flex-end;
+}
+
+.sidebar-topbar-content .topbar-leading > .main-header-action,
+.sidebar-topbar-content .workspace-separator,
+.sidebar-topbar-content .workspace-branch-static-row,
+.sidebar-topbar-content .workspace-branch-menu {
+  display: none;
+}
+
+.sidebar-topbar-content .workspace-header {
+  flex: 0 1 auto;
+  justify-content: flex-end;
+}
+
+.sidebar-topbar-content .workspace-project-dropdown {
+  left: auto;
+  right: 0;
+  z-index: 20;
+}
+
+.sidebar-titlebar-toggle {
+  --sidebar-titlebar-toggle-inline-gap: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  width: auto;
+  min-width: 0;
+  margin-left: auto;
+  padding-right: var(--sidebar-titlebar-toggle-inline-gap);
+  -webkit-app-region: no-drag;
+}
+
+.sidebar-titlebar-toggle.is-layout-swapped {
+  justify-content: flex-start;
+  margin-left: 0;
+  margin-right: auto;
+  padding-left: var(--sidebar-titlebar-toggle-inline-gap);
+  padding-right: 0;
+}
+
+.sidebar-titlebar-toggle .main-header-action {
+  width: var(--titlebar-toggle-size, 28px);
+  height: var(--titlebar-toggle-size, 28px);
+  padding: 0;
+  border-radius: 10px;
+  -webkit-app-region: no-drag;
+}
+
+.sidebar-titlebar-toggle
+  .main-header-action:not(.open-app-action):not(.open-app-toggle) {
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  box-shadow: none;
+}
+
+.sidebar-titlebar-toggle
+  .main-header-action:not(.open-app-action):not(.open-app-toggle):hover:not(
+    :disabled
+  ),
+.sidebar-titlebar-toggle
+  .main-header-action:not(.open-app-action):not(.open-app-toggle):focus-visible {
+  background: transparent;
+  color: var(--text-stronger);
+  box-shadow: none;
+}
+
+.sidebar,
+.sidebar * {
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.sidebar input,
+.sidebar textarea,
+.sidebar [contenteditable="true"] {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+@keyframes drop-text-shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
 
 .sidebar-primary-nav-item {
   width: 100%;

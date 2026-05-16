@@ -94,6 +94,29 @@ function resolveDurationToneClass(durationMs: number | null) {
   return "is-gt-30m";
 }
 
+function resolveDurationToneTailwind(durationMs: number | null) {
+  if (durationMs == null) {
+    return "text-[color-mix(in_srgb,var(--text-muted)_92%,transparent)]";
+  }
+  const totalMinutes = durationMs / (60 * 1000);
+  if (totalMinutes < 1) {
+    return "text-[color-mix(in_srgb,#10b981_84%,var(--text-strong))]";
+  }
+  if (totalMinutes <= 5) {
+    return "text-[color-mix(in_srgb,#22c55e_86%,var(--text-strong))]";
+  }
+  if (totalMinutes <= 10) {
+    return "text-[color-mix(in_srgb,#f59e0b_86%,var(--text-strong))]";
+  }
+  if (totalMinutes <= 20) {
+    return "text-[color-mix(in_srgb,#f97316_88%,var(--text-strong))]";
+  }
+  if (totalMinutes <= 30) {
+    return "text-[color-mix(in_srgb,#ef4444_90%,var(--text-strong))]";
+  }
+  return "text-[color-mix(in_srgb,#be123c_92%,var(--text-strong))]";
+}
+
 function formatDateKey(timestamp: number) {
   const date = new Date(timestamp);
   const year = date.getFullYear();
@@ -122,10 +145,16 @@ function RadarDeleteIconButton({
   onClick,
   iconSize,
 }: RadarDeleteIconButtonProps) {
+  const isDateGroup = className.includes("is-date-group");
+  const isEntry = className.includes("is-entry");
   return (
     <button
       type="button"
-      className={`session-activity-radar-delete-icon-button ${className}`}
+      className={`session-activity-radar-delete-icon-button ${className} p-0 border-none rounded-full inline-flex items-center justify-center bg-transparent text-[color-mix(in_srgb,var(--status-error,#ef4444)_82%,#ffd1d1)] dark:text-[color-mix(in_srgb,var(--status-error,#ef4444)_82%,#ffd1d1)] transition-[background-color,color,transform] duration-[140ms] ease-linear [&_svg]:[stroke-width:2.2] enabled:hover:bg-transparent enabled:hover:text-[#ffe4e6] focus-visible:outline focus-visible:outline-1 focus-visible:[outline-color:color-mix(in_srgb,var(--status-error,#ef4444)_86%,#ffffff)] focus-visible:[outline-offset:1px] disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none [:root[data-theme=light]_&]:text-[#dc2626] [:root[data-theme=light]_&:hover:not(:disabled)]:text-[#b91c1c]${
+        isDateGroup
+          ? " w-6 h-6 absolute right-2 top-1/2 -translate-y-1/2 enabled:hover:translate-y-[calc(-50%-0.5px)]"
+          : ""
+      }${isEntry ? " w-5 h-5" : ""}${!isDateGroup && !isEntry ? " enabled:hover:-translate-y-px" : ""}`}
       onClick={onClick}
       aria-label={ariaLabel}
       title={title}
@@ -289,33 +318,40 @@ export function WorkspaceSessionRadarPanel({
     emptyCopyKey: "activityPanel.radar.emptyRunning" | "activityPanel.radar.emptyRecent",
     entries: SessionRadarEntry[],
   ) => (
-    <section className="session-activity-radar-section">
-      <header className="session-activity-radar-section-header">
+    <section className="session-activity-radar-section flex flex-col gap-2">
+      <header className="session-activity-radar-section-header inline-flex items-center justify-between text-[11px] font-bold text-(--text-muted) tracking-[0.015em]">
         <span>{sectionTitle}</span>
       </header>
       {entries.length === 0 ? (
-        <div className="session-activity-radar-empty">{t(emptyCopyKey)}</div>
+        <div className="session-activity-radar-empty text-[12px] text-(--text-faint) py-2 px-0.5">{t(emptyCopyKey)}</div>
       ) : (
-        <div className="session-activity-radar-list">
+        <div className="session-activity-radar-list flex flex-col gap-1.5">
           {entries.map((entry) => {
             const completedAt = entry.completedAt ?? entry.updatedAt;
             const readAt = readStateById[entry.id] ?? 0;
             const isUnreadRecent = !entry.isProcessing && completedAt > readAt;
+            const isPreviewExpanded = Boolean(previewExpandedById[entry.id]);
             return (
               <button
                 key={entry.id}
                 type="button"
-                className={`session-activity-radar-row${entry.isProcessing ? " is-running" : ""}${
-                  isUnreadRecent ? " is-unread" : ""
-                }${previewExpandedById[entry.id] ? " is-preview-expanded" : ""}`}
+                className={`session-activity-radar-row relative w-full flex items-start gap-0 border rounded-lg [background:color-mix(in_srgb,var(--surface-card)_64%,transparent)] text-(--text-strong) py-2 px-[9px] text-left ${
+                  entry.isProcessing
+                    ? "is-running border-[color-mix(in_srgb,#10b981_38%,var(--border-subtle))]"
+                    : "border-[color-mix(in_srgb,var(--border-subtle)_72%,transparent)]"
+                } hover:border-[color-mix(in_srgb,var(--border-strong)_64%,transparent)] hover:[background:color-mix(in_srgb,var(--surface-hover)_72%,transparent)]${
+                  isUnreadRecent ? " is-unread border-[color-mix(in_srgb,var(--status-info,#3b82f6)_48%,var(--border-subtle))] [box-shadow:inset_0_0_0_1px_color-mix(in_srgb,var(--status-info,#3b82f6)_24%,transparent)]" : ""
+                }${isPreviewExpanded ? " is-preview-expanded" : ""}`}
                 onClick={() => togglePreviewAndSelectThread(entry)}
                 aria-expanded={previewExpandedById[entry.id] ? true : false}
                 aria-label={entry.threadName}
               >
                 {!entry.isProcessing ? (
                   <span
-                    className={`session-activity-radar-corner-badge${
-                      isUnreadRecent ? " is-unread" : " is-read"
+                    className={`session-activity-radar-corner-badge absolute top-2 right-2 min-w-5 h-5 px-1.5 rounded-full inline-flex items-center justify-center text-[11px] font-bold leading-none tracking-[0.01em] ${
+                      isUnreadRecent
+                        ? "is-unread text-[color-mix(in_srgb,#fb923c_82%,#ffffff)] bg-[color-mix(in_srgb,#fb923c_30%,transparent)] border-none [box-shadow:0_0_0_0_color-mix(in_srgb,#fb923c_0%,transparent)] [animation:session-radar-unread-breathe_1.95s_ease-in-out_infinite,session-radar-unread-flash_1.15s_steps(2,end)_infinite] [&_svg]:[animation:session-radar-unread-icon-breathe_1.95s_ease-in-out_infinite] motion-reduce:animate-none motion-reduce:[&_svg]:animate-none [:root[data-theme=light]_&]:text-[#1d4ed8] [:root[data-theme=light]_&]:bg-[color-mix(in_srgb,#2563eb_22%,#ffffff)] [:root[data-theme=light]_&]:border-transparent"
+                        : "is-read text-[color-mix(in_srgb,#34d399_80%,#ffffff)] bg-transparent border-none shadow-none [:root[data-theme=light]_&]:text-[#047857]"
                     }`}
                     aria-label={
                       isUnreadRecent
@@ -331,11 +367,11 @@ export function WorkspaceSessionRadarPanel({
                     {renderReadMarkerIcon(isUnreadRecent)}
                   </span>
                 ) : null}
-                <span className="session-activity-radar-row-main">
-                  <span className="session-activity-radar-row-meta-line">
+                <span className={`session-activity-radar-row-main min-w-0 flex-1 grid ${isPreviewExpanded ? "grid-rows-[auto_1fr] gap-y-0.5" : "grid-rows-[auto_0fr] gap-y-0"} transition-[grid-template-rows,row-gap] duration-[220ms] ease-[cubic-bezier(0.22,0.61,0.36,1)]`}>
+                  <span className="session-activity-radar-row-meta-line block min-w-0 pr-[34px] whitespace-nowrap overflow-hidden text-ellipsis text-[10px] text-(--text-muted) [&>span]:mr-2 [&>span]:align-middle [&>span:last-child]:mr-0">
                     <span
-                      className={`session-activity-radar-engine-icon${
-                        entry.isProcessing ? " is-running" : ""
+                      className={`session-activity-radar-engine-icon w-4 h-4 inline-flex items-center justify-center text-(--text-faint)${
+                        entry.isProcessing ? " is-running !text-[#10b981] [animation:session-radar-engine-spin_0.95s_linear_infinite]" : ""
                       }`}
                       aria-label={entry.engine}
                       title={entry.engine}
@@ -343,7 +379,7 @@ export function WorkspaceSessionRadarPanel({
                       <EngineIcon engine={resolveEngine(entry)} size={13} />
                     </span>
                     <span
-                      className="session-activity-radar-workspace"
+                      className="session-activity-radar-workspace font-[760] text-[12px] leading-[1.2]"
                       style={{ color: resolveWorkspaceAccent(entry.workspaceId || entry.workspaceName) }}
                     >
                       {entry.workspaceName}
@@ -361,7 +397,7 @@ export function WorkspaceSessionRadarPanel({
                         <span>
                           {t("activityPanel.radar.totalDuration")}{" "}
                           <span
-                            className={`session-activity-radar-duration ${resolveDurationToneClass(entry.durationMs)}`}
+                            className={`session-activity-radar-duration font-[680] ${resolveDurationToneClass(entry.durationMs)} ${resolveDurationToneTailwind(entry.durationMs)}`}
                           >
                             {formatDuration(entry.durationMs, t)}
                           </span>
@@ -369,7 +405,11 @@ export function WorkspaceSessionRadarPanel({
                       </>
                     ) : null}
                   </span>
-                  <span className="session-activity-radar-row-preview">
+                  <span className={`session-activity-radar-row-preview text-[11px] text-(--text-faint) pl-[22px] whitespace-pre-wrap [overflow-wrap:anywhere] break-words overflow-hidden min-h-0 [scrollbar-gutter:stable] transition-[opacity,transform] duration-[220ms] ease-[cubic-bezier(0.22,0.61,0.36,1)] ${
+                    isPreviewExpanded
+                      ? "max-h-[min(42vh,420px)] overflow-y-auto opacity-100 translate-y-0"
+                      : "max-h-none opacity-0 -translate-y-1"
+                  }`}>
                     {entry.preview || t("activityPanel.commandPendingSummary")}
                   </span>
                 </span>
@@ -400,14 +440,14 @@ export function WorkspaceSessionRadarPanel({
     );
 
     return (
-      <section className="session-activity-radar-section">
-        <header className="session-activity-radar-section-header">
+      <section className="session-activity-radar-section flex flex-col gap-2">
+        <header className="session-activity-radar-section-header inline-flex items-center justify-between text-[11px] font-bold text-(--text-muted) tracking-[0.015em]">
           <span>{sectionTitle}</span>
         </header>
         {entries.length === 0 ? (
-          <div className="session-activity-radar-empty">{t("activityPanel.radar.emptyRecent")}</div>
+          <div className="session-activity-radar-empty text-[12px] text-(--text-faint) py-2 px-0.5">{t("activityPanel.radar.emptyRecent")}</div>
         ) : (
-          <div className="session-activity-radar-list">
+          <div className="session-activity-radar-list flex flex-col gap-1.5">
             {groupEntries.map(([dateKey, group]) => {
               const isCollapsed = collapsedDateGroups[dateKey] ?? true;
               const isDeletingDateGroup = group.some((entry) => Boolean(deletingEntryIds[entry.id]));
@@ -416,11 +456,11 @@ export function WorkspaceSessionRadarPanel({
                 count: group.length,
               });
               return (
-                <div key={dateKey} className="session-activity-radar-date-group">
-                  <div className="session-activity-radar-date-group-header">
+                <div key={dateKey} className="session-activity-radar-date-group flex flex-col gap-2">
+                  <div className="session-activity-radar-date-group-header relative">
                     <button
                       type="button"
-                      className="session-activity-radar-date-toggle"
+                      className="session-activity-radar-date-toggle w-full min-h-9 border border-[color-mix(in_srgb,var(--border-subtle)_72%,transparent)] rounded-xl [background:color-mix(in_srgb,var(--surface-card)_66%,transparent)] text-(--text-strong) pr-[42px] pl-3 inline-flex items-center justify-between hover:[background:color-mix(in_srgb,var(--surface-hover)_72%,transparent)] hover:border-[color-mix(in_srgb,var(--border-strong)_64%,transparent)]"
                       onClick={() => {
                         setCollapsedDateGroups((current) => {
                           const next = { ...current, [dateKey]: !isCollapsed };
@@ -443,12 +483,12 @@ export function WorkspaceSessionRadarPanel({
                         })
                       }}
                     >
-                      <span className="session-activity-radar-date-toggle-left">
+                      <span className="session-activity-radar-date-toggle-left inline-flex items-center gap-2 text-[12px] font-bold">
                         <CalendarDays size={14} aria-hidden />
                         {isCollapsed ? <ChevronRight size={14} aria-hidden /> : <ChevronDown size={14} aria-hidden />}
                         <span>{dateKey}</span>
                       </span>
-                      <span className="session-activity-radar-date-toggle-count">{group.length}</span>
+                      <span className="session-activity-radar-date-toggle-count min-w-0 h-auto p-0 rounded-none inline-flex items-center justify-end text-right text-[12px] font-bold text-(--text-muted) bg-transparent border-none">{group.length}</span>
                     </button>
                     <RadarDeleteIconButton
                       className="session-activity-radar-date-group-delete-button is-date-group"
@@ -460,35 +500,36 @@ export function WorkspaceSessionRadarPanel({
                     />
                   </div>
                   {!isCollapsed ? (
-                    <div className="session-activity-radar-date-group-list">
+                    <div className="session-activity-radar-date-group-list flex flex-col gap-1.5">
                       {group.map((entry) => {
                         const completedAt = entry.completedAt ?? entry.updatedAt;
                         const readAt = readStateById[entry.id] ?? 0;
                         const isUnreadRecent = completedAt > readAt;
                         const showDeleteAction = !isUnreadRecent;
                         const isDeletingRecentEntry = Boolean(deletingEntryIds[entry.id]);
+                        const isPreviewExpanded = Boolean(previewExpandedById[entry.id]);
                         return (
-                          <div key={entry.id} className="session-activity-radar-row-shell">
+                          <div key={entry.id} className="session-activity-radar-row-shell relative">
                             <button
                               type="button"
-                              className={`session-activity-radar-row${showDeleteAction ? " has-delete-action" : ""}${isUnreadRecent ? " is-unread" : ""}${
-                                previewExpandedById[entry.id] ? " is-preview-expanded" : ""
+                              className={`session-activity-radar-row relative w-full flex items-start gap-0 border border-[color-mix(in_srgb,var(--border-subtle)_72%,transparent)] rounded-lg [background:color-mix(in_srgb,var(--surface-card)_64%,transparent)] text-(--text-strong) py-2 px-[9px] text-left hover:border-[color-mix(in_srgb,var(--border-strong)_64%,transparent)] hover:[background:color-mix(in_srgb,var(--surface-hover)_72%,transparent)]${showDeleteAction ? " has-delete-action [&_.session-activity-radar-row-meta-line]:pr-[82px]" : ""}${isUnreadRecent ? " is-unread border-[color-mix(in_srgb,var(--status-info,#3b82f6)_48%,var(--border-subtle))] [box-shadow:inset_0_0_0_1px_color-mix(in_srgb,var(--status-info,#3b82f6)_24%,transparent)]" : ""}${
+                                isPreviewExpanded ? " is-preview-expanded" : ""
                               }`}
                               onClick={() => togglePreviewAndSelectThread(entry)}
                               aria-expanded={previewExpandedById[entry.id] ? true : false}
                               aria-label={entry.threadName}
                             >
-                              <span className="session-activity-radar-row-main">
-                                <span className="session-activity-radar-row-meta-line">
+                              <span className={`session-activity-radar-row-main min-w-0 flex-1 grid ${isPreviewExpanded ? "grid-rows-[auto_1fr] gap-y-0.5" : "grid-rows-[auto_0fr] gap-y-0"} transition-[grid-template-rows,row-gap] duration-[220ms] ease-[cubic-bezier(0.22,0.61,0.36,1)]`}>
+                                <span className="session-activity-radar-row-meta-line block min-w-0 pr-[34px] whitespace-nowrap overflow-hidden text-ellipsis text-[10px] text-(--text-muted) [&>span]:mr-2 [&>span]:align-middle [&>span:last-child]:mr-0">
                                   <span
-                                    className="session-activity-radar-engine-icon"
+                                    className="session-activity-radar-engine-icon w-4 h-4 inline-flex items-center justify-center text-(--text-faint)"
                                     aria-label={entry.engine}
                                     title={entry.engine}
                                   >
                                     <EngineIcon engine={resolveEngine(entry)} size={13} />
                                   </span>
                                   <span
-                                    className="session-activity-radar-workspace"
+                                    className="session-activity-radar-workspace font-[760] text-[12px] leading-[1.2]"
                                     style={{ color: resolveWorkspaceAccent(entry.workspaceId || entry.workspaceName) }}
                                   >
                                     {entry.workspaceName}
@@ -508,24 +549,30 @@ export function WorkspaceSessionRadarPanel({
                                   <span>
                                     {t("activityPanel.radar.totalDuration")}{" "}
                                     <span
-                                      className={`session-activity-radar-duration ${resolveDurationToneClass(entry.durationMs)}`}
+                                      className={`session-activity-radar-duration font-[680] ${resolveDurationToneClass(entry.durationMs)} ${resolveDurationToneTailwind(entry.durationMs)}`}
                                     >
                                       {formatDuration(entry.durationMs, t)}
                                     </span>
                                   </span>
                                 </span>
-                                <span className="session-activity-radar-row-preview">
+                                <span className={`session-activity-radar-row-preview text-[11px] text-(--text-faint) pl-[22px] whitespace-pre-wrap [overflow-wrap:anywhere] break-words overflow-hidden min-h-0 [scrollbar-gutter:stable] transition-[opacity,transform] duration-[220ms] ease-[cubic-bezier(0.22,0.61,0.36,1)] ${
+                                  isPreviewExpanded
+                                    ? "max-h-[min(42vh,420px)] overflow-y-auto opacity-100 translate-y-0"
+                                    : "max-h-none opacity-0 -translate-y-1"
+                                }`}>
                                   {entry.preview || t("activityPanel.commandPendingSummary")}
                                 </span>
                               </span>
                             </button>
                             <span
-                              className="session-activity-radar-row-actions"
+                              className="session-activity-radar-row-actions absolute top-2 right-2 inline-flex items-center gap-1.5 [&_.session-activity-radar-corner-badge]:!static"
                               onClick={(event) => handleRecentRowActionsClick(event, entry)}
                             >
                               <span
-                                className={`session-activity-radar-corner-badge${
-                                  isUnreadRecent ? " is-unread" : " is-read"
+                                className={`session-activity-radar-corner-badge min-w-5 h-5 px-1.5 rounded-full inline-flex items-center justify-center text-[11px] font-bold leading-none tracking-[0.01em] ${
+                                  isUnreadRecent
+                                    ? "is-unread text-[color-mix(in_srgb,#fb923c_82%,#ffffff)] bg-[color-mix(in_srgb,#fb923c_30%,transparent)] border-none [box-shadow:0_0_0_0_color-mix(in_srgb,#fb923c_0%,transparent)] [animation:session-radar-unread-breathe_1.95s_ease-in-out_infinite,session-radar-unread-flash_1.15s_steps(2,end)_infinite] [&_svg]:[animation:session-radar-unread-icon-breathe_1.95s_ease-in-out_infinite] motion-reduce:animate-none motion-reduce:[&_svg]:animate-none [:root[data-theme=light]_&]:text-[#1d4ed8] [:root[data-theme=light]_&]:bg-[color-mix(in_srgb,#2563eb_22%,#ffffff)] [:root[data-theme=light]_&]:border-transparent"
+                                    : "is-read text-[color-mix(in_srgb,#34d399_80%,#ffffff)] bg-transparent border-none shadow-none [:root[data-theme=light]_&]:text-[#047857]"
                                 }`}
                                 aria-label={
                                   isUnreadRecent
@@ -566,18 +613,18 @@ export function WorkspaceSessionRadarPanel({
   };
 
   return (
-    <div className="session-activity-panel">
-      <div className="session-activity-header">
-        <div className="session-activity-title-group">
-          <div className="session-activity-heading-row">
-            <div className="session-activity-title-row">
+    <div className="session-activity-panel flex flex-col min-h-0 h-full bg-(--surface-right-panel) [background:color-mix(in_srgb,var(--surface-right-panel,transparent)_92%,transparent)]">
+      <div className="session-activity-header relative z-[2] overflow-visible flex items-center justify-between gap-3 px-3.5 pt-3 pb-2.5 border-b border-border">
+        <div className="session-activity-title-group flex items-center gap-3.5 flex-[1_1_auto] min-w-0 overflow-visible">
+          <div className="session-activity-heading-row relative flex items-center gap-2.5 min-w-0 overflow-visible">
+            <div className="session-activity-title-row inline-flex items-center gap-2 text-[13px] font-semibold text-(--text-strong)">
               <span>{t("activityPanel.radar.modeWorkspaceRadar")}</span>
             </div>
           </div>
         </div>
-        <div className="session-activity-summary">{headerSummary}</div>
+        <div className="session-activity-summary inline-flex items-center justify-end flex-[0_1_auto] min-w-0 max-w-full text-[11px] text-(--text-muted) [font-variant-numeric:tabular-nums] whitespace-nowrap overflow-hidden text-ellipsis">{headerSummary}</div>
       </div>
-      <div className="session-activity-radar">
+      <div className="session-activity-radar flex flex-col gap-3.5 px-3.5 pt-3 pb-4 overflow-y-auto">
         {renderSection(
           t("activityPanel.radar.runningSection", { count: runningSessions.length }),
           "activityPanel.radar.emptyRunning",

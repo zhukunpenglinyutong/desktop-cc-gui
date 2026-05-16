@@ -19,8 +19,8 @@ export function SidebarHeader({
   onAppModeChange,
 }: SidebarHeaderProps) {
   return (
-    <div className="sidebar-header">
-      <div className="sidebar-header-actions">
+    <div className="sidebar-header flex items-center gap-2 px-2 pt-3 pb-1 mb-0 [-webkit-app-region:no-drag]">
+      <div className="sidebar-header-actions flex items-center gap-1.5 w-full">
         <KanbanModeToggle
           appMode={appMode}
           onAppModeChange={onAppModeChange}

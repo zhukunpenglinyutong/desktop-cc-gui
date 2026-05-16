@@ -107,25 +107,42 @@ export function ClientDocumentationWindow() {
   };
 
   return (
-    <div className={`${appClassName} client-documentation-window`} style={documentationWindowStyle}>
+    <div
+      className={`${appClassName} client-documentation-window min-h-screen bg-[linear-gradient(90deg,rgba(37,99,235,0.07)_1px,transparent_1px),linear-gradient(rgba(15,23,42,0.045)_1px,transparent_1px),radial-gradient(circle_at_9%_4%,rgba(37,99,235,0.2),transparent_28%),radial-gradient(circle_at_96%_12%,rgba(14,165,233,0.12),transparent_24%),linear-gradient(135deg,var(--surface-base),var(--surface-raised))] bg-[size:42px_42px,42px_42px,auto,auto,auto] text-(--text-primary) flex flex-col overflow-hidden`}
+      style={documentationWindowStyle}
+    >
       <header
         ref={menubarRef}
-        className="client-documentation-menubar"
+        className="client-documentation-menubar h-11 flex items-center px-[18px] border-b border-(--border-subtle) bg-[color-mix(in_srgb,var(--surface-raised)_78%,transparent)] backdrop-blur-[18px] [-webkit-app-region:drag]"
         data-tauri-drag-region="true"
       >
-        <div className="client-documentation-menubar-copy" data-tauri-drag-region="true">
-          <span className="client-documentation-menubar-label" data-tauri-drag-region="true">
+        <div
+          className="client-documentation-menubar-copy flex items-baseline gap-2.5 min-w-0"
+          data-tauri-drag-region="true"
+        >
+          <span
+            className="client-documentation-menubar-label text-(--text-muted) text-xs tracking-[0.08em] uppercase"
+            data-tauri-drag-region="true"
+          >
             客户端说明文档
           </span>
-          <strong className="client-documentation-menubar-title" data-tauri-drag-region="true">
+          <strong
+            className="client-documentation-menubar-title text-(--text-stronger) text-[13px]"
+            data-tauri-drag-region="true"
+          >
             Client Guide
           </strong>
         </div>
       </header>
-      <main className="client-documentation-shell">
-        <aside className="client-documentation-sidebar" data-window-drag-ignore="true">
-          <div className="client-documentation-sidebar-kicker">Client map</div>
-          <div className="client-documentation-sidebar-heading">
+      <main className="client-documentation-shell min-h-0 flex-1 grid grid-cols-[minmax(300px,360px)_minmax(0,1fr)] max-[820px]:grid-cols-[1fr]">
+        <aside
+          className="client-documentation-sidebar min-w-0 min-h-0 border-r border-(--border-subtle) bg-[linear-gradient(180deg,color-mix(in_srgb,var(--surface-raised)_94%,transparent),color-mix(in_srgb,var(--surface-base)_82%,transparent)),color-mix(in_srgb,var(--surface-raised)_88%,transparent)] overflow-auto pt-5 pb-6 px-4 [-webkit-app-region:no-drag] max-[820px]:max-h-[38vh] max-[820px]:border-r-0 max-[820px]:border-b max-[820px]:border-(--border-subtle)"
+          data-window-drag-ignore="true"
+        >
+          <div className="client-documentation-sidebar-kicker w-fit border border-[rgba(37,99,235,0.24)] rounded-full text-[#2563eb] bg-[rgba(37,99,235,0.1)] text-[10px] font-extrabold tracking-[0.14em] uppercase px-2 py-[5px] mx-1 mb-3">
+            Client map
+          </div>
+          <div className="client-documentation-sidebar-heading flex items-center justify-between text-(--text-muted) text-xs mx-1 mb-3 uppercase tracking-[0.08em]">
             <span>模块目录</span>
             <small>{CLIENT_DOCUMENTATION_TREE.length} modules</small>
           </div>
@@ -135,7 +152,10 @@ export function ClientDocumentationWindow() {
             onSelectNode={setSelectedNodeId}
           />
         </aside>
-        <section className="client-documentation-content" data-window-drag-ignore="true">
+        <section
+          className="client-documentation-content min-w-0 min-h-0 overflow-auto py-9 px-[clamp(26px,5vw,78px)] [-webkit-app-region:no-drag] max-[820px]:pt-[22px] max-[820px]:pb-[34px] max-[820px]:px-[18px]"
+          data-window-drag-ignore="true"
+        >
           <ClientDocumentationDetail
             node={selectedNode}
             missingNodeId={missingNodeId}
