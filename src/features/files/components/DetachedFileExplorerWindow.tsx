@@ -61,6 +61,10 @@ export function DetachedFileExplorerWindow() {
       "--ui-font-family": appSettings.uiFontFamily,
       "--code-font-family": appSettings.codeFontFamily,
       "--code-font-size": `${appSettings.codeFontSize}px`,
+      "--detached-menubar-bg":
+        "color-mix(in srgb, var(--surface-topbar) 82%, var(--surface-messages) 18%)",
+      "--detached-menubar-border":
+        "color-mix(in srgb, var(--border-subtle) 88%, transparent)",
     }) as CSSProperties,
     [appSettings.codeFontFamily, appSettings.codeFontSize, appSettings.uiFontFamily],
   );
@@ -179,13 +183,18 @@ export function DetachedFileExplorerWindow() {
   }, [session]);
 
   const renderCompactMenubar = () => (
-    <header className="detached-file-explorer-menubar" data-tauri-drag-region="true">
-      <div className="detached-file-explorer-menubar-copy">
-        <span className="detached-file-explorer-menubar-label">
+    <header
+      className="detached-file-explorer-menubar flex items-center min-h-[24px] px-2.5 border-b bg-[var(--detached-menubar-bg)] border-[var(--detached-menubar-border)] shrink-0 [.macos-desktop_&]:pl-[calc(68px+var(--titlebar-inset-left,0px))]"
+      data-tauri-drag-region="true"
+    >
+      <div className="detached-file-explorer-menubar-copy inline-flex items-baseline gap-2 min-w-0">
+        <span className="detached-file-explorer-menubar-label text-[10px] font-semibold tracking-[0.06em] uppercase text-[var(--text-faint)]">
           {t("files.detachedExplorerTitle")}
         </span>
         {session ? (
-          <strong className="detached-file-explorer-menubar-title">{session.workspaceName}</strong>
+          <strong className="detached-file-explorer-menubar-title min-w-0 text-[10px] font-semibold text-[var(--text-muted)] whitespace-nowrap overflow-hidden text-ellipsis">
+            {session.workspaceName}
+          </strong>
         ) : null}
       </div>
     </header>
@@ -193,13 +202,16 @@ export function DetachedFileExplorerWindow() {
 
   if (!session) {
     return (
-      <div className={`${appClassName} detached-file-explorer-window`} style={detachedWindowStyle}>
+      <div
+        className={`${appClassName} detached-file-explorer-window flex flex-col w-screen h-screen min-w-0 min-h-0 bg-[var(--surface-messages)]`}
+        style={detachedWindowStyle}
+      >
         {renderCompactMenubar()}
-        <div className="detached-file-explorer-unavailable">
-          <p className="detached-file-explorer-empty-title">
+        <div className="detached-file-explorer-unavailable flex flex-col justify-center items-center gap-2.5 h-full p-8 text-center">
+          <p className="detached-file-explorer-empty-title m-0 text-base font-semibold text-[var(--text-stronger)]">
             {t("files.detachedExplorerUnavailableTitle")}
           </p>
-          <p className="detached-file-explorer-empty-body">
+          <p className="detached-file-explorer-empty-body m-0 max-w-[420px] text-[13px] leading-relaxed text-[var(--text-muted)]">
             {t("files.detachedExplorerUnavailableBody")}
           </p>
         </div>
@@ -208,7 +220,10 @@ export function DetachedFileExplorerWindow() {
   }
 
   return (
-    <div className={`${appClassName} detached-file-explorer-window`} style={detachedWindowStyle}>
+    <div
+      className={`${appClassName} detached-file-explorer-window flex flex-col w-screen h-screen min-w-0 min-h-0 bg-[var(--surface-messages)]`}
+      style={detachedWindowStyle}
+    >
       {renderCompactMenubar()}
       <FileExplorerWorkspace
         workspaceId={session.workspaceId}

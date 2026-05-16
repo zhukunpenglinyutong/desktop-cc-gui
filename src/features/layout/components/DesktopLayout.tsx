@@ -220,15 +220,15 @@ export function DesktopLayout({
 
   const isMemoryMode = centerMode === "memory";
   const gitHistoryDockNode = showGitHistory ? (
-    <div className="git-history-dock-overlay">
+    <div className="git-history-dock-overlay fixed left-0 right-0 bottom-0 z-[48] flex flex-col h-[var(--git-history-panel-height,50vh)] min-h-[240px] max-h-[calc(100vh-var(--main-topbar-height,44px))] border-t border-[color:var(--border-default)] bg-[color-mix(in_srgb,var(--surface-messages,#0d0f14)_94%,transparent)] transition-[height] duration-[120ms] ease-in-out">
       <div
-        className="git-history-dock-resizer"
+        className="git-history-dock-resizer relative h-2 cursor-row-resize flex-none touch-none bg-transparent after:content-[''] after:absolute after:left-1/2 after:w-[68px] after:top-1/2 after:h-[2px] after:rounded-full after:-translate-x-1/2 after:-translate-y-1/2 after:bg-[color-mix(in_srgb,var(--border-default)_90%,transparent)] hover:after:bg-[color-mix(in_srgb,var(--accent-primary,#2563eb)_70%,transparent)]"
         role="separator"
         aria-orientation="horizontal"
         aria-label={t("layout.resizeGitHistoryPanel")}
         onPointerDown={onGitHistoryPanelResizeStart}
       />
-      <div className="git-history-dock-body">{gitHistoryNode}</div>
+      <div className="git-history-dock-body flex-1 min-h-0 overflow-hidden">{gitHistoryNode}</div>
     </div>
   ) : null;
 

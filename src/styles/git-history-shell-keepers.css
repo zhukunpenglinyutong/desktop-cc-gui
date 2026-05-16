@@ -1,0 +1,49 @@
+/**
+ * Keeper file extracted from git-history.part1-shell.css during Phase 7.
+ *
+ * Reason: these rules cannot be inlined as Tailwind utilities on the React
+ * `className` props because:
+ *  1. `body[data-git-history-resizing="true"]` is a parent-attribute selector
+ *     that targets the dock resizer pseudo-element from outside its component.
+ *  2. The `.git-history-workbench` CSS custom properties (`--git-history-pane-bg`,
+ *     `--git-filetree-*`) are consumed by descendant cascade in
+ *     `git-history.part1.css` and `git-history.part1.overview.css`. The
+ *     descendants are not in the same JSX tree, so the properties must live on
+ *     the workbench root via a real CSS rule, not a Tailwind arbitrary-value
+ *     class.
+ *
+ * Same pattern as Phase 1 `proxy-status-badge.css`, Phase 3
+ * `prompts-animations.css`, Phase 4 `toast-animations.css`.
+ */
+
+body[data-git-history-resizing="true"] .git-history-dock-resizer::after {
+  background: color-mix(in srgb, var(--accent-primary, #2563eb) 70%, transparent);
+}
+
+.git-history-workbench {
+  --git-history-pane-bg: color-mix(
+    in srgb,
+    var(--surface-messages, #0d0f14) 92%,
+    var(--surface-card-muted, #111725)
+  );
+  --git-filetree-section-gap: 2px;
+  --git-filetree-section-padding: 6px;
+  --git-filetree-section-radius: 12px;
+  --git-filetree-section-border: color-mix(in srgb, var(--border-default) 48%, transparent);
+  --git-filetree-section-bg: color-mix(in srgb, var(--surface-control, #1a2230) 40%, transparent);
+  --git-filetree-row-min-height: 28px;
+  --git-filetree-row-gap: 8px;
+  --git-filetree-row-pad-y: 3px;
+  --git-filetree-row-pad-x: 8px;
+  --git-filetree-row-radius: 7px;
+  --git-filetree-indent-step: 16px;
+  --git-filetree-icon-size: 12px;
+  --git-filetree-tree-line-color: color-mix(in srgb, var(--text-muted, #64748b) 34%, transparent);
+  --git-filetree-row-hover-bg: color-mix(in srgb, var(--surface-control-hover, #263044) 56%, transparent);
+  --git-filetree-row-active-bg: color-mix(in srgb, var(--accent-primary, #2563eb) 17%, transparent);
+  --git-filetree-badge-font-size: 10px;
+  --git-filetree-badge-gap: 2px;
+  --git-filetree-badge-pad-y: 1px;
+  --git-filetree-badge-pad-x: 8px;
+  --git-filetree-badge-radius: 999px;
+}

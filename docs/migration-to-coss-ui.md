@@ -35,9 +35,9 @@
 | 4 | Composer & Interaction Dialogs | scope-shrunk → 6 dialog/toast 文件已删（ask-user-question / approval-toasts / loading-progress / request-user-input / error-toasts / update-toasts），composer.* 推迟到 Phase 4.5；bonus 修复 input.tsx baseline | ✅ done (2026-05-16, 待 commit) |
 | 5 | Home & Workspace | scope-shrunk → 4 文件已删（home / release-notes / note-cards / workspace-home）；2 keeper 抽出（release-notes-markdown / note-cards-rich-input）；taskCenterClasses helper 抽出；home-chat 推迟到 5.5（6 个 CSS-literal pin），kanban 推迟到 5.6（2071 行 + 14 consumer，需切 3 个 sub-PR） | ✅ done (2026-05-16, 待 commit) |
 | 6 | Settings | scope-shrunk → 仅 `settings.skills.css`（478 行）已删（单 consumer `SkillsSection.tsx` 1289/40）；7 个文件全部 defer（part1 frame 推迟到 6.7、vendor cluster 4 文件推迟到 6.5、part2 + basic-redesign + part3 推迟到 6.6） | ✅ done (2026-05-16, 待 commit) |
-| 7 | Git History | git-history.* + branch-compare / pr-dialog / shell / support | ☐ |
-| 8 | Spec Hub | spec-hub.* | ☐ |
-| 9 | File / Diff / Terminal | file-tree / diff / terminal / detached-file-explorer / opencode-panel | ☐ |
+| 7 | Git History | scope-shrunk → 仅 `git-history.part1-shell.css`（126 行）已删；keeper `git-history-shell-keepers.css`（49 行）保留 9 个 `--git-filetree-*` 与 `body[data-git-history-resizing]` cascade；DesktopLayout/GitHistoryPanelView Tailwind inline；git-history runtime contract + static imports 验证通过；剩余 part1/part1.overview/part2/branch-compare/pr-dialog 推 7.5/7.6/7.7 | ✅ done (2026-05-16, 待 commit) |
+| 8 | Spec Hub | **discovery + defer only**：`SpecHubPresentationalImpl.tsx` 是 113KB / `@ts-nocheck` / 单行 minified bundle，所有 225+ `spec-hub-*` className 在其中，无法 inline；Phase 8 仅产 plan doc；推 Phase 8.5（de-minify）+ Phase 8.6（inline Tailwind） | ✅ done (2026-05-16, 待 commit) |
+| 9 | File / Diff / Terminal | scope-shrunk → 仅 `detached-file-explorer.css` 处理（236 行 → 21 行 in-place keeper，bootstrap 不动）；diff/diff-viewer/file-tree/file-view-panel/terminal/opencode 推 9.1-9.5（4 个 tsx consumer > 1000 行，diff-viewer 字面值 pin，terminal cascade 与 main grid contract） | ✅ done (2026-05-16, 待 commit) |
 | 10 | Cleanup & Final Verify | 删剩余旧 CSS、跑所有 gate、人工 verify、follow-up 入库 | ☐ |
 
 > 每个 phase = 1 个 PR；DoD 详见 PRD。
@@ -111,6 +111,22 @@ archive 位置：`.trellis/tasks/archive/2026-05/`。
 ### 文档
 - [ ] 每 phase 完成后在 changelog 简要记录"用 coss 替换了哪些组件 / 删除了哪些 .css"。
 - [ ] 项目 README 顶部加 design system 引用：coss.ui v4 + Tailwind v4 + Base UI。
+
+### Phase 7 / 8 / 9 carry-over follow-up（2026-05-16 并行 worktree 批次）
+- [ ] **Phase 7.5** — `git-history.part1.css`（1430 行）+ `git-history.part1.overview.css` 非 worktree 部分（~600 行）：主体 3 列 + chip/search/branch-row/commit-row/details + diff-modal + 2 个共享 keyframes
+- [ ] **Phase 7.6** — `git-history.part1.overview.css` worktree 部分（~500 行）+ `GitHistoryWorktreePanel.tsx`（1391 行 / 80 className）
+- [ ] **Phase 7.7** — `git-history.branch-compare.css`（226）+ `git-history.part2.pr-dialog.css`（810）+ `git-history.part2-support.css`（320）+ `git-history.part2.css`（1646）：3002 行 CSS / 263+ className 集中 Dialog 处理（可与 Dialog primitive swap 合并）
+- [ ] **Phase 8.5** — De-minify `SpecHubPresentationalImpl.tsx`（113KB / `@ts-nocheck` / 单行 minified bundle）。两条路：git-history rollback（推荐）或 prettier 手工 decompose
+- [ ] **Phase 8.6** — Phase 8.5 完成后，inline Tailwind 5 个 spec-hub CSS（3211 行 / ~560 selector），bootstrap CSS imports −2，目标剩 1 keeper（spec-hub-detached-shell-keepers.css，`.macos-desktop` cascade）
+- [ ] **Phase 8.6.x** — `@keyframes spec-hub-spin` → `animate-spin`；5 个 @media → Tailwind `max-[Xpx]:` arbitrary
+- [ ] **Phase 8 coss primitive swap** — `Tabs` / `Dialog` / `Card` / `Badge` 审计
+- [ ] **Phase 9.1** — `file-tree.css`（1247 行 / 211 selector）+ FileTreePanel.tsx（2280 行）；建议拆 3 个 sub-PR
+- [ ] **Phase 9.2** — `diff.css`（2110）+ `diff-viewer.css`（1376，含 layout-swapped 字面值 pin）+ GitDiffPanel.tsx（2661）+ GitDiffViewer.tsx（1317）；建议拆 5 个 sub-PR；需先重构字面值 pin 测试
+- [ ] **Phase 9.3** — `file-view-panel.css`（2364）+ `file-view-panel-shell.css`（135，共享 `--fvp-*` token）+ FileViewPanel.tsx（1947 + 751）；建议拆 4 个 sub-PR
+- [ ] **Phase 9.4** — `terminal.css`（193 行）：xterm DOM cascade keeper + `terminal-panel { grid-row: 5; grid-column: 1/-1 }` 跨文件契约
+- [ ] **Phase 9.5** — `opencode-panel.css`（915 行 / 125 selector）+ OpenCodeControlPanel.tsx（1011 行）；遵守 codex-unified-exec-override-contract
+- [ ] **Phase 9 follow-up** — `Button` primitive swap（detached-file-explorer-sidebar-expand 单 icon-only floating button，trivial）
+- [ ] **Splitter primitive 整合** — detached file explorer / git-history compare / settings skills 三处共用 hand-rolled pointer drag，需要单一 primitive 统一
 
 ---
 

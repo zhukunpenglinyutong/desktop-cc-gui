@@ -180,12 +180,12 @@ export function FileExplorerWorkspace({
   return (
     <div
       ref={workspaceRef}
-      className={`detached-file-explorer-workspace${sidebarCollapsed ? " is-sidebar-collapsed" : ""}`}
+      className={`detached-file-explorer-workspace grid grid-cols-[minmax(220px,var(--detached-file-explorer-sidebar-width,320px))_10px_minmax(0,1fr)] min-w-0 min-h-0 flex-1 overflow-hidden relative bg-[var(--surface-messages)] [&.is-sidebar-collapsed]:grid-cols-[0_0_minmax(0,1fr)] max-[860px]:grid-cols-[minmax(200px,var(--detached-file-explorer-sidebar-width,260px))_10px_minmax(0,1fr)]${sidebarCollapsed ? " is-sidebar-collapsed" : ""}`}
       style={{
         "--detached-file-explorer-sidebar-width": `${sidebarWidth}px`,
       } as CSSProperties}
     >
-      <div className="detached-file-explorer-sidebar">
+      <div className="detached-file-explorer-sidebar min-w-0 min-h-0 bg-[var(--surface-messages)] [.is-sidebar-collapsed_&]:invisible [&_.file-tree-panel]:h-full">
         <FileTreePanel
           workspaceId={workspaceId}
           workspaceName={workspaceName}
@@ -215,23 +215,23 @@ export function FileExplorerWorkspace({
         />
       </div>
       <div
-        className="detached-file-explorer-resizer"
+        className="detached-file-explorer-resizer relative min-h-0 cursor-col-resize z-[2] bg-transparent [.is-sidebar-collapsed_&]:invisible [.is-sidebar-collapsed_&]:pointer-events-none before:content-[''] before:absolute before:top-1/2 before:left-1/2 before:w-[3px] before:h-16 before:rounded-full before:bg-[color-mix(in_srgb,var(--border-strong)_52%,transparent)] before:-translate-x-1/2 before:-translate-y-1/2 before:opacity-[0.72] before:transition-[opacity,background-color,width] before:duration-150 hover:before:w-1 hover:before:opacity-[0.96] hover:before:bg-[color-mix(in_srgb,var(--border-stronger)_72%,transparent)]"
         role="separator"
         aria-orientation="vertical"
         aria-label={t("layout.resizeSidebar")}
         onPointerDown={handleResizeStart}
       />
-      <div className="detached-file-explorer-viewer">
+      <div className="detached-file-explorer-viewer relative min-w-0 min-h-0 bg-[var(--surface-messages)]">
         {showViewerExpandButton ? (
           <button
             type="button"
-            className="detached-file-explorer-sidebar-expand"
+            className="detached-file-explorer-sidebar-expand absolute top-2 left-2 z-[4] inline-flex items-center justify-center w-6 h-6 border border-transparent rounded-md bg-transparent text-[var(--text-faint)] transition-colors duration-[120ms] hover:text-[var(--text-strong)] hover:border-[var(--border-strong)] hover:bg-[color-mix(in_srgb,var(--surface-hover)_68%,var(--surface-card))] focus-visible:text-[var(--text-strong)] focus-visible:border-[var(--border-strong)] focus-visible:bg-[color-mix(in_srgb,var(--surface-hover)_68%,var(--surface-card))]"
             onClick={handleToggleSidebar}
             aria-label={t("sidebar.sidebarExpand")}
             title={t("sidebar.sidebarExpand")}
           >
             <span
-              className="codicon codicon-chevron-right detached-file-explorer-sidebar-expand-icon"
+              className="codicon codicon-chevron-right detached-file-explorer-sidebar-expand-icon inline-flex items-center justify-center text-base leading-none"
               aria-hidden
             />
           </button>
@@ -271,11 +271,11 @@ export function FileExplorerWorkspace({
             }
           />
         ) : (
-          <div className="detached-file-explorer-empty">
-            <p className="detached-file-explorer-empty-title">
+          <div className="detached-file-explorer-empty flex flex-col justify-center items-center gap-2.5 h-full p-8 text-center">
+            <p className="detached-file-explorer-empty-title m-0 text-base font-semibold text-[var(--text-stronger)]">
               {t("files.detachedExplorerEmptyTitle")}
             </p>
-            <p className="detached-file-explorer-empty-body">
+            <p className="detached-file-explorer-empty-body m-0 max-w-[420px] text-[13px] leading-relaxed text-[var(--text-muted)]">
               {t("files.detachedExplorerEmptyBody")}
             </p>
           </div>

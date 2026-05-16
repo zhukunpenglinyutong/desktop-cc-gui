@@ -45,10 +45,10 @@ export function renderGitHistoryPanelView(scope: any) {
     const canPickFallbackGitRoot = repositoryUnavailable && Boolean(workspace);
     const isEmptyStateSelecting = Boolean(fallbackSelectingRoot || workspaceSelectingId);
     return (
-      <div className="git-history-workbench">
-        <div className="git-history-toolbar git-history-empty-toolbar">
-          <div className="git-history-toolbar-left">
-            <span className="git-history-empty-inline-text">{workspacePickerMessage}</span>
+      <div className="git-history-workbench relative flex flex-col w-full h-full min-w-0 min-h-0 text-[color:var(--text-primary)] bg-[var(--git-history-pane-bg)] focus-visible:outline-2 focus-visible:outline-[color-mix(in_srgb,var(--accent-primary,#2563eb)_52%,transparent)] focus-visible:[outline-offset:-2px]">
+        <div className="git-history-toolbar git-history-empty-toolbar flex items-center justify-between gap-[10px] py-2 px-[10px] border-b border-[color:var(--border-default)] bg-[color-mix(in_srgb,var(--surface-card-muted,#111725)_95%,transparent)]">
+          <div className="git-history-toolbar-left inline-flex items-center min-w-0 flex-wrap gap-[10px]">
+            <span className="git-history-empty-inline-text text-xs text-[color:var(--text-secondary)]">{workspacePickerMessage}</span>
             {projectOptions.length > 0 && onSelectWorkspace ? (
               <GitHistoryProjectPicker
                 sections={projectSections}
@@ -108,7 +108,7 @@ export function renderGitHistoryPanelView(scope: any) {
               />
             ) : null}
             {fallbackGitRootsError ? (
-              <span className="git-history-empty-inline-text">
+              <span className="git-history-empty-inline-text text-xs text-[color:var(--text-secondary)]">
                 {localizeKnownGitError(fallbackGitRootsError) ?? fallbackGitRootsError}
               </span>
             ) : null}
@@ -150,7 +150,7 @@ export function renderGitHistoryPanelView(scope: any) {
 
   return (
     <div
-      className="git-history-workbench"
+      className="git-history-workbench relative flex flex-col w-full h-full min-w-0 min-h-0 text-[color:var(--text-primary)] bg-[var(--git-history-pane-bg)] focus-visible:outline-2 focus-visible:outline-[color-mix(in_srgb,var(--accent-primary,#2563eb)_52%,transparent)] focus-visible:[outline-offset:-2px]"
       tabIndex={0}
       onKeyDown={(event) => {
         if (branchDiffState && event.key === "Escape") {
@@ -272,9 +272,9 @@ export function renderGitHistoryPanelView(scope: any) {
         }
       }}
     >
-      <div className="git-history-toolbar git-history-toolbar--hover-actions">
-        <div className="git-history-toolbar-left">
-          <h2>{t("git.historyTitle")}</h2>
+      <div className="git-history-toolbar git-history-toolbar--hover-actions flex items-center justify-between gap-[10px] py-2 px-[10px] border-b border-[color:var(--border-default)] bg-[color-mix(in_srgb,var(--surface-card-muted,#111725)_95%,transparent)]">
+        <div className="git-history-toolbar-left inline-flex items-center min-w-0 flex-wrap gap-[10px]">
+          <h2 className="m-0 text-sm font-semibold text-[color:var(--text-stronger)]">{t("git.historyTitle")}</h2>
           {projectOptions.length > 0 && onSelectWorkspace ? (
             <GitHistoryProjectPicker
               sections={projectSections}

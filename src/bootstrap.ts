@@ -33,6 +33,7 @@ import "./styles/status-panel.css";
 import "./styles/opencode-panel.css";
 import "./styles/kanban.css";
 import "./styles/git-history.css";
+import "./styles/git-history-shell-keepers.css";
 import "./styles/spec-hub-header.css";
 import "./styles/spec-hub.css";
 import "./styles/spec-hub.reader-layout.css";
