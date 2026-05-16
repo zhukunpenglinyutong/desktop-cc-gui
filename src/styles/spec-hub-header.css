@@ -87,42 +87,6 @@
   opacity: 0.9;
 }
 
-.spec-hub-badge-provider-openspec {
-  border-color: #bfdbfe;
-  background: #eff6ff;
-  color: #1d4ed8;
-}
-
-.spec-hub-badge-provider-speckit {
-  border-color: #fde68a;
-  background: #fffbeb;
-  color: #b45309;
-}
-
-.spec-hub-badge-provider-unknown {
-  border-color: #d1d5db;
-  background: #f3f4f6;
-  color: #6b7280;
-}
-
-.spec-hub-badge-support-full {
-  border-color: #a7f3d0;
-  background: #ecfdf5;
-  color: #047857;
-}
-
-.spec-hub-badge-support-minimal {
-  border-color: #fed7aa;
-  background: #fff7ed;
-  color: #c2410c;
-}
-
-.spec-hub-badge-support-none {
-  border-color: #d1d5db;
-  background: #f3f4f6;
-  color: #6b7280;
-}
-
 .spec-hub-badge-gate.is-pass {
   border-color: #86efac;
   background: #f0fdf4;

@@ -17,7 +17,10 @@
  */
 
 // @vitest-environment jsdom
+import { render, cleanup as cleanupReact } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { MessagesHistoryStickyHeader } from "../features/messages/components/MessagesHistoryStickyHeader";
+import type { HistoryStickyCandidate } from "../features/messages/components/messagesRenderUtils";
 import {
   appendDiv,
   cleanupHarness,
@@ -344,116 +347,144 @@ describe("layout swapped platform guard", () => {
   });
 
   describe("collapsed message sticky peek hugs the canvas right edge", () => {
-    beforeEach(() => {
-      loadStylesheets("base.css", "messages.css");
+    // Phase P0-1 deepen: the sticky header is now an extracted React
+    // component (`MessagesHistoryStickyHeader`) that carries its layout
+    // styles inline. These tests render the component into a wrapper
+    // `.app[.canvas-width-wide]` host so the ancestor-class observer in the
+    // component sees the wide-canvas flag, then read the inline `style`
+    // attribute on the rendered DOM. None of these assertions depend on
+    // `messages.history-sticky.css` existing on disk.
+
+    const CANDIDATE: HistoryStickyCandidate = {
+      id: "sticky-test",
+      text: "Sticky header probe",
+    };
+
+    afterEach(() => {
+      cleanupReact();
     });
 
-    function mountStickyHeader(opts: { canvasWidth?: "wide" } = {}) {
-      const app = mountApp({
-        layout: "desktop",
-        canvasWidth: opts.canvasWidth,
-      });
-      const main = appendDiv(app, "main");
-      const header = appendDiv(main, "messages-history-sticky-header");
-      header.setAttribute("data-history-sticky-collapsed", "true");
-      const inner = appendDiv(header, "messages-history-sticky-header-inner");
-      const content = appendDiv(inner, "messages-history-sticky-header-content");
-      const bubble = appendDiv(
-        content,
-        "messages-history-sticky-header-bubble is-collapsed",
+    function renderStickyHeader(opts: {
+      canvasWidth?: "wide";
+      collapsed?: boolean;
+    } = {}) {
+      const host = document.createElement("div");
+      const appClasses = ["app", "layout-desktop"];
+      if (opts.canvasWidth === "wide") appClasses.push("canvas-width-wide");
+      host.className = appClasses.join(" ");
+      document.body.appendChild(host);
+
+      const main = document.createElement("div");
+      main.className = "main";
+      host.appendChild(main);
+
+      const { unmount } = render(
+        <MessagesHistoryStickyHeader
+          candidate={CANDIDATE}
+          isCollapsed={opts.collapsed ?? true}
+          onCollapse={() => {}}
+          onExpand={() => {}}
+        />,
+        { container: main },
       );
-      return { app, header, inner, content, bubble };
+
+      const header = main.querySelector<HTMLElement>(
+        ".messages-history-sticky-header",
+      );
+      if (!header) throw new Error("sticky header did not render");
+      const inner = header.querySelector<HTMLElement>(
+        ".messages-history-sticky-header-inner",
+      );
+      const content = header.querySelector<HTMLElement>(
+        ".messages-history-sticky-header-content",
+      );
+      const bubble = header.querySelector<HTMLElement>(
+        ".messages-history-sticky-header-bubble",
+      );
+      if (!inner || !content || !bubble) {
+        throw new Error("sticky header sub-elements did not render");
+      }
+
+      return { host, header, inner, content, bubble, unmount };
     }
 
     it("default-canvas collapsed header pulls right margin to negate panel padding", () => {
-      const { header } = mountStickyHeader();
-      // margin-right: calc(-1 * var(--main-panel-padding))
-      expect(getComputedStyle(header).marginRight).toContain("calc");
-      expect(getComputedStyle(header).marginRight).toContain("main-panel-padding");
+      const { header } = renderStickyHeader();
+      // Inline style applied by the component when collapsed (default canvas):
+      //   marginRight: "calc(-1 * var(--main-panel-padding))"
+      expect(header.style.marginRight).toContain("calc");
+      expect(header.style.marginRight).toContain("main-panel-padding");
     });
 
     it("wide-canvas collapsed header overrides to margin-right: -25px", () => {
-      const { header } = mountStickyHeader({ canvasWidth: "wide" });
-      expect(getComputedStyle(header).marginRight).toBe("-25px");
+      const { header } = renderStickyHeader({ canvasWidth: "wide" });
+      // Ancestor observer must have detected `.canvas-width-wide` before this
+      // assertion runs; testing-library's render flushes useEffect so the
+      // override is in effect immediately.
+      expect(header.style.marginRight).toBe("-25px");
     });
 
     it("collapsed inner zeros its right padding", () => {
-      const { inner } = mountStickyHeader();
-      expect(getComputedStyle(inner).paddingRight).toBe("0px");
+      const { inner } = renderStickyHeader();
+      expect(inner.style.paddingRight).toBe("0px");
     });
 
     it("collapsed content justifies items to flex-end", () => {
-      const { content } = mountStickyHeader();
-      expect(getComputedStyle(content).justifyContent).toBe("flex-end");
+      const { content } = renderStickyHeader();
+      expect(content.style.justifyContent).toBe("flex-end");
     });
 
     it("collapsed bubble takes the peek width and resets transform", () => {
-      const { bubble } = mountStickyHeader();
-      const cs = getComputedStyle(bubble);
-      expect(cs.width).toContain("var(--messages-history-sticky-peek-width");
-      expect(cs.transform).toBe("none");
+      const { bubble } = renderStickyHeader();
+      expect(bubble.style.width).toContain(
+        "var(--messages-history-sticky-peek-width",
+      );
+      expect(bubble.style.transform).toBe("none");
     });
 
     it("declares --messages-history-sticky-peek-width: 16px on the content scope", () => {
-      const contentRule = findRuleBySelector(
-        ".messages-history-sticky-header-content",
-      );
-      expect(contentRule).toBeDefined();
+      const { content } = renderStickyHeader();
       expect(
-        contentRule!.style.getPropertyValue(
-          "--messages-history-sticky-peek-width",
-        ),
+        content.style.getPropertyValue("--messages-history-sticky-peek-width"),
       ).toBe("16px");
     });
 
     it("peek itself is borderless / no clip-path (the rectangular peek strip shape)", () => {
-      // Two rules share `.messages-history-sticky-header-peek` (positioning
-      // base + collapsed-state appearance). The collapsed-appearance rule is
-      // the one that pins the borderless / no-clip shape.
-      const peekRules = findRules(
-        (r) =>
-          normalizeSelector(r.selectorText) ===
-          ".messages-history-sticky-header-peek",
+      const { header } = renderStickyHeader();
+      const peek = header.querySelector<HTMLElement>(
+        ".messages-history-sticky-header-peek",
       );
-      expect(peekRules.length).toBeGreaterThan(0);
-      const borderlessRule = peekRules.find(
-        (r) => r.style.getPropertyValue("border-radius") === "0",
-      );
-      expect(borderlessRule).toBeDefined();
-      // jsdom returns shorthand-as-JS-property as undefined; use longhand.
-      expect(borderlessRule!.style.getPropertyValue("border-radius")).toBe(
-        "0",
-      );
-      expect(borderlessRule!.style.getPropertyValue("clip-path")).toBe("none");
+      expect(peek).not.toBeNull();
+      // jsdom keeps a numeric `borderRadius: 0` as the string "0px"; using
+      // getPropertyValue returns the original assigned value ("0" or "0px")
+      // depending on how the React style serializer formatted it.
+      expect(
+        peek!.style.borderRadius === "0" || peek!.style.borderRadius === "0px",
+      ).toBe(true);
+      expect(peek!.style.clipPath).toBe("none");
     });
 
-    it("peek ::before slab is 5x26 (pseudo-element via cssRules, not getComputedStyle)", () => {
-      const beforeRule = findRuleBySelector(
-        ".messages-history-sticky-header-peek::before",
+    it("peek slab (replaces ::before) is 5x26", () => {
+      const { header } = renderStickyHeader();
+      const slab = header.querySelector<HTMLElement>(
+        ".messages-history-sticky-header-peek-slab",
       );
-      expect(beforeRule).toBeDefined();
-      expect(beforeRule!.style.width).toBe("5px");
-      expect(beforeRule!.style.height).toBe("26px");
+      expect(slab).not.toBeNull();
+      expect(slab!.style.width).toBe("5px");
+      expect(slab!.style.height).toBe("26px");
     });
 
-    it("wide-canvas overrides come AFTER the collapsed margin-right override (cascade order)", () => {
-      // Original literal-text test asserted indexOf > indexOf to ensure that
-      // the collapsed override appears AFTER the wide-canvas one; preserve
-      // that semantics by checking selectorText positions in cssRules.
-      const allRules = findRules(() => true);
-      const wideCanvasIdx = allRules.findIndex(
-        (r) =>
-          normalizeSelector(r.selectorText) ===
-          ".app.canvas-width-wide .messages-history-sticky-header-inner",
-      );
-      const collapsedInnerIdx = allRules.findIndex(
-        (r) =>
-          normalizeSelector(r.selectorText) ===
-          '.messages-history-sticky-header[data-history-sticky-collapsed="true"] .messages-history-sticky-header-inner',
-      );
-      expect(wideCanvasIdx).toBeGreaterThanOrEqual(0);
-      expect(collapsedInnerIdx).toBeGreaterThanOrEqual(0);
-      expect(collapsedInnerIdx).toBeGreaterThan(wideCanvasIdx);
+    it("non-collapsed bubble does NOT take the peek-width override", () => {
+      // Cascade-order check replacement: confirm the wide-canvas override is
+      // only applied alongside the collapsed-state override (i.e. there's no
+      // stale wide-canvas margin leaking onto an expanded header).
+      const { header } = renderStickyHeader({
+        canvasWidth: "wide",
+        collapsed: false,
+      });
+      // Expanded header has no collapsed margin-right inline rule, so wide
+      // canvas (-25px) and default canvas (calc) must both be absent.
+      expect(header.style.marginRight).toBe("");
     });
   });
 

@@ -43,7 +43,7 @@
     "lint": "eslint . --ext .ts,.tsx",
     "test": "node scripts/test-batched.mjs",
     "test:integration": "node scripts/test-batched.mjs --include-heavy",
-    "test:layout-guard": "vitest run src/styles/layout-swapped-platform-guard.test.ts",
+    "test:layout-guard": "vitest run src/styles/layout-swapped-platform-guard.test.tsx",
     "test:memory-kind-contract:ts": "vitest run src/features/project-memory/utils/memoryKindClassifier.contract.test.ts",
     "test:memory-kind-contract:rust": "cargo test --manifest-path src-tauri/Cargo.toml classify_kind_matches_contract_samples",
     "test:memory-kind-contract": "npm run test:memory-kind-contract:ts && npm run test:memory-kind-contract:rust",

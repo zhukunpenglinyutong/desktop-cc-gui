@@ -402,16 +402,16 @@ function xl({
     po = Ye.status === "pass" ? Ln : Ye.status === "warn" ? xe : J,
     mo =
       E.provider === "openspec"
-        ? "spec-hub-badge-provider-openspec"
+        ? "spec-hub-badge-provider-openspec border-[#bfdbfe] bg-[#eff6ff] text-[#1d4ed8]"
         : E.provider === "speckit"
-        ? "spec-hub-badge-provider-speckit"
-        : "spec-hub-badge-provider-unknown",
+        ? "spec-hub-badge-provider-speckit border-[#fde68a] bg-[#fffbeb] text-[#b45309]"
+        : "spec-hub-badge-provider-unknown border-[#d1d5db] bg-[#f3f4f6] text-[#6b7280]",
     ho =
       E.supportLevel === "full"
-        ? "spec-hub-badge-support-full"
+        ? "spec-hub-badge-support-full border-[#a7f3d0] bg-[#ecfdf5] text-[#047857]"
         : E.supportLevel === "minimal"
-        ? "spec-hub-badge-support-minimal"
-        : "spec-hub-badge-support-none",
+        ? "spec-hub-badge-support-minimal border-[#fed7aa] bg-[#fff7ed] text-[#c2410c]"
+        : "spec-hub-badge-support-none border-[#d1d5db] bg-[#f3f4f6] text-[#6b7280]",
     ue = P(() => z.specs.sources ?? [], [z.specs.sources]),
     An = P(() => z.tasks.taskChecklist ?? [], [z.tasks.taskChecklist]),
     bo = P(() => $r(z.tasks.content, An), [z.tasks.content, An]),
