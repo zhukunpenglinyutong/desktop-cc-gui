@@ -654,270 +654,455 @@ export function RuntimeLogPanel({
   }
 
   return (
-    <section
-      className={`runtime-console-panel is-idea-${ideaTheme}${isResizing ? " is-resizing" : ""}`}
-      style={{ height: `${panelHeight}px` }}
-    >
-      <div
-        className="runtime-console-resizer"
-        role="separator"
-        aria-orientation="horizontal"
-        aria-label={t("layout.resizeRuntimeConsole")}
-        onMouseDown={handleResizeStart}
+    <>
+      <style>{`
+        /* Token color CSS variables — kept as CSS since they're referenced by dynamic class names */
+        .runtime-console-panel {
+          --runtime-console-line-system: #7fb7ff;
+          --runtime-console-line-info: #d7deea;
+          --runtime-console-line-warn: #f6cd8b;
+          --runtime-console-line-error: #ffadad;
+          --runtime-console-line-debug: #bdc6d8;
+          --runtime-console-token-time: #6c8ec7;
+          --runtime-console-token-thread: #8d98ac;
+          --runtime-console-token-level-info: #3fa061;
+          --runtime-console-token-level-warn: #c7802f;
+          --runtime-console-token-level-error: #d45e5e;
+          --runtime-console-token-level-debug: #8a76d6;
+          --runtime-console-token-level-trace: #6b7f93;
+          --runtime-console-token-pid: #7c879b;
+          --runtime-console-token-separator: #8e99aa;
+          --runtime-console-token-java-package: #8b97aa;
+          --runtime-console-token-java-class: #63b3d3;
+          --runtime-console-token-java-meta: #7f8da5;
+          --runtime-console-token-java: #6aa7c6;
+          --runtime-console-log-bg: color-mix(in srgb, var(--surface-raised) 90%, #0b1220 10%);
+          --runtime-console-log-font-size: 12px;
+          --runtime-console-log-line-height: 1.45;
+        }
+        .runtime-console-panel.is-idea-classic {
+          --runtime-console-line-info: #cfd6e3;
+          --runtime-console-line-warn: #e7bf80;
+          --runtime-console-line-error: #f2a0a0;
+          --runtime-console-line-debug: #b5bfd5;
+          --runtime-console-token-time: #4e6f99;
+          --runtime-console-token-thread: #7d889d;
+          --runtime-console-token-level-info: #3a9958;
+          --runtime-console-token-level-warn: #b2711f;
+          --runtime-console-token-level-error: #c75555;
+          --runtime-console-token-level-debug: #7b6ac5;
+          --runtime-console-token-level-trace: #5f7088;
+          --runtime-console-token-pid: #75849c;
+          --runtime-console-token-separator: #8793a7;
+          --runtime-console-token-java-package: #7f8a9f;
+          --runtime-console-token-java-class: #4e9bc4;
+          --runtime-console-token-java-meta: #6e7e97;
+          --runtime-console-token-java: #5a9ec0;
+          --runtime-console-log-bg: color-mix(in srgb, var(--surface-raised) 76%, #0a0f1c 24%);
+          --runtime-console-log-font-size: 11px;
+          --runtime-console-log-line-height: 1.5;
+        }
+        :root[data-theme="light"] .runtime-console-panel,
+        @media (prefers-color-scheme: light) { :root:not([data-theme]) .runtime-console-panel } {
+          --runtime-console-line-system: #2f6fdd;
+          --runtime-console-line-info: #334155;
+          --runtime-console-line-warn: #8a4f08;
+          --runtime-console-line-error: #b22d2d;
+          --runtime-console-line-debug: #475569;
+          --runtime-console-token-time: #2d5ca3;
+          --runtime-console-token-thread: #6b7280;
+          --runtime-console-token-level-info: #2f8f46;
+          --runtime-console-token-level-warn: #b06500;
+          --runtime-console-token-level-error: #be2f2f;
+          --runtime-console-token-level-debug: #7a5ac6;
+          --runtime-console-token-level-trace: #637186;
+          --runtime-console-token-pid: #697489;
+          --runtime-console-token-separator: #7a8598;
+          --runtime-console-token-java-package: #7f8798;
+          --runtime-console-token-java-class: #286b9b;
+          --runtime-console-token-java-meta: #64748b;
+          --runtime-console-token-java: #2f739f;
+          --runtime-console-log-bg: color-mix(in srgb, var(--surface-raised) 98%, #f2f4f8 2%);
+          --runtime-console-log-font-size: 12px;
+          --runtime-console-log-line-height: 1.45;
+        }
+        /* Token coloring via CSS vars — cannot be replaced by arbitrary Tailwind values */
+        .runtime-console-line.is-system { color: var(--runtime-console-line-system); }
+        .runtime-console-line.is-info { color: var(--runtime-console-line-info); }
+        .runtime-console-line.is-warn { color: var(--runtime-console-line-warn); }
+        .runtime-console-line.is-error { color: var(--runtime-console-line-error); }
+        .runtime-console-line.is-debug { color: var(--runtime-console-line-debug); }
+        .runtime-console-token.is-level-info { color: var(--runtime-console-token-level-info); }
+        .runtime-console-token.is-level-warn { color: var(--runtime-console-token-level-warn); }
+        .runtime-console-token.is-level-error { color: var(--runtime-console-token-level-error); }
+        .runtime-console-token.is-level-debug { color: var(--runtime-console-token-level-debug); }
+        .runtime-console-token.is-level-trace { color: var(--runtime-console-token-level-trace); }
+        .runtime-console-token.is-time { color: var(--runtime-console-token-time); }
+        .runtime-console-token.is-thread { color: var(--runtime-console-token-thread); }
+        .runtime-console-token.is-java { color: var(--runtime-console-token-java); }
+        .runtime-console-token.is-java-package { color: var(--runtime-console-token-java-package); }
+        .runtime-console-token.is-java-class { color: var(--runtime-console-token-java-class); }
+        .runtime-console-token.is-java-meta { color: var(--runtime-console-token-java-meta); }
+        .runtime-console-token.is-pid { color: var(--runtime-console-token-pid); }
+        .runtime-console-token.is-separator { color: var(--runtime-console-token-separator); }
+        /* action-theme uses CSS var for border/bg in active state */
+        .runtime-console-action-theme { color: var(--runtime-console-token-java-class); pointer-events: auto; position: relative; z-index: 1; }
+        .runtime-console-action-theme.is-active {
+          color: var(--runtime-console-token-java-class);
+          border-color: color-mix(in srgb, var(--runtime-console-token-java-class) 45%, var(--border-subtle) 55%);
+          background: color-mix(in srgb, var(--runtime-console-token-java-class) 16%, transparent);
+        }
+        /* select trigger — heavily overridden for theme variants, kept as CSS */
+        .runtime-console-select-trigger {
+          width: 100%; min-height: 28px !important; height: 28px;
+          border-radius: 0 !important; border: 0 !important;
+          border-bottom: 1px solid #c9cfda !important;
+          background: transparent !important; color: #1f2937 !important;
+          font-size: 12px !important; font-weight: 500;
+          font-family: var(--font-sans); box-shadow: none !important;
+        }
+        .runtime-console-select-trigger:hover:not([data-disabled]) { border-bottom-color: #94a3b8 !important; background: transparent !important; }
+        .runtime-console-select-trigger:focus-visible { border-bottom-color: #3b82f6 !important; box-shadow: inset 0 -2px 0 rgba(59,130,246,0.55) !important; }
+        .runtime-console-select-trigger[data-disabled] { opacity: 0.58; background: transparent !important; }
+        .runtime-console-select-trigger-goal.is-compact { padding-inline: 0 !important; justify-content: center !important; }
+        .runtime-console-select-trigger-goal.is-compact [data-slot="select-value"] { display: none; }
+        .runtime-console-select-trigger-goal.is-compact [data-slot="select-icon"] { margin: 0 !important; }
+        :root[data-theme="dark"] .runtime-console-select-trigger,
+        :root[data-theme="dim"] .runtime-console-select-trigger { border-bottom-color: #334155 !important; color: #e5e7eb !important; }
+        :root[data-theme="dark"] .runtime-console-select-trigger:hover:not([data-disabled]),
+        :root[data-theme="dim"] .runtime-console-select-trigger:hover:not([data-disabled]) { border-bottom-color: #64748b !important; }
+        :root[data-theme="dark"] .runtime-console-select-trigger:focus-visible,
+        :root[data-theme="dim"] .runtime-console-select-trigger:focus-visible { border-bottom-color: #60a5fa !important; box-shadow: inset 0 -2px 0 rgba(96,165,250,0.72) !important; }
+        @media (prefers-color-scheme: dark) {
+          :root:not([data-theme]) .runtime-console-select-trigger { border-bottom-color: #334155 !important; color: #e5e7eb !important; }
+          :root:not([data-theme]) .runtime-console-select-trigger:hover:not([data-disabled]) { border-bottom-color: #64748b !important; }
+          :root:not([data-theme]) .runtime-console-select-trigger:focus-visible { border-bottom-color: #60a5fa !important; box-shadow: inset 0 -2px 0 rgba(96,165,250,0.72) !important; }
+        }
+        /* select list */
+        .runtime-console-select-list { min-width: max(152px, var(--anchor-width)); max-height: min(34vh, 280px); padding: 4px; border: 0; border-radius: 12px; background: transparent; font-family: var(--font-sans); font-size: 13px; line-height: 1.4; }
+        .runtime-console-select-list [data-slot="select-group-label"] { padding: 6px 10px 4px; font-size: 10px; font-weight: 600; letter-spacing: 0.01em; color: #8f96a3; }
+        .runtime-console-select-list [data-slot="select-separator"] { margin: 6px 2px; background: #e7ebf1; }
+        .runtime-console-select-list [data-slot="select-item"] { min-height: 30px; border-radius: 8px; grid-template-columns: 16px 1fr; gap: 8px; padding-inline: 9px 10px; color: #1f2937; font-size: 12px; font-weight: 500; }
+        .runtime-console-select-list [data-slot="select-item"] svg { width: 12px; height: 12px; stroke-width: 2.2; }
+        .runtime-console-select-list [data-slot="select-item"][data-highlighted] { background: #edf0f4; color: #111827; }
+        .runtime-console-select-list [data-slot="select-item"][data-selected],
+        .runtime-console-select-list [data-slot="select-item"][aria-selected="true"] { background: #e8edf4; color: #111827; }
+        .runtime-console-select-list [data-slot="select-item"][data-disabled] { opacity: 0.45; }
+        [data-slot="select-popup"]:has(.runtime-console-select-list) [data-slot="select-scroll-up-arrow"],
+        [data-slot="select-popup"]:has(.runtime-console-select-list) [data-slot="select-scroll-down-arrow"] { display: none; }
+        [data-slot="select-popup"]:has(.runtime-console-select-list) > div { border: 1px solid #d6dbe3 !important; background: #f7f8fa !important; border-radius: 12px !important; box-shadow: 0 10px 24px rgba(15,23,42,0.14) !important; overflow: hidden; }
+        :root[data-theme="dark"] .runtime-console-select-list [data-slot="select-group-label"],
+        :root[data-theme="dim"] .runtime-console-select-list [data-slot="select-group-label"] { color: #9ca3af; }
+        :root[data-theme="dark"] .runtime-console-select-list [data-slot="select-separator"],
+        :root[data-theme="dim"] .runtime-console-select-list [data-slot="select-separator"] { background: color-mix(in srgb, #334155 80%, transparent); }
+        :root[data-theme="dark"] .runtime-console-select-list [data-slot="select-item"],
+        :root[data-theme="dim"] .runtime-console-select-list [data-slot="select-item"] { color: #e5e7eb; }
+        :root[data-theme="dark"] .runtime-console-select-list [data-slot="select-item"][data-highlighted],
+        :root[data-theme="dim"] .runtime-console-select-list [data-slot="select-item"][data-highlighted] { background: color-mix(in srgb, #1f2937 72%, transparent); color: #f8fafc; }
+        :root[data-theme="dark"] .runtime-console-select-list [data-slot="select-item"][data-selected],
+        :root[data-theme="dark"] .runtime-console-select-list [data-slot="select-item"][aria-selected="true"],
+        :root[data-theme="dim"] .runtime-console-select-list [data-slot="select-item"][data-selected],
+        :root[data-theme="dim"] .runtime-console-select-list [data-slot="select-item"][aria-selected="true"] { background: color-mix(in srgb, #374151 76%, transparent); color: #ffffff; }
+        :root[data-theme="dark"] [data-slot="select-popup"]:has(.runtime-console-select-list) > div,
+        :root[data-theme="dim"] [data-slot="select-popup"]:has(.runtime-console-select-list) > div { border-color: color-mix(in srgb, #334155 85%, var(--border-subtle)) !important; background: color-mix(in srgb, #0a1223 92%, var(--surface-card)) !important; box-shadow: 0 12px 28px rgba(2,8,20,0.46) !important; }
+        @media (prefers-color-scheme: dark) {
+          :root:not([data-theme]) .runtime-console-select-list [data-slot="select-group-label"] { color: #9ca3af; }
+          :root:not([data-theme]) .runtime-console-select-list [data-slot="select-separator"] { background: color-mix(in srgb, #334155 80%, transparent); }
+          :root:not([data-theme]) .runtime-console-select-list [data-slot="select-item"] { color: #e5e7eb; }
+          :root:not([data-theme]) .runtime-console-select-list [data-slot="select-item"][data-highlighted] { background: color-mix(in srgb, #1f2937 72%, transparent); color: #f8fafc; }
+          :root:not([data-theme]) .runtime-console-select-list [data-slot="select-item"][data-selected],
+          :root:not([data-theme]) .runtime-console-select-list [data-slot="select-item"][aria-selected="true"] { background: color-mix(in srgb, #374151 76%, transparent); color: #ffffff; }
+          :root:not([data-theme]) [data-slot="select-popup"]:has(.runtime-console-select-list) > div { border-color: color-mix(in srgb, #334155 85%, var(--border-subtle)) !important; background: color-mix(in srgb, #0a1223 92%, var(--surface-card)) !important; box-shadow: 0 12px 28px rgba(2,8,20,0.46) !important; }
+        }
+        /* command input — border-bottom style, dark theme variants */
+        .runtime-console-command-input { height: 28px; border-radius: 0; border: 0; border-bottom: 1px solid #c9cfda; background: transparent; color: var(--text-emphasis); font-size: 12px; padding: 0 6px; width: auto; min-width: 0; flex: 1 1 auto; font-family: var(--code-font-family, Menlo, Monaco, "Courier New", monospace); }
+        .runtime-console-command-input:focus { outline: none; border-bottom-color: #3b82f6; box-shadow: inset 0 -2px 0 rgba(59,130,246,0.55); }
+        :root[data-theme="dark"] .runtime-console-command-input,
+        :root[data-theme="dim"] .runtime-console-command-input { border-bottom-color: #334155; }
+        :root[data-theme="dark"] .runtime-console-command-input:focus,
+        :root[data-theme="dim"] .runtime-console-command-input:focus { border-bottom-color: #60a5fa; box-shadow: inset 0 -2px 0 rgba(96,165,250,0.72); }
+        @media (prefers-color-scheme: dark) {
+          :root:not([data-theme]) .runtime-console-command-input { border-bottom-color: #334155; }
+          :root:not([data-theme]) .runtime-console-command-input:focus { border-bottom-color: #60a5fa; box-shadow: inset 0 -2px 0 rgba(96,165,250,0.72); }
+        }
+        /* resizer hover — compound selector */
+        .runtime-console-resizer:hover .runtime-console-resizer-bar,
+        .runtime-console-panel.is-resizing .runtime-console-resizer-bar { width: 72px; background: var(--border-strong); }
+        /* log scrollbar */
+        .runtime-console-log::-webkit-scrollbar { width: 8px; }
+        .runtime-console-log::-webkit-scrollbar-thumb { border-radius: 999px; background: color-mix(in srgb, var(--text-subtle), transparent 42%); }
+      `}</style>
+      <section
+        className={`runtime-console-panel border-t border-(--border-subtle) bg-(--surface-debug) flex flex-col gap-[6px] col-[1_/_-1] row-[4] w-full min-h-[160px] flex-shrink-0 px-3 pt-1 pb-[10px] [-webkit-app-region:no-drag] relative z-[2]${isResizing ? " is-resizing select-none cursor-row-resize" : ""} is-idea-${ideaTheme}`}
+        style={{ height: `${panelHeight}px` }}
       >
-        <span className="runtime-console-resizer-bar" aria-hidden />
-      </div>
-      <div className="runtime-console-header">
-        <div className="runtime-console-header-main">
-          <div className="runtime-console-title-wrap">
-            <div className="runtime-console-title">{t("files.runConsoleTitle")}</div>
-            <span className={`runtime-console-status is-${status}`}>{statusLabel}</span>
-            {exitCode !== null && exitCode !== undefined ? (
-              <span className={`runtime-console-exit ${exitCode === 0 ? "is-ok" : "is-fail"}`}>
-                {t("files.exitCode", { code: exitCode })}
-              </span>
-            ) : null}
-            {truncated ? (
-              <span className="runtime-console-truncated">
-                {t("files.logsTruncated", { count: 5000 })}
-              </span>
-            ) : null}
-          </div>
-          <div className="runtime-console-command-inline" ref={commandInlineRef}>
-            <div className="runtime-console-select-cluster">
-              <div className="runtime-console-select-wrap runtime-console-select-wrap-preset">
-                <Select
-                  value={commandPresetId}
-                  onValueChange={(value) => {
-                    onCommandPresetChange?.(value as RuntimeCommandPresetId);
-                  }}
-                >
-                  <SelectTrigger
-                    size="sm"
-                    className="runtime-console-select-trigger runtime-console-select-trigger-preset w-auto"
-                    aria-label={commandPresetLabel}
-                    title={selectedPresetLabel}
-                  >
-                    <span className="runtime-console-select-trigger-text">{selectedPresetLabel}</span>
-                  </SelectTrigger>
-                  <SelectPopup
-                  side="top"
-                  sideOffset={10}
-                  align="start"
-                  alignOffset={0}
-                  alignItemWithTrigger={false}
-                  className="runtime-console-select-list"
-                >
-                    {commandPresetItems.map((option) => (
-                      <SelectItem key={option.id} value={option.id}>
-                        {option.label}
-                      </SelectItem>
-                    ))}
-                  </SelectPopup>
-                </Select>
-              </div>
-              <div
-                className={`runtime-console-select-wrap runtime-console-select-wrap-goal${
-                  isGoalSelectCompact ? " is-compact" : ""
-                }`}
-              >
-                <Select
-                  value={selectedCommandGoal}
-                  onValueChange={(value) => {
-                    if (
-                      value === COMMAND_OPTION_CUSTOM ||
-                      !commandProgram ||
-                      !commandGoalOptions.length
-                    ) {
-                      return;
-                    }
-                    onCommandInputChange?.(`${commandProgram} ${value}`);
-                  }}
-                >
-                  <SelectTrigger
-                    size="sm"
-                    className={`runtime-console-select-trigger runtime-console-select-trigger-goal w-auto${
-                      isGoalSelectCompact ? " is-compact" : ""
-                    }`}
-                    aria-label={commandGoalLabel}
-                    title={selectedGoalLabel}
-                    disabled={!commandProgram || commandGoalOptions.length === 0}
-                  >
-                    <span className="runtime-console-select-trigger-text">{selectedGoalLabel}</span>
-                  </SelectTrigger>
-                  <SelectPopup
-                  side="top"
-                  sideOffset={10}
-                  align="start"
-                  alignOffset={0}
-                  alignItemWithTrigger={false}
-                  className="runtime-console-select-list"
-                >
-                    {commandTool === "maven" ? (
-                      <>
-                        <SelectGroup>
-                          <SelectGroupLabel>{t("files.runCommandGoalGroupPhases")}</SelectGroupLabel>
-                          {MAVEN_PHASE_OPTIONS.map((option) => (
-                            <SelectItem key={option} value={option}>
-                              {option}
-                            </SelectItem>
-                          ))}
-                        </SelectGroup>
-                        <SelectSeparator />
-                        <SelectGroup>
-                          <SelectGroupLabel>{t("files.runCommandGoalGroupSpringBoot")}</SelectGroupLabel>
-                          {MAVEN_SPRING_BOOT_OPTIONS.map((option) => (
-                            <SelectItem key={option} value={option}>
-                              {option}
-                            </SelectItem>
-                          ))}
-                        </SelectGroup>
-                      </>
-                    ) : commandTool === "gradle" ? (
-                      <SelectGroup>
-                        <SelectGroupLabel>{t("files.runCommandGoalGroupTasks")}</SelectGroupLabel>
-                        {commandGoalOptions.map((option) => (
-                          <SelectItem key={option} value={option}>
-                            {option}
-                          </SelectItem>
-                        ))}
-                      </SelectGroup>
-                    ) : commandTool === "node" ? (
-                      <SelectGroup>
-                        <SelectGroupLabel>{t("files.runCommandGoalGroupNodeScripts")}</SelectGroupLabel>
-                        {commandGoalOptions.map((option) => (
-                          <SelectItem key={option} value={option}>
-                            {option}
-                          </SelectItem>
-                        ))}
-                      </SelectGroup>
-                    ) : commandTool === "python" ? (
-                      <SelectGroup>
-                        <SelectGroupLabel>{t("files.runCommandGoalGroupPythonExamples")}</SelectGroupLabel>
-                        {commandGoalOptions.map((option) => (
-                          <SelectItem key={option} value={option}>
-                            {option}
-                          </SelectItem>
-                        ))}
-                      </SelectGroup>
-                    ) : commandTool === "go" ? (
-                      <SelectGroup>
-                        <SelectGroupLabel>{t("files.runCommandGoalGroupGoExamples")}</SelectGroupLabel>
-                        {commandGoalOptions.map((option) => (
-                          <SelectItem key={option} value={option}>
-                            {option}
-                          </SelectItem>
-                        ))}
-                      </SelectGroup>
-                    ) : null}
-                    {commandGoalOptions.length > 0 ? (
-                      <SelectSeparator />
-                    ) : null}
-                    <SelectItem value={COMMAND_OPTION_CUSTOM}>
-                      {t("files.runCommandGoalCustom")}
-                    </SelectItem>
-                  </SelectPopup>
-                </Select>
-              </div>
+        <div
+          className="runtime-console-resizer h-2 cursor-row-resize flex items-start justify-center flex-shrink-0"
+          role="separator"
+          aria-orientation="horizontal"
+          aria-label={t("layout.resizeRuntimeConsole")}
+          onMouseDown={handleResizeStart}
+        >
+          <span className="runtime-console-resizer-bar w-14 h-0.5 rounded-full bg-(--border-subtle) transition-[background,width] duration-[140ms] ease-in" aria-hidden />
+        </div>
+        <div className="runtime-console-header flex items-center justify-between gap-3 min-w-0">
+          <div className="runtime-console-header-main flex items-center gap-2 min-w-0 flex-1">
+            <div className="runtime-console-title-wrap inline-flex items-center gap-2 min-w-0 flex-[0_1_auto] whitespace-nowrap">
+              <div className="runtime-console-title text-[12px] font-semibold text-(--text-emphasis)">{t("files.runConsoleTitle")}</div>
+              <span className={`runtime-console-status inline-flex items-center py-[2px] px-1 pb-[3px] border-0 border-b-2 border-b-transparent text-(--text-faint) text-[11px] leading-[1.3] bg-transparent${
+                status === "starting" || status === "running"
+                  ? " is-starting is-running border-b-green-400 text-green-400"
+                  : status === "error" || status === "stopped"
+                    ? " is-error is-stopped border-b-red-400 text-red-400"
+                    : ""
+              } is-${status}`}>{statusLabel}</span>
+              {exitCode !== null && exitCode !== undefined ? (
+                <span className={`runtime-console-exit inline-flex items-center py-[2px] px-1 pb-[3px] border-0 border-b-2 border-b-transparent text-(--text-faint) text-[11px] leading-[1.3] bg-transparent${exitCode === 0 ? " is-ok border-b-green-400 text-green-400" : " is-fail border-b-red-400 text-red-400"}`}>
+                  {t("files.exitCode", { code: exitCode })}
+                </span>
+              ) : null}
+              {truncated ? (
+                <span className="runtime-console-truncated inline-flex items-center py-[2px] px-2 rounded-full border border-amber-500/[.55] text-amber-500 text-[11px] leading-[1.3]">
+                  {t("files.logsTruncated", { count: 5000 })}
+                </span>
+              ) : null}
             </div>
-            <input
-              className="runtime-console-command-input"
-              type="text"
-              value={commandInput}
-              onChange={(event) => {
-                onCommandInputChange?.(event.target.value);
+            <div className="runtime-console-command-inline flex items-center gap-1 min-w-0 flex-1" ref={commandInlineRef}>
+              <div className="runtime-console-select-cluster inline-flex items-center gap-1 min-w-0 flex-[0_1_auto]">
+                <div className={`runtime-console-select-wrap runtime-console-select-wrap-preset min-w-0 flex-[0_1_auto] max-[980px]:w-[116px] w-[146px]`}>
+                  <Select
+                    value={commandPresetId}
+                    onValueChange={(value) => {
+                      onCommandPresetChange?.(value as RuntimeCommandPresetId);
+                    }}
+                  >
+                    <SelectTrigger
+                      size="sm"
+                      className="runtime-console-select-trigger runtime-console-select-trigger-preset w-auto"
+                      aria-label={commandPresetLabel}
+                      title={selectedPresetLabel}
+                    >
+                      <span className="runtime-console-select-trigger-text block min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">{selectedPresetLabel}</span>
+                    </SelectTrigger>
+                    <SelectPopup
+                    side="top"
+                    sideOffset={10}
+                    align="start"
+                    alignOffset={0}
+                    alignItemWithTrigger={false}
+                    className="runtime-console-select-list"
+                  >
+                      {commandPresetItems.map((option) => (
+                        <SelectItem key={option.id} value={option.id}>
+                          {option.label}
+                        </SelectItem>
+                      ))}
+                    </SelectPopup>
+                  </Select>
+                </div>
+                <div
+                  className={`runtime-console-select-wrap runtime-console-select-wrap-goal min-w-0 flex-[0_1_auto] max-[980px]:w-[116px]${
+                    isGoalSelectCompact ? " is-compact w-[34px] min-w-[34px]" : " w-[146px]"
+                  }`}
+                >
+                  <Select
+                    value={selectedCommandGoal}
+                    onValueChange={(value) => {
+                      if (
+                        value === COMMAND_OPTION_CUSTOM ||
+                        !commandProgram ||
+                        !commandGoalOptions.length
+                      ) {
+                        return;
+                      }
+                      onCommandInputChange?.(`${commandProgram} ${value}`);
+                    }}
+                  >
+                    <SelectTrigger
+                      size="sm"
+                      className={`runtime-console-select-trigger runtime-console-select-trigger-goal w-auto${
+                        isGoalSelectCompact ? " is-compact" : ""
+                      }`}
+                      aria-label={commandGoalLabel}
+                      title={selectedGoalLabel}
+                      disabled={!commandProgram || commandGoalOptions.length === 0}
+                    >
+                      <span className="runtime-console-select-trigger-text block min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">{selectedGoalLabel}</span>
+                    </SelectTrigger>
+                    <SelectPopup
+                    side="top"
+                    sideOffset={10}
+                    align="start"
+                    alignOffset={0}
+                    alignItemWithTrigger={false}
+                    className="runtime-console-select-list"
+                  >
+                      {commandTool === "maven" ? (
+                        <>
+                          <SelectGroup>
+                            <SelectGroupLabel>{t("files.runCommandGoalGroupPhases")}</SelectGroupLabel>
+                            {MAVEN_PHASE_OPTIONS.map((option) => (
+                              <SelectItem key={option} value={option}>
+                                {option}
+                              </SelectItem>
+                            ))}
+                          </SelectGroup>
+                          <SelectSeparator />
+                          <SelectGroup>
+                            <SelectGroupLabel>{t("files.runCommandGoalGroupSpringBoot")}</SelectGroupLabel>
+                            {MAVEN_SPRING_BOOT_OPTIONS.map((option) => (
+                              <SelectItem key={option} value={option}>
+                                {option}
+                              </SelectItem>
+                            ))}
+                          </SelectGroup>
+                        </>
+                      ) : commandTool === "gradle" ? (
+                        <SelectGroup>
+                          <SelectGroupLabel>{t("files.runCommandGoalGroupTasks")}</SelectGroupLabel>
+                          {commandGoalOptions.map((option) => (
+                            <SelectItem key={option} value={option}>
+                              {option}
+                            </SelectItem>
+                          ))}
+                        </SelectGroup>
+                      ) : commandTool === "node" ? (
+                        <SelectGroup>
+                          <SelectGroupLabel>{t("files.runCommandGoalGroupNodeScripts")}</SelectGroupLabel>
+                          {commandGoalOptions.map((option) => (
+                            <SelectItem key={option} value={option}>
+                              {option}
+                            </SelectItem>
+                          ))}
+                        </SelectGroup>
+                      ) : commandTool === "python" ? (
+                        <SelectGroup>
+                          <SelectGroupLabel>{t("files.runCommandGoalGroupPythonExamples")}</SelectGroupLabel>
+                          {commandGoalOptions.map((option) => (
+                            <SelectItem key={option} value={option}>
+                              {option}
+                            </SelectItem>
+                          ))}
+                        </SelectGroup>
+                      ) : commandTool === "go" ? (
+                        <SelectGroup>
+                          <SelectGroupLabel>{t("files.runCommandGoalGroupGoExamples")}</SelectGroupLabel>
+                          {commandGoalOptions.map((option) => (
+                            <SelectItem key={option} value={option}>
+                              {option}
+                            </SelectItem>
+                          ))}
+                        </SelectGroup>
+                      ) : null}
+                      {commandGoalOptions.length > 0 ? (
+                        <SelectSeparator />
+                      ) : null}
+                      <SelectItem value={COMMAND_OPTION_CUSTOM}>
+                        {t("files.runCommandGoalCustom")}
+                      </SelectItem>
+                    </SelectPopup>
+                  </Select>
+                </div>
+              </div>
+              <input
+                className="runtime-console-command-input"
+                type="text"
+                value={commandInput}
+                onChange={(event) => {
+                  onCommandInputChange?.(event.target.value);
+                }}
+                placeholder={commandInputPlaceholder}
+                aria-label={commandInputLabel}
+                spellCheck={false}
+                autoCapitalize="off"
+                autoCorrect="off"
+              />
+            </div>
+          </div>
+          <div className="runtime-console-actions inline-flex items-center gap-1 flex-wrap-nowrap justify-end flex-shrink-0">
+            <button
+              type="button"
+              className="ghost icon-button runtime-console-action runtime-console-action-run w-7 h-7 p-0 rounded-lg text-green-400 hover:text-green-600 disabled:opacity-50"
+              onClick={() => {
+                void onRun?.();
               }}
-              placeholder={commandInputPlaceholder}
-              aria-label={commandInputLabel}
-              spellCheck={false}
-              autoCapitalize="off"
-              autoCorrect="off"
-            />
+              disabled={!canRun}
+              aria-label={runLabel}
+              title={runLabel}
+            >
+              <Play size={14} aria-hidden />
+            </button>
+            <button
+              type="button"
+              className="ghost icon-button runtime-console-action runtime-console-action-stop w-7 h-7 p-0 rounded-lg text-red-400 hover:text-red-600 disabled:opacity-50"
+              onClick={() => {
+                void onStop();
+              }}
+              disabled={!isStoppable}
+              aria-label={stopLabel}
+              title={stopLabel}
+            >
+              <Square size={14} aria-hidden />
+            </button>
+            <button
+              type="button"
+              className="ghost icon-button runtime-console-action w-7 h-7 p-0 rounded-lg"
+              onClick={onClear}
+              aria-label={clearLabel}
+              title={clearLabel}
+            >
+              <Trash2 size={14} aria-hidden />
+            </button>
+            <button
+              type="button"
+              className={`ghost icon-button runtime-console-action w-7 h-7 p-0 rounded-lg${autoScroll ? " is-active text-(--text-emphasis) border-(--border-accent-soft) bg-(--surface-active)/60" : ""}`}
+              onClick={onToggleAutoScroll}
+              disabled={!onToggleAutoScroll}
+              aria-label={autoScrollLabel}
+              title={autoScrollLabel}
+            >
+              <ArrowDownToLine size={14} aria-hidden />
+            </button>
+            <button
+              type="button"
+              className={`ghost icon-button runtime-console-action w-7 h-7 p-0 rounded-lg${wrapLines ? " is-active text-(--text-emphasis) border-(--border-accent-soft) bg-(--surface-active)/60" : ""}`}
+              onClick={onToggleWrapLines}
+              disabled={!onToggleWrapLines}
+              aria-label={wrapLinesLabel}
+              title={wrapLinesLabel}
+            >
+              <WrapText size={14} aria-hidden />
+            </button>
+            <button
+              type="button"
+              className={`ghost icon-button runtime-console-action runtime-console-action-theme w-7 h-7 p-0 rounded-lg${
+                ideaTheme === "classic" ? " is-active" : ""
+              }`}
+              onClick={() => {
+                setIdeaTheme((prev) => (prev === "classic" ? "new-ui" : "classic"));
+              }}
+              aria-label={toggleThemeLabel}
+              title={toggleThemeLabel}
+            >
+              <Palette size={14} aria-hidden />
+            </button>
           </div>
         </div>
-        <div className="runtime-console-actions">
-          <button
-            type="button"
-            className="ghost icon-button runtime-console-action runtime-console-action-run"
-            onClick={() => {
-              void onRun?.();
-            }}
-            disabled={!canRun}
-            aria-label={runLabel}
-            title={runLabel}
-          >
-            <Play size={14} aria-hidden />
-          </button>
-          <button
-            type="button"
-            className="ghost icon-button runtime-console-action runtime-console-action-stop"
-            onClick={() => {
-              void onStop();
-            }}
-            disabled={!isStoppable}
-            aria-label={stopLabel}
-            title={stopLabel}
-          >
-            <Square size={14} aria-hidden />
-          </button>
-          <button
-            type="button"
-            className="ghost icon-button runtime-console-action"
-            onClick={onClear}
-            aria-label={clearLabel}
-            title={clearLabel}
-          >
-            <Trash2 size={14} aria-hidden />
-          </button>
-          <button
-            type="button"
-            className={`ghost icon-button runtime-console-action${autoScroll ? " is-active" : ""}`}
-            onClick={onToggleAutoScroll}
-            disabled={!onToggleAutoScroll}
-            aria-label={autoScrollLabel}
-            title={autoScrollLabel}
-          >
-            <ArrowDownToLine size={14} aria-hidden />
-          </button>
-          <button
-            type="button"
-            className={`ghost icon-button runtime-console-action${wrapLines ? " is-active" : ""}`}
-            onClick={onToggleWrapLines}
-            disabled={!onToggleWrapLines}
-            aria-label={wrapLinesLabel}
-            title={wrapLinesLabel}
-          >
-            <WrapText size={14} aria-hidden />
-          </button>
-          <button
-            type="button"
-            className={`ghost icon-button runtime-console-action runtime-console-action-theme${
-              ideaTheme === "classic" ? " is-active" : ""
-            }`}
-            onClick={() => {
-              setIdeaTheme((prev) => (prev === "classic" ? "new-ui" : "classic"));
-            }}
-            aria-label={toggleThemeLabel}
-            title={toggleThemeLabel}
-          >
-            <Palette size={14} aria-hidden />
-          </button>
-        </div>
-      </div>
-      <pre
-        className={`runtime-console-log ${wrapLines ? "is-wrap" : "is-nowrap"}`}
-        ref={logRef}
-      >
-        {logLines.map((line, index) => (
-          <span
-            key={`line-${index}-${line.length}`}
-            className={`runtime-console-line is-${resolveLineTone(line)}`}
-          >
-            {renderSpringBootLine(line) ?? renderHighlightedLine(line)}
-            {index < logLines.length - 1 ? "\n" : null}
-          </span>
-        ))}
-      </pre>
-    </section>
+        <pre
+          className={`runtime-console-log m-0 flex-1 min-h-0 px-3 py-[10px] rounded-lg border border-(--border-subtle) bg-[var(--runtime-console-log-bg)] text-(--text-normal) font-[family-name:var(--code-font-family,_Menlo,_Monaco,_monospace)] text-[length:var(--runtime-console-log-font-size)] leading-[var(--runtime-console-log-line-height)] [font-variant-ligatures:none] [tab-size:2] overflow-auto ${wrapLines ? "is-wrap whitespace-pre-wrap break-words overflow-wrap-anywhere" : "is-nowrap whitespace-pre break-normal"}`}
+          ref={logRef}
+        >
+          {logLines.map((line, index) => (
+            <span
+              key={`line-${index}-${line.length}`}
+              className={`runtime-console-line block is-${resolveLineTone(line)}`}
+            >
+              {renderSpringBootLine(line) ?? renderHighlightedLine(line)}
+              {index < logLines.length - 1 ? "\n" : null}
+            </span>
+          ))}
+        </pre>
+      </section>
+    </>
   );
 }

@@ -1,0 +1,316 @@
+/* Keeper CSS for spec-hub markdown prose + animations + responsive + detached window.
+   These selectors target dynamically rendered markdown HTML (not JSX className),
+   or are @media overrides and @keyframes that cannot be inlined.
+   Do NOT inline these into className attributes. */
+
+/* ── Markdown prose cascade ─────────────────────────────────────────────── */
+
+.spec-hub-markdown {
+  padding: 12px 14px;
+  min-height: 100%;
+  font-size: 13px;
+  line-height: 1.62;
+}
+
+.spec-hub-markdown > * + * {
+  margin-top: 10px;
+}
+
+.spec-hub-markdown :where(h1, h2, h3, h4) {
+  margin: 14px 0 8px;
+  font-weight: 700;
+  color: var(--text-stronger);
+  scroll-margin-top: 24px;
+}
+
+.spec-hub-markdown :where(ul, ol) {
+  padding-left: 20px;
+}
+
+.spec-hub-markdown :where(li) {
+  margin: 4px 0;
+}
+
+.spec-hub-markdown :where(blockquote) {
+  margin: 0;
+  padding: 8px 12px;
+  border-left: 2px solid var(--border-accent-soft);
+  background: color-mix(in srgb, var(--surface-card-strong) 60%, transparent);
+  border-radius: 8px;
+  color: var(--text-muted);
+}
+
+.spec-hub-markdown :not(pre) > code {
+  color: var(--text-stronger);
+  background: color-mix(in srgb, var(--surface-control) 75%, transparent);
+  border: 1px solid var(--border-subtle);
+  padding: 1px 5px;
+  border-radius: 6px;
+  font-size: 0.96em;
+}
+
+.spec-hub-markdown .markdown-codeblock {
+  border: 1px solid var(--border-stronger);
+  border-radius: 10px;
+  background: var(--surface-command);
+  overflow: hidden;
+  margin: 6px 0;
+}
+
+.spec-hub-markdown .markdown-codeblock-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 8px;
+  background: var(--surface-control);
+  border-bottom: 1px solid var(--border-strong);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.spec-hub-markdown .markdown-codeblock-language {
+  font-weight: 600;
+}
+
+.spec-hub-markdown .markdown-codeblock-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.spec-hub-markdown .markdown-codeblock-copy {
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  padding: 2px 8px;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-stronger);
+}
+
+.spec-hub-markdown .markdown-codeblock pre,
+.spec-hub-markdown .markdown-codeblock-single {
+  margin: 0;
+  padding: 10px 12px 12px;
+  white-space: pre;
+  overflow-x: auto;
+  font-family: var(--code-font-family);
+  font-size: var(--code-font-size, 11px);
+  font-weight: var(--code-font-weight, 400);
+  line-height: var(--code-line-height, 1.28);
+}
+
+.spec-hub-markdown .markdown-linkblock {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  word-break: break-all;
+}
+
+.spec-hub-markdown .markdown-linkblock a {
+  color: var(--message-link-color);
+}
+
+.spec-hub-markdown pre {
+  border-radius: 8px;
+  border: 1px solid var(--border-subtle);
+  padding: 10px;
+  background: var(--surface-card);
+  color: var(--text-primary);
+}
+
+/* ── Spin animation ─────────────────────────────────────────────────────── */
+
+.spec-hub .spin {
+  animation: spec-hub-spin 1s linear infinite;
+}
+
+@keyframes spec-hub-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ── Responsive overrides ───────────────────────────────────────────────── */
+
+@media (max-width: 1300px) {
+  .spec-hub-grid {
+    grid-template-columns: 200px minmax(0, 1fr) 280px;
+  }
+
+  .spec-hub-grid.is-control-collapsed:not(.is-artifact-maximized) {
+    grid-template-columns: 200px minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 1200px) {
+  .spec-hub-title-wrap p {
+    display: none;
+  }
+}
+
+@media (max-width: 1100px) {
+  .spec-hub-grid {
+    grid-template-columns: 1fr;
+    grid-template-rows: minmax(160px, 220px) minmax(320px, 1fr) minmax(220px, 320px);
+  }
+
+  .spec-hub-grid.is-control-collapsed:not(.is-artifact-maximized) {
+    grid-template-rows: minmax(160px, 220px) minmax(320px, 1fr);
+  }
+}
+
+@media (max-width: 980px) {
+  .spec-hub-control-tabs [role="tab"] {
+    flex: 1 1 0;
+    min-width: 0;
+    padding: 6px;
+    gap: 0;
+  }
+
+  .spec-hub-control-tabs [role="tab"] span {
+    display: none;
+  }
+}
+
+@media (max-width: 720px) {
+  .spec-hub {
+    padding: 8px;
+    gap: 8px;
+  }
+
+  .spec-hub-header {
+    flex-direction: column;
+  }
+
+  .spec-hub-header-side {
+    width: 100%;
+    align-items: flex-start;
+  }
+
+  .spec-hub-header-badges {
+    justify-content: flex-start;
+  }
+
+  .spec-hub-header-ops {
+    margin-left: auto;
+  }
+
+  .spec-hub-header-icon-action {
+    width: 22px;
+    height: 22px;
+    min-height: 22px;
+  }
+
+  .spec-hub-control-tabs [role="tab"] {
+    padding: 6px 8px;
+    font-size: 11px;
+  }
+
+  .spec-hub-doctor-card-head {
+    flex-wrap: wrap;
+  }
+
+  .spec-hub-doctor-card-head .spec-hub-mode-switch {
+    margin-left: auto;
+  }
+
+  .spec-hub-action-orchestrator-row {
+    flex-wrap: wrap;
+  }
+
+  .spec-hub-shared-engine-select-wrap {
+    width: 100%;
+    padding: 0 6px;
+  }
+
+  .spec-hub-action-icon-group {
+    width: 100%;
+    padding-left: 0;
+    padding-top: 8px;
+    border-left: none;
+    border-top: 1px solid color-mix(in srgb, var(--border-subtle) 88%, var(--text-secondary) 12%);
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .spec-hub-action-icon-button {
+    width: 24px;
+    min-width: 24px;
+    height: 24px;
+    min-height: 24px;
+  }
+
+  .spec-hub-tabs [role="tab"] {
+    padding: 6px 8px;
+    font-size: 11px;
+  }
+
+  .spec-hub-reader-outline {
+    padding: 8px 10px;
+  }
+
+  .spec-hub-apply-floating {
+    width: calc(100vw - 16px);
+    max-height: min(60vh, 520px);
+  }
+
+  .spec-hub-proposal-floating,
+  .spec-hub-verify-floating {
+    width: calc(100vw - 16px);
+    max-height: min(58vh, 520px);
+  }
+}
+
+/* ── Detached window overrides ──────────────────────────────────────────── */
+
+.detached-spec-hub-window-shell {
+  min-height: 100vh;
+}
+
+.detached-spec-hub-window .spec-hub-header-icon-action.is-chat {
+  display: none;
+}
+
+.detached-spec-hub-window .spec-hub-grid {
+  grid-template-columns:
+    var(--spec-hub-changes-width, clamp(220px, 18vw, 280px))
+    minmax(0, 1fr)
+    clamp(320px, 24vw, 380px);
+}
+
+.detached-spec-hub-window .spec-hub-artifact-content {
+  padding-top: 0;
+}
+
+.detached-spec-hub-unavailable {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 24px;
+  text-align: center;
+}
+
+.detached-spec-hub-unavailable-title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text-stronger);
+}
+
+.detached-spec-hub-unavailable-body {
+  margin: 0;
+  max-width: 420px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}

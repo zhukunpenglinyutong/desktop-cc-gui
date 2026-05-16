@@ -696,7 +696,7 @@ function xl({
     xt = I(
       (s, o) =>
         n("strong", {
-          className: `is-${s} spec-hub-status-value`,
+          className: `is-${s} spec-hub-status-value inline-flex items-center gap-1.5`,
           children: [
             s === "running"
               ? t(bi, { size: 12, "aria-hidden": !0, className: "spin" })
@@ -709,7 +709,7 @@ function xl({
     St = I(
       (s) =>
         n("p", {
-          className: "spec-hub-feedback-metrics",
+          className: "spec-hub-feedback-metrics m-0 text-[12px] text-(--text-secondary)",
           children: [
             e("specHub.applyExecution.changedFiles", { count: s.changedFiles }),
             " \xB7 ",
@@ -727,7 +727,7 @@ function xl({
     wt = I(
       (s) =>
         n("div", {
-          className: "spec-hub-command-preview",
+          className: "spec-hub-command-preview flex flex-col gap-1",
           children: [
             t("span", {
               children: e("specHub.applyExecution.changedFilesTitle"),
@@ -2547,15 +2547,15 @@ ${A}`
                 children: [
                   At.length === 0 &&
                     n("div", {
-                      className: "spec-hub-empty-state",
+                      className: "spec-hub-empty-state mx-auto w-[min(420px,calc(100%-24px))] min-h-[120px] px-4 py-3.5 border border-dashed border-(--border-muted) rounded-[10px] bg-[color-mix(in_srgb,var(--surface-card)_80%,transparent)] text-(--text-muted) flex flex-col justify-center gap-1",
                       children: [
                         t(qt, { size: 18, "aria-hidden": !0 }),
                         t("p", {
-                          className: "spec-hub-empty-state-title",
+                          className: "spec-hub-empty-state-title m-0 text-[13px] font-semibold text-(--text-secondary)",
                           children: emptyStateTitle,
                         }),
                         t("p", {
-                          className: "spec-hub-empty-state-desc",
+                          className: "spec-hub-empty-state-desc m-0 text-[12px]",
                           children: emptyStateHint,
                         }),
                       ],
@@ -2631,7 +2631,7 @@ ${A}`
                   }),
                   n("button", {
                     type: "button",
-                    className: "ghost spec-hub-panel-compact-action",
+                    className: "ghost spec-hub-panel-compact-action inline-flex items-center gap-1.5 border border-(--border-muted) rounded-lg px-2 py-1 text-[11px] text-(--text-secondary)",
                     onClick: () => {
                       Qt((s) => !s);
                     },
@@ -2804,10 +2804,10 @@ ${A}`
                                   ? s === "tasks" && An.length > 0
                                     ? n("div", {
                                         className:
-                                          "spec-hub-markdown markdown spec-hub-task-list",
+                                          "spec-hub-markdown markdown spec-hub-task-list flex flex-col gap-0.5 p-3 min-h-full text-[13px] leading-[1.62]",
                                         children: [
                                           t("p", {
-                                            className: "spec-hub-task-rule",
+                                            className: "spec-hub-task-rule m-0 mb-1.5 text-[11px] text-(--text-muted)",
                                             children: e(
                                               "specHub.tasksEditableRule"
                                             ),
@@ -2815,7 +2815,7 @@ ${A}`
                                           ie
                                             ? t("p", {
                                                 className:
-                                                  "spec-hub-task-readonly-hint",
+                                                  "spec-hub-task-readonly-hint m-0 mb-1 text-[11px] text-(--warning)",
                                                 children: e(
                                                   "specHub.tasksReadonlyDuringAction"
                                                 ),
@@ -2824,7 +2824,7 @@ ${A}`
                                           Ua
                                             ? t("p", {
                                                 className:
-                                                  "spec-hub-task-readonly-hint",
+                                                  "spec-hub-task-readonly-hint m-0 mb-1 text-[11px] text-(--warning)",
                                                 children: e(
                                                   "specHub.tasksUpdating"
                                                 ),
@@ -2836,7 +2836,7 @@ ${A}`
                                                 "div",
                                                 {
                                                   className:
-                                                    "spec-hub-task-blank",
+                                                    "spec-hub-task-blank h-1.5",
                                                   "aria-hidden": !0,
                                                 },
                                                 o.key
@@ -2848,7 +2848,7 @@ ${A}`
                                                   className: `spec-hub-task-heading level-${Math.min(
                                                     o.level,
                                                     4
-                                                  )}`,
+                                                  )} mt-2.5 mb-1 font-bold text-(--text-stronger) [scroll-margin-top:24px]`,
                                                   children: o.text,
                                                 },
                                                 o.key
@@ -2860,7 +2860,7 @@ ${A}`
                                                 {
                                                   className: `spec-hub-task-row ${
                                                     r ? "is-disabled" : ""
-                                                  }`,
+                                                  } flex items-start gap-2 py-0.5${r ? " opacity-[0.78]" : ""}`,
                                                   children: [
                                                     t("input", {
                                                       type: "checkbox",
@@ -2868,7 +2868,7 @@ ${A}`
                                                         o.item.index === Ba
                                                           ? "is-updating"
                                                           : ""
-                                                      }`,
+                                                      } mt-[3px] w-3.5 h-3.5 cursor-pointer accent-(--accent) flex-[0_0_auto] disabled:cursor-not-allowed disabled:opacity-[0.56]`,
                                                       checked: o.item.checked,
                                                       disabled: r,
                                                       onChange: () => {
@@ -2880,7 +2880,7 @@ ${A}`
                                                     }),
                                                     t("span", {
                                                       className:
-                                                        "spec-hub-task-text",
+                                                        "spec-hub-task-text m-0 whitespace-pre-wrap break-words leading-[1.55]",
                                                       children: qn(o.item.text),
                                                     }),
                                                   ],
@@ -2893,7 +2893,7 @@ ${A}`
                                                   "p",
                                                   {
                                                     className:
-                                                      "spec-hub-task-note",
+                                                      "spec-hub-task-note ml-[22px] text-(--text-secondary) text-[12px] m-0 whitespace-pre-wrap break-words leading-[1.55]",
                                                     children: qn(o.text),
                                                   },
                                                   o.key
@@ -2902,7 +2902,7 @@ ${A}`
                                                   "p",
                                                   {
                                                     className:
-                                                      "spec-hub-task-raw",
+                                                      "spec-hub-task-raw text-(--text-secondary) m-0 whitespace-pre-wrap break-words leading-[1.55]",
                                                     children: qn(o.text),
                                                   },
                                                   o.key
@@ -2911,7 +2911,7 @@ ${A}`
                                           _a
                                             ? n("p", {
                                                 className:
-                                                  "spec-hub-action-error",
+                                                  "spec-hub-action-error m-0 inline-flex items-center gap-1.5 text-[12px] text-(--danger)",
                                                 children: [
                                                   t(J, {
                                                     size: 14,
@@ -2934,17 +2934,17 @@ ${A}`
                                         codeBlockStyle: "message",
                                       })
                                   : n("div", {
-                                      className: "spec-hub-empty-state",
+                                      className: "spec-hub-empty-state mx-auto w-[min(420px,calc(100%-24px))] min-h-[120px] px-4 py-3.5 border border-dashed border-(--border-muted) rounded-[10px] bg-[color-mix(in_srgb,var(--surface-card)_80%,transparent)] text-(--text-muted) flex flex-col justify-center gap-1",
                                       children: [
                                         t(qt, { size: 18, "aria-hidden": !0 }),
                                         t("p", {
                                           className:
-                                            "spec-hub-empty-state-title",
+                                            "spec-hub-empty-state-title m-0 text-[13px] font-semibold text-(--text-secondary)",
                                           children: e("specHub.emptyArtifact"),
                                         }),
                                         t("p", {
                                           className:
-                                            "spec-hub-empty-state-desc",
+                                            "spec-hub-empty-state-desc m-0 text-[12px]",
                                           children: e(
                                             "specHub.emptyArtifactHint"
                                           ),
@@ -2960,15 +2960,15 @@ ${A}`
                     ],
                   })
                 : n("div", {
-                    className: "spec-hub-empty-state is-panel",
+                    className: "spec-hub-empty-state is-panel mx-3 w-auto min-h-[120px] px-4 py-3.5 border border-dashed border-(--border-muted) rounded-[10px] bg-[color-mix(in_srgb,var(--surface-card)_80%,transparent)] text-(--text-muted) flex flex-col justify-center gap-1",
                     children: [
                       t(qt, { size: 18, "aria-hidden": !0 }),
                       t("p", {
-                        className: "spec-hub-empty-state-title",
+                        className: "spec-hub-empty-state-title m-0 text-[13px] font-semibold text-(--text-secondary)",
                         children: e("specHub.selectChange"),
                       }),
                       t("p", {
-                        className: "spec-hub-empty-state-desc",
+                        className: "spec-hub-empty-state-desc m-0 text-[12px]",
                         children: e("specHub.selectChangeHint"),
                       }),
                     ],
@@ -3043,20 +3043,20 @@ ${A}`
                         className: "spec-hub-action-stack min-h-0 flex flex-col gap-2",
                         children: [
                           n("section", {
-                            className: "spec-hub-action-orchestrator",
+                            className: "spec-hub-action-orchestrator border border-[color-mix(in_srgb,var(--border-muted)_88%,var(--text-secondary)_12%)] rounded-[12px] bg-[color-mix(in_srgb,var(--surface-card)_96%,var(--surface-item)_4%)] [box-shadow:inset_0_1px_0_color-mix(in_srgb,var(--text-primary)_5%,transparent),0_1px_2px_color-mix(in_srgb,var(--text-primary)_5%,transparent)] p-3.5 flex flex-col gap-3",
                             children: [
                               n("header", {
-                                className: "spec-hub-action-orchestrator-head",
+                                className: "spec-hub-action-orchestrator-head flex items-center gap-3",
                                 children: [
                                   t("span", {
                                     className:
-                                      "spec-hub-action-orchestrator-head-icon",
+                                      "spec-hub-action-orchestrator-head-icon w-[26px] h-[26px] rounded-[9px] inline-flex items-center justify-center text-(--text-secondary) bg-[color-mix(in_srgb,var(--surface-control)_88%,var(--surface-card)_12%)] border border-[color-mix(in_srgb,var(--border-muted)_88%,var(--text-secondary)_12%)] flex-shrink-0",
                                     "aria-hidden": !0,
                                     children: t(Fn, { size: 14 }),
                                   }),
                                   n("div", {
                                     className:
-                                      "spec-hub-action-orchestrator-head-copy",
+                                      "spec-hub-action-orchestrator-head-copy min-w-0 flex items-baseline gap-2",
                                     children: [
                                       t("h4", {
                                         children: e(
@@ -3065,7 +3065,7 @@ ${A}`
                                       }),
                                       t("p", {
                                         className:
-                                          "spec-hub-action-orchestrator-head-hint",
+                                          "spec-hub-action-orchestrator-head-hint m-0 min-w-0 text-[12px] leading-[1.3] text-[color-mix(in_srgb,var(--text-secondary)_94%,var(--text-muted)_6%)] whitespace-nowrap overflow-hidden text-ellipsis flex-[1_1_auto]",
                                         children: e("specHub.actionCenterHint"),
                                       }),
                                     ],
@@ -3073,19 +3073,19 @@ ${A}`
                                 ],
                               }),
                               n("div", {
-                                className: "spec-hub-shared-engine",
+                                className: "spec-hub-shared-engine flex flex-col gap-1.5",
                                 children: [
                                   n("div", {
                                     className:
-                                      "spec-hub-action-orchestrator-row",
+                                      "spec-hub-action-orchestrator-row flex items-center gap-2.5 min-w-0 border border-[color-mix(in_srgb,var(--border-subtle)_88%,var(--text-secondary)_12%)] rounded-[10px] bg-[color-mix(in_srgb,var(--surface-card)_97%,var(--surface-control)_3%)] p-1",
                                     children: [
                                       n("div", {
                                         className:
-                                          "spec-hub-shared-engine-select-wrap",
+                                          "spec-hub-shared-engine-select-wrap flex-[1_1_auto] min-w-0 flex items-center gap-[7px] relative rounded-lg bg-transparent px-1.5 min-h-[22px] transition-[background-color,box-shadow] duration-[120ms] ease focus-within:bg-[color-mix(in_srgb,var(--surface-control-hover)_42%,var(--surface-card)_58%)] focus-within:[box-shadow:0_0_0_3px_color-mix(in_srgb,var(--text-primary)_10%,transparent)]",
                                         children: [
                                           t("span", {
                                             className:
-                                              "spec-hub-shared-engine-icon",
+                                              "spec-hub-shared-engine-icon inline-flex items-center justify-center w-[18px] h-[18px] text-[color-mix(in_srgb,var(--text-secondary)_82%,var(--text-primary)_18%)]",
                                             "aria-hidden": !0,
                                             children: t(Ti, {
                                               engine: S,
@@ -3117,14 +3117,14 @@ ${A}`
                                           }),
                                           t("span", {
                                             className:
-                                              "spec-hub-shared-engine-chevron",
+                                              "spec-hub-shared-engine-chevron absolute right-1.5 top-1/2 -translate-y-1/2 inline-flex items-center justify-center text-(--text-muted) pointer-events-none",
                                             "aria-hidden": !0,
                                             children: t($n, { size: 14 }),
                                           }),
                                         ],
                                       }),
                                       n("div", {
-                                        className: "spec-hub-action-icon-group",
+                                        className: "spec-hub-action-icon-group inline-flex items-center gap-1.5 flex-[0_0_auto] pl-2 border-l border-[color-mix(in_srgb,var(--border-subtle)_88%,var(--text-secondary)_12%)]",
                                         role: "group",
                                         "aria-label": e(
                                           "specHub.actionCenterTitle"
@@ -3133,7 +3133,7 @@ ${A}`
                                           t("button", {
                                             type: "button",
                                             className:
-                                              "spec-hub-action-icon-button",
+                                              "spec-hub-action-icon-button w-5 min-w-5 h-5 min-h-5 rounded-[6px] border-none bg-transparent text-[color-mix(in_srgb,var(--text-primary)_90%,var(--text-secondary)_10%)] appearance-none p-0 inline-flex items-center justify-center [box-shadow:none] transition-[transform,color,opacity] duration-[120ms] ease hover:not-disabled:text-(--text-primary) hover:not-disabled:scale-[1.06] focus-visible:outline-2 focus-visible:outline-[color-mix(in_srgb,var(--text-primary)_26%,var(--border-subtle))] focus-visible:outline-offset-2 focus-visible:text-(--text-primary) active:not-disabled:scale-[0.95] disabled:opacity-[0.58] disabled:cursor-not-allowed",
                                             disabled: Ts || He,
                                             onClick: () => ui("create"),
                                             "aria-label": e(
@@ -3150,7 +3150,7 @@ ${A}`
                                           t("button", {
                                             type: "button",
                                             className:
-                                              "spec-hub-action-icon-button",
+                                              "spec-hub-action-icon-button w-5 min-w-5 h-5 min-h-5 rounded-[6px] border-none bg-transparent text-[color-mix(in_srgb,var(--text-primary)_90%,var(--text-secondary)_10%)] appearance-none p-0 inline-flex items-center justify-center [box-shadow:none] transition-[transform,color,opacity] duration-[120ms] ease hover:not-disabled:text-(--text-primary) hover:not-disabled:scale-[1.06] focus-visible:outline-2 focus-visible:outline-[color-mix(in_srgb,var(--text-primary)_26%,var(--border-subtle))] focus-visible:outline-offset-2 focus-visible:text-(--text-primary) active:not-disabled:scale-[0.95] disabled:opacity-[0.58] disabled:cursor-not-allowed",
                                             disabled:
                                               le.length === 0 ||
                                               $?.status === "archived" ||
@@ -3173,7 +3173,7 @@ ${A}`
                                     ],
                                   }),
                                   t("p", {
-                                    className: "spec-hub-shared-engine-hint",
+                                    className: "spec-hub-shared-engine-hint mt-0.5 whitespace-nowrap overflow-hidden text-ellipsis m-0 text-[11px] leading-[1.4] text-(--text-secondary)",
                                     children: e("specHub.sharedExecutor.hint"),
                                   }),
                                 ],
@@ -3197,11 +3197,11 @@ ${A}`
                                     return n(
                                       "div",
                                       {
-                                        className: "spec-hub-action-item",
+                                        className: "spec-hub-action-item border border-(--border-muted) rounded-lg bg-(--surface-item) p-2 flex flex-col gap-1.5",
                                         children: [
                                           n("button", {
                                             type: "button",
-                                            className: "spec-hub-action-button",
+                                            className: "spec-hub-action-button w-full inline-flex items-center gap-2 justify-center rounded-lg border border-(--border-muted) bg-(--surface-control) text-(--text-primary) px-2 py-1.5 disabled:opacity-50 disabled:cursor-not-allowed",
                                             disabled: !s.available || tt,
                                             onClick: () => {
                                               Pn(s.key);
@@ -3232,7 +3232,7 @@ ${A}`
                                                   n("label", {
                                                     className: `spec-hub-action-inline-toggle ${
                                                       tt ? "is-disabled" : ""
-                                                    }`,
+                                                    } inline-flex items-center gap-1.5 text-[12px] text-(--text-secondary)${tt ? " opacity-60" : ""}`,
                                                     children: [
                                                       t("input", {
                                                         type: "checkbox",
@@ -3259,7 +3259,7 @@ ${A}`
                                                   us
                                                     ? t("p", {
                                                         className:
-                                                          "spec-hub-action-inline-hint",
+                                                          "spec-hub-action-inline-hint m-0 text-[11px] text-(--text-muted)",
                                                         children: e(
                                                           "specHub.continueAiEnhancement.hint"
                                                         ),
@@ -3299,7 +3299,7 @@ ${A}`
                                                     }),
                                                     t("p", {
                                                       className:
-                                                        "spec-hub-action-inline-hint",
+                                                        "spec-hub-action-inline-hint m-0 text-[11px] text-(--text-muted)",
                                                       children: e(
                                                         "specHub.applyContinueBrief.summary",
                                                         { summary: Ct.summary }
@@ -3308,7 +3308,7 @@ ${A}`
                                                     Ho
                                                       ? n("p", {
                                                           className:
-                                                            "spec-hub-action-next-step",
+                                                            "spec-hub-action-next-step m-0 inline-flex items-center gap-1.5 text-[12px] text-(--warning)",
                                                           children: [
                                                             t(xe, {
                                                               size: 13,
@@ -3326,7 +3326,7 @@ ${A}`
                                                 })
                                               : t("p", {
                                                   className:
-                                                    "spec-hub-action-inline-hint",
+                                                    "spec-hub-action-inline-hint m-0 text-[11px] text-(--text-muted)",
                                                   children: e(
                                                     "specHub.applyContinueBrief.missing"
                                                   ),
@@ -3336,7 +3336,7 @@ ${A}`
                                             ? n("label", {
                                                 className: `spec-hub-verify-auto-complete ${
                                                   tt ? "is-disabled" : ""
-                                                }`,
+                                                } inline-flex items-center gap-1.5 text-[12px] text-(--text-secondary)${tt ? " opacity-60" : ""}`,
                                                 children: [
                                                   t("input", {
                                                     type: "checkbox",
@@ -3361,7 +3361,7 @@ ${A}`
                                           s.key === "verify" && rs
                                             ? t("p", {
                                                 className:
-                                                  "spec-hub-verify-auto-complete-hint",
+                                                  "spec-hub-verify-auto-complete-hint m-0 text-[11px] text-(--text-muted)",
                                                 children: e(
                                                   "specHub.verifyAutoComplete.hint"
                                                 ),
@@ -3369,7 +3369,7 @@ ${A}`
                                             : null,
                                           s.key === "verify" && va && !Sn
                                             ? t("p", {
-                                                className: "spec-hub-running",
+                                                className: "spec-hub-running mx-2.5 mt-1.5 text-[12px] text-(--text-muted)",
                                                 children: e(
                                                   "specHub.verifyAutoComplete.running"
                                                 ),
@@ -3378,7 +3378,7 @@ ${A}`
                                           s.key === "verify" && fa && !Sn
                                             ? n("p", {
                                                 className:
-                                                  "spec-hub-action-error",
+                                                  "spec-hub-action-error m-0 inline-flex items-center gap-1.5 text-[12px] text-(--danger)",
                                                 children: [
                                                   t(J, {
                                                     size: 14,
@@ -3391,7 +3391,7 @@ ${A}`
                                           s.blockers.length > 0
                                             ? n("div", {
                                                 className:
-                                                  "spec-hub-action-blockers",
+                                                  "spec-hub-action-blockers flex flex-col gap-1",
                                                 children: [
                                                   d.map((f) =>
                                                     n(
@@ -3407,7 +3407,7 @@ ${A}`
                                                           }),
                                                           t("span", {
                                                             className:
-                                                              "spec-hub-action-blocker-text",
+                                                              "spec-hub-action-blocker-text flex-[1_1_auto] min-w-0",
                                                             children: V(f, e),
                                                           }),
                                                         ],
@@ -3419,7 +3419,7 @@ ${A}`
                                                     ? t("button", {
                                                         type: "button",
                                                         className:
-                                                          "ghost spec-hub-action-blockers-toggle",
+                                                          "ghost spec-hub-action-blockers-toggle self-start py-0.5 px-1 text-[11px] text-(--text-secondary) hover:not-disabled:text-(--text-primary)",
                                                         onClick: () => {
                                                           ma((f) => ({
                                                             ...f,
@@ -3442,7 +3442,7 @@ ${A}`
                                           m
                                             ? n("p", {
                                                 className:
-                                                  "spec-hub-action-next-step",
+                                                  "spec-hub-action-next-step m-0 inline-flex items-center gap-1.5 text-[12px] text-(--warning)",
                                                 children: [
                                                   t(Wt, {
                                                     size: 13,
@@ -3459,7 +3459,7 @@ ${A}`
                                   }),
                                   E.provider === "speckit"
                                     ? n("div", {
-                                        className: "spec-hub-passthrough",
+                                        className: "spec-hub-passthrough border border-(--border-muted) rounded-lg bg-(--surface-item) p-2 flex flex-col gap-1.5",
                                         children: [
                                           n("button", {
                                             type: "button",
@@ -3496,11 +3496,11 @@ ${A}`
                                   return n(
                                     "div",
                                     {
-                                      className: "spec-hub-action-item",
+                                      className: "spec-hub-action-item border border-(--border-muted) rounded-lg bg-(--surface-item) p-2 flex flex-col gap-1.5",
                                       children: [
                                         n("button", {
                                           type: "button",
-                                          className: "spec-hub-action-button",
+                                          className: "spec-hub-action-button w-full inline-flex items-center gap-2 justify-center rounded-lg border border-(--border-muted) bg-(--surface-control) text-(--text-primary) px-2 py-1.5 disabled:opacity-50 disabled:cursor-not-allowed",
                                           disabled: !0,
                                           children: [
                                             t(o, {
@@ -3516,7 +3516,7 @@ ${A}`
                                         }),
                                         t("code", { children: fr(s) }),
                                         t("div", {
-                                          className: "spec-hub-action-blockers",
+                                          className: "spec-hub-action-blockers flex flex-col gap-1",
                                           children: n("p", {
                                             children: [
                                               t(xe, {
@@ -3539,7 +3539,7 @@ ${A}`
                               }),
                           $ && Je
                             ? n("section", {
-                                className: "spec-hub-guidance-result",
+                                className: "spec-hub-guidance-result border border-(--border-muted) rounded-lg bg-(--surface-item) p-2.5 flex flex-col gap-2",
                                 children: [
                                   n("div", {
                                     className: "spec-hub-panel-title inline-flex items-center gap-1.5 text-[12px] font-bold text-[color:var(--text-secondary)] tracking-[0.02em] uppercase",
@@ -3551,10 +3551,10 @@ ${A}`
                                     ],
                                   }),
                                   n("div", {
-                                    className: "spec-hub-guidance-grid",
+                                    className: "spec-hub-guidance-grid grid [grid-template-columns:repeat(3,minmax(0,1fr))] gap-2",
                                     children: [
                                       n("article", {
-                                        className: "spec-hub-guidance-field",
+                                        className: "spec-hub-guidance-field border border-(--border-subtle) rounded-lg bg-(--surface-command) px-2 py-[7px] flex flex-col gap-1 min-w-0",
                                         children: [
                                           t("span", {
                                             children: e(
@@ -3565,7 +3565,7 @@ ${A}`
                                         ],
                                       }),
                                       n("article", {
-                                        className: "spec-hub-guidance-field",
+                                        className: "spec-hub-guidance-field border border-(--border-subtle) rounded-lg bg-(--surface-command) px-2 py-[7px] flex flex-col gap-1 min-w-0",
                                         children: [
                                           t("span", {
                                             children: e(
@@ -3579,7 +3579,7 @@ ${A}`
                                         ],
                                       }),
                                       n("article", {
-                                        className: "spec-hub-guidance-field",
+                                        className: "spec-hub-guidance-field border border-(--border-subtle) rounded-lg bg-(--surface-command) px-2 py-[7px] flex flex-col gap-1 min-w-0",
                                         children: [
                                           t("span", {
                                             children: e(
@@ -3603,7 +3603,7 @@ ${A}`
                                   }),
                                   te === "running"
                                     ? t("p", {
-                                        className: "spec-hub-running",
+                                        className: "spec-hub-running mx-2.5 mt-1.5 text-[12px] text-(--text-muted)",
                                         children: e(
                                           "specHub.guidance.runningHint"
                                         ),
@@ -3611,7 +3611,7 @@ ${A}`
                                     : te === "success"
                                     ? pe.noSuggestion
                                       ? t("p", {
-                                          className: "spec-hub-context-notice",
+                                          className: "spec-hub-context-notice m-0 text-(--success)",
                                           children: e(
                                             "specHub.guidance.noSuggestion"
                                           ),
@@ -3620,7 +3620,7 @@ ${A}`
                                           children: pe.isTemplate
                                             ? n("div", {
                                                 className:
-                                                  "spec-hub-guidance-template",
+                                                  "spec-hub-guidance-template border border-(--border-subtle) rounded-lg bg-(--surface-command) px-2 py-[7px] flex flex-col gap-1.5",
                                                 children: [
                                                   t("span", {
                                                     children: e(
@@ -3679,7 +3679,7 @@ ${A}`
                                               })
                                             : n("div", {
                                                 className:
-                                                  "spec-hub-guidance-highlights",
+                                                  "spec-hub-guidance-highlights border border-(--border-subtle) rounded-lg bg-(--surface-command) px-2 py-[7px] flex flex-col gap-1.5",
                                                 children: [
                                                   t("span", {
                                                     children: e(
@@ -3701,7 +3701,7 @@ ${A}`
                                         })
                                     : te === "failed"
                                     ? n("p", {
-                                        className: "spec-hub-action-error",
+                                        className: "spec-hub-action-error m-0 inline-flex items-center gap-1.5 text-[12px] text-(--danger)",
                                         children: [
                                           t(J, { size: 14, "aria-hidden": !0 }),
                                           t("span", {
@@ -3712,14 +3712,14 @@ ${A}`
                                         ],
                                       })
                                     : t("p", {
-                                        className: "spec-hub-running",
+                                        className: "spec-hub-running mx-2.5 mt-1.5 text-[12px] text-(--text-muted)",
                                         children: e(
                                           "specHub.guidance.idleHint"
                                         ),
                                       }),
                                   (te === "success" || te === "failed") && Qe
                                     ? n("div", {
-                                        className: "spec-hub-guidance-next",
+                                        className: "spec-hub-guidance-next flex flex-col gap-1.5",
                                         children: [
                                           t("span", {
                                             children: e(
@@ -3728,7 +3728,7 @@ ${A}`
                                           }),
                                           n("button", {
                                             type: "button",
-                                            className: "spec-hub-action-button",
+                                            className: "spec-hub-action-button w-full inline-flex items-center gap-2 justify-center rounded-lg border border-(--border-muted) bg-(--surface-control) text-(--text-primary) px-2 py-1.5 disabled:opacity-50 disabled:cursor-not-allowed",
                                             disabled:
                                               !Qe.available || ie !== null,
                                             onClick: () => {
@@ -3755,7 +3755,7 @@ ${A}`
                                           Qe.blockers.length > 0
                                             ? t("div", {
                                                 className:
-                                                  "spec-hub-action-blockers",
+                                                  "spec-hub-action-blockers flex flex-col gap-1",
                                                 children: n("p", {
                                                   children: [
                                                     t(xe, {
@@ -3777,7 +3777,7 @@ ${A}`
                                     : null,
                                   (te === "success" || te === "failed") && Ze
                                     ? n("div", {
-                                        className: "spec-hub-guidance-controls",
+                                        className: "spec-hub-guidance-controls flex gap-1.5",
                                         children: [
                                           Je
                                             ? t("button", {
@@ -3840,7 +3840,7 @@ ${A}`
                                           !is && ks.removedTags.length > 0
                                             ? t("p", {
                                                 className:
-                                                  "spec-hub-guidance-raw-hint",
+                                                  "spec-hub-guidance-raw-hint m-0 text-[11px] text-(--text-faint)",
                                                 children: e(
                                                   "specHub.guidance.rawCollapsedHint",
                                                   {
@@ -3858,7 +3858,7 @@ ${A}`
                             : null,
                           Eo
                             ? n("section", {
-                                className: "spec-hub-ai-takeover",
+                                className: "spec-hub-ai-takeover border border-dashed border-(--border-muted) rounded-lg bg-[color-mix(in_srgb,var(--surface-card)_84%,var(--surface-item))] p-2.5 flex flex-col gap-2",
                                 children: [
                                   n("div", {
                                     className: "spec-hub-panel-title inline-flex items-center gap-1.5 text-[12px] font-bold text-[color:var(--text-secondary)] tracking-[0.02em] uppercase",
@@ -3870,13 +3870,13 @@ ${A}`
                                     ],
                                   }),
                                   t("p", {
-                                    className: "spec-hub-bootstrap-desc",
+                                    className: "spec-hub-bootstrap-desc m-0 text-[12px] text-(--text-secondary)",
                                     children: e(
                                       "specHub.aiTakeover.description"
                                     ),
                                   }),
                                   n("div", {
-                                    className: "spec-hub-command-preview",
+                                    className: "spec-hub-command-preview flex flex-col gap-1",
                                     children: [
                                       t("span", {
                                         children: e(
@@ -3888,7 +3888,7 @@ ${A}`
                                   }),
                                   n("label", {
                                     className:
-                                      "spec-hub-ai-takeover-auto-archive",
+                                      "spec-hub-ai-takeover-auto-archive inline-flex items-center gap-1.5 text-[11px] text-(--text-secondary)",
                                     children: [
                                       t("input", {
                                         type: "checkbox",
@@ -3905,7 +3905,7 @@ ${A}`
                                   }),
                                   ys
                                     ? n("div", {
-                                        className: "spec-hub-command-preview",
+                                        className: "spec-hub-command-preview flex flex-col gap-1",
                                         children: [
                                           t("span", {
                                             children: e(
@@ -3918,7 +3918,7 @@ ${A}`
                                     : null,
                                   n("button", {
                                     type: "button",
-                                    className: "spec-hub-action-button",
+                                    className: "spec-hub-action-button w-full inline-flex items-center gap-2 justify-center rounded-lg border border-(--border-muted) bg-(--surface-control) text-(--text-primary) px-2 py-1.5 disabled:opacity-50 disabled:cursor-not-allowed",
                                     disabled: He || ie !== null || Us || et,
                                     onClick: () => {
                                       uc();
@@ -3941,13 +3941,13 @@ ${A}`
                       }),
                       ie
                         ? t("p", {
-                            className: "spec-hub-running",
+                            className: "spec-hub-running mx-2.5 mt-1.5 text-[12px] text-(--text-muted)",
                             children: e("specHub.runningAction"),
                           })
                         : null,
                       za
                         ? n("p", {
-                            className: "spec-hub-action-error",
+                            className: "spec-hub-action-error m-0 inline-flex items-center gap-1.5 text-[12px] text-(--danger)",
                             children: [
                               t(J, { size: 14, "aria-hidden": !0 }),
                               t("span", { children: V(za, e) }),
@@ -3961,18 +3961,18 @@ ${A}`
                     className: "spec-hub-control-content min-h-0 flex-1 flex flex-col gap-2 p-2.5 overflow-auto",
                     children: go
                       ? n("div", {
-                          className: "spec-hub-project-stack",
+                          className: "spec-hub-project-stack flex flex-col gap-3",
                           children: [
                             n("section", {
                               className:
-                                "spec-hub-bootstrap-panel spec-hub-project-card",
+                                "spec-hub-bootstrap-panel spec-hub-project-card border border-[color-mix(in_srgb,var(--border-muted)_88%,var(--text-secondary)_12%)] rounded-[12px] bg-[color-mix(in_srgb,var(--surface-card)_97%,var(--surface-item)_3%)] [box-shadow:0_1px_2px_color-mix(in_srgb,var(--text-primary)_5%,transparent)] p-3 flex flex-col gap-2.5",
                               children: [
                                 n("header", {
-                                  className: "spec-hub-bootstrap-card-head",
+                                  className: "spec-hub-bootstrap-card-head flex flex-col gap-1.5",
                                   children: [
                                     n("div", {
                                       className:
-                                        "spec-hub-bootstrap-card-title",
+                                        "spec-hub-bootstrap-card-title inline-flex items-center gap-1.5 text-[13px] font-bold text-(--text-stronger)",
                                       children: [
                                         t(Se, { size: 14, "aria-hidden": !0 }),
                                         t("span", {
@@ -3983,7 +3983,7 @@ ${A}`
                                       ],
                                     }),
                                     t("p", {
-                                      className: "spec-hub-bootstrap-desc",
+                                      className: "spec-hub-bootstrap-desc m-0 text-[12px] text-(--text-secondary)",
                                       children: e(
                                         "specHub.bootstrap.specRootDescription"
                                       ),
@@ -3991,7 +3991,7 @@ ${A}`
                                   ],
                                 }),
                                 n("div", {
-                                  className: "spec-hub-form-field",
+                                  className: "spec-hub-form-field flex flex-col gap-1",
                                   children: [
                                     t("label", {
                                       htmlFor: "spec-hub-spec-root-input",
@@ -4012,7 +4012,7 @@ ${A}`
                                   ],
                                 }),
                                 t("p", {
-                                  className: "spec-hub-bootstrap-root-current",
+                                  className: "spec-hub-bootstrap-root-current m-0 text-[11px] text-(--text-muted) break-all px-2 py-[7px] border border-(--border-subtle) rounded-lg bg-(--surface-command)",
                                   children: e(
                                     "specHub.bootstrap.specRootCurrent",
                                     {
@@ -4026,12 +4026,12 @@ ${A}`
                                   ),
                                 }),
                                 n("div", {
-                                  className: "spec-hub-bootstrap-root-actions",
+                                  className: "spec-hub-bootstrap-root-actions grid [grid-template-columns:repeat(2,minmax(0,1fr))] gap-2",
                                   children: [
                                     t("button", {
                                       type: "button",
                                       className:
-                                        "ghost spec-hub-bootstrap-inline-action",
+                                        "ghost spec-hub-bootstrap-inline-action w-full justify-center",
                                       onClick: () => {
                                         pc();
                                       },
@@ -4043,7 +4043,7 @@ ${A}`
                                     t("button", {
                                       type: "button",
                                       className:
-                                        "ghost spec-hub-bootstrap-inline-action",
+                                        "ghost spec-hub-bootstrap-inline-action w-full justify-center",
                                       onClick: () => {
                                         dc();
                                       },
@@ -4058,14 +4058,14 @@ ${A}`
                             }),
                             n("section", {
                               className:
-                                "spec-hub-bootstrap-panel spec-hub-project-card is-context",
+                                "spec-hub-bootstrap-panel spec-hub-project-card is-context border border-[color-mix(in_srgb,var(--border-muted)_88%,var(--text-secondary)_12%)] rounded-[12px] bg-[color-mix(in_srgb,var(--surface-card)_97%,var(--surface-item)_3%)] [box-shadow:0_1px_2px_color-mix(in_srgb,var(--text-primary)_5%,transparent)] p-3 flex flex-col gap-2.5",
                               children: [
                                 n("header", {
-                                  className: "spec-hub-bootstrap-card-head",
+                                  className: "spec-hub-bootstrap-card-head flex flex-col gap-1.5",
                                   children: [
                                     n("div", {
                                       className:
-                                        "spec-hub-bootstrap-card-title",
+                                        "spec-hub-bootstrap-card-title inline-flex items-center gap-1.5 text-[13px] font-bold text-(--text-stronger)",
                                       children: [
                                         t(Se, { size: 14, "aria-hidden": !0 }),
                                         t("span", {
@@ -4078,7 +4078,7 @@ ${A}`
                                       ],
                                     }),
                                     t("p", {
-                                      className: "spec-hub-bootstrap-desc",
+                                      className: "spec-hub-bootstrap-desc m-0 text-[12px] text-(--text-secondary)",
                                       children: e(
                                         ve
                                           ? "specHub.bootstrap.description"
@@ -4088,7 +4088,7 @@ ${A}`
                                   ],
                                 }),
                                 n("div", {
-                                  className: "spec-hub-auto-profile",
+                                  className: "spec-hub-auto-profile flex flex-col gap-2",
                                   children: [
                                     t("label", {
                                       htmlFor: "spec-hub-profile-select",
@@ -4098,11 +4098,11 @@ ${A}`
                                     }),
                                     n("div", {
                                       className:
-                                        "spec-hub-auto-profile-select-wrap",
+                                        "spec-hub-auto-profile-select-wrap w-full min-w-0 flex items-center gap-[7px] relative border border-(--border-subtle) rounded-lg bg-[color-mix(in_srgb,var(--surface-command)_90%,var(--surface-card)_10%)] px-2 min-h-[34px] transition-[background-color,box-shadow,border-color] duration-[120ms] ease focus-within:bg-[color-mix(in_srgb,var(--surface-control-hover)_42%,var(--surface-card)_58%)] focus-within:border-[color-mix(in_srgb,var(--border-muted)_82%,var(--text-secondary)_18%)] focus-within:[box-shadow:0_0_0_3px_color-mix(in_srgb,var(--text-primary)_10%,transparent)]",
                                       children: [
                                         t("span", {
                                           className:
-                                            "spec-hub-auto-profile-select-icon",
+                                            "spec-hub-auto-profile-select-icon inline-flex items-center justify-center w-5 h-5 text-[color-mix(in_srgb,var(--text-secondary)_82%,var(--text-primary)_18%)]",
                                           "aria-hidden": !0,
                                           children: t(Ti, {
                                             engine: ht,
@@ -4128,7 +4128,7 @@ ${A}`
                                         }),
                                         t("span", {
                                           className:
-                                            "spec-hub-auto-profile-select-chevron",
+                                            "spec-hub-auto-profile-select-chevron absolute right-1.5 top-1/2 -translate-y-1/2 inline-flex items-center justify-center text-(--text-muted) pointer-events-none",
                                           "aria-hidden": !0,
                                           children: t($n, { size: 14 }),
                                         }),
@@ -4136,7 +4136,7 @@ ${A}`
                                     }),
                                     t("p", {
                                       className:
-                                        "spec-hub-bootstrap-inline-hint",
+                                        "spec-hub-bootstrap-inline-hint m-0 text-[11px] leading-[1.35] text-(--text-muted)",
                                       children: e(
                                         "specHub.bootstrap.agentHint"
                                       ),
@@ -4144,7 +4144,7 @@ ${A}`
                                   ],
                                 }),
                                 t("div", {
-                                  className: "spec-hub-auto-preview",
+                                  className: "spec-hub-auto-preview border border-[color-mix(in_srgb,var(--border-subtle)_88%,var(--text-secondary)_12%)] rounded-[10px] bg-[color-mix(in_srgb,var(--surface-command)_90%,var(--surface-card)_10%)] p-2.5",
                                   children: gt
                                     ? n(Ms, {
                                         children: [
@@ -4215,7 +4215,7 @@ ${A}`
                                 }),
                                 n("button", {
                                   type: "button",
-                                  className: "spec-hub-action-button",
+                                  className: "spec-hub-action-button w-full inline-flex items-center gap-2 justify-center rounded-lg border border-(--border-muted) bg-(--surface-control) text-(--text-primary) px-2 py-1.5 disabled:opacity-50 disabled:cursor-not-allowed",
                                   onClick: () => {
                                     Qo();
                                   },
@@ -4235,7 +4235,7 @@ ${A}`
                                 }),
                                 Va
                                   ? n("p", {
-                                      className: "spec-hub-action-error",
+                                      className: "spec-hub-action-error m-0 inline-flex items-center gap-1.5 text-[12px] text-(--danger)",
                                       children: [
                                         t(J, { size: 14, "aria-hidden": !0 }),
                                         t("span", { children: V(Va, e) }),
@@ -4245,7 +4245,7 @@ ${A}`
                                 ea
                                   ? t("p", {
                                       className:
-                                        "spec-hub-running spec-hub-context-notice",
+                                        "spec-hub-running spec-hub-context-notice mx-2.5 mt-1.5 text-[12px] text-(--success)",
                                       children: ea,
                                     })
                                   : null,
@@ -4253,15 +4253,15 @@ ${A}`
                             }),
                             n("section", {
                               className:
-                                "spec-hub-bootstrap-panel spec-hub-project-card",
+                                "spec-hub-bootstrap-panel spec-hub-project-card border border-[color-mix(in_srgb,var(--border-muted)_88%,var(--text-secondary)_12%)] rounded-[12px] bg-[color-mix(in_srgb,var(--surface-card)_97%,var(--surface-item)_3%)] [box-shadow:0_1px_2px_color-mix(in_srgb,var(--text-primary)_5%,transparent)] p-3 flex flex-col gap-2.5",
                               children: [
                                 n("header", {
                                   className:
-                                    "spec-hub-bootstrap-card-head spec-hub-doctor-card-head",
+                                    "spec-hub-bootstrap-card-head spec-hub-doctor-card-head flex flex-col gap-1.5 flex-row items-center justify-between gap-2.5",
                                   children: [
                                     n("div", {
                                       className:
-                                        "spec-hub-bootstrap-card-title",
+                                        "spec-hub-bootstrap-card-title inline-flex items-center gap-1.5 text-[13px] font-bold text-(--text-stronger)",
                                       children: [
                                         t(Cc, { size: 14, "aria-hidden": !0 }),
                                         t("span", {
@@ -4390,15 +4390,15 @@ ${A}`
                           ],
                         })
                       : n("div", {
-                          className: "spec-hub-empty-state is-panel",
+                          className: "spec-hub-empty-state is-panel mx-3 w-auto min-h-[120px] px-4 py-3.5 border border-dashed border-(--border-muted) rounded-[10px] bg-[color-mix(in_srgb,var(--surface-card)_80%,transparent)] text-(--text-muted) flex flex-col justify-center gap-1",
                           children: [
                             t(qt, { size: 18, "aria-hidden": !0 }),
                             t("p", {
-                              className: "spec-hub-empty-state-title",
+                              className: "spec-hub-empty-state-title m-0 text-[13px] font-semibold text-(--text-secondary)",
                               children: e("specHub.bootstrap.projectInfoTitle"),
                             }),
                             t("p", {
-                              className: "spec-hub-empty-state-desc",
+                              className: "spec-hub-empty-state-desc m-0 text-[12px]",
                               children: e("specHub.bootstrap.unsupported"),
                             }),
                           ],
@@ -4410,7 +4410,7 @@ ${A}`
                     children: [
                       Ma.length > 0
                         ? n("div", {
-                            className: "spec-hub-validation-panel",
+                            className: "spec-hub-validation-panel border border-(--border-muted) rounded-lg bg-(--surface-item) p-2 flex flex-col gap-1.5",
                             children: [
                               n("div", {
                                 className: "spec-hub-panel-title inline-flex items-center gap-1.5 text-[12px] font-bold text-[color:var(--text-secondary)] tracking-[0.02em] uppercase",
@@ -4422,13 +4422,13 @@ ${A}`
                                 ],
                               }),
                               t("div", {
-                                className: "spec-hub-validation-list",
+                                className: "spec-hub-validation-list flex flex-col gap-1.5",
                                 children: Ma.map((s, o) =>
                                   n(
                                     "button",
                                     {
                                       type: "button",
-                                      className: "spec-hub-validation-item",
+                                      className: "spec-hub-validation-item border border-(--border-subtle) rounded-lg bg-(--surface-command) px-2 py-1.5 flex flex-col gap-0.5 text-left",
                                       onClick: () => mc(s.path),
                                       children: [
                                         t("strong", {
@@ -4446,14 +4446,14 @@ ${A}`
                           })
                         : null,
                       t("div", {
-                        className: "spec-hub-gate-panel",
+                        className: "spec-hub-gate-panel border border-(--border-muted) rounded-lg bg-(--surface-item) p-2 flex flex-col gap-1.5",
                         children: t("div", {
-                          className: "spec-hub-gate-checks",
+                          className: "spec-hub-gate-checks flex flex-col gap-1.5",
                           children: Ye.checks.map((s) =>
                             n(
                               "article",
                               {
-                                className: `spec-hub-gate-check ${s.status}`,
+                                className: `spec-hub-gate-check ${s.status} border border-(--border-subtle) rounded-lg bg-(--surface-command) px-2 py-1.5 flex flex-col gap-0.5 text-left`,
                                 children: [
                                   n("header", {
                                     children: [
@@ -4484,12 +4484,12 @@ ${A}`
                       }),
                       E.blockers.length > 0
                         ? t("div", {
-                            className: "spec-hub-blockers",
+                            className: "spec-hub-blockers border border-[color-mix(in_srgb,var(--danger)_35%,transparent)] bg-[color-mix(in_srgb,var(--danger)_10%,var(--surface-card))] rounded-[10px] px-2.5 py-2 flex flex-col gap-1.5",
                             children: E.blockers.map((s) =>
                               n(
                                 "div",
                                 {
-                                  className: "spec-hub-blocker-item",
+                                  className: "spec-hub-blocker-item m-0 inline-flex items-center gap-1.5 text-[12px] text-(--danger)",
                                   children: [
                                     t(xe, { size: 14, "aria-hidden": !0 }),
                                     t("span", { children: V(s, e) }),
@@ -4508,15 +4508,15 @@ ${A}`
                     children:
                       Oe.length === 0
                         ? n("div", {
-                            className: "spec-hub-empty-state is-panel",
+                            className: "spec-hub-empty-state is-panel mx-3 w-auto min-h-[120px] px-4 py-3.5 border border-dashed border-(--border-muted) rounded-[10px] bg-[color-mix(in_srgb,var(--surface-card)_80%,transparent)] text-(--text-muted) flex flex-col justify-center gap-1",
                             children: [
                               t(qt, { size: 18, "aria-hidden": !0 }),
                               t("p", {
-                                className: "spec-hub-empty-state-title",
+                                className: "spec-hub-empty-state-title m-0 text-[13px] font-semibold text-(--text-secondary)",
                                 children: e("specHub.noTimeline"),
                               }),
                               t("p", {
-                                className: "spec-hub-empty-state-desc",
+                                className: "spec-hub-empty-state-desc m-0 text-[12px]",
                                 children: e("specHub.noTimelineHint"),
                               }),
                             ],
@@ -4527,14 +4527,14 @@ ${A}`
                               n(
                                 "article",
                                 {
-                                  className: "spec-hub-timeline-item",
+                                  className: "spec-hub-timeline-item border border-(--border-subtle) rounded-lg bg-(--surface-item) p-2 flex flex-col gap-1.5",
                                   children: [
                                     n("header", {
                                       children: [
                                         n("span", {
                                           className: `spec-hub-timeline-status ${
                                             s.success ? "ok" : "fail"
-                                          }`,
+                                          } inline-flex items-center gap-1.5 text-[12px]${s.success ? " text-(--success)" : " text-(--danger)"}`,
                                           children: [
                                             s.success
                                               ? t(hi, { size: 14 })
@@ -4556,7 +4556,7 @@ ${A}`
                                     t("code", { children: s.command }),
                                     s.gitRefs.length > 0
                                       ? n("p", {
-                                          className: "spec-hub-git-refs",
+                                          className: "spec-hub-git-refs m-0 inline-flex items-center gap-1.5 text-[11px] text-(--text-muted)",
                                           children: [
                                             t(Hc, {
                                               size: 12,
@@ -4620,15 +4620,15 @@ ${A}`
       be && typeof document < "u"
         ? Ne(
             t("div", {
-              className: "spec-hub-proposal-dialog-backdrop",
+              className: "spec-hub-proposal-dialog-backdrop fixed z-[44] inset-0 flex items-center justify-center bg-[rgba(15,23,42,0.38)] [backdrop-filter:blur(2px)] p-4",
               role: "presentation",
               children: n("section", {
-                className: "spec-hub-proposal-dialog",
+                className: "spec-hub-proposal-dialog w-[min(640px,calc(100vw-32px))] max-h-[min(86vh,760px)] border border-(--border-subtle) rounded-[14px] bg-[color-mix(in_srgb,var(--surface-messages)_84%,var(--surface-card-strong)_16%)] [box-shadow:0_24px_48px_rgba(15,23,42,0.35)] flex flex-col overflow-hidden",
                 role: "dialog",
                 "aria-label": e("specHub.proposal.dialogTitle"),
                 children: [
                   n("header", {
-                    className: "spec-hub-proposal-dialog-header",
+                    className: "spec-hub-proposal-dialog-header flex items-center justify-between gap-2.5 px-3 py-2.5 border-b border-(--border-subtle) bg-[color-mix(in_srgb,var(--surface-messages)_88%,var(--surface-card-strong)_12%)]",
                     children: [
                       n("div", {
                         className: "spec-hub-panel-title inline-flex items-center gap-1.5 text-[12px] font-bold text-[color:var(--text-secondary)] tracking-[0.02em] uppercase",
@@ -4656,10 +4656,10 @@ ${A}`
                     ],
                   }),
                   n("div", {
-                    className: "spec-hub-proposal-dialog-body",
+                    className: "spec-hub-proposal-dialog-body flex-1 min-h-0 overflow-y-auto p-3 flex flex-col gap-2.5",
                     children: [
                       t("p", {
-                        className: "spec-hub-bootstrap-desc",
+                        className: "spec-hub-bootstrap-desc m-0 text-[12px] text-(--text-secondary)",
                         children: e(
                           be === "create"
                             ? "specHub.proposal.dialogDescriptionCreate"
@@ -4668,7 +4668,7 @@ ${A}`
                       }),
                       be === "append"
                         ? n("div", {
-                            className: "spec-hub-auto-profile",
+                            className: "spec-hub-auto-profile flex flex-col gap-2",
                             children: [
                               t("label", {
                                 htmlFor: "spec-hub-proposal-target",
@@ -4699,10 +4699,10 @@ ${A}`
                           })
                         : null,
                       n("div", {
-                        className: "spec-hub-form-field",
+                        className: "spec-hub-form-field flex flex-col gap-1",
                         children: [
                           n("div", {
-                            className: "spec-hub-proposal-composer-header",
+                            className: "spec-hub-proposal-composer-header flex items-center justify-between gap-2",
                             children: [
                               t("span", {
                                 children: e("specHub.proposal.contentLabel"),
@@ -4710,7 +4710,7 @@ ${A}`
                               n("button", {
                                 type: "button",
                                 className:
-                                  "ghost spec-hub-proposal-attach-button",
+                                  "ghost spec-hub-proposal-attach-button inline-flex items-center gap-1.5 px-2 py-1",
                                 onClick: () => {
                                   tc();
                                 },
@@ -4734,7 +4734,7 @@ ${A}`
                             ref: sc,
                             className: `spec-hub-proposal-composer${
                               nc ? " is-drag-over" : ""
-                            }`,
+                            } border border-(--border-subtle) rounded-[10px] bg-(--surface-command) overflow-hidden transition-[border-color,box-shadow,background] duration-[120ms] ease${nc ? " border-(--border-accent-soft) [box-shadow:0_0_0_1px_color-mix(in_srgb,var(--accent)_30%,transparent)] bg-[color-mix(in_srgb,var(--surface-control-hover)_82%,var(--surface-command))]" : ""}`,
                             onDragOver: ac,
                             onDragEnter: ic,
                             onDragLeave: oc,
@@ -4756,7 +4756,7 @@ ${A}`
                             }),
                           }),
                           t("p", {
-                            className: "spec-hub-proposal-attachment-hint",
+                            className: "spec-hub-proposal-attachment-hint m-0 text-[11px] text-(--text-muted)",
                             children: e("specHub.proposal.attachmentHint", {
                               count: zn,
                             }),
@@ -4770,7 +4770,7 @@ ${A}`
                       }),
                       ba
                         ? n("p", {
-                            className: "spec-hub-action-error",
+                            className: "spec-hub-action-error m-0 inline-flex items-center gap-1.5 text-[12px] text-(--danger)",
                             children: [
                               t(J, { size: 14, "aria-hidden": !0 }),
                               t("span", { children: ba }),
@@ -4780,7 +4780,7 @@ ${A}`
                     ],
                   }),
                   n("footer", {
-                    className: "spec-hub-proposal-dialog-footer",
+                    className: "spec-hub-proposal-dialog-footer flex justify-end gap-2 px-3 py-2.5 border-t border-(--border-subtle) bg-[color-mix(in_srgb,var(--surface-messages)_88%,var(--surface-card-strong)_12%)]",
                     children: [
                       t("button", {
                         type: "button",
@@ -4792,7 +4792,7 @@ ${A}`
                       }),
                       n("button", {
                         type: "button",
-                        className: "spec-hub-action-button",
+                        className: "spec-hub-action-button w-full inline-flex items-center gap-2 justify-center rounded-lg border border-(--border-muted) bg-(--surface-control) text-(--text-primary) px-2 py-1.5 disabled:opacity-50 disabled:cursor-not-allowed",
                         onClick: () => {
                           lc();
                         },
@@ -4818,7 +4818,7 @@ ${A}`
       Vt && typeof document < "u"
         ? Ne(
             t("div", {
-              className: "spec-hub-feedback-link",
+              className: "spec-hub-feedback-link fixed h-0.5 rounded-full bg-[linear-gradient(90deg,color-mix(in_srgb,var(--accent)_88%,transparent),color-mix(in_srgb,var(--success)_82%,transparent))] [transform-origin:0_50%] pointer-events-none z-[35]",
               "aria-hidden": !0,
               style: {
                 left: `${Vt.left}px`,
@@ -4836,7 +4836,7 @@ ${A}`
       Ut && typeof document < "u"
         ? Ne(
             t("div", {
-              className: "spec-hub-feedback-link",
+              className: "spec-hub-feedback-link fixed h-0.5 rounded-full bg-[linear-gradient(90deg,color-mix(in_srgb,var(--accent)_88%,transparent),color-mix(in_srgb,var(--success)_82%,transparent))] [transform-origin:0_50%] pointer-events-none z-[35]",
               "aria-hidden": !0,
               style: {
                 left: `${Ut.left}px`,
@@ -4856,13 +4856,13 @@ ${A}`
             n("section", {
               className: `spec-hub-apply-floating spec-hub-proposal-floating${
                 _t ? " is-collapsed" : ""
-              }${bs ? " is-dragging" : ""}`,
+              }${bs ? " is-dragging" : ""} fixed z-[38] w-[min(420px,calc(100vw-24px))] max-h-[min(72vh,620px)] flex flex-col border border-(--border-subtle) rounded-[12px] bg-[color-mix(in_srgb,var(--surface-card)_94%,var(--surface-item))] [box-shadow:0_16px_42px_color-mix(in_srgb,black_18%,transparent)] [backdrop-filter:blur(18px)_saturate(1.15)] overflow-hidden`,
               style: { left: `${ee.x}px`, top: `${ee.y}px` },
               role: "dialog",
               "aria-label": e("specHub.proposal.title"),
               children: [
                 n("header", {
-                  className: "spec-hub-apply-floating-header",
+                  className: "spec-hub-apply-floating-header flex items-center justify-between gap-2 px-2.5 py-2 border-b border-(--border-subtle) bg-[color-mix(in_srgb,var(--surface-item)_86%,var(--surface-card))] cursor-grab select-none",
                   onPointerDown: Es,
                   children: [
                     n("div", {
@@ -4873,7 +4873,7 @@ ${A}`
                       ],
                     }),
                     n("div", {
-                      className: "spec-hub-apply-floating-actions",
+                      className: "spec-hub-apply-floating-actions inline-flex items-center gap-1.5",
                       children: [
                         t("button", {
                           type: "button",
@@ -4912,13 +4912,13 @@ ${A}`
                 _t
                   ? null
                   : n("div", {
-                      className: "spec-hub-apply-floating-body",
+                      className: "spec-hub-apply-floating-body flex flex-col gap-2 p-2.5 overflow-y-auto",
                       children: [
                         n("div", {
-                          className: "spec-hub-guidance-grid",
+                          className: "spec-hub-guidance-grid grid [grid-template-columns:repeat(3,minmax(0,1fr))] gap-2",
                           children: [
                             n("article", {
-                              className: "spec-hub-guidance-field",
+                              className: "spec-hub-guidance-field border border-(--border-subtle) rounded-lg bg-(--surface-command) px-2 py-[7px] flex flex-col gap-1 min-w-0",
                               children: [
                                 t("span", {
                                   children: e("specHub.proposal.fieldStatus"),
@@ -4927,7 +4927,7 @@ ${A}`
                               ],
                             }),
                             n("article", {
-                              className: "spec-hub-guidance-field",
+                              className: "spec-hub-guidance-field border border-(--border-subtle) rounded-lg bg-(--surface-command) px-2 py-[7px] flex flex-col gap-1 min-w-0",
                               children: [
                                 t("span", {
                                   children: e("specHub.proposal.fieldPhase"),
@@ -4936,7 +4936,7 @@ ${A}`
                               ],
                             }),
                             n("article", {
-                              className: "spec-hub-guidance-field",
+                              className: "spec-hub-guidance-field border border-(--border-subtle) rounded-lg bg-(--surface-command) px-2 py-[7px] flex flex-col gap-1 min-w-0",
                               children: [
                                 t("span", {
                                   children: e("specHub.proposal.fieldEngine"),
@@ -4949,7 +4949,7 @@ ${A}`
                               ],
                             }),
                             n("article", {
-                              className: "spec-hub-guidance-field",
+                              className: "spec-hub-guidance-field border border-(--border-subtle) rounded-lg bg-(--surface-command) px-2 py-[7px] flex flex-col gap-1 min-w-0",
                               children: [
                                 t("span", {
                                   children: e("specHub.proposal.fieldMode"),
@@ -4961,7 +4961,7 @@ ${A}`
                         }),
                         w.startedAt
                           ? n("p", {
-                              className: "spec-hub-bootstrap-desc",
+                              className: "spec-hub-bootstrap-desc m-0 text-[12px] text-(--text-secondary)",
                               children: [
                                 e("specHub.proposal.startedAt", {
                                   time: new Date(
@@ -4985,7 +4985,7 @@ ${A}`
                           : null,
                         w.targetChangeId
                           ? n("p", {
-                              className: "spec-hub-bootstrap-desc",
+                              className: "spec-hub-bootstrap-desc m-0 text-[12px] text-(--text-secondary)",
                               children: [
                                 e("specHub.proposal.fieldTarget"),
                                 ": ",
@@ -4995,13 +4995,13 @@ ${A}`
                           : null,
                         w.summary
                           ? t("p", {
-                              className: "spec-hub-context-notice",
+                              className: "spec-hub-context-notice m-0 text-(--success)",
                               children: w.summary,
                             })
                           : null,
                         w.error
                           ? n("p", {
-                              className: "spec-hub-action-error",
+                              className: "spec-hub-action-error m-0 inline-flex items-center gap-1.5 text-[12px] text-(--danger)",
                               children: [
                                 t(J, { size: 14, "aria-hidden": !0 }),
                                 t("span", { children: w.error }),
@@ -5010,7 +5010,7 @@ ${A}`
                           : null,
                         w.preflightBlockers.length > 0
                           ? n("div", {
-                              className: "spec-hub-action-error",
+                              className: "spec-hub-action-error m-0 inline-flex items-center gap-1.5 text-[12px] text-(--danger)",
                               children: [
                                 t(xe, { size: 14, "aria-hidden": !0 }),
                                 t("span", {
@@ -5023,7 +5023,7 @@ ${A}`
                           : null,
                         w.preflightBlockers.length > 0
                           ? n("div", {
-                              className: "spec-hub-command-preview",
+                              className: "spec-hub-command-preview flex flex-col gap-1",
                               children: [
                                 t("span", { children: "Preflight blockers" }),
                                 t("code", {
@@ -5037,7 +5037,7 @@ ${A}`
                           : null,
                         w.preflightHints.length > 0
                           ? n("div", {
-                              className: "spec-hub-command-preview",
+                              className: "spec-hub-command-preview flex flex-col gap-1",
                               children: [
                                 t("span", { children: "Preflight hints" }),
                                 t("code", {
@@ -5053,7 +5053,7 @@ ${A}`
                         wt([]),
                         w.streamOutput
                           ? n("div", {
-                              className: "spec-hub-command-preview",
+                              className: "spec-hub-command-preview flex flex-col gap-1",
                               children: [
                                 t("span", {
                                   children: e("specHub.proposal.streamTitle"),
@@ -5067,7 +5067,7 @@ ${A}`
                           : null,
                         w.logs.length > 0
                           ? n("div", {
-                              className: "spec-hub-command-preview",
+                              className: "spec-hub-command-preview flex flex-col gap-1",
                               children: [
                                 t("span", {
                                   children: e("specHub.proposal.logsTitle"),
@@ -5092,13 +5092,13 @@ ${A}`
             n("section", {
               className: `spec-hub-apply-floating spec-hub-continue-floating${
                 Mt ? " is-collapsed" : ""
-              }${bs ? " is-dragging" : ""}`,
+              }${bs ? " is-dragging" : ""} fixed z-[36] w-[min(420px,calc(100vw-24px))] max-h-[min(72vh,620px)] flex flex-col border border-(--border-subtle) rounded-[12px] bg-[color-mix(in_srgb,var(--surface-card)_94%,var(--surface-item))] [box-shadow:0_16px_42px_color-mix(in_srgb,black_18%,transparent)] [backdrop-filter:blur(18px)_saturate(1.15)] overflow-hidden`,
               style: { left: `${ee.x}px`, top: `${ee.y}px` },
               role: "dialog",
               "aria-label": e("specHub.continueAiEnhancement.title"),
               children: [
                 n("header", {
-                  className: "spec-hub-apply-floating-header",
+                  className: "spec-hub-apply-floating-header flex items-center justify-between gap-2 px-2.5 py-2 border-b border-(--border-subtle) bg-[color-mix(in_srgb,var(--surface-item)_86%,var(--surface-card))] cursor-grab select-none",
                   onPointerDown: Es,
                   children: [
                     n("div", {
@@ -5111,7 +5111,7 @@ ${A}`
                       ],
                     }),
                     n("div", {
-                      className: "spec-hub-apply-floating-actions",
+                      className: "spec-hub-apply-floating-actions inline-flex items-center gap-1.5",
                       children: [
                         t("button", {
                           type: "button",
@@ -5152,13 +5152,13 @@ ${A}`
                 Mt
                   ? null
                   : n("div", {
-                      className: "spec-hub-apply-floating-body",
+                      className: "spec-hub-apply-floating-body flex flex-col gap-2 p-2.5 overflow-y-auto",
                       children: [
                         n("div", {
-                          className: "spec-hub-guidance-grid",
+                          className: "spec-hub-guidance-grid grid [grid-template-columns:repeat(3,minmax(0,1fr))] gap-2",
                           children: [
                             n("article", {
-                              className: "spec-hub-guidance-field",
+                              className: "spec-hub-guidance-field border border-(--border-subtle) rounded-lg bg-(--surface-command) px-2 py-[7px] flex flex-col gap-1 min-w-0",
                               children: [
                                 t("span", {
                                   children: e(
@@ -5169,7 +5169,7 @@ ${A}`
                               ],
                             }),
                             n("article", {
-                              className: "spec-hub-guidance-field",
+                              className: "spec-hub-guidance-field border border-(--border-subtle) rounded-lg bg-(--surface-command) px-2 py-[7px] flex flex-col gap-1 min-w-0",
                               children: [
                                 t("span", {
                                   children: e(
@@ -5180,7 +5180,7 @@ ${A}`
                               ],
                             }),
                             n("article", {
-                              className: "spec-hub-guidance-field",
+                              className: "spec-hub-guidance-field border border-(--border-subtle) rounded-lg bg-(--surface-command) px-2 py-[7px] flex flex-col gap-1 min-w-0",
                               children: [
                                 t("span", {
                                   children: e(
@@ -5198,7 +5198,7 @@ ${A}`
                         }),
                         O.startedAt
                           ? n("p", {
-                              className: "spec-hub-bootstrap-desc",
+                              className: "spec-hub-bootstrap-desc m-0 text-[12px] text-(--text-secondary)",
                               children: [
                                 e("specHub.continueAiEnhancement.startedAt", {
                                   time: new Date(
@@ -5225,13 +5225,13 @@ ${A}`
                           : null,
                         O.summary
                           ? t("p", {
-                              className: "spec-hub-context-notice",
+                              className: "spec-hub-context-notice m-0 text-(--success)",
                               children: O.summary,
                             })
                           : null,
                         O.error
                           ? n("p", {
-                              className: "spec-hub-action-error",
+                              className: "spec-hub-action-error m-0 inline-flex items-center gap-1.5 text-[12px] text-(--danger)",
                               children: [
                                 t(J, { size: 14, "aria-hidden": !0 }),
                                 t("span", { children: O.error }),
@@ -5242,7 +5242,7 @@ ${A}`
                         wt([]),
                         O.streamOutput
                           ? n("div", {
-                              className: "spec-hub-command-preview",
+                              className: "spec-hub-command-preview flex flex-col gap-1",
                               children: [
                                 t("span", {
                                   children: e(
@@ -5258,7 +5258,7 @@ ${A}`
                           : null,
                         O.logs.length > 0
                           ? n("div", {
-                              className: "spec-hub-command-preview",
+                              className: "spec-hub-command-preview flex flex-col gap-1",
                               children: [
                                 t("span", {
                                   children: e(
@@ -5285,13 +5285,13 @@ ${A}`
             n("section", {
               className: `spec-hub-apply-floating spec-hub-verify-floating${
                 Bt ? " is-collapsed" : ""
-              }${bs ? " is-dragging" : ""}`,
+              }${bs ? " is-dragging" : ""} fixed z-[39] w-[min(420px,calc(100vw-24px))] max-h-[min(72vh,620px)] flex flex-col border border-(--border-subtle) rounded-[12px] bg-[color-mix(in_srgb,var(--surface-card)_94%,var(--surface-item))] [box-shadow:0_16px_42px_color-mix(in_srgb,black_18%,transparent)] [backdrop-filter:blur(18px)_saturate(1.15)] overflow-hidden`,
               style: { left: `${ee.x}px`, top: `${ee.y}px` },
               role: "dialog",
               "aria-label": e("specHub.verifyAutoComplete.title"),
               children: [
                 n("header", {
-                  className: "spec-hub-apply-floating-header",
+                  className: "spec-hub-apply-floating-header flex items-center justify-between gap-2 px-2.5 py-2 border-b border-(--border-subtle) bg-[color-mix(in_srgb,var(--surface-item)_86%,var(--surface-card))] cursor-grab select-none",
                   onPointerDown: Es,
                   children: [
                     n("div", {
@@ -5304,7 +5304,7 @@ ${A}`
                       ],
                     }),
                     n("div", {
-                      className: "spec-hub-apply-floating-actions",
+                      className: "spec-hub-apply-floating-actions inline-flex items-center gap-1.5",
                       children: [
                         t("button", {
                           type: "button",
@@ -5345,13 +5345,13 @@ ${A}`
                 Bt
                   ? null
                   : n("div", {
-                      className: "spec-hub-apply-floating-body",
+                      className: "spec-hub-apply-floating-body flex flex-col gap-2 p-2.5 overflow-y-auto",
                       children: [
                         n("div", {
-                          className: "spec-hub-guidance-grid",
+                          className: "spec-hub-guidance-grid grid [grid-template-columns:repeat(3,minmax(0,1fr))] gap-2",
                           children: [
                             n("article", {
-                              className: "spec-hub-guidance-field",
+                              className: "spec-hub-guidance-field border border-(--border-subtle) rounded-lg bg-(--surface-command) px-2 py-[7px] flex flex-col gap-1 min-w-0",
                               children: [
                                 t("span", {
                                   children: e(
@@ -5362,7 +5362,7 @@ ${A}`
                               ],
                             }),
                             n("article", {
-                              className: "spec-hub-guidance-field",
+                              className: "spec-hub-guidance-field border border-(--border-subtle) rounded-lg bg-(--surface-command) px-2 py-[7px] flex flex-col gap-1 min-w-0",
                               children: [
                                 t("span", {
                                   children: e(
@@ -5373,7 +5373,7 @@ ${A}`
                               ],
                             }),
                             n("article", {
-                              className: "spec-hub-guidance-field",
+                              className: "spec-hub-guidance-field border border-(--border-subtle) rounded-lg bg-(--surface-command) px-2 py-[7px] flex flex-col gap-1 min-w-0",
                               children: [
                                 t("span", {
                                   children: e(
@@ -5391,7 +5391,7 @@ ${A}`
                         }),
                         D.startedAt
                           ? n("p", {
-                              className: "spec-hub-bootstrap-desc",
+                              className: "spec-hub-bootstrap-desc m-0 text-[12px] text-(--text-secondary)",
                               children: [
                                 e("specHub.verifyAutoComplete.startedAt", {
                                   time: new Date(
@@ -5418,13 +5418,13 @@ ${A}`
                           : null,
                         D.summary
                           ? t("p", {
-                              className: "spec-hub-context-notice",
+                              className: "spec-hub-context-notice m-0 text-(--success)",
                               children: D.summary,
                             })
                           : null,
                         D.validateSkipped
                           ? n("p", {
-                              className: "spec-hub-action-error",
+                              className: "spec-hub-action-error m-0 inline-flex items-center gap-1.5 text-[12px] text-(--danger)",
                               children: [
                                 t(J, { size: 14, "aria-hidden": !0 }),
                                 t("span", {
@@ -5437,7 +5437,7 @@ ${A}`
                           : null,
                         D.error
                           ? n("p", {
-                              className: "spec-hub-action-error",
+                              className: "spec-hub-action-error m-0 inline-flex items-center gap-1.5 text-[12px] text-(--danger)",
                               children: [
                                 t(J, { size: 14, "aria-hidden": !0 }),
                                 t("span", { children: D.error }),
@@ -5448,7 +5448,7 @@ ${A}`
                         wt([]),
                         D.streamOutput
                           ? n("div", {
-                              className: "spec-hub-command-preview",
+                              className: "spec-hub-command-preview flex flex-col gap-1",
                               children: [
                                 t("span", {
                                   children: e(
@@ -5464,7 +5464,7 @@ ${A}`
                           : null,
                         D.logs.length > 0
                           ? n("div", {
-                              className: "spec-hub-command-preview",
+                              className: "spec-hub-command-preview flex flex-col gap-1",
                               children: [
                                 t("span", {
                                   children: e(
@@ -5491,13 +5491,13 @@ ${A}`
             n("section", {
               className: `spec-hub-apply-floating spec-hub-ai-takeover-floating${
                 Rt ? " is-collapsed" : ""
-              }${bs ? " is-dragging" : ""}`,
+              }${bs ? " is-dragging" : ""} fixed z-[36] w-[min(420px,calc(100vw-24px))] max-h-[min(72vh,620px)] flex flex-col border border-(--border-subtle) rounded-[12px] bg-[color-mix(in_srgb,var(--surface-card)_94%,var(--surface-item))] [box-shadow:0_16px_42px_color-mix(in_srgb,black_18%,transparent)] [backdrop-filter:blur(18px)_saturate(1.15)] overflow-hidden`,
               style: { left: `${ee.x}px`, top: `${ee.y}px` },
               role: "dialog",
               "aria-label": e("specHub.aiTakeover.title"),
               children: [
                 n("header", {
-                  className: "spec-hub-apply-floating-header",
+                  className: "spec-hub-apply-floating-header flex items-center justify-between gap-2 px-2.5 py-2 border-b border-(--border-subtle) bg-[color-mix(in_srgb,var(--surface-item)_86%,var(--surface-card))] cursor-grab select-none",
                   onPointerDown: Es,
                   children: [
                     n("div", {
@@ -5508,7 +5508,7 @@ ${A}`
                       ],
                     }),
                     n("div", {
-                      className: "spec-hub-apply-floating-actions",
+                      className: "spec-hub-apply-floating-actions inline-flex items-center gap-1.5",
                       children: [
                         t("button", {
                           type: "button",
@@ -5547,13 +5547,13 @@ ${A}`
                 Rt
                   ? null
                   : n("div", {
-                      className: "spec-hub-apply-floating-body",
+                      className: "spec-hub-apply-floating-body flex flex-col gap-2 p-2.5 overflow-y-auto",
                       children: [
                         n("div", {
-                          className: "spec-hub-guidance-grid",
+                          className: "spec-hub-guidance-grid grid [grid-template-columns:repeat(3,minmax(0,1fr))] gap-2",
                           children: [
                             n("article", {
-                              className: "spec-hub-guidance-field",
+                              className: "spec-hub-guidance-field border border-(--border-subtle) rounded-lg bg-(--surface-command) px-2 py-[7px] flex flex-col gap-1 min-w-0",
                               children: [
                                 t("span", {
                                   children: e("specHub.aiTakeover.statusLabel"),
@@ -5562,7 +5562,7 @@ ${A}`
                               ],
                             }),
                             n("article", {
-                              className: "spec-hub-guidance-field",
+                              className: "spec-hub-guidance-field border border-(--border-subtle) rounded-lg bg-(--surface-command) px-2 py-[7px] flex flex-col gap-1 min-w-0",
                               children: [
                                 t("span", {
                                   children: e("specHub.aiTakeover.phase.agent"),
@@ -5573,7 +5573,7 @@ ${A}`
                               ],
                             }),
                             n("article", {
-                              className: "spec-hub-guidance-field",
+                              className: "spec-hub-guidance-field border border-(--border-subtle) rounded-lg bg-(--surface-command) px-2 py-[7px] flex flex-col gap-1 min-w-0",
                               children: [
                                 t("span", {
                                   children: e("specHub.aiTakeover.agentLabel"),
@@ -5585,7 +5585,7 @@ ${A}`
                         }),
                         Te
                           ? n("p", {
-                              className: "spec-hub-bootstrap-desc",
+                              className: "spec-hub-bootstrap-desc m-0 text-[12px] text-(--text-secondary)",
                               children: [
                                 e("specHub.aiTakeover.startedAt", {
                                   time: new Date(Te).toLocaleTimeString(),
@@ -5608,14 +5608,14 @@ ${A}`
                           : null,
                         Ys !== "idle"
                           ? t("p", {
-                              className: `spec-hub-ai-takeover-refresh is-${Ys}`,
+                              className: `spec-hub-ai-takeover-refresh is-${Ys} m-0 text-[11px] font-semibold`,
                               children: e(
                                 `specHub.aiTakeover.refreshState.${Ys}`
                               ),
                             })
                           : null,
                         t("div", {
-                          className: "spec-hub-ai-takeover-phases",
+                          className: "spec-hub-ai-takeover-phases border border-(--border-subtle) rounded-lg bg-(--surface-command) flex flex-col gap-0",
                           children: Mn.map((s) => {
                             const o = Zo(s);
                             return n(
@@ -5641,13 +5641,13 @@ ${A}`
                         }),
                         Bs
                           ? t("p", {
-                              className: "spec-hub-context-notice",
+                              className: "spec-hub-context-notice m-0 text-(--success)",
                               children: Bs,
                             })
                           : null,
                         _s
                           ? n("p", {
-                              className: "spec-hub-action-error",
+                              className: "spec-hub-action-error m-0 inline-flex items-center gap-1.5 text-[12px] text-(--danger)",
                               children: [
                                 t(J, { size: 14, "aria-hidden": !0 }),
                                 t("span", { children: _s }),
@@ -5674,7 +5674,7 @@ ${A}`
                           : null,
                         Gs
                           ? n("div", {
-                              className: "spec-hub-command-preview",
+                              className: "spec-hub-command-preview flex flex-col gap-1",
                               children: [
                                 t("span", {
                                   children: e("specHub.aiTakeover.outputTitle"),
@@ -5708,13 +5708,13 @@ ${A}`
             n("section", {
               className: `spec-hub-apply-floating${Ft ? " is-collapsed" : ""}${
                 Vi ? " is-dragging" : ""
-              }`,
+              } fixed z-[36] w-[min(420px,calc(100vw-24px))] max-h-[min(72vh,620px)] flex flex-col border border-(--border-subtle) rounded-[12px] bg-[color-mix(in_srgb,var(--surface-card)_94%,var(--surface-item))] [box-shadow:0_16px_42px_color-mix(in_srgb,black_18%,transparent)] [backdrop-filter:blur(18px)_saturate(1.15)] overflow-hidden`,
               style: { left: `${he.x}px`, top: `${he.y}px` },
               role: "dialog",
               "aria-label": e("specHub.applyExecution.title"),
               children: [
                 n("header", {
-                  className: "spec-hub-apply-floating-header",
+                  className: "spec-hub-apply-floating-header flex items-center justify-between gap-2 px-2.5 py-2 border-b border-(--border-subtle) bg-[color-mix(in_srgb,var(--surface-item)_86%,var(--surface-card))] cursor-grab select-none",
                   onPointerDown: Ko,
                   children: [
                     n("div", {
@@ -5727,7 +5727,7 @@ ${A}`
                       ],
                     }),
                     n("div", {
-                      className: "spec-hub-apply-floating-actions",
+                      className: "spec-hub-apply-floating-actions inline-flex items-center gap-1.5",
                       children: [
                         t("button", {
                           type: "button",
@@ -5766,13 +5766,13 @@ ${A}`
                 Ft
                   ? null
                   : n("div", {
-                      className: "spec-hub-apply-floating-body",
+                      className: "spec-hub-apply-floating-body flex flex-col gap-2 p-2.5 overflow-y-auto",
                       children: [
                         n("div", {
-                          className: "spec-hub-guidance-grid",
+                          className: "spec-hub-guidance-grid grid [grid-template-columns:repeat(3,minmax(0,1fr))] gap-2",
                           children: [
                             n("article", {
-                              className: "spec-hub-guidance-field",
+                              className: "spec-hub-guidance-field border border-(--border-subtle) rounded-lg bg-(--surface-command) px-2 py-[7px] flex flex-col gap-1 min-w-0",
                               children: [
                                 t("span", {
                                   children: e(
@@ -5783,7 +5783,7 @@ ${A}`
                               ],
                             }),
                             n("article", {
-                              className: "spec-hub-guidance-field",
+                              className: "spec-hub-guidance-field border border-(--border-subtle) rounded-lg bg-(--surface-command) px-2 py-[7px] flex flex-col gap-1 min-w-0",
                               children: [
                                 t("span", {
                                   children: e(
@@ -5794,7 +5794,7 @@ ${A}`
                               ],
                             }),
                             n("article", {
-                              className: "spec-hub-guidance-field",
+                              className: "spec-hub-guidance-field border border-(--border-subtle) rounded-lg bg-(--surface-command) px-2 py-[7px] flex flex-col gap-1 min-w-0",
                               children: [
                                 t("span", {
                                   children: e(
@@ -5812,7 +5812,7 @@ ${A}`
                         }),
                         v.startedAt
                           ? n("p", {
-                              className: "spec-hub-bootstrap-desc",
+                              className: "spec-hub-bootstrap-desc m-0 text-[12px] text-(--text-secondary)",
                               children: [
                                 e("specHub.applyExecution.startedAt", {
                                   time: new Date(
@@ -5839,19 +5839,19 @@ ${A}`
                           : null,
                         v.summary
                           ? t("p", {
-                              className: "spec-hub-context-notice",
+                              className: "spec-hub-context-notice m-0 text-(--success)",
                               children: V(v.summary, e),
                             })
                           : null,
                         v.status === "success" && v.noChanges
                           ? t("p", {
-                              className: "spec-hub-running",
+                              className: "spec-hub-running mx-2.5 mt-1.5 text-[12px] text-(--text-muted)",
                               children: e("specHub.applyExecution.noChanges"),
                             })
                           : null,
                         v.error
                           ? n("p", {
-                              className: "spec-hub-action-error",
+                              className: "spec-hub-action-error m-0 inline-flex items-center gap-1.5 text-[12px] text-(--danger)",
                               children: [
                                 t(J, { size: 14, "aria-hidden": !0 }),
                                 t("span", { children: V(v.error, e) }),
@@ -5862,7 +5862,7 @@ ${A}`
                         wt(v.changedFiles),
                         v.tests.length > 0
                           ? n("div", {
-                              className: "spec-hub-command-preview",
+                              className: "spec-hub-command-preview flex flex-col gap-1",
                               children: [
                                 t("span", {
                                   children: e(
@@ -5878,7 +5878,7 @@ ${A}`
                           : null,
                         v.checks.length > 0
                           ? n("div", {
-                              className: "spec-hub-command-preview",
+                              className: "spec-hub-command-preview flex flex-col gap-1",
                               children: [
                                 t("span", {
                                   children: e(
@@ -5894,7 +5894,7 @@ ${A}`
                           : null,
                         v.executionOutput
                           ? n("div", {
-                              className: "spec-hub-command-preview",
+                              className: "spec-hub-command-preview flex flex-col gap-1",
                               children: [
                                 t("span", {
                                   children: e(
@@ -5910,7 +5910,7 @@ ${A}`
                           : null,
                         v.logs.length > 0
                           ? n("div", {
-                              className: "spec-hub-command-preview",
+                              className: "spec-hub-command-preview flex flex-col gap-1",
                               children: [
                                 t("span", {
                                   children: e(
@@ -5937,13 +5937,13 @@ ${A}`
             n("section", {
               className: `spec-hub-apply-floating spec-hub-auto-combo-floating${
                 Ot ? " is-collapsed" : ""
-              }${Ki ? " is-dragging" : ""}`,
+              }${Ki ? " is-dragging" : ""} fixed z-[36] w-[min(420px,calc(100vw-24px))] max-h-[min(72vh,620px)] flex flex-col border border-(--border-subtle) rounded-[12px] bg-[color-mix(in_srgb,var(--surface-card)_94%,var(--surface-item))] [box-shadow:0_16px_42px_color-mix(in_srgb,black_18%,transparent)] [backdrop-filter:blur(18px)_saturate(1.15)] overflow-hidden`,
               style: { left: `${Ie.x}px`, top: `${Ie.y}px` },
               role: "dialog",
               "aria-label": e("specHub.autoCombo.title"),
               children: [
                 n("header", {
-                  className: "spec-hub-apply-floating-header",
+                  className: "spec-hub-apply-floating-header flex items-center justify-between gap-2 px-2.5 py-2 border-b border-(--border-subtle) bg-[color-mix(in_srgb,var(--surface-item)_86%,var(--surface-card))] cursor-grab select-none",
                   onPointerDown: Jo,
                   children: [
                     n("div", {
@@ -5954,7 +5954,7 @@ ${A}`
                       ],
                     }),
                     n("div", {
-                      className: "spec-hub-apply-floating-actions",
+                      className: "spec-hub-apply-floating-actions inline-flex items-center gap-1.5",
                       children: [
                         t("button", {
                           type: "button",
@@ -5993,13 +5993,13 @@ ${A}`
                 Ot
                   ? null
                   : n("div", {
-                      className: "spec-hub-apply-floating-body",
+                      className: "spec-hub-apply-floating-body flex flex-col gap-2 p-2.5 overflow-y-auto",
                       children: [
                         n("div", {
-                          className: "spec-hub-guidance-grid",
+                          className: "spec-hub-guidance-grid grid [grid-template-columns:repeat(3,minmax(0,1fr))] gap-2",
                           children: [
                             n("article", {
-                              className: "spec-hub-guidance-field",
+                              className: "spec-hub-guidance-field border border-(--border-subtle) rounded-lg bg-(--surface-command) px-2 py-[7px] flex flex-col gap-1 min-w-0",
                               children: [
                                 t("span", {
                                   children: e("specHub.autoCombo.fieldStatus"),
@@ -6008,7 +6008,7 @@ ${A}`
                               ],
                             }),
                             n("article", {
-                              className: "spec-hub-guidance-field",
+                              className: "spec-hub-guidance-field border border-(--border-subtle) rounded-lg bg-(--surface-command) px-2 py-[7px] flex flex-col gap-1 min-w-0",
                               children: [
                                 t("span", {
                                   children: e("specHub.autoCombo.fieldPhase"),
@@ -6017,7 +6017,7 @@ ${A}`
                               ],
                             }),
                             n("article", {
-                              className: "spec-hub-guidance-field",
+                              className: "spec-hub-guidance-field border border-(--border-subtle) rounded-lg bg-(--surface-command) px-2 py-[7px] flex flex-col gap-1 min-w-0",
                               children: [
                                 t("span", {
                                   children: e("specHub.autoCombo.fieldEngine"),
@@ -6033,7 +6033,7 @@ ${A}`
                         }),
                         H.startedAt
                           ? n("p", {
-                              className: "spec-hub-bootstrap-desc",
+                              className: "spec-hub-bootstrap-desc m-0 text-[12px] text-(--text-secondary)",
                               children: [
                                 e("specHub.autoCombo.startedAt", {
                                   time: new Date(
@@ -6057,13 +6057,13 @@ ${A}`
                           : null,
                         H.summary
                           ? t("p", {
-                              className: "spec-hub-context-notice",
+                              className: "spec-hub-context-notice m-0 text-(--success)",
                               children: H.summary,
                             })
                           : null,
                         H.error
                           ? n("p", {
-                              className: "spec-hub-action-error",
+                              className: "spec-hub-action-error m-0 inline-flex items-center gap-1.5 text-[12px] text-(--danger)",
                               children: [
                                 t(J, { size: 14, "aria-hidden": !0 }),
                                 t("span", { children: H.error }),
@@ -6074,7 +6074,7 @@ ${A}`
                         wt(H.changedFiles),
                         H.streamOutput
                           ? n("div", {
-                              className: "spec-hub-command-preview",
+                              className: "spec-hub-command-preview flex flex-col gap-1",
                               children: [
                                 t("span", {
                                   children: e(
@@ -6090,7 +6090,7 @@ ${A}`
                           : null,
                         H.logs.length > 0
                           ? n("div", {
-                              className: "spec-hub-command-preview",
+                              className: "spec-hub-command-preview flex flex-col gap-1",
                               children: [
                                 t("span", {
                                   children: e("specHub.autoCombo.logsTitle"),

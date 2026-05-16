@@ -39,7 +39,7 @@ import {
   getManualMemoryInjectionMode,
   setManualMemoryInjectionMode,
 } from "../utils/manualInjectionMode";
-import "../../../styles/project-memory.css";
+/* project-memory.css migrated to inline Tailwind — CSS file deleted */
 
 function parseTagTerms(value: string): string[] {
   return value
@@ -817,29 +817,52 @@ export function ProjectMemoryPanel({
     }
   };
 
+  // Shared Tailwind classes for action buttons (kept as constants for DRY inline usage)
+  const actionBtnCls =
+    "project-memory-action-btn border border-(--border-subtle) bg-(--bg-secondary) text-(--text-primary) rounded-lg min-h-[32px] px-3 text-xs font-medium inline-flex items-center gap-1.5 cursor-pointer transition-all duration-150 ease-out hover:bg-(--bg-hover) hover:border-(--border-hover) disabled:opacity-40 disabled:cursor-not-allowed [&_svg]:shrink-0 [&_svg]:w-3.5 [&_svg]:h-3.5";
+  const actionBtnCompactCls =
+    "project-memory-action-btn compact border border-(--border-subtle) bg-(--bg-secondary) text-(--text-primary) rounded-lg text-[11px] min-h-[24px] px-2 font-medium inline-flex items-center gap-1.5 cursor-pointer transition-all duration-150 ease-out whitespace-nowrap hover:bg-(--bg-hover) hover:border-(--border-hover) disabled:opacity-40 disabled:cursor-not-allowed [&_svg]:shrink-0 [&_svg]:w-3.5 [&_svg]:h-3.5";
+  const actionBtnDangerCls =
+    "project-memory-action-btn danger border border-red-400/40 text-red-600 dark:text-red-400 rounded-lg min-h-[32px] px-3 text-xs font-medium inline-flex items-center gap-1.5 cursor-pointer transition-all duration-150 ease-out hover:bg-red-500/10 hover:border-red-500/60 disabled:opacity-40 disabled:cursor-not-allowed [&_svg]:shrink-0 [&_svg]:w-3.5 [&_svg]:h-3.5";
+  const actionBtnCompactDangerCls =
+    "project-memory-action-btn compact danger border border-red-400/40 text-red-600 dark:text-red-400 rounded-lg text-[11px] min-h-[24px] px-2 font-medium inline-flex items-center gap-1.5 cursor-pointer transition-all duration-150 ease-out whitespace-nowrap hover:bg-red-500/10 hover:border-red-500/60 disabled:opacity-40 disabled:cursor-not-allowed [&_svg]:shrink-0 [&_svg]:w-3.5 [&_svg]:h-3.5";
+  const settingsBtnCls =
+    "project-memory-settings-btn border border-(--border-subtle) bg-transparent text-inherit rounded-md p-1 cursor-pointer transition-all duration-150 ease-out inline-flex items-center justify-center hover:bg-(--surface-hover) hover:border-(--border-hover) disabled:opacity-40 disabled:cursor-not-allowed";
+
   const renderManagerBody = (isModal: boolean) => (
-    <div className={`project-memory-body${isModal ? " is-modal" : ""}`}>
-      <div className="project-memory-workbench-strip" aria-label={t("memory.workbenchOverview")}>
-        <div className="project-memory-workbench-stat">
-          <span>{t("memory.workbenchTotal")}</span>
-          <strong>{total}</strong>
-        </div>
-        <div className="project-memory-workbench-stat">
-          <span>{t("memory.workbenchSelected")}</span>
-          <strong>{selectedIds.size}</strong>
-        </div>
-        <div className="project-memory-workbench-stat">
-          <span>{t("memory.workbenchReview")}</span>
-          <strong>{reviewInboxCount}</strong>
-        </div>
-        <div className="project-memory-workbench-stat">
-          <span>{t("memory.workbenchHealth")}</span>
-          <strong>{healthIssueCount}</strong>
-        </div>
+    <div className={`project-memory-body flex flex-col gap-2.5 min-h-0 flex-1${isModal ? " is-modal" : ""}`}>
+      {/* Workbench overview strip */}
+      <div
+        className="project-memory-workbench-strip grid grid-cols-4 gap-2 max-[900px]:grid-cols-2 max-[760px]:grid-cols-1"
+        aria-label={t("memory.workbenchOverview")}
+      >
+        {([
+          [t("memory.workbenchTotal"), total],
+          [t("memory.workbenchSelected"), selectedIds.size],
+          [t("memory.workbenchReview"), reviewInboxCount],
+          [t("memory.workbenchHealth"), healthIssueCount],
+        ] as const).map(([label, value]) => (
+          <div
+            key={label}
+            className="project-memory-workbench-stat border border-(--border-subtle) rounded-[10px] px-2.5 py-2 min-w-0"
+            style={{
+              background:
+                "linear-gradient(135deg, rgba(37,99,235,0.12), transparent 58%), var(--surface-card, rgba(255,255,255,0.04))",
+            }}
+          >
+            <span className="block overflow-hidden text-ellipsis whitespace-nowrap text-[10px] text-(--text-muted)">
+              {label}
+            </span>
+            <strong className="block overflow-hidden text-ellipsis whitespace-nowrap mt-0.5 text-[13px] text-(--text-primary)">
+              {value}
+            </strong>
+          </div>
+        ))}
       </div>
 
-      <div className="project-memory-toolbar">
-        <label className="project-memory-search">
+      {/* Toolbar */}
+      <div className="project-memory-toolbar flex gap-1.5 items-center flex-wrap">
+        <label className="project-memory-search flex items-center gap-1 flex-1 min-w-[120px] border border-(--border-subtle) rounded-md px-1.5 bg-(--bg-input) [&_input]:flex-1 [&_input]:bg-transparent [&_input]:border-0 [&_input]:text-inherit [&_input]:text-[11px] [&_input]:min-h-6 [&_input]:outline-none">
           <Search size={14} aria-hidden />
           <input
             value={query}
@@ -847,10 +870,11 @@ export function ProjectMemoryPanel({
             placeholder={t("memory.searchPlaceholder")}
           />
         </label>
+        {/* Kind select */}
         <select
           value={kind ?? ""}
           onChange={(event) => setKind(event.target.value || null)}
-          className="project-memory-kind-select"
+          className="project-memory-kind-select border border-(--border-subtle) bg-(--bg-input) text-inherit rounded-md min-h-6 text-[11px] px-1.5 max-w-[100px] shrink-0"
         >
           <option value="">{t("memory.kind.all")}</option>
           <option value="project_context">{t("memory.kind.projectContext")}</option>
@@ -859,22 +883,24 @@ export function ProjectMemoryPanel({
           <option value="known_issue">{t("memory.kind.knownIssue")}</option>
           <option value="note">{t("memory.kind.note")}</option>
         </select>
+        {/* Importance select */}
         <select
           value={importance ?? ""}
           onChange={(event) => setImportance(event.target.value || null)}
-          className="project-memory-kind-select"
+          className="project-memory-kind-select border border-(--border-subtle) bg-(--bg-input) text-inherit rounded-md min-h-6 text-[11px] px-1.5 max-w-[100px] shrink-0"
         >
           <option value="">{t("memory.importance.all")}</option>
           <option value="high">{t("memory.importance.high")}</option>
           <option value="medium">{t("memory.importance.medium")}</option>
           <option value="low">{t("memory.importance.low")}</option>
         </select>
+        {/* Review filter select */}
         <select
           value={reviewFilter}
           onChange={(event) =>
             setReviewFilter(event.target.value as ProjectMemoryReviewState | "all")
           }
-          className="project-memory-kind-select"
+          className="project-memory-kind-select border border-(--border-subtle) bg-(--bg-input) text-inherit rounded-md min-h-6 text-[11px] px-1.5 max-w-[100px] shrink-0"
         >
           <option value="all">{t("memory.review.all")}</option>
           <option value="unreviewed">{t("memory.review.unreviewed")}</option>
@@ -883,12 +909,13 @@ export function ProjectMemoryPanel({
           <option value="obsolete">{t("memory.review.obsolete")}</option>
           <option value="dismissed">{t("memory.review.dismissed")}</option>
         </select>
+        {/* Health filter select */}
         <select
           value={healthFilter}
           onChange={(event) =>
             setHealthFilter(event.target.value as ProjectMemoryHealthState | "all")
           }
-          className="project-memory-kind-select"
+          className="project-memory-kind-select border border-(--border-subtle) bg-(--bg-input) text-inherit rounded-md min-h-6 text-[11px] px-1.5 max-w-[100px] shrink-0"
         >
           <option value="all">{t("memory.health.all")}</option>
           <option value="complete">{t("memory.health.complete")}</option>
@@ -897,8 +924,9 @@ export function ProjectMemoryPanel({
           <option value="pending_fusion">{t("memory.health.pendingFusion")}</option>
           <option value="capture_failed">{t("memory.health.captureFailed")}</option>
         </select>
+        {/* Tag input */}
         <input
-          className="project-memory-tag-input"
+          className="project-memory-tag-input border border-(--border-subtle) bg-transparent text-inherit rounded-md min-h-6 text-[11px] px-1.5 w-[90px] shrink-0"
           list="project-memory-tag-suggestions"
           value={tag}
           onChange={(event) => setTag(event.target.value)}
@@ -911,16 +939,21 @@ export function ProjectMemoryPanel({
         </datalist>
       </div>
 
+      {/* Quick tag filters */}
       {availableTags.length > 0 ? (
-        <div className="project-memory-tag-quick-filters">
-          <span className="project-memory-tag-quick-label">{t("memory.quickTags")}</span>
+        <div className="project-memory-tag-quick-filters flex items-center gap-2 flex-wrap max-h-16 overflow-auto pr-0.5">
+          <span className="project-memory-tag-quick-label text-[11px] opacity-80">{t("memory.quickTags")}</span>
           {visibleQuickTags.map((entry) => {
             const active = activeTagTerms.includes(entry);
             return (
               <button
                 key={entry}
                 type="button"
-                className={`project-memory-tag-chip${active ? " is-active" : ""}`}
+                className={`project-memory-tag-chip border rounded-full min-h-6 px-2 text-[11px] cursor-pointer transition-all duration-150 ease-out hover:bg-(--bg-hover) hover:border-(--border-hover) ${
+                  active
+                    ? "is-active bg-blue-600/14 border-blue-600/65"
+                    : "border-(--border-subtle) bg-(--bg-secondary) text-inherit"
+                }`}
                 onClick={() => toggleQuickTag(entry)}
               >
                 {entry}
@@ -930,7 +963,7 @@ export function ProjectMemoryPanel({
           {hiddenQuickTagCount > 0 || showAllQuickTags ? (
             <button
               type="button"
-              className="project-memory-tag-chip project-memory-tag-chip-more"
+              className="project-memory-tag-chip project-memory-tag-chip-more border border-dashed border-(--border-subtle) text-(--text-primary) rounded-full min-h-6 px-2 text-[11px] cursor-pointer transition-all duration-150 ease-out hover:bg-(--bg-hover) hover:border-(--border-hover)"
               onClick={() => setShowAllQuickTags((value) => !value)}
               aria-expanded={showAllQuickTags}
             >
@@ -942,193 +975,184 @@ export function ProjectMemoryPanel({
         </div>
       ) : null}
 
-      <div className={`project-memory-settings${showSettings ? ' is-open' : ''}`}>
-          <div className="project-memory-toggle-row">
-            <label className="project-memory-toggle">
-              <input
-                type="checkbox"
-                checked={workspaceAutoEnabled}
-                disabled={!workspaceId || settingsLoading}
-                onChange={() => {
-                  void toggleWorkspaceAutoCapture();
-                }}
-              />
-              <span>{t("memory.autoCaptureWorkspace")}</span>
-            </label>
-            <label className="project-memory-toggle project-memory-toggle-disabled">
-              <input
-                type="checkbox"
-                checked={false}
-                disabled
-                readOnly
-              />
-              <span>{t("memory.contextInjectionEnabled")}</span>
-            </label>
-          </div>
-          <div className="project-memory-toggle-hint">
-            {t("memory.contextInjectionManualHint")}
-          </div>
-          <div className="project-memory-injection-mode-row">
-            <span className="project-memory-injection-mode-label">
-              {t("memory.manualInjectionMode")}
-            </span>
-            <select
-              className="project-memory-kind-select project-memory-injection-mode-select"
-              value={manualInjectionMode}
-              onChange={(event) => {
-                const nextMode = event.target.value === "summary" ? "summary" : "detail";
-                setManualInjectionModeState(nextMode);
-                setManualMemoryInjectionMode(nextMode);
+      {/* Settings panel — collapsed/expanded via max-h transition */}
+      <div
+        className={`project-memory-settings overflow-hidden transition-[max-height,opacity,padding] duration-300 ease-out ${
+          showSettings
+            ? "is-open max-h-[360px] opacity-100 px-3 py-3 border border-(--border-subtle) rounded-lg mb-2.5 bg-(--bg-secondary)"
+            : "max-h-0 opacity-0 px-3 py-0 border-0"
+        }`}
+      >
+        <div className="project-memory-toggle-row flex gap-4 flex-wrap">
+          <label className="project-memory-toggle flex items-center gap-2 text-xs">
+            <input
+              type="checkbox"
+              checked={workspaceAutoEnabled}
+              disabled={!workspaceId || settingsLoading}
+              onChange={() => {
+                void toggleWorkspaceAutoCapture();
               }}
-            >
-              <option value="detail">{t("memory.manualInjectionModeDetail")}</option>
-              <option value="summary">{t("memory.manualInjectionModeSummary")}</option>
-            </select>
-          </div>
-          <div className="project-memory-toggle-hint">
-            {t("memory.manualInjectionModeHint")}
-          </div>
-          <div className="project-memory-cleanup">
-            <div className="project-memory-cleanup-header">
-              <div className="project-memory-cleanup-title">{t("memory.cleanupTitle")}</div>
-              <div className="project-memory-cleanup-actions">
-                <button
-                  type="button"
-                  className="project-memory-action-btn compact"
-                  onClick={() => {
-                    void handleScanPollutedMemories();
-                  }}
-                  disabled={!workspaceId || pollutionBusy !== null}
-                >
-                  {pollutionBusy === "scan"
-                    ? t("memory.cleanupScanning")
-                    : t("memory.cleanupScan")}
-                </button>
-                <button
-                  type="button"
-                  className="project-memory-action-btn compact danger"
-                  onClick={() => {
-                    void handleCleanupPollutedMemories();
-                  }}
-                  disabled={
-                    !workspaceId ||
-                    pollutionBusy !== null ||
-                    pollutionCandidateIds.length === 0
-                  }
-                >
-                  {pollutionBusy === "cleanup"
-                    ? t("memory.cleanupRunning")
-                    : t("memory.cleanupRun")}
-                </button>
-                <button
-                  type="button"
-                  className="project-memory-action-btn compact danger"
-                  onClick={() => setShowClearAllConfirm(true)}
-                  disabled={!workspaceId || total === 0}
-                >
-                  {t("memory.clearAll")}
-                </button>
-              </div>
+            />
+            <span>{t("memory.autoCaptureWorkspace")}</span>
+          </label>
+          <label className="project-memory-toggle project-memory-toggle-disabled flex items-center gap-2 text-xs opacity-56 cursor-not-allowed">
+            <input
+              type="checkbox"
+              checked={false}
+              disabled
+              readOnly
+            />
+            <span>{t("memory.contextInjectionEnabled")}</span>
+          </label>
+        </div>
+        <div className="project-memory-toggle-hint mt-1.5 text-[11px] text-(--text-muted)">
+          {t("memory.contextInjectionManualHint")}
+        </div>
+        <div className="project-memory-injection-mode-row mt-2 flex items-center justify-between gap-2.5">
+          <span className="project-memory-injection-mode-label text-xs text-(--text-secondary)">
+            {t("memory.manualInjectionMode")}
+          </span>
+          <select
+            className="project-memory-kind-select project-memory-injection-mode-select border border-(--border-subtle) bg-(--bg-input) text-inherit rounded-md min-h-6 text-[11px] px-1.5 min-w-[190px]"
+            value={manualInjectionMode}
+            onChange={(event) => {
+              const nextMode = event.target.value === "summary" ? "summary" : "detail";
+              setManualInjectionModeState(nextMode);
+              setManualMemoryInjectionMode(nextMode);
+            }}
+          >
+            <option value="detail">{t("memory.manualInjectionModeDetail")}</option>
+            <option value="summary">{t("memory.manualInjectionModeSummary")}</option>
+          </select>
+        </div>
+        <div className="project-memory-toggle-hint mt-1.5 text-[11px] text-(--text-muted)">
+          {t("memory.manualInjectionModeHint")}
+        </div>
+
+        {/* Cleanup section */}
+        <div className="project-memory-cleanup mt-2.5 pt-2.5 border-t border-dashed border-(--border-subtle) flex flex-col gap-1.5">
+          <div className="project-memory-cleanup-header flex items-center justify-between gap-2">
+            <div className="project-memory-cleanup-title text-[11px] font-semibold shrink-0">{t("memory.cleanupTitle")}</div>
+            <div className="project-memory-cleanup-actions flex gap-1.5">
+              <button
+                type="button"
+                className={actionBtnCompactCls}
+                onClick={() => { void handleScanPollutedMemories(); }}
+                disabled={!workspaceId || pollutionBusy !== null}
+              >
+                {pollutionBusy === "scan" ? t("memory.cleanupScanning") : t("memory.cleanupScan")}
+              </button>
+              <button
+                type="button"
+                className={actionBtnCompactDangerCls}
+                onClick={() => { void handleCleanupPollutedMemories(); }}
+                disabled={!workspaceId || pollutionBusy !== null || pollutionCandidateIds.length === 0}
+              >
+                {pollutionBusy === "cleanup" ? t("memory.cleanupRunning") : t("memory.cleanupRun")}
+              </button>
+              <button
+                type="button"
+                className={actionBtnCompactDangerCls}
+                onClick={() => setShowClearAllConfirm(true)}
+                disabled={!workspaceId || total === 0}
+              >
+                {t("memory.clearAll")}
+              </button>
             </div>
-            <div className="project-memory-cleanup-hint">
-              {pollutionMessage
-                ? pollutionMessage
-                : pollutionScannedTotal > 0
-                  ? t("memory.cleanupScanned", { total: pollutionScannedTotal })
-                  : t("memory.cleanupHint")}
+          </div>
+          <div className="project-memory-cleanup-hint text-[11px] opacity-75 leading-[1.4]">
+            {pollutionMessage
+              ? pollutionMessage
+              : pollutionScannedTotal > 0
+                ? t("memory.cleanupScanned", { total: pollutionScannedTotal })
+                : t("memory.cleanupHint")}
+          </div>
+        </div>
+
+        {/* Diagnostics section */}
+        <div className="project-memory-cleanup project-memory-diagnostics mt-2.5 pt-2.5 border-t border-dashed border-(--border-subtle) flex flex-col gap-1.5">
+          <div className="project-memory-cleanup-header flex items-center justify-between gap-2">
+            <div className="project-memory-cleanup-title text-[11px] font-semibold shrink-0">{t("memory.diagnosticsTitle")}</div>
+            <div className="project-memory-cleanup-actions flex gap-1.5">
+              <button
+                type="button"
+                className={actionBtnCompactCls}
+                onClick={() => { void handleRunDiagnostics(); }}
+                disabled={!workspaceId || diagnosticsBusy !== null}
+              >
+                <ShieldCheck size={13} aria-hidden />
+                <span>
+                  {diagnosticsBusy === "diagnostics" ? t("memory.diagnosticsRunning") : t("memory.diagnosticsRun")}
+                </span>
+              </button>
+              <button
+                type="button"
+                className={actionBtnCompactCls}
+                onClick={() => { void handleRunReconcileDryRun(); }}
+                disabled={!workspaceId || diagnosticsBusy !== null}
+              >
+                {diagnosticsBusy === "dry-run" ? t("memory.reconcileRunning") : t("memory.reconcileDryRun")}
+              </button>
+              <button
+                type="button"
+                className={actionBtnCompactDangerCls}
+                onClick={() => setShowReconcileApplyConfirm(true)}
+                disabled={!workspaceId || diagnosticsBusy !== null || !reconcileResult || reconcileResult.fixableCount === 0}
+              >
+                <Wrench size={13} aria-hidden />
+                <span>
+                  {diagnosticsBusy === "apply" ? t("memory.reconcileRunning") : t("memory.reconcileApply")}
+                </span>
+              </button>
             </div>
           </div>
-          <div className="project-memory-cleanup project-memory-diagnostics">
-            <div className="project-memory-cleanup-header">
-              <div className="project-memory-cleanup-title">{t("memory.diagnosticsTitle")}</div>
-              <div className="project-memory-cleanup-actions">
-                <button
-                  type="button"
-                  className="project-memory-action-btn compact"
-                  onClick={() => {
-                    void handleRunDiagnostics();
-                  }}
-                  disabled={!workspaceId || diagnosticsBusy !== null}
-                >
-                  <ShieldCheck size={13} aria-hidden />
-                  <span>
-                    {diagnosticsBusy === "diagnostics"
-                      ? t("memory.diagnosticsRunning")
-                      : t("memory.diagnosticsRun")}
-                  </span>
-                </button>
-                <button
-                  type="button"
-                  className="project-memory-action-btn compact"
-                  onClick={() => {
-                    void handleRunReconcileDryRun();
-                  }}
-                  disabled={!workspaceId || diagnosticsBusy !== null}
-                >
-                  {diagnosticsBusy === "dry-run"
-                    ? t("memory.reconcileRunning")
-                    : t("memory.reconcileDryRun")}
-                </button>
-                <button
-                  type="button"
-                  className="project-memory-action-btn compact danger"
-                  onClick={() => setShowReconcileApplyConfirm(true)}
-                  disabled={
-                    !workspaceId ||
-                    diagnosticsBusy !== null ||
-                    !reconcileResult ||
-                    reconcileResult.fixableCount === 0
-                  }
-                >
-                  <Wrench size={13} aria-hidden />
-                  <span>
-                    {diagnosticsBusy === "apply"
-                      ? t("memory.reconcileRunning")
-                      : t("memory.reconcileApply")}
-                  </span>
-                </button>
-              </div>
-            </div>
-            <div className="project-memory-cleanup-hint">
-              {diagnostics
-                ? t("memory.diagnosticsSummary", {
-                    total: diagnostics.total,
-                    incomplete:
-                      diagnostics.healthCounts.input_only +
-                      diagnostics.healthCounts.assistant_only +
-                      diagnostics.healthCounts.pending_fusion +
-                      diagnostics.healthCounts.capture_failed,
-                    duplicates: diagnostics.duplicateTurnGroups.length,
-                    badFiles: diagnostics.badFiles.length,
-                  })
-                : t("memory.diagnosticsHint")}
-            </div>
-            {reconcileResult ? (
-              <div className="project-memory-cleanup-hint">
-                {t("memory.reconcileSummary", {
-                  fixable: reconcileResult.fixableCount,
-                  fixed: reconcileResult.fixedCount,
-                  skipped: reconcileResult.skippedCount,
-                })}
-              </div>
-            ) : null}
+          <div className="project-memory-cleanup-hint text-[11px] opacity-75 leading-[1.4]">
+            {diagnostics
+              ? t("memory.diagnosticsSummary", {
+                  total: diagnostics.total,
+                  incomplete:
+                    diagnostics.healthCounts.input_only +
+                    diagnostics.healthCounts.assistant_only +
+                    diagnostics.healthCounts.pending_fusion +
+                    diagnostics.healthCounts.capture_failed,
+                  duplicates: diagnostics.duplicateTurnGroups.length,
+                  badFiles: diagnostics.badFiles.length,
+                })
+              : t("memory.diagnosticsHint")}
           </div>
+          {reconcileResult ? (
+            <div className="project-memory-cleanup-hint text-[11px] opacity-75 leading-[1.4]">
+              {t("memory.reconcileSummary", {
+                fixable: reconcileResult.fixableCount,
+                fixed: reconcileResult.fixedCount,
+                skipped: reconcileResult.skippedCount,
+              })}
+            </div>
+          ) : null}
+        </div>
       </div>
 
-      <div className="project-memory-content">
-        <aside className="project-memory-list" aria-label={t("memory.memoryList")}>
-          <div className="project-memory-list-toolbar">
-            <span>{t("memory.memoryList")}</span>
-            <span>{t("memory.pageMeta", {
-              from: total === 0 ? 0 : page * pageSize + 1,
-              to: Math.min(total, (page + 1) * pageSize),
-              total,
-            })}</span>
+      {/* List + Detail columns */}
+      <div className="project-memory-content grid gap-3 min-h-0 flex-1 [grid-template-columns:minmax(280px,32%)_1fr] max-[760px]:[grid-template-columns:minmax(0,1fr)]">
+        {/* Memory list */}
+        <aside
+          className="project-memory-list border border-(--border-subtle) rounded-lg min-h-0 overflow-y-auto p-2.5 flex flex-col gap-2 max-[760px]:max-h-[38vh]"
+          aria-label={t("memory.memoryList")}
+        >
+          <div className="project-memory-list-toolbar sticky top-0 z-[1] flex justify-between gap-2 pb-2 text-[11px] text-(--text-muted) bg-inherit">
+            <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">{t("memory.memoryList")}</span>
+            <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">
+              {t("memory.pageMeta", {
+                from: total === 0 ? 0 : page * pageSize + 1,
+                to: Math.min(total, (page + 1) * pageSize),
+                total,
+              })}
+            </span>
           </div>
           {emptyMessage ? (
-            <div className="project-memory-empty">{emptyMessage}</div>
+            <div className="project-memory-empty text-xs opacity-75">{emptyMessage}</div>
           ) : filteredItems.length === 0 ? (
-            <div className="project-memory-empty">{t("memory.filteredEmpty")}</div>
+            <div className="project-memory-empty text-xs opacity-75">{t("memory.filteredEmpty")}</div>
           ) : (
             filteredItems.map((item) => {
               const recordKind = getProjectMemoryDisplayRecordKind(item);
@@ -1136,28 +1160,61 @@ export function ProjectMemoryPanel({
               const reviewState = deriveProjectMemoryReviewState(item);
               const compactTitle = resolveProjectMemoryCompactTitle(item);
               const compactSummary = resolveProjectMemoryCompactSummary(item);
+              const isActive = selectedId === item.id;
+              const isSelected = selectedIds.has(item.id);
+              const isObsolete = reviewState === "obsolete";
+              const isDismissed = reviewState === "dismissed";
+
+              // Build importance style
+              const importanceStyle: Record<string, string> = {
+                high: "bg-[linear-gradient(135deg,rgba(239,68,68,0.15),rgba(239,68,68,0.08))] border-red-400/25 hover:bg-[linear-gradient(135deg,rgba(239,68,68,0.2),rgba(239,68,68,0.12))] hover:border-red-400/35",
+                medium: "bg-[linear-gradient(135deg,rgba(251,191,36,0.12),rgba(251,191,36,0.06))] border-yellow-400/20 hover:bg-[linear-gradient(135deg,rgba(251,191,36,0.18),rgba(251,191,36,0.1))] hover:border-yellow-400/30",
+                low: "bg-[linear-gradient(135deg,rgba(107,114,128,0.08),rgba(107,114,128,0.04))] border-gray-500/15 hover:bg-[linear-gradient(135deg,rgba(107,114,128,0.12),rgba(107,114,128,0.08))] hover:border-gray-500/25",
+              };
+              const baseItemCls = `project-memory-list-item flex items-start gap-2.5 p-[9px] rounded-lg cursor-pointer transition-[background-color,border-color] duration-200 border min-w-0 ${
+                isActive
+                  ? "is-active bg-blue-600/8 border-blue-600/20"
+                  : isSelected
+                    ? "is-selected bg-blue-500/8 border-blue-500/20"
+                    : item.importance && importanceStyle[item.importance]
+                      ? importanceStyle[item.importance]
+                      : "bg-(--surface-card) border-black/8 hover:bg-(--surface-hover) hover:border-black/12"
+              }${isObsolete ? " is-obsolete opacity-72 grayscale-[0.35] border-dashed" : ""}${isDismissed ? " is-dismissed opacity-72 grayscale-[0.35] border-dashed" : ""}${item.importance ? ` importance-${item.importance}` : ""}`;
+
+              // Kind badge colors
+              const kindColorMap: Record<string, string> = {
+                "known-issue": "bg-red-500",
+                "code-decision": "bg-purple-500",
+                "project-context": "bg-blue-500",
+                "note": "bg-gray-500",
+                "conversation": "bg-green-500",
+              };
+              const kindSlug = item.kind.replace(/_/g, "-");
+              const kindBgCls = kindColorMap[kindSlug] ?? "bg-gray-500";
+
               return (
                 <div
                   key={item.id}
-                  className={`project-memory-list-item${
-                    selectedId === item.id ? " is-active" : ""
-                  }${selectedIds.has(item.id) ? " is-selected" : ""}${
-                    item.importance ? ` importance-${item.importance}` : ""
-                  }${reviewState === "obsolete" ? " is-obsolete" : ""}${
-                    reviewState === "dismissed" ? " is-dismissed" : ""
-                  }`}
+                  className={baseItemCls}
                   onClick={() => toggleSelectItem(item.id)}
                 >
-                  <label className="project-memory-list-checkbox" onClick={(e) => e.stopPropagation()}>
+                  {/* Checkbox */}
+                  <label
+                    className="project-memory-list-checkbox shrink-0 flex items-center justify-center cursor-pointer relative w-[18px] h-[18px] mt-px"
+                    onClick={(e) => e.stopPropagation()}
+                  >
                     <input
                       type="checkbox"
-                      checked={selectedIds.has(item.id)}
+                      checked={isSelected}
                       onChange={() => toggleSelectItem(item.id)}
+                      className="absolute opacity-0 w-full h-full cursor-pointer inset-0"
                     />
-                    <span className="checkbox-indicator" />
+                    <span className="checkbox-indicator absolute w-[18px] h-[18px] border-2 border-slate-400/40 rounded pointer-events-none transition-all duration-200 after:content-[''] after:absolute after:left-[5px] after:top-[2px] after:w-[5px] after:h-[9px] after:border-solid after:border-white after:border-r-2 after:border-b-2 after:border-t-0 after:border-l-0 after:scale-0 after:opacity-0 after:transition-all after:duration-200 after:[transform:rotate(45deg)_scale(0)]" />
                   </label>
+
+                  {/* Content */}
                   <div
-                    className="project-memory-list-item-content"
+                    className="project-memory-list-item-content flex-1 min-w-0 text-left cursor-pointer p-0 flex flex-col gap-1 h-auto min-h-0"
                     onClick={(e) => {
                       e.stopPropagation();
                       setSelectedId(item.id);
@@ -1171,20 +1228,26 @@ export function ProjectMemoryPanel({
                     role="button"
                     tabIndex={0}
                   >
-                    <div className="project-memory-list-item-head">
-                      <div className="project-memory-list-head-left">
+                    <div className="project-memory-list-item-head flex justify-between items-center text-[11px] opacity-90 mb-0.5 gap-1.5 min-w-0">
+                      <div className="project-memory-list-head-left inline-flex items-center gap-1.5 min-w-0 overflow-hidden">
                         <span
-                          className={`project-memory-list-kind kind-${item.kind.replace(/_/g, "-")}`}
+                          className={`project-memory-list-kind kind-${kindSlug} inline-flex items-center px-2.5 py-[3px] rounded-md font-semibold text-[10px] tracking-[0.3px] text-white ${kindBgCls}`}
                         >
                           {kindLabel(item.kind)}
                         </span>
                         <span
-                          className={`project-memory-record-kind record-${recordKind.replace(/_/g, "-")}`}
+                          className={`project-memory-record-kind record-${recordKind.replace(/_/g, "-")} inline-flex items-center py-[2px] px-[7px] rounded-[5px] text-[9px] font-bold text-(--text-primary) border border-(--border-subtle) bg-(--surface-elevated) tracking-[0] ${
+                            recordKind === "conversation_turn"
+                              ? "border-blue-600/36 bg-blue-600/12"
+                              : recordKind === "manual_note"
+                                ? "border-teal-500/35 bg-teal-500/12"
+                                : "border-gray-500/32 bg-gray-500/10"
+                          }`}
                         >
                           {recordKindLabel(recordKind)}
                         </span>
                         {isConversationTurnMemory(item) && item.engine ? (
-                          <span className="project-memory-list-engine">
+                          <span className="project-memory-list-engine inline-flex items-center py-[2px] px-[7px] rounded-[5px] bg-orange-500 text-white font-semibold text-[9px] uppercase tracking-[0.5px]">
                             {item.engine.toUpperCase()}
                           </span>
                         ) : null}
@@ -1193,22 +1256,33 @@ export function ProjectMemoryPanel({
                         {importanceLabel(item.importance)}
                       </span>
                     </div>
-                    <div className="project-memory-list-title">{compactTitle}</div>
-                    <div className="project-memory-list-summary">{compactSummary}</div>
-                    <div className="project-memory-list-meta-row">
+                    <div className="project-memory-list-title mt-0.5 text-[13px] font-bold leading-[1.3] text-(--text-primary) overflow-hidden text-ellipsis whitespace-nowrap break-words">
+                      {compactTitle}
+                    </div>
+                    <div className="project-memory-list-summary mt-0.5 text-xs font-normal leading-[1.42] text-(--text-secondary) [-webkit-line-clamp:3] [-webkit-box-orient:vertical] [display:-webkit-box] overflow-hidden text-ellipsis max-h-[4.26em] overflow-wrap-anywhere">
+                      {compactSummary}
+                    </div>
+                    <div className="project-memory-list-meta-row flex items-center gap-1.5 min-w-0 mt-0.5 text-[10px] text-(--text-muted) whitespace-nowrap overflow-hidden [&_span]:min-w-0 [&_span]:overflow-hidden [&_span]:text-ellipsis [&_span+span]:before:content-['·'] [&_span+span]:before:mr-1.5 [&_span+span]:before:opacity-65">
                       <span>{formatMemoryDateTime(item.updatedAt)}</span>
                       <span>{healthStateLabel(healthState)}</span>
                       <span>{reviewStateLabel(reviewState)}</span>
                     </div>
                     {item.tags && item.tags.length > 0 ? (
-                      <div className="project-memory-list-tags">
-                        {item.tags.slice(0, 3).map((entry) => (
-                          <span key={entry} className="project-memory-list-tag">
-                            {entry}
-                          </span>
-                        ))}
+                      <div className="project-memory-list-tags flex gap-1.5 flex-wrap mt-1 max-h-[23px] overflow-hidden">
+                        {item.tags.slice(0, 3).map((entry, idx) => {
+                          const tagColors = ["bg-cyan-500", "bg-violet-500", "bg-pink-500", "bg-teal-500"];
+                          const colorCls = tagColors[idx % 4];
+                          return (
+                            <span
+                              key={entry}
+                              className={`project-memory-list-tag inline-flex items-center py-[2px] px-2 rounded-[5px] text-[10px] text-white font-medium ${colorCls}`}
+                            >
+                              {entry}
+                            </span>
+                          );
+                        })}
                         {item.tags.length > 3 ? (
-                          <span className="project-memory-list-tag project-memory-list-tag-muted">
+                          <span className="project-memory-list-tag project-memory-list-tag-muted inline-flex items-center py-[2px] px-2 rounded-[5px] text-[10px] text-white font-medium bg-gray-500/55">
                             +{item.tags.length - 3}
                           </span>
                         ) : null}
@@ -1221,14 +1295,19 @@ export function ProjectMemoryPanel({
           )}
         </aside>
 
-        <div className="project-memory-detail" aria-label={t("memory.memoryDetail")}>
+        {/* Detail pane */}
+        <div
+          className="project-memory-detail border border-(--border-subtle) rounded-lg min-h-0 overflow-y-auto p-3 flex flex-col gap-2.5"
+          aria-label={t("memory.memoryDetail")}
+        >
           {selectedItem ? (
             <>
-              <div className="project-memory-detail-readonly-head">
-                <div className="project-memory-detail-readonly-title">
+              {/* Read-only head */}
+              <div className="project-memory-detail-readonly-head border border-(--border-subtle) rounded-[10px] bg-[color-mix(in_srgb,var(--surface-card,rgba(0,0,0,0.02))_86%,transparent)] p-2.5 flex flex-col gap-2">
+                <div className="project-memory-detail-readonly-title text-[15px] font-bold leading-[1.35] text-(--text-primary) break-words">
                   {selectedItem.title || selectedItem.summary || selectedItem.kind}
                 </div>
-                <div className="project-memory-detail-readonly-meta">
+                <div className="project-memory-detail-readonly-meta flex items-center gap-2 flex-wrap text-[11px] text-(--text-muted) [&>span]:inline-flex [&>span]:items-center [&>span]:gap-1 [&>span]:rounded-full [&>span]:px-2 [&>span]:py-0.5 [&>span]:border [&>span]:border-[color-mix(in_srgb,var(--border-subtle)_72%,transparent)] [&>span]:bg-[color-mix(in_srgb,var(--surface-elevated,rgba(0,0,0,0.04))_86%,transparent)]">
                   {selectedRecordKind ? (
                     <span>{recordKindLabel(selectedRecordKind)}</span>
                   ) : null}
@@ -1240,20 +1319,23 @@ export function ProjectMemoryPanel({
                   {selectedItem.engine ? <span>{selectedItem.engine}</span> : null}
                 </div>
                 {selectedItem.tags.length > 0 ? (
-                  <div className="project-memory-detail-readonly-tags">
+                  <div className="project-memory-detail-readonly-tags flex flex-wrap gap-1.5">
                     {selectedItem.tags.slice(0, 8).map((entry) => (
-                      <span key={entry} className="project-memory-detail-readonly-tag">
+                      <span
+                        key={entry}
+                        className="project-memory-detail-readonly-tag text-[11px] rounded-full px-2 py-0.5 text-(--text-muted) border border-[color-mix(in_srgb,var(--border-subtle)_75%,transparent)] bg-[color-mix(in_srgb,var(--surface-elevated,rgba(0,0,0,0.04))_84%,transparent)]"
+                      >
                         #{entry}
                       </span>
                     ))}
                   </div>
                 ) : null}
-                <div className="project-memory-source-locator">
-                  <div>
-                    <span className="project-memory-source-locator-label">
+                <div className="project-memory-source-locator flex items-center justify-between gap-2 border-t border-dashed border-(--border-subtle) pt-2">
+                  <div className="min-w-0 flex flex-col gap-0.5">
+                    <span className="project-memory-source-locator-label text-[11px] font-bold text-(--text-primary)">
                       {t("memory.sourceLocator")}
                     </span>
-                    <span className="project-memory-source-locator-status">
+                    <span className="project-memory-source-locator-status text-[11px] text-(--text-muted) overflow-hidden text-ellipsis whitespace-nowrap">
                       {selectedSourceLocator?.available
                         ? t("memory.sourceLocatorAvailable")
                         : t("memory.sourceLocatorUnavailable")}
@@ -1261,10 +1343,8 @@ export function ProjectMemoryPanel({
                   </div>
                   <button
                     type="button"
-                    className="project-memory-action-btn compact"
-                    onClick={() => {
-                      void handleCopySourceLocator();
-                    }}
+                    className={actionBtnCompactCls}
+                    onClick={() => { void handleCopySourceLocator(); }}
                     disabled={!selectedSourceLocator?.available}
                     aria-label={t("memory.copySourceLocator")}
                   >
@@ -1273,69 +1353,77 @@ export function ProjectMemoryPanel({
                   </button>
                 </div>
               </div>
+
               {detailLoading ? (
-                <div className="project-memory-detail-status">{t("memory.detailLoading")}</div>
+                <div className="project-memory-detail-status border border-(--border-subtle) rounded-lg px-2.5 py-2 text-xs text-(--text-muted) bg-(--surface-card)">
+                  {t("memory.detailLoading")}
+                </div>
               ) : null}
               {detailError ? (
-                <div className="project-memory-error">{detailError}</div>
+                <div className="project-memory-error text-xs text-red-300 dark:text-red-400">{detailError}</div>
               ) : null}
+
               {selectedIsConversationTurn ? (
-                <div className="project-memory-turn-grid">
-                  <section className="project-memory-turn-section">
+                <div className="project-memory-turn-grid grid gap-2.5 [grid-template-columns:minmax(0,1fr)_minmax(0,1fr)] max-[900px]:[grid-template-columns:minmax(0,1fr)]">
+                  <section className="project-memory-turn-section border border-(--border-subtle) rounded-lg bg-(--surface-card) p-2.5 min-w-0 [&_h3]:m-0 [&_h3]:mb-2 [&_h3]:text-xs [&_h3]:font-bold [&_h3]:text-(--text-primary)">
                     <h3>{t("memory.turnUserInput")}</h3>
                     <Markdown
-                      className="markdown project-memory-detail-preview-markdown"
+                      className="markdown project-memory-detail-preview-markdown text-xs leading-[1.65] break-words text-(--text-secondary) [&>*]:m-0 [&>*+*]:mt-1.5 [&_:where(h1,h2,h3,h4)]:text-[13px] [&_:where(h1,h2,h3,h4)]:font-bold [&_:where(h1,h2,h3,h4)]:text-(--text-primary) [&_:where(ul,ol)]:m-0 [&_:where(ul,ol)]:pl-[18px] [&_:where(li+li)]:mt-[3px] [&_:where(code)]:text-[11px]"
                       value={selectedItem.userInput?.trim() || t("memory.detailPreviewEmpty")}
                     />
                   </section>
                   {selectedItem.assistantThinkingSummary?.trim() ? (
-                    <section className="project-memory-turn-section">
+                    <section className="project-memory-turn-section border border-(--border-subtle) rounded-lg bg-(--surface-card) p-2.5 min-w-0 [&_h3]:m-0 [&_h3]:mb-2 [&_h3]:text-xs [&_h3]:font-bold [&_h3]:text-(--text-primary)">
                       <h3>{t("memory.turnAssistantThinkingSummary")}</h3>
                       <Markdown
-                        className="markdown project-memory-detail-preview-markdown"
+                        className="markdown project-memory-detail-preview-markdown text-xs leading-[1.65] break-words text-(--text-secondary) [&>*]:m-0 [&>*+*]:mt-1.5 [&_:where(h1,h2,h3,h4)]:text-[13px] [&_:where(h1,h2,h3,h4)]:font-bold [&_:where(h1,h2,h3,h4)]:text-(--text-primary) [&_:where(ul,ol)]:m-0 [&_:where(ul,ol)]:pl-[18px] [&_:where(li+li)]:mt-[3px] [&_:where(code)]:text-[11px]"
                         value={selectedItem.assistantThinkingSummary.trim()}
                       />
                     </section>
                   ) : null}
-                  <section className="project-memory-turn-section">
+                  <section className="project-memory-turn-section border border-(--border-subtle) rounded-lg bg-(--surface-card) p-2.5 min-w-0 [&_h3]:m-0 [&_h3]:mb-2 [&_h3]:text-xs [&_h3]:font-bold [&_h3]:text-(--text-primary)">
                     <h3>{t("memory.turnAssistantResponse")}</h3>
                     <Markdown
-                      className="markdown project-memory-detail-preview-markdown"
+                      className="markdown project-memory-detail-preview-markdown text-xs leading-[1.65] break-words text-(--text-secondary) [&>*]:m-0 [&>*+*]:mt-1.5 [&_:where(h1,h2,h3,h4)]:text-[13px] [&_:where(h1,h2,h3,h4)]:font-bold [&_:where(h1,h2,h3,h4)]:text-(--text-primary) [&_:where(ul,ol)]:m-0 [&_:where(ul,ol)]:pl-[18px] [&_:where(li+li)]:mt-[3px] [&_:where(code)]:text-[11px]"
                       value={selectedItem.assistantResponse?.trim() || t("memory.detailPreviewEmpty")}
                     />
                   </section>
                 </div>
               ) : (
-                <div className="project-memory-detail-editor">
-                  <label className="project-memory-detail-editor-label" htmlFor="project-memory-detail-editor">
+                <div className="project-memory-detail-editor flex flex-col gap-1.5">
+                  <label
+                    className="project-memory-detail-editor-label text-[11px] font-bold text-(--text-muted)"
+                    htmlFor="project-memory-detail-editor"
+                  >
                     {t("memory.editManualDetail")}
                   </label>
                   <textarea
                     id="project-memory-detail-editor"
-                    className="project-memory-detail-text"
+                    className="project-memory-detail-text w-full border border-(--border-subtle) bg-(--bg-input) text-inherit rounded-md text-xs p-2 outline-none flex-1 min-h-[200px] leading-[1.6] text-[13px] resize-y"
                     value={detailTextDraft}
                     onChange={(event) => setDetailTextDraft(event.target.value)}
                   />
                 </div>
               )}
+
               {!selectedIsConversationTurn ? (
-                <div className="project-memory-detail-preview">
-                  <div className="project-memory-detail-preview-title">
+                <div className="project-memory-detail-preview border border-(--border-subtle) rounded-lg bg-(--bg-input) p-2.5 flex flex-col gap-2 flex-1 min-h-0 overflow-auto">
+                  <div className="project-memory-detail-preview-title text-[11px] font-bold text-(--text-muted)">
                     {t("memory.detailPreviewTitle")}
                   </div>
                   {detailSections.length > 0 ? (
-                    <div className="project-memory-detail-preview-sections">
+                    <div className="project-memory-detail-preview-sections flex flex-col gap-2">
                       {detailSections.map((section, index) => (
                         <div
                           key={`${section.label}-${index}`}
-                          className="project-memory-detail-preview-section"
+                          className="project-memory-detail-preview-section rounded-lg border border-(--border-subtle) bg-(--surface-card) p-2 flex flex-col gap-1.5"
                         >
-                          <div className="project-memory-detail-preview-section-label">
+                          <div className="project-memory-detail-preview-section-label text-[11px] font-bold text-(--text-primary)">
                             {section.label}
                           </div>
-                          <div className="project-memory-detail-preview-section-content">
+                          <div className="project-memory-detail-preview-section-content text-xs leading-[1.6] text-(--text-secondary)">
                             <Markdown
-                              className="markdown project-memory-detail-preview-markdown"
+                              className="markdown project-memory-detail-preview-markdown text-xs leading-[1.65] break-words text-(--text-secondary) [&>*]:m-0 [&>*+*]:mt-1.5 [&_:where(h1,h2,h3,h4)]:text-[13px] [&_:where(h1,h2,h3,h4)]:font-bold [&_:where(h1,h2,h3,h4)]:text-(--text-primary) [&_:where(ul,ol)]:m-0 [&_:where(ul,ol)]:pl-[18px] [&_:where(li+li)]:mt-[3px] [&_:where(code)]:text-[11px]"
                               value={section.content}
                             />
                           </div>
@@ -1343,173 +1431,97 @@ export function ProjectMemoryPanel({
                       ))}
                     </div>
                   ) : (
-                    <div className="project-memory-detail-preview-plain">
+                    <div className="project-memory-detail-preview-plain text-xs leading-[1.6] text-(--text-secondary)">
                       <Markdown
-                        className="markdown project-memory-detail-preview-markdown"
+                        className="markdown project-memory-detail-preview-markdown text-xs leading-[1.65] break-words text-(--text-secondary) [&>*]:m-0 [&>*+*]:mt-1.5 [&_:where(h1,h2,h3,h4)]:text-[13px] [&_:where(h1,h2,h3,h4)]:font-bold [&_:where(h1,h2,h3,h4)]:text-(--text-primary) [&_:where(ul,ol)]:m-0 [&_:where(ul,ol)]:pl-[18px] [&_:where(li+li)]:mt-[3px] [&_:where(code)]:text-[11px]"
                         value={detailTextDraft.trim() || t("memory.detailPreviewEmpty")}
                       />
                     </div>
                   )}
                 </div>
               ) : null}
+
               {copyMessage ? (
-                <div className="project-memory-detail-status">{copyMessage}</div>
+                <div className="project-memory-detail-status border border-(--border-subtle) rounded-lg px-2.5 py-2 text-xs text-(--text-muted) bg-(--surface-card)">
+                  {copyMessage}
+                </div>
               ) : null}
-              <div className="project-memory-review-actions" aria-label={t("memory.reviewActions")}>
-                <button
-                  type="button"
-                  className="project-memory-action-btn compact"
-                  onClick={() => {
-                    void handleSetReviewState("kept");
-                  }}
-                  disabled={detailSaving}
-                >
+
+              {/* Review actions */}
+              <div
+                className="project-memory-review-actions flex gap-2 flex-wrap p-2.5 border border-dashed border-(--border-subtle) rounded-[10px] bg-[color-mix(in_srgb,var(--surface-card,rgba(0,0,0,0.02))_82%,transparent)]"
+                aria-label={t("memory.reviewActions")}
+              >
+                <button type="button" className={actionBtnCompactCls} onClick={() => { void handleSetReviewState("kept"); }} disabled={detailSaving}>
                   {t("memory.reviewKeep")}
                 </button>
-                <button
-                  type="button"
-                  className="project-memory-action-btn compact"
-                  onClick={() => {
-                    void handleConvertToManualNote();
-                  }}
-                  disabled={detailSaving || !selectedIsConversationTurn}
-                >
+                <button type="button" className={actionBtnCompactCls} onClick={() => { void handleConvertToManualNote(); }} disabled={detailSaving || !selectedIsConversationTurn}>
                   {t("memory.reviewConvert")}
                 </button>
-                <button
-                  type="button"
-                  className="project-memory-action-btn compact"
-                  onClick={() => {
-                    void handleSetReviewState("obsolete");
-                  }}
-                  disabled={detailSaving}
-                >
+                <button type="button" className={actionBtnCompactCls} onClick={() => { void handleSetReviewState("obsolete"); }} disabled={detailSaving}>
                   {t("memory.reviewObsolete")}
                 </button>
-                <button
-                  type="button"
-                  className="project-memory-action-btn compact"
-                  onClick={() => {
-                    void handleSetReviewState("dismissed");
-                  }}
-                  disabled={detailSaving}
-                >
+                <button type="button" className={actionBtnCompactCls} onClick={() => { void handleSetReviewState("dismissed"); }} disabled={detailSaving}>
                   {t("memory.reviewDismiss")}
                 </button>
               </div>
             </>
           ) : (
-            <div className="project-memory-empty">{t("memory.selectRecord")}</div>
+            <div className="project-memory-empty text-xs opacity-75">{t("memory.selectRecord")}</div>
           )}
         </div>
       </div>
 
-      {/* 统一操作区：批量操作（左） + 详情操作（右） */}
+      {/* Actions bar */}
       {items.length > 0 && (
-        <div className="project-memory-actions">
-          <div className="project-memory-batch-actions">
+        <div className="project-memory-actions flex items-center gap-2 flex-wrap max-[768px]:flex-col max-[768px]:items-stretch max-[768px]:gap-2.5">
+          <div className="project-memory-batch-actions flex items-center gap-1.5 flex-wrap max-[768px]:w-full max-[768px]:justify-center">
             <button
               type="button"
-              className="project-memory-action-btn compact"
+              className={actionBtnCompactCls}
               onClick={toggleSelectAll}
-              aria-label={
-                selectedIds.size === items.length
-                  ? t("memory.unselectAll")
-                  : t("memory.selectAll")
-              }
+              aria-label={selectedIds.size === items.length ? t("memory.unselectAll") : t("memory.selectAll")}
             >
               {selectedIds.size === items.length ? (
-                <>
-                  <Square size={14} aria-hidden />
-                  <span>{t("memory.unselectAll")}</span>
-                </>
+                <><Square size={14} aria-hidden /><span>{t("memory.unselectAll")}</span></>
               ) : (
-                <>
-                  <CheckSquare size={14} aria-hidden />
-                  <span>{t("memory.selectAll")}</span>
-                </>
+                <><CheckSquare size={14} aria-hidden /><span>{t("memory.selectAll")}</span></>
               )}
             </button>
             {selectedIds.size > 0 && (
               <>
-                <button
-                  type="button"
-                  className="project-memory-action-btn compact"
-                  onClick={() => { void handleBatchSetImportance("high"); }}
-                  disabled={batchUpdating}
-                >
+                <button type="button" className={actionBtnCompactCls} onClick={() => { void handleBatchSetImportance("high"); }} disabled={batchUpdating}>
                   {t("memory.batchSetHigh")}
                 </button>
-                <button
-                  type="button"
-                  className="project-memory-action-btn compact"
-                  onClick={() => { void handleBatchSetImportance("medium"); }}
-                  disabled={batchUpdating}
-                >
+                <button type="button" className={actionBtnCompactCls} onClick={() => { void handleBatchSetImportance("medium"); }} disabled={batchUpdating}>
                   {t("memory.batchSetMedium")}
                 </button>
-                <button
-                  type="button"
-                  className="project-memory-action-btn compact"
-                  onClick={() => { void handleBatchSetImportance("low"); }}
-                  disabled={batchUpdating}
-                >
+                <button type="button" className={actionBtnCompactCls} onClick={() => { void handleBatchSetImportance("low"); }} disabled={batchUpdating}>
                   {t("memory.batchSetLow")}
                 </button>
-                <button
-                  type="button"
-                  className="project-memory-action-btn compact danger"
-                  onClick={() => setShowBatchDeleteConfirm(true)}
-                  disabled={batchUpdating}
-                  aria-label={t("memory.batchDelete")}
-                >
+                <button type="button" className={actionBtnCompactDangerCls} onClick={() => setShowBatchDeleteConfirm(true)} disabled={batchUpdating} aria-label={t("memory.batchDelete")}>
                   <Trash2 size={14} aria-hidden />
-                  <span>
-                    {t("memory.batchDelete")} ({selectedIds.size})
-                  </span>
+                  <span>{t("memory.batchDelete")} ({selectedIds.size})</span>
                 </button>
               </>
             )}
           </div>
 
-          <div className="project-memory-actions-divider" />
+          {/* Divider */}
+          <div className="project-memory-actions-divider w-px h-5 bg-(--border-subtle) mx-1 max-[768px]:w-full max-[768px]:h-px max-[768px]:mx-0" />
 
-          <div className="project-memory-main-actions">
+          <div className="project-memory-main-actions flex items-center gap-2 ml-auto max-[768px]:w-full max-[768px]:justify-center">
             {selectedIsConversationTurn ? (
-              <button
-                type="button"
-                className="project-memory-action-btn"
-                onClick={() => {
-                  void handleCopySelectedTurn();
-                }}
-                disabled={!selectedItem}
-                aria-label={t("memory.copyTurn")}
-              >
+              <button type="button" className={`${actionBtnCls} max-[768px]:min-h-11 max-[768px]:w-full max-[768px]:justify-center max-[768px]:px-4`} onClick={() => { void handleCopySelectedTurn(); }} disabled={!selectedItem} aria-label={t("memory.copyTurn")}>
                 <Copy size={14} aria-hidden />
                 <span>{t("memory.copyTurn")}</span>
               </button>
             ) : (
-              <button
-                type="button"
-                className="project-memory-action-btn"
-                onClick={() => {
-                  void handleSaveManualDetail();
-                }}
-                disabled={!selectedItem || detailSaving}
-                aria-label={t("memory.save")}
-              >
+              <button type="button" className={`${actionBtnCls} max-[768px]:min-h-11 max-[768px]:w-full max-[768px]:justify-center max-[768px]:px-4`} onClick={() => { void handleSaveManualDetail(); }} disabled={!selectedItem || detailSaving} aria-label={t("memory.save")}>
                 <span>{detailSaving ? t("memory.saving") : t("memory.save")}</span>
               </button>
             )}
-            <button
-              type="button"
-              className="project-memory-action-btn danger"
-              onClick={() => {
-                handleDelete();
-              }}
-              disabled={!selectedItem}
-              aria-label={t("memory.delete")}
-            >
+            <button type="button" className={`${actionBtnDangerCls} max-[768px]:min-h-11 max-[768px]:w-full max-[768px]:justify-center max-[768px]:px-4`} onClick={() => { handleDelete(); }} disabled={!selectedItem} aria-label={t("memory.delete")}>
               <Trash2 size={14} aria-hidden />
               <span>{t("memory.delete")}</span>
             </button>
@@ -1517,17 +1529,24 @@ export function ProjectMemoryPanel({
         </div>
       )}
 
-      <div className={`project-memory-help${showHelp ? ' is-visible' : ''}`}>
+      {/* Help tooltip */}
+      <div
+        className={`project-memory-help fixed bottom-[70px] right-5 w-[340px] max-w-[calc(100vw-40px)] z-[60] border border-(--border-subtle) rounded-lg px-3 py-2.5 bg-(--bg-primary) shadow-[0_12px_40px_rgba(0,0,0,0.6)] transition-[opacity,transform] duration-[250ms] ease-out ${
+          showHelp
+            ? "is-visible opacity-100 pointer-events-auto translate-y-0"
+            : "opacity-0 pointer-events-none translate-y-2.5"
+        }`}
+      >
         <button
           type="button"
-          className="project-memory-help-close"
+          className="project-memory-help-close absolute top-2 right-2 border-0 bg-transparent text-inherit cursor-pointer p-1 opacity-70 transition-opacity duration-150 ease-out hover:opacity-100"
           onClick={() => setShowHelp(false)}
           aria-label={t("memory.closeHelp")}
         >
           <X size={14} aria-hidden />
         </button>
-        <h4 className="project-memory-help-title">{t("memory.helpTitle")}</h4>
-        <ul className="project-memory-help-list">
+        <h4 className="project-memory-help-title m-0 mb-1.5 text-xs font-semibold opacity-90">{t("memory.helpTitle")}</h4>
+        <ul className="project-memory-help-list m-0 pl-4 text-[11px] leading-[1.7] opacity-75 [&_li+li]:mt-0.5">
           <li>{t("memory.helpAutoCapture")}</li>
           <li>{t("memory.helpContextInjection")}</li>
           <li>{t("memory.helpBatchOps")}</li>
@@ -1537,22 +1556,23 @@ export function ProjectMemoryPanel({
         </ul>
       </div>
 
-      <div className="project-memory-pagination">
+      {/* Pagination */}
+      <div className="project-memory-pagination flex items-center justify-center gap-3 pt-3 mt-auto border-t border-(--border-subtle) max-w-[300px] mx-auto">
         <button
           type="button"
-          className="project-memory-action-btn compact"
+          className={actionBtnCompactCls}
           onClick={() => setPage((current) => Math.max(0, current - 1))}
           disabled={page === 0 || loading}
           aria-label={t("memory.prevPage")}
         >
           <ChevronLeft size={16} aria-hidden />
         </button>
-        <span className="project-memory-page-indicator">
+        <span className="project-memory-page-indicator text-xs opacity-85 font-medium min-w-[60px] text-center">
           {page + 1} / {Math.max(1, Math.ceil(total / pageSize))}
         </span>
         <button
           type="button"
-          className="project-memory-action-btn compact"
+          className={actionBtnCompactCls}
           onClick={() => setPage((current) => current + 1)}
           disabled={(page + 1) * pageSize >= total || loading}
           aria-label={t("memory.nextPage")}
@@ -1562,152 +1582,72 @@ export function ProjectMemoryPanel({
       </div>
 
       {(error || deleteError) && (
-        <div className="project-memory-error">{error ?? deleteError}</div>
+        <div className="project-memory-error text-xs text-red-300 dark:text-red-400">{error ?? deleteError}</div>
       )}
 
-      {/* 批量删除确认对话框 */}
+      {/* Confirm dialogs */}
       {showBatchDeleteConfirm && (
-        <div className="project-memory-confirm-dialog">
-          <div className="project-memory-confirm-backdrop" onClick={() => setShowBatchDeleteConfirm(false)} />
-          <div className="project-memory-confirm-card">
-            <h3 className="project-memory-confirm-title">{t("memory.batchDelete")}</h3>
-            <p className="project-memory-confirm-message">
-              {t("memory.batchDeleteConfirm", { count: selectedIds.size })}
-            </p>
-            <div className="project-memory-confirm-actions">
-              <button
-                type="button"
-                className="project-memory-action-btn"
-                onClick={() => setShowBatchDeleteConfirm(false)}
-              >
-                {t("memory.cancel")}
-              </button>
-              <button
-                type="button"
-                className="project-memory-action-btn danger"
-                onClick={() => {
-                  void handleBatchDelete();
-                }}
-              >
-                {t("memory.confirmDelete")}
-              </button>
-            </div>
-          </div>
-        </div>
+        <ConfirmDialog
+          title={t("memory.batchDelete")}
+          message={t("memory.batchDeleteConfirm", { count: selectedIds.size })}
+          onCancel={() => setShowBatchDeleteConfirm(false)}
+          onConfirm={() => { void handleBatchDelete(); }}
+          confirmCls={actionBtnDangerCls}
+          cancelCls={actionBtnCls}
+          t={t}
+        />
       )}
-
-      {/* 清空所有记忆确认对话框 */}
       {showClearAllConfirm && (
-        <div className="project-memory-confirm-dialog">
-          <div className="project-memory-confirm-backdrop" onClick={() => setShowClearAllConfirm(false)} />
-          <div className="project-memory-confirm-card">
-            <h3 className="project-memory-confirm-title">{t("memory.clearAll")}</h3>
-            <p className="project-memory-confirm-message">
-              {t("memory.clearAllConfirm")}
-            </p>
-            <div className="project-memory-confirm-actions">
-              <button
-                type="button"
-                className="project-memory-action-btn"
-                onClick={() => setShowClearAllConfirm(false)}
-              >
-                {t("memory.cancel")}
-              </button>
-              <button
-                type="button"
-                className="project-memory-action-btn danger"
-                onClick={() => {
-                  void handleClearAll();
-                }}
-              >
-                {t("memory.confirmDelete")}
-              </button>
-            </div>
-          </div>
-        </div>
+        <ConfirmDialog
+          title={t("memory.clearAll")}
+          message={t("memory.clearAllConfirm")}
+          onCancel={() => setShowClearAllConfirm(false)}
+          onConfirm={() => { void handleClearAll(); }}
+          confirmCls={actionBtnDangerCls}
+          cancelCls={actionBtnCls}
+          t={t}
+        />
       )}
-
-      {/* 单个删除确认对话框 */}
       {showDeleteConfirm && (
-        <div className="project-memory-confirm-dialog">
-          <div className="project-memory-confirm-backdrop" onClick={() => setShowDeleteConfirm(false)} />
-          <div className="project-memory-confirm-card">
-            <h3 className="project-memory-confirm-title">{t("memory.delete")}</h3>
-            <p className="project-memory-confirm-message">
-              {t("memory.deleteConfirm")}
-            </p>
-            <div className="project-memory-confirm-actions">
-              <button
-                type="button"
-                className="project-memory-action-btn"
-                onClick={() => setShowDeleteConfirm(false)}
-              >
-                {t("memory.cancel")}
-              </button>
-              <button
-                type="button"
-                className="project-memory-action-btn danger"
-                onClick={() => {
-                  void confirmDelete();
-                }}
-              >
-                {t("memory.confirmDelete")}
-              </button>
-            </div>
-          </div>
-        </div>
+        <ConfirmDialog
+          title={t("memory.delete")}
+          message={t("memory.deleteConfirm")}
+          onCancel={() => setShowDeleteConfirm(false)}
+          onConfirm={() => { void confirmDelete(); }}
+          confirmCls={actionBtnDangerCls}
+          cancelCls={actionBtnCls}
+          t={t}
+        />
       )}
-
       {showReconcileApplyConfirm && (
-        <div className="project-memory-confirm-dialog">
-          <div
-            className="project-memory-confirm-backdrop"
-            onClick={() => setShowReconcileApplyConfirm(false)}
-          />
-          <div className="project-memory-confirm-card">
-            <h3 className="project-memory-confirm-title">{t("memory.reconcileApply")}</h3>
-            <p className="project-memory-confirm-message">
-              {t("memory.reconcileApplyConfirm")}
-            </p>
-            <div className="project-memory-confirm-actions">
-              <button
-                type="button"
-                className="project-memory-action-btn"
-                onClick={() => setShowReconcileApplyConfirm(false)}
-              >
-                {t("memory.cancel")}
-              </button>
-              <button
-                type="button"
-                className="project-memory-action-btn danger"
-                onClick={() => {
-                  void handleApplyReconcile();
-                }}
-              >
-                {t("memory.reconcileApply")}
-              </button>
-            </div>
-          </div>
-        </div>
+        <ConfirmDialog
+          title={t("memory.reconcileApply")}
+          message={t("memory.reconcileApplyConfirm")}
+          onCancel={() => setShowReconcileApplyConfirm(false)}
+          onConfirm={() => { void handleApplyReconcile(); }}
+          confirmLabel={t("memory.reconcileApply")}
+          confirmCls={actionBtnDangerCls}
+          cancelCls={actionBtnCls}
+          t={t}
+        />
       )}
     </div>
   );
 
   return (
     <>
-      <section className="project-memory-panel">
-      </section>
+      <section className="project-memory-panel flex flex-col gap-2.5 h-full p-2.5 bg-(--bg-primary) text-(--text-primary)" />
 
       {managerOpen && (
-        <div className="project-memory-modal" role="dialog" aria-modal="true">
+        <div className="project-memory-modal fixed inset-0 z-[45]" role="dialog" aria-modal="true">
           <div
-            className="project-memory-modal-backdrop"
+            className="project-memory-modal-backdrop absolute inset-0 bg-black/72 backdrop-blur-[3px]"
             onClick={closeManager}
           />
-          <div className="project-memory-modal-card">
-            <div className="project-memory-modal-header">
-              <h2 className="project-memory-modal-title">{t("memory.title")}</h2>
-              <label className="project-memory-workspace-picker">
+          <div className="project-memory-modal-card absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[calc(100vw-24px)] h-[calc(100vh-24px)] max-w-[1720px] max-h-[1120px] rounded-2xl border border-(--border-subtle) bg-(--bg-primary) shadow-[0_24px_60px_rgba(0,0,0,0.5)] p-4 flex flex-col gap-3 max-[760px]:w-[calc(100vw-12px)] max-[760px]:h-[calc(100vh-12px)] max-[760px]:p-3">
+            <div className="project-memory-modal-header flex items-center justify-between gap-2 pb-2 border-b border-(--border-subtle) max-[760px]:items-stretch max-[760px]:flex-wrap">
+              <h2 className="project-memory-modal-title m-0 text-sm font-semibold tracking-[0.2px]">{t("memory.title")}</h2>
+              <label className="project-memory-workspace-picker flex items-center gap-2 min-w-[220px] max-w-[min(460px,40vw)] mr-auto text-(--text-muted) text-[11px] font-semibold max-[760px]:order-3 max-[760px]:w-full max-[760px]:max-w-none max-[760px]:mr-0 [&_span]:shrink-0 [&_select]:min-w-0 [&_select]:flex-1 [&_select]:border [&_select]:border-(--border-subtle) [&_select]:bg-(--bg-input) [&_select]:text-inherit [&_select]:rounded-lg [&_select]:min-h-[30px] [&_select]:px-2.5 [&_select]:text-xs">
                 <span>{t("memory.workspacePickerLabel")}</span>
                 <select
                   value={workspaceSelectValue}
@@ -1734,44 +1674,17 @@ export function ProjectMemoryPanel({
                   )}
                 </select>
               </label>
-              <div className="project-memory-modal-actions">
-                <button
-                  type="button"
-                  className="project-memory-settings-btn"
-                  onClick={() => {
-                    void refresh();
-                  }}
-                  title={t("memory.refresh")}
-                  aria-label={t("memory.refresh")}
-                  disabled={loading}
-                >
+              <div className="project-memory-modal-actions flex items-center gap-1">
+                <button type="button" className={settingsBtnCls} onClick={() => { void refresh(); }} title={t("memory.refresh")} aria-label={t("memory.refresh")} disabled={loading}>
                   <RefreshCw size={14} aria-hidden />
                 </button>
-                <button
-                  type="button"
-                  className="project-memory-settings-btn"
-                  onClick={() => setShowSettings((prev) => !prev)}
-                  title={t("memory.settings")}
-                  aria-label={t("memory.settings")}
-                >
+                <button type="button" className={settingsBtnCls} onClick={() => setShowSettings((prev) => !prev)} title={t("memory.settings")} aria-label={t("memory.settings")}>
                   <Settings2 size={14} aria-hidden />
                 </button>
-                <button
-                  type="button"
-                  className="project-memory-settings-btn"
-                  onClick={() => setShowHelp((prev) => !prev)}
-                  title={t("memory.help")}
-                  aria-label={t("memory.help")}
-                >
+                <button type="button" className={settingsBtnCls} onClick={() => setShowHelp((prev) => !prev)} title={t("memory.help")} aria-label={t("memory.help")}>
                   <HelpCircle size={14} aria-hidden />
                 </button>
-                <button
-                  type="button"
-                  className="project-memory-settings-btn"
-                  onClick={closeManager}
-                  title={t("memory.closeManager")}
-                  aria-label={t("memory.closeManager")}
-                >
+                <button type="button" className={settingsBtnCls} onClick={closeManager} title={t("memory.closeManager")} aria-label={t("memory.closeManager")}>
                   <X size={14} aria-hidden />
                 </button>
               </div>
@@ -1781,5 +1694,40 @@ export function ProjectMemoryPanel({
         </div>
       )}
     </>
+  );
+}
+
+/** Reusable confirm dialog — extracted to reduce repetition. */
+function ConfirmDialog({
+  title,
+  message,
+  onCancel,
+  onConfirm,
+  confirmLabel,
+  confirmCls,
+  cancelCls,
+  t,
+}: {
+  title: string;
+  message: string;
+  onCancel: () => void;
+  onConfirm: () => void;
+  confirmLabel?: string;
+  confirmCls: string;
+  cancelCls: string;
+  t: (key: string) => string;
+}) {
+  return (
+    <div className="project-memory-confirm-dialog fixed inset-0 z-[70] flex items-center justify-center">
+      <div className="project-memory-confirm-backdrop absolute inset-0 bg-black/50 backdrop-blur-[2px]" onClick={onCancel} />
+      <div className="project-memory-confirm-card relative bg-(--bg-primary) border border-(--border-subtle) rounded-xl p-5 w-[min(400px,calc(100vw-40px))] shadow-[0_10px_40px_rgba(0,0,0,0.15)] flex flex-col gap-4">
+        <h3 className="project-memory-confirm-title m-0 text-base font-semibold text-(--text-primary)">{title}</h3>
+        <p className="project-memory-confirm-message m-0 text-sm leading-[1.6] text-(--text-secondary)">{message}</p>
+        <div className="project-memory-confirm-actions flex gap-2.5 justify-end">
+          <button type="button" className={cancelCls} onClick={onCancel}>{t("memory.cancel")}</button>
+          <button type="button" className={confirmCls} onClick={onConfirm}>{confirmLabel ?? t("memory.confirmDelete")}</button>
+        </div>
+      </div>
+    </div>
   );
 }
