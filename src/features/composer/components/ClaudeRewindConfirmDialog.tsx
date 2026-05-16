@@ -404,7 +404,7 @@ export function ClaudeRewindConfirmDialog({
 
   return (
     <div
-      className="claude-rewind-modal"
+      className="claude-rewind-modal fixed inset-0 z-[58] flex items-center justify-center p-3"
       role="dialog"
       aria-modal="true"
       aria-labelledby="claude-rewind-dialog-title"
@@ -412,7 +412,7 @@ export function ClaudeRewindConfirmDialog({
       data-testid="claude-rewind-dialog"
     >
       <div
-        className="claude-rewind-modal-backdrop"
+        className="claude-rewind-modal-backdrop absolute inset-0 bg-[rgb(8_12_20/0.68)] backdrop-blur-md"
         onClick={() => {
           if (!isBusy && !isExporting) {
             onCancel();
@@ -420,48 +420,54 @@ export function ClaudeRewindConfirmDialog({
         }}
       />
       <div
-        className="claude-rewind-modal-card"
+        className="claude-rewind-modal-card relative flex max-h-[calc(100vh-24px)] w-[min(1540px,calc(100vw-12px))] flex-col overflow-hidden rounded-3xl border border-[color-mix(in_srgb,var(--border-stronger),transparent_12%)] bg-[linear-gradient(180deg,color-mix(in_srgb,var(--surface-popover,var(--surface-card))_96%,#0b1220_4%),color-mix(in_srgb,var(--surface-card)_92%,#0b1220_8%))] shadow-[0_28px_80px_rgba(0,0,0,0.42),0_0_0_1px_color-mix(in_srgb,#2563eb_10%,transparent)] max-sm:w-full max-sm:rounded-[20px]"
         onClick={(event) => event.stopPropagation()}
       >
-        <div className="claude-rewind-modal-header">
-          <div className="claude-rewind-modal-heading">
-            <div className="claude-rewind-modal-heading-main">
-              <div className="claude-rewind-modal-kicker">
+        <div className="claude-rewind-modal-header flex flex-col gap-2.5 border-b border-[color-mix(in_srgb,var(--border-subtle)_80%,transparent)] px-6 pt-5 pb-4 max-sm:px-4">
+          <div className="claude-rewind-modal-heading flex flex-col gap-1.5">
+            <div className="claude-rewind-modal-heading-main flex flex-wrap items-center gap-2.5">
+              <div className="claude-rewind-modal-kicker inline-flex items-center gap-1.5 rounded-full border border-[color-mix(in_srgb,#2563eb_48%,transparent)] bg-[color-mix(in_srgb,#2563eb_28%,transparent)] px-2.5 py-[5px] text-[11px] font-bold uppercase tracking-[0.1em] text-[#dbeafe]">
                 {resolveRewindEngineLabel(preview.engine)}
               </div>
-              <h3 id="claude-rewind-dialog-title">
+              <h3
+                id="claude-rewind-dialog-title"
+                className="m-0 text-3xl font-bold leading-[1.08] text-[var(--text-strong)] max-sm:text-2xl"
+              >
                 {t("rewind.dialogTitle", {
                   engine: resolveRewindEngineLabel(preview.engine),
                 })}
               </h3>
             </div>
-            <p id="claude-rewind-dialog-description">
+            <p
+              id="claude-rewind-dialog-description"
+              className="m-0 text-sm leading-[1.45] text-[var(--text-muted)]"
+            >
               {t("rewind.dialogDescription")}
             </p>
           </div>
         </div>
 
-        <div className="claude-rewind-modal-body">
-          <section className="claude-rewind-modal-section">
-            <div className="claude-rewind-modal-section-label">
+        <div className="claude-rewind-modal-body flex flex-col gap-[18px] overflow-y-auto px-6 pt-[22px] pb-2.5 max-sm:px-4">
+          <section className="claude-rewind-modal-section flex flex-col gap-3">
+            <div className="claude-rewind-modal-section-label text-[11px] font-bold uppercase tracking-[0.12em] text-[var(--text-faint)]">
               {t("rewind.targetSectionTitle")}
             </div>
-            <div className="claude-rewind-modal-target-card">
-              <div className="claude-rewind-modal-target-label">
+            <div className="claude-rewind-modal-target-card flex flex-col gap-2.5 rounded-[18px] border border-[color-mix(in_srgb,var(--border-subtle)_82%,transparent)] bg-[linear-gradient(180deg,color-mix(in_srgb,var(--surface-card)_92%,transparent),color-mix(in_srgb,var(--surface-elevated,var(--surface-card))_88%,transparent))] px-[18px] py-4">
+              <div className="claude-rewind-modal-target-label text-xs text-[var(--text-faint)]">
                 {t("rewind.targetMessageLabel")}
               </div>
-              <div className="claude-rewind-modal-target-preview">
+              <div className="claude-rewind-modal-target-preview whitespace-pre-wrap break-words text-[15px] leading-[1.65] text-[var(--text-strong)]">
                 {preview.preview}
               </div>
             </div>
           </section>
 
-          <section className="claude-rewind-modal-section">
-            <div className="claude-rewind-modal-section-label">
+          <section className="claude-rewind-modal-section flex flex-col gap-3">
+            <div className="claude-rewind-modal-section-label text-[11px] font-bold uppercase tracking-[0.12em] text-[var(--text-faint)]">
               {t("rewind.workspaceRestoreSectionTitle")}
             </div>
             <div
-              className="claude-rewind-modal-mode-list"
+              className="claude-rewind-modal-mode-list grid grid-cols-3 gap-2.5 max-md:grid-cols-1"
               role="radiogroup"
               data-testid="claude-rewind-mode-list"
             >
@@ -487,101 +493,124 @@ export function ClaudeRewindConfirmDialog({
                   title: string;
                   hint: string;
                 }>
-              ).map((option) => (
-                <label
-                  key={option.mode}
-                  className={`claude-rewind-modal-mode-option${rewindMode === option.mode ? " is-selected" : ""}`}
-                >
-                  <input
-                    type="radio"
-                    name="claude-rewind-mode"
-                    value={option.mode}
-                    checked={rewindMode === option.mode}
-                    onChange={() => {
-                      onRewindModeChange?.(option.mode);
-                    }}
-                    disabled={isBusy || isExporting}
-                    className="claude-rewind-modal-mode-input"
-                    data-testid={`claude-rewind-mode-${option.mode}`}
-                  />
-                  <span className="claude-rewind-modal-mode-indicator" aria-hidden>
-                    <span className="claude-rewind-modal-mode-indicator-dot" />
-                  </span>
-                  <span className="claude-rewind-modal-mode-copy">
-                    <span className="claude-rewind-modal-mode-title">
-                      {option.title}
-                    </span>
+              ).map((option) => {
+                const isModeSelected = rewindMode === option.mode;
+                return (
+                  <label
+                    key={option.mode}
+                    className={`claude-rewind-modal-mode-option relative flex min-h-14 cursor-pointer items-center justify-center gap-2.5 rounded-[14px] border bg-[linear-gradient(180deg,color-mix(in_srgb,var(--surface-card)_92%,transparent),color-mix(in_srgb,var(--surface-elevated,var(--surface-card))_88%,transparent))] px-3.5 py-3 ${isModeSelected ? "is-selected border-[rgba(37,99,235,0.42)] shadow-[inset_0_0_0_1px_rgba(37,99,235,0.16)]" : "border-[color-mix(in_srgb,var(--border-subtle)_82%,transparent)]"}`}
+                  >
+                    <input
+                      type="radio"
+                      name="claude-rewind-mode"
+                      value={option.mode}
+                      checked={rewindMode === option.mode}
+                      onChange={() => {
+                        onRewindModeChange?.(option.mode);
+                      }}
+                      disabled={isBusy || isExporting}
+                      className="claude-rewind-modal-mode-input peer pointer-events-none absolute h-px w-px opacity-0"
+                      data-testid={`claude-rewind-mode-${option.mode}`}
+                    />
                     <span
-                      className="claude-rewind-modal-mode-hint"
-                      aria-hidden="true"
+                      className="claude-rewind-modal-mode-indicator relative inline-flex h-5 w-5 flex-none items-center justify-center rounded-full border border-[color-mix(in_srgb,var(--border-subtle),transparent_6%)] bg-[color-mix(in_srgb,var(--surface-card-muted),#0f172a_28%)] transition-[background-color,border-color] duration-[180ms] ease-in peer-checked:border-[rgba(37,99,235,0.56)] peer-checked:bg-[rgba(37,99,235,0.35)] peer-disabled:opacity-[0.72] peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-[color-mix(in_srgb,#60a5fa_82%,transparent)]"
+                      aria-hidden
                     >
-                      {option.hint}
+                      <span
+                        className={`claude-rewind-modal-mode-indicator-dot absolute left-1/2 top-1/2 h-2 w-2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-[#dbeafe] transition-[transform,background-color] duration-[180ms] ease-in ${isModeSelected ? "scale-100" : "scale-0"}`}
+                      />
                     </span>
-                  </span>
-                </label>
-              ))}
+                    <span className="claude-rewind-modal-mode-copy flex min-w-0 flex-col gap-0.5 peer-disabled:opacity-[0.72]">
+                      <span className="claude-rewind-modal-mode-title text-[13px] font-bold leading-[1.25] text-[var(--text-strong)]">
+                        {option.title}
+                      </span>
+                      <span
+                        className="claude-rewind-modal-mode-hint hidden"
+                        aria-hidden="true"
+                      >
+                        {option.hint}
+                      </span>
+                    </span>
+                  </label>
+                );
+              })}
             </div>
           </section>
 
           {showMessageImpact ? (
             <section
-              className="claude-rewind-modal-section"
+              className="claude-rewind-modal-section flex flex-col gap-3"
               data-testid="claude-rewind-message-impact-section"
             >
-              <div className="claude-rewind-modal-section-label">
+              <div className="claude-rewind-modal-section-label text-[11px] font-bold uppercase tracking-[0.12em] text-[var(--text-faint)]">
                 {t("rewind.impactSectionTitle")}
               </div>
               <div
-                className="claude-rewind-modal-impact-grid"
+                className="claude-rewind-modal-impact-grid grid grid-cols-4 gap-3 max-md:grid-cols-2 max-sm:grid-cols-1"
                 data-impact-count={impactCards.length}
               >
                 {impactCards.map((card) => (
                   <article
                     key={card.key}
-                    className="claude-rewind-modal-impact-card"
+                    className="claude-rewind-modal-impact-card flex min-h-[92px] flex-col gap-1.5 rounded-[18px] border border-[color-mix(in_srgb,var(--border-subtle)_82%,transparent)] bg-[linear-gradient(180deg,color-mix(in_srgb,var(--surface-card)_92%,transparent),color-mix(in_srgb,var(--surface-elevated,var(--surface-card))_88%,transparent))] p-4"
                   >
-                    <span className="claude-rewind-modal-impact-value">
+                    <span className="claude-rewind-modal-impact-value text-[28px] font-extrabold leading-none text-[var(--text-strong)]">
                       {card.value}
                     </span>
-                    <span className="claude-rewind-modal-impact-label">
+                    <span className="claude-rewind-modal-impact-label text-xs leading-[1.5] text-[var(--text-muted)]">
                       {card.label}
                     </span>
                   </article>
                 ))}
               </div>
-              <div className="claude-rewind-modal-impact-note">
-                <p>{t("rewind.impactSummary")}</p>
-                <p>{t("rewind.impactFollowUp")}</p>
+              <div className="claude-rewind-modal-impact-note rounded-[18px] border border-[color-mix(in_srgb,var(--border-subtle)_82%,transparent)] bg-[linear-gradient(180deg,color-mix(in_srgb,var(--surface-card)_92%,transparent),color-mix(in_srgb,var(--surface-elevated,var(--surface-card))_88%,transparent))] px-4 py-3.5">
+                <p className="m-0 text-[13px] leading-[1.65] text-[color-mix(in_srgb,#fb923c_72%,var(--text-muted))]">
+                  {t("rewind.impactSummary")}
+                </p>
+                <p className="m-0 text-[13px] leading-[1.65] text-[color-mix(in_srgb,#fb923c_72%,var(--text-muted))]">
+                  {t("rewind.impactFollowUp")}
+                </p>
               </div>
             </section>
           ) : null}
 
           {showFileReview ? (
             <section
-              className="claude-rewind-modal-section"
+              className="claude-rewind-modal-section flex flex-col gap-3"
               data-testid="claude-rewind-file-review-section"
             >
-              <div className="claude-rewind-modal-section-label">
+              <div className="claude-rewind-modal-section-label text-[11px] font-bold uppercase tracking-[0.12em] text-[var(--text-faint)]">
                 {t("rewind.filesSectionTitle")}
               </div>
               {reviewFiles.length > 0 ? (
-                <div className="claude-rewind-modal-review-layout">
-                  <div className="claude-rewind-modal-file-rail">
-                    <div className="claude-rewind-modal-file-rail-header">
+                <div className="claude-rewind-modal-review-layout grid min-h-[360px] grid-cols-[minmax(280px,0.52fr)_minmax(0,2.28fr)] gap-3 max-md:grid-cols-1">
+                  <div className="claude-rewind-modal-file-rail flex min-w-0 flex-col overflow-hidden rounded-[18px] border border-[color-mix(in_srgb,var(--border-subtle)_82%,transparent)] bg-[linear-gradient(180deg,color-mix(in_srgb,var(--surface-card)_92%,transparent),color-mix(in_srgb,var(--surface-elevated,var(--surface-card))_88%,transparent))]">
+                    <div className="claude-rewind-modal-file-rail-header flex items-center justify-between gap-3 border-b border-[color-mix(in_srgb,var(--border-subtle)_82%,transparent)] px-4 pb-3 pt-3.5 text-xs font-bold uppercase tracking-[0.08em] text-[var(--text-faint)]">
                       <span>{t("rewind.filesRailTitle")}</span>
-                      <span className="claude-rewind-modal-file-rail-count">
+                      <span className="claude-rewind-modal-file-rail-count inline-flex h-6 min-w-7 items-center justify-center rounded-full bg-[color-mix(in_srgb,#2563eb_20%,transparent)] px-2 text-[#dbeafe]">
                         {reviewFiles.length}
                       </span>
                     </div>
-                    <div className="claude-rewind-modal-file-rail-list">
+                    <div className="claude-rewind-modal-file-rail-list flex min-h-0 max-h-[min(58vh,560px)] flex-col gap-1.5 overflow-y-auto p-2 max-md:max-h-[260px]">
                       {reviewFiles.map((file) => {
                         const isSelected =
                           file.filePath === selectedFile?.filePath;
+                        const statusKey = file.status.toLowerCase();
+                        const statusColor =
+                          statusKey === "a"
+                            ? "text-[#22c55e]"
+                            : statusKey === "m"
+                              ? "text-[#60a5fa]"
+                              : statusKey === "d"
+                                ? "text-[#f87171]"
+                                : statusKey === "r"
+                                  ? "text-[#c084fc]"
+                                  : "text-[var(--text-muted)]";
                         return (
                           <button
                             key={file.filePath}
                             type="button"
-                            className={`claude-rewind-modal-file-item${isSelected ? " is-selected" : ""}`}
+                            className={`claude-rewind-modal-file-item grid w-full cursor-pointer grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2.5 rounded-2xl px-3 py-2.5 text-left font-[inherit] text-[inherit] transition-[border-color,background-color,transform] duration-[140ms] ease-in hover:border-[color-mix(in_srgb,#2563eb_28%,var(--border-subtle))] hover:bg-[color-mix(in_srgb,var(--surface-elevated,var(--surface-card))_92%,transparent)] max-sm:grid-cols-[auto_minmax(0,1fr)] ${isSelected ? "is-selected -translate-y-px border border-[color-mix(in_srgb,#2563eb_42%,transparent)] bg-[color-mix(in_srgb,#2563eb_10%,var(--surface-card))] shadow-[inset_0_0_0_1px_color-mix(in_srgb,#2563eb_18%,transparent)]" : "border border-[color-mix(in_srgb,var(--border-subtle)_70%,transparent)] bg-[color-mix(in_srgb,var(--surface-card)_82%,transparent)]"}`}
                             onClick={() => {
                               setSelectedFilePath(file.filePath);
                               setExportError(null);
@@ -589,29 +618,33 @@ export function ClaudeRewindConfirmDialog({
                             data-testid={`claude-rewind-file-${file.fileName}`}
                           >
                             <span
-                              className="claude-rewind-modal-file-icon"
+                              className="claude-rewind-modal-file-icon inline-flex h-[18px] w-[18px] flex-shrink-0 items-center justify-center"
                               aria-hidden
                             >
                               <FileIcon filePath={file.filePath} />
                             </span>
-                            <span className="claude-rewind-modal-file-main">
-                              <span className="claude-rewind-modal-file-title-row">
+                            <span className="claude-rewind-modal-file-main flex min-w-0 flex-col gap-0.5">
+                              <span className="claude-rewind-modal-file-title-row flex min-w-0 items-center gap-2">
                                 <span
-                                  className="claude-rewind-modal-file-name"
+                                  className="claude-rewind-modal-file-name min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-[13px] font-bold text-[var(--text-strong)]"
                                   title={file.filePath}
                                 >
                                   {file.fileName}
                                 </span>
                                 <span
-                                  className={`claude-rewind-modal-file-status-text is-${file.status.toLowerCase()}`}
+                                  className={`claude-rewind-modal-file-status-text is-${statusKey} inline-flex items-center whitespace-nowrap text-[11px] font-bold ${statusColor}`}
                                 >
                                   {formatFileStatusLabel(t, file.status)}
                                 </span>
                               </span>
                             </span>
-                            <span className="claude-rewind-modal-file-stats">
-                              <span className="is-add">+{file.additions}</span>
-                              <span className="is-del">-{file.deletions}</span>
+                            <span className="claude-rewind-modal-file-stats inline-flex items-center gap-2 whitespace-nowrap text-xs font-bold max-sm:col-start-2 max-sm:justify-self-start">
+                              <span className="is-add text-[#22c55e]">
+                                +{file.additions}
+                              </span>
+                              <span className="is-del text-[#f87171]">
+                                -{file.deletions}
+                              </span>
                             </span>
                           </button>
                         );
@@ -619,43 +652,58 @@ export function ClaudeRewindConfirmDialog({
                     </div>
                   </div>
 
-                  <div className="claude-rewind-modal-diff-panel">
+                  <div className="claude-rewind-modal-diff-panel flex min-h-[320px] min-w-0 flex-col overflow-hidden rounded-[18px] border border-[color-mix(in_srgb,var(--border-subtle)_82%,transparent)] bg-[linear-gradient(180deg,color-mix(in_srgb,var(--surface-card)_92%,transparent),color-mix(in_srgb,var(--surface-elevated,var(--surface-card))_88%,transparent))]">
                     {selectedFile ? (
                       <>
-                        <div className="claude-rewind-modal-diff-header">
-                          <div className="claude-rewind-modal-diff-heading">
-                            <div className="claude-rewind-modal-diff-title-row">
+                        <div className="claude-rewind-modal-diff-header flex items-start justify-between gap-4 border-b border-[color-mix(in_srgb,var(--border-subtle)_82%,transparent)] px-4 pb-3 pt-3.5 max-md:flex-col max-md:items-stretch">
+                          <div className="claude-rewind-modal-diff-heading flex min-w-0 flex-col gap-2.5">
+                            <div className="claude-rewind-modal-diff-title-row flex items-start gap-3">
                               <span
-                                className="claude-rewind-modal-file-icon"
+                                className="claude-rewind-modal-file-icon inline-flex h-[18px] w-[18px] flex-shrink-0 items-center justify-center"
                                 aria-hidden
                               >
                                 <FileIcon filePath={selectedFile.filePath} />
                               </span>
-                              <div className="claude-rewind-modal-diff-title-group">
-                                <strong title={selectedFile.filePath}>
+                              <div className="claude-rewind-modal-diff-title-group flex min-w-0 flex-col gap-0.5">
+                                <strong
+                                  className="block min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-[15px] text-[var(--text-strong)]"
+                                  title={selectedFile.filePath}
+                                >
                                   {selectedFile.fileName}
                                 </strong>
-                                <code>{selectedFile.filePath}</code>
+                                <code className="break-words text-xs text-[var(--text-faint)]">
+                                  {selectedFile.filePath}
+                                </code>
                               </div>
                             </div>
-                            <div className="claude-rewind-modal-diff-meta">
+                            <div className="claude-rewind-modal-diff-meta inline-flex flex-wrap items-center gap-3 text-xs font-bold text-[var(--text-muted)]">
                               <span
-                                className={`claude-rewind-modal-file-status-text is-${selectedFile.status.toLowerCase()}`}
+                                className={`claude-rewind-modal-file-status-text is-${selectedFile.status.toLowerCase()} inline-flex items-center whitespace-nowrap text-[11px] font-bold ${
+                                  selectedFile.status === "A"
+                                    ? "text-[#22c55e]"
+                                    : selectedFile.status === "M"
+                                      ? "text-[#60a5fa]"
+                                      : selectedFile.status === "D"
+                                        ? "text-[#f87171]"
+                                        : selectedFile.status === "R"
+                                          ? "text-[#c084fc]"
+                                          : "text-[var(--text-muted)]"
+                                }`}
                               >
                                 {formatFileStatusLabel(t, selectedFile.status)}
                               </span>
-                              <span className="is-add">
+                              <span className="is-add text-[#22c55e]">
                                 +{selectedFile.additions}
                               </span>
-                              <span className="is-del">
+                              <span className="is-del text-[#f87171]">
                                 -{selectedFile.deletions}
                               </span>
                             </div>
                           </div>
-                          <div className="claude-rewind-modal-diff-actions">
+                          <div className="claude-rewind-modal-diff-actions inline-flex items-center gap-2">
                             <button
                               type="button"
-                              className="ghost claude-rewind-modal-inline-button"
+                              className="ghost claude-rewind-modal-inline-button min-h-[34px] rounded-[10px]"
                               onClick={() => setIsFullDiffOpen(true)}
                               data-testid="claude-rewind-open-diff-button"
                             >
@@ -665,7 +713,7 @@ export function ClaudeRewindConfirmDialog({
                         </div>
                         {selectedPreviewLines ? (
                           <div
-                            className="claude-rewind-modal-diff-content"
+                            className="claude-rewind-modal-diff-content min-h-0 overflow-auto pb-2.5 pt-2"
                             data-testid="claude-rewind-diff-preview"
                           >
                             <div className="diff-viewer-output diff-viewer-output-flat claude-rewind-modal-diff-theme">
@@ -685,34 +733,34 @@ export function ClaudeRewindConfirmDialog({
                             </div>
                           </div>
                         ) : (
-                          <div className="claude-rewind-modal-empty">
+                          <div className="claude-rewind-modal-empty rounded-2xl border border-dashed border-[color-mix(in_srgb,var(--border-subtle)_80%,transparent)] bg-[color-mix(in_srgb,var(--surface-card)_78%,transparent)] px-4 py-3.5 text-xs leading-[1.6] text-[var(--text-faint)]">
                             {t("rewind.diffEmpty")}
                           </div>
                         )}
                       </>
                     ) : (
-                      <div className="claude-rewind-modal-empty">
+                      <div className="claude-rewind-modal-empty rounded-2xl border border-dashed border-[color-mix(in_srgb,var(--border-subtle)_80%,transparent)] bg-[color-mix(in_srgb,var(--surface-card)_78%,transparent)] px-4 py-3.5 text-xs leading-[1.6] text-[var(--text-faint)]">
                         {t("rewind.filesEmpty")}
                       </div>
                     )}
                   </div>
                 </div>
               ) : (
-                <div className="claude-rewind-modal-empty">
+                <div className="claude-rewind-modal-empty rounded-2xl border border-dashed border-[color-mix(in_srgb,var(--border-subtle)_80%,transparent)] bg-[color-mix(in_srgb,var(--surface-card)_78%,transparent)] px-4 py-3.5 text-xs leading-[1.6] text-[var(--text-faint)]">
                   {t("rewind.filesEmpty")}
                 </div>
               )}
-              <div className="claude-rewind-modal-files-hint">
+              <div className="claude-rewind-modal-files-hint text-xs leading-[1.6] text-[var(--text-faint)]">
                 {t("rewind.filesHint")}
               </div>
             </section>
           ) : null}
         </div>
 
-        <div className="claude-rewind-modal-actions">
+        <div className="claude-rewind-modal-actions flex items-center justify-between gap-3.5 border-t border-[color-mix(in_srgb,var(--border-subtle)_80%,transparent)] bg-[color-mix(in_srgb,var(--surface-card)_94%,transparent)] px-6 pb-[22px] pt-[18px] max-sm:flex-col max-sm:items-stretch">
           {(exportResult || exportError) && (
             <div
-              className={`claude-rewind-modal-store-feedback claude-rewind-modal-store-feedback--inline${exportError ? " is-error" : " is-success"}`}
+              className={`claude-rewind-modal-store-feedback claude-rewind-modal-store-feedback--inline mr-3.5 flex min-w-0 flex-1 flex-col gap-2 rounded-[14px] border px-3.5 py-3 text-xs leading-[1.6] max-sm:mr-0 max-sm:w-full ${exportError ? "is-error border-[color-mix(in_srgb,#ef4444_32%,transparent)] bg-[color-mix(in_srgb,var(--surface-card)_78%,transparent)] text-[#fca5a5]" : "is-success border-[color-mix(in_srgb,#22c55e_36%,transparent)] bg-[color-mix(in_srgb,#22c55e_10%,var(--surface-card))] text-[var(--text-muted)]"}`}
               role="status"
               aria-live="polite"
               data-testid="claude-rewind-store-feedback"
@@ -721,19 +769,21 @@ export function ClaudeRewindConfirmDialog({
                 <span>{exportError}</span>
               ) : (
                 <>
-                  <div className="claude-rewind-modal-store-feedback-copy">
-                    <span className="claude-rewind-modal-store-feedback-title">
+                  <div className="claude-rewind-modal-store-feedback-copy min-w-0">
+                    <span className="claude-rewind-modal-store-feedback-title text-[13px] font-bold text-[var(--text-strong)]">
                       {t("rewind.storeSuccessTitle", {
                         count: exportResult?.fileCount ?? 0,
                       })}
                     </span>
                     <span>{t("rewind.storeSuccessPrefix")}</span>
-                    <code>{exportResult?.outputPath ?? ""}</code>
+                    <code className="block break-words text-[var(--text-strong)]">
+                      {exportResult?.outputPath ?? ""}
+                    </code>
                   </div>
-                  <div className="claude-rewind-modal-store-feedback-actions">
+                  <div className="claude-rewind-modal-store-feedback-actions flex justify-start">
                     <button
                       type="button"
-                      className="ghost claude-rewind-modal-inline-button"
+                      className="ghost claude-rewind-modal-inline-button min-h-[34px] rounded-[10px]"
                       onClick={() => {
                         void handleRevealStoredChanges();
                       }}
@@ -746,10 +796,10 @@ export function ClaudeRewindConfirmDialog({
               )}
             </div>
           )}
-          <div className="claude-rewind-modal-actions-primary">
+          <div className="claude-rewind-modal-actions-primary flex flex-none justify-end gap-2.5 max-sm:w-full max-sm:flex-col-reverse">
             <button
               type="button"
-              className="ghost claude-rewind-modal-button"
+              className="ghost claude-rewind-modal-button min-h-[38px] min-w-32 rounded-[12px] max-sm:w-full"
               onClick={handleStoreChanges}
               disabled={
                 isBusy ||
@@ -766,7 +816,7 @@ export function ClaudeRewindConfirmDialog({
             <button
               ref={cancelButtonRef}
               type="button"
-              className="ghost claude-rewind-modal-button"
+              className="ghost claude-rewind-modal-button min-h-[38px] min-w-32 rounded-[12px] max-sm:w-full"
               onClick={onCancel}
               disabled={isBusy || isExporting}
               data-testid="claude-rewind-cancel-button"
@@ -775,7 +825,7 @@ export function ClaudeRewindConfirmDialog({
             </button>
             <button
               type="button"
-              className="primary claude-rewind-modal-button claude-rewind-modal-button--confirm"
+              className="primary claude-rewind-modal-button claude-rewind-modal-button--confirm min-h-[38px] min-w-32 rounded-[12px] border border-[color-mix(in_srgb,#2563eb,transparent_18%)] bg-[linear-gradient(180deg,#2563eb_0%,#1d4ed8_100%)] text-[#eef4ff] shadow-[0_12px_24px_rgba(37,99,235,0.24)] disabled:shadow-none max-sm:w-full"
               onClick={() => {
                 void onConfirm();
               }}
@@ -791,44 +841,66 @@ export function ClaudeRewindConfirmDialog({
 
         {isFullDiffOpen && selectedFile ? (
           <div
-            className="claude-rewind-modal-full-diff-overlay"
+            className="claude-rewind-modal-full-diff-overlay absolute inset-0 z-[5] flex items-stretch justify-center bg-[rgb(6_10_18/0.72)] p-[18px] backdrop-blur-[10px] max-sm:p-3"
             role="presentation"
             onClick={() => setIsFullDiffOpen(false)}
             data-testid="claude-rewind-full-diff-overlay"
           >
             <div
-              className="claude-rewind-modal-full-diff-card"
+              className="claude-rewind-modal-full-diff-card flex h-full w-[min(1440px,100%)] flex-col overflow-hidden rounded-[20px] border border-[color-mix(in_srgb,var(--border-stronger)_82%,transparent)] bg-[linear-gradient(180deg,color-mix(in_srgb,var(--surface-popover,var(--surface-card))_98%,#0b1220_2%),color-mix(in_srgb,var(--surface-card)_92%,#0b1220_8%))] shadow-[0_24px_72px_rgba(0,0,0,0.42)]"
               role="dialog"
               aria-modal="true"
               aria-label={selectedFile.filePath}
               onClick={(event) => event.stopPropagation()}
               data-testid="claude-rewind-full-diff-dialog"
             >
-              <div className="claude-rewind-modal-full-diff-header">
-                <div className="claude-rewind-modal-diff-title-row">
-                  <span className="claude-rewind-modal-file-icon" aria-hidden>
+              <div className="claude-rewind-modal-full-diff-header flex items-start justify-between gap-4 border-b border-[color-mix(in_srgb,var(--border-subtle)_82%,transparent)] px-5 pb-3.5 pt-[18px] max-md:flex-col max-md:items-stretch">
+                <div className="claude-rewind-modal-diff-title-row flex items-start gap-3">
+                  <span
+                    className="claude-rewind-modal-file-icon inline-flex h-[18px] w-[18px] flex-shrink-0 items-center justify-center"
+                    aria-hidden
+                  >
                     <FileIcon filePath={selectedFile.filePath} />
                   </span>
-                  <div className="claude-rewind-modal-diff-title-group">
-                    <strong title={selectedFile.filePath}>
+                  <div className="claude-rewind-modal-diff-title-group flex min-w-0 flex-col gap-0.5">
+                    <strong
+                      className="block min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-[15px] text-[var(--text-strong)]"
+                      title={selectedFile.filePath}
+                    >
                       {selectedFile.fileName}
                     </strong>
-                    <code>{selectedFile.filePath}</code>
+                    <code className="break-words text-xs text-[var(--text-faint)]">
+                      {selectedFile.filePath}
+                    </code>
                   </div>
                 </div>
-                <div className="claude-rewind-modal-full-diff-actions">
+                <div className="claude-rewind-modal-full-diff-actions inline-flex flex-wrap items-center justify-end gap-2.5">
                   <span
-                    className={`claude-rewind-modal-file-status-text is-${selectedFile.status.toLowerCase()}`}
+                    className={`claude-rewind-modal-file-status-text is-${selectedFile.status.toLowerCase()} inline-flex items-center whitespace-nowrap text-[11px] font-bold ${
+                      selectedFile.status === "A"
+                        ? "text-[#22c55e]"
+                        : selectedFile.status === "M"
+                          ? "text-[#60a5fa]"
+                          : selectedFile.status === "D"
+                            ? "text-[#f87171]"
+                            : selectedFile.status === "R"
+                              ? "text-[#c084fc]"
+                              : "text-[var(--text-muted)]"
+                    }`}
                   >
                     {formatFileStatusLabel(t, selectedFile.status)}
                   </span>
-                  <span className="claude-rewind-modal-diff-meta">
-                    <span className="is-add">+{selectedFile.additions}</span>
-                    <span className="is-del">-{selectedFile.deletions}</span>
+                  <span className="claude-rewind-modal-diff-meta inline-flex flex-wrap items-center gap-3 text-xs font-bold text-[var(--text-muted)]">
+                    <span className="is-add text-[#22c55e]">
+                      +{selectedFile.additions}
+                    </span>
+                    <span className="is-del text-[#f87171]">
+                      -{selectedFile.deletions}
+                    </span>
                   </span>
                   <button
                     type="button"
-                    className="ghost claude-rewind-modal-inline-button"
+                    className="ghost claude-rewind-modal-inline-button min-h-[34px] rounded-[10px]"
                     onClick={() => setIsFullDiffOpen(false)}
                     data-testid="claude-rewind-full-diff-close-button"
                   >
@@ -837,10 +909,10 @@ export function ClaudeRewindConfirmDialog({
                 </div>
               </div>
 
-              <div className="claude-rewind-modal-full-diff-body">
+              <div className="claude-rewind-modal-full-diff-body min-h-0 flex-1 overflow-auto">
                 {selectedFile.diff?.trim() ? (
                   hasStructuredFullDiff ? (
-                    <div className="claude-rewind-modal-full-diff-content">
+                    <div className="claude-rewind-modal-full-diff-content pb-3.5 pt-2.5">
                       <div className="diff-viewer-output diff-viewer-output-flat claude-rewind-modal-diff-theme claude-rewind-modal-full-diff-theme">
                         <div
                           className="diffs-container"
@@ -859,14 +931,14 @@ export function ClaudeRewindConfirmDialog({
                     </div>
                   ) : (
                     <pre
-                      className="claude-rewind-modal-full-diff-raw"
+                      className="claude-rewind-modal-full-diff-raw m-0 whitespace-pre-wrap break-words px-5 pb-[22px] pt-[18px] font-[inherit] text-[var(--text-strong)]"
                       data-testid="claude-rewind-full-diff-raw"
                     >
                       {selectedFile.diff}
                     </pre>
                   )
                 ) : (
-                  <div className="claude-rewind-modal-empty">
+                  <div className="claude-rewind-modal-empty rounded-2xl border border-dashed border-[color-mix(in_srgb,var(--border-subtle)_80%,transparent)] bg-[color-mix(in_srgb,var(--surface-card)_78%,transparent)] px-4 py-3.5 text-xs leading-[1.6] text-[var(--text-faint)]">
                     {t("rewind.diffEmpty")}
                   </div>
                 )}

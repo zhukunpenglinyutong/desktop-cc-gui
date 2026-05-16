@@ -226,24 +226,24 @@ export function AgentSettingsSection({ active }: AgentSettingsSectionProps) {
       )}
 
       {agentDialog.open && (
-        <div className="vendor-dialog-overlay" onClick={closeAgentDialog}>
-          <div className="vendor-dialog vendor-dialog-wide" onClick={(event) => event.stopPropagation()}>
-            <div className="vendor-dialog-header">
+        <div className="vendor-dialog-overlay fixed inset-0 bg-black/60 backdrop-blur-[2px] flex items-center justify-center z-[100]" onClick={closeAgentDialog}>
+          <div className="vendor-dialog vendor-dialog-wide w-[min(600px,90vw)] max-h-[86vh] rounded-[14px] bg-[var(--surface-card-strong)] border border-[var(--border-stronger)] shadow-[0_20px_50px_rgba(0,0,0,0.3)] flex flex-col overflow-hidden" onClick={(event) => event.stopPropagation()}>
+            <div className="vendor-dialog-header flex items-center justify-between px-[18px] py-3.5 border-b border-[var(--border-muted)] [&_h3]:text-[15px] [&_h3]:font-semibold [&_h3]:text-[var(--text-primary)] [&_h3]:m-0">
               <h3>
                 {agentDialog.mode === "create"
                   ? t("settings.agent.dialog.addTitle")
                   : t("settings.agent.dialog.editTitle")}
               </h3>
-              <button type="button" className="vendor-dialog-close" onClick={closeAgentDialog}>
+              <button type="button" className="vendor-dialog-close bg-transparent border-0 text-[var(--text-secondary)] text-xl cursor-pointer px-1 leading-none hover:text-[var(--text-primary)]" onClick={closeAgentDialog}>
                 <span className="codicon codicon-close" />
               </button>
             </div>
-            <div className="vendor-dialog-body">
-              <div className="vendor-form-group">
+            <div className="vendor-dialog-body px-[18px] py-4 overflow-y-auto flex-1 flex flex-col gap-4">
+              <div className="vendor-form-group flex flex-col gap-[5px] [&>label]:text-xs [&>label]:font-medium [&>label]:text-[var(--text-primary)] [&>label]:inline-flex [&>label]:items-center [&>label]:gap-1.5">
                 <label htmlFor="agent-name-input">{t("settings.agent.dialog.name")}</label>
                 <input
                   id="agent-name-input"
-                  className="vendor-input"
+                  className="vendor-input w-full px-2.5 py-[7px] rounded-md border border-[var(--border-muted)] bg-[var(--surface-card)] text-[var(--text-primary)] text-[13px] outline-none transition-[border-color] duration-150 box-border focus:border-[var(--text-accent)]"
                   value={agentDialog.name}
                   placeholder={t("settings.agent.dialog.namePlaceholder")}
                   maxLength={20}
@@ -257,7 +257,7 @@ export function AgentSettingsSection({ active }: AgentSettingsSectionProps) {
                 />
                 <div className="settings-agent-counter">{agentDialog.name.length}/20</div>
               </div>
-              <div className="vendor-form-group">
+              <div className="vendor-form-group flex flex-col gap-[5px] [&>label]:text-xs [&>label]:font-medium [&>label]:text-[var(--text-primary)] [&>label]:inline-flex [&>label]:items-center [&>label]:gap-1.5">
                 <label>{t("settings.agent.dialog.icon")}</label>
                 <div
                   className="settings-agent-icon-groups"
@@ -300,11 +300,11 @@ export function AgentSettingsSection({ active }: AgentSettingsSectionProps) {
                   ))}
                 </div>
               </div>
-              <div className="vendor-form-group">
+              <div className="vendor-form-group flex flex-col gap-[5px] [&>label]:text-xs [&>label]:font-medium [&>label]:text-[var(--text-primary)] [&>label]:inline-flex [&>label]:items-center [&>label]:gap-1.5">
                 <label htmlFor="agent-prompt-input">{t("settings.agent.dialog.prompt")}</label>
                 <textarea
                   id="agent-prompt-input"
-                  className="vendor-code-editor settings-agent-prompt-editor"
+                  className="vendor-code-editor settings-agent-prompt-editor w-full px-2.5 py-2 rounded-md border border-[var(--border-muted)] bg-[var(--surface-card)] text-[var(--text-primary)] font-[var(--font-code)] text-xs leading-[1.5] resize-y outline-none box-border focus:border-[var(--text-accent)]"
                   rows={8}
                   maxLength={100000}
                   value={agentDialog.prompt}
@@ -320,16 +320,16 @@ export function AgentSettingsSection({ active }: AgentSettingsSectionProps) {
                 <div className="settings-agent-counter">
                   {agentDialog.prompt.length}/100000
                 </div>
-                <div className="vendor-hint">{t("settings.agent.dialog.promptHint")}</div>
+                <div className="vendor-hint text-[11px] text-[var(--text-secondary)] mt-0.5">{t("settings.agent.dialog.promptHint")}</div>
               </div>
               {agentDialog.nameError && (
-                <div className="vendor-json-error">{agentDialog.nameError}</div>
+                <div className="vendor-json-error text-[#e55] text-[11px] mt-1">{agentDialog.nameError}</div>
               )}
             </div>
-            <div className="vendor-dialog-footer">
+            <div className="vendor-dialog-footer flex items-center justify-end gap-2 px-[18px] py-3 border-t border-[var(--border-muted)]">
               <button
                 type="button"
-                className="vendor-btn-cancel"
+                className="vendor-btn-cancel px-4 py-1.5 bg-[var(--vendor-button-primary-soft,transparent)] border border-[var(--vendor-button-primary-border,var(--border-muted))] rounded-md text-[var(--vendor-button-primary,var(--text-primary))] text-xs font-semibold cursor-pointer transition-[background,border-color,color] duration-150"
                 onClick={closeAgentDialog}
                 disabled={agentDialog.saving}
               >
@@ -356,20 +356,20 @@ export function AgentSettingsSection({ active }: AgentSettingsSectionProps) {
 
       {agentDelete.open && agentDelete.target && (
         <div
-          className="vendor-dialog-overlay"
+          className="vendor-dialog-overlay fixed inset-0 bg-black/60 backdrop-blur-[2px] flex items-center justify-center z-[100]"
           onClick={() => setAgentDelete({ open: false, target: null, deleting: false })}
         >
-          <div className="vendor-dialog vendor-dialog-sm" onClick={(event) => event.stopPropagation()}>
-            <div className="vendor-dialog-header">
+          <div className="vendor-dialog vendor-dialog-sm w-[min(400px,90vw)] max-h-[86vh] rounded-[14px] bg-[var(--surface-card-strong)] border border-[var(--border-stronger)] shadow-[0_20px_50px_rgba(0,0,0,0.3)] flex flex-col overflow-hidden" onClick={(event) => event.stopPropagation()}>
+            <div className="vendor-dialog-header flex items-center justify-between px-[18px] py-3.5 border-b border-[var(--border-muted)] [&_h3]:text-[15px] [&_h3]:font-semibold [&_h3]:text-[var(--text-primary)] [&_h3]:m-0">
               <h3>{t("settings.agent.deleteConfirmTitle")}</h3>
             </div>
-            <div className="vendor-dialog-body">
+            <div className="vendor-dialog-body px-[18px] py-4 overflow-y-auto flex-1 flex flex-col gap-4">
               <div>{t("settings.agent.deleteConfirmMessage", { name: agentDelete.target.name })}</div>
             </div>
-            <div className="vendor-dialog-footer">
+            <div className="vendor-dialog-footer flex items-center justify-end gap-2 px-[18px] py-3 border-t border-[var(--border-muted)]">
               <button
                 type="button"
-                className="vendor-btn-cancel"
+                className="vendor-btn-cancel px-4 py-1.5 bg-[var(--vendor-button-primary-soft,transparent)] border border-[var(--vendor-button-primary-border,var(--border-muted))] rounded-md text-[var(--vendor-button-primary,var(--text-primary))] text-xs font-semibold cursor-pointer transition-[background,border-color,color] duration-150"
                 onClick={() => setAgentDelete({ open: false, target: null, deleting: false })}
                 disabled={agentDelete.deleting}
               >
@@ -392,15 +392,15 @@ export function AgentSettingsSection({ active }: AgentSettingsSectionProps) {
 
       {agentExport.open && (
         <div
-          className="vendor-dialog-overlay"
+          className="vendor-dialog-overlay fixed inset-0 bg-black/60 backdrop-blur-[2px] flex items-center justify-center z-[100]"
           onClick={() => setAgentExport({ open: false, saving: false, selectedIds: new Set<string>() })}
         >
-          <div className="vendor-dialog vendor-dialog-wide" onClick={(event) => event.stopPropagation()}>
-            <div className="vendor-dialog-header">
+          <div className="vendor-dialog vendor-dialog-wide w-[min(600px,90vw)] max-h-[86vh] rounded-[14px] bg-[var(--surface-card-strong)] border border-[var(--border-stronger)] shadow-[0_20px_50px_rgba(0,0,0,0.3)] flex flex-col overflow-hidden" onClick={(event) => event.stopPropagation()}>
+            <div className="vendor-dialog-header flex items-center justify-between px-[18px] py-3.5 border-b border-[var(--border-muted)] [&_h3]:text-[15px] [&_h3]:font-semibold [&_h3]:text-[var(--text-primary)] [&_h3]:m-0">
               <h3>{t("settings.agent.exportDialog.title")}</h3>
               <button
                 type="button"
-                className="vendor-dialog-close"
+                className="vendor-dialog-close bg-transparent border-0 text-[var(--text-secondary)] text-xl cursor-pointer px-1 leading-none hover:text-[var(--text-primary)]"
                 onClick={() =>
                   setAgentExport({ open: false, saving: false, selectedIds: new Set<string>() })
                 }
@@ -408,7 +408,7 @@ export function AgentSettingsSection({ active }: AgentSettingsSectionProps) {
                 <span className="codicon codicon-close" />
               </button>
             </div>
-            <div className="vendor-dialog-body">
+            <div className="vendor-dialog-body px-[18px] py-4 overflow-y-auto flex-1 flex flex-col gap-4">
               <div className="settings-agent-dialog-summary">
                 {t("settings.agent.exportDialog.selectHint")}
               </div>
@@ -463,7 +463,7 @@ export function AgentSettingsSection({ active }: AgentSettingsSectionProps) {
                 })}
               </div>
             </div>
-            <div className="vendor-dialog-footer settings-agent-dialog-footer">
+            <div className="vendor-dialog-footer settings-agent-dialog-footer flex items-center justify-end gap-2 px-[18px] py-3 border-t border-[var(--border-muted)]">
               <div className="settings-help">
                 {t("settings.agent.importDialog.selectedCount", {
                   count: agentExport.selectedIds.size,
@@ -471,7 +471,7 @@ export function AgentSettingsSection({ active }: AgentSettingsSectionProps) {
               </div>
               <button
                 type="button"
-                className="vendor-btn-cancel"
+                className="vendor-btn-cancel px-4 py-1.5 bg-[var(--vendor-button-primary-soft,transparent)] border border-[var(--vendor-button-primary-border,var(--border-muted))] rounded-md text-[var(--vendor-button-primary,var(--text-primary))] text-xs font-semibold cursor-pointer transition-[background,border-color,color] duration-150"
                 onClick={() =>
                   setAgentExport({ open: false, saving: false, selectedIds: new Set<string>() })
                 }
@@ -498,7 +498,7 @@ export function AgentSettingsSection({ active }: AgentSettingsSectionProps) {
 
       {agentImport.open && (
         <div
-          className="vendor-dialog-overlay"
+          className="vendor-dialog-overlay fixed inset-0 bg-black/60 backdrop-blur-[2px] flex items-center justify-center z-[100]"
           onClick={() =>
             setAgentImport({
               open: false,
@@ -510,12 +510,12 @@ export function AgentSettingsSection({ active }: AgentSettingsSectionProps) {
             })
           }
         >
-          <div className="vendor-dialog vendor-dialog-wide" onClick={(event) => event.stopPropagation()}>
-            <div className="vendor-dialog-header">
+          <div className="vendor-dialog vendor-dialog-wide w-[min(600px,90vw)] max-h-[86vh] rounded-[14px] bg-[var(--surface-card-strong)] border border-[var(--border-stronger)] shadow-[0_20px_50px_rgba(0,0,0,0.3)] flex flex-col overflow-hidden" onClick={(event) => event.stopPropagation()}>
+            <div className="vendor-dialog-header flex items-center justify-between px-[18px] py-3.5 border-b border-[var(--border-muted)] [&_h3]:text-[15px] [&_h3]:font-semibold [&_h3]:text-[var(--text-primary)] [&_h3]:m-0">
               <h3>{t("settings.agent.importDialog.title")}</h3>
               <button
                 type="button"
-                className="vendor-dialog-close"
+                className="vendor-dialog-close bg-transparent border-0 text-[var(--text-secondary)] text-xl cursor-pointer px-1 leading-none hover:text-[var(--text-primary)]"
                 onClick={() =>
                   setAgentImport({
                     open: false,
@@ -530,7 +530,7 @@ export function AgentSettingsSection({ active }: AgentSettingsSectionProps) {
                 <span className="codicon codicon-close" />
               </button>
             </div>
-            <div className="vendor-dialog-body">
+            <div className="vendor-dialog-body px-[18px] py-4 overflow-y-auto flex-1 flex flex-col gap-4">
               {agentImport.loading ? (
                 <div className="settings-agent-empty">
                   <span className="codicon codicon-loading codicon-modifier-spin" />
@@ -659,7 +659,7 @@ export function AgentSettingsSection({ active }: AgentSettingsSectionProps) {
               ) : null}
             </div>
             {!agentImport.loading && agentImport.preview && (
-              <div className="vendor-dialog-footer settings-agent-dialog-footer">
+              <div className="vendor-dialog-footer settings-agent-dialog-footer flex items-center justify-end gap-2 px-[18px] py-3 border-t border-[var(--border-muted)]">
                 <div className="settings-help">
                   {t("settings.agent.importDialog.selectedCount", {
                     count: agentImport.selectedIds.size,
@@ -667,7 +667,7 @@ export function AgentSettingsSection({ active }: AgentSettingsSectionProps) {
                 </div>
                 <button
                   type="button"
-                  className="vendor-btn-cancel"
+                  className="vendor-btn-cancel px-4 py-1.5 bg-[var(--vendor-button-primary-soft,transparent)] border border-[var(--vendor-button-primary-border,var(--border-muted))] rounded-md text-[var(--vendor-button-primary,var(--text-primary))] text-xs font-semibold cursor-pointer transition-[background,border-color,color] duration-150"
                   onClick={() =>
                     setAgentImport({
                       open: false,

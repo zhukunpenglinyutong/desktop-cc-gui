@@ -30,14 +30,14 @@ function renderContent(
 ) {
   if (loading) {
     return (
-      <div id={contentId} className="vendor-codex-global-config-body">
+      <div id={contentId} className="vendor-codex-global-config-body px-4 py-3.5 flex flex-col gap-2">
         <div className="vendor-current-config-loading">{loadingLabel}</div>
       </div>
     );
   }
   if (error) {
     return (
-      <div id={contentId} className="vendor-codex-global-config-body">
+      <div id={contentId} className="vendor-codex-global-config-body px-4 py-3.5 flex flex-col gap-2">
         <div className="vendor-current-config-empty">
           {errorLabel}: {error}
         </div>
@@ -46,14 +46,14 @@ function renderContent(
   }
   if (!exists) {
     return (
-      <div id={contentId} className="vendor-codex-global-config-body">
+      <div id={contentId} className="vendor-codex-global-config-body px-4 py-3.5 flex flex-col gap-2">
         <div className="vendor-current-config-empty">{emptyLabel}</div>
       </div>
     );
   }
   return (
     <div id={contentId} className="vendor-codex-global-config-body">
-      <pre className="vendor-codex-global-config-content">{content}</pre>
+      <pre className="vendor-codex-global-config-content m-0 max-h-[260px] overflow-auto border border-[var(--border-muted)] rounded-lg bg-[var(--surface-card-strong)] text-[var(--text-primary)] font-[var(--font-code)] text-xs leading-[1.5] px-3 py-2.5">{content}</pre>
       {truncated ? <div className="settings-help">{truncatedLabel}</div> : null}
     </div>
   );
@@ -85,11 +85,11 @@ export function CurrentCodexGlobalConfigCard({
 
   return (
     <div className="vendor-current-config vendor-codex-global-config">
-      <div className="vendor-codex-global-config-section">
+      <div className="vendor-codex-global-config-section [&:not(:first-child)]:border-t [&:not(:first-child)]:border-[var(--border-muted)]">
         <div className="vendor-current-config-header">
           <button
             type="button"
-            className="vendor-codex-global-config-toggle"
+            className="vendor-codex-global-config-toggle border-0 bg-transparent text-[var(--text-primary)] p-0 m-0 inline-flex items-center gap-1.5 cursor-pointer hover:text-[var(--text-accent)]"
             onClick={() => setConfigExpanded((value) => !value)}
             aria-expanded={configExpanded}
             aria-controls="codex-global-config-content"
@@ -99,7 +99,7 @@ export function CurrentCodexGlobalConfigCard({
               {t("settings.vendor.currentCodexGlobalConfig")}
             </span>
           </button>
-          <code className="vendor-codex-global-config-path">
+          <code className="vendor-codex-global-config-path text-xs text-[var(--text-secondary)] bg-[color-mix(in_srgb,var(--surface-card-strong)_82%,transparent)] border border-[var(--border-muted)] rounded-lg px-2 py-0.5">
             {t("settings.vendor.codexGlobalConfigPath")}
           </code>
         </div>
@@ -119,11 +119,11 @@ export function CurrentCodexGlobalConfigCard({
           : null}
       </div>
 
-      <div className="vendor-codex-global-config-section">
+      <div className="vendor-codex-global-config-section [&:not(:first-child)]:border-t [&:not(:first-child)]:border-[var(--border-muted)]">
         <div className="vendor-current-config-header">
           <button
             type="button"
-            className="vendor-codex-global-config-toggle"
+            className="vendor-codex-global-config-toggle border-0 bg-transparent text-[var(--text-primary)] p-0 m-0 inline-flex items-center gap-1.5 cursor-pointer hover:text-[var(--text-accent)]"
             onClick={() => setAuthExpanded((value) => !value)}
             aria-expanded={authExpanded}
             aria-controls="codex-auth-config-content"
@@ -133,17 +133,17 @@ export function CurrentCodexGlobalConfigCard({
               {t("settings.vendor.currentCodexAuthConfig")}
             </span>
           </button>
-          <div className="vendor-codex-global-config-header-actions">
+          <div className="vendor-codex-global-config-header-actions inline-flex items-center gap-2">
             <button
               type="button"
-              className="vendor-codex-sensitive-toggle"
+              className="vendor-codex-sensitive-toggle border border-[var(--border-muted)] rounded-[7px] bg-[var(--surface-card-strong)] text-[var(--text-secondary)] px-2 py-[3px] text-[11px] cursor-pointer hover:text-[var(--text-primary)] hover:border-[var(--border-stronger)]"
               onClick={handleToggleAuthSensitive}
             >
               {authSensitiveVisible
                 ? t("settings.vendor.codexAuthConfigHideSensitive")
                 : t("settings.vendor.codexAuthConfigShowSensitive")}
             </button>
-            <code className="vendor-codex-global-config-path">
+            <code className="vendor-codex-global-config-path text-xs text-[var(--text-secondary)] bg-[color-mix(in_srgb,var(--surface-card-strong)_82%,transparent)] border border-[var(--border-muted)] rounded-lg px-2 py-0.5">
               {t("settings.vendor.codexAuthConfigPath")}
             </code>
           </div>

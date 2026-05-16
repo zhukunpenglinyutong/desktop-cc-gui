@@ -557,17 +557,17 @@ export function VendorSettingsPanel({
                 {codex.codexProviderError}
               </div>
             )}
-            <div className="vendor-codex-runtime-card">
-              <div className="vendor-codex-runtime-card-copy">
-                <div className="vendor-codex-runtime-card-title-row">
-                  <div className="vendor-codex-runtime-card-title">
+            <div className="vendor-codex-runtime-card flex items-start justify-between gap-5 px-[18px] py-4 border border-[var(--border-muted)] rounded-[14px] bg-[linear-gradient(135deg,color-mix(in_srgb,var(--surface-card)_92%,var(--vendor-button-primary-soft))_0%,var(--surface-card)_100%)] max-[900px]:flex-col">
+              <div className="vendor-codex-runtime-card-copy flex-1 min-w-0">
+                <div className="vendor-codex-runtime-card-title-row flex items-center flex-wrap gap-2">
+                  <div className="vendor-codex-runtime-card-title text-base font-bold text-[var(--text-primary)]">
                     {t("settings.backgroundTerminal")}
                   </div>
-                  <span className="vendor-codex-runtime-card-badge">
+                  <span className="vendor-codex-runtime-card-badge inline-flex items-center justify-center min-h-[22px] px-2 rounded-full text-[11px] font-bold text-[var(--vendor-button-primary)] bg-[color-mix(in_srgb,var(--vendor-button-primary)_12%,transparent)]">
                     {t("settings.experimentalBadgeOfficial")}
                   </span>
                 </div>
-                <div className="vendor-codex-runtime-card-description">
+                <div className="vendor-codex-runtime-card-description mt-1.5 text-[var(--text-secondary)] leading-[1.5]">
                   {t("settings.backgroundTerminalDesc")}
                 </div>
                 <div className="settings-help">
@@ -591,7 +591,7 @@ export function VendorSettingsPanel({
                 {unifiedExecActionNotice ? (
                   <div className="settings-help">{unifiedExecActionNotice.message}</div>
                 ) : null}
-                <div className="vendor-codex-runtime-card-actions">
+                <div className="vendor-codex-runtime-card-actions mt-2.5 flex flex-wrap gap-2">
                   <Button
                     type="button"
                     variant="outline"

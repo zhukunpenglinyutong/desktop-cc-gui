@@ -36,17 +36,25 @@ export function ProjectCard({
   );
 
   return (
-    <div className="kanban-project-card" onClick={onSelect}>
-      <div className="kanban-project-card-header">
+    <div
+      className="kanban-project-card bg-[var(--bg-primary,#fff)] border border-[var(--border-color,#e5e5e5)] rounded-[10px] p-4 cursor-pointer transition-[border-color,box-shadow] duration-150 overflow-hidden min-w-0 hover:border-[var(--border-hover,#ccc)] hover:shadow-[0_2px_8px_rgba(0,0,0,0.06)]"
+      onClick={onSelect}
+    >
+      <div className="kanban-project-card-header flex items-center justify-between mb-3">
         <FolderOpen size={18} className="kanban-project-card-icon" />
-        <span className="kanban-project-card-name">{workspace.name}</span>
+        <span className="kanban-project-card-name text-[15px] font-semibold text-[var(--text-primary,#111)] overflow-hidden text-ellipsis whitespace-nowrap flex-1 min-w-0">
+          {workspace.name}
+        </span>
       </div>
-      <div className="kanban-project-card-footer">
-        <span className="kanban-project-card-path" title={workspace.path}>
+      <div className="kanban-project-card-footer flex flex-col gap-2 text-xs text-[var(--text-tertiary,#999)] min-w-0">
+        <span
+          className="kanban-project-card-path overflow-hidden text-ellipsis whitespace-nowrap min-w-0"
+          title={workspace.path}
+        >
           {displayPath}
         </span>
         {taskCount > 0 && (
-          <span className="kanban-project-card-count">
+          <span className="kanban-project-card-count inline-flex items-center self-start py-0.5 px-2 text-[11px] font-medium text-[var(--text-secondary,#666)] bg-[var(--bg-secondary,#f5f5f5)] rounded whitespace-nowrap shrink-0">
             {t("kanban.projects.taskCount", { count: taskCount })}
           </span>
         )}

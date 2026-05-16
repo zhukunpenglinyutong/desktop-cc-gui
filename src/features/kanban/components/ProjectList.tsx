@@ -26,17 +26,17 @@ export function ProjectList({
   const mainWorkspaces = workspaces.filter((w) => w.kind !== "worktree");
 
   return (
-    <div className="kanban-projects">
-      <div className="kanban-projects-topbar">
+    <div className="kanban-projects flex flex-col h-full overflow-hidden">
+      <div className="kanban-projects-topbar flex items-center py-3 pr-6 pl-20 border-b border-[var(--border-color,#e5e5e5)] relative z-[3] [-webkit-app-region:drag] [&>*]:[-webkit-app-region:no-drag]">
         <KanbanModeToggle appMode="kanban" onAppModeChange={onAppModeChange} />
       </div>
-      <div className="kanban-projects-content">
-        <div className="kanban-projects-header">
+      <div className="kanban-projects-content flex-1 overflow-y-auto py-8 px-10">
+        <div className="kanban-projects-header flex items-start justify-between mb-6">
           <div>
-            <h1 className="kanban-projects-title">
+            <h1 className="kanban-projects-title text-2xl font-bold m-0 mb-1 text-[var(--text-primary,#111)]">
               {t("kanban.projects.title")}
             </h1>
-            <p className="kanban-projects-subtitle">
+            <p className="kanban-projects-subtitle text-sm text-[var(--text-secondary,#666)] m-0">
               {t("kanban.projects.subtitle")}
             </p>
           </div>
@@ -61,7 +61,7 @@ export function ProjectList({
             </button>
           </div>
         ) : (
-          <div className="kanban-projects-grid">
+          <div className="kanban-projects-grid grid grid-cols-[repeat(auto-fill,minmax(280px,1fr))] gap-4">
             {mainWorkspaces.map((workspace) => (
               <ProjectCard
                 key={workspace.id}

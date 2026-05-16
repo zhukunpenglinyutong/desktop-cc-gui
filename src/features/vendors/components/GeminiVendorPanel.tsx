@@ -159,7 +159,7 @@ export function GeminiVendorPanel() {
           </div>
 
           <div className="vendor-gemini-auth-grid">
-            <div className="vendor-form-group vendor-gemini-auth-field vendor-gemini-auth-field-wide">
+            <div className="vendor-form-group vendor-gemini-auth-field vendor-gemini-auth-field-wide flex flex-col gap-[5px] [&>label]:text-xs [&>label]:font-medium [&>label]:text-[var(--text-primary)] [&>label]:inline-flex [&>label]:items-center [&>label]:gap-1.5">
               <Select
                 value={draft.authMode}
                 onValueChange={(nextValue) => {
@@ -200,11 +200,11 @@ export function GeminiVendorPanel() {
             </div>
 
             {shouldShowApiBaseUrl && (
-              <div className="vendor-form-group vendor-gemini-auth-field vendor-gemini-auth-field-wide">
+              <div className="vendor-form-group vendor-gemini-auth-field vendor-gemini-auth-field-wide flex flex-col gap-[5px] [&>label]:text-xs [&>label]:font-medium [&>label]:text-[var(--text-primary)] [&>label]:inline-flex [&>label]:items-center [&>label]:gap-1.5">
                 <label htmlFor="gemini-api-base-url">GOOGLE_GEMINI_BASE_URL</label>
                 <input
                   id="gemini-api-base-url"
-                  className="vendor-input"
+                  className="vendor-input w-full px-2.5 py-[7px] rounded-md border border-[var(--border-muted)] bg-[var(--surface-card)] text-[var(--text-primary)] text-[13px] outline-none transition-[border-color] duration-150 box-border focus:border-[var(--text-accent)]"
                   value={draft.apiBaseUrl}
                   placeholder="https://your-gemini-endpoint.example.com"
                   onChange={(event) => {
@@ -215,12 +215,12 @@ export function GeminiVendorPanel() {
             )}
 
             {shouldShowApiKey && (
-              <div className="vendor-form-group vendor-gemini-auth-field vendor-gemini-auth-field-wide">
+              <div className="vendor-form-group vendor-gemini-auth-field vendor-gemini-auth-field-wide flex flex-col gap-[5px] [&>label]:text-xs [&>label]:font-medium [&>label]:text-[var(--text-primary)] [&>label]:inline-flex [&>label]:items-center [&>label]:gap-1.5">
                 <label htmlFor="gemini-api-key">{keyLabel}</label>
-                <div className="vendor-input-row">
+                <div className="vendor-input-row flex gap-1 items-center [&_.vendor-input]:flex-1">
                   <input
                     id="gemini-api-key"
-                    className="vendor-input"
+                    className="vendor-input w-full px-2.5 py-[7px] rounded-md border border-[var(--border-muted)] bg-[var(--surface-card)] text-[var(--text-primary)] text-[13px] outline-none transition-[border-color] duration-150 box-border focus:border-[var(--text-accent)]"
                     type={showKey ? "text" : "password"}
                     value={keyValue}
                     placeholder="AIza..."
@@ -249,12 +249,12 @@ export function GeminiVendorPanel() {
             )}
 
             {isVertexMode && (
-              <div className="vendor-model-grid vendor-gemini-auth-field vendor-gemini-auth-field-wide">
+              <div className="vendor-model-grid vendor-gemini-auth-field vendor-gemini-auth-field-wide grid grid-cols-2 gap-2.5 [&_label]:text-[11px] [&_label]:text-[var(--text-secondary)] [&_label]:mb-[3px] [&_label]:block">
                 <div>
                   <label htmlFor="gemini-cloud-project">GOOGLE_CLOUD_PROJECT</label>
                   <input
                     id="gemini-cloud-project"
-                    className="vendor-input"
+                    className="vendor-input w-full px-2.5 py-[7px] rounded-md border border-[var(--border-muted)] bg-[var(--surface-card)] text-[var(--text-primary)] text-[13px] outline-none transition-[border-color] duration-150 box-border focus:border-[var(--text-accent)]"
                     value={draft.googleCloudProject}
                     placeholder="my-gcp-project-id"
                     onChange={(event) => {
@@ -266,7 +266,7 @@ export function GeminiVendorPanel() {
                   <label htmlFor="gemini-cloud-location">GOOGLE_CLOUD_LOCATION</label>
                   <input
                     id="gemini-cloud-location"
-                    className="vendor-input"
+                    className="vendor-input w-full px-2.5 py-[7px] rounded-md border border-[var(--border-muted)] bg-[var(--surface-card)] text-[var(--text-primary)] text-[13px] outline-none transition-[border-color] duration-150 box-border focus:border-[var(--text-accent)]"
                     value={draft.googleCloudLocation}
                     placeholder="global / us-central1"
                     onChange={(event) => {
@@ -278,13 +278,13 @@ export function GeminiVendorPanel() {
             )}
 
             {draft.authMode === "vertex_service_account" && (
-              <div className="vendor-form-group vendor-gemini-auth-field vendor-gemini-auth-field-wide">
+              <div className="vendor-form-group vendor-gemini-auth-field vendor-gemini-auth-field-wide flex flex-col gap-[5px] [&>label]:text-xs [&>label]:font-medium [&>label]:text-[var(--text-primary)] [&>label]:inline-flex [&>label]:items-center [&>label]:gap-1.5">
                 <label htmlFor="gemini-google-application-credentials">
                   GOOGLE_APPLICATION_CREDENTIALS
                 </label>
                 <input
                   id="gemini-google-application-credentials"
-                  className="vendor-input"
+                  className="vendor-input w-full px-2.5 py-[7px] rounded-md border border-[var(--border-muted)] bg-[var(--surface-card)] text-[var(--text-primary)] text-[13px] outline-none transition-[border-color] duration-150 box-border focus:border-[var(--text-accent)]"
                   value={draft.googleApplicationCredentials}
                   placeholder="<service-account-json-path>"
                   onChange={(event) => {
@@ -303,7 +303,7 @@ export function GeminiVendorPanel() {
       <section className="vendor-gemini-card vendor-gemini-card-env">
         <label className="vendor-gemini-section-title">{t("settings.vendor.gemini.envVars")}</label>
         <textarea
-          className="vendor-code-editor vendor-gemini-env-editor"
+          className="vendor-code-editor vendor-gemini-env-editor w-full px-2.5 py-2 rounded-md border border-[var(--border-muted)] bg-[var(--surface-card)] text-[var(--text-primary)] font-[var(--font-code)] text-xs leading-[1.5] resize-y outline-none box-border focus:border-[var(--text-accent)]"
           value={draft.envText}
           onChange={(event) => {
             handleDraftEnvTextChange(event.target.value);
@@ -326,7 +326,7 @@ export function GeminiVendorPanel() {
         </div>
       </section>
 
-      {error && <div className="vendor-json-error">{error}</div>}
+      {error && <div className="vendor-json-error text-[#e55] text-[11px] mt-1">{error}</div>}
       {savedAt && (
         <div className="vendor-gemini-saved-hint">
           {t("settings.vendor.gemini.savedAt", {
