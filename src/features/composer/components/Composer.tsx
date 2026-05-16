@@ -1882,22 +1882,25 @@ export const Composer = memo(function Composer({
   return (
     <footer className={`composer${disabled ? " is-disabled" : ""}`}>
       <div
-        className={`composer-shell${isComposerCollapsed ? " is-collapsed" : ""}`}
+        className={`composer-shell grid gap-2 rounded-none border-none bg-transparent p-0 focus-within:border-transparent focus-within:shadow-none${isComposerCollapsed ? " is-collapsed overflow-hidden" : ""}`}
       >
         {isComposerCollapsed ? (
           <button
             type="button"
-            className={`composer-shell-collapsed-strip${isProcessing ? " is-processing" : ""}`}
+            className={`composer-shell-collapsed-strip flex min-h-[26px] w-full items-center justify-center gap-2 rounded-full border-0 border-t border-t-[color-mix(in_srgb,var(--border-subtle)_92%,transparent)] bg-[color-mix(in_srgb,var(--surface-control)_88%,transparent)] px-2 shadow-none hover:bg-[color-mix(in_srgb,var(--surface-hover)_82%,transparent)] hover:text-foreground ${isProcessing ? "is-processing text-foreground" : "text-muted-foreground"}`}
             onClick={handleExpandComposer}
             aria-label={t("composer.expandInput")}
             title={t("composer.expandInput")}
           >
-            <span className="composer-shell-collapsed-rail" aria-hidden>
+            <span
+              className="composer-shell-collapsed-rail hidden items-center gap-[3px] [&>span]:h-[2px] [&>span]:w-[10px] [&>span]:rounded-full [&>span]:bg-[color-mix(in_srgb,var(--text-faint)_70%,transparent)] [&>span]:opacity-60"
+              aria-hidden
+            >
               <span />
               <span />
               <span />
             </span>
-            <span className="composer-shell-collapsed-text">
+            <span className="composer-shell-collapsed-text whitespace-nowrap text-[11px] font-semibold">
               {isProcessing
                 ? t("composer.collapsedProcessing")
                 : t("composer.expandInput")}
@@ -1907,7 +1910,7 @@ export const Composer = memo(function Composer({
           <>
             {/* Management toolbar (help, skill, commons, kanban) removed -- was disabled with {false && ...} */}
             {hasScrollableContextStack ? (
-              <div className="composer-context-stack">
+              <div className="composer-context-stack grid min-h-0 max-h-[min(44vh,420px)] gap-0 overflow-y-auto overflow-x-hidden overscroll-contain pr-1">
                 {selectedManualMemories.length > 0 && (
                   <div className="composer-memory-strip">
                     <div className="composer-memory-strip-head">

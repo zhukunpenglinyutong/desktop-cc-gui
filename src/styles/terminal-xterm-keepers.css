@@ -1,0 +1,68 @@
+/**
+ * Keeper file extracted from terminal.css during Phase 9.4.
+ *
+ * Reason: these rules cannot be inlined as Tailwind utilities on the
+ * `TerminalDock.tsx` / `TerminalPanel.tsx` React `className` props because:
+ *
+ *  1. `.terminal-surface .xterm`, `.terminal-surface .xterm-screen`,
+ *     `.terminal-surface .xterm-viewport`, and `.terminal-surface .composition-view`
+ *     target DOM nodes injected at runtime by `@xterm/xterm` via
+ *     `Terminal.open(container)` (see `useTerminalSession.ts`). Those nodes
+ *     are not in any React tree, so cascading CSS rules are the only way to
+ *     style them.
+ *
+ *  2. The `.terminal-panel` custom-property bundle
+ *     (`--terminal-background`, `--terminal-foreground`, `--terminal-cursor`,
+ *     `--terminal-selection`, `--terminal-font-family`) is read at runtime by
+ *     `useTerminalSession.ts::getTerminalAppearance` via
+ *     `getComputedStyle(.terminal-surface).getPropertyValue(...)`. The values
+ *     contain nested `var()` with comma-separated fallbacks, which are awkward
+ *     to encode as Tailwind arbitrary-value classes. Defining them once on the
+ *     panel root via a real CSS rule keeps the cascade legible.
+ *
+ *  3. `.terminal-panel { grid-column: 1 / -1; grid-row: 5; }` is a cross-file
+ *     contract with `src/styles/main.css:4`
+ *     (`.main { grid-template-rows: auto 1fr auto auto auto auto }`). The
+ *     terminal occupies row 5 of the main grid. Keeping the placement in this
+ *     keeper file lets that contract be audited in one place alongside this
+ *     comment.
+ *
+ * Same pattern as Phase 7 `git-history-shell-keepers.css` (custom-prop bundle
+ * consumed by descendant cascade) and Phase 5 `release-notes-markdown.css` /
+ * `note-cards-rich-input.css` (third-party DOM cascade).
+ */
+
+.terminal-panel {
+  grid-column: 1 / -1;
+  grid-row: 5;
+  --terminal-background: var(--theme-terminal-background, #11151b);
+  --terminal-foreground: var(--theme-terminal-foreground, #d9dee7);
+  --terminal-cursor: var(--theme-terminal-cursor, #d9dee7);
+  --terminal-selection: var(
+    --theme-terminal-selection,
+    rgba(60, 140, 220, 0.4)
+  );
+  --terminal-font-family: var(--theme-terminal-font-family, var(--code-font-family));
+}
+
+.terminal-surface .xterm,
+.terminal-surface .xterm-screen,
+.terminal-surface .xterm-viewport {
+  background: var(--terminal-background) !important;
+}
+
+.terminal-surface .xterm {
+  height: 100%;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 8px 12px 8px;
+}
+
+.terminal-surface .xterm-viewport {
+  height: 100% !important;
+}
+
+.terminal-surface .composition-view {
+  background: var(--terminal-background);
+  color: var(--terminal-foreground);
+}

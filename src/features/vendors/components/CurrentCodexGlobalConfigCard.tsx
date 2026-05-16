@@ -31,14 +31,14 @@ function renderContent(
   if (loading) {
     return (
       <div id={contentId} className="vendor-codex-global-config-body px-4 py-3.5 flex flex-col gap-2">
-        <div className="vendor-current-config-loading">{loadingLabel}</div>
+        <div className="vendor-current-config-loading text-[var(--text-secondary)] text-[13px] px-4 py-[18px]">{loadingLabel}</div>
       </div>
     );
   }
   if (error) {
     return (
       <div id={contentId} className="vendor-codex-global-config-body px-4 py-3.5 flex flex-col gap-2">
-        <div className="vendor-current-config-empty">
+        <div className="vendor-current-config-empty text-[var(--text-secondary)] text-[13px] px-4 py-[18px]">
           {errorLabel}: {error}
         </div>
       </div>
@@ -47,7 +47,7 @@ function renderContent(
   if (!exists) {
     return (
       <div id={contentId} className="vendor-codex-global-config-body px-4 py-3.5 flex flex-col gap-2">
-        <div className="vendor-current-config-empty">{emptyLabel}</div>
+        <div className="vendor-current-config-empty text-[var(--text-secondary)] text-[13px] px-4 py-[18px]">{emptyLabel}</div>
       </div>
     );
   }
@@ -84,9 +84,9 @@ export function CurrentCodexGlobalConfigCard({
   };
 
   return (
-    <div className="vendor-current-config vendor-codex-global-config">
+    <div className="vendor-current-config vendor-codex-global-config border border-[var(--border-muted)] rounded-[10px] bg-[var(--surface-card)]">
       <div className="vendor-codex-global-config-section [&:not(:first-child)]:border-t [&:not(:first-child)]:border-[var(--border-muted)]">
-        <div className="vendor-current-config-header">
+        <div className="vendor-current-config-header flex items-center justify-between gap-2.5 px-4 py-3.5 border-b border-[var(--border-muted)]">
           <button
             type="button"
             className="vendor-codex-global-config-toggle border-0 bg-transparent text-[var(--text-primary)] p-0 m-0 inline-flex items-center gap-1.5 cursor-pointer hover:text-[var(--text-accent)]"
@@ -95,7 +95,7 @@ export function CurrentCodexGlobalConfigCard({
             aria-controls="codex-global-config-content"
           >
             {configExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
-            <span className="vendor-current-config-title">
+            <span className="vendor-current-config-title text-base font-bold text-[var(--text-primary)]">
               {t("settings.vendor.currentCodexGlobalConfig")}
             </span>
           </button>
@@ -120,7 +120,7 @@ export function CurrentCodexGlobalConfigCard({
       </div>
 
       <div className="vendor-codex-global-config-section [&:not(:first-child)]:border-t [&:not(:first-child)]:border-[var(--border-muted)]">
-        <div className="vendor-current-config-header">
+        <div className="vendor-current-config-header flex items-center justify-between gap-2.5 px-4 py-3.5 border-b border-[var(--border-muted)]">
           <button
             type="button"
             className="vendor-codex-global-config-toggle border-0 bg-transparent text-[var(--text-primary)] p-0 m-0 inline-flex items-center gap-1.5 cursor-pointer hover:text-[var(--text-accent)]"
@@ -129,7 +129,7 @@ export function CurrentCodexGlobalConfigCard({
             aria-controls="codex-auth-config-content"
           >
             {authExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
-            <span className="vendor-current-config-title">
+            <span className="vendor-current-config-title text-base font-bold text-[var(--text-primary)]">
               {t("settings.vendor.currentCodexAuthConfig")}
             </span>
           </button>

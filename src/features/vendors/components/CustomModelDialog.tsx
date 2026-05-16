@@ -178,7 +178,7 @@ export function CustomModelDialog({
   return (
     <div className="vendor-dialog-overlay fixed inset-0 bg-black/60 backdrop-blur-[2px] flex items-center justify-center z-[100]" onClick={onClose}>
       <div
-        className="vendor-dialog vendor-dialog-wide vendor-model-manager-dialog w-[min(600px,90vw)] max-h-[86vh] rounded-[14px] bg-[var(--surface-card-strong)] border border-[var(--border-stronger)] shadow-[0_20px_50px_rgba(0,0,0,0.3)] flex flex-col overflow-hidden"
+        className="vendor-dialog vendor-dialog-wide vendor-model-manager-dialog !w-[min(640px,90vw)] max-h-[86vh] rounded-[14px] bg-[var(--surface-card-strong)] border border-[var(--border-stronger)] shadow-[0_20px_50px_rgba(0,0,0,0.3)] flex flex-col overflow-hidden"
         onClick={(event) => event.stopPropagation()}
       >
         <div className="vendor-dialog-header flex items-center justify-between px-[18px] py-3.5 border-b border-[var(--border-muted)] [&_h3]:text-[15px] [&_h3]:font-semibold [&_h3]:text-[var(--text-primary)] [&_h3]:m-0">
@@ -196,25 +196,25 @@ export function CustomModelDialog({
         <div className="vendor-dialog-body px-[18px] py-4 overflow-y-auto flex-1 flex flex-col gap-4">
           <div className="vendor-hint text-[11px] text-[var(--text-secondary)] mt-0.5">{t("settings.vendor.modelManager.description")}</div>
 
-          <div className="vendor-model-manager-list" role="list">
+          <div className="vendor-model-manager-list flex flex-col gap-2" role="list">
             {models.length === 0 && !isAdding ? (
-              <div className="vendor-empty">{t("settings.vendor.modelManager.empty")}</div>
+              <div className="vendor-empty text-center px-5 py-[30px] text-[var(--text-secondary)] text-[13px] border border-dashed border-[var(--border-muted)] rounded-lg bg-[var(--surface-card)]">{t("settings.vendor.modelManager.empty")}</div>
             ) : (
               models.map((model) => (
-                <div key={model.id} className="vendor-model-manager-item" role="listitem">
-                  <div className="vendor-model-manager-main">
-                    <div className="vendor-model-manager-id">{model.id}</div>
+                <div key={model.id} className="vendor-model-manager-item flex items-start gap-2.5 px-2.5 py-2 rounded-lg border border-[var(--border-muted)] bg-[var(--surface-card)]" role="listitem">
+                  <div className="vendor-model-manager-main flex-1 min-w-0 flex flex-col gap-0.5">
+                    <div className="vendor-model-manager-id font-[var(--font-code)] text-xs font-semibold text-[var(--text-primary)] break-all">{model.id}</div>
                     {model.label !== model.id && (
-                      <div className="vendor-model-manager-label">{model.label}</div>
+                      <div className="vendor-model-manager-label text-xs text-[var(--text-secondary)]">{model.label}</div>
                     )}
                     {model.description && (
-                      <div className="vendor-model-manager-desc">{model.description}</div>
+                      <div className="vendor-model-manager-desc text-[11px] text-[var(--text-muted)] break-words">{model.description}</div>
                     )}
                   </div>
-                  <div className="vendor-model-manager-actions">
+                  <div className="vendor-model-manager-actions flex items-center gap-1 shrink-0">
                     <button
                       type="button"
-                      className="vendor-btn-icon"
+                      className="vendor-btn-icon w-[26px] h-[26px] flex items-center justify-center bg-transparent border-0 rounded-[5px] text-[var(--text-secondary)] cursor-pointer text-[13px] transition-all duration-150 [&_svg]:w-3.5 [&_svg]:h-3.5 [&_svg]:shrink-0 hover:bg-[var(--surface-card-strong)] hover:text-[var(--text-primary)]"
                       onClick={() => handleStartEdit(model)}
                       title={t("settings.vendor.edit")}
                     >
@@ -222,7 +222,7 @@ export function CustomModelDialog({
                     </button>
                     <button
                       type="button"
-                      className="vendor-btn-icon vendor-btn-danger"
+                      className="vendor-btn-icon vendor-btn-danger w-[26px] h-[26px] flex items-center justify-center bg-transparent border-0 rounded-[5px] text-[#e55] cursor-pointer text-[13px] transition-all duration-150 [&_svg]:w-3.5 [&_svg]:h-3.5 [&_svg]:shrink-0 hover:bg-[var(--surface-card-strong)] hover:text-[#d44]"
                       onClick={() => handleDelete(model.id)}
                       title={t("settings.vendor.delete")}
                     >
@@ -235,8 +235,8 @@ export function CustomModelDialog({
           </div>
 
           {isAdding ? (
-            <div className="vendor-model-manager-form">
-              <div className="vendor-model-add">
+            <div className="vendor-model-manager-form border border-[var(--border-muted)] rounded-lg bg-[var(--surface-card)] p-2.5 flex flex-col gap-2">
+              <div className="vendor-model-add flex gap-1.5 items-center [&_.vendor-input]:flex-1">
                 <input
                   type="text"
                   className="vendor-input vendor-input-sm w-full px-2 py-[5px] rounded-md border border-[var(--border-muted)] bg-[var(--surface-card)] text-[var(--text-primary)] text-xs outline-none transition-[border-color] duration-150 box-border focus:border-[var(--text-accent)]"
@@ -270,17 +270,17 @@ export function CustomModelDialog({
               {validationError && (
                 <div className="vendor-json-error text-[#e55] text-[11px] mt-1">{validationError}</div>
               )}
-              <div className="vendor-model-manager-form-actions">
+              <div className="vendor-model-manager-form-actions flex justify-end gap-2">
                 <button
                   type="button"
-                  className="vendor-btn-cancel px-4 py-1.5 bg-[var(--vendor-button-primary-soft,transparent)] border border-[var(--vendor-button-primary-border,var(--border-muted))] rounded-md text-[var(--vendor-button-primary,var(--text-primary))] text-xs font-semibold cursor-pointer transition-[background,border-color,color] duration-150"
+                  className="vendor-btn-cancel px-4 py-1.5 bg-[var(--vendor-button-primary-soft,transparent)] border border-[var(--vendor-button-primary-border,var(--border-muted))] rounded-md text-[var(--vendor-button-primary,var(--text-primary))] text-xs font-semibold cursor-pointer transition-[background,border-color,color] duration-150 hover:border-[var(--vendor-button-primary,var(--text-accent))] hover:bg-[var(--vendor-button-primary,var(--text-accent))] hover:text-white"
                   onClick={resetEditor}
                 >
                   {t("settings.vendor.cancel")}
                 </button>
                 <button
                   type="button"
-                  className="vendor-btn-save"
+                  className="vendor-btn-save px-4 py-1.5 bg-[var(--vendor-button-primary,var(--text-accent))] border border-[var(--vendor-button-primary,var(--text-accent))] rounded-md text-white text-xs font-semibold cursor-pointer transition-[background,border-color] duration-150 hover:bg-[var(--vendor-button-primary-hover,var(--text-accent))] hover:border-[var(--vendor-button-primary-hover,var(--text-accent))] disabled:opacity-50 disabled:cursor-not-allowed"
                   onClick={handleSave}
                   disabled={!modelId.trim()}
                 >
@@ -293,7 +293,7 @@ export function CustomModelDialog({
           ) : (
             <button
               type="button"
-              className="vendor-btn-save vendor-model-manager-add-btn"
+              className="vendor-btn-save vendor-model-manager-add-btn px-4 py-1.5 bg-[var(--vendor-button-primary,var(--text-accent))] border border-[var(--vendor-button-primary,var(--text-accent))] rounded-md text-white text-xs font-semibold cursor-pointer transition-[background,border-color] duration-150 hover:bg-[var(--vendor-button-primary-hover,var(--text-accent))] hover:border-[var(--vendor-button-primary-hover,var(--text-accent))] disabled:opacity-50 disabled:cursor-not-allowed self-start"
               onClick={handleStartAdd}
             >
               + {t("settings.vendor.modelManager.addModel")}
@@ -302,7 +302,7 @@ export function CustomModelDialog({
         </div>
 
         <div className="vendor-dialog-footer flex items-center justify-end gap-2 px-[18px] py-3 border-t border-[var(--border-muted)]">
-          <button type="button" className="vendor-btn-save" onClick={onClose}>
+          <button type="button" className="vendor-btn-save px-4 py-1.5 bg-[var(--vendor-button-primary,var(--text-accent))] border border-[var(--vendor-button-primary,var(--text-accent))] rounded-md text-white text-xs font-semibold cursor-pointer transition-[background,border-color] duration-150 hover:bg-[var(--vendor-button-primary-hover,var(--text-accent))] hover:border-[var(--vendor-button-primary-hover,var(--text-accent))] disabled:opacity-50 disabled:cursor-not-allowed" onClick={onClose}>
             {t("common.close")}
           </button>
         </div>

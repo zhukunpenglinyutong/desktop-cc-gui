@@ -329,7 +329,7 @@ export function AgentSettingsSection({ active }: AgentSettingsSectionProps) {
             <div className="vendor-dialog-footer flex items-center justify-end gap-2 px-[18px] py-3 border-t border-[var(--border-muted)]">
               <button
                 type="button"
-                className="vendor-btn-cancel px-4 py-1.5 bg-[var(--vendor-button-primary-soft,transparent)] border border-[var(--vendor-button-primary-border,var(--border-muted))] rounded-md text-[var(--vendor-button-primary,var(--text-primary))] text-xs font-semibold cursor-pointer transition-[background,border-color,color] duration-150"
+                className="vendor-btn-cancel px-4 py-1.5 bg-[var(--vendor-button-primary-soft,transparent)] border border-[var(--vendor-button-primary-border,var(--border-muted))] rounded-md text-[var(--vendor-button-primary,var(--text-primary))] text-xs font-semibold cursor-pointer transition-[background,border-color,color] duration-150 hover:border-[var(--vendor-button-primary,var(--text-accent))] hover:bg-[var(--vendor-button-primary,var(--text-accent))] hover:text-white"
                 onClick={closeAgentDialog}
                 disabled={agentDialog.saving}
               >
@@ -337,7 +337,7 @@ export function AgentSettingsSection({ active }: AgentSettingsSectionProps) {
               </button>
               <button
                 type="button"
-                className="vendor-btn-save"
+                className="vendor-btn-save px-4 py-1.5 bg-[var(--vendor-button-primary,var(--text-accent))] border border-[var(--vendor-button-primary,var(--text-accent))] rounded-md text-white text-xs font-semibold cursor-pointer transition-[background,border-color] duration-150 hover:bg-[var(--vendor-button-primary-hover,var(--text-accent))] hover:border-[var(--vendor-button-primary-hover,var(--text-accent))] disabled:opacity-50 disabled:cursor-not-allowed"
                 onClick={() => {
                   void handleSaveAgent();
                 }}
@@ -369,7 +369,7 @@ export function AgentSettingsSection({ active }: AgentSettingsSectionProps) {
             <div className="vendor-dialog-footer flex items-center justify-end gap-2 px-[18px] py-3 border-t border-[var(--border-muted)]">
               <button
                 type="button"
-                className="vendor-btn-cancel px-4 py-1.5 bg-[var(--vendor-button-primary-soft,transparent)] border border-[var(--vendor-button-primary-border,var(--border-muted))] rounded-md text-[var(--vendor-button-primary,var(--text-primary))] text-xs font-semibold cursor-pointer transition-[background,border-color,color] duration-150"
+                className="vendor-btn-cancel px-4 py-1.5 bg-[var(--vendor-button-primary-soft,transparent)] border border-[var(--vendor-button-primary-border,var(--border-muted))] rounded-md text-[var(--vendor-button-primary,var(--text-primary))] text-xs font-semibold cursor-pointer transition-[background,border-color,color] duration-150 hover:border-[var(--vendor-button-primary,var(--text-accent))] hover:bg-[var(--vendor-button-primary,var(--text-accent))] hover:text-white"
                 onClick={() => setAgentDelete({ open: false, target: null, deleting: false })}
                 disabled={agentDelete.deleting}
               >
@@ -377,7 +377,7 @@ export function AgentSettingsSection({ active }: AgentSettingsSectionProps) {
               </button>
               <button
                 type="button"
-                className="vendor-btn-danger-solid"
+                className="vendor-btn-danger-solid px-4 py-1.5 bg-[#e55] border-none rounded-md text-white text-xs font-medium cursor-pointer hover:opacity-85"
                 onClick={() => {
                   void handleConfirmDeleteAgent();
                 }}
@@ -471,7 +471,7 @@ export function AgentSettingsSection({ active }: AgentSettingsSectionProps) {
               </div>
               <button
                 type="button"
-                className="vendor-btn-cancel px-4 py-1.5 bg-[var(--vendor-button-primary-soft,transparent)] border border-[var(--vendor-button-primary-border,var(--border-muted))] rounded-md text-[var(--vendor-button-primary,var(--text-primary))] text-xs font-semibold cursor-pointer transition-[background,border-color,color] duration-150"
+                className="vendor-btn-cancel px-4 py-1.5 bg-[var(--vendor-button-primary-soft,transparent)] border border-[var(--vendor-button-primary-border,var(--border-muted))] rounded-md text-[var(--vendor-button-primary,var(--text-primary))] text-xs font-semibold cursor-pointer transition-[background,border-color,color] duration-150 hover:border-[var(--vendor-button-primary,var(--text-accent))] hover:bg-[var(--vendor-button-primary,var(--text-accent))] hover:text-white"
                 onClick={() =>
                   setAgentExport({ open: false, saving: false, selectedIds: new Set<string>() })
                 }
@@ -481,7 +481,7 @@ export function AgentSettingsSection({ active }: AgentSettingsSectionProps) {
               </button>
               <button
                 type="button"
-                className="vendor-btn-save"
+                className="vendor-btn-save px-4 py-1.5 bg-[var(--vendor-button-primary,var(--text-accent))] border border-[var(--vendor-button-primary,var(--text-accent))] rounded-md text-white text-xs font-semibold cursor-pointer transition-[background,border-color] duration-150 hover:bg-[var(--vendor-button-primary-hover,var(--text-accent))] hover:border-[var(--vendor-button-primary-hover,var(--text-accent))] disabled:opacity-50 disabled:cursor-not-allowed"
                 onClick={() => {
                   void handleConfirmExportAgents();
                 }}
@@ -667,7 +667,7 @@ export function AgentSettingsSection({ active }: AgentSettingsSectionProps) {
                 </div>
                 <button
                   type="button"
-                  className="vendor-btn-cancel px-4 py-1.5 bg-[var(--vendor-button-primary-soft,transparent)] border border-[var(--vendor-button-primary-border,var(--border-muted))] rounded-md text-[var(--vendor-button-primary,var(--text-primary))] text-xs font-semibold cursor-pointer transition-[background,border-color,color] duration-150"
+                  className="vendor-btn-cancel px-4 py-1.5 bg-[var(--vendor-button-primary-soft,transparent)] border border-[var(--vendor-button-primary-border,var(--border-muted))] rounded-md text-[var(--vendor-button-primary,var(--text-primary))] text-xs font-semibold cursor-pointer transition-[background,border-color,color] duration-150 hover:border-[var(--vendor-button-primary,var(--text-accent))] hover:bg-[var(--vendor-button-primary,var(--text-accent))] hover:text-white"
                   onClick={() =>
                     setAgentImport({
                       open: false,
@@ -684,7 +684,7 @@ export function AgentSettingsSection({ active }: AgentSettingsSectionProps) {
                 </button>
                 <button
                   type="button"
-                  className="vendor-btn-save"
+                  className="vendor-btn-save px-4 py-1.5 bg-[var(--vendor-button-primary,var(--text-accent))] border border-[var(--vendor-button-primary,var(--text-accent))] rounded-md text-white text-xs font-semibold cursor-pointer transition-[background,border-color] duration-150 hover:bg-[var(--vendor-button-primary-hover,var(--text-accent))] hover:border-[var(--vendor-button-primary-hover,var(--text-accent))] disabled:opacity-50 disabled:cursor-not-allowed"
                   onClick={() => {
                     void handleConfirmImportAgents();
                   }}

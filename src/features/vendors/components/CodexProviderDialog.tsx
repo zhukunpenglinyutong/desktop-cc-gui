@@ -166,21 +166,21 @@ wire_api = "responses"`);
                 ({t("settings.vendor.optional")})
               </span>
             </label>
-            <div className="vendor-custom-models">
+            <div className="vendor-custom-models flex flex-col gap-1.5">
               {customModels.map((model) => (
-                <div key={model.id} className="vendor-model-item">
-                  <span className="vendor-model-id">{model.id}</span>
-                  <span className="vendor-model-label">{model.label}</span>
+                <div key={model.id} className="vendor-model-item flex items-center gap-2 px-2 py-[5px] rounded-[5px] bg-[var(--surface-card)] border border-[var(--border-muted)]">
+                  <span className="vendor-model-id font-[var(--font-code)] text-xs text-[var(--text-accent)] flex-1">{model.id}</span>
+                  <span className="vendor-model-label text-xs text-[var(--text-secondary)]">{model.label}</span>
                   <button
                     type="button"
-                    className="vendor-btn-icon vendor-btn-danger"
+                    className="vendor-btn-icon vendor-btn-danger w-[26px] h-[26px] flex items-center justify-center bg-transparent border-0 rounded-[5px] text-[#e55] cursor-pointer text-[13px] transition-all duration-150 [&_svg]:w-3.5 [&_svg]:h-3.5 [&_svg]:shrink-0 hover:bg-[var(--surface-card-strong)] hover:text-[#d44]"
                     onClick={() => handleRemoveModel(model.id)}
                   >
                     &times;
                   </button>
                 </div>
               ))}
-              <div className="vendor-model-add">
+              <div className="vendor-model-add flex gap-1.5 items-center [&_.vendor-input]:flex-1">
                 <input
                   type="text"
                   className="vendor-input vendor-input-sm w-full px-2 py-[5px] rounded-md border border-[var(--border-muted)] bg-[var(--surface-card)] text-[var(--text-primary)] text-xs outline-none transition-[border-color] duration-150 box-border focus:border-[var(--text-accent)]"
@@ -197,7 +197,7 @@ wire_api = "responses"`);
                 />
                 <button
                   type="button"
-                  className="vendor-btn-add-sm"
+                  className="vendor-btn-add-sm w-7 h-7 flex items-center justify-center bg-[var(--vendor-button-primary,var(--text-accent))] text-white border border-[var(--vendor-button-primary,var(--text-accent))] rounded-[5px] text-base cursor-pointer shrink-0 transition-[background,border-color] duration-150 hover:bg-[var(--vendor-button-primary-hover,var(--text-accent))] hover:border-[var(--vendor-button-primary-hover,var(--text-accent))] disabled:opacity-40 disabled:cursor-not-allowed"
                   onClick={handleAddModel}
                   disabled={!newModelId.trim() || !newModelLabel.trim()}
                 >
@@ -209,12 +209,12 @@ wire_api = "responses"`);
         </div>
 
         <div className="vendor-dialog-footer flex items-center justify-end gap-2 px-[18px] py-3 border-t border-[var(--border-muted)]">
-          <button type="button" className="vendor-btn-cancel px-4 py-1.5 bg-[var(--vendor-button-primary-soft,transparent)] border border-[var(--vendor-button-primary-border,var(--border-muted))] rounded-md text-[var(--vendor-button-primary,var(--text-primary))] text-xs font-semibold cursor-pointer transition-[background,border-color,color] duration-150" onClick={onClose}>
+          <button type="button" className="vendor-btn-cancel px-4 py-1.5 bg-[var(--vendor-button-primary-soft,transparent)] border border-[var(--vendor-button-primary-border,var(--border-muted))] rounded-md text-[var(--vendor-button-primary,var(--text-primary))] text-xs font-semibold cursor-pointer transition-[background,border-color,color] duration-150 hover:border-[var(--vendor-button-primary,var(--text-accent))] hover:bg-[var(--vendor-button-primary,var(--text-accent))] hover:text-white" onClick={onClose}>
             {t("settings.vendor.cancel")}
           </button>
           <button
             type="button"
-            className="vendor-btn-save"
+            className="vendor-btn-save px-4 py-1.5 bg-[var(--vendor-button-primary,var(--text-accent))] border border-[var(--vendor-button-primary,var(--text-accent))] rounded-md text-white text-xs font-semibold cursor-pointer transition-[background,border-color] duration-150 hover:bg-[var(--vendor-button-primary-hover,var(--text-accent))] hover:border-[var(--vendor-button-primary-hover,var(--text-accent))] disabled:opacity-50 disabled:cursor-not-allowed"
             onClick={handleSave}
             disabled={!providerName.trim()}
           >

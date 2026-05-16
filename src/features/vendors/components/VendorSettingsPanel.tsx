@@ -417,29 +417,29 @@ export function VendorSettingsPanel({
   );
 
   return (
-    <div className="vendor-settings-panel">
-      <h3 className="vendor-section-title">{t("settings.vendorsTitle")}</h3>
-      <p className="vendor-section-desc">{t("settings.vendorsDescription")}</p>
+    <div className="vendor-settings-panel mt-3 [--vendor-button-primary:var(--surface-bubble-user)] [--vendor-button-primary-hover:color-mix(in_srgb,var(--surface-bubble-user)_86%,#000_14%)] [--vendor-button-primary-border:color-mix(in_srgb,var(--surface-bubble-user)_72%,var(--border-stronger))] [--vendor-button-primary-soft:color-mix(in_srgb,var(--surface-bubble-user)_14%,var(--surface-card-strong))]">
+      <h3 className="vendor-section-title m-0 text-[30px] font-bold text-[var(--text-primary)]">{t("settings.vendorsTitle")}</h3>
+      <p className="vendor-section-desc mt-2 mb-[18px] text-[var(--text-secondary)] text-[15px]">{t("settings.vendorsDescription")}</p>
 
       <Tabs
         value={activeTab}
         onValueChange={(value) => setActiveTab(value as VendorTab)}
       >
-        <TabsList className="vendor-tabs">
-          <TabsTab className="vendor-tab" value="claude">
-            <span className="vendor-tab-label">
+        <TabsList className="vendor-tabs flex w-full max-w-[880px] gap-0 mb-2 p-0 bg-transparent border-0 border-b border-[var(--border-muted)] rounded-none [&_[data-slot=tab-indicator]]:block [&_[data-slot=tab-indicator]]:bg-[var(--primary)] [&_[data-slot=tab-indicator]]:h-0.5 [&_[data-slot=tab-indicator]]:rounded-none [&_[data-slot=tab-indicator]]:shadow-none">
+          <TabsTab className="vendor-tab flex-1 min-h-0 h-[42px] px-3.5 py-2.5 bg-transparent border-0 border-b-2 border-transparent rounded-none shadow-none text-[var(--text-secondary)] text-sm font-semibold cursor-pointer transition-[color,border-color] duration-150 hover:text-[var(--text-primary)] data-[selected]:text-[var(--primary)] data-[selected]:border-b-[var(--primary)] data-[state=active]:text-[var(--primary)] data-[state=active]:border-b-[var(--primary)]" value="claude">
+            <span className="vendor-tab-label inline-flex items-center justify-center gap-2">
               <EngineIcon engine="claude" size={14} />
               <span>Claude Code</span>
             </span>
           </TabsTab>
-          <TabsTab className="vendor-tab" value="codex">
-            <span className="vendor-tab-label">
+          <TabsTab className="vendor-tab flex-1 min-h-0 h-[42px] px-3.5 py-2.5 bg-transparent border-0 border-b-2 border-transparent rounded-none shadow-none text-[var(--text-secondary)] text-sm font-semibold cursor-pointer transition-[color,border-color] duration-150 hover:text-[var(--text-primary)] data-[selected]:text-[var(--primary)] data-[selected]:border-b-[var(--primary)] data-[state=active]:text-[var(--primary)] data-[state=active]:border-b-[var(--primary)]" value="codex">
+            <span className="vendor-tab-label inline-flex items-center justify-center gap-2">
               <EngineIcon engine="codex" size={14} />
               <span>Codex</span>
             </span>
           </TabsTab>
-          <TabsTab className="vendor-tab" value="gemini">
-            <span className="vendor-tab-label">
+          <TabsTab className="vendor-tab flex-1 min-h-0 h-[42px] px-3.5 py-2.5 bg-transparent border-0 border-b-2 border-transparent rounded-none shadow-none text-[var(--text-secondary)] text-sm font-semibold cursor-pointer transition-[color,border-color] duration-150 hover:text-[var(--text-primary)] data-[selected]:text-[var(--primary)] data-[selected]:border-b-[var(--primary)] data-[state=active]:text-[var(--primary)] data-[state=active]:border-b-[var(--primary)]" value="gemini">
+            <span className="vendor-tab-label inline-flex items-center justify-center gap-2">
               <EngineIcon engine="gemini" size={14} />
               <span>Gemini CLI</span>
             </span>
@@ -447,9 +447,9 @@ export function VendorSettingsPanel({
         </TabsList>
 
         <TabsPanel value="claude">
-          <div className="vendor-tab-content">
+          <div className="vendor-tab-content min-h-[200px] flex flex-col gap-3.5">
             <div
-              className="vendor-plugin-model-entry"
+              className="vendor-plugin-model-entry flex items-center justify-between gap-3 px-3.5 py-3 mb-3 border border-[var(--border-muted)] rounded-[10px] bg-[var(--surface-card)] cursor-pointer transition-[border-color,background] duration-150 hover:border-[var(--border-stronger)] hover:bg-[var(--surface-hover)]"
               role="button"
               tabIndex={0}
               onClick={() => openModelDialog("claude")}
@@ -460,13 +460,13 @@ export function VendorSettingsPanel({
                 }
               }}
             >
-              <div className="vendor-plugin-model-entry-main">
+              <div className="vendor-plugin-model-entry-main flex items-center gap-2 text-[var(--text-primary)] min-w-0">
                 <PackagePlus size={16} />
-                <span className="vendor-plugin-model-entry-title">
+                <span className="vendor-plugin-model-entry-title text-sm font-semibold">
                   {t("settings.vendor.pluginModels")}
                 </span>
                 {claudeModels.models.length > 0 && (
-                  <span className="vendor-plugin-model-entry-count">
+                  <span className="vendor-plugin-model-entry-count min-w-[20px] h-[20px] px-1.5 rounded-[10px] inline-flex items-center justify-center text-[11px] font-semibold text-white bg-[var(--vendor-button-primary)]">
                     {claudeModels.models.length}
                   </span>
                 )}
@@ -513,7 +513,7 @@ export function VendorSettingsPanel({
         </TabsPanel>
 
         <TabsPanel value="codex">
-          <div className="vendor-tab-content">
+          <div className="vendor-tab-content min-h-[200px] flex flex-col gap-3.5">
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
               <Button
                 size="sm"
@@ -635,7 +635,7 @@ export function VendorSettingsPanel({
               authError={codexAuthConfigError}
             />
             <div
-              className="vendor-plugin-model-entry"
+              className="vendor-plugin-model-entry flex items-center justify-between gap-3 px-3.5 py-3 mb-3 border border-[var(--border-muted)] rounded-[10px] bg-[var(--surface-card)] cursor-pointer transition-[border-color,background] duration-150 hover:border-[var(--border-stronger)] hover:bg-[var(--surface-hover)]"
               role="button"
               tabIndex={0}
               onClick={() => openModelDialog("codex")}
@@ -646,13 +646,13 @@ export function VendorSettingsPanel({
                 }
               }}
             >
-              <div className="vendor-plugin-model-entry-main">
+              <div className="vendor-plugin-model-entry-main flex items-center gap-2 text-[var(--text-primary)] min-w-0">
                 <PackagePlus size={16} />
-                <span className="vendor-plugin-model-entry-title">
+                <span className="vendor-plugin-model-entry-title text-sm font-semibold">
                   {t("settings.vendor.pluginModels")}
                 </span>
                 {codexModels.models.length > 0 && (
-                  <span className="vendor-plugin-model-entry-count">
+                  <span className="vendor-plugin-model-entry-count min-w-[20px] h-[20px] px-1.5 rounded-[10px] inline-flex items-center justify-center text-[11px] font-semibold text-white bg-[var(--vendor-button-primary)]">
                     {codexModels.models.length}
                   </span>
                 )}
@@ -693,9 +693,9 @@ export function VendorSettingsPanel({
         </TabsPanel>
 
         <TabsPanel value="gemini">
-          <div className="vendor-tab-content">
+          <div className="vendor-tab-content min-h-[200px] flex flex-col gap-3.5">
             <div
-              className="vendor-plugin-model-entry"
+              className="vendor-plugin-model-entry flex items-center justify-between gap-3 px-3.5 py-3 mb-3 border border-[var(--border-muted)] rounded-[10px] bg-[var(--surface-card)] cursor-pointer transition-[border-color,background] duration-150 hover:border-[var(--border-stronger)] hover:bg-[var(--surface-hover)]"
               role="button"
               tabIndex={0}
               onClick={() => openModelDialog("gemini")}
@@ -706,13 +706,13 @@ export function VendorSettingsPanel({
                 }
               }}
             >
-              <div className="vendor-plugin-model-entry-main">
+              <div className="vendor-plugin-model-entry-main flex items-center gap-2 text-[var(--text-primary)] min-w-0">
                 <PackagePlus size={16} />
-                <span className="vendor-plugin-model-entry-title">
+                <span className="vendor-plugin-model-entry-title text-sm font-semibold">
                   {t("settings.vendor.pluginModels")}
                 </span>
                 {geminiModels.models.length > 0 && (
-                  <span className="vendor-plugin-model-entry-count">
+                  <span className="vendor-plugin-model-entry-count min-w-[20px] h-[20px] px-1.5 rounded-[10px] inline-flex items-center justify-center text-[11px] font-semibold text-white bg-[var(--vendor-button-primary)]">
                     {geminiModels.models.length}
                   </span>
                 )}

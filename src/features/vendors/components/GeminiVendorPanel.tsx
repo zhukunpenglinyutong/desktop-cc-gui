@@ -76,11 +76,11 @@ export function GeminiVendorPanel() {
   const SelectedAuthModeIcon = GEMINI_AUTH_MODE_ICON_MAP[draft.authMode];
 
   return (
-    <div className="vendor-gemini-shell">
-      <div className="vendor-gemini-primary-grid">
-        <section className="vendor-gemini-card vendor-gemini-card-checks">
-          <div className="vendor-gemini-section-head">
-            <span className="vendor-gemini-section-title">
+    <div className="vendor-gemini-shell flex flex-col gap-2.5">
+      <div className="vendor-gemini-primary-grid grid grid-cols-[minmax(0,1fr)_minmax(0,1.3fr)] gap-2 items-stretch max-[900px]:grid-cols-1">
+        <section className="vendor-gemini-card vendor-gemini-card-checks border border-[var(--border-muted)] rounded-xl bg-[var(--surface-card)] p-2.5 flex flex-col gap-1.5 h-full self-stretch min-h-0">
+          <div className="vendor-gemini-section-head flex items-center justify-between gap-1.5">
+            <span className="vendor-gemini-section-title text-xs font-bold text-[var(--text-primary)]">
               {t("settings.vendor.gemini.preflightCount", {
                 count: preflightChecks.length,
               })}
@@ -93,20 +93,22 @@ export function GeminiVendorPanel() {
                 void refreshPreflight();
               }}
             >
-              <RefreshCw className={`h-3.5 w-3.5${preflightLoading ? " vendor-spin" : ""}`} />
+              <RefreshCw className={`h-3.5 w-3.5${preflightLoading ? " vendor-spin animate-spin" : ""}`} />
               {t("common.refresh")}
             </Button>
           </div>
-          <div className="vendor-gemini-check-list">
+          <div className="vendor-gemini-check-list grid grid-cols-3 gap-1.5 max-[1200px]:grid-cols-2 max-[900px]:grid-cols-1">
             {preflightChecks.map((check) => (
-              <div key={check.id} className="vendor-gemini-check-row" title={check.message}>
-                <div className="vendor-gemini-check-copy">
-                  <span className="vendor-gemini-check-label">{check.label}</span>
-                  <span className="vendor-gemini-check-message">{check.message}</span>
+              <div key={check.id} className="vendor-gemini-check-row grid grid-cols-[minmax(0,1fr)_auto] items-center gap-1.5 px-[9px] py-[7px] border border-[var(--border-muted)] rounded-lg bg-[linear-gradient(145deg,color-mix(in_srgb,var(--surface-card-strong)_95%,transparent)_0%,color-mix(in_srgb,var(--surface-hover)_68%,transparent)_100%)]" title={check.message}>
+                <div className="vendor-gemini-check-copy min-w-0 flex flex-col gap-px">
+                  <span className="vendor-gemini-check-label text-[11px] font-semibold text-[var(--text-primary)]">{check.label}</span>
+                  <span className="vendor-gemini-check-message text-[10px] text-[var(--text-secondary)] whitespace-nowrap overflow-hidden text-ellipsis max-[560px]:whitespace-normal max-[560px]:break-words">{check.message}</span>
                 </div>
                 <span
-                  className={`vendor-gemini-check-status ${
-                    check.status === "pass" ? "is-pass" : "is-fail"
+                  className={`vendor-gemini-check-status h-[22px] px-2 rounded-full text-[10px] font-bold tracking-[0.02em] border border-transparent inline-flex items-center justify-center shrink-0 ${
+                    check.status === "pass"
+                      ? "is-pass text-[#15803d] border-[color-mix(in_srgb,#15803d_28%,transparent)] bg-[color-mix(in_srgb,#15803d_12%,transparent)]"
+                      : "is-fail text-[#b91c1c] border-[color-mix(in_srgb,#b91c1c_28%,transparent)] bg-[color-mix(in_srgb,#b91c1c_12%,transparent)]"
                   }`}
                 >
                   {check.status.toUpperCase()}
@@ -114,7 +116,7 @@ export function GeminiVendorPanel() {
               </div>
             ))}
             {preflightChecks.length === 0 && (
-              <div className="vendor-gemini-empty-checks">
+              <div className="vendor-gemini-empty-checks col-span-full px-0.5 py-1.5 text-[11px] text-[var(--text-secondary)]">
                 {preflightLoading
                   ? t("settings.vendor.gemini.preflightLoading")
                   : t("settings.vendor.gemini.preflightEmpty")}
@@ -123,14 +125,14 @@ export function GeminiVendorPanel() {
           </div>
         </section>
 
-        <section className="vendor-gemini-card vendor-gemini-card-auth">
-          <div className="vendor-gemini-auth-header">
+        <section className="vendor-gemini-card vendor-gemini-card-auth border border-[var(--border-muted)] rounded-xl bg-[var(--surface-card)] p-2.5 flex flex-col gap-1.5 h-full self-stretch">
+          <div className="vendor-gemini-auth-header flex items-start justify-between gap-1.5 max-[900px]:flex-col max-[900px]:items-stretch">
             <div>
-              <label className="vendor-gemini-section-title">
+              <label className="vendor-gemini-section-title text-xs font-bold text-[var(--text-primary)]">
                 {t("settings.vendor.gemini.authConfig")}
               </label>
             </div>
-            <div className="vendor-gemini-auth-header-actions">
+            <div className="vendor-gemini-auth-header-actions inline-flex items-center gap-1.5 shrink-0 max-[900px]:w-full max-[900px]:justify-start">
               <Button
                 size="sm"
                 variant="outline"
@@ -158,8 +160,8 @@ export function GeminiVendorPanel() {
             </div>
           </div>
 
-          <div className="vendor-gemini-auth-grid">
-            <div className="vendor-form-group vendor-gemini-auth-field vendor-gemini-auth-field-wide flex flex-col gap-[5px] [&>label]:text-xs [&>label]:font-medium [&>label]:text-[var(--text-primary)] [&>label]:inline-flex [&>label]:items-center [&>label]:gap-1.5">
+          <div className="vendor-gemini-auth-grid grid grid-cols-2 gap-x-2 gap-y-1.5 items-start max-[900px]:grid-cols-1">
+            <div className="vendor-form-group vendor-gemini-auth-field vendor-gemini-auth-field-wide flex flex-col gap-[5px] [&>label]:text-xs [&>label]:font-medium [&>label]:text-[var(--text-primary)] [&>label]:inline-flex [&>label]:items-center [&>label]:gap-1.5 min-w-0 col-span-2 max-[900px]:col-span-1">
               <Select
                 value={draft.authMode}
                 onValueChange={(nextValue) => {
@@ -171,24 +173,24 @@ export function GeminiVendorPanel() {
               >
                 <SelectTrigger
                   id="gemini-auth-mode"
-                  className="vendor-gemini-auth-mode-trigger"
+                  className="vendor-gemini-auth-mode-trigger min-h-[30px] border-[var(--border-muted)] bg-[var(--surface-card)] text-xs"
                   aria-label={t("settings.vendor.gemini.authMode")}
                 >
-                  <span className="vendor-gemini-auth-mode-selected">
-                    <SelectedAuthModeIcon className="vendor-gemini-auth-mode-icon" />
-                    <span className="vendor-gemini-auth-mode-text">
+                  <span className="vendor-gemini-auth-mode-selected min-w-0 inline-flex items-center gap-1.5">
+                    <SelectedAuthModeIcon className="vendor-gemini-auth-mode-icon w-3.5 h-3.5 shrink-0 opacity-80" />
+                    <span className="vendor-gemini-auth-mode-text min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">
                       {modeLabel(t, draft.authMode)}
                     </span>
                   </span>
                 </SelectTrigger>
-                <SelectPopup className="vendor-gemini-auth-mode-popup">
+                <SelectPopup className="vendor-gemini-auth-mode-popup max-h-[260px]">
                   {GEMINI_AUTH_MODES.map((mode) => {
                     const ModeIcon = GEMINI_AUTH_MODE_ICON_MAP[mode];
                     return (
                       <SelectItem key={mode} value={mode}>
-                        <span className="vendor-gemini-auth-mode-option">
-                          <ModeIcon className="vendor-gemini-auth-mode-icon" />
-                          <span className="vendor-gemini-auth-mode-text">
+                        <span className="vendor-gemini-auth-mode-option min-w-0 inline-flex items-center gap-1.5">
+                          <ModeIcon className="vendor-gemini-auth-mode-icon w-3.5 h-3.5 shrink-0 opacity-80" />
+                          <span className="vendor-gemini-auth-mode-text min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">
                             {modeLabel(t, mode)}
                           </span>
                         </span>
@@ -200,7 +202,7 @@ export function GeminiVendorPanel() {
             </div>
 
             {shouldShowApiBaseUrl && (
-              <div className="vendor-form-group vendor-gemini-auth-field vendor-gemini-auth-field-wide flex flex-col gap-[5px] [&>label]:text-xs [&>label]:font-medium [&>label]:text-[var(--text-primary)] [&>label]:inline-flex [&>label]:items-center [&>label]:gap-1.5">
+              <div className="vendor-form-group vendor-gemini-auth-field vendor-gemini-auth-field-wide flex flex-col gap-[5px] [&>label]:text-xs [&>label]:font-medium [&>label]:text-[var(--text-primary)] [&>label]:inline-flex [&>label]:items-center [&>label]:gap-1.5 min-w-0 col-span-2 max-[900px]:col-span-1">
                 <label htmlFor="gemini-api-base-url">GOOGLE_GEMINI_BASE_URL</label>
                 <input
                   id="gemini-api-base-url"
@@ -215,7 +217,7 @@ export function GeminiVendorPanel() {
             )}
 
             {shouldShowApiKey && (
-              <div className="vendor-form-group vendor-gemini-auth-field vendor-gemini-auth-field-wide flex flex-col gap-[5px] [&>label]:text-xs [&>label]:font-medium [&>label]:text-[var(--text-primary)] [&>label]:inline-flex [&>label]:items-center [&>label]:gap-1.5">
+              <div className="vendor-form-group vendor-gemini-auth-field vendor-gemini-auth-field-wide flex flex-col gap-[5px] [&>label]:text-xs [&>label]:font-medium [&>label]:text-[var(--text-primary)] [&>label]:inline-flex [&>label]:items-center [&>label]:gap-1.5 min-w-0 col-span-2 max-[900px]:col-span-1">
                 <label htmlFor="gemini-api-key">{keyLabel}</label>
                 <div className="vendor-input-row flex gap-1 items-center [&_.vendor-input]:flex-1">
                   <input
@@ -234,7 +236,7 @@ export function GeminiVendorPanel() {
                   />
                   <button
                     type="button"
-                    className="vendor-btn-icon"
+                    className="vendor-btn-icon w-[26px] h-[26px] flex items-center justify-center bg-transparent border-0 rounded-[5px] text-[var(--text-secondary)] cursor-pointer text-[13px] transition-all duration-150 [&_svg]:w-3.5 [&_svg]:h-3.5 [&_svg]:shrink-0 hover:bg-[var(--surface-card-strong)] hover:text-[var(--text-primary)]"
                     onClick={() => setShowKey((current) => !current)}
                     title={
                       showKey
@@ -278,7 +280,7 @@ export function GeminiVendorPanel() {
             )}
 
             {draft.authMode === "vertex_service_account" && (
-              <div className="vendor-form-group vendor-gemini-auth-field vendor-gemini-auth-field-wide flex flex-col gap-[5px] [&>label]:text-xs [&>label]:font-medium [&>label]:text-[var(--text-primary)] [&>label]:inline-flex [&>label]:items-center [&>label]:gap-1.5">
+              <div className="vendor-form-group vendor-gemini-auth-field vendor-gemini-auth-field-wide flex flex-col gap-[5px] [&>label]:text-xs [&>label]:font-medium [&>label]:text-[var(--text-primary)] [&>label]:inline-flex [&>label]:items-center [&>label]:gap-1.5 min-w-0 col-span-2 max-[900px]:col-span-1">
                 <label htmlFor="gemini-google-application-credentials">
                   GOOGLE_APPLICATION_CREDENTIALS
                 </label>
@@ -300,17 +302,17 @@ export function GeminiVendorPanel() {
         </section>
       </div>
 
-      <section className="vendor-gemini-card vendor-gemini-card-env">
-        <label className="vendor-gemini-section-title">{t("settings.vendor.gemini.envVars")}</label>
+      <section className="vendor-gemini-card vendor-gemini-card-env border border-[var(--border-muted)] rounded-xl bg-[var(--surface-card)] p-2.5 flex flex-col gap-1.5 w-full self-stretch">
+        <label className="vendor-gemini-section-title text-xs font-bold text-[var(--text-primary)]">{t("settings.vendor.gemini.envVars")}</label>
         <textarea
-          className="vendor-code-editor vendor-gemini-env-editor w-full px-2.5 py-2 rounded-md border border-[var(--border-muted)] bg-[var(--surface-card)] text-[var(--text-primary)] font-[var(--font-code)] text-xs leading-[1.5] resize-y outline-none box-border focus:border-[var(--text-accent)]"
+          className="vendor-code-editor vendor-gemini-env-editor w-full px-2.5 py-2 rounded-md border border-[var(--border-muted)] bg-[var(--surface-card)] text-[var(--text-primary)] font-[var(--font-code)] text-xs leading-[1.5] resize-y outline-none box-border focus:border-[var(--text-accent)] min-h-[128px]"
           value={draft.envText}
           onChange={(event) => {
             handleDraftEnvTextChange(event.target.value);
           }}
           placeholder={"GEMINI_API_KEY=...\nGEMINI_MODEL=gemini-3-pro-preview"}
         />
-        <div className="vendor-gemini-actions-row">
+        <div className="vendor-gemini-actions-row flex items-center justify-end gap-2 max-[900px]:justify-start">
           <Button
             size="sm"
             onClick={() => {
@@ -328,7 +330,7 @@ export function GeminiVendorPanel() {
 
       {error && <div className="vendor-json-error text-[#e55] text-[11px] mt-1">{error}</div>}
       {savedAt && (
-        <div className="vendor-gemini-saved-hint">
+        <div className="vendor-gemini-saved-hint text-xs text-[var(--text-secondary)] pl-0.5">
           {t("settings.vendor.gemini.savedAt", {
             time: new Date(savedAt).toLocaleTimeString(),
           })}

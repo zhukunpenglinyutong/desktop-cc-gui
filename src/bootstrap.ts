@@ -20,7 +20,7 @@ import "./styles/detached-file-explorer.css";
 import "./styles/session-activity.css";
 import "./styles/prompts-animations.css";
 import "./styles/note-cards-rich-input.css";
-import "./styles/terminal.css";
+import "./styles/terminal-xterm-keepers.css";
 import "./styles/plan.css";
 import "./styles/about.css";
 import "./styles/client-documentation.css";

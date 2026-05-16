@@ -69,8 +69,8 @@ export function CurrentClaudeConfigCard({
 
   if (loading) {
     return (
-      <div className="vendor-current-config">
-        <div className="vendor-current-config-loading">
+      <div className="vendor-current-config border border-[var(--border-muted)] rounded-[10px] bg-[var(--surface-card)]">
+        <div className="vendor-current-config-loading text-[var(--text-secondary)] text-[13px] px-4 py-[18px]">
           {t("settings.loading")}
         </div>
       </div>
@@ -82,17 +82,17 @@ export function CurrentClaudeConfigCard({
   const hasAnyConfig = apiKey.length > 0 || baseUrl.length > 0;
 
   return (
-    <div className="vendor-current-config">
-      <div className="vendor-current-config-header">
-        <div className="vendor-current-config-title-row">
-          <span className="vendor-current-config-title">
+    <div className="vendor-current-config border border-[var(--border-muted)] rounded-[10px] bg-[var(--surface-card)]">
+      <div className="vendor-current-config-header flex items-center justify-between gap-2.5 px-4 py-3.5 border-b border-[var(--border-muted)]">
+        <div className="vendor-current-config-title-row flex items-center gap-2.5 min-w-0">
+          <span className="vendor-current-config-title text-base font-bold text-[var(--text-primary)]">
             {t("settings.vendor.currentConfig")}
           </span>
           {providerName && (
             <Badge
               variant="secondary"
               size="sm"
-              className="vendor-current-config-badge"
+              className="vendor-current-config-badge max-w-[280px] text-ellipsis overflow-hidden whitespace-nowrap"
             >
               {providerName}
             </Badge>
@@ -135,18 +135,18 @@ export function CurrentClaudeConfigCard({
       </div>
 
       {!hasAnyConfig ? (
-        <div className="vendor-current-config-empty">
+        <div className="vendor-current-config-empty text-[var(--text-secondary)] text-[13px] px-4 py-[18px]">
           {t("settings.vendor.noConfig")}
         </div>
       ) : (
-        <div className="vendor-current-config-body">
-          <div className="vendor-current-config-field">
-            <span className="vendor-current-config-field-icon">
+        <div className="vendor-current-config-body grid grid-cols-2 gap-2.5 px-4 py-3.5 max-[900px]:grid-cols-1">
+          <div className="vendor-current-config-field flex items-center gap-2 border border-[var(--border-muted)] rounded-lg bg-[var(--surface-card-strong)] min-h-[38px] px-2">
+            <span className="vendor-current-config-field-icon text-[var(--text-secondary)] inline-flex">
               <KeyRound size={14} />
             </span>
             <button
               type="button"
-              className="vendor-current-config-field-value"
+              className="vendor-current-config-field-value flex-1 min-w-0 border-none bg-transparent text-[var(--text-primary)] text-left font-[var(--font-code)] text-sm cursor-pointer overflow-hidden text-ellipsis whitespace-nowrap hover:text-[var(--text-accent)]"
               onClick={() => copyToClipboard(apiKey)}
               title={t("settings.vendor.dialog.apiKey")}
             >
@@ -159,7 +159,7 @@ export function CurrentClaudeConfigCard({
             {apiKey && (
               <button
                 type="button"
-                className="vendor-current-config-toggle"
+                className="vendor-current-config-toggle border-none bg-transparent text-[var(--text-secondary)] w-6 h-6 rounded inline-flex items-center justify-center cursor-pointer hover:bg-[var(--surface-hover)] hover:text-[var(--text-primary)]"
                 onClick={() => setShowApiKey((current) => !current)}
                 title={showApiKey ? t("settings.vendor.hide") : t("settings.vendor.show")}
               >
@@ -168,13 +168,13 @@ export function CurrentClaudeConfigCard({
             )}
           </div>
 
-          <div className="vendor-current-config-field">
-            <span className="vendor-current-config-field-icon">
+          <div className="vendor-current-config-field flex items-center gap-2 border border-[var(--border-muted)] rounded-lg bg-[var(--surface-card-strong)] min-h-[38px] px-2">
+            <span className="vendor-current-config-field-icon text-[var(--text-secondary)] inline-flex">
               <Globe size={14} />
             </span>
             <button
               type="button"
-              className="vendor-current-config-field-value"
+              className="vendor-current-config-field-value flex-1 min-w-0 border-none bg-transparent text-[var(--text-primary)] text-left font-[var(--font-code)] text-sm cursor-pointer overflow-hidden text-ellipsis whitespace-nowrap hover:text-[var(--text-accent)]"
               onClick={() => copyToClipboard(baseUrl)}
               title={t("settings.vendor.dialog.apiUrl")}
             >

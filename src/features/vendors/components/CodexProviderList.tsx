@@ -27,12 +27,12 @@ export function CodexProviderList({
   const providerList = Array.isArray(providers) ? providers : [];
 
   return (
-    <div className="vendor-provider-list">
-      <div className="vendor-list-header">
-        <span className="vendor-list-title">
+    <div className="vendor-provider-list flex flex-col gap-3">
+      <div className="vendor-list-header flex items-center justify-between">
+        <span className="vendor-list-title text-[13px] font-semibold text-[var(--text-primary)]">
           {t("settings.vendor.allCodexProviders")}
         </span>
-        <div className="vendor-list-actions">
+        <div className="vendor-list-actions flex items-center gap-2">
           <Button size="sm" onClick={onAdd}>
             + {t("settings.vendor.add")}
           </Button>
@@ -40,20 +40,20 @@ export function CodexProviderList({
       </div>
 
       {loading && (
-        <div className="vendor-loading">{t("settings.loading")}</div>
+        <div className="vendor-loading text-center py-5 text-[var(--text-secondary)] text-[13px]">{t("settings.loading")}</div>
       )}
 
-      <div className="vendor-cards">
+      <div className="vendor-cards flex flex-col gap-2.5">
         {providerList.map((provider) => (
           <div
             key={provider.id}
             className={cn(
-              "vendor-card",
-              provider.isActive && "active",
+              "vendor-card flex items-center justify-between p-[14px_16px] rounded-lg border border-[var(--border-muted)] bg-[var(--surface-card)] transition-[border-color] duration-150 gap-3 hover:border-[var(--border-stronger)]",
+              provider.isActive && "active border-[var(--vendor-button-primary-border)] bg-[var(--vendor-button-primary-soft)]",
             )}
           >
-            <div className="vendor-card-info">
-              <div className="vendor-card-name">
+            <div className="vendor-card-info flex flex-col gap-0.5 flex-1 min-w-0">
+              <div className="vendor-card-name text-[13px] font-medium text-[var(--text-primary)] flex items-center gap-2">
                 {provider.name}
                 {provider.customModels && provider.customModels.length > 0 && (
                   <Badge
@@ -67,12 +67,12 @@ export function CodexProviderList({
                 )}
               </div>
               {provider.remark && (
-                <div className="vendor-card-remark" title={provider.remark}>
+                <div className="vendor-card-remark text-[11px] text-[var(--text-secondary)] overflow-hidden text-ellipsis whitespace-nowrap" title={provider.remark}>
                   {provider.remark}
                 </div>
               )}
             </div>
-            <div className="vendor-card-actions">
+            <div className="vendor-card-actions flex items-center gap-1.5 shrink-0">
               {provider.isActive ? (
                 <Badge variant="outline" className="text-stone-700 dark:text-stone-200">
                   <span
@@ -90,7 +90,7 @@ export function CodexProviderList({
                   {t("settings.vendor.enable")}
                 </Button>
               )}
-              <span className="vendor-card-divider" />
+              <span className="vendor-card-divider w-px self-stretch bg-[var(--border-muted)]" />
               <Button
                 variant="ghost"
                 size="icon-xs"
@@ -114,7 +114,7 @@ export function CodexProviderList({
       </div>
 
       {!loading && providerList.length === 0 && (
-        <div className="vendor-empty">
+        <div className="vendor-empty text-center px-5 py-[30px] text-[var(--text-secondary)] text-[13px] border border-dashed border-[var(--border-muted)] rounded-lg bg-[var(--surface-card)]">
           {t("settings.vendor.emptyCodexState")}
         </div>
       )}

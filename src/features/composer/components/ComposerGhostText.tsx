@@ -45,9 +45,17 @@ export function ComposerGhostText({
   if (!suffix) return null;
 
   return (
-    <div ref={overlayRef} className="composer-ghost-text-overlay" aria-hidden>
-      <span className="composer-ghost-text-prefix">{text}</span>
-      <span className="composer-ghost-text-suffix">{suffix}</span>
+    <div
+      ref={overlayRef}
+      className="composer-ghost-text-overlay pointer-events-none absolute inset-0 m-0 overflow-hidden whitespace-pre-wrap break-words border-none p-0 font-[inherit] text-[14px] leading-[1.5]"
+      aria-hidden
+    >
+      <span className="composer-ghost-text-prefix invisible whitespace-pre-wrap break-words">
+        {text}
+      </span>
+      <span className="composer-ghost-text-suffix whitespace-pre-wrap break-words text-muted-foreground opacity-50">
+        {suffix}
+      </span>
     </div>
   );
 }

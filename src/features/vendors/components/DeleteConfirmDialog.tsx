@@ -45,12 +45,12 @@ export function DeleteConfirmDialog({
           </p>
         </div>
         <div className="vendor-dialog-footer flex items-center justify-end gap-2 px-[18px] py-3 border-t border-[var(--border-muted)]">
-          <button type="button" className="vendor-btn-cancel px-4 py-1.5 bg-[var(--vendor-button-primary-soft,transparent)] border border-[var(--vendor-button-primary-border,var(--border-muted))] rounded-md text-[var(--vendor-button-primary,var(--text-primary))] text-xs font-semibold cursor-pointer transition-[background,border-color,color] duration-150" onClick={onCancel}>
+          <button type="button" className="vendor-btn-cancel px-4 py-1.5 bg-[var(--vendor-button-primary-soft,transparent)] border border-[var(--vendor-button-primary-border,var(--border-muted))] rounded-md text-[var(--vendor-button-primary,var(--text-primary))] text-xs font-semibold cursor-pointer transition-[background,border-color,color] duration-150 hover:border-[var(--vendor-button-primary,var(--text-accent))] hover:bg-[var(--vendor-button-primary,var(--text-accent))] hover:text-white" onClick={onCancel}>
             {t("settings.vendor.cancel")}
           </button>
           <button
             type="button"
-            className="vendor-btn-danger-solid"
+            className="vendor-btn-danger-solid px-4 py-1.5 bg-[#e55] border-none rounded-md text-white text-xs font-medium cursor-pointer hover:opacity-85"
             onClick={onConfirm}
           >
             {t("settings.vendor.deleteConfirm.confirm")}
