@@ -51,3 +51,4 @@ import "./styles/spec-hub-header.css";
 import "./styles/spec-hub.css";
 import "./styles/spec-hub.reader-layout.css";
 import "./styles/workspace-home.css";
+import "./styles/proxy-status-badge.css";

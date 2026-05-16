@@ -2,9 +2,14 @@
 @import "tw-animate-css";
 
 /*
+ * Theme entry — coss.ui token registration only.
+ *
  * Theme variables are defined in themes.dark.css / themes.light.css
  * using the @coss/ui standard naming (--background, --foreground, --card, etc.)
  * This file maps those CSS variables to Tailwind theme tokens.
+ *
+ * Business styles MUST NOT live here. Feature-scoped styles belong in
+ * separate files imported from src/bootstrap.ts.
  */
 
 @theme {
@@ -51,117 +56,5 @@
     "Monaco",
     monospace
   );
-}
-
-.proxy-status-badge {
-  --proxy-badge-accent: color-mix(in srgb, #8b5cf6 78%, var(--text-strong) 22%);
-  --proxy-badge-halo: color-mix(in srgb, #8b5cf6 26%, transparent);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 999px;
-  white-space: nowrap;
-  flex-shrink: 0;
-  position: relative;
-  color: var(--proxy-badge-accent);
-  background: transparent;
-  isolation: isolate;
-}
-
-.proxy-status-badge__halo {
-  position: absolute;
-  inset: 50%;
-  width: 100%;
-  height: 100%;
-  border-radius: 999px;
-  transform: translate(-50%, -50%);
-  background:
-    radial-gradient(
-      circle,
-      color-mix(in srgb, var(--proxy-badge-halo) 100%, transparent) 0%,
-      color-mix(in srgb, var(--proxy-badge-halo) 55%, transparent) 45%,
-      transparent 76%
-    );
-  opacity: 0.55;
-  transition: opacity 180ms ease, transform 180ms ease;
-  pointer-events: none;
-  z-index: -1;
-}
-
-.proxy-status-badge__icon {
-  flex-shrink: 0;
-  stroke-width: 2.2;
-  filter:
-    drop-shadow(0 0 0.35rem color-mix(in srgb, var(--proxy-badge-accent) 28%, transparent))
-    drop-shadow(0 0 0.08rem color-mix(in srgb, var(--proxy-badge-accent) 62%, transparent));
-}
-
-.proxy-status-badge--compact {
-  width: 16px;
-  height: 16px;
-  opacity: 0.94;
-}
-
-.proxy-status-badge--prominent {
-  width: 18px;
-  height: 18px;
-  opacity: 1;
-}
-
-.proxy-status-badge--prominent .proxy-status-badge__halo {
-  width: 128%;
-  height: 128%;
-  opacity: 0.78;
-}
-
-.proxy-status-badge--animated .proxy-status-badge__icon {
-  animation: proxy-badge-zap 1.05s ease-in-out infinite;
-}
-
-.proxy-status-badge--animated .proxy-status-badge__halo {
-  animation: proxy-badge-halo 1.05s ease-in-out infinite;
-}
-
-@keyframes proxy-badge-zap {
-  0%,
-  100% {
-    transform: translateY(0) scale(1);
-    opacity: 0.9;
-  }
-  18% {
-    transform: translateY(-0.5px) scale(1.08);
-    opacity: 1;
-  }
-  36% {
-    transform: translateY(0.25px) scale(0.96);
-    opacity: 0.82;
-  }
-  54% {
-    transform: translateY(-0.35px) scale(1.04);
-    opacity: 1;
-  }
-  72% {
-    transform: translateY(0) scale(0.98);
-    opacity: 0.9;
-  }
-}
-
-@keyframes proxy-badge-halo {
-  0%,
-  100% {
-    opacity: 0.4;
-    transform: translate(-50%, -50%) scale(0.88);
-  }
-  22% {
-    opacity: 0.92;
-    transform: translate(-50%, -50%) scale(1.18);
-  }
-  48% {
-    opacity: 0.48;
-    transform: translate(-50%, -50%) scale(0.94);
-  }
-  70% {
-    opacity: 0.82;
-    transform: translate(-50%, -50%) scale(1.08);
-  }
+  --font-heading: var(--ui-font-family, "SF Pro Text", system-ui, sans-serif);
 }

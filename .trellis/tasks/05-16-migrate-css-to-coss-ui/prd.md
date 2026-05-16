@@ -113,13 +113,62 @@ stash 我的改动后 `npm run typecheck` 仍报相同 3 处错，确认与 Phas
 - 起草 `docs/migration-to-coss-ui.md`（路线图 + follow-up 占位）。
 - DoD：lint/typecheck/test 全绿；应用启动视觉跟主线一致（旧 CSS 仍在加载）。
 
-### Phase 1 — coss CSS Entry + Theme Foundation
-- 创建 `src/styles/coss.css`（Tailwind v4 entry + 完整 `@theme` block + coss design token）。
-- 在 `src/bootstrap.ts` 顶部、**所有旧 CSS 之前** import `coss.css`，让 Tailwind preflight 先于旧 CSS 进入 cascade。
-- 用 **CSS cascade layers** 约束 Tailwind utilities/preflight 在低优先级 layer，旧 CSS（无 @layer 包裹）自动进入更高优先级 anonymous layer，确保旧 UI cascade 不被 reset 破坏。
-- 接入 coss 字体变量约定（`--font-sans` / `--font-mono` / `--font-heading`）。
-- 主题切换 hook 接入 coss token，`themes.light/dark/system.css` 内容迁移到 `coss.css` 的 `:root` / `[data-theme]` block；旧 `themes.*.css` 暂留作 phase 1 对照参考，Phase 10 删除。
-- DoD：lint/typecheck/test 全绿；`tauri dev` 启动，**旧 UI 视觉零回归**（关键流程截图对比）；coss utility class 在 dev tools 中可被解析（验证 Tailwind 工作）。
+### Phase 1 — coss Token 收尾与 globals.css 清理 （**Phase 0 后 spike 后重写**）
+
+> **2026-05-16 spike 发现**：基础接入早已存在！
+> - `components.json` 已配 `@coss` registry，shadcn CLI 可直接 `add @coss/<name>`。
+> - `src/styles/globals.css` 已 `@import "tailwindcss"`，已含 `@theme` block 映射 coss 标准 token（`--color-background`、`--color-foreground` 等约 30+ 个）。
+> - `src/styles/themes.light.css:68-75` 与 `themes.dark.css:81-88` 已定义 `--background`、`--foreground`、`--card`、`--card-foreground`、`--primary`、`--primary-foreground` 等 coss 标准 token，与项目老 `--text-*` / `--surface-*` token 并存。
+> - `globals.css:46-47` 已有 `--font-sans` / `--font-mono`（指向 `--ui-font-family` 自定义变量，而非 coss 推荐 Inter / Geist Mono）。
+> - `src/bootstrap.ts` 已经把 `globals.css` 作为首行 import，cascade 顺序正确。
+>
+> 结论：**Phase 1 不再需要"接入"，只需"收尾 + 清理"**。
+
+实际 Phase 1 工作：
+
+1. **审计 coss token 完整性**：
+   - 比对 `themes.light.css` / `themes.dark.css` 中 coss 标准 token 是否覆盖 coss styling.md 期望（`destructive-foreground`、`success`、`warning`、`info` 系列与 `*-foreground`、`sidebar-*`、`ring`、`input`、`muted` 等完整链路）。
+   - 缺失的补齐；不破坏已有定义。
+2. **字体变量评估**：
+   - 当前 `--font-sans` / `--font-mono` 指向 `--ui-font-family`（SF Pro Text）。
+   - 评估是否替换为 coss 推荐 Inter / Geist Mono（按用户选 "coss 默认 design language" 应替换）；或继续保留 SF Pro 但补全 `--font-heading`。
+3. **globals.css 责任分层**：
+   - 把 globals.css 末尾的业务样式（`.proxy-status-badge*` keyframes 等）抽出到独立 `proxy-status-badge.css` 或合并入 `tabbar.css`/sidebar 区相关样式。
+   - globals.css 只保留 Tailwind import / `@theme` block / cascade layer 声明三件套，符合 coss styling.md "theme entry" 责任。
+4. **写一个 coss demo**：
+   - 在 `src/components/ui/` 或 `src/test-fixtures/` 加一个最小 demo 页面，验证 `bg-background text-foreground border` 等 coss utility class 真的能 render 正确颜色。
+   - 不直接接入主 UI，避免视觉影响。
+
+不做的（推迟到 Phase 2-9）：
+- ❌ 删除项目老 `--text-*` / `--surface-*` token（93 个旧 .css 在用，删了瞬间炸）。
+- ❌ 把 themes.*.css 内 cascade 重排成 coss `:root` / `[data-theme]` block——cascade 已经正确。
+- ❌ 给 Tailwind 配 cascade layer 强制低优先级——`@import "tailwindcss"` 默认行为 + 现状已经 work。
+
+DoD：
+- [x] coss styling.md 期望的 token 链路完整（21 个 token light/dark/`@theme` 三处都齐，仅补 `--font-heading`；详见 `phase-1-token-audit.md`）。
+- [x] 字体策略文档化在 PRD 与 `docs/migration-to-coss-ui.md`（保守保留 SF Pro Text，Phase 2+ 视觉刷新再切 Inter / Geist Mono）。
+- [x] `globals.css` 60 行（167 → 60，已剥离 `.proxy-status-badge*` 业务样式到 `proxy-status-badge.css`；60 行内容均为必需的 token 映射 + 注释，物理已无可压缩）。
+- [x] coss demo 页面通过 jsdom 测试（`__coss-smoke__/CossSmokeTest.test.tsx` 5 个 case 全过；13 个 coss utility class 验证 className contract）。
+- [x] lint / typecheck baseline 不增加（3 个 pre-existing 不变；smoke test 不引入新 typecheck 错）。
+- [ ] `tauri dev` 旧 UI 视觉零回归（需要用户在 GUI 实测；headless 跑不出）。
+
+#### Phase 1 完成状态（2026-05-16）
+
+实际产出（implement agent）：
+- 新增：`src/styles/proxy-status-badge.css`（119 行，从 globals.css 抽出）
+- 新增：`src/components/ui/__coss-smoke__/`（`CossSmokeTest.tsx` 65 行 + 测试 57 行 + README）
+- 新增：`.trellis/tasks/05-16-migrate-css-to-coss-ui/phase-1-token-audit.md`（129 行 audit）
+- 修改：`src/styles/globals.css`（167 → 60，添加 `--font-heading`，剥离业务样式）
+- 修改：`src/bootstrap.ts`（追加 `proxy-status-badge.css` 在 line 52）
+
+验证：
+- `npm run lint` ✅ pass
+- `npm run typecheck` ✅ 仅 3 个 pre-existing baseline 错（input.tsx + perfBaseline×2），无新错
+- `npx vitest run src/components/ui/__coss-smoke__/CossSmokeTest.test.tsx` ✅ 5/5 pass
+
+后续 phase 影响：
+- Phase 2-9 中如果某 feature 需要 sidebar-ring 等扩展 token，按需补到 themes.*.css。
+- Phase 10 删除 `__coss-smoke__/` fixture。
 
 ### Phase 2 — Global Chrome
 - 覆盖：`app-shell`、`sidebar.chrome`、`tabbar`、`panel-lock`、`panel-tabs`、`search-palette`、`compact-tablet`、`debug`。

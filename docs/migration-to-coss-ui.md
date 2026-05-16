@@ -28,8 +28,8 @@
 
 | Phase | 范围 | 关键产物 | 状态 |
 |---|---|---|---|
-| 0 | Preflight & Foundation | 本 README、`src/components/ui/README.md`、4 个 superseded task archive | ⏳ in progress |
-| 1 | coss CSS Entry + Theme Foundation | `src/styles/coss.css`、bootstrap.ts import 调整、cascade layers | ☐ |
+| 0 | Preflight & Foundation | 本 README、`src/components/ui/README.md`、4 个 superseded task archive | ✅ done (2026-05-16, commit `48baf63d`) |
+| 1 | coss Token 收尾 + globals.css 清理 | `--font-heading` 补齐、`globals.css` 167→60 行、抽 `proxy-status-badge.css`、`__coss-smoke__` 自测 | ✅ done (2026-05-16, 待 commit) |
 | 2 | Global Chrome | sidebar / tabbar / panel-lock / panel-tabs / search-palette / compact-tablet / debug | ☐ |
 | 3 | Threads + Messages（含 sticky header carry-forward） | messages.* / messages.streaming / history-sticky / prompts | ☐ |
 | 4 | Composer & Interaction Dialogs | composer.* / ask-user-question / approval-toasts / loading-progress / request-user-input | ☐ |
