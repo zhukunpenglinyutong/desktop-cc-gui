@@ -38,7 +38,7 @@
 | 7 | Git History | scope-shrunk → 仅 `git-history.part1-shell.css`（126 行）已删；keeper `git-history-shell-keepers.css`（49 行）保留 9 个 `--git-filetree-*` 与 `body[data-git-history-resizing]` cascade；DesktopLayout/GitHistoryPanelView Tailwind inline；git-history runtime contract + static imports 验证通过；剩余 part1/part1.overview/part2/branch-compare/pr-dialog 推 7.5/7.6/7.7 | ✅ done (2026-05-16, 待 commit) |
 | 8 | Spec Hub | **discovery + defer only**：`SpecHubPresentationalImpl.tsx` 是 113KB / `@ts-nocheck` / 单行 minified bundle，所有 225+ `spec-hub-*` className 在其中，无法 inline；Phase 8 仅产 plan doc；推 Phase 8.5（de-minify）+ Phase 8.6（inline Tailwind） | ✅ done (2026-05-16, 待 commit) |
 | 9 | File / Diff / Terminal | scope-shrunk → 仅 `detached-file-explorer.css` 处理（236 行 → 21 行 in-place keeper，bootstrap 不动）；diff/diff-viewer/file-tree/file-view-panel/terminal/opencode 推 9.1-9.5（4 个 tsx consumer > 1000 行，diff-viewer 字面值 pin，terminal cascade 与 main grid contract） | ✅ done (2026-05-16, 待 commit) |
-| 10 | Cleanup & Final Verify | 删剩余旧 CSS、跑所有 gate、人工 verify、follow-up 入库 | ☐ |
+| 10 | Cleanup & Final Verify | large-file baseline 重校、Phase 10 final wrap-up doc、PRD/roadmap 收口、sub-phase 队列移交（详见 `.trellis/tasks/05-16-migrate-css-to-coss-ui/phase-10-final-wrap-up.md`） | ✅ done (2026-05-16, 待 commit)；主任务 wrap-up；sub-phase 移交 follow-up |
 
 > 每个 phase = 1 个 PR；DoD 详见 PRD。
 
