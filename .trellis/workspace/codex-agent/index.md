@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-0.md`
-- **Total Sessions**: 6
+- **Total Sessions**: 7
 - **Last Active**: 2026-05-16
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-0.md` | ~510 | Active |
+| `journal-0.md` | ~585 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 7 | 2026-05-16 | Phase 6 Settings 切到 Tailwind/coss token (scope 收缩) | `dfbc0b07` | `chore/bump-version-0.5` |
 | 6 | 2026-05-16 | Phase 5 Home/Workspace 切到 Tailwind/coss token | `d83363f2` | `chore/bump-version-0.5` |
 | 5 | 2026-05-16 | Phase 4 Composer/Dialogs/Toasts 切到 Tailwind/coss token | `cef9fb11` | `chore/bump-version-0.5` |
 | 4 | 2026-05-16 | Phase 3 Threads/Messages 切到 Tailwind/coss token | `137fe522` | `chore/bump-version-0.5` |

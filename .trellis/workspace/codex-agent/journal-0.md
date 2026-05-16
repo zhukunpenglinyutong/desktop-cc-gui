@@ -508,3 +508,78 @@ Net delta：13 files，+334 -1604（-1270 LOC）。Bootstrap CSS imports 42 → 
 ### Next Steps
 
 - None - task complete
+
+
+## Session 7: Phase 6 Settings 切到 Tailwind/coss token (scope 收缩)
+
+**Date**: 2026-05-16
+**Task**: Phase 6 Settings 切到 Tailwind/coss token (scope 收缩)
+**Branch**: `chore/bump-version-0.5`
+
+### Summary
+
+(Add summary)
+
+### Main Changes
+
+Phase 6 完成（scope 大幅收缩，符合 PRD 安全策略）。10 个 settings.*.css / 7748 行的原范围实际处理 1 个（settings.skills.css 478 行），其余 9 文件按 vendor cluster / part2 cascade / settings frame 推到 Phase 6.5/6.6/6.7（4 条 follow-up）。
+
+## 实施
+
+- 删 settings.skills.css；settings.css 移除其 @import；SkillsSection.tsx 约 40 处 className 保留为 no-op marker 追加 coss design token Tailwind utility
+
+## Scope 收缩原因
+
+- vendor cluster 4 文件 1662 CSS + 2832 tsx consumer 单 phase 不可控
+- part2.css 5 处字面值 pin（settings-email-card-surface.test.ts）
+- part1.css 2158 CSS + SettingsView.tsx 2231 行 frame
+
+## Contract 严格遵守
+
+- codex-unified-exec-override-contract.md（CodexSection 2/2 pass）
+- terminal-shell-configuration.md（不在 SkillsSection 范围）
+
+## 0 个 coss primitive 结构性替换（同 Phase 2-5）
+
+Splitter / Tree 替换归 Phase 6 follow-up——coss 暂无现成 primitive。
+
+## 验证
+
+- lint pass
+- typecheck baseline 保持 2
+- test pass（ComposerInput.collaboration 3 个 failure 仍 pre-existing）
+- test:layout-guard 10/10
+- check:large-files:gate found=0
+- vitest 定向 SkillsSection 1/1、settings-email-card-surface 1/1、SettingsView 47/47、CodexSection 2/2、useAppSettings 22/22、VendorSettingsPanel 5/5
+
+## Follow-up（4 条新，已写入 docs/migration-to-coss-ui.md）
+
+1. Phase 6.5 vendor cluster（4 文件，6.5a/b/c sub-PR）
+2. Phase 6.6 part2 + basic-redesign + part3（含字面值 pin 处置 + --settings-basic-* token 提升）
+3. Phase 6.7 settings frame（part1.css + SettingsView frame，含 terminal-shell-configuration placeholder 约束）
+4. Splitter / Tree primitive 评估
+
+**Updated Files**:
+- 删除：src/styles/settings.skills.css
+- 修改：src/styles/settings.css、src/features/settings/components/SkillsSection.tsx
+- 新增：.trellis/tasks/05-16-migrate-css-to-coss-ui/phase-6-settings-plan.md
+- 更新：.trellis/tasks/05-16-migrate-css-to-coss-ui/prd.md、docs/migration-to-coss-ui.md
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `dfbc0b07` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
