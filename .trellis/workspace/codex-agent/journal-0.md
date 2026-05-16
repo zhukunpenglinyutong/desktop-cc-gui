@@ -1024,3 +1024,44 @@ Net：CSS 69→67；累计删 27 .css + 9 keeper；bootstrap.ts imports 41。
 ### Next Steps
 
 - None - task complete
+
+
+## Session 15: Phase 4.5d composer.part1 + 7.5 git-history.part1 + 9.1 file-tree 并行批次
+
+**Date**: 2026-05-17
+**Task**: Phase 4.5d composer.part1 + 7.5 git-history.part1 + 9.1 file-tree 并行批次
+**Branch**: `chore/bump-version-0.5`
+
+### Summary
+
+(Add summary)
+
+### Main Changes
+
+3 并行 agent（dead CSS 清扫 + 部分 inline）：
+- 4.5d composer.part1 1749→1258（-491 dead 284 行 + base/is-disabled/queue/attachment inline）
+- 7.5 git-history.part1 1430→1348（-82 dead 11 class + rule 合并）；contract + 178/178 全过
+- 9.1 file-tree 1247→981（-266 / -21%，FileTreePanel+38/RootActions+7 inline；workspace-search/file-preview/prism cascade 推 9.1b/c/d）
+
+验证：lint pass / typecheck 0 / layout-guard 46/46 / large-files retained / git-history contract pass / 全量 vitest 全过
+
+Net：CSS 67→67（全 in-place trim 不删文件）；3 css 累计 -839 行；4 tsx +60 net；bootstrap.ts 不动。
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `10678b9e` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
