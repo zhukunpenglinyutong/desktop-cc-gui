@@ -199,11 +199,52 @@ Scope 调整（写在 plan doc）：
 - 覆盖：`messages.part1/2`、`messages.streaming`、`messages.history-sticky`、`messages.status-shell`、`messages.part1-shell`、`messages.part2.css`、`prompts.css`。
 - 严格遵守 `.trellis/spec/frontend/messages-streaming-render-contract.md`（stable snapshot + live row override）。
 - **Carry-forward from `04-22-align-live-sticky-with-history-header`**（必须满足）：
-  - [ ] realtime 不再渲染 `.messages-live-sticky-user-message`（迁移到 coss 后用统一的 sticky header 出口）
-  - [ ] realtime / history 共用同一条 sticky header 出口渲染
-  - [ ] realtime 回看更早 rendered sections 时，sticky header 按 history-style handoff 接棒
-  - [ ] trimmed live latest question 仍可驱动 sticky header
+  - [x] realtime 不再渲染 `.messages-live-sticky-user-message`（迁移到 coss 后用统一的 sticky header 出口）
+  - [x] realtime / history 共用同一条 sticky header 出口渲染
+  - [x] realtime 回看更早 rendered sections 时，sticky header 按 history-style handoff 接棒
+  - [x] trimmed live latest question 仍可驱动 sticky header
 - DoD：旅程 = 列表 → 进入 thread → 实时消息流；并验证以上 4 条 sticky 行为。
+
+#### Phase 3 完成状态（2026-05-16）
+
+**Scope 大幅收缩** — 见 `phase-3-messages-plan.md` 的 "Final Phase 3 scope" 节。原 PRD 列出的 8 个 CSS 文件中，**6 个被 CSS-content 测试钉死**（`layout-swapped-platform-guard.test.ts` 用 `readCssWithImports` 读取整条 `messages.css` 链路并对字面文本做 `.toContain` 断言）。本 phase 仅处理 2 个无测试钉死的小文件：
+
+实际产出（implement agent）：
+- 新增：`.trellis/tasks/05-16-migrate-css-to-coss-ui/phase-3-messages-plan.md`（discovery + 6 文件 defer rationale + 2 文件 convert plan）
+- 新增：`src/styles/prompts-animations.css`（54 行，仅保留 3 个 `@keyframes` + `.is-highlight` / `.prompt-editor` / `.prompt-empty-card` / `.prompt-delete-confirm` 的 `animation` 触发 + `prefers-reduced-motion` 覆写——同 Phase 1 `proxy-status-badge.css` pattern）
+- 删除 2 个 .css 文件：
+  - `src/styles/prompts.css`（295 行）→ 内联 Tailwind 到 `PromptPanel.tsx`；`PromptEnhancerDialog.tsx` 2 处共享 `.prompt-section` 由 `enhance-prompt.css` 自带规则兜底，仅补 `justify-between` Tailwind 兜底原 prompts.css cascade
+  - `src/styles/messages.streaming.css`（15 行，含 1 条死 CSS `.thinking`）→ 内联 Tailwind 到 `MessagesRows.tsx` + `WorkspaceSessionActivityPanel.tsx` 的 `.markdown-live-streaming` / `.markdown-live-plain-text` className 拼接处
+- 修改：`src/styles/messages.css`（5 → 4 行，去掉 streaming `@import`）
+- 修改：`src/bootstrap.ts`（line 26 `prompts.css` → `prompts-animations.css`，import 总数 46 保持不变）
+- 修改：`src/features/prompts/components/PromptPanel.tsx`（46 处 `prompt-*` className 保留为 no-op semantic marker + 追加 Tailwind utility）
+- 修改：`src/features/composer/components/ChatInputBox/PromptEnhancerDialog.tsx`（2 处 `.prompt-section-header` 追加 `justify-between`）
+- 修改：`src/features/messages/components/MessagesRows.tsx`（3 处 `.markdown-live-streaming` / `.markdown-live-plain-text` 追加 `break-words [overflow-wrap:anywhere]` / `whitespace-pre-wrap`）
+- 修改：`src/features/session-activity/components/WorkspaceSessionActivityPanel.tsx`（1 处同上）
+
+未处理（推迟到 Phase 3.5 / 3.6 / 4）——已在 `docs/migration-to-coss-ui.md` follow-up 落档：
+- `messages.css`（entry，被测试读）
+- `messages.history-sticky.css`（394 行，7 条字面 CSS 断言 + `MessagesTimeline.tsx` 8 个 className + 30 个 `Messages.live-behavior` querySelector）
+- `messages.part1-shell.css`（222 行，`.claude-render-safe` 字面断言）
+- `messages.part1.css`（2301 行，`.messages-live-controls` + `.claude-render-safe` 字面断言）
+- `messages.part2.css`（875 行，体量太大且与 part1 / status-shell 强耦合）
+- `messages.status-shell.css`（533 行，含 `.claude-render-safe .working-spinner` 字面断言）
+
+4 条 sticky carry-forward acceptance 通过 **non-intervention** 保留：`MessagesTimeline.tsx:478-530` 的 sticky header markup 完全未改；`messagesUserPresentation.ts`、`useStickyMessageSelector` 等 hook 完全未动；45 条 `Messages.live-behavior.test.tsx` 全过（含 7 条 `.messages-live-sticky-user-message` `toBeNull` 断言 + 30+ 条 `.messages-history-sticky-header` 行为断言）。
+
+验证（同 Phase 2 baseline，无新错）：
+- `npm run lint` ✅ pass
+- `npm run typecheck` ✅ 仅 3 个 pre-existing baseline 错（input.tsx + perfBaseline×2），无新错
+- `npm run test` ✅ 仅 `ComposerInput.collaboration.test.tsx` 的 3 个 pre-existing failure
+- `npm run test:layout-guard` ✅ 10/10 pass（含 `.messages-shell.claude-render-safe` + `.messages-history-sticky-*` 字面断言全过 — 因为对应 CSS 文件未动）
+- `npm run check:large-files:gate` ✅ pass（found=0）
+- 单独跑 `Messages.live-behavior.test.tsx` ✅ 45/45 pass（覆盖 4 条 sticky carry-forward）
+- 单独跑 `WorkspaceSessionActivityPanel.test.tsx` ✅ 54/54 pass（覆盖 `.markdown-live-streaming` className 断言）
+
+后续 phase 影响：
+- bootstrap.ts CSS import 数从 46 保持 46（prompts.css 换为 prompts-animations.css，1:1 替换）；实际删除文件 = 2 个。
+- messages.css 链路从 5 imports 缩到 4。
+- 3 条新 follow-up 入 `docs/migration-to-coss-ui.md`：Phase 3.5 sticky header、Phase 3.6 message bodies、Phase 4 PromptEnhancerDialog as Dialog。
 
 ### Phase 4 — Composer & Interaction Dialogs
 - 覆盖：`composer.part1/2`、`ask-user-question-dialog`、`approval-toasts`、`request-user-input`、`loading-progress-modal`。

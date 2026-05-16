@@ -23,7 +23,7 @@ import "./styles/file-view-panel-shell.css";
 import "./styles/file-view-panel.css";
 import "./styles/detached-file-explorer.css";
 import "./styles/session-activity.css";
-import "./styles/prompts.css";
+import "./styles/prompts-animations.css";
 import "./styles/note-cards.css";
 import "./styles/terminal.css";
 import "./styles/plan.css";

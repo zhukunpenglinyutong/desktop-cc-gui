@@ -345,18 +345,29 @@ export function PromptPanel({
     const effectiveArgs = showArgsInput ? argsValue : "";
     const isHighlighted = highlightKey === prompt.path || highlightKey === prompt.name;
     return (
-      <div className={`prompt-row${isHighlighted ? " is-highlight" : ""}`} key={key}>
-        <div className="prompt-row-header">
-          <div className="prompt-name">{prompt.name}</div>
+      <div
+        className={`prompt-row flex flex-col gap-2 p-2.5 rounded-xl bg-[color:var(--surface-control)] border border-[color:var(--border-subtle)] transition-[background,border-color,box-shadow,transform] duration-[180ms] ease-out${
+          isHighlighted ? " is-highlight" : ""
+        }`}
+        key={key}
+      >
+        <div className="prompt-row-header flex flex-col gap-1">
+          <div className="prompt-name text-[13px] font-semibold text-[color:var(--text-emphasis)]">
+            {prompt.name}
+          </div>
           {prompt.description && (
-            <div className="prompt-description">{prompt.description}</div>
+            <div className="prompt-description text-xs text-[color:var(--text-subtle)]">
+              {prompt.description}
+            </div>
           )}
         </div>
-        {hint && <div className="prompt-hint">{hint}</div>}
-        <div className="prompt-actions">
+        {hint && (
+          <div className="prompt-hint text-[11px] text-[color:var(--text-faint)]">{hint}</div>
+        )}
+        <div className="prompt-actions flex items-center gap-2 flex-wrap">
           {showArgsInput ? (
             <input
-              className="prompt-args-input"
+              className="prompt-args-input flex-1 min-w-[160px] rounded-lg border border-[color:var(--border-subtle)] bg-[color:var(--surface-card)] text-[color:var(--text-emphasis)] py-1.5 px-2 text-xs placeholder:text-[color:var(--text-dim)]"
               type="text"
               placeholder={hint ?? t("prompts.arguments")}
               value={argsValue}
@@ -366,7 +377,7 @@ export function PromptPanel({
           ) : null}
           <button
             type="button"
-            className="ghost prompt-action"
+            className="ghost prompt-action py-1.5 px-2.5 text-[11px] tracking-[0.04em] uppercase"
             onClick={() => {
               const text = buildPromptText(prompt, effectiveArgs);
               if (!text) {
@@ -380,7 +391,7 @@ export function PromptPanel({
           </button>
           <button
             type="button"
-            className="ghost prompt-action"
+            className="ghost prompt-action py-1.5 px-2.5 text-[11px] tracking-[0.04em] uppercase"
             onClick={() => {
               const text = buildPromptText(prompt, effectiveArgs);
               if (!text) {
@@ -403,18 +414,18 @@ export function PromptPanel({
           </button>
         </div>
         {pendingDeletePath === prompt.path && (
-          <div className="prompt-delete-confirm">
-            <span>{t("prompts.deletePrompt")}</span>
+          <div className="prompt-delete-confirm flex items-center gap-2 text-[11px] text-[color:var(--text-subtle)] pt-0.5">
+            <span className="flex-1">{t("prompts.deletePrompt")}</span>
             <button
               type="button"
-              className="ghost prompt-action"
+              className="ghost prompt-action py-1.5 px-2.5 text-[11px] tracking-[0.04em] uppercase"
               onClick={() => void handleDeleteConfirm(prompt)}
             >
               {t("prompts.delete")}
             </button>
             <button
               type="button"
-              className="ghost prompt-action"
+              className="ghost prompt-action py-1.5 px-2.5 text-[11px] tracking-[0.04em] uppercase"
               onClick={() => setPendingDeletePath(null)}
             >
               {t("common.cancel")}
@@ -426,9 +437,9 @@ export function PromptPanel({
   };
 
   return (
-    <aside className="diff-panel prompt-panel">
+    <aside className="diff-panel prompt-panel [&]:gap-3">
       <div className="git-panel-header">
-        <div className="prompt-panel-meta">
+        <div className="prompt-panel-meta text-[11px] text-[color:var(--text-faint)]">
           {hasPrompts ? t("prompts.promptCount", { count: totalCount }) : t("prompts.noPrompts")}
         </div>
       </div>
@@ -443,24 +454,24 @@ export function PromptPanel({
           aria-label={t("prompts.filterPrompts")}
         />
       </div>
-      <div className="prompt-panel-scroll">
+      <div className="prompt-panel-scroll flex flex-col gap-3 flex-1 min-h-0 overflow-y-auto pr-0.5 pb-3">
         {editor && (
-          <div className="prompt-editor">
-            <div className="prompt-editor-row">
-              <label className="prompt-editor-label">
+          <div className="prompt-editor flex flex-col gap-2.5 p-3 rounded-xl bg-[color:var(--surface-card)] border border-[color:var(--border-subtle)]">
+            <div className="prompt-editor-row flex gap-3 flex-wrap">
+              <label className="prompt-editor-label flex flex-col gap-1.5 text-[11px] text-[color:var(--text-faint)] flex-1 min-w-[160px]">
                 {t("prompts.name")}
                 <input
-                  className="prompt-args-input"
+                  className="prompt-args-input rounded-lg border border-[color:var(--border-subtle)] bg-[color:var(--surface-card)] text-[color:var(--text-emphasis)] py-1.5 px-2 text-xs placeholder:text-[color:var(--text-dim)]"
                   type="text"
                   value={editor.name}
                   onChange={(event) => updateEditor({ name: event.target.value })}
                   placeholder={t("prompts.promptName")}
                 />
               </label>
-              <label className="prompt-editor-label">
+              <label className="prompt-editor-label flex flex-col gap-1.5 text-[11px] text-[color:var(--text-faint)] flex-1 min-w-[160px]">
                 {t("prompts.scope")}
                 <select
-                  className="prompt-scope-select"
+                  className="prompt-scope-select border border-[color:var(--border-subtle)] bg-[color:var(--surface-card)] text-[color:var(--text-emphasis)] text-xs rounded-lg py-1.5 px-2"
                   value={editor.scope}
                   onChange={(event) =>
                     updateEditor({
@@ -474,21 +485,21 @@ export function PromptPanel({
                 </select>
               </label>
             </div>
-            <div className="prompt-editor-row">
-              <label className="prompt-editor-label">
+            <div className="prompt-editor-row flex gap-3 flex-wrap">
+              <label className="prompt-editor-label flex flex-col gap-1.5 text-[11px] text-[color:var(--text-faint)] flex-1 min-w-[160px]">
                 {t("prompts.description")}
                 <input
-                  className="prompt-args-input"
+                  className="prompt-args-input rounded-lg border border-[color:var(--border-subtle)] bg-[color:var(--surface-card)] text-[color:var(--text-emphasis)] py-1.5 px-2 text-xs placeholder:text-[color:var(--text-dim)]"
                   type="text"
                   value={editor.description}
                   onChange={(event) => updateEditor({ description: event.target.value })}
                   placeholder={t("prompts.optionalDescription")}
                 />
               </label>
-              <label className="prompt-editor-label">
+              <label className="prompt-editor-label flex flex-col gap-1.5 text-[11px] text-[color:var(--text-faint)] flex-1 min-w-[160px]">
                 {t("prompts.argumentHint")}
                 <input
-                  className="prompt-args-input"
+                  className="prompt-args-input rounded-lg border border-[color:var(--border-subtle)] bg-[color:var(--surface-card)] text-[color:var(--text-emphasis)] py-1.5 px-2 text-xs placeholder:text-[color:var(--text-dim)]"
                   type="text"
                   value={editor.argumentHint}
                   onChange={(event) => updateEditor({ argumentHint: event.target.value })}
@@ -496,21 +507,25 @@ export function PromptPanel({
                 />
               </label>
             </div>
-            <label className="prompt-editor-label">
+            <label className="prompt-editor-label flex flex-col gap-1.5 text-[11px] text-[color:var(--text-faint)] flex-1 min-w-[160px]">
               {t("prompts.content")}
               <textarea
-                className="prompt-editor-textarea"
+                className="prompt-editor-textarea w-full rounded-lg border border-[color:var(--border-subtle)] bg-[color:var(--surface-card)] text-[color:var(--text-emphasis)] p-2 text-xs resize-y min-h-[120px]"
                 value={editor.content}
                 onChange={(event) => updateEditor({ content: event.target.value })}
                 placeholder={t("prompts.promptContent")}
                 rows={6}
               />
             </label>
-            {editorError && <div className="prompt-editor-error">{editorError}</div>}
-            <div className="prompt-editor-actions">
+            {editorError && (
+              <div className="prompt-editor-error text-xs text-[color:var(--status-error)]">
+                {editorError}
+              </div>
+            )}
+            <div className="prompt-editor-actions flex gap-2 justify-end">
               <button
                 type="button"
-                className="ghost prompt-action"
+                className="ghost prompt-action py-1.5 px-2.5 text-[11px] tracking-[0.04em] uppercase"
                 onClick={() => setEditor(null)}
                 disabled={isSaving}
               >
@@ -518,7 +533,7 @@ export function PromptPanel({
               </button>
               <button
                 type="button"
-                className="ghost prompt-action"
+                className="ghost prompt-action py-1.5 px-2.5 text-[11px] tracking-[0.04em] uppercase"
                 onClick={() => void handleSave()}
                 disabled={isSaving}
               >
@@ -527,9 +542,11 @@ export function PromptPanel({
             </div>
           </div>
         )}
-        <div className="prompt-section">
-          <div className="prompt-section-header">
-            <div className="prompt-section-title">{t("prompts.workspacePrompts")}</div>
+        <div className="prompt-section flex flex-col gap-2">
+          <div className="prompt-section-header flex items-center justify-between gap-2">
+            <div className="prompt-section-title text-[11px] tracking-[0.08em] uppercase text-[color:var(--text-muted)]">
+              {t("prompts.workspacePrompts")}
+            </div>
             <button
               type="button"
               className="ghost icon-button prompt-section-add"
@@ -541,26 +558,28 @@ export function PromptPanel({
             </button>
           </div>
           {workspacePrompts.length > 0 ? (
-            <div className="prompt-list">
+            <div className="prompt-list flex flex-col gap-2.5">
               {workspacePrompts.map((prompt) => renderPromptRow(prompt))}
             </div>
           ) : (
-            <div className="prompt-empty-card">
-              <ScrollText className="prompt-empty-icon" aria-hidden />
+            <div className="prompt-empty-card flex items-center gap-3 p-3 rounded-xl border border-dashed border-[color:var(--border-subtle)] bg-[color:var(--surface-card)] text-[color:var(--text-faint)]">
+              <ScrollText className="prompt-empty-icon w-6 h-6 opacity-60" aria-hidden />
               <div className="prompt-empty-text">
-                <div className="prompt-empty-title">{t("prompts.noWorkspacePrompts")}</div>
-                <div className="prompt-empty-subtitle">
+                <div className="prompt-empty-title text-xs text-[color:var(--text-subtle)] font-semibold">
+                  {t("prompts.noWorkspacePrompts")}
+                </div>
+                <div className="prompt-empty-subtitle text-xs text-[color:var(--text-faint)]">
                   {t("prompts.createOrDropWorkspace")}{" "}
                   {workspacePath ? (
                     <button
                       type="button"
-                      className="prompt-empty-link"
+                      className="prompt-empty-link border-0 bg-transparent p-0 m-0 font-inherit text-[color:var(--text-accent)] cursor-pointer underline underline-offset-2 hover:text-[color:var(--text-emphasis)]"
                       onClick={() => void onRevealWorkspacePrompts()}
                     >
                       {t("prompts.workspacePromptsFolder")}
                     </button>
                   ) : (
-                    <span className="prompt-empty-link is-disabled">
+                    <span className="prompt-empty-link is-disabled text-[color:var(--text-faint)] cursor-default no-underline">
                       {t("prompts.workspacePromptsFolder")}
                     </span>
                   )}
@@ -570,9 +589,11 @@ export function PromptPanel({
             </div>
           )}
         </div>
-        <div className="prompt-section">
-          <div className="prompt-section-header">
-            <div className="prompt-section-title">{t("prompts.globalPrompts")}</div>
+        <div className="prompt-section flex flex-col gap-2">
+          <div className="prompt-section-header flex items-center justify-between gap-2">
+            <div className="prompt-section-title text-[11px] tracking-[0.08em] uppercase text-[color:var(--text-muted)]">
+              {t("prompts.globalPrompts")}
+            </div>
             <button
               type="button"
               className="ghost icon-button prompt-section-add"
@@ -584,26 +605,28 @@ export function PromptPanel({
             </button>
           </div>
           {globalPrompts.length > 0 ? (
-            <div className="prompt-list">
+            <div className="prompt-list flex flex-col gap-2.5">
               {globalPrompts.map((prompt) => renderPromptRow(prompt))}
             </div>
           ) : (
-            <div className="prompt-empty-card">
-              <ScrollText className="prompt-empty-icon" aria-hidden />
+            <div className="prompt-empty-card flex items-center gap-3 p-3 rounded-xl border border-dashed border-[color:var(--border-subtle)] bg-[color:var(--surface-card)] text-[color:var(--text-faint)]">
+              <ScrollText className="prompt-empty-icon w-6 h-6 opacity-60" aria-hidden />
               <div className="prompt-empty-text">
-                <div className="prompt-empty-title">{t("prompts.noGeneralPrompts")}</div>
-                <div className="prompt-empty-subtitle">
+                <div className="prompt-empty-title text-xs text-[color:var(--text-subtle)] font-semibold">
+                  {t("prompts.noGeneralPrompts")}
+                </div>
+                <div className="prompt-empty-subtitle text-xs text-[color:var(--text-faint)]">
                   {t("prompts.createOrDropGeneral")}{" "}
                   {canRevealGeneralPrompts ? (
                     <button
                       type="button"
-                      className="prompt-empty-link"
+                      className="prompt-empty-link border-0 bg-transparent p-0 m-0 font-inherit text-[color:var(--text-accent)] cursor-pointer underline underline-offset-2 hover:text-[color:var(--text-emphasis)]"
                       onClick={() => void onRevealGeneralPrompts()}
                     >
                       {t("prompts.codexHomePrompts")}
                     </button>
                   ) : (
-                    <span className="prompt-empty-link is-disabled">
+                    <span className="prompt-empty-link is-disabled text-[color:var(--text-faint)] cursor-default no-underline">
                       {t("prompts.codexHomePrompts")}
                     </span>
                   )}

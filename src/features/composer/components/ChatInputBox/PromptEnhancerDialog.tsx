@@ -93,7 +93,7 @@ export const PromptEnhancerDialog = ({
         <div className="prompt-enhancer-content">
           {/* Original prompt */}
           <div className="prompt-section">
-            <div className="prompt-section-header">
+            <div className="prompt-section-header justify-between">
               <span className="codicon codicon-edit" />
               <span>{t('promptEnhancer.originalPrompt')}</span>
             </div>
@@ -104,7 +104,7 @@ export const PromptEnhancerDialog = ({
 
           {/* Enhanced prompt */}
           <div className="prompt-section">
-            <div className="prompt-section-header">
+            <div className="prompt-section-header justify-between">
               <span className="codicon codicon-sparkle" />
               <span>{t('promptEnhancer.enhancedPrompt')}</span>
             </div>

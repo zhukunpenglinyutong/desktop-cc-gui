@@ -1724,7 +1724,7 @@ export function WorkspaceSessionActivityPanel({
                     <Markdown
                       value={event.reasoningPreview || t("activityPanel.waitingForReasoning")}
                       className={`markdown reasoning-markdown session-activity-preview-markdown${
-                        event.status === "running" ? " markdown-live-streaming" : ""
+                        event.status === "running" ? " markdown-live-streaming break-words [overflow-wrap:anywhere]" : ""
                       }`}
                       codeBlockStyle="message"
                       streamingThrottleMs={event.status === "running" ? 220 : 80}

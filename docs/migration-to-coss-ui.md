@@ -31,7 +31,7 @@
 | 0 | Preflight & Foundation | 本 README、`src/components/ui/README.md`、4 个 superseded task archive | ✅ done (2026-05-16, commit `48baf63d`) |
 | 1 | coss Token 收尾 + globals.css 清理 | `--font-heading` 补齐、`globals.css` 167→60 行、抽 `proxy-status-badge.css`、`__coss-smoke__` 自测 | ✅ done (2026-05-16, 待 commit) |
 | 2 | Global Chrome | tabbar / panel-lock / panel-tabs / search-palette / compact-* / debug（sidebar 推迟到后续 phase 与业务一起处理） | ✅ done (2026-05-16, 待 commit) |
-| 3 | Threads + Messages（含 sticky header carry-forward） | messages.* / messages.streaming / history-sticky / prompts | ☐ |
+| 3 | Threads + Messages（含 sticky header carry-forward） | scope-shrunk → 仅 `prompts.css` + `messages.streaming.css` 删除；sticky header 与 message bodies 推迟到 3.5 / 3.6 | ✅ done (2026-05-16, 待 commit) |
 | 4 | Composer & Interaction Dialogs | composer.* / ask-user-question / approval-toasts / loading-progress / request-user-input | ☐ |
 | 5 | Home & Workspace | home / home-chat / workspace-home / note-cards / kanban / release-notes / update-toasts | ☐ |
 | 6 | Settings | settings.* / settings.vendor.* / settings.skills | ☐ |
@@ -69,6 +69,9 @@ archive 位置：`.trellis/tasks/archive/2026-05/`。
 - [ ] 评估是否引入 coss `Command` 重写 search-palette（本次 Phase 2 只换皮）。
 - [ ] **Phase 4**：评估是否引入 coss `Dialog` 替换 LockScreenOverlay 自实现的 overlay 结构（Phase 2 只完成纯样式换皮，结构沿用旧 div 树）。
 - [ ] **Phase 3+**：sidebar.css / sidebar.chrome.css / sidebar-shell.css 内的 chrome 部分（topbar placeholder、search toggle、primary nav 等）随 Threads/Workspace 业务拆解一起迁移。两个 CSS 字面值测试（`layout-swapped-platform-guard.test.ts` 与 `sidebar-titlebar-drag-region.test.ts`）届时需要按拆解结果改造或归档。
+- [ ] **Phase 3.5 — sticky header coss 化**：先把 `layout-swapped-platform-guard.test.ts` 中针对 `messages-history-sticky-*` 的 7 条字面 CSS 文本断言（peek-width / peek border-radius / collapsed bubble width / wide-canvas margin-right 等，lines 143-186）改为行为断言（jsdom render `MessagesTimeline` 后断言 className 或 data-* 状态），随后即可把 `messages.history-sticky.css` 整体替换为 `MessagesTimeline.tsx` 内联 Tailwind。
+- [ ] **Phase 3.6 — message bodies coss 化**：先把 `layout-swapped-platform-guard.test.ts` 中针对 `.messages-shell.claude-render-safe` 与 `.messages-live-controls` 的字面文本断言（lines 135-201）改造，再分批拆解 `messages.part1.css` (2301 行) / `messages.part1-shell.css` / `messages.status-shell.css` / `messages.part2.css`。预计 2-3 个 sub-PR。
+- [ ] **Phase 4 — PromptEnhancerDialog as `Dialog`**：当前 `PromptEnhancerDialog` 用裸 `<div className="prompt-enhancer-overlay">`，对应样式仍住在 `composer/components/ChatInputBox/styles/enhance-prompt.css`。Phase 4 用 coss `Dialog` 把 overlay + portal + focus trap 换成原语，同时把 `enhance-prompt.css` 内 `.prompt-section` / `.prompt-section-header` 的样式与 `PromptPanel` 对齐（Phase 3 用 `justify-between` Tailwind 兜底了 PromptEnhancerDialog 的视觉，未来若设计选择 left-align 可直接去掉）。
 
 ### 工程
 - [ ] 删除 `@radix-ui/*` 等 legacy 依赖（迁移完成后跑 `npx depcheck`）。

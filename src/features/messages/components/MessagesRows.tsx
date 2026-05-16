@@ -1113,7 +1113,7 @@ export const MessageRow = memo(function MessageRow({
       ? "markdown markdown-codex-canvas"
       : "markdown";
   const resolvedMarkdownClassName = isStreaming
-    ? `${markdownClassName} markdown-live-streaming`
+    ? `${markdownClassName} markdown-live-streaming break-words [overflow-wrap:anywhere]`
     : markdownClassName;
   const streamingMarkdownComplexityCacheRef = useRef<{
     value: string;
@@ -1159,7 +1159,7 @@ export const MessageRow = memo(function MessageRow({
     presentationProfile,
     streamingMarkdownComplexity,
   );
-  const livePlainTextClassName = `${resolvedMarkdownClassName} markdown-live-plain-text`;
+  const livePlainTextClassName = `${resolvedMarkdownClassName} markdown-live-plain-text whitespace-pre-wrap`;
   const handleRenderedAssistantValue = useCallback(
     (visibleText: string) => {
       if (item.role !== "assistant" || !isStreaming) {
@@ -1656,7 +1656,7 @@ export const ReasoningRow = memo(function ReasoningRow({
           <div className="reasoning-markdown-surface">
             <Markdown
               value={thinkingText}
-              className={`markdown reasoning-markdown${isLive ? " markdown-live-streaming" : ""}`}
+              className={`markdown reasoning-markdown${isLive ? " markdown-live-streaming break-words [overflow-wrap:anywhere]" : ""}`}
               workspaceId={workspaceId}
               codeBlockStyle="message"
               streamingThrottleMs={resolveReasoningStreamingThrottleMs(
