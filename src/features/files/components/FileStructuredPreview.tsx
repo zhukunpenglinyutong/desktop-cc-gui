@@ -167,26 +167,26 @@ function ShellPreview({
   return (
     <div className={className} data-testid="file-structured-preview">
       {shebang ? (
-        <section className="fvp-structured-preview-banner">
-          <div className="fvp-structured-preview-banner-label">Shebang</div>
+        <section className="fvp-structured-preview-banner border border-[color-mix(in_srgb,var(--border-subtle)_78%,transparent)] rounded-xl bg-[color-mix(in_srgb,var(--surface-card)_90%,transparent)] py-3 px-3.5 flex items-center gap-2.5 font-[var(--code-font-family)] [&_code]:text-[12px] [&_code]:text-(--fvp-reader-text)">
+          <div className="fvp-structured-preview-banner-label shrink-0 text-[10px] font-bold tracking-[0.08em] uppercase text-(--fvp-reader-faint)">Shebang</div>
           <code>{shebang}</code>
         </section>
       ) : null}
       {sections.map((section, index) => (
         <section
           key={`shell-${index}`}
-          className="fvp-structured-preview-section"
+          className="fvp-structured-preview-section border border-[color-mix(in_srgb,var(--border-subtle)_78%,transparent)] rounded-xl bg-[color-mix(in_srgb,var(--surface-card)_90%,transparent)] py-3 px-3.5 flex flex-col gap-2.5"
         >
           {section.notes.length > 0 ? (
-            <div className="fvp-structured-preview-notes">
+            <div className="fvp-structured-preview-notes flex flex-col gap-1.5 text-(--fvp-reader-muted) leading-[1.55] [&_p]:m-0">
               {section.notes.map((note, noteIndex) => (
                 <p key={`note-${index}-${noteIndex}`}>{note}</p>
               ))}
             </div>
           ) : null}
           {section.commands.length > 0 ? (
-            <div className="fvp-structured-preview-code">
-              <div className="fvp-structured-preview-code-label">Commands</div>
+            <div className="fvp-structured-preview-code flex flex-col gap-2.5 [&_pre]:m-0 [&_pre]:py-3 [&_pre]:px-3.5 [&_pre]:overflow-auto [&_pre]:rounded-[10px] [&_pre]:bg-[color-mix(in_srgb,var(--surface-control)_58%,transparent)] [&_pre]:font-[var(--code-font-family)] [&_pre]:text-[12px] [&_pre]:leading-[1.6]">
+              <div className="fvp-structured-preview-code-label text-[10px] font-bold tracking-[0.08em] uppercase text-(--fvp-reader-faint)">Commands</div>
               <pre>
                 <code
                   dangerouslySetInnerHTML={renderHighlightedBlock(
@@ -217,33 +217,33 @@ function DockerfilePreview({
       {sections.map((section, sectionIndex) => (
         <section
           key={`docker-${sectionIndex}`}
-          className="fvp-structured-preview-section"
+          className="fvp-structured-preview-section border border-[color-mix(in_srgb,var(--border-subtle)_78%,transparent)] rounded-xl bg-[color-mix(in_srgb,var(--surface-card)_90%,transparent)] py-3 px-3.5 flex flex-col gap-2.5"
         >
           {section.notes.length > 0 ? (
-            <div className="fvp-structured-preview-notes">
+            <div className="fvp-structured-preview-notes flex flex-col gap-1.5 text-(--fvp-reader-muted) leading-[1.55] [&_p]:m-0">
               {section.notes.map((note, noteIndex) => (
                 <p key={`docker-note-${sectionIndex}-${noteIndex}`}>{note}</p>
               ))}
             </div>
           ) : null}
           {section.instructions.length > 0 ? (
-            <div className="fvp-structured-preview-stack">
+            <div className="fvp-structured-preview-stack flex flex-col gap-2.5">
               {section.instructions.map((instruction, instructionIndex) => (
                 <article
                   key={`docker-instruction-${sectionIndex}-${instructionIndex}`}
-                  className="fvp-structured-preview-card"
+                  className="fvp-structured-preview-card border border-[color-mix(in_srgb,var(--border-subtle)_78%,transparent)] rounded-xl bg-[color-mix(in_srgb,var(--surface-card)_90%,transparent)] py-3 px-3.5"
                 >
-                  <div className="fvp-structured-preview-card-header">
-                    <span className="fvp-structured-preview-pill">
+                  <div className="fvp-structured-preview-card-header flex flex-wrap items-center gap-2.5 mb-2.5">
+                    <span className="fvp-structured-preview-pill inline-flex items-center justify-center min-h-[22px] px-2 rounded-full bg-[color-mix(in_srgb,var(--surface-active)_58%,#5fa3ff_12%)] text-(--text-stronger) text-[10px] font-bold tracking-[0.06em] uppercase">
                       {instruction.keyword}
                     </span>
                     {instruction.summary ? (
-                      <div className="fvp-structured-preview-summary">
+                      <div className="fvp-structured-preview-summary min-w-0 flex-1 text-(--fvp-reader-text) text-[13px] font-medium leading-[1.45] break-words">
                         {instruction.summary}
                       </div>
                     ) : null}
                   </div>
-                  <pre className="fvp-structured-preview-card-code">
+                  <pre className="fvp-structured-preview-card-code m-0 py-3 px-3.5 overflow-auto rounded-[10px] bg-[color-mix(in_srgb,var(--surface-control)_58%,transparent)] font-[var(--code-font-family)] text-[12px] leading-[1.6]">
                     <code
                       dangerouslySetInnerHTML={renderHighlightedBlock(
                         instruction.raw,

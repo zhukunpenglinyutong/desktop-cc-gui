@@ -462,21 +462,21 @@ export function FileViewBody({
 
   if (viewSurface.kind === "image") {
     return (
-      <div className="fvp-image-preview">
+      <div className="fvp-image-preview flex-1 flex items-center justify-center overflow-auto p-6 bg-(--surface-command) bg-[linear-gradient(45deg,var(--surface-control)_25%,transparent_25%),linear-gradient(-45deg,var(--surface-control)_25%,transparent_25%),linear-gradient(45deg,transparent_75%,var(--surface-control)_75%),linear-gradient(-45deg,transparent_75%,var(--surface-control)_75%)] [background-size:16px_16px] [background-position:0_0,0_8px,8px_-8px,-8px_0]">
         {imageSrc ? (
-          <div className="fvp-image-preview-inner">
+          <div className="fvp-image-preview-inner flex flex-col items-center gap-3 max-w-full max-h-full min-w-0 min-h-0">
             <img
               src={imageSrc}
               alt={filePath}
-              className="fvp-image-preview-img"
+              className="fvp-image-preview-img max-w-full max-h-full object-contain rounded-[4px] shadow-[0_4px_16px_rgba(0,0,0,0.2)] min-h-0"
               draggable={false}
               onLoad={handleImageLoad}
               onError={handleImageError}
             />
             {imageLoadError ? (
-              <span className="fvp-image-info fvp-error text-[var(--text-danger,#f87171)]">{imageLoadError}</span>
+              <span className="fvp-image-info fvp-error text-[11px] text-(--text-faint) shrink-0 text-[var(--text-danger,#f87171)]">{imageLoadError}</span>
             ) : imageInfo ? (
-              <span className="fvp-image-info">
+              <span className="fvp-image-info text-[11px] text-(--text-faint) shrink-0">
                 {imageInfo.width > 0 && `${imageInfo.width} × ${imageInfo.height}`}
                 {imageInfo.width > 0 && imageInfo.sizeBytes != null && " · "}
                 {imageInfo.sizeBytes != null ? formatFileSize(imageInfo.sizeBytes) : null}
@@ -591,7 +591,7 @@ export function FileViewBody({
 
   if (viewSurface.kind === "markdown-preview") {
     return (
-      <div className="fvp-preview-scroll">
+      <div className="fvp-preview-scroll flex-1 overflow-auto py-5 px-6 w-full min-w-0">
         <FileMarkdownPreview
           key={filePath}
           value={content}
@@ -627,12 +627,12 @@ export function FileViewBody({
 
   if (viewSurface.kind === "structured-preview") {
     return (
-      <div className="fvp-preview-scroll">
+      <div className="fvp-preview-scroll flex-1 overflow-auto py-5 px-6 w-full min-w-0">
         <FileStructuredPreview
           key={filePath}
           filePath={filePath}
           value={content}
-          className="fvp-structured-preview"
+          className="fvp-structured-preview flex flex-col gap-3.5 text-[13px] text-(--fvp-reader-text)"
         />
       </div>
     );
@@ -645,7 +645,7 @@ export function FileViewBody({
     : null;
 
   return (
-    <div className="fvp-code-preview" role="list">
+    <div className="fvp-code-preview flex flex-col overflow-auto flex-1 py-3 px-0 font-[var(--code-font-family)] text-[var(--code-font-size,12px)] font-[var(--code-font-weight,400)] leading-[var(--code-line-height,1.6)] text-(--fvp-reader-text) whitespace-pre bg-(--fvp-reader-surface) w-full min-w-0" role="list">
       {previewLineSelection && onPreviewAnnotationStart ? (
         <div className="fvp-preview-selection-toolbar sticky top-0 z-[3] flex items-center justify-end gap-2 px-2.5 py-[7px] border-b border-[color-mix(in_srgb,var(--border-accent)_28%,var(--border-subtle))] bg-[color-mix(in_srgb,var(--surface-card)_94%,var(--surface-command))] text-[var(--text-muted)] text-[11px] [&>span]:mr-auto [&>span]:text-[var(--text-strong)] [&>span]:font-bold" role="group" aria-label={t("files.annotationSelectionToolbar")}>
           <span>{previewSelectionLabel}</span>
@@ -687,7 +687,7 @@ export function FileViewBody({
         return (
           <div
             key={`line-${index}`}
-            className={`fvp-code-line${isGitModifiedLine ? " is-git-modified" : isGitAddedLine ? " is-git-added" : ""}${
+            className={`fvp-code-line relative grid grid-cols-[52px_1fr] gap-3 items-start py-px pr-4 pl-0 min-w-full w-max hover:bg-[color-mix(in_srgb,var(--surface-active)_35%,transparent)] [&.is-git-added]:before:content-[''] [&.is-git-added]:before:absolute [&.is-git-added]:before:left-[53px] [&.is-git-added]:before:top-px [&.is-git-added]:before:bottom-px [&.is-git-added]:before:w-[3px] [&.is-git-added]:before:rounded-full [&.is-git-added]:before:bg-[color-mix(in_srgb,#3fb950_88%,var(--text-strong))] [&.is-git-modified]:before:content-[''] [&.is-git-modified]:before:absolute [&.is-git-modified]:before:left-[53px] [&.is-git-modified]:before:top-px [&.is-git-modified]:before:bottom-px [&.is-git-modified]:before:w-[3px] [&.is-git-modified]:before:rounded-full [&.is-git-modified]:before:bg-[color-mix(in_srgb,#6bb3f0_88%,var(--text-strong))] ${isSelected ? "bg-[color-mix(in_srgb,#2563eb_16%,var(--surface-active))]" : ""} hover:[&_.fvp-line-annotation-button]:opacity-100${isGitModifiedLine ? " is-git-modified" : isGitAddedLine ? " is-git-added" : ""}${
               isSelected ? " is-selected" : ""
             }`}
             role={onPreviewAnnotationStart ? "button" : undefined}
@@ -698,12 +698,12 @@ export function FileViewBody({
             onMouseEnter={() => handlePreviewLineMouseEnter(lineNumber)}
             onMouseUp={handlePreviewLineMouseUp}
           >
-            <span className="fvp-line-number">
+            <span className={`fvp-line-number inline-flex items-center justify-end gap-1.5 text-right tabular-nums select-none pr-1 ${isSelected ? "text-[#2563eb]" : "text-(--fvp-reader-fainter)"}`}>
               {lineNumber}
               {onPreviewAnnotationStart ? (
                 <button
                   type="button"
-                  className="fvp-line-annotation-button"
+                  className="fvp-line-annotation-button border border-[color-mix(in_srgb,#2563eb_42%,var(--border-subtle))] bg-[color-mix(in_srgb,#2563eb_10%,transparent)] text-[#2563eb] rounded-full cursor-pointer w-[18px] h-[18px] p-0 opacity-0 transition-[opacity,background] duration-[120ms] focus-visible:opacity-100"
                   onClick={(event) => {
                     event.stopPropagation();
                     onPreviewAnnotationStart({
@@ -719,7 +719,7 @@ export function FileViewBody({
               ) : null}
             </span>
             <span
-              className="fvp-line-text"
+              className="fvp-line-text min-w-0"
               dangerouslySetInnerHTML={{ __html: html }}
             />
             {lineAnnotations.map((annotation) => (

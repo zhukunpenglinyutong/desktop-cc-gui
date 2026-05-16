@@ -1,0 +1,721 @@
+/*
+ * file-view-panel-prism.css — Phase 9.3 keeper (post-inline cascade-only rules)
+ *
+ * This file contains the rules that cannot be expressed as Tailwind utilities
+ * inside React TSX:
+ *
+ *   1. tab/filepath git-status theme cascade overrides (light/dark)
+ *   2. Prism `.token.*` syntax highlighting cascades — applied to
+ *      `dangerouslySetInnerHTML` content where we cannot attach utilities.
+ *   3. `.fvp-file-markdown` content cascade (h1-h6, p, ul, ol, blockquote,
+ *      tables, code, etc.) — react-markdown injects native DOM and Tailwind
+ *      arbitrary-variant chains would balloon className size unmanageably.
+ *   4. `.fvp-markdown-github` token bridge (custom properties consumed by
+ *      the inlined utilities).
+ *   5. `.fvp-cm .cm-*` CodeMirror DOM overrides — CodeMirror controls its
+ *      own DOM, we can only theme it via CSS.
+ *   6. `.content.is-editor-split-vertical .fvp-footer` global cascade
+ *      (resizer styling triggered by parent body class).
+ *   7. `body.editor-split-resizing` global cursor override.
+ */
+
+/* ── tab git-status colors (cascade base + light theme overrides) ── */
+
+.fvp-tab.git-a .fvp-tab-main-label,
+.fvp-filepath.git-a {
+  color: #89d185;
+}
+
+.fvp-tab.git-m .fvp-tab-main-label,
+.fvp-filepath.git-m {
+  color: #6bb3f0;
+}
+
+.fvp-tab.git-d .fvp-tab-main-label,
+.fvp-filepath.git-d {
+  color: #ff6b6b;
+  text-decoration: line-through;
+}
+
+.fvp-tab.git-r .fvp-tab-main-label,
+.fvp-filepath.git-r {
+  color: #c9a3f5;
+}
+
+.fvp-tab.git-t .fvp-tab-main-label,
+.fvp-filepath.git-t {
+  color: #f5c363;
+}
+
+:root[data-theme="light"] .fvp-tab.git-a .fvp-tab-main-label,
+:root[data-theme="light"] .fvp-filepath.git-a {
+  color: var(--status-success);
+}
+
+:root[data-theme="light"] .fvp-tab.git-m .fvp-tab-main-label,
+:root[data-theme="light"] .fvp-filepath.git-m {
+  color: #2a7ab5;
+}
+
+:root[data-theme="light"] .fvp-tab.git-d .fvp-tab-main-label,
+:root[data-theme="light"] .fvp-filepath.git-d {
+  color: var(--status-error);
+  text-decoration: line-through;
+}
+
+:root[data-theme="light"] .fvp-tab.git-r .fvp-tab-main-label,
+:root[data-theme="light"] .fvp-filepath.git-r {
+  color: #8b5fcf;
+}
+
+:root[data-theme="light"] .fvp-tab.git-t .fvp-tab-main-label,
+:root[data-theme="light"] .fvp-filepath.git-t {
+  color: var(--status-warning);
+}
+
+/* ── tab icon active state (cascade-based via .fvp-tab.is-active) ── */
+
+.fvp-tab.is-active .fvp-tab-icon {
+  opacity: 1;
+  filter: saturate(1) contrast(1.05);
+}
+
+/* ── Prism token cascade (dangerouslySetInnerHTML — code preview) ── */
+
+.fvp-line-text .token.comment,
+.fvp-line-text .token.prolog,
+.fvp-line-text .token.doctype,
+.fvp-line-text .token.cdata {
+  color: var(--fvp-token-comment);
+}
+
+.fvp-line-text .token.punctuation {
+  color: var(--fvp-token-punctuation);
+}
+
+.fvp-line-text .token.property,
+.fvp-line-text .token.tag,
+.fvp-line-text .token.constant,
+.fvp-line-text .token.symbol,
+.fvp-line-text .token.deleted {
+  color: var(--fvp-token-property);
+}
+
+.fvp-line-text .token.boolean,
+.fvp-line-text .token.number {
+  color: var(--fvp-token-number);
+}
+
+.fvp-line-text .token.selector,
+.fvp-line-text .token.attr-name,
+.fvp-line-text .token.string,
+.fvp-line-text .token.char,
+.fvp-line-text .token.builtin,
+.fvp-line-text .token.inserted {
+  color: var(--fvp-token-string);
+}
+
+.fvp-line-text .token.operator,
+.fvp-line-text .token.entity,
+.fvp-line-text .token.url,
+.fvp-line-text .token.variable {
+  color: var(--fvp-token-operator);
+}
+
+.fvp-line-text .token.atrule,
+.fvp-line-text .token.attr-value,
+.fvp-line-text .token.keyword {
+  color: var(--fvp-token-keyword);
+}
+
+.fvp-line-text .token.function,
+.fvp-line-text .token.class-name {
+  color: var(--fvp-token-function);
+}
+
+/* ── Prism token cascade (structured preview) ── */
+
+.fvp-structured-preview code .token.comment,
+.fvp-structured-preview code .token.prolog,
+.fvp-structured-preview code .token.doctype,
+.fvp-structured-preview code .token.cdata {
+  color: var(--fvp-token-comment);
+}
+
+.fvp-structured-preview code .token.punctuation {
+  color: var(--fvp-token-punctuation);
+}
+
+.fvp-structured-preview code .token.property,
+.fvp-structured-preview code .token.tag,
+.fvp-structured-preview code .token.constant,
+.fvp-structured-preview code .token.symbol,
+.fvp-structured-preview code .token.deleted {
+  color: var(--fvp-token-property);
+}
+
+.fvp-structured-preview code .token.boolean,
+.fvp-structured-preview code .token.number {
+  color: var(--fvp-token-number);
+}
+
+.fvp-structured-preview code .token.selector,
+.fvp-structured-preview code .token.attr-name,
+.fvp-structured-preview code .token.string,
+.fvp-structured-preview code .token.char,
+.fvp-structured-preview code .token.builtin,
+.fvp-structured-preview code .token.inserted {
+  color: var(--fvp-token-string);
+}
+
+.fvp-structured-preview code .token.operator,
+.fvp-structured-preview code .token.entity,
+.fvp-structured-preview code .token.url,
+.fvp-structured-preview code .token.variable {
+  color: var(--fvp-token-operator);
+}
+
+.fvp-structured-preview code .token.atrule,
+.fvp-structured-preview code .token.attr-value,
+.fvp-structured-preview code .token.keyword {
+  color: var(--fvp-token-keyword);
+}
+
+.fvp-structured-preview code .token.function,
+.fvp-structured-preview code .token.class-name {
+  color: var(--fvp-token-function);
+}
+
+/* ── Markdown github theme custom properties (consumed by inlined utilities) ── */
+
+.fvp-markdown-github {
+  --fvp-markdown-rule: color-mix(in srgb, var(--border-subtle) 78%, transparent);
+  --fvp-markdown-inline-code-bg: color-mix(in srgb, var(--surface-control) 74%, transparent);
+  --fvp-markdown-code-bg: color-mix(in srgb, var(--surface-card) 86%, transparent);
+  --fvp-markdown-title-accent: color-mix(in srgb, var(--text-accent) 82%, #79a6ff 18%);
+  --fvp-markdown-title-secondary: color-mix(in srgb, var(--text-stronger) 78%, var(--text-accent) 22%);
+  --fvp-markdown-title-tertiary: color-mix(in srgb, var(--text-stronger) 84%, #7bd3c7 16%);
+  --fvp-markdown-table-head-bg: color-mix(in srgb, var(--surface-control) 62%, #6f9cff 8%);
+  --fvp-markdown-table-stripe: color-mix(in srgb, var(--surface-control) 24%, #6f9cff 6%);
+  --fvp-markdown-quote-bg: color-mix(in srgb, var(--surface-control) 42%, #6f9cff 8%);
+  --fvp-markdown-list-marker: color-mix(in srgb, var(--text-stronger) 90%, #000 10%);
+}
+
+/* ── Markdown content cascade (react-markdown injects native DOM) ── */
+
+.fvp-file-markdown :where(h1, h2, h3, h4, h5, h6) {
+  margin-top: 24px;
+  margin-bottom: 16px;
+  line-height: 1.28;
+  font-weight: 650;
+  color: var(--fvp-markdown-title-secondary);
+  letter-spacing: -0.01em;
+}
+
+.fvp-file-markdown :where(h1, h2) {
+  padding-bottom: 0.35em;
+  border-bottom: 1px solid var(--fvp-markdown-rule);
+}
+
+.fvp-file-markdown :where(h1) {
+  font-size: 1.9em;
+  color: var(--fvp-markdown-title-accent);
+}
+
+.fvp-file-markdown :where(h2) {
+  font-size: 1.5em;
+  color: var(--fvp-markdown-title-secondary);
+}
+
+.fvp-file-markdown :where(h3) {
+  font-size: 1.25em;
+  color: var(--fvp-markdown-title-tertiary);
+}
+
+.fvp-file-markdown :where(h4, h5, h6) {
+  font-size: 1em;
+  color: color-mix(in srgb, var(--text-stronger) 88%, var(--text-accent) 12%);
+}
+
+.fvp-file-markdown :where(h1, h2, h3, h4, h5, h6):first-child {
+  margin-top: 0;
+}
+
+.fvp-file-markdown :where(p, ul, ol, pre, blockquote, table) {
+  margin: 0 0 16px;
+}
+
+.fvp-file-markdown :where(ul, ol) {
+  padding-left: 1.15em;
+  margin-left: 0;
+}
+
+.fvp-file-markdown :where(li + li) {
+  margin-top: 0.42em;
+}
+
+.fvp-file-markdown :where(li > ul, li > ol) {
+  margin-top: 0.55em;
+  margin-bottom: 0;
+  padding-top: 0.15em;
+}
+
+.fvp-file-markdown :where(ul) {
+  list-style-type: disc;
+}
+
+.fvp-file-markdown :where(ul ul) {
+  list-style-type: circle;
+}
+
+.fvp-file-markdown :where(ul ul ul) {
+  list-style-type: square;
+}
+
+.fvp-file-markdown :where(li) {
+  padding-left: 0.04em;
+}
+
+.fvp-file-markdown :where(li)::marker {
+  color: var(--fvp-markdown-list-marker);
+  font-weight: 600;
+}
+
+.fvp-file-markdown :where(ol > li)::marker {
+  color: var(--fvp-markdown-list-marker);
+  font-weight: 600;
+}
+
+.fvp-file-markdown :where(li > p:first-child:last-child) {
+  margin-bottom: 0;
+}
+
+.fvp-file-markdown :where(li:has(input[type="checkbox"])) {
+  list-style: none;
+  margin-left: -0.05em;
+  padding: 0.08em 0;
+}
+
+.fvp-file-markdown :where(li:has(input[type="checkbox"]) + li:has(input[type="checkbox"])) {
+  margin-top: 0.35em;
+}
+
+.fvp-file-markdown :where(input[type="checkbox"]) {
+  width: 0.95em;
+  height: 0.95em;
+  margin-right: 0.55em;
+  accent-color: var(--fvp-markdown-list-marker);
+}
+
+.fvp-file-markdown :where(a) {
+  color: var(--text-accent);
+  text-decoration: none;
+}
+
+.fvp-file-markdown :where(a:hover) {
+  text-decoration: underline;
+}
+
+.fvp-file-markdown :where(strong) {
+  color: var(--text-stronger);
+}
+
+.fvp-file-markdown :where(hr) {
+  margin: 24px 0;
+  border: 0;
+  border-top: 1px solid var(--fvp-markdown-rule);
+}
+
+.fvp-file-markdown :where(blockquote) {
+  margin-left: 0;
+  padding: 10px 14px;
+  color: var(--fvp-reader-muted);
+  border-left: 4px solid var(--fvp-markdown-rule);
+  background: var(--fvp-markdown-quote-bg);
+  border-radius: 0 10px 10px 0;
+}
+
+.fvp-file-markdown pre {
+  white-space: pre;
+  overflow-x: auto;
+  max-width: 100%;
+}
+
+.fvp-file-markdown code {
+  font-family: var(--code-font-family);
+  font-weight: var(--code-font-weight, 400);
+}
+
+.fvp-file-markdown :where(p code, li code, blockquote code, td code, th code) {
+  padding: 0.18em 0.4em;
+  border-radius: 6px;
+  background: var(--fvp-markdown-inline-code-bg);
+  font-size: 0.92em;
+}
+
+.fvp-file-markdown table {
+  width: max-content;
+  min-width: 100%;
+  border-collapse: collapse;
+}
+
+.fvp-file-markdown th,
+.fvp-file-markdown td {
+  white-space: normal;
+  border: 1px solid var(--fvp-markdown-rule);
+  padding: 8px 12px;
+  text-align: left;
+  vertical-align: top;
+}
+
+.fvp-file-markdown th {
+  font-weight: 600;
+  color: var(--fvp-markdown-title-secondary);
+  background: var(--fvp-markdown-table-head-bg);
+}
+
+.fvp-file-markdown tbody tr:nth-child(2n) {
+  background: var(--fvp-markdown-table-stripe);
+}
+
+/* ── Markdown codeblock Prism token cascade ── */
+
+.fvp-file-markdown-codeblock :is(.token.comment, .token.prolog, .token.doctype, .token.cdata) {
+  color: var(--fvp-token-comment);
+}
+
+.fvp-file-markdown-codeblock .token.punctuation {
+  color: var(--fvp-token-punctuation);
+}
+
+.fvp-file-markdown-codeblock :is(.token.property, .token.tag, .token.constant, .token.symbol, .token.deleted) {
+  color: var(--fvp-token-property);
+}
+
+.fvp-file-markdown-codeblock :is(.token.boolean, .token.number) {
+  color: var(--fvp-token-number);
+}
+
+.fvp-file-markdown-codeblock :is(.token.selector, .token.attr-name, .token.string, .token.char, .token.builtin, .token.inserted) {
+  color: var(--fvp-token-string);
+}
+
+.fvp-file-markdown-codeblock :is(.token.operator, .token.entity, .token.url, .token.variable) {
+  color: var(--fvp-token-operator);
+}
+
+.fvp-file-markdown-codeblock :is(.token.atrule, .token.attr-value, .token.keyword) {
+  color: var(--fvp-token-keyword);
+}
+
+.fvp-file-markdown-codeblock :is(.token.function, .token.class-name) {
+  color: var(--fvp-token-function);
+}
+
+/* ── Editor (CodeMirror DOM injection, cannot inline as React utilities) ── */
+
+.fvp-cm {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  width: 100%;
+  overflow: hidden;
+}
+
+.fvp-cm .cm-editor {
+  height: 100%;
+  background: var(--fvp-reader-surface);
+}
+
+.fvp-cm .cm-editor.cm-focused {
+  outline: none;
+}
+
+.fvp-cm .cm-scroller {
+  overflow: auto;
+  font-family: var(--code-font-family);
+  font-size: var(--code-font-size, 13px);
+  font-weight: var(--code-font-weight, 400);
+  line-height: var(--code-line-height, 1.6);
+  color: var(--fvp-reader-text);
+}
+
+.fvp-cm .cm-content {
+  white-space: pre;
+  overflow-wrap: normal;
+}
+
+.fvp-cm .cm-gutters {
+  background: var(--fvp-reader-surface);
+  border-right: 1px solid var(--border-subtle);
+  color: var(--fvp-reader-fainter);
+}
+
+.fvp-cm .cm-activeLineGutter {
+  background: color-mix(in srgb, var(--surface-active) 24%, transparent);
+}
+
+.fvp-cm .cm-activeLine {
+  background: color-mix(in srgb, var(--surface-active) 12%, transparent);
+}
+
+.fvp-cm .cm-cursor {
+  border-left-color: var(--fvp-reader-text);
+}
+
+.fvp-cm .cm-selectionBackground {
+  background: color-mix(in srgb, var(--border-accent) 26%, transparent) !important;
+}
+
+.fvp-cm .cm-matchingBracket {
+  background: color-mix(in srgb, var(--border-accent) 25%, transparent);
+  outline: 1px solid color-mix(in srgb, var(--border-accent) 50%, transparent);
+}
+
+.fvp-cm .cm-foldGutter {
+  width: 12px;
+}
+
+.fvp-cm .cm-panels {
+  background: color-mix(in srgb, var(--surface-card) 92%, var(--surface-command));
+  color: var(--text-strong);
+  border-bottom: 1px solid color-mix(in srgb, var(--border-subtle) 85%, transparent);
+}
+
+.fvp-cm .cm-panels-top {
+  border-bottom: 1px solid color-mix(in srgb, var(--border-subtle) 85%, transparent);
+}
+
+.fvp-cm .cm-panels-bottom {
+  border-top: 1px solid color-mix(in srgb, var(--border-subtle) 85%, transparent);
+}
+
+.fvp-cm .cm-search {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+  padding: 3px 8px;
+  font-size: 10px;
+}
+
+.fvp-cm .cm-search label {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  color: var(--text-muted);
+  font-size: 9px;
+  line-height: 1;
+}
+
+.fvp-cm .cm-search input[type="text"],
+.fvp-cm .cm-search input:not([type]) {
+  background: color-mix(in srgb, var(--surface-command) 88%, transparent);
+  color: var(--text-strong);
+  border: 1px solid color-mix(in srgb, var(--border-subtle) 90%, transparent);
+  border-radius: 6px;
+  padding: 2px 6px;
+  min-height: 18px;
+  font-size: 9px;
+  line-height: 1.1;
+}
+
+.fvp-cm .cm-search input[type="text"]:focus,
+.fvp-cm .cm-search input:not([type]):focus {
+  outline: none;
+  border-color: color-mix(in srgb, var(--border-accent) 68%, var(--border-subtle));
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--border-accent) 20%, transparent);
+}
+
+.fvp-cm .cm-search .cm-button {
+  width: auto;
+  height: auto;
+  min-height: 0;
+  padding: 1px 3px;
+  border-radius: 4px;
+  border: none;
+  display: inline-flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 3px;
+  font-size: 9px;
+  line-height: 1;
+  font-weight: 600;
+  color: var(--text-muted);
+  cursor: pointer;
+  background: transparent;
+  box-shadow: none;
+  transition:
+    color 120ms ease,
+    background 120ms ease;
+}
+
+.fvp-cm .cm-search .cm-button::before {
+  font-size: 11px;
+  line-height: 1;
+  font-weight: 700;
+  color: var(--text-stronger);
+  letter-spacing: -0.02em;
+}
+
+.fvp-cm .cm-search .cm-button:hover {
+  color: var(--text-strong);
+  background: color-mix(in srgb, var(--surface-control-hover) 55%, transparent);
+}
+
+.fvp-cm .cm-search .cm-button:active {
+  background: color-mix(in srgb, var(--surface-control-hover) 70%, transparent);
+}
+
+.fvp-cm .cm-search .cm-button:focus-visible {
+  outline: none;
+  box-shadow:
+    0 0 0 2px color-mix(in srgb, var(--surface-card) 78%, transparent),
+    0 0 0 4px color-mix(in srgb, var(--border-accent) 45%, transparent);
+}
+
+.fvp-cm .cm-search .cm-button[name="next"]::before {
+  content: "↓";
+}
+
+.fvp-cm .cm-search .cm-button[name="prev"]::before {
+  content: "↑";
+}
+
+.fvp-cm .cm-search .cm-button[name="select"]::before {
+  content: "◎";
+}
+
+.fvp-cm .cm-search .cm-button[name="replace"]::before {
+  content: "\eb3d";
+}
+
+.fvp-cm .cm-search .cm-button[name="replaceAll"]::before {
+  content: "\eb3c";
+}
+
+.fvp-cm .cm-search .cm-button[name="replace"]::before,
+.fvp-cm .cm-search .cm-button[name="replaceAll"]::before {
+  font-family: codicon;
+  font-size: 11px;
+  font-weight: 400;
+  display: inline-block;
+  width: 1em;
+  height: 1em;
+  line-height: 1;
+  text-align: center;
+}
+
+.fvp-cm .cm-search button[name="close"] {
+  margin-left: auto;
+  align-self: center;
+  min-height: 0;
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, #ef4444 48%, transparent);
+  background: color-mix(in srgb, #ef4444 12%, transparent);
+  color: transparent;
+  padding: 0;
+  font-size: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition:
+    color 120ms ease,
+    background 120ms ease,
+    border-color 120ms ease,
+    transform 120ms ease;
+}
+
+.fvp-cm .cm-search button[name="close"]::before {
+  content: "✕";
+  font-size: 13px;
+  line-height: 1;
+  font-weight: 700;
+  color: #ef4444;
+}
+
+.fvp-cm .cm-search button[name="close"]:hover {
+  background: color-mix(in srgb, #ef4444 20%, transparent);
+  border-color: color-mix(in srgb, #ef4444 70%, transparent);
+  transform: scale(1.04);
+}
+
+.fvp-cm .cm-search button[name="close"]:focus-visible {
+  outline: none;
+  box-shadow:
+    0 0 0 2px color-mix(in srgb, var(--surface-card) 78%, transparent),
+    0 0 0 4px color-mix(in srgb, #ef4444 32%, transparent);
+}
+
+.fvp-cm .cm-searchMatch {
+  background: color-mix(in srgb, #f59e0b 36%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, #f59e0b 64%, transparent);
+}
+
+.fvp-cm .cm-searchMatch.cm-searchMatch-selected {
+  background: color-mix(in srgb, var(--border-accent) 40%, transparent);
+  border-bottom-color: color-mix(in srgb, var(--border-accent) 72%, transparent);
+}
+
+.fvp-cm .cm-line.cm-git-added-line {
+  background: color-mix(in srgb, #3fb950 12%, transparent);
+  box-shadow: inset 3px 0 0 color-mix(in srgb, #3fb950 88%, var(--text-strong));
+}
+
+.fvp-cm .cm-line.cm-git-modified-line {
+  background: color-mix(in srgb, #6bb3f0 14%, transparent);
+  box-shadow: inset 3px 0 0 color-mix(in srgb, #6bb3f0 88%, var(--text-strong));
+}
+
+.fvp-cm .cm-line.cm-activeLine.cm-git-added-line {
+  background: color-mix(
+    in srgb,
+    color-mix(in srgb, #3fb950 12%, transparent) 72%,
+    var(--surface-active) 28%
+  );
+}
+
+.fvp-cm .cm-line.cm-activeLine.cm-git-modified-line {
+  background: color-mix(
+    in srgb,
+    color-mix(in srgb, #6bb3f0 14%, transparent) 72%,
+    var(--surface-active) 28%
+  );
+}
+
+/* ── Editor split global cascade overrides (parent body / .content cascade) ── */
+
+.content.is-editor-split-vertical .fvp-footer {
+  cursor: row-resize;
+  position: relative;
+}
+
+.content.is-editor-split-vertical .fvp-footer::before {
+  content: "";
+  position: absolute;
+  top: 1px;
+  left: 50%;
+  width: 40px;
+  height: 2px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--border-strong) 74%, transparent);
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+.content.is-editor-split .fvp-footer button,
+.content.is-editor-split .fvp-footer [role="button"] {
+  cursor: pointer;
+}
+
+body.editor-split-resizing {
+  cursor: row-resize !important;
+  user-select: none !important;
+}
+
+body.editor-split-resizing * {
+  cursor: row-resize !important;
+}

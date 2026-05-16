@@ -105,16 +105,16 @@ function PdfPageCanvas({ pdfDocument, pageNumber, scale, t }: PdfPageCanvasProps
   }, [pageNumber, pdfDocument, scale, shouldRender]);
 
   return (
-    <div ref={pageRootRef} className="fvp-pdf-page" data-page-number={pageNumber}>
-      <header className="fvp-pdf-page-header">
+    <div ref={pageRootRef} className="fvp-pdf-page flex flex-col gap-2.5 p-3.5 border border-[color-mix(in_srgb,var(--border-subtle)_72%,transparent)] rounded-[14px] bg-[color-mix(in_srgb,var(--surface-card)_88%,transparent)]" data-page-number={pageNumber}>
+      <header className="fvp-pdf-page-header flex items-center justify-between text-(--fvp-reader-muted) text-[12px] font-semibold">
         <span>{t("files.pdfPreviewPageLabel", { page: pageNumber })}</span>
       </header>
       {pageError ? (
-        <div className="fvp-pdf-page-error">{pageError}</div>
+        <div className="fvp-pdf-page-error flex min-h-24 items-center justify-center rounded-[10px] bg-[color-mix(in_srgb,var(--surface-control)_40%,transparent)] text-(--status-error) text-center text-[12px]">{pageError}</div>
       ) : shouldRender ? (
-        <canvas ref={canvasRef} className="fvp-pdf-canvas" />
+        <canvas ref={canvasRef} className="fvp-pdf-canvas w-full max-w-full self-center rounded-xl bg-white shadow-[0_12px_32px_rgba(0,0,0,0.18)]" />
       ) : (
-        <div className="fvp-pdf-page-placeholder">{t("files.pdfPreviewPagePlaceholder")}</div>
+        <div className="fvp-pdf-page-placeholder flex min-h-24 items-center justify-center rounded-[10px] bg-[color-mix(in_srgb,var(--surface-control)_40%,transparent)] text-(--fvp-reader-muted) text-center text-[12px]">{t("files.pdfPreviewPagePlaceholder")}</div>
       )}
     </div>
   );
@@ -306,20 +306,20 @@ export function FilePdfPreview({
   };
 
   if (isLoading || isRuntimeLoading) {
-    return <div className="fvp-status">{t("files.loadingFile")}</div>;
+    return <div className="fvp-status p-6 text-[13px] text-(--text-muted) text-center">{t("files.loadingFile")}</div>;
   }
 
   if (error || runtimeError) {
-    return <div className="fvp-status fvp-error">{error ?? runtimeError}</div>;
+    return <div className="fvp-status fvp-error p-6 text-[13px] text-center text-[var(--text-danger,#f87171)]">{error ?? runtimeError}</div>;
   }
 
   if (!assetUrl || !pdfDocument) {
-    return <div className="fvp-status">{t("files.pdfPreviewUnavailable")}</div>;
+    return <div className="fvp-status p-6 text-[13px] text-(--text-muted) text-center">{t("files.pdfPreviewUnavailable")}</div>;
   }
 
   return (
-    <div className="fvp-preview-scroll">
-      <div className={`fvp-preview-shell${isOutlineCollapsed ? " is-outline-collapsed" : ""}`}>
+    <div className="fvp-preview-scroll flex-1 overflow-auto py-5 px-6 w-full min-w-0">
+      <div className={`fvp-preview-shell grid grid-cols-[minmax(220px,280px)_minmax(0,1fr)] max-[980px]:grid-cols-[minmax(0,1fr)] gap-5 items-start ${isOutlineCollapsed ? "is-outline-collapsed !grid-cols-[minmax(0,1fr)]" : ""}`}>
         {!isOutlineCollapsed ? (
           <PreviewOutlineSidebar
             title={t("files.previewOutlineTitle")}
@@ -329,17 +329,17 @@ export function FilePdfPreview({
             onSelectItem={handleSelectOutlineItem}
           />
         ) : null}
-        <div ref={previewRootRef} className="fvp-pdf-preview fvp-preview-main">
-          <header className="fvp-preview-section-header">
-            <div className="fvp-preview-section-title">
+        <div ref={previewRootRef} className="fvp-pdf-preview fvp-preview-main flex flex-col gap-3 min-w-0">
+          <header className="fvp-preview-section-header flex flex-wrap items-center justify-between gap-2.5 mb-3.5 text-(--fvp-reader-muted) text-[12px] [&_strong]:text-(--fvp-reader-text) [&_strong]:text-[13px] [&_strong]:font-bold">
+            <div className="fvp-preview-section-title flex flex-wrap items-center gap-2.5 min-w-0">
               <strong>{t("files.pdfPreviewTitle")}</strong>
               <span>{t("files.pdfPreviewPageCount", { count: numPages })}</span>
             </div>
-            <div className="fvp-preview-toolbar" role="toolbar" aria-label={t("files.pdfPreviewToolbarLabel")}>
+            <div className="fvp-preview-toolbar inline-flex items-center gap-2 flex-wrap" role="toolbar" aria-label={t("files.pdfPreviewToolbarLabel")}>
               {outlineItems.length > 0 ? (
                 <button
                   type="button"
-                  className="fvp-preview-toolbar-button"
+                  className="fvp-preview-toolbar-button inline-flex items-center justify-center min-h-[30px] min-w-[30px] px-2.5 py-0 border border-[color-mix(in_srgb,var(--border-subtle)_72%,transparent)] rounded-[10px] bg-[color-mix(in_srgb,var(--surface-card)_86%,transparent)] text-(--fvp-reader-text) text-[12px] font-semibold transition-[background,border-color,color] duration-[140ms] enabled:hover:bg-[color-mix(in_srgb,var(--surface-hover)_70%,transparent)] disabled:opacity-[0.45]"
                   aria-label={t(
                     isOutlineCollapsed
                       ? "files.pdfPreviewExpandOutline"
@@ -352,7 +352,7 @@ export function FilePdfPreview({
               ) : null}
               <button
                 type="button"
-                className="fvp-preview-toolbar-button"
+                className="fvp-preview-toolbar-button inline-flex items-center justify-center min-h-[30px] min-w-[30px] px-2.5 py-0 border border-[color-mix(in_srgb,var(--border-subtle)_72%,transparent)] rounded-[10px] bg-[color-mix(in_srgb,var(--surface-card)_86%,transparent)] text-(--fvp-reader-text) text-[12px] font-semibold transition-[background,border-color,color] duration-[140ms] enabled:hover:bg-[color-mix(in_srgb,var(--surface-hover)_70%,transparent)] disabled:opacity-[0.45]"
                 aria-label={t("files.pdfPreviewZoomOut")}
                 disabled={pdfScale <= MIN_PDF_SCALE}
                 onClick={handleZoomOut}
@@ -361,7 +361,7 @@ export function FilePdfPreview({
               </button>
               <button
                 type="button"
-                className="fvp-preview-toolbar-button fvp-preview-toolbar-value"
+                className="fvp-preview-toolbar-button fvp-preview-toolbar-value inline-flex items-center justify-center min-h-[30px] min-w-16 px-2.5 py-0 border border-[color-mix(in_srgb,var(--border-subtle)_72%,transparent)] rounded-[10px] bg-[color-mix(in_srgb,var(--surface-card)_86%,transparent)] text-(--fvp-reader-text) text-[12px] font-semibold transition-[background,border-color,color] duration-[140ms] enabled:hover:bg-[color-mix(in_srgb,var(--surface-hover)_70%,transparent)] disabled:opacity-[0.45]"
                 aria-label={t("files.pdfPreviewResetZoom")}
                 onClick={handleResetZoom}
               >
@@ -369,7 +369,7 @@ export function FilePdfPreview({
               </button>
               <button
                 type="button"
-                className="fvp-preview-toolbar-button"
+                className="fvp-preview-toolbar-button inline-flex items-center justify-center min-h-[30px] min-w-[30px] px-2.5 py-0 border border-[color-mix(in_srgb,var(--border-subtle)_72%,transparent)] rounded-[10px] bg-[color-mix(in_srgb,var(--surface-card)_86%,transparent)] text-(--fvp-reader-text) text-[12px] font-semibold transition-[background,border-color,color] duration-[140ms] enabled:hover:bg-[color-mix(in_srgb,var(--surface-hover)_70%,transparent)] disabled:opacity-[0.45]"
                 aria-label={t("files.pdfPreviewZoomIn")}
                 disabled={pdfScale >= MAX_PDF_SCALE}
                 onClick={handleZoomIn}
@@ -379,7 +379,7 @@ export function FilePdfPreview({
             </div>
           </header>
           {isPageCountTruncated ? (
-            <div className="fvp-preview-budget-hint">
+            <div className="fvp-preview-budget-hint mb-3.5 py-2.5 px-3 border border-[color-mix(in_srgb,var(--border-subtle)_72%,transparent)] rounded-[10px] bg-[color-mix(in_srgb,var(--surface-control)_42%,transparent)] text-(--fvp-reader-muted) text-[12px] leading-[1.5]">
               {t("files.pdfPreviewPageLimitHint", {
                 visibleCount: visiblePageCount,
                 totalCount: numPages,
@@ -387,7 +387,7 @@ export function FilePdfPreview({
               })}
             </div>
           ) : null}
-          <div className="fvp-pdf-pages">
+          <div className="fvp-pdf-pages flex flex-col gap-[18px]">
             {visiblePageNumbers.map((pageNumber) => (
               <PdfPageCanvas
                 key={`pdf-page-${pageNumber}`}

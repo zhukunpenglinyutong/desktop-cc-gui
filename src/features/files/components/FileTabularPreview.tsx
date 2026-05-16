@@ -159,15 +159,15 @@ export function FileTabularPreview({
   );
 
   if (isLoading || isParsing) {
-    return <div className="fvp-status">{t("files.loadingFile")}</div>;
+    return <div className="fvp-status p-6 text-[13px] text-(--text-muted) text-center">{t("files.loadingFile")}</div>;
   }
 
   if (error || parseError) {
-    return <div className="fvp-status fvp-error">{error ?? parseError}</div>;
+    return <div className="fvp-status fvp-error p-6 text-[13px] text-center text-(--text-danger,#f87171)">{error ?? parseError}</div>;
   }
 
   if (!activeSheet) {
-    return <div className="fvp-status">{t("files.tabularPreviewUnavailable")}</div>;
+    return <div className="fvp-status p-6 text-[13px] text-(--text-muted) text-center">{t("files.tabularPreviewUnavailable")}</div>;
   }
 
   const hasAnyCell = activeSheet.rows.some((row) => row.some((cell) => cell.length > 0));
@@ -177,9 +177,9 @@ export function FileTabularPreview({
     (payload?.kind === "inline-bytes" && payload.truncated);
 
   return (
-    <div className="fvp-preview-scroll">
-      <div className="fvp-tabular-preview">
-        <header className="fvp-preview-section-header">
+    <div className="fvp-preview-scroll flex-1 overflow-auto py-5 px-6 w-full min-w-0">
+      <div className="fvp-tabular-preview flex flex-col gap-3 min-w-0">
+        <header className="fvp-preview-section-header flex flex-wrap items-center justify-between gap-2.5 mb-3.5 text-(--fvp-reader-muted) text-[12px] [&_strong]:text-(--fvp-reader-text) [&_strong]:text-[13px] [&_strong]:font-bold">
           <strong>{t("files.tabularPreviewTitle")}</strong>
           <span>
             {t("files.tabularPreviewSheetStats", {
@@ -189,12 +189,12 @@ export function FileTabularPreview({
           </span>
         </header>
         {sheets.length > 1 ? (
-          <div className="fvp-tabular-sheet-tabs" role="tablist" aria-label={t("files.tabularPreviewSheets")}>
+          <div className="fvp-tabular-sheet-tabs flex flex-wrap gap-2" role="tablist" aria-label={t("files.tabularPreviewSheets")}>
             {sheets.map((sheet, index) => (
               <button
                 key={sheet.name}
                 type="button"
-                className={`fvp-tabular-sheet-tab${index === activeSheetIndex ? " is-active" : ""}`}
+                className={`fvp-tabular-sheet-tab rounded-full px-3 py-1.5 text-[12px] font-semibold border ${index === activeSheetIndex ? "is-active border-[color-mix(in_srgb,var(--border-accent)_66%,transparent)] bg-[color-mix(in_srgb,var(--surface-active)_52%,#5f9dff_10%)] text-(--text-stronger)" : "border-[color-mix(in_srgb,var(--border-subtle)_70%,transparent)] bg-[color-mix(in_srgb,var(--surface-control)_42%,transparent)] text-(--text-muted)"}`}
                 onClick={() => setActiveSheetIndex(index)}
               >
                 {sheet.name}
@@ -203,7 +203,7 @@ export function FileTabularPreview({
           </div>
         ) : null}
         {showTruncationHint ? (
-          <div className="fvp-preview-budget-hint">
+          <div className="fvp-preview-budget-hint mb-3.5 py-2.5 px-3 border border-[color-mix(in_srgb,var(--border-subtle)_72%,transparent)] rounded-[10px] bg-[color-mix(in_srgb,var(--surface-control)_42%,transparent)] text-(--fvp-reader-muted) text-[12px] leading-normal">
             {t("files.tabularPreviewTruncatedHint", {
               rows: MAX_TABLE_ROWS,
               columns: MAX_TABLE_COLUMNS,
@@ -211,8 +211,8 @@ export function FileTabularPreview({
           </div>
         ) : null}
         {hasAnyCell ? (
-          <div className="fvp-tabular-table-wrap">
-            <table className="fvp-tabular-table">
+          <div className="fvp-tabular-table-wrap overflow-auto border border-[color-mix(in_srgb,var(--border-subtle)_68%,transparent)] rounded-xl bg-[color-mix(in_srgb,var(--surface-card)_90%,transparent)]">
+            <table className="fvp-tabular-table w-full border-collapse min-w-140 [&_td]:border-b [&_td]:border-b-[color-mix(in_srgb,var(--border-subtle)_54%,transparent)] [&_td]:border-r [&_td]:border-r-[color-mix(in_srgb,var(--border-subtle)_42%,transparent)] [&_td]:py-2 [&_td]:px-2.5 [&_td]:text-(--fvp-reader-text) [&_td]:text-[12px] [&_td]:leading-normal [&_td]:align-top [&_td]:whitespace-pre-wrap [&_td]:wrap-break-word [&_tr:nth-child(odd)_td]:bg-[color-mix(in_srgb,var(--surface-control)_18%,transparent)]">
               <tbody>
                 {activeSheet.rows.map((row, rowIndex) => (
                   <tr key={`sheet-row-${rowIndex}`}>
@@ -229,7 +229,7 @@ export function FileTabularPreview({
             </table>
           </div>
         ) : (
-          <div className="fvp-status">{t("files.tabularPreviewEmpty")}</div>
+          <div className="fvp-status p-6 text-[13px] text-(--text-muted) text-center">{t("files.tabularPreviewEmpty")}</div>
         )}
       </div>
     </div>

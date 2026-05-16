@@ -1279,49 +1279,49 @@ export function GitHistoryWorktreePanel({
           }}
         >
           <div
-            className="git-history-worktree-danger-dialog"
+            className="git-history-worktree-danger-dialog w-[min(560px,100%)] rounded-xl border border-(--border-default)/78 bg-[color-mix(in_srgb,var(--surface-card-muted,#111725)_92%,#0b1220)] shadow-[0_14px_42px_rgba(0,0,0,0.34)] p-3.5 flex flex-col gap-2.5"
             role="dialog"
             aria-modal="true"
             aria-label={t("git.revertAllTitle")}
           >
-            <div className="git-history-create-branch-title">{t("git.revertAllTitle")}</div>
-            <div className="git-history-worktree-danger-copy">
-              <p>{t("git.revertAllBeginnerLead")}</p>
-              <div className="git-history-worktree-danger-list">
-                <div className="git-history-worktree-danger-list-title">{t("git.revertAllAffectsLabel")}</div>
-                <ul>
-                  <li>
-                    <span className="git-history-danger-keyword">{t("git.revertAllKeywordStaged")}</span>
+            <div className="git-history-create-branch-title text-[13px] font-bold text-(--text-stronger)">{t("git.revertAllTitle")}</div>
+            <div className="git-history-worktree-danger-copy flex flex-col gap-2">
+              <p className="m-0 text-[13px] leading-[1.45] text-(--text-secondary)">{t("git.revertAllBeginnerLead")}</p>
+              <div className="git-history-worktree-danger-list rounded-[10px] border border-(--border-default)/64 bg-[color-mix(in_srgb,var(--surface-control,#1a2230)_54%,transparent)] px-2.5 py-2">
+                <div className="git-history-worktree-danger-list-title text-xs text-(--text-secondary) mb-1.5">{t("git.revertAllAffectsLabel")}</div>
+                <ul className="m-0 pl-[18px] flex flex-col gap-1 max-h-[180px] overflow-auto">
+                  <li className="text-xs text-(--text-secondary)">
+                    <span className="git-history-danger-keyword text-[#ef4444] font-bold">{t("git.revertAllKeywordStaged")}</span>
                   </li>
-                  <li>
-                    <span className="git-history-danger-keyword">{t("git.revertAllKeywordUnstaged")}</span>
+                  <li className="text-xs text-(--text-secondary)">
+                    <span className="git-history-danger-keyword text-[#ef4444] font-bold">{t("git.revertAllKeywordUnstaged")}</span>
                   </li>
-                  <li>
-                    <span className="git-history-danger-keyword">{t("git.revertAllKeywordUntracked")}</span>
+                  <li className="text-xs text-(--text-secondary)">
+                    <span className="git-history-danger-keyword text-[#ef4444] font-bold">{t("git.revertAllKeywordUntracked")}</span>
                   </li>
                 </ul>
               </div>
-              <div className="git-history-worktree-danger-list">
-                <div className="git-history-worktree-danger-list-title">
+              <div className="git-history-worktree-danger-list rounded-[10px] border border-(--border-default)/64 bg-[color-mix(in_srgb,var(--surface-control,#1a2230)_54%,transparent)] px-2.5 py-2">
+                <div className="git-history-worktree-danger-list-title text-xs text-(--text-secondary) mb-1.5">
                   {t("git.revertAllFilesPreviewLabel", { count: revertAllPreviewPaths.length })}
                 </div>
-                <ul>
+                <ul className="m-0 pl-[18px] flex flex-col gap-1 max-h-[180px] overflow-auto">
                   {revertAllPreviewPaths.map((path) => (
-                    <li key={path}>
-                      <code className="git-history-worktree-danger-file">{path}</code>
+                    <li key={path} className="text-xs text-(--text-secondary)">
+                      <code className="git-history-worktree-danger-file font-[var(--code-font-family,ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,'Liberation_Mono','Courier_New',monospace)] text-[11px] text-(--text-secondary)/88 break-all">{path}</code>
                     </li>
                   ))}
                 </ul>
               </div>
-              <div className="git-history-worktree-danger-note">
-                <span className="git-history-danger-keyword">{t("git.revertAllKeywordIrreversible")}</span>
+              <div className="git-history-worktree-danger-note rounded-lg px-2.5 py-2 bg-[color-mix(in_srgb,#ef4444_14%,transparent)] text-xs leading-[1.4] text-(--text-secondary) inline-flex flex-wrap gap-1">
+                <span className="git-history-danger-keyword text-[#ef4444] font-bold">{t("git.revertAllKeywordIrreversible")}</span>
                 <span>{t("git.revertAllBeginnerHint")}</span>
               </div>
             </div>
-            <div className="git-history-create-branch-actions">
+            <div className="git-history-create-branch-actions flex justify-end gap-2">
               <button
                 type="button"
-                className="git-history-create-branch-btn is-cancel"
+                className="git-history-create-branch-btn is-cancel min-w-[76px] h-[30px] rounded-lg text-xs font-semibold cursor-pointer border border-(--border-default)/76 bg-[color-mix(in_srgb,var(--surface-control,#1a2230)_64%,transparent)] text-(--text-secondary) disabled:opacity-[0.48] disabled:cursor-not-allowed"
                 disabled={operationLoading}
                 onClick={() => setDiscardAllDialogOpen(false)}
               >
@@ -1329,7 +1329,7 @@ export function GitHistoryWorktreePanel({
               </button>
               <button
                 type="button"
-                className="git-history-create-branch-btn is-danger"
+                className="git-history-create-branch-btn is-danger min-w-[76px] h-[30px] rounded-lg text-xs font-semibold cursor-pointer border border-[color-mix(in_srgb,#ef4444_54%,transparent)] bg-[color-mix(in_srgb,#ef4444_26%,transparent)] text-[color-mix(in_srgb,#ef4444_90%,#fee2e2)] disabled:opacity-[0.48] disabled:cursor-not-allowed"
                 disabled={operationLoading}
                 onClick={() => void handleConfirmDiscardAll()}
               >
@@ -1349,33 +1349,33 @@ export function GitHistoryWorktreePanel({
           }}
         >
           <div
-            className="git-history-worktree-danger-dialog"
+            className="git-history-worktree-danger-dialog w-[min(560px,100%)] rounded-xl border border-(--border-default)/78 bg-[color-mix(in_srgb,var(--surface-card-muted,#111725)_92%,#0b1220)] shadow-[0_14px_42px_rgba(0,0,0,0.34)] p-3.5 flex flex-col gap-2.5"
             role="dialog"
             aria-modal="true"
             aria-label={t("git.discardConfirmTitle")}
           >
-            <div className="git-history-create-branch-title">{t("git.discardConfirmTitle")}</div>
-            <div className="git-history-worktree-danger-copy">
-              <p>{t("git.discardDialogBeginnerLead")}</p>
-              <div className="git-history-worktree-danger-list">
-                <div className="git-history-worktree-danger-list-title">{t("git.discardDialogAffectsLabel")}</div>
-                <ul>
+            <div className="git-history-create-branch-title text-[13px] font-bold text-(--text-stronger)">{t("git.discardConfirmTitle")}</div>
+            <div className="git-history-worktree-danger-copy flex flex-col gap-2">
+              <p className="m-0 text-[13px] leading-[1.45] text-(--text-secondary)">{t("git.discardDialogBeginnerLead")}</p>
+              <div className="git-history-worktree-danger-list rounded-[10px] border border-(--border-default)/64 bg-[color-mix(in_srgb,var(--surface-control,#1a2230)_54%,transparent)] px-2.5 py-2">
+                <div className="git-history-worktree-danger-list-title text-xs text-(--text-secondary) mb-1.5">{t("git.discardDialogAffectsLabel")}</div>
+                <ul className="m-0 pl-[18px] flex flex-col gap-1 max-h-[180px] overflow-auto">
                   {discardDialogPaths.map((path) => (
-                    <li key={path}>
-                      <code className="git-history-worktree-danger-file">{path}</code>
+                    <li key={path} className="text-xs text-(--text-secondary)">
+                      <code className="git-history-worktree-danger-file font-[var(--code-font-family,ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,'Liberation_Mono','Courier_New',monospace)] text-[11px] text-(--text-secondary)/88 break-all">{path}</code>
                     </li>
                   ))}
                 </ul>
               </div>
-              <div className="git-history-worktree-danger-note">
-                <span className="git-history-danger-keyword">{t("git.revertAllKeywordIrreversible")}</span>
+              <div className="git-history-worktree-danger-note rounded-lg px-2.5 py-2 bg-[color-mix(in_srgb,#ef4444_14%,transparent)] text-xs leading-[1.4] text-(--text-secondary) inline-flex flex-wrap gap-1">
+                <span className="git-history-danger-keyword text-[#ef4444] font-bold">{t("git.revertAllKeywordIrreversible")}</span>
                 <span>{t("git.discardDialogBeginnerHint")}</span>
               </div>
             </div>
-            <div className="git-history-create-branch-actions">
+            <div className="git-history-create-branch-actions flex justify-end gap-2">
               <button
                 type="button"
-                className="git-history-create-branch-btn is-cancel"
+                className="git-history-create-branch-btn is-cancel min-w-[76px] h-[30px] rounded-lg text-xs font-semibold cursor-pointer border border-(--border-default)/76 bg-[color-mix(in_srgb,var(--surface-control,#1a2230)_64%,transparent)] text-(--text-secondary) disabled:opacity-[0.48] disabled:cursor-not-allowed"
                 disabled={operationLoading}
                 onClick={() => setDiscardDialogPaths(null)}
               >
@@ -1383,7 +1383,7 @@ export function GitHistoryWorktreePanel({
               </button>
               <button
                 type="button"
-                className="git-history-create-branch-btn is-danger"
+                className="git-history-create-branch-btn is-danger min-w-[76px] h-[30px] rounded-lg text-xs font-semibold cursor-pointer border border-[color-mix(in_srgb,#ef4444_54%,transparent)] bg-[color-mix(in_srgb,#ef4444_26%,transparent)] text-[color-mix(in_srgb,#ef4444_90%,#fee2e2)] disabled:opacity-[0.48] disabled:cursor-not-allowed"
                 disabled={operationLoading}
                 onClick={() => void handleConfirmDiscardFiles()}
               >

@@ -187,7 +187,7 @@ export function CheckpointCommitDialog({
 
   return (
     <div
-      className="sp-checkpoint-commit-dialog-overlay"
+      className="sp-checkpoint-commit-dialog-overlay fixed inset-0 z-[70] flex items-center justify-center p-6 [background:color-mix(in_srgb,var(--surface-app,#020617)_58%,transparent)] [backdrop-filter:blur(10px)]"
       role="presentation"
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) {
@@ -196,20 +196,22 @@ export function CheckpointCommitDialog({
       }}
     >
       <div
-        className="sp-checkpoint-commit-dialog"
+        className="sp-checkpoint-commit-dialog w-[min(920px,calc(100vw-48px))] max-h-[min(760px,calc(100vh-48px))] flex flex-col overflow-hidden border border-(--sp-commit-border-strong) rounded-2xl bg-(--sp-commit-surface) text-(--sp-commit-text) [box-shadow:0_24px_80px_color-mix(in_srgb,var(--sp-commit-text)_24%,transparent)]"
         role="dialog"
         aria-modal="true"
         aria-label={t("statusPanel.checkpoint.commitDialog.title")}
         onMouseDown={(event) => event.stopPropagation()}
       >
-        <div className="sp-checkpoint-commit-dialog-header">
+        <div className="sp-checkpoint-commit-dialog-header flex items-start justify-between gap-4 px-[18px] pt-4 pb-3 border-b border-(--sp-commit-border)">
           <div>
-            <div className="sp-checkpoint-commit-dialog-title">
+            <div className="sp-checkpoint-commit-dialog-title text-[15px] font-extrabold text-(--sp-commit-text)">
               {t("statusPanel.checkpoint.commitDialog.title")}
             </div>
-            <div className="sp-checkpoint-commit-dialog-meta">
+            <div className="sp-checkpoint-commit-dialog-meta flex items-center gap-2 mt-[7px] text-[11px] text-(--sp-commit-text-muted)">
               <span>{t("statusPanel.checkpoint.commitDialog.path")}</span>
-              <code>{workspacePath || t("workspace.unknownBranch")}</code>
+              <code className="overflow-hidden text-ellipsis whitespace-nowrap max-w-[min(680px,68vw)] text-(--sp-commit-text-muted) font-[var(--code-font-family)]">
+                {workspacePath || t("workspace.unknownBranch")}
+              </code>
             </div>
           </div>
           <button
@@ -222,8 +224,8 @@ export function CheckpointCommitDialog({
             <X size={14} />
           </button>
         </div>
-        <div className="sp-checkpoint-commit-dialog-body">
-          <div className="commit-message-section sp-checkpoint-commit-message-section">
+        <div className="sp-checkpoint-commit-dialog-body flex flex-col gap-3 min-h-0 px-[18px] pt-3.5 pb-[18px]">
+          <div className="commit-message-section sp-checkpoint-commit-message-section m-0 pb-3 [border-bottom-color:var(--sp-commit-border)]">
             <div className="commit-message-input-wrapper">
               <textarea
                 className="commit-message-input"
@@ -306,9 +308,9 @@ export function CheckpointCommitDialog({
                 : t("git.selectFilesToCommit")}
             </div>
           </div>
-          <div className="sp-checkpoint-commit-files">
-            <div className="sp-checkpoint-commit-files-header">
-              <div>
+          <div className="sp-checkpoint-commit-files min-h-0 flex flex-col overflow-hidden border border-(--sp-commit-border) rounded-xl bg-(--sp-commit-surface-raised)">
+            <div className="sp-checkpoint-commit-files-header flex items-center justify-between gap-3 px-3 py-2.5 border-b border-(--sp-commit-border) text-(--sp-commit-text-muted) text-[11px] font-bold">
+              <div className="flex items-center gap-2 [&_input]:w-4 [&_input]:h-4 [&_input]:m-0 [&_input]:accent-(--sp-commit-accent) [&_strong]:text-(--sp-commit-text) [&_strong]:text-[13px]">
                 <input
                   ref={selectAllCheckboxRef}
                   type="checkbox"
@@ -320,18 +322,21 @@ export function CheckpointCommitDialog({
                 <span>{t("statusPanel.checkpoint.commitDialog.files")}</span>
                 <strong>{commitDialogFiles.length}</strong>
               </div>
-              <div className="sp-checkpoint-commit-total-stats">
-                <span className="is-add">+{totalAdditions}</span>
-                <span className="is-del">-{totalDeletions}</span>
+              <div className="sp-checkpoint-commit-total-stats inline-flex items-center gap-[7px] font-[var(--code-font-family)] text-[11px] font-extrabold">
+                <span className="is-add text-(--sp-commit-success)">+{totalAdditions}</span>
+                <span className="is-del text-(--sp-commit-danger)">-{totalDeletions}</span>
               </div>
             </div>
-            <div className="sp-checkpoint-commit-file-list">
+            <div className="sp-checkpoint-commit-file-list overflow-auto max-h-[390px] p-1">
               {commitDialogFiles.map((file) => {
                 const isSelected = includedCommitPathSet.has(normalizeGitPath(file.commitPath));
                 const isLocked = isCommitPathLocked(file.commitPath);
                 const isStaged = stagedPathSet.has(file.commitPath);
                 return (
-                  <label key={file.commitPath} className="sp-checkpoint-commit-file-row">
+                  <label
+                    key={file.commitPath}
+                    className="sp-checkpoint-commit-file-row grid grid-cols-[24px_auto_minmax(0,1fr)_auto] items-center gap-2.5 px-2 py-2 rounded-[9px] cursor-pointer hover:bg-(--sp-commit-surface-hover)"
+                  >
                     <input
                       type="checkbox"
                       checked={isSelected}
@@ -340,25 +345,28 @@ export function CheckpointCommitDialog({
                       onChange={(event) => {
                         setCommitSelection([file.commitPath], event.target.checked);
                       }}
+                      className="w-4 h-4 accent-(--sp-commit-accent)"
                     />
                     <span className={`git-history-file-status git-status-${file.status.toLowerCase()}`}>
                       {file.status}
                     </span>
-                    <span className="sp-checkpoint-commit-file-main">
-                      <span className="sp-checkpoint-commit-file-name">{file.fileName}</span>
-                      <span className="sp-checkpoint-commit-file-path">
+                    <span className="sp-checkpoint-commit-file-main min-w-0 flex items-baseline gap-2">
+                      <span className="sp-checkpoint-commit-file-name min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-(--sp-commit-text) font-[var(--code-font-family)] text-xs font-extrabold">
+                        {file.fileName}
+                      </span>
+                      <span className="sp-checkpoint-commit-file-path min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-(--sp-commit-text-muted) font-[var(--code-font-family)] text-[10px]">
                         {file.filePath}
                         {isStaged ? (
-                          <span className="sp-checkpoint-commit-file-tag">
+                          <span className="sp-checkpoint-commit-file-tag inline-flex items-center gap-[3px] ml-2 text-(--sp-commit-success) font-[var(--code-font-family)] text-[9px] font-extrabold">
                             <Check size={10} />
                             {t("statusPanel.checkpoint.commitDialog.staged")}
                           </span>
                         ) : null}
                       </span>
                     </span>
-                    <span className="sp-checkpoint-commit-file-stats">
-                      <span className="is-add">+{file.additions}</span>
-                      <span className="is-del">-{file.deletions}</span>
+                    <span className="sp-checkpoint-commit-file-stats inline-flex items-center gap-[7px] font-[var(--code-font-family)] text-[11px] font-extrabold">
+                      <span className="is-add text-(--sp-commit-success)">+{file.additions}</span>
+                      <span className="is-del text-(--sp-commit-danger)">-{file.deletions}</span>
                     </span>
                   </label>
                 );

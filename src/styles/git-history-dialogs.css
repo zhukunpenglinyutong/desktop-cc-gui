@@ -1,3 +1,32 @@
+/**
+ * Keeper file extracted from git-history.part2.css during Phase 7.7.
+ *
+ * Reason: these rules cannot be cleanly inlined as Tailwind utilities on the React
+ * `className` props because:
+ *  1. `@keyframes git-history-danger-pulse` — CSS animation must live in a stylesheet.
+ *  2. `.git-history-push-dialog::before` — pseudo-element with `mask-composite: exclude`
+ *     creates a complex inner border that cannot be expressed as a single utility.
+ *  3. Descendant selectors that override base classes contextually, e.g.
+ *     `.git-history-toolbar-confirm-dialog .git-history-create-branch-field input`
+ *     and `.git-history-push-dialog .git-history-create-branch-btn`. These rely on
+ *     parent-context cascade that would require duplicating overrides at every call
+ *     site if inlined.
+ *  4. Pseudo-class state styles on shared picker/toggle components
+ *     (`:hover`, `:disabled`, `.is-active`, `.is-open`) used across pull/sync/fetch/
+ *     refresh/push/branch-compare dialogs.
+ *  5. Media queries spanning classes from multiple files (`git-history-main-grid`,
+ *     `git-history-grid`, `git-history-overview`, `git-history-branches`,
+ *     `git-history-commits`, `git-history-toolbar`, etc. live in part1.css; the
+ *     responsive break-points were authored in part2.css to keep dialog-related
+ *     responsive rules together).
+ *
+ * Simple, self-contained classes (worktree-danger, force-delete dialog body) were
+ * inlined as Tailwind utilities in the consumer TSX files. The class names are
+ * retained here as no-op semantic markers; the duplication is intentional.
+ *
+ * Same pattern as `git-history-shell-keepers.css` (Phase 7.5).
+ */
+
 @import "./git-history.part2.pr-dialog.css";
 
 .git-history-reset-dialog {

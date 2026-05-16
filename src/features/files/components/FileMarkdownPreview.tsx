@@ -333,14 +333,14 @@ function MarkdownAnnotatableBlock({
 
   return (
     <div
-      className="fvp-markdown-annotatable-block"
+      className="fvp-markdown-annotatable-block relative m-0 py-px pr-[34px] pl-0 rounded-[10px] after:content-[''] after:absolute after:-top-1 after:right-0 after:-bottom-1 after:w-[34px] after:pointer-events-none hover:bg-[color-mix(in_srgb,#2563eb_5%,transparent)] focus-within:bg-[color-mix(in_srgb,#2563eb_5%,transparent)] hover:[&_.fvp-markdown-annotation-button]:opacity-100 focus-within:[&_.fvp-markdown-annotation-button]:opacity-100"
       data-source-line-start={lineRange.startLine}
       data-source-line-end={lineRange.endLine}
     >
       {onAnnotationStart ? (
         <button
           type="button"
-          className="fvp-markdown-annotation-button"
+          className="fvp-markdown-annotation-button absolute top-0.5 right-0 z-[1] opacity-0 border border-[color-mix(in_srgb,#2563eb_42%,var(--border-subtle))] rounded-full py-[3px] px-2 bg-[color-mix(in_srgb,var(--surface-card)_94%,#2563eb_6%)] text-[#2563eb] shadow-[0_8px_18px_color-mix(in_srgb,#000_12%,transparent)] cursor-pointer text-[11px] font-bold leading-[1.2] hover:opacity-100 focus-visible:opacity-100"
           onClick={() => onAnnotationStart(lineRange)}
           aria-label={`${annotationActionLabel} ${formatCodeAnnotationLineRange(lineRange)}`}
           title={`${annotationActionLabel} ${formatCodeAnnotationLineRange(lineRange)}`}
@@ -351,13 +351,13 @@ function MarkdownAnnotatableBlock({
       {children}
       {blockAnnotations.map((annotation) =>
         renderAnnotationMarker ? (
-          <div key={annotation.id} className="fvp-markdown-annotation-inline">
+          <div key={annotation.id} className="fvp-markdown-annotation-inline my-2 mt-2 mb-3">
             {renderAnnotationMarker(annotation)}
           </div>
         ) : null,
       )}
       {shouldRenderDraft && annotationDraft && renderAnnotationDraft ? (
-        <div className="fvp-markdown-annotation-inline">
+        <div className="fvp-markdown-annotation-inline my-2 mt-2 mb-3">
           {renderAnnotationDraft(annotationDraft)}
         </div>
       ) : null}
@@ -379,9 +379,9 @@ function FileMarkdownCodeBlock({
   );
 
   return (
-    <div className="fvp-file-markdown-codeblock">
+    <div className="fvp-file-markdown-codeblock mb-4 border border-(--fvp-markdown-rule) rounded-xl bg-(--fvp-markdown-code-bg) overflow-hidden [&_pre]:m-0 [&_pre]:pt-[13px] [&_pre]:px-3.5 [&_pre]:pb-3.5 [&_pre]:whitespace-pre [&_pre]:overflow-x-auto [&_pre]:font-[var(--code-font-family)] [&_pre]:text-[var(--code-font-size,11px)] [&_pre]:leading-[var(--code-line-height,1.28)] [&_code]:text-(--fvp-reader-text)">
       {languageTag ? (
-        <div className="fvp-file-markdown-codeblock-label">{languageTag}</div>
+        <div className="fvp-file-markdown-codeblock-label flex items-center justify-between gap-3 pt-[7px] pb-1.5 px-3 border-b border-b-(--fvp-markdown-rule) text-[10px] tracking-[0.08em] uppercase text-(--fvp-reader-faint) bg-[color-mix(in_srgb,var(--surface-control)_58%,transparent)]">{languageTag}</div>
       ) : null}
       <pre>
         <code
@@ -460,15 +460,15 @@ function FileMarkdownMermaidBlock({
   }, []);
 
   return (
-    <div className="fvp-file-markdown-codeblock fvp-file-markdown-mermaid">
-      <div className="fvp-file-markdown-codeblock-label">
+    <div className="fvp-file-markdown-codeblock fvp-file-markdown-mermaid mb-4 border border-(--fvp-markdown-rule) rounded-xl bg-(--fvp-markdown-code-bg) overflow-hidden [&_pre]:m-0 [&_pre]:pt-[13px] [&_pre]:px-3.5 [&_pre]:pb-3.5 [&_pre]:whitespace-pre [&_pre]:overflow-x-auto [&_pre]:font-[var(--code-font-family)] [&_pre]:text-[var(--code-font-size,11px)] [&_pre]:leading-[var(--code-line-height,1.28)] [&_code]:text-(--fvp-reader-text)">
+      <div className="fvp-file-markdown-codeblock-label flex items-center justify-between gap-3 pt-[7px] pb-1.5 px-3 border-b border-b-(--fvp-markdown-rule) text-[10px] tracking-[0.08em] uppercase text-(--fvp-reader-faint) bg-[color-mix(in_srgb,var(--surface-control)_58%,transparent)]">
         <span>Mermaid</span>
-        <div className="fvp-file-markdown-mermaid-tabs" role="tablist" aria-label="Mermaid block view">
+        <div className="fvp-file-markdown-mermaid-tabs inline-flex items-center gap-1" role="tablist" aria-label="Mermaid block view">
           <button
             type="button"
             role="tab"
             aria-selected={activeTab === "source"}
-            className={`fvp-file-markdown-mermaid-tab${activeTab === "source" ? " is-active" : ""}`}
+            className={`fvp-file-markdown-mermaid-tab border-0 rounded-full py-1 px-2 text-[10px] tracking-[0.08em] uppercase cursor-pointer focus-visible:outline focus-visible:outline-(--text-accent) focus-visible:outline-1 focus-visible:outline-offset-[1px] ${activeTab === "source" ? "is-active text-(--text-stronger) bg-[color-mix(in_srgb,var(--surface-control)_76%,#79a6ff_10%)]" : "text-(--fvp-reader-faint) bg-transparent hover:text-(--text-stronger) hover:bg-[color-mix(in_srgb,var(--surface-hover)_72%,transparent)]"}`}
             onClick={() => setActiveTab("source")}
           >
             Source
@@ -477,7 +477,7 @@ function FileMarkdownMermaidBlock({
             type="button"
             role="tab"
             aria-selected={activeTab === "render"}
-            className={`fvp-file-markdown-mermaid-tab${activeTab === "render" ? " is-active" : ""}`}
+            className={`fvp-file-markdown-mermaid-tab border-0 rounded-full py-1 px-2 text-[10px] tracking-[0.08em] uppercase cursor-pointer focus-visible:outline focus-visible:outline-(--text-accent) focus-visible:outline-1 focus-visible:outline-offset-[1px] ${activeTab === "render" ? "is-active text-(--text-stronger) bg-[color-mix(in_srgb,var(--surface-control)_76%,#79a6ff_10%)]" : "text-(--fvp-reader-faint) bg-transparent hover:text-(--text-stronger) hover:bg-[color-mix(in_srgb,var(--surface-hover)_72%,transparent)]"}`}
             onClick={() => setActiveTab("render")}
           >
             Render
@@ -494,16 +494,16 @@ function FileMarkdownMermaidBlock({
         </pre>
       ) : renderState.status === "success" ? (
         <div
-          className="fvp-file-markdown-mermaid-diagram"
+          className="fvp-file-markdown-mermaid-diagram p-3.5 overflow-auto [&_svg]:block [&_svg]:max-w-full [&_svg]:h-auto"
           data-testid="file-markdown-mermaid-preview"
           dangerouslySetInnerHTML={{ __html: renderState.svg }}
         />
       ) : renderState.status === "error" ? (
-        <div className="fvp-file-markdown-mermaid-status fvp-file-markdown-mermaid-error">
+        <div className="fvp-file-markdown-mermaid-status fvp-file-markdown-mermaid-error p-3.5 text-[var(--color-danger-strong,#ef4444)] text-[12px]">
           Render failed: {renderState.message}
         </div>
       ) : (
-        <div className="fvp-file-markdown-mermaid-status">
+        <div className="fvp-file-markdown-mermaid-status p-3.5 text-(--fvp-reader-muted) text-[12px]">
           Rendering diagram...
         </div>
       )}
@@ -622,7 +622,7 @@ export function FileMarkdownPreview({
       "div",
       node,
       <table>{children}</table>,
-      { className: "fvp-file-markdown-table-wrap" },
+      { className: "fvp-file-markdown-table-wrap block overflow-x-auto max-w-full mb-4 mt-0 mx-0 border border-(--fvp-markdown-rule) rounded-xl bg-[color-mix(in_srgb,var(--surface-card)_90%,transparent)]" },
     ),
     pre: ({ node, children }) => {
       const { className: codeClassName, value: codeValue } = extractCodeFromPre(
@@ -655,11 +655,11 @@ export function FileMarkdownPreview({
   return (
     <div className={className} data-testid="file-markdown-preview">
       {frontmatter.fields.length > 0 ? (
-        <section className="fvp-file-markdown-frontmatter" data-testid="file-markdown-frontmatter">
-          <div className="fvp-file-markdown-frontmatter-label">Metadata</div>
-          <dl className="fvp-file-markdown-frontmatter-grid">
+        <section className="fvp-file-markdown-frontmatter mb-4 py-2.5 px-3 border border-(--fvp-markdown-rule) rounded-[10px] bg-[color-mix(in_srgb,var(--surface-card)_92%,#5fa3ff_4%)]" data-testid="file-markdown-frontmatter">
+          <div className="fvp-file-markdown-frontmatter-label mb-2 text-[10px] tracking-[0.06em] uppercase text-(--fvp-reader-faint)">Metadata</div>
+          <dl className="fvp-file-markdown-frontmatter-grid grid gap-1.5 m-0">
             {frontmatter.fields.map((field) => (
-              <div key={field.key} className="fvp-file-markdown-frontmatter-row">
+              <div key={field.key} className="fvp-file-markdown-frontmatter-row grid grid-cols-[minmax(82px,108px)_minmax(0,1fr)] gap-2.5 items-baseline leading-[1.35] [&_dt]:m-0 [&_dt]:text-(--fvp-reader-faint) [&_dt]:text-[11px] [&_dt]:lowercase [&_dd]:m-0 [&_dd]:text-(--fvp-reader-text) [&_dd]:font-medium [&_dd]:text-[13px] [&_dd]:break-words">
                 <dt>{field.key}</dt>
                 <dd>{field.value}</dd>
               </div>

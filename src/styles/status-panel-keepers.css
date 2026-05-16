@@ -1,0 +1,482 @@
+/* ─────────────────────────────────────
+   StatusPanel keepers — complex selectors
+   that don't inline cleanly into Tailwind:
+   - commit dialog: --sp-commit-* CSS var scope
+   - checkpoint diff modal + sidebar layout
+   - editable diff review surface (shared with git module)
+   ───────────────────────────────────── */
+
+/* commit dialog: CSS var scope (used by nested commit-message-input, etc.) */
+.sp-checkpoint-commit-dialog-overlay {
+  --sp-commit-accent: var(--accent, #2563eb);
+  --sp-commit-text: var(--text-strong, var(--text-primary, #111827));
+  --sp-commit-text-muted: var(--text-muted, #64748b);
+  --sp-commit-text-faint: color-mix(in srgb, var(--sp-commit-text-muted) 82%, transparent);
+  --sp-commit-surface: var(--surface-popover, var(--surface-panel, var(--surface-card, #ffffff)));
+  --sp-commit-surface-raised: color-mix(
+    in srgb,
+    var(--surface-card, var(--sp-commit-surface)) 88%,
+    var(--surface-control, var(--sp-commit-surface)) 12%
+  );
+  --sp-commit-surface-control: color-mix(
+    in srgb,
+    var(--surface-control, var(--sp-commit-surface)) 82%,
+    var(--sp-commit-surface) 18%
+  );
+  --sp-commit-surface-hover: color-mix(
+    in srgb,
+    var(--surface-control-hover, var(--surface-control, var(--sp-commit-surface))) 72%,
+    var(--sp-commit-surface) 28%
+  );
+  --sp-commit-border: color-mix(in srgb, var(--border-subtle, #cbd5e1) 86%, var(--sp-commit-text) 14%);
+  --sp-commit-border-strong: color-mix(in srgb, var(--border-strong, var(--sp-commit-border)) 82%, var(--sp-commit-text) 18%);
+  --sp-commit-success: color-mix(in srgb, var(--success, #16a34a) 78%, var(--sp-commit-text) 22%);
+  --sp-commit-danger: color-mix(in srgb, var(--danger, var(--status-error, #dc2626)) 82%, var(--sp-commit-text) 18%);
+}
+
+.sp-checkpoint-commit-message-section .commit-message-input {
+  color: var(--sp-commit-text);
+  background: var(--sp-commit-surface-control);
+  border-color: var(--sp-commit-border-strong);
+}
+
+.sp-checkpoint-commit-message-section .commit-message-input::placeholder {
+  color: var(--sp-commit-text-faint);
+}
+
+.sp-checkpoint-commit-message-section .commit-message-input:focus {
+  border-color: color-mix(in srgb, var(--sp-commit-accent) 64%, var(--sp-commit-border));
+  color: var(--sp-commit-text);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--sp-commit-accent) 18%, transparent);
+}
+
+.sp-checkpoint-commit-message-section .commit-message-generate-button {
+  border-color: var(--sp-commit-border);
+  background: color-mix(in srgb, var(--sp-commit-surface-raised) 92%, var(--sp-commit-accent) 8%);
+  color: color-mix(in srgb, var(--sp-commit-accent) 82%, var(--sp-commit-text) 18%);
+}
+
+.sp-checkpoint-commit-message-section .commit-message-generate-button:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--sp-commit-accent) 44%, var(--sp-commit-border));
+  background: color-mix(in srgb, var(--sp-commit-surface-hover) 86%, var(--sp-commit-accent) 14%);
+}
+
+.sp-checkpoint-commit-message-section .commit-message-error {
+  color: var(--sp-commit-danger);
+}
+
+/* ─── Checkpoint diff modal ─── */
+.checkpoint-diff-modal {
+  width: min(1600px, calc(100vw - 48px));
+  max-width: min(1600px, calc(100vw - 48px));
+  height: min(900px, calc(100vh - 64px));
+  max-height: calc(100vh - 64px);
+}
+
+.checkpoint-diff-modal.is-maximized {
+  width: calc(100vw - 16px);
+  max-width: calc(100vw - 16px);
+  height: calc(100vh - 16px);
+  max-height: calc(100vh - 16px);
+}
+
+.checkpoint-diff-modal-shell {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 300px;
+  gap: 0;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.checkpoint-diff-sidebar {
+  border-left: 1px solid var(--border-subtle);
+  background: color-mix(in srgb, var(--surface-item) 90%, transparent);
+  padding: 12px 10px;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.checkpoint-diff-sidebar-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.checkpoint-diff-sidebar-title {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.checkpoint-diff-sidebar-count {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.checkpoint-diff-sidebar-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-height: 0;
+  flex: 1;
+  overflow: auto;
+}
+
+.checkpoint-diff-sidebar-item {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-strong);
+  text-align: left;
+}
+
+.checkpoint-diff-sidebar-item:hover {
+  background: var(--surface-hover);
+  cursor: pointer;
+}
+
+.checkpoint-diff-sidebar-item.is-active {
+  border-color: color-mix(in srgb, var(--accent-primary, #2563eb) 45%, var(--border-subtle));
+  background: color-mix(in srgb, var(--surface-card) 92%, transparent);
+}
+
+.checkpoint-diff-sidebar-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.checkpoint-diff-sidebar-meta {
+  font-size: 10px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.checkpoint-diff-sidebar-stats {
+  display: inline-flex;
+  gap: 6px;
+  font-size: 11px;
+}
+
+.checkpoint-diff-sidebar-stats .is-add {
+  color: #89d185;
+}
+
+.checkpoint-diff-sidebar-stats .is-del {
+  color: #d19a66;
+}
+
+.checkpoint-diff-viewer {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.checkpoint-diff-viewer > .diff-viewer-frame {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+}
+
+.checkpoint-diff-fallback {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 12px;
+  height: 100%;
+  padding: 24px;
+}
+
+.checkpoint-diff-fallback-copy {
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+/* ─── Editable diff review surface (shared with git module) ─── */
+.editable-diff-review-surface {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+  height: 100%;
+}
+
+.editable-diff-review-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border-subtle);
+  background: color-mix(in srgb, var(--surface-panel) 86%, transparent);
+}
+
+.editable-diff-review-toolbar-copy {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.editable-diff-review-toolbar-kicker {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.editable-diff-review-toolbar-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-strong);
+}
+
+.editable-diff-review-toolbar-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.editable-diff-review-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-strong);
+  font-size: 12px;
+  font-weight: 600;
+  padding: 6px 10px;
+}
+
+.editable-diff-review-action:not(:disabled) {
+  cursor: pointer;
+}
+
+.editable-diff-review-action:not(:disabled):hover {
+  background: var(--surface-hover);
+}
+
+.editable-diff-review-action:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.editable-diff-review-surface.is-toolbar-inline-actions .editable-diff-review-toolbar-actions {
+  display: contents;
+}
+
+.git-history-diff-modal-actions > .editable-diff-review-toolbar-actions {
+  display: contents;
+}
+
+.git-history-diff-modal-actions .editable-diff-review-action {
+  width: auto;
+  height: auto;
+  min-height: 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  padding: 0;
+  font-size: 11px;
+  line-height: 1.2;
+  font-weight: 700;
+  color: var(--text-strong);
+}
+
+.git-history-diff-modal-actions .editable-diff-review-action:not(:disabled):hover {
+  background: transparent;
+  color: var(--text-emphasis);
+}
+
+.git-history-diff-modal-actions .editable-diff-review-readonly-hint {
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.editable-diff-review-readonly-hint {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.editable-diff-review-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 300px;
+  min-height: 0;
+  min-width: 0;
+  flex: 1;
+}
+
+.editable-diff-review-surface:not(.has-sidebar) .editable-diff-review-layout {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.editable-diff-review-main {
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.editable-diff-review-main > .diff-viewer-frame,
+.editable-diff-review-main > .fvp {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+}
+
+.editable-diff-review-sidebar {
+  border-left: 1px solid var(--border-subtle);
+  background: color-mix(in srgb, var(--surface-item) 90%, transparent);
+  padding: 12px 10px;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.editable-diff-review-sidebar-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.editable-diff-review-sidebar-title {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.editable-diff-review-sidebar-count {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.editable-diff-review-sidebar-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-height: 0;
+  flex: 1;
+  overflow: auto;
+}
+
+.editable-diff-review-sidebar-item {
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-strong);
+  text-align: left;
+}
+
+.editable-diff-review-sidebar-item:hover {
+  background: var(--surface-hover);
+  cursor: pointer;
+}
+
+.editable-diff-review-sidebar-item.is-active {
+  border-color: color-mix(in srgb, var(--accent-primary, #2563eb) 45%, var(--border-subtle));
+  background: color-mix(in srgb, var(--surface-card) 92%, transparent);
+}
+
+.editable-diff-review-sidebar-icon {
+  display: inline-flex;
+  align-items: center;
+}
+
+.editable-diff-review-sidebar-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.editable-diff-review-sidebar-stats {
+  display: inline-flex;
+  gap: 6px;
+  font-size: 11px;
+}
+
+.editable-diff-review-sidebar-stats .is-add {
+  color: #89d185;
+}
+
+.editable-diff-review-sidebar-stats .is-del {
+  color: #d19a66;
+}
+
+@media (max-width: 1100px) {
+  .checkpoint-diff-modal-shell {
+    grid-template-columns: 1fr;
+  }
+
+  .checkpoint-diff-sidebar {
+    order: 2;
+    border-left: 0;
+    border-top: 1px solid var(--border-subtle);
+  }
+
+  .checkpoint-diff-sidebar-list {
+    max-height: 220px;
+  }
+
+  .editable-diff-review-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .editable-diff-review-sidebar {
+    border-left: 0;
+    border-top: 1px solid var(--border-subtle);
+  }
+
+  .editable-diff-review-sidebar-list {
+    max-height: 220px;
+  }
+}

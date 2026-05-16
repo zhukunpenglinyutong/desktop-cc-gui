@@ -1147,15 +1147,15 @@ export function renderGitHistoryPanelDialogs(scope: any) {
             }}
           >
             <div
-              className="git-history-reset-dialog"
+              className="git-history-reset-dialog w-[min(640px,100%)] rounded-xl border border-(--border-default)/78 bg-[color-mix(in_srgb,var(--surface-card-muted,#111725)_92%,#0b1220)] shadow-[0_14px_42px_rgba(0,0,0,0.34)] p-3.5 flex flex-col gap-2.5"
               role="dialog"
               aria-modal="true"
               aria-label={t("git.historyResetDialogTitle")}
             >
-              <div className="git-history-create-branch-title">
+              <div className="git-history-create-branch-title text-[13px] font-bold text-(--text-stronger)">
                 {t("git.historyResetDialogTitle")}
               </div>
-              <div className="git-history-reset-target">
+              <div className="git-history-reset-target text-[13px] text-(--text-primary) leading-[1.4]">
                 {t("git.historyResetDialogTarget", {
                   branch: currentBranch ?? "HEAD",
                   workspace: workspace.name,
@@ -1164,26 +1164,26 @@ export function renderGitHistoryPanelDialogs(scope: any) {
                   author: resetTargetCommit.author,
                 })}
               </div>
-              <div className="git-history-reset-description">
+              <div className="git-history-reset-description text-xs text-(--text-secondary)">
                 {t("git.historyResetDialogDescription")}
               </div>
-              <div className="git-history-reset-mode-list" role="radiogroup">
+              <div className="git-history-reset-mode-list flex flex-col gap-[7px]" role="radiogroup">
                 {([
                   ["soft", "historyResetModeSoft", "historyResetModeSoftDesc"],
                   ["mixed", "historyResetModeMixed", "historyResetModeMixedDesc"],
                   ["hard", "historyResetModeHard", "historyResetModeHardDesc"],
                   ["keep", "historyResetModeKeep", "historyResetModeKeepDesc"],
                 ] as const).map(([mode, labelKey, descKey]) => (
-                  <label key={mode} className="git-history-reset-mode-item">
+                  <label key={mode} className="git-history-reset-mode-item flex items-start gap-2 border border-(--border-default)/54 rounded-[9px] px-[9px] py-2 bg-[color-mix(in_srgb,var(--surface-control,#1a2230)_46%,transparent)] [&_input]:mt-[1px]">
                     <input
                       type="radio"
                       name="git-history-reset-mode"
                       checked={resetMode === mode}
                       onChange={() => setResetMode(mode)}
                     />
-                    <div className="git-history-reset-mode-copy">
-                      <div className="git-history-reset-mode-label">{t(`git.${labelKey}`)}</div>
-                      <div className="git-history-reset-mode-desc">{t(`git.${descKey}`)}</div>
+                    <div className="git-history-reset-mode-copy flex flex-col gap-[3px] min-w-0">
+                      <div className="git-history-reset-mode-label text-[13px] font-bold text-(--text-stronger)">{t(`git.${labelKey}`)}</div>
+                      <div className="git-history-reset-mode-desc text-xs text-(--text-secondary) leading-[1.35]">{t(`git.${descKey}`)}</div>
                     </div>
                   </label>
                 ))}
@@ -1191,17 +1191,17 @@ export function renderGitHistoryPanelDialogs(scope: any) {
               {resetMode === "hard" ? (
                 <div className="git-history-warning">{t("git.historyResetHardWarning")}</div>
               ) : null}
-              <div className="git-history-create-branch-actions">
+              <div className="git-history-create-branch-actions flex justify-end gap-2">
                 <button
                   type="button"
-                  className="git-history-create-branch-btn is-cancel"
+                  className="git-history-create-branch-btn is-cancel min-w-[76px] h-[30px] rounded-lg text-xs font-semibold cursor-pointer border border-(--border-default)/76 bg-[color-mix(in_srgb,var(--surface-control,#1a2230)_64%,transparent)] text-(--text-secondary) disabled:opacity-[0.48] disabled:cursor-not-allowed"
                   onClick={() => setResetDialogOpen(false)}
                 >
                   {t("common.cancel")}
                 </button>
                 <button
                   type="button"
-                  className="git-history-create-branch-btn is-confirm"
+                  className="git-history-create-branch-btn is-confirm min-w-[76px] h-[30px] rounded-lg text-xs font-semibold cursor-pointer border border-[color-mix(in_srgb,var(--accent-primary,#2563eb)_52%,transparent)] bg-[color-mix(in_srgb,var(--accent-primary,#2563eb)_28%,transparent)] text-[color-mix(in_srgb,var(--accent-primary,#2563eb)_92%,#dbeafe)] disabled:opacity-[0.48] disabled:cursor-not-allowed"
                   disabled={!resetTargetSha || Boolean(operationLoading)}
                   onClick={() => void handleConfirmResetCommit()}
                 >
@@ -1221,30 +1221,30 @@ export function renderGitHistoryPanelDialogs(scope: any) {
             }}
           >
             <section
-              className="git-history-force-delete-dialog"
+              className="git-history-force-delete-dialog w-[min(560px,100%)] rounded-[14px] border border-[color-mix(in_srgb,#ef4444_26%,var(--border-default))] bg-[color-mix(in_srgb,var(--surface-card-muted,#111725)_94%,#0b1220)] shadow-[0_16px_40px_rgba(0,0,0,0.34)] p-3.5 flex flex-col gap-2.5"
               role="dialog"
               aria-modal="true"
               aria-label={t("git.historyTitleForceDeleteBranch")}
             >
-              <div className="git-history-force-delete-header">
-                <span className="git-history-force-delete-title">
+              <div className="git-history-force-delete-header flex items-center justify-between gap-2.5">
+                <span className="git-history-force-delete-title inline-flex items-center gap-2 text-[color-mix(in_srgb,#ef4444_86%,var(--text-stronger))] text-sm font-bold">
                   <ShieldAlert size={16} />
                   {t("git.historyTitleForceDeleteBranch")}
                 </span>
                 <button
                   type="button"
-                  className="git-history-force-delete-close"
+                  className="git-history-force-delete-close inline-flex items-center justify-center w-[26px] h-[26px] rounded-full border border-(--border-default)/72 bg-[color-mix(in_srgb,var(--surface-control,#1a2230)_66%,transparent)] text-(--text-secondary) cursor-pointer hover:[&:not(:disabled)]:text-(--text-primary) hover:[&:not(:disabled)]:border-[color-mix(in_srgb,var(--accent-primary,#2563eb)_56%,transparent)] disabled:opacity-100 disabled:text-[color-mix(in_srgb,var(--text-secondary)_78%,var(--text-muted))] [&_svg]:block [&_svg]:w-3.5 [&_svg]:h-3.5 [&_svg]:stroke-current [&_svg]:[stroke-width:2.35]"
                   onClick={() => closeForceDeleteDialog(false)}
                   aria-label={t("common.close")}
                   title={t("common.close")}
                 >
-                  <span className="git-history-force-delete-close-glyph" aria-hidden>
+                  <span className="git-history-force-delete-close-glyph inline-flex items-center justify-center w-3.5 h-3.5 text-lg font-bold leading-none text-current" aria-hidden>
                     ×
                   </span>
                 </button>
               </div>
 
-              <div className="git-history-force-delete-summary">
+              <div className="git-history-force-delete-summary text-[13px] text-(--text-primary) leading-[1.45]">
                 {forceDeleteDialogState.mode === "worktreeOccupied"
                   ? t("git.historyForceDeleteDialogSubtitleWithWorktree", {
                       branch: forceDeleteDialogState.branch,
@@ -1254,16 +1254,16 @@ export function renderGitHistoryPanelDialogs(scope: any) {
                     })}
               </div>
 
-              <div className="git-history-force-delete-risk">
-                <strong>{t("git.historyForceDeleteDialogRiskTitle")}</strong>
-                <p>
+              <div className="git-history-force-delete-risk rounded-[10px] border border-[color-mix(in_srgb,#ef4444_34%,transparent)] bg-[color-mix(in_srgb,#ef4444_14%,transparent)] px-2.5 py-[9px] flex flex-col gap-1.5 [animation:git-history-danger-pulse_2.2s_ease-in-out_infinite]">
+                <strong className="text-[color-mix(in_srgb,#ef4444_88%,var(--text-primary))] text-xs">{t("git.historyForceDeleteDialogRiskTitle")}</strong>
+                <p className="m-0 text-(--text-secondary) text-xs leading-[1.45]">
                   {forceDeleteDialogState.mode === "worktreeOccupied"
                     ? t("git.historyForceDeleteDialogRiskWithWorktree")
                     : t("git.historyForceDeleteDialogRiskNotMerged")}
                 </p>
               </div>
 
-              <dl className="git-history-force-delete-facts">
+              <dl className="git-history-force-delete-facts m-0 rounded-[10px] border border-(--border-default)/72 bg-[color-mix(in_srgb,var(--surface-control,#1a2230)_54%,transparent)] overflow-hidden [&>div]:m-0 [&>div]:px-2.5 [&>div]:py-2 [&>div]:grid [&>div]:gap-1 [&>div+div]:border-t [&>div+div]:border-(--border-default)/62 [&_dt]:m-0 [&_dt]:text-xs [&_dt]:text-(--text-secondary) [&_dd]:m-0 [&_code]:text-[11px] [&_code]:text-(--text-primary) [&_code]:[overflow-wrap:anywhere]">
                 <div>
                   <dt>{t("git.historyForceDeleteDialogBranchLabel")}</dt>
                   <dd>
@@ -1274,11 +1274,11 @@ export function renderGitHistoryPanelDialogs(scope: any) {
                   <div>
                     <dt>{t("git.historyForceDeleteDialogWorktreeLabel")}</dt>
                     <dd>
-                      <span className="git-history-force-delete-worktree-row">
+                      <span className="git-history-force-delete-worktree-row flex items-center gap-2">
                         <code>{forceDeleteDialogState.worktreePath}</code>
                         <button
                           type="button"
-                          className="git-history-force-delete-copy"
+                          className="git-history-force-delete-copy flex-none border border-(--border-default)/70 rounded-full bg-[color-mix(in_srgb,var(--surface-control,#1a2230)_64%,transparent)] text-(--text-secondary) text-[11px] leading-none px-2 py-[5px] cursor-pointer hover:border-[color-mix(in_srgb,var(--accent-primary,#2563eb)_56%,transparent)] hover:text-(--text-primary)"
                           onClick={() => void handleCopyForceDeleteWorktreePath()}
                         >
                           {forceDeleteCopiedPath
@@ -1291,21 +1291,21 @@ export function renderGitHistoryPanelDialogs(scope: any) {
                 ) : null}
               </dl>
 
-              <p className="git-history-force-delete-tip">
+              <p className="git-history-force-delete-tip m-0 text-xs text-(--text-muted) leading-[1.45]">
                 {t("git.historyForceDeleteDialogTip")}
               </p>
 
-              <div className="git-history-create-branch-actions">
+              <div className="git-history-create-branch-actions flex justify-end gap-2">
                 <button
                   type="button"
-                  className="git-history-create-branch-btn is-cancel"
+                  className="git-history-create-branch-btn is-cancel min-w-[76px] h-[30px] rounded-lg text-xs font-semibold cursor-pointer border border-(--border-default)/76 bg-[color-mix(in_srgb,var(--surface-control,#1a2230)_64%,transparent)] text-(--text-secondary) disabled:opacity-[0.48] disabled:cursor-not-allowed"
                   onClick={() => closeForceDeleteDialog(false)}
                 >
                   {t("common.cancel")}
                 </button>
                 <button
                   type="button"
-                  className="git-history-create-branch-btn is-danger"
+                  className="git-history-create-branch-btn is-danger min-w-[76px] h-[30px] rounded-lg text-xs font-semibold cursor-pointer border border-[color-mix(in_srgb,#ef4444_54%,transparent)] bg-[color-mix(in_srgb,#ef4444_26%,transparent)] text-[color-mix(in_srgb,#ef4444_90%,#fee2e2)] disabled:opacity-[0.48] disabled:cursor-not-allowed"
                   disabled={forceDeleteCountdown > 0}
                   onClick={() => closeForceDeleteDialog(true)}
                 >

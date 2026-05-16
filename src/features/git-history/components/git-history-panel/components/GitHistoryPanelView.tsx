@@ -1706,24 +1706,24 @@ export function renderGitHistoryPanelView(scope: any) {
                 <div className="git-history-create-pr-header-actions">
                   <button
                     type="button"
-                    className="git-history-force-delete-close"
+                    className="git-history-force-delete-close inline-flex items-center justify-center w-[26px] h-[26px] rounded-full border border-(--border-default)/72 bg-[color-mix(in_srgb,var(--surface-control,#1a2230)_66%,transparent)] text-(--text-secondary) cursor-pointer hover:[&:not(:disabled)]:text-(--text-primary) hover:[&:not(:disabled)]:border-[color-mix(in_srgb,var(--accent-primary,#2563eb)_56%,transparent)] disabled:opacity-100 disabled:text-[color-mix(in_srgb,var(--text-secondary)_78%,var(--text-muted))] [&_svg]:block [&_svg]:w-3.5 [&_svg]:h-3.5 [&_svg]:stroke-current [&_svg]:[stroke-width:2.35]"
                     onClick={() => setIsCreatePrDialogMaximized((value) => !value)}
                     aria-label={isCreatePrDialogMaximized ? t("common.restore") : t("menu.maximize")}
                     title={isCreatePrDialogMaximized ? t("common.restore") : t("menu.maximize")}
                   >
-                    <span className="git-history-force-delete-close-glyph" aria-hidden>
+                    <span className="git-history-force-delete-close-glyph inline-flex items-center justify-center w-3.5 h-3.5 text-lg font-bold leading-none text-current" aria-hidden>
                       {isCreatePrDialogMaximized ? "❐" : "□"}
                     </span>
                   </button>
                   <button
                     type="button"
-                    className="git-history-force-delete-close"
+                    className="git-history-force-delete-close inline-flex items-center justify-center w-[26px] h-[26px] rounded-full border border-(--border-default)/72 bg-[color-mix(in_srgb,var(--surface-control,#1a2230)_66%,transparent)] text-(--text-secondary) cursor-pointer hover:[&:not(:disabled)]:text-(--text-primary) hover:[&:not(:disabled)]:border-[color-mix(in_srgb,var(--accent-primary,#2563eb)_56%,transparent)] disabled:opacity-100 disabled:text-[color-mix(in_srgb,var(--text-secondary)_78%,var(--text-muted))] [&_svg]:block [&_svg]:w-3.5 [&_svg]:h-3.5 [&_svg]:stroke-current [&_svg]:[stroke-width:2.35]"
                     onClick={closeCreatePrDialog}
                     aria-label={t("common.close")}
                     title={t("common.close")}
                     disabled={createPrSubmitting}
                   >
-                    <span className="git-history-force-delete-close-glyph" aria-hidden>
+                    <span className="git-history-force-delete-close-glyph inline-flex items-center justify-center w-3.5 h-3.5 text-lg font-bold leading-none text-current" aria-hidden>
                       ×
                     </span>
                   </button>

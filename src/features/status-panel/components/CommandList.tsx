@@ -16,8 +16,14 @@ const STATUS_ICON = {
   error: XCircle,
 } as const;
 
+const STATUS_ICON_CLASS = {
+  running: "text-[#61afef] [&_svg]:animate-[sp-spin_1s_linear_infinite]",
+  completed: "text-[#89d185]",
+  error: "text-[#ff6b6b]",
+} as const;
+
 function stripTrailingEllipsis(text: string): string {
-  return text.replace(/(?:\u2026|\.{3})\s*$/, "");
+  return text.replace(/(?:…|\.{3})\s*$/, "");
 }
 
 export const CommandList = memo(function CommandList({
@@ -43,10 +49,14 @@ export const CommandList = memo(function CommandList({
   }, [enableExpand]);
 
   if (commands.length === 0) {
-    return <div className="sp-empty">{t("statusPanel.emptyCommands")}</div>;
+    return (
+      <div className="sp-empty p-4 text-center text-(--text-faint) text-xs">
+        {t("statusPanel.emptyCommands")}
+      </div>
+    );
   }
   return (
-    <div className="sp-command-list">
+    <div className="sp-command-list flex flex-col gap-1">
       {commands.map((entry) => {
         const Icon = STATUS_ICON[entry.status] ?? Loader2;
         const isExpanded = expandedIds.has(entry.id);
@@ -58,7 +68,9 @@ export const CommandList = memo(function CommandList({
         return (
           <div
             key={entry.id}
-            className={`sp-command-item sp-command-${entry.status}${canExpand ? " is-expandable" : ""}`}
+            className={`sp-command-item sp-command-${entry.status} flex items-start gap-2 px-2 py-1.5 rounded-lg hover:bg-(--surface-hover)${
+              canExpand ? " is-expandable cursor-pointer" : ""
+            }`}
             onClick={() => toggleExpanded(entry.id)}
             role={canExpand ? "button" : undefined}
             tabIndex={canExpand ? 0 : undefined}
@@ -73,11 +85,17 @@ export const CommandList = memo(function CommandList({
               }
             }}
           >
-            <span className="sp-command-icon">
+            <span
+              className={`sp-command-icon flex items-center mt-px text-(--text-muted) ${STATUS_ICON_CLASS[entry.status]}`}
+            >
               <Icon size={14} />
             </span>
             <code
-              className={`sp-command-text${isExpanded ? " is-expanded" : ""}`}
+              className={`sp-command-text block flex-1 min-w-0 text-xs leading-snug text-(--text-strong) font-mono${
+                isExpanded
+                  ? " is-expanded whitespace-pre-wrap overflow-visible text-clip break-words"
+                  : " whitespace-nowrap overflow-hidden text-ellipsis"
+              }`}
               title={entry.command}
             >
               {displayCommand}

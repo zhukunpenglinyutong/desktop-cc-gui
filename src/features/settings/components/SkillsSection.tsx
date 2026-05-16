@@ -1221,12 +1221,12 @@ export function SkillsSection({
                       <div className="settings-skills-content-wrap mt-1 min-h-0 flex-1 flex flex-col overflow-auto">
                         {selectedFileIsImage ? (
                           selectedImageSrc ? (
-                            <div className="fvp-image-preview">
-                              <div className="fvp-image-preview-inner">
+                            <div className="fvp-image-preview flex-1 flex items-center justify-center overflow-auto p-6 bg-(--surface-command) bg-[linear-gradient(45deg,var(--surface-control)_25%,transparent_25%),linear-gradient(-45deg,var(--surface-control)_25%,transparent_25%),linear-gradient(45deg,transparent_75%,var(--surface-control)_75%),linear-gradient(-45deg,var(--surface-control)_75%)] [background-size:16px_16px] [background-position:0_0,0_8px,8px_-8px,-8px_0]">
+                              <div className="fvp-image-preview-inner flex flex-col items-center gap-3 max-w-full max-h-full min-w-0 min-h-0">
                                 <img
                                   src={selectedImageSrc}
                                   alt={pathBaseName(selectedFilePath ?? "")}
-                                  className="fvp-image-preview-img"
+                                  className="fvp-image-preview-img max-w-full max-h-full object-contain rounded-[4px] shadow-[0_4px_16px_rgba(0,0,0,0.2)] min-h-0"
                                   draggable={false}
                                 />
                               </div>
@@ -1249,7 +1249,7 @@ export function SkillsSection({
                           </div>
                         ) : selectedFileIsMarkdown ? (
                           selectedFileContent ? (
-                            <div className="fvp-preview-scroll">
+                            <div className="fvp-preview-scroll flex-1 overflow-auto py-5 px-6 w-full min-w-0">
                               <FileMarkdownPreview
                                 value={selectedFileContent}
                                 className="fvp-file-markdown fvp-markdown-github"
@@ -1259,20 +1259,20 @@ export function SkillsSection({
                             <div className="settings-inline-muted">{t("settings.skillsPanel.contentEmpty")}</div>
                           )
                         ) : selectedStructuredPreviewKind && selectedFilePath ? (
-                          <div className="fvp-preview-scroll">
+                          <div className="fvp-preview-scroll flex-1 overflow-auto py-5 px-6 w-full min-w-0">
                             <FileStructuredPreview
                               filePath={selectedFilePath}
                               value={selectedFileContent}
-                              className="fvp-structured-preview"
+                              className="fvp-structured-preview flex flex-col gap-3.5 text-[13px] text-(--fvp-reader-text)"
                             />
                           </div>
                         ) : highlightedContentLines.length > 0 ? (
-                          <div className="fvp-code-preview" role="list">
+                          <div className="fvp-code-preview flex flex-col overflow-auto flex-1 py-3 px-0 font-[var(--code-font-family)] text-[var(--code-font-size,12px)] font-[var(--code-font-weight,400)] leading-[var(--code-line-height,1.6)] text-(--fvp-reader-text) whitespace-pre bg-(--fvp-reader-surface) w-full min-w-0" role="list">
                             {highlightedContentLines.map((lineHtml, index) => (
-                              <div key={`${selectedFilePath}-${index}`} className="fvp-code-line">
-                                <span className="fvp-line-number">{index + 1}</span>
+                              <div key={`${selectedFilePath}-${index}`} className="fvp-code-line relative grid grid-cols-[52px_1fr] gap-3 items-start py-px pr-4 pl-0 min-w-full w-max hover:bg-[color-mix(in_srgb,var(--surface-active)_35%,transparent)]">
+                                <span className="fvp-line-number inline-flex items-center justify-end gap-1.5 text-(--fvp-reader-fainter) text-right tabular-nums select-none pr-1">{index + 1}</span>
                                 <span
-                                  className="fvp-line-text"
+                                  className="fvp-line-text min-w-0"
                                   dangerouslySetInnerHTML={{ __html: lineHtml }}
                                 />
                               </div>
