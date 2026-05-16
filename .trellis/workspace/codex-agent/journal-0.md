@@ -76,3 +76,78 @@
 - Phase 1 完成后自然修复 `input.tsx` typecheck 报错。
 - `perfBaseline` 缺 `web-vitals` 与本次无关，在 follow-up 队列。
 - `add_session.py` 在 workspace 未初始化时无法自动 create journal-0.md（已手工补建），可作为 Trellis 工具改进点之一。
+
+
+## Session 2: Phase 1 收尾 coss token 与精简 globals.css
+
+**Date**: 2026-05-16
+**Task**: Phase 1 收尾 coss token 与精简 globals.css
+**Branch**: `chore/bump-version-0.5`
+
+### Summary
+
+(Add summary)
+
+### Main Changes
+
+本会话完成 coss UI 全量迁移 task 的 Phase 1。Phase 0 spike 后发现项目早已完成 Tailwind v4 与 coss 标准 token 基础接入（globals.css + themes.light/dark.css），Phase 1 因此从"从零接入"调整为"收尾 + 清理"。
+
+## Phase 1 实际工作
+
+| 类别 | 内容 |
+|---|---|
+| Token 审计 | 21 个 coss 标准 token 三处全覆盖（themes.light + themes.dark + globals.css @theme block），唯一缺口 --font-heading 已补 |
+| 字体策略 | 保守保留 SF Pro Text（chained to --ui-font-family），避免视觉回归；Phase 2+ 视觉刷新再决定是否切 Inter / Geist Mono |
+| globals.css 责任分层 | 167 行 → 60 行，剥离 .proxy-status-badge* 业务样式与 keyframes 到独立 src/styles/proxy-status-badge.css；globals.css 只留 Tailwind import + @theme + 注释 |
+| Bootstrap | bootstrap.ts 追加 proxy-status-badge.css import（line 52），保持 globals.css 仍为首行 |
+| Smoke test | 新建 src/components/ui/__coss-smoke__/ fixture（不接入主 UI），13 个 coss utility class 的 className contract 通过 5 个 vitest case 验证 |
+| Audit doc | phase-1-token-audit.md 记录 token 链路覆盖矩阵 + font 策略 + responsibility refactor 细节 + follow-ups |
+| Roadmap | docs/migration-to-coss-ui.md Phase 0/1 状态标 done |
+
+## 验证结果
+
+- `npm run lint` ✅ pass
+- `npm run typecheck` ✅ baseline 不变（仅 3 个 pre-existing：input.tsx:48 + perfBaseline×2）
+- `npx vitest run src/components/ui/__coss-smoke__/CossSmokeTest.test.tsx` ✅ 5/5 pass
+- `tauri dev` 视觉回归 ⚠️ 留待用户 GUI 实测（headless 跑不出）
+
+## 关键决策
+
+- 不删除任何项目老 token（--text-* / --surface-*），避免 93 个旧 .css 瞬间崩
+- 不引入 cascade layer 强制 Tailwind 低优先级——现有 cascade 已正确
+- font 切到 Inter / Geist Mono 推迟到 Phase 2 视觉刷新（避免 Phase 1 引入视觉变化）
+
+## 后续 phase 影响
+
+- Phase 2-9 中如某 feature 需要扩展 token（如 sidebar-ring），按需补到 themes.*.css
+- Phase 10 删除 __coss-smoke__/ fixture
+- Phase 2 起开始动业务 .css，第一波是 Global Chrome（app-shell / sidebar.chrome / tabbar / panel-lock / panel-tabs / search-palette / compact-tablet / debug）
+
+**Updated Files**:
+
+- `src/styles/globals.css` (167 → 60)
+- `src/styles/proxy-status-badge.css` (new, 119 lines)
+- `src/bootstrap.ts` (+1 line)
+- `src/components/ui/__coss-smoke__/CossSmokeTest.tsx`, `CossSmokeTest.test.tsx`, `README.md`
+- `.trellis/tasks/05-16-migrate-css-to-coss-ui/phase-1-token-audit.md`
+- `.trellis/tasks/05-16-migrate-css-to-coss-ui/prd.md`
+- `docs/migration-to-coss-ui.md`
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `a7eed8cf` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
