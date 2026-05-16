@@ -942,3 +942,44 @@ src/styles/*.css: 72 → 71（−1 sticky）；累计删 22 .css；bootstrap.ts 
 ### Next Steps
 
 - None - task complete
+
+
+## Session 13: Phase 4.5a composer-rewind + 5.6a kanban mode-toggle + 6.5a vendor 并行批次
+
+**Date**: 2026-05-17
+**Task**: Phase 4.5a composer-rewind + 5.6a kanban mode-toggle + 6.5a vendor 并行批次
+**Branch**: `chore/bump-version-0.5`
+
+### Summary
+
+(Add summary)
+
+### Main Changes
+
+3 个并行 agent 推进 sub-PR：
+- 4.5a composer.rewind-modal 1233→422 keeper（-65.8%），ClaudeRewindConfirmDialog inline Tailwind 含 peer radio
+- 5.6a kanban.css 2071→1896 in-place trim（mode-toggle + projects 段），4 个 tsx Tailwind 化
+- 6.5a vendor-codex-runtime + vendor-dialog 2 文件 469 行删除，8 个 vendor .tsx inline Tailwind，settings.css 7→5 行，codex-unified-exec-override-contract 严格保留
+
+验证：lint pass / typecheck 0 / layout-guard 46/46 / large-files retained / composer 453 + kanban 63 + settings 134 全过
+
+Net：CSS 71→69，累计删 24 个 .css + 7 keeper。
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `36c730be` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
