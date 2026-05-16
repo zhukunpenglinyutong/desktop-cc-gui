@@ -151,3 +151,100 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 3: Phase 2 Global Chrome 切到 Tailwind/coss token
+
+**Date**: 2026-05-16
+**Task**: Phase 2 Global Chrome 切到 Tailwind/coss token
+**Branch**: `chore/bump-version-0.5`
+
+### Summary
+
+(Add summary)
+
+### Main Changes
+
+本会话完成 coss UI 全量迁移 Phase 2。
+
+## 实施摘要
+
+- 删除 8 个 chrome 类 .css（tabbar / panel-tabs / panel-lock / search-palette / compact-base / compact-phone / compact-tablet / debug）
+- 10 个 .tsx 改用 coss design token + Tailwind utility class（TabBar / TabletNav / LockScreenOverlay / PanelTabs / PhoneLayout / TabletLayout / useLayoutNodes / DebugPanel / SearchPalette）
+- 语义 class 名保留为 no-op marker，让现有 CSS-pin 测试与下游 debug 工具继续工作
+- cross-cutting compact layout 选择器搬入 base.css，等后续 phase 对应 feature 拆完再删
+
+## Scope 收缩
+
+sidebar.css（2448 行，80%+ 业务样式）/ sidebar.chrome.css（被字面值测试 pin）/ sidebar-shell.css 推迟到 Phase 3+ 与 Threads/Workspace 业务一起拆。理由：硬拆会破坏 layout-swapped-platform-guard 与 sidebar-titlebar-drag-region 两个字面值测试，且会让 Threads/Workspace 视觉提前炸。
+
+## 0 个 coss primitive 替换
+
+Phase 2 是纯样式 rebase——0 个 coss primitive 引入。Toolbar / Command / Dialog 替换 PanelTabs / SearchPalette / LockScreenOverlay 推迟到 Phase 4。理由：
+- TabBar/TabletNav：Toolbar 对 stateless 4-5 button nav 是 over-engineering
+- PanelTabs：现有 TooltipIconButton 组合 + role=tablist 测试 contract 不动
+- LockScreenOverlay：换 Dialog 会改 focus/portal 语义，需要 Phase 4 专门处理
+- SearchPalette：自定义键盘导航 + scope filter 超出 Command items 模式
+- DebugPanel：native overflow 已 work，ScrollArea 反而冲突
+
+## Net Delta
+
+| 指标 | 变化 |
+|---|---|
+| 删除 .css 文件 | 8 |
+| 修改 .tsx 文件 | 10 |
+| bootstrap.ts CSS imports | 54 → 46 |
+| 新增 base.css 行数 | 419 → 500（cross-cutting 选择器吸收） |
+| 删除 CSS 字节 | ~38 KB |
+| coss primitive 替换 | 0（推到 Phase 4） |
+
+## 验证
+
+- npm run lint ✅ pass
+- npm run typecheck ✅ baseline 不变（仅 3 个 pre-existing：input.tsx + perfBaseline×2）
+- npm run test ✅ pass（ComposerInput.collaboration 3 个 failure 是 pre-existing baseline，stash 验证）
+- npm run test:layout-guard ✅ 10/10 pass
+- npm run check:large-files:gate ✅ found=0
+- 定向：PanelTabs / Sidebar / layout-swapped-platform-guard / sidebar-titlebar-drag-region / CossSmokeTest / DesktopLayout / useLayoutNodes.client-ui-visibility 共 81/81 pass
+
+## IDE 诊断告警（非阻塞）
+
+tailwindcss-language-server 建议 Tailwind v4 canonical class：`size-[13px]→size-3.25`、`z-[2100]→z-2100`、`max-w-[760px]→max-w-190`、`p-[3px]→p-0.75` 等约 10 处。npm run lint 不报，列入 follow-up，后续 phase 统一收 cleanups 时一起改。
+
+## 后续 phase 影响
+
+- Phase 3+ 拆 sidebar.css/sidebar.chrome.css/sidebar-shell.css 时同时改 layout-swapped-platform-guard.test.ts 与 sidebar-titlebar-drag-region.test.ts（字面值测试改造或归档）
+- Phase 4 评估 Command / Dialog / Toolbar 重写 SearchPalette / LockScreenOverlay / TabBar
+- 各 feature phase 完成后回收 base.css 里 cross-cutting compact 选择器
+
+**Updated Files**:
+
+- 删除：src/styles/{tabbar,panel-tabs,panel-lock,search-palette,compact-base,compact-phone,compact-tablet,debug}.css
+- 修改：src/bootstrap.ts、src/styles/base.css
+- 修改：src/features/app/components/{TabBar,TabletNav,LockScreenOverlay}.tsx
+- 修改：src/features/layout/components/{PanelTabs,PhoneLayout,TabletLayout}.tsx
+- 修改：src/features/layout/hooks/useLayoutNodes.tsx
+- 修改：src/features/debug/components/DebugPanel.tsx
+- 修改：src/features/search/components/SearchPalette.tsx
+- 新增：.trellis/tasks/05-16-migrate-css-to-coss-ui/phase-2-chrome-plan.md
+- 更新：.trellis/tasks/05-16-migrate-css-to-coss-ui/prd.md（Phase 2 完成状态）
+- 更新：docs/migration-to-coss-ui.md（Phase 2 标 done + 新 follow-up）
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `f056b109` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
