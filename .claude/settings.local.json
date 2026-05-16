@@ -1,21 +1,10 @@
 {
   "permissions": {
     "allow": [
-      "Bash(git config:*)",
       "Skill(aimax:auto)",
       "Skill(aimax:auto:*)",
       "mcp__ace-tool__search_context",
-      "Bash(npm run typecheck:*)",
-      "Bash(npm run lint:*)",
-      "Bash(npm run build:*)",
-      "Bash(npx tsc:*)",
-      "Bash(npm install:*)",
-      "Bash(git add *)",
-      "Bash(git rebase *)",
-      "Bash(rtk git *)",
-      "Bash(rtk read *)",
-      "Bash(git check-ignore *)",
-      "Bash(rtk ls *)"
+      "Bash(*)"
     ]
   }
 }

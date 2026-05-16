@@ -1,0 +1,102 @@
+# Migration to coss.ui — Roadmap
+
+> 关联 Trellis task：`.trellis/tasks/05-16-migrate-css-to-coss-ui/prd.md`
+> Status：Phase 0 in progress（2026-05-16 启动）
+
+本文档是 coss.ui 全量迁移的路线图与 follow-up 清单。Trellis task 内的 PRD 是 single source of truth；本文件偏向"工程师可读"的速查与遗留事项追踪。
+
+---
+
+## 背景
+
+- 项目 fork 自 https://github.com/Dimillian/CodexMonitor，在原仓库基础上 commit 1000+ 次，未做彻底 CSS 架构治理，导致 `src/styles/` 下 **93 个 .css 文件**（含按 part 切分的大文件）。
+- 视觉一致性差，旧 CSS 与 Tailwind 已经混跑（`src/components/ui/` 下 24 个 shadcn/Radix 组件已经在用 Tailwind utility class）。
+- 决策（2026-05-16）：**clean-slate** 用 coss.ui 重塑 CSS 架构 + 替换基础组件，不保留旧 CSS。
+
+## 决策快照
+
+| 决策 | 选择 |
+|---|---|
+| 旧 CSS 处置 | 彻底删除（clean-slate） |
+| 重构边界 | 样式 + 基础组件；不动 feature 布局 / 信息架构 |
+| 视觉目标 | coss 默认 design language，无 brand override |
+| 节奏 | 阶段性 PR（每 phase 一个 PR） |
+| Branch | 直接在 `chore/bump-version-0.5` 上做 |
+| coss skill | 已安装到 `.agents/skills/coss/`（53 primitive 全覆盖） |
+
+## Phase 总览
+
+| Phase | 范围 | 关键产物 | 状态 |
+|---|---|---|---|
+| 0 | Preflight & Foundation | 本 README、`src/components/ui/README.md`、4 个 superseded task archive | ⏳ in progress |
+| 1 | coss CSS Entry + Theme Foundation | `src/styles/coss.css`、bootstrap.ts import 调整、cascade layers | ☐ |
+| 2 | Global Chrome | sidebar / tabbar / panel-lock / panel-tabs / search-palette / compact-tablet / debug | ☐ |
+| 3 | Threads + Messages（含 sticky header carry-forward） | messages.* / messages.streaming / history-sticky / prompts | ☐ |
+| 4 | Composer & Interaction Dialogs | composer.* / ask-user-question / approval-toasts / loading-progress / request-user-input | ☐ |
+| 5 | Home & Workspace | home / home-chat / workspace-home / note-cards / kanban / release-notes / update-toasts | ☐ |
+| 6 | Settings | settings.* / settings.vendor.* / settings.skills | ☐ |
+| 7 | Git History | git-history.* + branch-compare / pr-dialog / shell / support | ☐ |
+| 8 | Spec Hub | spec-hub.* | ☐ |
+| 9 | File / Diff / Terminal | file-tree / diff / terminal / detached-file-explorer / opencode-panel | ☐ |
+| 10 | Cleanup & Final Verify | 删剩余旧 CSS、跑所有 gate、人工 verify、follow-up 入库 | ☐ |
+
+> 每个 phase = 1 个 PR；DoD 详见 PRD。
+
+## Archived Superseded Tasks
+
+| Task | 处置 | 原因 |
+|---|---|---|
+| `04-22-align-live-sticky-with-history-header` | archive + needs carry-forward to Phase 3 | 含 render contract 行为需求（sticky header 视觉 + 接棒规则），不只是 CSS |
+| `04-23-split-composer-rewind-modal-styles` | archive | 纯 CSS 切分，旧 CSS 即将整体删除 |
+| `04-23-split-git-history-branch-compare-styles` | archive | 同上 |
+| `04-23-split-settings-css-panel-sections` | archive | 同上 |
+
+archive 位置：`.trellis/tasks/archive/2026-05/`。
+
+## Follow-up（迁移完成后再做）
+
+> 本次 phase 内**不做**这些；落进队列，避免 scope creep。
+
+### 视觉与设计
+- [ ] 引入 brand color override layer（如果产品需要品牌色，先 design exploration）。
+- [ ] feature 页面级布局重做 / 信息架构调整（threads 列表、git history、spec hub 等）。
+- [ ] 动效与微交互重设计（按 coss motion 约定）。
+- [ ] 暗色模式 token 精细化（超出 coss 默认 token 的部分）。
+
+### 组件与契约
+- [ ] 评估 `src/features/<feature>/components/` 下与 `src/components/ui/` 重复的组件，做去重 / 提升。
+- [ ] 评估是否引入 coss `Form` + Zod 重写 settings / composer 表单（本次只换基础原语，不重写表单整体）。
+- [ ] 评估是否引入 coss `Command` 重写 search-palette（本次 Phase 2 只换皮）。
+
+### 工程
+- [ ] 删除 `@radix-ui/*` 等 legacy 依赖（迁移完成后跑 `npx depcheck`）。
+- [ ] 升级 `cn()` 实现：若 coss 期望 `@coss/ui/lib/utils` 的 cn()，统一替换。
+- [ ] 大文件 baseline 重新校准（CSS 删完后基线大幅变化）。
+- [ ] 写 `.trellis/spec/frontend/coss-component-guidelines.md` 沉淀 coss 使用规范（替代 / 补充 现 component-guidelines.md）。
+- [ ] 把 coss skill 加入 onboarding 文档，新开发者知道在哪查 primitive。
+
+### 文档
+- [ ] 每 phase 完成后在 changelog 简要记录"用 coss 替换了哪些组件 / 删除了哪些 .css"。
+- [ ] 项目 README 顶部加 design system 引用：coss.ui v4 + Tailwind v4 + Base UI。
+
+---
+
+## 不变性 / 红线
+
+迁移过程中**不可破坏**：
+
+- `.trellis/spec/frontend/messages-streaming-render-contract.md`（stable snapshot + live row override）
+- `.trellis/spec/frontend/computer-use-bridge.md`（computer use 状态面板与 bridge）
+- `.trellis/spec/frontend/claude-context-usage-display.md`（Claude context usage view model）
+- `.trellis/spec/guides/codex-unified-exec-override-contract.md`（settings/runtime/global-config 边界）
+- `.trellis/spec/guides/terminal-shell-configuration.md`（terminal shell path override）
+- `src/services/tauri.ts` 的 command payload contract
+
+## 引用
+
+- coss skill：`.agents/skills/coss/SKILL.md`
+- coss component registry：`.agents/skills/coss/references/component-registry.md`
+- coss migration rules：`.agents/skills/coss/references/rules/migration.md`
+- coss particles（用法 demo）：`.agents/skills/coss-particles/SKILL.md`
+- Trellis PRD：`.trellis/tasks/05-16-migrate-css-to-coss-ui/prd.md`
+- 前端规范入口：`.trellis/spec/frontend/index.md`

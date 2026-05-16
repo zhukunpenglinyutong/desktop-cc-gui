@@ -1,0 +1,19 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend development guide"}
+{"file": ".trellis/spec/frontend/index.md", "reason": "Frontend development guide"}
+{"file": ".trellis/spec/frontend/component-guidelines.md", "reason": "组件设计、props、styling 规范——每个 phase 都要遵守"}
+{"file": ".trellis/spec/frontend/directory-structure.md", "reason": "feature slice 落位——决定新组件放哪里"}
+{"file": ".trellis/spec/frontend/hook-guidelines.md", "reason": "useEffect/polling/listener 约束——迁移时容易破坏"}
+{"file": ".trellis/spec/frontend/state-management.md", "reason": "local/global/persistent state 边界"}
+{"file": ".trellis/spec/frontend/type-safety.md", "reason": "strict TS + boundary mapping"}
+{"file": ".trellis/spec/frontend/messages-streaming-render-contract.md", "reason": "Phase 3 sticky header carry-forward 必须遵守"}
+{"file": ".trellis/spec/frontend/claude-context-usage-display.md", "reason": "Phase 4 composer / token indicator 不能破坏"}
+{"file": ".trellis/spec/frontend/computer-use-bridge.md", "reason": "computer use 状态面板 contract"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "coss 多 phase 复用同一原语；不要每 phase 重复实现 Dialog/Menu 等"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "UI→service→tauri 调用约束——迁移时避免破契约"}
+{"file": ".agents/skills/coss/SKILL.md", "reason": "coss skill entry——usage workflow / output checklist"}
+{"file": ".agents/skills/coss/references/component-registry.md", "reason": "53 primitive 索引——选组件时查"}
+{"file": ".agents/skills/coss/references/rules/styling.md", "reason": "Tailwind v4 token / icon / data-slot 约定"}
+{"file": ".agents/skills/coss/references/rules/migration.md", "reason": "shadcn/Radix → coss/Base UI 迁移 pattern"}
+{"file": ".agents/skills/coss/references/rules/composition.md", "reason": "trigger/popup 层级、grouped controls"}
+{"file": ".agents/skills/coss/references/rules/forms.md", "reason": "Field 组合 / validation / input pattern"}

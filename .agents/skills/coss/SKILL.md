@@ -1,58 +1,117 @@
 ---
-title: Skills
-description: Give your AI assistant deep knowledge of coss ui components, patterns, and best practices.
+name: coss
+description: Helps implement coss UI components correctly. Use when building UIs with coss primitives (buttons, dialogs, selects, forms, menus, tabs, inputs, toasts, etc.), migrating from shadcn/Radix to coss/Base UI, composing trigger-based overlays, or troubleshooting coss component behavior. Covers imports, accessibility, Tailwind styling, and common pitfalls.
+compatibility: Requires Tailwind CSS v4 and @base-ui/react. Designed for React projects using the coss component registry.
+license: MIT
+metadata:
+  author: cosscom
 ---
 
-Skills provide AI coding assistants with structured knowledge about **coss ui** — component APIs, composition patterns, styling conventions, migration rules, and common pitfalls. When installed, your assistant knows how to use coss primitives correctly without guessing.
+# coss ui
 
-For example, you can ask your assistant to:
+coss ui is a component library built on Base UI with a shadcn-like developer experience plus a large particle catalog.
 
-- _"Add a settings dialog with a form and save/cancel buttons."_
-- _"Add a select with grouped options and a search filter."_
-- _"Migrate this shadcn dropdown menu to coss."_
-- _"Build a toast notification for form submission errors."_
+## What this skill is for
 
-## Install
+Use this skill to:
+
+- pick the right coss primitive(s) for a UI task
+- write correct coss usage code (imports, composition, props)
+- avoid common migration mistakes from shadcn/Radix assumptions
+- reference particle examples to produce practical, production-like patterns
+
+## Source of truth
+
+- coss components docs: `apps/ui/content/docs/components/*.mdx`
+  - `https://github.com/cosscom/coss/tree/main/apps/ui/content/docs/components`
+- coss particle examples: `apps/ui/registry/default/particles/p-*.tsx`
+  - `https://github.com/cosscom/coss/tree/main/apps/ui/registry/default/particles`
+- coss particles catalog: `https://coss.com/ui/particles`
+- docs map for agents: `https://coss.com/ui/llms.txt`
+
+## Out of scope
+
+- Maintaining coss monorepo internals/build pipelines.
+- Editing registry internals unless explicitly requested.
+
+## Principles for agent output
+
+1. Use existing primitives and particles first before inventing custom markup.
+2. Prefer composition over custom behavior reimplementation.
+3. Follow coss naming and APIs from docs exactly.
+4. Keep examples accessible and production-realistic.
+5. Prefer concise code that mirrors coss docs/particles conventions.
+6. Assume Tailwind CSS v4 conventions in coss examples and setup guidance.
+
+## Critical usage rules
+
+Always apply before returning coss code:
+
+- Do not invent coss APIs. Verify against component docs first.
+- For trigger-based primitives (Dialog, Menu, Select, Popover, Tooltip), follow each primitive's documented trigger/content hierarchy and composition API; do not mix patterns across components.
+- Preserve accessibility labels and error semantics.
+- Consult primitive-specific guides for component invariants and edge cases.
+- For manual install guidance, include all required dependencies and local component files referenced by imports.
+- Prefer styled coss exports first; use `*Primitive` exports only when custom composition/styling requires it.
+
+Rule references (read on demand when the task touches these areas):
+
+- `./references/rules/styling.md` — Tailwind tokens, icon conventions, data-slot selectors
+- `./references/rules/forms.md` — Field composition, validation, input patterns
+- `./references/rules/composition.md` — Trigger/popup hierarchies, grouped controls
+- `./references/rules/migration.md` — shadcn/Radix to coss/Base UI migration patterns
+- `./references/portal-props.md` — optional `portalProps` on composed popups and toast providers (`keepMounted`, `container`, which surfaces support it)
+
+## Component discovery
+
+All 53 primitives have dedicated reference guides at `./references/primitives/<name>.md`. To find the right one for a task, consult the component registry index:
+
+- `./references/component-registry.md`
+
+## Usage workflow
+
+1. Identify user intent (single primitive, composed flow, form flow, overlay flow, feedback flow).
+2. Consult `references/component-registry.md` to identify candidate primitives.
+3. Select primitives from coss docs first; avoid custom fallback unless needed.
+4. Check at least one particle example for practical composition patterns. Particle files live at `apps/ui/registry/default/particles/p-<name>-<N>.tsx` (e.g. `p-dialog-1.tsx`).
+5. Write minimal code using documented imports/props.
+6. Self-check accessibility and composition invariants.
+
+## Installation reference
+
+See `./references/cli.md` for full install/discovery workflow.
+
+Quick CLI pattern:
 
 ```bash
-npx skills add cosscom/coss
+npx shadcn@latest add @coss/<component>
 ```
 
-This installs the coss skill into your project. Once installed, your AI assistant automatically loads it when working with coss ui components.
+Quick manual pattern:
 
-Learn more about the skills ecosystem at [skills.sh](https://skills.sh).
+- install dependencies listed in the component docs page
+- copy required component file(s)
+- update imports to match the target app alias setup
 
-## What's Included
+## Primitive Guidance
 
-The skill covers the full coss ui surface:
+Every primitive has a reference guide at `./references/primitives/<name>.md` with imports, minimal patterns, inline code examples, pitfalls, and particle references. Use the component registry to find the right file.
 
-### Component Knowledge
+High-risk primitives (read these guides first -- they have the most composition gotchas):
 
-Reference guides for all primitives — imports, minimal patterns, inline code examples, composition rules, and common pitfalls. The assistant knows when to use Dialog vs Sheet vs Drawer, how to compose trigger-based overlays, and how to structure forms with Field.
+- `./references/primitives/dialog.md` — modal overlays, form-in-dialog, responsive dialog/drawer
+- `./references/primitives/menu.md` — dropdown actions, checkbox/radio items, submenus
+- `./references/primitives/select.md` — items-first pattern, multiple, object values, groups
+- `./references/primitives/form.md` — Field composition, validation, submission
+- `./references/primitives/input-group.md` — addons, DOM order invariant, textarea layouts
+- `./references/primitives/toast.md` — toastManager (not Sonner), anchored toasts, providers
 
-### Styling Conventions
+## Output Checklist
 
-Tailwind v4 token usage, semantic color system, icon sizing rules, `data-slot` selectors, `--alpha()` syntax, and the font variable contract (`--font-sans`, `--font-mono`, `--font-heading`).
+Before returning code:
 
-### Migration Patterns
+- imports and props match coss docs
+- composition structure is valid for selected primitive(s)
+- accessibility and explicit control types (`button`, `input`, etc.) are present
+- migration-sensitive flows are verified (type/lint, keyboard/a11y behavior, and SSR-sensitive primitives like Select/Command)
 
-Rules for migrating from shadcn/Radix to coss/Base UI — `asChild` to `render`, `onSelect` to `onClick`, Select items-first pattern, ToggleGroup `type` to `multiple`, and Slider scalar values.
-
-### CLI and Registry
-
-Full reference for installing components via the shadcn CLI, discovery fallbacks, and manual install paths.
-
-### Particle Examples
-
-The skill references the particle catalog — real-world composition examples for every primitive — so the assistant can produce production-realistic code, not just minimal stubs.
-
-## How It Works
-
-1. **Skill activation** — Your AI agent detects the installed skill files in your project.
-2. **Progressive loading** — The root `SKILL.md` provides core rules and a component registry index. Detailed per-component guides and rule references are loaded on demand when the task requires them.
-3. **Pattern enforcement** — The assistant follows coss composition rules: `render` prop for trigger composition, `DialogHeader`/`DialogPanel`/`DialogFooter` section structure, `variant="ghost"` for cancel buttons, and correct Base UI APIs.
-4. **Example-driven output** — Before generating code, the assistant consults particle examples to match real coss patterns.
-
-## Supported Agents
-
-Skills work with any agent that supports the Agent Skills specification, including Claude Code, Cursor, Codex, Cline, Windsurf, GitHub Copilot, and many more.

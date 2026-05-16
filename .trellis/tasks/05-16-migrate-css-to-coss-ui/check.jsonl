@@ -1,0 +1,9 @@
+{"file": ".claude/commands/trellis/finish-work.md", "reason": "Finish work checklist"}
+{"file": ".claude/commands/trellis/check.md", "reason": "Code quality check spec"}
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "review checklist——每个 phase 完成后跑"}
+{"file": ".trellis/spec/frontend/component-guidelines.md", "reason": "组件 review"}
+{"file": ".trellis/spec/frontend/type-safety.md", "reason": "boundary mapping review"}
+{"file": ".trellis/spec/frontend/messages-streaming-render-contract.md", "reason": "Phase 3 完成后必须验证"}
+{"file": ".agents/skills/coss/references/rules/styling.md", "reason": "coss styling 合规性 check"}
+{"file": ".agents/skills/coss/references/rules/composition.md", "reason": "trigger/popup 合规性 check"}
+{"file": ".agents/skills/coss/references/rules/migration.md", "reason": "migration pattern 是否对齐"}

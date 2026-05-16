@@ -1,0 +1,53 @@
+{
+  "id": "split-composer-rewind-modal-styles",
+  "name": "split-composer-rewind-modal-styles",
+  "title": "Split composer rewind modal styles",
+  "description": "",
+  "status": "completed",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P1",
+  "creator": "chenxiangning",
+  "assignee": "chenxiangning",
+  "createdAt": "2026-04-23",
+  "completedAt": "2026-05-16",
+  "branch": null,
+  "base_branch": "feature/v-0.4.8",
+  "worktree_path": null,
+  "current_phase": 0,
+  "next_action": [
+    {
+      "phase": 1,
+      "action": "brainstorm"
+    },
+    {
+      "phase": 2,
+      "action": "research"
+    },
+    {
+      "phase": 3,
+      "action": "implement"
+    },
+    {
+      "phase": 4,
+      "action": "check"
+    },
+    {
+      "phase": 5,
+      "action": "update-spec"
+    },
+    {
+      "phase": 6,
+      "action": "record-session"
+    }
+  ],
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {}
+}
