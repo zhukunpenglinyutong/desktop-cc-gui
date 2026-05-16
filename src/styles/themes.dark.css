@@ -84,7 +84,7 @@
   --card-foreground: #e6e7ea;
   --popover: #0a0e14;
   --popover-foreground: #e6e7ea;
-  --primary: #7a9dcc;
+  --primary: #60a5fa;
   --primary-foreground: #0d0f14;
   --secondary: #27272e;
   --secondary-foreground: #e6e7ea;
@@ -102,8 +102,8 @@
   --info-foreground: #0d0f14;
   --border: #222228;
   --input: #27272e;
-  --ring: #4a8caa;
-  --radius: 0.5rem;
+  --ring: rgba(96, 165, 250, 0.55);
+  --radius: 0.625rem;
   --sidebar-background: #121212;
   --sidebar-foreground: #b3b3b3;
   --sidebar-border: #222228;

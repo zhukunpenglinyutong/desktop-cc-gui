@@ -74,6 +74,8 @@
     "@codemirror/search": "^6.6.0",
     "@codemirror/state": "^6.6.0",
     "@codemirror/view": "^6.40.0",
+    "@fontsource-variable/geist-mono": "^5.2.7",
+    "@fontsource/inter": "^5.2.8",
     "@hello-pangea/dnd": "^18.0.1",
     "@lobehub/icons": "^4.9.0",
     "@tailwindcss/vite": "^4.1.18",

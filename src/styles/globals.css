@@ -48,13 +48,12 @@
   --radius-md: calc(var(--radius) - 2px);
   --radius-sm: calc(var(--radius) - 4px);
 
-  --font-sans: var(--ui-font-family, "SF Pro Text", system-ui, sans-serif);
-  --font-mono: var(
+  --font-sans: "Inter", var(--ui-font-family, "SF Pro Text"), system-ui, sans-serif;
+  --font-mono: "Geist Mono Variable", var(
     --code-font-family,
     "SF Mono",
     "Menlo",
-    "Monaco",
-    monospace
-  );
-  --font-heading: var(--ui-font-family, "SF Pro Text", system-ui, sans-serif);
+    "Monaco"
+  ), monospace;
+  --font-heading: "Inter", var(--ui-font-family, "SF Pro Text"), system-ui, sans-serif;
 }
