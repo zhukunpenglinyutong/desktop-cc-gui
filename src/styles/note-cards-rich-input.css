@@ -1,0 +1,81 @@
+/*
+ * Note Cards rich text input cascade overrides.
+ *
+ * Phase 5 (coss-ui migration) keeper file: holds descendant cascade rules
+ * for the embedded `RichTextInput` component inside the note cards panel.
+ * These cannot be inlined as Tailwind utilities on
+ * `WorkspaceNoteCardPanel.tsx` because the children belong to RichTextInput
+ * internal markup (no className anchor available on the panel JSX tree).
+ *
+ * The rest of `note-cards.css` was inlined onto
+ * `WorkspaceNoteCardPanel.tsx`.
+ */
+
+.workspace-note-cards-rich-input {
+  min-height: 0;
+}
+
+.workspace-note-cards-rich-input .rich-text-input {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.workspace-note-cards-rich-input .rich-text-input-area {
+  min-height: 180px;
+  padding: 10px 0 8px;
+  border: 1px solid var(--note-card-border, color-mix(in srgb, var(--border-subtle, #cbd5e1) 82%, transparent));
+  border-radius: 12px;
+  background: var(
+    --note-card-surface-muted,
+    color-mix(in srgb, var(--surface-item, var(--surface-card, #ffffff)) 86%, transparent)
+  );
+  overflow: hidden;
+}
+
+.workspace-note-cards-rich-input .rich-text-attachments {
+  padding: 0 12px;
+}
+
+.workspace-note-cards-rich-input .rich-text-textarea {
+  box-sizing: border-box;
+}
+
+.workspace-note-cards-rich-input .rich-text-textarea-shell {
+  min-height: 0;
+}
+
+.workspace-note-cards-rich-input .rich-text-input-footer {
+  margin-top: auto;
+  padding: 8px 12px 0;
+  border-top: 1px solid var(--note-card-border, color-mix(in srgb, var(--border-subtle, #cbd5e1) 82%, transparent));
+}
+
+.workspace-note-cards-rich-input .rich-text-input-footer-left,
+.workspace-note-cards-rich-input .rich-text-input-footer-right {
+  gap: 10px;
+}
+
+/*
+ * Editor-expanded mode: stretch the RichTextInput internals to fill the
+ * available vertical space inside the expanded note panel.
+ */
+.workspace-note-cards-panel.is-editor-expanded .workspace-note-cards-rich-input {
+  flex: 1;
+}
+
+.workspace-note-cards-panel.is-editor-expanded .workspace-note-cards-rich-input .rich-text-input {
+  height: 100%;
+  min-height: 0;
+}
+
+.workspace-note-cards-panel.is-editor-expanded .workspace-note-cards-rich-input .rich-text-input-area {
+  flex: 1;
+  min-height: 0;
+  height: auto;
+}
+
+.workspace-note-cards-panel.is-editor-expanded .workspace-note-cards-rich-input .rich-text-textarea-shell {
+  flex: 1;
+  min-height: 0;
+}

@@ -292,6 +292,50 @@ Scope 调整（写在 plan doc）：
 - 覆盖：`home.css`、`home-chat.css`、`workspace-home.css`、`note-cards.css`、`kanban.css`、`release-notes.css`、`update-toasts.css`。
 - DoD：旅程 = 启动后 home → 切 workspace → 查看 release notes → 更新 toast。
 
+#### Phase 5 完成状态（2026-05-16）
+
+**Scope 调整**（在 plan-time，非 execution-time）— 见 `phase-5-home-plan.md`。原 PRD 列出的 6 个 CSS 文件（加上 Phase 4 已 opportunistic 处理的 `update-toasts.css`），本 phase 处理 4 个；2 个 deferred：
+
+- **DEFER `home-chat.css`** 到 Phase 5.5：6 个 CSS-literal `.toContain` 测试钉死（`HomeChat.styles.test.ts`：grayscale 规则 / codex context accents / workspace popup `data-slot` / picker search-add / selection states / trigger line-height），且 `ChatInputBoxFooter.tsx` 是 composer cluster（Phase 4.5 defer 范围）的共用 consumer。
+- **DEFER `kanban.css`** 到 Phase 5.6：2071 行 CSS + 14 个 tsx consumer (5355 tsx 行) + 240+ className 引用，规模超过 composer cluster。需切成 sub-PR（5.6a/b/c），单 phase 不可行。
+
+实际产出（implement agent）：
+- 新增：`.trellis/tasks/05-16-migrate-css-to-coss-ui/phase-5-home-plan.md`（discovery + per-file plan + coss primitive 决策矩阵 + defer rationale）
+- 新增：`src/styles/release-notes-markdown.css`（51 行，keeper：保留 `.release-notes-markdown :where(p, ul, ol, li, a, ...)` 的 markdown HTML 输出 cascade overrides，无法 inline 到 React className）
+- 新增：`src/styles/note-cards-rich-input.css`（76 行，keeper：保留 `.workspace-note-cards-rich-input .rich-text-input*` 的 RichTextInput 内部 cascade overrides，descendant 是组件内部 markup 不在 JSX 树上）
+- 新增：`src/features/tasks/utils/taskCenterClasses.ts`（54 行 helper：severity-driven Tailwind utility class strings，被 `WorkspaceHome.tsx` 和 `TaskCenterView.tsx` 共用——避免 css cascade）
+- 删除 4 个 .css 文件（共 1445 行 CSS）：
+  - `home.css`（85 行）→ 内联 Tailwind 到 `Home.tsx`；`home-fade-in` keyframe 换为 Tailwind `motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-bottom-2 motion-safe:duration-500`（tw-animate-css 已在 `globals.css` import）
+  - `release-notes.css`（233 行）→ 内联到 `ReleaseNotesModal.tsx`；markdown cascade 拆到 `release-notes-markdown.css` keeper
+  - `note-cards.css`（523 行）→ 内联到 `WorkspaceNoteCardPanel.tsx`（864 行 consumer，48+ className refs 全部保留为 no-op marker）；RichTextInput cascade 拆到 `note-cards-rich-input.css` keeper
+  - `workspace-home.css`（604 行）→ 内联到 `WorkspaceHome.tsx`（163 行）+ `TaskCenterView.tsx`（244 行）；severity 调色板共用 `taskCenterClasses.ts` helper
+- 修改：`src/bootstrap.ts`（42 → 40 CSS imports：删 4 个 `home/release-notes/note-cards/workspace-home`，加 2 个 keeper）
+- 6 个 .tsx 全部沿用 `保留 class name 作为 no-op marker + 追加 Tailwind utility` pattern（与 Phase 2/3/4 一致）
+
+未处理（推迟到 Phase 5.5 / 5.6）——已在 `docs/migration-to-coss-ui.md` follow-up 落档：
+- `home-chat.css`（946 行）—— Phase 5.5
+- `kanban.css`（2071 行）—— Phase 5.6（建议拆成 a/b/c 3 个 sub-PR）
+
+未引入 coss primitive structural swap（同 Phase 2/3/4 决策）——本 phase 决策为「纯 styling pass」，详见 plan doc 的 coss primitive 决策矩阵。`Dialog`（ReleaseNotesModal）、`Tabs`（note-cards collection switch）、`Card`（spec-provider/guide cards）、`Button`（home primary）的结构性替换转入 Phase follow-up（需 `npx shadcn add @coss/dialog` 等新 dep + 行为契约 re-validation pass）。
+
+发现：`WorkspaceHomeSpecModule.tsx`（160 行）使用 `workspace-home-panel` / `workspace-home-spec-module` / `workspace-home-section-header` / `workspace-home-spec-provider` / `workspace-home-guide-*` 等 class names，但 **这些 class 在任何 .css 文件都无定义**——组件渲染为 unstyled，且 `grep -rln "WorkspaceHomeSpecModule"` 结果仅文件自身（dead code，无 consumer）。Phase 5 不处理（dead code 清理超出 scope）。同 Phase 4 `ask-user-question-dialog.css` 模式。
+
+验证（同 Phase 2/3/4 baseline，无新错）：
+- `npm run lint` ✅ pass
+- `npm run typecheck` ✅ 2 个 pre-existing baseline 错（perfBaseline×2；input.tsx baseline 已在 Phase 4 修复 ⇒ 保持 2）
+- `npm run test` ✅ 仅 `ComposerInput.collaboration.test.tsx` 的 3 个 pre-existing failure（已通过 `git stash` 三次确认与 Phase 5 无关）
+- `npm run test:layout-guard` ✅ 10/10 pass
+- `npm run check:large-files:gate` ✅ found=0
+- `npx vitest run` 单独跑 Phase 5 affected tests ✅ PASS (21) FAIL (0)
+  - `Home.test.tsx` ✅ 2/2 pass（`.home-primary-button` querySelector 保留）
+  - `HomeChat.styles.test.ts` ✅ 6/6 pass（`home-chat.css` 未动，6 个 CSS-literal pin 保留）
+  - `WorkspaceHome.test.tsx` ✅ 6/6 pass（`.workspace-home-path-line/path-name/branch-line` querySelector + i18n key 全保留）
+  - `WorkspaceNoteCardPanel.test.tsx` ✅ 7/7 pass（`.workspace-note-cards-list` classList contain `is-empty` 保留）
+
+后续 phase 影响：
+- bootstrap.ts CSS import 数从 42 → 40（−4 删除 + 2 新增 keeper）
+- 6 条新 follow-up 入 `docs/migration-to-coss-ui.md`：Phase 5.5 home-chat migration / Phase 5.6 kanban migration (a/b/c) / Dialog primitive swap (ReleaseNotesModal) / Tabs primitive swap (note-cards collection) / Card primitive swap (multiple) / WorkspaceHomeSpecModule dead-code cleanup
+
 ### Phase 6 — Settings
 - 覆盖：`settings.css`、`settings.skills.css`、`settings.vendor-codex-runtime.css`、`settings.vendor-dialog.css`、其它 `settings.*`。
 - 严格遵守 `.trellis/spec/guides/codex-unified-exec-override-contract.md` 与 `terminal-shell-configuration.md`。

@@ -1,0 +1,50 @@
+/*
+ * Release notes markdown cascade overrides.
+ *
+ * Phase 5 (coss-ui migration) keeper file: holds descendant cascade rules
+ * for markdown HTML rendered inside the release-notes modal body. These
+ * cannot be inlined as Tailwind utilities because the children are produced
+ * by the Markdown component (not React/JSX), so no className anchor exists
+ * for them.
+ *
+ * The rest of `release-notes.css` was inlined onto `ReleaseNotesModal.tsx`.
+ */
+
+.release-notes-markdown {
+  font-size: 12.5px;
+  line-height: 1.42;
+  color: var(--text);
+}
+
+.release-notes-markdown :where(p, ul, ol, li) {
+  line-height: 1.42;
+}
+
+.release-notes-markdown ul {
+  padding-left: 1.1em;
+}
+
+.release-notes-markdown h1,
+.release-notes-markdown h2,
+.release-notes-markdown h3,
+.release-notes-markdown h4,
+.release-notes-markdown h5,
+.release-notes-markdown h6 {
+  margin-top: 0.45em;
+  margin-bottom: 0.4em;
+}
+
+.release-notes-markdown :where(a, a:visited, a:hover, a:active) {
+  color: inherit;
+  text-decoration: none;
+}
+
+.release-notes-markdown :where(a code) {
+  color: inherit;
+}
+
+@media (max-width: 900px) {
+  .release-notes-markdown {
+    font-size: 12px;
+  }
+}

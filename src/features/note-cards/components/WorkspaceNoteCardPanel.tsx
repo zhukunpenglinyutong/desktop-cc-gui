@@ -541,32 +541,32 @@ export function WorkspaceNoteCardPanel({
     <div
       className={`workspace-note-cards-panel${
         editorExpanded && shouldShowExpandedEditor ? " is-editor-expanded" : ""
-      }`}
+      } [--note-card-accent:var(--accent-primary,var(--text-accent,#2563eb))] [--note-card-list-card-height:196px] [--note-card-surface:color-mix(in_srgb,var(--surface-card,#ffffff)_94%,var(--surface-panel,#f8fafc))] [--note-card-surface-muted:color-mix(in_srgb,var(--surface-item,var(--surface-card,#ffffff))_86%,transparent)] [--note-card-surface-active:color-mix(in_srgb,var(--surface-active,var(--surface-item,#f1f5f9))_74%,var(--surface-card,#ffffff))] [--note-card-border:color-mix(in_srgb,var(--border-subtle,#cbd5e1)_82%,transparent)] [--note-card-border-strong:color-mix(in_srgb,var(--border-strong,var(--border-subtle,#cbd5e1))_88%,transparent)] [--note-card-text-strong:var(--text-strong,var(--text-primary,inherit))] [--note-card-text-muted:var(--text-muted,var(--text-secondary,inherit))] [--note-card-danger:var(--status-error,var(--text-danger,#dc2626))] flex flex-col gap-3 h-full p-3 overflow-hidden text-[var(--note-card-text-strong)] bg-[radial-gradient(circle_at_top_right,color-mix(in_srgb,var(--note-card-accent)_12%,transparent),transparent_34%),linear-gradient(180deg,color-mix(in_srgb,var(--surface-panel,var(--surface-card,#ffffff))_96%,transparent),color-mix(in_srgb,var(--surface-panel,var(--surface-card,#ffffff))_88%,transparent))]`}
     >
-      <header className="workspace-note-cards-topbar">
-        <div className="workspace-note-cards-topbar-main">
-          <span className="workspace-note-cards-title-icon" aria-hidden>
+      <header className="workspace-note-cards-topbar flex flex-col gap-2.5 p-3 shrink-0 border border-[var(--note-card-border)] bg-[var(--note-card-surface)] rounded-[14px]">
+        <div className="workspace-note-cards-topbar-main grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2.5 min-w-0 justify-between">
+          <span className="workspace-note-cards-title-icon inline-flex items-center justify-center w-[34px] h-[34px] rounded-xl bg-[color-mix(in_srgb,var(--note-card-accent)_14%,transparent)] text-[var(--note-card-accent)]" aria-hidden>
             <NotebookPen size={16} />
           </span>
 
-          <div className="workspace-note-cards-collection-switch" role="tablist" aria-label={t("noteCards.title")}>
+          <div className="workspace-note-cards-collection-switch inline-flex gap-1.5 p-1 bg-[var(--note-card-surface-muted)] rounded-full justify-self-start shrink-0" role="tablist" aria-label={t("noteCards.title")}>
             <button
               type="button"
-              className={`workspace-note-cards-collection-tab${!archived ? " is-active" : ""}`}
+              className={`workspace-note-cards-collection-tab border-0 bg-transparent text-inherit py-1.5 px-2.5 rounded-full cursor-pointer text-xs ${!archived ? "is-active bg-[color-mix(in_srgb,var(--note-card-accent)_14%,transparent)] text-[var(--note-card-accent)]" : ""}`}
               onClick={() => setCollection("active")}
             >
               {t("noteCards.pool")}
             </button>
             <button
               type="button"
-              className={`workspace-note-cards-collection-tab${archived ? " is-active" : ""}`}
+              className={`workspace-note-cards-collection-tab border-0 bg-transparent text-inherit py-1.5 px-2.5 rounded-full cursor-pointer text-xs ${archived ? "is-active bg-[color-mix(in_srgb,var(--note-card-accent)_14%,transparent)] text-[var(--note-card-accent)]" : ""}`}
               onClick={() => setCollection("archive")}
             >
               {t("noteCards.archive")}
             </button>
           </div>
 
-          <div className="workspace-note-cards-header-actions">
+          <div className="workspace-note-cards-header-actions flex items-center gap-2 shrink-0">
             <button
               type="button"
               className="ghost icon-button"
@@ -578,22 +578,22 @@ export function WorkspaceNoteCardPanel({
             </button>
           </div>
         </div>
-        <p className="workspace-note-cards-storage-hint">{storageHint}</p>
+        <p className="workspace-note-cards-storage-hint m-0 text-xs leading-[1.5] text-[var(--note-card-text-muted)] [overflow-wrap:anywhere]">{storageHint}</p>
       </header>
 
       {!archived ? (
         <section
-          className={`workspace-note-cards-editor${editorCollapsed ? " is-collapsed" : ""}`}
+          className={`workspace-note-cards-editor${editorCollapsed ? " is-collapsed gap-0" : " gap-2.5"} border border-[var(--note-card-border)] bg-[var(--note-card-surface)] rounded-[14px] p-3 shrink-0 flex flex-col min-h-0`}
         >
-          <div className="workspace-note-cards-editor-head">
-            <div className="workspace-note-cards-editor-copy" title={editorHintLabel}>
-              <h3>{selectedId ? t("noteCards.editorEdit") : t("noteCards.editorCreate")}</h3>
-              <span>{editorHintLabel}</span>
+          <div className="workspace-note-cards-editor-head flex items-center justify-between gap-3 min-w-0">
+            <div className="workspace-note-cards-editor-copy flex items-center gap-2 min-w-0 flex-1" title={editorHintLabel}>
+              <h3 className="m-0 text-sm font-bold whitespace-nowrap">{selectedId ? t("noteCards.editorEdit") : t("noteCards.editorCreate")}</h3>
+              <span className="m-0 text-[var(--note-card-text-muted)] text-xs whitespace-nowrap overflow-hidden text-ellipsis">{editorHintLabel}</span>
             </div>
-            <div className="workspace-note-cards-head-actions">
+            <div className="workspace-note-cards-head-actions flex items-center gap-2 flex-nowrap justify-end shrink-0">
               <button
                 type="button"
-                className="ghost workspace-note-cards-inline-action workspace-note-cards-icon-action"
+                className="ghost workspace-note-cards-inline-action workspace-note-cards-icon-action inline-flex items-center justify-center gap-1.5 rounded-[10px] border border-[var(--note-card-border)] p-0 w-[34px] h-[34px] bg-transparent text-inherit cursor-pointer text-xs shrink-0"
                 onClick={() => {
                   if (editorCollapsed) {
                     setEditorCollapsed(false);
@@ -609,7 +609,7 @@ export function WorkspaceNoteCardPanel({
               {shouldShowExpandedEditor ? (
                 <button
                   type="button"
-                  className="ghost workspace-note-cards-inline-action workspace-note-cards-icon-action"
+                  className="ghost workspace-note-cards-inline-action workspace-note-cards-icon-action inline-flex items-center justify-center gap-1.5 rounded-[10px] border border-[var(--note-card-border)] p-0 w-[34px] h-[34px] bg-transparent text-inherit cursor-pointer text-xs shrink-0"
                   onClick={() => setEditorExpanded((value) => !value)}
                   aria-label={editorToggleLabel}
                   title={editorToggleLabel}
@@ -620,7 +620,7 @@ export function WorkspaceNoteCardPanel({
               {shouldShowExpandedEditor && selectedId ? (
                 <button
                   type="button"
-                  className="ghost workspace-note-cards-inline-action workspace-note-cards-icon-action workspace-note-cards-danger"
+                  className="ghost workspace-note-cards-inline-action workspace-note-cards-icon-action workspace-note-cards-danger inline-flex items-center justify-center gap-1.5 rounded-[10px] border border-[var(--note-card-border)] p-0 w-[34px] h-[34px] bg-transparent text-[var(--note-card-danger)] cursor-pointer text-xs shrink-0"
                   onClick={() => void handleDelete(selectedId, selectedNote?.title ?? titleDraft)}
                   aria-label={t("noteCards.deleteAction")}
                   title={t("noteCards.deleteAction")}
@@ -631,7 +631,7 @@ export function WorkspaceNoteCardPanel({
               {shouldShowExpandedEditor && selectedId ? (
                 <button
                   type="button"
-                  className="ghost workspace-note-cards-clear workspace-note-cards-icon-action"
+                  className="ghost workspace-note-cards-clear workspace-note-cards-icon-action inline-flex items-center justify-center gap-1.5 rounded-[10px] border border-[var(--note-card-border)] p-0 w-[34px] h-[34px] bg-transparent text-inherit cursor-pointer text-xs shrink-0"
                   onClick={resetDraft}
                   aria-label={t("noteCards.clear")}
                   title={t("noteCards.clear")}
@@ -642,9 +642,9 @@ export function WorkspaceNoteCardPanel({
             </div>
           </div>
           {shouldShowExpandedEditor ? (
-            <div className="workspace-note-cards-editor-body">
+            <div className="workspace-note-cards-editor-body flex flex-col gap-2.5 min-h-0">
               <input
-                className="workspace-note-cards-title-input"
+                className="workspace-note-cards-title-input w-full border-0 bg-transparent text-inherit outline-none h-[38px] px-3 border border-[var(--note-card-border)] rounded-xl mb-2.5"
                 value={titleDraft}
                 onChange={(event) => setTitleDraft(event.target.value)}
                 placeholder={t("noteCards.titlePlaceholder")}
@@ -664,11 +664,11 @@ export function WorkspaceNoteCardPanel({
                 minHeight={editorExpanded ? 340 : 140}
                 maxHeight={editorExpanded ? 1600 : 320}
                 className="workspace-note-cards-rich-input"
-                footerClassName="workspace-note-cards-rich-footer"
+                footerClassName="workspace-note-cards-rich-footer flex-nowrap"
                 footerLeft={(
                   <button
                     type="button"
-                    className="ghost workspace-note-cards-inline-action workspace-note-cards-icon-action"
+                    className="ghost workspace-note-cards-inline-action workspace-note-cards-icon-action inline-flex items-center justify-center gap-1.5 rounded-[10px] border border-[var(--note-card-border)] p-0 w-[34px] h-[34px] bg-transparent text-inherit cursor-pointer text-xs shrink-0"
                     onClick={() => void handlePickImages()}
                     aria-label={attachImageLabel}
                     title={attachImageLabel}
@@ -679,7 +679,7 @@ export function WorkspaceNoteCardPanel({
                 footerRight={(
                   <button
                     type="button"
-                    className="workspace-note-cards-save workspace-note-cards-icon-action"
+                    className="workspace-note-cards-save workspace-note-cards-icon-action inline-flex items-center justify-center gap-1.5 rounded-[10px] border border-[var(--note-card-accent)] bg-[var(--note-card-accent)] text-white p-0 w-[34px] h-[34px] cursor-pointer text-xs shrink-0 disabled:opacity-60 disabled:cursor-default"
                     onClick={() => void handleSave()}
                     disabled={saving || !workspaceId}
                     aria-label={saveLabel}
@@ -693,26 +693,28 @@ export function WorkspaceNoteCardPanel({
           ) : null}
         </section>
       ) : (
-        <section className="workspace-note-cards-preview-panel">
-          <div className="workspace-note-cards-editor-head">
+        <section className="workspace-note-cards-preview-panel border border-[var(--note-card-border)] bg-[var(--note-card-surface)] rounded-[14px] p-3 shrink-0 flex flex-col gap-2.5 min-h-0">
+          <div className="workspace-note-cards-editor-head flex items-center justify-between gap-3 min-w-0">
             <div>
-              <h3>{t("noteCards.previewTitle")}</h3>
-              <p>{t("noteCards.previewHint")}</p>
+              <h3 className="m-0 text-sm font-bold">{t("noteCards.previewTitle")}</h3>
+              <p className="m-0 text-[var(--note-card-text-muted)] text-xs">{t("noteCards.previewHint")}</p>
             </div>
           </div>
           {detailLoading ? (
-            <div className="workspace-note-cards-empty">{t("noteCards.loading")}</div>
+            <div className="workspace-note-cards-empty p-4 rounded-[14px] text-center text-[var(--note-card-text-muted)] bg-[var(--note-card-surface-muted)]">
+              {t("noteCards.loading")}
+            </div>
           ) : previewNote ? (
-            <article className="workspace-note-cards-preview-card">
-              <div className="workspace-note-cards-preview-head">
-                <div className="workspace-note-cards-preview-meta">
-                  <h4>{previewNote.title || t("noteCards.untitled")}</h4>
+            <article className="workspace-note-cards-preview-card flex flex-col gap-3 min-h-0">
+              <div className="workspace-note-cards-preview-head flex items-center justify-between gap-2.5 min-w-0">
+                <div className="workspace-note-cards-preview-meta flex-1 min-w-0 text-[var(--note-card-text-muted)] text-[11px]">
+                  <h4 className="m-0 text-sm font-bold">{previewNote.title || t("noteCards.untitled")}</h4>
                   <span>{t("noteCards.updatedAt", { time: formatDate(previewNote.updatedAt) })}</span>
                 </div>
-                <div className="workspace-note-cards-head-actions">
+                <div className="workspace-note-cards-head-actions flex items-center gap-2 flex-nowrap justify-end shrink-0">
                   <button
                     type="button"
-                    className="workspace-note-cards-inline-action workspace-note-cards-icon-action"
+                    className="workspace-note-cards-inline-action workspace-note-cards-icon-action inline-flex items-center justify-center gap-1.5 rounded-[10px] border border-[var(--note-card-border)] p-0 w-[34px] h-[34px] bg-transparent text-inherit cursor-pointer text-xs shrink-0"
                     onClick={() => void handleRestore(previewNote.id)}
                     aria-label={t("noteCards.restore")}
                     title={t("noteCards.restore")}
@@ -721,7 +723,7 @@ export function WorkspaceNoteCardPanel({
                   </button>
                   <button
                     type="button"
-                    className="ghost workspace-note-cards-inline-action workspace-note-cards-icon-action workspace-note-cards-danger"
+                    className="ghost workspace-note-cards-inline-action workspace-note-cards-icon-action workspace-note-cards-danger inline-flex items-center justify-center gap-1.5 rounded-[10px] border border-[var(--note-card-border)] p-0 w-[34px] h-[34px] bg-transparent text-[var(--note-card-danger)] cursor-pointer text-xs shrink-0"
                     onClick={() => void handleDelete(previewNote.id, previewNote.title)}
                     aria-label={t("noteCards.deleteAction")}
                     title={t("noteCards.deleteAction")}
@@ -731,18 +733,18 @@ export function WorkspaceNoteCardPanel({
                 </div>
               </div>
               <Markdown
-                className="markdown workspace-note-cards-preview-markdown"
+                className="markdown workspace-note-cards-preview-markdown max-h-[220px] overflow-auto p-3 rounded-xl bg-[var(--note-card-surface-muted)]"
                 value={previewNote.bodyMarkdown || previewNote.plainTextExcerpt}
               />
               {previewNote.attachments.length > 0 ? (
-                <div className="workspace-note-cards-preview-images">
+                <div className="workspace-note-cards-preview-images grid grid-cols-[repeat(auto-fill,minmax(116px,1fr))] gap-2">
                   {previewNote.attachments.map((attachment) => {
                     const src = attachmentPreviewSrc(attachment.absolutePath);
                     return (
                       <button
                         key={attachment.id}
                         type="button"
-                        className="workspace-note-cards-preview-image"
+                        className="workspace-note-cards-preview-image flex items-center justify-center w-full min-h-[116px] p-2 overflow-hidden appearance-none rounded-xl bg-[var(--note-card-surface-muted)] border border-[var(--note-card-border)] cursor-zoom-in hover:border-[color-mix(in_srgb,var(--note-card-accent)_36%,var(--note-card-border))] [&_img]:w-full [&_img]:h-full [&_img]:max-h-[160px] [&_img]:object-contain"
                         onClick={() => {
                           if (src) {
                             setImagePreview({
@@ -769,53 +771,67 @@ export function WorkspaceNoteCardPanel({
               ) : null}
             </article>
           ) : (
-            <div className="workspace-note-cards-empty">{t("noteCards.previewEmpty")}</div>
+            <div className="workspace-note-cards-empty p-4 rounded-[14px] text-center text-[var(--note-card-text-muted)] bg-[var(--note-card-surface-muted)]">
+              {t("noteCards.previewEmpty")}
+            </div>
           )}
         </section>
       )}
 
       {error ? (
-        <div className="workspace-note-cards-error">{error}</div>
+        <div className="workspace-note-cards-error p-4 rounded-[14px] text-center text-[var(--note-card-danger)] bg-[color-mix(in_srgb,var(--note-card-danger)_10%,var(--note-card-surface))]">
+          {error}
+        </div>
       ) : null}
 
       {shouldShowList ? (
-        <section className={`workspace-note-cards-list${isListEmpty ? " is-empty" : ""}`}>
+        <section
+          className={`workspace-note-cards-list${
+            isListEmpty
+              ? " is-empty flex items-center justify-center pr-0"
+              : " grid grid-cols-2 max-[860px]:grid-cols-1 pr-0.5"
+          } flex-1 gap-2.5 content-start min-h-0 overflow-auto`}
+        >
           {isListEmpty ? (
-            <div className="workspace-note-cards-empty">{emptyMessage}</div>
+            <div className="workspace-note-cards-empty w-[min(100%,520px)] min-h-[164px] flex items-center justify-center p-6 rounded-[14px] text-center text-[var(--note-card-text-muted)] bg-[var(--note-card-surface-muted)]">
+              {emptyMessage}
+            </div>
           ) : (
             listItems.map((item) => {
               const isSelected = item.id === selectedId;
               return (
                 <article
                   key={item.id}
-                  className={`workspace-note-cards-card${isSelected ? " is-selected" : ""}`}
+                  className={`workspace-note-cards-card${isSelected ? " is-selected border-[color-mix(in_srgb,var(--note-card-accent)_45%,var(--note-card-border))] shadow-[0_0_0_1px_color-mix(in_srgb,var(--note-card-accent)_18%,transparent)]" : ""} grid grid-cols-[minmax(0,1fr)_auto] items-start gap-3 min-h-[var(--note-card-list-card-height)] h-[var(--note-card-list-card-height)] p-3 overflow-hidden border border-[var(--note-card-border)] bg-[var(--note-card-surface)] rounded-[14px]`}
                 >
                   <button
                     type="button"
-                    className="workspace-note-cards-card-main"
+                    className="workspace-note-cards-card-main flex flex-col gap-2 h-full min-w-0 p-0 border-0 bg-transparent text-left text-inherit cursor-pointer"
                     onClick={() => handleSelectCard(item.id)}
                   >
-                    <div className="workspace-note-cards-card-head">
-                      <strong>{item.title || t("noteCards.untitled")}</strong>
+                    <div className="workspace-note-cards-card-head flex items-center justify-between gap-2 min-w-0">
+                      <strong className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">{item.title || t("noteCards.untitled")}</strong>
                       {item.imageCount > 0 ? (
-                        <span className="workspace-note-cards-card-badge">
+                        <span className="workspace-note-cards-card-badge inline-flex items-center px-2 py-1 rounded-full bg-[color-mix(in_srgb,var(--note-card-accent)_12%,transparent)] text-[var(--note-card-accent)] text-[11px]">
                           {t("noteCards.imageCount", { count: item.imageCount })}
                         </span>
                       ) : null}
                     </div>
-                    <p>{item.plainTextExcerpt || t("noteCards.previewEmpty")}</p>
-                    <div className="workspace-note-cards-card-meta">
+                    <p className="m-0 text-[var(--note-card-text-muted)] text-xs leading-[1.5] overflow-hidden [display:-webkit-box] [-webkit-box-orient:vertical] [-webkit-line-clamp:5] [line-clamp:5]">
+                      {item.plainTextExcerpt || t("noteCards.previewEmpty")}
+                    </p>
+                    <div className="workspace-note-cards-card-meta flex items-center mt-auto gap-2 flex-wrap text-[var(--note-card-text-muted)] text-[11px] justify-between">
                       <span>{t("noteCards.updatedAt", { time: formatDate(item.updatedAt) })}</span>
                       {item.archived ? (
                         <span>{t("noteCards.archivedState")}</span>
                       ) : null}
                     </div>
                   </button>
-                  <div className="workspace-note-cards-card-actions">
+                  <div className="workspace-note-cards-card-actions flex items-center gap-2 flex-nowrap self-start text-[var(--note-card-text-muted)] text-[11px]">
                     {archived ? (
                       <button
                         type="button"
-                        className="ghost workspace-note-cards-inline-action workspace-note-cards-icon-action"
+                        className="ghost workspace-note-cards-inline-action workspace-note-cards-icon-action inline-flex items-center justify-center gap-1.5 rounded-[10px] border border-[var(--note-card-border)] p-0 w-[34px] h-[34px] bg-transparent text-inherit cursor-pointer text-xs shrink-0"
                         onClick={() => void handleRestore(item.id)}
                         aria-label={t("noteCards.restore")}
                         title={t("noteCards.restore")}
@@ -825,7 +841,7 @@ export function WorkspaceNoteCardPanel({
                     ) : (
                       <button
                         type="button"
-                        className="ghost workspace-note-cards-inline-action workspace-note-cards-icon-action"
+                        className="ghost workspace-note-cards-inline-action workspace-note-cards-icon-action inline-flex items-center justify-center gap-1.5 rounded-[10px] border border-[var(--note-card-border)] p-0 w-[34px] h-[34px] bg-transparent text-inherit cursor-pointer text-xs shrink-0"
                         onClick={() => void handleArchive(item.id)}
                         aria-label={t("noteCards.archiveAction")}
                         title={t("noteCards.archiveAction")}
@@ -835,7 +851,7 @@ export function WorkspaceNoteCardPanel({
                     )}
                     <button
                       type="button"
-                      className="ghost workspace-note-cards-inline-action workspace-note-cards-icon-action workspace-note-cards-danger"
+                      className="ghost workspace-note-cards-inline-action workspace-note-cards-icon-action workspace-note-cards-danger inline-flex items-center justify-center gap-1.5 rounded-[10px] border border-[var(--note-card-border)] p-0 w-[34px] h-[34px] bg-transparent text-[var(--note-card-danger)] cursor-pointer text-xs shrink-0"
                       onClick={() => void handleDelete(item.id, item.title)}
                       aria-label={t("noteCards.deleteAction")}
                       title={t("noteCards.deleteAction")}
