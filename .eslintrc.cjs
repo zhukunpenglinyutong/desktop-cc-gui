@@ -70,6 +70,7 @@ module.exports = {
         'src/features/settings/components/SettingsView.tsx',
         'src/features/settings/components/settings-view/sections/CodexSection.tsx',
         'src/features/spec/components/spec-hub/presentational/SpecHubPresentationalImpl.tsx',
+        'src/features/spec/components/spec-hub/presentational/SpecHubPresentationalImpl.helpers.tsx',
       ],
       rules: {
         '@typescript-eslint/ban-ts-comment': 'off',

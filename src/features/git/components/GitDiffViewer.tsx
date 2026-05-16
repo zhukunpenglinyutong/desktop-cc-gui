@@ -381,69 +381,84 @@ const PullRequestSummary = memo(function PullRequestSummary({
   }, [pullRequest.number]);
 
   return (
-    <section className="diff-viewer-pr" aria-label="Pull request summary">
-      <div className="diff-viewer-pr-header">
-        <div className="diff-viewer-pr-header-row">
-          <div className="diff-viewer-pr-title">
-            <span className="diff-viewer-pr-number">#{pullRequest.number}</span>
-            <span className="diff-viewer-pr-title-text">
+    <section
+      className="diff-viewer-pr mx-4 mt-3 mb-4 p-4 rounded-[14px] border border-[var(--border-subtle)] bg-[color-mix(in_srgb,var(--surface-strong)_84%,transparent)] shadow-[0_12px_30px_rgba(0,0,0,0.22)]"
+      aria-label="Pull request summary"
+    >
+      <div className="diff-viewer-pr-header flex flex-col gap-2.5">
+        <div className="diff-viewer-pr-header-row flex items-start justify-between gap-3">
+          <div className="diff-viewer-pr-title flex flex-wrap gap-2 text-[18px] font-semibold text-[var(--text-strong)]">
+            <span className="diff-viewer-pr-number text-[var(--text-faint)] tabular-nums">
+              #{pullRequest.number}
+            </span>
+            <span className="diff-viewer-pr-title-text text-[var(--text-stronger)]">
               {pullRequest.title}
             </span>
           </div>
           {hasDiffs && (
             <button
               type="button"
-              className="ghost diff-viewer-pr-jump"
+              className="ghost diff-viewer-pr-jump inline-flex items-center gap-1.5 px-2.5 py-1 text-[11px] whitespace-nowrap"
               onClick={onJumpToFirstFile}
               aria-label={t("git.jumpToFirstFile")}
             >
-              <span className="diff-viewer-pr-jump-add">
+              <span className="diff-viewer-pr-jump-add text-[#47d488] tabular-nums">
                 +{diffStats.additions}
               </span>
-              <span className="diff-viewer-pr-jump-sep">/</span>
-              <span className="diff-viewer-pr-jump-del">
+              <span className="diff-viewer-pr-jump-sep text-[var(--text-faint)] tabular-nums">
+                /
+              </span>
+              <span className="diff-viewer-pr-jump-del text-[#ff6b6b] tabular-nums">
                 -{diffStats.deletions}
               </span>
             </button>
           )}
         </div>
-        <div className="diff-viewer-pr-meta">
-          <span className="diff-viewer-pr-author">@{prAuthor}</span>
+        <div className="diff-viewer-pr-meta flex flex-wrap items-center gap-2 text-xs text-[var(--text-muted)]">
+          <span className="diff-viewer-pr-author font-semibold text-[var(--text-strong)]">
+            @{prAuthor}
+          </span>
           {prUpdatedLabel && (
             <>
-              <span className="diff-viewer-pr-sep">·</span>
+              <span className="diff-viewer-pr-sep text-[var(--text-faint)]">·</span>
               <span>{prUpdatedLabel}</span>
             </>
           )}
-          <span className="diff-viewer-pr-sep">·</span>
-          <span className="diff-viewer-pr-branch">
+          <span className="diff-viewer-pr-sep text-[var(--text-faint)]">·</span>
+          <span className="diff-viewer-pr-branch font-[var(--code-font-family)] text-[var(--code-font-size,11px)] px-1.5 py-0.5 rounded-full border border-[var(--border-subtle)] bg-[var(--surface-control)] text-[var(--text-quiet)]">
             {pullRequest.baseRefName} ← {pullRequest.headRefName}
           </span>
           {pullRequest.isDraft && (
-            <span className="diff-viewer-pr-pill">{t("git.draft")}</span>
+            <span className="diff-viewer-pr-pill px-1.5 py-0.5 rounded-full border border-[#6a4a2a] bg-[#2e2418] text-[#f2994a] text-[11px] font-semibold uppercase">
+              {t("git.draft")}
+            </span>
           )}
         </div>
       </div>
-      <div className="diff-viewer-pr-body">
+      <div className="diff-viewer-pr-body mt-3 pt-3 border-t border-[var(--border-subtle)]">
         {prBody ? (
           <Markdown
             value={prBody}
-            className="diff-viewer-pr-markdown markdown"
+            className="diff-viewer-pr-markdown markdown text-[13px] text-[var(--text-stronger)] [&_:where(h1,h2,h3,h4,h5,h6)]:mt-4 [&_:where(p,ul,ol,pre)]:mt-2.5"
           />
         ) : (
-          <div className="diff-viewer-pr-empty">{t("git.noDescriptionProvided")}</div>
+          <div className="diff-viewer-pr-empty text-[13px] text-[var(--text-muted)]">
+            {t("git.noDescriptionProvided")}
+          </div>
         )}
       </div>
-      <div className="diff-viewer-pr-timeline">
-        <div className="diff-viewer-pr-timeline-header">
-          <span className="diff-viewer-pr-timeline-title">{t("git.activity")}</span>
-          <span className="diff-viewer-pr-timeline-count">
+      <div className="diff-viewer-pr-timeline mt-4 pt-3 border-t border-[var(--border-subtle)]">
+        <div className="diff-viewer-pr-timeline-header flex flex-wrap items-center gap-2 mb-3 text-xs text-[var(--text-muted)]">
+          <span className="diff-viewer-pr-timeline-title font-semibold text-[var(--text-strong)]">
+            {t("git.activity")}
+          </span>
+          <span className="diff-viewer-pr-timeline-count tabular-nums">
             {sortedComments.length} {sortedComments.length === 1 ? t("git.comment") : t("git.comments")}
           </span>
           {hiddenCommentCount > 0 && (
             <button
               type="button"
-              className="ghost diff-viewer-pr-timeline-button"
+              className="ghost diff-viewer-pr-timeline-button px-2.5 py-1 text-[11px]"
               onClick={() => setIsTimelineExpanded(true)}
             >
               {t("git.showAll")}
@@ -453,33 +468,33 @@ const PullRequestSummary = memo(function PullRequestSummary({
             sortedComments.length > visibleCommentCount && (
               <button
                 type="button"
-                className="ghost diff-viewer-pr-timeline-button"
+                className="ghost diff-viewer-pr-timeline-button px-2.5 py-1 text-[11px]"
                 onClick={() => setIsTimelineExpanded(false)}
               >
                 {t("git.collapse")}
               </button>
             )}
         </div>
-        <div className="diff-viewer-pr-timeline-list">
+        <div className="diff-viewer-pr-timeline-list relative flex flex-col gap-3.5 pl-3.5 before:content-[''] before:absolute before:left-1.5 before:top-1 before:bottom-1 before:w-0.5 before:bg-[color-mix(in_srgb,var(--border-strong)_40%,transparent)]">
           {pullRequestCommentsLoading && (
-            <div className="diff-viewer-pr-timeline-state">
+            <div className="diff-viewer-pr-timeline-state pl-3 text-xs text-[var(--text-muted)]">
               {t("git.loadingComments")}
             </div>
           )}
           {pullRequestCommentsError && (
-            <div className="diff-viewer-pr-timeline-state diff-viewer-pr-timeline-error">
+            <div className="diff-viewer-pr-timeline-state diff-viewer-pr-timeline-error pl-3 text-xs text-[var(--text-error,#ff8d8d)]">
               {pullRequestCommentsError}
             </div>
           )}
           {!pullRequestCommentsLoading &&
             !pullRequestCommentsError &&
             !sortedComments.length && (
-              <div className="diff-viewer-pr-timeline-state">
+              <div className="diff-viewer-pr-timeline-state pl-3 text-xs text-[var(--text-muted)]">
                 {t("git.noCommentsYet")}
               </div>
             )}
           {hiddenCommentCount > 0 && !isTimelineExpanded && (
-            <div className="diff-viewer-pr-timeline-divider">
+            <div className="diff-viewer-pr-timeline-divider pl-3 text-xs text-[var(--text-faint)]">
               {hiddenCommentCount} {hiddenCommentCount === 1 ? t("git.earlierComment") : t("git.earlierComments")}
             </div>
           )}
@@ -489,23 +504,26 @@ const PullRequestSummary = memo(function PullRequestSummary({
               new Date(comment.createdAt).getTime(),
             );
             return (
-              <div key={comment.id} className="diff-viewer-pr-timeline-item">
-                <div className="diff-viewer-pr-timeline-marker" />
-                <div className="diff-viewer-pr-timeline-content">
-                  <div className="diff-viewer-pr-timeline-meta">
-                    <span className="diff-viewer-pr-timeline-author">
+              <div
+                key={comment.id}
+                className="diff-viewer-pr-timeline-item relative flex gap-3"
+              >
+                <div className="diff-viewer-pr-timeline-marker relative z-[1] w-3 h-3 mt-[3px] rounded-full bg-[var(--surface-control)] border-2 border-[var(--border-strong)] shrink-0" />
+                <div className="diff-viewer-pr-timeline-content flex-1 min-w-0 px-3 py-2.5 rounded-xl border border-[var(--border-subtle)] bg-[color-mix(in_srgb,var(--surface-strong)_78%,transparent)]">
+                  <div className="diff-viewer-pr-timeline-meta flex flex-wrap items-center gap-1.5 text-xs text-[var(--text-muted)]">
+                    <span className="diff-viewer-pr-timeline-author font-semibold text-[var(--text-strong)]">
                       @{commentAuthor}
                     </span>
-                    <span className="diff-viewer-pr-sep">·</span>
+                    <span className="diff-viewer-pr-sep text-[var(--text-faint)]">·</span>
                     <span>{commentTime}</span>
                   </div>
                   {comment.body.trim() ? (
                     <Markdown
                       value={comment.body}
-                      className="diff-viewer-pr-comment markdown"
+                      className="diff-viewer-pr-comment markdown mt-2 text-[13px] text-[var(--text-stronger)] [&_:where(p,ul,ol,pre)]:mt-2"
                     />
                   ) : (
-                    <div className="diff-viewer-pr-timeline-text">
+                    <div className="diff-viewer-pr-timeline-text mt-1.5 text-[13px] text-[var(--text-stronger)]">
                       {t("git.noCommentBody")}
                     </div>
                   )}

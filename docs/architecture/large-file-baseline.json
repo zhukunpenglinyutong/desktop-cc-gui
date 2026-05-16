@@ -1,6 +1,16 @@
 {
-  "generatedAt": "2026-05-16T13:57:56.763Z",
+  "generatedAt": "2026-05-16T15:11:00.289Z",
   "scope": "fail",
   "policyVersion": "2026-04-22.policy-v2",
-  "entries": []
+  "entries": [
+    {
+      "path": "src/features/spec/components/spec-hub/presentational/SpecHubPresentationalImpl.tsx",
+      "lines": 6111,
+      "type": "ts/tsx",
+      "policyId": "feature-hotpath",
+      "priority": "P1",
+      "warnThreshold": 2400,
+      "failThreshold": 2800
+    }
+  ]
 }
