@@ -1065,3 +1065,44 @@ Net：CSS 67→67（全 in-place trim 不删文件）；3 css 累计 -839 行；
 ### Next Steps
 
 - None - task complete
+
+
+## Session 16: Phase 5.6b kanban + 9.5 opencode-panel + 9.3 partial 并行批次
+
+**Date**: 2026-05-17
+**Task**: Phase 5.6b kanban + 9.5 opencode-panel + 9.3 partial 并行批次
+**Branch**: `chore/bump-version-0.5`
+
+### Summary
+
+(Add summary)
+
+### Main Changes
+
+3 并行：
+- 5.6b kanban.css 1896→1784（fullscreen + board header dropdown，DesktopLayout + KanbanBoardHeader inline）
+- 9.5 opencode-panel.css 全删（915 行），5 tsx inline，codex-unified-exec 严格保留
+- 9.3 file-view-panel agent API error，IDE 保留 partial inline + plan doc
+
+验证：lint pass / typecheck 0 / layout-guard 46/46 / large-files retained / kanban 63 / opencode 8 / codex 2 / useAppSettings 22
+
+Net：CSS 67→66；累计删 28 .css；bootstrap.ts 41→40 imports
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `a846709d` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

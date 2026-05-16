@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-0.md`
-- **Total Sessions**: 15
+- **Total Sessions**: 16
 - **Last Active**: 2026-05-17
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-0.md` | ~1067 | Active |
+| `journal-0.md` | ~1108 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 16 | 2026-05-17 | Phase 5.6b kanban + 9.5 opencode-panel + 9.3 partial 并行批次 | `a846709d` | `chore/bump-version-0.5` |
 | 15 | 2026-05-17 | Phase 4.5d composer.part1 + 7.5 git-history.part1 + 9.1 file-tree 并行批次 | `10678b9e` | `chore/bump-version-0.5` |
 | 14 | 2026-05-17 | Phase 4.5b composer.part2 + 6.5b vendor 收尾 + 9.4 terminal 并行批次 | `3361fc18` | `chore/bump-version-0.5` |
 | 13 | 2026-05-17 | Phase 4.5a composer-rewind + 5.6a kanban mode-toggle + 6.5a vendor 并行批次 | `36c730be` | `chore/bump-version-0.5` |
