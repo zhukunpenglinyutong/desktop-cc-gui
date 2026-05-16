@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-0.md`
-- **Total Sessions**: 10
+- **Total Sessions**: 11
 - **Last Active**: 2026-05-16
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-0.md` | ~835 | Active |
+| `journal-0.md` | ~887 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 11 | 2026-05-16 | P0-2 SpecHub de-minify + Phase 9.2 PR cluster + 3.5 sticky 阻塞分析 | `b2736ba9` | `chore/bump-version-0.5` |
 | 10 | 2026-05-16 | P0 layout-guard 字面值断言改造解锁 6 个推迟的 .css | `1384e9f4` | `chore/bump-version-0.5` |
 | 9 | 2026-05-16 | Phase 10 final wrap-up，主任务收尾 | `17ff792a` | `chore/bump-version-0.5` |
 | 8 | 2026-05-16 | Phase 7+8+9 并行 worktree 批次 (scope 大幅收缩) | `72574e14` | `chore/bump-version-0.5` |

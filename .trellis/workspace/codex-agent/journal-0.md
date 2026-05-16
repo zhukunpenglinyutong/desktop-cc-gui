@@ -833,3 +833,55 @@ P0 第二件（layout-guard 测试改造）已完成。layout-swapped-platform-g
 ### Next Steps
 
 - None - task complete
+
+
+## Session 11: P0-2 SpecHub de-minify + Phase 9.2 PR cluster + 3.5 sticky 阻塞分析
+
+**Date**: 2026-05-16
+**Task**: P0-2 SpecHub de-minify + Phase 9.2 PR cluster + 3.5 sticky 阻塞分析
+**Branch**: `chore/bump-version-0.5`
+
+### Summary
+
+(Add summary)
+
+### Main Changes
+
+3 个并行 agent 完成 P0-2 SpecHub de-minify、Phase 9.2 PR cluster 子 PR、Phase 3.5 sticky 阻塞分析。一个 commit 容纳。
+
+## P0-2 SpecHubPresentationalImpl de-minify ✅
+25 行 minified → 6111 行 prettier expand；抽 990 行到 sibling helpers.tsx；移除 3 dead import；large-file-baseline 重校到 6111（status=retained delta=0）；@ts-nocheck 保留。Phase 8.6 spec-hub coss 化推迟到 8.6.1/8.6.2/8.6.3（prettier reformat 输出仍是 _jsx runtime call 而非 readable JSX，单 phase inline 560 selector 不现实）。
+
+## Phase 9.2 diff-viewer PullRequestSummary ✅
+diff-viewer.css 1376 → 1137 行（删 PR cluster 27 selectors / 247 行），GitDiffViewer.tsx PullRequestSummary 27 className 追加 Tailwind utility，bootstrap.ts 不动。剩 8 个 sub-PR 推迟。
+
+## Phase 3.5 messages.history-sticky 阻塞分析 ⏸
+重要发现：P0-1 commit 1384e9f4 "解锁"声明未达成——layout-guard 9 个 sticky test 仍 cssRules introspection，强依赖 messages.history-sticky.css rules 存在。下一 commit 必须 P0-1 深化（DOM 行为/属性断言替换 cssRules introspection），才能真正解除 .css 删除阻塞。仅落地 plan doc。
+
+## 验证
+lint pass / typecheck 0 / test:layout-guard 46/46 / check:large-files:gate found=1 retained delta=0 pass / spec feature 120/120 / GitDiff 系列 207/207 / Messages.live-behavior 45/45（sticky 4 条 carry-forward 全保）
+
+## Follow-up
+- P0-1 深化：layout-guard sticky test DOM 行为断言
+- Phase 8.6.1/8.6.2/8.6.3 spec-hub 分批
+- Phase 9.2 剩 8 个 sub-PR
+- .prettierignore 加 SpecHubPresentationalImpl.tsx
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `b2736ba9` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
