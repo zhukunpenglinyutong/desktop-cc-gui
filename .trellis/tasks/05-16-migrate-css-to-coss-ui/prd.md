@@ -341,6 +341,60 @@ Scope 调整（写在 plan doc）：
 - 严格遵守 `.trellis/spec/guides/codex-unified-exec-override-contract.md` 与 `terminal-shell-configuration.md`。
 - DoD：旅程 = 打开 settings → 切各 tab → 修改 → 保存。
 
+#### Phase 6 完成状态（2026-05-16）
+
+**Scope 大幅收缩**（在 plan-time，非 execution-time）— 见 `phase-6-settings-plan.md`。PRD 原列 8 个 settings CSS 文件（共 7748 行）+ aggregator，本 phase 仅处理 1 个文件 + aggregator。其余 7 个全部 defer 到 Phase 6.5 / 6.6 / 6.7。原因汇总：
+
+| 文件 | 行 | 字面值 pin? | Consumer 规模 | 决策 |
+|---|---|---|---|---|
+| `settings.css` (aggregator) | 8 | 否 | — | **本 phase**: 删 1 行 `@import "./settings.skills.css"` |
+| `settings.skills.css` | 478 | 否 | `SkillsSection.tsx` 1289 行 / 40 className refs（单 consumer，无字面值 pin） | **本 phase**: 删除 + 内联 Tailwind（与 Phase 5 `WorkspaceNoteCardPanel.tsx` 864/48 模式一致） |
+| `settings.part1.css` | 2158 | 否 | `SettingsView.tsx` 2231 行 frame | **DEFER → Phase 6.7** |
+| `settings.part1.vendor-panels.css` | 863 | 否 | vendor cluster 2832 行 tsx | **DEFER → Phase 6.5** |
+| `settings.part2.css` | 2154 | **YES** — `settings-email-card-surface.test.ts` 用 `readFileSync('./settings.part2.css')` 钉死 5 条字面 CSS rule + 1 条 negative `not.toMatch` | cross-section + 字面值 pin | **DEFER → Phase 6.6** |
+| `settings.part2.basic-redesign.css` | 1044 | 否 | cross-section cascade 通过 `--settings-basic-*` 影响 13+ section | **DEFER → Phase 6.6** |
+| `settings.part2.vendor-models.css` | 330 | 否 | vendor cluster | **DEFER → Phase 6.5** |
+| `settings.part3.css` | 244 | 否 | cross-section + `:root[data-theme="light"]` theme cascade | **DEFER → Phase 6.6** |
+| `settings.vendor-codex-runtime.css` | 83 | 否 | vendor cluster | **DEFER → Phase 6.5** |
+| `settings.vendor-dialog.css` | 386 | 否 | vendor cluster 1597 行 tsx | **DEFER → Phase 6.5** |
+
+实际产出（implement agent）：
+- 新增：`.trellis/tasks/05-16-migrate-css-to-coss-ui/phase-6-settings-plan.md`（discovery + per-file plan + scope decision + execution-time 结果）
+- 删除 1 个 .css 文件：`settings.skills.css`（478 行）→ 内联 Tailwind 到 `SkillsSection.tsx`
+- 修改：`src/styles/settings.css`（8 → 7 行，删除 1 行 `@import "./settings.skills.css"`）
+- 修改：`src/features/settings/components/SkillsSection.tsx`（约 40 处 `settings-skills-*` / `settings-search-field` className 保留为 no-op semantic marker + 追加 Tailwind utility；处置含 conditional `is-active` / `is-tree-collapsed` / `is-resizing` 状态 + media query (`max-[1100px]:` arbitrary breakpoint) + splitter `::before` pseudo-element + 嵌套 selector `.settings-skills-browser.is-resizing .settings-skills-splitter::before`）
+- 沿用 Phase 2/3/4/5 既证的「保留 class name 作为 no-op marker + 追加 Tailwind utility」pattern
+- `src/bootstrap.ts` 未动（settings.css 仍是 entry，内部少 1 个 @import）
+
+未引入 coss primitive structural swap（同 Phase 2/3/4/5 决策）——本 phase 决策为「纯 styling pass」，详见 plan doc 的 "Follow-ups" 节。`Splitter`（settings-skills-splitter）、`Tree`（settings-skills-tree-node）的结构性替换转入 Phase 10 follow-up。
+
+**严格 contract 遵守验证**：
+- `codex-unified-exec-override-contract.md` 触点 `useAppSettings` / `SettingsView` / `tauri.ts` 未被改动 → contract 不破坏
+- `terminal-shell-configuration.md` 触点 `terminalShellPath` settings field 未在 SkillsSection 范围 → 无影响
+
+字面值 pin 报告：
+- `settings-email-card-surface.test.ts` 读取 `settings.part2.css` 验证 5 条字面 CSS rule → **本 phase 完全没动 `settings.part2.css`**，pin 自动保留
+- `SettingsView.test.tsx` 仅 querySelector `.settings-doctor-body`（DOM presence pin，非 CSS literal），其源 class 由 `settings.part1.css` / `settings.part2.css` 提供，本 phase 不动 → pin 自动保留
+
+验证（同 Phase 2/3/4/5 baseline，无新错）：
+- `npm run lint` ✅ pass
+- `npm run typecheck` ✅ 2 个 pre-existing baseline 错（perfBaseline×2；Phase 0 baseline 保持 2）
+- `npm run test` ✅ 仅 `ComposerInput.collaboration.test.tsx` 的 3 个 pre-existing failure（通过 `git stash` + `git stash pop` 第六次确认与 Phase 6 无关，完全一致 Phase 2/3/4/5 记录）
+- `npm run test:layout-guard` ✅ 10/10 pass
+- `npm run check:large-files:gate` ✅ pass（found=0）
+- 单独跑 Phase 6 affected tests ✅ PASS (78) FAIL (0):
+  - `SkillsSection.test.tsx` ✅ 1/1 pass（无 settings-skills className 钉死，inline 处理安全）
+  - `settings-email-card-surface.test.ts` ✅ 1/1 pass（settings.part2.css 字面值 pin 保留）
+  - `SettingsView.test.tsx` ✅ 47/47 pass（.settings-doctor-body 等 querySelector 全部保留）
+  - `CodexSection.test.tsx` ✅ 2/2 pass（codex-unified-exec-override-contract 行为不变）
+  - `useAppSettings.test.ts` ✅ 22/22 pass（settings field 契约不变）
+  - `VendorSettingsPanel.test.tsx` ✅ 5/5 pass（vendor panel 行为不变）
+
+后续 phase 影响：
+- bootstrap.ts CSS import 数从 40 保持 40 (settings.css 仍是 entry, 内部少 1 个 @import)
+- settings.css 内部 import 数从 8 → 7
+- 3 条新 follow-up 入 `docs/migration-to-coss-ui.md`：Phase 6.5 vendor cluster (4 文件 / 1662 行 CSS / 2344+ tsx) / Phase 6.6 part2 + basic-redesign + part3 (3 文件 / 3442 行 CSS / 字面值 pin + cross-section cascade) / Phase 6.7 settings frame (1 文件 / 2158 行 CSS / SettingsView 2231 tsx)
+
 ### Phase 7 — Git History
 - 覆盖：`git-history.part1/2` + 所有 sub（`branch-compare`、`pr-dialog`、`shell`、`support`）。
 - DoD：旅程 = 打开 git history → 切换分支 → branch compare → PR dialog。

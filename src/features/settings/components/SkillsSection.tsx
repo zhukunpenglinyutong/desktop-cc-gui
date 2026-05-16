@@ -767,8 +767,8 @@ export function SkillsSection({
               <button
                 type="button"
                 className={cn(
-                  "settings-skills-tree-node settings-skills-tree-node--dir",
-                  isActive && "is-active",
+                  "settings-skills-tree-node settings-skills-tree-node--dir w-full border-0 bg-transparent text-[var(--text-strong)] min-h-7 flex items-center gap-1.5 text-left cursor-pointer text-[12px] font-semibold hover:bg-[var(--surface-hover)]",
+                  isActive && "is-active bg-[color-mix(in_srgb,var(--primary)_16%,transparent)]",
                 )}
                 style={{ paddingLeft: `${depth * 14 + 8}px` }}
                 onClick={() => {
@@ -779,9 +779,9 @@ export function SkillsSection({
               >
                 {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
                 <Folder size={14} />
-                <span className="settings-skills-tree-label">{entry.name}</span>
+                <span className="settings-skills-tree-label min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap">{entry.name}</span>
                 {entry.isSkillRoot ? (
-                  <span className="settings-skills-tree-tag">
+                  <span className="settings-skills-tree-tag inline-flex items-center gap-1 rounded-full border border-[var(--border-muted)] px-1.5 py-px text-[var(--text-muted)] text-[10px] font-medium">
                     <BadgeInfo size={12} />
                     {t("settings.skillsPanel.treeSkillRootTag")}
                   </span>
@@ -790,17 +790,17 @@ export function SkillsSection({
               {isExpanded ? (
                 <div>
                   {isLoadingChildren ? (
-                    <div className="settings-skills-tree-state" style={{ paddingLeft: `${depth * 14 + 30}px` }}>
+                    <div className="settings-skills-tree-state min-h-[26px] flex items-center text-[11px] text-[var(--text-muted)]" style={{ paddingLeft: `${depth * 14 + 30}px` }}>
                       {t("settings.skillsPanel.treeLoading")}
                     </div>
                   ) : null}
                   {loadError ? (
-                    <div className="settings-skills-tree-state settings-inline-error" style={{ paddingLeft: `${depth * 14 + 30}px` }}>
+                    <div className="settings-skills-tree-state settings-inline-error min-h-[26px] flex items-center text-[11px]" style={{ paddingLeft: `${depth * 14 + 30}px` }}>
                       {t("settings.skillsPanel.treeLoadFailed", { message: loadError })}
                     </div>
                   ) : null}
                   {!isLoadingChildren && !loadError && children.length === 0 ? (
-                    <div className="settings-skills-tree-state" style={{ paddingLeft: `${depth * 14 + 30}px` }}>
+                    <div className="settings-skills-tree-state min-h-[26px] flex items-center text-[11px] text-[var(--text-muted)]" style={{ paddingLeft: `${depth * 14 + 30}px` }}>
                       {t("settings.skillsPanel.treeFolderEmpty")}
                     </div>
                   ) : null}
@@ -821,8 +821,8 @@ export function SkillsSection({
             key={entry.path}
             type="button"
             className={cn(
-              "settings-skills-tree-node settings-skills-tree-node--file",
-              isActive && "is-active",
+              "settings-skills-tree-node settings-skills-tree-node--file w-full border-0 bg-transparent text-[var(--text-strong)] min-h-7 flex items-center gap-1.5 text-left cursor-pointer text-[12px] hover:bg-[var(--surface-hover)]",
+              isActive && "is-active bg-[color-mix(in_srgb,var(--primary)_16%,transparent)]",
             )}
             style={{ paddingLeft: `${depth * 14 + 24}px` }}
             onClick={() => {
@@ -831,7 +831,7 @@ export function SkillsSection({
             }}
           >
             <FileIcon size={14} />
-            <span className="settings-skills-tree-label">{entry.name}</span>
+            <span className="settings-skills-tree-label min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap">{entry.name}</span>
           </button>,
         ];
       }),
@@ -952,12 +952,12 @@ export function SkillsSection({
         </>
       ) : (
         <>
-          <div className="settings-skills-head-inline">
-            <div className="settings-section-subtitle settings-skills-head-desc">
+          <div className="settings-skills-head-inline flex items-center justify-between gap-3 flex-nowrap max-[1100px]:items-stretch max-[1100px]:flex-wrap">
+            <div className="settings-section-subtitle settings-skills-head-desc mb-0 flex-[0_0_auto]">
               {t("settings.skillsPanel.description")}
             </div>
-            <div className="settings-skills-toolbar settings-skills-toolbar--inline">
-              <label className="settings-search-field">
+            <div className="settings-skills-toolbar settings-skills-toolbar--inline mb-0 flex-nowrap max-[1100px]:w-full max-[1100px]:justify-start max-[1100px]:flex-wrap">
+              <label className="settings-search-field inline-flex items-center gap-1.5 min-w-[340px] [&>svg]:text-[var(--text-faint)] max-[1100px]:min-w-[220px]">
                 <Search size={14} />
                 <Input
                   value={query}
@@ -994,9 +994,9 @@ export function SkillsSection({
             </div>
           </div>
 
-          <div className="settings-skills-custom-dirs">
-            <div className="settings-skills-custom-dirs-copy">
-              <div className="settings-skills-custom-dirs-title">
+          <div className="settings-skills-custom-dirs grid grid-cols-[minmax(180px,260px)_minmax(280px,1fr)_auto] items-start gap-2.5 my-2.5 p-2.5 border border-[var(--border-muted)] rounded-lg bg-[color-mix(in_srgb,var(--surface-card)_72%,transparent)]">
+            <div className="settings-skills-custom-dirs-copy flex flex-col gap-1">
+              <div className="settings-skills-custom-dirs-title text-[12px] font-bold text-[var(--text-strong)]">
                 {t("settings.skillsPanel.customDirsTitle")}
               </div>
               <div className="settings-inline-muted">
@@ -1011,10 +1011,10 @@ export function SkillsSection({
                 setCustomDirsError(null);
               }}
               placeholder={t("settings.skillsPanel.customDirsPlaceholder")}
-              className="settings-skills-custom-dirs-input"
+              className="settings-skills-custom-dirs-input min-h-[72px] font-mono text-[12px] resize-y"
               spellCheck={false}
             />
-            <div className="settings-skills-custom-dirs-actions">
+            <div className="settings-skills-custom-dirs-actions inline-flex flex-col items-start gap-1.5">
               <Button
                 type="button"
                 variant="outline"
@@ -1036,12 +1036,12 @@ export function SkillsSection({
             </div>
           </div>
 
-          <div className="settings-skills-summary-strip">
-            <div className="settings-skills-summary-chip">
+          <div className="settings-skills-summary-strip flex items-center gap-2 flex-wrap mb-2">
+            <div className="settings-skills-summary-chip inline-flex items-center gap-1.5 border border-[var(--border-muted)] rounded-full px-2.5 py-[5px] bg-[color-mix(in_srgb,var(--surface-card)_72%,transparent)] text-[var(--text-muted)] text-[11px]">
               <HardDrive size={14} />
               <span>{t("settings.skillsPanel.globalDirs")}</span>
             </div>
-            <div className="settings-skills-summary-chip">
+            <div className="settings-skills-summary-chip inline-flex items-center gap-1.5 border border-[var(--border-muted)] rounded-full px-2.5 py-[5px] bg-[color-mix(in_srgb,var(--surface-card)_72%,transparent)] text-[var(--text-muted)] text-[11px]">
               <FolderTree size={14} />
               <span>
                 {t("settings.skillsPanel.activeGlobalDir", {
@@ -1049,7 +1049,7 @@ export function SkillsSection({
                 })}
               </span>
             </div>
-            <div className="settings-skills-summary-chip">
+            <div className="settings-skills-summary-chip inline-flex items-center gap-1.5 border border-[var(--border-muted)] rounded-full px-2.5 py-[5px] bg-[color-mix(in_srgb,var(--surface-card)_72%,transparent)] text-[var(--text-muted)] text-[11px]">
               <FileText size={14} />
               <span>
                 {t("settings.skillsPanel.count", {
@@ -1076,26 +1076,32 @@ export function SkillsSection({
             <div
               ref={browserContainerRef}
               className={cn(
-                "settings-skills-browser",
-                treePaneCollapsed && "is-tree-collapsed",
-                isResizingTreePane && "is-resizing",
+                "settings-skills-browser group/skills-browser mt-2.5 grid grid-cols-[minmax(260px,340px)_6px_1fr] gap-1 max-[1100px]:!grid-cols-[minmax(0,1fr)]",
+                treePaneCollapsed && "is-tree-collapsed gap-0",
+                isResizingTreePane && "is-resizing is-resizing-active cursor-col-resize",
               )}
               style={{ gridTemplateColumns: browserGridTemplateColumns }}
             >
-              <aside className="settings-skills-tree-pane" aria-hidden={treePaneCollapsed}>
-                <div className="settings-skills-pane-title">{t("settings.skillsPanel.treeTitle")}</div>
-                <div className="settings-skills-tree-root">
+              <aside
+                className={cn(
+                  "settings-skills-tree-pane border border-[var(--border-muted)] rounded-[10px] bg-[var(--surface-card)] min-h-[420px] flex flex-col",
+                  treePaneCollapsed && "min-w-0 border-0 rounded-none overflow-hidden [&>*]:hidden",
+                )}
+                aria-hidden={treePaneCollapsed}
+              >
+                <div className="settings-skills-pane-title px-3 pt-2.5 pb-2 text-[12px] font-bold text-[var(--text-strong)] border-b border-[var(--border-muted)]">{t("settings.skillsPanel.treeTitle")}</div>
+                <div className="settings-skills-tree-root px-3 py-2 text-[11px] text-[var(--text-muted)] border-b border-[var(--border-muted)] font-mono">
                   {engineRootSummary || primaryEngineRootPath}
                 </div>
-                <div className="settings-skills-tree-scroll">
+                <div className="settings-skills-tree-scroll overflow-auto py-2">
                   {rootTreeLoading ? (
-                    <div className="settings-skills-tree-state">{t("settings.skillsPanel.treeLoading")}</div>
+                    <div className="settings-skills-tree-state min-h-[26px] flex items-center text-[11px] text-[var(--text-muted)]">{t("settings.skillsPanel.treeLoading")}</div>
                   ) : rootTreeError ? (
                     <div className="settings-inline-error">
                       {t("settings.skillsPanel.treeLoadFailed", { message: rootTreeError })}
                     </div>
                   ) : rootTreeEntries.length === 0 ? (
-                    <div className="settings-skills-tree-state">{t("settings.skillsPanel.treeFolderEmpty")}</div>
+                    <div className="settings-skills-tree-state min-h-[26px] flex items-center text-[11px] text-[var(--text-muted)]">{t("settings.skillsPanel.treeFolderEmpty")}</div>
                   ) : (
                     renderTreeNodes(rootTreeEntries)
                   )}
@@ -1103,16 +1109,19 @@ export function SkillsSection({
               </aside>
               <button
                 type="button"
-                className="settings-skills-splitter"
+                className={cn(
+                  "settings-skills-splitter relative w-[6px] border-0 bg-transparent p-0 cursor-col-resize before:content-[''] before:absolute before:top-1 before:bottom-1 before:left-1/2 before:w-0.5 before:-translate-x-1/2 before:rounded-full before:bg-[color-mix(in_srgb,var(--border-muted)_74%,transparent)] before:transition-colors hover:before:bg-[color-mix(in_srgb,var(--primary)_48%,var(--border-muted)_52%)] max-[1100px]:hidden",
+                  isResizingTreePane && "before:!bg-[color-mix(in_srgb,var(--primary)_62%,var(--border-muted)_38%)]",
+                )}
                 onPointerDown={handleTreePaneResizeStart}
                 aria-label={t("settings.skillsPanel.treeTitle")}
               />
 
-              <section className="settings-skills-detail-pane">
-                <div className="settings-skills-pane-title settings-skills-pane-title--row">
+              <section className="settings-skills-detail-pane border border-[var(--border-muted)] rounded-[10px] bg-[var(--surface-card)] min-h-[420px] flex flex-col overflow-hidden">
+                <div className="settings-skills-pane-title settings-skills-pane-title--row px-3 pt-2.5 pb-2 text-[12px] font-bold text-[var(--text-strong)] border-b border-[var(--border-muted)] flex items-center justify-between gap-2">
                   <span>{t("settings.skillsPanel.detailTitle")}</span>
                   {selectedNodePath ? (
-                    <div className="settings-skills-detail-actions">
+                    <div className="settings-skills-detail-actions inline-flex items-center gap-1.5 flex-wrap">
                       <Button
                         type="button"
                         variant="outline"
@@ -1169,17 +1178,17 @@ export function SkillsSection({
                 {!selectedNodePath ? (
                   <div className="settings-inline-muted">{t("settings.skillsPanel.detailEmpty")}</div>
                 ) : (
-                  <div className="settings-skills-detail-body">
-                    <div className="settings-skills-detail-headline">
-                      <span className="settings-skills-detail-name">{pathBaseName(selectedNodePath)}</span>
-                      <span className="settings-skills-detail-chip">
+                  <div className="settings-skills-detail-body px-3 py-2.5 flex flex-col gap-2 min-h-0 flex-1">
+                    <div className="settings-skills-detail-headline flex items-center gap-2 flex-wrap">
+                      <span className="settings-skills-detail-name text-[15px] font-bold text-[var(--text-strong)]">{pathBaseName(selectedNodePath)}</span>
+                      <span className="settings-skills-detail-chip inline-flex items-center border border-[var(--border-muted)] rounded-full px-2.5 py-0.5 text-[11px] text-[var(--text-muted)] bg-[color-mix(in_srgb,var(--surface-card)_72%,transparent)]">
                         {t("settings.skillsPanel.detailType")}:
                         {" "}
                         {selectedNodeKind === "dir"
                           ? t("settings.skillsPanel.detailTypeDirectory")
                           : t("settings.skillsPanel.detailTypeFile")}
                       </span>
-                      <span className="settings-skills-detail-chip">
+                      <span className="settings-skills-detail-chip inline-flex items-center border border-[var(--border-muted)] rounded-full px-2.5 py-0.5 text-[11px] text-[var(--text-muted)] bg-[color-mix(in_srgb,var(--surface-card)_72%,transparent)]">
                         {t("settings.skillsPanel.detailSource")}:
                         {" "}
                         {selectedSkill?.source
@@ -1187,16 +1196,16 @@ export function SkillsSection({
                           : "-"}
                       </span>
                     </div>
-                    <div className="settings-skills-detail-meta">
+                    <div className="settings-skills-detail-meta text-[11px] text-[var(--text-muted)] break-all">
                       {t("settings.skillsPanel.detailPath")}: {selectedNodePath}
                     </div>
-                    <div className="settings-skills-detail-meta">
+                    <div className="settings-skills-detail-meta text-[11px] text-[var(--text-muted)] break-all">
                       {t("settings.skillsPanel.detailSkillRoot")}:
                       {" "}
                       {selectedSkillRootPath || t("settings.skillsPanel.detailSkillRootMissing")}
                     </div>
                     {selectedSkillDescription ? (
-                      <div className="settings-skills-detail-description">{selectedSkillDescription}</div>
+                      <div className="settings-skills-detail-description text-[12px] text-[var(--text-subtle)] leading-[1.5]">{selectedSkillDescription}</div>
                     ) : null}
                     {selectedFileSaveError ? (
                       <div className="settings-inline-error">
@@ -1209,7 +1218,7 @@ export function SkillsSection({
                         {t("settings.skillsPanel.detailDirectoryHint", { count: selectedDirectoryChildCount })}
                       </div>
                     ) : (
-                      <div className="settings-skills-content-wrap">
+                      <div className="settings-skills-content-wrap mt-1 min-h-0 flex-1 flex flex-col overflow-auto">
                         {selectedFileIsImage ? (
                           selectedImageSrc ? (
                             <div className="fvp-image-preview">
@@ -1230,11 +1239,11 @@ export function SkillsSection({
                         ) : selectedFileContentError ? (
                           <div className="settings-inline-error">{selectedFileContentError}</div>
                         ) : isEditingSelectedFile ? (
-                          <div className="settings-skills-editor-wrap">
+                          <div className="settings-skills-editor-wrap mt-0.5 min-h-0 flex-1 flex">
                             <Textarea
                               value={selectedFileDraftContent}
                               onChange={(event) => setSelectedFileDraftContent(event.target.value)}
-                              className="settings-skills-editor"
+                              className="settings-skills-editor flex-1 min-h-[320px] resize-y text-[12px] leading-[1.5] font-mono"
                               spellCheck={false}
                             />
                           </div>

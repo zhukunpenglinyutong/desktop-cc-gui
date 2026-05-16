@@ -34,7 +34,7 @@
 | 3 | Threads + Messages（含 sticky header carry-forward） | scope-shrunk → 仅 `prompts.css` + `messages.streaming.css` 删除；sticky header 与 message bodies 推迟到 3.5 / 3.6 | ✅ done (2026-05-16, 待 commit) |
 | 4 | Composer & Interaction Dialogs | scope-shrunk → 6 dialog/toast 文件已删（ask-user-question / approval-toasts / loading-progress / request-user-input / error-toasts / update-toasts），composer.* 推迟到 Phase 4.5；bonus 修复 input.tsx baseline | ✅ done (2026-05-16, 待 commit) |
 | 5 | Home & Workspace | scope-shrunk → 4 文件已删（home / release-notes / note-cards / workspace-home）；2 keeper 抽出（release-notes-markdown / note-cards-rich-input）；taskCenterClasses helper 抽出；home-chat 推迟到 5.5（6 个 CSS-literal pin），kanban 推迟到 5.6（2071 行 + 14 consumer，需切 3 个 sub-PR） | ✅ done (2026-05-16, 待 commit) |
-| 6 | Settings | settings.* / settings.vendor.* / settings.skills | ☐ |
+| 6 | Settings | scope-shrunk → 仅 `settings.skills.css`（478 行）已删（单 consumer `SkillsSection.tsx` 1289/40）；7 个文件全部 defer（part1 frame 推迟到 6.7、vendor cluster 4 文件推迟到 6.5、part2 + basic-redesign + part3 推迟到 6.6） | ✅ done (2026-05-16, 待 commit) |
 | 7 | Git History | git-history.* + branch-compare / pr-dialog / shell / support | ☐ |
 | 8 | Spec Hub | spec-hub.* | ☐ |
 | 9 | File / Diff / Terminal | file-tree / diff / terminal / detached-file-explorer / opencode-panel | ☐ |
@@ -86,6 +86,20 @@ archive 位置：`.trellis/tasks/archive/2026-05/`。
 - [ ] **Phase 5 follow-up — Card primitive 替换 spec-provider/guide cards + note-cards items + release-notes modal**：多处自定义卡片（`workspace-home-spec-provider-card`、`workspace-home-guide-card`、`workspace-note-cards-card`、`workspace-note-cards-preview-card`、`release-notes-modal-card`）都符合 coss `Card` 的语义；统一替换可消除大量 inline Tailwind 重复。
 - [ ] **Phase 5 follow-up — Button primitive 替换 Home.tsx primary**：trivial swap，把 `<button className="home-primary-button">` 换为 `<Button variant="outline" size="lg">`。
 - [ ] **Phase 5 follow-up — WorkspaceHomeSpecModule 死代码清理**：`src/features/workspaces/components/WorkspaceHomeSpecModule.tsx`（160 行）使用 `workspace-home-panel` / `workspace-home-spec-module` / `workspace-home-section-header` / `workspace-home-spec-provider-*` / `workspace-home-guide-*` 等 class names，但这些 class 在任何 `.css` 中都无定义（dead CSS），且组件本身在仓库中**无任何 consumer**（`rg WorkspaceHomeSpecModule` 仅命中文件本身）。属于 dead code。建议在 Phase 10 cleanup 时整体删除或在 Phase 5.5/5.6 顺便处理。
+- [ ] **Phase 6.5 — settings vendor cluster coss 化**：dedicated phase 处理 4 个 vendor settings CSS 文件（共 1662 行 CSS / 11 个 tsx consumer 共 2832 行）：
+  - `settings.vendor-codex-runtime.css`（83 行 / 13 selector）
+  - `settings.vendor-dialog.css`（386 行 / 52 selector，**Dialog primitive 候选**)
+  - `settings.part1.vendor-panels.css`（863 行 / 124 selector）
+  - `settings.part2.vendor-models.css`（330 行 / 48 selector）
+  - **关键 contract 约束**：必须严格遵守 `.trellis/spec/guides/codex-unified-exec-override-contract.md` 的 vendor settings UI 约束（4 个 action buttons / no tri-state selector / payload type signatures / no-session reload 文案中性）。推荐拆 3 个 sub-PR：6.5a vendor-dialog（cluster 入口；vendor-codex-runtime 合并）/ 6.5b vendor-panels（VendorSettingsPanel 747 + ProviderList / CodexProviderList / CurrentClaudeConfigCard / CurrentCodexGlobalConfigCard）/ 6.5c vendor-models（GeminiVendorPanel + CustomModelDialog + ProviderDialog model grid + DeleteConfirmDialog）。
+- [ ] **Phase 6.6 — settings part2 + basic-redesign + part3 coss 化**：dedicated phase 处理 3 个文件（共 3442 行 CSS）：
+  - `settings.part2.css`（2154 行 / 315 selector）— **字面值 pin × 5** in `src/styles/settings-email-card-surface.test.ts`（`.settings-email-card` `background/border`、`::before` `box-shadow: none`、`.settings-card-switch-header` `grid-template-columns`、`.settings-basic-sounds-card-content` `display: flex`、negative `not.toMatch`）。必须先把 email-card cascade 内联到 `EmailSenderSettings.tsx` 然后改造 pin test 为行为断言或 className 断言。
+  - `settings.part2.basic-redesign.css`（1044 行 / 156 selector）— cross-section cascade 通过 `--settings-basic-*` CSS vars 影响 13+ section consumer（BasicAppearance / BasicBehavior / Codex / Composer / Dictation / Email / Mcp / OpenApps / Other / Projects / Runtime / Session / Shortcuts / WebService）。建议先把 `--settings-basic-*` 自定义变量提升到 `themes.light.css` / `themes.dark.css` 与 coss token 并存，再分批迁 section。
+  - `settings.part3.css`（244 行 / 44 selector）— theme cascade `:root[data-theme="light"]` + media query。建议作为 keeper 文件保留（同 Phase 5 `release-notes-markdown.css` 模式），但需配合 6.6 整体迁移。
+- [ ] **Phase 6.7 — settings frame coss 化**：dedicated phase 处理 `settings.part1.css`（2158 行 / 311 selector），覆盖 `SettingsView.tsx`（2231 行）的 shell / sidebar / nav / header / body 骨架。
+  - **关键 contract 约束**：必须严格遵守 `.trellis/spec/guides/terminal-shell-configuration.md` 的 `terminalShellPath` placeholder text 不能被 CSS truncate（placeholder examples 是 guidance only, not persisted），保持 trimming + fallback 行为不变。
+  - 建议先把 SettingsView 拆分（settings/components/settings-view/sections/ 下 23 个 section 已经拆好，frame 部分还在 2231 行的 SettingsView.tsx 顶层），把 `.settings-header` / `.settings-sidebar` / `.settings-nav` / `.settings-content` 等 frame chrome 抽到独立 component，避免单 PR 内大 diff。
+- [ ] **Phase 6 follow-up — Splitter / Tree primitive 引入**：`SkillsSection.tsx` 的 `.settings-skills-splitter`（自管 pointer drag + collapse threshold + width state）与 `.settings-skills-tree-node`（自管 expand/collapse + active highlight + keyboard a11y）目前是 hand-rolled。coss 暂无现成 Splitter / Tree primitive，需评估是否引入第三方（`react-resizable-panels` for splitter、`@radix-ui/react-accordion` for tree）或保留 hand-rolled。本次 Phase 6 完成纯 styling pass，保留行为。
 
 ### 工程
 - [ ] 删除 `@radix-ui/*` 等 legacy 依赖（迁移完成后跑 `npx depcheck`）。
