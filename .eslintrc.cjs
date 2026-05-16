@@ -56,6 +56,15 @@ module.exports = {
       files: ['**/*.ts', '**/*.tsx'],
     },
     {
+      // coss/shadcn 官方组件原始 import 风格，豁免 tree-shake 与 ban-types 规则
+      files: ['src/components/ui/**', 'src/hooks/use-media-query.ts'],
+      rules: {
+        '@typescript-eslint/no-restricted-imports': 'off',
+        '@typescript-eslint/ban-types': 'off',
+        '@typescript-eslint/no-empty-object-type': 'off',
+      },
+    },
+    {
       files: [
         'src/app-shell.tsx',
         'src/app-shell-parts/renderAppShell.tsx',
