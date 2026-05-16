@@ -433,3 +433,78 @@ Net delta：17 files changed，+369 -1636（-1267 LOC from src/）。
 ### Next Steps
 
 - None - task complete
+
+
+## Session 6: Phase 5 Home/Workspace 切到 Tailwind/coss token
+
+**Date**: 2026-05-16
+**Task**: Phase 5 Home/Workspace 切到 Tailwind/coss token
+**Branch**: `chore/bump-version-0.5`
+
+### Summary
+
+(Add summary)
+
+### Main Changes
+
+Phase 5 完成。删 4 CSS (1445 行)、改 5 .tsx + 1 bootstrap、新增 4 支撑文件（2 keeper CSS + 1 utility helper + plan doc）。home-chat.css（946 行）与 kanban.css（2071 行）按字面值测试 pin / scope 推 Phase 5.5 / 5.6。
+
+## 实施
+
+- Home / ReleaseNotesModal / WorkspaceHome / TaskCenterView / WorkspaceNoteCardPanel 用 coss design token + Tailwind utility 重写
+- @keyframes 换 motion-safe:animate-in motion-safe:fade-in（tw-animate-css 已在 globals.css）
+- severity-driven Tailwind class 抽 taskCenterClasses.ts helper 给 WorkspaceHome + TaskCenterView 共用
+- markdown 与 RichTextInput 的 descendant cascade 保留为独立 keeper css（不内联化以避免 hundreds-of-class explosion）
+
+## Scope 收缩
+
+- home-chat.css → Phase 5.5（HomeChat.styles.test.ts 6 处 .toContain CSS 字面值 pin）
+- kanban.css → Phase 5.6（2071 行 + 14 consumers + 5355 tsx + 240+ className，建议拆 3 个 sub-PR）
+
+## 0 个 coss primitive 结构性替换
+
+Dialog 替 ReleaseNotesModal、Tabs 替 note-cards collection、Card 替多处、Button 替 Home primary 全部推 follow-up。同 Phase 2/3/4 precedent。
+
+## 验证
+
+- lint pass
+- typecheck baseline 保持 2（perfBaseline×2 pre-existing）
+- test pass（ComposerInput.collaboration 3 个 failure 仍 pre-existing）
+- test:layout-guard 10/10
+- check:large-files:gate found=0
+- 6 phase-5 components 26/26（Home/HomeChat/HomeChat.styles/WorkspaceHome/WorkspaceNoteCardPanel）
+
+Net delta：13 files，+334 -1604（-1270 LOC）。Bootstrap CSS imports 42 → 40。
+
+## Follow-up
+
+- Phase 5.5 home-chat coss 化（建议与 Phase 4.5 composer 同步——共用 ChatInputBoxFooter cascade）
+- Phase 5.6 kanban 拆 3 sub-PR
+- Dialog/Tabs/Card/Button primitive structural swaps
+- WorkspaceHomeSpecModule.tsx 160 行 dead code 清理（无 CSS 定义 + 无 consumer，列入 follow-up）
+
+**Updated Files**:
+
+- 删除：src/styles/{home,release-notes,note-cards,workspace-home}.css
+- 新增：src/styles/{release-notes-markdown,note-cards-rich-input}.css、src/features/tasks/utils/taskCenterClasses.ts、.trellis/tasks/05-16-migrate-css-to-coss-ui/phase-5-home-plan.md
+- 修改：src/features/home/components/Home.tsx、src/features/update/components/ReleaseNotesModal.tsx、src/features/workspaces/components/WorkspaceHome.tsx、src/features/tasks/components/TaskCenterView.tsx、src/features/note-cards/components/WorkspaceNoteCardPanel.tsx、src/bootstrap.ts
+- 更新：.trellis/tasks/05-16-migrate-css-to-coss-ui/prd.md、docs/migration-to-coss-ui.md
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `d83363f2` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
