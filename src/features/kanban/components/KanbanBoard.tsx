@@ -737,7 +737,7 @@ export function KanbanBoard({
   );
 
   return (
-    <div className="kanban-board">
+    <div className="kanban-board flex flex-col h-full overflow-hidden bg-[color:var(--bg-primary,#fff)]">
       <KanbanBoardHeader
         workspace={workspace}
         workspaces={workspaces}
@@ -752,10 +752,10 @@ export function KanbanBoard({
         showGitPanel={showGitPanel}
         onToggleGitPanel={handleToggleGitPanel}
       />
-      <div className="kanban-board-body">
-        <div className="kanban-board-columns-area">
+      <div className="kanban-board-body flex flex-1 overflow-hidden">
+        <div className="kanban-board-columns-area flex-1 overflow-x-auto min-w-0">
           <DragDropContext onDragEnd={handleDragEnd}>
-            <div className="kanban-columns">
+            <div className="kanban-columns flex gap-0 flex-1 overflow-x-auto h-full">
               {columns.map((col) => (
                 <KanbanColumn
                   key={col.id}
@@ -780,47 +780,47 @@ export function KanbanBoard({
 
         {selectedTask && conversationNode && (
           <div
-            className="kanban-conversation-panel"
+            className="kanban-conversation-panel min-w-[340px] max-w-[800px] border-l border-[color:var(--border-color,#e5e5e5)] flex flex-col bg-[color:var(--bg-primary,#fff)] overflow-hidden relative"
             style={{ width: kanbanConversationWidth ? `${kanbanConversationWidth}px` : undefined }}
           >
             {onKanbanConversationResizeStart && (
               <div
-                className="kanban-conversation-resizer"
+                className="kanban-conversation-resizer absolute left-0 top-0 bottom-0 w-1.5 cursor-col-resize z-10 bg-transparent transition-[background] duration-150 hover:bg-[color:var(--accent-primary,var(--surface-hover))] active:bg-[color:var(--accent-primary,var(--surface-active))]"
                 role="separator"
                 aria-orientation="vertical"
                 aria-label="Resize conversation panel"
                 onMouseDown={onKanbanConversationResizeStart}
               />
             )}
-            <div className="kanban-conversation-header">
-              <div className="kanban-conversation-header-main">
-                <span className="kanban-conversation-title">
+            <div className="kanban-conversation-header flex items-center justify-between px-4 py-2.5 border-b border-[color:var(--border-color,#e5e5e5)] gap-2 shrink-0">
+              <div className="kanban-conversation-header-main flex-1 min-w-0 flex flex-col gap-1.5">
+                <span className="kanban-conversation-title text-sm font-semibold text-[color:var(--text-primary,#111)] overflow-hidden text-ellipsis whitespace-nowrap flex-1 min-w-0">
                   {selectedTask.title}
                 </span>
                 {(selectedTaskSchedule || selectedTask.chain?.previousTaskId || selectedTaskBlockedReason) && (
-                  <div className="kanban-conversation-meta-row">
+                  <div className="kanban-conversation-meta-row flex flex-wrap gap-1.5">
                     {selectedTaskSchedule === "once" && (
-                      <span className="kanban-conversation-meta-badge">
+                      <span className="kanban-conversation-meta-badge inline-flex items-center rounded-full border border-[color:var(--border-color,#dbe3ee)] bg-[color:var(--bg-secondary,#eef2f7)] text-[color:var(--text-secondary,#4b5563)] px-2 py-px text-[10px] leading-[1.5] max-w-[220px] whitespace-nowrap overflow-hidden text-ellipsis">
                         {t("kanban.task.schedule.onceBadge")}
                       </span>
                     )}
                     {selectedTaskSchedule === "recurring" && (
-                      <span className="kanban-conversation-meta-badge">
+                      <span className="kanban-conversation-meta-badge inline-flex items-center rounded-full border border-[color:var(--border-color,#dbe3ee)] bg-[color:var(--bg-secondary,#eef2f7)] text-[color:var(--text-secondary,#4b5563)] px-2 py-px text-[10px] leading-[1.5] max-w-[220px] whitespace-nowrap overflow-hidden text-ellipsis">
                         {t("kanban.task.schedule.recurringBadge")}
                       </span>
                     )}
                     {selectedTaskSchedule === "once_overdue" && (
-                      <span className="kanban-conversation-meta-badge kanban-conversation-meta-badge-warn">
+                      <span className="kanban-conversation-meta-badge kanban-conversation-meta-badge-warn inline-flex items-center rounded-full border border-[#fcd34d] bg-[#fffbeb] text-[#92400e] px-2 py-px text-[10px] leading-[1.5] max-w-[220px] whitespace-nowrap overflow-hidden text-ellipsis">
                         {t("kanban.task.schedule.onceOverdueBadge")}
                       </span>
                     )}
                     {selectedTask.chain?.previousTaskId && (
-                      <span className="kanban-conversation-meta-badge">
+                      <span className="kanban-conversation-meta-badge inline-flex items-center rounded-full border border-[color:var(--border-color,#dbe3ee)] bg-[color:var(--bg-secondary,#eef2f7)] text-[color:var(--text-secondary,#4b5563)] px-2 py-px text-[10px] leading-[1.5] max-w-[220px] whitespace-nowrap overflow-hidden text-ellipsis">
                         {t("kanban.task.chain.badge")}
                       </span>
                     )}
                     {selectedTaskBlockedReason && (
-                      <span className="kanban-conversation-meta-badge kanban-conversation-meta-badge-warn">
+                      <span className="kanban-conversation-meta-badge kanban-conversation-meta-badge-warn inline-flex items-center rounded-full border border-[#fcd34d] bg-[#fffbeb] text-[#92400e] px-2 py-px text-[10px] leading-[1.5] max-w-[220px] whitespace-nowrap overflow-hidden text-ellipsis">
                         {t("kanban.task.blocked", { reason: selectedTaskBlockedReason })}
                       </span>
                     )}
@@ -828,30 +828,30 @@ export function KanbanBoard({
                 )}
               </div>
               <button
-                className="kanban-icon-btn"
+                className="kanban-icon-btn flex items-center justify-center w-7 h-7 p-0 border-none bg-transparent rounded-[6px] cursor-pointer text-[color:var(--text-secondary,#666)] transition-[background,color] duration-150 hover:bg-[color:var(--bg-tertiary,#f0f0f0)] hover:text-[color:var(--text-primary,#111)]"
                 onClick={onCloseConversation}
                 aria-label={t("kanban.conversation.close")}
               >
                 <X size={16} />
               </button>
             </div>
-            <div className="kanban-conversation-body">
+            <div className="kanban-conversation-body flex-1 flex flex-col overflow-hidden">
               {conversationNode}
             </div>
           </div>
         )}
 
         {showGitPanel && gitPanelNode && (
-          <div className="kanban-git-panel">
+          <div className="kanban-git-panel min-w-[300px] max-w-[420px] w-[360px] border-l border-[color:var(--border-color,#e5e5e5)] flex flex-col bg-[color:var(--bg-primary,#fff)] overflow-hidden relative shrink-0 [&>*]:h-full [&>*]:border-none">
             {gitPanelNode}
           </div>
         )}
       </div>
 
       {onToggleTerminal && (
-        <div className="kanban-terminal-bar">
+        <div className="kanban-terminal-bar flex items-center justify-end px-4 py-1.5 border-t border-[color:var(--border-color,#e5e5e5)] shrink-0">
           <button
-            className={`kanban-terminal-btn${terminalOpen ? " is-active" : ""}`}
+            className={`kanban-terminal-btn inline-flex items-center gap-1.5 px-2.5 py-1 border-none bg-transparent rounded-[6px] cursor-pointer text-[color:var(--text-tertiary,#999)] text-xs font-medium transition-[background,color] duration-150 hover:bg-[color:var(--bg-tertiary,#f0f0f0)] hover:text-[color:var(--text-secondary,#666)]${terminalOpen ? " is-active text-[color:var(--accent-color,#3b82f6)]" : ""}`}
             type="button"
             onClick={onToggleTerminal}
             aria-label={t("common.terminal")}

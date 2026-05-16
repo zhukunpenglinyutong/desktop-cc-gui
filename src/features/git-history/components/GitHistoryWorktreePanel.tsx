@@ -250,7 +250,7 @@ function renderSectionIndicator(
   const Icon = section === "staged" ? CircleCheckBig : SquarePen;
   return (
     <span
-      className={`git-history-worktree-section-indicator is-${section}`}
+      className={`git-history-worktree-section-indicator inline-flex items-center gap-1 whitespace-nowrap leading-none [&_svg]:block [&_svg]:w-3 [&_svg]:h-3 [&_strong]:text-[12px] [&_strong]:leading-none is-${section}${section === "staged" ? " text-[color-mix(in_srgb,var(--status-success,#47d488)_78%,var(--text-primary))]" : " text-[color-mix(in_srgb,var(--text-secondary)_88%,var(--text-primary))]"}`}
       aria-label={`${label} (${count})`}
       title={label}
     >
@@ -708,8 +708,8 @@ export function GitHistoryWorktreePanel({
   const operationErrorText = normalizeErrorMessage(operationError, t);
   const commitMessageErrorText = normalizeErrorMessage(commitMessageError, t);
   const shouldShowFileSections = hasStagedFiles || hasUnstagedFiles;
-  const worktreeSectionsClassName = `git-history-worktree-sections${
-    hasStagedFiles !== hasUnstagedFiles ? " is-single" : ""
+  const worktreeSectionsClassName = `git-history-worktree-sections min-h-0 flex-1 overflow-auto flex flex-col gap-[10px] pb-2${
+    hasStagedFiles !== hasUnstagedFiles ? " is-single overflow-hidden" : ""
   }`;
   const visibleSectionCount = Number(hasStagedFiles) + Number(hasUnstagedFiles);
   const compactSection =
@@ -768,8 +768,8 @@ export function GitHistoryWorktreePanel({
       return (
         <div
           key={`${section}:${file.path}`}
-          className={`git-history-worktree-file-row diff-row git-filetree-row ${listView === "tree" ? "is-tree" : ""} ${
-            clickable ? "is-clickable" : ""
+          className={`git-history-worktree-file-row diff-row git-filetree-row w-full min-h-[var(--git-filetree-row-min-height)] border border-transparent rounded-[var(--git-filetree-row-radius)] bg-transparent text-[color:var(--text-primary)] relative hover:bg-[var(--git-filetree-row-hover-bg)] grid items-center [grid-template-columns:20px_26px_14px_minmax(0,1fr)_auto] gap-[var(--git-filetree-row-gap)] py-[var(--git-filetree-row-pad-y)] px-[var(--git-filetree-row-pad-x)] ${listView === "tree" ? "is-tree" : ""} ${
+            clickable ? "is-clickable cursor-pointer focus-visible:outline focus-visible:outline-[1px] focus-visible:outline-[color-mix(in_srgb,var(--accent-primary,#2563eb)_62%,transparent)] focus-visible:outline-offset-[-1px]" : ""
           }`}
           data-status={file.status}
           data-section={section}
@@ -800,15 +800,15 @@ export function GitHistoryWorktreePanel({
             }}
           />
           <span
-            className={`git-history-worktree-file-status diff-icon ${diffStatusClass(file.status)}`}
+            className={`git-history-worktree-file-status diff-icon text-[color:var(--git-worktree-file-status-color)] w-6 text-[10px] font-semibold font-[var(--code-font-family,monospace)] leading-none ${diffStatusClass(file.status)}`}
             aria-hidden
           >
             {statusSymbol(file.status)}
           </span>
-          <span className="git-history-worktree-file-icon diff-file-icon" aria-hidden>
+          <span className="git-history-worktree-file-icon diff-file-icon w-4 h-4 inline-flex items-center justify-center" aria-hidden>
             <FileIcon filePath={file.path} />
           </span>
-          <span className="git-history-worktree-file-path diff-file" title={file.path}>
+          <span className="git-history-worktree-file-path diff-file min-w-0 inline-flex items-baseline gap-[6px] overflow-hidden" title={file.path}>
             <span className="diff-path">
               <span className="diff-name">
                 <span className="diff-name-base">{name}</span>
@@ -818,22 +818,22 @@ export function GitHistoryWorktreePanel({
           </span>
           <span className="diff-row-meta">
             <span
-              className="git-history-worktree-file-stats diff-counts-inline git-filetree-badge"
+              className="git-history-worktree-file-stats diff-counts-inline git-filetree-badge whitespace-nowrap text-[var(--git-filetree-badge-font-size)] inline-flex items-center gap-[var(--git-filetree-badge-gap)] py-[var(--git-filetree-badge-pad-y)] px-[var(--git-filetree-badge-pad-x)] min-h-[18px] rounded-[var(--git-filetree-badge-radius)] border border-[color-mix(in_srgb,var(--border-default)_58%,transparent)] bg-[color-mix(in_srgb,var(--surface-control,#1a2230)_64%,transparent)] font-[var(--code-font-family)] tabular-nums"
               aria-label={`+${file.additions} -${file.deletions}`}
             >
-              <span className="is-add">+{file.additions}</span>
-              <span className="is-sep">/</span>
-              <span className="is-del">-{file.deletions}</span>
+              <span className="is-add text-[#22c55e]">+{file.additions}</span>
+              <span className="is-sep text-[color:var(--text-muted)]">/</span>
+              <span className="is-del text-[#f87171]">-{file.deletions}</span>
             </span>
             <span
-              className="git-history-worktree-file-actions diff-row-actions"
+              className="git-history-worktree-file-actions diff-row-actions inline-flex items-center gap-1"
               role="group"
               aria-label={t("git.fileActions")}
             >
               {showStage ? (
                 <button
                   type="button"
-                  className="git-history-worktree-action git-history-worktree-action-stage diff-row-action diff-row-action--stage"
+                  className="git-history-worktree-action git-history-worktree-action-stage diff-row-action diff-row-action--stage w-5 h-5 rounded-[6px] border border-[color-mix(in_srgb,var(--border-default)_68%,transparent)] bg-[color-mix(in_srgb,var(--surface-control,#1a2230)_68%,transparent)] text-[color:var(--text-muted)] inline-flex items-center justify-center cursor-pointer hover:not-disabled:bg-[color-mix(in_srgb,var(--surface-control-hover,#263044)_55%,transparent)] hover:not-disabled:border-[color-mix(in_srgb,var(--border-default)_88%,transparent)] hover:not-disabled:text-[#22c55e] [&_svg]:block [&_svg]:w-[14px] [&_svg]:h-[14px] disabled:opacity-[0.45] disabled:cursor-not-allowed"
                   onClick={(event) => {
                     event.stopPropagation();
                     void handleMutation(() => stageGitFile(workspaceId, file.path));
@@ -848,7 +848,7 @@ export function GitHistoryWorktreePanel({
               {showUnstage ? (
                 <button
                   type="button"
-                  className="git-history-worktree-action git-history-worktree-action-unstage diff-row-action diff-row-action--unstage"
+                  className="git-history-worktree-action git-history-worktree-action-unstage diff-row-action diff-row-action--unstage w-5 h-5 rounded-[6px] border border-[color-mix(in_srgb,var(--border-default)_68%,transparent)] bg-[color-mix(in_srgb,var(--surface-control,#1a2230)_68%,transparent)] text-[color:var(--text-muted)] inline-flex items-center justify-center cursor-pointer hover:not-disabled:bg-[color-mix(in_srgb,var(--surface-control-hover,#263044)_55%,transparent)] hover:not-disabled:border-[color-mix(in_srgb,var(--border-default)_88%,transparent)] hover:not-disabled:text-[#f87171] [&_svg]:block [&_svg]:w-[14px] [&_svg]:h-[14px] disabled:opacity-[0.45] disabled:cursor-not-allowed"
                   onClick={(event) => {
                     event.stopPropagation();
                     void handleMutation(() => unstageGitFile(workspaceId, file.path));
@@ -863,7 +863,7 @@ export function GitHistoryWorktreePanel({
               {showDiscard ? (
                 <button
                   type="button"
-                  className="git-history-worktree-action git-history-worktree-action-discard diff-row-action diff-row-action--discard"
+                  className="git-history-worktree-action git-history-worktree-action-discard diff-row-action diff-row-action--discard w-5 h-5 rounded-[6px] border border-[color-mix(in_srgb,var(--border-default)_68%,transparent)] bg-[color-mix(in_srgb,var(--surface-control,#1a2230)_68%,transparent)] text-[color:var(--text-muted)] inline-flex items-center justify-center cursor-pointer hover:not-disabled:bg-[color-mix(in_srgb,var(--surface-control-hover,#263044)_55%,transparent)] hover:not-disabled:border-[color-mix(in_srgb,var(--border-default)_88%,transparent)] hover:not-disabled:text-[#f87171] [&_svg]:block [&_svg]:w-[14px] [&_svg]:h-[14px] disabled:opacity-[0.45] disabled:cursor-not-allowed"
                   onClick={(event) => {
                     event.stopPropagation();
                     void discardFiles([file.path]);
@@ -940,9 +940,9 @@ export function GitHistoryWorktreePanel({
             ["--git-tree-branch-opacity" as string]: getTreeLineOpacity(depth + 1),
           } as CSSProperties;
           rows.push(
-            <div key={collapsedFolder.key} className="git-history-worktree-folder-group">
+            <div key={collapsedFolder.key} className="git-history-worktree-folder-group flex flex-col gap-[var(--git-filetree-section-gap)]">
               <div
-                className="git-history-worktree-folder-row diff-tree-folder-row git-filetree-folder-row"
+                className="git-history-worktree-folder-row diff-tree-folder-row git-filetree-folder-row w-full min-h-[var(--git-filetree-row-min-height)] border border-transparent rounded-[var(--git-filetree-row-radius)] bg-transparent text-[color:var(--text-secondary)] inline-flex items-center gap-[var(--git-filetree-row-gap)] py-[var(--git-filetree-row-pad-y)] px-[var(--git-filetree-row-pad-x)] cursor-pointer relative text-[13px] font-[560] hover:bg-[var(--git-filetree-row-hover-bg)]"
                 style={folderStyle}
                 role="button"
                 tabIndex={0}
@@ -969,20 +969,20 @@ export function GitHistoryWorktreePanel({
                     );
                   }}
                 />
-                <span className="git-history-worktree-folder-caret diff-tree-folder-toggle" aria-hidden>
+                <span className="git-history-worktree-folder-caret diff-tree-folder-toggle w-[var(--git-filetree-icon-size)] inline-flex items-center justify-center text-[color-mix(in_srgb,var(--text-muted)_88%,transparent)]" aria-hidden>
                   {collapsed ? <ChevronRight size={12} /> : <ChevronDown size={12} />}
                 </span>
                 <FileIcon
                   filePath={collapsedFolder.iconName}
                   isFolder
                   isOpen={!collapsed}
-                  className="git-history-worktree-folder-icon diff-tree-folder-icon"
+                  className="git-history-worktree-folder-icon diff-tree-folder-icon w-4 h-4 inline-flex items-center justify-center flex-shrink-0 [&_svg]:w-4 [&_svg]:h-4"
                 />
-                <span className="git-history-worktree-folder-name diff-tree-folder-name">{collapsedFolder.name}</span>
+                <span className="git-history-worktree-folder-name diff-tree-folder-name min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-[13px] font-[560] text-[color:var(--text-stronger)]">{collapsedFolder.name}</span>
               </div>
               {!collapsed ? (
                 <div
-                  className="git-history-worktree-folder-children diff-tree-folder-children"
+                  className="git-history-worktree-folder-children diff-tree-folder-children relative flex flex-col gap-[var(--git-filetree-section-gap)] before:content-[''] before:absolute before:left-[var(--git-tree-branch-x,calc(var(--git-filetree-row-pad-x)-3px))] before:top-0 before:bottom-0 before:w-[1.25px] before:bg-[var(--git-filetree-tree-line-color)] before:opacity-[var(--git-tree-branch-opacity,0.62)] before:pointer-events-none"
                   style={childTreeStyle}
                 >
                   {walk(collapsedFolder.node, depth + 1)}
@@ -1006,9 +1006,9 @@ export function GitHistoryWorktreePanel({
       } as CSSProperties;
 
       return [
-        <div key={rootFolderKey} className="git-history-worktree-folder-group">
+        <div key={rootFolderKey} className="git-history-worktree-folder-group flex flex-col gap-[var(--git-filetree-section-gap)]">
           <div
-            className="git-history-worktree-folder-row diff-tree-folder-row git-filetree-folder-row"
+            className="git-history-worktree-folder-row diff-tree-folder-row git-filetree-folder-row w-full min-h-[var(--git-filetree-row-min-height)] border border-transparent rounded-[var(--git-filetree-row-radius)] bg-transparent text-[color:var(--text-secondary)] inline-flex items-center gap-[var(--git-filetree-row-gap)] py-[var(--git-filetree-row-pad-y)] px-[var(--git-filetree-row-pad-x)] cursor-pointer relative text-[13px] font-[560] hover:bg-[var(--git-filetree-row-hover-bg)]"
             style={{ paddingLeft: "0px" }}
             role="button"
             tabIndex={0}
@@ -1035,20 +1035,20 @@ export function GitHistoryWorktreePanel({
                 );
               }}
             />
-            <span className="git-history-worktree-folder-caret diff-tree-folder-toggle" aria-hidden>
+            <span className="git-history-worktree-folder-caret diff-tree-folder-toggle w-[var(--git-filetree-icon-size)] inline-flex items-center justify-center text-[color-mix(in_srgb,var(--text-muted)_88%,transparent)]" aria-hidden>
               {rootCollapsed ? <ChevronRight size={12} /> : <ChevronDown size={12} />}
             </span>
             <FileIcon
               filePath={resolvedRootFolderName}
               isFolder
               isOpen={!rootCollapsed}
-              className="git-history-worktree-folder-icon diff-tree-folder-icon"
+              className="git-history-worktree-folder-icon diff-tree-folder-icon w-4 h-4 inline-flex items-center justify-center flex-shrink-0 [&_svg]:w-4 [&_svg]:h-4"
             />
-            <span className="git-history-worktree-folder-name diff-tree-folder-name">{resolvedRootFolderName}</span>
+            <span className="git-history-worktree-folder-name diff-tree-folder-name min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-[13px] font-[560] text-[color:var(--text-stronger)]">{resolvedRootFolderName}</span>
           </div>
           {!rootCollapsed ? (
             <div
-              className="git-history-worktree-folder-children diff-tree-folder-children"
+              className="git-history-worktree-folder-children diff-tree-folder-children relative flex flex-col gap-[var(--git-filetree-section-gap)] before:content-[''] before:absolute before:left-[var(--git-tree-branch-x,calc(var(--git-filetree-row-pad-x)-3px))] before:top-0 before:bottom-0 before:w-[1.25px] before:bg-[var(--git-filetree-tree-line-color)] before:opacity-[var(--git-tree-branch-opacity,0.62)] before:pointer-events-none"
               style={rootChildrenStyle}
             >
               {walk(tree, 1)}
@@ -1085,12 +1085,26 @@ export function GitHistoryWorktreePanel({
   );
 
   return (
-    <div className="git-history-worktree-panel">
+    <div className="git-history-worktree-panel flex flex-col gap-[10px] min-h-0 flex-1">
+      {/* data-status CSS variable rules cannot be expressed in Tailwind — kept as scoped style */}
+      <style>{`
+        .git-history-worktree-file-row { --git-worktree-file-status-color: var(--text-primary); }
+        .git-history-worktree-file-row[data-status="A"] { --git-worktree-file-status-color: color-mix(in srgb, var(--status-success, #22c55e) 88%, var(--text-primary) 12%); }
+        .git-history-worktree-file-row[data-status="M"] { --git-worktree-file-status-color: color-mix(in srgb, var(--text-accent, #60a5fa) 92%, var(--text-primary) 8%); }
+        .git-history-worktree-file-row[data-status="D"] { --git-worktree-file-status-color: color-mix(in srgb, var(--status-error, #f87171) 88%, var(--text-primary) 12%); }
+        .git-history-worktree-file-row[data-status="R"] { --git-worktree-file-status-color: color-mix(in srgb, var(--status-warning, #f59e0b) 82%, var(--text-primary) 18%); }
+        .git-history-worktree-file-row[data-status="T"] { --git-worktree-file-status-color: color-mix(in srgb, var(--status-warning, #f59e0b) 78%, var(--text-primary) 22%); }
+        .git-history-worktree-file-path strong { color: var(--git-worktree-file-status-color); font-size: 13px; font-weight: 560; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .git-history-worktree-file-path em { color: var(--text-muted); font-style: normal; font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        body[data-git-history-column-resizing="true"] .git-history-vertical-resizer::after { background: color-mix(in srgb, var(--accent-primary, #2563eb) 72%, transparent); }
+        .git-history-worktree-section-list .git-history-worktree-folder-row::before,
+        .git-history-worktree-section-list .git-history-worktree-file-row.is-tree::before { content: none; }
+      `}</style>
       {!commitSectionCollapsed ? (
-        <div className="git-history-worktree-commit-box commit-message-section">
-          <div className="git-history-worktree-commit-input-wrap commit-message-input-wrapper">
+        <div className="git-history-worktree-commit-box commit-message-section flex flex-col gap-[6px] mb-0 pb-3 border-b border-[color-mix(in_srgb,var(--border-muted)_50%,transparent)]">
+          <div className="git-history-worktree-commit-input-wrap commit-message-input-wrapper relative">
             <textarea
-              className="git-history-worktree-commit-input commit-message-input"
+              className="git-history-worktree-commit-input commit-message-input w-full min-h-12 max-h-[120px] resize-y rounded-lg border border-[color:var(--border-strong)] bg-transparent text-[color:var(--text-muted)] font-[var(--code-font-family)] text-[var(--code-font-size,11px)] leading-[1.5] pt-2 pr-9 pb-2 pl-[10px] box-border transition-[border-color_160ms_ease,color_160ms_ease,box-shadow_160ms_ease] focus-visible:outline-none focus-visible:border-[color:var(--border-accent-soft)] focus-visible:text-[color:var(--text-emphasis)] focus-visible:shadow-[0_0_0_3px_color-mix(in_srgb,var(--border-accent-soft)_20%,transparent)]"
               placeholder={t("git.commitMessage")}
               value={commitMessage}
               onChange={(event) => setCommitMessage(event.target.value)}
@@ -1099,8 +1113,8 @@ export function GitHistoryWorktreePanel({
             />
             <button
               type="button"
-              className={`git-history-worktree-generate commit-message-generate-button${
-                commitMessageLoading ? " git-history-worktree-generate--loading commit-message-generate-button--loading" : ""
+              className={`git-history-worktree-generate commit-message-generate-button absolute right-[6px] top-[6px] w-6 h-6 rounded-[4px] inline-flex items-center justify-center bg-[color-mix(in_srgb,var(--surface-panel)_78%,transparent)] border border-[color-mix(in_srgb,var(--border-default)_82%,transparent)] text-[color:var(--text-emphasis)] cursor-pointer transition-[background_160ms_ease,color_160ms_ease,border-color_160ms_ease] hover:not-disabled:bg-[color:var(--surface-control-hover)] hover:not-disabled:border-[color-mix(in_srgb,var(--border-default)_96%,transparent)] hover:not-disabled:text-[color:var(--text-emphasis)] disabled:opacity-[0.45] disabled:cursor-not-allowed [&_svg]:block [&_svg]:w-[14px] [&_svg]:h-[14px] [&_img]:block [&_img]:w-[14px] [&_img]:h-[14px] [&_.codicon]:text-[14px] [&_.codicon]:leading-none${
+                commitMessageLoading ? " git-history-worktree-generate--loading commit-message-generate-button--loading opacity-100 disabled:opacity-100" : ""
               }`}
               onClick={(event) => {
                 void showCommitMessageEngineMenu(event);
@@ -1117,14 +1131,14 @@ export function GitHistoryWorktreePanel({
               <CommitMessageEngineIcon
                 engine={commitMessageMenuEngine}
                 size={14}
-                className={`git-history-worktree-engine-icon commit-message-engine-icon${
-                  commitMessageLoading ? " git-history-worktree-engine-icon--spinning commit-message-engine-icon--spinning" : ""
+                className={`git-history-worktree-engine-icon commit-message-engine-icon block w-[14px] h-[14px]${
+                  commitMessageLoading ? " git-history-worktree-engine-icon--spinning commit-message-engine-icon--spinning animate-spin origin-center will-change-transform" : ""
                 }`}
               />
             </button>
           </div>
           {hasWorktreeChanges ? (
-            <div className="git-history-worktree-commit-hint commit-message-hint" aria-live="polite">
+            <div className="git-history-worktree-commit-hint commit-message-hint text-[11px] text-[color:var(--text-muted)] leading-[1.4]" aria-live="polite">
               {commitStatusHint}
             </div>
           ) : null}
@@ -1145,21 +1159,21 @@ export function GitHistoryWorktreePanel({
       {shouldShowFileSections ? (
         <div className={worktreeSectionsClassName}>
           {compactSection && compactSummaryLabel ? (
-            <div className="git-history-worktree-summary-bar">
+            <div className="git-history-worktree-summary-bar flex items-center gap-2 min-h-[var(--git-filetree-row-min-height)] px-[var(--git-filetree-row-pad-x)] border border-[color-mix(in_srgb,var(--border-default)_34%,transparent)] rounded-lg bg-[color-mix(in_srgb,var(--surface-control,#1a2230)_32%,transparent)]">
               <span
-                className="git-history-worktree-summary-lines"
+                className="git-history-worktree-summary-lines inline-flex items-center gap-[6px] whitespace-nowrap flex-[0_0_auto]"
                 aria-label={`+${status.totalAdditions} -${status.totalDeletions}`}
               >
-                <span className="git-history-diff-add">+{status.totalAdditions}</span>
-                <span className="git-history-diff-sep" aria-hidden>
+                <span className="git-history-diff-add text-[color:var(--status-success,#22c55e)]">+{status.totalAdditions}</span>
+                <span className="git-history-diff-sep text-[color:var(--text-muted)] opacity-[0.82]" aria-hidden>
                   /
                 </span>
-                <span className="git-history-diff-del">-{status.totalDeletions}</span>
+                <span className="git-history-diff-del text-[color:var(--status-error,#f87171)]">-{status.totalDeletions}</span>
               </span>
-              <span className="git-history-worktree-summary-branch" title={compactSummaryBranch}>
+              <span className="git-history-worktree-summary-branch min-w-0 inline-flex items-center text-[color:var(--text-primary)] flex-[1_1_auto] [&_strong]:min-w-0 [&_strong]:overflow-hidden [&_strong]:text-ellipsis [&_strong]:whitespace-nowrap" title={compactSummaryBranch}>
                 <strong>{compactSummaryBranch}</strong>
               </span>
-              <span className="git-history-worktree-summary-label">{compactSummaryLabel}</span>
+              <span className="git-history-worktree-summary-label text-[color:var(--text-secondary)] text-[13px] font-[560] flex-[0_1_auto] inline-flex items-center leading-none h-5 min-w-0 overflow-hidden text-ellipsis whitespace-nowrap [&_.git-history-worktree-section-indicator]:h-5 [&_.git-history-worktree-section-indicator]:items-center">{compactSummaryLabel}</span>
               <GitDiffPanelSectionActions
                 title={compactSection === "staged" ? t("git.staged") : t("git.unstaged")}
                 section={compactSection}
@@ -1196,9 +1210,9 @@ export function GitHistoryWorktreePanel({
             </div>
           ) : null}
           {hasStagedFiles ? (
-            <div className="git-history-worktree-section git-filetree-section">
+            <div className="git-history-worktree-section git-filetree-section border border-[color:var(--git-filetree-section-border)] rounded-[var(--git-filetree-section-radius)] bg-transparent overflow-hidden shadow-none [.is-single_&]:min-h-0 [.is-single_&]:flex-1 [.is-single_&]:flex [.is-single_&]:flex-col">
               <div
-                className="git-history-worktree-section-header git-filetree-section-header"
+                className="git-history-worktree-section-header git-filetree-section-header flex items-center justify-between gap-2 min-h-[var(--git-filetree-row-min-height)] py-[var(--git-filetree-row-pad-y)] px-[var(--git-filetree-row-pad-x)] border-b border-[color-mix(in_srgb,var(--border-default)_34%,transparent)] text-[13px] font-[560] text-[color:var(--text-secondary)]"
                 hidden={compactSection === "staged"}
               >
                 <span>{renderSectionIndicator("staged", stagedFiles.length, t)}</span>
@@ -1213,7 +1227,7 @@ export function GitHistoryWorktreePanel({
                 />
               </div>
               <div
-                className={`git-history-worktree-section-list git-filetree-list${
+                className={`git-history-worktree-section-list git-filetree-list max-h-[260px] overflow-auto flex flex-col gap-[var(--git-filetree-section-gap)] p-0.5 [.is-single_&]:min-h-0 [.is-single_&]:max-h-none [.is-single_&]:flex-1${
                   listView === "tree" ? " diff-section-tree-list git-filetree-list--tree" : ""
                 }`}
               >
@@ -1223,9 +1237,9 @@ export function GitHistoryWorktreePanel({
           ) : null}
 
           {hasUnstagedFiles ? (
-            <div className="git-history-worktree-section git-filetree-section">
+            <div className="git-history-worktree-section git-filetree-section border border-[color:var(--git-filetree-section-border)] rounded-[var(--git-filetree-section-radius)] bg-transparent overflow-hidden shadow-none [.is-single_&]:min-h-0 [.is-single_&]:flex-1 [.is-single_&]:flex [.is-single_&]:flex-col">
               <div
-                className="git-history-worktree-section-header git-filetree-section-header"
+                className="git-history-worktree-section-header git-filetree-section-header flex items-center justify-between gap-2 min-h-[var(--git-filetree-row-min-height)] py-[var(--git-filetree-row-pad-y)] px-[var(--git-filetree-row-pad-x)] border-b border-[color-mix(in_srgb,var(--border-default)_34%,transparent)] text-[13px] font-[560] text-[color:var(--text-secondary)]"
                 hidden={compactSection === "unstaged"}
               >
                 <span>{renderSectionIndicator("unstaged", unstagedFiles.length, t)}</span>
@@ -1243,7 +1257,7 @@ export function GitHistoryWorktreePanel({
                 />
               </div>
               <div
-                className={`git-history-worktree-section-list git-filetree-list${
+                className={`git-history-worktree-section-list git-filetree-list max-h-[260px] overflow-auto flex flex-col gap-[var(--git-filetree-section-gap)] p-0.5 [.is-single_&]:min-h-0 [.is-single_&]:max-h-none [.is-single_&]:flex-1${
                   listView === "tree" ? " diff-section-tree-list git-filetree-list--tree" : ""
                 }`}
               >

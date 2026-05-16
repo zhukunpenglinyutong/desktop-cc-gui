@@ -114,14 +114,25 @@ function ensureHost(parent: Element | null, className: string, before?: Element 
   return host;
 }
 
+const READER_HEADER_HOST_CLASS = "spec-hub-reader-header-host ml-auto inline-flex items-center";
+const READER_OUTLINE_HOST_CLASS = "spec-hub-reader-outline-host flex flex-col gap-2";
+
 function ensurePortalHosts(root: HTMLElement): PortalHosts {
   const changesPanelHeader = root.querySelector(".spec-hub-changes .spec-hub-panel-header");
   const artifactPanelHeader = root.querySelector(".spec-hub-artifacts .spec-hub-panel-header");
   const artifactContent = root.querySelector(".spec-hub-artifact-content");
+  const headerHost = ensureHost(artifactPanelHeader, "spec-hub-reader-header-host");
+  if (headerHost && !headerHost.classList.contains("ml-auto")) {
+    headerHost.className = READER_HEADER_HOST_CLASS;
+  }
+  const outlineHost = ensureHost(artifactContent, "spec-hub-reader-outline-host");
+  if (outlineHost && !outlineHost.classList.contains("flex-col")) {
+    outlineHost.className = READER_OUTLINE_HOST_CLASS;
+  }
   return {
     changesHeader: ensureHost(changesPanelHeader, "spec-hub-changes-header-host"),
-    header: ensureHost(artifactPanelHeader, "spec-hub-reader-header-host"),
-    outline: ensureHost(artifactContent, "spec-hub-reader-outline-host"),
+    header: headerHost,
+    outline: outlineHost,
     grid: root.querySelector(".spec-hub-grid"),
   };
 }
@@ -333,7 +344,7 @@ export function SpecHubSurfaceFrame({
         : null}
       {!isDetached && portalHosts.header && typeof document !== "undefined"
         ? createPortal(
-            <div className="spec-hub-reader-header-actions">
+            <div className="spec-hub-reader-header-actions inline-flex items-center gap-2">
               {hasReaderOutline ? (
                 <button
                   type="button"
@@ -359,7 +370,7 @@ export function SpecHubSurfaceFrame({
               ) : null}
               <button
                 type="button"
-                className="spec-hub-reader-detach-button"
+                className="spec-hub-reader-detach-button inline-flex items-center gap-1.5 border border-[color:var(--border-subtle)] rounded-full bg-[color:var(--surface-item)] text-[color:var(--text-secondary)] px-2.5 py-[5px] text-[11px] font-semibold hover:not-disabled:text-[color:var(--text-stronger)] hover:not-disabled:border-[color:var(--border-strong)] disabled:opacity-60 disabled:cursor-not-allowed"
                 onClick={() => {
                   void handleOpenInWindow();
                 }}
@@ -404,20 +415,20 @@ export function SpecHubSurfaceFrame({
         : null}
       {hasReaderOutline && portalHosts.outline && typeof document !== "undefined" && !outlineCollapsed
         ? createPortal(
-            <section className="spec-hub-reader-outline" aria-label={t("specHub.readerOutline.title")}>
-              <header className="spec-hub-reader-outline-head">
-                <strong>{t("specHub.readerOutline.title")}</strong>
+            <section className="spec-hub-reader-outline flex flex-col gap-2 border border-[color:var(--border-subtle)] rounded-lg bg-[color-mix(in_srgb,var(--surface-card)_88%,var(--surface-command)_12%)] px-3 py-2.5" aria-label={t("specHub.readerOutline.title")}>
+              <header className="spec-hub-reader-outline-head flex items-center justify-between gap-2 text-[color:var(--text-secondary)] text-[11px]">
+                <strong className="text-[color:var(--text-stronger)] text-[12px]">{t("specHub.readerOutline.title")}</strong>
                 <span>{snapshot.outline.length}</span>
               </header>
               {snapshot.outline.length > 0 ? (
-                <div className="spec-hub-reader-outline-list">
+                <div className="spec-hub-reader-outline-list flex flex-col gap-1 max-h-[180px] overflow-auto">
                   {snapshot.outline.map((item) => (
                     <button
                       key={item.id}
                       type="button"
                       className={`spec-hub-reader-outline-button${
                         activeOutlineId === item.id ? " is-active" : ""
-                      }${pendingOutlineIdSet.has(item.id) ? " is-pending" : ""}`}
+                      }${pendingOutlineIdSet.has(item.id) ? " is-pending" : ""} w-full inline-flex items-center justify-start gap-1.5 border rounded-lg bg-transparent text-[color:var(--text-secondary)] py-[5px] pr-2 text-[12px] text-left hover:text-[color:var(--text-stronger)] hover:border-[color:var(--border-subtle)] hover:bg-[color-mix(in_srgb,var(--surface-item)_72%,transparent)] focus-visible:text-[color:var(--text-stronger)] focus-visible:border-[color:var(--border-subtle)] focus-visible:bg-[color-mix(in_srgb,var(--surface-item)_72%,transparent)]${activeOutlineId === item.id ? " text-[color:var(--text-stronger)] border-[color-mix(in_srgb,var(--accent)_30%,var(--border-subtle))] bg-[color-mix(in_srgb,var(--accent)_10%,var(--surface-item))]" : " border-transparent"}${pendingOutlineIdSet.has(item.id) && activeOutlineId !== item.id ? " border-[color-mix(in_srgb,#ffaf55_30%,transparent)]" : ""}`}
                       style={{ paddingInlineStart: `${12 + Math.max(0, item.level - 1) * 14}px` }}
                       onClick={() => {
                         if (!(rootRef.current instanceof HTMLElement)) {
@@ -427,27 +438,27 @@ export function SpecHubSurfaceFrame({
                         setActiveOutlineId(item.id);
                       }}
                     >
-                      <span className="spec-hub-reader-outline-label">{item.title}</span>
+                      <span className="spec-hub-reader-outline-label flex-[1_1_auto] min-w-0">{item.title}</span>
                       {pendingOutlineIdSet.has(item.id) ? (
-                        <span className="spec-hub-reader-outline-pending-dot" aria-hidden="true" />
+                        <span className="spec-hub-reader-outline-pending-dot w-2 h-2 ml-auto rounded-full bg-[color-mix(in_srgb,#ffaf55_92%,white_8%)] [box-shadow:0_0_0_2px_color-mix(in_srgb,var(--surface-card)_92%,transparent)] flex-[0_0_auto]" aria-hidden="true" />
                       ) : null}
                     </button>
                   ))}
                 </div>
               ) : (
-                <p className="spec-hub-reader-outline-empty">
+                <p className="spec-hub-reader-outline-empty m-0 text-[11px] text-[color:var(--text-muted)]">
                   {t("specHub.readerOutline.empty")}
                 </p>
               )}
               {snapshot.artifactType === "proposal" && relatedSpecButtons.length > 0 ? (
-                <div className="spec-hub-reader-related-specs">
-                  <strong>{t("specHub.readerOutline.linkedSpecs")}</strong>
-                  <div className="spec-hub-reader-related-spec-list">
+                <div className="spec-hub-reader-related-specs flex flex-col gap-1.5">
+                  <strong className="text-[color:var(--text-stronger)] text-[12px]">{t("specHub.readerOutline.linkedSpecs")}</strong>
+                  <div className="spec-hub-reader-related-spec-list flex flex-wrap gap-1.5">
                     {relatedSpecButtons.map((capabilityId) => (
                       <button
                         key={capabilityId}
                         type="button"
-                        className="spec-hub-reader-related-spec-button"
+                        className="spec-hub-reader-related-spec-button w-auto inline-flex items-center justify-start gap-1.5 border border-[color:var(--border-subtle)] rounded-lg bg-[color:var(--surface-item)] text-[color:var(--text-secondary)] py-[5px] px-2 text-[12px] text-left whitespace-nowrap hover:text-[color:var(--text-stronger)] hover:border-[color:var(--border-subtle)] hover:bg-[color-mix(in_srgb,var(--surface-item)_72%,transparent)] focus-visible:text-[color:var(--text-stronger)] focus-visible:border-[color:var(--border-subtle)] focus-visible:bg-[color-mix(in_srgb,var(--surface-item)_72%,transparent)]"
                         onClick={() => {
                           const root = rootRef.current;
                           if (!(root instanceof HTMLElement)) {

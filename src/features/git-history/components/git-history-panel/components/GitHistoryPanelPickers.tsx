@@ -216,12 +216,12 @@ export function GitHistoryProjectPicker({
 
   return (
     <div
-      className={`git-history-project-picker${open ? " is-open" : ""}${disabled ? " is-disabled" : ""}`}
+      className={`git-history-project-picker relative inline-block min-w-45 max-w-[min(36vw,420px)]${open ? " is-open" : ""}${disabled ? " is-disabled opacity-[0.66]" : ""}`}
       ref={pickerRef}
     >
       <button
         type="button"
-        className="git-history-project-display git-history-project-trigger"
+        className="git-history-project-display git-history-project-trigger inline-flex items-center gap-2 w-full min-h-7.5 px-2.5 rounded-lg border border-[color-mix(in_srgb,var(--border-default)_64%,transparent)] bg-[color-mix(in_srgb,var(--surface-control,#1a2230)_56%,transparent)] text-(--text-primary) box-border text-[12px] leading-[1.2] transition-[background-color_140ms_ease,border-color_140ms_ease,box-shadow_140ms_ease] disabled:cursor-not-allowed hover:not-disabled:border-[color-mix(in_srgb,var(--border-default)_86%,transparent)] hover:not-disabled:bg-[color-mix(in_srgb,var(--surface-control-hover,#263044)_62%,transparent)] focus-visible:outline-none focus-visible:border-[color-mix(in_srgb,var(--accent-primary,#2563eb)_56%,transparent)] focus-visible:shadow-[0_0_0_2px_color-mix(in_srgb,var(--accent-primary,#2563eb)_18%,transparent)]"
         aria-label={ariaLabel}
         aria-haspopup="listbox"
         aria-expanded={open}
@@ -234,26 +234,27 @@ export function GitHistoryProjectPicker({
         }}
       >
         {icon}
-        <span className="git-history-project-value">{selectedLabel}</span>
-        <ChevronDown size={12} className="git-history-project-caret" />
+        <span className="git-history-project-value min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">{selectedLabel}</span>
+        <ChevronDown size={12} className={`git-history-project-caret text-(--text-muted) ml-auto flex-[0_0_auto] transition-transform duration-160 ease-[ease]${open ? " rotate-180" : ""}`} />
       </button>
 
       {open && (
-        <div className="git-history-project-dropdown popover-surface" role="listbox" aria-label={ariaLabel}>
-          <div className="git-history-project-search">
+        <div className="git-history-project-dropdown popover-surface absolute top-[calc(100%+8px)] left-0 min-w-[max(260px,100%)] max-w-[min(52vw,560px)] max-h-105 p-2 rounded-[18px] z-40 flex flex-col gap-2" role="listbox" aria-label={ariaLabel}>
+          <div className="git-history-project-search p-0.5">
             <input
               ref={inputRef}
               value={query}
               onChange={(event) => setQuery(event.target.value)}
               placeholder={searchPlaceholder}
               aria-label={searchPlaceholder}
+              className="w-full h-9 rounded-xl border border-[color-mix(in_srgb,var(--border-default)_70%,transparent)] bg-[color-mix(in_srgb,var(--surface-control,#1a2230)_84%,transparent)] text-(--text-primary) text-[13px] px-3 outline-none focus-visible:border-[color-mix(in_srgb,var(--accent-primary,#2563eb)_62%,transparent)] focus-visible:shadow-[0_0_0_2px_color-mix(in_srgb,var(--accent-primary,#2563eb)_16%,transparent)]"
             />
           </div>
-          <div className="git-history-project-list">
+          <div className="git-history-project-list overflow-y-auto max-h-85 flex flex-col gap-0.5 pb-0.5 px-0.5">
             {filteredSections.map((section) => (
-              <div key={section.id ?? "ungrouped"} className="git-history-project-group">
+              <div key={section.id ?? "ungrouped"} className="git-history-project-group flex flex-col gap-0.5 [&+&]:mt-1.5">
                 {showGroupLabel && section.name.trim().length > 0 ? (
-                  <div className="git-history-project-group-label">{section.name}</div>
+                  <div className="git-history-project-group-label px-2.5 pt-1.5 pb-1 text-[11px] leading-[1.2] text-(--text-faint) font-semibold tracking-[0.01em]">{section.name}</div>
                 ) : null}
                 {section.options.map((entry) => {
                   const selected = entry.id === selectedId;
@@ -261,17 +262,17 @@ export function GitHistoryProjectPicker({
                     <button
                       key={entry.id}
                       type="button"
-                      className={`git-history-project-item${selected ? " is-active" : ""}`}
+                      className={`git-history-project-item w-full min-h-8.5 border-none rounded-[10px] bg-transparent text-(--text-secondary) inline-flex items-center gap-2 px-2.5 text-left cursor-pointer hover:bg-[color-mix(in_srgb,var(--surface-control-hover,#263044)_72%,transparent)] hover:text-[color:var(--text-stronger)]${selected ? " is-active bg-[color-mix(in_srgb,var(--accent-primary,#2563eb)_76%,#1d4ed8)] text-white font-semibold" : ""}`}
                       role="option"
                       aria-selected={selected}
                       onClick={() => handleSelect(entry.id)}
                     >
-                      <span className="git-history-project-item-check" aria-hidden>
+                      <span className="git-history-project-item-check w-3.5 flex-[0_0_14px] text-center text-[13px]" aria-hidden>
                         {selected ? "✓" : ""}
                       </span>
                       <span
-                        className={`git-history-project-item-label${
-                          entry.kind === "worktree" ? " is-worktree" : ""
+                        className={`git-history-project-item-label min-w-0 overflow-hidden text-ellipsis whitespace-nowrap${
+                          entry.kind === "worktree" ? " is-worktree text-[color-mix(in_srgb,var(--text-secondary)_84%,var(--text-muted))] pl-1.5" : ""
                         }`}
                       >
                         {entry.kind === "worktree" ? "↳ " : ""}
@@ -283,7 +284,7 @@ export function GitHistoryProjectPicker({
               </div>
             ))}
             {filteredSections.length === 0 && (
-              <div className="git-history-project-empty">{emptyText}</div>
+              <div className="git-history-project-empty p-2.5 text-(--text-muted) text-[12px] text-center">{emptyText}</div>
             )}
           </div>
         </div>

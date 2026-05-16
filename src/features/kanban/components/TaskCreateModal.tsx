@@ -459,27 +459,27 @@ export function TaskCreateModal({
   const showAutoStartToggle = !editingTask && scheduleMode === "manual";
 
   return (
-    <div className="kanban-modal-overlay">
-      <div className="kanban-modal kanban-task-modal">
-        <div className="kanban-modal-header">
-          <h2>{editingTask ? t("kanban.task.editTitle") : t("kanban.task.createTitle")}</h2>
-          <button className="kanban-icon-btn" onClick={handleCancel}>
+    <div className="kanban-modal-overlay fixed top-0 left-0 right-0 bottom-0 bg-black/60 backdrop-blur-[4px] [-webkit-backdrop-filter:blur(4px)] flex items-center justify-center z-[1000]">
+      <div className="kanban-modal kanban-task-modal bg-[color:var(--surface-card-strong,var(--bg-primary,#fff))] border border-[color:var(--border-strong,var(--border-color,#e5e5e5))] rounded-xl w-[560px] max-w-[90vw] max-h-[90vh] overflow-y-auto shadow-[0_16px_48px_rgba(0,0,0,0.3)]">
+        <div className="kanban-modal-header flex items-center justify-between px-5 py-4 border-b border-[color:var(--border-color,#e5e5e5)]">
+          <h2 className="text-base font-semibold m-0">{editingTask ? t("kanban.task.editTitle") : t("kanban.task.createTitle")}</h2>
+          <button className="kanban-icon-btn flex items-center justify-center w-7 h-7 p-0 border-none bg-transparent rounded-[6px] cursor-pointer text-[color:var(--text-secondary,#666)] transition-[background,color] duration-150 hover:bg-[color:var(--bg-tertiary,#f0f0f0)] hover:text-[color:var(--text-primary,#111)]" onClick={handleCancel}>
             <X size={18} />
           </button>
         </div>
         <form onSubmit={handleSubmit}>
-          <div className="kanban-modal-body">
-            <div className="kanban-task-title-row">
+          <div className="kanban-modal-body px-5 py-5 flex flex-col gap-3">
+            <div className="kanban-task-title-row flex items-center gap-2">
               <input
                 ref={titleRef}
-                className="kanban-input kanban-task-title-input"
+                className="kanban-input kanban-task-title-input w-full px-3 py-2.5 border border-[color:var(--border-color,#e5e5e5)] rounded-lg text-sm text-[color:var(--text-primary,#111)] bg-[color:var(--bg-primary,#fff)] outline-none transition-[border-color] duration-150 box-border focus:border-[color:var(--accent-color,#3b82f6)] text-base font-medium flex-1"
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
                 placeholder={t("kanban.task.titlePlaceholder")}
               />
               <button
                 type="button"
-                className="kanban-icon-btn kanban-task-generate-btn"
+                className="kanban-icon-btn kanban-task-generate-btn flex items-center justify-center w-7 h-7 p-0 border-none bg-transparent rounded-[6px] cursor-pointer text-[color:var(--text-tertiary,#999)] transition-[background,color] duration-150 shrink-0 hover:not-disabled:text-[color:var(--accent-color,#3b82f6)] disabled:opacity-35 disabled:cursor-not-allowed"
                 onClick={handleGenerateTitle}
                 disabled={!description.trim() || isGeneratingTitle}
                 title={t("kanban.task.generateTitle")}
@@ -500,7 +500,7 @@ export function TaskCreateModal({
               initialHeight={120}
               minHeight={80}
               maxHeight={300}
-              className="kanban-rich-input"
+              className="kanban-rich-input border border-[color:var(--border-color,#e5e5e5)] rounded-lg bg-[color:var(--bg-primary,#fff)] py-1"
               textareaRef={descTextareaRef}
               onKeyDown={handleDescKeyDown}
               ghostTextSuffix={inlineCompletionSuffix}
@@ -508,15 +508,15 @@ export function TaskCreateModal({
                 <>
                   <button
                     type="button"
-                    className="kanban-icon-btn kanban-rich-input-attach"
+                    className="kanban-icon-btn kanban-rich-input-attach flex items-center justify-center w-7 h-7 p-0 border-none bg-transparent rounded-[6px] cursor-pointer text-[color:var(--text-secondary,#666)] transition-[background,color] duration-150 px-2 py-1 rounded-[6px] gap-1 hover:not-disabled:text-[color:var(--text-primary,#333)] hover:not-disabled:bg-[color:var(--bg-tertiary,#f0f0f0)]"
                     onClick={handlePickImages}
                     title={t("kanban.task.addImage")}
                   >
                     <ImagePlus size={16} />
                   </button>
-                  <div className="kanban-task-selector">
+                  <div className="kanban-task-selector flex">
                     <select
-                      className="kanban-select"
+                      className="kanban-select px-3 py-2 border border-[color:var(--border-color,#e5e5e5)] rounded-lg text-[13px] text-[color:var(--text-primary,#111)] bg-[color:var(--bg-primary,#fff)] outline-none cursor-pointer box-border max-w-[180px]"
                       value={engineType}
                       onChange={(e) =>
                         setEngineType(e.target.value as EngineType)
@@ -534,9 +534,9 @@ export function TaskCreateModal({
                       ))}
                     </select>
                   </div>
-                  <div className="kanban-task-selector">
+                  <div className="kanban-task-selector flex">
                     <select
-                      className="kanban-select"
+                      className="kanban-select px-3 py-2 border border-[color:var(--border-color,#e5e5e5)] rounded-lg text-[13px] text-[color:var(--text-primary,#111)] bg-[color:var(--bg-primary,#fff)] outline-none cursor-pointer box-border max-w-[180px]"
                       value={modelId ?? ""}
                       onChange={(e) => setModelId(e.target.value || null)}
                     >
@@ -554,19 +554,19 @@ export function TaskCreateModal({
               }
             />
 
-            <div className="kanban-task-config-block is-compact">
-              <div className="kanban-task-config-row">
-                <span className="kanban-task-config-label">
-                  <Calendar size={13} className="kanban-task-config-label-icon" />
+            <div className="kanban-task-config-block is-compact border border-[color:var(--border-color,#e5e5e5)] rounded-[10px] bg-[color-mix(in_srgb,var(--bg-secondary,#fafafa)_92%,var(--bg-primary,#fff))] px-2.5 py-2 flex flex-col gap-1.5">
+              <div className="kanban-task-config-row grid [grid-template-columns:132px_minmax(0,1fr)] items-center gap-3 min-h-[30px]">
+                <span className="kanban-task-config-label inline-flex items-center gap-1.5 text-xs text-[color:var(--text-secondary,#555)] tracking-[0.01em] whitespace-nowrap">
+                  <Calendar size={13} className="kanban-task-config-label-icon text-[color:var(--text-tertiary,#8b90a0)] shrink-0" />
                   {t("kanban.task.schedule.modeLabel")}
                 </span>
                 <div
-                  className="kanban-task-mode-segmented"
+                  className="kanban-task-mode-segmented relative grid [grid-template-columns:repeat(3,minmax(0,1fr))] items-center w-full max-w-[280px] min-h-[32px] border border-[color:var(--border-color,#dfe3ea)] rounded-lg bg-[color-mix(in_srgb,var(--bg-secondary,#f4f6fa)_80%,var(--bg-primary,#fff))] p-0.5 box-border"
                   role="radiogroup"
                   aria-label={t("kanban.task.schedule.modeLabel")}
                 >
                   <span
-                    className="kanban-task-mode-segmented-thumb"
+                    className="kanban-task-mode-segmented-thumb absolute top-0.5 left-0.5 w-[calc((100%-4px)/3)] h-[calc(100%-4px)] rounded-[6px] bg-[color-mix(in_srgb,var(--accent-color,#3b82f6)_12%,var(--bg-primary,#fff))] border border-[color-mix(in_srgb,var(--accent-color,#3b82f6)_62%,var(--border-color,#dfe3ea))] shadow-[0_1px_2px_rgba(59,130,246,0.18)] transition-transform duration-200 ease-[ease] pointer-events-none"
                     aria-hidden
                     style={{
                       transform: `translateX(${scheduleModeIndex * 100}%)`,
@@ -581,10 +581,10 @@ export function TaskCreateModal({
                         type="button"
                         role="radio"
                         aria-checked={isActive}
-                        className={`kanban-task-mode-segmented-btn${isActive ? " is-active" : ""}`}
+                        className={`kanban-task-mode-segmented-btn relative z-[1] h-[26px] border-none bg-transparent rounded-[6px] inline-flex items-center justify-center gap-1 px-2 text-xs cursor-pointer select-none transition-[color] duration-200 ease-[ease] whitespace-nowrap${isActive ? " is-active text-[color-mix(in_srgb,var(--accent-color,#3b82f6)_78%,#111827)] font-semibold" : " text-[color:var(--text-secondary,#5b6475)]"}`}
                         onClick={() => setScheduleMode(option.value)}
                       >
-                        <Icon size={13} className="kanban-task-mode-segmented-icon" />
+                        <Icon size={13} className="kanban-task-mode-segmented-icon shrink-0" />
                         <span>{option.label}</span>
                       </button>
                     );
@@ -593,13 +593,13 @@ export function TaskCreateModal({
               </div>
 
               {scheduleMode === "once" && (
-                <div className="kanban-task-config-row">
-                  <span className="kanban-task-config-label">
-                    <Clock3 size={13} className="kanban-task-config-label-icon" />
+                <div className="kanban-task-config-row grid [grid-template-columns:132px_minmax(0,1fr)] items-center gap-3 min-h-[30px]">
+                  <span className="kanban-task-config-label inline-flex items-center gap-1.5 text-xs text-[color:var(--text-secondary,#555)] tracking-[0.01em] whitespace-nowrap">
+                    <Clock3 size={13} className="kanban-task-config-label-icon text-[color:var(--text-tertiary,#8b90a0)] shrink-0" />
                     {t("kanban.task.schedule.runAt")}
                   </span>
                   <input
-                    className="kanban-input kanban-task-date-input"
+                    className="kanban-input kanban-task-date-input w-full max-w-[280px] px-2.5 py-0 h-8 min-h-8 text-xs border border-[color:var(--border-color,#e5e5e5)] rounded-[7px] text-[color:var(--text-primary,#111)] bg-[color:var(--bg-primary,#fff)] outline-none transition-[border-color] duration-150 box-border focus:border-[color:var(--accent-color,#3b82f6)]"
                     type="datetime-local"
                     value={runAtText}
                     onChange={(e) => setRunAtText(e.target.value)}
@@ -609,21 +609,21 @@ export function TaskCreateModal({
 
               {scheduleMode === "recurring" && (
                 <>
-                  <div className="kanban-task-config-row">
-                    <span className="kanban-task-config-label">
-                      <Repeat size={13} className="kanban-task-config-label-icon" />
+                  <div className="kanban-task-config-row grid [grid-template-columns:132px_minmax(0,1fr)] items-center gap-3 min-h-[30px]">
+                    <span className="kanban-task-config-label inline-flex items-center gap-1.5 text-xs text-[color:var(--text-secondary,#555)] tracking-[0.01em] whitespace-nowrap">
+                      <Repeat size={13} className="kanban-task-config-label-icon text-[color:var(--text-tertiary,#8b90a0)] shrink-0" />
                       {t("kanban.task.schedule.every")}
                     </span>
-                    <div className="kanban-task-config-inline">
+                    <div className="kanban-task-config-inline flex items-center justify-start gap-1.5 w-full max-w-[280px]">
                       <input
-                        className="kanban-input kanban-task-recurring-interval-input"
+                        className="kanban-input kanban-task-recurring-interval-input h-8 min-h-8 text-xs border border-[color:var(--border-color,#e5e5e5)] rounded-[7px] text-[color:var(--text-primary,#111)] bg-[color:var(--bg-primary,#fff)] outline-none transition-[border-color] duration-150 box-border focus:border-[color:var(--accent-color,#3b82f6)] flex-[0_0_72px] w-[72px] px-2.5 py-0"
                         type="number"
                         min={1}
                         value={recurringInterval}
                         onChange={(e) => setRecurringInterval(Math.max(1, Number(e.target.value) || 1))}
                       />
                       <select
-                        className="kanban-select"
+                        className="kanban-select flex-1 max-w-none min-w-0 h-8 min-h-8 text-xs border border-[color:var(--border-color,#e5e5e5)] rounded-[7px] text-[color:var(--text-primary,#111)] bg-[color:var(--bg-primary,#fff)] outline-none cursor-pointer box-border px-2.5 py-0 focus:border-[color:var(--accent-color,#3b82f6)]"
                         value={recurringUnit}
                         onChange={(e) => setRecurringUnit(e.target.value as KanbanRecurringUnit)}
                       >
@@ -635,13 +635,13 @@ export function TaskCreateModal({
                     </div>
                   </div>
 
-                  <div className="kanban-task-config-row">
-                    <span className="kanban-task-config-label">
-                      <Settings2 size={13} className="kanban-task-config-label-icon" />
+                  <div className="kanban-task-config-row grid [grid-template-columns:132px_minmax(0,1fr)] items-center gap-3 min-h-[30px]">
+                    <span className="kanban-task-config-label inline-flex items-center gap-1.5 text-xs text-[color:var(--text-secondary,#555)] tracking-[0.01em] whitespace-nowrap">
+                      <Settings2 size={13} className="kanban-task-config-label-icon text-[color:var(--text-tertiary,#8b90a0)] shrink-0" />
                       {t("kanban.task.schedule.executionModeLabel")}
                     </span>
                     <select
-                      className="kanban-select"
+                      className="kanban-select w-full max-w-[280px] justify-self-start h-8 min-h-8 text-xs border border-[color:var(--border-color,#e5e5e5)] rounded-[7px] text-[color:var(--text-primary,#111)] bg-[color:var(--bg-primary,#fff)] outline-none cursor-pointer box-border px-2.5 py-0 focus:border-[color:var(--accent-color,#3b82f6)]"
                       value={recurringExecutionMode}
                       onChange={(e) =>
                         setRecurringExecutionMode(e.target.value as KanbanRecurringExecutionMode)
@@ -657,13 +657,13 @@ export function TaskCreateModal({
                   </div>
 
                   {recurringExecutionMode === "same_thread" && (
-                    <div className="kanban-task-config-row">
-                      <span className="kanban-task-config-label">
-                        <Hash size={13} className="kanban-task-config-label-icon" />
+                    <div className="kanban-task-config-row grid [grid-template-columns:132px_minmax(0,1fr)] items-center gap-3 min-h-[30px]">
+                      <span className="kanban-task-config-label inline-flex items-center gap-1.5 text-xs text-[color:var(--text-secondary,#555)] tracking-[0.01em] whitespace-nowrap">
+                        <Hash size={13} className="kanban-task-config-label-icon text-[color:var(--text-tertiary,#8b90a0)] shrink-0" />
                         {t("kanban.task.schedule.maxRounds")}
                       </span>
                       <input
-                        className="kanban-input kanban-task-rounds-input"
+                        className="kanban-input kanban-task-rounds-input w-full max-w-[280px] h-8 min-h-8 text-xs border border-[color:var(--border-color,#e5e5e5)] rounded-[7px] text-[color:var(--text-primary,#111)] bg-[color:var(--bg-primary,#fff)] outline-none transition-[border-color] duration-150 box-border px-2.5 py-0 focus:border-[color:var(--accent-color,#3b82f6)]"
                         type="number"
                         min={1}
                         max={50}
@@ -678,13 +678,13 @@ export function TaskCreateModal({
                   )}
 
                   {recurringExecutionMode === "new_thread" && (
-                    <div className="kanban-task-config-row">
-                      <span className="kanban-task-config-label">
-                        <GitBranch size={13} className="kanban-task-config-label-icon" />
+                    <div className="kanban-task-config-row grid [grid-template-columns:132px_minmax(0,1fr)] items-center gap-3 min-h-[30px]">
+                      <span className="kanban-task-config-label inline-flex items-center gap-1.5 text-xs text-[color:var(--text-secondary,#555)] tracking-[0.01em] whitespace-nowrap">
+                        <GitBranch size={13} className="kanban-task-config-label-icon text-[color:var(--text-tertiary,#8b90a0)] shrink-0" />
                         {t("kanban.task.schedule.resultPassing")}
                       </span>
                       <select
-                        className="kanban-select"
+                        className="kanban-select w-full max-w-[280px] justify-self-start h-8 min-h-8 text-xs border border-[color:var(--border-color,#e5e5e5)] rounded-[7px] text-[color:var(--text-primary,#111)] bg-[color:var(--bg-primary,#fff)] outline-none cursor-pointer box-border px-2.5 py-0 focus:border-[color:var(--accent-color,#3b82f6)]"
                         value={newThreadResultMode}
                         onChange={(e) =>
                           setNewThreadResultMode(e.target.value as KanbanNewThreadResultMode)
@@ -703,13 +703,13 @@ export function TaskCreateModal({
               )}
 
               {scheduleMode === "manual" && (
-                <div className="kanban-task-config-row">
-                  <span className="kanban-task-config-label">
-                    <Link2 size={13} className="kanban-task-config-label-icon" />
+                <div className="kanban-task-config-row grid [grid-template-columns:132px_minmax(0,1fr)] items-center gap-3 min-h-[30px]">
+                  <span className="kanban-task-config-label inline-flex items-center gap-1.5 text-xs text-[color:var(--text-secondary,#555)] tracking-[0.01em] whitespace-nowrap">
+                    <Link2 size={13} className="kanban-task-config-label-icon text-[color:var(--text-tertiary,#8b90a0)] shrink-0" />
                     {t("kanban.task.chain.upstreamLabel")}
                   </span>
                   <select
-                    className="kanban-select"
+                    className="kanban-select w-full max-w-[280px] justify-self-start h-8 min-h-8 text-xs border border-[color:var(--border-color,#e5e5e5)] rounded-[7px] text-[color:var(--text-primary,#111)] bg-[color:var(--bg-primary,#fff)] outline-none cursor-pointer box-border px-2.5 py-0 focus:border-[color:var(--accent-color,#3b82f6)]"
                     value={previousTaskId}
                     onChange={(e) => setPreviousTaskId(e.target.value)}
                   >
@@ -725,28 +725,28 @@ export function TaskCreateModal({
             </div>
 
             {formError && (
-              <div className="kanban-task-form-error" role="alert">
+              <div className="kanban-task-form-error text-[#b91c1c] bg-[#fef2f2] border border-[#fecaca] rounded-lg px-2.5 py-2 text-xs leading-[1.4]" role="alert">
                 {formError}
               </div>
             )}
           </div>
 
-          <div className="kanban-modal-footer">
+          <div className="kanban-modal-footer flex items-center justify-between px-5 py-4 border-t border-[color:var(--border-color,#e5e5e5)] gap-2">
             {showAutoStartToggle ? (
-              <label className="kanban-toggle-label">
+              <label className="kanban-toggle-label inline-flex items-center gap-2 cursor-pointer text-[13px] text-[color:var(--text-primary,#111)] select-none">
                 <input
                   type="checkbox"
-                  className="kanban-toggle-input"
+                  className="kanban-toggle-input absolute opacity-0 w-0 h-0"
                   checked={autoStart}
                   onChange={(e) => setAutoStart(e.target.checked)}
                 />
-                <span className="kanban-toggle-switch" />
+                <span className="kanban-toggle-switch relative w-9 h-5 bg-[color:var(--bg-tertiary,#d1d5db)] rounded-[10px] transition-[background] duration-200 shrink-0 after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:w-4 after:h-4 after:bg-white after:rounded-full after:transition-transform after:duration-200 after:shadow-[0_1px_3px_rgba(0,0,0,0.15)] [input:checked+&]:bg-[color:var(--text-primary,#111)] [input:checked+&]:after:translate-x-4" />
                 <span>{t("kanban.task.start")}</span>
               </label>
             ) : <div />}
             <button
               type="submit"
-              className="kanban-btn kanban-btn-primary"
+              className="kanban-btn kanban-btn-primary inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-[13px] font-medium cursor-pointer bg-[color:var(--text-primary,#e6e7ea)] text-[color:var(--bg-primary,#1e1e1e)] border-transparent transition-[background,border-color] duration-150 hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
               disabled={!title.trim()}
             >
               {editingTask ? t("kanban.task.update") : t("kanban.task.create")}

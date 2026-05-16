@@ -129,8 +129,8 @@ export function KanbanBoardHeader({
   }, [wsMenuOpen]);
 
   return (
-    <div className="kanban-board-header">
-      <div className="kanban-board-header-left">
+    <div className="kanban-board-header flex items-center justify-between px-6 py-3 pl-20 border-b border-[color:var(--border-color,#e5e5e5)] [-webkit-app-region:drag] relative z-[3] [&>*]:[-webkit-app-region:no-drag]">
+      <div className="kanban-board-header-left flex items-center gap-2">
         <KanbanModeToggle appMode="kanban" onAppModeChange={onAppModeChange} />
         <div className="kanban-back-menu relative" ref={backMenuRef}>
           <button
@@ -227,9 +227,9 @@ export function KanbanBoardHeader({
             )}
           </div>
         ) : (
-          <span className="kanban-breadcrumb-workspace">{workspace.name}</span>
+          <span className="kanban-breadcrumb-workspace text-sm text-[color:var(--text-secondary,#666)] whitespace-nowrap overflow-hidden text-ellipsis max-w-[160px]">{workspace.name}</span>
         )}
-        <span className="kanban-breadcrumb-sep" aria-hidden>›</span>
+        <span className="kanban-breadcrumb-sep text-[color:var(--text-faint,#ccc)] text-sm shrink-0 select-none" aria-hidden>›</span>
         {showPanelMenu ? (
           <div className="kanban-project-menu relative inline-flex items-center min-w-0" ref={panelMenuRef}>
             <button
@@ -239,7 +239,7 @@ export function KanbanBoardHeader({
               aria-haspopup="menu"
               aria-expanded={panelMenuOpen}
             >
-              <h2 className="kanban-board-title">{panel.name}</h2>
+              <h2 className="kanban-board-title text-base font-semibold m-0 text-[color:var(--text-primary,#111)]">{panel.name}</h2>
               <span className="kanban-project-caret text-[var(--text-faint)] text-xs shrink-0 leading-none" aria-hidden>
                 ›
               </span>
@@ -283,24 +283,24 @@ export function KanbanBoardHeader({
             )}
           </div>
         ) : (
-          <h2 className="kanban-board-title">{panel.name}</h2>
+          <h2 className="kanban-board-title text-base font-semibold m-0 text-[color:var(--text-primary,#111)]">{panel.name}</h2>
         )}
       </div>
-      <div className="kanban-board-header-center">
-        <div className="kanban-search-box">
-          <Search size={15} className="kanban-search-icon" />
+      <div className="kanban-board-header-center flex-1 flex justify-center px-4 min-w-0">
+        <div className="kanban-search-box flex items-center gap-2 w-full max-w-[360px] px-3 py-1.5 border border-[color:var(--border-color,#e5e5e5)] rounded-lg bg-[color:var(--bg-secondary,#f8f8f8)] transition-[border-color,background] duration-150 focus-within:border-[color:var(--accent-color,#3b82f6)] focus-within:bg-[color:var(--bg-primary,#fff)]">
+          <Search size={15} className="kanban-search-icon text-[color:var(--text-tertiary,#999)] shrink-0" />
           <input
             type="text"
             value={searchQuery}
             onChange={(e) => onSearchChange(e.target.value)}
             placeholder={t("kanban.board.searchPlaceholder")}
-            className="kanban-search-input"
+            className="kanban-search-input flex-1 border-none bg-transparent text-[13px] text-[color:var(--text-primary,#111)] outline-none min-w-0 placeholder:text-[color:var(--text-tertiary,#999)]"
           />
         </div>
       </div>
-      <div className="kanban-board-header-right">
+      <div className="kanban-board-header-right flex items-center gap-2 shrink-0">
         <button
-          className={`kanban-icon-btn${showGitPanel ? " is-active" : ""}`}
+          className={`kanban-icon-btn flex items-center justify-center w-7 h-7 p-0 border-none bg-transparent rounded-[6px] cursor-pointer text-[color:var(--text-secondary,#666)] transition-[background,color] duration-150 hover:bg-[color:var(--bg-tertiary,#f0f0f0)] hover:text-[color:var(--text-primary,#111)]${showGitPanel ? " is-active bg-[color:var(--accent-color,#3b82f6)] text-white hover:bg-[color:var(--accent-color,#3b82f6)] hover:text-white" : ""}`}
           onClick={onToggleGitPanel}
           aria-label={t("kanban.board.toggleGitPanel")}
           aria-pressed={showGitPanel}

@@ -205,12 +205,12 @@ export function Vn(a) {
   return a === "codex" || a === "claude" || a === "opencode";
 }
 export const Ei = {
-    draft: { icon: Yt, className: "is-draft" },
-    ready: { icon: hi, className: "is-ready" },
-    implementing: { icon: Se, className: "is-implementing" },
-    verified: { icon: Ln, className: "is-verified" },
-    archived: { icon: di, className: "is-archived" },
-    blocked: { icon: xe, className: "is-blocked" },
+    draft: { icon: Yt, className: "is-draft text-[color-mix(in_srgb,var(--status-warning,var(--warning))_92%,var(--text-primary)_8%)]" },
+    ready: { icon: hi, className: "is-ready text-[color-mix(in_srgb,var(--status-success,var(--success))_93%,var(--text-primary)_7%)]" },
+    implementing: { icon: Se, className: "is-implementing text-[color-mix(in_srgb,var(--info,#2563eb)_92%,var(--text-primary)_8%)] dark:text-[color-mix(in_srgb,var(--info,#7a9dcc)_94%,#dbeafe_6%)]" },
+    verified: { icon: Ln, className: "is-verified text-[color-mix(in_srgb,var(--status-success,var(--success))_90%,var(--text-primary)_10%)]" },
+    archived: { icon: di, className: "is-archived text-[color-mix(in_srgb,var(--text-muted)_68%,var(--text-primary)_32%)]" },
+    blocked: { icon: xe, className: "is-blocked text-[color-mix(in_srgb,var(--status-error,var(--danger))_92%,var(--text-primary)_8%)]" },
   },
   Pi = { continue: Wt, apply: Rn, verify: mi, archive: di, bootstrap: Se },
   ar = {

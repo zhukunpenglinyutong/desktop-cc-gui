@@ -114,7 +114,7 @@ export function renderGitHistoryPanelView(scope: any) {
             ) : null}
           </div>
           {onRequestClose ? (
-            <div className="git-history-toolbar-actions">
+            <div className="git-history-toolbar-actions inline-flex items-center gap-2 flex-wrap justify-end">
               <ActionSurface
                 className="git-history-close-chip"
                 onActivate={() => onRequestClose()}
@@ -272,7 +272,7 @@ export function renderGitHistoryPanelView(scope: any) {
         }
       }}
     >
-      <div className="git-history-toolbar git-history-toolbar--hover-actions flex items-center justify-between gap-[10px] py-2 px-[10px] border-b border-[color:var(--border-default)] bg-[color-mix(in_srgb,var(--surface-card-muted,#111725)_95%,transparent)]">
+      <div className="git-history-toolbar git-history-toolbar--hover-actions group/toolbar flex items-center justify-between gap-[10px] py-2 px-[10px] border-b border-[color:var(--border-default)] bg-[color-mix(in_srgb,var(--surface-card-muted,#111725)_95%,transparent)]">
         <div className="git-history-toolbar-left inline-flex items-center min-w-0 flex-wrap gap-[10px]">
           <h2 className="m-0 text-sm font-semibold text-[color:var(--text-stronger)]">{t("git.historyTitle")}</h2>
           {projectOptions.length > 0 && onSelectWorkspace ? (
@@ -291,32 +291,32 @@ export function renderGitHistoryPanelView(scope: any) {
               }}
             />
           ) : null}
-          <div className="git-history-toolbar-meta">
-            <span className="git-history-head-pill">HEAD</span>
-            <code className="git-history-current-branch">{currentBranch ?? workspace.name}</code>
+          <div className="git-history-toolbar-meta inline-flex items-center gap-2 min-w-0 text-[color:var(--text-muted)] text-[11px]">
+            <span className="git-history-head-pill inline-flex items-center justify-center h-[18px] px-[6px] rounded-full text-[10px] font-bold tracking-[0.03em] text-[color-mix(in_srgb,var(--accent-primary,#2563eb)_86%,#dbeafe)] border border-[color-mix(in_srgb,var(--accent-primary,#2563eb)_58%,transparent)] bg-[color-mix(in_srgb,var(--accent-primary,#2563eb)_18%,transparent)]">HEAD</span>
+            <code className="git-history-current-branch inline-flex items-center h-5 px-2 rounded-full border border-[color-mix(in_srgb,#10b981_58%,transparent)] bg-[color-mix(in_srgb,#10b981_16%,var(--surface-control,#1a2230))] min-w-0 max-w-[min(36vw,440px)] overflow-hidden text-ellipsis whitespace-nowrap text-[10px] font-semibold leading-none text-[color-mix(in_srgb,#10b981_82%,#d1fae5)]">{currentBranch ?? workspace.name}</code>
             <span
-              className={`git-history-toolbar-worktree ${
-                workingTreeChangedFiles > 0 ? "is-dirty" : "is-clean"
+              className={`git-history-toolbar-worktree whitespace-nowrap text-[11px] ${
+                workingTreeChangedFiles > 0 ? "is-dirty text-[#fca5a5]" : "is-clean text-[color:var(--text-muted)]"
               }`}
             >
               {workingTreeSummaryLabel}
             </span>
             {workingTreeChangedFiles > 0 ? (
-              <span className="git-history-toolbar-lines">
-                <span className="git-history-diff-add">+{workingTreeTotalAdditions}</span>
-                <span className="git-history-diff-sep" aria-hidden>
+              <span className="git-history-toolbar-lines inline-flex items-center gap-[6px] whitespace-nowrap text-[11px] text-[color:var(--text-muted)]">
+                <span className="git-history-diff-add text-[color:var(--status-success,#22c55e)]">+{workingTreeTotalAdditions}</span>
+                <span className="git-history-diff-sep text-[color:var(--text-muted)] opacity-[0.82]" aria-hidden>
                   /
                 </span>
-                <span className="git-history-diff-del">-{workingTreeTotalDeletions}</span>
+                <span className="git-history-diff-del text-[color:var(--status-error,#f87171)]">-{workingTreeTotalDeletions}</span>
               </span>
             ) : null}
-            <span className="git-history-toolbar-count">
+            <span className="git-history-toolbar-count text-[color:var(--text-muted)] whitespace-nowrap">
               {t("git.historyCommitCount", { count: historyTotal })}
             </span>
           </div>
         </div>
-        <div className="git-history-toolbar-actions">
-          <div className="git-history-toolbar-action-group">
+        <div className="git-history-toolbar-actions inline-flex items-center gap-2 flex-wrap justify-end">
+          <div className="git-history-toolbar-action-group inline-flex items-center gap-1 p-0.5 border border-[color-mix(in_srgb,var(--border-default)_78%,transparent)] rounded-full bg-[color-mix(in_srgb,var(--surface-control,#1a2230)_42%,transparent)] opacity-0 pointer-events-none translate-x-[18px] transition-[opacity_160ms_ease,transform_180ms_ease] group-hover/toolbar:opacity-100 group-hover/toolbar:pointer-events-auto group-hover/toolbar:translate-x-0 group-focus-within/toolbar:opacity-100 group-focus-within/toolbar:pointer-events-auto group-focus-within/toolbar:translate-x-0 motion-reduce:translate-x-0 motion-reduce:transition-[opacity_120ms_ease]">
             <ActionSurface
               className="git-history-chip git-history-chip-pr"
               active={createPrDialogOpen}
@@ -414,17 +414,17 @@ export function renderGitHistoryPanelView(scope: any) {
       )}
 
       <div
-        className={`git-history-grid${desktopSplitLayout ? " with-vertical-resizers" : ""}`}
+        className={`git-history-grid grid w-full flex-1 min-h-0 overflow-hidden [grid-template-columns:minmax(200px,240px)_minmax(0,1fr)]${desktopSplitLayout ? " with-vertical-resizers [&.with-vertical-resizers_.git-history-overview]:border-r-0" : ""}`}
         ref={workbenchGridRef}
         style={workbenchGridStyle}
       >
-        <aside className="git-history-overview">
-          <div className="git-history-overview-toolbar is-files-top-row">
-            <div className="git-history-overview-list-toggle" role="group" aria-label={t("git.listView")}>
+        <aside className="git-history-overview min-w-0 min-h-0 flex flex-col gap-[10px] p-[10px] border-r border-[color:var(--border-default)] bg-[var(--git-history-pane-bg)]">
+          <div className="git-history-overview-toolbar flex items-center justify-between gap-2 is-files-top-row">
+            <div className="git-history-overview-list-toggle inline-flex items-center gap-2 self-center p-0 w-fit border-none rounded-none bg-transparent" role="group" aria-label={t("git.listView")}>
               <button
                 type="button"
-                className={`git-history-overview-list-tab${
-                  overviewListView === "flat" ? " is-active" : ""
+                className={`git-history-overview-list-tab min-h-6 py-1 px-0.5 pb-[5px] inline-flex items-center justify-center gap-1 border-none border-b-2 border-b-transparent rounded-none bg-transparent text-[color:var(--text-secondary)] text-[11px] font-semibold whitespace-nowrap cursor-pointer transition-[border-bottom-color_160ms_ease,color_160ms_ease] hover:text-[color:var(--text-emphasis)] hover:bg-transparent focus-visible:outline-none focus-visible:text-[color:var(--text-accent,#7a9dcc)] [&_svg]:flex-[0_0_auto]${
+                  overviewListView === "flat" ? " is-active text-[color-mix(in_srgb,var(--accent-primary,#2563eb)_88%,var(--text-emphasis))] border-b-[color:var(--accent-primary,#2563eb)]" : ""
                 }`}
                 onClick={() => setOverviewListView("flat")}
                 aria-pressed={overviewListView === "flat"}
@@ -436,8 +436,8 @@ export function renderGitHistoryPanelView(scope: any) {
               </button>
               <button
                 type="button"
-                className={`git-history-overview-list-tab${
-                  overviewListView === "tree" ? " is-active" : ""
+                className={`git-history-overview-list-tab min-h-6 py-1 px-0.5 pb-[5px] inline-flex items-center justify-center gap-1 border-none border-b-2 border-b-transparent rounded-none bg-transparent text-[color:var(--text-secondary)] text-[11px] font-semibold whitespace-nowrap cursor-pointer transition-[border-bottom-color_160ms_ease,color_160ms_ease] hover:text-[color:var(--text-emphasis)] hover:bg-transparent focus-visible:outline-none focus-visible:text-[color:var(--text-accent,#7a9dcc)] [&_svg]:flex-[0_0_auto]${
+                  overviewListView === "tree" ? " is-active text-[color-mix(in_srgb,var(--accent-primary,#2563eb)_88%,var(--text-emphasis))] border-b-[color:var(--accent-primary,#2563eb)]" : ""
                 }`}
                 onClick={() => setOverviewListView("tree")}
                 aria-pressed={overviewListView === "tree"}
@@ -449,9 +449,9 @@ export function renderGitHistoryPanelView(scope: any) {
               </button>
               <button
                 type="button"
-                className={`git-history-overview-list-tab${
-                  !overviewCommitSectionCollapsed ? " is-active" : ""
-                }`}
+                className={`git-history-overview-list-tab min-h-6 py-1 px-0.5 pb-[5px] inline-flex items-center justify-center gap-1 border-none border-b-2 border-b-transparent rounded-none bg-transparent text-[color:var(--text-secondary)] text-[11px] font-semibold whitespace-nowrap cursor-pointer transition-[border-bottom-color_160ms_ease,color_160ms_ease] hover:text-[color:var(--text-emphasis)] hover:bg-transparent focus-visible:outline-none focus-visible:text-[color:var(--text-accent,#7a9dcc)] [&_svg]:flex-[0_0_auto]${
+                  !overviewCommitSectionCollapsed ? " is-active text-[color-mix(in_srgb,var(--accent-primary,#2563eb)_88%,var(--text-emphasis))] border-b-[color:var(--accent-primary,#2563eb)]" : ""
+                } w-[30px] p-0 justify-center`}
                 onClick={() => setOverviewCommitSectionCollapsed((value) => !value)}
                 aria-pressed={!overviewCommitSectionCollapsed}
                 aria-label={t("git.toggleCommitSection")}
@@ -481,7 +481,7 @@ export function renderGitHistoryPanelView(scope: any) {
 
         {desktopSplitLayout && (
           <div
-            className="git-history-vertical-resizer"
+            className="git-history-vertical-resizer relative cursor-col-resize touch-none bg-[color-mix(in_srgb,var(--surface-control,#1a2230)_58%,transparent)] after:content-[''] after:absolute after:top-0 after:bottom-0 after:left-1/2 after:w-px after:bg-[color-mix(in_srgb,var(--border-default)_88%,transparent)] after:-translate-x-[0.5px] hover:after:bg-[color-mix(in_srgb,var(--accent-primary,#2563eb)_72%,transparent)]"
             role="separator"
             aria-orientation="vertical"
             onMouseDown={handleOverviewSplitResizeStart}
@@ -493,7 +493,7 @@ export function renderGitHistoryPanelView(scope: any) {
         )}
 
         <div
-          className={`git-history-main-grid${desktopSplitLayout ? " with-vertical-resizers" : ""}`}
+          className={`git-history-main-grid min-w-0 min-h-0 grid overflow-hidden [grid-template-columns:minmax(220px,0.82fr)_minmax(420px,1.35fr)_minmax(420px,1.2fr)]${desktopSplitLayout ? " with-vertical-resizers [&.with-vertical-resizers_.git-history-branches]:border-r-0 [&.with-vertical-resizers_.git-history-commits]:border-r-0" : ""}`}
           ref={mainGridRef}
           style={mainGridStyle}
         >
@@ -685,7 +685,7 @@ export function renderGitHistoryPanelView(scope: any) {
 
         {desktopSplitLayout && (
           <div
-            className="git-history-vertical-resizer"
+            className="git-history-vertical-resizer relative cursor-col-resize touch-none bg-[color-mix(in_srgb,var(--surface-control,#1a2230)_58%,transparent)] after:content-[''] after:absolute after:top-0 after:bottom-0 after:left-1/2 after:w-px after:bg-[color-mix(in_srgb,var(--border-default)_88%,transparent)] after:-translate-x-[0.5px] hover:after:bg-[color-mix(in_srgb,var(--accent-primary,#2563eb)_72%,transparent)]"
             role="separator"
             aria-orientation="vertical"
             onMouseDown={handleBranchesSplitResizeStart}
@@ -801,7 +801,7 @@ export function renderGitHistoryPanelView(scope: any) {
 
         {desktopSplitLayout && (
           <div
-            className="git-history-vertical-resizer"
+            className="git-history-vertical-resizer relative cursor-col-resize touch-none bg-[color-mix(in_srgb,var(--surface-control,#1a2230)_58%,transparent)] after:content-[''] after:absolute after:top-0 after:bottom-0 after:left-1/2 after:w-px after:bg-[color-mix(in_srgb,var(--border-default)_88%,transparent)] after:-translate-x-[0.5px] hover:after:bg-[color-mix(in_srgb,var(--accent-primary,#2563eb)_72%,transparent)]"
             role="separator"
             aria-orientation="vertical"
             onMouseDown={handleCommitsSplitResizeStart}
