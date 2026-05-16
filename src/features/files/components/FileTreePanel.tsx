@@ -1869,10 +1869,10 @@ export function FileTreePanel({
     const isPrimarySelection = selectedNodePath === node.path;
     return (
       <div key={node.path}>
-        <div className="file-tree-row-wrap">
+        <div className="file-tree-row-wrap relative flex items-center">
           <button
             type="button"
-            className={`file-tree-row${isFolder ? " is-folder" : " is-file"}${isGitignored ? " is-gitignored" : ""}${isSelected ? " is-selected" : ""}${isPrimarySelection ? " is-primary" : ""}`}
+            className={`file-tree-row flex items-center gap-[5px] py-0.5 px-1.5 rounded-[7px] cursor-default border border-transparent bg-transparent text-[var(--text-emphasis)] text-xs leading-[1.25] text-left w-full${isFolder ? " is-folder font-semibold" : " is-file pl-[22px]"}${isGitignored ? " is-gitignored" : ""}${isSelected ? " is-selected" : ""}${isPrimarySelection ? " is-primary" : ""}`}
             style={{ paddingLeft: `${depth * 10}px` }}
             onClick={(event) => {
               const isToggleSelect = event.metaKey || event.ctrlKey;
@@ -1991,7 +1991,7 @@ export function FileTreePanel({
           >
             {isFolder && canExpand ? (
               <span
-                className={`file-tree-chevron${isExpanded ? " is-open" : ""}`}
+                className={`file-tree-chevron w-[13px] h-[13px] inline-flex items-center justify-center text-[var(--text-faint)] transition-transform duration-[140ms] ease-out${isExpanded ? " is-open rotate-90" : " rotate-0"}`}
                 onClick={(event) => {
                   event.preventDefault();
                   event.stopPropagation();
@@ -2001,16 +2001,16 @@ export function FileTreePanel({
                 ›
               </span>
             ) : (
-              <span className="file-tree-spacer" aria-hidden />
+              <span className="file-tree-spacer w-[13px] h-[13px]" aria-hidden />
             )}
-            <span className="file-tree-icon" aria-hidden>
+            <span className="file-tree-icon inline-flex items-center justify-center w-[15px] h-[15px] shrink-0 [&>svg]:w-[13px] [&>svg]:h-[13px]" aria-hidden>
               <FileIcon filePath={node.name} isFolder={isFolder} isOpen={isExpanded} />
             </span>
-            <span className={`file-tree-name${gitStatusClass}`}>{node.name}</span>
+            <span className={`file-tree-name min-w-0 overflow-hidden text-ellipsis whitespace-nowrap leading-[1.2]${gitStatusClass}`}>{node.name}</span>
           </button>
           <button
             type="button"
-            className={`ghost icon-button file-tree-action${isSelected ? " is-visible" : ""}`}
+            className={`ghost icon-button file-tree-action absolute right-1 top-1/2 -translate-y-1/2 z-[2] p-0.5 border-none bg-transparent shadow-none${isSelected ? " is-visible" : ""}`}
             onMouseDown={(event) => {
               // Keep row click from stealing the pointer sequence on dense list rows.
               event.stopPropagation();
@@ -2042,18 +2042,18 @@ export function FileTreePanel({
         {isLazyFolder && isExpanded && node.children.length === 0 && (
           <div className="file-tree-children">
             {isLazyLoading ? (
-              <div className="file-tree-lazy-state">{t("files.loadingFiles")}</div>
+              <div className="file-tree-lazy-state py-[3px] pr-1.5 pl-[26px] text-[10px] text-[var(--text-faint)]">{t("files.loadingFiles")}</div>
             ) : lazyLoadError ? (
               <button
                 type="button"
-                className="file-tree-lazy-retry"
+                className="file-tree-lazy-retry w-[calc(100%-20px)] ml-5 border border-dashed border-[var(--border-subtle)] rounded-md bg-transparent text-[var(--status-error)] text-[10px] text-left py-[3px] px-1.5 cursor-pointer"
                 onClick={() => void loadLazyDirectoryChildren(node.path)}
                 title={lazyLoadError}
               >
                 {t("files.retryLoadFiles")}
               </button>
             ) : (
-              <div className="file-tree-lazy-state">{t("files.noFilesAvailable")}</div>
+              <div className="file-tree-lazy-state py-[3px] pr-1.5 pl-[26px] text-[10px] text-[var(--text-faint)]">{t("files.noFilesAvailable")}</div>
             )}
           </div>
         )}
@@ -2062,13 +2062,13 @@ export function FileTreePanel({
   };
 
   return (
-    <aside className="diff-panel file-tree-panel" ref={panelRef}>
-      <div className="file-tree-top-zone">
-        <div className="file-tree-root-row">
-          <div className="file-tree-root-wrap">
+    <aside className="diff-panel file-tree-panel gap-0 overflow-hidden" ref={panelRef}>
+      <div className="file-tree-top-zone sticky top-0 z-[8] flex flex-col gap-1.5 pb-1.5 bg-[color-mix(in_srgb,var(--surface-right-panel,transparent)_84%,transparent)] [backdrop-filter:blur(6px)]">
+        <div className="file-tree-root-row flex items-center gap-0.5 min-w-0">
+          <div className="file-tree-root-wrap min-w-0 flex-1 -ml-2.5">
             <button
               type="button"
-              className={`file-tree-row is-folder is-root${selectedNodePaths.has("") ? " is-selected" : ""}${selectedNodePath === "" ? " is-primary" : ""}`}
+              className={`file-tree-row is-folder is-root w-full min-w-0 max-w-none pt-1 pr-2 pb-1 pl-0 border-none rounded-none bg-transparent text-[13px] font-bold gap-0.5 flex items-center cursor-default text-[var(--text-emphasis)] leading-[1.25] text-left${selectedNodePaths.has("") ? " is-selected" : ""}${selectedNodePath === "" ? " is-primary" : ""}`}
               onClick={() => {
                 setSingleSelection("", "root");
                 setRootExpanded((prev) => !prev);
@@ -2084,7 +2084,7 @@ export function FileTreePanel({
               }}
             >
               <span
-                className={`file-tree-chevron file-tree-root-chevron${isRootVisibleExpanded ? " is-open" : ""}`}
+                className={`file-tree-chevron file-tree-root-chevron w-[18px] h-[18px] inline-flex items-center justify-center text-[var(--text-faint)] text-[17px] font-bold ml-0.5 transition-transform duration-[140ms] ease-out${isRootVisibleExpanded ? " is-open rotate-90" : " rotate-0"}`}
                 onClick={(event) => {
                   event.preventDefault();
                   event.stopPropagation();
@@ -2093,10 +2093,10 @@ export function FileTreePanel({
               >
                 ›
               </span>
-              <span className="file-tree-icon file-tree-icon-root-special" aria-hidden>
+              <span className="file-tree-icon file-tree-icon-root-special inline-flex items-center justify-center w-[15px] h-[15px] shrink-0 text-[color-mix(in_srgb,var(--accent-500)_65%,var(--text-strong)_35%)] [&>svg]:w-[13px] [&>svg]:h-[13px]" aria-hidden>
                 <TreePine size={13} />
               </span>
-              <span className="file-tree-name">{workspaceRootLabel}</span>
+              <span className="file-tree-name min-w-0 overflow-hidden text-ellipsis whitespace-nowrap leading-[1.2] text-[var(--text-strong)]">{workspaceRootLabel}</span>
             </button>
           </div>
           <FileTreeRootActions
@@ -2120,19 +2120,19 @@ export function FileTreePanel({
           />
         </div>
       </div>
-      <div className={`file-tree-list${isRootVisibleExpanded && nodes.length > 0 ? " has-root-guide" : ""}`}>
+      <div className={`file-tree-list relative flex flex-col gap-px overflow-y-auto flex-1 pr-px pt-0 min-h-0${isRootVisibleExpanded && nodes.length > 0 ? " has-root-guide" : ""}`}>
         {showLoading ? (
-          <div className="file-tree-loading-row" role="status" aria-live="polite">
-            <LoaderCircle className="file-tree-loading-spinner" size={13} aria-hidden />
+          <div className="file-tree-loading-row inline-flex items-center gap-[7px] min-h-6 mt-0.5 ml-[15px] text-[var(--text-muted)] text-xs leading-none" role="status" aria-live="polite">
+            <LoaderCircle className="file-tree-loading-spinner flex-none text-[var(--text-accent,var(--accent-500))]" size={13} aria-hidden />
             <span>{t("files.loadingFiles")}</span>
           </div>
         ) : !isRootVisibleExpanded ? null : normalizedLoadError && !hasTreeEntries ? (
-          <div className="file-tree-empty" title={normalizedLoadError}>
+          <div className="file-tree-empty text-xs text-[var(--text-faint)]" title={normalizedLoadError}>
             <div>{t("files.loadFilesFailed")}</div>
             {onRefreshFiles ? (
               <button
                 type="button"
-                className="file-tree-lazy-retry"
+                className="file-tree-lazy-retry w-[calc(100%-20px)] ml-5 border border-dashed border-[var(--border-subtle)] rounded-md bg-transparent text-[var(--status-error)] text-[10px] text-left py-[3px] px-1.5 cursor-pointer"
                 onClick={() => void onRefreshFiles()}
                 title={normalizedLoadError}
               >
@@ -2141,7 +2141,7 @@ export function FileTreePanel({
             ) : null}
           </div>
         ) : !hasTreeEntries ? (
-          <div className="file-tree-empty">
+          <div className="file-tree-empty text-xs text-[var(--text-faint)]">
             {t("files.noFilesAvailable")}
           </div>
         ) : (
@@ -2192,17 +2192,17 @@ export function FileTreePanel({
         />
       ) : null}
       {newFileParent !== null && (
-        <div className="new-file-prompt" role="dialog" aria-modal="true">
-          <div className="new-file-prompt-backdrop" onClick={cancelNewFile} />
-          <div className="new-file-prompt-card">
-            <div className="new-file-prompt-title">{t("files.newFile")}</div>
+        <div className="new-file-prompt fixed inset-0 z-50 flex items-center justify-center" role="dialog" aria-modal="true">
+          <div className="new-file-prompt-backdrop absolute inset-0 bg-black/55 [backdrop-filter:blur(6px)]" onClick={cancelNewFile} />
+          <div className="new-file-prompt-card relative w-[min(380px,calc(100vw-48px))] bg-[var(--surface-card-strong)] border border-[var(--border-stronger)] rounded-[14px] p-5 flex flex-col gap-[14px] shadow-[0_24px_48px_rgba(0,0,0,0.4),0_0_0_1px_rgba(255,255,255,0.04)_inset]">
+            <div className="new-file-prompt-title text-[15px] font-semibold text-[var(--text-strong)] tracking-[-0.01em]">{t("files.newFile")}</div>
             {newFileParent && (
-              <div className="new-file-prompt-path">{newFileParent}/</div>
+              <div className="new-file-prompt-path text-xs text-[var(--text-faint)] font-[var(--code-font-family)] overflow-hidden text-ellipsis whitespace-nowrap -mt-1.5">{newFileParent}/</div>
             )}
             <input
               id="new-file-name"
               ref={newFileInputRef}
-              className="new-file-prompt-input"
+              className="new-file-prompt-input w-full rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-card-muted)] text-[var(--text-strong)] py-[9px] px-3 text-[13px] font-[var(--code-font-family)] transition-[border-color,box-shadow] duration-150 ease-out"
               placeholder={t("files.newFileNamePlaceholder")}
               value={newFileName}
               onChange={(e) => setNewFileName(e.target.value)}
@@ -2217,7 +2217,7 @@ export function FileTreePanel({
                 }
               }}
             />
-            <div className="new-file-prompt-actions">
+            <div className="new-file-prompt-actions flex justify-end gap-2 mt-0.5">
               <button type="button" className="ghost" onClick={cancelNewFile}>
                 {t("files.cancel")}
               </button>
@@ -2234,17 +2234,17 @@ export function FileTreePanel({
         </div>
       )}
       {newFolderParent !== null && (
-        <div className="new-file-prompt" role="dialog" aria-modal="true">
-          <div className="new-file-prompt-backdrop" onClick={cancelNewFolder} />
-          <div className="new-file-prompt-card">
-            <div className="new-file-prompt-title">{t("files.newFolder")}</div>
+        <div className="new-file-prompt fixed inset-0 z-50 flex items-center justify-center" role="dialog" aria-modal="true">
+          <div className="new-file-prompt-backdrop absolute inset-0 bg-black/55 [backdrop-filter:blur(6px)]" onClick={cancelNewFolder} />
+          <div className="new-file-prompt-card relative w-[min(380px,calc(100vw-48px))] bg-[var(--surface-card-strong)] border border-[var(--border-stronger)] rounded-[14px] p-5 flex flex-col gap-[14px] shadow-[0_24px_48px_rgba(0,0,0,0.4),0_0_0_1px_rgba(255,255,255,0.04)_inset]">
+            <div className="new-file-prompt-title text-[15px] font-semibold text-[var(--text-strong)] tracking-[-0.01em]">{t("files.newFolder")}</div>
             {newFolderParent && (
-              <div className="new-file-prompt-path">{newFolderParent}/</div>
+              <div className="new-file-prompt-path text-xs text-[var(--text-faint)] font-[var(--code-font-family)] overflow-hidden text-ellipsis whitespace-nowrap -mt-1.5">{newFolderParent}/</div>
             )}
             <input
               id="new-folder-name"
               ref={newFolderInputRef}
-              className="new-file-prompt-input"
+              className="new-file-prompt-input w-full rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-card-muted)] text-[var(--text-strong)] py-[9px] px-3 text-[13px] font-[var(--code-font-family)] transition-[border-color,box-shadow] duration-150 ease-out"
               placeholder={t("files.newFolderNamePlaceholder")}
               value={newFolderName}
               onChange={(e) => setNewFolderName(e.target.value)}
@@ -2259,7 +2259,7 @@ export function FileTreePanel({
                 }
               }}
             />
-            <div className="new-file-prompt-actions">
+            <div className="new-file-prompt-actions flex justify-end gap-2 mt-0.5">
               <button type="button" className="ghost" onClick={cancelNewFolder}>
                 {t("files.cancel")}
               </button>

@@ -56,12 +56,17 @@ export function ComposerQueue({
   }
 
   return (
-    <div className="composer-queue">
-      <div className="composer-queue-title">{t("composer.queue")}</div>
-      <div className="composer-queue-list">
+    <div className="composer-queue flex flex-col gap-[6px] rounded-[10px] border border-[var(--border-muted)] bg-card px-2 py-[6px]">
+      <div className="composer-queue-title text-[10px] uppercase tracking-[0.1em] text-[var(--text-fainter)]">
+        {t("composer.queue")}
+      </div>
+      <div className="composer-queue-list flex flex-col gap-1">
         {queuedMessages.map((item) => (
-          <div key={item.id} className="composer-queue-item">
-            <span className="composer-queue-text">
+          <div
+            key={item.id}
+            className="composer-queue-item flex items-center gap-2 rounded-lg bg-[var(--surface-item)] px-[6px] py-1 text-[11px] text-[var(--text-quiet)]"
+          >
+            <span className="composer-queue-text flex-1 overflow-hidden text-ellipsis whitespace-nowrap">
               {item.text ||
                 (item.images?.length
                   ? item.images.length === 1
@@ -73,7 +78,7 @@ export function ComposerQueue({
                 : ""}
             </span>
             <button
-              className="composer-queue-menu"
+              className="composer-queue-menu cursor-pointer border-none bg-transparent px-1 py-0.5 text-[11px] text-[var(--text-faint)] hover:text-[var(--text-stronger)]"
               onClick={(event) => handleQueueMenu(event, item)}
               aria-label="Queue item menu"
             >

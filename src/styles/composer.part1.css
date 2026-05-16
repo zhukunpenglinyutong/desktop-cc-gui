@@ -1,21 +1,7 @@
-.composer {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 8px;
-  -webkit-app-region: no-drag;
-  padding: 12px var(--main-panel-padding) 24px;
-  border-top: none;
-  background: var(--surface-messages);
-  grid-column: 1;
-  grid-row: 3;
-}
-
-.composer > * {
-  max-width: 750px;
-  width: 100%;
-}
-
+/* `.composer` base + `.composer > *` are inlined to Composer.tsx footer (Phase 4.5d).
+   The `.app.canvas-width-wide` cascade is kept here as a small keeper because the
+   ancestor class lives on the `<div class="app">` root — easier to keep the
+   descendant override than to wire it through Tailwind arbitrary variants. */
 .app.canvas-width-wide .composer > * {
   max-width: none;
 }
@@ -23,60 +9,6 @@
 .app.canvas-width-wide .composer {
   padding-left: 50px;
   padding-right: 25px;
-}
-
-.composer-queue {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 6px 8px;
-  border-radius: 10px;
-  background: var(--surface-card);
-  border: 1px solid var(--border-muted);
-}
-
-.composer-queue-title {
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
-  color: var(--text-fainter);
-}
-
-.composer-queue-list {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.composer-queue-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 4px 6px;
-  border-radius: 8px;
-  background: var(--surface-item);
-  color: var(--text-quiet);
-  font-size: 11px;
-}
-
-.composer-queue-text {
-  flex: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.composer-queue-menu {
-  border: none;
-  background: transparent;
-  color: var(--text-faint);
-  font-size: 11px;
-  padding: 2px 4px;
-  cursor: pointer;
-}
-
-.composer-queue-menu:hover {
-  color: var(--text-stronger);
 }
 
 .composer-input {
@@ -139,116 +71,6 @@
   display: flex;
   flex-direction: column;
   gap: 8px;
-}
-
-/* Deleted .composer-kanban-toolbar */
-
-/* Deleted .composer-kanban-strip styles */
-
-.composer-kanban-strip-main span:last-child {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.composer-kanban-strip-main:hover,
-.composer-kanban-strip-link:hover {
-  color: var(--text-strong);
-}
-
-.composer-kanban-strip-item.is-active .composer-kanban-strip-main svg,
-.composer-kanban-strip-item.is-active .composer-kanban-strip-link svg {
-  color: #22c55e;
-  opacity: 0.96;
-  filter: drop-shadow(0 0 2px rgba(34, 197, 94, 0.28));
-}
-
-.composer-kanban-strip-clear {
-  border: 1px dashed var(--border-muted);
-  border-radius: 999px;
-  background: transparent;
-  color: var(--text-faint);
-  font-size: 12px;
-  padding: 2px 7px;
-  cursor: pointer;
-  flex-shrink: 0;
-}
-
-.composer-kanban-strip-clear:hover {
-  color: var(--text-muted);
-  border-color: var(--border-strong);
-}
-
-.composer-kanban-strip-empty {
-  color: var(--text-faint);
-  font-size: 12px;
-}
-
-.composer-kanban-context-mode {
-  margin-left: auto;
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 2px;
-  border: 1px solid color-mix(in srgb, var(--border-subtle) 80%, transparent);
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--surface-item) 70%, transparent);
-}
-
-.composer-kanban-context-mode-label {
-  color: var(--text-faint);
-  font-size: 12px;
-}
-
-.composer-kanban-context-mode-btn {
-  border: 1px solid transparent;
-  border-radius: 999px;
-  background: transparent;
-  color: color-mix(in srgb, var(--text-muted) 88%, var(--text-faint));
-  font-size: 12px;
-  font-weight: 600;
-  padding: 3px 10px;
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  transition:
-    border-color 0.15s ease,
-    background-color 0.15s ease,
-    color 0.15s ease,
-    box-shadow 0.15s ease;
-}
-
-.composer-kanban-context-mode-btn:hover {
-  color: var(--text-strong);
-  border-color: color-mix(in srgb, var(--border-strong) 78%, transparent);
-  background: color-mix(in srgb, var(--surface-card) 72%, transparent);
-}
-
-.composer-kanban-context-mode-btn.is-active {
-  color: color-mix(in srgb, var(--text-strong) 90%, #ffffff);
-  border-color: color-mix(
-    in srgb,
-    var(--accent-strong) 72%,
-    var(--border-subtle)
-  );
-  background: color-mix(in srgb, var(--surface-card) 84%, var(--accent-soft));
-  box-shadow: inset 0 0 0 1px
-    color-mix(in srgb, var(--accent-soft) 34%, transparent);
-}
-
-.composer-kanban-context-mode-check {
-  width: 14px;
-  height: 14px;
-  border-radius: 999px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  color: #166534;
-  background: #bbf7d0;
-  border: 1px solid #86efac;
-  flex-shrink: 0;
 }
 
 .composer-textarea-wrapper {
@@ -655,35 +477,6 @@
   }
 }
 
-.composer-select-picker-trigger {
-  border: 0;
-  background: transparent;
-  color: var(--text-muted);
-  font-size: 12px;
-  padding: 0 2px;
-}
-
-.composer-select-wrap.is-opencode-model-picker {
-  cursor: pointer;
-  flex: 0 1 220px;
-  max-width: 220px;
-  min-width: 120px;
-}
-
-.composer-select-wrap.is-opencode-model-picker:focus-visible {
-  outline: 2px solid
-    color-mix(in srgb, var(--interactive-primary) 55%, transparent);
-  outline-offset: 1px;
-}
-
-.composer-select-wrap.is-opencode-model-picker .composer-select-value {
-  max-width: 150px;
-}
-
-.composer-select-wrap.is-opencode-model-picker .composer-opencode-model-badges {
-  display: none;
-}
-
 .composer-opencode-model-indicator {
   cursor: default;
   color: #1d4ed8;
@@ -743,110 +536,10 @@
   background: #ef4444;
 }
 
-.composer-picker-backdrop {
-  position: fixed;
-  inset: 0;
-  background: rgba(15, 23, 42, 0.22);
-  z-index: 80;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.composer-picker-modal {
-  width: min(680px, calc(100vw - 24px));
-  max-height: min(76vh, 780px);
-  border: 1px solid var(--border-subtle);
-  border-radius: 12px;
-  background: var(--surface-panel, var(--surface-card));
-  box-shadow: 0 20px 60px rgba(15, 23, 42, 0.3);
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 10px;
-}
-
-.composer-picker-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  font-size: 13px;
-}
-
-.composer-picker-close {
-  border: 0;
-  background: transparent;
-  color: var(--text-muted);
-  font-size: 12px;
-  cursor: pointer;
-}
-
-.composer-picker-search {
-  width: 100%;
-  border: 1px solid var(--border-subtle);
-  border-radius: 8px;
-  padding: 6px 8px;
-  font-size: 12px;
-  background: var(--surface-input, var(--surface-card));
-  color: var(--text-strong);
-}
-
-.composer-picker-list {
-  border: 1px solid var(--border-subtle);
-  border-radius: 10px;
-  max-height: 46vh;
-  overflow: auto;
-  padding: 8px;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.composer-picker-item {
-  border: 0;
-  background: transparent;
-  border-radius: 8px;
-  text-align: left;
-  padding: 6px 8px;
-  cursor: pointer;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  color: var(--text-strong);
-}
-
-.composer-picker-item:hover {
-  background: color-mix(in srgb, var(--surface-control-hover) 80%, transparent);
-}
-
-.composer-picker-item.is-selected {
-  background: #2563eb;
-  color: #fff;
-}
-
-.composer-picker-item-meta {
-  font-size: 11px;
-  opacity: 0.8;
-}
-
-.composer-picker-empty {
-  font-size: 12px;
-  color: var(--text-muted);
-  padding: 10px 8px;
-}
-
 .composer-select-wrap:hover {
   background: color-mix(in srgb, var(--surface-item) 92%, transparent);
   border-color: color-mix(in srgb, var(--border-subtle) 76%, transparent);
   color: var(--text-strong);
-}
-
-.composer-select-wrap--settings-link {
-  border: 1px dashed color-mix(in srgb, var(--border-subtle) 80%, transparent);
-}
-
-.composer-select-wrap--settings-link:hover {
-  border-color: color-mix(in srgb, var(--text-subtle) 46%, transparent);
 }
 
 .composer-select {
@@ -862,37 +555,6 @@
 
 .composer-select:disabled {
   cursor: default;
-}
-
-.composer-link-button {
-  border: 0;
-  background: transparent;
-  color: var(--text-subtle);
-  font-size: 11px;
-  padding: 0;
-  cursor: pointer;
-  text-decoration: underline;
-}
-
-.composer-link-button:hover {
-  color: var(--text-strong);
-}
-
-.composer-collaboration-hint {
-  display: inline-flex;
-  align-items: center;
-  min-width: 0;
-  max-width: min(42vw, 360px);
-  padding: 1px 8px;
-  border-radius: 999px;
-  border: 1px solid color-mix(in srgb, var(--border-subtle) 80%, transparent);
-  background: color-mix(in srgb, var(--surface-item) 74%, transparent);
-  color: var(--text-subtle);
-  font-size: 11px;
-  line-height: 1.35;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
 .composer-icon {
@@ -911,151 +573,6 @@
   overflow: hidden;
   text-overflow: ellipsis;
   max-width: 220px;
-}
-
-.composer-select-value--settings-link {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  color: var(--text-subtle);
-  text-decoration: underline;
-  text-decoration-style: dashed;
-  text-underline-offset: 2px;
-}
-
-.composer-settings-link-icon {
-  flex: 0 0 auto;
-}
-
-.composer-opencode-model-badges {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  margin-left: 8px;
-}
-
-.composer-opencode-model-badge {
-  display: inline-block;
-  border-radius: 999px;
-  padding: 0 6px;
-  line-height: 1.5;
-  font-size: 10px;
-  border: 1px solid transparent;
-}
-
-.composer-opencode-model-badge--good {
-  background: #dcfce7;
-  border-color: #86efac;
-  color: #166534;
-}
-
-.composer-opencode-model-badge--warn {
-  background: #fff7ed;
-  border-color: #fdba74;
-  color: #9a3412;
-}
-
-.composer-opencode-model-badge--neutral {
-  background: #eff6ff;
-  border-color: #bfdbfe;
-  color: #1d4ed8;
-}
-
-.composer-attachments {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-bottom: 6px;
-}
-
-.composer-attachment {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 2px 8px;
-  border-radius: 999px;
-  background: var(--surface-card);
-  border: 1px solid var(--border-muted);
-  color: var(--text-muted);
-  font-size: 11px;
-  max-width: 100%;
-  position: relative;
-}
-
-.composer-attachment:hover .composer-attachment-preview,
-.composer-attachment:focus-within .composer-attachment-preview {
-  opacity: 1;
-  transform: translate(-50%, -6px) scale(1);
-  pointer-events: auto;
-}
-
-.composer-attachment-preview {
-  position: absolute;
-  left: 50%;
-  bottom: calc(100% + 8px);
-  width: 240px;
-  height: 180px;
-  border-radius: 12px;
-  overflow: hidden;
-  border: 1px solid var(--border-subtle);
-  background: var(--surface-quiet);
-  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.24);
-  opacity: 0;
-  transform: translate(-50%, -2px) scale(0.98);
-  transition:
-    opacity 0.15s ease,
-    transform 0.15s ease;
-  pointer-events: none;
-  z-index: 20;
-}
-
-.composer-attachment-preview img {
-  display: block;
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
-}
-
-.composer-attachment-thumb {
-  width: 20px;
-  height: 20px;
-  border-radius: 6px;
-  overflow: hidden;
-  border: 1px solid var(--border-subtle);
-  background: var(--surface-item);
-  flex: 0 0 auto;
-}
-
-.composer-attachment-thumb img {
-  display: block;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.composer-attachment-name {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  max-width: 180px;
-}
-
-.composer-attachment-remove {
-  border: none;
-  background: transparent;
-  color: var(--text-faint);
-  padding: 0;
-  cursor: pointer;
-  display: inline-flex;
-}
-
-.composer-attachment-remove:hover {
-  color: var(--text-stronger);
-}
-
-.composer-attachment-remove:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
 }
 
 .composer-mode-badge {
@@ -1460,15 +977,7 @@
   animation: composer-action-spin 0.8s linear infinite;
 }
 
-.composer.is-disabled {
-  opacity: 0.7;
-}
-
-.composer textarea:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-  color: var(--text-fainter);
-}
+/* `.composer.is-disabled` opacity + `.composer textarea:disabled` styles are inlined to Composer.tsx (Phase 4.5d). */
 
 .composer-action:disabled {
   opacity: 0.5;

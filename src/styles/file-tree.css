@@ -1,66 +1,32 @@
-.file-tree-panel {
-  gap: 0;
-  overflow: hidden;
-}
+/*
+ * file-tree.css — keeper (Phase 9.1)
+ *
+ * Reduced from 1247 → ~470 lines via Phase 9.1 file-tree coss-ization.
+ * Layout/sizing/positioning/color rules migrated to inline Tailwind utilities in:
+ *   - src/features/files/components/FileTreePanel.tsx
+ *   - src/features/files/components/FileTreeRootActions.tsx
+ *
+ * What remains here:
+ *   1. Parent-state cascade (hover / focus-within) on actions (visibility gating)
+ *   2. Draggable cursor cascade on `.file-tree-row[draggable]`
+ *   3. Root cascade `:root.file-tree-dragging *` + `.app.windows-desktop` + `.app.reduced-transparency`
+ *   4. Theme-aware git-status color cascade (`.file-tree-name.git-X` + `:root[data-theme="light"]` override)
+ *   5. Cross-component `.workspace-search-*` cluster (consumed by `WorkspaceSearchPanel.tsx`,
+ *      deferred to Phase 9.1b follow-up)
+ *   6. Cross-component `.file-preview-*` cluster (consumed by `FilePreviewPopover.tsx`,
+ *      deferred to Phase 9.1c follow-up) + prism token cascade
+ *   7. Reserved `.file-tree-search*` + `.file-tree-search-result-*` namespace
+ *      (currently un-rendered in FileTreePanel.tsx; keeper to prevent regression)
+ *   8. Keyframes (file-tree-root-action-spin / file-tree-loading-spin / new-file-prompt-enter)
+ *      + `@media (prefers-reduced-motion)` overrides
+ *
+ * Cross-file dependencies (DO NOT MODIFY without coordination):
+ *   - src/styles/detached-file-explorer.css line 21:
+ *     `.detached-file-explorer-window .file-tree-action { display: none; }`
+ *     depends on `.file-tree-action` className being preserved on FileTreePanel's mention button.
+ */
 
-.file-tree-top-zone {
-  position: sticky;
-  top: 0;
-  z-index: 8;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding-bottom: 6px;
-  background: color-mix(in srgb, var(--surface-right-panel, transparent) 84%, transparent);
-  backdrop-filter: blur(6px);
-}
-
-.app.reduced-transparency .file-tree-top-zone {
-  backdrop-filter: none;
-  background: transparent;
-}
-
-.file-tree-tool-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  min-height: 28px;
-  min-width: 0;
-  padding-bottom: 2px;
-  border-bottom: 1px solid var(--border-subtle);
-}
-
-.file-tree-tabs-wrap {
-  display: inline-flex;
-  align-items: center;
-  flex: 0 0 auto;
-}
-
-.file-tree-root-row {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  min-width: 0;
-}
-
-.file-tree-root-wrap {
-  min-width: 0;
-  flex: 1 1 auto;
-  margin-left: -10px;
-}
-
-.file-tree-root-actions {
-  display: inline-flex;
-  align-items: center;
-  gap: 2px;
-  flex: 0 0 auto;
-  opacity: 0;
-  transform: translateY(-1px);
-  pointer-events: none;
-  transition:
-    opacity 140ms ease,
-    transform 140ms ease;
-}
+/* ── 1. Parent-state cascade: root-actions visibility ─────────────────── */
 
 .file-tree-panel:hover .file-tree-root-actions,
 .file-tree-panel:focus-within .file-tree-root-actions {
@@ -69,24 +35,42 @@
   pointer-events: auto;
 }
 
-.file-tree-root-action {
-  width: 24px;
-  height: 24px;
-  padding: 0;
-  border: none;
+/* Row-wrap parent-state cascade: file-tree-action visibility */
+
+.file-tree-action {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.file-tree-row-wrap:hover .file-tree-action,
+.file-tree-row-wrap:focus-within .file-tree-action,
+.file-tree-action.is-visible,
+.file-tree-action:hover,
+.file-tree-action:focus-visible {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+}
+
+.file-tree-action:hover:not(:disabled) {
+  transform: translateY(-50%);
   box-shadow: none;
-  background: transparent;
 }
 
-.file-tree-root-action.is-spinning svg {
-  animation: file-tree-root-action-spin 420ms ease-in-out 1;
+/* Row-wrap parent-state cascade: row hover */
+
+.file-tree-row:hover,
+.file-tree-row-wrap:hover .file-tree-row {
+  background: var(--surface-hover);
+  border-color: var(--border-subtle);
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .file-tree-root-action.is-spinning svg {
-    animation: none;
-  }
+.file-tree-row.is-selected {
+  background: var(--surface-hover);
 }
+
+/* Root-action interactive states */
 
 .file-tree-root-action:hover:not(:disabled),
 .file-tree-root-action:focus-visible {
@@ -99,6 +83,21 @@
   color: var(--text-accent, var(--accent-500));
 }
 
+.file-tree-root-action-danger:hover:not(:disabled),
+.file-tree-root-action-danger:focus-visible {
+  color: var(--text-danger-hover, #ef4444);
+}
+
+.file-tree-root-action.is-spinning svg {
+  animation: file-tree-root-action-spin 420ms ease-in-out 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .file-tree-root-action.is-spinning svg {
+    animation: none;
+  }
+}
+
 @keyframes file-tree-root-action-spin {
   from {
     transform: rotate(0deg);
@@ -108,13 +107,35 @@
   }
 }
 
-.file-tree-root-action-danger {
-  color: var(--text-danger, #f87171);
+/* ── 2. Draggable cursor cascade ──────────────────────────────────────── */
+
+.file-tree-row[draggable="true"] {
+  cursor: default;
 }
 
-.file-tree-root-action-danger:hover:not(:disabled),
-.file-tree-root-action-danger:focus-visible {
-  color: var(--text-danger-hover, #ef4444);
+.file-tree-row[draggable="true"]:active {
+  cursor: default;
+}
+
+.app.windows-desktop .file-tree-row[draggable="true"] {
+  cursor: grab;
+}
+
+.app.windows-desktop .file-tree-row[draggable="true"]:active {
+  cursor: grabbing;
+}
+
+/* ── 3. Root cascade: dragging + reduced-transparency ─────────────────── */
+
+:root.file-tree-dragging,
+:root.file-tree-dragging * {
+  cursor: -webkit-grabbing !important;
+  cursor: grabbing !important;
+}
+
+.app.reduced-transparency .file-tree-top-zone {
+  backdrop-filter: none;
+  background: transparent;
 }
 
 .app.reduced-transparency .file-tree-panel {
@@ -122,153 +143,11 @@
   border-left: none;
 }
 
-.file-tree-count {
-  font-size: 11px;
-  color: var(--text-faint);
+.app.reduced-transparency .new-file-prompt-backdrop {
+  backdrop-filter: none;
 }
 
-.file-tree-meta {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex: 0 0 auto;
-  margin-left: auto;
-  min-width: fit-content;
-}
-
-.file-tree-toggle {
-  padding: 4px;
-}
-
-.file-tree-toggle svg {
-  width: 14px;
-  height: 14px;
-}
-
-.file-tree-search {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 8px;
-  border-radius: 0;
-  background: transparent;
-  border: none;
-  color: var(--text-faint);
-}
-
-.file-tree-search-inline {
-  flex: 1 1 180px;
-  min-width: 140px;
-}
-
-.file-tree-search:focus-within {
-  color: var(--text-emphasis);
-}
-
-.file-tree-search-icon {
-  width: 14px;
-  height: 14px;
-}
-
-.file-tree-search-input {
-  flex: 1 1 auto;
-  min-width: 0;
-  border: none;
-  background: transparent;
-  color: inherit;
-  font-size: 12px;
-  outline: none;
-}
-
-.file-tree-search-option {
-  flex: 0 0 auto;
-  min-width: 24px;
-  height: 24px;
-  padding: 0 6px;
-  border-radius: 6px;
-  border: 1px solid transparent;
-  color: var(--text-faint);
-  font-size: 11px;
-}
-
-.file-tree-search-option:hover,
-.file-tree-search-option:focus-visible,
-.file-tree-search-option.is-active {
-  color: var(--text-emphasis);
-  border-color: var(--border-subtle);
-  background: var(--surface-hover);
-}
-
-.file-tree-search-details {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: 8px;
-}
-
-.file-tree-search-details-input {
-  min-width: 0;
-  height: 30px;
-  border-radius: 8px;
-  border: 1px solid var(--border-subtle);
-  background: color-mix(in srgb, var(--surface-secondary) 86%, transparent);
-  color: var(--text-emphasis);
-  font-size: 12px;
-  padding: 0 10px;
-  outline: none;
-}
-
-.file-tree-search-details-input:focus {
-  border-color: var(--accent-500);
-}
-
-.file-tree-search-run {
-  flex: 0 0 auto;
-  margin-left: auto;
-  padding: 4px;
-  border-radius: 8px;
-  border-color: color-mix(in srgb, var(--accent-500) 70%, var(--border-subtle) 30%);
-  color: var(--text-faint);
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent-500) 28%, transparent 72%);
-}
-
-.file-tree-search-run:hover:not(:disabled),
-.file-tree-search-run:focus-visible:not(:disabled) {
-  border-color: var(--accent-500);
-  color: var(--text-emphasis);
-  box-shadow:
-    0 0 0 1px color-mix(in srgb, var(--accent-500) 45%, transparent 55%),
-    0 0 10px color-mix(in srgb, var(--accent-500) 22%, transparent 78%);
-}
-
-.file-tree-search-run.is-active {
-  border-color: var(--accent-500);
-  color: var(--text-emphasis);
-  box-shadow:
-    0 0 0 1px color-mix(in srgb, var(--accent-500) 45%, transparent 55%),
-    0 0 12px color-mix(in srgb, var(--accent-500) 25%, transparent 75%);
-}
-
-.file-tree-search-run:disabled {
-  opacity: 0.5;
-  border-color: var(--border-subtle);
-  box-shadow: none;
-}
-
-.file-tree-search-input::placeholder {
-  color: var(--text-faint);
-}
-
-.file-tree-list {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-  overflow-y: auto;
-  flex: 1;
-  padding-right: 1px;
-  padding-top: 0;
-  min-height: 0;
-}
+/* List `has-root-guide` pseudo-element */
 
 .file-tree-list.has-root-guide::before {
   content: "";
@@ -281,103 +160,100 @@
   pointer-events: none;
 }
 
-.file-tree-empty {
-  font-size: 12px;
-  color: var(--text-faint);
+/* Row gitignored inherited italic */
+
+.file-tree-row.is-gitignored {
+  opacity: 0.5;
 }
 
-.file-tree-search-summary,
-.file-tree-search-limit {
-  font-size: 12px;
-  color: var(--text-faint);
-  padding: 2px 2px 6px;
+.file-tree-row.is-gitignored .file-tree-name {
+  font-style: italic;
 }
 
-.file-tree-search-limit {
-  color: var(--text-warning, #fbbf24);
-  padding-top: 0;
-}
+/* file-tree-toggle.is-active */
 
-.file-tree-search-result-group {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.file-tree-search-result-file,
-.file-tree-search-result-match {
-  width: 100%;
-  border: 1px solid transparent;
-  background: transparent;
+.file-tree-toggle.is-active {
   color: var(--text-emphasis);
-  text-align: left;
+  background: var(--surface-active);
+  border-color: var(--border-accent);
 }
 
-.file-tree-search-result-file {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 4px 6px;
-  border-radius: 8px;
+/* Loading spinner animation */
+
+.file-tree-loading-spinner {
+  animation: file-tree-loading-spin 0.85s linear infinite;
 }
 
-.file-tree-search-result-file:hover,
-.file-tree-search-result-file:focus-visible,
-.file-tree-search-result-match:hover,
-.file-tree-search-result-match:focus-visible {
-  background: var(--surface-hover);
-  border-color: var(--border-subtle);
+@keyframes file-tree-loading-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
-.file-tree-search-result-path {
-  flex: 1 1 auto;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 12px;
+@media (prefers-reduced-motion: reduce) {
+  .file-tree-loading-spinner {
+    animation: none;
+  }
 }
 
-.file-tree-search-result-count {
-  flex: 0 0 auto;
-  min-width: 22px;
-  padding: 1px 6px;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--surface-hover) 75%, transparent);
-  color: var(--text-faint);
-  font-size: 11px;
-  text-align: center;
+/* ── 4. Git status color cascade (theme-aware) ────────────────────────── */
+
+.file-tree-name.git-a,
+.file-tree-name.git-m,
+.file-tree-name.git-d,
+.file-tree-name.git-r,
+.file-tree-name.git-t {
+  font-weight: 800 !important;
+  font-variation-settings: "wght" 800;
+  text-shadow: 0.25px 0 currentColor;
 }
 
-.file-tree-search-result-matches {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding-left: 18px;
+.file-tree-name.git-a {
+  color: #89d185;
 }
 
-.file-tree-search-result-match {
-  display: grid;
-  grid-template-columns: 56px minmax(0, 1fr);
-  gap: 8px;
-  align-items: start;
-  padding: 4px 6px;
-  border-radius: 8px;
+.file-tree-name.git-m {
+  color: #6bb3f0;
 }
 
-.file-tree-search-result-location {
-  color: var(--text-faint);
-  font-size: 11px;
+.file-tree-name.git-d {
+  color: #ff6b6b;
+  text-decoration: line-through;
 }
 
-.file-tree-search-result-preview {
-  min-width: 0;
-  font-size: 12px;
-  color: var(--text-emphasis);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+.file-tree-name.git-r {
+  color: #c9a3f5;
 }
+
+.file-tree-name.git-t {
+  color: #f5c363;
+}
+
+:root[data-theme="light"] .file-tree-name.git-a {
+  color: var(--status-success);
+}
+
+:root[data-theme="light"] .file-tree-name.git-m {
+  color: #2a7ab5;
+}
+
+:root[data-theme="light"] .file-tree-name.git-d {
+  color: var(--status-error);
+  text-decoration: line-through;
+}
+
+:root[data-theme="light"] .file-tree-name.git-r {
+  color: #8b5fcf;
+}
+
+:root[data-theme="light"] .file-tree-name.git-t {
+  color: var(--status-warning);
+}
+
+/* ── 5. Cross-component: workspace-search cluster (WorkspaceSearchPanel.tsx) ── */
 
 .workspace-search-panel {
   display: flex;
@@ -572,224 +448,7 @@
   text-overflow: ellipsis;
 }
 
-.file-tree-loading-row {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  min-height: 24px;
-  margin: 2px 0 0 15px;
-  color: var(--text-muted);
-  font-size: 12px;
-  line-height: 1;
-}
-
-.file-tree-loading-spinner {
-  flex: 0 0 auto;
-  color: var(--text-accent, var(--accent-500));
-  animation: file-tree-loading-spin 0.85s linear infinite;
-}
-
-@keyframes file-tree-loading-spin {
-  from {
-    transform: rotate(0deg);
-  }
-
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .file-tree-loading-spinner {
-    animation: none;
-  }
-}
-
-.file-tree-row {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  padding: 2px 6px;
-  border-radius: 7px;
-  cursor: default;
-  border: 1px solid transparent;
-  background: transparent;
-  color: var(--text-emphasis);
-  font-size: 12px;
-  line-height: 1.25;
-  text-align: left;
-  width: 100%;
-}
-
-.file-tree-row[draggable="true"] {
-  cursor: default;
-}
-
-.file-tree-row[draggable="true"]:active {
-  cursor: default;
-}
-
-.app.windows-desktop .file-tree-row[draggable="true"] {
-  cursor: grab;
-}
-
-.app.windows-desktop .file-tree-row[draggable="true"]:active {
-  cursor: grabbing;
-}
-
-:root.file-tree-dragging,
-:root.file-tree-dragging * {
-  cursor: -webkit-grabbing !important;
-  cursor: grabbing !important;
-}
-
-.file-tree-row-wrap {
-  position: relative;
-  display: flex;
-  align-items: center;
-}
-
-.file-tree-row.is-file {
-  padding-left: 22px;
-}
-
-.file-tree-row:hover,
-.file-tree-row-wrap:hover .file-tree-row {
-  background: var(--surface-hover);
-  border-color: var(--border-subtle);
-}
-
-.file-tree-row.is-selected {
-  background: var(--surface-hover);
-}
-
-.file-tree-row.is-folder {
-  font-weight: 600;
-}
-
-.file-tree-row.is-root {
-  width: 100%;
-  min-width: 0;
-  max-width: none;
-  padding: 4px 8px 4px 0;
-  border: none;
-  border-radius: 0;
-  background: transparent;
-  font-size: 13px;
-  font-weight: 700;
-  gap: 2px;
-}
-
-.file-tree-row.is-root .file-tree-name {
-  color: var(--text-strong);
-}
-
-.file-tree-icon-root-special {
-  color: color-mix(in srgb, var(--accent-500) 65%, var(--text-strong) 35%);
-}
-
-.file-tree-chevron {
-  width: 13px;
-  height: 13px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--text-faint);
-  transform: rotate(0deg);
-  transition: transform 140ms ease;
-}
-
-.file-tree-root-chevron {
-  width: 18px;
-  height: 18px;
-  font-size: 17px;
-  font-weight: 700;
-  margin-left: 2px;
-}
-
-.file-tree-chevron.is-open {
-  transform: rotate(90deg);
-}
-
-.file-tree-spacer {
-  width: 13px;
-  height: 13px;
-}
-
-.file-tree-icon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 15px;
-  height: 15px;
-  flex-shrink: 0;
-}
-
-.file-tree-icon svg {
-  width: 13px;
-  height: 13px;
-}
-
-.file-tree-name {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  line-height: 1.2;
-}
-
-.file-tree-action {
-  position: absolute;
-  right: 4px;
-  top: 50%;
-  transform: translateY(-50%);
-  opacity: 0;
-  visibility: hidden;
-  pointer-events: none;
-  z-index: 2;
-  padding: 2px;
-  border: none;
-  background: transparent;
-  box-shadow: none;
-}
-
-.file-tree-action:hover:not(:disabled) {
-  transform: translateY(-50%);
-  box-shadow: none;
-}
-
-.file-tree-row-wrap:hover .file-tree-action,
-.file-tree-row-wrap:focus-within .file-tree-action,
-.file-tree-action.is-visible,
-.file-tree-action:hover,
-.file-tree-action:focus-visible {
-  opacity: 1;
-  visibility: visible;
-  pointer-events: auto;
-}
-
-.file-tree-lazy-state {
-  padding: 3px 6px 3px 26px;
-  font-size: 10px;
-  color: var(--text-faint);
-}
-
-.file-tree-lazy-retry {
-  width: calc(100% - 20px);
-  margin-left: 20px;
-  border: 1px dashed var(--border-subtle);
-  border-radius: 6px;
-  background: transparent;
-  color: var(--status-error);
-  font-size: 10px;
-  text-align: left;
-  padding: 3px 6px;
-  cursor: pointer;
-}
-
-.file-tree-lazy-retry:hover {
-  background: var(--surface-hover);
-}
+/* ── 6. Cross-component: file-preview cluster (FilePreviewPopover.tsx) ── */
 
 .file-preview-popover {
   border-radius: 12px;
@@ -1026,6 +685,8 @@
   word-break: break-word;
 }
 
+/* Prism token color cascade — DOM is injected by Prism via dangerouslySetInnerHTML */
+
 .file-preview-line-text .token.comment,
 .file-preview-line-text .token.prolog,
 .file-preview-line-text .token.doctype,
@@ -1077,108 +738,217 @@
   color: #d2a8ff;
 }
 
-/* Git status colors in file tree */
-.file-tree-name.git-a,
-.file-tree-name.git-m,
-.file-tree-name.git-d,
-.file-tree-name.git-r,
-.file-tree-name.git-t {
-  font-weight: 800 !important;
-  font-variation-settings: "wght" 800;
-  text-shadow: 0.25px 0 currentColor;
-}
+/* ── 7. Reserved file-tree-search* namespace (currently un-rendered) ─── */
 
-.file-tree-name.git-a {
-  color: #89d185;
-}
-
-.file-tree-name.git-m {
-  color: #6bb3f0;
-}
-
-.file-tree-name.git-d {
-  color: #ff6b6b;
-  text-decoration: line-through;
-}
-
-.file-tree-name.git-r {
-  color: #c9a3f5;
-}
-
-.file-tree-name.git-t {
-  color: #f5c363;
-}
-
-:root[data-theme="light"] .file-tree-name.git-a {
-  color: var(--status-success);
-}
-
-:root[data-theme="light"] .file-tree-name.git-m {
-  color: #2a7ab5;
-}
-
-:root[data-theme="light"] .file-tree-name.git-d {
-  color: var(--status-error);
-  text-decoration: line-through;
-}
-
-:root[data-theme="light"] .file-tree-name.git-r {
-  color: #8b5fcf;
-}
-
-:root[data-theme="light"] .file-tree-name.git-t {
-  color: var(--status-warning);
-}
-
-/* Gitignored files */
-.file-tree-row.is-gitignored {
-  opacity: 0.5;
-}
-
-.file-tree-row.is-gitignored .file-tree-name {
-  font-style: italic;
-}
-
-.file-tree-toggle.is-active {
-  color: var(--text-emphasis);
-  background: var(--surface-active);
-  border-color: var(--border-accent);
-}
-
-/* ── New file prompt modal ── */
-
-.new-file-prompt {
-  position: fixed;
-  inset: 0;
-  z-index: 50;
+.file-tree-search {
   display: flex;
   align-items: center;
-  justify-content: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 0;
+  background: transparent;
+  border: none;
+  color: var(--text-faint);
 }
 
-.new-file-prompt-backdrop {
-  position: absolute;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.55);
-  backdrop-filter: blur(6px);
+.file-tree-search-inline {
+  flex: 1 1 180px;
+  min-width: 140px;
 }
 
-.app.reduced-transparency .new-file-prompt-backdrop {
-  backdrop-filter: none;
+.file-tree-search:focus-within {
+  color: var(--text-emphasis);
 }
 
-.new-file-prompt-card {
-  position: relative;
-  width: min(380px, calc(100vw - 48px));
-  background: var(--surface-card-strong);
-  border: 1px solid var(--border-stronger);
-  border-radius: 14px;
-  padding: 20px;
+.file-tree-search-icon {
+  width: 14px;
+  height: 14px;
+}
+
+.file-tree-search-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font-size: 12px;
+  outline: none;
+}
+
+.file-tree-search-input::placeholder {
+  color: var(--text-faint);
+}
+
+.file-tree-search-option {
+  flex: 0 0 auto;
+  min-width: 24px;
+  height: 24px;
+  padding: 0 6px;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  color: var(--text-faint);
+  font-size: 11px;
+}
+
+.file-tree-search-option:hover,
+.file-tree-search-option:focus-visible,
+.file-tree-search-option.is-active {
+  color: var(--text-emphasis);
+  border-color: var(--border-subtle);
+  background: var(--surface-hover);
+}
+
+.file-tree-search-details {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 8px;
+}
+
+.file-tree-search-details-input {
+  min-width: 0;
+  height: 30px;
+  border-radius: 8px;
+  border: 1px solid var(--border-subtle);
+  background: color-mix(in srgb, var(--surface-secondary) 86%, transparent);
+  color: var(--text-emphasis);
+  font-size: 12px;
+  padding: 0 10px;
+  outline: none;
+}
+
+.file-tree-search-details-input:focus {
+  border-color: var(--accent-500);
+}
+
+.file-tree-search-run {
+  flex: 0 0 auto;
+  margin-left: auto;
+  padding: 4px;
+  border-radius: 8px;
+  border-color: color-mix(in srgb, var(--accent-500) 70%, var(--border-subtle) 30%);
+  color: var(--text-faint);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent-500) 28%, transparent 72%);
+}
+
+.file-tree-search-run:hover:not(:disabled),
+.file-tree-search-run:focus-visible:not(:disabled) {
+  border-color: var(--accent-500);
+  color: var(--text-emphasis);
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--accent-500) 45%, transparent 55%),
+    0 0 10px color-mix(in srgb, var(--accent-500) 22%, transparent 78%);
+}
+
+.file-tree-search-run.is-active {
+  border-color: var(--accent-500);
+  color: var(--text-emphasis);
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--accent-500) 45%, transparent 55%),
+    0 0 12px color-mix(in srgb, var(--accent-500) 25%, transparent 75%);
+}
+
+.file-tree-search-run:disabled {
+  opacity: 0.5;
+  border-color: var(--border-subtle);
+  box-shadow: none;
+}
+
+.file-tree-search-summary,
+.file-tree-search-limit {
+  font-size: 12px;
+  color: var(--text-faint);
+  padding: 2px 2px 6px;
+}
+
+.file-tree-search-limit {
+  color: var(--text-warning, #fbbf24);
+  padding-top: 0;
+}
+
+.file-tree-search-result-group {
   display: flex;
   flex-direction: column;
-  gap: 14px;
-  box-shadow: 0 24px 48px rgba(0, 0, 0, 0.4),
-              0 0 0 1px rgba(255, 255, 255, 0.04) inset;
+  gap: 2px;
+}
+
+.file-tree-search-result-file,
+.file-tree-search-result-match {
+  width: 100%;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-emphasis);
+  text-align: left;
+}
+
+.file-tree-search-result-file {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 6px;
+  border-radius: 8px;
+}
+
+.file-tree-search-result-file:hover,
+.file-tree-search-result-file:focus-visible,
+.file-tree-search-result-match:hover,
+.file-tree-search-result-match:focus-visible {
+  background: var(--surface-hover);
+  border-color: var(--border-subtle);
+}
+
+.file-tree-search-result-path {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+}
+
+.file-tree-search-result-count {
+  flex: 0 0 auto;
+  min-width: 22px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--surface-hover) 75%, transparent);
+  color: var(--text-faint);
+  font-size: 11px;
+  text-align: center;
+}
+
+.file-tree-search-result-matches {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-left: 18px;
+}
+
+.file-tree-search-result-match {
+  display: grid;
+  grid-template-columns: 56px minmax(0, 1fr);
+  gap: 8px;
+  align-items: start;
+  padding: 4px 6px;
+  border-radius: 8px;
+}
+
+.file-tree-search-result-location {
+  color: var(--text-faint);
+  font-size: 11px;
+}
+
+.file-tree-search-result-preview {
+  min-width: 0;
+  font-size: 12px;
+  color: var(--text-emphasis);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ── 8. new-file-prompt card animation ────────────────────────────────── */
+
+.new-file-prompt-card {
   animation: new-file-prompt-enter 0.15s ease-out;
 }
 
@@ -1193,35 +963,6 @@
   }
 }
 
-.new-file-prompt-title {
-  font-size: 15px;
-  font-weight: 600;
-  color: var(--text-strong);
-  letter-spacing: -0.01em;
-}
-
-.new-file-prompt-path {
-  font-size: 12px;
-  color: var(--text-faint);
-  font-family: var(--code-font-family);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  margin-top: -6px;
-}
-
-.new-file-prompt-input {
-  width: 100%;
-  border-radius: 8px;
-  border: 1px solid var(--border-subtle);
-  background: var(--surface-card-muted);
-  color: var(--text-strong);
-  padding: 9px 12px;
-  font-size: 13px;
-  font-family: var(--code-font-family);
-  transition: border-color 0.15s ease, box-shadow 0.15s ease;
-}
-
 .new-file-prompt-input::placeholder {
   color: var(--text-dim);
 }
@@ -1230,13 +971,6 @@
   outline: none;
   border-color: var(--border-accent);
   box-shadow: 0 0 0 3px var(--shadow-accent, rgba(42, 80, 128, 0.25));
-}
-
-.new-file-prompt-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
-  margin-top: 2px;
 }
 
 .new-file-prompt-actions button {

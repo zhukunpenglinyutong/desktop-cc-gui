@@ -1880,7 +1880,9 @@ export const Composer = memo(function Composer({
     shouldRenderReviewInlinePrompt;
 
   return (
-    <footer className={`composer${disabled ? " is-disabled" : ""}`}>
+    <footer
+      className={`composer col-start-1 row-start-3 flex flex-col items-center gap-2 border-t-0 bg-[var(--surface-messages)] px-[var(--main-panel-padding)] pb-6 pt-3 [-webkit-app-region:no-drag] [&>*]:w-full [&>*]:max-w-[750px] [&_textarea:disabled]:cursor-not-allowed [&_textarea:disabled]:text-[var(--text-fainter)] [&_textarea:disabled]:opacity-60${disabled ? " is-disabled opacity-70" : ""}`}
+    >
       <div
         className={`composer-shell grid gap-2 rounded-none border-none bg-transparent p-0 focus-within:border-transparent focus-within:shadow-none${isComposerCollapsed ? " is-collapsed overflow-hidden" : ""}`}
       >

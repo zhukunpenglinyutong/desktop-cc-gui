@@ -81,11 +81,11 @@ export function FileTreeRootActions({
   }, []);
 
   return (
-    <div className="file-tree-root-actions">
+    <div className="file-tree-root-actions inline-flex items-center gap-0.5 flex-none opacity-0 -translate-y-px pointer-events-none transition-[opacity,transform] duration-[140ms] ease-out">
       {showDetachedExplorerAction ? (
         <button
           type="button"
-          className={`ghost icon-button file-tree-root-action${spinningAction === "detached" ? " is-spinning" : ""}`}
+          className={`ghost icon-button file-tree-root-action w-6 h-6 p-0 border-none shadow-none bg-transparent${spinningAction === "detached" ? " is-spinning" : ""}`}
           onClick={() =>
             triggerActionWithSpin("detached", () => onOpenDetachedExplorer?.(detachedInitialFilePath))
           }
@@ -99,7 +99,7 @@ export function FileTreeRootActions({
       {showSpecHubAction ? (
         <button
           type="button"
-          className={`ghost icon-button file-tree-root-action${isSpecHubActive ? " is-active" : ""}${spinningAction === "spec-hub" ? " is-spinning" : ""}`}
+          className={`ghost icon-button file-tree-root-action w-6 h-6 p-0 border-none shadow-none bg-transparent${isSpecHubActive ? " is-active" : ""}${spinningAction === "spec-hub" ? " is-spinning" : ""}`}
           onClick={() => triggerActionWithSpin("spec-hub", () => onOpenSpecHub?.())}
           disabled={!onOpenSpecHub}
           aria-label={t("sidebar.specHub")}
@@ -110,7 +110,7 @@ export function FileTreeRootActions({
       ) : null}
       <button
         type="button"
-        className={`ghost icon-button file-tree-root-action${spinningAction === "new-file" ? " is-spinning" : ""}`}
+        className={`ghost icon-button file-tree-root-action w-6 h-6 p-0 border-none shadow-none bg-transparent${spinningAction === "new-file" ? " is-spinning" : ""}`}
         onClick={() =>
           triggerActionWithSpin("new-file", () => onOpenNewFile(selectedParentFolder))
         }
@@ -121,7 +121,7 @@ export function FileTreeRootActions({
       </button>
       <button
         type="button"
-        className={`ghost icon-button file-tree-root-action${spinningAction === "new-folder" ? " is-spinning" : ""}`}
+        className={`ghost icon-button file-tree-root-action w-6 h-6 p-0 border-none shadow-none bg-transparent${spinningAction === "new-folder" ? " is-spinning" : ""}`}
         onClick={() =>
           triggerActionWithSpin("new-folder", () => onOpenNewFolder(selectedParentFolder))
         }
@@ -132,7 +132,7 @@ export function FileTreeRootActions({
       </button>
       <button
         type="button"
-        className={`ghost icon-button file-tree-root-action${spinningAction === "refresh" ? " is-spinning" : ""}`}
+        className={`ghost icon-button file-tree-root-action w-6 h-6 p-0 border-none shadow-none bg-transparent${spinningAction === "refresh" ? " is-spinning" : ""}`}
         onClick={() => triggerActionWithSpin("refresh", () => onRefreshFiles?.())}
         disabled={!onRefreshFiles}
         aria-label={t("files.refreshFiles")}
@@ -142,7 +142,7 @@ export function FileTreeRootActions({
       </button>
       <button
         type="button"
-        className={`ghost icon-button file-tree-root-action file-tree-root-action-danger${spinningAction === "trash" ? " is-spinning" : ""}`}
+        className={`ghost icon-button file-tree-root-action file-tree-root-action-danger w-6 h-6 p-0 border-none shadow-none bg-transparent text-[var(--text-danger,#f87171)]${spinningAction === "trash" ? " is-spinning" : ""}`}
         onClick={() => triggerActionWithSpin("trash", onTrashSelected)}
         disabled={!canTrashSelectedNode}
         aria-label={t("files.deleteItem")}
