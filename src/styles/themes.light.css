@@ -64,38 +64,38 @@
   --status-unknown: rgba(17, 20, 28, 0.25);
   --select-caret: rgba(15, 23, 36, 0.45);
 
-  /* @coss/ui standard theme variables (bridge) */
-  --background: #ffffff;
-  --foreground: #1a1d24;
-  --card: rgba(255, 255, 255, 0.72);
-  --card-foreground: #1a1d24;
-  --popover: rgba(255, 255, 255, 0.99);
-  --popover-foreground: #1a1d24;
-  --primary: #3b82f6;
+  /* @coss/ui standard theme variables — Linear-style refresh (2026-05-17) */
+  --background: #fafafa;
+  --foreground: #09090b;
+  --card: #ffffff;
+  --card-foreground: #09090b;
+  --popover: #ffffff;
+  --popover-foreground: #09090b;
+  --primary: #6366f1;
   --primary-foreground: #ffffff;
-  --secondary: rgba(15, 23, 36, 0.08);
-  --secondary-foreground: #1a1d24;
-  --muted: rgba(15, 23, 36, 0.08);
-  --muted-foreground: rgba(17, 20, 28, 0.7);
-  --accent: rgba(15, 23, 36, 0.06);
-  --accent-foreground: #1a1d24;
-  --destructive: rgba(200, 45, 45, 0.9);
+  --secondary: #f4f4f5;
+  --secondary-foreground: #18181b;
+  --muted: #f4f4f5;
+  --muted-foreground: #71717a;
+  --accent: #f4f4f5;
+  --accent-foreground: #18181b;
+  --destructive: #ef4444;
   --destructive-foreground: #ffffff;
-  --success: rgba(30, 155, 110, 0.9);
+  --success: #10b981;
   --success-foreground: #ffffff;
-  --warning: rgba(215, 120, 20, 0.9);
-  --warning-foreground: #1a1d24;
-  --info: rgba(45, 93, 170, 0.7);
+  --warning: #f59e0b;
+  --warning-foreground: #0c0a09;
+  --info: #3b82f6;
   --info-foreground: #ffffff;
-  --border: rgba(15, 23, 36, 0.06);
-  --input: rgba(15, 23, 36, 0.08);
-  --ring: rgba(59, 130, 246, 0.55);
+  --border: #e4e4e7;
+  --input: #e4e4e7;
+  --ring: rgba(99, 102, 241, 0.5);
   --radius: 0.625rem;
-  --sidebar-background: rgba(246, 247, 250, 0.82);
-  --sidebar-foreground: rgba(17, 20, 28, 0.7);
-  --sidebar-border: rgba(15, 23, 36, 0.06);
-  --sidebar-accent: rgba(255, 255, 255, 0.72);
-  --sidebar-accent-foreground: #0e1118;
+  --sidebar-background: #f4f4f5;
+  --sidebar-foreground: #3f3f46;
+  --sidebar-border: #e4e4e7;
+  --sidebar-accent: #ffffff;
+  --sidebar-accent-foreground: #09090b;
 
   /* 滚动条颜色 - Scrollbar colors */
   --scrollbar-track: transparent;
