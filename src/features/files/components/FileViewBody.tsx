@@ -231,7 +231,7 @@ function InlineAnnotationDraft({
 
   return (
     <div
-      className="fvp-annotation-draft fvp-annotation-draft-inline"
+      className="fvp-annotation-draft fvp-annotation-draft-inline col-start-2 mt-1.5 mb-2 mr-2.5 min-w-0 max-w-full whitespace-normal p-2.5 rounded-[10px] border border-[color-mix(in_srgb,#2563eb_34%,var(--border-subtle))] bg-[color-mix(in_srgb,#2563eb_7%,var(--surface-elevated))] shadow-[0_10px_24px_color-mix(in_srgb,#000_12%,transparent)]"
       role="region"
       aria-label={t("files.annotationDraft")}
       onMouseDown={stopDraftEvent}
@@ -239,8 +239,8 @@ function InlineAnnotationDraft({
       onClick={stopDraftEvent}
       onKeyDown={stopDraftEvent}
     >
-      <div className="fvp-annotation-draft-head">
-        <span className="fvp-annotation-title">
+      <div className="fvp-annotation-draft-head mb-2 flex items-center justify-between gap-2 text-[11px] font-bold text-[var(--text-strong)]">
+        <span className="fvp-annotation-title inline-flex items-center gap-1.5 min-w-0 [&_.codicon]:text-[#2563eb] [&_.codicon]:text-[13px]">
           <span className="codicon codicon-comment-discussion" aria-hidden />
           {t("files.annotationDraft")}
         </span>
@@ -248,7 +248,7 @@ function InlineAnnotationDraft({
       </div>
       <textarea
         ref={textareaRef}
-        className="fvp-annotation-draft-input"
+        className="fvp-annotation-draft-input box-border w-full max-w-full min-w-0 min-h-[58px] resize-y rounded-lg border border-[var(--border-subtle)] p-2 bg-[var(--surface-panel)] text-[var(--text-strong)] font-[inherit]"
         defaultValue={draft.body}
         onChange={handleDraftInput}
         onCompositionStart={handleCompositionStart}
@@ -259,14 +259,14 @@ function InlineAnnotationDraft({
         onSelect={recordSelection}
         placeholder={t("files.annotationPlaceholder")}
       />
-      <div className="fvp-annotation-draft-actions">
-        <button type="button" className="ghost fvp-action-btn" onClick={onCancel}>
+      <div className="fvp-annotation-draft-actions mt-2 flex items-center justify-end gap-2">
+        <button type="button" className="ghost fvp-action-btn inline-flex items-center gap-[3px] px-1.5 py-[3px] text-[10px] rounded-lg whitespace-nowrap" onClick={onCancel}>
           {t("common.cancel")}
         </button>
         <button
           ref={submitButtonRef}
           type="button"
-          className="fvp-annotation-submit"
+          className="fvp-annotation-submit rounded-full px-3 py-[5px] bg-[#2563eb] text-white border-0 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
           onClick={() => {
             const body = textareaRef.current?.value ?? localBodyRef.current;
             if (!body.trim()) {
@@ -293,18 +293,18 @@ function InlineAnnotationMarker({
   onRemove?: (annotationId: string) => void;
 }) {
   return (
-    <div className="fvp-annotation-marker" role="note">
-      <div className="fvp-annotation-marker-head">
-        <span className="fvp-annotation-title">
+    <div className="fvp-annotation-marker col-start-2 mt-1.5 mb-2 mr-2.5 min-w-0 max-w-full whitespace-normal px-2.5 py-2 rounded-[10px] border border-[color-mix(in_srgb,#2563eb_24%,var(--border-subtle))] bg-[color-mix(in_srgb,#2563eb_5%,var(--surface-elevated))] text-[var(--text-muted)] [&_p]:m-0 [&_p]:text-[12px] [&_p]:leading-[1.45] [&_p]:text-[var(--text-muted)]" role="note">
+      <div className="fvp-annotation-marker-head mb-1 flex items-center justify-between gap-2 text-[11px] font-bold text-[var(--text-strong)]">
+        <span className="fvp-annotation-title inline-flex items-center gap-1.5 min-w-0 [&_.codicon]:text-[#2563eb] [&_.codicon]:text-[13px]">
           <span className="codicon codicon-comment-discussion" aria-hidden />
           {t("files.annotationDraft")}
         </span>
-        <span className="fvp-annotation-marker-tools">
+        <span className="fvp-annotation-marker-tools inline-flex items-center gap-1.5 min-w-0 shrink-0">
           <code>{formatAnnotationLineLabel(annotation.lineRange)}</code>
           {onRemove ? (
             <button
               type="button"
-              className="fvp-annotation-remove"
+              className="fvp-annotation-remove inline-flex items-center justify-center w-5 h-5 border border-transparent rounded-full bg-transparent text-[var(--text-faint)] cursor-pointer hover:border-[color-mix(in_srgb,#2563eb_28%,var(--border-subtle))] hover:bg-[color-mix(in_srgb,#2563eb_8%,transparent)] hover:text-[var(--text-strong)]"
               onClick={() => onRemove(annotation.id)}
               title={t("files.annotationRemove")}
               aria-label={t("files.annotationRemove")}
@@ -454,10 +454,10 @@ export function FileViewBody({
   }, [filePath, viewSurface.kind]);
 
   if (isLoading) {
-    return <div className="fvp-status">{t("files.loadingFile")}</div>;
+    return <div className="fvp-status p-6 text-[13px] text-[var(--text-muted)] text-center">{t("files.loadingFile")}</div>;
   }
   if (error) {
-    return <div className="fvp-status fvp-error">{error}</div>;
+    return <div className="fvp-status fvp-error p-6 text-[13px] text-center text-[var(--text-danger,#f87171)]">{error}</div>;
   }
 
   if (viewSurface.kind === "image") {
@@ -474,7 +474,7 @@ export function FileViewBody({
               onError={handleImageError}
             />
             {imageLoadError ? (
-              <span className="fvp-image-info fvp-error">{imageLoadError}</span>
+              <span className="fvp-image-info fvp-error text-[var(--text-danger,#f87171)]">{imageLoadError}</span>
             ) : imageInfo ? (
               <span className="fvp-image-info">
                 {imageInfo.width > 0 && `${imageInfo.width} × ${imageInfo.height}`}
@@ -484,14 +484,14 @@ export function FileViewBody({
             ) : null}
           </div>
         ) : (
-          <div className="fvp-status fvp-error">{t("files.imagePreview")}</div>
+          <div className="fvp-status fvp-error p-6 text-[13px] text-center text-[var(--text-danger,#f87171)]">{t("files.imagePreview")}</div>
         )}
       </div>
     );
   }
 
   if (viewSurface.kind === "binary-unsupported") {
-    return <div className="fvp-status">{t("files.unsupportedFormat")}</div>;
+    return <div className="fvp-status p-6 text-[13px] text-[var(--text-muted)] text-center">{t("files.unsupportedFormat")}</div>;
   }
 
   if (viewSurface.kind === "pdf-preview") {
@@ -533,9 +533,9 @@ export function FileViewBody({
 
   if (viewSurface.kind === "editor") {
     return (
-      <div className="fvp-editor">
+      <div className="fvp-editor flex-1 flex flex-col min-h-0 min-w-0 w-full overflow-hidden">
         {editorAnnotationLineRange ? (
-          <div className="fvp-annotation-toolbar">
+          <div className="fvp-annotation-toolbar sticky top-0 z-[5] flex items-center justify-end gap-2 px-2.5 py-1.5 bg-[color-mix(in_srgb,var(--surface-elevated)_92%,transparent)] border-b border-[var(--border-subtle)] text-[11px] text-[var(--text-muted)]">
             <span>
               {editorAnnotationLineRange.startLine === editorAnnotationLineRange.endLine
                 ? `L${editorAnnotationLineRange.startLine}`
@@ -543,7 +543,7 @@ export function FileViewBody({
             </span>
             <button
               type="button"
-              className="fvp-annotation-trigger"
+              className="fvp-annotation-trigger px-2.5 py-[3px] text-[11px] rounded-full border border-[color-mix(in_srgb,#2563eb_42%,var(--border-subtle))] bg-[color-mix(in_srgb,#2563eb_10%,transparent)] text-[#2563eb] cursor-pointer"
               onClick={onEditorAnnotationStart}
             >
               {t("files.annotateForAi")}
@@ -647,18 +647,18 @@ export function FileViewBody({
   return (
     <div className="fvp-code-preview" role="list">
       {previewLineSelection && onPreviewAnnotationStart ? (
-        <div className="fvp-preview-selection-toolbar" role="group" aria-label={t("files.annotationSelectionToolbar")}>
+        <div className="fvp-preview-selection-toolbar sticky top-0 z-[3] flex items-center justify-end gap-2 px-2.5 py-[7px] border-b border-[color-mix(in_srgb,var(--border-accent)_28%,var(--border-subtle))] bg-[color-mix(in_srgb,var(--surface-card)_94%,var(--surface-command))] text-[var(--text-muted)] text-[11px] [&>span]:mr-auto [&>span]:text-[var(--text-strong)] [&>span]:font-bold" role="group" aria-label={t("files.annotationSelectionToolbar")}>
           <span>{previewSelectionLabel}</span>
           <button
             type="button"
-            className="ghost fvp-action-btn"
+            className="ghost fvp-action-btn inline-flex items-center gap-[3px] px-1.5 py-[3px] text-[10px] rounded-lg whitespace-nowrap"
             onClick={() => setPreviewLineSelection(null)}
           >
             {t("files.clearSelection")}
           </button>
           <button
             type="button"
-            className="fvp-annotation-trigger"
+            className="fvp-annotation-trigger px-2.5 py-[3px] text-[11px] rounded-full border border-[color-mix(in_srgb,#2563eb_42%,var(--border-subtle))] bg-[color-mix(in_srgb,#2563eb_10%,transparent)] text-[#2563eb] cursor-pointer"
             onClick={() =>
               onPreviewAnnotationStart({
                 startLine: previewLineSelection.start,

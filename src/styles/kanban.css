@@ -10,7 +10,8 @@
 }
 
 .kanban-fullscreen {
-  /* Bridge legacy Kanban tokens to current surface palette to avoid washed-out panels. */
+  /* Bridge legacy Kanban tokens to current surface palette to avoid washed-out panels.
+     Layout (flex/width/height/overflow) migrated to inline Tailwind in DesktopLayout.tsx (Phase 5.6b). */
   --bg-primary: var(--surface-card-strong, #1f1f25);
   --bg-secondary: var(--surface-card, #232329);
   --bg-tertiary: var(--surface-control, #27272e);
@@ -20,11 +21,6 @@
   --border-hover: var(--border-strong, #353540);
   --text-secondary: var(--text-muted, #b3b3b3);
   --text-tertiary: var(--text-subtle, #999999);
-  display: flex;
-  flex-direction: column;
-  width: 100%;
-  height: 100%;
-  overflow: hidden;
 }
 
 .kanban-fullscreen > .terminal-panel {
@@ -231,117 +227,9 @@
   color: var(--text-primary, #111);
 }
 
-/* --- Kanban Project Selector --- */
-
-.kanban-project-menu {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  min-width: 0;
-}
-
-.kanban-project-button {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  background: transparent;
-  border: none;
-  cursor: pointer;
-  padding: 2px 4px;
-  border-radius: 6px;
-  min-width: 0;
-}
-
-.kanban-project-button:hover {
-  background: var(--surface-control-hover);
-}
-
-.kanban-back-menu {
-  position: relative;
-}
-
-.kanban-back-menu-trigger {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  background: transparent;
-  border: 1px solid transparent;
-  color: var(--text-secondary, #666);
-  font-size: 13px;
-  font-weight: 500;
-  cursor: pointer;
-  padding: 0 10px;
-  height: 28px;
-  border-radius: 6px;
-  transition: background 0.15s, color 0.15s, border-color 0.15s;
-}
-
-.kanban-back-menu-trigger:hover {
-  background: var(--bg-tertiary, #f0f0f0);
-  color: var(--text-primary, #111);
-}
-
-.kanban-back-menu-trigger[aria-expanded="true"] {
-  border-color: var(--border-color, #e5e5e5);
-  background: var(--bg-secondary, #f8f8f8);
-  color: var(--text-primary, #111);
-}
-
-.kanban-back-menu-list {
-  position: absolute;
-  top: calc(100% + 6px);
-  left: 0;
-  min-width: 156px;
-  z-index: 11;
-  border-radius: 10px;
-  padding: 6px;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.kanban-back-menu-item {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  width: 100%;
-  border: none;
-  border-radius: 8px;
-  background: transparent;
-  color: var(--text-secondary, #666);
-  font-size: 13px;
-  text-align: left;
-  padding: 6px 8px;
-  cursor: pointer;
-}
-
-.kanban-back-menu-item:hover {
-  background: var(--surface-control-hover);
-  color: var(--text-primary, #111);
-}
-
-.kanban-project-caret {
-  color: var(--text-faint);
-  font-size: 12px;
-  flex-shrink: 0;
-  line-height: 1;
-}
-
-.kanban-project-dropdown {
-  position: absolute;
-  top: calc(100% + 6px);
-  left: 0;
-  min-width: 220px;
-  max-width: 320px;
-  max-height: 360px;
-  z-index: 10;
-  border-radius: 10px;
-  padding: 6px;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  overflow: hidden;
-}
+/* Kanban Project Selector (project-menu / project-button / project-caret /
+   project-dropdown + back-menu*) migrated to inline Tailwind in
+   KanbanBoardHeader.tsx (Phase 5.6b). */
 
 /* --- Board Header Right --- */
 .kanban-board-header-right {

@@ -132,10 +132,14 @@ export function KanbanBoardHeader({
     <div className="kanban-board-header">
       <div className="kanban-board-header-left">
         <KanbanModeToggle appMode="kanban" onAppModeChange={onAppModeChange} />
-        <div className="kanban-back-menu" ref={backMenuRef}>
+        <div className="kanban-back-menu relative" ref={backMenuRef}>
           <button
             type="button"
-            className="kanban-back-menu-trigger"
+            className={`kanban-back-menu-trigger inline-flex items-center gap-1.5 bg-transparent border border-transparent text-[var(--text-secondary,#666)] text-[13px] font-medium cursor-pointer px-2.5 h-7 rounded-md transition-[background,color,border-color] duration-150 hover:bg-[var(--bg-tertiary,#f0f0f0)] hover:text-[var(--text-primary,#111)]${
+              backMenuOpen
+                ? " border-[var(--border-color,#e5e5e5)] bg-[var(--bg-secondary,#f8f8f8)] text-[var(--text-primary,#111)]"
+                : ""
+            }`}
             onClick={() => setBackMenuOpen((prev) => !prev)}
             aria-haspopup="menu"
             aria-expanded={backMenuOpen}
@@ -145,10 +149,13 @@ export function KanbanBoardHeader({
             <span>{t("kanban.board.back")}</span>
           </button>
           {backMenuOpen && (
-            <div className="kanban-back-menu-list popover-surface" role="menu">
+            <div
+              className="kanban-back-menu-list popover-surface absolute top-[calc(100%+6px)] left-0 min-w-[156px] z-[11] rounded-[10px] p-1.5 flex flex-col gap-1"
+              role="menu"
+            >
               <button
                 type="button"
-                className="kanban-back-menu-item"
+                className="kanban-back-menu-item inline-flex items-center gap-1.5 w-full border-none rounded-lg bg-transparent text-[var(--text-secondary,#666)] text-[13px] text-left py-1.5 px-2 cursor-pointer hover:bg-[var(--surface-control-hover)] hover:text-[var(--text-primary,#111)]"
                 onClick={handleBackToPanels}
                 role="menuitem"
               >
@@ -157,7 +164,7 @@ export function KanbanBoardHeader({
               </button>
               <button
                 type="button"
-                className="kanban-back-menu-item"
+                className="kanban-back-menu-item inline-flex items-center gap-1.5 w-full border-none rounded-lg bg-transparent text-[var(--text-secondary,#666)] text-[13px] text-left py-1.5 px-2 cursor-pointer hover:bg-[var(--surface-control-hover)] hover:text-[var(--text-primary,#111)]"
                 onClick={handleBackToChat}
                 role="menuitem"
               >
@@ -168,22 +175,22 @@ export function KanbanBoardHeader({
           )}
         </div>
         {showWsMenu ? (
-          <div className="kanban-project-menu" ref={wsMenuRef}>
+          <div className="kanban-project-menu relative inline-flex items-center min-w-0" ref={wsMenuRef}>
             <button
               type="button"
-              className="kanban-project-button"
+              className="kanban-project-button inline-flex items-center gap-1 bg-transparent border-none cursor-pointer py-0.5 px-1 rounded-md min-w-0 hover:bg-[var(--surface-control-hover)]"
               onClick={() => setWsMenuOpen((prev) => !prev)}
               aria-haspopup="menu"
               aria-expanded={wsMenuOpen}
             >
               <span className="kanban-breadcrumb-workspace">{workspace.name}</span>
-              <span className="kanban-project-caret" aria-hidden>
+              <span className="kanban-project-caret text-[var(--text-faint)] text-xs shrink-0 leading-none" aria-hidden>
                 ›
               </span>
             </button>
             {wsMenuOpen && (
               <div
-                className="kanban-project-dropdown popover-surface"
+                className="kanban-project-dropdown popover-surface absolute top-[calc(100%+6px)] left-0 min-w-[220px] max-w-[320px] max-h-[360px] z-10 rounded-[10px] p-1.5 flex flex-col gap-1 overflow-hidden"
                 role="menu"
               >
                 <div className="project-search">
@@ -224,22 +231,22 @@ export function KanbanBoardHeader({
         )}
         <span className="kanban-breadcrumb-sep" aria-hidden>›</span>
         {showPanelMenu ? (
-          <div className="kanban-project-menu" ref={panelMenuRef}>
+          <div className="kanban-project-menu relative inline-flex items-center min-w-0" ref={panelMenuRef}>
             <button
               type="button"
-              className="kanban-project-button"
+              className="kanban-project-button inline-flex items-center gap-1 bg-transparent border-none cursor-pointer py-0.5 px-1 rounded-md min-w-0 hover:bg-[var(--surface-control-hover)]"
               onClick={() => setPanelMenuOpen((prev) => !prev)}
               aria-haspopup="menu"
               aria-expanded={panelMenuOpen}
             >
               <h2 className="kanban-board-title">{panel.name}</h2>
-              <span className="kanban-project-caret" aria-hidden>
+              <span className="kanban-project-caret text-[var(--text-faint)] text-xs shrink-0 leading-none" aria-hidden>
                 ›
               </span>
             </button>
             {panelMenuOpen && (
               <div
-                className="kanban-project-dropdown popover-surface"
+                className="kanban-project-dropdown popover-surface absolute top-[calc(100%+6px)] left-0 min-w-[220px] max-w-[320px] max-h-[360px] z-10 rounded-[10px] p-1.5 flex flex-col gap-1 overflow-hidden"
                 role="menu"
               >
                 <div className="project-search">

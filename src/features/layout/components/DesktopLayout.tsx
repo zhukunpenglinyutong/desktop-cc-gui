@@ -209,7 +209,7 @@ export function DesktopLayout({
 
   if (showKanban) {
     return (
-      <section className="main kanban-fullscreen">
+      <section className="main kanban-fullscreen flex flex-col w-full h-full overflow-hidden">
         {kanbanNode}
         {globalRuntimeNoticeDockNode}
         {runtimeConsoleDockNode}

@@ -1,29 +1,31 @@
-.fvp-tab-main {
-  border: none;
-  background: transparent;
-  color: inherit;
-  font-size: 10px;
-  font-weight: 600;
-  line-height: 1.1;
-  max-width: 180px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  padding: 4px 5px 4px 7px;
-}
+/*
+ * file-view-panel.css — Phase 9.3 keeper
+ *
+ * Phase 9.3 (2026-05-17) inlined `.fvp-tab*`, `.fvp-topbar*`, `.fvp-header-row*`,
+ * `.fvp-external-change-banner*`, `.fvp-external-compare*`, `.fvp-back`,
+ * `.fvp-filepath`, `.fvp-dirty-dot`, `.fvp-truncated`, `.fvp-action-btn`,
+ * `.fvp-action-group`, `.fvp-save-btn`, `.fvp-body`, `.fvp-status`, `.fvp-error`,
+ * `.fvp-tab-context-menu*`, `.fvp-annotation-*` (FileViewBody scope only),
+ * `.fvp-preview-selection-toolbar`, `.fvp-footer*`, `.fvp-file-reference-*`,
+ * `.fvp-layout-toggle`, `.fvp-maximize-toggle`, `.fvp-find-toggle` into
+ * FileViewPanel.tsx / FileViewBody.tsx, dropped the dead `.fvp-split*` cluster.
+ *
+ * Remaining keepers:
+ *   1. tab/filepath git-status theme cascade overrides
+ *   2. cross-feature shared (consumed by SkillsSection.tsx):
+ *      .fvp-image-preview* / .fvp-preview-scroll /
+ *      .fvp-code-preview / .fvp-code-line / .fvp-line-* /
+ *      .fvp-structured-preview* / .fvp-file-markdown*
+ *   3. markdown annotation cascade overrides
+ *      (.fvp-markdown-annotation-inline .fvp-annotation-draft-inline | -marker)
+ *   4. CodeMirror DOM overrides (.fvp-cm .cm-*) — not in React tree
+ *   5. Prism token cascade (dangerouslySetInnerHTML injected)
+ *   6. Preview surface clusters not yet inlined (pdf / tabular / document / navigation / outline / preview-toolbar)
+ *   7. body.editor-split-resizing global cursor + .content.is-editor-split-vertical .fvp-footer cascade
+ *   8. responsive breakpoint helpers
+ */
 
-.fvp-tab-main-content {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  min-width: 0;
-}
-
-.fvp-tab-main-label {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
+/* ── tab git-status colors (cascade base + light theme overrides) ── */
 
 .fvp-tab.git-a .fvp-tab-main-label,
 .fvp-filepath.git-a {
@@ -77,347 +79,14 @@
   color: var(--status-warning);
 }
 
-.fvp-tab-icon {
-  width: 12px !important;
-  height: 12px !important;
-  opacity: 0.92;
-  filter: saturate(0.86) contrast(1.03);
-}
+/* ── tab icon active state (cascade-based via .fvp-tab.is-active) ── */
 
 .fvp-tab.is-active .fvp-tab-icon {
   opacity: 1;
   filter: saturate(1) contrast(1.05);
 }
 
-.fvp-tab-close {
-  border: none;
-  background: transparent;
-  color: inherit;
-  padding: 3px 4px 3px 2px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 0;
-  opacity: 0.62;
-  transition: background 120ms ease, opacity 120ms ease;
-}
-
-.fvp-tab-close:hover {
-  background: color-mix(in srgb, var(--surface-active) 42%, transparent);
-  opacity: 1;
-}
-
-.fvp-tab.is-active .fvp-tab-close {
-  opacity: 0.9;
-}
-
-.fvp-tab-context-menu {
-  position: absolute;
-  z-index: 1000;
-  display: flex;
-  min-width: 148px;
-  flex-direction: column;
-  border: 1px solid var(--border-subtle);
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--surface-card) 92%, transparent);
-  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.24);
-  padding: 4px;
-}
-
-.fvp-tab-context-menu-item {
-  border: none;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--text-strong);
-  font-size: 12px;
-  text-align: left;
-  padding: 7px 9px;
-}
-
-.fvp-tab-context-menu-item:hover {
-  background: color-mix(in srgb, var(--surface-hover) 74%, transparent);
-}
-
-/* ── Topbar ── */
-
-.fvp-topbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 6px;
-  padding: 3px 14px;
-  border-bottom: 1px solid var(--border-subtle);
-  background: var(--surface-messages);
-  flex-shrink: 0;
-}
-
-.fvp-topbar-left {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  min-width: 0;
-  flex: 1;
-}
-
-.fvp-topbar-right {
-  display: flex;
-  align-items: center;
-  gap: 3px;
-  flex-shrink: 0;
-}
-
-.fvp-header-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 3px 12px;
-  border-bottom: 1px solid var(--border-subtle);
-  background: var(--surface-messages);
-  flex-shrink: 0;
-}
-
-.fvp-header-row-left {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-  flex: 1;
-}
-
-.fvp-header-row-tabs {
-  min-width: 0;
-  flex: 1;
-}
-
-.fvp-header-row-right {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-  flex-shrink: 0;
-  margin-left: auto;
-}
-
-.fvp-header-actions {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  flex-shrink: 0;
-}
-
-.fvp-external-change-banner {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 8px 14px;
-  border-bottom: 1px solid var(--border-subtle);
-  background: color-mix(in srgb, var(--surface-card) 90%, transparent);
-}
-
-.fvp-external-change-banner.is-conflict {
-  border-bottom-color: color-mix(in srgb, var(--border-accent) 36%, var(--border-subtle));
-  background: color-mix(in srgb, var(--surface-control) 70%, var(--surface-card));
-}
-
-.fvp-external-change-banner.is-auto-sync {
-  color: var(--text-muted);
-  font-size: 12px;
-}
-
-.fvp-external-change-banner-copy {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
-}
-
-.fvp-external-change-banner-copy strong {
-  font-size: 12px;
-  color: var(--text-strong);
-}
-
-.fvp-external-change-banner-copy span {
-  font-size: 11px;
-  color: var(--text-muted);
-}
-
-.fvp-external-change-banner-actions {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  flex-wrap: wrap;
-}
-
-.fvp-external-compare {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
-  padding: 10px 14px;
-  border-bottom: 1px solid var(--border-subtle);
-  background: color-mix(in srgb, var(--surface-command) 74%, transparent);
-}
-
-.fvp-external-compare-column {
-  min-width: 0;
-  border: 1px solid var(--border-subtle);
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--surface-card) 90%, transparent);
-}
-
-.fvp-external-compare-column header {
-  padding: 6px 8px;
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--text-muted);
-  border-bottom: 1px solid var(--border-subtle);
-}
-
-.fvp-external-compare-column pre {
-  margin: 0;
-  padding: 8px;
-  max-height: 160px;
-  overflow: auto;
-  font-size: 11px;
-  line-height: 1.45;
-  color: var(--text-strong);
-  white-space: pre-wrap;
-  word-break: break-word;
-  font-family: var(--code-font-family);
-}
-
-.fvp-back {
-  padding: 1px;
-  flex-shrink: 0;
-}
-
-.fvp-filepath {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--text-strong);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  font-family: var(--code-font-family);
-}
-
-.fvp-dirty-dot {
-  display: inline-block;
-  width: 8px;
-  height: 8px;
-  border-radius: 999px;
-  background: var(--border-accent);
-  flex-shrink: 0;
-}
-
-.fvp-truncated {
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--text-faint);
-  flex-shrink: 0;
-}
-
-/* Action items */
-
-.fvp-action-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  padding: 3px 6px;
-  font-size: 10px;
-  border-radius: 8px;
-  white-space: nowrap;
-}
-
-.fvp-action-group {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  border-radius: 0;
-  border: none;
-  background: transparent;
-  box-shadow: none;
-  padding: 0;
-}
-
-.fvp-action-group .fvp-action-btn {
-  border: none;
-  border-radius: 0;
-  min-height: 15px;
-  padding: 1px 0;
-  color: var(--text-muted);
-  background: transparent;
-  font-size: 9px;
-  font-weight: 600;
-  transition: color 120ms ease, opacity 120ms ease;
-}
-
-.fvp-action-group .fvp-action-btn:hover:not(:disabled) {
-  color: var(--text-strong);
-  opacity: 0.95;
-}
-
-.fvp-action-group .fvp-action-btn.is-active {
-  color: var(--text-strong);
-}
-
-.fvp-action-group .fvp-action-btn:focus-visible {
-  outline: 2px solid color-mix(in srgb, var(--border-accent) 56%, transparent);
-  outline-offset: 3px;
-}
-
-.fvp-action-group .fvp-action-btn.primary {
-  background: transparent;
-  color: var(--text-strong);
-}
-
-.fvp-action-group .fvp-action-btn.primary:hover:not(:disabled) {
-  background: transparent;
-}
-
-.fvp-action-group .fvp-save-btn {
-  min-width: auto;
-  justify-content: center;
-}
-
-.fvp-action-group .fvp-save-btn.is-saved {
-  opacity: 0.75;
-}
-
-.fvp-save-btn {
-  min-width: 70px;
-  justify-content: center;
-}
-
-.fvp-save-btn.is-saved {
-  opacity: 0.6;
-}
-
-/* ── Body ── */
-
-.fvp-body {
-  flex: 1;
-  min-height: 0;
-  min-width: 0;
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
-  width: 100%;
-}
-
-.fvp-status {
-  padding: 24px;
-  font-size: 13px;
-  color: var(--text-muted);
-  text-align: center;
-}
-
-.fvp-error {
-  color: var(--text-danger, #f87171);
-}
-
-/* ── Image preview ── */
+/* ── Image preview (cross-feature: SkillsSection.tsx) ── */
 
 .fvp-image-preview {
   flex: 1;
@@ -462,7 +131,7 @@
   flex-shrink: 0;
 }
 
-/* ── Code preview ── */
+/* ── Code preview (cross-feature: SkillsSection.tsx + Prism cascade) ── */
 
 .fvp-code-preview {
   display: flex;
@@ -538,16 +207,12 @@
   padding-right: 4px;
 }
 
-.fvp-line-annotation-button,
-.fvp-annotation-trigger {
+.fvp-line-annotation-button {
   border: 1px solid color-mix(in srgb, #2563eb 42%, var(--border-subtle));
   background: color-mix(in srgb, #2563eb 10%, transparent);
   color: #2563eb;
   border-radius: 999px;
   cursor: pointer;
-}
-
-.fvp-line-annotation-button {
   width: 18px;
   height: 18px;
   padding: 0;
@@ -560,181 +225,12 @@
   opacity: 1;
 }
 
-.fvp-annotation-toolbar {
-  position: sticky;
-  top: 0;
-  z-index: 5;
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 8px;
-  padding: 6px 10px;
-  background: color-mix(in srgb, var(--surface-elevated) 92%, transparent);
-  border-bottom: 1px solid var(--border-subtle);
-  font-size: 11px;
-  color: var(--text-muted);
-}
-
-.fvp-annotation-trigger {
-  padding: 3px 10px;
-  font-size: 11px;
-}
-
-.fvp-annotation-draft {
-  margin: 8px 12px 0;
-  padding: 10px;
-  border-radius: 10px;
-  border: 1px solid color-mix(in srgb, #2563eb 34%, var(--border-subtle));
-  background: color-mix(in srgb, #2563eb 7%, var(--surface-elevated));
-  box-shadow: 0 10px 24px color-mix(in srgb, #000 12%, transparent);
-}
-
-.fvp-annotation-draft-inline,
-.fvp-annotation-marker {
-  grid-column: 2;
-  margin: 6px 10px 8px 0;
-  min-width: 0;
-  max-width: 100%;
-  white-space: normal;
-}
-
-.fvp-annotation-marker {
-  padding: 8px 10px;
-  border-radius: 10px;
-  border: 1px solid color-mix(in srgb, #2563eb 24%, var(--border-subtle));
-  background: color-mix(in srgb, #2563eb 5%, var(--surface-elevated));
-  color: var(--text-muted);
-}
-
-.fvp-annotation-marker-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  margin-bottom: 4px;
-  font-size: 11px;
-  font-weight: 700;
-  color: var(--text-strong);
-}
-
-.fvp-annotation-title,
-.fvp-annotation-marker-tools {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
-}
-
-.fvp-annotation-title .codicon {
-  color: #2563eb;
-  font-size: 13px;
-}
-
-.fvp-annotation-marker-tools {
-  flex-shrink: 0;
-}
-
-.fvp-annotation-remove {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 20px;
-  height: 20px;
-  border: 1px solid transparent;
-  border-radius: 999px;
-  background: transparent;
-  color: var(--text-faint);
-  cursor: pointer;
-}
-
-.fvp-annotation-remove:hover {
-  border-color: color-mix(in srgb, #2563eb 28%, var(--border-subtle));
-  background: color-mix(in srgb, #2563eb 8%, transparent);
-  color: var(--text-strong);
-}
-
-.fvp-annotation-marker p {
-  margin: 0;
-  font-size: 12px;
-  line-height: 1.45;
-  color: var(--text-muted);
-}
-
-.fvp-annotation-draft-head,
-.fvp-annotation-draft-actions {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-}
-
-.fvp-annotation-draft-head {
-  margin-bottom: 8px;
-  font-size: 11px;
-  font-weight: 700;
-  color: var(--text-strong);
-}
-
-.fvp-annotation-draft-input {
-  box-sizing: border-box;
-  width: 100%;
-  max-width: 100%;
-  min-width: 0;
-  min-height: 58px;
-  resize: vertical;
-  border: 1px solid var(--border-subtle);
-  border-radius: 8px;
-  padding: 8px;
-  background: var(--surface-panel);
-  color: var(--text-strong);
-  font: inherit;
-}
-
-.fvp-annotation-draft-actions {
-  justify-content: flex-end;
-  margin-top: 8px;
-}
-
-.fvp-annotation-submit {
-  border: none;
-  border-radius: 999px;
-  padding: 5px 12px;
-  background: #2563eb;
-  color: white;
-  cursor: pointer;
-}
-
-.fvp-annotation-submit:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
 .fvp-line-text {
   min-width: 0;
 }
 
-.fvp-preview-selection-toolbar {
-  position: sticky;
-  top: 0;
-  z-index: 3;
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 8px;
-  padding: 7px 10px;
-  border-bottom: 1px solid color-mix(in srgb, var(--border-accent) 28%, var(--border-subtle));
-  background: color-mix(in srgb, var(--surface-card) 94%, var(--surface-command));
-  color: var(--text-muted);
-  font-size: 11px;
-}
+/* ── Code preview / structured preview Prism token cascade ── */
 
-.fvp-preview-selection-toolbar > span {
-  margin-right: auto;
-  color: var(--text-strong);
-  font-weight: 700;
-}
-
-/* Syntax highlighting tokens */
 .fvp-line-text .token.comment,
 .fvp-line-text .token.prolog,
 .fvp-line-text .token.doctype,
@@ -786,7 +282,7 @@
   color: var(--fvp-token-function);
 }
 
-/* ── Structured preview ── */
+/* ── Structured preview (cross-feature: SkillsSection.tsx) ── */
 
 .fvp-structured-preview {
   display: flex;
@@ -963,7 +459,7 @@
   color: var(--fvp-token-function);
 }
 
-/* ── Markdown preview ── */
+/* ── Preview surfaces still to be inlined (Phase 9.3b/c follow-ups) ── */
 
 .fvp-preview-scroll {
   flex: 1;
@@ -1275,6 +771,8 @@
     max-height: none;
   }
 }
+
+/* ── Markdown preview (cross-feature: SkillsSection.tsx + dangerouslySetInnerHTML Prism cascade) ── */
 
 .fvp-file-markdown {
   font-size: 14px;
@@ -1716,17 +1214,7 @@
   background: var(--fvp-markdown-table-stripe);
 }
 
-/* ── Editor (CodeMirror) ── */
-
-.fvp-editor {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-  min-width: 0;
-  width: 100%;
-  overflow: hidden;
-}
+/* ── Editor (CodeMirror DOM injection, cannot inline as React utilities) ── */
 
 .fvp-cm {
   flex: 1;
@@ -2000,42 +1488,7 @@
   );
 }
 
-/* ── Split pane (Markdown edit) ── */
-
-.fvp-split {
-  flex: 1;
-  display: grid;
-  grid-template-columns: 1fr auto 1fr;
-  min-height: 0;
-  min-width: 0;
-  overflow: hidden;
-  width: 100%;
-}
-
-.fvp-split-editor {
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-  min-width: 0;
-  overflow: hidden;
-}
-
-.fvp-split-editor .fvp-cm {
-  flex: 1;
-}
-
-.fvp-split-divider {
-  width: 1px;
-  background: var(--border-subtle);
-}
-
-.fvp-split-preview {
-  overflow: auto;
-  padding: 20px 24px;
-  min-width: 0;
-}
-
-/* ── Navigation panel ── */
+/* ── Navigation panel (Phase 9.3c follow-up) ── */
 
 .fvp-navigation-panel {
   flex-shrink: 0;
@@ -2137,164 +1590,11 @@
   color: var(--text-strong);
 }
 
-/* ── Footer ── */
-
-.fvp-footer {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 3px 10px;
-  border-top: 1px solid var(--border-subtle);
-  font-size: 10px;
-  color: var(--text-faint);
-  flex-shrink: 0;
-  background: var(--surface-messages);
-  min-height: 20px;
-}
-
-.fvp-footer-left {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
-  flex: 1;
-}
-
-.fvp-footer-right {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  flex-shrink: 0;
-  justify-content: flex-end;
-  min-width: 0;
-}
-
-.fvp-footer-hint {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.fvp-footer-shortcut {
-  color: var(--text-fainter);
-  font-family: var(--code-font-family);
-  font-size: 9px;
-  padding: 0 3px;
-  border-radius: 3px;
-  background: var(--surface-control);
-  border: 1px solid var(--border-subtle);
-}
-
-.fvp-footer-saved {
-  color: var(--text-muted);
-}
-
-.fvp-file-reference-bar {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
-  max-width: min(56vw, 560px);
-  border: 1px solid color-mix(in srgb, var(--border-accent) 34%, var(--border-subtle));
-  border-radius: 999px;
-  padding: 2px 6px 2px 8px;
-  background:
-    linear-gradient(
-      120deg,
-      color-mix(in srgb, var(--surface-control) 88%, transparent),
-      color-mix(in srgb, var(--surface-card) 82%, transparent)
-    );
-  box-shadow: inset 0 1px 0 color-mix(in srgb, white 18%, transparent);
-  opacity: 0;
-  transform: translateY(2px);
-  transition: opacity 120ms ease, transform 120ms ease;
-  pointer-events: none;
-}
-
-.fvp-file-reference-bar.is-visible {
-  opacity: 1;
-  transform: translateY(0);
-  pointer-events: auto;
-}
-
-.fvp-file-reference-label {
-  font-size: 10px;
-  color: var(--text-faint);
-  white-space: nowrap;
-}
-
-.fvp-file-reference-path {
-  min-width: 0;
-  flex: 1;
-  font-size: 10px;
-  color: var(--text-strong);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  background: transparent;
-}
-
-.fvp-file-reference-lines {
-  font-size: 9px;
-  color: var(--text-strong);
-  border: 1px solid var(--border-subtle);
-  border-radius: 999px;
-  padding: 1px 6px;
-  white-space: nowrap;
-  background: color-mix(in srgb, var(--surface-strong) 80%, transparent);
-}
-
-.fvp-file-reference-toggle {
-  border: 1px solid var(--border-subtle);
-  border-radius: 999px;
-  background: var(--surface-control);
-  color: var(--text-muted);
-  font-size: 10px;
-  padding: 2px 7px;
-  white-space: nowrap;
-  line-height: 1.1;
-}
+/* ── Editor split global cascade overrides (parent body / .content cascade) ── */
 
 .content.is-editor-split-vertical .fvp-footer {
   cursor: row-resize;
   position: relative;
-}
-
-.fvp-footer .fvp-action-btn {
-  padding: 2px 6px;
-  font-size: 10px;
-  line-height: 1.1;
-  min-height: 18px;
-  border-radius: 6px;
-}
-
-.fvp-footer .open-app-button {
-  border-radius: 8px;
-}
-
-.fvp-footer .open-app-action,
-.fvp-footer .open-app-toggle {
-  min-height: 18px;
-}
-
-.fvp-footer .open-app-action {
-  padding: 2px 7px;
-}
-
-.fvp-footer .open-app-toggle {
-  padding: 2px 5px;
-}
-
-.fvp-footer .open-app-label {
-  gap: 4px;
-  font-size: 11px;
-  line-height: 1.1;
-}
-
-.fvp-footer .open-app-icon {
-  width: 12px;
-  height: 12px;
 }
 
 .content.is-editor-split-vertical .fvp-footer::before {
@@ -2310,33 +1610,6 @@
   pointer-events: none;
 }
 
-.fvp-layout-toggle {
-  min-width: 20px;
-  min-height: 18px;
-  justify-content: center;
-  padding: 2px 5px;
-}
-
-.fvp-maximize-toggle {
-  min-width: 20px;
-  min-height: 18px;
-  justify-content: center;
-  padding: 2px 5px;
-}
-
-.fvp-find-toggle {
-  min-width: 20px;
-  min-height: 18px;
-  justify-content: center;
-  padding: 2px 5px;
-}
-
-.fvp-layout-toggle.is-side-by-side {
-  color: var(--text-strong);
-  border-color: color-mix(in srgb, var(--border-accent) 46%, var(--border-subtle));
-  background: color-mix(in srgb, var(--surface-card) 76%, var(--surface-active));
-}
-
 .content.is-editor-split .fvp-footer button,
 .content.is-editor-split .fvp-footer [role="button"] {
   cursor: pointer;
@@ -2349,16 +1622,4 @@ body.editor-split-resizing {
 
 body.editor-split-resizing * {
   cursor: row-resize !important;
-}
-
-.fvp-file-reference-toggle.is-active {
-  border-color: color-mix(in srgb, var(--border-accent) 60%, var(--border-subtle));
-  color: var(--text-strong);
-  background: color-mix(in srgb, var(--surface-active) 72%, var(--surface-control));
-}
-
-@media (max-width: 980px) {
-  .fvp-external-compare {
-    grid-template-columns: 1fr;
-  }
 }

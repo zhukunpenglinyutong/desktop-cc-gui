@@ -1473,15 +1473,26 @@ export function FileViewPanel({
   );
 
   // ── Topbar ──
+  // Action button base utilities. Within `.fvp-action-group` CSS rules previously
+  // overrode these defaults, but inline migration applies the effective styles
+  // directly so the rule block can be dropped.
+  const ACTION_BTN_BASE_CLS =
+    "inline-flex items-center gap-1.5 px-0 py-px text-[9px] font-semibold whitespace-nowrap bg-transparent text-[var(--text-muted)] border-0 rounded-none min-h-[15px] transition-[color,opacity] duration-[120ms] enabled:hover:opacity-95 enabled:hover:text-[var(--text-strong)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[color-mix(in_srgb,var(--border-accent)_56%,transparent)] focus-visible:outline-offset-[3px]";
   const renderTopbarActions = (className = "fvp-topbar-right") => (
-    <div className={className}>
+    <div
+      className={
+        className === "fvp-topbar-right"
+          ? "fvp-topbar-right flex items-center gap-[3px] shrink-0"
+          : `${className} inline-flex items-center gap-[3px] shrink-0`
+      }
+    >
       {canEditDocument && (
         <>
           {mode === "preview" ? (
-            <div className="fvp-action-group fvp-preview-tools" role="group">
+            <div className="fvp-action-group fvp-preview-tools inline-flex items-center gap-1.5" role="group">
               <button
                 type="button"
-                className="fvp-action-btn"
+                className={`fvp-action-btn ${ACTION_BTN_BASE_CLS}`}
                 onClick={handleEnterEdit}
                 disabled={truncated || !canEditDocument}
                 title={truncated ? t("files.fileTooLarge") : t("files.edit")}
@@ -1491,10 +1502,10 @@ export function FileViewPanel({
               </button>
             </div>
           ) : (
-            <div className="fvp-action-group" role="group">
+            <div className="fvp-action-group inline-flex items-center gap-1.5" role="group">
               <button
                 type="button"
-                className="ghost fvp-action-btn"
+                className={`ghost fvp-action-btn ${ACTION_BTN_BASE_CLS}`}
                 onClick={runDefinitionFromCursor}
                 aria-busy={isDefinitionLoading}
                 title={t("files.gotoDefinition")}
@@ -1508,7 +1519,7 @@ export function FileViewPanel({
               </button>
               <button
                 type="button"
-                className="ghost fvp-action-btn"
+                className={`ghost fvp-action-btn ${ACTION_BTN_BASE_CLS}`}
                 onClick={runReferencesFromCursor}
                 aria-busy={isReferencesLoading}
                 title={t("files.findReferences")}
@@ -1522,7 +1533,7 @@ export function FileViewPanel({
               </button>
               <button
                 type="button"
-                className="ghost fvp-action-btn"
+                className={`ghost fvp-action-btn ${ACTION_BTN_BASE_CLS}`}
                 onClick={handleEnterPreview}
               >
                 <Eye size={14} aria-hidden />
@@ -1530,7 +1541,7 @@ export function FileViewPanel({
               </button>
               <button
                 type="button"
-                className={`primary fvp-action-btn fvp-save-btn ${isDirty ? "" : "is-saved"}`}
+                className={`primary fvp-action-btn fvp-save-btn ${ACTION_BTN_BASE_CLS} justify-center text-[var(--text-strong)] ${isDirty ? "" : "is-saved opacity-75"}`}
                 onClick={handleSave}
                 disabled={!isDirty || isSaving}
               >
@@ -1545,11 +1556,11 @@ export function FileViewPanel({
   );
 
   const renderTopbar = () => (
-    <div className="fvp-topbar">
-      <div className="fvp-topbar-left">
+    <div className="fvp-topbar flex items-center justify-between gap-1.5 px-3.5 py-[3px] border-b border-[var(--border-subtle)] bg-[var(--surface-messages)] shrink-0">
+      <div className="fvp-topbar-left flex items-center gap-1.5 min-w-0 flex-1">
         <button
           type="button"
-          className="icon-button fvp-back"
+          className="icon-button fvp-back p-px shrink-0"
           onClick={handleClose}
           aria-label={t("files.backToChat")}
           title={t("files.backToChat")}
@@ -1557,13 +1568,13 @@ export function FileViewPanel({
           <ArrowLeft size={16} aria-hidden />
         </button>
         <span
-          className={`fvp-filepath ${fileGitStatusClass}`.trim()}
+          className={`fvp-filepath ${fileGitStatusClass} text-[12px] font-semibold text-[var(--text-strong)] whitespace-nowrap overflow-hidden text-ellipsis font-[var(--code-font-family)]`.trim()}
           title={filePath}
         >
           {filePath}
         </span>
-        {isDirty && <span className="fvp-dirty-dot" aria-label={t("files.unsavedChanges")} />}
-        {truncated && <span className="fvp-truncated">{t("files.truncated")}</span>}
+        {isDirty && <span className="fvp-dirty-dot inline-block w-2 h-2 rounded-full bg-[var(--border-accent)] shrink-0" aria-label={t("files.unsavedChanges")} />}
+        {truncated && <span className="fvp-truncated text-[10px] uppercase tracking-[0.08em] text-[var(--text-faint)] shrink-0">{t("files.truncated")}</span>}
       </div>
       {renderTopbarActions()}
     </div>
@@ -1578,14 +1589,14 @@ export function FileViewPanel({
     }
     if (externalChangeSyncState !== "external-changed-dirty" || !externalChangeConflict) {
       return (
-        <div className="fvp-external-change-banner is-auto-sync" role="status" aria-live="polite">
+        <div className="fvp-external-change-banner is-auto-sync flex items-center justify-between gap-3 px-3.5 py-2 border-b border-[var(--border-subtle)] bg-[color-mix(in_srgb,var(--surface-card)_90%,transparent)] text-[var(--text-muted)] text-[12px]" role="status" aria-live="polite">
           {t("files.externalChangeAutoSynced")}
         </div>
       );
     }
     return (
-      <div className="fvp-external-change-banner is-conflict" role="status" aria-live="polite">
-        <div className="fvp-external-change-banner-copy">
+      <div className="fvp-external-change-banner is-conflict flex items-center justify-between gap-3 px-3.5 py-2 border-b border-b-[color-mix(in_srgb,var(--border-accent)_36%,var(--border-subtle))] bg-[color-mix(in_srgb,var(--surface-control)_70%,var(--surface-card))]" role="status" aria-live="polite">
+        <div className="fvp-external-change-banner-copy flex flex-col gap-0.5 min-w-0 [&_strong]:text-[12px] [&_strong]:text-[var(--text-strong)] [&_span]:text-[11px] [&_span]:text-[var(--text-muted)]">
           <strong>{t("files.externalChangeConflictTitle")}</strong>
           <span>
             {t("files.externalChangeConflictBody", {
@@ -1593,24 +1604,24 @@ export function FileViewPanel({
             })}
           </span>
         </div>
-        <div className="fvp-external-change-banner-actions">
+        <div className="fvp-external-change-banner-actions inline-flex items-center gap-1.5 flex-wrap">
           <button
             type="button"
-            className="ghost fvp-action-btn"
+            className="ghost fvp-action-btn inline-flex items-center gap-[3px] px-1.5 py-[3px] text-[10px] rounded-lg whitespace-nowrap"
             onClick={handleExternalToggleCompare}
           >
             {externalCompareOpen ? t("files.externalChangeHideCompare") : t("files.externalChangeCompare")}
           </button>
           <button
             type="button"
-            className="ghost fvp-action-btn"
+            className="ghost fvp-action-btn inline-flex items-center gap-[3px] px-1.5 py-[3px] text-[10px] rounded-lg whitespace-nowrap"
             onClick={handleExternalKeepLocal}
           >
             {t("files.externalChangeKeepLocal")}
           </button>
           <button
             type="button"
-            className="primary fvp-action-btn"
+            className="primary fvp-action-btn inline-flex items-center gap-[3px] px-1.5 py-[3px] text-[10px] rounded-lg whitespace-nowrap"
             onClick={handleExternalReloadFromDisk}
           >
             {t("files.externalChangeReload")}
@@ -1631,12 +1642,12 @@ export function FileViewPanel({
         ? `${externalChangeConflict.diskContent.slice(0, 6_000)}\n\n...`
         : externalChangeConflict.diskContent;
     return (
-      <div className="fvp-external-compare">
-        <div className="fvp-external-compare-column">
+      <div className="fvp-external-compare grid grid-cols-2 max-[980px]:grid-cols-1 gap-2.5 px-3.5 py-2.5 border-b border-[var(--border-subtle)] bg-[color-mix(in_srgb,var(--surface-command)_74%,transparent)]">
+        <div className="fvp-external-compare-column min-w-0 border border-[var(--border-subtle)] rounded-lg bg-[color-mix(in_srgb,var(--surface-card)_90%,transparent)] [&_header]:px-2 [&_header]:py-1.5 [&_header]:text-[11px] [&_header]:font-semibold [&_header]:text-[var(--text-muted)] [&_header]:border-b [&_header]:border-[var(--border-subtle)] [&_pre]:m-0 [&_pre]:p-2 [&_pre]:max-h-40 [&_pre]:overflow-auto [&_pre]:text-[11px] [&_pre]:leading-[1.45] [&_pre]:text-[var(--text-strong)] [&_pre]:whitespace-pre-wrap [&_pre]:break-words [&_pre]:font-[var(--code-font-family)]">
           <header>{t("files.externalChangeCompareLocal")}</header>
           <pre>{localPreview}</pre>
         </div>
-        <div className="fvp-external-compare-column">
+        <div className="fvp-external-compare-column min-w-0 border border-[var(--border-subtle)] rounded-lg bg-[color-mix(in_srgb,var(--surface-card)_90%,transparent)] [&_header]:px-2 [&_header]:py-1.5 [&_header]:text-[11px] [&_header]:font-semibold [&_header]:text-[var(--text-muted)] [&_header]:border-b [&_header]:border-[var(--border-subtle)] [&_pre]:m-0 [&_pre]:p-2 [&_pre]:max-h-40 [&_pre]:overflow-auto [&_pre]:text-[11px] [&_pre]:leading-[1.45] [&_pre]:text-[var(--text-strong)] [&_pre]:whitespace-pre-wrap [&_pre]:break-words [&_pre]:font-[var(--code-font-family)]">
           <header>{t("files.externalChangeCompareDisk")}</header>
           <pre>{diskPreview}</pre>
         </div>
@@ -1644,64 +1655,79 @@ export function FileViewPanel({
     );
   };
 
-  const renderTabs = (className?: string) => (
-    <div
-      ref={tabsContainerRef}
-      className={`fvp-tabs${className ? ` ${className}` : ""}`}
-      role="tablist"
-      aria-label="Open files"
-      onContextMenu={openTabContextMenu}
-    >
-      <div className="fvp-tabs-track">
-        {visibleTabs.map((tabPath) => {
-          const isActive = (activeTabPath ?? filePath) === tabPath;
-          const tabName = tabPath.split("/").pop() || tabPath;
-          const tabGitStatus = resolveMatchedGitStatusByPath(tabPath)?.status ?? null;
-          const tabGitStatusClass = tabGitStatus ? `git-${tabGitStatus.toLowerCase()}` : "";
-          return (
-            <div
-              key={tabPath}
-              className={`fvp-tab ${isActive ? "is-active" : ""} ${tabGitStatusClass}`.trim()}
-              role="presentation"
-            >
-              <button
-                type="button"
-                className="fvp-tab-main"
-                role="tab"
-                aria-selected={isActive}
-                onClick={() => onActivateTab?.(tabPath)}
-                onDoubleClick={() => onToggleEditorFileMaximized?.()}
-                onContextMenu={openTabContextMenu}
-                title={tabPath}
+  const renderTabs = (className?: string) => {
+    const isInline = className === "fvp-tabs-inline";
+    return (
+      <div
+        ref={tabsContainerRef}
+        className={`fvp-tabs${className ? ` ${className}` : ""} ${
+          isInline
+            ? "flex-1 min-w-0 min-h-[24px] border-b-0 bg-transparent w-full overflow-x-auto overflow-y-hidden p-0 shrink-0 relative z-[1]"
+            : "block min-h-[30px] overflow-x-auto overflow-y-hidden p-0 border-b border-[var(--border-subtle)] bg-[var(--surface-messages)] shrink-0 relative z-[1]"
+        }`}
+        role="tablist"
+        aria-label="Open files"
+        onContextMenu={openTabContextMenu}
+      >
+        <div className={`fvp-tabs-track inline-flex items-stretch gap-px min-w-max pt-0 border-0 rounded-none bg-transparent shadow-none ${isInline ? "min-h-[24px]" : ""}`}>
+          {visibleTabs.map((tabPath) => {
+            const isActive = (activeTabPath ?? filePath) === tabPath;
+            const tabName = tabPath.split("/").pop() || tabPath;
+            const tabGitStatus = resolveMatchedGitStatusByPath(tabPath)?.status ?? null;
+            const tabGitStatusClass = tabGitStatus ? `git-${tabGitStatus.toLowerCase()}` : "";
+            return (
+              <div
+                key={tabPath}
+                className={`fvp-tab ${isActive ? "is-active" : ""} ${tabGitStatusClass} inline-flex items-center max-w-[220px] ${
+                  isInline ? "min-h-[24px]" : "min-h-[26px]"
+                } border border-[color-mix(in_srgb,var(--border-subtle)_60%,transparent)] border-b-0 rounded-none transition-[background,border-color,color] duration-[140ms] relative ${
+                  isActive
+                    ? "border-[color-mix(in_srgb,var(--border-subtle)_90%,transparent)] bg-[color-mix(in_srgb,var(--surface-card)_90%,transparent)] text-[var(--text-stronger)] z-[1] after:content-[''] after:absolute after:left-0 after:right-0 after:bottom-0 after:h-0.5 after:rounded-none after:bg-[color-mix(in_srgb,var(--border-accent)_88%,#7aa2ff_12%)]"
+                    : "bg-[color-mix(in_srgb,var(--surface-control)_48%,transparent)] text-[var(--text-faint)] hover:bg-[color-mix(in_srgb,var(--surface-hover)_58%,transparent)] hover:text-[var(--text-strong)]"
+                }`.trim()}
+                role="presentation"
               >
-                <span className="fvp-tab-main-content">
-                  <FileIcon filePath={tabPath} className="fvp-tab-icon" />
-                  <span className="fvp-tab-main-label">{tabName}</span>
-                </span>
-              </button>
-              {onCloseTab ? (
                 <button
                   type="button"
-                  className="fvp-tab-close"
-                  aria-label={`Close ${tabName}`}
-                  onClick={() => onCloseTab(tabPath)}
+                  className="fvp-tab-main border-0 bg-transparent text-inherit text-[10px] font-semibold leading-[1.1] max-w-[180px] overflow-hidden text-ellipsis whitespace-nowrap px-[5px] pl-[7px] py-1"
+                  role="tab"
+                  aria-selected={isActive}
+                  onClick={() => onActivateTab?.(tabPath)}
+                  onDoubleClick={() => onToggleEditorFileMaximized?.()}
                   onContextMenu={openTabContextMenu}
+                  title={tabPath}
                 >
-                  <X size={11} aria-hidden />
+                  <span className="fvp-tab-main-content inline-flex items-center gap-[5px] min-w-0">
+                    <FileIcon filePath={tabPath} className="fvp-tab-icon !w-3 !h-3 opacity-[0.92] [filter:saturate(0.86)_contrast(1.03)]" />
+                    <span className="fvp-tab-main-label overflow-hidden text-ellipsis whitespace-nowrap">{tabName}</span>
+                  </span>
                 </button>
-              ) : null}
-            </div>
-          );
-        })}
+                {onCloseTab ? (
+                  <button
+                    type="button"
+                    className={`fvp-tab-close border-0 bg-transparent text-inherit pr-1 pl-0.5 py-[3px] inline-flex items-center justify-center rounded-none transition-[background,opacity] duration-[120ms] hover:bg-[color-mix(in_srgb,var(--surface-active)_42%,transparent)] hover:opacity-100 ${
+                      isActive ? "opacity-90" : "opacity-60"
+                    }`}
+                    aria-label={`Close ${tabName}`}
+                    onClick={() => onCloseTab(tabPath)}
+                    onContextMenu={openTabContextMenu}
+                  >
+                    <X size={11} aria-hidden />
+                  </button>
+                ) : null}
+              </div>
+            );
+          })}
+        </div>
       </div>
-    </div>
-  );
+    );
+  };
 
   const renderSingleRowHeader = () => (
-    <div className="fvp-header-row">
+    <div className="fvp-header-row flex items-center gap-2 px-3 py-[3px] border-b border-[var(--border-subtle)] bg-[var(--surface-messages)] shrink-0">
       <button
         type="button"
-        className="icon-button fvp-back"
+        className="icon-button fvp-back p-px shrink-0"
         onClick={onSingleRowLeadingAction ?? handleClose}
         aria-label={singleRowLeadingLabel ?? t("files.backToChat")}
         title={singleRowLeadingLabel ?? t("files.backToChat")}
@@ -1712,12 +1738,12 @@ export function FileViewPanel({
           <ArrowLeft size={16} aria-hidden />
         )}
       </button>
-      <div className="fvp-header-row-tabs">
+      <div className="fvp-header-row-tabs min-w-0 flex-1">
         {renderTabs("fvp-tabs-inline")}
       </div>
-      <div className="fvp-header-row-right">
-        {isDirty ? <span className="fvp-dirty-dot" aria-label={t("files.unsavedChanges")} /> : null}
-        {truncated ? <span className="fvp-truncated">{t("files.truncated")}</span> : null}
+      <div className="fvp-header-row-right inline-flex items-center gap-2 min-w-0 shrink-0 ml-auto">
+        {isDirty ? <span className="fvp-dirty-dot inline-block w-2 h-2 rounded-full bg-[var(--border-accent)] shrink-0" aria-label={t("files.unsavedChanges")} /> : null}
+        {truncated ? <span className="fvp-truncated text-[10px] uppercase tracking-[0.08em] text-[var(--text-faint)] shrink-0">{t("files.truncated")}</span> : null}
         {renderTopbarActions("fvp-header-actions")}
       </div>
     </div>
@@ -1779,44 +1805,59 @@ export function FileViewPanel({
   );
 
   // ── Footer ──
+  // Footer action button — within `.fvp-footer .fvp-action-btn` cascade (overrides
+  // global base with tighter dimensions). Plus toggle variants (find/maximize/layout)
+  // share a 20×18 icon-button look.
+  const FOOTER_ACTION_BTN_CLS =
+    "inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] leading-[1.1] rounded-md min-h-[18px] whitespace-nowrap";
+  const FOOTER_TOGGLE_BTN_CLS =
+    "inline-flex items-center justify-center min-w-[20px] min-h-[18px] px-[5px] py-0.5 text-[10px] leading-[1.1] rounded-md";
   const renderFooter = () => (
     <div
-      className="fvp-footer"
+      className="fvp-footer flex items-center justify-between gap-2 px-2.5 py-[3px] border-t border-[var(--border-subtle)] text-[10px] text-[var(--text-faint)] shrink-0 bg-[var(--surface-messages)] min-h-[20px] [&_.open-app-button]:rounded-lg [&_.open-app-action]:min-h-[18px] [&_.open-app-action]:px-[7px] [&_.open-app-action]:py-0.5 [&_.open-app-toggle]:min-h-[18px] [&_.open-app-toggle]:px-[5px] [&_.open-app-toggle]:py-0.5 [&_.open-app-label]:gap-1 [&_.open-app-label]:text-[11px] [&_.open-app-label]:leading-[1.1] [&_.open-app-icon]:w-3 [&_.open-app-icon]:h-3"
       onPointerDown={handleFooterPointerDown}
       title={t("layout.resizePlanPanel")}
     >
-      <div className="fvp-footer-left">
+      <div className="fvp-footer-left flex items-center gap-1.5 min-w-0 flex-1">
         {canEditDocument && mode === "edit" && isDirty && (
-          <span className="fvp-footer-hint">
-            <span className="fvp-dirty-dot" />
+          <span className="fvp-footer-hint flex items-center gap-1.5">
+            <span className="fvp-dirty-dot inline-block w-2 h-2 rounded-full bg-[var(--border-accent)] shrink-0" />
             {t("files.unsavedChanges")}
-            <span className="fvp-footer-shortcut">{t("files.saveShortcut")}</span>
+            <span className="fvp-footer-shortcut text-[var(--text-fainter)] font-[var(--code-font-family)] text-[9px] px-[3px] rounded-[3px] bg-[var(--surface-control)] border border-[var(--border-subtle)]">{t("files.saveShortcut")}</span>
           </span>
         )}
         {canEditDocument && mode === "edit" && !isDirty && (
-          <span className="fvp-footer-hint fvp-footer-saved">{t("files.saved")}</span>
+          <span className="fvp-footer-hint fvp-footer-saved flex items-center gap-1.5 text-[var(--text-muted)]">{t("files.saved")}</span>
         )}
         {(mode === "preview" && (truncated || !canEditDocument)) && (
-          <span className="fvp-footer-hint">{t("files.readOnly")}</span>
+          <span className="fvp-footer-hint flex items-center gap-1.5">{t("files.readOnly")}</span>
         )}
       </div>
-      <div className="fvp-footer-right">
+      <div className="fvp-footer-right flex items-center gap-1 shrink-0 justify-end min-w-0">
         {fileReferenceShouldRender ? (
           <div
-            className={`fvp-file-reference-bar${fileReferenceVisible ? " is-visible" : ""}`}
+            className={`fvp-file-reference-bar flex items-center gap-1.5 min-w-0 max-w-[min(56vw,560px)] border border-[color-mix(in_srgb,var(--border-accent)_34%,var(--border-subtle))] rounded-full pl-2 pr-1.5 py-0.5 bg-[linear-gradient(120deg,color-mix(in_srgb,var(--surface-control)_88%,transparent),color-mix(in_srgb,var(--surface-card)_82%,transparent))] shadow-[inset_0_1px_0_color-mix(in_srgb,white_18%,transparent)] transition-[opacity,transform] duration-[120ms] ${
+              fileReferenceVisible
+                ? "is-visible opacity-100 translate-y-0 pointer-events-auto"
+                : "opacity-0 translate-y-0.5 pointer-events-none"
+            }`}
             role="group"
             aria-label={t("composer.fileReference")}
           >
-            <span className="fvp-file-reference-label">{t("composer.activeFile")}:</span>
-            <code className="fvp-file-reference-path" title={filePath}>
+            <span className="fvp-file-reference-label text-[10px] text-[var(--text-faint)] whitespace-nowrap">{t("composer.activeFile")}:</span>
+            <code className="fvp-file-reference-path min-w-0 flex-1 text-[10px] text-[var(--text-strong)] overflow-hidden text-ellipsis whitespace-nowrap bg-transparent" title={filePath}>
               {filePath.split("/").pop() || filePath}
             </code>
             {activeFileLineLabel ? (
-              <span className="fvp-file-reference-lines">{activeFileLineLabel}</span>
+              <span className="fvp-file-reference-lines text-[9px] text-[var(--text-strong)] border border-[var(--border-subtle)] rounded-full px-1.5 py-px whitespace-nowrap bg-[color-mix(in_srgb,var(--surface-strong)_80%,transparent)]">{activeFileLineLabel}</span>
             ) : null}
             <button
               type="button"
-              className={`fvp-file-reference-toggle${fileReferenceMode === "path" ? " is-active" : ""}`}
+              className={`fvp-file-reference-toggle border border-[var(--border-subtle)] rounded-full text-[10px] px-[7px] py-0.5 whitespace-nowrap leading-[1.1] ${
+                fileReferenceMode === "path"
+                  ? "is-active border-[color-mix(in_srgb,var(--border-accent)_60%,var(--border-subtle))] text-[var(--text-strong)] bg-[color-mix(in_srgb,var(--surface-active)_72%,var(--surface-control))]"
+                  : "bg-[var(--surface-control)] text-[var(--text-muted)]"
+              }`}
               onClick={() =>
                 onFileReferenceModeChange?.(fileReferenceMode === "path" ? "none" : "path")
               }
@@ -1831,7 +1872,7 @@ export function FileViewPanel({
         {mode === "preview" && onInsertText && content.trim().length > 0 && (
           <button
             type="button"
-            className="ghost fvp-action-btn"
+            className={`ghost fvp-action-btn ${FOOTER_ACTION_BTN_CLS}`}
             onClick={() => {
               const fence = previewLanguage ? `\`\`\`${previewLanguage}` : "```";
               const snippet = `${filePath}\n${fence}\n${content}\n\`\`\``;
@@ -1844,7 +1885,7 @@ export function FileViewPanel({
         {!skipTextRead && !truncated ? (
           <button
             type="button"
-            className="ghost fvp-action-btn fvp-find-toggle"
+            className={`ghost fvp-action-btn fvp-find-toggle ${FOOTER_TOGGLE_BTN_CLS}`}
             aria-label={t("files.openFind")}
             title={t("files.openFind")}
             onClick={handleOpenFindPanel}
@@ -1855,7 +1896,7 @@ export function FileViewPanel({
         {onToggleEditorFileMaximized ? (
           <button
             type="button"
-            className="ghost fvp-action-btn fvp-maximize-toggle"
+            className={`ghost fvp-action-btn fvp-maximize-toggle ${FOOTER_TOGGLE_BTN_CLS}`}
             aria-label={isEditorFileMaximized ? t("common.restore") : t("menu.maximize")}
             title={isEditorFileMaximized ? t("common.restore") : t("menu.maximize")}
             onClick={onToggleEditorFileMaximized}
@@ -1870,8 +1911,10 @@ export function FileViewPanel({
         {onToggleEditorSplitLayout ? (
           <button
             type="button"
-            className={`ghost fvp-action-btn fvp-layout-toggle${
-              editorSplitLayout === "horizontal" ? " is-side-by-side" : ""
+            className={`ghost fvp-action-btn fvp-layout-toggle ${FOOTER_TOGGLE_BTN_CLS} ${
+              editorSplitLayout === "horizontal"
+                ? "is-side-by-side text-[var(--text-strong)] border-[color-mix(in_srgb,var(--border-accent)_46%,var(--border-subtle))] bg-[color-mix(in_srgb,var(--surface-card)_76%,var(--surface-active))]"
+                : ""
             }`}
             aria-label={
               editorSplitLayout === "horizontal"
@@ -1922,13 +1965,13 @@ export function FileViewPanel({
       {tabContextMenu.visible && canCloseAllTabs ? (
         <div
           ref={tabContextMenuRef}
-          className="fvp-tab-context-menu"
+          className="fvp-tab-context-menu absolute z-[1000] flex min-w-[148px] flex-col border border-[var(--border-subtle)] rounded-lg bg-[color-mix(in_srgb,var(--surface-card)_92%,transparent)] shadow-[0_10px_24px_rgba(0,0,0,0.24)] p-1"
           role="menu"
           style={{ left: `${tabContextMenu.x}px`, top: `${tabContextMenu.y}px` }}
         >
           <button
             type="button"
-            className="fvp-tab-context-menu-item"
+            className="fvp-tab-context-menu-item border-0 rounded-md bg-transparent text-[var(--text-strong)] text-[12px] text-left px-[9px] py-[7px] hover:bg-[color-mix(in_srgb,var(--surface-hover)_74%,transparent)]"
             role="menuitem"
             onClick={handleCloseAllTabs}
           >
@@ -1939,7 +1982,7 @@ export function FileViewPanel({
       {!usesSingleRowHeader ? renderTopbar() : null}
       {renderExternalChangeNotice()}
       {renderExternalComparePanel()}
-      <div className="fvp-body">{renderContent()}</div>
+      <div className="fvp-body flex-1 min-h-0 min-w-0 overflow-hidden flex flex-col w-full">{renderContent()}</div>
       {renderNavigationPanel()}
       {renderFooter()}
     </div>

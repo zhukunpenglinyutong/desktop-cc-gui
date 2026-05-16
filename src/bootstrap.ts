@@ -30,7 +30,6 @@ import "./styles/settings.css";
 import "./styles/tool-blocks-shell.css";
 import "./styles/tool-blocks.css";
 import "./styles/status-panel.css";
-import "./styles/opencode-panel.css";
 import "./styles/kanban.css";
 import "./styles/git-history.css";
 import "./styles/git-history-shell-keepers.css";

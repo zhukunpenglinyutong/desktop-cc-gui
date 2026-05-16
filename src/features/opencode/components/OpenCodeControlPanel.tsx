@@ -677,30 +677,57 @@ export function OpenCodeControlPanel({
     return null;
   }
 
+  const panelRootClass = embedded
+    ? "opencode-panel is-embedded relative min-w-0 m-0 p-0 mb-0 border-0 bg-transparent rounded-[10px]"
+    : `opencode-panel relative rounded-[10px] border border-[color:var(--border-subtle,#d7dce8)] px-2.5 py-1.5 mb-2 bg-[linear-gradient(180deg,color-mix(in_srgb,var(--surface-item,#f8fafc)_88%,transparent),color-mix(in_srgb,var(--surface-card,#fff)_96%,transparent))]${
+        dock ? " is-dock flex-[0_1_auto] max-w-[520px]" : ""
+      }`;
+  const panelHeaderClass = dock
+    ? "opencode-panel-header flex items-center gap-1.5 min-h-[26px] max-[900px]:flex-wrap max-[900px]:items-start"
+    : "opencode-panel-header flex items-center gap-2 min-h-[32px] max-[900px]:flex-wrap max-[900px]:items-start";
+  const indicatorBaseTone =
+    providerStatusTone === "is-ok"
+      ? "bg-[#22c55e]"
+      : providerStatusTone === "is-runtime"
+        ? "bg-[#f59e0b]"
+        : "bg-[#ef4444]";
   return (
     <section
       ref={panelRootRef}
-      className={`opencode-panel${embedded ? " is-embedded" : ""}${dock ? " is-dock" : ""}`}
+      className={panelRootClass}
       data-testid="opencode-control-panel"
     >
-      <header className="opencode-panel-header">
+      <header className={panelHeaderClass}>
         {!dock && (
-          <div className="opencode-panel-title">
+          <div
+            className={`opencode-panel-title inline-flex items-center gap-1.5 font-semibold text-[color:var(--text-accent,#1d4ed8)] whitespace-nowrap ${
+              embedded ? "text-[10px] [&_span]:opacity-[0.86]" : "text-[11px]"
+            }`}
+          >
             <Activity size={13} aria-hidden />
             <span>OpenCode 状态中心</span>
           </div>
         )}
         {!dock && (
-          <div className="opencode-panel-summary">
-            <span className="opencode-summary-pill" title={sessionIdValue ?? "-"}>
+          <div className="opencode-panel-summary flex flex-1 gap-1.5 min-w-0 overflow-hidden">
+            <span
+              className="opencode-summary-pill inline-flex items-center rounded-full border border-[color:var(--border-strong,#bfdbfe)] bg-[var(--surface-control-hover,#eff6ff)] px-2 py-0.5 text-[10px] text-[color:var(--text-accent,#1d4ed8)] max-w-[240px] max-[900px]:max-w-[calc(46vw-20px)] overflow-hidden text-ellipsis whitespace-nowrap"
+              title={sessionIdValue ?? "-"}
+            >
               Session: {sessionLabel}
             </span>
             <span
-              className={`opencode-connection-indicator ${providerStatusTone}`}
+              className={`opencode-connection-indicator inline-flex items-center gap-1.5 rounded-full border border-[color:var(--border-subtle,#d7dce8)] bg-[var(--surface-card,#fff)] px-2 py-0.5 text-[10px] text-[color:var(--text-muted,#6b7280)] ${providerStatusTone}`}
               title={providerHealth.error ?? providerStatusLabel}
             >
               <span
-                className={`opencode-connection-dot ${providerStatusTone === "is-ok" ? "is-ok" : providerStatusTone === "is-runtime" ? "is-runtime" : "is-fail"}`}
+                className={`opencode-connection-dot w-2 h-2 rounded-full shadow-[0_0_0_2px_rgba(255,255,255,0.9)] ${indicatorBaseTone} ${
+                  providerStatusTone === "is-ok"
+                    ? "is-ok"
+                    : providerStatusTone === "is-runtime"
+                      ? "is-runtime"
+                      : "is-fail"
+                }`}
                 aria-hidden
               />
               <span>{providerStatusLabel}</span>
@@ -708,11 +735,11 @@ export function OpenCodeControlPanel({
           </div>
         )}
         {!dock && (
-          <div className="opencode-panel-actions">
+          <div className="opencode-panel-actions inline-flex items-center gap-2 max-[900px]:ml-auto">
             <button
               ref={panelToggleRef}
               type="button"
-              className="opencode-panel-toggle"
+              className="opencode-panel-toggle inline-flex items-center justify-center cursor-pointer rounded-[7px] border border-[color:var(--border-subtle,#d7dce8)] bg-[var(--surface-card,#fff)] px-2 py-0.5 text-[11px]"
               onClick={() => setDetailOpen((prev) => !prev)}
               title={detailOpen ? "关闭状态面板" : "打开状态面板"}
               aria-label={detailOpen ? "关闭状态面板" : "打开状态面板"}
@@ -724,25 +751,28 @@ export function OpenCodeControlPanel({
       </header>
 
       {detailOpen && (
-        <div className="opencode-drawer-layer" onClick={() => setDetailOpen(false)}>
+        <div
+          className="opencode-drawer-layer fixed inset-0 z-[55] pointer-events-auto bg-[color-mix(in_srgb,#0f172a_16%,transparent)]"
+          onClick={() => setDetailOpen(false)}
+        >
           <aside
             ref={drawerRef}
-            className="opencode-drawer"
+            className="opencode-drawer fixed flex flex-col overflow-hidden pointer-events-auto right-3 bottom-14 w-[min(920px,calc(100vw-24px))] max-h-[min(76vh,820px)] rounded-[14px] border border-[color:var(--border-subtle,#d7dce8)] bg-[var(--surface-card,#fff)] shadow-[0_24px_56px_color-mix(in_srgb,#0f172a_28%,transparent)] max-[900px]:right-2 max-[900px]:left-2 max-[900px]:w-auto max-[900px]:bottom-12 max-[900px]:max-h-[min(80vh,760px)]"
             role="dialog"
             aria-modal="true"
             aria-label="OpenCode 管理面板"
             style={drawerStyle}
             onClick={(event) => event.stopPropagation()}
           >
-            <header className="opencode-drawer-header">
-              <div className="opencode-drawer-title">
+            <header className="opencode-drawer-header flex justify-between items-center px-3 pt-2.5 pb-2 border-b border-[color:var(--border-subtle,#d7dce8)]">
+              <div className="opencode-drawer-title inline-flex items-center gap-1.5 text-[13px] font-semibold text-[color:var(--text-accent,#1d4ed8)]">
                 <Activity size={13} aria-hidden />
                 <span>OpenCode 管理面板</span>
               </div>
-              <div className="opencode-panel-actions">
+              <div className="opencode-panel-actions inline-flex items-center gap-2">
                 <button
                   type="button"
-                  className="opencode-drawer-close"
+                  className="opencode-drawer-close inline-flex items-center justify-center cursor-pointer rounded-lg border border-[color:var(--border-subtle,#d7dce8)] bg-[var(--surface-card,#fff)] w-6 h-6 text-[15px] font-medium leading-none text-[color:var(--text-muted,#6b7280)]"
                   onClick={() => setDetailOpen(false)}
                   aria-label="关闭面板"
                   title="关闭面板"
@@ -751,49 +781,58 @@ export function OpenCodeControlPanel({
                 </button>
               </div>
             </header>
-            <div className="opencode-drawer-tabs" role="tablist" aria-label="OpenCode tabs">
-              <button
-                type="button"
-                role="tab"
-                className={`opencode-drawer-tab${activeTab === "provider" ? " is-active" : ""}`}
-                onClick={() => setActiveTab("provider")}
-              >
-                Provider
-              </button>
-              <button
-                type="button"
-                role="tab"
-                className={`opencode-drawer-tab${activeTab === "mcp" ? " is-active" : ""}`}
-                onClick={() => setActiveTab("mcp")}
-              >
-                MCP
-              </button>
-              <button
-                type="button"
-                role="tab"
-                className={`opencode-drawer-tab${activeTab === "sessions" ? " is-active" : ""}`}
-                onClick={() => setActiveTab("sessions")}
-              >
-                Sessions
-              </button>
-              <button
-                type="button"
-                role="tab"
-                className={`opencode-drawer-tab${activeTab === "advanced" ? " is-active" : ""}`}
-                onClick={() => setActiveTab("advanced")}
-              >
-                Advanced
-              </button>
+            <div
+              className="opencode-drawer-tabs flex gap-1.5 px-3 py-2 border-b border-[color:var(--border-subtle,#d7dce8)] overflow-x-auto"
+              role="tablist"
+              aria-label="OpenCode tabs"
+            >
+              {(["provider", "mcp", "sessions", "advanced"] as const).map((tabId) => {
+                const isActive = activeTab === tabId;
+                const label =
+                  tabId === "provider"
+                    ? "Provider"
+                    : tabId === "mcp"
+                      ? "MCP"
+                      : tabId === "sessions"
+                        ? "Sessions"
+                        : "Advanced";
+                return (
+                  <button
+                    key={tabId}
+                    type="button"
+                    role="tab"
+                    className={`opencode-drawer-tab cursor-pointer rounded-full border whitespace-nowrap px-2.5 py-[3px] text-[11px] ${
+                      isActive
+                        ? "is-active border-[color:var(--border-strong,#bfdbfe)] bg-[var(--surface-control-hover,#eff6ff)] text-[color:var(--text-accent,#1d4ed8)]"
+                        : "border-[color:var(--border-subtle,#d7dce8)] bg-[var(--surface-card,#fff)] text-[color:var(--text-muted,#6b7280)]"
+                    }`}
+                    onClick={() => setActiveTab(tabId)}
+                  >
+                    {label}
+                  </button>
+                );
+              })}
             </div>
-            <div className="opencode-drawer-content">
-      <section className="opencode-onboarding-card" aria-label="OpenCode 连接引导">
-        <h4>连接引导</h4>
-        <p>默认不预选连接。点击连接后请在 CLI 中自行选择空间/Provider 完成认证。</p>
-        <div className="opencode-onboarding-metrics">
-          <span>认证状态：{providerStatusLabel}</span>
+            <div className="opencode-drawer-content px-3 py-2.5 overflow-auto min-h-0">
+      <section
+        className="opencode-onboarding-card rounded-[10px] border border-[color:var(--border-subtle,#d7dce8)] bg-[var(--surface-item,#f8fafc)] p-2.5 mb-2.5"
+        aria-label="OpenCode 连接引导"
+      >
+        <h4 className="m-0 mb-1.5 text-[12px] text-[color:var(--text-accent,#1d4ed8)]">连接引导</h4>
+        <p className="m-0 text-[11px] leading-[1.4] text-[color:var(--text-muted,#6b7280)]">
+          默认不预选连接。点击连接后请在 CLI 中自行选择空间/Provider 完成认证。
+        </p>
+        <div className="opencode-onboarding-metrics flex flex-wrap gap-2 mt-2">
+          <span className="rounded-full border border-[color:var(--border-subtle,#d7dce8)] bg-[var(--surface-card,#fff)] px-2 py-0.5 text-[10px] text-[color:var(--text-strong,#111827)]">
+            认证状态：{providerStatusLabel}
+          </span>
           <button
             type="button"
-            className={`opencode-onboarding-chip${authExpanded ? " is-open" : ""}`}
+            className={`opencode-onboarding-chip cursor-pointer rounded-full border px-2 py-0.5 text-[10px] ${
+              authExpanded
+                ? "is-open border-[color:var(--border-strong,#bfdbfe)] bg-[var(--surface-control-hover,#eff6ff)] text-[color:var(--text-accent,#1d4ed8)]"
+                : "border-[color:var(--border-subtle,#d7dce8)] bg-[var(--surface-card,#fff)] text-[color:var(--text-strong,#111827)]"
+            }`}
             onClick={() => setAuthExpanded((prev) => !prev)}
             aria-expanded={authExpanded}
             aria-label="展开已完成认证详情"
@@ -802,96 +841,125 @@ export function OpenCodeControlPanel({
           </button>
         </div>
         {authExpanded && (
-          <div className="opencode-auth-expand">
-            {authExpandRows.map((row) => (
-              <p key={`${row.label}:${row.value}`} className={`opencode-auth-line is-${row.tone}`}>
-                {row.icon === "ok" && <CheckCircle2 size={12} aria-hidden />}
-                {row.icon === "warn" && <CircleDashed size={12} aria-hidden />}
-                {row.icon === "fail" && <XCircle size={12} aria-hidden />}
-                <span className="opencode-auth-key">{row.label}：</span>
-                {row.key === "authenticatedProviders" ? (
-                  <span className="opencode-auth-vendors">
-                    {(row.providers ?? []).length > 0 ? (
-                      (row.providers ?? []).map((providerName, providerIndex) => {
-                        const normalized = normalizeProviderDisplayName(providerName);
-                        const brand = detectProviderBrand(normalized);
-                        const tagKey = normalizeLooseKey(normalized);
-                        const isSelected = activeProviderTagKey.length > 0 && activeProviderTagKey === tagKey;
-                        return (
-                          <span
-                            key={`${providerName}:${brand}:${providerIndex}`}
-                            role="button"
-                            tabIndex={0}
-                            className={`opencode-auth-vendor-tag${isSelected ? " is-selected" : ""}`}
-                            onClick={() => {
-                              const switchedModel = switchToLatestModelByProvider(normalized);
-                              if (!switchedModel) {
-                                setProviderStatusHint(`未找到 ${normalized} 对应可切换模型`);
-                              } else {
-                                setProviderStatusHint(`已切换到 ${normalized} 最新模型：${switchedModel}`);
-                              }
-                            }}
-                            onKeyDown={(event) => {
-                              if (event.key !== "Enter" && event.key !== " ") {
-                                return;
-                              }
-                              event.preventDefault();
-                              const switchedModel = switchToLatestModelByProvider(normalized);
-                              if (!switchedModel) {
-                                setProviderStatusHint(`未找到 ${normalized} 对应可切换模型`);
-                              } else {
-                                setProviderStatusHint(`已切换到 ${normalized} 最新模型：${switchedModel}`);
-                              }
-                            }}
-                            title={`切换到 ${normalized} 的最新模型`}
-                          >
-                            {brand === "openai" && <Bot size={11} aria-hidden />}
-                            {brand === "anthropic" && <Brain size={11} aria-hidden />}
-                            {brand === "github" && <Github size={11} aria-hidden />}
-                            {brand === "zhipu" && <Cpu size={11} aria-hidden />}
-                            {brand === "minimax" && <Cpu size={11} aria-hidden />}
-                            {brand === "opencode" && <Activity size={11} aria-hidden />}
-                            {brand === "other" && <CircleDashed size={11} aria-hidden />}
-                            <span>{normalized}</span>
-                          </span>
-                        );
-                      })
-                    ) : (
-                      <span className="opencode-auth-value">无</span>
-                    )}
-                  </span>
-                ) : (
-                  <span className="opencode-auth-value">{row.value}</span>
-                )}
-              </p>
-            ))}
+          <div className="opencode-auth-expand mt-2 grid gap-1 rounded-lg border border-dashed border-[color:var(--border-subtle,#d7dce8)] bg-[var(--surface-card,#fff)] p-2">
+            {authExpandRows.map((row) => {
+              const valueToneClass =
+                row.tone === "ok"
+                  ? "[&_.opencode-auth-value]:text-[#166534]"
+                  : row.tone === "warn"
+                    ? "[&_.opencode-auth-value]:text-[#92400e]"
+                    : "[&_.opencode-auth-value]:text-[#991b1b]";
+              return (
+                <p
+                  key={`${row.label}:${row.value}`}
+                  className={`opencode-auth-line is-${row.tone} inline-flex flex-wrap items-center gap-1.5 m-0 text-[11px] text-[color:var(--text-muted,#6b7280)] ${valueToneClass}`}
+                >
+                  {row.icon === "ok" && <CheckCircle2 size={12} aria-hidden />}
+                  {row.icon === "warn" && <CircleDashed size={12} aria-hidden />}
+                  {row.icon === "fail" && <XCircle size={12} aria-hidden />}
+                  <span className="opencode-auth-key text-[color:var(--text-muted,#6b7280)]">{row.label}：</span>
+                  {row.key === "authenticatedProviders" ? (
+                    <span className="opencode-auth-vendors inline-flex flex-wrap gap-1.5">
+                      {(row.providers ?? []).length > 0 ? (
+                        (row.providers ?? []).map((providerName, providerIndex) => {
+                          const normalized = normalizeProviderDisplayName(providerName);
+                          const brand = detectProviderBrand(normalized);
+                          const tagKey = normalizeLooseKey(normalized);
+                          const isSelected = activeProviderTagKey.length > 0 && activeProviderTagKey === tagKey;
+                          return (
+                            <span
+                              key={`${providerName}:${brand}:${providerIndex}`}
+                              role="button"
+                              tabIndex={0}
+                              className={`opencode-auth-vendor-tag inline-flex items-center gap-1 cursor-pointer select-none rounded-full border px-2 py-0.5 text-[11px] ${
+                                isSelected
+                                  ? "is-selected border-[color:color-mix(in_srgb,#22c55e_60%,var(--border-subtle,#d7dce8))] bg-[color:color-mix(in_srgb,#dcfce7_70%,var(--surface-card,#fff))] text-[#166534]"
+                                  : "border-[color:var(--border-subtle,#d7dce8)] bg-[color:color-mix(in_srgb,var(--surface-card,#fff)_80%,white_20%)] text-[color:var(--text-strong,#111827)] hover:bg-[var(--surface-control-hover,#eff6ff)]"
+                              }`}
+                              onClick={() => {
+                                const switchedModel = switchToLatestModelByProvider(normalized);
+                                if (!switchedModel) {
+                                  setProviderStatusHint(`未找到 ${normalized} 对应可切换模型`);
+                                } else {
+                                  setProviderStatusHint(`已切换到 ${normalized} 最新模型：${switchedModel}`);
+                                }
+                              }}
+                              onKeyDown={(event) => {
+                                if (event.key !== "Enter" && event.key !== " ") {
+                                  return;
+                                }
+                                event.preventDefault();
+                                const switchedModel = switchToLatestModelByProvider(normalized);
+                                if (!switchedModel) {
+                                  setProviderStatusHint(`未找到 ${normalized} 对应可切换模型`);
+                                } else {
+                                  setProviderStatusHint(`已切换到 ${normalized} 最新模型：${switchedModel}`);
+                                }
+                              }}
+                              title={`切换到 ${normalized} 的最新模型`}
+                            >
+                              {brand === "openai" && <Bot size={11} aria-hidden />}
+                              {brand === "anthropic" && <Brain size={11} aria-hidden />}
+                              {brand === "github" && <Github size={11} aria-hidden />}
+                              {brand === "zhipu" && <Cpu size={11} aria-hidden />}
+                              {brand === "minimax" && <Cpu size={11} aria-hidden />}
+                              {brand === "opencode" && <Activity size={11} aria-hidden />}
+                              {brand === "other" && <CircleDashed size={11} aria-hidden />}
+                              <span>{normalized}</span>
+                            </span>
+                          );
+                        })
+                      ) : (
+                        <span className="opencode-auth-value font-semibold">无</span>
+                      )}
+                    </span>
+                  ) : (
+                    <span className="opencode-auth-value font-semibold">{row.value}</span>
+                  )}
+                </p>
+              );
+            })}
           </div>
         )}
         {shouldShowProviderStatusHint && (
-          <p className="opencode-provider-status-hint">{providerStatusHint}</p>
+          <p className="opencode-provider-status-hint mt-2 m-0 text-[11px] text-[color:var(--text-accent,#1d4ed8)]">
+            {providerStatusHint}
+          </p>
         )}
         {filteredOutProviderCount > 0 && (
-          <p className="opencode-provider-status-hint">
+          <p className="opencode-provider-status-hint mt-2 m-0 text-[11px] text-[color:var(--text-accent,#1d4ed8)]">
             已自动隐藏 {filteredOutProviderCount} 项疑似失效/不可用 Provider
           </p>
         )}
-        <p className="opencode-onboarding-next-step">{onboardingNextStep}</p>
+        <p className="opencode-onboarding-next-step mt-2 m-0 text-[11px] text-[color:var(--text-muted,#6b7280)]">
+          {onboardingNextStep}
+        </p>
       </section>
-      <section className="opencode-overview-layout">
+      <section className="opencode-overview-layout grid gap-2.5 mb-2.5">
         {hasSessionValue && (
-          <div className="opencode-panel-item is-session is-hero" title={sessionIdValue ?? "-"}>
+          <div
+            className="opencode-panel-item is-session is-hero flex flex-col gap-0.5 rounded-lg border border-[color:var(--border-strong,#bfdbfe)] bg-[color:color-mix(in_srgb,var(--surface-control-hover,#eff6ff)_56%,var(--surface-card,#fff))] px-2 py-1.5 col-[1/-1] [&_span]:text-[11px] [&_span]:text-[color:var(--text-muted,#6b7280)] [&_strong]:text-[12px] [&_strong]:text-[color:var(--text-strong,#111827)] [&_strong]:whitespace-nowrap [&_strong]:overflow-hidden [&_strong]:text-ellipsis"
+            title={sessionIdValue ?? "-"}
+          >
             <span>Session</span>
             <strong>{sessionLabel}</strong>
           </div>
         )}
-        <div className="opencode-panel-grid">
-          <div className="opencode-panel-item is-control" title={snapshot?.agent ?? selectedAgent ?? "default"}>
-            <span className="opencode-control-icon-label" title="Agent" aria-label="Agent">
+        <div className="opencode-panel-grid grid grid-cols-[repeat(3,minmax(0,1fr))] gap-2 mb-2.5">
+          <div
+            className="opencode-panel-item is-control flex flex-col gap-0.5 rounded-lg border border-[color:var(--border-subtle,#d7dce8)] px-2 py-1.5 min-w-0 [&_span]:text-[11px] [&_span]:text-[color:var(--text-muted,#6b7280)] [&_strong]:text-[12px] [&_strong]:text-[color:var(--text-strong,#111827)] [&_strong]:whitespace-nowrap [&_strong]:overflow-hidden [&_strong]:text-ellipsis"
+            title={snapshot?.agent ?? selectedAgent ?? "default"}
+          >
+            <span
+              className="opencode-control-icon-label inline-flex items-center justify-center w-[18px] h-[18px] rounded-md border border-[color:var(--border-subtle,#d7dce8)] !text-[color:var(--text-accent,#1d4ed8)]"
+              title="Agent"
+              aria-label="Agent"
+            >
               <Bot size={12} aria-hidden />
             </span>
             {onSelectAgent ? (
               <select
-                className="opencode-panel-select"
+                className="opencode-panel-select w-full min-w-0 rounded-lg border border-[color:var(--border-subtle,#d7dce8)] bg-[var(--surface-card,#fff)] px-2 py-[3px] text-[12px] text-[color:var(--text-strong,#111827)]"
                 aria-label="OpenCode Agent Selector"
                 value={selectedAgent ?? ""}
                 onChange={(event) => onSelectAgent(event.target.value || null)}
@@ -907,13 +975,20 @@ export function OpenCodeControlPanel({
               <strong>{snapshot?.agent ?? selectedAgent ?? "default"}</strong>
             )}
           </div>
-          <div className="opencode-panel-item is-control" title={resolvedModelValue ?? "未选择模型"}>
-            <span className="opencode-control-icon-label" title="Model" aria-label="Model">
+          <div
+            className="opencode-panel-item is-control flex flex-col gap-0.5 rounded-lg border border-[color:var(--border-subtle,#d7dce8)] px-2 py-1.5 min-w-0 [&_span]:text-[11px] [&_span]:text-[color:var(--text-muted,#6b7280)] [&_strong]:text-[12px] [&_strong]:text-[color:var(--text-strong,#111827)] [&_strong]:whitespace-nowrap [&_strong]:overflow-hidden [&_strong]:text-ellipsis"
+            title={resolvedModelValue ?? "未选择模型"}
+          >
+            <span
+              className="opencode-control-icon-label inline-flex items-center justify-center w-[18px] h-[18px] rounded-md border border-[color:var(--border-subtle,#d7dce8)] !text-[color:var(--text-accent,#1d4ed8)]"
+              title="Model"
+              aria-label="Model"
+            >
               <Brain size={12} aria-hidden />
             </span>
             {onSelectModel ? (
               <select
-                className="opencode-panel-select"
+                className="opencode-panel-select w-full min-w-0 rounded-lg border border-[color:var(--border-subtle,#d7dce8)] bg-[var(--surface-card,#fff)] px-2 py-[3px] text-[12px] text-[color:var(--text-strong,#111827)]"
                 aria-label="OpenCode Model Selector"
                 value={selectedModelId ?? ""}
                 onChange={(event) => onSelectModel(event.target.value)}
@@ -936,13 +1011,20 @@ export function OpenCodeControlPanel({
               <strong>{resolvedModelValue ?? "未选择模型"}</strong>
             )}
           </div>
-          <div className="opencode-panel-item is-control" title={snapshot?.variant ?? selectedVariant ?? "default"}>
-            <span className="opencode-control-icon-label" title="Variant" aria-label="Variant">
+          <div
+            className="opencode-panel-item is-control flex flex-col gap-0.5 rounded-lg border border-[color:var(--border-subtle,#d7dce8)] px-2 py-1.5 min-w-0 [&_span]:text-[11px] [&_span]:text-[color:var(--text-muted,#6b7280)] [&_strong]:text-[12px] [&_strong]:text-[color:var(--text-strong,#111827)] [&_strong]:whitespace-nowrap [&_strong]:overflow-hidden [&_strong]:text-ellipsis"
+            title={snapshot?.variant ?? selectedVariant ?? "default"}
+          >
+            <span
+              className="opencode-control-icon-label inline-flex items-center justify-center w-[18px] h-[18px] rounded-md border border-[color:var(--border-subtle,#d7dce8)] !text-[color:var(--text-accent,#1d4ed8)]"
+              title="Variant"
+              aria-label="Variant"
+            >
               <Cpu size={12} aria-hidden />
             </span>
             {onSelectVariant ? (
               <select
-                className="opencode-panel-select"
+                className="opencode-panel-select w-full min-w-0 rounded-lg border border-[color:var(--border-subtle,#d7dce8)] bg-[var(--surface-card,#fff)] px-2 py-[3px] text-[12px] text-[color:var(--text-strong,#111827)]"
                 aria-label="OpenCode Variant Selector"
                 value={selectedVariant ?? ""}
                 onChange={(event) => onSelectVariant(event.target.value || null)}
@@ -1005,7 +1087,9 @@ export function OpenCodeControlPanel({
         </div>
       )}
 
-      {error && <div className="opencode-panel-error">{error}</div>}
+      {error && (
+        <div className="opencode-panel-error mt-1.5 text-[11px] text-[#991b1b]">{error}</div>
+      )}
     </section>
   );
 }
