@@ -346,3 +346,90 @@ Net delta：10 files，+132 -376（-244 LOC）。
 ### Next Steps
 
 - None - task complete
+
+
+## Session 5: Phase 4 Composer/Dialogs/Toasts 切到 Tailwind/coss token
+
+**Date**: 2026-05-16
+**Task**: Phase 4 Composer/Dialogs/Toasts 切到 Tailwind/coss token
+**Branch**: `chore/bump-version-0.5`
+
+### Summary
+
+(Add summary)
+
+### Main Changes
+
+本会话完成 coss UI 全量迁移 Phase 4。
+
+## 实施摘要
+
+删除 6 个 dialog/toast 类 .css（共 1486 行）；其中 ask-user-question-dialog.css 是 dead CSS（无任何 import 引用，发现于 discovery）。
+新增 toast-animations.css 集中 5 个 @keyframes（68 行）。
+bootstrap.ts imports 由 46 → 42（净减 4）。
+改写 9 个 .tsx：LoadingProgressDialog / ApprovalToasts / AskUserQuestionDialog / RequestUserInputMessage / RequestUserInputSubmittedBlock / ErrorToasts / UpdateToast / input.tsx。
+
+## input.tsx baseline 自然修复
+
+机会主义清理 dead nativeInput prop（无 caller，rg 验证），消去 Base UI InputState style ↔ plain `<input>` 不兼容错。typecheck baseline 由 3 → 2 errors（剩 perfBaseline×2 与本 task 无关）。
+
+## Scope 收缩
+
+composer 4 文件（part1/part2/memory-picker/rewind-modal，共 5476 行 CSS + 5500+ 行 tsx consumers across 9 tsx）整体推迟到 Phase 4.5（4 个 sub-PR）。理由：单 phase 1500+ 行 tsx diff 不可控。
+
+## 字面值测试 pin 报告
+
+layout-swapped-platform-guard.test.ts 不读 Phase 4 任何 6 文件；6 个测试套（AskUserQuestionDialog / ApprovalToasts / RequestUserInputMessage / LoadingProgressDialog / UpdateToast / ErrorToasts）均为 classList / querySelector / role-based pin，保留 semantic class names 即满足。无 defer。
+
+## 0 个 coss primitive 结构性替换
+
+同 Phase 2/3 precedent。Dialog 替 LoadingProgressDialog/AskUserQuestionDialog、Toast 替 ApprovalToasts/ErrorToasts/UpdateToast、RadioGroup/CheckboxGroup/Field 替 option lists——全部推 Phase 4 follow-up（需要 npx shadcn add @coss/dialog + 全局 toastManager 集成 + focus trap/portal 行为 re-validation）。
+
+## 验证
+
+- npm run lint pass
+- npm run typecheck 仅 2 个 pre-existing baseline（input.tsx 已修，剩 perfBaseline×2）
+- npm run test pass（ComposerInput.collaboration 3 个 failure 仍是 pre-existing baseline）
+- npm run test:layout-guard 10/10
+- npm run check:large-files:gate found=0
+- 6 个 phase-4 affected components 40/40 pass（LoadingProgressDialog 2/2 + ErrorToasts 5/5 + UpdateToast 4/4 + RequestUserInputMessage 10/10 + ApprovalToasts 6/6 + AskUserQuestionDialog 13/13）
+
+Net delta：17 files changed，+369 -1636（-1267 LOC from src/）。
+
+## Follow-up
+
+1. Phase 4.5 composer coss 化（4 sub-PR：part1 / part2 / memory-picker / rewind-modal）
+2. Phase 4 follow-up Dialog primitive 结构性替换（LoadingProgressDialog / AskUserQuestionDialog）
+3. Phase 4 follow-up Toast primitive 结构性替换（ErrorToasts / UpdateToast / ApprovalToasts → toastManager 集成）
+4. Phase 4 follow-up RadioGroup / CheckboxGroup / Field 引入（option lists 替换）
+
+**Updated Files**:
+
+- 删除：src/styles/{loading-progress-modal,update-toasts,error-toasts,request-user-input,approval-toasts,ask-user-question-dialog}.css
+- 新增：src/styles/toast-animations.css、.trellis/tasks/05-16-migrate-css-to-coss-ui/phase-4-composer-plan.md
+- 修改：src/bootstrap.ts
+- 修改：src/components/ui/{LoadingProgressDialog,input}.tsx
+- 修改：src/features/app/components/{ApprovalToasts,AskUserQuestionDialog,RequestUserInputMessage}.tsx
+- 修改：src/features/messages/components/toolBlocks/RequestUserInputSubmittedBlock.tsx
+- 修改：src/features/notifications/components/ErrorToasts.tsx
+- 修改：src/features/update/components/UpdateToast.tsx
+- 更新：.trellis/tasks/05-16-migrate-css-to-coss-ui/prd.md、docs/migration-to-coss-ui.md
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `cef9fb11` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
