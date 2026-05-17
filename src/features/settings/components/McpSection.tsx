@@ -454,7 +454,7 @@ export function McpSection({
         </>
       )}
 
-      <div className="settings-mcp-toolbar">
+      <div className="settings-mcp-toolbar flex items-center gap-2 flex-wrap mb-2.5">
         <div className="settings-inline-muted">
           {t("settings.mcpPanel.serverCount", {
             count: visibleServerCount,
@@ -476,22 +476,22 @@ export function McpSection({
       {error ? <div className="settings-inline-error">{error}</div> : null}
       {loading ? <div className="settings-inline-muted">{t("settings.loading")}</div> : null}
 
-      <div className="settings-mcp-overview-grid">
-        <div className="settings-mcp-codex-card settings-mcp-overview-card">
-          <div className="settings-mcp-panel-title">
+      <div className="settings-mcp-overview-grid grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))" }}>
+        <div className="settings-mcp-codex-card settings-mcp-overview-card border border-(--border-muted) rounded-lg bg-(--surface-card) py-2.5 px-3 min-h-24">
+          <div className="settings-mcp-panel-title flex items-center gap-2 text-(--text-strong) text-[13px] font-semibold">
             {getEngineIcon(selectedEngine)}
             {t("settings.mcpPanel.overviewActiveEngine")}
           </div>
-          <div className="settings-mcp-panel-highlight">{t(selectedDescriptor.titleKey)}</div>
+          <div className="settings-mcp-panel-highlight mt-2 text-(--text-strong) text-xl font-bold">{t(selectedDescriptor.titleKey)}</div>
           <div className="settings-mcp-server-meta mt-0.5 text-(--text-muted) text-xs">{t(selectedDescriptor.modeKey)}</div>
         </div>
 
-        <div className="settings-mcp-codex-card settings-mcp-overview-card">
-          <div className="settings-mcp-panel-title">
+        <div className="settings-mcp-codex-card settings-mcp-overview-card border border-(--border-muted) rounded-lg bg-(--surface-card) py-2.5 px-3 min-h-24">
+          <div className="settings-mcp-panel-title flex items-center gap-2 text-(--text-strong) text-[13px] font-semibold">
             <ShieldCheck size={16} />
             {t("settings.mcpPanel.overviewDetectedEngines")}
           </div>
-          <div className="settings-mcp-panel-highlight">
+          <div className="settings-mcp-panel-highlight mt-2 text-(--text-strong) text-xl font-bold">
             {t("settings.mcpPanel.detectedEnginesValue", {
               installed: installedCount,
               total: ORDERED_ENGINES.length,
@@ -500,12 +500,12 @@ export function McpSection({
           <div className="settings-mcp-server-meta mt-0.5 text-(--text-muted) text-xs">{t("settings.mcpPanel.overviewDetectedDesc")}</div>
         </div>
 
-        <div className="settings-mcp-codex-card settings-mcp-overview-card">
-          <div className="settings-mcp-panel-title">
+        <div className="settings-mcp-codex-card settings-mcp-overview-card border border-(--border-muted) rounded-lg bg-(--surface-card) py-2.5 px-3 min-h-24">
+          <div className="settings-mcp-panel-title flex items-center gap-2 text-(--text-strong) text-[13px] font-semibold">
             <Database size={16} />
             {t("settings.mcpPanel.overviewLiveInventory")}
           </div>
-          <div className="settings-mcp-panel-highlight">
+          <div className="settings-mcp-panel-highlight mt-2 text-(--text-strong) text-xl font-bold">
             {t("settings.mcpPanel.serverCount", {
               count: visibleServerCount,
               toolCount: visibleToolCount,
@@ -542,15 +542,15 @@ export function McpSection({
         </div>
       </div>
 
-      <div className="settings-mcp-engine-grid">
+      <div className="settings-mcp-engine-grid grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))" }}>
         {ORDERED_ENGINES.map((engine) => {
           const status = engineStatusMap.get(engine.engineType) ?? null;
           return (
             <div
               key={engine.engineType}
-              className={`settings-mcp-codex-card settings-mcp-engine-card ${engine.engineType === selectedEngine ? "is-active" : ""}`}
+              className={`settings-mcp-codex-card settings-mcp-engine-card border border-(--border-muted) rounded-lg bg-(--surface-card) py-2.5 px-3 ${engine.engineType === selectedEngine ? "is-active" : ""}`}
             >
-              <div className="settings-mcp-engine-head">
+              <div className="settings-mcp-engine-head flex items-center justify-between gap-2">
                 <div className="settings-mcp-server-name flex items-center gap-1.5 text-(--text-strong) text-[13px] font-semibold">
                   {getEngineIcon(engine.engineType)}
                   {t(engine.titleKey)}
@@ -559,18 +559,18 @@ export function McpSection({
                   {t(getEngineStatusBadgeKey(engine.engineType, normalizedActiveEngine, status))}
                 </span>
               </div>
-              <div className="settings-mcp-engine-meta-grid">
-                <div className="settings-mcp-detail-row">
-                  <span className="settings-mcp-detail-label">{t("settings.mcpPanel.detailVersion")}</span>
-                  <span className="settings-mcp-detail-value">{status?.version ?? t("settings.mcpPanel.valueUnknown")}</span>
+              <div className="settings-mcp-engine-meta-grid flex flex-col gap-2 mt-2.5">
+                <div className="settings-mcp-detail-row flex flex-col gap-0.5">
+                  <span className="settings-mcp-detail-label text-(--text-muted) text-[11px]">{t("settings.mcpPanel.detailVersion")}</span>
+                  <span className="settings-mcp-detail-value text-(--text-strong) text-xs leading-normal break-words">{status?.version ?? t("settings.mcpPanel.valueUnknown")}</span>
                 </div>
-                <div className="settings-mcp-detail-row">
-                  <span className="settings-mcp-detail-label">{t("settings.mcpPanel.detailMode")}</span>
-                  <span className="settings-mcp-detail-value">{t(engine.modeKey)}</span>
+                <div className="settings-mcp-detail-row flex flex-col gap-0.5">
+                  <span className="settings-mcp-detail-label text-(--text-muted) text-[11px]">{t("settings.mcpPanel.detailMode")}</span>
+                  <span className="settings-mcp-detail-value text-(--text-strong) text-xs leading-normal break-words">{t(engine.modeKey)}</span>
                 </div>
-                <div className="settings-mcp-detail-row">
-                  <span className="settings-mcp-detail-label">{t("settings.mcpPanel.detailConfigPaths")}</span>
-                  <span className="settings-mcp-detail-value">{getConfigPaths(engine.engineType).join(" · ")}</span>
+                <div className="settings-mcp-detail-row flex flex-col gap-0.5">
+                  <span className="settings-mcp-detail-label text-(--text-muted) text-[11px]">{t("settings.mcpPanel.detailConfigPaths")}</span>
+                  <span className="settings-mcp-detail-value text-(--text-strong) text-xs leading-normal break-words">{getConfigPaths(engine.engineType).join(" · ")}</span>
                 </div>
               </div>
             </div>
@@ -587,7 +587,7 @@ export function McpSection({
         <div
           className="settings-mcp-engine-panel"
         >
-              <div className="settings-mcp-engine-panel-header">
+              <div className="settings-mcp-engine-panel-header flex items-center justify-between gap-2">
                 <div className="settings-mcp-server-name flex items-center gap-1.5 text-(--text-strong) text-[13px] font-semibold">
                   {getEngineIcon(selectedEngine)}
                   {t(selectedDescriptor.titleKey)}
@@ -597,57 +597,57 @@ export function McpSection({
                 </span>
               </div>
 
-              <div className="settings-mcp-detail-grid">
-                <div className="settings-mcp-codex-card">
-                  <div className="settings-mcp-panel-title">
+              <div className="settings-mcp-detail-grid grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))" }}>
+                <div className="settings-mcp-codex-card border border-(--border-muted) rounded-lg bg-(--surface-card) py-2.5 px-3">
+                  <div className="settings-mcp-panel-title flex items-center gap-2 text-(--text-strong) text-[13px] font-semibold">
                     <ShieldCheck size={15} />
                     {t("settings.mcpPanel.rulesTitle")}
                   </div>
-                  <div className="settings-mcp-rule-list">
-                    <div className="settings-mcp-detail-row">
-                      <span className="settings-mcp-detail-label">{t("settings.mcpPanel.ruleModeLabel")}</span>
-                      <span className="settings-mcp-detail-value">{t(selectedDescriptor.modeKey)}</span>
+                  <div className="settings-mcp-rule-list flex flex-col gap-2 mt-2.5">
+                    <div className="settings-mcp-detail-row flex flex-col gap-0.5">
+                      <span className="settings-mcp-detail-label text-(--text-muted) text-[11px]">{t("settings.mcpPanel.ruleModeLabel")}</span>
+                      <span className="settings-mcp-detail-value text-(--text-strong) text-xs leading-normal break-words">{t(selectedDescriptor.modeKey)}</span>
                     </div>
-                    <div className="settings-mcp-detail-row">
-                      <span className="settings-mcp-detail-label">{t("settings.mcpPanel.ruleScopeLabel")}</span>
-                      <span className="settings-mcp-detail-value">{t(selectedDescriptor.scopeKey)}</span>
+                    <div className="settings-mcp-detail-row flex flex-col gap-0.5">
+                      <span className="settings-mcp-detail-label text-(--text-muted) text-[11px]">{t("settings.mcpPanel.ruleScopeLabel")}</span>
+                      <span className="settings-mcp-detail-value text-(--text-strong) text-xs leading-normal break-words">{t(selectedDescriptor.scopeKey)}</span>
                     </div>
-                    <div className="settings-mcp-detail-row">
-                      <span className="settings-mcp-detail-label">{t("settings.mcpPanel.ruleSourceLabel")}</span>
-                      <span className="settings-mcp-detail-value">{t(selectedDescriptor.sourceKey)}</span>
+                    <div className="settings-mcp-detail-row flex flex-col gap-0.5">
+                      <span className="settings-mcp-detail-label text-(--text-muted) text-[11px]">{t("settings.mcpPanel.ruleSourceLabel")}</span>
+                      <span className="settings-mcp-detail-value text-(--text-strong) text-xs leading-normal break-words">{t(selectedDescriptor.sourceKey)}</span>
                     </div>
-                    <div className="settings-mcp-detail-row">
-                      <span className="settings-mcp-detail-label">{t("settings.mcpPanel.ruleRefreshLabel")}</span>
-                      <span className="settings-mcp-detail-value">{t(selectedDescriptor.refreshKey)}</span>
+                    <div className="settings-mcp-detail-row flex flex-col gap-0.5">
+                      <span className="settings-mcp-detail-label text-(--text-muted) text-[11px]">{t("settings.mcpPanel.ruleRefreshLabel")}</span>
+                      <span className="settings-mcp-detail-value text-(--text-strong) text-xs leading-normal break-words">{t(selectedDescriptor.refreshKey)}</span>
                     </div>
-                    <div className="settings-mcp-detail-row">
-                      <span className="settings-mcp-detail-label">{t("settings.mcpPanel.ruleRuntimeLabel")}</span>
-                      <span className="settings-mcp-detail-value">{t(selectedDescriptor.runtimeKey)}</span>
+                    <div className="settings-mcp-detail-row flex flex-col gap-0.5">
+                      <span className="settings-mcp-detail-label text-(--text-muted) text-[11px]">{t("settings.mcpPanel.ruleRuntimeLabel")}</span>
+                      <span className="settings-mcp-detail-value text-(--text-strong) text-xs leading-normal break-words">{t(selectedDescriptor.runtimeKey)}</span>
                     </div>
                   </div>
                 </div>
 
-                <div className="settings-mcp-codex-card">
-                  <div className="settings-mcp-panel-title">
+                <div className="settings-mcp-codex-card border border-(--border-muted) rounded-lg bg-(--surface-card) py-2.5 px-3">
+                  <div className="settings-mcp-panel-title flex items-center gap-2 text-(--text-strong) text-[13px] font-semibold">
                     <Info size={15} />
                     {t("settings.mcpPanel.environmentTitle")}
                   </div>
-                  <div className="settings-mcp-rule-list">
-                    <div className="settings-mcp-detail-row">
-                      <span className="settings-mcp-detail-label">{t("settings.mcpPanel.detailVersion")}</span>
-                      <span className="settings-mcp-detail-value">{selectedStatus?.version ?? t("settings.mcpPanel.valueUnknown")}</span>
+                  <div className="settings-mcp-rule-list flex flex-col gap-2 mt-2.5">
+                    <div className="settings-mcp-detail-row flex flex-col gap-0.5">
+                      <span className="settings-mcp-detail-label text-(--text-muted) text-[11px]">{t("settings.mcpPanel.detailVersion")}</span>
+                      <span className="settings-mcp-detail-value text-(--text-strong) text-xs leading-normal break-words">{selectedStatus?.version ?? t("settings.mcpPanel.valueUnknown")}</span>
                     </div>
-                    <div className="settings-mcp-detail-row">
-                      <span className="settings-mcp-detail-label">{t("settings.mcpPanel.detailBinary")}</span>
-                      <span className="settings-mcp-detail-value">{selectedStatus?.binPath ?? t("settings.mcpPanel.valueUnavailable")}</span>
+                    <div className="settings-mcp-detail-row flex flex-col gap-0.5">
+                      <span className="settings-mcp-detail-label text-(--text-muted) text-[11px]">{t("settings.mcpPanel.detailBinary")}</span>
+                      <span className="settings-mcp-detail-value text-(--text-strong) text-xs leading-normal break-words">{selectedStatus?.binPath ?? t("settings.mcpPanel.valueUnavailable")}</span>
                     </div>
-                    <div className="settings-mcp-detail-row">
-                      <span className="settings-mcp-detail-label">{t("settings.mcpPanel.detailConfigPaths")}</span>
-                      <span className="settings-mcp-detail-value">{getConfigPaths(selectedEngine).join(" · ")}</span>
+                    <div className="settings-mcp-detail-row flex flex-col gap-0.5">
+                      <span className="settings-mcp-detail-label text-(--text-muted) text-[11px]">{t("settings.mcpPanel.detailConfigPaths")}</span>
+                      <span className="settings-mcp-detail-value text-(--text-strong) text-xs leading-normal break-words">{getConfigPaths(selectedEngine).join(" · ")}</span>
                     </div>
-                    <div className="settings-mcp-detail-row">
-                      <span className="settings-mcp-detail-label">{t("settings.mcpPanel.detailRuntimeStatus")}</span>
-                      <span className="settings-mcp-detail-value">
+                    <div className="settings-mcp-detail-row flex flex-col gap-0.5">
+                      <span className="settings-mcp-detail-label text-(--text-muted) text-[11px]">{t("settings.mcpPanel.detailRuntimeStatus")}</span>
+                      <span className="settings-mcp-detail-value text-(--text-strong) text-xs leading-normal break-words">
                         {selectedEngine === "opencode"
                           ? workspaceId
                             ? t("settings.mcpPanel.runtimeStatusOpenCodeReady")
@@ -660,8 +660,8 @@ export function McpSection({
                       </span>
                     </div>
                     {selectedStatus?.error ? (
-                      <div className="settings-mcp-detail-row">
-                        <span className="settings-mcp-detail-label">{t("settings.mcpPanel.detailError")}</span>
+                      <div className="settings-mcp-detail-row flex flex-col gap-0.5">
+                        <span className="settings-mcp-detail-label text-(--text-muted) text-[11px]">{t("settings.mcpPanel.detailError")}</span>
                         <span className="settings-mcp-detail-value settings-inline-error">{selectedStatus.error}</span>
                       </div>
                     ) : null}
@@ -670,8 +670,8 @@ export function McpSection({
               </div>
 
               {selectedEngine === "claude" || selectedEngine === "gemini" ? (
-                <div className="settings-mcp-codex-card">
-                  <div className="settings-mcp-panel-title">
+                <div className="settings-mcp-codex-card border border-(--border-muted) rounded-lg bg-(--surface-card) py-2.5 px-3">
+                  <div className="settings-mcp-panel-title flex items-center gap-2 text-(--text-strong) text-[13px] font-semibold">
                     <FolderTree size={15} />
                     {t("settings.mcpPanel.configServersTitle")}
                   </div>
@@ -689,7 +689,7 @@ export function McpSection({
                             ? t("settings.mcpPanel.urlMeta", { url: server.url })
                             : t("settings.mcpPanel.transportUnknown");
                         return (
-                          <div key={`${selectedEngine}-${server.name}`} className="settings-mcp-server-row">
+                          <div key={`${selectedEngine}-${server.name}`} className="settings-mcp-server-row flex justify-between items-center gap-2.5 py-2.5 px-3 border border-(--border-muted) rounded-lg bg-(--surface-card)">
                             <div>
                               <div className="settings-mcp-server-name flex items-center gap-1.5 text-(--text-strong) text-[13px] font-semibold">
                                 <Database size={14} />
@@ -712,8 +712,8 @@ export function McpSection({
 
               {selectedEngine === "codex" ? (
                 <Fragment>
-                  <div className="settings-mcp-codex-card">
-                    <div className="settings-mcp-panel-title">
+                  <div className="settings-mcp-codex-card border border-(--border-muted) rounded-lg bg-(--surface-card) py-2.5 px-3">
+                    <div className="settings-mcp-panel-title flex items-center gap-2 text-(--text-strong) text-[13px] font-semibold">
                       <Database size={15} />
                       {t("settings.mcpPanel.configServersTitle")}
                     </div>
@@ -731,7 +731,7 @@ export function McpSection({
                               ? t("settings.mcpPanel.urlMeta", { url: server.url })
                               : t("settings.mcpPanel.transportUnknown");
                           return (
-                            <div key={`codex-config-${server.name}`} className="settings-mcp-server-row">
+                            <div key={`codex-config-${server.name}`} className="settings-mcp-server-row flex justify-between items-center gap-2.5 py-2.5 px-3 border border-(--border-muted) rounded-lg bg-(--surface-card)">
                               <div>
                                 <div className="settings-mcp-server-name flex items-center gap-1.5 text-(--text-strong) text-[13px] font-semibold">
                                   <Database size={14} />
@@ -752,8 +752,8 @@ export function McpSection({
                     )}
                   </div>
 
-                  <div className="settings-mcp-codex-card">
-                    <div className="settings-mcp-panel-title">
+                  <div className="settings-mcp-codex-card border border-(--border-muted) rounded-lg bg-(--surface-card) py-2.5 px-3">
+                    <div className="settings-mcp-panel-title flex items-center gap-2 text-(--text-strong) text-[13px] font-semibold">
                       <Server size={15} />
                       {t("settings.mcpPanel.runtimeServersTitle")}
                     </div>
@@ -762,7 +762,7 @@ export function McpSection({
                     ) : (
                       <div className="settings-mcp-list flex flex-col gap-2">
                         {codexServers.map((server) => (
-                          <div key={`codex-runtime-${server.name}`} className="settings-mcp-codex-card">
+                          <div key={`codex-runtime-${server.name}`} className="settings-mcp-codex-card border border-(--border-muted) rounded-lg bg-(--surface-card) py-2.5 px-3">
                             <div className="settings-mcp-codex-head flex items-center justify-between gap-2">
                               <div className="settings-mcp-server-name flex items-center gap-1.5 text-(--text-strong) text-[13px] font-semibold">
                                 <Server size={14} />
@@ -799,24 +799,24 @@ export function McpSection({
 
               {selectedEngine === "opencode" ? (
                 <Fragment>
-                  <div className="settings-mcp-codex-card">
-                    <div className="settings-mcp-panel-title">
+                  <div className="settings-mcp-codex-card border border-(--border-muted) rounded-lg bg-(--surface-card) py-2.5 px-3">
+                    <div className="settings-mcp-panel-title flex items-center gap-2 text-(--text-strong) text-[13px] font-semibold">
                       <ShieldCheck size={15} />
                       {t("settings.mcpPanel.sessionOverviewTitle")}
                     </div>
                     {openCodeSnapshot ? (
-                      <div className="settings-mcp-rule-list">
-                        <div className="settings-mcp-detail-row">
-                          <span className="settings-mcp-detail-label">{t("settings.mcpPanel.globalToggle")}</span>
-                          <span className="settings-mcp-detail-value">
+                      <div className="settings-mcp-rule-list flex flex-col gap-2 mt-2.5">
+                        <div className="settings-mcp-detail-row flex flex-col gap-0.5">
+                          <span className="settings-mcp-detail-label text-(--text-muted) text-[11px]">{t("settings.mcpPanel.globalToggle")}</span>
+                          <span className="settings-mcp-detail-value text-(--text-strong) text-xs leading-normal break-words">
                             {openCodeSnapshot.mcpEnabled
                               ? t("settings.mcpPanel.enabled")
                               : t("settings.mcpPanel.disabled")}
                           </span>
                         </div>
-                        <div className="settings-mcp-detail-row">
-                          <span className="settings-mcp-detail-label">{t("settings.mcpPanel.detailWorkspace")}</span>
-                          <span className="settings-mcp-detail-value">
+                        <div className="settings-mcp-detail-row flex flex-col gap-0.5">
+                          <span className="settings-mcp-detail-label text-(--text-muted) text-[11px]">{t("settings.mcpPanel.detailWorkspace")}</span>
+                          <span className="settings-mcp-detail-value text-(--text-strong) text-xs leading-normal break-words">
                             {activeWorkspace?.name ?? t("settings.mcpPanel.valueUnavailable")}
                           </span>
                         </div>
@@ -830,8 +830,8 @@ export function McpSection({
                     )}
                   </div>
 
-                  <div className="settings-mcp-codex-card">
-                    <div className="settings-mcp-panel-title">
+                  <div className="settings-mcp-codex-card border border-(--border-muted) rounded-lg bg-(--surface-card) py-2.5 px-3">
+                    <div className="settings-mcp-panel-title flex items-center gap-2 text-(--text-strong) text-[13px] font-semibold">
                       <Server size={15} />
                       {t("settings.mcpPanel.runtimeServersTitle")}
                     </div>
@@ -846,7 +846,7 @@ export function McpSection({
                     ) : (
                       <div className="settings-mcp-list flex flex-col gap-2">
                         {openCodeSnapshot.mcpServers.map((server) => (
-                          <div key={`opencode-${server.name}`} className="settings-mcp-server-row">
+                          <div key={`opencode-${server.name}`} className="settings-mcp-server-row flex justify-between items-center gap-2.5 py-2.5 px-3 border border-(--border-muted) rounded-lg bg-(--surface-card)">
                             <div>
                               <div className="settings-mcp-server-name flex items-center gap-1.5 text-(--text-strong) text-[13px] font-semibold">
                                 <Server size={14} />
@@ -871,8 +871,8 @@ export function McpSection({
       </div>
 
       {!loading && engineStatuses.length === 0 && !error ? (
-        <div className="settings-mcp-codex-card settings-mcp-empty-state mt-3">
-          <div className="settings-mcp-panel-title">
+        <div className="settings-mcp-codex-card settings-mcp-empty-state border border-(--border-muted) rounded-lg bg-(--surface-card) py-2.5 px-3 mt-3">
+          <div className="settings-mcp-panel-title flex items-center gap-2 text-(--text-strong) text-[13px] font-semibold">
             <TriangleAlert size={15} />
             {t("settings.mcpPanel.detectEmptyTitle")}
           </div>

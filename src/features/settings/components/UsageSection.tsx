@@ -275,13 +275,13 @@ export function UsageSection({
       </div>
 
       <div className="settings-usage-panel">
-        <div className="settings-usage-notice">
+        <div className="settings-usage-notice flex items-center gap-2 mb-3 py-2.5 px-3 rounded-lg text-xs" style={{ border: "1px solid color-mix(in srgb, #f59e0b 35%, transparent)", background: "color-mix(in srgb, #f59e0b 22%, transparent)", color: "color-mix(in srgb, #f59e0b 85%, var(--text-strong))" }}>
           <span className="codicon codicon-warning" />
           {t("settings.usagePanel.estimateNotice")}
         </div>
 
-        <div className="settings-usage-controls">
-          <div className="settings-usage-controls-left">
+        <div className="settings-usage-controls flex justify-between items-center gap-2.5 flex-wrap">
+          <div className="settings-usage-controls-left flex items-center gap-2.5 flex-wrap">
             <div className="settings-usage-segmented">
               <button
                 type="button"
@@ -353,7 +353,7 @@ export function UsageSection({
 
         {statistics ? (
           <>
-            <div className="settings-usage-tabs">
+            <div className="settings-usage-tabs flex gap-1 my-4 border-b border-(--border-muted) flex-wrap">
               <button
                 type="button"
                 className={`settings-usage-tab-btn ${activeTab === "overview" ? "active" : ""}`}
@@ -388,17 +388,17 @@ export function UsageSection({
               </button>
             </div>
 
-            <div className="settings-usage-content">
+            <div className="settings-usage-content min-h-[360px]">
               {activeTab === "overview" ? (
-                <div className="settings-usage-overview">
-                  <div className="settings-usage-project-info">
+                <div className="settings-usage-overview flex flex-col gap-[18px]">
+                  <div className="settings-usage-project-info flex items-center gap-2 py-2.5 px-3 rounded-lg border bg-(--settings-usage-surface-soft) border-(--settings-usage-border-soft)">
                     <span className="codicon codicon-folder" />
                     <span className="project-name">
                       {scope === "all" ? t("settings.usagePanel.scopeAll") : statistics.projectName}
                     </span>
                   </div>
 
-                  <div className="settings-usage-stat-cards">
+                  <div className="settings-usage-stat-cards grid gap-2.5" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))" }}>
                     <div className="settings-usage-stat-card cost-card">
                       <div className="stat-icon">
                         <span className="codicon codicon-credit-card" />
@@ -469,13 +469,13 @@ export function UsageSection({
 
                   <div className="settings-usage-token-breakdown">
                     <h4>{t("settings.usagePanel.tokenBreakdown")}</h4>
-                    <div className="settings-usage-token-breakdown-inner">
-                      <div className="settings-usage-token-row">
-                        <div className="settings-usage-token-header">
+                    <div className="settings-usage-token-breakdown-inner border border-(--settings-usage-border-soft) rounded-[10px] bg-(--settings-usage-surface-soft) p-3.5 flex flex-col gap-3">
+                      <div className="settings-usage-token-row flex flex-col gap-1.5">
+                        <div className="settings-usage-token-header flex justify-between items-center text-[13px] text-(--text-strong)">
                           <span>{t("settings.usagePanel.input")}</span>
                           <span>{formatNumber(statistics.totalUsage.inputTokens)}</span>
                         </div>
-                        <div className="settings-usage-token-track">
+                        <div className="settings-usage-token-track w-full h-2 rounded-md overflow-hidden" style={{ background: "color-mix(in srgb, var(--surface-hover) 64%, var(--surface-card-strong) 36%)" }}>
                           <div
                             className="settings-usage-token-fill input"
                             style={{ width: `${getTokenPercentage(statistics.totalUsage.inputTokens)}%` }}
@@ -483,12 +483,12 @@ export function UsageSection({
                         </div>
                       </div>
 
-                      <div className="settings-usage-token-row">
-                        <div className="settings-usage-token-header">
+                      <div className="settings-usage-token-row flex flex-col gap-1.5">
+                        <div className="settings-usage-token-header flex justify-between items-center text-[13px] text-(--text-strong)">
                           <span>{t("settings.usagePanel.output")}</span>
                           <span>{formatNumber(statistics.totalUsage.outputTokens)}</span>
                         </div>
-                        <div className="settings-usage-token-track">
+                        <div className="settings-usage-token-track w-full h-2 rounded-md overflow-hidden" style={{ background: "color-mix(in srgb, var(--surface-hover) 64%, var(--surface-card-strong) 36%)" }}>
                           <div
                             className="settings-usage-token-fill output"
                             style={{ width: `${getTokenPercentage(statistics.totalUsage.outputTokens)}%` }}
@@ -496,12 +496,12 @@ export function UsageSection({
                         </div>
                       </div>
 
-                      <div className="settings-usage-token-row">
-                        <div className="settings-usage-token-header">
+                      <div className="settings-usage-token-row flex flex-col gap-1.5">
+                        <div className="settings-usage-token-header flex justify-between items-center text-[13px] text-(--text-strong)">
                           <span>{t("settings.usagePanel.cacheWrite")}</span>
                           <span>{formatNumber(statistics.totalUsage.cacheWriteTokens)}</span>
                         </div>
-                        <div className="settings-usage-token-track">
+                        <div className="settings-usage-token-track w-full h-2 rounded-md overflow-hidden" style={{ background: "color-mix(in srgb, var(--surface-hover) 64%, var(--surface-card-strong) 36%)" }}>
                           <div
                             className="settings-usage-token-fill cache-write"
                             style={{ width: `${getTokenPercentage(statistics.totalUsage.cacheWriteTokens)}%` }}
@@ -509,12 +509,12 @@ export function UsageSection({
                         </div>
                       </div>
 
-                      <div className="settings-usage-token-row">
-                        <div className="settings-usage-token-header">
+                      <div className="settings-usage-token-row flex flex-col gap-1.5">
+                        <div className="settings-usage-token-header flex justify-between items-center text-[13px] text-(--text-strong)">
                           <span>{t("settings.usagePanel.cacheRead")}</span>
                           <span>{formatNumber(statistics.totalUsage.cacheReadTokens)}</span>
                         </div>
-                        <div className="settings-usage-token-track">
+                        <div className="settings-usage-token-track w-full h-2 rounded-md overflow-hidden" style={{ background: "color-mix(in srgb, var(--surface-hover) 64%, var(--surface-card-strong) 36%)" }}>
                           <div
                             className="settings-usage-token-fill cache-read"
                             style={{ width: `${getTokenPercentage(statistics.totalUsage.cacheReadTokens)}%` }}
@@ -527,18 +527,19 @@ export function UsageSection({
                   <div className="settings-usage-engine-distribution">
                     <h4>{t("settings.usagePanel.engineDistribution")}</h4>
                     {engineUsageItems.length > 0 ? (
-                      <div className="settings-usage-engine-list">
+                      <div className="settings-usage-engine-list border border-(--settings-usage-border-soft) rounded-[10px] bg-(--settings-usage-surface-soft) p-3.5 flex flex-col gap-3">
                         {engineUsageItems.map((item) => (
-                          <div key={item.engine} className="settings-usage-engine-row">
-                            <div className="settings-usage-engine-header">
+                          <div key={item.engine} className="settings-usage-engine-row flex flex-col gap-1.5">
+                            <div className="settings-usage-engine-header flex justify-between items-center text-[13px] text-(--text-strong)">
                               <span>{item.engine}</span>
                               <span>{item.count}</span>
                             </div>
-                            <div className="settings-usage-engine-track">
+                            <div className="settings-usage-engine-track w-full h-2 rounded-md overflow-hidden" style={{ background: "color-mix(in srgb, var(--surface-hover) 64%, var(--surface-card-strong) 36%)" }}>
                               <div
-                                className="settings-usage-engine-fill"
+                                className="settings-usage-engine-fill h-full transition-[width] duration-200 ease-out rounded-md"
                                 style={{
                                   width: `${Math.max(0, Math.min(100, (item.count / maxEngineUsageCount) * 100))}%`,
+                                  background: "linear-gradient(90deg, color-mix(in srgb, #14b8a6 86%, #ffffff 14%) 0%, color-mix(in srgb, #14b8a6 62%, transparent) 100%)",
                                 }}
                               />
                             </div>
@@ -553,18 +554,19 @@ export function UsageSection({
                   <div className="settings-usage-code-changes">
                     <h4>{t("settings.usagePanel.dailyCodeChanges")}</h4>
                     {filteredDailyCodeChanges.length > 0 ? (
-                      <div className="settings-usage-code-change-list">
+                      <div className="settings-usage-code-change-list border border-(--settings-usage-border-soft) rounded-[10px] bg-(--settings-usage-surface-soft) p-3.5 flex flex-col gap-3">
                         {filteredDailyCodeChanges.map((item) => (
-                          <div key={item.date} className="settings-usage-code-change-row">
-                            <div className="settings-usage-code-change-header">
+                          <div key={item.date} className="settings-usage-code-change-row flex flex-col gap-1.5">
+                            <div className="settings-usage-code-change-header flex justify-between items-center text-[13px] text-(--text-strong)">
                               <span>{formatShortDate(item.date)}</span>
                               <span>{formatNumber(item.modifiedLines)} {t("settings.usagePanel.lines")}</span>
                             </div>
-                            <div className="settings-usage-code-change-track">
+                            <div className="settings-usage-code-change-track w-full h-2 rounded-md overflow-hidden" style={{ background: "color-mix(in srgb, var(--surface-hover) 64%, var(--surface-card-strong) 36%)" }}>
                               <div
-                                className="settings-usage-code-change-fill"
+                                className="settings-usage-code-change-fill h-full transition-[width] duration-200 ease-out rounded-md"
                                 style={{
                                   width: `${Math.max(0, Math.min(100, (item.modifiedLines / maxDailyCodeLines) * 100))}%`,
+                                  background: "linear-gradient(90deg, color-mix(in srgb, #ef4444 86%, #ffffff 14%) 0%, color-mix(in srgb, #ef4444 62%, transparent) 100%)",
                                 }}
                               />
                             </div>
@@ -579,9 +581,9 @@ export function UsageSection({
                   {statistics.byModel.length > 0 ? (
                     <div className="settings-usage-top-models">
                       <h4>{t("settings.usagePanel.topModels")}</h4>
-                      <div className="settings-usage-top-models-list">
+                      <div className="settings-usage-top-models-list flex flex-col gap-2">
                         {statistics.byModel.slice(0, 3).map((model, index) => (
-                          <div key={model.model} className="settings-usage-model-card">
+                          <div key={model.model} className="settings-usage-model-card border border-(--settings-usage-border-soft) rounded-lg bg-(--settings-usage-surface-soft) py-2.5 px-3 flex items-center gap-2.5">
                             <div className="model-rank">#{index + 1}</div>
                             <div className="model-info">
                               <div className="model-name">{model.model}</div>
@@ -602,9 +604,9 @@ export function UsageSection({
               {activeTab === "models" ? (
                 <div className="settings-usage-models-tab">
                   <h4>{t("settings.usagePanel.byModel")}</h4>
-                  <div className="settings-usage-model-list">
+                  <div className="settings-usage-model-list flex flex-col gap-2">
                     {statistics.byModel.map((model) => (
-                      <div key={model.model} className="settings-usage-model-item">
+                      <div key={model.model} className="settings-usage-model-item border border-(--settings-usage-border-soft) rounded-lg bg-(--settings-usage-surface-soft) p-3">
                         <div className="model-header">
                           <span className="model-name">{model.model}</span>
                           <span className="model-cost">{formatCost(model.totalCost)}</span>
@@ -634,7 +636,7 @@ export function UsageSection({
               ) : null}
 
               {activeTab === "sessions" ? (
-                <div className="settings-usage-sessions-tab">
+                <div className="settings-usage-sessions-tab flex flex-col gap-3">
                   <div className="sessions-header">
                     <h4>
                       {t("settings.usagePanel.sessionList")} ({filteredSessions.length})
@@ -657,9 +659,9 @@ export function UsageSection({
                     </div>
                   </div>
 
-                  <div className="settings-usage-session-list">
+                  <div className="settings-usage-session-list flex flex-col gap-2">
                     {paginatedSessions.map((session, index) => (
-                      <div key={session.sessionId} className="settings-usage-session-item">
+                      <div key={session.sessionId} className="settings-usage-session-item border border-(--settings-usage-border-soft) rounded-lg bg-(--settings-usage-surface-soft) p-2.5 flex items-center gap-2.5">
                         <div className="session-rank">
                           {(sessionPage - 1) * SESSIONS_PER_PAGE + index + 1}
                         </div>
@@ -682,7 +684,7 @@ export function UsageSection({
                   </div>
 
                   {totalPages > 1 ? (
-                    <div className="settings-usage-pagination">
+                    <div className="settings-usage-pagination flex items-center justify-center gap-2.5 py-2">
                       <button
                         type="button"
                         onClick={() => setSessionPage((prev) => Math.max(1, prev - 1))}
@@ -710,9 +712,9 @@ export function UsageSection({
               {activeTab === "timeline" ? (
                 <div className="settings-usage-timeline-tab">
                   <h4>{t("settings.usagePanel.dailyTrend")}</h4>
-                  <div className="settings-usage-timeline-chart">
+                  <div className="settings-usage-timeline-chart border border-(--settings-usage-border-soft) rounded-[10px] bg-(--settings-usage-surface-soft) p-3.5">
                     {filteredDailyUsage.length > 0 ? (
-                      <div className="settings-usage-chart-with-axis">
+                      <div className="settings-usage-chart-with-axis flex gap-2.5 min-h-[280px]">
                         <div className="settings-usage-chart-y-axis">
                           {[1, 0.75, 0.5, 0.25, 0].map((ratio) => (
                             <div key={ratio} className="y-axis-label">
@@ -720,13 +722,13 @@ export function UsageSection({
                             </div>
                           ))}
                         </div>
-                        <div className="settings-usage-chart-main">
+                        <div className="settings-usage-chart-main flex-1 min-w-0 relative">
                           <div className="settings-usage-chart-grid">
                             {[0, 1, 2, 3, 4].map((index) => (
                               <div key={index} className="chart-grid-line" style={{ bottom: `${index * 25}%` }} />
                             ))}
                           </div>
-                          <div className="settings-usage-chart-scroll-view">
+                          <div className="settings-usage-chart-scroll-view overflow-x-auto overflow-y-hidden h-full relative z-[1]">
                             <div className="settings-usage-chart-bars">
                               {filteredDailyUsage.map((day) => {
                                 const height = maxDailyCost > 0 ? (day.cost / maxDailyCost) * 100 : 0;

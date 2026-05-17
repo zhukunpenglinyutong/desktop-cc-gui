@@ -122,7 +122,7 @@ export function BasicBehaviorSection({
         <div className="settings-subsection-subtitle">
           {t("settings.sendShortcutSubDescription")}
         </div>
-        <div className="settings-shortcut-cards">
+        <div className="settings-shortcut-cards flex gap-3 mb-4">
           <button
             type="button"
             className={`settings-shortcut-card ${
@@ -133,14 +133,14 @@ export function BasicBehaviorSection({
             }}
           >
             {appSettings.composerSendShortcut === "enter" ? (
-              <div className="settings-shortcut-card-check" aria-hidden>
+              <div className="settings-shortcut-card-check absolute top-2 right-2 w-5 h-5 rounded-full inline-flex items-center justify-center bg-(--primary) text-white" aria-hidden>
                 <Check size={12} />
               </div>
             ) : null}
-            <div className="settings-shortcut-card-title">
+            <div className="settings-shortcut-card-title text-[13px] font-semibold text-(--text-strong) mb-1">
               {t("settings.sendShortcutEnterTitle")}
             </div>
-            <div className="settings-shortcut-card-desc">
+            <div className="settings-shortcut-card-desc text-xs text-(--text-muted)">
               {t("settings.sendShortcutEnterDesc")}
             </div>
           </button>
@@ -154,14 +154,14 @@ export function BasicBehaviorSection({
             }}
           >
             {appSettings.composerSendShortcut === "cmdEnter" ? (
-              <div className="settings-shortcut-card-check" aria-hidden>
+              <div className="settings-shortcut-card-check absolute top-2 right-2 w-5 h-5 rounded-full inline-flex items-center justify-center bg-(--primary) text-white" aria-hidden>
                 <Check size={12} />
               </div>
             ) : null}
-            <div className="settings-shortcut-card-title">
+            <div className="settings-shortcut-card-title text-[13px] font-semibold text-(--text-strong) mb-1">
               {t("settings.sendShortcutCmdEnterTitle")}
             </div>
-            <div className="settings-shortcut-card-desc">
+            <div className="settings-shortcut-card-desc text-xs text-(--text-muted)">
               {t("settings.sendShortcutCmdEnterDesc")}
             </div>
           </button>

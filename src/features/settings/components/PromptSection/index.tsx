@@ -373,7 +373,7 @@ export function PromptSection({
             />
           </div>
 
-          <div className="settings-prompt-toolbar settings-prompt-toolbar--primary">
+          <div className="settings-prompt-toolbar settings-prompt-toolbar--primary flex items-center gap-2.5 flex-wrap mb-3.5">
             <div className="settings-select-wrap settings-prompt-filter-wrap">
               <select
                 className="settings-select settings-select--compact"
@@ -416,7 +416,7 @@ export function PromptSection({
             </Button>
           </div>
 
-          <div className="settings-prompt-toolbar settings-prompt-toolbar--secondary">
+          <div className="settings-prompt-toolbar settings-prompt-toolbar--secondary flex items-center gap-2 flex-wrap -mt-0.5">
             <Button
               type="button"
               variant="outline"

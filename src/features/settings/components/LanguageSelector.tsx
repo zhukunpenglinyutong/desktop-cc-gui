@@ -22,9 +22,9 @@ export function LanguageSelector({ rowClassName }: LanguageSelectorProps = {}) {
 
   return (
     <div className={`settings-row mb-3 ${rowClassName ?? ""}`.trim()}>
-      <div className="settings-label settings-basic-field-header">
-        <Languages className="settings-basic-field-icon" aria-hidden />
-        <span className="settings-basic-field-label">{t("settings.language")}</span>
+      <div className="settings-label settings-basic-field-header flex items-center gap-2">
+        <Languages className="settings-basic-field-icon w-4 h-4 text-(--text-strong)" aria-hidden />
+        <span className="settings-basic-field-label text-sm font-semibold text-(--text-strong)">{t("settings.language")}</span>
       </div>
       <div className="settings-control">
         <div

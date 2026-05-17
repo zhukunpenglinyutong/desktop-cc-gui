@@ -956,7 +956,7 @@ export function SkillsSection({
             <div className="settings-section-subtitle settings-skills-head-desc mb-0 flex-[0_0_auto]">
               {t("settings.skillsPanel.description")}
             </div>
-            <div className="settings-skills-toolbar settings-skills-toolbar--inline mb-0 flex-nowrap max-[1100px]:w-full max-[1100px]:justify-start max-[1100px]:flex-wrap">
+            <div className="settings-skills-toolbar settings-skills-toolbar--inline flex items-center gap-2 flex-nowrap max-[1100px]:w-full max-[1100px]:justify-start max-[1100px]:flex-wrap">
               <label className="settings-search-field inline-flex items-center gap-1.5 min-w-[340px] [&>svg]:text-[var(--text-faint)] max-[1100px]:min-w-[220px]">
                 <Search size={14} />
                 <Input

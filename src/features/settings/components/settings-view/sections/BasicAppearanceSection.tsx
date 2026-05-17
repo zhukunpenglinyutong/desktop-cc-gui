@@ -213,12 +213,12 @@ export function BasicAppearanceSection({
         <div className="settings-subsection-subtitle">
           {t("settings.displaySubDescription")}
         </div>
-        <div className="settings-field settings-basic-theme-field settings-basic-item">
-          <div className="settings-basic-field-header">
-            <Palette className="settings-basic-field-icon" aria-hidden />
-            <span className="settings-basic-field-label">{t("settings.theme")}</span>
+        <div className="settings-field settings-basic-theme-field settings-basic-item mb-2.5">
+          <div className="settings-basic-field-header flex items-center gap-2">
+            <Palette className="settings-basic-field-icon w-4 h-4 text-(--text-strong)" aria-hidden />
+            <span className="settings-basic-field-label text-sm font-semibold text-(--text-strong)">{t("settings.theme")}</span>
           </div>
-          <div className="settings-basic-theme-selector" role="radiogroup" aria-label={t("settings.theme")}>
+          <div className="settings-basic-theme-selector flex flex-wrap gap-2.5" role="radiogroup" aria-label={t("settings.theme")}>
             <button
               type="button"
               role="radio"
@@ -233,7 +233,8 @@ export function BasicAppearanceSection({
                 })
               }
             >
-              <span className="settings-basic-theme-icon settings-basic-theme-icon-system">
+              <span className="settings-basic-theme-icon settings-basic-theme-icon-system w-9 h-9 rounded-[10px] inline-flex items-center justify-center shrink-0 text-white border border-[#818cf8]"
+              style={{ background: "linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)" }}>
                 <Monitor size={14} />
               </span>
               <span>{t("settings.themeSystem")}</span>
@@ -252,7 +253,8 @@ export function BasicAppearanceSection({
                 })
               }
             >
-              <span className="settings-basic-theme-icon settings-basic-theme-icon-light">
+              <span className="settings-basic-theme-icon settings-basic-theme-icon-light w-9 h-9 rounded-[10px] inline-flex items-center justify-center shrink-0 text-[#2c2d30] border border-[#d5d7de]"
+              style={{ background: "linear-gradient(135deg, #ffffff 0%, #f5f5f5 100%)" }}>
                 <Sun size={14} />
               </span>
               <span>{t("settings.themeLight")}</span>
@@ -271,7 +273,8 @@ export function BasicAppearanceSection({
                 })
               }
             >
-              <span className="settings-basic-theme-icon settings-basic-theme-icon-dark">
+              <span className="settings-basic-theme-icon settings-basic-theme-icon-dark w-9 h-9 rounded-[10px] inline-flex items-center justify-center shrink-0 text-white border border-[#3f4148]"
+              style={{ background: "linear-gradient(135deg, #2d2d2d 0%, #1e1e1e 100%)" }}>
                 <Moon size={14} />
               </span>
               <span>{t("settings.themeDark")}</span>
@@ -291,7 +294,7 @@ export function BasicAppearanceSection({
                 })
               }
             >
-              <span className="settings-basic-theme-icon settings-basic-theme-icon-custom">
+              <span className="settings-basic-theme-icon settings-basic-theme-icon-custom w-9 h-9 rounded-[10px] inline-flex items-center justify-center shrink-0">
                 <Palette size={14} />
               </span>
               <span>{t("settings.themeCustom")}</span>
@@ -301,9 +304,9 @@ export function BasicAppearanceSection({
         </div>
         {appSettings.theme === "custom" ? (
           <div className="settings-field settings-basic-item">
-            <div className="settings-basic-field-header">
-              <Palette className="settings-basic-field-icon" aria-hidden />
-              <span className="settings-basic-field-label">{t("settings.themePreset")}</span>
+            <div className="settings-basic-field-header flex items-center gap-2">
+              <Palette className="settings-basic-field-icon w-4 h-4 text-(--text-strong)" aria-hidden />
+              <span className="settings-basic-field-label text-sm font-semibold text-(--text-strong)">{t("settings.themePreset")}</span>
             </div>
             <div className="settings-control settings-basic-theme-preset-control">
               <div className="settings-select-wrap settings-basic-theme-preset-select-wrap">
@@ -332,11 +335,11 @@ export function BasicAppearanceSection({
         ) : null}
         <LanguageSelector rowClassName="settings-basic-item" />
         <div className="settings-field settings-basic-item">
-          <div className="settings-basic-field-header">
-            <ArrowLeftRight className="settings-basic-field-icon" aria-hidden />
-            <span className="settings-basic-field-label">{t("settings.canvasWidth")}</span>
+          <div className="settings-basic-field-header flex items-center gap-2">
+            <ArrowLeftRight className="settings-basic-field-icon w-4 h-4 text-(--text-strong)" aria-hidden />
+            <span className="settings-basic-field-label text-sm font-semibold text-(--text-strong)">{t("settings.canvasWidth")}</span>
           </div>
-          <div className="settings-basic-theme-selector" role="radiogroup" aria-label={t("settings.canvasWidth")}>
+          <div className="settings-basic-theme-selector flex flex-wrap gap-2.5" role="radiogroup" aria-label={t("settings.canvasWidth")}>
             <button
               type="button"
               role="radio"
@@ -373,11 +376,11 @@ export function BasicAppearanceSection({
           <div className="settings-help">{t("settings.canvasWidthDesc")}</div>
         </div>
         <div className="settings-field settings-basic-item">
-          <div className="settings-basic-field-header">
-            <PanelsLeftRight className="settings-basic-field-icon" aria-hidden />
-            <span className="settings-basic-field-label">{t("settings.layoutMode")}</span>
+          <div className="settings-basic-field-header flex items-center gap-2">
+            <PanelsLeftRight className="settings-basic-field-icon w-4 h-4 text-(--text-strong)" aria-hidden />
+            <span className="settings-basic-field-label text-sm font-semibold text-(--text-strong)">{t("settings.layoutMode")}</span>
           </div>
-          <div className="settings-basic-theme-selector" role="radiogroup" aria-label={t("settings.layoutMode")}>
+          <div className="settings-basic-theme-selector flex flex-wrap gap-2.5" role="radiogroup" aria-label={t("settings.layoutMode")}>
             <button
               type="button"
               role="radio"
@@ -414,9 +417,9 @@ export function BasicAppearanceSection({
           <div className="settings-help">{t("settings.layoutModeDesc")}</div>
         </div>
         <div className="settings-field settings-basic-item settings-scale-item">
-          <div className="settings-basic-field-header">
-            <Type className="settings-basic-field-icon" aria-hidden />
-            <span className="settings-basic-field-label">{t("settings.interfaceScale")}</span>
+          <div className="settings-basic-field-header flex items-center gap-2">
+            <Type className="settings-basic-field-icon w-4 h-4 text-(--text-strong)" aria-hidden />
+            <span className="settings-basic-field-label text-sm font-semibold text-(--text-strong)">{t("settings.interfaceScale")}</span>
           </div>
           <div className="settings-control settings-scale-control">
             <input
@@ -463,7 +466,7 @@ export function BasicAppearanceSection({
         <div className="settings-client-ui-visibility-head">
           <div>
             <div className="settings-subsection-title settings-client-ui-visibility-title">
-              <Eye className="settings-basic-field-icon" aria-hidden />
+              <Eye className="settings-basic-field-icon w-4 h-4 text-(--text-strong)" aria-hidden />
               <span>{t("settings.clientUiVisibility.title")}</span>
             </div>
             <div className="settings-subsection-subtitle">
@@ -551,14 +554,14 @@ export function BasicAppearanceSection({
           );
         })}
       </div>
-      <div className="settings-color-config-card settings-basic-group-card">
-        <div className="settings-color-config-head">
-          <MessageCircle className="settings-color-config-icon" aria-hidden />
-          <span className="settings-color-config-title">
+      <div className="settings-color-config-card settings-basic-group-card mb-3 py-3.5 px-4 rounded-[14px] border" style={{ borderColor: "color-mix(in srgb, var(--border-muted) 88%, transparent)", background: "color-mix(in srgb, var(--surface-card) 78%, transparent)" }}>
+        <div className="settings-color-config-head flex items-center gap-2 mb-3">
+          <MessageCircle className="settings-color-config-icon w-4 h-4 text-(--text-strong)" aria-hidden />
+          <span className="settings-color-config-title text-[15px] font-bold text-(--text-strong)">
             {t("settings.userMsgColorLabel")}
           </span>
         </div>
-        <div className="settings-color-preset-grid" role="list">
+        <div className="settings-color-preset-grid flex flex-wrap gap-2.5 mb-3" role="list">
           {userMsgPresets.map((preset) => (
             <button
               key={preset.color}
@@ -571,26 +574,26 @@ export function BasicAppearanceSection({
               data-testid={`settings-user-msg-color-preset-${preset.color.slice(1)}`}
             >
               <span
-                className="settings-color-swatch-inner"
+                className="settings-color-swatch-inner w-full h-full rounded-[10px]"
                 style={{ backgroundColor: preset.color }}
               />
             </button>
           ))}
         </div>
-        <div className="settings-color-custom-row">
-          <span className="settings-color-custom-label">
+        <div className="settings-color-custom-row flex items-center gap-2.5 flex-wrap mb-2.5">
+          <span className="settings-color-custom-label text-[13px] text-(--text-muted)">
             {t("settings.userMsgColorCustom")}
           </span>
           <label className="settings-color-picker" aria-label={t("settings.userMsgColorLabel")}>
             <span
-              className="settings-color-picker-preview"
+              className="settings-color-picker-preview block w-full h-full"
               style={{
                 backgroundColor: normalizedUserMsgColor || defaultUserMsgColor,
               }}
             />
             <input
               type="color"
-              className="settings-color-picker-input"
+              className="settings-color-picker-input absolute inset-0 border-none p-0 opacity-0 cursor-pointer"
               value={normalizedUserMsgColor || defaultUserMsgColor}
               onChange={handleUserMsgColorPickerChange}
               aria-label={t("settings.userMsgColorLabel")}
@@ -598,7 +601,8 @@ export function BasicAppearanceSection({
           </label>
           <input
             type="text"
-            className="settings-input settings-color-hex-input"
+            className="settings-input settings-color-hex-input w-[140px] min-h-[46px] text-[13px]"
+            style={{ fontFamily: "var(--code-font-family)" }}
             value={userMsgHexDraft}
             onChange={handleUserMsgHexInputChange}
             placeholder="#6e40c9"
@@ -610,7 +614,7 @@ export function BasicAppearanceSection({
           {normalizedUserMsgColor ? (
             <button
               type="button"
-              className="ghost settings-color-reset"
+              className="ghost settings-color-reset min-h-[46px] inline-flex items-center gap-1.5 py-0 px-3.5 rounded-[10px]"
               onClick={handleResetUserMsgColor}
               data-testid="settings-user-msg-color-reset"
             >
@@ -619,7 +623,7 @@ export function BasicAppearanceSection({
             </button>
           ) : null}
         </div>
-        <div className="settings-help settings-color-hint">
+        <div className="settings-help settings-color-hint flex items-start gap-1.5 text-[13px] [&_svg]:w-3.5 [&_svg]:h-3.5 [&_svg]:mt-0.5">
           <Info size={14} aria-hidden />
           <span>{t("settings.userMsgColorHint")}</span>
         </div>

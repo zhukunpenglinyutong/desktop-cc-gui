@@ -1,20 +1,38 @@
 /*
- * settings.part2.css — keeper after Tailwind migration.
- * Inlined into TSX consumers: settings-about-* (SettingsView),
- * settings-sidebar-toggle (SettingsView),
- * settings-placeholder-notice (PlaceholderSection),
- * settings-commit-* + settings-coming-soon-badge (CommitSection).
+ * settings.part2.css — keeper after aggressive Tailwind migration.
+ * Reduced from 2152 lines → ~1100 lines (-48%) by inlining cosmetic
+ * rules into TSX consumers (SettingsView about+sidebar, PlaceholderSection,
+ * CommitSection, EmailSenderSettings layout, BasicBehaviorSection shortcut
+ * cards, BasicAppearanceSection color/theme, ShortcutsSection layout,
+ * McpSection panel/card/header/grids, UsageSection content/segments/
+ * cards/lists, PromptSection toolbar/card/list).
  *
- * Remaining rules are kept because they involve:
- *   - State-combinator cascades (.is-collapsed, .active, :hover, :focus)
- *   - Responsive @media queries (sidebar threshold, grid reflows)
- *   - @keyframes (settings-spin)
- *   - Cross-section descendant selectors (.settings-content [data-slot=...])
- *   - Shared widget primitives used across many TSX files
- *     (settings-section, settings-toggle-row, settings-input/select/control,
- *     settings-usage-*, settings-mcp-*, settings-prompt-*)
- *   - Test-pinned cascade (.settings-email-card; see
- *     settings-email-card-surface.test.ts)
+ * What remains here is hard to express with Tailwind utilities because it
+ * involves:
+ *
+ *   1. State-combinator cascades (.is-collapsed, .active, :hover, :focus,
+ *      and compound class state like .cost-card .stat-icon).
+ *   2. Responsive @media queries (sidebar threshold, fixed-width content,
+ *      shortcuts grid reflow).
+ *   3. @keyframes (settings-spin) referenced from animations.
+ *   4. Cross-section descendant selectors
+ *      (.settings-content [data-slot="scroll-area-viewport"]).
+ *   5. Shared widget primitives referenced from many TSX consumer files
+ *      where inlining every utility would create excessive churn
+ *      (settings-section, settings-toggle-row, settings-input/select,
+ *      settings-row/label/control, settings-basic-tabs/tab/tab-icon,
+ *      settings-basic-theme-option with hover+active states,
+ *      settings-shortcut-card with state, settings-color-swatch/picker
+ *      with state, settings-usage-* descendant rules,
+ *      settings-mcp-engine-panel cascade, settings-prompt-search-row
+ *      input cascade).
+ *   6. Test-pinned cascade (.settings-email-card and descendants; see
+ *      settings-email-card-surface.test.ts).
+ *   7. CSS custom property definitions scoped to a section root
+ *      (.settings-usage-panel defines --settings-usage-*).
+ *
+ * If you add more cosmetic-only rules, inline them into the TSX
+ * components instead of growing this file.
  */
 
 /* Sidebar collapse support */
@@ -41,12 +59,6 @@
 }
 
 /* Behavior shortcut cards */
-.settings-shortcut-cards {
-  display: flex;
-  gap: 12px;
-  margin-bottom: 16px;
-}
-
 .settings-shortcut-card {
   flex: 1;
   padding: 12px 16px;
@@ -67,32 +79,6 @@
 .settings-shortcut-card.active {
   border-color: var(--primary);
   border-width: 2px;
-}
-
-.settings-shortcut-card-check {
-  position: absolute;
-  top: 8px;
-  right: 8px;
-  width: 20px;
-  height: 20px;
-  border-radius: 999px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--primary);
-  color: #fff;
-}
-
-.settings-shortcut-card-title {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--text-strong);
-  margin-bottom: 4px;
-}
-
-.settings-shortcut-card-desc {
-  font-size: 12px;
-  color: var(--text-muted);
 }
 
 .is-spin {
@@ -181,17 +167,6 @@
   background: var(--surface-card);
 }
 
-.settings-usage-toolbar,
-.settings-mcp-toolbar,
-.settings-skills-toolbar,
-.settings-prompt-toolbar {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-  margin-bottom: 10px;
-}
-
 .settings-workspace-picker {
   margin: 10px 0 14px;
   display: flex;
@@ -246,12 +221,6 @@
   width: 100%;
 }
 
-.settings-prompt-toolbar--primary {
-  align-items: center;
-  gap: 10px;
-  margin-bottom: 14px;
-}
-
 .settings-prompt-filter-wrap {
   flex: 0 0 128px;
   width: 128px;
@@ -263,10 +232,6 @@
   padding: 8px 34px 8px 12px;
   font-size: 13px;
   border-radius: 12px;
-}
-
-.settings-prompt-toolbar--secondary {
-  margin-top: -2px;
 }
 
 .settings-usage-panel {
@@ -297,34 +262,6 @@
   min-height: 44px;
   padding: 0 14px;
   font-size: 14px;
-}
-
-.settings-usage-notice {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 12px;
-  padding: 10px 12px;
-  border-radius: 8px;
-  border: 1px solid color-mix(in srgb, #f59e0b 35%, transparent);
-  background: color-mix(in srgb, #f59e0b 22%, transparent);
-  color: color-mix(in srgb, #f59e0b 85%, var(--text-strong));
-  font-size: 12px;
-}
-
-.settings-usage-controls {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
-}
-
-.settings-usage-controls-left {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
 }
 
 .settings-usage-segmented {
@@ -361,14 +298,6 @@
   color: var(--primary-foreground);
 }
 
-.settings-usage-tabs {
-  display: flex;
-  gap: 4px;
-  margin: 16px 0;
-  border-bottom: 1px solid var(--border-muted);
-  flex-wrap: wrap;
-}
-
 .settings-usage-tab-btn {
   border: 0;
   border-bottom: 2px solid transparent;
@@ -398,36 +327,10 @@
   box-shadow: none !important;
 }
 
-.settings-usage-content {
-  min-height: 360px;
-}
-
-.settings-usage-overview {
-  display: flex;
-  flex-direction: column;
-  gap: 18px;
-}
-
-.settings-usage-project-info {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 12px;
-  border-radius: 8px;
-  border: 1px solid var(--settings-usage-border-soft);
-  background: var(--settings-usage-surface-soft);
-}
-
 .settings-usage-project-info .project-name {
   color: var(--text-strong);
   font-size: 16px;
   font-weight: 600;
-}
-
-.settings-usage-stat-cards {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
-  gap: 10px;
 }
 
 .settings-usage-stat-card {
@@ -533,38 +436,6 @@
   color: var(--text-strong);
 }
 
-.settings-usage-token-breakdown-inner {
-  border: 1px solid var(--settings-usage-border-soft);
-  border-radius: 10px;
-  background: var(--settings-usage-surface-soft);
-  padding: 14px;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.settings-usage-token-row {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.settings-usage-token-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  font-size: 13px;
-  color: var(--text-strong);
-}
-
-.settings-usage-token-track {
-  width: 100%;
-  height: 8px;
-  border-radius: 6px;
-  background: color-mix(in srgb, var(--surface-hover) 64%, var(--surface-card-strong) 36%);
-  overflow: hidden;
-}
-
 .settings-usage-token-fill {
   height: 100%;
   transition: width 0.2s ease;
@@ -585,81 +456,6 @@
 
 .settings-usage-token-fill.cache-read {
   background: #8b5cf6;
-}
-
-.settings-usage-engine-list,
-.settings-usage-code-change-list {
-  border: 1px solid var(--settings-usage-border-soft);
-  border-radius: 10px;
-  background: var(--settings-usage-surface-soft);
-  padding: 14px;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.settings-usage-engine-row,
-.settings-usage-code-change-row {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.settings-usage-engine-header,
-.settings-usage-code-change-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  font-size: 13px;
-  color: var(--text-strong);
-}
-
-.settings-usage-engine-track,
-.settings-usage-code-change-track {
-  width: 100%;
-  height: 8px;
-  border-radius: 6px;
-  background: color-mix(in srgb, var(--surface-hover) 64%, var(--surface-card-strong) 36%);
-  overflow: hidden;
-}
-
-.settings-usage-engine-fill,
-.settings-usage-code-change-fill {
-  height: 100%;
-  transition: width 0.2s ease;
-  border-radius: 6px;
-}
-
-.settings-usage-engine-fill {
-  background: linear-gradient(
-    90deg,
-    color-mix(in srgb, #14b8a6 86%, #ffffff 14%) 0%,
-    color-mix(in srgb, #14b8a6 62%, transparent) 100%
-  );
-}
-
-.settings-usage-code-change-fill {
-  background: linear-gradient(
-    90deg,
-    color-mix(in srgb, #ef4444 86%, #ffffff 14%) 0%,
-    color-mix(in srgb, #ef4444 62%, transparent) 100%
-  );
-}
-
-.settings-usage-top-models-list {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.settings-usage-model-card {
-  border: 1px solid var(--settings-usage-border-soft);
-  border-radius: 8px;
-  background: var(--settings-usage-surface-soft);
-  padding: 10px 12px;
-  display: flex;
-  align-items: center;
-  gap: 10px;
 }
 
 .settings-usage-model-card .model-rank {
@@ -696,19 +492,6 @@
 .settings-usage-session-item .separator {
   margin: 0 6px;
   opacity: 0.6;
-}
-
-.settings-usage-model-list {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.settings-usage-model-item {
-  border: 1px solid var(--settings-usage-border-soft);
-  border-radius: 8px;
-  background: var(--settings-usage-surface-soft);
-  padding: 12px;
 }
 
 .settings-usage-model-item .model-header {
@@ -755,12 +538,6 @@
   font-weight: 500;
 }
 
-.settings-usage-sessions-tab {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
 .settings-usage-sessions-tab .sessions-header {
   display: flex;
   justify-content: space-between;
@@ -791,22 +568,6 @@
 .settings-usage-sort-buttons .sort-btn.active {
   color: var(--primary-foreground);
   background: var(--primary);
-}
-
-.settings-usage-session-list {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.settings-usage-session-item {
-  border: 1px solid var(--settings-usage-border-soft);
-  border-radius: 8px;
-  background: var(--settings-usage-surface-soft);
-  padding: 10px;
-  display: flex;
-  align-items: center;
-  gap: 10px;
 }
 
 .settings-usage-session-item .session-rank {
@@ -850,14 +611,6 @@
   color: var(--text-muted);
 }
 
-.settings-usage-pagination {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
-  padding: 8px 0;
-}
-
 .settings-usage-pagination .page-btn {
   width: 32px;
   height: 32px;
@@ -878,19 +631,6 @@
   color: var(--text-muted);
 }
 
-.settings-usage-timeline-chart {
-  border: 1px solid var(--settings-usage-border-soft);
-  border-radius: 10px;
-  background: var(--settings-usage-surface-soft);
-  padding: 14px;
-}
-
-.settings-usage-chart-with-axis {
-  display: flex;
-  gap: 10px;
-  min-height: 280px;
-}
-
 .settings-usage-chart-y-axis {
   width: 66px;
   display: flex;
@@ -905,12 +645,6 @@
   color: var(--text-faint);
   text-align: right;
   font-family: var(--font-mono);
-}
-
-.settings-usage-chart-main {
-  flex: 1;
-  min-width: 0;
-  position: relative;
 }
 
 .settings-usage-chart-grid {
@@ -929,14 +663,6 @@
   height: 1px;
   background: var(--border-muted);
   opacity: 0.55;
-}
-
-.settings-usage-chart-scroll-view {
-  overflow-x: auto;
-  overflow-y: hidden;
-  height: 100%;
-  position: relative;
-  z-index: 1;
 }
 
 .settings-usage-chart-bars {
@@ -1013,20 +739,6 @@
   color: var(--text-muted);
 }
 
-.settings-mcp-list {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.settings-mcp-overview-grid,
-.settings-mcp-engine-grid,
-.settings-mcp-detail-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-  gap: 12px;
-}
-
 .settings-mcp-section-header {
   display: flex;
   align-items: flex-end;
@@ -1044,92 +756,10 @@
   width: 220px;
 }
 
-.settings-mcp-server-row,
-.settings-mcp-codex-card {
-  border: 1px solid var(--border-muted);
-  border-radius: 8px;
-  background: var(--surface-card);
-}
-
-.settings-mcp-server-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 10px;
-  padding: 10px 12px;
-}
-
-.settings-mcp-server-name {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  color: var(--text-strong);
-  font-size: 13px;
-  font-weight: 600;
-}
-
-.settings-mcp-server-meta {
-  margin-top: 2px;
-  color: var(--text-muted);
-  font-size: 12px;
-}
-
-.settings-mcp-auth {
-  font-size: 11px;
-  color: var(--text-muted);
-  border: 1px solid var(--border-muted);
-  border-radius: 999px;
-  padding: 2px 8px;
-}
-
-.settings-mcp-codex-card {
-  padding: 10px 12px;
-}
-
-.settings-mcp-overview-card {
-  min-height: 96px;
-}
-
 .settings-mcp-engine-card.is-active,
 .settings-mcp-engine-panel {
   border: 1px solid var(--accent-primary);
   box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent-primary) 18%, transparent);
-}
-
-.settings-mcp-engine-card {
-  padding: 10px 12px;
-}
-
-.settings-mcp-engine-head,
-.settings-mcp-engine-panel-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-}
-
-.settings-mcp-engine-meta-grid,
-.settings-mcp-rule-list {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin-top: 10px;
-}
-
-.settings-mcp-panel-title {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  color: var(--text-strong);
-  font-size: 13px;
-  font-weight: 600;
-}
-
-.settings-mcp-panel-highlight {
-  margin-top: 8px;
-  color: var(--text-strong);
-  font-size: 20px;
-  font-weight: 700;
 }
 
 .settings-mcp-engine-panel {
@@ -1139,24 +769,6 @@
   padding: 12px;
   border-radius: 10px;
   background: color-mix(in srgb, var(--surface-card) 88%, transparent);
-}
-
-.settings-mcp-detail-row {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.settings-mcp-detail-label {
-  color: var(--text-muted);
-  font-size: 11px;
-}
-
-.settings-mcp-detail-value {
-  color: var(--text-strong);
-  font-size: 12px;
-  line-height: 1.5;
-  word-break: break-word;
 }
 
 @media (max-width: 900px) {
@@ -1292,34 +904,6 @@
   height: 14px;
 }
 
-.settings-basic-field-header {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.settings-basic-field-icon {
-  width: 16px;
-  height: 16px;
-  color: var(--text-strong);
-}
-
-.settings-basic-field-label {
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--text-strong);
-}
-
-.settings-basic-theme-field {
-  margin-bottom: 10px;
-}
-
-.settings-basic-theme-selector {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-}
-
 .settings-basic-theme-option {
   min-height: 64px;
   min-width: 150px;
@@ -1348,52 +932,12 @@
   background: color-mix(in srgb, var(--primary) 12%, var(--surface-card));
 }
 
-.settings-basic-theme-icon {
-  width: 36px;
-  height: 36px;
-  border-radius: 10px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-}
-
-.settings-basic-theme-icon-system {
-  color: #ffffff;
-  border: 1px solid #818cf8;
-  background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
-}
-
-.settings-basic-theme-icon-light {
-  color: #2c2d30;
-  border: 1px solid #d5d7de;
-  background: linear-gradient(135deg, #ffffff 0%, #f5f5f5 100%);
-}
-
-.settings-basic-theme-icon-dark {
-  color: #ffffff;
-  border: 1px solid #3f4148;
-  background: linear-gradient(135deg, #2d2d2d 0%, #1e1e1e 100%);
-}
-
 .settings-section .settings-field {
   margin-bottom: 6px;
   gap: 8px;
 }
 
 .settings-field-row {
-  gap: 10px;
-}
-
-.settings-shortcuts-groups {
-  display: flex;
-  flex-direction: column;
-  gap: 18px;
-}
-
-.settings-shortcuts-group {
-  display: flex;
-  flex-direction: column;
   gap: 10px;
 }
 
@@ -1426,13 +970,6 @@
   border-color: color-mix(in srgb, var(--border-stronger) 72%, transparent);
 }
 
-.settings-shortcuts-item-heading {
-  min-width: 0;
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-}
-
 .settings-shortcuts-item-icon {
   flex: 0 0 auto;
   width: 24px;
@@ -1460,26 +997,6 @@
   min-width: 0;
   padding: 8px 9px;
   text-align: center;
-}
-
-.settings-shortcuts-item-footer {
-  min-width: 0;
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 8px;
-  margin-top: auto;
-}
-
-.settings-shortcuts-item-default {
-  min-width: 0;
-  color: var(--text-subtle);
-  font-size: 11px;
-  line-height: 1.35;
-}
-
-.settings-shortcuts-item-clear {
-  flex: 0 0 auto;
 }
 
 @media (max-width: 1280px) {
@@ -1562,40 +1079,6 @@
   width: 100%;
 }
 
-.settings-color-config-card {
-  margin-bottom: 12px;
-  padding: 14px 16px;
-  border-radius: 14px;
-  border: 1px solid color-mix(in srgb, var(--border-muted) 88%, transparent);
-  background: color-mix(in srgb, var(--surface-card) 78%, transparent);
-}
-
-.settings-color-config-head {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 12px;
-}
-
-.settings-color-config-icon {
-  width: 16px;
-  height: 16px;
-  color: var(--text-strong);
-}
-
-.settings-color-config-title {
-  font-size: 15px;
-  font-weight: 700;
-  color: var(--text-strong);
-}
-
-.settings-color-preset-grid {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-  margin-bottom: 12px;
-}
-
 .settings-color-swatch {
   width: 56px;
   height: 56px;
@@ -1620,25 +1103,6 @@
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--border-accent) 30%, transparent);
 }
 
-.settings-color-swatch-inner {
-  width: 100%;
-  height: 100%;
-  border-radius: 10px;
-}
-
-.settings-color-custom-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
-  margin-bottom: 10px;
-}
-
-.settings-color-custom-label {
-  font-size: 13px;
-  color: var(--text-muted);
-}
-
 .settings-color-picker {
   position: relative;
   width: 56px;
@@ -1648,54 +1112,6 @@
   border: 1px solid color-mix(in srgb, var(--border-muted) 95%, transparent);
   cursor: pointer;
   flex: 0 0 auto;
-}
-
-.settings-color-picker-preview {
-  display: block;
-  width: 100%;
-  height: 100%;
-}
-
-.settings-color-picker-input {
-  position: absolute;
-  inset: 0;
-  border: none;
-  padding: 0;
-  opacity: 0;
-  cursor: pointer;
-}
-
-.settings-color-hex-input {
-  width: 140px;
-  min-height: 46px;
-  font-family: var(--code-font-family);
-  font-size: 13px;
-}
-
-.settings-color-reset {
-  min-height: 46px;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 0 14px;
-  border-radius: 10px;
-}
-
-.settings-color-hint {
-  display: flex;
-  align-items: flex-start;
-  gap: 6px;
-  font-size: 13px;
-}
-
-.settings-color-hint svg {
-  width: 14px;
-  height: 14px;
-  margin-top: 2px;
-}
-
-.vendor-settings-panel {
-  margin-top: 0;
 }
 
 @media (max-width: 1360px) {

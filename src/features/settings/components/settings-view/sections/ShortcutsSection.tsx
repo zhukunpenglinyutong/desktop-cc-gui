@@ -123,9 +123,9 @@ export function ShortcutsSection({
       <div className="settings-section-subtitle text-xs text-(--text-subtle) mb-4">
         {t("settings.shortcutsDescription")}
       </div>
-      <div className="settings-shortcuts-groups">
+      <div className="settings-shortcuts-groups flex flex-col gap-[18px]">
         {shortcutGroups.map((group) => (
-          <div className="settings-shortcuts-group" key={group.id}>
+          <div className="settings-shortcuts-group flex flex-col gap-2.5" key={group.id}>
             <div className="settings-shortcuts-group-header">
               <div className="settings-subsection-title">{group.title}</div>
               <div className="settings-subsection-subtitle">
@@ -138,7 +138,7 @@ export function ShortcutsSection({
                 const defaultShortcut = resolveDefaultShortcut(item);
                 return (
                   <div className="settings-shortcuts-item" key={item.setting}>
-                    <div className="settings-shortcuts-item-heading">
+                    <div className="settings-shortcuts-item-heading min-w-0 flex items-start gap-2">
                       <span className="settings-shortcuts-item-icon" aria-hidden="true">
                         <Icon size={15} strokeWidth={2.1} />
                       </span>
@@ -156,14 +156,14 @@ export function ShortcutsSection({
                       aria-label={`${t(item.labelKey)} ${t("settings.typeShortcut")}`}
                       readOnly
                     />
-                    <div className="settings-shortcuts-item-footer">
-                      <span className="settings-shortcuts-item-default">
+                    <div className="settings-shortcuts-item-footer min-w-0 flex items-end justify-between gap-2 mt-auto">
+                      <span className="settings-shortcuts-item-default min-w-0 text-(--text-subtle) text-[11px] leading-[1.35]">
                         {t(item.defaultLabelKey ?? "settings.defaultColon")}{" "}
                         {formatShortcutForPlatform(defaultShortcut)}
                       </span>
                       <button
                         type="button"
-                        className="ghost settings-button-compact settings-shortcuts-item-clear"
+                        className="ghost settings-button-compact settings-shortcuts-item-clear shrink-0"
                         onClick={() => void updateShortcut(item.setting, null)}
                       >
                         {t("settings.clear")}
