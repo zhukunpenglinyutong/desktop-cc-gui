@@ -1914,7 +1914,7 @@ export const Composer = memo(function Composer({
             {hasScrollableContextStack ? (
               <div className="composer-context-stack grid min-h-0 max-h-[min(44vh,420px)] gap-0 overflow-y-auto overflow-x-hidden overscroll-contain pr-1">
                 {selectedManualMemories.length > 0 && (
-                  <div className="composer-memory-strip">
+                  <div className="composer-memory-strip grid gap-2 mt-1.5 mb-2.5">
                     <div className="composer-memory-strip-head">
                       <span className="composer-memory-strip-label">
                         {t("composer.manualMemorySelection", {
@@ -1925,7 +1925,7 @@ export const Composer = memo(function Composer({
                         {manualMemorySelectionHintCopy}
                       </span>
                     </div>
-                    <div className="composer-memory-chip-list">
+                    <div className="composer-memory-chip-list grid grid-cols-[repeat(auto-fit,minmax(220px,1fr))] gap-2">
                       {selectedManualMemories.map((memory, memoryIndex) => {
                         const chipTitle = `[M${memoryIndex + 1}] ${resolveManualMemoryChipTitle(memory)}`;
                         const chipDetail = resolveManualMemoryChipDetail(memory);
@@ -1987,7 +1987,7 @@ export const Composer = memo(function Composer({
                 )}
 
                 {selectedNoteCards.length > 0 && (
-                  <div className="composer-memory-strip">
+                  <div className="composer-memory-strip grid gap-2 mt-1.5 mb-2.5">
                     <div className="composer-memory-strip-head">
                       <span className="composer-memory-strip-label">
                         {t("composer.noteCardSelection", {
@@ -1998,7 +1998,7 @@ export const Composer = memo(function Composer({
                         {noteCardSelectionHintCopy}
                       </span>
                     </div>
-                    <div className="composer-memory-chip-list">
+                    <div className="composer-memory-chip-list grid grid-cols-[repeat(auto-fit,minmax(220px,1fr))] gap-2">
                       {selectedNoteCards.map((noteCard) => {
                         const chipTitle = resolveNoteCardChipTitle(noteCard);
                         const chipDetail = resolveNoteCardChipDetail(noteCard);

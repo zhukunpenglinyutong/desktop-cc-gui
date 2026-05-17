@@ -517,14 +517,14 @@ export const ContextLedgerPanel = memo(function ContextLedgerPanel({
           aria-expanded={!hidden && expanded}
           onClick={handlePrimaryToggle}
         >
-          <span className="composer-context-ledger-title">
+          <span className="composer-context-ledger-title text-xs font-bold flex-shrink-0">
             {t("composer.contextLedgerTitle")}
           </span>
-          <span className="composer-context-ledger-summary">
+          <span className="composer-context-ledger-summary text-[11px] text-(--text-muted) min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">
             {summaryText}
           </span>
         </button>
-        <div className="composer-context-ledger-toggle-actions">
+        <div className="composer-context-ledger-toggle-actions inline-flex items-center gap-1.5 flex-shrink-0">
           {!hidden && onHide ? (
             <button
               type="button"
@@ -562,22 +562,22 @@ export const ContextLedgerPanel = memo(function ContextLedgerPanel({
 
       {!hidden && expanded ? (
         <div
-          className="composer-context-ledger-panel"
+          className="composer-context-ledger-panel grid gap-2 min-h-0"
           role="region"
           aria-label={t("composer.contextLedgerTitle")}
         >
-          <p className="composer-context-ledger-truth-note">
+          <p className="composer-context-ledger-truth-note m-0 px-0.5 text-[10px] leading-[1.35] text-(--text-faint)">
             {t("composer.contextLedgerTruthNote")}
           </p>
           {comparison ? (
             <section className="composer-context-ledger-comparison">
-              <header className="composer-context-ledger-comparison-head">
-                <div className="composer-context-ledger-comparison-copy">
-                  <span className="composer-context-ledger-comparison-title">
+              <header className="composer-context-ledger-comparison-head flex items-center justify-between gap-2 flex-[0_0_auto]">
+                <div className="composer-context-ledger-comparison-copy inline-flex items-center gap-2">
+                  <span className="composer-context-ledger-comparison-title text-[11px] font-bold text-(--text-strong)">
                     {resolveComparisonTitle(t, comparison)}
                   </span>
                   {resolveComparisonUsageDeltaLabel(t, comparison) ? (
-                    <span className="composer-context-ledger-comparison-delta">
+                    <span className="composer-context-ledger-comparison-delta text-[10px] text-(--accent-primary,#2563eb)">
                       {resolveComparisonUsageDeltaLabel(t, comparison)}
                     </span>
                   ) : null}
@@ -586,8 +586,8 @@ export const ContextLedgerPanel = memo(function ContextLedgerPanel({
                   {comparison.items.length}
                 </span>
               </header>
-              <div className="composer-context-ledger-comparison-summary">
-                <span className="composer-context-ledger-comparison-hint">
+              <div className="composer-context-ledger-comparison-summary flex items-center gap-1.5 flex-wrap">
+                <span className="composer-context-ledger-comparison-hint text-[10px] text-(--text-faint)">
                   {comparison.basis === "pre_compaction"
                     ? t("composer.contextLedgerComparisonPreCompactionHint")
                     : t("composer.contextLedgerComparisonLastSendHint")}
@@ -617,19 +617,19 @@ export const ContextLedgerPanel = memo(function ContextLedgerPanel({
           ) : null}
           {batchSelectionEnabled ? (
             <section className="composer-context-ledger-batch">
-              <header className="composer-context-ledger-batch-head">
-                <div className="composer-context-ledger-batch-copy">
-                  <span className="composer-context-ledger-comparison-title">
+              <header className="composer-context-ledger-batch-head flex items-start justify-between gap-2.5">
+                <div className="composer-context-ledger-batch-copy grid gap-1">
+                  <span className="composer-context-ledger-comparison-title text-[11px] font-bold text-(--text-strong)">
                     {t("composer.contextLedgerBatchTitle")}
                   </span>
-                  <span className="composer-context-ledger-comparison-item-title">
+                  <span className="composer-context-ledger-comparison-item-title min-w-0 text-[11px] text-(--text-muted) break-words">
                     {t("composer.contextLedgerBatchSummary", {
                       selected: selectedBatchBlocks.length,
                       total: batchGovernableBlocks.length,
                     })}
                   </span>
                 </div>
-                <div className="composer-context-ledger-batch-actions">
+                <div className="composer-context-ledger-batch-actions flex items-center gap-2 flex-wrap">
                   <button
                     type="button"
                     className="composer-context-ledger-action"
@@ -647,7 +647,7 @@ export const ContextLedgerPanel = memo(function ContextLedgerPanel({
                   </button>
                 </div>
               </header>
-              <div className="composer-context-ledger-batch-actions">
+              <div className="composer-context-ledger-batch-actions flex items-center gap-2 flex-wrap">
                 <button
                   type="button"
                   className="composer-context-ledger-action"
@@ -688,8 +688,8 @@ export const ContextLedgerPanel = memo(function ContextLedgerPanel({
               key={group.kind}
               className={resolveGroupClassName(group)}
             >
-              <header className="composer-context-ledger-group-head">
-                <span className="composer-context-ledger-group-title">
+              <header className="composer-context-ledger-group-head flex items-center justify-between gap-2">
+                <span className="composer-context-ledger-group-title text-[11px] font-bold text-(--text-strong)">
                   {resolveGroupLabel(t, group)}
                 </span>
                 <span className="composer-context-ledger-group-count">
@@ -865,31 +865,31 @@ export const ContextLedgerPanel = memo(function ContextLedgerPanel({
 
       {inspectedBlock ? (
         <div
-          className="composer-context-ledger-detail-dialog"
+          className="composer-context-ledger-detail-dialog relative z-[2]"
           role="dialog"
           aria-modal="true"
           aria-label={t("composer.contextLedgerDetailDialogTitle")}
         >
           <div className="composer-context-ledger-detail-card">
-            <div className="composer-context-ledger-detail-head">
-              <div className="composer-context-ledger-detail-copy">
-                <div className="composer-context-ledger-detail-kicker">
+            <div className="composer-context-ledger-detail-head flex items-start justify-between gap-3">
+              <div className="composer-context-ledger-detail-copy grid gap-1">
+                <div className="composer-context-ledger-detail-kicker text-[10px] text-(--text-faint)">
                   {t("composer.contextLedgerDetailDialogTitle")}
                 </div>
-                <div className="composer-context-ledger-detail-title">
+                <div className="composer-context-ledger-detail-title text-xs font-bold text-(--text-strong)">
                   {resolveInspectionTitle(t, inspectedBlock)}
                 </div>
               </div>
               <button
                 type="button"
-                className="composer-context-ledger-detail-close"
+                className="composer-context-ledger-detail-close border-none bg-transparent text-(--accent-primary,#2563eb) text-[11px] cursor-pointer p-0"
                 onClick={() => setInspectedBlock(null)}
               >
                 {t("composer.contextLedgerDetailDialogClose")}
               </button>
             </div>
             {inspectedAttributionLabel || inspectedBackendSourceLabel || inspectedBlock.sourcePath ? (
-              <div className="composer-context-ledger-detail-meta">
+              <div className="composer-context-ledger-detail-meta flex items-center gap-2 flex-wrap">
                 {inspectedAttributionLabel ? (
                   <span className="composer-context-ledger-meta-badge">
                     {inspectedAttributionLabel}
@@ -901,13 +901,13 @@ export const ContextLedgerPanel = memo(function ContextLedgerPanel({
                   </span>
                 ) : null}
                 {inspectedBlock.sourcePath ? (
-                  <span className="composer-context-ledger-detail-path">
+                  <span className="composer-context-ledger-detail-path text-[10px] text-(--text-faint) break-all">
                     {inspectedBlock.sourcePath}
                   </span>
                 ) : null}
               </div>
             ) : null}
-            <div className="composer-context-ledger-detail-body">
+            <div className="composer-context-ledger-detail-body max-h-60 overflow-auto min-w-0">
               <Markdown
                 className="markdown composer-context-ledger-detail-markdown"
                 value={inspectedMarkdownContent}

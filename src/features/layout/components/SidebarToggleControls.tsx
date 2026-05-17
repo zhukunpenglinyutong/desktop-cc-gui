@@ -152,20 +152,20 @@ function WindowControls() {
     <div className="titlebar-toggle titlebar-toggle-right titlebar-window-controls">
       <button
         type="button"
-        className="titlebar-window-button"
+        className="w-[34px] h-6 border-none rounded-md p-0 bg-transparent text-(--text-muted) inline-flex items-center justify-center cursor-pointer hover:bg-(--surface-control-hover) hover:text-(--text-stronger)"
         onClick={handleMinimize}
         data-tauri-drag-region="false"
         aria-label={t("menu.minimize")}
         title={t("menu.minimize")}
       >
         <span
-          className="codicon codicon-chrome-minimize titlebar-window-glyph"
+          className="codicon codicon-chrome-minimize text-[13px] leading-none pointer-events-none"
           aria-hidden
         />
       </button>
       <button
         type="button"
-        className="titlebar-window-button"
+        className="w-[34px] h-6 border-none rounded-md p-0 bg-transparent text-(--text-muted) inline-flex items-center justify-center cursor-pointer hover:bg-(--surface-control-hover) hover:text-(--text-stronger)"
         onClick={() => {
           void handleToggleMaximize();
         }}
@@ -176,20 +176,20 @@ function WindowControls() {
         <span
           className={`codicon ${
             isMaximized ? "codicon-chrome-restore" : "codicon-chrome-maximize"
-          } titlebar-window-glyph`}
+          } text-[13px] leading-none pointer-events-none`}
           aria-hidden
         />
       </button>
       <button
         type="button"
-        className="titlebar-window-button titlebar-window-button-close"
+        className="w-[34px] h-6 border-none rounded-md p-0 bg-transparent text-(--text-muted) inline-flex items-center justify-center cursor-pointer hover:bg-[#e81123] hover:text-white"
         onClick={handleClose}
         data-tauri-drag-region="false"
         aria-label={t("menu.closeWindow")}
         title={t("menu.closeWindow")}
       >
         <span
-          className="codicon codicon-chrome-close titlebar-window-glyph"
+          className="codicon codicon-chrome-close text-[13px] leading-none pointer-events-none"
           aria-hidden
         />
       </button>
@@ -208,7 +208,7 @@ export function TitlebarExpandControls({
   }
 
   return (
-    <div className="titlebar-controls">
+    <div className="absolute top-0 left-0 right-0 z-[4] pointer-events-none h-[var(--main-topbar-height,44px)]">
       {showSidebarTitlebarToggle ? (
         <div
           className={`titlebar-toggle ${

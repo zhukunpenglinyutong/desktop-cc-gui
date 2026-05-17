@@ -427,19 +427,6 @@
   background: color-mix(in srgb, var(--button-primary, var(--input-focus-border, var(--accent-primary))) 88%, var(--text-primary) 12%);
 }
 
-/* ---------- composer-memory-strip (chip list grid) ---------- */
-.composer-memory-strip {
-  display: grid;
-  gap: 8px;
-  margin: 6px 0 10px;
-}
-
-.composer-memory-chip-list {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: 8px;
-}
-
 .composer-memory-chip {
   display: flex;
   align-items: flex-start;
@@ -649,28 +636,6 @@
   cursor: pointer;
 }
 
-.composer-context-ledger-title {
-  font-size: 12px;
-  font-weight: 700;
-  flex-shrink: 0;
-}
-
-.composer-context-ledger-summary {
-  font-size: 11px;
-  color: var(--text-muted);
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.composer-context-ledger-toggle-actions {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  flex-shrink: 0;
-}
-
 .composer-context-ledger-icon-action,
 .composer-context-ledger-toggle-text {
   display: inline-flex;
@@ -700,20 +665,6 @@
   white-space: nowrap;
 }
 
-.composer-context-ledger-panel {
-  display: grid;
-  gap: 8px;
-  min-height: 0;
-}
-
-.composer-context-ledger-truth-note {
-  margin: 0;
-  padding: 0 2px;
-  font-size: 10px;
-  line-height: 1.35;
-  color: var(--text-faint);
-}
-
 .composer-context-ledger-comparison {
   display: flex;
   align-items: center;
@@ -735,77 +686,6 @@
   background: color-mix(in srgb, var(--surface-panel) 90%, #0f766e 10%);
 }
 
-.composer-context-ledger-batch-head {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 10px;
-}
-
-.composer-context-ledger-batch-copy {
-  display: grid;
-  gap: 4px;
-}
-
-.composer-context-ledger-batch-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-.composer-context-ledger-comparison-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  flex: 0 0 auto;
-}
-
-.composer-context-ledger-comparison-copy {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.composer-context-ledger-comparison-title {
-  font-size: 11px;
-  font-weight: 700;
-  color: var(--text-strong);
-}
-
-.composer-context-ledger-comparison-delta {
-  font-size: 10px;
-  color: var(--accent-primary, #2563eb);
-}
-
-.composer-context-ledger-comparison-hint {
-  font-size: 10px;
-  color: var(--text-faint);
-}
-
-.composer-context-ledger-comparison-summary,
-.composer-context-ledger-comparison-items {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex-wrap: wrap;
-}
-
-.composer-context-ledger-comparison-item {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
-}
-
-.composer-context-ledger-comparison-item-title {
-  min-width: 0;
-  font-size: 11px;
-  color: var(--text-muted);
-  word-break: break-word;
-}
-
 .composer-context-ledger-group {
   display: grid;
   gap: 8px;
@@ -823,19 +703,6 @@
 .composer-context-ledger-group--attached_resource {
   gap: 6px;
   padding: 8px 10px;
-}
-
-.composer-context-ledger-group-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-}
-
-.composer-context-ledger-group-title {
-  font-size: 11px;
-  font-weight: 700;
-  color: var(--text-strong);
 }
 
 .composer-context-ledger-group-count {
@@ -1040,11 +907,6 @@
   cursor: not-allowed;
 }
 
-.composer-context-ledger-detail-dialog {
-  position: relative;
-  z-index: 2;
-}
-
 .composer-context-ledger-detail-card {
   display: grid;
   gap: 10px;
@@ -1052,51 +914,6 @@
   border: 1px solid var(--border-strong);
   border-radius: 12px;
   background: color-mix(in srgb, var(--surface-panel) 94%, #2563eb 6%);
-}
-
-.composer-context-ledger-detail-head {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.composer-context-ledger-detail-copy {
-  display: grid;
-  gap: 4px;
-}
-
-.composer-context-ledger-detail-meta {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-.composer-context-ledger-detail-kicker {
-  font-size: 10px;
-  color: var(--text-faint);
-}
-
-.composer-context-ledger-detail-title {
-  font-size: 12px;
-  font-weight: 700;
-  color: var(--text-strong);
-}
-
-.composer-context-ledger-detail-close {
-  border: none;
-  background: transparent;
-  color: var(--accent-primary, #2563eb);
-  font-size: 11px;
-  cursor: pointer;
-  padding: 0;
-}
-
-.composer-context-ledger-detail-body {
-  max-height: 240px;
-  overflow: auto;
-  min-width: 0;
 }
 
 .composer-context-ledger-detail-markdown {
@@ -1136,8 +953,3 @@
   margin: 0;
 }
 
-.composer-context-ledger-detail-path {
-  font-size: 10px;
-  color: var(--text-faint);
-  word-break: break-all;
-}
