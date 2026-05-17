@@ -47,6 +47,11 @@ import { DictationWaveform } from "../../dictation/components/DictationWaveform"
 import { ReviewInlinePrompt } from "./ReviewInlinePrompt";
 import type { ReviewPromptState, ReviewPromptStep } from "../../threads/hooks/useReviewPrompt";
 import { ContextUsageIndicator } from "./ContextUsageIndicator";
+import {
+  Progress,
+  ProgressIndicator,
+  ProgressTrack,
+} from "@/components/ui/progress";
 import { formatRelativeTime } from "../../../utils/time";
 import { resolveManualMemoryPreview } from "../utils/manualMemoryPreview";
 
@@ -1226,12 +1231,15 @@ export function ComposerInput({
                               )}`}
                         </span>
                       </div>
-                      <div className="composer-usage-progress-track h-1.5 overflow-hidden rounded-full bg-[color-mix(in_srgb,var(--surface-item)_80%,transparent)]" aria-hidden>
-                        <span
-                          className="composer-usage-progress-fill block h-full w-0 rounded-full bg-linear-to-r from-[#2563eb] to-[#60a5fa] transition-[width] duration-200 ease-in-out"
-                          style={{ width: `${usageSnapshot.sessionPercent ?? 0}%` }}
-                        />
-                      </div>
+                      <Progress
+                        value={usageSnapshot.sessionPercent ?? 0}
+                        className="composer-usage-progress-track w-full gap-0"
+                        aria-hidden
+                      >
+                        <ProgressTrack className="h-1.5 bg-[color-mix(in_srgb,var(--surface-item)_80%,transparent)]">
+                          <ProgressIndicator className="composer-usage-progress-fill bg-linear-to-r from-[#2563eb] to-[#60a5fa] transition-[width] duration-200 ease-in-out" />
+                        </ProgressTrack>
+                      </Progress>
                       {usageSnapshot.sessionResetLabel && (
                         <div className="composer-usage-reset text-[10px] text-[var(--text-muted)]">{usageSnapshot.sessionResetLabel}</div>
                       )}
@@ -1248,12 +1256,15 @@ export function ComposerInput({
                                 )}`}
                           </span>
                         </div>
-                        <div className="composer-usage-progress-track h-1.5 overflow-hidden rounded-full bg-[color-mix(in_srgb,var(--surface-item)_80%,transparent)]" aria-hidden>
-                          <span
-                            className="composer-usage-progress-fill block h-full w-0 rounded-full bg-linear-to-r from-[#2563eb] to-[#60a5fa] transition-[width] duration-200 ease-in-out"
-                            style={{ width: `${usageSnapshot.weeklyPercent ?? 0}%` }}
-                          />
-                        </div>
+                        <Progress
+                          value={usageSnapshot.weeklyPercent ?? 0}
+                          className="composer-usage-progress-track w-full gap-0"
+                          aria-hidden
+                        >
+                          <ProgressTrack className="h-1.5 bg-[color-mix(in_srgb,var(--surface-item)_80%,transparent)]">
+                            <ProgressIndicator className="composer-usage-progress-fill bg-linear-to-r from-[#2563eb] to-[#60a5fa] transition-[width] duration-200 ease-in-out" />
+                          </ProgressTrack>
+                        </Progress>
                         {usageSnapshot.weeklyResetLabel && (
                           <div className="composer-usage-reset text-[10px] text-[var(--text-muted)]">{usageSnapshot.weeklyResetLabel}</div>
                         )}
