@@ -45,10 +45,10 @@ export function renderGitHistoryPanelView(scope: any) {
     const canPickFallbackGitRoot = repositoryUnavailable && Boolean(workspace);
     const isEmptyStateSelecting = Boolean(fallbackSelectingRoot || workspaceSelectingId);
     return (
-      <div className="git-history-workbench relative flex flex-col w-full h-full min-w-0 min-h-0 text-[color:var(--text-primary)] bg-[var(--git-history-pane-bg)] focus-visible:outline-2 focus-visible:outline-[color-mix(in_srgb,var(--accent-primary,#2563eb)_52%,transparent)] focus-visible:[outline-offset:-2px]">
-        <div className="git-history-toolbar git-history-empty-toolbar flex items-center justify-between gap-[10px] py-2 px-[10px] border-b border-[color:var(--border-default)] bg-[color-mix(in_srgb,var(--surface-card-muted,#111725)_95%,transparent)]">
-          <div className="git-history-toolbar-left inline-flex items-center min-w-0 flex-wrap gap-[10px]">
-            <span className="git-history-empty-inline-text text-xs text-[color:var(--text-secondary)]">{workspacePickerMessage}</span>
+      <div className="git-history-workbench relative flex flex-col w-full h-full min-w-0 min-h-0 text-(--text-primary) bg-[var(--git-history-pane-bg)] focus-visible:outline-2 focus-visible:outline-[color-mix(in_srgb,var(--accent-primary,#2563eb)_52%,transparent)] focus-visible:[outline-offset:-2px]">
+        <div className="git-history-toolbar git-history-empty-toolbar flex items-center justify-between gap-2.5 py-2 px-[10px] border-b border-[color:var(--border-default)] bg-[color-mix(in_srgb,var(--surface-card-muted,#111725)_95%,transparent)]">
+          <div className="git-history-toolbar-left inline-flex items-center min-w-0 flex-wrap gap-2.5">
+            <span className="git-history-empty-inline-text text-xs text-(--text-secondary)">{workspacePickerMessage}</span>
             {projectOptions.length > 0 && onSelectWorkspace ? (
               <GitHistoryProjectPicker
                 sections={projectSections}
@@ -108,7 +108,7 @@ export function renderGitHistoryPanelView(scope: any) {
               />
             ) : null}
             {fallbackGitRootsError ? (
-              <span className="git-history-empty-inline-text text-xs text-[color:var(--text-secondary)]">
+              <span className="git-history-empty-inline-text text-xs text-(--text-secondary)">
                 {localizeKnownGitError(fallbackGitRootsError) ?? fallbackGitRootsError}
               </span>
             ) : null}
@@ -150,7 +150,7 @@ export function renderGitHistoryPanelView(scope: any) {
 
   return (
     <div
-      className="git-history-workbench relative flex flex-col w-full h-full min-w-0 min-h-0 text-[color:var(--text-primary)] bg-[var(--git-history-pane-bg)] focus-visible:outline-2 focus-visible:outline-[color-mix(in_srgb,var(--accent-primary,#2563eb)_52%,transparent)] focus-visible:[outline-offset:-2px]"
+      className="git-history-workbench relative flex flex-col w-full h-full min-w-0 min-h-0 text-(--text-primary) bg-[var(--git-history-pane-bg)] focus-visible:outline-2 focus-visible:outline-[color-mix(in_srgb,var(--accent-primary,#2563eb)_52%,transparent)] focus-visible:[outline-offset:-2px]"
       tabIndex={0}
       onKeyDown={(event) => {
         if (branchDiffState && event.key === "Escape") {
@@ -272,9 +272,9 @@ export function renderGitHistoryPanelView(scope: any) {
         }
       }}
     >
-      <div className="git-history-toolbar git-history-toolbar--hover-actions group/toolbar flex items-center justify-between gap-[10px] py-2 px-[10px] border-b border-[color:var(--border-default)] bg-[color-mix(in_srgb,var(--surface-card-muted,#111725)_95%,transparent)]">
-        <div className="git-history-toolbar-left inline-flex items-center min-w-0 flex-wrap gap-[10px]">
-          <h2 className="m-0 text-sm font-semibold text-[color:var(--text-stronger)]">{t("git.historyTitle")}</h2>
+      <div className="git-history-toolbar git-history-toolbar--hover-actions group/toolbar flex items-center justify-between gap-2.5 py-2 px-[10px] border-b border-[color:var(--border-default)] bg-[color-mix(in_srgb,var(--surface-card-muted,#111725)_95%,transparent)]">
+        <div className="git-history-toolbar-left inline-flex items-center min-w-0 flex-wrap gap-2.5">
+          <h2 className="m-0 text-sm font-semibold text-(--text-stronger)">{t("git.historyTitle")}</h2>
           {projectOptions.length > 0 && onSelectWorkspace ? (
             <GitHistoryProjectPicker
               sections={projectSections}
@@ -291,26 +291,26 @@ export function renderGitHistoryPanelView(scope: any) {
               }}
             />
           ) : null}
-          <div className="git-history-toolbar-meta inline-flex items-center gap-2 min-w-0 text-[color:var(--text-muted)] text-[11px]">
+          <div className="git-history-toolbar-meta inline-flex items-center gap-2 min-w-0 text-(--text-muted) text-[11px]">
             <span className="git-history-head-pill inline-flex items-center justify-center h-[18px] px-[6px] rounded-full text-[10px] font-bold tracking-[0.03em] text-[color-mix(in_srgb,var(--accent-primary,#2563eb)_86%,#dbeafe)] border border-[color-mix(in_srgb,var(--accent-primary,#2563eb)_58%,transparent)] bg-[color-mix(in_srgb,var(--accent-primary,#2563eb)_18%,transparent)]">HEAD</span>
             <code className="git-history-current-branch inline-flex items-center h-5 px-2 rounded-full border border-[color-mix(in_srgb,#10b981_58%,transparent)] bg-[color-mix(in_srgb,#10b981_16%,var(--surface-control,#1a2230))] min-w-0 max-w-[min(36vw,440px)] overflow-hidden text-ellipsis whitespace-nowrap text-[10px] font-semibold leading-none text-[color-mix(in_srgb,#10b981_82%,#d1fae5)]">{currentBranch ?? workspace.name}</code>
             <span
               className={`git-history-toolbar-worktree whitespace-nowrap text-[11px] ${
-                workingTreeChangedFiles > 0 ? "is-dirty text-[#fca5a5]" : "is-clean text-[color:var(--text-muted)]"
+                workingTreeChangedFiles > 0 ? "is-dirty text-[#fca5a5]" : "is-clean text-(--text-muted)"
               }`}
             >
               {workingTreeSummaryLabel}
             </span>
             {workingTreeChangedFiles > 0 ? (
-              <span className="git-history-toolbar-lines inline-flex items-center gap-[6px] whitespace-nowrap text-[11px] text-[color:var(--text-muted)]">
+              <span className="git-history-toolbar-lines inline-flex items-center gap-1.5 whitespace-nowrap text-[11px] text-(--text-muted)">
                 <span className="git-history-diff-add text-[color:var(--status-success,#22c55e)]">+{workingTreeTotalAdditions}</span>
-                <span className="git-history-diff-sep text-[color:var(--text-muted)] opacity-[0.82]" aria-hidden>
+                <span className="git-history-diff-sep text-(--text-muted) opacity-82" aria-hidden>
                   /
                 </span>
                 <span className="git-history-diff-del text-[color:var(--status-error,#f87171)]">-{workingTreeTotalDeletions}</span>
               </span>
             ) : null}
-            <span className="git-history-toolbar-count text-[color:var(--text-muted)] whitespace-nowrap">
+            <span className="git-history-toolbar-count text-(--text-muted) whitespace-nowrap">
               {t("git.historyCommitCount", { count: historyTotal })}
             </span>
           </div>
@@ -418,12 +418,12 @@ export function renderGitHistoryPanelView(scope: any) {
         ref={workbenchGridRef}
         style={workbenchGridStyle}
       >
-        <aside className="git-history-overview min-w-0 min-h-0 flex flex-col gap-[10px] p-[10px] border-r border-[color:var(--border-default)] bg-[var(--git-history-pane-bg)]">
+        <aside className="git-history-overview min-w-0 min-h-0 flex flex-col gap-2.5 p-[10px] border-r border-[color:var(--border-default)] bg-[var(--git-history-pane-bg)]">
           <div className="git-history-overview-toolbar flex items-center justify-between gap-2 is-files-top-row">
             <div className="git-history-overview-list-toggle inline-flex items-center gap-2 self-center p-0 w-fit border-none rounded-none bg-transparent" role="group" aria-label={t("git.listView")}>
               <button
                 type="button"
-                className={`git-history-overview-list-tab min-h-6 py-1 px-0.5 pb-[5px] inline-flex items-center justify-center gap-1 border-none border-b-2 border-b-transparent rounded-none bg-transparent text-[color:var(--text-secondary)] text-[11px] font-semibold whitespace-nowrap cursor-pointer transition-[border-bottom-color_160ms_ease,color_160ms_ease] hover:text-[color:var(--text-emphasis)] hover:bg-transparent focus-visible:outline-none focus-visible:text-[color:var(--text-accent,#7a9dcc)] [&_svg]:flex-[0_0_auto]${
+                className={`git-history-overview-list-tab min-h-6 py-1 px-0.5 pb-[5px] inline-flex items-center justify-center gap-1 border-none border-b-2 border-b-transparent rounded-none bg-transparent text-(--text-secondary) text-[11px] font-semibold whitespace-nowrap cursor-pointer transition-[border-bottom-color_160ms_ease,color_160ms_ease] hover:text-(--text-emphasis) hover:bg-transparent focus-visible:outline-none focus-visible:text-[color:var(--text-accent,#7a9dcc)] [&_svg]:flex-[0_0_auto]${
                   overviewListView === "flat" ? " is-active text-[color-mix(in_srgb,var(--accent-primary,#2563eb)_88%,var(--text-emphasis))] border-b-[color:var(--accent-primary,#2563eb)]" : ""
                 }`}
                 onClick={() => setOverviewListView("flat")}
@@ -436,7 +436,7 @@ export function renderGitHistoryPanelView(scope: any) {
               </button>
               <button
                 type="button"
-                className={`git-history-overview-list-tab min-h-6 py-1 px-0.5 pb-[5px] inline-flex items-center justify-center gap-1 border-none border-b-2 border-b-transparent rounded-none bg-transparent text-[color:var(--text-secondary)] text-[11px] font-semibold whitespace-nowrap cursor-pointer transition-[border-bottom-color_160ms_ease,color_160ms_ease] hover:text-[color:var(--text-emphasis)] hover:bg-transparent focus-visible:outline-none focus-visible:text-[color:var(--text-accent,#7a9dcc)] [&_svg]:flex-[0_0_auto]${
+                className={`git-history-overview-list-tab min-h-6 py-1 px-0.5 pb-[5px] inline-flex items-center justify-center gap-1 border-none border-b-2 border-b-transparent rounded-none bg-transparent text-(--text-secondary) text-[11px] font-semibold whitespace-nowrap cursor-pointer transition-[border-bottom-color_160ms_ease,color_160ms_ease] hover:text-(--text-emphasis) hover:bg-transparent focus-visible:outline-none focus-visible:text-[color:var(--text-accent,#7a9dcc)] [&_svg]:flex-[0_0_auto]${
                   overviewListView === "tree" ? " is-active text-[color-mix(in_srgb,var(--accent-primary,#2563eb)_88%,var(--text-emphasis))] border-b-[color:var(--accent-primary,#2563eb)]" : ""
                 }`}
                 onClick={() => setOverviewListView("tree")}
@@ -449,7 +449,7 @@ export function renderGitHistoryPanelView(scope: any) {
               </button>
               <button
                 type="button"
-                className={`git-history-overview-list-tab min-h-6 py-1 px-0.5 pb-[5px] inline-flex items-center justify-center gap-1 border-none border-b-2 border-b-transparent rounded-none bg-transparent text-[color:var(--text-secondary)] text-[11px] font-semibold whitespace-nowrap cursor-pointer transition-[border-bottom-color_160ms_ease,color_160ms_ease] hover:text-[color:var(--text-emphasis)] hover:bg-transparent focus-visible:outline-none focus-visible:text-[color:var(--text-accent,#7a9dcc)] [&_svg]:flex-[0_0_auto]${
+                className={`git-history-overview-list-tab min-h-6 py-1 px-0.5 pb-[5px] inline-flex items-center justify-center gap-1 border-none border-b-2 border-b-transparent rounded-none bg-transparent text-(--text-secondary) text-[11px] font-semibold whitespace-nowrap cursor-pointer transition-[border-bottom-color_160ms_ease,color_160ms_ease] hover:text-(--text-emphasis) hover:bg-transparent focus-visible:outline-none focus-visible:text-[color:var(--text-accent,#7a9dcc)] [&_svg]:flex-[0_0_auto]${
                   !overviewCommitSectionCollapsed ? " is-active text-[color-mix(in_srgb,var(--accent-primary,#2563eb)_88%,var(--text-emphasis))] border-b-[color:var(--accent-primary,#2563eb)]" : ""
                 } w-[30px] p-0 justify-center`}
                 onClick={() => setOverviewCommitSectionCollapsed((value) => !value)}
@@ -502,7 +502,7 @@ export function renderGitHistoryPanelView(scope: any) {
             <span>
               <GitBranch size={14} /> {t("git.historyBranches")}
             </span>
-            <div className="git-history-branch-actions inline-flex items-center gap-0.5 p-0.5 rounded-full border border-[color-mix(in_srgb,var(--border-default)_72%,transparent)] bg-[color-mix(in_srgb,var(--surface-control,#1a2230)_74%,transparent)] shadow-[inset_0_1px_0_color-mix(in_srgb,#ffffff_10%,transparent)] [&_.git-history-mini-chip]:w-7 [&_.git-history-mini-chip]:h-[26px] [&_.git-history-mini-chip]:p-0 [&_.git-history-mini-chip]:border-none [&_.git-history-mini-chip]:rounded-full [&_.git-history-mini-chip]:bg-transparent [&_.git-history-mini-chip]:text-(--text-secondary) [&_.git-history-mini-chip]:font-semibold [&_.git-history-mini-chip]:transition-[background-color,color,opacity] [&_.git-history-mini-chip]:duration-[140ms] [&_.git-history-mini-chip]:ease [&_.git-history-mini-chip_svg]:w-3.5 [&_.git-history-mini-chip_svg]:h-3.5 [&_.git-history-mini-chip_svg]:[stroke-width:2.1] [&_.git-history-mini-chip:hover:not(.is-disabled)]:bg-[color-mix(in_srgb,var(--surface-control-hover,#263044)_86%,transparent)] [&_.git-history-mini-chip:hover:not(.is-disabled)]:text-(--text-stronger)">
+            <div className="git-history-branch-actions inline-flex items-center gap-0.5 p-0.5 rounded-full border border-[color-mix(in_srgb,var(--border-default)_72%,transparent)] bg-[color-mix(in_srgb,var(--surface-control,#1a2230)_74%,transparent)] shadow-[inset_0_1px_0_color-mix(in_srgb,#ffffff_10%,transparent)] [&_.git-history-mini-chip]:w-7 [&_.git-history-mini-chip]:h-[26px] [&_.git-history-mini-chip]:p-0 [&_.git-history-mini-chip]:border-none [&_.git-history-mini-chip]:rounded-full [&_.git-history-mini-chip]:bg-transparent [&_.git-history-mini-chip]:text-(--text-secondary) [&_.git-history-mini-chip]:font-semibold [&_.git-history-mini-chip]:transition-[background-color,color,opacity] [&_.git-history-mini-chip]:duration-140 [&_.git-history-mini-chip]:ease [&_.git-history-mini-chip_svg]:w-3.5 [&_.git-history-mini-chip_svg]:h-3.5 [&_.git-history-mini-chip_svg]:[stroke-width:2.1] [&_.git-history-mini-chip:hover:not(.is-disabled)]:bg-[color-mix(in_srgb,var(--surface-control-hover,#263044)_86%,transparent)] [&_.git-history-mini-chip:hover:not(.is-disabled)]:text-(--text-stronger)">
               <ActionSurface
                 className="git-history-mini-chip"
                 onActivate={() => void handleCreateBranch()}
@@ -758,7 +758,7 @@ export function renderGitHistoryPanelView(scope: any) {
                       transform: `translateY(${virtualRow.start}px)`,
                     }}
                 >
-                  <span className={`${graphClassName} relative block h-full min-h-[34px] [&.is-first_.git-history-graph-line]:top-2 [&.is-last_.git-history-graph-line]:bottom-2`} aria-hidden>
+                  <span className={`${graphClassName} relative block h-full min-h-8.5 [&.is-first_.git-history-graph-line]:top-2 [&.is-last_.git-history-graph-line]:bottom-2`} aria-hidden>
                     <i className="git-history-graph-line absolute left-[7px] -top-2 -bottom-2 w-0.5 bg-[color-mix(in_srgb,var(--text-muted)_45%,transparent)]" />
                     <i className="git-history-graph-dot absolute left-[3px] top-[11px] w-2.5 h-2.5 rounded-full bg-(--accent-primary,#2563eb)" />
                   </span>
@@ -984,7 +984,7 @@ export function renderGitHistoryPanelView(scope: any) {
                           <FileIcon filePath={previewDetailFile.path} />
                         </span>
                         <span className="git-history-diff-modal-path min-w-0 flex-1 whitespace-nowrap overflow-hidden text-ellipsis text-(--text-strong)">{previewDetailFile.path}</span>
-                        <span className="git-history-diff-modal-stats text-[11px] whitespace-nowrap inline-flex items-center gap-[3px] [&_.is-add]:text-[#22c55e] [&_.is-del]:text-[#f87171] [&_.is-sep]:text-(--text-muted)">
+                        <span className="git-history-diff-modal-stats text-[11px] whitespace-nowrap inline-flex items-center gap-0.75 [&_.is-add]:text-[#22c55e] [&_.is-del]:text-[#f87171] [&_.is-sep]:text-(--text-muted)">
                           <span className="is-add">+{previewDetailFile.additions}</span>
                           <span className="is-sep">/</span>
                           <span className="is-del">-{previewDetailFile.deletions}</span>
@@ -1074,7 +1074,7 @@ export function renderGitHistoryPanelView(scope: any) {
                     <FileIcon filePath={worktreePreviewFile.path} />
                   </span>
                   <span className="git-history-diff-modal-path min-w-0 flex-1 whitespace-nowrap overflow-hidden text-ellipsis text-(--text-strong)">{worktreePreviewFile.path}</span>
-                  <span className="git-history-diff-modal-stats text-[11px] whitespace-nowrap inline-flex items-center gap-[3px] [&_.is-add]:text-[#22c55e] [&_.is-del]:text-[#f87171] [&_.is-sep]:text-(--text-muted)">
+                  <span className="git-history-diff-modal-stats text-[11px] whitespace-nowrap inline-flex items-center gap-0.75 [&_.is-add]:text-[#22c55e] [&_.is-del]:text-[#f87171] [&_.is-sep]:text-(--text-muted)">
                     <span className="is-add">+{worktreePreviewFile.additions}</span>
                     <span className="is-sep">/</span>
                     <span className="is-del">-{worktreePreviewFile.deletions}</span>
@@ -1207,7 +1207,7 @@ export function renderGitHistoryPanelView(scope: any) {
                 branchDiffState.files.length === 0 ? (
                   <div className="git-history-empty p-4 text-(--text-muted) text-xs">{t("git.historyBranchWorktreeDiffEmpty")}</div>
                 ) : (
-                  <div className="git-history-branch-worktree-diff-layout flex-1 min-h-[420px] h-[min(78vh,860px)] max-h-[calc(100vh-120px)] grid [grid-template-columns:minmax(0,1fr)_minmax(320px,34%)] border-t border-t-[color-mix(in_srgb,var(--border-default)_44%,transparent)] overflow-hidden">
+                  <div className="git-history-branch-worktree-diff-layout flex-1 min-h-105 h-[min(78vh,860px)] max-h-[calc(100vh-120px)] grid [grid-template-columns:minmax(0,1fr)_minmax(320px,34%)] border-t border-t-[color-mix(in_srgb,var(--border-default)_44%,transparent)] overflow-hidden">
                     <div className="git-history-branch-worktree-diff-detail order-1 h-full min-w-0 min-h-0 flex flex-col overflow-hidden bg-[color-mix(in_srgb,var(--surface-popover,#0d0f14)_94%,transparent)] [&_.git-history-diff-modal-viewer]:flex-1 [&_.git-history-diff-modal-viewer]:min-h-0 [&_.git-history-diff-modal-viewer]:max-h-none">
                       {!branchDiffState.selectedPath ? (
                         <div className="git-history-empty p-4 text-(--text-muted) text-xs">
@@ -1484,7 +1484,7 @@ export function renderGitHistoryPanelView(scope: any) {
                     {comparePreviewDetailFile.status}
                   </span>
                   <span className="git-history-diff-modal-path min-w-0 flex-1 whitespace-nowrap overflow-hidden text-ellipsis text-(--text-strong)">{comparePreviewDetailFile.path}</span>
-                  <span className="git-history-diff-modal-stats text-[11px] whitespace-nowrap inline-flex items-center gap-[3px]">
+                  <span className="git-history-diff-modal-stats text-[11px] whitespace-nowrap inline-flex items-center gap-0.75">
                     +{comparePreviewDetailFile.additions} / -{comparePreviewDetailFile.deletions}
                   </span>
                 </div>
@@ -1568,7 +1568,7 @@ export function renderGitHistoryPanelView(scope: any) {
                 >
                   <button
                     type="button"
-                    className={`git-history-branch-context-item w-full border-none bg-transparent text-(--text-primary) text-[13px] leading-[1.3] text-left rounded-[10px] py-[9px] px-2.5 cursor-pointer transition-[background-color,color] duration-[140ms] ease hover:[&:not(:disabled)]:bg-[color-mix(in_srgb,var(--surface-control-hover,#263044)_86%,transparent)] hover:[&:not(:disabled)_.git-history-branch-context-item-icon]:text-[color-mix(in_srgb,var(--accent-primary,#2563eb)_84%,var(--text-strong))] focus-visible:outline focus-visible:outline-[color-mix(in_srgb,var(--accent-primary,#2563eb)_74%,transparent)] focus-visible:[outline-offset:-1px] disabled:text-(--text-muted) disabled:opacity-[0.54] disabled:cursor-not-allowed${action.disabled ? " is-disabled" : ""}${
+                    className={`git-history-branch-context-item w-full border-none bg-transparent text-(--text-primary) text-[13px] leading-[1.3] text-left rounded-[10px] py-[9px] px-2.5 cursor-pointer transition-[background-color,color] duration-140 ease hover:[&:not(:disabled)]:bg-[color-mix(in_srgb,var(--surface-control-hover,#263044)_86%,transparent)] hover:[&:not(:disabled)_.git-history-branch-context-item-icon]:text-[color-mix(in_srgb,var(--accent-primary,#2563eb)_84%,var(--text-strong))] focus-visible:outline focus-visible:outline-[color-mix(in_srgb,var(--accent-primary,#2563eb)_74%,transparent)] focus-visible:[outline-offset:-1px] disabled:text-(--text-muted) disabled:opacity-54 disabled:cursor-not-allowed${action.disabled ? " is-disabled" : ""}${
                       action.tone === "danger" ? " is-danger [&:not(:disabled)]:text-[color-mix(in_srgb,#ef4444_86%,var(--text-primary))] [&:not(:disabled)_.git-history-branch-context-item-icon]:text-[color-mix(in_srgb,#ef4444_72%,var(--text-muted))]" : ""
                     }`}
                     role="menuitem"
@@ -1698,7 +1698,7 @@ export function renderGitHistoryPanelView(scope: any) {
                   <span className="git-history-create-pr-title-icon w-[34px] h-[34px] rounded-[10px] border border-[color-mix(in_srgb,var(--accent-primary,#2563eb)_36%,transparent)] bg-[color-mix(in_srgb,var(--accent-primary,#2563eb)_12%,transparent)] text-[color-mix(in_srgb,var(--accent-primary,#2563eb)_84%,#dbeafe)] inline-flex items-center justify-center flex-none">
                     <GitPullRequestCreate size={16} />
                   </span>
-                  <div className="git-history-create-pr-title-copy min-w-0 flex flex-col gap-[3px] [&_strong]:text-[15px] [&_strong]:text-(--text-stronger) [&_p]:m-0 [&_p]:text-xs [&_p]:text-(--text-secondary) [&_p]:leading-[1.45]">
+                  <div className="git-history-create-pr-title-copy min-w-0 flex flex-col gap-0.75 [&_strong]:text-[15px] [&_strong]:text-(--text-stronger) [&_p]:m-0 [&_p]:text-xs [&_p]:text-(--text-secondary) [&_p]:leading-[1.45]">
                     <strong>{t("git.historyCreatePrDialogTitle")}</strong>
                     <p>{t("git.historyCreatePrDialogSubtitle")}</p>
                   </div>
@@ -1750,7 +1750,7 @@ export function renderGitHistoryPanelView(scope: any) {
                   <span className="git-history-create-pr-compare-icon w-[38px] h-10 rounded-[11px] border border-[color-mix(in_srgb,var(--accent-primary,#2563eb)_34%,transparent)] bg-[color-mix(in_srgb,var(--accent-primary,#2563eb)_10%,transparent)] text-[color-mix(in_srgb,var(--accent-primary,#2563eb)_84%,var(--text-primary))] inline-flex items-center justify-center" aria-hidden>
                     <GitPullRequestCreate size={14} />
                   </span>
-                  <label className="git-history-create-pr-compare-field flex flex-col-reverse items-stretch justify-center gap-1 min-w-0 min-h-[52px] rounded-xl border border-(--border-default)/68 bg-[color-mix(in_srgb,var(--surface-card-muted,#ffffff)_92%,transparent)] py-[7px] px-2.5 relative transition-[border-color,box-shadow,background-color] duration-[140ms] ease focus-within:border-[color-mix(in_srgb,var(--accent-primary,#2563eb)_52%,transparent)] focus-within:shadow-[0_0_0_2px_color-mix(in_srgb,var(--accent-primary,#2563eb)_17%,transparent),0_8px_20px_color-mix(in_srgb,#0f172a_8%,transparent)] [&>span]:w-fit [&>span]:max-w-full [&>span]:inline-flex [&>span]:items-center [&>span]:gap-[5px] [&>span]:py-px [&>span]:px-1.5 [&>span]:rounded-full [&>span]:border [&>span]:border-(--border-default)/72 [&>span]:bg-[color-mix(in_srgb,var(--surface-control,#f8fafc)_65%,transparent)] [&>span]:text-[10px] [&>span]:font-[620] [&>span]:text-[color-mix(in_srgb,var(--text-secondary)_90%,var(--text-primary))] [&>span]:whitespace-nowrap [&>span]:tracking-[0.004em] [&>span]:leading-[1.25] [&>span]:overflow-hidden [&>span]:text-ellipsis">
+                  <label className="git-history-create-pr-compare-field flex flex-col-reverse items-stretch justify-center gap-1 min-w-0 min-h-[52px] rounded-xl border border-(--border-default)/68 bg-[color-mix(in_srgb,var(--surface-card-muted,#ffffff)_92%,transparent)] py-[7px] px-2.5 relative transition-[border-color,box-shadow,background-color] duration-140 ease focus-within:border-[color-mix(in_srgb,var(--accent-primary,#2563eb)_52%,transparent)] focus-within:shadow-[0_0_0_2px_color-mix(in_srgb,var(--accent-primary,#2563eb)_17%,transparent),0_8px_20px_color-mix(in_srgb,#0f172a_8%,transparent)] [&>span]:w-fit [&>span]:max-w-full [&>span]:inline-flex [&>span]:items-center [&>span]:gap-[5px] [&>span]:py-px [&>span]:px-1.5 [&>span]:rounded-full [&>span]:border [&>span]:border-(--border-default)/72 [&>span]:bg-[color-mix(in_srgb,var(--surface-control,#f8fafc)_65%,transparent)] [&>span]:text-[10px] [&>span]:font-[620] [&>span]:text-[color-mix(in_srgb,var(--text-secondary)_90%,var(--text-primary))] [&>span]:whitespace-nowrap [&>span]:tracking-[0.004em] [&>span]:leading-[1.25] [&>span]:overflow-hidden [&>span]:text-ellipsis">
                     <span>
                       <HardDrive size={11} className="git-history-create-pr-field-chip-icon flex-none text-[color-mix(in_srgb,var(--text-secondary)_84%,var(--accent-primary,#2563eb))]" />
                       <span className="git-history-create-pr-field-chip-text min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">
@@ -1773,7 +1773,7 @@ export function renderGitHistoryPanelView(scope: any) {
                         }))}
                     />
                   </label>
-                  <label className="git-history-create-pr-compare-field flex flex-col-reverse items-stretch justify-center gap-1 min-w-0 min-h-[52px] rounded-xl border border-(--border-default)/68 bg-[color-mix(in_srgb,var(--surface-card-muted,#ffffff)_92%,transparent)] py-[7px] px-2.5 relative transition-[border-color,box-shadow,background-color] duration-[140ms] ease focus-within:border-[color-mix(in_srgb,var(--accent-primary,#2563eb)_52%,transparent)] focus-within:shadow-[0_0_0_2px_color-mix(in_srgb,var(--accent-primary,#2563eb)_17%,transparent),0_8px_20px_color-mix(in_srgb,#0f172a_8%,transparent)] [&>span]:w-fit [&>span]:max-w-full [&>span]:inline-flex [&>span]:items-center [&>span]:gap-[5px] [&>span]:py-px [&>span]:px-1.5 [&>span]:rounded-full [&>span]:border [&>span]:border-(--border-default)/72 [&>span]:bg-[color-mix(in_srgb,var(--surface-control,#f8fafc)_65%,transparent)] [&>span]:text-[10px] [&>span]:font-[620] [&>span]:text-[color-mix(in_srgb,var(--text-secondary)_90%,var(--text-primary))] [&>span]:whitespace-nowrap [&>span]:tracking-[0.004em] [&>span]:leading-[1.25] [&>span]:overflow-hidden [&>span]:text-ellipsis">
+                  <label className="git-history-create-pr-compare-field flex flex-col-reverse items-stretch justify-center gap-1 min-w-0 min-h-[52px] rounded-xl border border-(--border-default)/68 bg-[color-mix(in_srgb,var(--surface-card-muted,#ffffff)_92%,transparent)] py-[7px] px-2.5 relative transition-[border-color,box-shadow,background-color] duration-140 ease focus-within:border-[color-mix(in_srgb,var(--accent-primary,#2563eb)_52%,transparent)] focus-within:shadow-[0_0_0_2px_color-mix(in_srgb,var(--accent-primary,#2563eb)_17%,transparent),0_8px_20px_color-mix(in_srgb,#0f172a_8%,transparent)] [&>span]:w-fit [&>span]:max-w-full [&>span]:inline-flex [&>span]:items-center [&>span]:gap-[5px] [&>span]:py-px [&>span]:px-1.5 [&>span]:rounded-full [&>span]:border [&>span]:border-(--border-default)/72 [&>span]:bg-[color-mix(in_srgb,var(--surface-control,#f8fafc)_65%,transparent)] [&>span]:text-[10px] [&>span]:font-[620] [&>span]:text-[color-mix(in_srgb,var(--text-secondary)_90%,var(--text-primary))] [&>span]:whitespace-nowrap [&>span]:tracking-[0.004em] [&>span]:leading-[1.25] [&>span]:overflow-hidden [&>span]:text-ellipsis">
                     <span>
                       <GitBranch size={11} className="git-history-create-pr-field-chip-icon flex-none text-[color-mix(in_srgb,var(--text-secondary)_84%,var(--accent-primary,#2563eb))]" />
                       <span className="git-history-create-pr-field-chip-text min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">
@@ -1799,7 +1799,7 @@ export function renderGitHistoryPanelView(scope: any) {
                   <span className="git-history-create-pr-compare-separator w-[38px] h-10 rounded-[11px] border border-(--border-default)/68 bg-[color-mix(in_srgb,var(--surface-card-muted,#ffffff)_90%,transparent)] text-(--text-secondary) inline-flex items-center justify-center" aria-hidden>
                     <ChevronLeft size={14} />
                   </span>
-                  <label className="git-history-create-pr-compare-field flex flex-col-reverse items-stretch justify-center gap-1 min-w-0 min-h-[52px] rounded-xl border border-(--border-default)/68 bg-[color-mix(in_srgb,var(--surface-card-muted,#ffffff)_92%,transparent)] py-[7px] px-2.5 relative transition-[border-color,box-shadow,background-color] duration-[140ms] ease focus-within:border-[color-mix(in_srgb,var(--accent-primary,#2563eb)_52%,transparent)] focus-within:shadow-[0_0_0_2px_color-mix(in_srgb,var(--accent-primary,#2563eb)_17%,transparent),0_8px_20px_color-mix(in_srgb,#0f172a_8%,transparent)] [&>span]:w-fit [&>span]:max-w-full [&>span]:inline-flex [&>span]:items-center [&>span]:gap-[5px] [&>span]:py-px [&>span]:px-1.5 [&>span]:rounded-full [&>span]:border [&>span]:border-(--border-default)/72 [&>span]:bg-[color-mix(in_srgb,var(--surface-control,#f8fafc)_65%,transparent)] [&>span]:text-[10px] [&>span]:font-[620] [&>span]:text-[color-mix(in_srgb,var(--text-secondary)_90%,var(--text-primary))] [&>span]:whitespace-nowrap [&>span]:tracking-[0.004em] [&>span]:leading-[1.25] [&>span]:overflow-hidden [&>span]:text-ellipsis">
+                  <label className="git-history-create-pr-compare-field flex flex-col-reverse items-stretch justify-center gap-1 min-w-0 min-h-[52px] rounded-xl border border-(--border-default)/68 bg-[color-mix(in_srgb,var(--surface-card-muted,#ffffff)_92%,transparent)] py-[7px] px-2.5 relative transition-[border-color,box-shadow,background-color] duration-140 ease focus-within:border-[color-mix(in_srgb,var(--accent-primary,#2563eb)_52%,transparent)] focus-within:shadow-[0_0_0_2px_color-mix(in_srgb,var(--accent-primary,#2563eb)_17%,transparent),0_8px_20px_color-mix(in_srgb,#0f172a_8%,transparent)] [&>span]:w-fit [&>span]:max-w-full [&>span]:inline-flex [&>span]:items-center [&>span]:gap-[5px] [&>span]:py-px [&>span]:px-1.5 [&>span]:rounded-full [&>span]:border [&>span]:border-(--border-default)/72 [&>span]:bg-[color-mix(in_srgb,var(--surface-control,#f8fafc)_65%,transparent)] [&>span]:text-[10px] [&>span]:font-[620] [&>span]:text-[color-mix(in_srgb,var(--text-secondary)_90%,var(--text-primary))] [&>span]:whitespace-nowrap [&>span]:tracking-[0.004em] [&>span]:leading-[1.25] [&>span]:overflow-hidden [&>span]:text-ellipsis">
                     <span>
                       <HardDrive size={11} className="git-history-create-pr-field-chip-icon flex-none text-[color-mix(in_srgb,var(--text-secondary)_84%,var(--accent-primary,#2563eb))]" />
                       <span className="git-history-create-pr-field-chip-text min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">
@@ -1818,7 +1818,7 @@ export function renderGitHistoryPanelView(scope: any) {
                       onSelect={handleCreatePrHeadRepositoryChange}
                     />
                   </label>
-                  <label className="git-history-create-pr-compare-field flex flex-col-reverse items-stretch justify-center gap-1 min-w-0 min-h-[52px] rounded-xl border border-(--border-default)/68 bg-[color-mix(in_srgb,var(--surface-card-muted,#ffffff)_92%,transparent)] py-[7px] px-2.5 relative transition-[border-color,box-shadow,background-color] duration-[140ms] ease focus-within:border-[color-mix(in_srgb,var(--accent-primary,#2563eb)_52%,transparent)] focus-within:shadow-[0_0_0_2px_color-mix(in_srgb,var(--accent-primary,#2563eb)_17%,transparent),0_8px_20px_color-mix(in_srgb,#0f172a_8%,transparent)] [&>span]:w-fit [&>span]:max-w-full [&>span]:inline-flex [&>span]:items-center [&>span]:gap-[5px] [&>span]:py-px [&>span]:px-1.5 [&>span]:rounded-full [&>span]:border [&>span]:border-(--border-default)/72 [&>span]:bg-[color-mix(in_srgb,var(--surface-control,#f8fafc)_65%,transparent)] [&>span]:text-[10px] [&>span]:font-[620] [&>span]:text-[color-mix(in_srgb,var(--text-secondary)_90%,var(--text-primary))] [&>span]:whitespace-nowrap [&>span]:tracking-[0.004em] [&>span]:leading-[1.25] [&>span]:overflow-hidden [&>span]:text-ellipsis">
+                  <label className="git-history-create-pr-compare-field flex flex-col-reverse items-stretch justify-center gap-1 min-w-0 min-h-[52px] rounded-xl border border-(--border-default)/68 bg-[color-mix(in_srgb,var(--surface-card-muted,#ffffff)_92%,transparent)] py-[7px] px-2.5 relative transition-[border-color,box-shadow,background-color] duration-140 ease focus-within:border-[color-mix(in_srgb,var(--accent-primary,#2563eb)_52%,transparent)] focus-within:shadow-[0_0_0_2px_color-mix(in_srgb,var(--accent-primary,#2563eb)_17%,transparent),0_8px_20px_color-mix(in_srgb,#0f172a_8%,transparent)] [&>span]:w-fit [&>span]:max-w-full [&>span]:inline-flex [&>span]:items-center [&>span]:gap-[5px] [&>span]:py-px [&>span]:px-1.5 [&>span]:rounded-full [&>span]:border [&>span]:border-(--border-default)/72 [&>span]:bg-[color-mix(in_srgb,var(--surface-control,#f8fafc)_65%,transparent)] [&>span]:text-[10px] [&>span]:font-[620] [&>span]:text-[color-mix(in_srgb,var(--text-secondary)_90%,var(--text-primary))] [&>span]:whitespace-nowrap [&>span]:tracking-[0.004em] [&>span]:leading-[1.25] [&>span]:overflow-hidden [&>span]:text-ellipsis">
                     <span>
                       <GitPullRequestCreate size={11} className="git-history-create-pr-field-chip-icon flex-none text-[color-mix(in_srgb,var(--text-secondary)_84%,var(--accent-primary,#2563eb))]" />
                       <span className="git-history-create-pr-field-chip-text min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">
@@ -1845,7 +1845,7 @@ export function renderGitHistoryPanelView(scope: any) {
               </section>
 
               <section
-                className={`git-history-create-pr-preview-card rounded-[10px] border bg-[color-mix(in_srgb,var(--surface-control,#f8fafc)_78%,transparent)] py-2 px-2.5 flex flex-col gap-2 transition-[border-color,box-shadow] duration-[140ms] ease ${createPrPreviewExpanded ? "is-expanded border-[color-mix(in_srgb,var(--accent-primary,#2563eb)_44%,transparent)] shadow-[0_8px_20px_color-mix(in_srgb,var(--accent-primary,#2563eb)_14%,transparent)] [&_.git-history-create-pr-preview-caret]:rotate-180 [&_.git-history-create-pr-preview-caret]:text-(--text-secondary) [&_.git-history-create-pr-preview-caret]:border-[color-mix(in_srgb,var(--accent-primary,#2563eb)_44%,transparent)] [&_.git-history-create-pr-preview-collapsible]:max-h-[1300px] [&_.git-history-create-pr-preview-collapsible]:opacity-100 [&_.git-history-create-pr-preview-collapsible]:overflow-visible [&_.git-history-create-pr-preview-collapsible]:pointer-events-auto [&_.git-history-create-pr-preview-collapsible]:translate-y-0" : "border-(--border-default)/72"}`}
+                className={`git-history-create-pr-preview-card rounded-[10px] border bg-[color-mix(in_srgb,var(--surface-control,#f8fafc)_78%,transparent)] py-2 px-2.5 flex flex-col gap-2 transition-[border-color,box-shadow] duration-140 ease ${createPrPreviewExpanded ? "is-expanded border-[color-mix(in_srgb,var(--accent-primary,#2563eb)_44%,transparent)] shadow-[0_8px_20px_color-mix(in_srgb,var(--accent-primary,#2563eb)_14%,transparent)] [&_.git-history-create-pr-preview-caret]:rotate-180 [&_.git-history-create-pr-preview-caret]:text-(--text-secondary) [&_.git-history-create-pr-preview-caret]:border-[color-mix(in_srgb,var(--accent-primary,#2563eb)_44%,transparent)] [&_.git-history-create-pr-preview-collapsible]:max-h-[1300px] [&_.git-history-create-pr-preview-collapsible]:opacity-100 [&_.git-history-create-pr-preview-collapsible]:overflow-visible [&_.git-history-create-pr-preview-collapsible]:pointer-events-auto [&_.git-history-create-pr-preview-collapsible]:translate-y-0" : "border-(--border-default)/72"}`}
               >
                 <div className="git-history-create-pr-preview-head flex items-center justify-between gap-2.5">
                   <div className="git-history-create-pr-preview-title-wrap min-w-0 flex flex-col gap-0.5">
@@ -1862,7 +1862,7 @@ export function renderGitHistoryPanelView(scope: any) {
                   <div className="git-history-create-pr-preview-actions inline-flex items-center gap-1.5">
                     <button
                       type="button"
-                      className="git-history-create-pr-preview-caret w-5 h-5 p-0 rounded-md border border-(--border-default)/64 bg-[color-mix(in_srgb,var(--surface-card-muted,#ffffff)_86%,transparent)] text-(--text-muted) inline-flex items-center justify-center cursor-pointer transition-[transform,color,border-color] duration-[220ms] ease hover:text-(--text-secondary) hover:border-[color-mix(in_srgb,var(--accent-primary,#2563eb)_44%,transparent)]"
+                      className="git-history-create-pr-preview-caret w-5 h-5 p-0 rounded-md border border-(--border-default)/64 bg-[color-mix(in_srgb,var(--surface-card-muted,#ffffff)_86%,transparent)] text-(--text-muted) inline-flex items-center justify-center cursor-pointer transition-[transform,color,border-color] duration-220 ease hover:text-(--text-secondary) hover:border-[color-mix(in_srgb,var(--accent-primary,#2563eb)_44%,transparent)]"
                       onClick={() => setCreatePrPreviewExpanded((previous) => !previous)}
                       aria-label={
                         createPrPreviewExpanded
@@ -1894,7 +1894,7 @@ export function renderGitHistoryPanelView(scope: any) {
                     </button>
                   </div>
                 </div>
-                <div className="git-history-create-pr-preview-collapsible flex flex-col gap-2 max-h-0 opacity-0 overflow-hidden pointer-events-none -translate-y-[3px] transition-[max-height,opacity,transform] duration-[260ms] ease">
+                <div className="git-history-create-pr-preview-collapsible flex flex-col gap-2 max-h-0 opacity-0 overflow-hidden pointer-events-none -translate-y-[3px] transition-[max-height,opacity,transform] duration-260 ease">
                   <div className="git-history-create-pr-preview-summary inline-flex items-center gap-2 flex-wrap [&>span]:text-[11px] [&>span]:text-(--text-secondary) [&>span]:py-0.5 [&>span]:px-[7px] [&>span]:rounded-full [&>span]:border [&>span]:border-(--border-default)/68 [&>span]:bg-[color-mix(in_srgb,var(--surface-card-muted,#ffffff)_88%,transparent)]">
                     <span>{t("git.historyCreatePrPreviewOutgoingCount", { count: createPrPreviewCommits.length })}</span>
                     <span>{t("git.historyCreatePrPreviewBaseOnlyCount", { count: createPrPreviewBaseOnlyCount })}</span>

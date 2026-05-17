@@ -765,7 +765,7 @@ export function renderGitHistoryPanelDialogs(scope: any) {
                               <FileIcon filePath={pushPreviewModalFile.path} />
                             </span>
                             <span className="git-history-diff-modal-path min-w-0 flex-1 whitespace-nowrap overflow-hidden text-ellipsis text-(--text-strong)">{pushPreviewModalFile.path}</span>
-                            <span className="git-history-diff-modal-stats text-[11px] whitespace-nowrap inline-flex items-center gap-[3px] [&_.is-add]:text-[#22c55e] [&_.is-del]:text-[#f87171] [&_.is-sep]:text-(--text-muted)">
+                            <span className="git-history-diff-modal-stats text-[11px] whitespace-nowrap inline-flex items-center gap-0.75 [&_.is-add]:text-[#22c55e] [&_.is-del]:text-[#f87171] [&_.is-sep]:text-(--text-muted)">
                               <span className="is-add">+{pushPreviewModalFile.additions}</span>
                               <span className="is-sep">/</span>
                               <span className="is-del">-{pushPreviewModalFile.deletions}</span>
@@ -1181,7 +1181,7 @@ export function renderGitHistoryPanelDialogs(scope: any) {
                       checked={resetMode === mode}
                       onChange={() => setResetMode(mode)}
                     />
-                    <div className="git-history-reset-mode-copy flex flex-col gap-[3px] min-w-0">
+                    <div className="git-history-reset-mode-copy flex flex-col gap-0.75 min-w-0">
                       <div className="git-history-reset-mode-label text-[13px] font-bold text-(--text-stronger)">{t(`git.${labelKey}`)}</div>
                       <div className="git-history-reset-mode-desc text-xs text-(--text-secondary) leading-[1.35]">{t(`git.${descKey}`)}</div>
                     </div>
@@ -1194,14 +1194,14 @@ export function renderGitHistoryPanelDialogs(scope: any) {
               <div className="git-history-create-branch-actions flex justify-end gap-2">
                 <button
                   type="button"
-                  className="git-history-create-branch-btn is-cancel min-w-[76px] h-[30px] rounded-lg text-xs font-semibold cursor-pointer border border-(--border-default)/76 bg-[color-mix(in_srgb,var(--surface-control,#1a2230)_64%,transparent)] text-(--text-secondary) disabled:opacity-[0.48] disabled:cursor-not-allowed"
+                  className="git-history-create-branch-btn is-cancel min-w-[76px] h-7.5 rounded-lg text-xs font-semibold cursor-pointer border border-(--border-default)/76 bg-[color-mix(in_srgb,var(--surface-control,#1a2230)_64%,transparent)] text-(--text-secondary) disabled:opacity-[0.48] disabled:cursor-not-allowed"
                   onClick={() => setResetDialogOpen(false)}
                 >
                   {t("common.cancel")}
                 </button>
                 <button
                   type="button"
-                  className="git-history-create-branch-btn is-confirm min-w-[76px] h-[30px] rounded-lg text-xs font-semibold cursor-pointer border border-[color-mix(in_srgb,var(--accent-primary,#2563eb)_52%,transparent)] bg-[color-mix(in_srgb,var(--accent-primary,#2563eb)_28%,transparent)] text-[color-mix(in_srgb,var(--accent-primary,#2563eb)_92%,#dbeafe)] disabled:opacity-[0.48] disabled:cursor-not-allowed"
+                  className="git-history-create-branch-btn is-confirm min-w-[76px] h-7.5 rounded-lg text-xs font-semibold cursor-pointer border border-[color-mix(in_srgb,var(--accent-primary,#2563eb)_52%,transparent)] bg-[color-mix(in_srgb,var(--accent-primary,#2563eb)_28%,transparent)] text-[color-mix(in_srgb,var(--accent-primary,#2563eb)_92%,#dbeafe)] disabled:opacity-[0.48] disabled:cursor-not-allowed"
                   disabled={!resetTargetSha || Boolean(operationLoading)}
                   onClick={() => void handleConfirmResetCommit()}
                 >
@@ -1298,14 +1298,14 @@ export function renderGitHistoryPanelDialogs(scope: any) {
               <div className="git-history-create-branch-actions flex justify-end gap-2">
                 <button
                   type="button"
-                  className="git-history-create-branch-btn is-cancel min-w-[76px] h-[30px] rounded-lg text-xs font-semibold cursor-pointer border border-(--border-default)/76 bg-[color-mix(in_srgb,var(--surface-control,#1a2230)_64%,transparent)] text-(--text-secondary) disabled:opacity-[0.48] disabled:cursor-not-allowed"
+                  className="git-history-create-branch-btn is-cancel min-w-[76px] h-7.5 rounded-lg text-xs font-semibold cursor-pointer border border-(--border-default)/76 bg-[color-mix(in_srgb,var(--surface-control,#1a2230)_64%,transparent)] text-(--text-secondary) disabled:opacity-[0.48] disabled:cursor-not-allowed"
                   onClick={() => closeForceDeleteDialog(false)}
                 >
                   {t("common.cancel")}
                 </button>
                 <button
                   type="button"
-                  className="git-history-create-branch-btn is-danger min-w-[76px] h-[30px] rounded-lg text-xs font-semibold cursor-pointer border border-[color-mix(in_srgb,#ef4444_54%,transparent)] bg-[color-mix(in_srgb,#ef4444_26%,transparent)] text-[color-mix(in_srgb,#ef4444_90%,#fee2e2)] disabled:opacity-[0.48] disabled:cursor-not-allowed"
+                  className="git-history-create-branch-btn is-danger min-w-[76px] h-7.5 rounded-lg text-xs font-semibold cursor-pointer border border-[color-mix(in_srgb,#ef4444_54%,transparent)] bg-[color-mix(in_srgb,#ef4444_26%,transparent)] text-[color-mix(in_srgb,#ef4444_90%,#fee2e2)] disabled:opacity-[0.48] disabled:cursor-not-allowed"
                   disabled={forceDeleteCountdown > 0}
                   onClick={() => closeForceDeleteDialog(true)}
                 >

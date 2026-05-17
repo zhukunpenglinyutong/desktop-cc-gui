@@ -32,10 +32,10 @@ export function ActionSurface({
   style,
 }: ActionSurfaceProps) {
   const mergedClassName = [
-    "git-history-action",
+    "git-history-action inline-flex items-center justify-center gap-1.25 border border-transparent rounded-[7px] bg-transparent text-(--text-normal) select-none cursor-pointer outline-none transition-[background-color,border-color,color] duration-120 ease hover:bg-[color-mix(in_srgb,var(--surface-control-hover,#263044)_80%,transparent)] focus-visible:border-[color-mix(in_srgb,var(--accent-primary,#2563eb)_65%,transparent)]",
     className,
-    active ? "is-active" : "",
-    disabled ? "is-disabled" : "",
+    active ? "is-active bg-[color-mix(in_srgb,var(--accent-primary,#2563eb)_18%,transparent)]" : "",
+    disabled ? "is-disabled opacity-45 cursor-not-allowed pointer-events-none" : "",
   ]
     .filter(Boolean)
     .join(" ");
