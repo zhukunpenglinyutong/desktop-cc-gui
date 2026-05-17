@@ -88,7 +88,7 @@ describe("HomeChat", () => {
     );
 
     expect(markup).toMatch(
-      /home-chat-workspace-select-label">desktop-cc-gui<\/span>/,
+      /home-chat-workspace-select-label[^"]*">desktop-cc-gui<\/span>/,
     );
     expect(markup).not.toContain("/Users/demo/Desktop/desktop-cc-gui");
   });
