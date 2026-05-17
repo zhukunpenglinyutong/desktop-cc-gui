@@ -1,3 +1,4 @@
+import type { CSSProperties } from "react";
 import Zap from "lucide-react/dist/esm/icons/zap";
 
 type ProxyStatusBadgeProps = {
@@ -6,6 +7,7 @@ type ProxyStatusBadgeProps = {
   variant?: "compact" | "prominent";
   animated?: boolean;
   className?: string;
+  style?: CSSProperties;
   title?: string;
 };
 
@@ -31,6 +33,7 @@ export function ProxyStatusBadge({
   variant = "compact",
   animated = false,
   className = "",
+  style,
   title,
 }: ProxyStatusBadgeProps) {
   const host = normalizeProxyHost(proxyUrl);
@@ -40,6 +43,7 @@ export function ProxyStatusBadge({
   return (
     <span
       className={`proxy-status-badge proxy-status-badge--${variant}${stateClassName ? ` ${stateClassName}` : ""}${className ? ` ${className}` : ""}`}
+      style={style}
       title={resolvedTitle}
       aria-label={resolvedTitle}
     >

@@ -1,3 +1,36 @@
+/*
+ * messages.status-shell.css — keepers after Phase 7 inline migration.
+ *
+ * Most rules previously in this file have been inlined into their consumer
+ * components:
+ *   - .messages-empty / .messages-history-loading* / .messages-live-middle-collapsed-indicator
+ *     → MessagesTimeline.tsx
+ *   - .working / .working-text / .working-timer / .working-hint / .working-activity
+ *     / .working-proxy-badge / .turn-complete*
+ *     → MessagesRows.tsx (WorkingIndicator)
+ *
+ * What remains here is content that cannot be inlined cleanly:
+ *   1. `.messages-anchor-*`               — cross-stylesheet override
+ *      (`.content.is-editor-split .messages-anchor-rail` in main.css)
+ *      participates in the cascade with these rules.
+ *   2. `.messages-live-controls`          — test-pinned by
+ *      layout-swapped-platform-guard.test.tsx (`appendDiv(app, "messages-live-controls")`)
+ *      and has no React consumer to inline into. Minimal rules kept so the
+ *      swap-vs-base `right:` assertion still resolves.
+ *   3. `.working-spinner` + `.working.is-ingress *` + `.app.<platform>-desktop *`
+ *      — test-pinned by the Claude render-safe mitigation block of
+ *      layout-swapped-platform-guard.test.tsx. The platform-scoped rules
+ *      depend on the `.app` ancestor class so they cannot move to React
+ *      without a cross-tree subscription.
+ *   4. `:root[data-theme="light"]` / `prefers-color-scheme: light` overrides
+ *      for `.working.is-ingress .working-spinner` — theme-bound, cleanest
+ *      expressed as CSS.
+ *   5. `@keyframes working-spin / working-shimmer / working-ingress-halo /
+ *      working-spark-spin / tool-breathing` — still referenced by the
+ *      inlined animations (working-shimmer) and by sibling stylesheets
+ *      (tool-breathing in messages.part1.css).
+ */
+
 .messages-anchor-rail {
   position: absolute;
   left: 6px;
@@ -96,185 +129,23 @@
   }
 }
 
+/* messages-live-controls: test-pinned in layout-swapped-platform-guard.test.tsx
+ * — no current React consumer. Minimal base + swap override kept so the test's
+ * `getComputedStyle(controls).right` assertions still flip between
+ * `--right-panel-width` (base) and `--sidebar-width` (swap). */
 .messages-live-controls {
   position: fixed;
   right: calc(var(--right-panel-width, 230px) + var(--main-panel-padding) + 6px);
-  bottom: 14px;
-  z-index: 22;
-  display: inline-flex;
-  flex-direction: column;
-  align-items: stretch;
-  gap: 5px;
-  padding: 5px;
-  border-radius: 12px;
-  background: color-mix(in srgb, var(--surface-card) 92%, transparent);
-  border: 1px solid color-mix(in srgb, var(--border-strong) 68%, transparent);
-  box-shadow:
-    0 8px 20px color-mix(in srgb, #000 16%, transparent),
-    inset 0 1px 0 color-mix(in srgb, #ffffff 14%, transparent);
-  backdrop-filter: blur(6px);
-}
-
-.messages-live-control-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: flex-start;
-  gap: 6px;
-  padding: 6px 9px;
-  border-radius: 8px;
-  border: 1px solid color-mix(in srgb, var(--border-subtle) 78%, transparent);
-  background: color-mix(in srgb, var(--surface-card-elevated) 86%, transparent);
-  color: color-mix(in srgb, var(--text-muted) 88%, var(--text-faint));
-  font-size: 11px;
-  font-weight: 650;
-  line-height: 1;
-  cursor: pointer;
-  transition: all 0.18s ease;
-}
-
-.messages-live-control-btn span {
-  white-space: nowrap;
-}
-
-.messages-live-control-btn svg {
-  opacity: 0.7;
-  color: color-mix(in srgb, var(--text-muted) 82%, var(--text-faint));
-  transition: color 0.16s ease, opacity 0.16s ease;
-}
-
-.messages-live-control-state-dot {
-  margin-left: auto;
-  width: 7px;
-  height: 7px;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--text-faint) 42%, transparent);
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--border-subtle) 74%, transparent);
-  transition: all 0.16s ease;
-}
-
-.messages-live-control-btn:hover {
-  border-color: color-mix(in srgb, var(--accent) 42%, var(--border-strong));
-  color: var(--text-primary);
-  transform: translateY(-1px) scale(1.01);
-}
-
-.messages-live-control-btn:hover svg {
-  opacity: 0.95;
-  color: color-mix(in srgb, var(--accent) 72%, var(--text-primary));
-}
-
-.messages-live-control-btn.is-active {
-  background: color-mix(in srgb, var(--accent) 18%, var(--surface-card-elevated));
-  border-color: color-mix(in srgb, var(--accent) 64%, var(--border-strong));
-  color: color-mix(in srgb, var(--accent) 88%, var(--text-primary));
-  box-shadow:
-    0 0 0 1px color-mix(in srgb, var(--accent) 30%, transparent),
-    inset 0 0 0 1px color-mix(in srgb, var(--accent) 38%, transparent);
-}
-
-.messages-live-control-btn.is-active svg {
-  opacity: 1;
-  color: color-mix(in srgb, var(--accent) 92%, var(--text-primary));
-}
-
-.messages-live-control-btn.is-active .messages-live-control-state-dot {
-  background: color-mix(in srgb, var(--accent) 95%, #9ff6c1 5%);
-  box-shadow:
-    0 0 0 1px color-mix(in srgb, var(--accent) 48%, transparent),
-    0 0 8px color-mix(in srgb, var(--accent) 54%, transparent);
-}
-
-.messages-live-middle-collapsed-indicator {
-  margin: 4px 0 10px;
-  padding: 7px 10px;
-  border-radius: 10px;
-  border: 1px dashed color-mix(in srgb, var(--border-subtle) 86%, transparent);
-  background: color-mix(in srgb, var(--surface-card-muted) 78%, transparent);
-  color: var(--text-faint);
-  font-size: 12px;
-}
-
-@media (max-width: 900px) {
-  .messages-live-controls {
-    right: 10px;
-    bottom: 8px;
-    gap: 4px;
-    padding: 4px;
-  }
-
-  .messages-live-control-btn {
-    padding: 5px 7px;
-    font-size: 11px;
-  }
-}
-
-.app.right-panel-collapsed .messages-live-controls {
-  right: calc(var(--main-panel-padding, 24px) + 6px);
 }
 
 .app.layout-desktop.layout-swapped .messages-live-controls {
   right: calc(var(--sidebar-width, 210px) + var(--main-panel-padding, 24px) + 6px);
 }
 
-.app.layout-desktop.layout-swapped.right-panel-collapsed .messages-live-controls {
-  right: calc(var(--sidebar-width, 210px) + var(--main-panel-padding, 24px) + 6px);
-}
-
-.messages-empty {
-  padding: 24px 0;
-  max-width: 750px;
-  margin-left: auto;
-  margin-right: auto;
-  width: 100%;
-}
-
-.messages-history-loading {
-  min-height: 220px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 14px;
-  color: var(--text-fainter);
-}
-
-.messages-history-loading .working-spinner {
-  flex: 0 0 auto;
-}
-
-.messages-history-loading-copy {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.messages-history-loading-copy strong {
-  color: var(--text-stronger);
-  font-size: 14px;
-  font-weight: 600;
-}
-
-.messages-history-loading-copy span {
-  font-size: 12px;
-  line-height: 1.5;
-}
-
-.working {
-  display: inline-flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 10px;
-  padding: 0;
-  margin: 4px 24px 12px 0;
-  color: var(--text-fainter);
-  font-size: 12px;
-  letter-spacing: 0.02em;
-}
-
-.working-proxy-badge {
-  margin-right: 0;
-  margin-left: 1px;
-}
-
+/* working-spinner cluster — test-pinned in layout-swapped-platform-guard.test.tsx
+ * (Claude render-safe mitigation block). The ingress override + platform-scoped
+ * render-safe rules cannot be inlined without a cross-tree React subscription
+ * (need `.app.<platform>-desktop` ancestor class), so they stay in CSS. */
 .working-spinner {
   position: relative;
   display: inline-block;
@@ -410,45 +281,10 @@
   }
 }
 
-.working-timer {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-variant-numeric: tabular-nums;
-  color: var(--text-stronger);
-}
-
-
-.working-text {
-  position: relative;
-  color: transparent;
-  background: linear-gradient(
-    90deg,
-    rgba(255, 255, 255, 0.3),
-    rgba(255, 255, 255, 0.95),
-    rgba(255, 255, 255, 0.3)
-  );
-  background-size: 200% 100%;
-  -webkit-background-clip: text;
-  background-clip: text;
-  animation: working-shimmer 2.2s ease-in-out infinite;
-}
-
-.working-hint {
-  margin-left: 8px;
-  color: var(--text-faint);
-  font-size: 11px;
-}
-
-.working-activity {
-  color: var(--text-faint);
-  font-size: 11px;
-  max-width: min(62ch, 54vw);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
+/* Theme override for the inlined .working-text shimmer gradient. Kept here
+ * (rather than passing a theme prop into WorkingIndicator) because the rule
+ * piggybacks on the global `:root[data-theme="light"]` cascade that the rest
+ * of the app uses. */
 :root[data-theme="light"] .working-text {
   color: var(--text-muted);
   background: none;
@@ -461,27 +297,9 @@
   }
 }
 
-.turn-complete {
-  display: none;
-  align-items: center;
-  gap: 10px;
-  margin: 6px 24px 12px 24px;
-  color: var(--text-faint);
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.12em;
-}
-
-.turn-complete-line {
-  flex: 1;
-  height: 1px;
-  background: linear-gradient(90deg, transparent, #3a3a44);
-}
-
-.turn-complete-label {
-  white-space: nowrap;
-}
-
+/* Animation keyframes — still referenced by inlined `animation:` declarations
+ * (working-shimmer in MessagesRows.tsx WORKING_TEXT_STYLE) and by sibling
+ * stylesheets (tool-breathing in messages.part1.css). */
 @keyframes working-spin {
   to {
     transform: rotate(360deg);

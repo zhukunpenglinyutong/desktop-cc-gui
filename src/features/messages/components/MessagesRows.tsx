@@ -1,4 +1,12 @@
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+} from "react";
 import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
 import Check from "lucide-react/dist/esm/icons/check";
@@ -48,6 +56,80 @@ import {
   resolveProvenanceEngineLabel,
   shouldDisplayWorkingActivityLabel,
 } from "./messagesRenderUtils";
+
+/**
+ * Inline styles previously defined in `src/styles/messages.status-shell.css`
+ * (the working/turn-complete cluster). Migrated to inline `style` props so
+ * the CSS file can shrink — the original class names are retained as no-op
+ * markers for QA / spec-hub selectors. Animation keyframes (`working-spin`,
+ * `working-shimmer`, etc.) remain in CSS because they are referenced by
+ * `animation` shorthand below and by the still-CSS `.working-spinner` rule
+ * (which is kept in CSS because it is test-pinned by
+ * layout-swapped-platform-guard).
+ */
+const WORKING_BASE_STYLE: CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  flexWrap: "wrap",
+  gap: "10px",
+  padding: 0,
+  margin: "4px 24px 12px 0",
+  color: "var(--text-fainter)",
+  fontSize: "12px",
+  letterSpacing: "0.02em",
+};
+const WORKING_PROXY_BADGE_STYLE: CSSProperties = {
+  marginRight: 0,
+  marginLeft: "1px",
+};
+const WORKING_TIMER_STYLE: CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  gap: "6px",
+  fontVariantNumeric: "tabular-nums",
+  color: "var(--text-stronger)",
+};
+const WORKING_TEXT_STYLE: CSSProperties = {
+  position: "relative",
+  color: "transparent",
+  background:
+    "linear-gradient(90deg, rgba(255, 255, 255, 0.3), rgba(255, 255, 255, 0.95), rgba(255, 255, 255, 0.3))",
+  backgroundSize: "200% 100%",
+  WebkitBackgroundClip: "text",
+  backgroundClip: "text",
+  animation: "working-shimmer 2.2s ease-in-out infinite",
+};
+const WORKING_HINT_STYLE: CSSProperties = {
+  marginLeft: "8px",
+  color: "var(--text-faint)",
+  fontSize: "11px",
+};
+const WORKING_ACTIVITY_STYLE: CSSProperties = {
+  color: "var(--text-faint)",
+  fontSize: "11px",
+  maxWidth: "min(62ch, 54vw)",
+  overflow: "hidden",
+  textOverflow: "ellipsis",
+  whiteSpace: "nowrap",
+};
+const TURN_COMPLETE_STYLE: CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  gap: "10px",
+  margin: "6px 24px 12px 24px",
+  color: "var(--text-faint)",
+  fontSize: "11px",
+  textTransform: "uppercase",
+  letterSpacing: "0.12em",
+};
+const TURN_COMPLETE_LINE_STYLE: CSSProperties = {
+  flex: "1",
+  height: "1px",
+  background: "linear-gradient(90deg, transparent, #3a3a44)",
+};
+const TURN_COMPLETE_LABEL_STYLE: CSSProperties = {
+  whiteSpace: "nowrap",
+};
 
 type WorkingIndicatorProps = {
   isThinking: boolean;
@@ -842,7 +924,7 @@ export const WorkingIndicator = memo(function WorkingIndicator({
   return (
     <>
       {isThinking && (
-        <div className={`working${streamPhaseClass}`}>
+        <div className={`working${streamPhaseClass}`} style={WORKING_BASE_STYLE}>
           {proxyEnabled && (
             <ProxyStatusBadge
               proxyUrl={proxyUrl}
@@ -850,30 +932,47 @@ export const WorkingIndicator = memo(function WorkingIndicator({
               variant="prominent"
               animated
               className="working-proxy-badge"
+              style={WORKING_PROXY_BADGE_STYLE}
             />
           )}
           <span className="working-spinner" aria-hidden />
-          <div className="working-timer">
+          <div className="working-timer" style={WORKING_TIMER_STYLE}>
             <span className="working-timer-clock">{formatDurationMs(elapsedMs)}</span>
           </div>
-          <span className="working-text">
+          <span className="working-text" style={WORKING_TEXT_STYLE}>
             {primaryLabel || reasoningLabel || t("messages.generatingResponse")}
           </span>
-          {showActivityLabel && <span className="working-activity">{activityLabel}</span>}
+          {showActivityLabel && (
+            <span className="working-activity" style={WORKING_ACTIVITY_STYLE}>
+              {activityLabel}
+            </span>
+          )}
           {showNonStreamingHint && (
-            <span className="working-hint">
+            <span className="working-hint" style={WORKING_HINT_STYLE}>
               {heartbeatHintText || resolvedNonStreamingHint}
             </span>
           )}
         </div>
       )}
       {!isThinking && lastDurationMs !== null && hasItems && (
-        <div className="turn-complete" aria-live="polite">
-          <span className="turn-complete-line" aria-hidden />
-          <span className="turn-complete-label">
+        <div
+          className="turn-complete"
+          aria-live="polite"
+          style={TURN_COMPLETE_STYLE}
+        >
+          <span
+            className="turn-complete-line"
+            aria-hidden
+            style={TURN_COMPLETE_LINE_STYLE}
+          />
+          <span className="turn-complete-label" style={TURN_COMPLETE_LABEL_STYLE}>
             {t("messages.doneIn", { duration: formatDurationMs(lastDurationMs) })}
           </span>
-          <span className="turn-complete-line" aria-hidden />
+          <span
+            className="turn-complete-line"
+            aria-hidden
+            style={TURN_COMPLETE_LINE_STYLE}
+          />
         </div>
       )}
     </>

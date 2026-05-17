@@ -517,7 +517,7 @@ export const ButtonArea = ({
           {onToggleMemoryReference ? (
             <div
               ref={memoryReferenceRootRef}
-              className="composer-memory-reference-control"
+              className="composer-memory-reference-control inline-flex items-center relative flex-none"
             >
               <button
                 type="button"
@@ -541,13 +541,13 @@ export const ButtonArea = ({
               {isMemoryReferencePopoverOpen ? (
                 <div
                   id={memoryReferencePopoverId}
-                  className="composer-memory-reference-popover"
+                  className="composer-memory-reference-popover absolute right-0 bottom-[calc(100%+6px)] z-[45] w-[min(252px,calc(100vw-24px))] p-0 border rounded-[9px] overflow-hidden border-(--composer-tool-popover-border,var(--border-strong,var(--border-subtle))) bg-(--composer-tool-popover-bg,var(--dropdown-bg,var(--surface-panel,var(--surface-control)))) shadow-[var(--shadow-popover,0_10px_24px_rgba(0,0,0,0.24))] text-(--text-secondary)"
                   role="dialog"
                   aria-label={t('composer.memoryReferenceDialogTitle')}
                 >
-                  <div className="composer-memory-reference-popover-head">
-                    <div className="composer-memory-reference-popover-title-group">
-                      <span className="composer-memory-reference-popover-title">
+                  <div className="composer-memory-reference-popover-head flex items-center justify-between gap-2 min-w-0 pt-[7px] px-2 pb-1.5 border-b border-(--border-subtle,var(--border-strong))">
+                    <div className="composer-memory-reference-popover-title-group grid gap-px min-w-0">
+                      <span className="composer-memory-reference-popover-title text-(--text-primary) text-xs font-[750] leading-[1.15]">
                         {t('composer.memoryReferenceDialogTitle')}
                       </span>
                     </div>
@@ -560,20 +560,20 @@ export const ButtonArea = ({
                       <X size={12} aria-hidden />
                     </button>
                   </div>
-                  <div className="composer-memory-reference-popover-body">
-                    <div className="composer-memory-reference-popover-row">
-                      <span className="composer-memory-reference-popover-label">
+                  <div className="composer-memory-reference-popover-body grid gap-[5px] pt-[7px] px-2 pb-0">
+                    <div className="composer-memory-reference-popover-row flex items-baseline justify-between gap-3 min-w-0">
+                      <span className="composer-memory-reference-popover-label text-(--text-primary) text-[11px] font-[720] leading-[1.2] min-w-0">
                         {t('composer.memoryReferenceScope')}
                       </span>
-                      <span className="composer-memory-reference-popover-value">
+                      <span className="composer-memory-reference-popover-value text-(--text-muted) text-[10px] font-[680] leading-[1.2] whitespace-nowrap">
                         {t('composer.memoryReferenceOff')}
                       </span>
                     </div>
-                    <div className="composer-memory-reference-popover-copy">
+                    <div className="composer-memory-reference-popover-copy m-0 text-(--text-muted) text-[11px] leading-[1.32]">
                       {t('composer.memoryReferenceOffHint')}
                     </div>
                   </div>
-                  <div className="composer-memory-reference-popover-actions">
+                  <div className="composer-memory-reference-popover-actions flex justify-end gap-1.5 mt-[7px] px-2 pb-2">
                     <button
                       type="button"
                       className="composer-memory-reference-popover-secondary"

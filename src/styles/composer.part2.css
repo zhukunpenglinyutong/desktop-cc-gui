@@ -1,34 +1,16 @@
 /**
- * composer.part2.css — keeper (Phase 4.5b/4.5e Tailwind 迁移后保留段)
+ * composer.part2.css — keeper
  *
- * Phase 4.5e (本次) 内联到 TSX：
- *   composer-context-menu-panel{,--portal} / composer-context-backdrop
- *   composer-memory-strip{,-head,-label,-hint}
- *   composer-memory-chip-list (in code-annotation list path)
- *
- * 保留原因：
- *   1. ContextUsageIndicator — radial-gradient + conic-gradient + ::after/::before tooltip 伪元素
- *   2. @container composer-footer queries — cross-cluster responsive
- *   3. .composer-shell .composer-input{,:focus-within} — 父级 context-dependent 覆盖
- *   4. composer-memory-reference-popover* — ButtonArea (state hover/armed/disabled + close hover)
- *   5. composer-memory-chip{,-main,-title,-summary,-meta,-state,-remove} + 状态 (.is-carry/.is-retained)
- *      + descendant `.composer-code-annotation-chip` overrides
- *   6. composer-context-ledger* — ContextLedgerPanel 单文件大型 cascade（kind 变体 + 选中态 + dialog）
+ * Keepers:
+ *   1. ContextUsageIndicator — radial/conic-gradient + ::before/::after tooltip
+ *   2. @container composer-footer queries
+ *   3. .composer-shell .composer-input{,:focus-within} — parent cascade
+ *   4. composer-memory-reference-popover — state hover/armed/disabled cascade
+ *   5. composer-memory-chip cluster — .is-carry/.is-retained + .composer-code-annotation-chip overrides
+ *   6. composer-context-ledger — kind variants + selected state + dialog cascade
  */
 
-/**
- * ContextUsageIndicator 样式
- * ─────────────────────────────────────────
- * 奶奶请看：这里定义了"上下文使用量指示器"的外观
- *
- * 布局说明：
- * [●] 50% · 100k / 200k 上下文
- *  ↑    ↑         ↑        ↑
- * 圆环 百分比   数值    标签
- * ─────────────────────────────────────────
- */
-
-/* 整体容器：使用 flex 布局让各部分水平排列 */
+/* ContextUsageIndicator: ring + tooltip via radial/conic gradient + ::before/::after */
 .context-usage-indicator {
   display: flex;
   align-items: center;
@@ -43,37 +25,19 @@
   transition: background-color 0.15s ease;
 }
 
-/**
- * 进度圆环
- * - 使用 CSS 渐变绘制圆环
- * - 颜色随使用量变化（绿→黄→红）
- */
 .context-usage-ring {
-  --context-free: 100; /* 默认剩余 100%，即完全空闲 */
+  --context-free: 100;
   width: 14px;
   height: 14px;
   border-radius: 999px;
   position: relative;
   flex-shrink: 0;
-
-  /*
-   * 背景渐变说明：
-   * 1. radial-gradient：中心挖空，形成环形
-   * 2. conic-gradient：根据 --context-free 变量绘制进度
-   *    - 统一灰白配色，与界面更协调
-   */
   background:
     radial-gradient(circle, var(--surface-context-core, var(--surface-card)) 50%, transparent 52%),
-    conic-gradient(
-      from 180deg,
-      var(--text-muted, #888)
-        calc(var(--context-free) * 1%),
-      var(--border-subtle, #ddd) 0
-    );
+    conic-gradient(from 180deg, var(--text-muted, #888) calc(var(--context-free) * 1%), var(--border-subtle, #ddd) 0);
   transition: background 0.3s ease;
 }
 
-/* 圆环内部的小圆点（装饰用） */
 .context-usage-ring-inner {
   position: absolute;
   inset: 3px;
@@ -81,42 +45,25 @@
   background: var(--surface-context-core, var(--surface-card));
 }
 
-/**
- * 紧凑模式（只显示圆环）
- * ─────────────────────────────────────────
- * 奶奶请看：这是简化版的样式
- * 只显示一个小圆环，鼠标放上去才显示详情
- * ─────────────────────────────────────────
- */
 .context-usage-indicator--compact {
   padding: 0;
   background: transparent;
   position: relative;
 }
 
-/* 紧凑模式下圆环稍大一点，更容易看清颜色 */
 .context-usage-indicator--compact .context-usage-ring {
   width: 16px;
   height: 16px;
 }
 
-/* 紧凑模式下的内圈调整 */
 .context-usage-indicator--compact .context-usage-ring-inner {
   inset: 4px;
 }
 
-/* 紧凑模式鼠标悬停效果 */
 .context-usage-indicator--compact:hover {
   background: transparent;
 }
 
-/**
- * 自定义 Tooltip 样式
- * ─────────────────────────────────────────
- * 用伪元素实现更漂亮的 tooltip
- * 鼠标悬停时从下方滑入显示
- * ─────────────────────────────────────────
- */
 .context-usage-indicator--compact::after {
   content: attr(title);
   position: absolute;
@@ -137,7 +84,6 @@
   z-index: 100;
 }
 
-/* Tooltip 小箭头 */
 .context-usage-indicator--compact::before {
   content: "";
   position: absolute;
@@ -152,7 +98,6 @@
   z-index: 101;
 }
 
-/* 鼠标悬停时显示 tooltip */
 .context-usage-indicator--compact:hover::after,
 .context-usage-indicator--compact:hover::before {
   opacity: 1;
@@ -254,13 +199,6 @@
 }
 
 /* ---------- composer-memory-reference-popover (ButtonArea) ---------- */
-.composer-memory-reference-control {
-  display: inline-flex;
-  align-items: center;
-  position: relative;
-  flex: 0 0 auto;
-}
-
 .composer-memory-reference-toggle {
   display: inline-flex;
   align-items: center;
@@ -292,44 +230,6 @@
   opacity: 0.55;
 }
 
-.composer-memory-reference-popover {
-  position: absolute;
-  right: 0;
-  bottom: calc(100% + 6px);
-  z-index: 45;
-  width: min(252px, calc(100vw - 24px));
-  padding: 0;
-  border: 1px solid var(--composer-tool-popover-border, var(--border-strong, var(--border-subtle)));
-  border-radius: 9px;
-  background: var(--composer-tool-popover-bg, var(--dropdown-bg, var(--surface-panel, var(--surface-control))));
-  box-shadow: var(--shadow-popover, 0 10px 24px rgba(0, 0, 0, 0.24));
-  color: var(--text-secondary);
-  overflow: hidden;
-}
-
-.composer-memory-reference-popover-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  min-width: 0;
-  padding: 7px 8px 6px;
-  border-bottom: 1px solid var(--border-subtle, var(--border-strong));
-}
-
-.composer-memory-reference-popover-title-group {
-  display: grid;
-  gap: 1px;
-  min-width: 0;
-}
-
-.composer-memory-reference-popover-title {
-  color: var(--text-primary);
-  font-size: 12px;
-  font-weight: 750;
-  line-height: 1.15;
-}
-
 .composer-memory-reference-popover-close {
   display: inline-flex;
   align-items: center;
@@ -348,51 +248,6 @@
 .composer-memory-reference-popover-close:hover {
   color: var(--text-primary);
   background: var(--selector-pill-hover, transparent);
-}
-
-.composer-memory-reference-popover-body {
-  display: grid;
-  gap: 5px;
-  padding: 7px 8px 0;
-}
-
-.composer-memory-reference-popover-row {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 12px;
-  min-width: 0;
-}
-
-.composer-memory-reference-popover-label {
-  color: var(--text-primary);
-  font-size: 11px;
-  font-weight: 720;
-  line-height: 1.2;
-  min-width: 0;
-}
-
-.composer-memory-reference-popover-value {
-  color: var(--text-muted);
-  font-size: 10px;
-  font-weight: 680;
-  line-height: 1.2;
-  white-space: nowrap;
-}
-
-.composer-memory-reference-popover-copy {
-  margin: 0;
-  color: var(--text-muted);
-  font-size: 11px;
-  line-height: 1.32;
-}
-
-.composer-memory-reference-popover-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 6px;
-  margin-top: 7px;
-  padding: 0 8px 8px;
 }
 
 .composer-memory-reference-popover-secondary,
@@ -621,21 +476,6 @@
   background: color-mix(in srgb, var(--surface-item) 88%, #2563eb 12%);
 }
 
-.composer-context-ledger-toggle-main {
-  flex: 1 1 auto;
-  min-width: 0;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  border: none;
-  background: transparent;
-  color: inherit;
-  padding: 0;
-  margin: 0;
-  text-align: left;
-  cursor: pointer;
-}
-
 .composer-context-ledger-icon-action,
 .composer-context-ledger-toggle-text {
   display: inline-flex;
@@ -665,27 +505,6 @@
   white-space: nowrap;
 }
 
-.composer-context-ledger-comparison {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  flex-wrap: wrap;
-  padding: 8px 10px;
-  border: 1px solid color-mix(in srgb, var(--border-strong) 64%, #2563eb 36%);
-  border-radius: 10px;
-  background: color-mix(in srgb, var(--surface-panel) 90%, #2563eb 10%);
-}
-
-.composer-context-ledger-batch {
-  display: grid;
-  gap: 8px;
-  padding: 10px 12px;
-  border: 1px solid color-mix(in srgb, var(--border-strong) 58%, #0f766e 42%);
-  border-radius: 12px;
-  background: color-mix(in srgb, var(--surface-panel) 90%, #0f766e 10%);
-}
-
 .composer-context-ledger-group {
   display: grid;
   gap: 8px;
@@ -703,19 +522,6 @@
 .composer-context-ledger-group--attached_resource {
   gap: 6px;
   padding: 8px 10px;
-}
-
-.composer-context-ledger-group-count {
-  min-width: 20px;
-  height: 20px;
-  padding: 0 6px;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--surface-panel) 76%, #2563eb 24%);
-  color: var(--text-muted);
-  font-size: 10px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
 }
 
 .composer-context-ledger-block-list {
@@ -905,15 +711,6 @@
 .composer-context-ledger-action:disabled {
   opacity: 0.52;
   cursor: not-allowed;
-}
-
-.composer-context-ledger-detail-card {
-  display: grid;
-  gap: 10px;
-  padding: 12px;
-  border: 1px solid var(--border-strong);
-  border-radius: 12px;
-  background: color-mix(in srgb, var(--surface-panel) 94%, #2563eb 6%);
 }
 
 .composer-context-ledger-detail-markdown {

@@ -1276,11 +1276,11 @@ export function renderGitHistoryPanelView(scope: any) {
                   </div>
                 )
               ) : (
-                <div className="git-history-branch-compare-layout">
-                  <div className="git-history-branch-compare-lists">
+                <div className="git-history-branch-compare-layout flex-auto min-h-[420px] h-[min(78vh,860px)] max-h-[calc(100vh-120px)] grid grid-cols-[minmax(320px,42%)_minmax(0,1fr)] border-t border-t-[color-mix(in_srgb,var(--border-default)_44%,transparent)] overflow-hidden">
+                  <div className="git-history-branch-compare-lists min-h-0 grid grid-rows-[minmax(0,1fr)_minmax(0,1fr)] gap-2.5 p-2.5 border-r border-r-[color-mix(in_srgb,#f59e0b_14%,var(--border-default))] bg-[color-mix(in_srgb,var(--surface-control,#1a2230)_34%,transparent)]">
                     <section className="git-history-branch-compare-list-card is-target">
                       <header className="git-history-branch-compare-list-header is-target">
-                        <span className="git-history-branch-compare-list-title-wrap">
+                        <span className="git-history-branch-compare-list-title-wrap min-w-0 inline-flex items-center gap-2">
                           <span className="git-history-branch-compare-list-dot" aria-hidden />
                           <span className="git-history-branch-compare-list-title">
                             {t("git.historyBranchCompareDirectionTargetOnly", {
@@ -1298,7 +1298,7 @@ export function renderGitHistoryPanelView(scope: any) {
                           {t("git.historyBranchCompareDirectionEmpty")}
                         </div>
                       ) : (
-                        <div className="git-history-branch-compare-list">
+                        <div className="git-history-branch-compare-list flex-auto min-h-0 overflow-auto p-1.5 flex flex-col gap-1">
                           {branchDiffState.targetOnlyCommits.map((entry) => (
                             <button
                               key={`target-${entry.sha}`}
@@ -1352,7 +1352,7 @@ export function renderGitHistoryPanelView(scope: any) {
                           {t("git.historyBranchCompareDirectionEmpty")}
                         </div>
                       ) : (
-                        <div className="git-history-branch-compare-list">
+                        <div className="git-history-branch-compare-list flex-auto min-h-0 overflow-auto p-1.5 flex flex-col gap-1">
                           {branchDiffState.currentOnlyCommits.map((entry) => (
                             <button
                               key={`current-${entry.sha}`}
@@ -1387,7 +1387,7 @@ export function renderGitHistoryPanelView(scope: any) {
                     </section>
                   </div>
 
-                  <div className="git-history-branch-compare-detail">
+                  <div className="git-history-branch-compare-detail min-h-0 flex flex-col bg-[color-mix(in_srgb,var(--surface-popover,#0d0f14)_92%,transparent)]">
                     {!branchDiffState.selectedCommitSha ? (
                       <div className="git-history-empty p-4 text-(--text-muted) text-xs">
                         {t("git.historyBranchCompareSelectCommit")}
@@ -1397,8 +1397,8 @@ export function renderGitHistoryPanelView(scope: any) {
                     ) : branchDiffState.selectedCommitError ? (
                       <div className="git-history-error">{branchDiffState.selectedCommitError}</div>
                     ) : branchDiffState.selectedCommitDetails ? (
-                      <div className="git-history-branch-compare-detail-body">
-                        <div className="git-history-branch-compare-detail-summary">
+                      <div className="git-history-branch-compare-detail-body flex-auto min-h-0 overflow-auto p-3 flex flex-col gap-2.5">
+                        <div className="git-history-branch-compare-detail-summary text-[13px] font-bold text-(--text-stronger)">
                           {branchDiffState.selectedCommitDetails.summary || t("git.historyNoMessage")}
                         </div>
                         <div className="git-history-branch-compare-detail-meta">

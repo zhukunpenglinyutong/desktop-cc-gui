@@ -4,6 +4,7 @@ import {
   useCallback,
   useEffect,
   useState,
+  type CSSProperties,
   type MutableRefObject,
   type ReactNode,
   type RefObject,
@@ -46,6 +47,57 @@ import {
   resolveProvenanceEngineLabel,
   shouldHideCodexCanvasCommandCard,
 } from "./messagesRenderUtils";
+
+/**
+ * Inline styles previously defined in `src/styles/messages.status-shell.css`.
+ * Migrated here so the CSS file can shrink — the original class names
+ * (`messages-empty`, `messages-history-loading*`, etc.) are retained as
+ * no-op markers for existing selectors / QA hooks.
+ */
+const MESSAGES_EMPTY_STYLE: CSSProperties = {
+  padding: "24px 0",
+  maxWidth: "750px",
+  marginLeft: "auto",
+  marginRight: "auto",
+  width: "100%",
+};
+const MESSAGES_HISTORY_LOADING_STYLE: CSSProperties = {
+  ...MESSAGES_EMPTY_STYLE,
+  minHeight: "220px",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  gap: "14px",
+  color: "var(--text-fainter)",
+};
+const MESSAGES_HISTORY_LOADING_SPINNER_STYLE: CSSProperties = {
+  flex: "0 0 auto",
+};
+const MESSAGES_HISTORY_LOADING_COPY_STYLE: CSSProperties = {
+  display: "flex",
+  flexDirection: "column",
+  gap: "4px",
+};
+const MESSAGES_HISTORY_LOADING_COPY_STRONG_STYLE: CSSProperties = {
+  color: "var(--text-stronger)",
+  fontSize: "14px",
+  fontWeight: 600,
+};
+const MESSAGES_HISTORY_LOADING_COPY_SPAN_STYLE: CSSProperties = {
+  fontSize: "12px",
+  lineHeight: 1.5,
+};
+const MESSAGES_LIVE_MIDDLE_COLLAPSED_INDICATOR_STYLE: CSSProperties = {
+  margin: "4px 0 10px",
+  padding: "7px 10px",
+  borderRadius: "10px",
+  border:
+    "1px dashed color-mix(in srgb, var(--border-subtle) 86%, transparent)",
+  background:
+    "color-mix(in srgb, var(--surface-card-muted) 78%, transparent)",
+  color: "var(--text-faint)",
+  fontSize: "12px",
+};
 
 type MessagesTimelineProps = {
   activeCollaborationModeId: string | null;
@@ -517,7 +569,11 @@ export const MessagesTimeline = memo(function MessagesTimeline({
         ))}
         {userInputNode}
         {isThinking && collapseLiveMiddleStepsEnabled && collapsedMiddleStepCount > 0 && (
-          <div className="messages-live-middle-collapsed-indicator" role="status">
+          <div
+            className="messages-live-middle-collapsed-indicator"
+            role="status"
+            style={MESSAGES_LIVE_MIDDLE_COLLAPSED_INDICATOR_STYLE}
+          >
             {t("messages.middleStepsCollapsedHint", { count: collapsedMiddleStepCount })}
           </div>
         )}
@@ -543,19 +599,34 @@ export const MessagesTimeline = memo(function MessagesTimeline({
               className="empty messages-empty messages-history-loading"
               role="status"
               aria-live="polite"
+              style={MESSAGES_HISTORY_LOADING_STYLE}
             >
-              <span className="working-spinner" aria-hidden="true" />
-              <div className="messages-history-loading-copy">
-                <strong>{t("messages.restoringHistory")}</strong>
-                <span>{t("messages.restoringHistoryHint")}</span>
+              <span
+                className="working-spinner"
+                aria-hidden="true"
+                style={MESSAGES_HISTORY_LOADING_SPINNER_STYLE}
+              />
+              <div
+                className="messages-history-loading-copy"
+                style={MESSAGES_HISTORY_LOADING_COPY_STYLE}
+              >
+                <strong style={MESSAGES_HISTORY_LOADING_COPY_STRONG_STYLE}>
+                  {t("messages.restoringHistory")}
+                </strong>
+                <span style={MESSAGES_HISTORY_LOADING_COPY_SPAN_STYLE}>
+                  {t("messages.restoringHistoryHint")}
+                </span>
               </div>
             </div>
           ) : hiddenClaudeReasoningOnly ? (
-            <div className="empty messages-empty messages-hidden-reasoning">
+            <div
+              className="empty messages-empty messages-hidden-reasoning"
+              style={MESSAGES_EMPTY_STYLE}
+            >
               {t("messages.hiddenThinkingContent")}
             </div>
           ) : (
-            <div className="empty messages-empty">
+            <div className="empty messages-empty" style={MESSAGES_EMPTY_STYLE}>
               {t("messages.emptyThread")}
             </div>
           )

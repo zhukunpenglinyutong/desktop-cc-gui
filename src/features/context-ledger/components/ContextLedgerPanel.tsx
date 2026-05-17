@@ -513,7 +513,7 @@ export const ContextLedgerPanel = memo(function ContextLedgerPanel({
       <div className="composer-context-ledger-toggle">
         <button
           type="button"
-          className="composer-context-ledger-toggle-main"
+          className="composer-context-ledger-toggle-main flex-1 min-w-0 flex items-center gap-2 border-none bg-transparent text-inherit p-0 m-0 text-left cursor-pointer"
           aria-expanded={!hidden && expanded}
           onClick={handlePrimaryToggle}
         >
@@ -570,7 +570,7 @@ export const ContextLedgerPanel = memo(function ContextLedgerPanel({
             {t("composer.contextLedgerTruthNote")}
           </p>
           {comparison ? (
-            <section className="composer-context-ledger-comparison">
+            <section className="composer-context-ledger-comparison flex items-center justify-between gap-2.5 flex-wrap py-2 px-2.5 border rounded-[10px] border-[color-mix(in_srgb,var(--border-strong)_64%,#2563eb_36%)] bg-[color-mix(in_srgb,var(--surface-panel)_90%,#2563eb_10%)]">
               <header className="composer-context-ledger-comparison-head flex items-center justify-between gap-2 flex-[0_0_auto]">
                 <div className="composer-context-ledger-comparison-copy inline-flex items-center gap-2">
                   <span className="composer-context-ledger-comparison-title text-[11px] font-bold text-(--text-strong)">
@@ -582,7 +582,7 @@ export const ContextLedgerPanel = memo(function ContextLedgerPanel({
                     </span>
                   ) : null}
                 </div>
-                <span className="composer-context-ledger-group-count">
+                <span className="composer-context-ledger-group-count min-w-5 h-5 px-1.5 rounded-full bg-[color-mix(in_srgb,var(--surface-panel)_76%,#2563eb_24%)] text-(--text-muted) text-[10px] inline-flex items-center justify-center">
                   {comparison.items.length}
                 </span>
               </header>
@@ -616,7 +616,7 @@ export const ContextLedgerPanel = memo(function ContextLedgerPanel({
             </section>
           ) : null}
           {batchSelectionEnabled ? (
-            <section className="composer-context-ledger-batch">
+            <section className="composer-context-ledger-batch grid gap-2 py-2.5 px-3 border rounded-xl border-[color-mix(in_srgb,var(--border-strong)_58%,#0f766e_42%)] bg-[color-mix(in_srgb,var(--surface-panel)_90%,#0f766e_10%)]">
               <header className="composer-context-ledger-batch-head flex items-start justify-between gap-2.5">
                 <div className="composer-context-ledger-batch-copy grid gap-1">
                   <span className="composer-context-ledger-comparison-title text-[11px] font-bold text-(--text-strong)">
@@ -692,7 +692,7 @@ export const ContextLedgerPanel = memo(function ContextLedgerPanel({
                 <span className="composer-context-ledger-group-title text-[11px] font-bold text-(--text-strong)">
                   {resolveGroupLabel(t, group)}
                 </span>
-                <span className="composer-context-ledger-group-count">
+                <span className="composer-context-ledger-group-count min-w-5 h-5 px-1.5 rounded-full bg-[color-mix(in_srgb,var(--surface-panel)_76%,#2563eb_24%)] text-(--text-muted) text-[10px] inline-flex items-center justify-center">
                   {group.blocks.length}
                 </span>
               </header>
@@ -870,7 +870,7 @@ export const ContextLedgerPanel = memo(function ContextLedgerPanel({
           aria-modal="true"
           aria-label={t("composer.contextLedgerDetailDialogTitle")}
         >
-          <div className="composer-context-ledger-detail-card">
+          <div className="composer-context-ledger-detail-card grid gap-2.5 p-3 border border-(--border-strong) rounded-xl bg-[color-mix(in_srgb,var(--surface-panel)_94%,#2563eb_6%)]">
             <div className="composer-context-ledger-detail-head flex items-start justify-between gap-3">
               <div className="composer-context-ledger-detail-copy grid gap-1">
                 <div className="composer-context-ledger-detail-kicker text-[10px] text-(--text-faint)">
