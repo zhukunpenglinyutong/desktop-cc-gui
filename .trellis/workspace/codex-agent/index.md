@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-0.md`
-- **Total Sessions**: 17
+- **Total Sessions**: 18
 - **Last Active**: 2026-05-17
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-0.md` | ~1156 | Active |
+| `journal-0.md` | ~1218 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 18 | 2026-05-17 | CSS 迁移收尾 + 终态文档化 + keeper 注释 | `7ee13c12b390fede02e135b0b3bd9a4d6a4dc547` | `chore/bump-version-0.5` |
 | 17 | 2026-05-17 | coss.ui 视觉 token 接入 + 官方 dark mode selector 对齐 | `30826436` | `chore/bump-version-0.5` |
 | 16 | 2026-05-17 | Phase 5.6b kanban + 9.5 opencode-panel + 9.3 partial 并行批次 | `a846709d` | `chore/bump-version-0.5` |
 | 15 | 2026-05-17 | Phase 4.5d composer.part1 + 7.5 git-history.part1 + 9.1 file-tree 并行批次 | `10678b9e` | `chore/bump-version-0.5` |

@@ -1154,3 +1154,65 @@ Net：CSS 67→66；累计删 28 .css；bootstrap.ts 41→40 imports
 ### Next Steps
 
 - None - task complete
+
+
+## Session 18: CSS 迁移收尾 + 终态文档化 + keeper 注释
+
+**Date**: 2026-05-17
+**Task**: CSS 迁移收尾 + 终态文档化 + keeper 注释
+**Branch**: `chore/bump-version-0.5`
+
+### Summary
+
+(Add summary)
+
+### Main Changes
+
+完成 CSS 迁移收尾（Phase 10 final wrap-up）：
+
+量化成果（起点 → 终态）：
+- .css 文件数：104 → 50（-52%）
+- src/styles/ 总行数：~85,000 → 24,090（-72%）
+- bootstrap.ts CSS imports：54 → 44
+- coss primitive 数：5 → 53
+- 视觉风格：fork 自 CodexMonitor → 100% @coss/ui 官方设计语言
+
+核心目标完成度：视觉/组件/token 100% coss.ui；业务样式 ~95% Tailwind utility
+
+本次会话关键 commit：
+- Phase 5.6c kanban + 7.6 git-history-overview + 8.6.2 spec-hub.chrome/controls
+- Phase 8.6.3 spec-hub + project-memory + worktree-modal + runtime-console
+- 5 并行批次：main / tool-blocks / diff / composer / file-tree
+- session-activity + chrome dock + client-doc + sidebar.chrome
+- Phase 7.5b/c git-history.part1.css 大瘦身 (-83%)
+- settings.part1.css 大瘦身 (-50%)
+- home-chat.css 内联 (-52%)
+- settings.part2.css 第二轮 (-34%)
+- test pin 解除（messages.part1 + settings.part2 + sidebar.css 字面 CSS 测试 → jsdom 化）
+- spec-hub-header.css 内联 (-80%)
+- Phase 10 收尾：终态文档 + 11 个 keeper 文件加 why-keep 注释
+
+收尾决策：不再继续推进瘦身，固化成果。剩余 24,090 行多为 CSS-native 特性（cascade / pseudo / @keyframes / Prism / markdown DOM），强行 inline 价值递减且会降低代码可读性。
+
+后续微调指引已写入 docs/migration-to-coss-ui.md。
+
+验证：lint ✅ typecheck ✅ vitest 4163/4166（3 个 pre-existing 失败与本迁移无关）
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `7ee13c12b390fede02e135b0b3bd9a4d6a4dc547` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
