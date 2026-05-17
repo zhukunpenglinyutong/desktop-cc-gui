@@ -95,8 +95,8 @@ describe("MainHeader workspace switch regression", () => {
     expect(screen.getByText("src/app.tsx")).toBeTruthy();
     expect(screen.queryByText("blank-file-panel")).toBeNull();
 
-    fireEvent.click(screen.getByRole("button", { name: "Workspace 1" }));
-    fireEvent.click(screen.getByRole("menuitem", { name: "Workspace 2" }));
+    fireEvent.click(screen.getByRole("combobox", { name: "Workspace 1" }));
+    fireEvent.click(screen.getByRole("option", { name: "Workspace 2" }));
 
     expect(screen.getByText("src/feature.ts")).toBeTruthy();
     expect(screen.getByText("src/panel.css")).toBeTruthy();

@@ -12,6 +12,22 @@ import { OpenAppMenu } from "./OpenAppMenu";
 import { LaunchScriptButton } from "./LaunchScriptButton";
 import { LaunchScriptEntryButton } from "./LaunchScriptEntryButton";
 import type { WorkspaceLaunchScriptsState } from "../hooks/useWorkspaceLaunchScripts";
+import {
+  Combobox,
+  ComboboxEmpty,
+  ComboboxGroup,
+  ComboboxGroupLabel,
+  ComboboxInput,
+  ComboboxItem,
+  ComboboxList,
+  ComboboxPopup,
+  ComboboxPrimitive,
+} from "@/components/ui/combobox";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 
 type WorkspaceGroupSection = {
   id: string | null;
@@ -260,30 +276,6 @@ export function MainHeader({
     !showProjectMenu || projectRevealActive || projectMenuOpen || menuOpen || infoOpen;
 
   useEffect(() => {
-    if (!menuOpen && !infoOpen && !projectMenuOpen) {
-      return;
-    }
-    const handleClick = (event: MouseEvent) => {
-      const target = event.target as Node;
-      const menuContains = menuRef.current?.contains(target) ?? false;
-      const infoContains = infoRef.current?.contains(target) ?? false;
-      const projectMenuContains = projectMenuRef.current?.contains(target) ?? false;
-      if (!menuContains && !infoContains && !projectMenuContains) {
-        setMenuOpen(false);
-        setInfoOpen(false);
-        setProjectMenuOpen(false);
-        setBranchQuery("");
-        setProjectQuery("");
-        setError(null);
-      }
-    };
-    window.addEventListener("mousedown", handleClick);
-    return () => {
-      window.removeEventListener("mousedown", handleClick);
-    };
-  }, [infoOpen, menuOpen, projectMenuOpen]);
-
-  useEffect(() => {
     if (!infoOpen && renameOnCancel) {
       renameOnCancel();
     }
@@ -332,84 +324,89 @@ export function MainHeader({
               onFocusCapture={showProjectDetails}
               onBlurCapture={handleProjectScopeBlur}
             >
-              <button
-                type="button"
-                className="workspace-project-button inline-flex items-center gap-1 bg-transparent border-none cursor-pointer py-0.5 px-1 rounded-md min-w-0 hover:bg-(--surface-control-hover)"
-                onClick={() => {
-                  setProjectMenuOpen((prev) => !prev);
-                  if (menuOpen) setMenuOpen(false);
+              <Combobox
+                value={activeWorkspaceId ?? null}
+                onValueChange={(next) => {
+                  if (typeof next === "string") {
+                    handleSelectProject(next);
+                  }
                 }}
-                aria-haspopup="menu"
-                aria-expanded={projectMenuOpen}
-                data-tauri-drag-region="false"
+                open={projectMenuOpen}
+                onOpenChange={(open) => {
+                  setProjectMenuOpen(open);
+                  if (!open) {
+                    setProjectQuery("");
+                  } else if (menuOpen) {
+                    setMenuOpen(false);
+                  }
+                }}
+                onInputValueChange={(value) => setProjectQuery(value)}
               >
-                <span className="workspace-project-icon inline-flex items-center justify-center text-(--text-muted) shrink-0" aria-hidden>
-                  <Folder size={14} />
-                </span>
-                <span className="workspace-title text-[15px] font-semibold tracking-[0.2px] max-w-[min(32vw,420px)] overflow-hidden text-ellipsis whitespace-nowrap">
-                  {parentName ? parentName : workspace.name}
-                </span>
-                <span className="workspace-project-caret text-(--text-faint) text-xs shrink-0 leading-none" aria-hidden>
-                  ›
-                </span>
-              </button>
-              {projectMenuOpen && (
-                <div
-                  className="workspace-project-dropdown popover-surface absolute top-[calc(100%+6px)] left-0 min-w-65 max-w-[min(86vw,360px)] max-h-105 z-10 rounded-[18px] p-2.5 flex flex-col gap-2 overflow-hidden"
-                  role="menu"
+                <ComboboxPrimitive.Trigger
+                  className="workspace-project-button inline-flex items-center gap-1 bg-transparent border-none cursor-pointer py-0.5 px-1 rounded-md min-w-0 hover:bg-(--surface-control-hover) outline-none"
+                  aria-label={parentName ? parentName : workspace.name}
                   data-tauri-drag-region="false"
                 >
-                  <label className="workspace-project-search flex items-center gap-2 min-h-9.5 px-2.5 rounded-xl border">
-                    <span className="workspace-project-search-icon inline-flex items-center justify-center text-(--text-faint) shrink-0" aria-hidden>
-                      <Search size={14} />
-                    </span>
-                    <input
-                      value={projectQuery}
-                      onChange={(event) => setProjectQuery(event.target.value)}
+                  <span
+                    className="workspace-project-icon inline-flex items-center justify-center text-(--text-muted) shrink-0"
+                    aria-hidden
+                  >
+                    <Folder size={14} />
+                  </span>
+                  <span className="workspace-title text-[15px] font-semibold tracking-[0.2px] max-w-[min(32vw,420px)] overflow-hidden text-ellipsis whitespace-nowrap">
+                    {parentName ? parentName : workspace.name}
+                  </span>
+                  <span
+                    className="workspace-project-caret text-(--text-faint) text-xs shrink-0 leading-none"
+                    aria-hidden
+                  >
+                    ›
+                  </span>
+                </ComboboxPrimitive.Trigger>
+                <ComboboxPopup
+                  className="workspace-project-dropdown"
+                  side="bottom"
+                  align="start"
+                  sideOffset={6}
+                  data-tauri-drag-region="false"
+                >
+                  <div className="p-1">
+                    <ComboboxInput
                       placeholder={t("workspace.searchProjects")}
-                      className="workspace-project-search-input w-full h-full border-0 outline-none p-0 bg-transparent text-(--text-stronger) text-sm leading-[1.3] placeholder:text-(--text-faint)"
-                      autoFocus
-                      data-tauri-drag-region="false"
+                      startAddon={<Search />}
+                      showTrigger={false}
                       aria-label={t("workspace.searchProjects")}
+                      data-tauri-drag-region="false"
                     />
-                  </label>
-                  <div className="workspace-project-list overflow-y-auto max-h-85 flex flex-col gap-2.5 p-0.5" role="none">
-                    {filteredGroups.map((group) => (
-                      <div key={group.id ?? "ungrouped"} className="workspace-project-group flex flex-col gap-0.75">
-                        {group.name && (
-                          <div className="workspace-project-group-label text-xs text-(--text-muted) py-0.75 px-2.5 tracking-[0.01em] font-semibold">{group.name}</div>
-                        )}
-                        {group.workspaces.map((ws) => (
-                          <button
-                            key={ws.id}
-                            type="button"
-                            className={`workspace-project-item w-full min-h-9 text-left px-2.5 rounded-[11px] border-none bg-transparent text-(--text-normal) text-sm leading-[1.3] cursor-pointer inline-flex items-center gap-2.25 transition-colors duration-150 hover:text-(--text-stronger)${
-                              ws.kind === "worktree" ? " is-worktree pl-5" : ""
-                            }${
-                              ws.id === activeWorkspaceId ? " is-active font-semibold text-white" : ""
-                            }`}
-                            onClick={() => handleSelectProject(ws.id)}
-                            role="menuitem"
-                            data-tauri-drag-region="false"
-                          >
-                            <span className="workspace-project-item-icon inline-flex items-center justify-center flex-[0_0_14px]" aria-hidden>
-                              {ws.kind === "worktree" ? <GitBranch size={14} /> : <Folder size={14} />}
-                            </span>
-                            <span className="workspace-project-item-label min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">
-                              {ws.kind === "worktree" ? (ws.worktree?.branch ?? ws.name) : ws.name}
-                            </span>
-                          </button>
-                        ))}
-                      </div>
-                    ))}
-                    {filteredGroups.length === 0 && (
-                      <div className="workspace-project-empty py-3 px-2 text-(--text-quiet) text-xs text-center">
-                        {t("workspace.noProjectsFound")}
-                      </div>
-                    )}
                   </div>
-                </div>
-              )}
+                  <ComboboxList>
+                    <ComboboxEmpty>
+                      {t("workspace.noProjectsFound")}
+                    </ComboboxEmpty>
+                    {filteredGroups.map((group) => (
+                      <ComboboxGroup key={group.id ?? "ungrouped"}>
+                        {group.name ? (
+                          <ComboboxGroupLabel>{group.name}</ComboboxGroupLabel>
+                        ) : null}
+                        {group.workspaces.map((ws) => (
+                          <ComboboxItem key={ws.id} value={ws.id}>
+                            {ws.kind === "worktree" ? (
+                              <GitBranch aria-hidden />
+                            ) : (
+                              <Folder aria-hidden />
+                            )}
+                            <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">
+                              {ws.kind === "worktree"
+                                ? (ws.worktree?.branch ?? ws.name)
+                                : ws.name}
+                            </span>
+                          </ComboboxItem>
+                        ))}
+                      </ComboboxGroup>
+                    ))}
+                  </ComboboxList>
+                </ComboboxPopup>
+              </Combobox>
             </div>
           ) : (
             <span className="workspace-title text-[15px] font-semibold tracking-[0.2px] max-w-[min(32vw,420px)] overflow-hidden text-ellipsis whitespace-nowrap">
@@ -428,19 +425,22 @@ export function MainHeader({
               onFocusCapture={showProjectDetails}
               onBlurCapture={handleProjectScopeBlur}
             >
-              <button
-                type="button"
-                className="workspace-branch-static-button border border-(--border-muted) bg-(--surface-card-strong) text-(--text-stronger) rounded-full py-0.5 px-2.5 inline-flex items-center justify-center cursor-pointer text-xs font-semibold max-w-[min(44vw,520px)] overflow-hidden text-ellipsis whitespace-nowrap hover:border-(--border-strong) hover:bg-(--surface-control-hover)"
-                onClick={() => setInfoOpen((prev) => !prev)}
-                aria-haspopup="dialog"
-                aria-expanded={infoOpen}
-                data-tauri-drag-region="false"
-                title={t("workspace.worktreeInfo")}
-              >
-                {worktreeLabel || branchName}
-              </button>
-              {infoOpen && (
-                <div className="worktree-info-popover popover-surface absolute top-[calc(100%+8px)] left-0 min-w-70 max-w-[min(360px,80vw)] z-12 rounded-[10px] p-2.5 flex flex-col gap-2" role="dialog">
+              <Popover open={infoOpen} onOpenChange={setInfoOpen}>
+                <PopoverTrigger asChild>
+                  <button
+                    type="button"
+                    className="workspace-branch-static-button border border-(--border-muted) bg-(--surface-card-strong) text-(--text-stronger) rounded-full py-0.5 px-2.5 inline-flex items-center justify-center cursor-pointer text-xs font-semibold max-w-[min(44vw,520px)] overflow-hidden text-ellipsis whitespace-nowrap hover:border-(--border-strong) hover:bg-(--surface-control-hover)"
+                    data-tauri-drag-region="false"
+                    title={t("workspace.worktreeInfo")}
+                  >
+                    {worktreeLabel || branchName}
+                  </button>
+                </PopoverTrigger>
+                <PopoverContent
+                  align="start"
+                  sideOffset={8}
+                  className="worktree-info-popover min-w-70 max-w-[min(360px,80vw)] z-12 rounded-[10px] p-2.5 flex flex-col gap-2 w-auto"
+                >
                   {worktreeRename && (
                     <div className="worktree-info-rename flex flex-col gap-1.5">
                       <span className="worktree-info-label text-[10px] uppercase tracking-[0.08em] text-(--text-faint)">{t("common.name")}</span>
@@ -565,8 +565,8 @@ export function MainHeader({
                       {t("workspace.revealInFinder")}
                     </button>
                   </div>
-                </div>
-              )}
+                </PopoverContent>
+              </Popover>
             </div>
           ) : (
             <div
@@ -575,43 +575,74 @@ export function MainHeader({
               onFocusCapture={showProjectDetails}
               onBlurCapture={handleProjectScopeBlur}
             >
-              <button
-                type="button"
-                className="workspace-branch-button inline-flex items-center gap-1.5 border-none bg-transparent py-0.5 px-1 rounded-md cursor-pointer text-(--text-subtle) max-w-[min(24vw,260px)] min-w-0 hover:bg-(--surface-control-hover) hover:text-(--text-stronger)"
-                onClick={() => setMenuOpen((prev) => !prev)}
-                aria-haspopup="menu"
-                aria-expanded={menuOpen}
-                data-tauri-drag-region="false"
+              <Combobox
+                value={branchName}
+                onValueChange={async (next) => {
+                  if (typeof next !== "string" || next === branchName) {
+                    return;
+                  }
+                  try {
+                    await onCheckoutBranch(next);
+                    setMenuOpen(false);
+                    setBranchQuery("");
+                    setError(null);
+                  } catch (err) {
+                    setError(err instanceof Error ? err.message : String(err));
+                  }
+                }}
+                open={menuOpen}
+                onOpenChange={(open) => {
+                  setMenuOpen(open);
+                  if (!open) {
+                    setBranchQuery("");
+                    setError(null);
+                  }
+                }}
+                onInputValueChange={(value) => {
+                  setBranchQuery(value);
+                  setError(null);
+                }}
               >
-                <span className="workspace-branch text-(--text-subtle) text-xs font-medium min-w-0 overflow-hidden text-ellipsis whitespace-nowrap block">{branchName}</span>
-                <span className="workspace-branch-caret text-[11px] text-(--text-faint) inline-flex rotate-90 items-center leading-none mt-px" aria-hidden>
-                  ›
-                </span>
-              </button>
-              {menuOpen && (
-                <div
-                  className="workspace-branch-dropdown popover-surface absolute top-[calc(100%+6px)] left-0 min-w-55 max-w-80 z-10 rounded-[10px] p-1.5 flex flex-col gap-1.5"
-                  role="menu"
+                <ComboboxPrimitive.Trigger
+                  className="workspace-branch-button inline-flex items-center gap-1.5 border-none bg-transparent py-0.5 px-1 rounded-md cursor-pointer text-(--text-subtle) max-w-[min(24vw,260px)] min-w-0 hover:bg-(--surface-control-hover) hover:text-(--text-stronger) outline-none"
+                  aria-label={branchName}
                   data-tauri-drag-region="false"
                 >
-                  <div className="branch-actions flex flex-col gap-1.5">
-                    <div className="branch-search flex gap-1.5 items-center min-w-0">
-                      <input
-                        value={branchQuery}
-                        onChange={(event) => {
-                          setBranchQuery(event.target.value);
-                          setError(null);
-                        }}
+                  <span className="workspace-branch text-(--text-subtle) text-xs font-medium min-w-0 overflow-hidden text-ellipsis whitespace-nowrap block">
+                    {branchName}
+                  </span>
+                  <span
+                    className="workspace-branch-caret text-[11px] text-(--text-faint) inline-flex rotate-90 items-center leading-none mt-px"
+                    aria-hidden
+                  >
+                    ›
+                  </span>
+                </ComboboxPrimitive.Trigger>
+                <ComboboxPopup
+                  className="workspace-branch-dropdown"
+                  side="bottom"
+                  align="start"
+                  sideOffset={6}
+                  data-tauri-drag-region="false"
+                >
+                  <div className="flex flex-col gap-1.5 p-1">
+                    <div className="flex gap-1.5 items-center min-w-0">
+                      <ComboboxInput
+                        placeholder={t("workspace.searchOrCreateBranch")}
+                        showTrigger={false}
+                        aria-label={t("workspace.searchBranches")}
+                        data-tauri-drag-region="false"
                         onKeyDown={async (event) => {
                           if (event.key !== "Enter") {
                             return;
                           }
-                          event.preventDefault();
                           if (branchValidationMessage) {
+                            event.preventDefault();
                             setError(branchValidationMessage);
                             return;
                           }
                           if (canCreate) {
+                            event.preventDefault();
                             try {
                               await onCreateBranch(trimmedQuery);
                               setMenuOpen(false);
@@ -622,30 +653,12 @@ export function MainHeader({
                                 err instanceof Error ? err.message : String(err),
                               );
                             }
-                            return;
-                          }
-                          if (exactMatch && exactMatch.name !== branchName) {
-                            try {
-                              await onCheckoutBranch(exactMatch.name);
-                              setMenuOpen(false);
-                              setBranchQuery("");
-                              setError(null);
-                            } catch (err) {
-                              setError(
-                                err instanceof Error ? err.message : String(err),
-                              );
-                            }
                           }
                         }}
-                        placeholder={t("workspace.searchOrCreateBranch")}
-                        className="branch-input flex-1 min-w-0 border border-(--border-muted) rounded-lg bg-(--surface-card) text-(--text-stronger) py-1.5 px-2 text-xs focus:outline-1 focus:outline-(--border-strong)"
-                        autoFocus
-                        data-tauri-drag-region="false"
-                        aria-label={t("workspace.searchBranches")}
                       />
                       <button
                         type="button"
-                        className="branch-create-button border-none rounded-lg bg-(--surface-card-strong) text-(--text-stronger) py-1.5 px-2 text-xs cursor-pointer hover:bg-(--surface-control-hover) disabled:cursor-not-allowed disabled:opacity-60 disabled:bg-(--surface-card)"
+                        className="shrink-0 rounded-md border bg-secondary px-2 py-1 text-xs font-medium text-secondary-foreground hover:bg-secondary/80 disabled:cursor-not-allowed disabled:opacity-50"
                         disabled={!canCreate || Boolean(branchValidationMessage)}
                         onClick={async () => {
                           if (branchValidationMessage) {
@@ -672,50 +685,36 @@ export function MainHeader({
                       </button>
                     </div>
                     {branchValidationMessage && (
-                      <div className="branch-error text-[11px] text-[rgba(255,160,160,0.9)] py-1.5 px-2 pb-0.5 whitespace-pre-wrap">{branchValidationMessage}</div>
+                      <div className="px-2 text-[11px] text-destructive whitespace-pre-wrap">
+                        {branchValidationMessage}
+                      </div>
                     )}
                     {canCreate && !branchValidationMessage && (
-                      <div className="branch-create-hint text-[11px] text-(--text-faint) py-0.5 px-2">
+                      <div className="px-2 text-[11px] text-muted-foreground">
                         {t("workspace.createBranchNamed", { name: trimmedQuery })}
                       </div>
                     )}
                   </div>
-                  <div className="branch-list flex flex-col gap-1 max-h-55 overflow-y-auto overflow-x-hidden" role="none">
+                  <ComboboxList>
+                    <ComboboxEmpty>
+                      {t("workspace.noBranchesFound")}
+                    </ComboboxEmpty>
                     {filteredBranches.map((branch) => (
-                      <button
+                      <ComboboxItem
                         key={branch.name}
-                        type="button"
-                        className={`branch-item text-left border-none bg-transparent py-1.5 px-2 rounded-lg text-(--text-muted) text-xs cursor-pointer hover:bg-(--surface-item) hover:text-(--text-stronger)${
-                          branch.name === branchName ? " is-active bg-(--surface-item) text-(--text-stronger)" : ""
-                        }`}
-                        onClick={async () => {
-                          if (branch.name === branchName) {
-                            return;
-                          }
-                          try {
-                            await onCheckoutBranch(branch.name);
-                            setMenuOpen(false);
-                            setBranchQuery("");
-                            setError(null);
-                          } catch (err) {
-                            setError(
-                              err instanceof Error ? err.message : String(err),
-                            );
-                          }
-                        }}
-                        role="menuitem"
-                        data-tauri-drag-region="false"
+                        value={branch.name}
                       >
                         {branch.name}
-                      </button>
+                      </ComboboxItem>
                     ))}
-                    {filteredBranches.length === 0 && (
-                      <div className="branch-empty text-[11px] text-(--text-faint) py-1 px-2">{t("workspace.noBranchesFound")}</div>
-                    )}
-                  </div>
-                  {error ? <div className="branch-error text-[11px] text-[rgba(255,160,160,0.9)] py-1.5 px-2 pb-0.5 whitespace-pre-wrap">{error}</div> : null}
-                </div>
-              )}
+                  </ComboboxList>
+                  {error ? (
+                    <div className="px-2 py-1 text-[11px] text-destructive whitespace-pre-wrap">
+                      {error}
+                    </div>
+                  ) : null}
+                </ComboboxPopup>
+              </Combobox>
             </div>
           )}
         </div>
