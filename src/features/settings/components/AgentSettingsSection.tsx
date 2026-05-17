@@ -108,14 +108,14 @@ export function AgentSettingsSection({ active }: AgentSettingsSectionProps) {
     <>
       {active && (
         <section className="settings-section">
-          <div className="settings-section-title">{t("settings.agent.title")}</div>
-          <div className="settings-section-subtitle">
+          <div className="settings-section-title text-[15px] font-semibold text-(--text-strong) mb-1">{t("settings.agent.title")}</div>
+          <div className="settings-section-subtitle text-xs text-(--text-subtle) mb-4">
             {t("settings.agent.description")}
           </div>
 
           {agentNotice && (
             <div
-              className={`settings-agent-notice ${
+              className={`settings-agent-notice rounded-[10px] border border-(--border-muted) px-2.5 py-2 text-xs mb-3 ${
                 agentNotice.kind === "error" ? "is-error" : "is-success"
               }`}
             >
@@ -123,7 +123,7 @@ export function AgentSettingsSection({ active }: AgentSettingsSectionProps) {
             </div>
           )}
 
-          <div className="settings-agent-toolbar">
+          <div className="settings-agent-toolbar flex flex-wrap gap-2 mb-3">
             <Button
               variant="outline"
               size="sm"
@@ -161,25 +161,25 @@ export function AgentSettingsSection({ active }: AgentSettingsSectionProps) {
             {t("settings.agent.customAgents")}
           </div>
           {agentLoading ? (
-            <div className="settings-agent-empty">
+            <div className="settings-agent-empty inline-flex items-center gap-2 text-(--text-muted) text-xs py-3 px-2.5 border border-dashed border-(--border-muted) rounded-[10px]">
               <span className="codicon codicon-loading codicon-modifier-spin" />
               <span>{t("settings.agent.loading")}</span>
             </div>
           ) : agentError ? (
-            <div className="settings-agent-empty is-error">
+            <div className="settings-agent-empty is-error inline-flex items-center gap-2 text-xs py-3 px-2.5 border border-dashed rounded-[10px]">
               <span className="codicon codicon-error" />
               <span>{agentError}</span>
             </div>
           ) : agentList.length === 0 ? (
-            <div className="settings-agent-empty">
+            <div className="settings-agent-empty inline-flex items-center gap-2 text-(--text-muted) text-xs py-3 px-2.5 border border-dashed border-(--border-muted) rounded-[10px]">
               <span>{t("settings.agent.noAgents")}</span>
             </div>
           ) : (
-            <div className="settings-agent-list">
+            <div className="settings-agent-list flex flex-col gap-2">
               {agentList.map((agent) => (
-                <div key={agent.id} className="settings-agent-card">
-                  <div className="settings-agent-card-main">
-                    <div className="settings-agent-card-title">
+                <div key={agent.id} className="settings-agent-card flex justify-between gap-3 border border-(--border-muted) rounded-[10px] bg-(--surface-card) px-3 py-2.5">
+                  <div className="settings-agent-card-main min-w-0 flex flex-col gap-1">
+                    <div className="settings-agent-card-title inline-flex items-center gap-1.5 text-[13px] font-semibold text-(--text-strong) [&_.agent-icon-svg]:w-5 [&_.agent-icon-svg]:h-5 [&_.agent-icon-svg]:text-(--text-secondary)">
                       <AgentIcon
                         icon={agent.icon}
                         seed={agent.id || agent.name}
@@ -190,7 +190,7 @@ export function AgentSettingsSection({ active }: AgentSettingsSectionProps) {
                     </div>
                     {agent.prompt && (
                       <div
-                        className="settings-agent-card-prompt"
+                        className="settings-agent-card-prompt text-xs text-(--text-muted) leading-[1.45] whitespace-nowrap overflow-hidden text-ellipsis max-w-[min(100%,580px)]"
                         title={agent.prompt}
                       >
                         {agent.prompt.length > 140
@@ -199,7 +199,7 @@ export function AgentSettingsSection({ active }: AgentSettingsSectionProps) {
                       </div>
                     )}
                   </div>
-                  <div className="settings-agent-card-actions">
+                  <div className="settings-agent-card-actions inline-flex gap-1 items-start shrink-0">
                     <Button
                       variant="ghost"
                       size="icon-sm"
@@ -255,22 +255,22 @@ export function AgentSettingsSection({ active }: AgentSettingsSectionProps) {
                     }))
                   }
                 />
-                <div className="settings-agent-counter">{agentDialog.name.length}/20</div>
+                <div className="settings-agent-counter text-[11px] text-(--text-subtle) mt-0.5 text-right">{agentDialog.name.length}/20</div>
               </div>
               <div className="vendor-form-group flex flex-col gap-[5px] [&>label]:text-xs [&>label]:font-medium [&>label]:text-[var(--text-primary)] [&>label]:inline-flex [&>label]:items-center [&>label]:gap-1.5">
                 <label>{t("settings.agent.dialog.icon")}</label>
                 <div
-                  className="settings-agent-icon-groups"
+                  className="settings-agent-icon-groups flex flex-col gap-2"
                   role="radiogroup"
                   aria-label={t("settings.agent.dialog.icon")}
                   ref={agentIconGroupRef}
                 >
                   {AGENT_ICON_GROUPS.map((group) => (
-                    <div key={group.id} className="settings-agent-icon-group">
-                      <div className="settings-agent-icon-group-label">
+                    <div key={group.id} className="settings-agent-icon-group flex flex-col gap-1">
+                      <div className="settings-agent-icon-group-label text-[11px] text-(--text-subtle) leading-tight">
                         {t(group.labelI18nKey)}
                       </div>
-                      <div className="settings-agent-icon-grid">
+                      <div className="settings-agent-icon-grid grid grid-cols-[repeat(auto-fill,minmax(72px,1fr))] gap-1.5">
                         {group.icons.map((iconClass) => {
                           const isSelected = selectedDialogIcon === iconClass;
                           const iconTitle = iconClass.replace("codicon-", "");
@@ -317,7 +317,7 @@ export function AgentSettingsSection({ active }: AgentSettingsSectionProps) {
                     }))
                   }
                 />
-                <div className="settings-agent-counter">
+                <div className="settings-agent-counter text-[11px] text-(--text-subtle) mt-0.5 text-right">
                   {agentDialog.prompt.length}/100000
                 </div>
                 <div className="vendor-hint text-[11px] text-[var(--text-secondary)] mt-0.5">{t("settings.agent.dialog.promptHint")}</div>
@@ -409,11 +409,11 @@ export function AgentSettingsSection({ active }: AgentSettingsSectionProps) {
               </button>
             </div>
             <div className="vendor-dialog-body px-[18px] py-4 overflow-y-auto flex-1 flex flex-col gap-4">
-              <div className="settings-agent-dialog-summary">
+              <div className="settings-agent-dialog-summary text-xs text-(--text-secondary) flex items-center gap-2 flex-wrap">
                 {t("settings.agent.exportDialog.selectHint")}
               </div>
               <div className="settings-agent-table-head">
-                <label className="settings-agent-table-checkbox">
+                <label className="settings-agent-table-checkbox inline-flex justify-center">
                   <input
                     type="checkbox"
                     checked={
@@ -434,12 +434,12 @@ export function AgentSettingsSection({ active }: AgentSettingsSectionProps) {
                 <div>{t("settings.agent.importDialog.columnName")}</div>
                 <div>{t("settings.agent.importDialog.columnId")}</div>
               </div>
-              <div className="settings-agent-table-body">
+              <div className="settings-agent-table-body flex flex-col gap-1 max-h-[260px] overflow-auto pt-2">
                 {agentList.map((agent) => {
                   const checked = agentExport.selectedIds.has(agent.id);
                   return (
                     <label key={agent.id} className="settings-agent-table-row">
-                      <span className="settings-agent-table-checkbox">
+                      <span className="settings-agent-table-checkbox inline-flex justify-center">
                         <input
                           type="checkbox"
                           checked={checked}
@@ -457,13 +457,13 @@ export function AgentSettingsSection({ active }: AgentSettingsSectionProps) {
                         />
                       </span>
                       <span>{agent.name}</span>
-                      <span className="settings-agent-row-id">{agent.id}</span>
+                      <span className="settings-agent-row-id font-(family-name:--font-code) text-(--text-subtle) overflow-hidden text-ellipsis whitespace-nowrap">{agent.id}</span>
                     </label>
                   );
                 })}
               </div>
             </div>
-            <div className="vendor-dialog-footer settings-agent-dialog-footer flex items-center justify-end gap-2 px-[18px] py-3 border-t border-[var(--border-muted)]">
+            <div className="vendor-dialog-footer settings-agent-dialog-footer flex items-center justify-between gap-2 px-[18px] py-3 border-t border-[var(--border-muted)]">
               <div className="settings-help">
                 {t("settings.agent.importDialog.selectedCount", {
                   count: agentExport.selectedIds.size,
@@ -532,33 +532,33 @@ export function AgentSettingsSection({ active }: AgentSettingsSectionProps) {
             </div>
             <div className="vendor-dialog-body px-[18px] py-4 overflow-y-auto flex-1 flex flex-col gap-4">
               {agentImport.loading ? (
-                <div className="settings-agent-empty">
+                <div className="settings-agent-empty inline-flex items-center gap-2 text-(--text-muted) text-xs py-3 px-2.5 border border-dashed border-(--border-muted) rounded-[10px]">
                   <span className="codicon codicon-loading codicon-modifier-spin" />
                   <span>{t("settings.loading")}</span>
                 </div>
               ) : agentImport.preview ? (
                 <>
-                  <div className="settings-agent-dialog-summary">
+                  <div className="settings-agent-dialog-summary text-xs text-(--text-secondary) flex items-center gap-2 flex-wrap">
                     {t("settings.agent.importDialog.summary", {
                       total: agentImport.preview.summary.total,
                     })}
-                    <span className="settings-agent-tag is-new">
+                    <span className="settings-agent-tag is-new inline-flex items-center rounded-full px-2 py-px text-[10px] border border-(--border-muted) text-(--text-secondary)">
                       {t("settings.agent.importDialog.newCount", {
                         count: agentImport.preview.summary.newCount,
                       })}
                     </span>
-                    <span className="settings-agent-tag is-update">
+                    <span className="settings-agent-tag is-update inline-flex items-center rounded-full px-2 py-px text-[10px] border border-(--border-muted) text-(--text-secondary)">
                       {t("settings.agent.importDialog.updateCount", {
                         count: agentImport.preview.summary.updateCount,
                       })}
                     </span>
                   </div>
                   {hasImportConflicts && (
-                    <div className="settings-agent-strategy">
+                    <div className="settings-agent-strategy border border-(--border-muted) rounded-lg p-2.5 flex flex-col gap-1.5">
                       <div className="settings-field-label">
                         {t("settings.agent.importDialog.conflictStrategy")}
                       </div>
-                      <label className="settings-agent-strategy-option">
+                      <label className="settings-agent-strategy-option inline-flex items-center gap-1.5 text-xs text-(--text-secondary)">
                         <input
                           type="radio"
                           name="agent-import-strategy"
@@ -570,7 +570,7 @@ export function AgentSettingsSection({ active }: AgentSettingsSectionProps) {
                         />
                         <span>{t("settings.agent.importDialog.strategySkip")}</span>
                       </label>
-                      <label className="settings-agent-strategy-option">
+                      <label className="settings-agent-strategy-option inline-flex items-center gap-1.5 text-xs text-(--text-secondary)">
                         <input
                           type="radio"
                           name="agent-import-strategy"
@@ -582,7 +582,7 @@ export function AgentSettingsSection({ active }: AgentSettingsSectionProps) {
                         />
                         <span>{t("settings.agent.importDialog.strategyOverwrite")}</span>
                       </label>
-                      <label className="settings-agent-strategy-option">
+                      <label className="settings-agent-strategy-option inline-flex items-center gap-1.5 text-xs text-(--text-secondary)">
                         <input
                           type="radio"
                           name="agent-import-strategy"
@@ -619,13 +619,13 @@ export function AgentSettingsSection({ active }: AgentSettingsSectionProps) {
                     <div>{t("settings.agent.importDialog.columnId")}</div>
                     <div>{t("settings.agent.importDialog.columnStatus")}</div>
                   </div>
-                  <div className="settings-agent-table-body">
+                  <div className="settings-agent-table-body flex flex-col gap-1 max-h-[260px] overflow-auto pt-2">
                     {agentImport.preview.items.map((item) => {
                       const agent = item.data;
                       const checked = agentImport.selectedIds.has(agent.id);
                       return (
                         <label key={agent.id} className="settings-agent-table-row is-import">
-                          <span className="settings-agent-table-checkbox">
+                          <span className="settings-agent-table-checkbox inline-flex justify-center">
                             <input
                               type="checkbox"
                               checked={checked}
@@ -643,9 +643,9 @@ export function AgentSettingsSection({ active }: AgentSettingsSectionProps) {
                             />
                           </span>
                           <span>{agent.name}</span>
-                          <span className="settings-agent-row-id">{agent.id}</span>
+                          <span className="settings-agent-row-id font-(family-name:--font-code) text-(--text-subtle) overflow-hidden text-ellipsis whitespace-nowrap">{agent.id}</span>
                           <span>
-                            <span className={`settings-agent-tag ${item.status === "new" ? "is-new" : "is-update"}`}>
+                            <span className={`settings-agent-tag inline-flex items-center rounded-full px-2 py-px text-[10px] border border-(--border-muted) text-(--text-secondary) ${item.status === "new" ? "is-new" : "is-update"}`}>
                               {item.status === "new"
                                 ? t("settings.agent.importDialog.statusNew")
                                 : t("settings.agent.importDialog.statusUpdate")}
@@ -659,7 +659,7 @@ export function AgentSettingsSection({ active }: AgentSettingsSectionProps) {
               ) : null}
             </div>
             {!agentImport.loading && agentImport.preview && (
-              <div className="vendor-dialog-footer settings-agent-dialog-footer flex items-center justify-end gap-2 px-[18px] py-3 border-t border-[var(--border-muted)]">
+              <div className="vendor-dialog-footer settings-agent-dialog-footer flex items-center justify-between gap-2 px-[18px] py-3 border-t border-[var(--border-muted)]">
                 <div className="settings-help">
                   {t("settings.agent.importDialog.selectedCount", {
                     count: agentImport.selectedIds.size,

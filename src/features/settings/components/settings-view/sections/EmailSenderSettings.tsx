@@ -419,7 +419,7 @@ export function EmailSenderSettings({
             </Button>
           </div>
 
-          <div className="settings-divider" />
+          <div className="settings-divider h-px bg-(--border-muted) my-4 rounded-full" />
 
           <div className="settings-field">
             {!draft.enabled ? (

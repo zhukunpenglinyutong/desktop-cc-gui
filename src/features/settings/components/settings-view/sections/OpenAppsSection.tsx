@@ -55,18 +55,18 @@ export function OpenAppsSection({
             openAppIconById[target.id] ??
             GENERIC_APP_ICON;
           return (
-            <div key={target.id} className="settings-open-app-row">
-              <div className="settings-open-app-icon-wrap" aria-hidden>
+            <div key={target.id} className="settings-open-app-row flex items-center gap-2.5 px-2.5 py-2 rounded-xl border border-(--border-muted) bg-(--surface-card) flex-wrap">
+              <div className="settings-open-app-icon-wrap shrink-0 w-6 h-6 rounded-lg border border-(--border-muted) bg-(--surface-control) inline-flex items-center justify-center" aria-hidden>
                 <img
-                  className="settings-open-app-icon"
+                  className="settings-open-app-icon w-[18px] h-[18px] rounded-[5px]"
                   src={iconSrc}
                   alt=""
                   width={18}
                   height={18}
                 />
               </div>
-              <div className="settings-open-app-fields">
-                <label className="settings-open-app-field settings-open-app-field--label">
+              <div className="settings-open-app-fields flex-1 min-w-0 flex items-center gap-2 flex-wrap">
+                <label className="settings-open-app-field settings-open-app-field--label min-w-0 inline-flex items-center">
                   <span className="settings-visually-hidden">{t("settings.label")}</span>
                   <input
                     className="settings-input settings-input--compact settings-open-app-input settings-open-app-input--label"
@@ -83,7 +83,7 @@ export function OpenAppsSection({
                     aria-label={`Open app label ${index + 1}`}
                   />
                 </label>
-                <label className="settings-open-app-field settings-open-app-field--type">
+                <label className="settings-open-app-field settings-open-app-field--type min-w-0 inline-flex items-center">
                   <span className="settings-visually-hidden">{t("settings.type")}</span>
                   <select
                     className="settings-select settings-select--compact settings-open-app-kind"
@@ -102,7 +102,7 @@ export function OpenAppsSection({
                   </select>
                 </label>
                 {target.kind === "app" && (
-                  <label className="settings-open-app-field settings-open-app-field--appname">
+                  <label className="settings-open-app-field settings-open-app-field--appname min-w-0 inline-flex items-center">
                     <span className="settings-visually-hidden">{t("settings.appName")}</span>
                     <input
                       className="settings-input settings-input--compact settings-open-app-input settings-open-app-input--appname"
@@ -121,7 +121,7 @@ export function OpenAppsSection({
                   </label>
                 )}
                 {target.kind === "command" && (
-                  <label className="settings-open-app-field settings-open-app-field--command">
+                  <label className="settings-open-app-field settings-open-app-field--command min-w-0 inline-flex items-center">
                     <span className="settings-visually-hidden">{t("settings.command")}</span>
                     <input
                       className="settings-input settings-input--compact settings-open-app-input settings-open-app-input--command"
@@ -140,7 +140,7 @@ export function OpenAppsSection({
                   </label>
                 )}
                 {target.kind !== "finder" && (
-                  <label className="settings-open-app-field settings-open-app-field--args">
+                  <label className="settings-open-app-field settings-open-app-field--args min-w-0 inline-flex items-center">
                     <span className="settings-visually-hidden">{t("settings.args")}</span>
                     <input
                       className="settings-input settings-input--compact settings-open-app-input settings-open-app-input--args"
@@ -159,8 +159,8 @@ export function OpenAppsSection({
                   </label>
                 )}
               </div>
-              <div className="settings-open-app-actions">
-                <label className="settings-open-app-default">
+              <div className="settings-open-app-actions inline-flex items-center gap-1.5 ml-auto shrink-0">
+                <label className="settings-open-app-default inline-flex items-center gap-1 text-[11px] text-(--text-muted)">
                   <input
                     type="radio"
                     name="open-app-default"
@@ -169,7 +169,7 @@ export function OpenAppsSection({
                   />
                   {t("settings.defaultRadio")}
                 </label>
-                <div className="settings-open-app-order">
+                <div className="settings-open-app-order inline-flex gap-1">
                   <button
                     type="button"
                     className="ghost icon-button"
@@ -204,7 +204,7 @@ export function OpenAppsSection({
           );
         })}
       </div>
-      <div className="settings-open-app-footer">
+      <div className="settings-open-app-footer mt-2 flex flex-col gap-1.5">
         <button
           type="button"
           className="ghost"

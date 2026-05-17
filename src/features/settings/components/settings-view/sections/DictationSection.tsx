@@ -182,10 +182,10 @@ export function DictationSection({
               (dictationModelStatus.error ?? t("settings.modelDownloadError"))}
           </div>
           {dictationProgress && (
-            <div className="settings-download-progress">
-              <div className="settings-download-bar">
+            <div className="settings-download-progress flex flex-col gap-1.5">
+              <div className="settings-download-bar h-1.5 rounded-full bg-(--surface-control) border border-(--border-muted) overflow-hidden">
                 <div
-                  className="settings-download-fill"
+                  className="settings-download-fill h-full bg-linear-to-r from-[#4a8caa] to-[#58b888]"
                   style={{
                     width: dictationProgress.totalBytes
                       ? `${Math.min(
@@ -198,7 +198,7 @@ export function DictationSection({
                   }}
                 />
               </div>
-              <div className="settings-download-meta">
+              <div className="settings-download-meta text-[11px] text-(--text-subtle)">
                 {formatDownloadSize(dictationProgress.downloadedBytes)}
               </div>
             </div>

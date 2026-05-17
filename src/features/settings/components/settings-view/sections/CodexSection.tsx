@@ -103,11 +103,11 @@ function DoctorResultCard({
   const debugProxySnapshot = state.result.debug?.proxyEnvSnapshot ?? null;
 
   return (
-    <div className={`settings-doctor ${state.result.ok ? "ok" : "error"}`}>
-      <div className="settings-doctor-title">
+    <div className={`settings-doctor mt-2 px-3.5 py-3 rounded-xl border border-(--border-muted) bg-(--surface-card) text-[11px] text-(--text-muted) ${state.result.ok ? "ok" : "error"}`}>
+      <div className="settings-doctor-title font-semibold mb-1.5">
         {state.result.ok ? t(successTitleKey) : t(errorTitleKey)}
       </div>
-      <div className="settings-doctor-body">
+      <div className="settings-doctor-body flex flex-col gap-1">
         <div>
           {t("settings.versionLabel")}{" "}
           {state.result.version ?? t("git.unknown")}
@@ -164,7 +164,7 @@ function DoctorResultCard({
           <div>{state.result.nodeDetails}</div>
         ) : null}
         {state.result.path ? (
-          <div className="settings-doctor-path">
+          <div className="settings-doctor-path break-all wrap-break-word">
             {t("settings.pathLabel")} {state.result.path}
           </div>
         ) : null}
@@ -844,11 +844,11 @@ export function CodexSection({
       </Tabs>
 
       {installerState.status !== "idle" ? (
-        <div className="settings-doctor">
-          <div className="settings-doctor-title">
+        <div className="settings-doctor mt-2 px-3.5 py-3 rounded-xl border border-(--border-muted) bg-(--surface-card) text-[11px] text-(--text-muted)">
+          <div className="settings-doctor-title font-semibold mb-1.5">
             {t("settings.cliInstallerTitle")}
           </div>
-          <div className="settings-doctor-body">
+          <div className="settings-doctor-body flex flex-col gap-1">
             {installerState.status === "planning" ? (
               <div>{t("settings.cliInstallerPlanning")}</div>
             ) : null}
@@ -929,8 +929,8 @@ export function CodexSection({
             ) : null}
             {installerState.status === "running" ||
             installerState.logLines.length > 0 ? (
-              <div className="settings-installer-log">
-                <div className="settings-installer-log-meta">
+              <div className="settings-installer-log mt-2 p-2.5 rounded-[10px] border border-(--border-muted) bg-[color-mix(in_srgb,var(--surface-card)_72%,#000_28%)]">
+                <div className="settings-installer-log-meta flex items-center justify-between gap-3 mb-2 text-(--text-faint)">
                   <span>{t("settings.cliInstallerLiveLog")}</span>
                   <span>
                     {t("settings.cliInstallerElapsed")}{" "}
@@ -945,7 +945,7 @@ export function CodexSection({
                   </span>
                 </div>
                 {installerState.logLines.length > 0 ? (
-                  <pre className="settings-installer-log-output">
+                  <pre className="settings-installer-log-output max-h-55 m-0 p-2.5 overflow-auto rounded-lg bg-black/25 text-(--text-strong) whitespace-pre-wrap break-words">
                     {installerState.logLines
                       .map((line) => {
                         const stream = line.stream
@@ -964,11 +964,11 @@ export function CodexSection({
               <div
                 className={
                   installerState.result.ok
-                    ? "settings-doctor ok"
-                    : "settings-doctor error"
+                    ? "settings-doctor ok mt-2 px-3.5 py-3 rounded-xl border border-(--border-muted) bg-(--surface-card) text-[11px] text-(--text-muted)"
+                    : "settings-doctor error mt-2 px-3.5 py-3 rounded-xl border border-(--border-muted) bg-(--surface-card) text-[11px] text-(--text-muted)"
                 }
               >
-                <div className="settings-doctor-title">
+                <div className="settings-doctor-title font-semibold mb-1.5">
                   {installerState.result.ok
                     ? t("settings.cliInstallerSucceeded")
                     : t("settings.cliInstallerFailed")}
@@ -982,19 +982,19 @@ export function CodexSection({
                   <div>{installerState.result.details}</div>
                 ) : null}
                 {installerState.result.stdoutSummary ? (
-                  <pre className="settings-doctor-path">
+                  <pre className="settings-doctor-path break-all wrap-break-word">
                     {installerState.result.stdoutSummary}
                   </pre>
                 ) : null}
                 {installerState.result.stderrSummary ? (
-                  <pre className="settings-doctor-path">
+                  <pre className="settings-doctor-path break-all wrap-break-word">
                     {installerState.result.stderrSummary}
                   </pre>
                 ) : null}
               </div>
             ) : null}
             {installerState.error ? (
-              <div className="settings-doctor error">
+              <div className="settings-doctor error mt-2 px-3.5 py-3 rounded-xl border border-(--border-muted) bg-(--surface-card) text-[11px] text-(--text-muted)">
                 {installerState.error}
               </div>
             ) : null}

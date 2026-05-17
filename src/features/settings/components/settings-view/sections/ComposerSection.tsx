@@ -48,7 +48,7 @@ export function ComposerSection({
         {t("settings.sendShortcutSubDescription")}
       </div>
       <div
-        className="settings-send-shortcut-grid"
+        className="settings-send-shortcut-grid grid grid-cols-[repeat(auto-fit,minmax(260px,1fr))] gap-3"
         role="radiogroup"
         aria-label={t("settings.sendShortcutSubtitle")}
       >
@@ -56,22 +56,22 @@ export function ComposerSection({
           type="button"
           role="radio"
           aria-checked={appSettings.composerSendShortcut === "enter"}
-          className={`settings-send-shortcut-option${
+          className={`settings-send-shortcut-option flex flex-col gap-2 w-full px-4 py-3.5 rounded-xl border border-(--border-muted) bg-(--surface-card) text-left cursor-pointer transition-[border-color,box-shadow] duration-150${
             appSettings.composerSendShortcut === "enter" ? " is-active" : ""
           }`}
           onClick={() => handleComposerSendShortcutChange("enter")}
         >
-          <div className="settings-send-shortcut-option-title-row">
-            <span className="settings-send-shortcut-option-title">
+          <div className="settings-send-shortcut-option-title-row flex items-center justify-between gap-2.5">
+            <span className="settings-send-shortcut-option-title text-[17px] font-bold text-(--text-strong)">
               {t("settings.sendShortcutEnterTitle")}
             </span>
             {appSettings.composerSendShortcut === "enter" && (
-              <span className="settings-send-shortcut-option-check" aria-hidden>
+              <span className="settings-send-shortcut-option-check inline-flex items-center justify-center w-6 h-6 rounded-full bg-[color-mix(in_srgb,#2088ff_88%,transparent)] text-white text-sm leading-none" aria-hidden>
                 ✓
               </span>
             )}
           </div>
-          <span className="settings-send-shortcut-option-desc">
+          <span className="settings-send-shortcut-option-desc text-xs text-(--text-subtle) leading-normal">
             {t("settings.sendShortcutEnterDesc")}
           </span>
         </button>
@@ -79,22 +79,22 @@ export function ComposerSection({
           type="button"
           role="radio"
           aria-checked={appSettings.composerSendShortcut === "cmdEnter"}
-          className={`settings-send-shortcut-option${
+          className={`settings-send-shortcut-option flex flex-col gap-2 w-full px-4 py-3.5 rounded-xl border border-(--border-muted) bg-(--surface-card) text-left cursor-pointer transition-[border-color,box-shadow] duration-150${
             appSettings.composerSendShortcut === "cmdEnter" ? " is-active" : ""
           }`}
           onClick={() => handleComposerSendShortcutChange("cmdEnter")}
         >
-          <div className="settings-send-shortcut-option-title-row">
-            <span className="settings-send-shortcut-option-title">
+          <div className="settings-send-shortcut-option-title-row flex items-center justify-between gap-2.5">
+            <span className="settings-send-shortcut-option-title text-[17px] font-bold text-(--text-strong)">
               {t("settings.sendShortcutCmdEnterTitle")}
             </span>
             {appSettings.composerSendShortcut === "cmdEnter" && (
-              <span className="settings-send-shortcut-option-check" aria-hidden>
+              <span className="settings-send-shortcut-option-check inline-flex items-center justify-center w-6 h-6 rounded-full bg-[color-mix(in_srgb,#2088ff_88%,transparent)] text-white text-sm leading-none" aria-hidden>
                 ✓
               </span>
             )}
           </div>
-          <span className="settings-send-shortcut-option-desc">
+          <span className="settings-send-shortcut-option-desc text-xs text-(--text-subtle) leading-normal">
             {t("settings.sendShortcutCmdEnterDesc")}
           </span>
         </button>

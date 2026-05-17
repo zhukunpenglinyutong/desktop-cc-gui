@@ -20,8 +20,8 @@ export function PlaceholderSection({ type }: PlaceholderSectionProps) {
 
   return (
     <section className="settings-section">
-      <div className="settings-section-title">{title}</div>
-      <div className="settings-section-subtitle">{desc}</div>
+      <div className="settings-section-title text-[15px] font-semibold text-(--text-strong) mb-1">{title}</div>
+      <div className="settings-section-subtitle text-xs text-(--text-subtle) mb-4">{desc}</div>
       <div className="settings-placeholder-notice">
         <span className={`codicon ${icon}`} />
         <p>{t("settings.placeholder.comingSoon")}</p>

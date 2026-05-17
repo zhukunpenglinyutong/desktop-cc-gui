@@ -121,7 +121,7 @@ export function ProjectsSection({
             </button>
           </PopoverTrigger>
           <PopoverContent align="end" className="p-3">
-            <div className="settings-popover-content">
+            <div className="settings-popover-content flex flex-col gap-2 w-65">
               <div className="settings-field-label">
                 {t("settings.newGroupPlaceholder")}
               </div>
@@ -138,7 +138,7 @@ export function ProjectsSection({
                   }
                 }}
               />
-              <div className="settings-popover-actions">
+              <div className="settings-popover-actions flex justify-end gap-2">
                 <Button
                   variant="ghost"
                   size="sm"
@@ -163,14 +163,14 @@ export function ProjectsSection({
       <div className="settings-subsection-subtitle">
         {t("settings.groupsDescription")}
       </div>
-      <div className="settings-groups">
-        {groupError && <div className="settings-group-error">{groupError}</div>}
+      <div className="settings-groups flex flex-col gap-2.5">
+        {groupError && <div className="settings-group-error text-[11px] text-(--status-error)">{groupError}</div>}
         {workspaceGroups.length > 0 ? (
           <DragDropContext onDragEnd={handleDragEnd}>
             <Droppable droppableId="settings-group-list">
               {(provided) => (
                 <div
-                  className="settings-group-list"
+                  className="settings-group-list flex flex-col border border-(--border-muted) rounded-lg overflow-hidden"
                   {...provided.droppableProps}
                   ref={provided.innerRef}
                 >
@@ -184,19 +184,19 @@ export function ProjectsSection({
                         <div
                           ref={draggableProvided.innerRef}
                           {...draggableProvided.draggableProps}
-                          className={`settings-group-row ${
+                          className={`settings-group-row flex items-center gap-2 px-2 py-1.5 min-h-9 transition-colors bg-(--surface-card) ${
                             snapshot.isDragging ? "is-dragging" : ""
                           }`}
                           style={draggableProvided.draggableProps.style}
                         >
                           <span
-                            className="settings-group-drag-handle"
+                            className="settings-group-drag-handle flex items-center justify-center text-(--text-faint) cursor-grab shrink-0 w-5"
                             {...draggableProvided.dragHandleProps}
                           >
                             <GripVertical aria-hidden />
                           </span>
 
-                          <div className="settings-group-name">
+                          <div className="settings-group-name flex-1 min-w-0">
                             {renamingGroupId === group.id ? (
                               <input
                                 className="settings-input settings-input--compact"
@@ -229,7 +229,7 @@ export function ProjectsSection({
                               />
                             ) : (
                               <span
-                                className="settings-group-name-text"
+                                className="settings-group-name-text block text-[13px] text-(--text-strong) whitespace-nowrap overflow-hidden text-ellipsis cursor-default select-none py-0.5 px-1 rounded"
                                 onDoubleClick={() => setRenamingGroupId(group.id)}
                               >
                                 {group.name}
@@ -241,7 +241,7 @@ export function ProjectsSection({
                             <TooltipProvider>
                               <Tooltip>
                                 <TooltipTrigger>
-                                  <span className="settings-group-folder-indicator">
+                                  <span className="settings-group-folder-indicator flex items-center justify-center text-(--text-faint) shrink-0">
                                     <FolderOpen aria-hidden />
                                   </span>
                                 </TooltipTrigger>
@@ -326,10 +326,10 @@ export function ProjectsSection({
       <div className="settings-subsection-subtitle">
         {t("settings.projectsSubsectionDescription")}
       </div>
-      <div className="settings-projects">
+      <div className="settings-projects flex flex-col gap-2.5">
         {visibleGroupedWorkspaces.map((group) => (
-          <div key={group.id ?? "ungrouped"} className="settings-project-group">
-            <div className="settings-project-group-label">{group.name}</div>
+          <div key={group.id ?? "ungrouped"} className="settings-project-group flex flex-col gap-2.5">
+            <div className="settings-project-group-label uppercase text-[11px] tracking-[0.08em] text-(--text-faint) pl-1">{group.name}</div>
             {group.workspaces.map((workspace, index) => {
               const groupValue =
                 workspaceGroups.some(
@@ -338,12 +338,12 @@ export function ProjectsSection({
                   ? workspace.settings.groupId ?? ""
                   : "";
               return (
-                <div key={workspace.id} className="settings-project-row">
-                  <div className="settings-project-info">
-                    <div className="settings-project-name">{workspace.name}</div>
-                    <div className="settings-project-path">{workspace.path}</div>
+                <div key={workspace.id} className="settings-project-row flex items-center justify-between gap-3 px-3.5 py-3 rounded-xl bg-(--surface-card) border border-(--border-muted)">
+                  <div className="settings-project-info flex flex-col gap-1 min-w-0">
+                    <div className="settings-project-name text-[13px] font-semibold text-(--text-strong)">{workspace.name}</div>
+                    <div className="settings-project-path text-[11px] text-(--text-subtle) whitespace-nowrap overflow-hidden text-ellipsis">{workspace.path}</div>
                   </div>
-                  <div className="settings-project-actions">
+                  <div className="settings-project-actions inline-flex gap-1.5">
                     <select
                       className="settings-select settings-select--compact"
                       value={groupValue}
