@@ -584,11 +584,11 @@ export function ChatInputBoxFooter({
         ) : noteCardEntries.length === 0 ? (
           <div className="dropdown-empty">{t('noteCards.emptySearch')}</div>
         ) : (
-          <div className="composer-memory-picker" role="listbox">
-            <div className="composer-memory-picker-list">
-              <div className="composer-memory-picker-head">
-                <span className="composer-memory-picker-title">{noteCardPickerHeading}</span>
-                <span className="composer-memory-picker-count">
+          <div className="composer-memory-picker grid grid-cols-[minmax(290px,1fr)_minmax(250px,0.9fr)] gap-2.5 min-h-0 h-[clamp(240px,58vh,440px)] overflow-hidden items-stretch" role="listbox">
+            <div className="composer-memory-picker-list min-h-0 h-full overflow-y-auto overflow-x-hidden overscroll-contain pr-0.5 flex flex-col gap-2">
+              <div className="composer-memory-picker-head sticky top-0 z-[1] flex items-center justify-between gap-2 rounded-lg px-2 py-1.5 bg-[var(--surface-panel,var(--surface-card))] border border-(--border-subtle)/72 shadow-[0_1px_0_color-mix(in_srgb,var(--border-subtle)_65%,transparent)]">
+                <span className="composer-memory-picker-title text-[11px] font-bold text-(--text-strong)">{noteCardPickerHeading}</span>
+                <span className="composer-memory-picker-count text-[10px] text-(--text-muted)">
                   {t('composer.noteCardPickerSelectedCount', {
                     count: selectedNoteCardIds.length,
                   })}
@@ -603,7 +603,7 @@ export function ChatInputBoxFooter({
                   <button
                     key={item.id}
                     type="button"
-                    className={`composer-memory-picker-card${isActive ? ' is-active' : ''}${
+                    className={`composer-memory-picker-card flex items-start gap-2 border border-(--border-subtle)/76 rounded-[10px] p-2 bg-(--surface-item)/72 text-(--text-strong) text-left cursor-pointer w-full${isActive ? ' is-active' : ''}${
                       selected ? ' is-selected' : ''
                     }`}
                     role="option"
@@ -612,11 +612,11 @@ export function ChatInputBoxFooter({
                     onClick={() => noteCardCompletion.selectIndex(index)}
                     onMouseEnter={() => noteCardCompletion.handleMouseEnter(index)}
                   >
-                    <span className="composer-memory-picker-card-check" aria-hidden>
+                    <span className="composer-memory-picker-card-check flex-none text-[color:color-mix(in_srgb,var(--accent-primary,#2563eb)_74%,var(--text-muted))] mt-px" aria-hidden>
                       {selected ? <CheckCircle2 size={14} /> : <Circle size={14} />}
                     </span>
                     {coverAttachment ? (
-                      <span className="composer-note-card-picker-thumb" aria-hidden>
+                      <span className="composer-note-card-picker-thumb w-13 h-13 rounded-[10px] overflow-hidden flex-none bg-(--surface-card)/84 border border-(--border-subtle)/72" aria-hidden>
                         <LocalImage
                           src={resolveLocalPreviewSrc(coverAttachment.absolutePath)}
                           localPath={coverAttachment.absolutePath}
@@ -626,22 +626,22 @@ export function ChatInputBoxFooter({
                         />
                       </span>
                     ) : null}
-                    <span className="composer-memory-picker-card-main">
-                      <span className="composer-memory-picker-card-title">
+                    <span className="composer-memory-picker-card-main flex flex-col gap-[5px] min-w-0 flex-1">
+                      <span className="composer-memory-picker-card-title text-xs font-bold text-(--text-strong) leading-[1.3] min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">
                         {noteCard?.title || item.label}
                       </span>
-                      <span className="composer-memory-picker-card-meta">
+                      <span className="composer-memory-picker-card-meta flex items-center gap-2 flex-nowrap min-w-0 overflow-hidden">
                         {noteCard?.archived ? (
-                          <span className="composer-memory-picker-card-meta-item">
+                          <span className="composer-memory-picker-card-meta-item inline-flex items-center gap-1 text-[10px] text-(--text-faint) min-w-0 overflow-hidden text-ellipsis whitespace-nowrap shrink">
                             {t('composer.noteCardArchivedBadge')}
                           </span>
                         ) : null}
-                        <span className="composer-memory-picker-card-meta-item">
+                        <span className="composer-memory-picker-card-meta-item inline-flex items-center gap-1 text-[10px] text-(--text-faint) min-w-0 overflow-hidden text-ellipsis whitespace-nowrap shrink">
                           <Clock3 size={12} />
                           {formatMemoryDate(noteCard?.updatedAt)}
                         </span>
                         {typeof noteCard?.imageCount === 'number' && noteCard.imageCount > 0 ? (
-                          <span className="composer-memory-picker-card-meta-item">
+                          <span className="composer-memory-picker-card-meta-item inline-flex items-center gap-1 text-[10px] text-(--text-faint) min-w-0 overflow-hidden text-ellipsis whitespace-nowrap shrink">
                             {t('noteCards.imageCount', { count: noteCard.imageCount })}
                           </span>
                         ) : null}
@@ -656,7 +656,7 @@ export function ChatInputBoxFooter({
                 );
               })}
             </div>
-            <aside className="composer-memory-picker-preview max-[960px]:!max-h-[190px]">
+            <aside className="composer-memory-picker-preview border border-(--border-subtle)/72 rounded-xl bg-[linear-gradient(180deg,color-mix(in_srgb,var(--surface-card)_92%,transparent),color-mix(in_srgb,var(--surface-elevated,var(--surface-card))_90%,transparent))] p-3 flex flex-col gap-2.5 min-h-0 h-full overflow-hidden max-[960px]:!max-h-[190px]">
               {activeNoteCard ? (
                 <>
                   <div className="composer-memory-picker-preview-head flex items-center justify-between gap-2 pb-2 border-b border-(--border-subtle)/72">
@@ -768,11 +768,11 @@ export function ChatInputBoxFooter({
         ) : memoryEntries.length === 0 ? (
           <div className="dropdown-empty">{t('memory.empty')}</div>
         ) : (
-          <div className="composer-memory-picker" role="listbox">
-            <div className="composer-memory-picker-list">
-              <div className="composer-memory-picker-head">
-                <span className="composer-memory-picker-title">{manualMemoryPickerHeading}</span>
-                <span className="composer-memory-picker-count">
+          <div className="composer-memory-picker grid grid-cols-[minmax(290px,1fr)_minmax(250px,0.9fr)] gap-2.5 min-h-0 h-[clamp(240px,58vh,440px)] overflow-hidden items-stretch" role="listbox">
+            <div className="composer-memory-picker-list min-h-0 h-full overflow-y-auto overflow-x-hidden overscroll-contain pr-0.5 flex flex-col gap-2">
+              <div className="composer-memory-picker-head sticky top-0 z-[1] flex items-center justify-between gap-2 rounded-lg px-2 py-1.5 bg-[var(--surface-panel,var(--surface-card))] border border-(--border-subtle)/72 shadow-[0_1px_0_color-mix(in_srgb,var(--border-subtle)_65%,transparent)]">
+                <span className="composer-memory-picker-title text-[11px] font-bold text-(--text-strong)">{manualMemoryPickerHeading}</span>
+                <span className="composer-memory-picker-count text-[10px] text-(--text-muted)">
                   {t('composer.manualMemoryPickerSelectedCount', {
                     count: selectedManualMemoryIds.length,
                   })}
@@ -797,7 +797,7 @@ export function ChatInputBoxFooter({
                   <button
                     key={item.id}
                     type="button"
-                    className={`composer-memory-picker-card${isActive ? ' is-active' : ''}${
+                    className={`composer-memory-picker-card flex items-start gap-2 border border-(--border-subtle)/76 rounded-[10px] p-2 bg-(--surface-item)/72 text-(--text-strong) text-left cursor-pointer w-full${isActive ? ' is-active' : ''}${
                       selected ? ' is-selected' : ''
                     }`}
                     role="option"
@@ -806,33 +806,33 @@ export function ChatInputBoxFooter({
                     onClick={() => memoryCompletion.selectIndex(index)}
                     onMouseEnter={() => memoryCompletion.handleMouseEnter(index)}
                   >
-                    <span className="composer-memory-picker-card-check" aria-hidden>
+                    <span className="composer-memory-picker-card-check flex-none text-[color:color-mix(in_srgb,var(--accent-primary,#2563eb)_74%,var(--text-muted))] mt-px" aria-hidden>
                       {selected ? <CheckCircle2 size={14} /> : <Circle size={14} />}
                     </span>
-                    <span className="composer-memory-picker-card-main">
-                      <span className="composer-memory-picker-card-title">{preview.title}</span>
-                      <span className="composer-memory-picker-card-summary">
+                    <span className="composer-memory-picker-card-main flex flex-col gap-[5px] min-w-0 flex-1">
+                      <span className="composer-memory-picker-card-title text-xs font-bold text-(--text-strong) leading-[1.3] min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">{preview.title}</span>
+                      <span className="composer-memory-picker-card-summary [display:-webkit-box] [-webkit-line-clamp:3] [-webkit-box-orient:vertical] overflow-hidden text-(--text-muted) text-[11px] leading-[1.38] [overflow-wrap:anywhere]">
                         {preview.summary}
                       </span>
-                      <span className="composer-memory-picker-card-meta">
-                        <span className="composer-memory-picker-card-meta-item">
+                      <span className="composer-memory-picker-card-meta flex items-center gap-2 flex-nowrap min-w-0 overflow-hidden">
+                        <span className="composer-memory-picker-card-meta-item inline-flex items-center gap-1 text-[10px] text-(--text-faint) min-w-0 overflow-hidden text-ellipsis whitespace-nowrap shrink">
                           <Layers3 size={12} />
                           {memory?.kind || 'note'}
                         </span>
                         <span
-                          className={`composer-memory-picker-card-meta-item composer-memory-picker-importance is-${importanceTone}`}
+                          className={`composer-memory-picker-card-meta-item composer-memory-picker-importance inline-flex items-center gap-1 text-[10px] min-w-0 overflow-hidden text-ellipsis whitespace-nowrap shrink rounded-full px-1.5 py-px border border-(--border-subtle)/70 bg-(--surface-elevated)/80 is-${importanceTone}`}
                         >
                           {memory?.importance || 'normal'}
                         </span>
-                        <span className="composer-memory-picker-card-meta-item">
+                        <span className="composer-memory-picker-card-meta-item inline-flex items-center gap-1 text-[10px] text-(--text-faint) min-w-0 overflow-hidden text-ellipsis whitespace-nowrap shrink">
                           <Clock3 size={12} />
                           {formatMemoryDate(memory?.updatedAt)}
                         </span>
                       </span>
                       {tags.length > 0 && (
-                        <span className="composer-memory-picker-card-tags">
+                        <span className="composer-memory-picker-card-tags flex flex-wrap gap-1 max-h-[21px] overflow-hidden">
                           {tags.map((tag) => (
-                            <span key={`${memoryId}-${tag}`} className="composer-memory-picker-tag">
+                            <span key={`${memoryId}-${tag}`} className="composer-memory-picker-tag text-[10px] rounded-full px-1.5 py-px border border-(--border-subtle)/72 bg-(--surface-elevated)/80 text-(--text-muted)">
                               #{tag}
                             </span>
                           ))}
@@ -843,7 +843,7 @@ export function ChatInputBoxFooter({
                 );
               })}
             </div>
-            <aside className="composer-memory-picker-preview max-[960px]:!max-h-[190px]">
+            <aside className="composer-memory-picker-preview border border-(--border-subtle)/72 rounded-xl bg-[linear-gradient(180deg,color-mix(in_srgb,var(--surface-card)_92%,transparent),color-mix(in_srgb,var(--surface-elevated,var(--surface-card))_90%,transparent))] p-3 flex flex-col gap-2.5 min-h-0 h-full overflow-hidden max-[960px]:!max-h-[190px]">
               {activeMemory ? (
                 <>
                   <div className="composer-memory-picker-preview-head flex items-center justify-between gap-2 pb-2 border-b border-(--border-subtle)/72">
