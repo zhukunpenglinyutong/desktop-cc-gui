@@ -22,15 +22,15 @@ export function renderGitHistoryPanelDialogs(scope: any) {
                 <Download size={14} />
                 <span>{t("git.historyPullDialogTitle")}</span>
               </div>
-              <div className="git-history-toolbar-confirm-hero">
-                <div className="git-history-toolbar-confirm-hero-line">
+              <div className="git-history-toolbar-confirm-hero rounded-[10px] border border-[color-mix(in_srgb,var(--accent-primary,#2563eb)_30%,var(--border-default))] [background:linear-gradient(180deg,color-mix(in_srgb,var(--accent-primary,#2563eb)_8%,transparent)_0%,color-mix(in_srgb,var(--surface-control,#f8fafc)_82%,transparent)_100%)] px-3 py-2.5 flex flex-col gap-2 [&>code]:m-0 [&>code]:rounded-lg [&>code]:border [&>code]:border-dashed [&>code]:border-(--border-default)/72 [&>code]:bg-[color-mix(in_srgb,var(--surface-card-muted,#ffffff)_86%,transparent)] [&>code]:text-(--text-primary) [&>code]:text-xs [&>code]:leading-[1.45] [&>code]:py-1.5 [&>code]:px-2 [&>code]:block">
+                <div className="git-history-toolbar-confirm-hero-line inline-flex items-center gap-2 text-[13px] font-semibold text-(--text-primary)">
                   <span>{pullRemote || "origin"}</span>
                   <span aria-hidden>{"->"}</span>
                   <span>{pullTargetBranch.trim() || currentBranch || "main"}</span>
                 </div>
                 <code>{pullExampleCommand}</code>
               </div>
-              <div className="git-history-toolbar-confirm-grid">
+              <div className="git-history-toolbar-confirm-grid grid gap-2.5 [grid-template-columns:minmax(220px,0.8fr)_minmax(520px,1.2fr)] [@media(max-width:760px)]:grid-cols-1">
                 <label className="git-history-create-branch-field">
                   <span>{t("git.historyPullDialogRemoteLabel")}</span>
                   <div
@@ -219,7 +219,7 @@ export function renderGitHistoryPanelDialogs(scope: any) {
                   ) : null}
                 </label>
               </div>
-              <div className="git-history-toolbar-confirm-options" ref={pullOptionsMenuRef}>
+              <div className="git-history-toolbar-confirm-options relative flex flex-col gap-2" ref={pullOptionsMenuRef}>
                 <button
                   type="button"
                   className="git-history-push-toggle"
@@ -241,12 +241,12 @@ export function renderGitHistoryPanelDialogs(scope: any) {
                   <span>{t("git.historyPullDialogModifyOptions")}</span>
                 </button>
                 {pullOptionsMenuOpen ? (
-                  <div className="git-history-toolbar-confirm-options-menu">
+                  <div className="git-history-toolbar-confirm-options-menu rounded-[10px] border border-(--border-default)/72 bg-[color-mix(in_srgb,var(--surface-popover,#ffffff)_96%,transparent)] p-1.5 flex flex-wrap gap-1.5">
                     {(["--rebase", "--ff-only", "--no-ff", "--squash"] as const).map((option) => (
                       <button
                         key={option}
                         type="button"
-                        className={`git-history-toolbar-confirm-options-item${pullStrategy === option ? " is-active" : ""}`}
+                        className={`git-history-toolbar-confirm-options-item border border-(--border-default)/70 rounded-lg bg-[color-mix(in_srgb,var(--surface-control,#f8fafc)_84%,transparent)] text-(--text-secondary) px-2 py-1.25 text-xs cursor-pointer [&.is-active]:border-[color-mix(in_srgb,var(--accent-primary,#2563eb)_44%,transparent)] [&.is-active]:bg-[color-mix(in_srgb,var(--accent-primary,#2563eb)_16%,transparent)] [&.is-active]:text-[color-mix(in_srgb,var(--accent-primary,#2563eb)_84%,var(--text-primary))]${pullStrategy === option ? " is-active" : ""}`}
                         onClick={() => {
                           setPullStrategy((previous) => (previous === option ? null : option));
                         }}
@@ -256,14 +256,14 @@ export function renderGitHistoryPanelDialogs(scope: any) {
                     ))}
                     <button
                       type="button"
-                      className={`git-history-toolbar-confirm-options-item${pullNoCommit ? " is-active" : ""}`}
+                      className={`git-history-toolbar-confirm-options-item border border-(--border-default)/70 rounded-lg bg-[color-mix(in_srgb,var(--surface-control,#f8fafc)_84%,transparent)] text-(--text-secondary) px-2 py-1.25 text-xs cursor-pointer [&.is-active]:border-[color-mix(in_srgb,var(--accent-primary,#2563eb)_44%,transparent)] [&.is-active]:bg-[color-mix(in_srgb,var(--accent-primary,#2563eb)_16%,transparent)] [&.is-active]:text-[color-mix(in_srgb,var(--accent-primary,#2563eb)_84%,var(--text-primary))]${pullNoCommit ? " is-active" : ""}`}
                       onClick={() => setPullNoCommit((previous) => !previous)}
                     >
                       --no-commit
                     </button>
                     <button
                       type="button"
-                      className={`git-history-toolbar-confirm-options-item${pullNoVerify ? " is-active" : ""}`}
+                      className={`git-history-toolbar-confirm-options-item border border-(--border-default)/70 rounded-lg bg-[color-mix(in_srgb,var(--surface-control,#f8fafc)_84%,transparent)] text-(--text-secondary) px-2 py-1.25 text-xs cursor-pointer [&.is-active]:border-[color-mix(in_srgb,var(--accent-primary,#2563eb)_44%,transparent)] [&.is-active]:bg-[color-mix(in_srgb,var(--accent-primary,#2563eb)_16%,transparent)] [&.is-active]:text-[color-mix(in_srgb,var(--accent-primary,#2563eb)_84%,var(--text-primary))]${pullNoVerify ? " is-active" : ""}`}
                       onClick={() => setPullNoVerify((previous) => !previous)}
                     >
                       --no-verify
@@ -271,12 +271,12 @@ export function renderGitHistoryPanelDialogs(scope: any) {
                   </div>
                 ) : null}
                 {pullSelectedOptions.length > 0 ? (
-                  <div className="git-history-toolbar-confirm-chip-list">
+                  <div className="git-history-toolbar-confirm-chip-list flex flex-wrap gap-2">
                     {pullSelectedOptions.map((entry) => (
                       <button
                         key={entry.id}
                         type="button"
-                        className="git-history-toolbar-confirm-chip"
+                        className="git-history-toolbar-confirm-chip border border-(--border-default)/66 rounded-full bg-[color-mix(in_srgb,var(--surface-control,#f8fafc)_72%,transparent)] text-(--text-secondary) inline-flex items-center gap-1.5 min-h-7 px-2.5 text-xs cursor-pointer"
                         disabled={pullSubmitting}
                         onClick={entry.onRemove}
                       >
@@ -301,7 +301,7 @@ export function renderGitHistoryPanelDialogs(scope: any) {
                   <dd>{t("git.historyPullDialogWillNotHappen")}</dd>
                 </div>
               </dl>
-              <div className="git-history-toolbar-confirm-command">
+              <div className="git-history-toolbar-confirm-command rounded-[10px] border border-(--border-default)/72 bg-[color-mix(in_srgb,var(--surface-card-muted,#ffffff)_92%,transparent)] px-2.5 py-2 grid gap-1.25 [&>span]:text-xs [&>span]:text-(--text-secondary) [&>span]:font-semibold [&>code]:m-0 [&>code]:text-xs [&>code]:text-(--text-primary) [&>code]:[overflow-wrap:anywhere]">
                 <span>{t("git.historyExampleTitle")}</span>
                 <code>{pullExampleCommand}</code>
               </div>
@@ -340,15 +340,15 @@ export function renderGitHistoryPanelDialogs(scope: any) {
                 <Repeat size={14} />
                 <span>{t("git.historySyncDialogTitle")}</span>
               </div>
-              <div className="git-history-toolbar-confirm-hero">
-                <div className="git-history-toolbar-confirm-hero-line">
+              <div className="git-history-toolbar-confirm-hero rounded-[10px] border border-[color-mix(in_srgb,var(--accent-primary,#2563eb)_30%,var(--border-default))] [background:linear-gradient(180deg,color-mix(in_srgb,var(--accent-primary,#2563eb)_8%,transparent)_0%,color-mix(in_srgb,var(--surface-control,#f8fafc)_82%,transparent)_100%)] px-3 py-2.5 flex flex-col gap-2 [&>code]:m-0 [&>code]:rounded-lg [&>code]:border [&>code]:border-dashed [&>code]:border-(--border-default)/72 [&>code]:bg-[color-mix(in_srgb,var(--surface-card-muted,#ffffff)_86%,transparent)] [&>code]:text-(--text-primary) [&>code]:text-xs [&>code]:leading-[1.45] [&>code]:py-1.5 [&>code]:px-2 [&>code]:block">
+                <div className="git-history-toolbar-confirm-hero-line inline-flex items-center gap-2 text-[13px] font-semibold text-(--text-primary)">
                   <span>{currentBranch || t("git.historyHeadRef")}</span>
                   <span aria-hidden>{"->"}</span>
                   <span>{`${syncPreviewTargetRemote || "origin"}:${syncPreviewTargetBranch || (currentBranch ?? "main")}`}</span>
                 </div>
                 <code>git pull && git push</code>
               </div>
-              <div className="git-history-toolbar-confirm-preflight">
+              <div className="git-history-toolbar-confirm-preflight rounded-[10px] border border-(--border-default)/70 bg-[color-mix(in_srgb,var(--surface-control,#f8fafc)_76%,transparent)] px-2.5 py-2 flex flex-col gap-1.5 text-xs text-(--text-primary)">
                 <div>{t("git.historySyncDialogTarget", {
                   sourceBranch: currentBranch || t("git.historyHeadRef"),
                   remote: syncPreviewTargetRemote || "origin",
@@ -359,15 +359,15 @@ export function renderGitHistoryPanelDialogs(scope: any) {
                 {syncPreviewLoading ? <div>{t("common.loading")}</div> : null}
                 {syncPreviewError ? <div className="git-history-error">{syncPreviewError}</div> : null}
                 {!syncPreviewLoading && !syncPreviewError ? (
-                  <div className="git-history-toolbar-confirm-commit-list">
+                  <div className="git-history-toolbar-confirm-commit-list flex flex-col gap-1">
                     {(syncPreviewCommits.slice(0, 5)).map((entry) => (
-                      <div key={entry.sha} className="git-history-toolbar-confirm-commit-item">
+                      <div key={entry.sha} className="git-history-toolbar-confirm-commit-item inline-flex items-center gap-2 min-w-0 [&_code]:text-[11px] [&_span]:min-w-0 [&_span]:overflow-hidden [&_span]:text-ellipsis [&_span]:whitespace-nowrap">
                         <code>{entry.shortSha}</code>
                         <span>{entry.summary || t("git.historyNoMessage")}</span>
                       </div>
                     ))}
                     {!syncPreviewTargetFound ? (
-                      <div className="git-history-toolbar-confirm-note">{t("git.historySyncDialogNoRemoteTarget")}</div>
+                      <div className="git-history-toolbar-confirm-note text-xs text-(--text-muted)">{t("git.historySyncDialogNoRemoteTarget")}</div>
                     ) : null}
                   </div>
                 ) : null}
@@ -386,7 +386,7 @@ export function renderGitHistoryPanelDialogs(scope: any) {
                   <dd>{t("git.historySyncDialogWillNotHappen")}</dd>
                 </div>
               </dl>
-              <div className="git-history-toolbar-confirm-command">
+              <div className="git-history-toolbar-confirm-command rounded-[10px] border border-(--border-default)/72 bg-[color-mix(in_srgb,var(--surface-card-muted,#ffffff)_92%,transparent)] px-2.5 py-2 grid gap-1.25 [&>span]:text-xs [&>span]:text-(--text-secondary) [&>span]:font-semibold [&>code]:m-0 [&>code]:text-xs [&>code]:text-(--text-primary) [&>code]:[overflow-wrap:anywhere]">
                 <span>{t("git.historyExampleTitle")}</span>
                 <code>git pull && git push</code>
               </div>
@@ -413,8 +413,8 @@ export function renderGitHistoryPanelDialogs(scope: any) {
                 <CloudDownload size={14} />
                 <span>{t("git.historyFetchDialogTitle")}</span>
               </div>
-              <div className="git-history-toolbar-confirm-hero">
-                <div className="git-history-toolbar-confirm-hero-line">
+              <div className="git-history-toolbar-confirm-hero rounded-[10px] border border-[color-mix(in_srgb,var(--accent-primary,#2563eb)_30%,var(--border-default))] [background:linear-gradient(180deg,color-mix(in_srgb,var(--accent-primary,#2563eb)_8%,transparent)_0%,color-mix(in_srgb,var(--surface-control,#f8fafc)_82%,transparent)_100%)] px-3 py-2.5 flex flex-col gap-2 [&>code]:m-0 [&>code]:rounded-lg [&>code]:border [&>code]:border-dashed [&>code]:border-(--border-default)/72 [&>code]:bg-[color-mix(in_srgb,var(--surface-card-muted,#ffffff)_86%,transparent)] [&>code]:text-(--text-primary) [&>code]:text-xs [&>code]:leading-[1.45] [&>code]:py-1.5 [&>code]:px-2 [&>code]:block">
+                <div className="git-history-toolbar-confirm-hero-line inline-flex items-center gap-2 text-[13px] font-semibold text-(--text-primary)">
                   <span>{t("git.historyFetchDialogHeroSource")}</span>
                   <span aria-hidden>{"->"}</span>
                   <span>{t("git.historyFetchDialogHeroTarget")}</span>
@@ -435,7 +435,7 @@ export function renderGitHistoryPanelDialogs(scope: any) {
                   <dd>{t("git.historyFetchDialogWillNotHappen")}</dd>
                 </div>
               </dl>
-              <div className="git-history-toolbar-confirm-command">
+              <div className="git-history-toolbar-confirm-command rounded-[10px] border border-(--border-default)/72 bg-[color-mix(in_srgb,var(--surface-card-muted,#ffffff)_92%,transparent)] px-2.5 py-2 grid gap-1.25 [&>span]:text-xs [&>span]:text-(--text-secondary) [&>span]:font-semibold [&>code]:m-0 [&>code]:text-xs [&>code]:text-(--text-primary) [&>code]:[overflow-wrap:anywhere]">
                 <span>{t("git.historyExampleTitle")}</span>
                 <code>git fetch --all</code>
               </div>
@@ -462,8 +462,8 @@ export function renderGitHistoryPanelDialogs(scope: any) {
                 <RefreshCw size={14} />
                 <span>{t("git.historyRefreshDialogTitle")}</span>
               </div>
-              <div className="git-history-toolbar-confirm-hero">
-                <div className="git-history-toolbar-confirm-hero-line">
+              <div className="git-history-toolbar-confirm-hero rounded-[10px] border border-[color-mix(in_srgb,var(--accent-primary,#2563eb)_30%,var(--border-default))] [background:linear-gradient(180deg,color-mix(in_srgb,var(--accent-primary,#2563eb)_8%,transparent)_0%,color-mix(in_srgb,var(--surface-control,#f8fafc)_82%,transparent)_100%)] px-3 py-2.5 flex flex-col gap-2 [&>code]:m-0 [&>code]:rounded-lg [&>code]:border [&>code]:border-dashed [&>code]:border-(--border-default)/72 [&>code]:bg-[color-mix(in_srgb,var(--surface-card-muted,#ffffff)_86%,transparent)] [&>code]:text-(--text-primary) [&>code]:text-xs [&>code]:leading-[1.45] [&>code]:py-1.5 [&>code]:px-2 [&>code]:block">
+                <div className="git-history-toolbar-confirm-hero-line inline-flex items-center gap-2 text-[13px] font-semibold text-(--text-primary)">
                   <span>{t("git.historyRefreshDialogHeroSource")}</span>
                   <span aria-hidden>{"->"}</span>
                   <span>{t("git.historyRefreshDialogHeroTarget")}</span>
@@ -484,7 +484,7 @@ export function renderGitHistoryPanelDialogs(scope: any) {
                   <dd>{t("git.historyRefreshDialogWillNotHappen")}</dd>
                 </div>
               </dl>
-              <div className="git-history-toolbar-confirm-command">
+              <div className="git-history-toolbar-confirm-command rounded-[10px] border border-(--border-default)/72 bg-[color-mix(in_srgb,var(--surface-card-muted,#ffffff)_92%,transparent)] px-2.5 py-2 grid gap-1.25 [&>span]:text-xs [&>span]:text-(--text-secondary) [&>span]:font-semibold [&>code]:m-0 [&>code]:text-xs [&>code]:text-(--text-primary) [&>code]:[overflow-wrap:anywhere]">
                 <span>{t("git.historyExampleTitle")}</span>
                 <code>refreshAll()</code>
               </div>
@@ -520,8 +520,8 @@ export function renderGitHistoryPanelDialogs(scope: any) {
                   <span>{t("git.historyPushDialogTitle")}</span>
                 </div>
                 <div className="git-history-push-summary-row">
-                  <div className="git-history-push-target-wrap">
-                    <div className="git-history-push-target">
+                  <div className="git-history-push-target-wrap min-w-0 inline-flex items-center gap-2.5">
+                    <div className="git-history-push-target text-xs text-(--text-primary) leading-[1.42] p-0 min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">
                       {t("git.historyPushDialogTarget", {
                         sourceBranch: currentBranch || "HEAD",
                         remote: pushRemoteTrimmed || "origin",
@@ -529,7 +529,7 @@ export function renderGitHistoryPanelDialogs(scope: any) {
                       })}
                     </div>
                     {pushIsNewBranchTarget ? (
-                      <span className="git-history-push-target-badge">
+                      <span className="git-history-push-target-badge flex-none inline-flex items-center justify-center min-h-[22px] px-2 rounded-full border border-[color-mix(in_srgb,#f97316_48%,transparent)] bg-[color-mix(in_srgb,#f97316_14%,transparent)] text-[color-mix(in_srgb,#ea580c_86%,#fb923c)] text-xs font-bold leading-none font-(family-name:--code-font-family,ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,'Liberation_Mono','Courier_New',monospace)">
                         ({t("git.historyPushDialogTargetNewTag")})
                       </span>
                     ) : null}
