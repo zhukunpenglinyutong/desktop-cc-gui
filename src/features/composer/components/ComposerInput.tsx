@@ -52,6 +52,11 @@ import {
   ProgressIndicator,
   ProgressTrack,
 } from "@/components/ui/progress";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import { formatRelativeTime } from "../../../utils/time";
 import { resolveManualMemoryPreview } from "../utils/manualMemoryPreview";
 
@@ -1196,22 +1201,31 @@ export function ComposerInput({
                 onFocus={handleUsageEnter}
                 onBlur={handleUsageBlur}
               >
-                <button
-                  type="button"
-                  className={`composer-action composer-action--usage relative inline-flex h-6 w-6 cursor-pointer items-center justify-center rounded-full border border-[#808080] bg-transparent p-0 text-xs text-white [&_svg]:h-3 [&_svg]:w-3${
-                    usageLoading ? " is-loading [&_svg]:[animation:composer-action-spin_0.8s_linear_infinite]" : ""
-                  }`}
-                  aria-label={t("home.usageSnapshot")}
-                  title={t("home.usageSnapshot")}
-                  aria-expanded={usagePopoverOpen}
-                  onClick={() => {
-                    void refreshUsageSnapshot();
-                  }}
-                >
-                  <Gauge size={14} aria-hidden />
-                </button>
-                {usagePopoverOpen && (
-                  <div className="composer-usage-tooltip absolute right-0 bottom-[calc(100%+8px)] z-40 w-[220px] rounded-[10px] border border-[color-mix(in_srgb,var(--border-subtle)_82%,transparent)] bg-[color-mix(in_srgb,var(--surface-popover)_92%,var(--surface-card))] p-2.5 text-[var(--text-strong)] shadow-[0_10px_22px_rgba(0,0,0,0.25)]" role="status" aria-live="polite">
+                <Popover open={usagePopoverOpen} onOpenChange={setUsagePopoverOpen}>
+                  <PopoverTrigger asChild>
+                    <button
+                      type="button"
+                      className={`composer-action composer-action--usage relative inline-flex h-6 w-6 cursor-pointer items-center justify-center rounded-full border border-[#808080] bg-transparent p-0 text-xs text-white [&_svg]:h-3 [&_svg]:w-3${
+                        usageLoading ? " is-loading [&_svg]:[animation:composer-action-spin_0.8s_linear_infinite]" : ""
+                      }`}
+                      aria-label={t("home.usageSnapshot")}
+                      title={t("home.usageSnapshot")}
+                      onClick={() => {
+                        void refreshUsageSnapshot();
+                      }}
+                    >
+                      <Gauge size={14} aria-hidden />
+                    </button>
+                  </PopoverTrigger>
+                  <PopoverContent
+                    side="top"
+                    align="end"
+                    sideOffset={8}
+                    className="composer-usage-tooltip w-[220px] rounded-[10px] border border-[color-mix(in_srgb,var(--border-subtle)_82%,transparent)] bg-[color-mix(in_srgb,var(--surface-popover)_92%,var(--surface-card))] p-2.5 text-[var(--text-strong)] shadow-[0_10px_22px_rgba(0,0,0,0.25)]"
+                    role="status"
+                    aria-live="polite"
+                    onOpenAutoFocus={(event) => event.preventDefault()}
+                  >
                     <div className="composer-usage-tooltip-header mb-2 flex items-center justify-between text-[11px] font-semibold">
                       <span>{t("home.usageSnapshot")}</span>
                       {usageLoading && (
@@ -1270,8 +1284,8 @@ export function ComposerInput({
                         )}
                       </div>
                     )}
-                  </div>
-                )}
+                  </PopoverContent>
+                </Popover>
               </div>
             )}
             <ContextUsageIndicator contextUsage={contextUsage} />
