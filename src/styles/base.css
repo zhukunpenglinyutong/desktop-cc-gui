@@ -159,6 +159,22 @@ body {
   transition: none;
 }
 
+/* Kanban fullscreen mode: collapse the .app grid to a single column so the
+   only rendered <section class="main kanban-fullscreen"> spans the full
+   viewport. Without this rule .main stays in the 1fr column of the default
+   `var(--sidebar-width) 1fr` grid (sidebar column is empty because Kanban
+   mode skips rendering Sidebar), leaving the panel content visually clamped
+   to the right half. See bug report: 项目面板尺寸被截断, 2026-05-17.
+   Original rule lived in kanban.css; restored here after Phase 5.6c migration
+   deleted that file. */
+.app.kanban-active {
+  grid-template-columns: 1fr;
+}
+
+.app.kanban-active .main {
+  grid-column: 1 / -1;
+}
+
 body[data-panel-resizing="true"] .app {
   transition: none;
 }
