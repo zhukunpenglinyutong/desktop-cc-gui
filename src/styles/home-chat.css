@@ -1,3 +1,21 @@
+/**
+ * home-chat.css — home chat surface (keeper, slimmed from 946 → 457 lines).
+ *
+ * Why kept as CSS:
+ *  - `.home-chat` declares `--home-chat-*` CSS var palette consumed by
+ *    descendants via cascade; var scope cannot be inlined.
+ *  - `.home-chat::before` decorative gradient pseudo-element.
+ *  - `[data-theme="light"]` + `@media (prefers-color-scheme: light)` overrides.
+ *  - `.home-chat-workspace-picker-popover[data-slot="popover-content"]` Base UI
+ *    overrides (popover is portaled to document.body — outside Home subtree).
+ *  - `.home-chat-composer-host` descendant cascade into composer DOM
+ *    (.composer / .chat-input-box / .attach-button / etc.).
+ *  - `@media (max-width: 900px)` / `(640px)` responsive overrides.
+ *
+ * Simple layout/typography selectors have been migrated to inline Tailwind
+ * in HomeChat.tsx (see commit 3878a457).
+ */
+
 .home-chat {
   --home-chat-bg: #1c1c1c;
   --home-chat-surface: rgba(46, 46, 46, 0.96);

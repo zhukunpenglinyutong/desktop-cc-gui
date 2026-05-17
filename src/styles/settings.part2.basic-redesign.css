@@ -1,3 +1,20 @@
+/**
+ * settings.part2.basic-redesign.css — basic + tabbed section cascade root (keeper).
+ *
+ * Why kept as CSS:
+ *  - Declares the `--settings-basic-*` CSS var palette on 5+ section roots
+ *    (.settings-section-basic + 4× .settings-section-tabbed via :is() selector).
+ *  - Vars cascade through 270+ class references across 6 TSX consumers.
+ *  - Per-component inlining would require duplicating 9 vars across 5 sections
+ *    + editing 99+ classNames in BasicAppearanceSection.tsx alone.
+ *  - Pseudo-elements (::before / ::after) for dropdown arrows + shadcn card
+ *    shadow neutralizer.
+ *  - [data-slot="switch"] Base UI switch theming overrides.
+ *
+ * Optimized: 1044 → 965 lines (-8%) via :is() selector consolidation +
+ * near-duplicate merging.
+ */
+
 /* === Basic settings redesign (Codex-like dark panel) === */
 /* Cascade root: defines --settings-basic-* palette consumed by 5+ sections (basic + 4 tabbed) */
 :is(.settings-section-basic, .settings-section-tabbed) {

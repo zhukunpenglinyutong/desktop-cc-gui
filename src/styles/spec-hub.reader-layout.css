@@ -1,3 +1,15 @@
+/**
+ * spec-hub.reader-layout.css — detached spec-hub window layout (keeper).
+ *
+ * Why kept as CSS:
+ *  - `.app.detached-spec-hub-window-shell` is a Tauri detached-window root
+ *    selector — class set on root `<div class="app">` by Tauri shell, not
+ *    inside React components.
+ *  - `.macos-desktop .detached-spec-hub-menubar*` platform-conditional
+ *    overrides (drag region + macOS title-bar inset).
+ *  - `.spec-hub-surface > .spec-hub` direct-child grid layout invariants.
+ */
+
 .app.detached-spec-hub-window-shell {
   display: flex;
   flex-direction: column;

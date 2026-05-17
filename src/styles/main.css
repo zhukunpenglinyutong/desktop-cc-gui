@@ -1,3 +1,21 @@
+/**
+ * main.css — main content area shell (keeper).
+ *
+ * Why kept as CSS instead of Tailwind utility classes:
+ *  - `.app.layout-desktop.layout-swapped:not(.settings-open) .main-topbar` and
+ *    similar 5+ level state combinators on `.app` ancestor — these layout
+ *    invariants are pinned by `layout-swapped-platform-guard.test.tsx` cascade
+ *    assertions and cannot be expressed as React className props (the `.app`
+ *    class lives on the root shell, not in the consumer component).
+ *  - `@media (max-width: 860px)` and platform-scoped responsive overrides.
+ *  - Cross-component cascade (e.g., `.main-content .messages-shell`) targeting
+ *    descendants from outside their component scope.
+ *
+ * Simple selectors have been migrated to inline Tailwind in MainHeader.tsx /
+ * LaunchScriptButton.tsx / OpenAppMenu.tsx etc. What remains is genuinely
+ * cascade-essential.
+ */
+
 .main {
   display: grid;
   grid-template-columns: minmax(280px, 1fr) var(--right-panel-width, 230px);

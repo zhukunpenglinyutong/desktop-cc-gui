@@ -1,3 +1,17 @@
+/**
+ * themes.dark.css — project legacy token surface (keeper).
+ *
+ * coss.ui official tokens (--background / --foreground / --primary / etc.)
+ * are registered in globals.css. This file keeps the legacy project tokens
+ * (--text-*, --surface-*, --border-*, --color-*, --scrollbar-*, --dropdown-*)
+ * that are still referenced by ~50+ keeper CSS files (diff-keepers, sidebar,
+ * main, settings.part1/2, etc.).
+ *
+ * Migration intent: as keeper CSS files shrink, replace references to these
+ * legacy vars with coss tokens (bg-card, text-foreground, etc.) — at that
+ * point this file can shrink too.
+ */
+
 :root {
   font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
   color: var(--text-primary);

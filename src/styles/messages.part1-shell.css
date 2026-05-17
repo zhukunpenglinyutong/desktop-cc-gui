@@ -1,3 +1,14 @@
+/**
+ * messages.part1-shell.css — messages outer shell (keeper).
+ *
+ * Why kept as CSS:
+ *  - `.app.canvas-width-wide .messages-full` ancestor cascade — `.app` class
+ *    lives on root shell, not in Messages component.
+ *  - `.claude-render-safe .messages-collapsed-indicator` cascade (used by
+ *    layout-guard tests to verify render-safe scoping on desktop).
+ *  - `--main-panel-padding` consumption inside layout primitives.
+ */
+
 .messages-shell {
   position: relative;
   display: flex;

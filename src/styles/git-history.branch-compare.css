@@ -1,3 +1,20 @@
+/**
+ * git-history.branch-compare.css — branch compare modal (keeper).
+ *
+ * Why kept as CSS:
+ *  - `.git-history-branch-compare-list-card` declares `--branch-compare-accent`
+ *    + `-text-tint` CSS var; variants `.is-target` (#f59e0b) vs `.is-current`
+ *    (#0ea5e9) flip the var, and 8+ descendants reference it via color-mix.
+ *  - `.git-history-branch-compare-list-header::before` 3px accent indicator
+ *    pseudo-element using the variant var.
+ *  - Complex linear-gradient + box-shadow combos using color-mix(in_srgb,
+ *    var(--branch-compare-accent) X%, transparent) — inlining each as
+ *    Tailwind arbitrary `[background:...]` would produce 200-char classNames.
+ *
+ * Simple layout selectors migrated to inline Tailwind in
+ * GitHistoryPanelView.tsx (see commit 19b85365).
+ */
+
 .git-history-branch-compare-modal {
   width: min(1380px, calc(100vw - 24px));
   max-height: calc(100vh - 28px);

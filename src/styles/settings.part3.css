@@ -1,3 +1,14 @@
+/**
+ * settings.part3.css — basic section color/sound widget cascade (keeper).
+ *
+ * Why kept as CSS:
+ *  - All selectors are `.settings-section-basic .descendant` cascade —
+ *    overrides need ancestor + descendant pairing to fire (Tailwind utility
+ *    on descendant alone would lose the parent-conditioned scope).
+ *  - Paired with `.settings-section-basic` declaration in settings.part1.css
+ *    and `--settings-basic-*` vars from settings.part2.basic-redesign.css.
+ */
+
 .settings-section-basic .settings-color-custom-label {
   white-space: nowrap;
   font-size: 12px;

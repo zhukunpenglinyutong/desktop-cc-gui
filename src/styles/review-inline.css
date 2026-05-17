@@ -1,3 +1,16 @@
+/**
+ * review-inline.css — review inline prompt surface (keeper).
+ *
+ * Why kept as CSS:
+ *  - `.review-inline` declares `--review-inline-accent` + `-soft` + `-border`
+ *    CSS var palette consumed by 6+ descendant variants (option / toolbar /
+ *    actions / outcome / etc.) via cascade.
+ *  - State combinators like `.review-inline-option.is-selected` flip multiple
+ *    style props (border + bg + box-shadow inset) coordinated.
+ *  - Used across 5+ consumers (ReviewInlinePrompt + git-history + composer +
+ *    workspaces) — single source of truth via CSS file is the right shape.
+ */
+
 .composer-suggestions.review-inline-suggestions {
   max-height: min(324px, 56vh);
   width: min(560px, calc(100vw - 40px));

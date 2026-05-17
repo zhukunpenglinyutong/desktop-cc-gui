@@ -1,3 +1,12 @@
+/**
+ * git-history.part2-support.css — branch compare detail support styles (keeper).
+ *
+ * Why kept as CSS:
+ *  - Markdown render surface descendant cascade (`.detail-message :where(p, ul,
+ *    code)`) targeting react-markdown DOM.
+ *  - Shared across multiple commit-detail rendering paths.
+ */
+
 .git-history-branch-compare-detail-message {
   margin: 0;
   padding: 10px;

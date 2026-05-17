@@ -1,4 +1,16 @@
-/* Thinking Block - Minimalist (synced with idea-claude-code-gui) */
+/**
+ * messages.part2.css — thinking blocks + reasoning markdown surface (keeper).
+ *
+ * Why kept as CSS:
+ *  - `.reasoning-markdown :where(h1, h2, h3, p, ul, ol, ...)` selectors target
+ *    DOM produced by react-markdown (`dangerouslySetInnerHTML`-style), which
+ *    cannot be tagged with React className props.
+ *  - `.thinking-block.is-expanded .thinking-title`, `.is-live` parent-state
+ *    combinators that flip styling on descendants.
+ *  - `.markdown-live-streaming` cascade variants synchronized across multiple
+ *    streaming write paths.
+ */
+
 .thinking-block {
   margin-bottom: 18px;
   font-size: 12.5px;

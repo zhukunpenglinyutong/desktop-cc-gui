@@ -1,3 +1,18 @@
+/**
+ * tool-blocks.css — tool block rendering keeper (slimmed 2117 → 1573, -26%).
+ *
+ * Why kept as CSS:
+ *  - 50%+ is Prism syntax highlight cascade (`.diff-line-content .token.*`)
+ *    consumed by `dangerouslySetInnerHTML` output — cannot tag with className.
+ *  - react-markdown DOM cascade (`:where(p, ul, ol, li)`) for tool output prose.
+ *  - State combinators (`.is-collapsible`, `.is-collapsed`, `.is-expanded`,
+ *    `.is-inline-summary`) flip styles on descendants.
+ *  - 9 consumer ToolBlock components depend on the className markers AND
+ *    `expect(...).toContain("bash-output-line-error")` test assertions.
+ *
+ * Dead code removed in commit 226bed2e (45 selectors, no consumers).
+ */
+
 .tool-title-summary {
   color: var(--text-tertiary, var(--text-muted));
   font-size: 12px;

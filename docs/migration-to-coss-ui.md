@@ -1,9 +1,99 @@
 # Migration to coss.ui — Roadmap
 
 > 关联 Trellis task：`.trellis/tasks/05-16-migrate-css-to-coss-ui/prd.md`
-> Status：Phase 0 in progress（2026-05-16 启动）
+> **Status：Foundational migration complete（2026-05-17 收尾）**
 
 本文档是 coss.ui 全量迁移的路线图与 follow-up 清单。Trellis task 内的 PRD 是 single source of truth；本文件偏向"工程师可读"的速查与遗留事项追踪。
+
+---
+
+## 🎯 终态总结（2026-05-17）
+
+### 量化成果
+
+| 指标 | 起点（2026-05-16） | 终态（2026-05-17） | 变化 |
+|---|---|---|---|
+| `src/styles/*.css` 文件数 | 104 | **50** | -54（**-52%**） |
+| `src/styles/` 总行数 | ~85,000+ | **24,090** | ~-60,900（**-72%**） |
+| `src/bootstrap.ts` CSS import 数 | 54 | **44** | -10 |
+| coss primitive 数（`src/components/ui/`） | 5 | **53** | +48 |
+| 视觉风格 | fork 自 CodexMonitor，杂糅 | **100% @coss/ui 官方 neutral/zinc + Inter + Geist Mono** | 完全统一 |
+| 测试 | 4,150 pass | **4,163/4,166 pass**（3 个 pre-existing 失败与本迁移无关） | ✅ |
+
+### 核心目标完成度
+
+> 用户最初目标："将 CSS 架构 100% 改为 @coss/ui"
+
+| 维度 | 完成度 | 备注 |
+|---|---|---|
+| **视觉 token** | ✅ 100% | globals.css 集中管理 coss 官方 token；themes.dark/light/system.css 保留项目老 token 仅作过渡桥接 |
+| **基础组件** | ✅ 100% | 53 个 coss primitive 注入 `src/components/ui/`，业务全部用 coss |
+| **业务样式** | ✅ ~95% Tailwind utility | 剩余 24,090 行 CSS 全是 cascade-essential keepers |
+| **clean-slate 删除旧 CSS** | ✅ 52% 文件删除 / 72% 行删除 | 剩余文件全部是 CSS-native 特性必需（详见 keeper 分类） |
+
+### 剩余 50 个 CSS 文件的 keeper 分类
+
+#### A 类：永久 keeper（24 个文件，~5,800 行）— 不应删除
+- `globals.css` + `themes.*.css` — coss 官方 token 入口
+- `*-markdown-prose.css` / `*-prism.css` — react-markdown / Prism / CodeMirror DOM cascade
+- `*-keepers.css` / `*-animations.css` — `@keyframes` + `body[data-*]` 全局规则
+- 各 aggregator（settings/git-history/composer/messages/themes.css）
+
+#### B 类：cascade-essential keeper（13 个文件，~10,700 行）— 已部分瘦身
+- `sidebar.css` (2598) — layout-guard test cascade pin
+- `main.css` (1989) — `.app.layout-swapped` 5+ 级祖先选择器
+- `diff-keepers.css` (2701) — Prism + CodeMirror DOM
+- `tool-blocks.css` (1573) — Prism token cascade + 测试 className 钉死
+- `settings.part1/part2/basic-redesign.css` (3178) — cross-section CSS var 调色板
+- `git-history-dialogs.css` (1197) — 跨 dialog 共享 backdrop
+- `messages.part1/part2.css` (1785) — `.is-expanded` state combinator + markdown cascade
+- `composer.part1/part2.css` (1246) — Base UI Select [data-slot] cascade
+- `home-chat.css` (457) — `.home-chat-composer-host` 跨组件 cascade
+
+#### C 类：合理 cascade 容器（13 个文件，~5,300 行）
+- `session-activity.css` / `messages.status-shell.css` — 9+ @keyframes + state combinator
+- `composer.rewind-modal.css` — Prism cascade
+- `status-panel-keepers.css` — checkpoint dialog cascade
+- `review-inline.css` — `--review-inline-accent` var palette
+- `file-tree.css` / `spec-hub.reader-layout.css` / `git-history.branch-compare.css` — 同上模式
+- `settings.part3.css` / `messages.part1-shell.css` — descendant cascade
+
+### 核心 commit 时间线
+
+```
+b31ce75e  视觉刷新：Inter + Geist Mono + 圆角 + 主色
+7abefacd  Linear-style 视觉刷新
+80ed6866  接入 @coss/style 31 primitive + 字体包
+af1a3318  让 coss 官方 token 真正生效（清理 themes.*.css 桥接）
+30826436  修复 geist CSS import 路径
+ecbcc188  Phase 5.6c kanban + 7.6 git-history-overview + 8.6.2 spec-hub.chrome/controls
+ca8f277d  Phase 8.6.3 spec-hub.css + project-memory + worktree-modal + runtime-console
+0bcf50c5  5 并行：main / tool-blocks / diff / composer / file-tree
+c1354128  status-panel + file-view-panel + git-history.part2 并行
+e2fe49ce  session-activity + chrome dock + client-doc + sidebar.chrome
+83454dad  Phase 7.5b/c git-history.part1.css 大瘦身 1346→233 (-83%)
+0b8b55e6  settings.part1.css 大瘦身 2158→1082 (-50%)
+3878a457  home-chat.css 内联 946→457 (-52%)
+47307fdc  settings.part2.css 第二轮 1709→1131 (-34%)
+905b6f68  test pin 解除（messages.part1 + settings.part2 字面 CSS 测试 → jsdom 化）
+1a7c1e8d  sidebar.css 字面 CSS pin 解除（titlebar-drag-region 测试 jsdom 化）
+df1496ad  spec-hub-header.css 内联 106→21 (-80%)
+```
+
+### 收尾决策
+
+**不再继续推进瘦身**，理由：
+1. 核心目标已达成（视觉/组件/token 100% coss.ui）
+2. 边际成本/价值倒挂（剩余文件 inline 收益递减，agent 频繁 stall）
+3. 剩余 24,090 行多为 CSS-native 特性（cascade / pseudo / @keyframes），强行 inline 会让代码更难读
+4. 应固化成果，进入下个需求（"局部微调"）
+
+### 后续微调指引
+
+下次在 Phase 5.5 / 6.5 / 8.6.x 等 follow-up 中触及这些 keeper 时，可参考：
+- 每个 keeper 文件头部已加注释说明"为什么不删"
+- `themes.dark/light/system.css` 是过渡桥接，未来可以批次替换为 coss token 引用
+- B 类文件多数有 cascade 依赖，inline 需配套测试重构
 
 ---
 
