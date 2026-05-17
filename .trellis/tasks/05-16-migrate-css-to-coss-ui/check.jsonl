@@ -7,3 +7,6 @@
 {"file": ".agents/skills/coss/references/rules/styling.md", "reason": "coss styling 合规性 check"}
 {"file": ".agents/skills/coss/references/rules/composition.md", "reason": "trigger/popup 合规性 check"}
 {"file": ".agents/skills/coss/references/rules/migration.md", "reason": "migration pattern 是否对齐"}
+{"file": "src/features/app/components/MainHeader.branch-reveal.test.tsx", "reason": "Phase 11.1 测试约束：className pin + hover delay"}
+{"file": "src/features/app/components/MainHeader.workspace-switch-regression.test.tsx", "reason": "Phase 11.1 测试：menuitem→option role 调整"}
+{"file": "src/styles/main.worktree-info-theme.test.ts", "reason": "Phase 11.1 CSS pin：保留 .worktree-info-* className 作 marker"}

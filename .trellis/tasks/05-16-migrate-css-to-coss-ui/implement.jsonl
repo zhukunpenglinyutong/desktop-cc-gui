@@ -17,3 +17,8 @@
 {"file": ".agents/skills/coss/references/rules/migration.md", "reason": "shadcn/Radix → coss/Base UI 迁移 pattern"}
 {"file": ".agents/skills/coss/references/rules/composition.md", "reason": "trigger/popup 层级、grouped controls"}
 {"file": ".agents/skills/coss/references/rules/forms.md", "reason": "Field 组合 / validation / input pattern"}
+{"file": "src/features/app/components/MainHeader.tsx", "reason": "Phase 11.1 主要改造目标——3 个手写 popover 块替换为 coss Combobox/Popover"}
+{"file": "src/components/ui/menu.tsx", "reason": "coss Menu primitive 标准 API 参考（base-ui 实现）"}
+{"file": ".agents/skills/coss/references/primitives/combobox.md", "reason": "Combobox API 文档"}
+{"file": ".agents/skills/coss/references/primitives/popover.md", "reason": "Popover API 文档"}
+{"file": ".agents/skills/coss/references/primitives/button.md", "reason": "Button variants/sizes 参考"}

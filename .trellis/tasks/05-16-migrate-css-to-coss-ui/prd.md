@@ -441,10 +441,96 @@ Scope 调整（写在 plan doc）：
 5. `python3 ./.trellis/scripts/task.py` 更新 task 状态。
 6. 用户人工 confirm 后再进入下一 phase。
 
-## 下一步
+---
 
-待用户 confirm 本 phase 草案。confirm 后立刻进入 **Phase 0**：
-- 切 branch
-- archive 4 个 superseded task
-- 跑 `task.py init-context fullstack` + 配置 Research/Implement/Check 的 jsonl 上下文
-- 跑 `task.py start`
+## Phase 11 — Primitive Structural Swap（2026-05-17 追加）
+
+### 背景
+
+- Phase 2-10 完成了「CSS 内联到 Tailwind」+ 「class name 保留为 no-op marker」+ 「styling pass」。
+- 但**真正用上 coss primitive 这步还没做**：截图页面看上去和 coss.ui 官网示例不一样，根因是核心 feature 组件几乎全是手写 `<div>` + Tailwind，没用 `Combobox` / `Popover` / `Menu` / `Tabs` 等原语。
+- 抽查全仓 `@/components/ui/*` 引用次数：`Button` 18 / `Input` 6 / `Select` 4 / `Popover` 3 / `Tooltip` 2 / `Tabs` 2，其他 0-2 次。
+- 同时发现 `src/components/ui/` 下有 **3 个旧 shadcn/radix 残留组件**：`button.tsx` / `popover.tsx` / `dropdown-menu.tsx` 用的是 `radix-ui` 而不是 `@base-ui/react`（coss 底层），与项目整体 coss 风格不一致。
+
+### Phase 11 目标
+
+把「primitive structural swap」从 Phase 10 follow-up 提升为正式 phase，**按截图页面优先级分块推进**，每个文件作为独立子 phase 一次落地一个 commit。
+
+### Phase 11.1 — MainHeader 试点（**首发**）
+
+**范围**（`src/features/app/components/MainHeader.tsx`，当前 809 行）：
+
+| 子块 | 行号 | 替换映射 |
+|---|---|---|
+| 项目下拉（带搜索 + 分组） | 302-413 | 手写 popover + input → **coss `Combobox` + `ComboboxGroup` + `ComboboxEmpty`** |
+| worktree info popover | 424-570 | 手写 popover + rename input + cd command + 图标按钮 → **coss `Popover` + `Field` + `Button` size=icon + `Tooltip`** |
+| 分支搜索 + 创建 | 572-720 | 手写 popover + search + branch list + create btn → **coss `Combobox` + 自定义 footer (`Button`)** |
+| session tabs slot | 723-740 | 保留（外部 props 透传） |
+| 右侧动作区 | 741-806 | 保留（LaunchScriptButton / OpenAppMenu 独立单元，下一 phase 单独处理） |
+
+**预期净行数**：~809 → ~700 行（净 -100）。
+
+### Phase 11.1 准备工作
+
+1. `npx shadcn@latest add @coss/combobox` — 新装（项目缺失）
+2. `npx shadcn@latest add @coss/popover` — 把 `popover.tsx` 从 radix 升级到 coss base-ui（顺手做，本任务一并解决「3 个 shadcn 旧版残留」之一）
+3. `npx shadcn@latest add @coss/button` — 把 `button.tsx` 从 radix Slot 升级到 coss base-ui（同上，可选 bonus）
+
+> 注：dropdown-menu.tsx 由于影响面更大（多个 feature 在用），不在本 phase 处理，留 Phase 11.x 单独追踪。
+
+### Phase 11.1 测试约束
+
+| 测试 | 钉死的约束 | 处理 |
+|---|---|---|
+| `MainHeader.branch-reveal.test.tsx` | `.workspace-title-line` / `.workspace-project-menu` className + hover 250ms/500ms 延迟显示 | 保留 className 作 no-op marker；hover 延迟逻辑保留在外层 div |
+| `MainHeader.workspace-switch-regression.test.tsx` | `getByRole("menuitem")` | 改 1 行：`menuitem` → `option`（Combobox 子项 W3C 标准角色） |
+| `MainHeader.topbar-session-tabs.test.tsx` | `.main-header-session-tabs-slot/-interactive/-drag-lane` | 不动 ⑤ 块，无影响 |
+| `main.worktree-info-theme.test.ts` | main.css 中 `.worktree-info-copy/-reveal/-input/-confirm` 含 theme token | 保留 className 作 marker；main.css 规则不动 |
+
+**原则（用户已 confirm 2026-05-17）**：
+- 以 coss 默认行为为准，必要时改业务/测试
+- 行为偏离时优先用 coss `render` prop / `*Primitive` 底层组合保留 Tauri drag region 等特殊属性
+
+### Phase 11.1 DoD
+
+- [ ] 3 个手写 popover 全部用 coss primitive 替换（Combobox × 2 + Popover × 1）
+- [ ] `src/components/ui/popover.tsx` 不再 import `radix-ui`
+- [ ] `src/components/ui/button.tsx` 不再 import `radix-ui`（可选）
+- [ ] MainHeader 测试 4 个文件全绿
+- [ ] 全仓 lint / typecheck / test / layout-guard / large-file 守卫全绿
+- [ ] Tauri dev 跑一遍：项目切换 / 分支切换 / worktree rename / cd 拷贝 / reveal in finder 5 个旅程都正常
+- [ ] commit message：`refactor(main-header): <子块描述>`，每个子块独立 commit
+
+### Phase 11.1 工时
+
+- 总计 1-2 工作日，4-5 个原子 commit
+- 子步骤：装 primitive (0.5h) / 项目下拉 (2-3h) / worktree popover (2-3h) / 分支菜单 (2-3h) / 测试 + 回归 (1h)
+
+### Phase 11.x — 后续排队（按截图页面相关性 + 行数升序）
+
+| 子 phase | 文件 | 行数 | 关键替换 |
+|---|---|---|---|
+| 11.2 | `MainHeaderActions.tsx` + `OpenAppMenu.tsx` + `LaunchScriptButton.tsx` | ~500 | Menu / Popover / Button |
+| 11.3 | `StatusPanel.tsx` (right bottom panel tab 切换) | 728 | `Tabs` |
+| 11.4 | `ComposerInput.tsx` (底部输入框) | 1634 | `Textarea` / `Select` / `Badge` / `Progress` / `Combobox` (autocomplete) |
+| 11.5 | `FileTreePanel.tsx` (右侧文件树) | 2288 | `Collapsible` / `Button` / `Popover` |
+| 11.6 | `Sidebar.tsx` (左侧) | 2415 | `Menu` (right-click) / `Collapsible` (worktree section) |
+| 11.7 | `Messages.tsx` (消息流) | 2217 | `Card` / `Collapsible` / `Badge` |
+| 11.8 | `dropdown-menu.tsx` shadcn → coss `Menu` 全仓替换 | 跨文件 | 全仓 `DropdownMenu*` → `Menu*` |
+
+> 11.2 - 11.8 顺序可调整；每个子 phase 都要按 11.1 同样流程：用户先 confirm 方案 → implement → check → commit。
+
+### 与原 PRD 范围的关系
+
+- 原 PRD「最终目标 3：基础组件全部用 coss 原语替换」**通过 Phase 11.x 真正落地**。
+- 原 PRD「最终目标 1：旧 CSS 文件彻底删除」**保持原计划**（Phase 10 已完成大部分，剩余 follow-up）。
+- 原 PRD「最终目标 2：Tailwind v4 + coss token + data-slot」**已基本达成**（Phase 2-6 内联）。
+
+### 下一步
+
+立即进入 **Phase 11.1**：
+- 安装 3 个 coss primitive
+- 重写 MainHeader.tsx 3 个 UI 块
+- 调整 4 个测试
+- 跑回归
+- 4-5 个原子 commit
