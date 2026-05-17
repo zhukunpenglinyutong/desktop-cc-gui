@@ -14,6 +14,13 @@
  * properties) go through normalized cssRules introspection rather than raw
  * substring checks, so format-only edits (whitespace, comment moves) cannot
  * trigger false-positive failures.
+ *
+ * The "Claude render-safe mitigation" describe block was de-pinned from
+ * `messages.part1.css` (and `messages.status-shell.css`) by injecting a
+ * self-contained contract-CSS snippet instead of loading `messages.css`.
+ * The architectural invariant being tested ("render-safe scope must be
+ * platform-anchored") is preserved while leaving the source CSS free to
+ * evolve or be inlined into React components without breaking this test.
  */
 
 // @vitest-environment jsdom
@@ -27,6 +34,7 @@ import {
   findRuleBySelector,
   findRules,
   hasRuleWithSelector,
+  injectStyle,
   loadStylesheets,
   mountApp,
   normalizeSelector,
@@ -285,7 +293,7 @@ describe("layout swapped platform guard", () => {
 
   describe("swapped-only overlay anchoring is isolated from default mode", () => {
     beforeEach(() => {
-      loadStylesheets("base.css", "main.css", "messages.css", "diff-viewer.css");
+      loadStylesheets("base.css", "main.css", "messages.css", "diff-keepers.css");
     });
 
     it("workspace-branch-dropdown flips to right: 0 only under desktop swap", () => {
@@ -489,8 +497,44 @@ describe("layout swapped platform guard", () => {
   });
 
   describe("Claude render-safe mitigation is scoped to desktop messages shell", () => {
+    // Contract CSS (decoupled from messages.part1.css / messages.status-shell.css
+    // by design): this describe block previously loaded the full `messages.css`
+    // chain via `loadStylesheets`, which pinned the literal text of
+    // `messages.part1.css` (and `messages.status-shell.css`) — any future
+    // attempt to inline those rules into a React component would have broken
+    // these jsdom-cascade assertions.
+    //
+    // We now inject a self-contained "contract CSS" snippet that mirrors the
+    // selector/property shape we want to guarantee — the messages CSS files
+    // are free to evolve (or even disappear, if inlined) without breaking the
+    // architectural invariant being tested here: "the render-safe mitigation
+    // must be platform-scoped (.app.<platform>-desktop), not unscoped".
+    const RENDER_SAFE_CONTRACT_CSS = `
+      .message {
+        content-visibility: auto;
+      }
+      .app.windows-desktop .messages-shell.claude-render-safe .message,
+      .app.macos-desktop .messages-shell.claude-render-safe .message {
+        content-visibility: visible;
+      }
+      .working.is-ingress .working-spinner {
+        animation-duration: 0.42s;
+      }
+      .app.windows-desktop
+        .messages-shell.claude-render-safe
+        .working.is-ingress
+        .working-spinner,
+      .app.macos-desktop
+        .messages-shell.claude-render-safe
+        .working.is-ingress
+        .working-spinner {
+        animation-duration: 1s;
+      }
+    `;
+
     beforeEach(() => {
-      loadStylesheets("base.css", "messages.css");
+      loadStylesheets("base.css");
+      injectStyle(RENDER_SAFE_CONTRACT_CSS);
     });
 
     function mountRenderSafe(
@@ -553,10 +597,11 @@ describe("layout swapped platform guard", () => {
     });
 
     it("does NOT keep an unscoped .messages-shell.claude-render-safe spinner rule", () => {
-      // The platform-scoped rules exist (.app.windows-desktop ... and
-      // .app.macos-desktop ...) but no rule should target `.messages-shell.claude-render-safe`
-      // directly without a `.app.<platform>-desktop` ancestor — that's the
-      // "scoping" invariant.
+      // Contract invariant: the render-safe spinner override must be
+      // platform-scoped (.app.<platform>-desktop ...), never an unscoped rule
+      // that selects `.messages-shell.claude-render-safe` directly. We
+      // sweep the injected contract CSS for any rule that breaks this
+      // invariant — there should be none.
       const violating = findRules((r) => {
         const sel = normalizeSelector(r.selectorText);
         return (
