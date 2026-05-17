@@ -38,9 +38,9 @@ export function CommitSection({
         <span className="codicon codicon-edit" style={{ marginRight: 6 }} />
         {t("settings.commit.promptLabel")}
       </div>
-      <div className="settings-commit-prompt-wrapper">
+      <div className="settings-commit-prompt-wrapper flex flex-col gap-2 mb-2">
         <textarea
-          className="settings-commit-textarea"
+          className="settings-commit-textarea w-full min-h-[120px] px-3 py-2.5 text-[13px] leading-normal text-(--text-strong) bg-[var(--surface-input,var(--background))] border border-(--border-muted) rounded-md resize-y font-inherit focus:border-(--primary) focus:outline-none"
           placeholder={t("settings.commit.promptPlaceholder")}
           value={commitPrompt}
           onChange={(e) => onCommitPromptChange(e.target.value)}
@@ -63,8 +63,8 @@ export function CommitSection({
         {t("settings.commit.promptHint")}
       </div>
 
-      <div className="settings-commit-preview">
-        <div className="settings-coming-soon-badge">
+      <div className="settings-commit-preview mt-6 relative">
+        <div className="settings-coming-soon-badge inline-flex items-center gap-1 px-2.5 py-[2px] text-[11px] font-semibold text-(--primary) rounded-xl mb-3" style={{ background: "color-mix(in srgb, var(--primary) 12%, transparent)" }}>
           <span className="codicon codicon-sparkle" style={{ marginRight: 4 }} />
           {t("settings.placeholder.comingSoon")}
         </div>
@@ -72,9 +72,9 @@ export function CommitSection({
           <span className="codicon codicon-code" style={{ marginRight: 6 }} />
           {t("settings.commit.codeReviewLabel")}
         </div>
-        <div className="settings-commit-prompt-wrapper">
+        <div className="settings-commit-prompt-wrapper flex flex-col gap-2 mb-2">
           <textarea
-            className="settings-commit-textarea settings-commit-textarea--disabled"
+            className="settings-commit-textarea settings-commit-textarea--disabled w-full min-h-[120px] px-3 py-2.5 text-[13px] leading-normal text-(--text-strong) bg-[var(--surface-input,var(--background))] border border-(--border-muted) rounded-md resize-y font-inherit focus:border-(--primary) focus:outline-none opacity-50 cursor-not-allowed"
             placeholder={t("settings.commit.codeReviewPlaceholder")}
             disabled
             rows={4}

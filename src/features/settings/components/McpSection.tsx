@@ -483,7 +483,7 @@ export function McpSection({
             {t("settings.mcpPanel.overviewActiveEngine")}
           </div>
           <div className="settings-mcp-panel-highlight">{t(selectedDescriptor.titleKey)}</div>
-          <div className="settings-mcp-server-meta">{t(selectedDescriptor.modeKey)}</div>
+          <div className="settings-mcp-server-meta mt-0.5 text-(--text-muted) text-xs">{t(selectedDescriptor.modeKey)}</div>
         </div>
 
         <div className="settings-mcp-codex-card settings-mcp-overview-card">
@@ -497,7 +497,7 @@ export function McpSection({
               total: ORDERED_ENGINES.length,
             })}
           </div>
-          <div className="settings-mcp-server-meta">{t("settings.mcpPanel.overviewDetectedDesc")}</div>
+          <div className="settings-mcp-server-meta mt-0.5 text-(--text-muted) text-xs">{t("settings.mcpPanel.overviewDetectedDesc")}</div>
         </div>
 
         <div className="settings-mcp-codex-card settings-mcp-overview-card">
@@ -511,7 +511,7 @@ export function McpSection({
               toolCount: visibleToolCount,
             })}
           </div>
-          <div className="settings-mcp-server-meta">{t("settings.mcpPanel.overviewInventoryDesc")}</div>
+          <div className="settings-mcp-server-meta mt-0.5 text-(--text-muted) text-xs">{t("settings.mcpPanel.overviewInventoryDesc")}</div>
         </div>
       </div>
 
@@ -551,11 +551,11 @@ export function McpSection({
               className={`settings-mcp-codex-card settings-mcp-engine-card ${engine.engineType === selectedEngine ? "is-active" : ""}`}
             >
               <div className="settings-mcp-engine-head">
-                <div className="settings-mcp-server-name">
+                <div className="settings-mcp-server-name flex items-center gap-1.5 text-(--text-strong) text-[13px] font-semibold">
                   {getEngineIcon(engine.engineType)}
                   {t(engine.titleKey)}
                 </div>
-                <span className="settings-mcp-auth">
+                <span className="settings-mcp-auth text-[11px] text-(--text-muted) border border-(--border-muted) rounded-full px-2 py-0.5">
                   {t(getEngineStatusBadgeKey(engine.engineType, normalizedActiveEngine, status))}
                 </span>
               </div>
@@ -583,16 +583,16 @@ export function McpSection({
         <div className="settings-inline-muted">{t("settings.mcpPanel.detailsDesc")}</div>
       </div>
 
-      <div className="settings-mcp-list">
+      <div className="settings-mcp-list flex flex-col gap-2">
         <div
           className="settings-mcp-engine-panel"
         >
               <div className="settings-mcp-engine-panel-header">
-                <div className="settings-mcp-server-name">
+                <div className="settings-mcp-server-name flex items-center gap-1.5 text-(--text-strong) text-[13px] font-semibold">
                   {getEngineIcon(selectedEngine)}
                   {t(selectedDescriptor.titleKey)}
                 </div>
-                <span className="settings-mcp-auth">
+                <span className="settings-mcp-auth text-[11px] text-(--text-muted) border border-(--border-muted) rounded-full px-2 py-0.5">
                   {t(getEngineStatusBadgeKey(selectedEngine, normalizedActiveEngine, selectedStatus))}
                 </span>
               </div>
@@ -678,7 +678,7 @@ export function McpSection({
                   {selectedConfigServers.length === 0 ? (
                     <div className="settings-inline-muted">{t("settings.mcpPanel.noConfigServers")}</div>
                   ) : (
-                    <div className="settings-mcp-list">
+                    <div className="settings-mcp-list flex flex-col gap-2">
                       {selectedConfigServers.map((server) => {
                         const targetLabel = server.command
                           ? t("settings.mcpPanel.commandMeta", {
@@ -691,15 +691,15 @@ export function McpSection({
                         return (
                           <div key={`${selectedEngine}-${server.name}`} className="settings-mcp-server-row">
                             <div>
-                              <div className="settings-mcp-server-name">
+                              <div className="settings-mcp-server-name flex items-center gap-1.5 text-(--text-strong) text-[13px] font-semibold">
                                 <Database size={14} />
                                 {server.name}
                               </div>
-                              <div className="settings-mcp-server-meta">
+                              <div className="settings-mcp-server-meta mt-0.5 text-(--text-muted) text-xs">
                                 {server.transport ?? t("settings.mcpPanel.transportUnknown")} · {targetLabel}
                               </div>
                             </div>
-                            <span className="settings-mcp-auth">
+                            <span className="settings-mcp-auth text-[11px] text-(--text-muted) border border-(--border-muted) rounded-full px-2 py-0.5">
                               {server.enabled ? t("settings.mcpPanel.enabled") : t("settings.mcpPanel.disabled")}
                             </span>
                           </div>
@@ -720,7 +720,7 @@ export function McpSection({
                     {ccguiConfigServers.length === 0 ? (
                       <div className="settings-inline-muted">{t("settings.mcpPanel.noConfigServers")}</div>
                     ) : (
-                      <div className="settings-mcp-list">
+                      <div className="settings-mcp-list flex flex-col gap-2">
                         {ccguiConfigServers.map((server) => {
                           const targetLabel = server.command
                             ? t("settings.mcpPanel.commandMeta", {
@@ -733,16 +733,16 @@ export function McpSection({
                           return (
                             <div key={`codex-config-${server.name}`} className="settings-mcp-server-row">
                               <div>
-                                <div className="settings-mcp-server-name">
+                                <div className="settings-mcp-server-name flex items-center gap-1.5 text-(--text-strong) text-[13px] font-semibold">
                                   <Database size={14} />
                                   {server.name}
                                 </div>
-                                <div className="settings-mcp-server-meta">
+                                <div className="settings-mcp-server-meta mt-0.5 text-(--text-muted) text-xs">
                                   {server.transport ?? t("settings.mcpPanel.transportUnknown")} · {targetLabel}
                                 </div>
-                                <div className="settings-mcp-server-meta">{t("settings.mcpPanel.sourceCcgui")}</div>
+                                <div className="settings-mcp-server-meta mt-0.5 text-(--text-muted) text-xs">{t("settings.mcpPanel.sourceCcgui")}</div>
                               </div>
-                              <span className="settings-mcp-auth">
+                              <span className="settings-mcp-auth text-[11px] text-(--text-muted) border border-(--border-muted) rounded-full px-2 py-0.5">
                                 {server.enabled ? t("settings.mcpPanel.enabled") : t("settings.mcpPanel.disabled")}
                               </span>
                             </div>
@@ -760,30 +760,30 @@ export function McpSection({
                     {codexServers.length === 0 ? (
                       <div className="settings-inline-muted">{t("settings.mcpPanel.noRuntimeServers")}</div>
                     ) : (
-                      <div className="settings-mcp-list">
+                      <div className="settings-mcp-list flex flex-col gap-2">
                         {codexServers.map((server) => (
                           <div key={`codex-runtime-${server.name}`} className="settings-mcp-codex-card">
-                            <div className="settings-mcp-codex-head">
-                              <div className="settings-mcp-server-name">
+                            <div className="settings-mcp-codex-head flex items-center justify-between gap-2">
+                              <div className="settings-mcp-server-name flex items-center gap-1.5 text-(--text-strong) text-[13px] font-semibold">
                                 <Server size={14} />
                                 {server.name}
                               </div>
-                              <span className="settings-mcp-auth">
+                              <span className="settings-mcp-auth text-[11px] text-(--text-muted) border border-(--border-muted) rounded-full px-2 py-0.5">
                                 {server.authLabel ?? t("settings.mcpPanel.authUnknown")}
                               </span>
                             </div>
-                            <div className="settings-mcp-codex-meta">
+                            <div className="settings-mcp-codex-meta mt-1.5 text-xs text-(--text-muted)">
                               {t("settings.mcpPanel.resourcesTemplates", {
                                 resources: server.resourcesCount,
                                 templates: server.templatesCount,
                               })}
                             </div>
-                            <div className="settings-mcp-tools">
+                            <div className="settings-mcp-tools mt-2 flex flex-wrap gap-1.5">
                               {server.toolNames.length === 0 ? (
                                 <span className="settings-inline-muted">{t("settings.mcpPanel.noTools")}</span>
                               ) : (
                                 server.toolNames.map((tool) => (
-                                  <span key={`${server.name}-${tool}`} className="settings-mcp-tool-chip">
+                                  <span key={`${server.name}-${tool}`} className="settings-mcp-tool-chip border border-(--border-muted) bg-(--surface-control) rounded-full py-0.5 px-2 text-[11px] text-(--text-muted)">
                                     {tool}
                                   </span>
                                 ))
@@ -844,20 +844,20 @@ export function McpSection({
                     ) : openCodeSnapshot.mcpServers.length === 0 ? (
                       <div className="settings-inline-muted">{t("settings.mcpPanel.noRuntimeServers")}</div>
                     ) : (
-                      <div className="settings-mcp-list">
+                      <div className="settings-mcp-list flex flex-col gap-2">
                         {openCodeSnapshot.mcpServers.map((server) => (
                           <div key={`opencode-${server.name}`} className="settings-mcp-server-row">
                             <div>
-                              <div className="settings-mcp-server-name">
+                              <div className="settings-mcp-server-name flex items-center gap-1.5 text-(--text-strong) text-[13px] font-semibold">
                                 <Server size={14} />
                                 {server.name}
                               </div>
-                              <div className="settings-mcp-server-meta">
+                              <div className="settings-mcp-server-meta mt-0.5 text-(--text-muted) text-xs">
                                 {server.status ?? t("settings.mcpPanel.statusUnknown")}
                                 {server.permissionHint ? ` · ${server.permissionHint}` : ""}
                               </div>
                             </div>
-                            <span className="settings-mcp-auth">
+                            <span className="settings-mcp-auth text-[11px] text-(--text-muted) border border-(--border-muted) rounded-full px-2 py-0.5">
                               {server.enabled ? t("settings.mcpPanel.enabled") : t("settings.mcpPanel.disabled")}
                             </span>
                           </div>
@@ -871,12 +871,12 @@ export function McpSection({
       </div>
 
       {!loading && engineStatuses.length === 0 && !error ? (
-        <div className="settings-mcp-codex-card settings-mcp-empty-state">
+        <div className="settings-mcp-codex-card settings-mcp-empty-state mt-3">
           <div className="settings-mcp-panel-title">
             <TriangleAlert size={15} />
             {t("settings.mcpPanel.detectEmptyTitle")}
           </div>
-          <div className="settings-mcp-server-meta">{t("settings.mcpPanel.detectEmptyDesc")}</div>
+          <div className="settings-mcp-server-meta mt-0.5 text-(--text-muted) text-xs">{t("settings.mcpPanel.detectEmptyDesc")}</div>
         </div>
       ) : null}
     </section>

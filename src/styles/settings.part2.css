@@ -1,62 +1,21 @@
-/* About section in Settings */
-.settings-about-section {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  flex: 1;
-  padding: 24px;
-  text-align: center;
-  gap: 8px;
-}
-
-.settings-about-name {
-  font-size: 22px;
-  font-weight: 700;
-  color: var(--text-strong);
-  letter-spacing: -0.02em;
-}
-
-.settings-about-version {
-  font-size: 10px;
-  color: var(--text-muted);
-  font-weight: 400;
-  vertical-align: super;
-  margin-left: 3px;
-  opacity: 0.6;
-}
-
-.settings-about-tagline {
-  font-size: 13px;
-  color: var(--text-subtle);
-  max-width: 300px;
-}
-
-.settings-about-links {
-  margin-top: 12px;
-  display: flex;
-  gap: 12px;
-}
-
-.settings-about-wechat {
-  margin-top: 20px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 8px;
-}
-
-.settings-about-wechat-label {
-  font-size: 12px;
-  color: var(--text-muted);
-}
-
-.settings-about-wechat-qr {
-  width: 180px;
-  height: 180px;
-  border-radius: 12px;
-  object-fit: contain;
-}
+/*
+ * settings.part2.css — keeper after Tailwind migration.
+ * Inlined into TSX consumers: settings-about-* (SettingsView),
+ * settings-sidebar-toggle (SettingsView),
+ * settings-placeholder-notice (PlaceholderSection),
+ * settings-commit-* + settings-coming-soon-badge (CommitSection).
+ *
+ * Remaining rules are kept because they involve:
+ *   - State-combinator cascades (.is-collapsed, .active, :hover, :focus)
+ *   - Responsive @media queries (sidebar threshold, grid reflows)
+ *   - @keyframes (settings-spin)
+ *   - Cross-section descendant selectors (.settings-content [data-slot=...])
+ *   - Shared widget primitives used across many TSX files
+ *     (settings-section, settings-toggle-row, settings-input/select/control,
+ *     settings-usage-*, settings-mcp-*, settings-prompt-*)
+ *   - Test-pinned cascade (.settings-email-card; see
+ *     settings-email-card-surface.test.ts)
+ */
 
 /* Sidebar collapse support */
 .settings-sidebar.is-collapsed {
@@ -79,62 +38,6 @@
 .settings-sidebar.is-collapsed .settings-nav svg,
 .settings-sidebar.is-collapsed .settings-nav .codicon {
   margin: 0;
-}
-
-.settings-sidebar-toggle {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  align-self: center;
-  width: 28px;
-  height: 28px;
-  margin-top: auto;
-  padding: 0;
-  border-radius: 999px;
-  color: var(--text-muted);
-  background: transparent;
-  border: none;
-  cursor: pointer;
-  transition: background-color 120ms ease, color 120ms ease;
-}
-
-.settings-sidebar-toggle:hover {
-  background: var(--surface-hover);
-  color: var(--text-strong);
-}
-
-.settings-sidebar-toggle:focus-visible {
-  outline: 2px solid var(--primary);
-  outline-offset: 2px;
-}
-
-/* Basic settings sub-tabs */
-.settings-basic-tabs {
-  display: flex;
-  gap: 0;
-  border-bottom: 1px solid var(--border-muted);
-  margin-bottom: 16px;
-}
-
-.settings-basic-tab {
-  padding: 8px 16px;
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--text-muted);
-  background: transparent;
-  border: none;
-  border-bottom: 2px solid transparent;
-  cursor: pointer;
-  transition: color 120ms ease, border-color 120ms ease;
-}
-
-.settings-basic-tab:hover {
-  color: var(--text-strong);
-}
-
-.settings-basic-tab.active {
-  color: var(--text-strong);
-  border-bottom-color: var(--primary);
 }
 
 /* Behavior shortcut cards */
@@ -192,78 +95,6 @@
   color: var(--text-muted);
 }
 
-/* Placeholder / Coming Soon */
-.settings-placeholder-notice {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 12px;
-  padding: 48px 24px;
-  color: var(--text-muted);
-  text-align: center;
-}
-
-.settings-placeholder-notice .codicon {
-  font-size: 32px;
-  opacity: 0.4;
-}
-
-.settings-placeholder-notice p {
-  font-size: 14px;
-  margin: 0;
-}
-
-/* Commit section */
-.settings-commit-prompt-wrapper {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin-bottom: 8px;
-}
-
-.settings-commit-textarea {
-  width: 100%;
-  min-height: 120px;
-  padding: 10px 12px;
-  font-size: 13px;
-  line-height: 1.5;
-  color: var(--text-strong);
-  background: var(--surface-input, var(--background));
-  border: 1px solid var(--border-muted);
-  border-radius: 6px;
-  resize: vertical;
-  font-family: inherit;
-}
-
-.settings-commit-textarea:focus {
-  border-color: var(--primary);
-  outline: none;
-}
-
-.settings-commit-textarea--disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.settings-commit-preview {
-  margin-top: 24px;
-  position: relative;
-}
-
-.settings-coming-soon-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 2px 10px;
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--primary);
-  background: color-mix(in srgb, var(--primary) 12%, transparent);
-  border-radius: 12px;
-  margin-bottom: 12px;
-}
-
 .is-spin {
   animation: settings-spin 0.9s linear infinite;
 }
@@ -302,12 +133,6 @@
   color: color-mix(in srgb, var(--status-success, #2e7d32) 85%, var(--text-strong));
   background: color-mix(in srgb, var(--status-success, #2e7d32) 12%, transparent);
   border: 1px solid color-mix(in srgb, var(--status-success, #2e7d32) 28%, transparent);
-}
-
-.settings-email-section {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
 }
 
 .settings-email-card {
@@ -354,47 +179,6 @@
   gap: 10px;
   padding: 0 16px 16px;
   background: var(--surface-card);
-}
-
-.settings-form-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 14px;
-}
-
-.settings-button-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-  align-items: center;
-}
-
-@media (max-width: 760px) {
-  .settings-form-grid {
-    grid-template-columns: 1fr;
-  }
-}
-
-.settings-segmented {
-  display: inline-flex;
-  border: 1px solid var(--border-muted);
-  border-radius: 8px;
-  overflow: hidden;
-  background: var(--surface-card);
-}
-
-.settings-segmented-btn {
-  border: 0;
-  background: transparent;
-  color: var(--text-muted);
-  font-size: 12px;
-  padding: 6px 10px;
-  cursor: pointer;
-}
-
-.settings-segmented-btn.active {
-  color: var(--text-strong);
-  background: var(--surface-hover);
 }
 
 .settings-usage-toolbar,
@@ -483,99 +267,6 @@
 
 .settings-prompt-toolbar--secondary {
   margin-top: -2px;
-}
-
-.settings-usage-cards {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: 8px;
-  margin-top: 12px;
-}
-
-.settings-usage-card {
-  padding: 10px 12px;
-  border: 1px solid var(--border-muted);
-  border-radius: 8px;
-  background: var(--surface-card);
-}
-
-.settings-usage-card-label {
-  font-size: 12px;
-  color: var(--text-muted);
-}
-
-.settings-usage-card-value {
-  margin-top: 6px;
-  font-size: 20px;
-  font-weight: 600;
-  color: var(--text-strong);
-}
-
-.settings-usage-card-value--small {
-  font-size: 13px;
-  font-weight: 500;
-}
-
-.settings-usage-chart {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(28px, 1fr));
-  gap: 6px;
-  margin-bottom: 10px;
-}
-
-.settings-usage-bar-item {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 6px;
-}
-
-.settings-usage-bar-track {
-  height: 84px;
-  width: 100%;
-  border-radius: 6px;
-  background: var(--surface-card);
-  border: 1px solid var(--border-muted);
-  display: flex;
-  align-items: flex-end;
-  overflow: hidden;
-}
-
-.settings-usage-bar-fill {
-  width: 100%;
-  border-radius: 4px;
-  background: color-mix(in srgb, var(--primary) 80%, transparent);
-}
-
-.settings-usage-bar-label {
-  font-size: 11px;
-  color: var(--text-faint);
-}
-
-.settings-usage-models {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.settings-usage-model-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 8px 10px;
-  border: 1px solid var(--border-muted);
-  border-radius: 8px;
-  background: var(--surface-card);
-  font-size: 12px;
-}
-
-.settings-usage-model-name {
-  color: var(--text-strong);
-  font-weight: 500;
-}
-
-.settings-usage-model-meta {
-  color: var(--text-muted);
 }
 
 .settings-usage-panel {
@@ -1353,17 +1044,6 @@
   width: 220px;
 }
 
-.settings-mcp-global {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 12px;
-  padding: 12px;
-  border-radius: 8px;
-  border: 1px solid var(--border-muted);
-  background: var(--surface-card);
-}
-
 .settings-mcp-server-row,
 .settings-mcp-codex-card {
   border: 1px solid var(--border-muted);
@@ -1479,10 +1159,6 @@
   word-break: break-word;
 }
 
-.settings-mcp-empty-state {
-  margin-top: 12px;
-}
-
 @media (max-width: 900px) {
   .settings-mcp-section-header {
     align-items: stretch;
@@ -1495,125 +1171,12 @@
   }
 }
 
-.settings-mcp-codex-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-}
-
-.settings-mcp-codex-meta {
-  margin-top: 6px;
-  font-size: 12px;
-  color: var(--text-muted);
-}
-
-.settings-mcp-tools {
-  margin-top: 8px;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.settings-mcp-tool-chip {
-  border: 1px solid var(--border-muted);
-  background: var(--surface-control);
-  border-radius: 999px;
-  padding: 2px 8px;
-  font-size: 11px;
-  color: var(--text-muted);
-}
-
-
-.settings-prompt-editor-card,
-.settings-prompt-card {
-  border: 1px solid var(--border-muted);
-  border-radius: 10px;
-  background: var(--surface-card);
-}
-
-.settings-prompt-editor-card {
-  margin-top: 8px;
-  padding: 12px;
-}
-
-.settings-prompt-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: 10px;
-  margin-bottom: 10px;
-}
-
 .settings-field {
   display: flex;
   flex-direction: column;
   gap: 6px;
   font-size: 12px;
   color: var(--text-muted);
-}
-
-.settings-prompt-textarea {
-  min-height: 140px;
-}
-
-.settings-prompt-actions {
-  margin-top: 10px;
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
-}
-
-.settings-prompt-list {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.settings-prompt-card {
-  padding: 10px 12px;
-}
-
-.settings-prompt-card-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-}
-
-.settings-prompt-name {
-  font-size: 13px;
-  color: var(--text-strong);
-  font-weight: 600;
-}
-
-.settings-prompt-card-actions {
-  display: flex;
-  gap: 6px;
-  flex-wrap: wrap;
-}
-
-.settings-prompt-description {
-  margin-top: 6px;
-  font-size: 12px;
-  color: var(--text-subtle);
-}
-
-.settings-prompt-meta {
-  margin-top: 4px;
-  font-size: 11px;
-  color: var(--text-muted);
-}
-
-.settings-prompt-content-preview {
-  margin-top: 8px;
-  font-size: 12px;
-  color: var(--text-strong);
-  white-space: pre-wrap;
-  word-break: break-word;
-  border-top: 1px dashed var(--border-muted);
-  padding-top: 8px;
-  max-height: 120px;
-  overflow: auto;
 }
 
 /* Responsive sidebar collapse threshold */

@@ -451,15 +451,15 @@ export function PromptSection({
           </div>
 
           {showImport && (
-            <div className="settings-prompt-editor-card">
+            <div className="settings-prompt-editor-card border border-(--border-muted) rounded-[10px] bg-(--surface-card) mt-2 p-3">
               <div className="settings-subsection-title">{t("settings.prompt.importTitle")}</div>
               <Textarea
-                className="settings-prompt-textarea"
+                className="settings-prompt-textarea min-h-[140px]"
                 value={importText}
                 onChange={(event) => setImportText(event.target.value)}
                 placeholder={t("settings.prompt.importPlaceholder")}
               />
-              <div className="settings-prompt-actions">
+              <div className="settings-prompt-actions mt-2.5 flex justify-end gap-2">
                 <Button
                   type="button"
                   variant="outline"
@@ -480,13 +480,13 @@ export function PromptSection({
           )}
 
           {editor && (
-            <div className="settings-prompt-editor-card">
+            <div className="settings-prompt-editor-card border border-(--border-muted) rounded-[10px] bg-(--surface-card) mt-2 p-3">
               <div className="settings-subsection-title">
                 {editor.mode === "create"
                   ? t("settings.prompt.create")
                   : t("settings.prompt.edit")}
               </div>
-              <div className="settings-prompt-grid">
+              <div className="settings-prompt-grid grid gap-2.5 mb-2.5" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))" }}>
                 <label className="settings-field">
                   <span>{t("settings.prompt.name")}</span>
                   <Input
@@ -544,7 +544,7 @@ export function PromptSection({
               <label className="settings-field">
                 <span>{t("settings.prompt.contentLabel")}</span>
                 <Textarea
-                  className="settings-prompt-textarea"
+                  className="settings-prompt-textarea min-h-[140px]"
                   value={editor.content}
                   onChange={(event) =>
                     setEditor((prev) =>
@@ -553,7 +553,7 @@ export function PromptSection({
                   }
                 />
               </label>
-              <div className="settings-prompt-actions">
+              <div className="settings-prompt-actions mt-2.5 flex justify-end gap-2">
                 <Button
                   type="button"
                   variant="outline"
@@ -577,17 +577,17 @@ export function PromptSection({
           {!loading && groupedPrompts.workspace.length === 0 && groupedPrompts.global.length === 0 ? (
             <div className="settings-inline-muted">{t("settings.prompt.empty")}</div>
           ) : (
-            <div className="settings-prompt-list">
+            <div className="settings-prompt-list flex flex-col gap-2">
               {groupedPrompts.workspace.length > 0 && (
                 <>
                   <div className="settings-subsection-title">
                     {t("settings.prompt.scopeWorkspace")}
                   </div>
                   {groupedPrompts.workspace.map((prompt) => (
-                    <div key={prompt.path} className="settings-prompt-card">
-                      <div className="settings-prompt-card-head">
-                        <div className="settings-prompt-name">{prompt.name}</div>
-                        <div className="settings-prompt-card-actions">
+                    <div key={prompt.path} className="settings-prompt-card border border-(--border-muted) rounded-[10px] bg-(--surface-card) py-2.5 px-3">
+                      <div className="settings-prompt-card-head flex items-center justify-between gap-2">
+                        <div className="settings-prompt-name text-[13px] text-(--text-strong) font-semibold">{prompt.name}</div>
+                        <div className="settings-prompt-card-actions flex gap-1.5 flex-wrap">
                           <Button
                             type="button"
                             variant="outline"
@@ -618,14 +618,14 @@ export function PromptSection({
                         </div>
                       </div>
                       {prompt.description && (
-                        <div className="settings-prompt-description">{prompt.description}</div>
+                        <div className="settings-prompt-description mt-1.5 text-xs text-(--text-subtle)">{prompt.description}</div>
                       )}
                       {prompt.argumentHint && (
-                        <div className="settings-prompt-meta">
+                        <div className="settings-prompt-meta mt-1 text-[11px] text-(--text-muted)">
                           {t("settings.prompt.argumentHintLabel")}: {prompt.argumentHint}
                         </div>
                       )}
-                      <div className="settings-prompt-content-preview">
+                      <div className="settings-prompt-content-preview mt-2 text-xs text-(--text-strong) whitespace-pre-wrap break-words border-t border-dashed border-(--border-muted) pt-2 max-h-[120px] overflow-auto">
                         {prompt.content}
                       </div>
                     </div>
@@ -639,10 +639,10 @@ export function PromptSection({
                     {t("settings.prompt.scopeGlobal")}
                   </div>
                   {groupedPrompts.global.map((prompt) => (
-                    <div key={prompt.path} className="settings-prompt-card">
-                      <div className="settings-prompt-card-head">
-                        <div className="settings-prompt-name">{prompt.name}</div>
-                        <div className="settings-prompt-card-actions">
+                    <div key={prompt.path} className="settings-prompt-card border border-(--border-muted) rounded-[10px] bg-(--surface-card) py-2.5 px-3">
+                      <div className="settings-prompt-card-head flex items-center justify-between gap-2">
+                        <div className="settings-prompt-name text-[13px] text-(--text-strong) font-semibold">{prompt.name}</div>
+                        <div className="settings-prompt-card-actions flex gap-1.5 flex-wrap">
                           <Button
                             type="button"
                             variant="outline"
@@ -673,14 +673,14 @@ export function PromptSection({
                         </div>
                       </div>
                       {prompt.description && (
-                        <div className="settings-prompt-description">{prompt.description}</div>
+                        <div className="settings-prompt-description mt-1.5 text-xs text-(--text-subtle)">{prompt.description}</div>
                       )}
                       {prompt.argumentHint && (
-                        <div className="settings-prompt-meta">
+                        <div className="settings-prompt-meta mt-1 text-[11px] text-(--text-muted)">
                           {t("settings.prompt.argumentHintLabel")}: {prompt.argumentHint}
                         </div>
                       )}
-                      <div className="settings-prompt-content-preview">
+                      <div className="settings-prompt-content-preview mt-2 text-xs text-(--text-strong) whitespace-pre-wrap break-words border-t border-dashed border-(--border-muted) pt-2 max-h-[120px] overflow-auto">
                         {prompt.content}
                       </div>
                     </div>

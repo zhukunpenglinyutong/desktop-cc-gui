@@ -453,35 +453,35 @@ export const CollapsibleUserTextBlock = memo(function CollapsibleUserTextBlock({
   }, [content]);
 
   return (
-    <div className={`user-collapsible-block ${expanded ? "is-expanded" : "is-collapsed"}`}>
+    <div className={`user-collapsible-block flex flex-col w-full ${expanded ? "is-expanded" : "is-collapsed"}`}>
       <div
-        className={`user-collapsible-content${hasMeasuredOverflow ? " is-measured" : " is-measuring"}`}
+        className={`user-collapsible-content relative [transition:max-height_0.3s_ease-out]${hasMeasuredOverflow ? " is-measured" : " is-measuring [transition:none]"}`}
         ref={contentRef}
         style={{
           maxHeight: expanded || !isOverflowing ? "none" : `${MAX_COLLAPSED_HEIGHT}px`,
           overflow: "hidden",
         }}
       >
-        <div className="user-collapsible-text-content">
+        <div className="user-collapsible-text-content text-inherit whitespace-pre-wrap break-words">
           <span>{parsedContent.plainText}</span>
         </div>
         {parsedContent.references.length > 0 ? (
-          <div className="user-reference-card" aria-label="Referenced files and folders">
-            <div className="user-reference-card-title">References</div>
-            <div className="user-reference-card-list">
+          <div className="user-reference-card mt-2 pt-1.5 border-t border-[color-mix(in_srgb,var(--color-message-user-text,#ffffff)_18%,transparent)]" aria-label="Referenced files and folders">
+            <div className="user-reference-card-title text-[10px] tracking-[0.03em] uppercase text-[color-mix(in_srgb,var(--color-message-user-text,#ffffff)_62%,transparent)] mb-1">References</div>
+            <div className="user-reference-card-list flex flex-col gap-[3px]">
               {parsedContent.references.map((reference) => (
                 <div
                   key={reference.path}
-                  className="user-reference-card-item"
+                  className="user-reference-card-item inline-flex items-center gap-2 min-w-0 py-0.5"
                   title={reference.path}
                 >
-                  <span className="user-reference-card-icon" aria-hidden>
+                  <span className="user-reference-card-icon inline-flex items-center justify-center w-[18px] h-[18px] flex-none rounded-[5px] [background:linear-gradient(180deg,color-mix(in_srgb,#ffffff_30%,transparent)_0%,color-mix(in_srgb,#ffffff_20%,transparent)_100%)] [box-shadow:inset_0_0_0_1px_color-mix(in_srgb,#ffffff_36%,transparent),0_0_0_1px_color-mix(in_srgb,#000000_16%,transparent)] [&_.file-icon]:inline-flex [&_.file-icon]:items-center [&_.file-icon]:justify-center [&_.file-icon_svg]:w-[14px] [&_.file-icon_svg]:h-[14px] [&_.file-icon_svg]:[filter:saturate(1.35)_contrast(1.35)_brightness(1.2)_drop-shadow(0_0_0.55px_color-mix(in_srgb,#000000_45%,transparent))]" aria-hidden>
                     <FileIcon filePath={reference.path} isFolder={reference.isDirectory} />
                   </span>
-                  <span className="user-reference-card-meta">
-                    <span className="user-reference-card-name">{reference.displayName}</span>
+                  <span className="user-reference-card-meta inline-flex flex-col min-w-0 leading-[1.15]">
+                    <span className="user-reference-card-name max-w-full overflow-hidden text-ellipsis whitespace-nowrap text-[11px] font-semibold">{reference.displayName}</span>
                     {reference.parentPath ? (
-                      <span className="user-reference-card-parent">{reference.parentPath}</span>
+                      <span className="user-reference-card-parent max-w-full overflow-hidden text-ellipsis whitespace-nowrap text-[10px] opacity-[0.72]">{reference.parentPath}</span>
                     ) : null}
                   </span>
                 </div>
@@ -489,12 +489,12 @@ export const CollapsibleUserTextBlock = memo(function CollapsibleUserTextBlock({
             </div>
           </div>
         ) : null}
-        {!expanded && isOverflowing ? <div className="user-collapsible-overlay" /> : null}
+        {!expanded && isOverflowing ? <div className="user-collapsible-overlay absolute bottom-0 -left-3.5 w-[calc(100%+28px)] h-[60px] [background:linear-gradient(to_bottom,transparent,var(--color-message-user-bg,var(--surface-bubble-user)))] pointer-events-none z-[1]" /> : null}
       </div>
       {isOverflowing ? (
         <button
           type="button"
-          className="user-collapsible-toggle"
+          className="user-collapsible-toggle flex justify-center items-center w-[calc(100%+28px)] h-5 mt-0 -mr-3.5 -mb-2.5 -ml-3.5 py-0.5 border-0 border-t border-[color-mix(in_srgb,var(--color-message-user-text,#ffffff)_18%,transparent)] rounded-b-xl [background:var(--color-message-user-bg,var(--surface-bubble-user))] text-[color-mix(in_srgb,var(--color-message-user-text,#ffffff)_74%,transparent)] cursor-pointer [transition:color_0.2s_ease] hover:[background:var(--color-message-user-bg,var(--surface-bubble-user))] hover:text-[var(--color-message-user-text,#ffffff)] [&_.codicon]:text-[14px] [&_.codicon]:[transition:transform_0.2s] [&_.codicon.is-expanded]:[transform:rotate(180deg)]"
           onClick={() => setExpanded((current) => !current)}
           aria-expanded={expanded}
           aria-label={expanded ? t("messages.collapseInput") : t("messages.expandInput")}
@@ -519,20 +519,20 @@ export const UserCodeAnnotationContextBlock = memo(function UserCodeAnnotationCo
 
   return (
     <div
-      className={`message-code-annotation-context${expanded ? " is-expanded" : " is-collapsed"}`}
+      className={`message-code-annotation-context w-[min(720px,100%)] grid gap-1.5 px-2.5 py-2 rounded-xl border border-(--border-subtle) bg-(--surface-card)${expanded ? " is-expanded" : " is-collapsed py-1.75 px-2.25 rounded-[10px]"}`}
       aria-label={t("messages.codeAnnotations")}
     >
-      <div className="message-code-annotation-context-head">
-        <div className="message-code-annotation-context-title">
+      <div className="message-code-annotation-context-head flex items-center justify-between gap-3 min-w-0">
+        <div className="message-code-annotation-context-title inline-flex items-center gap-1.5 min-w-0 text-(--text-muted) text-[11px] font-[650] tracking-[0.01em] [&_.codicon]:text-(--text-faint) [&_.codicon]:text-[13px]">
           <span className="codicon codicon-comment-discussion" aria-hidden />
           <span>{t("messages.codeAnnotations")}</span>
-          <span className="message-code-annotation-context-count">
+          <span className="message-code-annotation-context-count text-(--text-faint) text-[11px] font-[650] tracking-[0.01em] whitespace-nowrap">
             {t("messages.codeAnnotationContextCount", { count: annotations.length })}
           </span>
         </div>
         <button
           type="button"
-          className="message-code-annotation-context-toggle"
+          className="message-code-annotation-context-toggle flex-none inline-flex items-center justify-center gap-1.25 min-h-6 px-1.75 border border-(--border-subtle) rounded-full bg-(--surface-item) text-(--text-muted) cursor-pointer [transition:background-color_0.18s_ease,border-color_0.18s_ease,color_0.18s_ease] hover:bg-(--surface-hover) hover:border-(--border-strong) hover:text-(--text-primary)"
           onClick={() => setExpanded((current) => !current)}
           aria-expanded={expanded}
           aria-label={
@@ -541,39 +541,39 @@ export const UserCodeAnnotationContextBlock = memo(function UserCodeAnnotationCo
               : t("messages.expandCodeAnnotations")
           }
         >
-          <span className="message-code-annotation-context-toggle-label">
+          <span className="message-code-annotation-context-toggle-label text-[11px] font-[650] leading-none whitespace-nowrap">
             {expanded ? t("messages.collapse") : t("messages.expand")}
           </span>
           <span
-            className={`codicon codicon-chevron-down message-code-annotation-context-toggle-icon${expanded ? " is-expanded" : ""}`}
+            className={`codicon codicon-chevron-down message-code-annotation-context-toggle-icon text-current text-[13px] [transition:transform_0.18s_ease]${expanded ? " is-expanded [transform:rotate(180deg)]" : ""}`}
             aria-hidden
           />
         </button>
       </div>
       {expanded ? (
-        <div className="message-code-annotation-context-list">
+        <div className="message-code-annotation-context-list grid gap-1.5">
           {annotations.map((annotation, index) => (
             <div
               key={`${annotation.path}-${annotation.lineRange}-${index}`}
-              className="message-code-annotation-context-item"
+              className="message-code-annotation-context-item grid grid-cols-[auto_minmax(0,1fr)] items-start gap-2 min-w-0 py-1.75 px-2 rounded-[9px] border border-(--border-subtle) bg-(--surface-item)"
               title={`${annotation.path}#${annotation.lineRange}`}
             >
-              <span className="message-code-annotation-context-icon" aria-hidden>
+              <span className="message-code-annotation-context-icon inline-flex items-center justify-center w-[22px] h-[22px] rounded-[7px] border border-(--border-subtle) bg-(--surface-card) [&_.file-icon_svg]:w-3.5 [&_.file-icon_svg]:h-3.5" aria-hidden>
                 <FileIcon filePath={annotation.path} isFolder={false} />
               </span>
-              <span className="message-code-annotation-context-meta">
-                <span className="message-code-annotation-context-reference">
-                  <span className="message-code-annotation-context-name">
+              <span className="message-code-annotation-context-meta grid gap-0.5 min-w-0">
+                <span className="message-code-annotation-context-reference inline-flex items-center gap-1.75 min-w-0 [&_code]:flex-none [&_code]:px-1.25 [&_code]:py-px [&_code]:rounded-full [&_code]:border [&_code]:border-(--border-subtle) [&_code]:bg-(--surface-card) [&_code]:text-(--text-muted) [&_code]:text-[10px] [&_code]:font-mono">
+                  <span className="message-code-annotation-context-name min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-(--text-primary) text-xs font-bold">
                     {annotation.displayName}
                   </span>
                   <code>{annotation.lineRange}</code>
                 </span>
                 {annotation.parentPath ? (
-                  <span className="message-code-annotation-context-parent">
+                  <span className="message-code-annotation-context-parent min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-(--text-faint) text-[10px]">
                     {annotation.parentPath}
                   </span>
                 ) : null}
-                <span className="message-code-annotation-context-body">
+                <span className="message-code-annotation-context-body text-(--text-primary) text-xs font-semibold leading-[1.35] whitespace-pre-wrap break-words">
                   {annotation.body}
                 </span>
               </span>

@@ -1629,7 +1629,7 @@ export function SettingsView({
             </button>
             <button
               type="button"
-              className="settings-sidebar-toggle"
+              className="settings-sidebar-toggle inline-flex items-center justify-center self-center w-7 h-7 mt-auto p-0 rounded-full text-(--text-muted) bg-transparent border-0 cursor-pointer transition-[background-color,color] duration-[120ms] ease-out hover:bg-(--surface-hover) hover:text-(--text-strong) focus-visible:outline-2 focus-visible:outline-(--primary) focus-visible:outline-offset-2"
               onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
               aria-label={sidebarCollapsed ? t("settings.sidebarExpand") : t("settings.sidebarCollapse")}
               title={sidebarCollapsed ? t("settings.sidebarExpand") : t("settings.sidebarCollapse")}
@@ -2115,17 +2115,17 @@ export function SettingsView({
               </section>
             )}
             {activeSection === "community" && (
-              <section className="settings-section settings-about-section w-full max-w-[980px] text-(--text-strong)">
-                <div className="settings-about-name">
+              <section className="settings-section settings-about-section w-full max-w-[980px] text-(--text-strong) flex flex-col items-center justify-center flex-1 p-6 text-center gap-2">
+                <div className="settings-about-name text-[22px] font-bold text-(--text-strong) tracking-[-0.02em]">
                   ccgui
                   {appVersion && (
-                    <span className="settings-about-version">{appVersion}</span>
+                    <span className="settings-about-version text-[10px] text-(--text-muted) font-normal align-super ml-[3px] opacity-60">{appVersion}</span>
                   )}
                 </div>
-                <div className="settings-about-tagline">
+                <div className="settings-about-tagline text-[13px] text-(--text-subtle) max-w-[300px]">
                   {t("about.tagline")}
                 </div>
-                <div className="settings-about-links">
+                <div className="settings-about-links mt-3 flex gap-3">
                   <button
                     type="button"
                     className="ghost"
@@ -2134,10 +2134,10 @@ export function SettingsView({
                     {t("about.github")}
                   </button>
                 </div>
-                <div className="settings-about-wechat">
-                  <div className="settings-about-wechat-label">{t("about.wechatGroupTitle")}</div>
+                <div className="settings-about-wechat mt-5 flex flex-col items-center gap-2">
+                  <div className="settings-about-wechat-label text-xs text-(--text-muted)">{t("about.wechatGroupTitle")}</div>
                   <img
-                    className="settings-about-wechat-qr"
+                    className="settings-about-wechat-qr w-[180px] h-[180px] rounded-xl object-contain"
                     src={wxqImage}
                     alt={t("about.wechatGroupTitle")}
                   />

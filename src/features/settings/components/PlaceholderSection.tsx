@@ -22,7 +22,7 @@ export function PlaceholderSection({ type }: PlaceholderSectionProps) {
     <section className="settings-section">
       <div className="settings-section-title text-[15px] font-semibold text-(--text-strong) mb-1">{title}</div>
       <div className="settings-section-subtitle text-xs text-(--text-subtle) mb-4">{desc}</div>
-      <div className="settings-placeholder-notice">
+      <div className="settings-placeholder-notice flex flex-col items-center justify-center gap-3 py-12 px-6 text-(--text-muted) text-center [&_.codicon]:text-[32px] [&_.codicon]:opacity-40 [&_p]:text-sm [&_p]:m-0">
         <span className={`codicon ${icon}`} />
         <p>{t("settings.placeholder.comingSoon")}</p>
       </div>

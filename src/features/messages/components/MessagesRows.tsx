@@ -688,13 +688,13 @@ const NoteCardContextSummaryCard = memo(function NoteCardContextSummaryCard({
 
   return (
     <>
-      <div className="note-card-context-summary-card">
-        <div className="note-card-context-summary-head">
-          <div className="note-card-context-summary-head-copy">
-            <span className="note-card-context-summary-title">
+      <div className="note-card-context-summary-card w-[min(720px,100%)] grid gap-2 px-3.5 py-3 rounded-2xl border border-[color-mix(in_srgb,var(--border-strong)_82%,transparent)] [background:linear-gradient(180deg,color-mix(in_srgb,var(--surface-card)_95%,var(--accent-primary,var(--accent,#2563eb))_5%),color-mix(in_srgb,var(--surface-card)_98%,var(--surface-panel,transparent)_2%))]">
+        <div className="note-card-context-summary-head flex items-center gap-2.5">
+          <div className="note-card-context-summary-head-copy min-w-0 inline-flex items-center gap-2.5">
+            <span className="note-card-context-summary-title text-xs font-bold tracking-[0.08em] uppercase text-[color-mix(in_srgb,var(--text-muted)_72%,var(--accent-primary,var(--accent,#2563eb))_28%)]">
               {t("messages.noteCardContextSummary")}
             </span>
-            <span className="note-card-context-summary-count">
+            <span className="note-card-context-summary-count text-[11px] text-(--text-faint)">
               {t("messages.noteCardContextSummaryCount", {
                 count: summary.notes.length,
               })}
@@ -702,7 +702,7 @@ const NoteCardContextSummaryCard = memo(function NoteCardContextSummaryCard({
           </div>
           <button
             type="button"
-            className="note-card-context-summary-toggle"
+            className="note-card-context-summary-toggle ml-auto min-h-[30px] inline-flex items-center justify-center gap-1.5 pr-1.5 pl-2.5 border border-[color-mix(in_srgb,var(--border-subtle)_82%,transparent)] rounded-full [background:color-mix(in_srgb,var(--surface-item)_82%,var(--surface-card))] text-(--text-strong) cursor-pointer [transition:background-color_0.18s_ease,border-color_0.18s_ease,color_0.18s_ease,transform_0.18s_ease] hover:[background:color-mix(in_srgb,var(--surface-active)_76%,var(--surface-card))] hover:border-[color-mix(in_srgb,var(--accent-primary,var(--accent,#2563eb))_48%,var(--border-strong))] hover:[transform:translateY(-1px)]"
             onClick={() => setIsExpanded((current) => !current)}
             aria-expanded={isExpanded}
             aria-label={
@@ -716,17 +716,17 @@ const NoteCardContextSummaryCard = memo(function NoteCardContextSummaryCard({
                 : t("messages.noteCardContextExpand")
             }
           >
-            <span className="note-card-context-summary-toggle-label">
+            <span className="note-card-context-summary-toggle-label text-[11px] leading-none whitespace-nowrap">
               {isExpanded
                 ? t("messages.noteCardContextCollapse")
                 : t("messages.noteCardContextExpand")}
             </span>
-            <span className="note-card-context-summary-toggle-icon" aria-hidden>
+            <span className="note-card-context-summary-toggle-icon w-5 h-5 inline-flex items-center justify-center rounded-full [background:color-mix(in_srgb,var(--accent-primary,var(--accent,#2563eb))_16%,transparent)] text-[color-mix(in_srgb,var(--accent-primary,var(--accent,#2563eb))_80%,var(--text-strong)_20%)] [&_svg]:w-3.5 [&_svg]:h-3.5 [&_svg]:block [&_svg]:stroke-current [&_svg]:[stroke-width:2.4px] [&_svg]:fill-none" aria-hidden>
               {isExpanded ? <ChevronUp size={14} aria-hidden /> : <ChevronDown size={14} aria-hidden />}
             </span>
           </button>
         </div>
-        <div className="note-card-context-summary-list">
+        <div className="note-card-context-summary-list grid gap-0">
           {summary.notes.map((note, index) => {
             const noteTitle = note.title.trim() || t("noteCards.untitled");
             const bodyPreview = buildNoteCardBodyPreview(note.bodyMarkdown);
@@ -736,18 +736,18 @@ const NoteCardContextSummaryCard = memo(function NoteCardContextSummaryCard({
             return (
               <article
                 key={`${noteTitle}-${index}`}
-                className={`note-card-context-summary-note${isExpanded ? " is-expanded" : " is-collapsed"}`}
+                className={`note-card-context-summary-note grid gap-1.5 pt-2.5 pb-0 px-0 border-t border-[color-mix(in_srgb,var(--border-subtle)_68%,transparent)] bg-transparent first:pt-0 first:border-t-0${isExpanded ? " is-expanded" : " is-collapsed"}`}
               >
-                <div className="note-card-context-summary-note-head">
+                <div className="note-card-context-summary-note-head flex items-start justify-between gap-3 [&>strong]:block [&>strong]:min-w-0 [&>strong]:flex-1 [&>strong]:overflow-hidden [&>strong]:text-ellipsis [&>strong]:whitespace-nowrap [&>strong]:text-[13px] [&>strong]:text-(--text-strong)">
                   <strong>{noteTitle}</strong>
-                  <span className="note-card-context-summary-note-meta">
+                  <span className="note-card-context-summary-note-meta inline-flex items-center gap-1.5 flex-wrap">
                     {note.archived ? (
-                      <span className="note-card-context-summary-note-badge">
+                      <span className="note-card-context-summary-note-badge inline-flex items-center min-h-5 px-2 rounded-full border border-[color-mix(in_srgb,var(--border-subtle)_80%,transparent)] [background:color-mix(in_srgb,var(--surface-card)_80%,transparent)] text-[10px] text-(--text-muted)">
                         {t("composer.noteCardArchivedBadge")}
                       </span>
                     ) : null}
                     {note.attachments.length > 0 ? (
-                      <span className="note-card-context-summary-note-badge">
+                      <span className="note-card-context-summary-note-badge inline-flex items-center min-h-5 px-2 rounded-full border border-[color-mix(in_srgb,var(--border-subtle)_80%,transparent)] [background:color-mix(in_srgb,var(--surface-card)_80%,transparent)] text-[10px] text-(--text-muted)">
                         {t("noteCards.imageCount", { count: note.attachments.length })}
                       </span>
                     ) : null}
@@ -757,7 +757,7 @@ const NoteCardContextSummaryCard = memo(function NoteCardContextSummaryCard({
                   note.bodyMarkdown ? (
                     <Markdown
                       value={note.bodyMarkdown}
-                      className="markdown note-card-context-summary-markdown"
+                      className="markdown note-card-context-summary-markdown text-[13px] text-(--text-secondary)"
                       workspaceId={workspaceId}
                       codeBlockStyle="message"
                       codeBlockCopyUseModifier={codeBlockCopyUseModifier}
@@ -766,10 +766,10 @@ const NoteCardContextSummaryCard = memo(function NoteCardContextSummaryCard({
                     />
                   ) : null
                 ) : bodyPreview ? (
-                  <p className="note-card-context-summary-preview">{bodyPreview}</p>
+                  <p className="note-card-context-summary-preview m-0 text-xs leading-normal text-(--text-secondary) [display:-webkit-box] [-webkit-line-clamp:1] [-webkit-box-orient:vertical] overflow-hidden">{bodyPreview}</p>
                 ) : null}
                 {visibleAttachments.length > 0 ? (
-                  <div className="note-card-context-summary-images" role="list">
+                  <div className="note-card-context-summary-images grid grid-cols-[repeat(auto-fit,minmax(48px,52px))] gap-1.5" role="list">
                     {visibleAttachments.map((attachment, attachmentIndex) => {
                       const src =
                         normalizeMessageImageSrc(attachment.absolutePath)
@@ -780,7 +780,7 @@ const NoteCardContextSummaryCard = memo(function NoteCardContextSummaryCard({
                         <button
                           key={`${noteTitle}-${attachment.absolutePath}-${attachmentIndex}`}
                           type="button"
-                          className="note-card-context-summary-image"
+                          className="note-card-context-summary-image w-[52px] h-[52px] border border-[color-mix(in_srgb,var(--border-subtle)_72%,transparent)] p-0 rounded-[10px] overflow-hidden aspect-square [background:color-mix(in_srgb,var(--surface-item)_86%,transparent)] cursor-zoom-in [&_img]:block [&_img]:w-full [&_img]:h-full [&_img]:object-cover"
                           role="listitem"
                           onClick={() =>
                             setImagePreview({
@@ -1295,36 +1295,36 @@ export const MessageRow = memo(function MessageRow({
         </div>
       ) : null}
       {agentTaskNotification && agentTaskDisplay ? (
-        <div className="message-agent-task-card">
-          <div className="message-agent-task-header">
-            <div className="message-agent-task-avatar" aria-hidden>
+        <div className="message-agent-task-card grid gap-2.5 px-4 pt-3.5 pb-3 mb-2.5 rounded-[18px] border border-[color-mix(in_srgb,var(--border-strong)_84%,#2563eb_16%)] [background:linear-gradient(180deg,color-mix(in_srgb,var(--surface-card)_88%,#2563eb_12%)_0%,color-mix(in_srgb,var(--surface-card)_95%,transparent)_100%)] [box-shadow:0_16px_36px_color-mix(in_srgb,#020617_18%,transparent),inset_0_1px_0_color-mix(in_srgb,#ffffff_8%,transparent)]">
+          <div className="message-agent-task-header grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3">
+            <div className="message-agent-task-avatar w-[34px] h-[34px] rounded-xl inline-flex items-center justify-center bg-[color-mix(in_srgb,#2563eb_18%,var(--surface-card))] text-[color-mix(in_srgb,#2563eb_64%,var(--text-primary))] border border-[color-mix(in_srgb,#2563eb_22%,var(--border-strong))]" aria-hidden>
               <AgentIcon
                 seed={agentTaskDisplay.title || agentTaskNotification.taskId || item.id}
                 fallback="codicon-hubot"
-                className="message-agent-task-avatar-icon"
+                className="message-agent-task-avatar-icon inline-flex"
                 size={18}
               />
             </div>
-            <div className="message-agent-task-heading">
-              <span className="message-agent-task-eyebrow">Agent session</span>
-              <strong className="message-agent-task-title">{agentTaskDisplay.title}</strong>
+            <div className="message-agent-task-heading min-w-0 grid gap-0.5">
+              <span className="message-agent-task-eyebrow text-[11px] leading-none font-bold tracking-[0.08em] uppercase text-[color-mix(in_srgb,var(--text-muted)_84%,#2563eb_16%)]">Agent session</span>
+              <strong className="message-agent-task-title min-w-0 text-[15px] leading-tight font-bold text-(--text-primary)">{agentTaskDisplay.title}</strong>
               {agentTaskDisplay.subtitle ? (
-                <span className="message-agent-task-subtitle">{agentTaskDisplay.subtitle}</span>
+                <span className="message-agent-task-subtitle min-w-0 text-xs leading-tight text-(--text-secondary)">{agentTaskDisplay.subtitle}</span>
               ) : null}
             </div>
-            <span className={`message-agent-task-status is-${agentTaskDisplay.status.tone}`}>
+            <span className={`message-agent-task-status is-${agentTaskDisplay.status.tone} inline-flex items-center justify-center min-h-6 px-2.5 rounded-full border border-(--border-strong) bg-[color-mix(in_srgb,var(--surface-card)_88%,transparent)] text-[11px] font-bold tracking-[0.04em] uppercase text-(--text-secondary)`}>
               {agentTaskDisplay.status.label}
             </span>
           </div>
-          <div className="message-agent-task-meta">
+          <div className="message-agent-task-meta flex flex-wrap gap-2">
             {agentTaskNotification.taskId ? (
-              <span className="message-agent-task-chip">task {agentTaskNotification.taskId}</span>
+              <span className="message-agent-task-chip inline-flex items-center min-h-[22px] px-2.25 rounded-full bg-[color-mix(in_srgb,var(--surface-card)_92%,transparent)] border border-[color-mix(in_srgb,var(--border-strong)_92%,transparent)] text-(--text-secondary) text-[11px] leading-none whitespace-nowrap">task {agentTaskNotification.taskId}</span>
             ) : null}
             {agentTaskNotification.toolUseId ? (
-              <span className="message-agent-task-chip">tool {agentTaskNotification.toolUseId}</span>
+              <span className="message-agent-task-chip inline-flex items-center min-h-[22px] px-2.25 rounded-full bg-[color-mix(in_srgb,var(--surface-card)_92%,transparent)] border border-[color-mix(in_srgb,var(--border-strong)_92%,transparent)] text-(--text-secondary) text-[11px] leading-none whitespace-nowrap">tool {agentTaskNotification.toolUseId}</span>
             ) : null}
             {agentTaskDisplay.outputFileName ? (
-              <span className="message-agent-task-chip">{agentTaskDisplay.outputFileName}</span>
+              <span className="message-agent-task-chip inline-flex items-center min-h-[22px] px-2.25 rounded-full bg-[color-mix(in_srgb,var(--surface-card)_92%,transparent)] border border-[color-mix(in_srgb,var(--border-strong)_92%,transparent)] text-(--text-secondary) text-[11px] leading-none whitespace-nowrap">{agentTaskDisplay.outputFileName}</span>
             ) : null}
           </div>
         </div>
@@ -1337,38 +1337,38 @@ export const MessageRow = memo(function MessageRow({
         />
       )}
       {deferredImageItems.length > 0 ? (
-        <div className="message-deferred-image-list" role="list">
+        <div className="message-deferred-image-list grid gap-2 mb-2" role="list">
           {deferredImageItems.map((image, index) => {
             const key = deferredImageKey(image);
             const state = deferredImageStates[key] ?? { status: "idle" };
             return (
               <div
                 key={key}
-                className={`message-deferred-image is-${state.status}`}
+                className={`message-deferred-image is-${state.status} flex items-center justify-between gap-3 py-2.5 px-3 border border-dashed border-[color-mix(in_srgb,var(--border-strong)_72%,transparent)] rounded-2xl bg-[color-mix(in_srgb,var(--surface-item)_86%,transparent)]`}
                 role="listitem"
               >
                 {state.status === "loaded" && state.src ? (
                   <div
-                    className="message-deferred-image-preview"
+                    className="message-deferred-image-preview w-40 max-w-full rounded-xl overflow-hidden bg-[color-mix(in_srgb,var(--surface-item)_92%,transparent)] [&_img]:block [&_img]:w-full [&_img]:h-auto"
                   >
                     <img src={state.src} alt={`Deferred Claude image ${index + 1}`} loading="lazy" />
                   </div>
                 ) : (
                   <>
-                    <div className="message-deferred-image-copy">
-                      <span className="message-deferred-image-title">
+                    <div className="message-deferred-image-copy grid gap-0.75 min-w-0">
+                      <span className="message-deferred-image-title text-xs font-[650] text-(--text-primary)">
                         Claude history image available on demand
                       </span>
-                      <span className="message-deferred-image-meta">
+                      <span className="message-deferred-image-meta text-[11px] text-(--text-secondary)">
                         {image.mediaType} · {formatDeferredImageSize(image.estimatedByteSize)}
                       </span>
                       {state.status === "error" && state.error ? (
-                        <span className="message-deferred-image-error">{state.error}</span>
+                        <span className="message-deferred-image-error text-[11px] text-(--danger)">{state.error}</span>
                       ) : null}
                     </div>
                     <button
                       type="button"
-                      className="message-deferred-image-action"
+                      className="message-deferred-image-action flex-none border border-(--border-accent) rounded-full py-1.5 px-2.5 bg-[color-mix(in_srgb,var(--accent)_10%,transparent)] text-(--text-primary) text-xs font-[650] disabled:cursor-wait disabled:opacity-65"
                       onClick={() => void handleLoadDeferredImage(image)}
                       disabled={state.status === "loading"}
                     >
@@ -1471,18 +1471,18 @@ export const MessageRow = memo(function MessageRow({
     memoryPayloadDialogOpen && memorySummaryRawPayload && typeof document !== "undefined"
       ? createPortal(
         <div
-          className="memory-context-payload-dialog-overlay"
+          className="memory-context-payload-dialog-overlay fixed inset-0 z-[2000] grid place-items-center p-6 bg-black/40"
           role="presentation"
           onClick={() => setMemoryPayloadDialogOpen(false)}
         >
           <div
-            className="memory-context-payload-dialog"
+            className="memory-context-payload-dialog w-[min(860px,calc(100vw-48px))] max-h-[min(720px,calc(100vh-48px))] grid grid-rows-[auto_minmax(0,1fr)] border border-(--border-subtle) rounded-[14px] bg-(--surface-card) [box-shadow:0_24px_80px_rgba(0,0,0,0.35)] overflow-hidden"
             role="dialog"
             aria-modal="true"
             aria-labelledby={`${item.id}-memory-payload-title`}
             onClick={(event) => event.stopPropagation()}
           >
-            <div className="memory-context-payload-dialog-header">
+            <div className="memory-context-payload-dialog-header flex items-start justify-between gap-4 px-4 py-3.5 border-b border-(--border-subtle) [&_h3]:m-0 [&_h3]:text-(--text-primary) [&_h3]:text-sm [&_h3]:font-bold [&_p]:mt-1 [&_p]:mr-0 [&_p]:mb-0 [&_p]:ml-0 [&_p]:text-(--text-muted) [&_p]:text-xs [&_p]:leading-normal">
               <div>
                 <h3 id={`${item.id}-memory-payload-title`}>
                   {t("messages.memoryContextSentDetailsTitle")}
@@ -1491,40 +1491,40 @@ export const MessageRow = memo(function MessageRow({
               </div>
               <button
                 type="button"
-                className="memory-context-payload-dialog-close"
+                className="memory-context-payload-dialog-close w-7 h-7 inline-flex items-center justify-center border border-(--border-subtle) rounded-full bg-transparent text-(--text-muted) cursor-pointer flex-none text-[22px] font-medium leading-none hover:text-(--text-primary) hover:[background:var(--surface-elevated,transparent)] [&_span]:block [&_span]:[transform:translateY(-1px)]"
                 aria-label={t("messages.memoryContextCloseDetails")}
                 onClick={() => setMemoryPayloadDialogOpen(false)}
               >
                 <span aria-hidden="true">×</span>
               </button>
             </div>
-            <div className="memory-context-payload-dialog-body">
+            <div className="memory-context-payload-dialog-body min-h-0 overflow-auto px-4 pt-3.5 pb-4.5 grid gap-3.5">
               {memoryPayloadPacks.length > 0 ? (
-                <div className="memory-context-payload-pack-list">
+                <div className="memory-context-payload-pack-list grid gap-3">
                   {memoryPayloadPacks.map((pack, packIndex) => (
                     <section
                       key={`${item.id}-memory-payload-pack-${packIndex}`}
-                      className="memory-context-payload-pack"
+                      className="memory-context-payload-pack grid gap-2.5 border border-(--border-subtle) rounded-xl [background:var(--surface-elevated,rgba(255,255,255,0.03))] p-3"
                     >
-                      <div className="memory-context-payload-pack-header">
-                        <span className="memory-context-payload-pack-title">
+                      <div className="memory-context-payload-pack-header flex items-baseline justify-between gap-3">
+                        <span className="memory-context-payload-pack-title text-(--text-primary) text-[13px] font-bold">
                           {t("messages.memoryContextPayloadPackTitle", {
                             index: packIndex + 1,
                           })}
                         </span>
-                        <span className="memory-context-payload-pack-meta">
+                        <span className="memory-context-payload-pack-meta text-(--text-faint) text-[11px] whitespace-nowrap">
                           {t("messages.memoryContextPayloadPackMeta", {
                             source: pack.source || t("messages.memoryContextSourceUnknown"),
                             count: Number(pack.count),
                           })}
                         </span>
                       </div>
-                      <div className="memory-context-payload-section-label">
+                      <div className="memory-context-payload-section-label text-(--text-muted) text-[11px] font-bold tracking-[0.04em] uppercase">
                         {t("messages.memoryContextPayloadCleanedContext")}
                       </div>
                       <Markdown
                         value={pack.cleanedContext}
-                        className="markdown memory-context-payload-markdown"
+                        className="markdown memory-context-payload-markdown text-(--text-muted) text-xs leading-[1.55]"
                         workspaceId={workspaceId}
                         codeBlockStyle="message"
                         codeBlockCopyUseModifier={codeBlockCopyUseModifier}
@@ -1537,7 +1537,7 @@ export const MessageRow = memo(function MessageRow({
               ) : (
                 <Markdown
                   value={memorySummaryRawPayload}
-                  className="markdown memory-context-payload-markdown"
+                  className="markdown memory-context-payload-markdown text-(--text-muted) text-xs leading-[1.55]"
                   workspaceId={workspaceId}
                   codeBlockStyle="message"
                   codeBlockCopyUseModifier={codeBlockCopyUseModifier}
@@ -1545,9 +1545,9 @@ export const MessageRow = memo(function MessageRow({
                   onOpenFileLinkMenu={onOpenFileLinkMenu}
                 />
               )}
-              <details className="memory-context-payload-raw">
+              <details className="memory-context-payload-raw border border-(--border-subtle) rounded-[10px] [background:var(--surface-sunken,rgba(0,0,0,0.16))] overflow-hidden [&>summary]:cursor-pointer [&>summary]:py-2.25 [&>summary]:px-2.75 [&>summary]:text-(--text-muted) [&>summary]:text-xs [&>summary]:font-bold">
                 <summary>{t("messages.memoryContextPayloadRaw")}</summary>
-                <pre className="memory-context-payload-dialog-code">
+                <pre className="memory-context-payload-dialog-code m-0 p-3 overflow-auto text-(--text-muted) border-t border-(--border-subtle) bg-black/20 [font-family:var(--font-mono,'SFMono-Regular','Consolas',monospace)] text-[11px] leading-normal whitespace-pre-wrap break-words">
                   <code>{memorySummaryRawPayload}</code>
                 </pre>
               </details>
@@ -1559,17 +1559,17 @@ export const MessageRow = memo(function MessageRow({
       : null;
   const memorySummaryNode = resolvedMemorySummary ? (
     <>
-      <div className="memory-context-summary-card">
+      <div className="memory-context-summary-card border border-(--border-subtle) rounded-[10px] bg-(--surface-card) max-w-[860px]">
         <button
           type="button"
-          className="memory-context-summary-toggle"
+          className="memory-context-summary-toggle w-full border-0 bg-transparent text-inherit flex items-center gap-2 px-2.5 py-2 text-left cursor-pointer"
           onClick={() => setMemorySummaryExpanded((current) => !current)}
           aria-expanded={memorySummaryExpanded}
         >
-          <span className="memory-context-summary-title">
+          <span className="memory-context-summary-title text-xs font-semibold tracking-[0.01em]">
             {t("messages.memoryContextSummary")}
           </span>
-          <span className="memory-context-summary-count">
+          <span className="memory-context-summary-count ml-auto text-[11px] text-(--text-faint)">
             {t("messages.memoryContextSummaryCount", {
               count: resolvedMemorySummary.lines.length,
             })}
@@ -1581,9 +1581,9 @@ export const MessageRow = memo(function MessageRow({
           )}
         </button>
         {memorySummaryExpanded && (
-          <div className="memory-context-summary-content">
+          <div className="memory-context-summary-content border-t border-(--border-subtle) px-2.5 pt-2 pb-2.25 flex flex-col gap-1.5 [&_p]:m-0 [&_p]:text-xs [&_p]:leading-normal [&_p]:text-(--text-muted)">
             {memorySummaryRecords.length > 0 ? (
-              <div className="memory-context-summary-record-list">
+              <div className="memory-context-summary-record-list grid gap-1.5">
                 {memorySummaryRecords.map((record) => {
                   const sourceLabel = record.source === "manual-selection"
                     ? t("messages.memoryContextSourceManual")
@@ -1593,16 +1593,16 @@ export const MessageRow = memo(function MessageRow({
                   return (
                     <div
                       key={`${item.id}-${record.displayIndex}-${record.index}-${record.memoryId}`}
-                      className="memory-context-summary-record"
+                      className="memory-context-summary-record grid grid-cols-[auto_minmax(0,1fr)] items-center gap-2 min-w-0 py-1.5 px-2 border border-(--border-subtle) rounded-lg [background:var(--surface-elevated,var(--surface-card))]"
                     >
-                      <span className="memory-context-summary-record-index">
+                      <span className="memory-context-summary-record-index text-[11px] font-bold [color:var(--text-accent,var(--accent-500,var(--text-muted)))] whitespace-nowrap">
                         {record.displayIndex}
                       </span>
-                      <span className="memory-context-summary-record-copy">
-                        <span className="memory-context-summary-record-title">
+                      <span className="memory-context-summary-record-copy min-w-0 grid gap-0.5">
+                        <span className="memory-context-summary-record-title min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-xs text-(--text-muted)">
                           {record.title || record.memoryId}
                         </span>
-                        <span className="memory-context-summary-record-meta">
+                        <span className="memory-context-summary-record-meta min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-[10px] text-(--text-faint)">
                           {t("messages.memoryContextRecordMeta", {
                             source: sourceLabel,
                             index: record.index,
@@ -1616,7 +1616,7 @@ export const MessageRow = memo(function MessageRow({
             ) : (
               <Markdown
                 value={resolvedMemorySummary.markdown ?? resolvedMemorySummary.lines.join("\n\n")}
-                className="markdown memory-context-summary-markdown"
+                className="markdown memory-context-summary-markdown text-xs leading-[1.5] text-(--text-muted)"
                 workspaceId={workspaceId}
                 codeBlockStyle="message"
                 codeBlockCopyUseModifier={codeBlockCopyUseModifier}
@@ -1627,7 +1627,7 @@ export const MessageRow = memo(function MessageRow({
             {memorySummaryRawPayload ? (
               <button
                 type="button"
-                className="memory-context-summary-detail-button"
+                className="memory-context-summary-detail-button self-start border border-(--border-subtle) rounded-full [background:var(--surface-elevated,var(--surface-card))] text-(--text-muted) cursor-pointer text-[11px] font-semibold px-2.5 py-1.25 hover:text-(--text-primary) hover:border-[var(--border-strong,var(--border-subtle))]"
                 onClick={() => setMemoryPayloadDialogOpen(true)}
               >
                 {t("messages.memoryContextViewSentDetails")}
@@ -1643,7 +1643,7 @@ export const MessageRow = memo(function MessageRow({
     return null;
   }
   const stackedContent = memorySummaryNode || noteCardSummaryNode || codeAnnotationContextNode ? (
-    <div className={`message-context-stack${item.role === "user" ? " is-user" : ""}`}>
+    <div className={`message-context-stack grid gap-2 w-[min(860px,100%)]${item.role === "user" ? " is-user justify-items-end" : ""}`}>
       {memorySummaryNode}
       {codeAnnotationContextNode}
       {noteCardSummaryNode}
@@ -1652,10 +1652,10 @@ export const MessageRow = memo(function MessageRow({
   ) : bubbleNode;
 
   const agentBadgeNode = hasExternalAgentBadge ? (
-    <div className={`message-user-agent-rail${isAgentBadgeExpanded ? " is-open" : ""}`}>
+    <div className={`message-user-agent-rail inline-flex items-center gap-1.5 pt-1 flex-none${isAgentBadgeExpanded ? " is-open" : ""}`}>
       <button
         type="button"
-        className="message-agent-icon-button"
+        className="message-agent-icon-button w-9 h-9 border-0 rounded-[10px] bg-transparent text-[color-mix(in_srgb,var(--color-message-user-bg,var(--surface-bubble-user))_78%,#ffffff_22%)] inline-flex items-center justify-center p-0 cursor-pointer [transition:transform_160ms_ease,opacity_160ms_ease] hover:[transform:translateY(-1px)] hover:opacity-100 focus-visible:outline-none focus-visible:rounded-lg focus-visible:[box-shadow:0_0_0_2px_color-mix(in_srgb,var(--accent)_42%,transparent)]"
         onClick={handleToggleAgentBadge}
         aria-expanded={isAgentBadgeExpanded}
         aria-label={
@@ -1674,8 +1674,8 @@ export const MessageRow = memo(function MessageRow({
         />
       </button>
       {isAgentBadgeExpanded && selectedAgentName && (
-        <div className="message-agent-reveal is-visible" role="status">
-          <span className="message-agent-tag-text">{selectedAgentName}</span>
+        <div className="message-agent-reveal is-visible inline-flex items-center max-w-[200px] py-0.5 px-1.5 rounded-full border-0 bg-transparent text-[color-mix(in_srgb,var(--color-message-user-bg,var(--surface-bubble-user))_90%,#ffffff_10%)] opacity-100 [transform:none] pointer-events-auto [transition:none]" role="status">
+          <span className="message-agent-tag-text min-w-0 max-w-[180px] overflow-hidden text-ellipsis whitespace-nowrap text-[11px] font-semibold tracking-[0.01em]">{selectedAgentName}</span>
         </div>
       )}
     </div>
@@ -1684,7 +1684,7 @@ export const MessageRow = memo(function MessageRow({
   return (
     <div className={`message ${item.role}${agentTaskNotification ? " message-agent-task" : ""}`}>
       {hasExternalAgentBadge ? (
-        <div className="message-user-layout">
+        <div className="message-user-layout flex items-start justify-between gap-3 w-full max-w-full">
           {agentBadgeNode}
           {stackedContent}
         </div>
@@ -1813,34 +1813,34 @@ export const GeneratedImageRow = memo(function GeneratedImageRow({
 
   return (
     <div
-      className="message-generated-image-card"
+      className="message-generated-image-card w-[min(760px,100%)] my-2.5 mb-3.5 ml-auto p-3.5 rounded-[18px] border border-[color-mix(in_srgb,var(--border-strong)_82%,transparent)] [background:linear-gradient(180deg,color-mix(in_srgb,var(--surface-card)_96%,#2563eb_4%),var(--surface-card))] [box-shadow:0_12px_28px_rgba(15,23,42,0.08)] grid gap-3"
       data-generated-image-anchor={item.anchorUserMessageId ?? undefined}
     >
-      <div className="message-generated-image-header">
-        <div className="message-generated-image-title-group">
-          <span className="message-generated-image-eyebrow">
+      <div className="message-generated-image-header flex items-start justify-between gap-3">
+        <div className="message-generated-image-title-group min-w-0 grid gap-1.5">
+          <span className="message-generated-image-eyebrow text-[11px] leading-none font-bold tracking-[0.08em] uppercase text-[color-mix(in_srgb,var(--text-muted)_74%,#2563eb_26%)]">
             {generatedImageTitle}
           </span>
           {item.promptText ? (
-            <div className="message-generated-image-prompt">{item.promptText}</div>
+            <div className="message-generated-image-prompt text-sm leading-normal text-(--text-primary) break-words">{item.promptText}</div>
           ) : null}
         </div>
-        <span className={`message-generated-image-status ${statusClassName}`}>
+        <span className={`message-generated-image-status ${statusClassName} inline-flex items-center min-h-[26px] px-2.5 rounded-full border border-(--border-strong) text-[11px] font-bold tracking-[0.04em] uppercase whitespace-nowrap`}>
           {statusLabel}
         </span>
       </div>
       {item.status === "processing" ? (
-        <div className="message-generated-image-hint">
+        <div className="message-generated-image-hint text-xs leading-normal text-(--text-secondary) break-words">
           {generatedImageProcessingHint}
         </div>
       ) : null}
       {imageItems.length > 0 ? (
-        <div className="message-generated-image-grid" role="list">
+        <div className="message-generated-image-grid grid grid-cols-[repeat(auto-fit,minmax(180px,1fr))] gap-3" role="list">
           {imageItems.map((image, index) => (
             <button
               key={`${item.id}-${index}`}
               type="button"
-              className="message-generated-image-thumb"
+              className="message-generated-image-thumb border-0 p-0 bg-transparent rounded-2xl overflow-hidden aspect-square cursor-zoom-in [box-shadow:none!important] [&_img]:block [&_img]:w-full [&_img]:h-full [&_img]:object-cover [&_img]:[background:color-mix(in_srgb,var(--surface-card)_92%,#0f172a_8%)]"
               onClick={() => setLightboxIndex(index)}
               aria-label={image.label}
             >
@@ -1856,7 +1856,7 @@ export const GeneratedImageRow = memo(function GeneratedImageRow({
         </div>
       ) : null}
       {item.status === "degraded" ? (
-        <div className="message-generated-image-hint">
+        <div className="message-generated-image-hint text-xs leading-normal text-(--text-secondary) break-words">
           {item.fallbackText || generatedImageDegradedHint}
         </div>
       ) : null}

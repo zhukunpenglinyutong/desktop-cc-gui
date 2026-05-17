@@ -232,20 +232,24 @@ export function RuntimeReconnectCard({
     : t("messages.runtimeReconnectFailed");
 
   return (
-    <div className="message-runtime-recovery-card" role="group" aria-label={title}>
-      <div className="message-runtime-recovery-header">
-        <Terminal className="message-runtime-recovery-icon" size={15} aria-hidden />
-        <div className="message-runtime-recovery-copy">
-          <div className="message-runtime-recovery-title">{title}</div>
-          <div className="message-runtime-recovery-description">{description}</div>
+    <div
+      className="message-runtime-recovery-card grid gap-2.5 px-3.5 py-3 my-0.5 mb-2.5 rounded-2xl border border-[color-mix(in_srgb,var(--border-strong)_78%,#2563eb_22%)] [background:linear-gradient(180deg,color-mix(in_srgb,var(--surface-card)_90%,#2563eb_10%)_0%,color-mix(in_srgb,var(--surface-card)_96%,transparent)_100%)] [box-shadow:0_14px_32px_color-mix(in_srgb,#020617_14%,transparent),inset_0_1px_0_color-mix(in_srgb,#ffffff_6%,transparent)]"
+      role="group"
+      aria-label={title}
+    >
+      <div className="message-runtime-recovery-header grid grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-2.5">
+        <Terminal className="message-runtime-recovery-icon mt-0.5 text-[color-mix(in_srgb,#60a5fa_72%,var(--text-primary))]" size={15} aria-hidden />
+        <div className="message-runtime-recovery-copy min-w-0 grid gap-[3px]">
+          <div className="message-runtime-recovery-title text-[13px] leading-tight font-bold text-(--text-primary)">{title}</div>
+          <div className="message-runtime-recovery-description text-xs leading-normal text-(--text-secondary)">{description}</div>
         </div>
-        <div className="message-runtime-recovery-actions">
+        <div className="message-runtime-recovery-actions flex flex-wrap justify-end items-center gap-2">
           {showReconnectAction ? (
             <Button
               type="button"
               size="sm"
               variant="outline"
-              className="message-runtime-recovery-button"
+              className="message-runtime-recovery-button min-w-[118px] self-center"
               onClick={() => {
                 void handleReconnectRuntime("reconnect");
               }}
@@ -257,7 +261,7 @@ export function RuntimeReconnectCard({
           <Button
             type="button"
             size="sm"
-            className="message-runtime-recovery-button"
+            className="message-runtime-recovery-button min-w-[118px] self-center"
             onClick={() => {
               void handleReconnectRuntime("resend");
             }}
@@ -267,14 +271,14 @@ export function RuntimeReconnectCard({
           </Button>
         </div>
       </div>
-      <div className="message-runtime-recovery-detail">{hint.rawMessage}</div>
+      <div className="message-runtime-recovery-detail text-xs leading-normal text-(--text-muted) whitespace-pre-wrap break-words">{hint.rawMessage}</div>
       {showReconnectUnavailable ? (
-        <div className="message-runtime-recovery-status is-error" aria-live="polite">
+        <div className="message-runtime-recovery-status is-error text-xs leading-tight font-semibold" aria-live="polite">
           {unavailableLabel}
         </div>
       ) : null}
       {!reconnectUnavailable && resendUnavailable ? (
-        <div className="message-runtime-recovery-detail" aria-live="polite">
+        <div className="message-runtime-recovery-detail text-xs leading-normal text-(--text-muted) whitespace-pre-wrap break-words" aria-live="polite">
           {requiresThreadRecovery
             ? t("messages.threadRecoveryResendUnavailable")
             : t("messages.runtimeReconnectResendUnavailable")}
@@ -282,24 +286,24 @@ export function RuntimeReconnectCard({
       ) : null}
       {reconnectStatus === "error" ? (
         <>
-          <div className="message-runtime-recovery-status is-error" aria-live="polite">{failedLabel}</div>
+          <div className="message-runtime-recovery-status is-error text-xs leading-tight font-semibold" aria-live="polite">{failedLabel}</div>
           {reconnectErrorDetail ? (
-            <div className="message-runtime-recovery-detail">{reconnectErrorDetail}</div>
+            <div className="message-runtime-recovery-detail text-xs leading-normal text-(--text-muted) whitespace-pre-wrap break-words">{reconnectErrorDetail}</div>
           ) : null}
         </>
       ) : null}
       {reconnectStatus === "restored" && reconnectErrorDetail ? (
         <>
-          <div className="message-runtime-recovery-status is-success" aria-live="polite">
+          <div className="message-runtime-recovery-status is-success text-xs leading-tight font-semibold" aria-live="polite">
             {requiresThreadRecovery
               ? t("messages.threadRecoveryRestored")
               : t("messages.runtimeReconnectRestored")}
           </div>
-          <div className="message-runtime-recovery-detail">{reconnectErrorDetail}</div>
+          <div className="message-runtime-recovery-detail text-xs leading-normal text-(--text-muted) whitespace-pre-wrap break-words">{reconnectErrorDetail}</div>
         </>
       ) : null}
       {reconnectStatus === "fresh" && reconnectErrorDetail ? (
-        <div className="message-runtime-recovery-detail" aria-live="polite">
+        <div className="message-runtime-recovery-detail text-xs leading-normal text-(--text-muted) whitespace-pre-wrap break-words" aria-live="polite">
           {reconnectErrorDetail}
         </div>
       ) : null}

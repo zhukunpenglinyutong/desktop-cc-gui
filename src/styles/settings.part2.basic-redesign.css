@@ -1,6 +1,6 @@
 /* === Basic settings redesign (Codex-like dark panel) === */
-.settings-section-basic,
-.settings-section-tabbed {
+/* Cascade root: defines --settings-basic-* palette consumed by 5+ sections (basic + 4 tabbed) */
+:is(.settings-section-basic, .settings-section-tabbed) {
   --settings-basic-text: var(--text-strong);
   --settings-basic-text-muted: var(--text-muted);
   --settings-basic-surface: color-mix(in srgb, var(--surface-card-strong) 84%, var(--surface-messages) 16%);
@@ -14,23 +14,20 @@
   color: var(--settings-basic-text);
 }
 
-.settings-section-basic .settings-section-title,
-.settings-section-tabbed .settings-section-title {
+:is(.settings-section-basic, .settings-section-tabbed) .settings-section-title {
   color: var(--settings-basic-text);
   font-size: 30px;
   font-weight: 700;
   letter-spacing: -0.015em;
 }
 
-.settings-section-basic .settings-section-subtitle,
-.settings-section-tabbed .settings-section-subtitle {
+:is(.settings-section-basic, .settings-section-tabbed) .settings-section-subtitle {
   color: var(--settings-basic-text-muted);
   font-size: 13px;
   margin-bottom: 4px;
 }
 
-.settings-section-basic > .settings-basic-tabs,
-.settings-section-tabbed > .settings-basic-tabs {
+:is(.settings-section-basic, .settings-section-tabbed) > .settings-basic-tabs {
   margin-bottom: 12px;
   padding: 4px;
   border-radius: 12px;
@@ -39,8 +36,7 @@
   max-width: none;
 }
 
-.settings-section-basic > .settings-basic-tabs > .settings-basic-tab,
-.settings-section-tabbed > .settings-basic-tabs > .settings-basic-tab {
+:is(.settings-section-basic, .settings-section-tabbed) > .settings-basic-tabs > .settings-basic-tab {
   min-height: 38px;
   border-radius: 8px;
   border: 1px solid transparent;
@@ -49,14 +45,12 @@
   font-weight: 600;
 }
 
-.settings-section-basic > .settings-basic-tabs > .settings-basic-tab:hover,
-.settings-section-tabbed > .settings-basic-tabs > .settings-basic-tab:hover {
+:is(.settings-section-basic, .settings-section-tabbed) > .settings-basic-tabs > .settings-basic-tab:hover {
   color: var(--settings-basic-text);
   background: color-mix(in srgb, var(--settings-basic-control-hover) 72%, transparent);
 }
 
-.settings-section-basic > .settings-basic-tabs > .settings-basic-tab.active,
-.settings-section-tabbed > .settings-basic-tabs > .settings-basic-tab.active {
+:is(.settings-section-basic, .settings-section-tabbed) > .settings-basic-tabs > .settings-basic-tab.active {
   color: #eef2ff;
   border-color: color-mix(in srgb, var(--primary) 42%, #8898b8 58%);
   background: color-mix(in srgb, var(--primary) 24%, var(--settings-basic-control));
@@ -69,14 +63,18 @@
   gap: 10px;
 }
 
-.settings-section-basic .settings-basic-group-card {
-  border-radius: 14px;
+.settings-section-basic .settings-basic-group-card,
+.settings-section-basic .settings-color-config-card {
   border: 1px solid var(--settings-basic-border);
   background: linear-gradient(
     180deg,
     color-mix(in srgb, var(--settings-basic-surface) 96%, transparent) 0%,
     color-mix(in srgb, var(--settings-basic-surface-strong) 98%, transparent) 100%
   );
+}
+
+.settings-section-basic .settings-basic-group-card {
+  border-radius: 14px;
   overflow: hidden;
 }
 
@@ -162,12 +160,11 @@
   align-items: center;
 }
 
-.settings-section-basic .settings-proxy-input {
+.settings-section-basic :is(.settings-proxy-input, .settings-proxy-save-btn) {
   min-height: 36px;
 }
 
 .settings-section-basic .settings-proxy-save-btn {
-  min-height: 36px;
   white-space: nowrap;
   padding-inline: 12px;
 }
@@ -260,16 +257,22 @@
   border: 0;
 }
 
-.settings-section-basic .settings-sound-select-trigger {
+.settings-section-basic :is(
+  .settings-sound-select-trigger,
+  .settings-sound-select-row-shadcn .settings-sound-test-btn,
+  .settings-sound-custom-input,
+  .settings-sound-control-item-custom .settings-button-compact
+) {
   min-height: 38px;
-  width: 100%;
   border-radius: 10px;
+}
+
+.settings-section-basic .settings-sound-select-trigger {
+  width: 100%;
 }
 
 .settings-section-basic .settings-sound-select-row-shadcn .settings-sound-test-btn {
   min-width: 92px;
-  min-height: 38px;
-  border-radius: 10px;
 }
 
 .settings-section-basic .settings-sound-custom-path-row-shadcn {
@@ -278,16 +281,6 @@
   width: 100%;
   gap: 8px;
   align-items: stretch;
-}
-
-.settings-section-basic .settings-sound-custom-input {
-  min-height: 38px;
-  border-radius: 10px;
-}
-
-.settings-section-basic .settings-sound-control-item-custom .settings-button-compact {
-  min-height: 38px;
-  border-radius: 10px;
 }
 
 .settings-section-basic .settings-sound-custom-hint {
@@ -327,11 +320,13 @@
   line-height: 1.45;
 }
 
-.settings-section-basic .settings-basic-group-card--list > .settings-toggle-row,
-.settings-section-basic .settings-basic-group-card--list > .settings-field.settings-basic-item,
-.settings-section-basic .settings-basic-group-card--list > .settings-row.settings-basic-item,
-.settings-section-basic .settings-basic-group-card--list > .settings-help,
-.settings-section-basic .settings-basic-group-card--list > .settings-sound-config {
+.settings-section-basic .settings-basic-group-card--list > :is(
+  .settings-toggle-row,
+  .settings-field.settings-basic-item,
+  .settings-row.settings-basic-item,
+  .settings-help,
+  .settings-sound-config
+) {
   border-top: 1px solid var(--settings-basic-divider);
 }
 
@@ -394,16 +389,13 @@
   line-height: 1.35;
 }
 
-.settings-section-basic .settings-proxy-card-title,
-.settings-section-basic .settings-proxy-toggle-title {
+.settings-section-basic :is(.settings-proxy-card-title, .settings-proxy-toggle-title) {
   display: inline-flex;
   align-items: center;
   gap: 8px;
 }
 
-.settings-section-basic .settings-proxy-header-badge,
-.settings-section-basic .settings-proxy-toggle-badge,
-.settings-section-basic .settings-proxy-input-badge {
+.settings-section-basic :is(.settings-proxy-header-badge, .settings-proxy-toggle-badge, .settings-proxy-input-badge) {
   opacity: 0.98;
 }
 
@@ -536,8 +528,7 @@
   color: color-mix(in srgb, var(--settings-basic-text) 86%, var(--text-muted));
 }
 
-.settings-section-basic .settings-client-ui-visibility-row-icon svg,
-.settings-section-basic .settings-client-ui-visibility-row-icon img {
+.settings-section-basic .settings-client-ui-visibility-row-icon :is(svg, img) {
   width: 15px;
   height: 15px;
 }
@@ -600,15 +591,12 @@
   grid-template-columns: minmax(0, 1fr) minmax(320px, 520px);
 }
 
-.settings-section-basic .settings-field.settings-basic-item > .settings-basic-field-header,
-.settings-section-basic .settings-field.settings-basic-item > .settings-field-label {
+.settings-section-basic .settings-field.settings-basic-item > :is(.settings-basic-field-header, .settings-field-label) {
   grid-area: label;
   margin: 0;
 }
 
-.settings-section-basic .settings-field.settings-basic-item > .settings-control,
-.settings-section-basic .settings-field.settings-basic-item > .settings-field-row,
-.settings-section-basic .settings-field.settings-basic-item > .settings-basic-theme-selector {
+.settings-section-basic .settings-field.settings-basic-item > :is(.settings-control, .settings-field-row, .settings-basic-theme-selector) {
   grid-area: control;
   width: 100%;
 }
@@ -645,13 +633,12 @@
   min-width: 120px;
 }
 
-.settings-section-basic .settings-scale-control .settings-scale-save {
-  margin-left: auto;
+.settings-section-basic .settings-scale-control :is(.settings-scale-save, .settings-scale-reset) {
   flex: 0 0 auto;
 }
 
-.settings-section-basic .settings-scale-control .settings-scale-reset {
-  flex: 0 0 auto;
+.settings-section-basic .settings-scale-control .settings-scale-save {
+  margin-left: auto;
 }
 
 .settings-section-basic .settings-scale-value {
@@ -676,7 +663,7 @@
   gap: 8px 16px;
 }
 
-.settings-section-basic .settings-row.settings-basic-item .settings-label {
+.settings-section-basic :is(.settings-row.settings-basic-item .settings-label, .settings-basic-field-label, .settings-field-label) {
   margin: 0;
   color: var(--settings-basic-text);
   font-size: 14px;
@@ -687,16 +674,7 @@
   width: 100%;
 }
 
-.settings-section-basic .settings-basic-field-label,
-.settings-section-basic .settings-field-label {
-  color: var(--settings-basic-text);
-  font-size: 14px;
-  font-weight: 600;
-}
-
-.settings-section-basic .settings-basic-field-icon,
-.settings-section-basic .settings-color-config-icon,
-.settings-section-basic .settings-help svg {
+.settings-section-basic :is(.settings-basic-field-icon, .settings-color-config-icon, .settings-help svg) {
   color: color-mix(in srgb, var(--settings-basic-text-muted) 88%, #fff 12%);
 }
 
@@ -705,43 +683,13 @@
   font-size: 11px;
 }
 
-.settings-section-basic .settings-basic-theme-selector {
-  justify-content: flex-end;
-  gap: 8px;
-}
-
-.settings-section-basic .settings-basic-language-selector {
+.settings-section-basic :is(.settings-basic-theme-selector, .settings-basic-language-selector) {
   display: flex;
   justify-content: flex-end;
   gap: 8px;
 }
 
-.settings-section-basic .settings-basic-theme-option {
-  min-height: 36px;
-  min-width: 0;
-  padding: 5px 12px;
-  border-radius: 999px;
-  border-width: 1px;
-  border-color: var(--settings-basic-control-border);
-  background: color-mix(in srgb, var(--settings-basic-control) 90%, transparent);
-  color: var(--settings-basic-text-muted);
-  font-size: 13px;
-  gap: 6px;
-}
-
-.settings-section-basic .settings-basic-theme-option:hover {
-  border-color: color-mix(in srgb, var(--settings-basic-control-border) 70%, #b8c5de 30%);
-  background: color-mix(in srgb, var(--settings-basic-control-hover) 84%, transparent);
-  color: var(--settings-basic-text);
-}
-
-.settings-section-basic .settings-basic-theme-option.active {
-  color: #ffffff;
-  border-color: color-mix(in srgb, var(--primary) 46%, #8fa7df 54%);
-  background: color-mix(in srgb, var(--primary) 18%, var(--settings-basic-control));
-  box-shadow: none;
-}
-
+.settings-section-basic .settings-basic-theme-option,
 .settings-section-basic .settings-basic-language-option {
   min-height: 36px;
   min-width: 0;
@@ -756,29 +704,21 @@
   gap: 6px;
 }
 
+.settings-section-basic .settings-basic-theme-option:hover,
 .settings-section-basic .settings-basic-language-option:hover {
   border-color: color-mix(in srgb, var(--settings-basic-control-border) 70%, #b8c5de 30%);
   background: color-mix(in srgb, var(--settings-basic-control-hover) 84%, transparent);
   color: var(--settings-basic-text);
 }
 
+.settings-section-basic .settings-basic-theme-option.active,
 .settings-section-basic .settings-basic-language-option.active {
-  color: #ffffff;
+  color: #fff;
   border-color: color-mix(in srgb, var(--primary) 46%, #8fa7df 54%);
   background: color-mix(in srgb, var(--primary) 18%, var(--settings-basic-control));
 }
 
-.settings-section-basic .settings-basic-theme-icon {
-  width: 22px;
-  height: 22px;
-  border-radius: 999px;
-}
-
-.settings-section-basic .settings-basic-theme-icon svg {
-  width: 11px;
-  height: 11px;
-}
-
+.settings-section-basic .settings-basic-theme-icon,
 .settings-section-basic .settings-basic-language-icon {
   width: 22px;
   height: 22px;
@@ -789,12 +729,14 @@
   justify-content: center;
 }
 
+.settings-section-basic .settings-basic-theme-icon svg,
 .settings-section-basic .settings-basic-language-icon svg {
   width: 11px;
   height: 11px;
 }
 
-.settings-section-basic .settings-basic-language-icon-zh {
+.settings-section-basic .settings-basic-language-icon-zh,
+.settings-section-basic .settings-basic-theme-icon-system {
   background: #4a5a7a;
   border-color: #64789f;
 }
@@ -802,11 +744,6 @@
 .settings-section-basic .settings-basic-language-icon-en {
   background: #303745;
   border-color: #495062;
-}
-
-.settings-section-basic .settings-basic-theme-icon-system {
-  background: #4a5a7a;
-  border-color: #64789f;
 }
 
 .settings-section-basic .settings-basic-theme-icon-light {
@@ -819,8 +756,7 @@
   border-color: #3f4652;
 }
 
-.settings-section-basic .settings-input,
-.settings-section-basic .settings-select {
+.settings-section-basic :is(.settings-input, .settings-select) {
   min-height: 36px;
   border-radius: 10px;
   border-color: var(--settings-basic-control-border);
@@ -832,8 +768,7 @@
   color: color-mix(in srgb, var(--settings-basic-text-muted) 82%, #fff 18%);
 }
 
-.settings-section-basic .settings-input:focus,
-.settings-section-basic .settings-select:focus {
+.settings-section-basic :is(.settings-input, .settings-select):focus {
   border-color: color-mix(in srgb, var(--primary) 48%, #9cb0d9 52%);
 }
 
@@ -867,8 +802,7 @@
   width: 100%;
 }
 
-.settings-section-basic .settings-select-wrap--font::after,
-.settings-section-basic .settings-basic-theme-preset-select-wrap::after {
+.settings-section-basic :is(.settings-select-wrap--font, .settings-basic-theme-preset-select-wrap)::after {
   content: "";
   position: absolute;
   top: 50%;
@@ -882,8 +816,7 @@
   opacity: 0.9;
 }
 
-.settings-section-basic .settings-select-wrap--font .settings-select,
-.settings-section-basic .settings-basic-theme-preset-select-wrap .settings-select {
+.settings-section-basic :is(.settings-select-wrap--font, .settings-basic-theme-preset-select-wrap) .settings-select {
   appearance: none;
   -webkit-appearance: none;
   -moz-appearance: none;
@@ -900,12 +833,11 @@
     color-mix(in srgb, var(--settings-basic-control) 96%, transparent) 0%,
     color-mix(in srgb, var(--settings-basic-surface) 70%, var(--settings-basic-control) 30%) 100%
   );
-  box-shadow: inset 0 1px 0 color-mix(in srgb, #ffffff 10%, transparent);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 10%, transparent);
   transition: border-color 140ms ease, box-shadow 140ms ease, background-color 140ms ease;
 }
 
-.settings-section-basic .settings-select-wrap--font .settings-select:hover,
-.settings-section-basic .settings-basic-theme-preset-select-wrap .settings-select:hover {
+.settings-section-basic :is(.settings-select-wrap--font, .settings-basic-theme-preset-select-wrap) .settings-select:hover {
   border-color: color-mix(in srgb, var(--settings-basic-control-border) 70%, var(--primary) 30%);
   background: linear-gradient(
     180deg,
@@ -914,12 +846,11 @@
   );
 }
 
-.settings-section-basic .settings-select-wrap--font .settings-select:focus,
-.settings-section-basic .settings-basic-theme-preset-select-wrap .settings-select:focus {
+.settings-section-basic :is(.settings-select-wrap--font, .settings-basic-theme-preset-select-wrap) .settings-select:focus {
   border-color: color-mix(in srgb, var(--primary) 54%, #9cb0d9 46%);
   box-shadow:
     0 0 0 3px color-mix(in srgb, var(--primary) 20%, transparent),
-    inset 0 1px 0 color-mix(in srgb, #ffffff 18%, transparent);
+    inset 0 1px 0 color-mix(in srgb, #fff 18%, transparent);
 }
 
 .settings-section-basic .settings-font-reset {
@@ -960,9 +891,7 @@
   transform: translateY(1px);
 }
 
-.settings-section-basic .ghost.settings-button-compact,
-.settings-section-basic .ghost.settings-color-reset,
-.settings-section-basic .ghost.settings-sound-test-btn {
+.settings-section-basic .ghost:is(.settings-button-compact, .settings-color-reset, .settings-sound-test-btn) {
   min-height: 36px;
   padding: 0 12px;
   border-radius: 10px;
@@ -971,20 +900,12 @@
   color: var(--settings-basic-text);
 }
 
-.settings-section-basic .ghost.settings-button-compact:hover,
-.settings-section-basic .ghost.settings-color-reset:hover,
-.settings-section-basic .ghost.settings-sound-test-btn:hover {
+.settings-section-basic .ghost:is(.settings-button-compact, .settings-color-reset, .settings-sound-test-btn):hover {
   background: color-mix(in srgb, var(--settings-basic-control-hover) 90%, transparent);
 }
 
 .settings-section-basic .settings-color-config-card {
   margin-bottom: 0;
-  border-color: var(--settings-basic-border);
-  background: linear-gradient(
-    180deg,
-    color-mix(in srgb, var(--settings-basic-surface) 96%, transparent) 0%,
-    color-mix(in srgb, var(--settings-basic-surface-strong) 98%, transparent) 100%
-  );
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   column-gap: 16px;

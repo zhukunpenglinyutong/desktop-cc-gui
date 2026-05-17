@@ -272,7 +272,7 @@ export function EmailSenderSettings({
   }, [t]);
 
   return (
-    <div className="settings-email-section">
+    <div className="settings-email-section flex flex-col gap-4">
       <div className="settings-section-title text-[30px] font-bold text-(--text-strong) tracking-tight mb-1">{t("settings.emailTitle")}</div>
       <div className="settings-section-subtitle text-[13px] text-(--text-muted) mb-1">{t("settings.emailDescription")}</div>
 
@@ -291,7 +291,7 @@ export function EmailSenderSettings({
           </div>
         </CardHeader>
         <CardContent className="settings-basic-sounds-card-content">
-          <div className="settings-form-grid">
+          <div className="settings-form-grid grid grid-cols-1 gap-3.5 max-[760px]:grid-cols-1 min-[760px]:grid-cols-2">
             <div className="settings-field">
               <Label htmlFor="email-enabled">{t("settings.emailEnableTitle")}</Label>
               <div className="settings-proxy-input-row">
@@ -404,7 +404,7 @@ export function EmailSenderSettings({
             {secretConfigured ? t("settings.emailSecretConfigured") : t("settings.emailSecretMissing")}
           </div>
 
-          <div className="settings-button-row">
+          <div className="settings-button-row flex flex-wrap gap-2.5 items-center">
             <Button type="button" onClick={() => void handleSave()} disabled={!canSave}>
               {action === "save" ? t("settings.emailSaving") : t("common.save")}
             </Button>
@@ -423,7 +423,7 @@ export function EmailSenderSettings({
 
           <div className="settings-field">
             {!draft.enabled ? (
-              <div className="settings-button-row">
+              <div className="settings-button-row flex flex-wrap gap-2.5 items-center">
                 <Button
                   type="button"
                   variant="outline"
@@ -435,7 +435,7 @@ export function EmailSenderSettings({
                 </Button>
               </div>
             ) : null}
-            <div className="settings-button-row">
+            <div className="settings-button-row flex flex-wrap gap-2.5 items-center">
               <Button
                 type="button"
                 variant="outline"
