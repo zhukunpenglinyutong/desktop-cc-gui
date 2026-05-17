@@ -400,14 +400,6 @@
   padding-right: 6px;
 }
 
-.diff-tree-summary-meta {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  white-space: nowrap;
-  flex: 0 0 auto;
-}
-
 .diff-tree-summary-root {
   min-width: 0;
   display: inline-flex;
@@ -430,20 +422,11 @@
   flex: 0 0 auto;
 }
 
-.diff-tree-summary-root-name,
-.diff-tree-summary-section-label {
+.diff-tree-summary-root-name {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.diff-tree-summary-section-label {
-  color: var(--text-secondary);
-  flex: 0 1 auto;
-  display: inline-flex;
-  align-items: center;
-  line-height: 1;
 }
 
 .diff-section-indicator {
@@ -474,25 +457,6 @@
   color: color-mix(in srgb, var(--text-secondary) 88%, var(--text-primary));
 }
 
-
-.diff-list-view-toggle {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  align-self: center;
-  padding: 0;
-  border: none;
-  border-radius: 0;
-  background: transparent;
-}
-
-.diff-list-controls {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: nowrap;
-  min-width: 0;
-}
 
 .diff-list-view-button {
   display: inline-flex;
@@ -583,23 +547,6 @@
   color: var(--text-accent, #7a9dcc);
 }
 
-.diff-status-issues {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
-
-
-.diff-list {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  overflow-y: auto;
-  flex: 1;
-  padding-right: 2px;
-  min-height: 0;
-}
-
 .diff-section {
   display: flex;
   flex-direction: column;
@@ -609,29 +556,6 @@
   background: var(--git-filetree-section-bg);
   border: 1px solid var(--git-filetree-section-border);
   box-shadow: inset 0 1px 0 color-mix(in srgb, var(--surface-card) 42%, transparent);
-}
-
-.diff-section-title {
-  font-size: 12px;
-  color: var(--text-secondary);
-  text-transform: none;
-  letter-spacing: 0.01em;
-  padding: 1px 4px 0;
-  font-weight: 600;
-}
-
-.diff-section-title--row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-}
-
-.diff-section-actions {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  margin-left: 6px;
 }
 
 .diff-section-list {
@@ -660,12 +584,6 @@
   background: var(--git-filetree-tree-line-color);
   opacity: 1;
   pointer-events: none;
-}
-
-.diff-tree-folder-group {
-  display: flex;
-  flex-direction: column;
-  gap: var(--git-filetree-section-gap);
 }
 
 .diff-tree-folder-children {
@@ -728,11 +646,6 @@
   color: var(--text-secondary);
 }
 
-.diff-tree-folder-spacer {
-  width: var(--git-filetree-icon-size);
-  height: var(--git-filetree-icon-size);
-}
-
 .diff-tree-folder-icon {
   display: inline-flex;
   width: 16px;
@@ -745,14 +658,6 @@
 .diff-tree-folder-icon svg {
   width: 16px;
   height: 16px;
-}
-
-.diff-tree-folder-name {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--text-stronger);
 }
 
 /* .diff-empty / .diff-error migrated to inline Tailwind in GitDiffPanel.tsx */
@@ -1261,64 +1166,6 @@
   color: var(--text-faint);
 }
 
-.git-log-list {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  overflow-y: auto;
-  flex: 1;
-  padding-right: 2px;
-  min-height: 0;
-}
-
-.git-issues-list {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  overflow-y: auto;
-  flex: 1;
-  padding-right: 2px;
-  min-height: 0;
-}
-
-.git-pr-list {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  overflow-y: auto;
-  overflow-x: hidden;
-  flex: 1;
-  padding-right: 2px;
-  min-height: 0;
-}
-
-.git-log-sync {
-  font-size: 11px;
-  color: var(--text-faint);
-  display: inline-flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.git-log-section {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.git-log-section-title {
-  font-size: 10px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--text-faint);
-}
-
-.git-log-section-list {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
 .git-log-entry {
   display: flex;
   flex-direction: column;
@@ -1395,108 +1242,6 @@
   margin: -2px -6px;
 }
 
-.git-log-summary {
-  font-size: 12px;
-  color: var(--text-emphasis);
-}
-
-.git-issue-summary {
-  display: flex;
-  gap: 8px;
-  font-size: 12px;
-  color: var(--text-emphasis);
-  align-items: baseline;
-  flex-wrap: wrap;
-}
-
-.git-issue-number {
-  font-family: var(--code-font-family);
-  font-size: var(--code-font-size, 11px);
-  color: var(--text-faint);
-}
-
-.git-issue-title {
-  flex: 1;
-  min-width: 0;
-  white-space: normal;
-}
-
-.git-pr-meta {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  align-items: center;
-  min-width: 0;
-}
-
-.git-pr-header {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 8px;
-  min-width: 0;
-}
-
-.git-pr-title {
-  display: inline-flex;
-  align-items: baseline;
-  gap: 6px;
-  min-width: 0;
-  font-size: 12px;
-  color: var(--text-emphasis);
-}
-
-.git-pr-title-text {
-  min-width: 0;
-  white-space: normal;
-  line-height: 1.3;
-  overflow-wrap: break-word;
-}
-
-.git-pr-number,
-.git-pr-author-inline {
-  font-family: var(--code-font-family);
-  font-size: var(--code-font-size, 11px);
-  color: var(--text-faint);
-}
-
-.git-pr-author-inline {
-  font-size: var(--code-font-size, 11px);
-}
-
-.git-pr-branches {
-  font-family: var(--code-font-family);
-  font-size: var(--code-font-size, 11px);
-  color: var(--text-faint);
-}
-
-.git-pr-draft {
-  color: var(--text-dim);
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  font-size: 9px;
-}
-
-.git-pr-time {
-  font-size: 11px;
-  color: var(--text-faint);
-  white-space: nowrap;
-}
-
-.git-pr-pill {
-  font-size: 10px;
-  color: var(--text-faint);
-  padding: 2px 6px;
-  border-radius: 999px;
-  border: 1px solid var(--border-subtle);
-  background: var(--surface-control);
-  max-width: 100%;
-}
-
-.git-issue-date {
-  color: var(--text-faint);
-}
-
 .git-panel-spinner {
   width: 10px;
   height: 10px;
@@ -1510,23 +1255,6 @@
   to {
     transform: rotate(360deg);
   }
-}
-
-.git-log-meta {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  font-size: 11px;
-  color: var(--text-faint);
-}
-
-.git-log-sha {
-  font-family: var(--code-font-family);
-  font-size: var(--code-font-size, 11px);
-}
-
-.git-log-sep {
-  color: var(--text-dim);
 }
 
 /* Commit message generation */
@@ -1691,23 +1419,7 @@
   will-change: transform;
 }
 
-.commit-message-error {
-  font-size: 11px;
-  color: rgba(255, 160, 160, 0.9);
-  padding: 2px 0;
-}
-
-.commit-message-hint {
-  font-size: 11px;
-  color: var(--text-muted);
-  line-height: 1.4;
-}
-
 /* Commit button */
-.commit-button-container {
-  margin-top: 4px;
-}
-
 .commit-button {
   width: 100%;
   display: flex;
@@ -1993,21 +1705,6 @@
  * defer to follow-up sub-PRs (9.2.anchor / 9.2.header / 9.2.body).
  */
 
-.diff-viewer-list {
-  position: relative;
-  width: 100%;
-}
-
-.diff-viewer-row {
-  position: absolute;
-  left: 0;
-  top: 0;
-  width: 100%;
-  padding-bottom: 0;
-  will-change: transform;
-  isolation: isolate;
-}
-
 .diff-viewer-item {
   border-radius: 0;
   border: none;
@@ -2036,15 +1733,6 @@
   margin: 0;
   border-bottom: 1px solid var(--border-subtle);
   box-shadow: 0 1px 0 rgba(0, 0, 0, 0.08);
-}
-
-.diff-viewer-path {
-  min-width: 0;
-  flex: 1;
-  color: var(--text-emphasis);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .diff-viewer-header-controls {
@@ -2734,13 +2422,6 @@
   color: inherit !important;
 }
 
-.diff-viewer-placeholder,
-.diff-viewer-empty {
-  color: var(--text-subtle);
-  font-size: 12px;
-  padding: 8px 0;
-}
-
 :root[data-theme="light"] .diff-viewer-output {
   --diff-surface-bg: #ffffff;
   --diff-line-add-bg: color-mix(in srgb, #16a34a 16%, var(--diff-surface-bg));
@@ -2831,12 +2512,6 @@
     --diff-token-keyword: #b8a6ff;
     --diff-token-function: #7fd1ff;
   }
-}
-
-.diff-viewer-loading {
-  color: var(--text-faint);
-  font-size: 11px;
-  padding: 6px 0;
 }
 
 .diff-line {

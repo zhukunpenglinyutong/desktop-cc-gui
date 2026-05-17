@@ -439,14 +439,14 @@ export function DiffSection({
   return (
     <div className={`diff-section git-filetree-section diff-section--${section}`}>
       <div
-        className={`diff-section-title diff-section-title--row git-filetree-section-header${
+        className={`diff-section-title diff-section-title--row git-filetree-section-header flex items-center justify-between gap-2 text-xs text-(--text-secondary) tracking-[0.01em] pt-px px-1 pb-0 font-semibold normal-case${
           compactHeader ? " is-compact" : ""
         }`}
       >
         {showCompactRoot ? (
           <span className="diff-tree-summary-root is-static">
             <span className="diff-tree-summary-root-toggle" aria-hidden>
-              <span className="diff-tree-folder-spacer" />
+              <span className="diff-tree-folder-spacer w-(--git-filetree-icon-size) h-(--git-filetree-icon-size)" />
             </span>
             <FileIcon
               filePath={rootFolderName ?? ""}
@@ -457,11 +457,11 @@ export function DiffSection({
             <span className="diff-tree-summary-root-name">{rootFolderName}</span>
           </span>
         ) : null}
-        <span className="diff-tree-summary-section-label">
+        <span className="diff-tree-summary-section-label min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-(--text-secondary) inline-flex items-center leading-none [flex:0_1_auto]">
           {renderSectionIndicator(section, files.length, t)}
         </span>
         {leadingMeta ? (
-          <span className="diff-tree-summary-meta">{leadingMeta}</span>
+          <span className="diff-tree-summary-meta inline-flex items-center gap-1.5 whitespace-nowrap flex-none">{leadingMeta}</span>
         ) : null}
         {showSectionActions && (
           <GitDiffPanelSectionActions

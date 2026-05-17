@@ -48,7 +48,7 @@ export function GitDiffPanelSectionActions({
 
   return (
     <div
-      className="diff-section-actions git-filetree-section-actions"
+      className="diff-section-actions git-filetree-section-actions inline-flex items-center gap-1 ml-1.5"
       role="group"
       aria-label={t("git.sectionActions", { title })}
     >

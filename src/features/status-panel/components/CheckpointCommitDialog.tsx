@@ -292,8 +292,8 @@ export function CheckpointCommitDialog({
                 </div>
               ) : null}
             </div>
-            {commitMessageError ? <div className="commit-message-error">{commitMessageError}</div> : null}
-            {commitError ? <div className="commit-message-error">{commitError}</div> : null}
+            {commitMessageError ? <div className="commit-message-error text-[11px] text-[rgba(255,160,160,0.9)] py-0.5">{commitMessageError}</div> : null}
+            {commitError ? <div className="commit-message-error text-[11px] text-[rgba(255,160,160,0.9)] py-0.5">{commitError}</div> : null}
             <CommitButton
               commitMessage={commitMessage}
               selectedCount={selectedCommitCount}
@@ -302,7 +302,7 @@ export function CheckpointCommitDialog({
               selectedPaths={selectedCommitPaths}
               onCommit={onCommit}
             />
-            <div className="commit-message-hint" aria-live="polite">
+            <div className="commit-message-hint text-[11px] text-(--text-muted) leading-[1.4]" aria-live="polite">
               {selectedCommitCount > 0
                 ? t("git.selectedFilesForCommit", { count: selectedCommitCount })
                 : t("git.selectFilesToCommit")}

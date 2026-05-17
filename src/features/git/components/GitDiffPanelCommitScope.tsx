@@ -177,7 +177,7 @@ export function CommitButton({
   const canCommit = hasMessage && selectedCount > 0 && !commitLoading;
 
   return (
-    <div className="commit-button-container">
+    <div className="commit-button-container mt-1">
       <button
         type="button"
         className="commit-button"

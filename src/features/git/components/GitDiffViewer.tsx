@@ -160,7 +160,7 @@ const DiffCard = memo(function DiffCard({
         <span className="diff-viewer-status" data-status={entry.status}>
           {entry.status}
         </span>
-        <span className="diff-viewer-path">
+        <span className="diff-viewer-path min-w-0 flex-1 text-(--text-emphasis) overflow-hidden text-ellipsis whitespace-nowrap">
           {normalizePatchName(entry.path)}
         </span>
       </div>
@@ -325,7 +325,7 @@ const DiffCard = memo(function DiffCard({
           </div>
         </div>
       ) : (
-        <div className="diff-viewer-placeholder">{t("git.diffUnavailable")}</div>
+        <div className="diff-viewer-placeholder text-(--text-subtle) text-xs py-2">{t("git.diffUnavailable")}</div>
       )}
     </div>
   );
@@ -1163,7 +1163,7 @@ export function GitDiffViewer({
                   >
                     {stickyEntry.status}
                   </span>
-                  <span className="diff-viewer-path">{stickyEntry.path}</span>
+                  <span className="diff-viewer-path min-w-0 flex-1 text-(--text-emphasis) overflow-hidden text-ellipsis whitespace-nowrap">{stickyEntry.path}</span>
                 </>
               ) : null}
               {!effectiveHeaderControlsTarget && (
@@ -1253,20 +1253,20 @@ export function GitDiffViewer({
             {anchorControls}
           </div>
         )}
-        {error && <div className="diff-viewer-empty">{error}</div>}
+        {error && <div className="diff-viewer-empty text-(--text-subtle) text-xs py-2">{error}</div>}
         {!error && isLoading && effectiveDiffs.length > 0 && (
           <div className="diff-viewer-loading diff-viewer-loading-overlay">
             {t("git.refreshingDiff")}
           </div>
         )}
         {!error && !isLoading && !effectiveDiffs.length && (
-          <div className="diff-viewer-empty">
+          <div className="diff-viewer-empty text-(--text-subtle) text-xs py-2">
             {listView === "tree" ? t("git.selectFileToViewDiff") : t("git.noChangesDetected")}
           </div>
         )}
         {!error && effectiveDiffs.length > 0 && (
           <div
-            className="diff-viewer-list"
+            className="diff-viewer-list relative w-full"
             ref={listRef}
             style={{
               height: rowVirtualizer.getTotalSize(),
@@ -1280,7 +1280,7 @@ export function GitDiffViewer({
               return (
                 <div
                   key={entry.path}
-                  className="diff-viewer-row"
+                  className="diff-viewer-row absolute left-0 top-0 w-full pb-0 will-change-transform isolate"
                   data-index={virtualRow.index}
                   ref={setRowRef(entry.path)}
                   style={{

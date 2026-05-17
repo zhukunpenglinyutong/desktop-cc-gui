@@ -555,7 +555,7 @@ function DiffTreeSection({
         ["--git-tree-branch-opacity" as string]: getTreeLineOpacity(depth + 1),
       } as CSSProperties;
       return (
-        <div key={folder.key} className="diff-tree-folder-group">
+        <div key={folder.key} className="diff-tree-folder-group flex flex-col gap-(--git-filetree-section-gap)">
           <div
             className="diff-tree-folder-row git-filetree-folder-row"
             style={folderStyle}
@@ -600,7 +600,7 @@ function DiffTreeSection({
               {hasChildren ? (
                 isCollapsed ? <ChevronRight size={12} /> : <ChevronDown size={12} />
               ) : (
-                <span className="diff-tree-folder-spacer" />
+                <span className="diff-tree-folder-spacer w-(--git-filetree-icon-size) h-(--git-filetree-icon-size)" />
               )}
             </span>
             <FileIcon
@@ -609,7 +609,7 @@ function DiffTreeSection({
               isOpen={!isCollapsed}
               className="diff-tree-folder-icon"
             />
-            <span className="diff-tree-folder-name">{folder.name}</span>
+            <span className="diff-tree-folder-name min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-(--text-stronger)">{folder.name}</span>
           </div>
           {!isCollapsed && (
             <div className="diff-tree-folder-children" style={childTreeStyle}>
@@ -683,7 +683,7 @@ function DiffTreeSection({
   return (
     <div className={`diff-section git-filetree-section diff-section--${section}`}>
       <div
-        className={`diff-section-title diff-section-title--row git-filetree-section-header${
+        className={`diff-section-title diff-section-title--row git-filetree-section-header flex items-center justify-between gap-2 text-xs text-(--text-secondary) tracking-[0.01em] pt-px px-1 pb-0 font-semibold normal-case${
           useCompactHeader ? " is-compact" : ""
         }`}
       >
@@ -703,7 +703,7 @@ function DiffTreeSection({
               {hasTreeNodes ? (
                 rootCollapsed ? <ChevronRight size={12} /> : <ChevronDown size={12} />
               ) : (
-                <span className="diff-tree-folder-spacer" />
+                <span className="diff-tree-folder-spacer w-(--git-filetree-icon-size) h-(--git-filetree-icon-size)" />
               )}
             </span>
             <FileIcon
@@ -715,10 +715,10 @@ function DiffTreeSection({
             <span className="diff-tree-summary-root-name">{rootFolderName}</span>
           </button>
         ) : null}
-        <span className="diff-tree-summary-section-label">
+        <span className="diff-tree-summary-section-label min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-(--text-secondary) inline-flex items-center leading-none [flex:0_1_auto]">
           {renderSectionIndicator(section, files.length, t)}
         </span>
-        {leadingMeta ? <span className="diff-tree-summary-meta">{leadingMeta}</span> : null}
+        {leadingMeta ? <span className="diff-tree-summary-meta inline-flex items-center gap-1.5 whitespace-nowrap flex-none">{leadingMeta}</span> : null}
         {showSectionActions && (
           <GitDiffPanelSectionActions
             title={title}
@@ -744,7 +744,7 @@ function DiffTreeSection({
         onKeyDownCapture={handleTreeKeyDownCapture}
       >
         {hasTreeNodes && hasRootFolderName && !useCompactHeader && (
-          <div className="diff-tree-folder-group">
+          <div className="diff-tree-folder-group flex flex-col gap-(--git-filetree-section-gap)">
             <div
               className="diff-tree-folder-row git-filetree-folder-row"
               style={{ paddingLeft: "0px" }}
@@ -790,7 +790,7 @@ function DiffTreeSection({
                 isOpen={!rootCollapsed}
                 className="diff-tree-folder-icon"
               />
-              <span className="diff-tree-folder-name">{rootFolderName}</span>
+              <span className="diff-tree-folder-name min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-(--text-stronger)">{rootFolderName}</span>
             </div>
             {!rootCollapsed && (
               <div
@@ -954,12 +954,12 @@ function GitLogEntryRow({
         }
       }}
     >
-      <div className="git-log-summary">{entry.summary || "No message"}</div>
-      <div className="git-log-meta">
-        <span className="git-log-sha">{entry.sha.slice(0, 7)}</span>
-        <span className="git-log-sep">·</span>
+      <div className="git-log-summary text-xs text-(--text-emphasis)">{entry.summary || "No message"}</div>
+      <div className="git-log-meta flex flex-wrap gap-1.5 text-[11px] text-(--text-faint)">
+        <span className="git-log-sha font-(family-name:--code-font-family) text-[var(--code-font-size,11px)]">{entry.sha.slice(0, 7)}</span>
+        <span className="git-log-sep text-(--text-dim)">·</span>
         <span className="git-log-author">{entry.author || "Unknown"}</span>
-        <span className="git-log-sep">·</span>
+        <span className="git-log-sep text-(--text-dim)">·</span>
         <span className="git-log-date">
           {formatRelativeTime(entry.timestamp * 1000)}
         </span>
@@ -1871,7 +1871,7 @@ export function GitDiffPanel({
       <div className="git-panel-header git-panel-header--hover-actions">
         <div className="git-panel-actions" role="group" aria-label="Git panel">
           {mode === "diff" && (
-            <div className="diff-list-view-toggle" role="group" aria-label={t("git.listView")}>
+            <div className="diff-list-view-toggle inline-flex items-center gap-2 self-center p-0 border-0 rounded-none bg-transparent" role="group" aria-label={t("git.listView")}>
               <button
                 type="button"
                 className={`diff-list-view-button ${gitDiffListView === "flat" ? "active" : ""}`}
@@ -2031,11 +2031,11 @@ export function GitDiffPanel({
       ) : mode === "log" ? (
         <>
           <div className="diff-status inline-flex items-center gap-1.5 text-[11px] text-(--text-faint)">{logCountLabel}</div>
-          <div className="git-log-sync">
+          <div className="git-log-sync text-[11px] text-(--text-faint) inline-flex flex-wrap gap-1.5">
             <span>{logSyncLabel}</span>
             {logUpstreamLabel && (
               <>
-                <span className="git-log-sep">·</span>
+                <span className="git-log-sep text-(--text-dim)">·</span>
                 <span>{logUpstreamLabel}</span>
               </>
             )}
@@ -2043,23 +2043,23 @@ export function GitDiffPanel({
         </>
       ) : mode === "issues" ? (
         <>
-          <div className="diff-status diff-status-issues">
+          <div className="diff-status diff-status-issues inline-flex items-center gap-1.5">
             <span>{t("git.githubIssues")}</span>
             {issuesLoading ? <span className="git-panel-spinner" aria-hidden /> : null}
           </div>
-          <div className="git-log-sync">
+          <div className="git-log-sync text-[11px] text-(--text-faint) inline-flex flex-wrap gap-1.5">
             <span>{issuesTotal} {t("git.open")}</span>
           </div>
         </>
       ) : (
         <>
-          <div className="diff-status diff-status-issues">
+          <div className="diff-status diff-status-issues inline-flex items-center gap-1.5">
             <span>{t("git.githubPullRequests")}</span>
             {pullRequestsLoading && (
               <span className="git-panel-spinner" aria-hidden />
             )}
           </div>
-          <div className="git-log-sync">
+          <div className="git-log-sync text-[11px] text-(--text-faint) inline-flex flex-wrap gap-1.5">
             <span>{pullRequestsTotal} {t("git.open")}</span>
           </div>
         </>
@@ -2068,7 +2068,7 @@ export function GitDiffPanel({
         <div className="diff-branch text-[13px] font-semibold mb-1">{branchName || t("git.unknown")}</div>
       ) : null}
       {mode === "diff" ? (
-        <div className="diff-list" onClick={handleDiffListClick}>
+        <div className="diff-list flex flex-col gap-1.5 overflow-y-auto flex-1 pr-0.5 min-h-0" onClick={handleDiffListClick}>
           {isGitRootPanelOpen && (
             <div className="git-root-panel flex flex-col gap-2 p-2.5 rounded-xl border border-(--border-muted) bg-(--surface-card)" id="git-root-panel">
               <div className="git-root-toolbar flex items-center justify-between gap-2.5 flex-wrap">
@@ -2188,16 +2188,16 @@ export function GitDiffPanel({
                 </button>
               </div>
               {commitMessageError && (
-                <div className="commit-message-error">{commitMessageError}</div>
+                <div className="commit-message-error text-[11px] text-[rgba(255,160,160,0.9)] py-0.5">{commitMessageError}</div>
               )}
               {commitError && (
-                <div className="commit-message-error">{commitError}</div>
+                <div className="commit-message-error text-[11px] text-[rgba(255,160,160,0.9)] py-0.5">{commitError}</div>
               )}
               {pushError && (
-                <div className="commit-message-error">{pushError}</div>
+                <div className="commit-message-error text-[11px] text-[rgba(255,160,160,0.9)] py-0.5">{pushError}</div>
               )}
               {syncError && (
-                <div className="commit-message-error">{syncError}</div>
+                <div className="commit-message-error text-[11px] text-[rgba(255,160,160,0.9)] py-0.5">{syncError}</div>
               )}
               <CommitButton
                 commitMessage={commitMessage}
@@ -2207,7 +2207,7 @@ export function GitDiffPanel({
                 selectedPaths={selectedCommitPaths}
                 onCommit={onCommit}
               />
-              <div className="commit-message-hint" aria-live="polite">
+              <div className="commit-message-hint text-[11px] text-(--text-muted) leading-[1.4]" aria-live="polite">
                 {commitScopeHint}
               </div>
             </div>
@@ -2216,7 +2216,7 @@ export function GitDiffPanel({
           {commitsAhead > 0 && !stagedFiles.length && (
             <div className="push-section">
               {pushError && (
-                <div className="commit-message-error">{pushError}</div>
+                <div className="commit-message-error text-[11px] text-[rgba(255,160,160,0.9)] py-0.5">{pushError}</div>
               )}
               <button
                 type="button"
@@ -2350,10 +2350,10 @@ export function GitDiffPanel({
           )}
         </div>
       ) : mode === "log" ? (
-        <div className="git-log-list">
+        <div className="git-log-list flex flex-col gap-3 overflow-y-auto flex-1 pr-0.5 min-h-0">
           {logError && <div className="diff-error text-xs text-[rgba(255,160,160,0.9)] whitespace-pre-wrap">{logError}</div>}
           {!logError && logLoading && (
-            <div className="diff-viewer-loading">{t("git.loadingCommits")}</div>
+            <div className="diff-viewer-loading text-(--text-faint) text-[11px] py-1.5">{t("git.loadingCommits")}</div>
           )}
           {!logError &&
             !logLoading &&
@@ -2363,9 +2363,9 @@ export function GitDiffPanel({
             <div className="diff-empty text-xs text-(--text-faint)">{t("git.noCommitsYet")}</div>
           )}
           {showAheadSection && (
-            <div className="git-log-section">
-              <div className="git-log-section-title">{t("git.toPush")}</div>
-              <div className="git-log-section-list">
+            <div className="git-log-section flex flex-col gap-1.5">
+              <div className="git-log-section-title text-[10px] tracking-[0.08em] uppercase text-(--text-faint)">{t("git.toPush")}</div>
+              <div className="git-log-section-list flex flex-col gap-2">
                 {logAheadEntries.map((entry) => {
                   const isSelected = selectedCommitSha === entry.sha;
                   return (
@@ -2383,9 +2383,9 @@ export function GitDiffPanel({
             </div>
           )}
           {showBehindSection && (
-            <div className="git-log-section">
-              <div className="git-log-section-title">{t("git.toPull")}</div>
-              <div className="git-log-section-list">
+            <div className="git-log-section flex flex-col gap-1.5">
+              <div className="git-log-section-title text-[10px] tracking-[0.08em] uppercase text-(--text-faint)">{t("git.toPull")}</div>
+              <div className="git-log-section-list flex flex-col gap-2">
                 {logBehindEntries.map((entry) => {
                   const isSelected = selectedCommitSha === entry.sha;
                   return (
@@ -2403,9 +2403,9 @@ export function GitDiffPanel({
             </div>
           )}
           {(logEntries.length > 0 || logLoading) && (
-            <div className="git-log-section">
-              <div className="git-log-section-title">{t("git.recentCommits")}</div>
-              <div className="git-log-section-list">
+            <div className="git-log-section flex flex-col gap-1.5">
+              <div className="git-log-section-title text-[10px] tracking-[0.08em] uppercase text-(--text-faint)">{t("git.recentCommits")}</div>
+              <div className="git-log-section-list flex flex-col gap-2">
                 {logEntries.map((entry) => {
                   const isSelected = selectedCommitSha === entry.sha;
                   return (
@@ -2423,7 +2423,7 @@ export function GitDiffPanel({
           )}
         </div>
       ) : mode === "issues" ? (
-        <div className="git-issues-list">
+        <div className="git-issues-list flex flex-col gap-2.5 overflow-y-auto flex-1 pr-0.5 min-h-0">
           {issuesError && <div className="diff-error text-xs text-[rgba(255,160,160,0.9)] whitespace-pre-wrap">{issuesError}</div>}
           {!issuesError && !issuesLoading && !issues.length && (
             <div className="diff-empty text-xs text-(--text-faint)">{t("git.noOpenIssues")}</div>
@@ -2440,11 +2440,11 @@ export function GitDiffPanel({
                   void openUrl(issue.url);
                 }}
               >
-                <div className="git-issue-summary">
-                  <span className="git-issue-title">
-                    <span className="git-issue-number">#{issue.number}</span>{" "}
+                <div className="git-issue-summary flex gap-2 text-xs text-(--text-emphasis) items-baseline flex-wrap">
+                  <span className="git-issue-title flex-1 min-w-0 whitespace-normal">
+                    <span className="git-issue-number font-(family-name:--code-font-family) text-[var(--code-font-size,11px)] text-(--text-faint)">#{issue.number}</span>{" "}
                     {issue.title}{" "}
-                    <span className="git-issue-date">· {relativeTime}</span>
+                    <span className="git-issue-date text-(--text-faint)">· {relativeTime}</span>
                   </span>
                 </div>
               </a>
@@ -2452,7 +2452,7 @@ export function GitDiffPanel({
           })}
         </div>
       ) : (
-        <div className="git-pr-list">
+        <div className="git-pr-list flex flex-col gap-2.5 overflow-y-auto overflow-x-hidden flex-1 pr-0.5 min-h-0">
           {pullRequestsError && (
             <div className="diff-error text-xs text-[rgba(255,160,160,0.9)] whitespace-pre-wrap">{pullRequestsError}</div>
           )}
@@ -2482,19 +2482,19 @@ export function GitDiffPanel({
                   }
                 }}
               >
-                <div className="git-pr-header">
-                  <span className="git-pr-title">
-                    <span className="git-pr-number">#{pullRequest.number}</span>
-                    <span className="git-pr-title-text">
+                <div className="git-pr-header flex items-baseline justify-between gap-2 min-w-0">
+                  <span className="git-pr-title inline-flex items-baseline gap-1.5 min-w-0 text-xs text-(--text-emphasis)">
+                    <span className="git-pr-number font-(family-name:--code-font-family) text-[var(--code-font-size,11px)] text-(--text-faint)">#{pullRequest.number}</span>
+                    <span className="git-pr-title-text min-w-0 whitespace-normal leading-[1.3] break-words">
                       {pullRequest.title}{" "}
-                      <span className="git-pr-author-inline">@{author}</span>
+                      <span className="git-pr-author-inline font-(family-name:--code-font-family) text-[var(--code-font-size,11px)] text-(--text-faint)">@{author}</span>
                     </span>
                   </span>
-                  <span className="git-pr-time">{relativeTime}</span>
+                  <span className="git-pr-time text-[11px] text-(--text-faint) whitespace-nowrap">{relativeTime}</span>
                 </div>
-                <div className="git-pr-meta">
+                <div className="git-pr-meta flex flex-wrap gap-1.5 items-center min-w-0">
                   {pullRequest.isDraft && (
-                    <span className="git-pr-pill git-pr-draft">{t("git.draft")}</span>
+                    <span className="git-pr-pill git-pr-draft text-[9px] text-(--text-dim) uppercase tracking-[0.08em] px-1.5 py-0.5 rounded-full border border-(--border-subtle) bg-(--surface-control) max-w-full">{t("git.draft")}</span>
                   )}
                 </div>
               </div>

@@ -93,7 +93,7 @@ export const ImageDiffCard = memo(function ImageDiffCard({
         <span className="diff-viewer-status" data-status={status}>
           {status}
         </span>
-        <span className="diff-viewer-path">{path}</span>
+        <span className="diff-viewer-path min-w-0 flex-1 text-(--text-emphasis) overflow-hidden text-ellipsis whitespace-nowrap">{path}</span>
       </div>
       <div className="image-diff-content p-4">
         {isModified && (
