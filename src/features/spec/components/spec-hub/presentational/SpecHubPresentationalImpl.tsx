@@ -2382,13 +2382,13 @@ ${A}`
       );
     };
   return n("section", {
-    className: `spec-hub ${ke ? "is-artifact-maximized" : ""}`,
+    className: `spec-hub flex-auto h-full w-full min-w-0 flex flex-col gap-3 p-3 bg-(--surface-messages) text-(--text-primary) overflow-hidden ${ke ? "is-artifact-maximized" : ""}`,
     children: [
       n("header", {
-        className: "spec-hub-header",
+        className: "spec-hub-header flex items-center justify-between gap-2.5 border border-(--border-muted) rounded-[10px] bg-[linear-gradient(180deg,color-mix(in_srgb,var(--surface-card)_88%,var(--surface-control)_12%),var(--surface-card))] py-2 px-2.5 shadow-[inset_0_1px_0_color-mix(in_srgb,var(--text-primary)_8%,transparent)]",
         children: [
           n("div", {
-            className: "spec-hub-title-wrap",
+            className: "spec-hub-title-wrap min-w-0 flex-1 flex items-center gap-2.5 [&_h2]:m-0 [&_h2]:text-lg [&_h2]:leading-none [&_h2]:flex-shrink-0 [&_h2]:tracking-[0.01em] [&_h2]:text-(--text-stronger) [&_p]:m-0 [&_p]:text-(--text-muted) [&_p]:text-xs [&_p]:font-medium [&_p]:whitespace-nowrap [&_p]:overflow-hidden [&_p]:text-ellipsis",
             children: [
               t("h2", { children: e("specHub.title") }),
               t("p", {
@@ -2399,17 +2399,17 @@ ${A}`
             ],
           }),
           n("div", {
-            className: "spec-hub-header-side",
+            className: "spec-hub-header-side flex-none flex items-center gap-1.5",
             children: [
               n("div", {
-                className: "spec-hub-header-badges",
+                className: "spec-hub-header-badges flex items-center gap-1 flex-nowrap",
                 children: [
                   n(_e, {
                     variant: "outline",
-                    className: `spec-hub-badge ${mo}`,
+                    className: `spec-hub-badge inline-flex items-center gap-1 rounded-[7px] text-[11px] font-bold tracking-[0.01em] ${mo}`,
                     children: [
                       t("span", {
-                        className: "spec-hub-badge-dot",
+                        className: "spec-hub-badge-dot w-1.5 h-1.5 rounded-full bg-current opacity-90",
                         "aria-hidden": !0,
                       }),
                       oo,
@@ -2418,7 +2418,7 @@ ${A}`
                   t(_e, {
                     variant:
                       E.supportLevel === "full" ? "secondary" : "outline",
-                    className: `spec-hub-badge ${ho}`,
+                    className: `spec-hub-badge inline-flex items-center gap-1 rounded-[7px] text-[11px] font-bold tracking-[0.01em] ${ho}`,
                     children:
                       E.supportLevel === "full"
                         ? e("specHub.supportFull")
@@ -2428,7 +2428,7 @@ ${A}`
                   }),
                   n(_e, {
                     variant: uo,
-                    className: `spec-hub-badge spec-hub-badge-gate is-${Ye.status}`,
+                    className: `spec-hub-badge spec-hub-badge-gate inline-flex items-center gap-1 rounded-[7px] text-[11px] font-bold tracking-[0.01em] is-${Ye.status}`,
                     title: e(`specHub.gateMeaning.${Ye.status}`),
                     children: [
                       t(po, { size: 12, "aria-hidden": !0 }),
