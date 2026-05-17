@@ -74,10 +74,13 @@ export const ImageDiffCard = memo(function ImageDiffCard({
   const isDeleted = status === "D";
   const isModified = !isAdded && !isDeleted;
   const placeholderLabel = t("git.imageDiffUnavailable");
+  const paneClass = "image-diff-pane flex flex-col items-center";
+  const previewClass = "image-diff-preview max-w-full max-h-75 object-contain bg-[repeating-conic-gradient(var(--surface-control)_0%_25%,var(--surface-strong)_0%_50%)] bg-[length:16px_16px] bg-[position:50%]";
+  const metaClass = "image-diff-meta text-[11px] text-(--text-faint) tabular-nums mt-2";
   const renderPlaceholder = () => (
-    <div className="image-diff-placeholder">
-      <ImageOff className="image-diff-placeholder-icon" aria-hidden />
-      <div className="image-diff-placeholder-text">{placeholderLabel}</div>
+    <div className="image-diff-placeholder flex flex-col items-center justify-center gap-1.5 min-h-35 py-3 px-4 text-(--text-subtle) text-xs text-center rounded-lg bg-(--surface-strong) border border-(--border-subtle)">
+      <ImageOff className="image-diff-placeholder-icon w-5 h-5 text-(--text-faint)" aria-hidden />
+      <div className="image-diff-placeholder-text leading-[1.4]">{placeholderLabel}</div>
     </div>
   );
 
@@ -92,64 +95,64 @@ export const ImageDiffCard = memo(function ImageDiffCard({
         </span>
         <span className="diff-viewer-path">{path}</span>
       </div>
-      <div className="image-diff-content">
+      <div className="image-diff-content p-4">
         {isModified && (
-          <div className="image-diff-side-by-side">
-            <div className="image-diff-pane image-diff-pane-old">
+          <div className="image-diff-side-by-side grid grid-cols-2 gap-4">
+            <div className={`${paneClass} image-diff-pane-old`}>
               {oldDataUri ? (
                 <img
                   src={oldDataUri}
                   alt="Previous version"
-                  className="image-diff-preview"
+                  className={previewClass}
                 />
               ) : (
                 renderPlaceholder()
               )}
-              {oldSize && <div className="image-diff-meta">{oldSize}</div>}
+              {oldSize && <div className={metaClass}>{oldSize}</div>}
             </div>
-            <div className="image-diff-pane image-diff-pane-new">
+            <div className={`${paneClass} image-diff-pane-new`}>
               {newDataUri ? (
                 <img
                   src={newDataUri}
                   alt="Current version"
-                  className="image-diff-preview"
+                  className={previewClass}
                 />
               ) : (
                 renderPlaceholder()
               )}
-              {newSize && <div className="image-diff-meta">{newSize}</div>}
+              {newSize && <div className={metaClass}>{newSize}</div>}
             </div>
           </div>
         )}
         {isAdded && (
-          <div className="image-diff-single">
-            <div className="image-diff-pane image-diff-pane-new">
+          <div className="image-diff-single flex justify-center [&_.image-diff-pane]:max-w-1/2">
+            <div className={`${paneClass} image-diff-pane-new`}>
               {newDataUri ? (
                 <img
                   src={newDataUri}
                   alt="New image"
-                  className="image-diff-preview"
+                  className={previewClass}
                 />
               ) : (
                 renderPlaceholder()
               )}
-              {newSize && <div className="image-diff-meta">{newSize}</div>}
+              {newSize && <div className={metaClass}>{newSize}</div>}
             </div>
           </div>
         )}
         {isDeleted && (
-          <div className="image-diff-single">
-            <div className="image-diff-pane image-diff-pane-old">
+          <div className="image-diff-single flex justify-center [&_.image-diff-pane]:max-w-1/2">
+            <div className={`${paneClass} image-diff-pane-old`}>
               {oldDataUri ? (
                 <img
                   src={oldDataUri}
                   alt="Deleted image"
-                  className="image-diff-preview"
+                  className={previewClass}
                 />
               ) : (
                 renderPlaceholder()
               )}
-              {oldSize && <div className="image-diff-meta">{oldSize}</div>}
+              {oldSize && <div className={metaClass}>{oldSize}</div>}
             </div>
           </div>
         )}

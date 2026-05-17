@@ -1704,11 +1704,11 @@ export function GitDiffPanel({
     stagedFiles.length > 0 ? "staged" : unstagedFiles.length > 0 ? "unstaged" : null;
   const diffTotalsNode = (
     <>
-      <span className="diff-status-add">+{totalAdditions}</span>
-      <span className="diff-status-sep" aria-hidden>
+      <span className="diff-status-add text-(--status-success,#47d488)">+{totalAdditions}</span>
+      <span className="diff-status-sep text-(--text-dim) opacity-72" aria-hidden>
         /
       </span>
-      <span className="diff-status-del">-{totalDeletions}</span>
+      <span className="diff-status-del text-(--status-error,#ff6b6b)">-{totalDeletions}</span>
     </>
   );
   const diffStatusNode = hasDiffTotals
@@ -1717,7 +1717,7 @@ export function GitDiffPanel({
           {logUpstream && (
             <>
               <span>{logSyncLabel}</span>
-              <span className="diff-status-sep" aria-hidden>
+              <span className="diff-status-sep text-(--text-dim) opacity-72" aria-hidden>
                 ·
               </span>
             </>
@@ -2002,22 +2002,22 @@ export function GitDiffPanel({
         </div>
       </div>
       {showActiveRootSummary && (
-        <div className="git-root-current">
-          <span className="git-root-label">{t("git.path")}</span>
-          <span className="git-root-path" title={activeRootPathDisplay}>
+        <div className="git-root-current flex items-center flex-wrap gap-2 text-[11px] text-(--text-faint) mb-1">
+          <span className="git-root-label uppercase tracking-[0.06em] text-[10px] text-(--text-muted)">{t("git.path")}</span>
+          <span className="git-root-path flex-auto min-w-0 overflow-hidden text-ellipsis whitespace-nowrap" title={activeRootPathDisplay}>
             {activeRootPathDisplay}
           </span>
-          {rootAlertText ? <span className="git-root-inline-alert">{rootAlertText}</span> : null}
+          {rootAlertText ? <span className="git-root-inline-alert text-(--status-error,#ff6b6b) text-[11px] font-semibold whitespace-nowrap">{rootAlertText}</span> : null}
           {onScanGitRoots && (
             <button
               type="button"
-              className="ghost git-root-button git-root-button--toggle"
+              className="ghost git-root-button git-root-button--toggle inline-flex items-center justify-center gap-1.5 py-1.5 px-2.5 min-w-13 min-h-7 border-0 shadow-none bg-transparent text-[11px] rounded-lg [&_.git-root-button-icon]:transition-transform [&_.git-root-button-icon]:duration-140"
               onClick={() => setIsGitRootPanelOpen((open) => !open)}
               aria-label={t("git.change")}
               title={t("git.change")}
               aria-expanded={isGitRootPanelOpen}
             >
-              <ArrowLeftRight className="git-root-button-icon" aria-hidden />
+              <ArrowLeftRight className="git-root-button-icon w-3 h-3" aria-hidden />
               <span>{t("git.change")}</span>
             </button>
           )}
@@ -2025,12 +2025,12 @@ export function GitDiffPanel({
       )}
       {mode === "diff" ? (
         <>
-          {!useUnifiedDiffSummary && !rootAlertText ? <div className="diff-status">{diffStatusNode}</div> : null}
-          {worktreeApplyError ? <div className="diff-error">{worktreeApplyError}</div> : null}
+          {!useUnifiedDiffSummary && !rootAlertText ? <div className="diff-status inline-flex items-center gap-1.5 text-[11px] text-(--text-faint)">{diffStatusNode}</div> : null}
+          {worktreeApplyError ? <div className="diff-error text-xs text-[rgba(255,160,160,0.9)] whitespace-pre-wrap">{worktreeApplyError}</div> : null}
         </>
       ) : mode === "log" ? (
         <>
-          <div className="diff-status">{logCountLabel}</div>
+          <div className="diff-status inline-flex items-center gap-1.5 text-[11px] text-(--text-faint)">{logCountLabel}</div>
           <div className="git-log-sync">
             <span>{logSyncLabel}</span>
             {logUpstreamLabel && (
@@ -2065,28 +2065,28 @@ export function GitDiffPanel({
         </>
       )}
       {(mode === "diff" || mode === "log") && !useUnifiedDiffSummary && !rootAlertText ? (
-        <div className="diff-branch">{branchName || t("git.unknown")}</div>
+        <div className="diff-branch text-[13px] font-semibold mb-1">{branchName || t("git.unknown")}</div>
       ) : null}
       {mode === "diff" ? (
         <div className="diff-list" onClick={handleDiffListClick}>
           {isGitRootPanelOpen && (
-            <div className="git-root-panel" id="git-root-panel">
-              <div className="git-root-toolbar">
-                <div className="git-root-title">{t("git.chooseRepo")}</div>
-                <div className="git-root-actions">
+            <div className="git-root-panel flex flex-col gap-2 p-2.5 rounded-xl border border-(--border-muted) bg-(--surface-card)" id="git-root-panel">
+              <div className="git-root-toolbar flex items-center justify-between gap-2.5 flex-wrap">
+                <div className="git-root-title text-xs text-(--text-strong)">{t("git.chooseRepo")}</div>
+                <div className="git-root-actions flex flex-wrap gap-2 items-center">
                   <button
                     type="button"
-                    className="ghost git-root-button git-root-button--scan"
+                    className="ghost git-root-button git-root-button--scan inline-flex items-center gap-1.5 py-1.5 px-2.5 text-[11px] rounded-lg border-0 shadow-none bg-transparent"
                     onClick={onScanGitRoots}
                     disabled={!onScanGitRoots || gitRootScanLoading}
                   >
-                    <Search className="git-root-button-icon" aria-hidden />
+                    <Search className="git-root-button-icon w-3 h-3" aria-hidden />
                     {t("git.scanWorkspace")}
                   </button>
-                  <label className="git-root-depth">
+                  <label className="git-root-depth inline-flex items-center gap-1.5 text-[11px] text-(--text-faint)">
                     <span>{t("git.depth")}</span>
                     <select
-                      className="git-root-select"
+                      className="git-root-select py-1.25 pr-5.5 pl-2 rounded-lg border border-(--border-muted) bg-(--surface-control) text-(--text-strong) text-[11px]"
                       value={gitRootScanDepth}
                       onChange={(event) => {
                         const value = Number(event.target.value);
@@ -2106,31 +2106,31 @@ export function GitDiffPanel({
                   {hasGitRoot && onClearGitRoot && (
                     <button
                       type="button"
-                      className="ghost git-root-button git-root-button--workspace-root"
+                      className="ghost git-root-button git-root-button--workspace-root inline-flex items-center gap-1.5 py-1.5 px-2.5 text-[11px] rounded-lg border-0 shadow-none bg-transparent"
                       onClick={() => {
                         onClearGitRoot();
                         setIsGitRootPanelOpen(false);
                       }}
                       disabled={gitRootScanLoading}
                     >
-                      <HardDrive className="git-root-button-icon" aria-hidden />
+                      <HardDrive className="git-root-button-icon w-3 h-3" aria-hidden />
                       {t("git.useWorkspaceRoot")}
                     </button>
                   )}
                 </div>
               </div>
               {gitRootScanLoading && (
-                <div className="diff-empty">{t("git.scanningRepositories")}</div>
+                <div className="diff-empty text-xs text-(--text-faint)">{t("git.scanningRepositories")}</div>
               )}
-              {gitRootScanError && <div className="diff-error">{gitRootScanError}</div>}
+              {gitRootScanError && <div className="diff-error text-xs text-[rgba(255,160,160,0.9)] whitespace-pre-wrap">{gitRootScanError}</div>}
               {!gitRootScanLoading &&
                 !gitRootScanError &&
                 gitRootScanHasScanned &&
                 gitRootCandidates.length === 0 && (
-                  <div className="diff-empty">{t("git.noRepositoriesFound")}</div>
+                  <div className="diff-empty text-xs text-(--text-faint)">{t("git.noRepositoriesFound")}</div>
                 )}
               {gitRootCandidates.length > 0 && (
-                <div className="git-root-list">
+                <div className="git-root-list flex flex-col gap-1.5">
                   {gitRootCandidates.map((path) => {
                     const normalizedPath = normalizeRootPath(path);
                     const isActive =
@@ -2139,14 +2139,14 @@ export function GitDiffPanel({
                     <button
                       key={path}
                       type="button"
-                      className={`git-root-item ${isActive ? "active" : ""}`}
+                      className={`git-root-item flex items-center gap-2 w-full text-left border border-(--border-subtle) bg-(--surface-control) text-(--text-emphasis) py-1.5 px-2.5 rounded-lg text-[11px] hover:bg-(--surface-control-hover) ${isActive ? "active bg-(--surface-active) border-(--border-accent-soft)" : ""}`}
                       onClick={() => {
                         onSelectGitRoot?.(path);
                         setIsGitRootPanelOpen(false);
                       }}
                     >
-                      <span className="git-root-path">{path}</span>
-                      {isActive && <span className="git-root-tag">{t("git.active")}</span>}
+                      <span className="git-root-path flex-auto min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">{path}</span>
+                      {isActive && <span className="git-root-tag text-[10px] text-(--text-muted) uppercase tracking-[0.05em]">{t("git.active")}</span>}
                     </button>
                     );
                   })}
@@ -2236,7 +2236,7 @@ export function GitDiffPanel({
             </div>
           )}
           {!error && !stagedFiles.length && !unstagedFiles.length && commitsAhead === 0 && (
-            <div className="diff-empty">{t("git.noChangesDetected")}</div>
+            <div className="diff-empty text-xs text-(--text-faint)">{t("git.noChangesDetected")}</div>
           )}
           {(stagedFiles.length > 0 || unstagedFiles.length > 0) && (
             <>
@@ -2351,7 +2351,7 @@ export function GitDiffPanel({
         </div>
       ) : mode === "log" ? (
         <div className="git-log-list">
-          {logError && <div className="diff-error">{logError}</div>}
+          {logError && <div className="diff-error text-xs text-[rgba(255,160,160,0.9)] whitespace-pre-wrap">{logError}</div>}
           {!logError && logLoading && (
             <div className="diff-viewer-loading">{t("git.loadingCommits")}</div>
           )}
@@ -2360,7 +2360,7 @@ export function GitDiffPanel({
             !logEntries.length &&
             !showAheadSection &&
             !showBehindSection && (
-            <div className="diff-empty">{t("git.noCommitsYet")}</div>
+            <div className="diff-empty text-xs text-(--text-faint)">{t("git.noCommitsYet")}</div>
           )}
           {showAheadSection && (
             <div className="git-log-section">
@@ -2424,9 +2424,9 @@ export function GitDiffPanel({
         </div>
       ) : mode === "issues" ? (
         <div className="git-issues-list">
-          {issuesError && <div className="diff-error">{issuesError}</div>}
+          {issuesError && <div className="diff-error text-xs text-[rgba(255,160,160,0.9)] whitespace-pre-wrap">{issuesError}</div>}
           {!issuesError && !issuesLoading && !issues.length && (
-            <div className="diff-empty">{t("git.noOpenIssues")}</div>
+            <div className="diff-empty text-xs text-(--text-faint)">{t("git.noOpenIssues")}</div>
           )}
           {issues.map((issue) => {
             const relativeTime = formatRelativeTime(new Date(issue.updatedAt).getTime());
@@ -2454,12 +2454,12 @@ export function GitDiffPanel({
       ) : (
         <div className="git-pr-list">
           {pullRequestsError && (
-            <div className="diff-error">{pullRequestsError}</div>
+            <div className="diff-error text-xs text-[rgba(255,160,160,0.9)] whitespace-pre-wrap">{pullRequestsError}</div>
           )}
           {!pullRequestsError &&
             !pullRequestsLoading &&
             !pullRequests.length && (
-            <div className="diff-empty">{t("git.noOpenPullRequests")}</div>
+            <div className="diff-empty text-xs text-(--text-faint)">{t("git.noOpenPullRequests")}</div>
           )}
           {pullRequests.map((pullRequest) => {
             const relativeTime = formatRelativeTime(
@@ -2587,7 +2587,7 @@ export function GitDiffPanel({
                       codeAnnotationSurface="modal-diff-view"
                     />
                   ) : (
-                    <div className="diff-empty">{t("git.diffUnavailable")}</div>
+                    <div className="diff-empty text-xs text-(--text-faint)">{t("git.diffUnavailable")}</div>
                   )}
                 </div>
               </div>
