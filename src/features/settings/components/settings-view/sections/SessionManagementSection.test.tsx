@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   collectSucceededWorkspaceIds,
@@ -190,70 +190,72 @@ describe("SessionManagementSection", () => {
     ).toBeTruthy();
   });
 
-  it("saves the workspace thread visibility count with clamping", async () => {
-    const onUpdateWorkspaceSettings = vi.fn().mockResolvedValue(undefined);
+  // 注释掉：线程可见性配置功能已从项目模式中移除
+  // it("saves the workspace thread visibility count with clamping", async () => {
+  //   const onUpdateWorkspaceSettings = vi.fn().mockResolvedValue(undefined);
+  //
+  //   render(
+  //     <SessionManagementSection
+  //       title="Session Management"
+  //       description="Manage sessions"
+  //       workspaces={[workspace, worktree]}
+  //       groupedWorkspaces={[{ id: null, name: "Ungrouped", workspaces: [workspace, worktree] }]}
+  //       initialWorkspaceId="ws-1"
+  //       onUpdateWorkspaceSettings={onUpdateWorkspaceSettings}
+  //     />,
+  //   );
+  //
+  //   expect(await screen.findByText("settings.sessionManagementCurrentPageCount")).toBeTruthy();
+  //
+  //   const input = screen.getByTestId(
+  //     "settings-project-sessions-visible-root-count-input",
+  //   ) as HTMLInputElement;
+  //   fireEvent.change(input, { target: { value: "300" } });
+  //   fireEvent.click(
+  //     screen.getByTestId("settings-project-sessions-visible-root-count-save"),
+  //   );
+  //
+  //   await waitFor(() => {
+  //     expect(onUpdateWorkspaceSettings).toHaveBeenCalledWith("ws-1", {
+  //       visibleThreadRootCount: 200,
+  //     });
+  //   });
+  // });
 
-    render(
-      <SessionManagementSection
-        title="Session Management"
-        description="Manage sessions"
-        workspaces={[workspace, worktree]}
-        groupedWorkspaces={[{ id: null, name: "Ungrouped", workspaces: [workspace, worktree] }]}
-        initialWorkspaceId="ws-1"
-        onUpdateWorkspaceSettings={onUpdateWorkspaceSettings}
-      />,
-    );
-
-    expect(await screen.findByText("settings.sessionManagementCurrentPageCount")).toBeTruthy();
-
-    const input = screen.getByTestId(
-      "settings-project-sessions-visible-root-count-input",
-    ) as HTMLInputElement;
-    fireEvent.change(input, { target: { value: "300" } });
-    fireEvent.click(
-      screen.getByTestId("settings-project-sessions-visible-root-count-save"),
-    );
-
-    await waitFor(() => {
-      expect(onUpdateWorkspaceSettings).toHaveBeenCalledWith("ws-1", {
-        visibleThreadRootCount: 200,
-      });
-    });
-  });
-
-  it("does not partially parse invalid workspace thread visibility text", async () => {
-    const onUpdateWorkspaceSettings = vi.fn().mockResolvedValue(undefined);
-
-    render(
-      <SessionManagementSection
-        title="Session Management"
-        description="Manage sessions"
-        workspaces={[workspace, worktree]}
-        groupedWorkspaces={[{ id: null, name: "Ungrouped", workspaces: [workspace, worktree] }]}
-        initialWorkspaceId="ws-1"
-        onUpdateWorkspaceSettings={onUpdateWorkspaceSettings}
-      />,
-    );
-
-    const input = screen.getByTestId(
-      "settings-project-sessions-visible-root-count-input",
-    ) as HTMLInputElement;
-    await act(async () => {
-      fireEvent.change(input, { target: { value: "12abc" } });
-    });
-
-    const saveButton = screen.getByTestId(
-      "settings-project-sessions-visible-root-count-save",
-    ) as HTMLButtonElement;
-    expect(saveButton.disabled).toBe(true);
-
-    await act(async () => {
-      fireEvent.blur(input);
-    });
-
-    expect(input.value).toBe("20");
-    expect(onUpdateWorkspaceSettings).not.toHaveBeenCalled();
-  });
+  // 注释掉：线程可见性配置功能已从项目模式中移除
+  // it("does not partially parse invalid workspace thread visibility text", async () => {
+  //   const onUpdateWorkspaceSettings = vi.fn().mockResolvedValue(undefined);
+  //
+  //   render(
+  //     <SessionManagementSection
+  //       title="Session Management"
+  //       description="Manage sessions"
+  //       workspaces={[workspace, worktree]}
+  //       groupedWorkspaces={[{ id: null, name: "Ungrouped", workspaces: [workspace, worktree] }]}
+  //       initialWorkspaceId="ws-1"
+  //       onUpdateWorkspaceSettings={onUpdateWorkspaceSettings}
+  //     />,
+  //   );
+  //
+  //   const input = screen.getByTestId(
+  //     "settings-project-sessions-visible-root-count-input",
+  //   ) as HTMLInputElement;
+  //   await act(async () => {
+  //     fireEvent.change(input, { target: { value: "12abc" } });
+  //   });
+  //
+  //   const saveButton = screen.getByTestId(
+  //     "settings-project-sessions-visible-root-count-save",
+  //   ) as HTMLButtonElement;
+  //   expect(saveButton.disabled).toBe(true);
+  //
+  //   await act(async () => {
+  //     fireEvent.blur(input);
+  //   });
+  //
+  //   expect(input.value).toBe("20");
+  //   expect(onUpdateWorkspaceSettings).not.toHaveBeenCalled();
+  // });
 
   it("explains filtered total versus current page window for project scope", async () => {
     vi.mocked(getWorkspaceSessionProjectionSummary).mockResolvedValue({
