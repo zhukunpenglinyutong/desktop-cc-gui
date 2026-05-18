@@ -1,130 +1,56 @@
 /*
- * file-tree.css — keeper (Phase 9.1b)
+ * file-tree.css — keeper
  *
- * Reduced from 981 lines via Phase 9.1b workspace-search + file-preview + file-tree-search inline.
- * Layout/sizing/positioning/color rules migrated to inline Tailwind utilities in:
- *   - src/features/files/components/FileTreePanel.tsx
- *   - src/features/files/components/FileTreeRootActions.tsx
- *   - src/features/files/components/FilePreviewPopover.tsx
- *   - src/features/search/components/WorkspaceSearchPanel.tsx
- *   - src/features/prompts/components/PromptPanel.tsx (file-tree-search wrap)
- *
- * What remains here:
- *   1. Parent-state cascade (hover / focus-within) on actions (visibility gating)
- *   2. Draggable cursor cascade on `.file-tree-row[draggable]`
- *   3. Root cascade `:root.file-tree-dragging *` + `.app.windows-desktop` + `.app.reduced-transparency`
- *   4. Theme-aware git-status color cascade (`.file-tree-name.git-X` + `:root[data-theme="light"]` override)
- *   5. Prism token color cascade on `.file-preview-line-text .token.*` (DOM injected by dangerouslySetInnerHTML)
- *   6. `.file-preview-popover::after` arrow pseudo-element (CSS triangle + drop-shadow filter)
- *   7. Keyframes (file-tree-root-action-spin / file-tree-loading-spin / new-file-prompt-enter)
- *      + `@media (prefers-reduced-motion)` overrides
- *
- * Cross-file dependencies (DO NOT MODIFY without coordination):
- *   - src/styles/detached-file-explorer.css line 21:
- *     `.detached-file-explorer-window .file-tree-action { display: none; }`
- *     depends on `.file-tree-action` className being preserved on FileTreePanel's mention button.
+ * The file tree surface now renders through coss/headless-tree and owns its
+ * row/action styling in component-local Tailwind classes. This stylesheet only
+ * keeps shared cascades that cannot be expressed safely inline:
+ *   1. Native drag cursor bridge used across renderer windows
+ *   2. Theme-aware git status colors for the coss file-tree name span
+ *   3. File preview Prism and popover pseudo-element keepers
+ *   4. New-file prompt animation/focus keepers
  */
 
-/* ── 1. Parent-state cascade: root-actions visibility ─────────────────── */
+/* ── 1. Drag cursor bridge ────────────────────────────────────────────── */
 
-.file-tree-panel:hover .file-tree-root-actions,
-.file-tree-panel:focus-within .file-tree-root-actions {
-  opacity: 1;
-  transform: translateY(0);
-  pointer-events: auto;
-}
-
-/* Row-wrap parent-state cascade: file-tree-action visibility */
-
-.file-tree-action {
-  opacity: 0;
-  visibility: hidden;
-  pointer-events: none;
-}
-
-.file-tree-row-wrap:hover .file-tree-action,
-.file-tree-row-wrap:focus-within .file-tree-action,
-.file-tree-action.is-visible,
-.file-tree-action:hover,
-.file-tree-action:focus-visible {
-  opacity: 1;
-  visibility: visible;
-  pointer-events: auto;
-}
-
-.file-tree-action:hover:not(:disabled) {
-  transform: translateY(-50%);
-  box-shadow: none;
-}
-
-/* Row-wrap parent-state cascade: row hover */
-
-.file-tree-row:hover,
-.file-tree-row-wrap:hover .file-tree-row {
-  background: var(--surface-hover);
-  border-color: var(--border-subtle);
-}
-
-.file-tree-row.is-selected {
-  background: var(--surface-hover);
-}
-
-/* Root-action interactive states */
-
-.file-tree-root-action:hover:not(:disabled),
-.file-tree-root-action:focus-visible {
-  background: color-mix(in srgb, var(--surface-hover) 78%, transparent);
-  color: var(--text-emphasis);
-}
-
-.file-tree-root-action.is-active {
-  background: color-mix(in srgb, var(--accent-500) 16%, transparent);
-  color: var(--text-accent, var(--accent-500));
-}
-
-.file-tree-root-action-danger:hover:not(:disabled),
-.file-tree-root-action-danger:focus-visible {
-  color: var(--text-danger-hover, #ef4444);
-}
-
-.file-tree-root-action.is-spinning svg {
-  animation: file-tree-root-action-spin 420ms ease-in-out 1;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .file-tree-root-action.is-spinning svg {
-    animation: none;
-  }
-}
-
-@keyframes file-tree-root-action-spin {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-/* ── 2. Draggable cursor cascade ──────────────────────────────────────── */
-
-.file-tree-row[draggable="true"] {
+.coss-file-tree-item[draggable="true"] {
   cursor: default;
 }
 
-.file-tree-row[draggable="true"]:active {
+.coss-file-tree-item[draggable="true"]:active {
   cursor: default;
 }
 
-.app.windows-desktop .file-tree-row[draggable="true"] {
+.app.windows-desktop .coss-file-tree-item[draggable="true"] {
   cursor: grab;
 }
 
-.app.windows-desktop .file-tree-row[draggable="true"]:active {
+.app.windows-desktop .coss-file-tree-item[draggable="true"]:active {
   cursor: grabbing;
 }
 
-/* ── 3. Root cascade: dragging + reduced-transparency ─────────────────── */
+.coss-file-tree-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--foreground) 20%, transparent) transparent;
+}
+
+.coss-file-tree-scroll::-webkit-scrollbar {
+  width: 8px;
+}
+
+.coss-file-tree-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.coss-file-tree-scroll::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background-clip: content-box;
+  background-color: color-mix(in srgb, var(--foreground) 18%, transparent);
+}
+
+.coss-file-tree-scroll::-webkit-scrollbar-thumb:hover {
+  background-color: color-mix(in srgb, var(--foreground) 28%, transparent);
+}
 
 :root.file-tree-dragging,
 :root.file-tree-dragging * {
@@ -132,127 +58,64 @@
   cursor: grabbing !important;
 }
 
-.app.reduced-transparency .file-tree-top-zone {
-  backdrop-filter: none;
-  background: transparent;
-}
-
-.app.reduced-transparency .file-tree-panel {
-  border-radius: 0;
-  border-left: none;
-}
-
 .app.reduced-transparency .new-file-prompt-backdrop {
   backdrop-filter: none;
 }
 
-/* List `has-root-guide` pseudo-element */
+/* ── 2. Git status color cascade (theme-aware) ───────────────────────── */
 
-.file-tree-list.has-root-guide::before {
-  content: "";
-  position: absolute;
-  left: 0;
-  top: 0;
-  bottom: 0;
-  width: 1px;
-  background: color-mix(in srgb, var(--border-subtle) 82%, transparent);
-  pointer-events: none;
+.coss-file-tree-name.git-a,
+.coss-file-tree-name.git-m,
+.coss-file-tree-name.git-d,
+.coss-file-tree-name.git-r,
+.coss-file-tree-name.git-t {
+  font-weight: 600;
+  font-variation-settings: "wght" 600;
 }
 
-/* Row gitignored inherited italic */
-
-.file-tree-row.is-gitignored {
-  opacity: 0.5;
-}
-
-.file-tree-row.is-gitignored .file-tree-name {
-  font-style: italic;
-}
-
-/* file-tree-toggle.is-active */
-
-.file-tree-toggle.is-active {
-  color: var(--text-emphasis);
-  background: var(--surface-active);
-  border-color: var(--border-accent);
-}
-
-/* Loading spinner animation */
-
-.file-tree-loading-spinner {
-  animation: file-tree-loading-spin 0.85s linear infinite;
-}
-
-@keyframes file-tree-loading-spin {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .file-tree-loading-spinner {
-    animation: none;
-  }
-}
-
-/* ── 4. Git status color cascade (theme-aware) ────────────────────────── */
-
-.file-tree-name.git-a,
-.file-tree-name.git-m,
-.file-tree-name.git-d,
-.file-tree-name.git-r,
-.file-tree-name.git-t {
-  font-weight: 800 !important;
-  font-variation-settings: "wght" 800;
-  text-shadow: 0.25px 0 currentColor;
-}
-
-.file-tree-name.git-a {
+.coss-file-tree-name.git-a {
   color: #89d185;
 }
 
-.file-tree-name.git-m {
+.coss-file-tree-name.git-m {
   color: #6bb3f0;
 }
 
-.file-tree-name.git-d {
+.coss-file-tree-name.git-d {
   color: #ff6b6b;
   text-decoration: line-through;
 }
 
-.file-tree-name.git-r {
+.coss-file-tree-name.git-r {
   color: #c9a3f5;
 }
 
-.file-tree-name.git-t {
+.coss-file-tree-name.git-t {
   color: #f5c363;
 }
 
-:root[data-theme="light"] .file-tree-name.git-a {
+:root[data-theme="light"] .coss-file-tree-name.git-a {
   color: var(--status-success);
 }
 
-:root[data-theme="light"] .file-tree-name.git-m {
+:root[data-theme="light"] .coss-file-tree-name.git-m {
   color: #2a7ab5;
 }
 
-:root[data-theme="light"] .file-tree-name.git-d {
+:root[data-theme="light"] .coss-file-tree-name.git-d {
   color: var(--status-error);
   text-decoration: line-through;
 }
 
-:root[data-theme="light"] .file-tree-name.git-r {
+:root[data-theme="light"] .coss-file-tree-name.git-r {
   color: #8b5fcf;
 }
 
-:root[data-theme="light"] .file-tree-name.git-t {
+:root[data-theme="light"] .coss-file-tree-name.git-t {
   color: var(--status-warning);
 }
 
-/* ── 5. file-preview-popover arrow pseudo-element ─────────────────────── */
+/* ── 3. file-preview-popover arrow pseudo-element ─────────────────────── */
 
 .file-preview-popover::after {
   content: "";
@@ -267,7 +130,7 @@
   filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.25));
 }
 
-/* ── 6. Prism token color cascade (DOM injected by dangerouslySetInnerHTML) ── */
+/* ── 4. Prism token color cascade (DOM injected by dangerouslySetInnerHTML) ── */
 
 .file-preview-line-text .token.comment,
 .file-preview-line-text .token.prolog,
@@ -320,7 +183,7 @@
   color: #d2a8ff;
 }
 
-/* ── 7. new-file-prompt card animation + form-state cascade ───────────── */
+/* ── 5. new-file-prompt card animation + form-state cascade ───────────── */
 
 .new-file-prompt-card {
   animation: new-file-prompt-enter 0.15s ease-out;

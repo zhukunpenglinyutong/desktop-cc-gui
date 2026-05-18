@@ -185,7 +185,7 @@ export function FileExplorerWorkspace({
         "--detached-file-explorer-sidebar-width": `${sidebarWidth}px`,
       } as CSSProperties}
     >
-      <div className="detached-file-explorer-sidebar min-w-0 min-h-0 bg-[var(--surface-messages)] [.is-sidebar-collapsed_&]:invisible [&_.file-tree-panel]:h-full">
+      <div className="detached-file-explorer-sidebar min-w-0 min-h-0 bg-[var(--surface-messages)] [.is-sidebar-collapsed_&]:invisible [&_.coss-file-tree-panel]:h-full">
         <FileTreePanel
           workspaceId={workspaceId}
           workspaceName={workspaceName}

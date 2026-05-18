@@ -68,6 +68,10 @@ afterEach(() => {
   window.localStorage.removeItem(DETACHED_FILE_TREE_DRAG_SNAPSHOT_STORAGE_KEY);
 });
 
+function getTreeItem(name: string | RegExp) {
+  return screen.getByRole("treeitem", { name });
+}
+
 describe("FileTreePanel detached explorer action", () => {
   it("keeps the embedded panel available while exposing the detached explorer control", () => {
     const onOpenDetachedExplorer = vi.fn();
@@ -122,7 +126,7 @@ describe("FileTreePanel detached explorer action", () => {
       />,
     );
 
-    fireEvent.dragStart(screen.getByRole("button", { name: "README.md" }), {
+    fireEvent.dragStart(getTreeItem("README.md"), {
       dataTransfer: {
         setData: vi.fn(),
         effectAllowed: "",
@@ -163,7 +167,7 @@ describe("FileTreePanel detached explorer action", () => {
       />,
     );
 
-    const row = screen.getByRole("button", { name: "README.md" });
+    const row = getTreeItem("README.md");
     fireEvent.dragStart(row, {
       dataTransfer: {
         setData: vi.fn(),

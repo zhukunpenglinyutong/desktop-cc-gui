@@ -18,7 +18,6 @@ import "./styles/diff-keepers.css";
 import "./styles/file-tree.css";
 import "./styles/file-view-panel-shell.css";
 import "./styles/file-view-panel-prism.css";
-import "./styles/detached-file-explorer.css";
 import "./styles/session-activity.css";
 import "./styles/prompts-animations.css";
 import "./styles/note-cards-rich-input.css";

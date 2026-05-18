@@ -97,8 +97,12 @@ afterEach(() => {
   delete window.__fileTreeDragCleanup;
 });
 
+function getTreeItem(name: string | RegExp) {
+  return screen.getByRole("treeitem", { name });
+}
+
 describe("FileTreePanel run action isolation", () => {
-  it("renders a single workspace root node and keeps it expanded by default", () => {
+  it("uses an internal workspace root while rendering top-level entries first", () => {
     const { container } = render(
       <FileTreePanel
         workspaceId="workspace-1"
@@ -118,13 +122,40 @@ describe("FileTreePanel run action isolation", () => {
       />,
     );
 
-    expect(screen.getByRole("button", { name: /workspace/ })).toBeTruthy();
-    expect(container.querySelectorAll(".file-tree-row.is-root")).toHaveLength(1);
-    expect(screen.getByRole("button", { name: /src/ })).toBeTruthy();
+    expect(screen.queryByRole("treeitem", { name: /workspace/ })).toBeNull();
+    expect(container.querySelectorAll('[data-slot="tree-item"][data-file-tree-kind="root"]')).toHaveLength(0);
+    expect(getTreeItem(/src/)).toBeTruthy();
+    expect(getTreeItem(/README.md/)).toBeTruthy();
   });
 
-  it("restores child expansion state after collapsing and re-expanding workspace root", () => {
+  it("renders the file browser through the coss tree surface", () => {
     const { container } = render(
+      <FileTreePanel
+        workspaceId="workspace-1"
+        workspacePath="/tmp/workspace"
+        files={["src/index.ts", "README.md"]}
+        directories={["src"]}
+        isLoading={false}
+        filePanelMode="files"
+        onFilePanelModeChange={() => undefined}
+        onOpenFile={() => undefined}
+        onInsertText={() => undefined}
+        openTargets={[]}
+        openAppIconById={{}}
+        selectedOpenAppId=""
+        onSelectOpenAppId={() => undefined}
+        gitStatusFiles={[]}
+        gitignoredFiles={new Set<string>()}
+      />,
+    );
+
+    expect(container.querySelector('[data-slot="tree"]')).toBeTruthy();
+    expect(container.querySelector('[data-slot="tree-item"]')).toBeTruthy();
+    expect(container.querySelector(".file-tree-row")).toBeNull();
+  });
+
+  it("keeps child expansion on the coss folder row without visible root chrome", () => {
+    render(
       <FileTreePanel
         workspaceId="workspace-1"
         workspacePath="/tmp/workspace"
@@ -143,20 +174,19 @@ describe("FileTreePanel run action isolation", () => {
       />,
     );
 
-    fireEvent.doubleClick(screen.getByRole("button", { name: /src/ }));
+    fireEvent.doubleClick(getTreeItem(/src/));
     expect(screen.getByText("index.ts")).toBeTruthy();
 
-    const rootChevron = container.querySelector(".file-tree-root-chevron");
-    expect(rootChevron).toBeTruthy();
-    fireEvent.click(rootChevron as Element);
+    const srcToggle = getTreeItem(/src/).querySelector("[data-tree-toggle]");
+    expect(srcToggle).toBeTruthy();
+    fireEvent.click(srcToggle as Element);
     expect(screen.queryByText("index.ts")).toBeNull();
-
-    fireEvent.click(rootChevron as Element);
+    fireEvent.click(srcToggle as Element);
     expect(screen.getByText("index.ts")).toBeTruthy();
   });
 
-  it("places workspace root on its own row", () => {
-    render(
+  it("keeps root actions outside tree rows", () => {
+    const { container } = render(
       <FileTreePanel
         workspaceId="workspace-1"
         workspacePath="/tmp/workspace"
@@ -176,10 +206,9 @@ describe("FileTreePanel run action isolation", () => {
       />,
     );
 
-    const rootButton = screen.getByRole("button", { name: /workspace/ });
-    const rootRow = rootButton.closest(".file-tree-root-row");
-    expect(rootRow).toBeTruthy();
-    expect(rootRow?.querySelectorAll(".file-tree-row.is-root")).toHaveLength(1);
+    expect(screen.queryByRole("treeitem", { name: /workspace/ })).toBeNull();
+    expect(container.querySelector(".coss-file-tree-root-actions-slot")).toBeTruthy();
+    expect(container.querySelector(".coss-file-tree-row-wrap .coss-file-tree-root-actions")).toBeNull();
   });
 
   it("keeps opened-file contract when running non-open action from root context menu", async () => {
@@ -190,7 +219,7 @@ describe("FileTreePanel run action isolation", () => {
       value: { writeText: writeTextMock },
     });
 
-    render(
+    const { container } = render(
       <FileTreePanel
         workspaceId="workspace-1"
         workspacePath="/tmp/workspace"
@@ -209,7 +238,9 @@ describe("FileTreePanel run action isolation", () => {
       />,
     );
 
-    fireEvent.contextMenu(screen.getByRole("button", { name: /workspace/ }));
+    const surface = container.querySelector(".coss-file-tree-surface");
+    expect(surface).toBeTruthy();
+    fireEvent.contextMenu(surface as Element);
     fireEvent.click(await screen.findByRole("menuitem", { name: "files.copyPath" }));
 
     expect(writeTextMock).toHaveBeenCalledWith("/tmp/workspace/");
@@ -235,7 +266,7 @@ describe("FileTreePanel run action isolation", () => {
       />,
     );
 
-    fireEvent.doubleClick(screen.getByRole("button", { name: "README.md" }));
+    fireEvent.doubleClick(getTreeItem("README.md"));
     await waitFor(() => {
       expect(invokeMock).toHaveBeenCalledWith("read_workspace_file", {
         workspaceId: "workspace-1",
@@ -272,7 +303,7 @@ describe("FileTreePanel run action isolation", () => {
       />,
     );
 
-    fireEvent.doubleClick(screen.getByRole("button", { name: /src/ }));
+    fireEvent.doubleClick(getTreeItem(/src/));
     const fileLabel = screen.getByText("index.ts");
     expect(fileLabel.className).toContain("git-m");
   });
@@ -306,7 +337,7 @@ describe("FileTreePanel run action isolation", () => {
       />,
     );
 
-    fireEvent.doubleClick(screen.getByRole("button", { name: /kmllm-search-showcar-py/ }));
+    fireEvent.doubleClick(getTreeItem(/kmllm-search-showcar-py/));
     const fileLabel = screen.getByText("README.md");
     expect(fileLabel.className).toContain("git-m");
   });
@@ -340,7 +371,7 @@ describe("FileTreePanel run action isolation", () => {
       />,
     );
 
-    fireEvent.doubleClick(screen.getByRole("button", { name: /kmllm-search-showcar-py/ }));
+    fireEvent.doubleClick(getTreeItem(/kmllm-search-showcar-py/));
     const readmeLabels = screen.getAllByText("README.md");
     expect(readmeLabels).toHaveLength(2);
     const highlightedLabels = readmeLabels.filter((label) =>
@@ -415,7 +446,7 @@ describe("FileTreePanel run action isolation", () => {
     expect(folderLabel.className).not.toContain("git-d");
   });
 
-  it("keeps sticky-top and scroll-list containers separated in DOM structure", () => {
+  it("renders a dedicated coss tree scroll surface", () => {
     const { container } = render(
       <FileTreePanel
         workspaceId="workspace-1"
@@ -435,11 +466,15 @@ describe("FileTreePanel run action isolation", () => {
       />,
     );
 
-    const topZone = container.querySelector(".file-tree-top-zone");
-    const listZone = container.querySelector(".file-tree-list");
-    expect(topZone).toBeTruthy();
-    expect(listZone).toBeTruthy();
-    expect(topZone?.contains(listZone as Node)).toBe(false);
+    const surface = container.querySelector(".coss-file-tree-surface");
+    const scrollZone = container.querySelector(".coss-file-tree-scroll");
+    const tree = container.querySelector('[data-slot="tree"]');
+    expect(surface).toBeTruthy();
+    expect(scrollZone).toBeTruthy();
+    expect(tree).toBeTruthy();
+    expect(surface?.contains(scrollZone as Node)).toBe(true);
+    expect(scrollZone?.contains(tree as Node)).toBe(true);
+    expect(container.querySelector(".file-tree-top-zone")).toBeNull();
   });
 
   it("renders empty directories from workspace directory snapshot", () => {
@@ -589,13 +624,13 @@ describe("FileTreePanel run action isolation", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "README.md" }));
+    fireEvent.click(getTreeItem("README.md"));
     expect(onOpenFile).not.toHaveBeenCalled();
-    fireEvent.doubleClick(screen.getByRole("button", { name: "README.md" }));
+    fireEvent.doubleClick(getTreeItem("README.md"));
     expect(onOpenFile).toHaveBeenCalledWith("README.md");
   });
 
-  it("keeps single click on folder as selection and uses double click to toggle children", () => {
+  it("toggles folder children on a single click", () => {
     const onOpenFile = vi.fn();
     render(
       <FileTreePanel
@@ -617,16 +652,18 @@ describe("FileTreePanel run action isolation", () => {
     );
 
     expect(screen.queryByText("index.ts")).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: /src/ }));
+    fireEvent.click(getTreeItem(/src/));
+    expect(screen.getByText("index.ts")).toBeTruthy();
+    fireEvent.click(getTreeItem(/src/));
     expect(screen.queryByText("index.ts")).toBeNull();
-    const srcRow = screen.getByRole("button", { name: /src/ });
-    const srcChevron = srcRow.querySelector(".file-tree-chevron");
+    const srcRow = getTreeItem(/src/);
+    const srcChevron = srcRow.querySelector("[data-tree-toggle]");
     expect(srcChevron).toBeTruthy();
     fireEvent.click(srcChevron as Element);
     expect(screen.getByText("index.ts")).toBeTruthy();
     fireEvent.click(srcChevron as Element);
     expect(screen.queryByText("index.ts")).toBeNull();
-    fireEvent.doubleClick(screen.getByRole("button", { name: /src/ }));
+    fireEvent.doubleClick(getTreeItem(/src/));
     expect(screen.getByText("index.ts")).toBeTruthy();
     expect(onOpenFile).not.toHaveBeenCalled();
     expect(invokeMock).not.toHaveBeenCalledWith(
@@ -669,7 +706,7 @@ describe("FileTreePanel run action isolation", () => {
       />,
     );
 
-    fireEvent.doubleClick(screen.getByRole("button", { name: /node_modules/ }));
+    fireEvent.doubleClick(getTreeItem(/node_modules/));
     expect(await screen.findByText("package.json")).toBeTruthy();
     expect(invokeMock).toHaveBeenCalledWith("list_workspace_directory_children", {
       workspaceId: "workspace-1",
@@ -725,8 +762,8 @@ describe("FileTreePanel run action isolation", () => {
       />,
     );
 
-    fireEvent.doubleClick(screen.getByRole("button", { name: /packages/ }));
-    fireEvent.doubleClick(screen.getByRole("button", { name: /large/ }));
+    fireEvent.doubleClick(getTreeItem(/packages/));
+    fireEvent.doubleClick(getTreeItem(/large/));
 
     expect(await screen.findByText("index.ts")).toBeTruthy();
     expect(invokeMock).toHaveBeenCalledWith("list_workspace_directory_children", {
@@ -783,11 +820,11 @@ describe("FileTreePanel run action isolation", () => {
       />,
     );
 
-    fireEvent.doubleClick(screen.getByRole("button", { name: /docs/ }));
-    fireEvent.doubleClick(screen.getByRole("button", { name: /empty/ }));
+    fireEvent.doubleClick(getTreeItem(/docs/));
+    fireEvent.doubleClick(getTreeItem(/empty/));
     await waitFor(() => expect(invokeMock).toHaveBeenCalledTimes(1));
-    fireEvent.doubleClick(screen.getByRole("button", { name: /empty/ }));
-    fireEvent.doubleClick(screen.getByRole("button", { name: /empty/ }));
+    fireEvent.doubleClick(getTreeItem(/empty/));
+    fireEvent.doubleClick(getTreeItem(/empty/));
 
     expect(invokeMock).toHaveBeenCalledTimes(1);
   });
@@ -851,13 +888,13 @@ describe("FileTreePanel run action isolation", () => {
       />,
     );
 
-    fireEvent.doubleClick(screen.getByRole("button", { name: /node_modules/ }));
-    expect(await screen.findByRole("button", { name: /@babel/ })).toBeTruthy();
+    fireEvent.doubleClick(getTreeItem(/node_modules/));
+    expect(await screen.findByRole("treeitem", { name: /@babel/ })).toBeTruthy();
 
-    fireEvent.doubleClick(screen.getByRole("button", { name: /@babel/ }));
-    expect(await screen.findByRole("button", { name: /core/ })).toBeTruthy();
+    fireEvent.doubleClick(getTreeItem(/@babel/));
+    expect(await screen.findByRole("treeitem", { name: /core/ })).toBeTruthy();
 
-    fireEvent.doubleClick(screen.getByRole("button", { name: /core/ }));
+    fireEvent.doubleClick(getTreeItem(/core/));
     expect(await screen.findByText("index.js")).toBeTruthy();
 
     expect(invokeMock).toHaveBeenCalledWith("list_workspace_directory_children", {
@@ -907,7 +944,7 @@ describe("FileTreePanel run action isolation", () => {
     fireEvent.click(refreshButton);
     expect(onRefreshFiles).toHaveBeenCalledTimes(1);
 
-    fireEvent.click(screen.getByRole("button", { name: "README.md" }));
+    fireEvent.click(getTreeItem("README.md"));
     expect(deleteButton.disabled).toBe(false);
     fireEvent.click(deleteButton);
 
@@ -977,7 +1014,7 @@ describe("FileTreePanel run action isolation", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: /src/ }));
+    fireEvent.click(getTreeItem(/src/));
     fireEvent.click(screen.getByRole("button", { name: "files.newFolder" }));
     const folderInput = screen.getByPlaceholderText("files.newFolderNamePlaceholder");
     fireEvent.change(folderInput, { target: { value: "docs" } });
@@ -1011,8 +1048,8 @@ describe("FileTreePanel run action isolation", () => {
       />,
     );
 
-    fireEvent.doubleClick(screen.getByRole("button", { name: /src/ }));
-    fireEvent.click(screen.getByRole("button", { name: "index.ts" }));
+    fireEvent.doubleClick(getTreeItem(/src/));
+    fireEvent.click(getTreeItem("index.ts"));
     fireEvent.click(screen.getByRole("button", { name: "files.newFile" }));
     const fileInput = screen.getByPlaceholderText("files.newFileNamePlaceholder");
     fireEvent.change(fileInput, { target: { value: "utils.ts" } });
@@ -1057,7 +1094,7 @@ describe("FileTreePanel run action isolation", () => {
       />,
     );
 
-    fireEvent.doubleClick(screen.getByRole("button", { name: /node_modules/ }));
+    fireEvent.doubleClick(getTreeItem(/node_modules/));
     expect(await screen.findByRole("button", { name: "files.retryLoadFiles" })).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: "files.retryLoadFiles" }));
@@ -1120,7 +1157,7 @@ describe("FileTreePanel run action isolation", () => {
       />,
     );
 
-    const mentionButton = container.querySelector(".file-tree-action") as HTMLButtonElement | null;
+    const mentionButton = container.querySelector(".coss-file-tree-action") as HTMLButtonElement | null;
     expect(mentionButton).not.toBeNull();
     fireEvent.click(mentionButton as HTMLButtonElement);
 
@@ -1149,8 +1186,8 @@ describe("FileTreePanel run action isolation", () => {
       />,
     );
 
-    const readme = screen.getByRole("button", { name: "README.md" });
-    const pkg = screen.getByRole("button", { name: "package.json" });
+    const readme = getTreeItem("README.md");
+    const pkg = getTreeItem("package.json");
     fireEvent.click(readme);
     fireEvent.click(pkg, { ctrlKey: true });
 
@@ -1223,7 +1260,7 @@ describe("FileTreePanel run action isolation", () => {
     );
 
     const setDragImage = vi.fn();
-    fireEvent.dragStart(screen.getByRole("button", { name: "README.md" }), {
+    fireEvent.dragStart(getTreeItem("README.md"), {
       dataTransfer: {
         setData: vi.fn(),
         setDragImage,
@@ -1237,7 +1274,7 @@ describe("FileTreePanel run action isolation", () => {
     expect(dragImageNode?.textContent).toContain("README.md");
     expect(document.body.contains(dragImageNode ?? null)).toBe(true);
 
-    fireEvent.dragEnd(screen.getByRole("button", { name: "README.md" }));
+    fireEvent.dragEnd(getTreeItem("README.md"));
     expect(document.body.contains(dragImageNode ?? null)).toBe(false);
 
     Object.defineProperty(window.navigator, "platform", {
@@ -1275,7 +1312,7 @@ describe("FileTreePanel run action isolation", () => {
       />,
     );
 
-    const readme = screen.getByRole("button", { name: "README.md" });
+    const readme = getTreeItem("README.md");
     fireEvent.dragStart(readme, {
       dataTransfer: { setData: vi.fn(), effectAllowed: "" },
     });
@@ -1321,7 +1358,7 @@ describe("FileTreePanel run action isolation", () => {
       />,
     );
 
-    const readme = screen.getByRole("button", { name: "README.md" });
+    const readme = getTreeItem("README.md");
     fireEvent.dragStart(readme, {
       dataTransfer: { setData: vi.fn(), effectAllowed: "" },
     });
@@ -1360,7 +1397,7 @@ describe("FileTreePanel run action isolation", () => {
       />,
     );
 
-    const readme = screen.getByRole("button", { name: "README.md" });
+    const readme = getTreeItem("README.md");
     fireEvent.dragStart(readme, {
       dataTransfer: { setData: vi.fn(), effectAllowed: "" },
     });

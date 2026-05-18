@@ -77,6 +77,8 @@
     "@fontsource-variable/geist-mono": "^5.2.7",
     "@fontsource-variable/inter": "^5.2.8",
     "@fontsource/inter": "^5.2.8",
+    "@headless-tree/core": "^1.6.3",
+    "@headless-tree/react": "^1.6.3",
     "@hello-pangea/dnd": "^18.0.1",
     "@lobehub/icons": "^4.9.0",
     "@tailwindcss/vite": "^4.1.18",

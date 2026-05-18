@@ -862,7 +862,6 @@ export function ComposerInput({
                     {t("composer.planModeToggle")}
                   </span>
                   <Switch
-                    aria-label={t("composer.planModeToggle")}
                     checked={isPlanModeEnabled}
                     disabled={collaborationModeDisabled}
                     onCheckedChange={handlePlanModeToggle}

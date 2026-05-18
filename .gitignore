@@ -31,6 +31,7 @@ CLAUDE.md
 
 # AI workflow local-only state
 .claude/settings.local.json
+.claude/worktrees/
 .codex/hooks/__pycache__/
 .trellis/.developer
 .trellis/.current-task

@@ -12,10 +12,6 @@ import { convertFileSrc } from "@tauri-apps/api/core";
 import { emitTo } from "@tauri-apps/api/event";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import { confirm } from "@tauri-apps/plugin-dialog";
-import LoaderCircle from "lucide-react/dist/esm/icons/loader-circle";
-import Plus from "lucide-react/dist/esm/icons/plus";
-import TreePine from "lucide-react/dist/esm/icons/tree-pine";
-import FileIcon from "../../../components/FileIcon";
 import type { PanelTabId } from "../../layout/components/PanelTabs";
 import {
   createWorkspaceDirectory,
@@ -40,6 +36,10 @@ import {
 } from "../detachedFileTreeDragBridge";
 import { FilePreviewPopover } from "./FilePreviewPopover";
 import { FileTreeRootActions } from "./FileTreeRootActions";
+import {
+  CossFileTreeSurface,
+  type CossFileTreeItemData,
+} from "./CossFileTreeSurface";
 import {
   clampRendererContextMenuPosition,
   RendererContextMenu,
@@ -977,7 +977,6 @@ export function FileTreePanel({
     return map;
   }, [gitRootWorkspacePrefix, gitStatusFiles, workspacePath]);
 
-  const isRootVisibleExpanded = rootExpanded;
   const visibleTreeNodeEntries = useMemo(() => {
     const entries: VisibleTreeNodeEntry[] = [{ path: "", type: "root" }];
     const visit = (node: FileTreeNode) => {
@@ -1708,7 +1707,7 @@ export function FileTreePanel({
     selectedNodeType !== null && selectedNodePath !== null && selectedNodePath.length > 0;
 
   const showContextMenu = useCallback(
-    (event: MouseEvent<HTMLButtonElement>, relativePath: string, isFolder: boolean) => {
+    (event: MouseEvent<HTMLElement>, relativePath: string, isFolder: boolean) => {
       event.preventDefault();
       event.stopPropagation();
 
@@ -1844,261 +1843,245 @@ export function FileTreePanel({
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [selectedNodePath, selectedNodeType, trashItem, copyPath]);
 
-  const renderNode = (node: FileTreeNode, depth: number) => {
-    const isFolder = node.type === "folder";
-    const isLazyFolder = isFolder && (node.isLazyLoadable ?? false);
-    const hasChildren = isFolder && node.children.length > 0;
-    const canExpand = isFolder && (hasChildren || isLazyFolder);
-    const isExpanded = canExpand && expandedFolders.has(node.path);
-    const isLazyLoading = isLazyFolder && loadingLazyDirectories.has(node.path);
-    const lazyLoadError = isLazyFolder ? lazyDirectoryLoadErrors.get(node.path) ?? null : null;
-    const rawGitStatus = isFolder
-      ? folderGitStatusMap.get(node.path) ?? null
-      : gitStatusMap.get(node.path) ?? null;
-    const fileGitStatus =
-      isFolder && rawGitStatus?.toUpperCase() === "D"
-        ? "M"
-        : rawGitStatus;
-    const gitStatusClass = fileGitStatus
-      ? ` git-${fileGitStatus.toLowerCase()}`
-      : "";
-    const isGitignored = isFolder
-      ? mergedGitignoredDirectories.has(node.path)
-      : mergedGitignoredFiles.has(node.path);
-    const isSelected = selectedNodePaths.has(node.path);
-    const isPrimarySelection = selectedNodePath === node.path;
-    return (
-      <div key={node.path}>
-        <div className="file-tree-row-wrap relative flex items-center">
-          <button
-            type="button"
-            className={`file-tree-row flex items-center gap-[5px] py-0.5 px-1.5 rounded-[7px] cursor-default border border-transparent bg-transparent text-[var(--text-emphasis)] text-xs leading-[1.25] text-left w-full${isFolder ? " is-folder font-semibold" : " is-file pl-[22px]"}${isGitignored ? " is-gitignored" : ""}${isSelected ? " is-selected" : ""}${isPrimarySelection ? " is-primary" : ""}`}
-            style={{ paddingLeft: `${depth * 10}px` }}
-            onClick={(event) => {
-              const isToggleSelect = event.metaKey || event.ctrlKey;
-              if (event.shiftKey) {
-                setRangeSelection(node.path, node.type);
-                return;
-              }
-              if (isToggleSelect) {
-                togglePathSelection(node.path, node.type);
-                return;
-              }
-              setSingleSelection(node.path, node.type);
-            }}
-            onDoubleClick={(event) => {
-              event.preventDefault();
-              if (isFolder) {
-                if (!canExpand) {
-                  return;
-                }
-                toggleFolderExpandedState(node.path, isLazyFolder);
-                return;
-              }
-              if (onOpenFile) {
-                onOpenFile(node.path);
-                return;
-              }
-              openPreview(node.path, event.currentTarget);
-            }}
-            onContextMenu={(event) => {
-              if (!selectedNodePaths.has(node.path)) {
-                setSingleSelection(node.path, node.type);
-              } else {
-                setSelectedNodePath(node.path);
-                setSelectedNodeType(node.type);
-              }
-              showContextMenu(event, node.path, isFolder);
-            }}
-            draggable
-            onDragStart={(event: DragEvent<HTMLButtonElement>) => {
-              const dragSourcePaths = isSelected
-                ? orderedSelectedNodePaths
-                : [node.path];
-              const uniqueSourcePaths = Array.from(new Set(dragSourcePaths));
-              if (uniqueSourcePaths.length === 0) {
-                return;
-              }
-              if (!isSelected) {
-                setSingleSelection(node.path, node.type);
-              }
-              if (
-                typeof window !== "undefined" &&
-                (window.__fileTreeDragActive === true ||
-                  typeof window.__fileTreeDragCleanup === "function")
-              ) {
-                clearFileTreeDragBridge();
-              }
-              const absolutePaths = uniqueSourcePaths.map((path) => resolvePath(path));
-              activeCrossWindowDragPathsRef.current = absolutePaths;
-              lastCrossWindowDragBroadcastRef.current = Date.now();
-              dragImageCleanupRef.current?.();
-              dragImageCleanupRef.current = null;
-              setFileTreeDragBridge(absolutePaths);
-              window.__fileTreeDragCleanup = bindChatDropTargetsForTreeDrag(absolutePaths);
-              setFileTreeDragPosition(event.clientX, event.clientY);
-              broadcastCrossWindowTreeDrag({
-                type: "start",
-                paths: absolutePaths,
-              });
-              if (!event.dataTransfer) {
-                return;
-              }
-              const encodedPaths = JSON.stringify(absolutePaths);
-              event.dataTransfer.effectAllowed = "copy";
-              event.dataTransfer.setData("application/x-ccgui-file-paths", encodedPaths);
-              event.dataTransfer.setData("text/plain", absolutePaths.join("\n"));
-              if (isWindowsDragPreviewRuntime() && typeof event.dataTransfer.setDragImage === "function") {
-                const preview = createWindowsFileTreeDragImage(
-                  absolutePaths[0] ?? "",
-                  absolutePaths.length,
-                  isFolder,
-                );
-                if (preview) {
-                  event.dataTransfer.setDragImage(preview.element, 18, 14);
-                  dragImageCleanupRef.current = preview.cleanup;
-                }
-              }
-            }}
-            onDrag={(event: DragEvent<HTMLButtonElement>) => {
-              setFileTreeDragPosition(event.clientX, event.clientY);
-              rebroadcastCrossWindowTreeDrag();
-            }}
-            onDragEnd={(event: DragEvent<HTMLButtonElement>) => {
-              activeCrossWindowDragPathsRef.current = [];
-              lastCrossWindowDragBroadcastRef.current = 0;
-              dragImageCleanupRef.current?.();
-              dragImageCleanupRef.current = null;
-              if (typeof window !== "undefined" && window.__fileTreeDragDropped === true) {
-                clearFileTreeDragBridge();
-                return;
-              }
-              const inserted = triggerChatInputInsertFromTreeDrag(
-                event,
-                window.__fileTreeDragPaths ?? [],
-              );
-              if (!inserted) {
-                const fallbackPaths = window.__fileTreeDragPaths ?? [];
-                const hasChatInput = Boolean(document.querySelector(".chat-input-box"));
-                if (hasChatInput && fallbackPaths.length > 0) {
-                  // Fallback channel for runtimes where native HTML drag does not expose
-                  // stable dragover/drop coordinates across panes.
-                  insertPathsIntoChat(fallbackPaths);
-                }
-              }
-              clearFileTreeDragBridge();
-            }}
-          >
-            {isFolder && canExpand ? (
-              <span
-                className={`file-tree-chevron w-[13px] h-[13px] inline-flex items-center justify-center text-[var(--text-faint)] transition-transform duration-[140ms] ease-out${isExpanded ? " is-open rotate-90" : " rotate-0"}`}
-                onClick={(event) => {
-                  event.preventDefault();
-                  event.stopPropagation();
-                  toggleFolderExpandedState(node.path, isLazyFolder);
-                }}
-              >
-                ›
-              </span>
-            ) : (
-              <span className="file-tree-spacer w-[13px] h-[13px]" aria-hidden />
-            )}
-            <span className="file-tree-icon inline-flex items-center justify-center w-[15px] h-[15px] shrink-0 [&>svg]:w-[13px] [&>svg]:h-[13px]" aria-hidden>
-              <FileIcon filePath={node.name} isFolder={isFolder} isOpen={isExpanded} />
-            </span>
-            <span className={`file-tree-name min-w-0 overflow-hidden text-ellipsis whitespace-nowrap leading-[1.2]${gitStatusClass}`}>{node.name}</span>
-          </button>
-          <button
-            type="button"
-            className={`ghost icon-button file-tree-action absolute right-1 top-1/2 -translate-y-1/2 z-[2] p-0.5 border-none bg-transparent shadow-none${isSelected ? " is-visible" : ""}`}
-            onMouseDown={(event) => {
-              // Keep row click from stealing the pointer sequence on dense list rows.
-              event.stopPropagation();
-            }}
-            onClick={(event) => {
-              event.stopPropagation();
-              const absolutePath = resolvePath(node.path);
-              // Prefer ChatInputBox bridge so `+` follows the same render/update
-              // path as native @ file-reference insertion.
-              if (typeof window !== "undefined" && window.handleFilePathFromJava) {
-                window.handleFilePathFromJava(absolutePath);
-                return;
-              }
-              // Fallback for non-ChatInputBox contexts.
-              const mentionText = `@${absolutePath}${node.type === "file" ? " " : ""}`;
-              onInsertText?.(mentionText);
-            }}
-            aria-label={t("files.mentionFile", { name: node.name })}
-            title={t("files.mentionInChat")}
-          >
-            <Plus size={10} aria-hidden />
-          </button>
-        </div>
-        {hasChildren && isExpanded && (
-          <div className="file-tree-children">
-            {node.children.map((child) => renderNode(child, depth + 1))}
-          </div>
-        )}
-        {isLazyFolder && isExpanded && node.children.length === 0 && (
-          <div className="file-tree-children">
-            {isLazyLoading ? (
-              <div className="file-tree-lazy-state py-[3px] pr-1.5 pl-[26px] text-[10px] text-[var(--text-faint)]">{t("files.loadingFiles")}</div>
-            ) : lazyLoadError ? (
-              <button
-                type="button"
-                className="file-tree-lazy-retry w-[calc(100%-20px)] ml-5 border border-dashed border-[var(--border-subtle)] rounded-md bg-transparent text-[var(--status-error)] text-[10px] text-left py-[3px] px-1.5 cursor-pointer"
-                onClick={() => void loadLazyDirectoryChildren(node.path)}
-                title={lazyLoadError}
-              >
-                {t("files.retryLoadFiles")}
-              </button>
-            ) : (
-              <div className="file-tree-lazy-state py-[3px] pr-1.5 pl-[26px] text-[10px] text-[var(--text-faint)]">{t("files.noFilesAvailable")}</div>
-            )}
-          </div>
-        )}
-      </div>
-    );
-  };
+  const handleRootContextMenu = useCallback(
+    (event: MouseEvent<HTMLElement>) => {
+      if (!selectedNodePaths.has("")) {
+        setSingleSelection("", "root");
+      } else {
+        setSelectedNodePath("");
+        setSelectedNodeType("folder");
+      }
+      showContextMenu(event, "", true);
+    },
+    [selectedNodePaths, setSingleSelection, showContextMenu],
+  );
+
+  const handleTreeItemClick = useCallback(
+    (event: MouseEvent<HTMLButtonElement>, item: CossFileTreeItemData) => {
+      if (item.type === "root") {
+        return;
+      }
+      const nodeType = item.type === "folder" ? "folder" : "file";
+      const isToggleSelect = event.metaKey || event.ctrlKey;
+      if (event.shiftKey) {
+        setRangeSelection(item.path, nodeType);
+        return;
+      }
+      if (isToggleSelect) {
+        togglePathSelection(item.path, nodeType);
+        return;
+      }
+      setSingleSelection(item.path, nodeType);
+      if (item.type === "folder") {
+        const canExpand = item.children.length > 0 || item.isLazyLoadable;
+        if (canExpand) {
+          toggleFolderExpandedState(item.path, item.isLazyLoadable);
+        }
+      }
+    },
+    [setRangeSelection, setSingleSelection, toggleFolderExpandedState, togglePathSelection],
+  );
+
+  const handleTreeItemToggle = useCallback(
+    (item: CossFileTreeItemData) => {
+      if (item.type !== "folder") {
+        return;
+      }
+      const canExpand = item.children.length > 0 || item.isLazyLoadable;
+      if (!canExpand) {
+        return;
+      }
+      toggleFolderExpandedState(item.path, item.isLazyLoadable);
+    },
+    [toggleFolderExpandedState],
+  );
+
+  const handleTreeItemDoubleClick = useCallback(
+    (event: MouseEvent<HTMLButtonElement>, item: CossFileTreeItemData) => {
+      event.preventDefault();
+      if (item.type === "folder") {
+        handleTreeItemToggle(item);
+        return;
+      }
+      if (item.type !== "file") {
+        return;
+      }
+      if (onOpenFile) {
+        onOpenFile(item.path);
+        return;
+      }
+      openPreview(item.path, event.currentTarget);
+    },
+    [handleTreeItemToggle, onOpenFile, openPreview],
+  );
+
+  const handleTreeItemContextMenu = useCallback(
+    (event: MouseEvent<HTMLButtonElement>, item: CossFileTreeItemData) => {
+      if (item.type === "root") {
+        return;
+      }
+      const nodeType = item.type === "folder" ? "folder" : "file";
+      if (!selectedNodePaths.has(item.path)) {
+        setSingleSelection(item.path, nodeType);
+      } else {
+        setSelectedNodePath(item.path);
+        setSelectedNodeType(nodeType);
+      }
+      showContextMenu(event, item.path, item.type === "folder");
+    },
+    [selectedNodePaths, setSingleSelection, showContextMenu],
+  );
+
+  const handleTreeItemDragStart = useCallback(
+    (event: DragEvent<HTMLButtonElement>, item: CossFileTreeItemData) => {
+      if (item.type === "root") {
+        return;
+      }
+      const isSelected = selectedNodePaths.has(item.path);
+      const dragSourcePaths = isSelected ? orderedSelectedNodePaths : [item.path];
+      const uniqueSourcePaths = Array.from(new Set(dragSourcePaths));
+      if (uniqueSourcePaths.length === 0) {
+        return;
+      }
+      if (!isSelected) {
+        setSingleSelection(item.path, item.type);
+      }
+      if (
+        typeof window !== "undefined" &&
+        (window.__fileTreeDragActive === true ||
+          typeof window.__fileTreeDragCleanup === "function")
+      ) {
+        clearFileTreeDragBridge();
+      }
+      const absolutePaths = uniqueSourcePaths.map((path) => resolvePath(path));
+      activeCrossWindowDragPathsRef.current = absolutePaths;
+      lastCrossWindowDragBroadcastRef.current = Date.now();
+      dragImageCleanupRef.current?.();
+      dragImageCleanupRef.current = null;
+      setFileTreeDragBridge(absolutePaths);
+      window.__fileTreeDragCleanup = bindChatDropTargetsForTreeDrag(absolutePaths);
+      setFileTreeDragPosition(event.clientX, event.clientY);
+      broadcastCrossWindowTreeDrag({
+        type: "start",
+        paths: absolutePaths,
+      });
+      const encodedPaths = JSON.stringify(absolutePaths);
+      event.dataTransfer.effectAllowed = "copy";
+      event.dataTransfer.setData("application/x-ccgui-file-paths", encodedPaths);
+      event.dataTransfer.setData("text/plain", absolutePaths.join("\n"));
+      if (
+        isWindowsDragPreviewRuntime() &&
+        typeof event.dataTransfer.setDragImage === "function"
+      ) {
+        const preview = createWindowsFileTreeDragImage(
+          absolutePaths[0] ?? "",
+          absolutePaths.length,
+          item.type === "folder",
+        );
+        if (preview) {
+          event.dataTransfer.setDragImage(preview.element, 18, 14);
+          dragImageCleanupRef.current = preview.cleanup;
+        }
+      }
+    },
+    [
+      broadcastCrossWindowTreeDrag,
+      orderedSelectedNodePaths,
+      resolvePath,
+      selectedNodePaths,
+      setSingleSelection,
+    ],
+  );
+
+  const handleTreeItemDrag = useCallback(
+    (event: DragEvent<HTMLButtonElement>) => {
+      setFileTreeDragPosition(event.clientX, event.clientY);
+      rebroadcastCrossWindowTreeDrag();
+    },
+    [rebroadcastCrossWindowTreeDrag],
+  );
+
+  const handleTreeItemDragEnd = useCallback(
+    (event: DragEvent<HTMLButtonElement>) => {
+      activeCrossWindowDragPathsRef.current = [];
+      lastCrossWindowDragBroadcastRef.current = 0;
+      dragImageCleanupRef.current?.();
+      dragImageCleanupRef.current = null;
+      if (typeof window !== "undefined" && window.__fileTreeDragDropped === true) {
+        clearFileTreeDragBridge();
+        return;
+      }
+      const inserted = triggerChatInputInsertFromTreeDrag(
+        event,
+        window.__fileTreeDragPaths ?? [],
+      );
+      if (!inserted) {
+        const fallbackPaths = window.__fileTreeDragPaths ?? [];
+        const hasChatInput = Boolean(document.querySelector(".chat-input-box"));
+        if (hasChatInput && fallbackPaths.length > 0) {
+          // Fallback channel for runtimes where native HTML drag does not expose
+          // stable dragover/drop coordinates across panes.
+          insertPathsIntoChat(fallbackPaths);
+        }
+      }
+      clearFileTreeDragBridge();
+    },
+    [],
+  );
+
+  const handleMentionTreeItem = useCallback(
+    (item: CossFileTreeItemData) => {
+      if (item.type === "root") {
+        return;
+      }
+      const absolutePath = resolvePath(item.path);
+      // Prefer ChatInputBox bridge so `+` follows the same render/update path
+      // as native @ file-reference insertion.
+      if (typeof window !== "undefined" && window.handleFilePathFromJava) {
+        window.handleFilePathFromJava(absolutePath);
+        return;
+      }
+      const mentionText = `@${absolutePath}${item.type === "file" ? " " : ""}`;
+      onInsertText?.(mentionText);
+    },
+    [onInsertText, resolvePath],
+  );
 
   return (
-    <aside className="diff-panel file-tree-panel gap-0 overflow-hidden" ref={panelRef}>
-      <div className="file-tree-top-zone sticky top-0 z-[8] flex flex-col gap-1.5 pb-1.5 bg-[color-mix(in_srgb,var(--surface-right-panel,transparent)_84%,transparent)] [backdrop-filter:blur(6px)]">
-        <div className="file-tree-root-row flex items-center gap-0.5 min-w-0">
-          <div className="file-tree-root-wrap min-w-0 flex-1 -ml-2.5">
-            <button
-              type="button"
-              className={`file-tree-row is-folder is-root w-full min-w-0 max-w-none pt-1 pr-2 pb-1 pl-0 border-none rounded-none bg-transparent text-[13px] font-bold gap-0.5 flex items-center cursor-default text-[var(--text-emphasis)] leading-[1.25] text-left${selectedNodePaths.has("") ? " is-selected" : ""}${selectedNodePath === "" ? " is-primary" : ""}`}
-              onClick={() => {
-                setSingleSelection("", "root");
-                setRootExpanded((prev) => !prev);
-              }}
-              onContextMenu={(event) => {
-                if (!selectedNodePaths.has("")) {
-                  setSingleSelection("", "root");
-                } else {
-                  setSelectedNodePath("");
-                  setSelectedNodeType("folder");
-                }
-                showContextMenu(event, "", true);
-              }}
-            >
-              <span
-                className={`file-tree-chevron file-tree-root-chevron w-[18px] h-[18px] inline-flex items-center justify-center text-[var(--text-faint)] text-[17px] font-bold ml-0.5 transition-transform duration-[140ms] ease-out${isRootVisibleExpanded ? " is-open rotate-90" : " rotate-0"}`}
-                onClick={(event) => {
-                  event.preventDefault();
-                  event.stopPropagation();
-                  setRootExpanded((prev) => !prev);
-                }}
-              >
-                ›
-              </span>
-              <span className="file-tree-icon file-tree-icon-root-special inline-flex items-center justify-center w-[15px] h-[15px] shrink-0 text-[color-mix(in_srgb,var(--accent-500)_65%,var(--text-strong)_35%)] [&>svg]:w-[13px] [&>svg]:h-[13px]" aria-hidden>
-                <TreePine size={13} />
-              </span>
-              <span className="file-tree-name min-w-0 overflow-hidden text-ellipsis whitespace-nowrap leading-[1.2] text-[var(--text-strong)]">{workspaceRootLabel}</span>
-            </button>
-          </div>
+    <aside
+      className="coss-file-tree-panel flex min-h-0 flex-1 flex-col overflow-hidden bg-background py-3 pl-4 pr-3 font-sans text-sm text-foreground [-webkit-app-region:no-drag]"
+      ref={panelRef}
+    >
+      <CossFileTreeSurface
+        nodes={nodes}
+        workspaceRootLabel={workspaceRootLabel}
+        rootExpanded={rootExpanded}
+        expandedFolders={expandedFolders}
+        selectedNodePaths={selectedNodePaths}
+        selectedNodePath={selectedNodePath}
+        loadingLazyDirectories={loadingLazyDirectories}
+        lazyDirectoryLoadErrors={lazyDirectoryLoadErrors}
+        gitStatusMap={gitStatusMap}
+        folderGitStatusMap={folderGitStatusMap}
+        gitignoredFiles={mergedGitignoredFiles}
+        gitignoredDirectories={mergedGitignoredDirectories}
+        showLoading={showLoading}
+        hasTreeEntries={hasTreeEntries}
+        normalizedLoadError={normalizedLoadError}
+        showMentionActions={Boolean(onInsertText)}
+        translate={t}
+        onRootContextMenu={handleRootContextMenu}
+        onItemClick={handleTreeItemClick}
+        onItemDoubleClick={handleTreeItemDoubleClick}
+        onItemToggle={handleTreeItemToggle}
+        onItemContextMenu={handleTreeItemContextMenu}
+        onItemDragStart={handleTreeItemDragStart}
+        onItemDrag={handleTreeItemDrag}
+        onItemDragEnd={handleTreeItemDragEnd}
+        onMentionItem={handleMentionTreeItem}
+        onRetryLazyDirectory={(path) => void loadLazyDirectoryChildren(path)}
+        onRefreshFiles={onRefreshFiles}
+        rootActions={
           <FileTreeRootActions
             canTrashSelectedNode={canTrashSelectedNode}
             isSpecHubActive={isSpecHubActive}
@@ -2118,36 +2101,8 @@ export function FileTreePanel({
             showSpecHubAction={showSpecHubAction}
             showDetachedExplorerAction={showDetachedExplorerAction}
           />
-        </div>
-      </div>
-      <div className={`file-tree-list relative flex flex-col gap-px overflow-y-auto flex-1 pr-px pt-0 min-h-0${isRootVisibleExpanded && nodes.length > 0 ? " has-root-guide" : ""}`}>
-        {showLoading ? (
-          <div className="file-tree-loading-row inline-flex items-center gap-[7px] min-h-6 mt-0.5 ml-[15px] text-[var(--text-muted)] text-xs leading-none" role="status" aria-live="polite">
-            <LoaderCircle className="file-tree-loading-spinner flex-none text-[var(--text-accent,var(--accent-500))]" size={13} aria-hidden />
-            <span>{t("files.loadingFiles")}</span>
-          </div>
-        ) : !isRootVisibleExpanded ? null : normalizedLoadError && !hasTreeEntries ? (
-          <div className="file-tree-empty text-xs text-[var(--text-faint)]" title={normalizedLoadError}>
-            <div>{t("files.loadFilesFailed")}</div>
-            {onRefreshFiles ? (
-              <button
-                type="button"
-                className="file-tree-lazy-retry w-[calc(100%-20px)] ml-5 border border-dashed border-[var(--border-subtle)] rounded-md bg-transparent text-[var(--status-error)] text-[10px] text-left py-[3px] px-1.5 cursor-pointer"
-                onClick={() => void onRefreshFiles()}
-                title={normalizedLoadError}
-              >
-                {t("files.retryLoadFiles")}
-              </button>
-            ) : null}
-          </div>
-        ) : !hasTreeEntries ? (
-          <div className="file-tree-empty text-xs text-[var(--text-faint)]">
-            {t("files.noFilesAvailable")}
-          </div>
-        ) : (
-          nodes.map((node) => renderNode(node, 1))
-        )}
-      </div>
+        }
+      />
       {previewPath && previewAnchor
         ? createPortal(
             <FilePreviewPopover

@@ -80,12 +80,15 @@ export function FileTreeRootActions({
     }
   }, []);
 
+  const actionClassName = (actionId: string, extra = "") =>
+    `coss-file-tree-root-action inline-flex !size-6 items-center justify-center !rounded-sm !border-0 !bg-background/90 !p-0 !text-xs !font-normal text-muted-foreground/80 !shadow-none backdrop-blur-sm !transition-colors hover:bg-[color-mix(in_srgb,var(--background)_92%,var(--foreground)_8%)] hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-40 [&_svg]:!size-3.5 [&_svg]:stroke-[1.8]${spinningAction === actionId ? " is-spinning [&>svg]:animate-spin" : ""}${extra ? ` ${extra}` : ""}`;
+
   return (
-    <div className="file-tree-root-actions inline-flex items-center gap-0.5 flex-none opacity-0 -translate-y-px pointer-events-none transition-[opacity,transform] duration-[140ms] ease-out">
+    <div className="coss-file-tree-root-actions inline-flex flex-none items-center gap-1">
       {showDetachedExplorerAction ? (
         <button
           type="button"
-          className={`ghost icon-button file-tree-root-action w-6 h-6 p-0 border-none shadow-none bg-transparent${spinningAction === "detached" ? " is-spinning" : ""}`}
+          className={actionClassName("detached")}
           onClick={() =>
             triggerActionWithSpin("detached", () => onOpenDetachedExplorer?.(detachedInitialFilePath))
           }
@@ -99,7 +102,10 @@ export function FileTreeRootActions({
       {showSpecHubAction ? (
         <button
           type="button"
-          className={`ghost icon-button file-tree-root-action w-6 h-6 p-0 border-none shadow-none bg-transparent${isSpecHubActive ? " is-active" : ""}${spinningAction === "spec-hub" ? " is-spinning" : ""}`}
+          className={actionClassName(
+            "spec-hub",
+            isSpecHubActive ? "is-active bg-accent text-accent-foreground" : "",
+          )}
           onClick={() => triggerActionWithSpin("spec-hub", () => onOpenSpecHub?.())}
           disabled={!onOpenSpecHub}
           aria-label={t("sidebar.specHub")}
@@ -110,7 +116,7 @@ export function FileTreeRootActions({
       ) : null}
       <button
         type="button"
-        className={`ghost icon-button file-tree-root-action w-6 h-6 p-0 border-none shadow-none bg-transparent${spinningAction === "new-file" ? " is-spinning" : ""}`}
+        className={actionClassName("new-file")}
         onClick={() =>
           triggerActionWithSpin("new-file", () => onOpenNewFile(selectedParentFolder))
         }
@@ -121,7 +127,7 @@ export function FileTreeRootActions({
       </button>
       <button
         type="button"
-        className={`ghost icon-button file-tree-root-action w-6 h-6 p-0 border-none shadow-none bg-transparent${spinningAction === "new-folder" ? " is-spinning" : ""}`}
+        className={actionClassName("new-folder")}
         onClick={() =>
           triggerActionWithSpin("new-folder", () => onOpenNewFolder(selectedParentFolder))
         }
@@ -132,7 +138,7 @@ export function FileTreeRootActions({
       </button>
       <button
         type="button"
-        className={`ghost icon-button file-tree-root-action w-6 h-6 p-0 border-none shadow-none bg-transparent${spinningAction === "refresh" ? " is-spinning" : ""}`}
+        className={actionClassName("refresh")}
         onClick={() => triggerActionWithSpin("refresh", () => onRefreshFiles?.())}
         disabled={!onRefreshFiles}
         aria-label={t("files.refreshFiles")}
@@ -142,7 +148,10 @@ export function FileTreeRootActions({
       </button>
       <button
         type="button"
-        className={`ghost icon-button file-tree-root-action file-tree-root-action-danger w-6 h-6 p-0 border-none shadow-none bg-transparent text-[var(--text-danger,#f87171)]${spinningAction === "trash" ? " is-spinning" : ""}`}
+        className={actionClassName(
+          "trash",
+          "coss-file-tree-root-action-danger text-destructive hover:text-destructive",
+        )}
         onClick={() => triggerActionWithSpin("trash", onTrashSelected)}
         disabled={!canTrashSelectedNode}
         aria-label={t("files.deleteItem")}
