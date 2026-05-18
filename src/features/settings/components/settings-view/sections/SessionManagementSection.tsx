@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import Archive from "lucide-react/dist/esm/icons/archive";
 import ChevronDown from "lucide-react/dist/esm/icons/chevron-down";
 import ChevronRight from "lucide-react/dist/esm/icons/chevron-right";
+import FolderInput from "lucide-react/dist/esm/icons/folder-input";
 import RotateCw from "lucide-react/dist/esm/icons/rotate-cw";
 import Trash2 from "lucide-react/dist/esm/icons/trash-2";
 import Undo2 from "lucide-react/dist/esm/icons/undo-2";
@@ -33,7 +34,12 @@ import {
   type WorkspaceSessionCatalogSource,
 } from "../hooks/useWorkspaceSessionCatalog";
 import { useWorkspaceSessionProjectionSummary } from "../../../../workspaces/hooks/useWorkspaceSessionProjectionSummary";
-import type { WorkspaceSessionCatalogEntry } from "../../../../../services/tauri";
+import {
+  assignWorkspaceSessionFolder,
+  type WorkspaceSessionCatalogEntry,
+} from "../../../../../services/tauri";
+import { SessionOrganizerModal } from "./sessionOrganization/SessionOrganizerModal";
+import { MoveToFolderPicker } from "./sessionOrganization/MoveToFolderPicker";
 
 type GroupedWorkspace = {
   id: string | null;
@@ -380,10 +386,13 @@ export function SessionManagementSection({
       : workspaceOptions[0]?.id ?? null,
   );
   const [mode, setMode] = useState<WorkspaceSessionCatalogMode>("project");
+  const [organizerOpen, setOrganizerOpen] = useState(false);
   const [filters, setFilters] = useState<WorkspaceSessionCatalogFilters>(DEFAULT_FILTERS);
   const [selectedIds, setSelectedIds] = useState<Record<string, true>>({});
   const [deleteArmed, setDeleteArmed] = useState(false);
   const [notice, setNotice] = useState<NoticeState>(null);
+  const [movePickerOpen, setMovePickerOpen] = useState(false);
+  const [isMovingToFolder, setIsMovingToFolder] = useState(false);
   const [visibleThreadRootCountDraft, setVisibleThreadRootCountDraft] = useState(
     String(DEFAULT_VISIBLE_THREAD_ROOT_COUNT),
   );
@@ -501,6 +510,29 @@ export function SessionManagementSection({
       next[buildWorkspaceSessionSelectionKey(entry)] = true;
     });
     setSelectedIds(next);
+  };
+
+  const handleSelectAllInOrganizer = () => {
+    if (primaryEntries.length === 0) return;
+    const next: Record<string, true> = {};
+    primaryEntries.forEach((entry) => {
+      next[buildWorkspaceSessionSelectionKey(entry)] = true;
+    });
+    setSelectedIds(next);
+  };
+
+  const openOrganizer = () => {
+    resetSelection();
+    setMovePickerOpen(false);
+    setNotice(null);
+    setOrganizerOpen(true);
+  };
+
+  const closeOrganizer = () => {
+    if (isMovingToFolder) return;
+    resetSelection();
+    setMovePickerOpen(false);
+    setOrganizerOpen(false);
   };
 
   const handleWorkspaceChange = (nextWorkspaceId: string | null) => {
@@ -692,6 +724,80 @@ export function SessionManagementSection({
     }
   };
 
+  const handleApplyMoveToFolder = async (folderId: string | null) => {
+    if (!workspaceId || isMovingToFolder) {
+      return;
+    }
+    const selectedEntries = visibleEntries.filter((entry) =>
+      Boolean(selectedIds[buildWorkspaceSessionSelectionKey(entry)]),
+    );
+    if (selectedEntries.length === 0) {
+      setMovePickerOpen(false);
+      return;
+    }
+    setIsMovingToFolder(true);
+    let succeeded = 0;
+    const failures: { sessionId: string; error: string }[] = [];
+    try {
+      for (const entry of selectedEntries) {
+        try {
+          await assignWorkspaceSessionFolder(
+            workspaceId,
+            entry.sessionId,
+            folderId,
+          );
+          succeeded += 1;
+        } catch (error) {
+          failures.push({
+            sessionId: entry.sessionId,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
+      }
+      if (failures.length === 0) {
+        setNotice({
+          kind: "success",
+          text: t("settings.sessionOrganizationMoveSuccess", {
+            count: succeeded,
+          }),
+        });
+        resetSelection();
+      } else {
+        setNotice({
+          kind: "error",
+          text: t("settings.sessionOrganizationMovePartial", {
+            succeeded,
+            failed: failures.length,
+            reason: failures[0]?.error ?? "",
+          }),
+        });
+      }
+      await Promise.all([
+        reloadPrimary(),
+        mode === "project" ? reloadRelated() : Promise.resolve(),
+        mode === "project" && workspaceId
+          ? reloadProjectionSummary()
+          : Promise.resolve(),
+      ]);
+      const succeededWorkspaceIds = new Set(
+        selectedEntries
+          .filter(
+            (entry) =>
+              !failures.some(
+                (failure) => failure.sessionId === entry.sessionId,
+              ),
+          )
+          .map((entry) => entry.workspaceId),
+      );
+      succeededWorkspaceIds.forEach((ownerWorkspaceId) => {
+        onSessionsMutated?.(ownerWorkspaceId);
+      });
+    } finally {
+      setIsMovingToFolder(false);
+      setMovePickerOpen(false);
+    }
+  };
+
   const expandCount = mode === "global" ? primaryEntries.length : filteredTotalCount;
   const showProjectStrictEmpty =
     mode === "project" && !primaryIsLoading && primaryEntries.length === 0;
@@ -727,6 +833,19 @@ export function SessionManagementSection({
               <p>{description}</p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
+              {mode === "project" ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={openOrganizer}
+                  disabled={!workspaceId || primaryIsLoading || isMutating}
+                  data-testid="settings-project-sessions-open-organizer"
+                >
+                  <FolderInput size={14} aria-hidden />
+                  {t("settings.sessionOrganizerOpenButton")}
+                </Button>
+              ) : null}
               <Button
                 type="button"
                 variant="outline"
@@ -1161,6 +1280,46 @@ export function SessionManagementSection({
             </>
           )}
         </div>
+      ) : null}
+      {movePickerOpen && workspaceId ? (
+        <MoveToFolderPicker
+          workspaceId={workspaceId}
+          selectedCount={selectedCount}
+          onClose={() => {
+            if (!isMovingToFolder) {
+              setMovePickerOpen(false);
+            }
+          }}
+          onApply={(folderId) => handleApplyMoveToFolder(folderId)}
+        />
+      ) : null}
+      {organizerOpen && workspaceId ? (
+        <SessionOrganizerModal
+          workspaceId={workspaceId}
+          workspacePath={selectedWorkspace?.path ?? null}
+          workspaceLabel={
+            workspaceLabelById.get(workspaceId) ?? selectedWorkspace?.name ?? ""
+          }
+          entries={primaryEntries}
+          selectedIds={selectedIds}
+          selectedCount={selectedCount}
+          deleteArmed={deleteArmed}
+          isMutating={isMutating}
+          isMovingToFolder={isMovingToFolder}
+          locale={i18n.language}
+          onClose={closeOrganizer}
+          onToggleSelection={toggleSelection}
+          onSelectAll={handleSelectAllInOrganizer}
+          onClearSelection={resetSelection}
+          onArchive={() => void handleMutation("archive")}
+          onUnarchive={() => void handleMutation("unarchive")}
+          onDelete={() => void handleMutation("delete")}
+          onOpenMovePicker={() => setMovePickerOpen(true)}
+          onCatalogMutated={() => {
+            void reloadPrimary();
+            void reloadProjectionSummary();
+          }}
+        />
       ) : null}
     </div>
   );
