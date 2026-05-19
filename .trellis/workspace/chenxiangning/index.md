@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-14.md`
-- **Total Sessions**: 483
-- **Last Active**: 2026-05-18
+- **Total Sessions**: 484
+- **Last Active**: 2026-05-19
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-14.md` | ~335 | Active |
+| `journal-14.md` | ~376 | Active |
 | `journal-13.md` | ~1947 | Archived |
 | `journal-12.md` | ~1971 | Archived |
 | `journal-11.md` | ~1985 | Archived |
@@ -42,6 +42,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 484 | 2026-05-19 | 归一化用户提问卡片交互 | `d142510b` | `feature/v0.5.0-md` |
 | 483 | 2026-05-18 | 加固 Claude 列表超时兜底 | `1f2f87f1` | `feature/v0.5.0-md` |
 | 482 | 2026-05-18 | 修复 Markdown 收口回归 | `59acb6be` | `feature/v0.5.0-md` |
 | 481 | 2026-05-18 | 支持 Markdown 文件预览公式和图表渲染 | `7fdc8e5e` | `feature/v0.5.0-md` |
