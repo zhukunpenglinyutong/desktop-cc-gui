@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-14.md`
-- **Total Sessions**: 502
+- **Total Sessions**: 503
 - **Last Active**: 2026-05-20
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-14.md` | ~1127 | Active |
+| `journal-14.md` | ~1161 | Active |
 | `journal-13.md` | ~1947 | Archived |
 | `journal-12.md` | ~1971 | Archived |
 | `journal-11.md` | ~1985 | Archived |
@@ -42,6 +42,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 503 | 2026-05-20 | 拆分英文基础翻译分片 | `495bb867` | `feature/v0.5.0-md` |
 | 502 | 2026-05-20 | 拆分 useThreadsReducer 压缩生命周期测试 | `98f9b5bd` | `feature/v0.5.0-md` |
 | 501 | 2026-05-20 | 拆分 historyLoaders 回退测试 | `f6de5b3e` | `feature/v0.5.0-md` |
 | 500 | 2026-05-20 | 拆分 FileViewPanel 外部变更监控测试 | `f9eeda35` | `feature/v0.5.0-md` |

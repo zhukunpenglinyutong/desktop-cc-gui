@@ -1125,3 +1125,37 @@ Notes:
 ### Next Steps
 
 - None - task complete
+
+
+## Session 503: 拆分英文基础翻译分片
+
+**Date**: 2026-05-20
+**Task**: 拆分英文基础翻译分片
+**Branch**: `feature/v0.5.0-md`
+
+### Summary
+
+将 en.part1.ts 中 common/app/searchPalette/tabbar/layout 基础 namespace 拆到 en.part1.base.ts，并在 en.ts 中按原顺序合并；en.part1.ts 从 2681 行降到 2569 行，large-file near-threshold watch 从 19 降到 18。验证通过：npm run typecheck；npx vitest run src/i18n/locales/canvasCopy.snapshot.test.ts src/i18n/locales/chatLocaleMerge.test.ts src/features/spec/specHubVisibleCopyKeys.test.ts src/features/spec/specHubLanguageSwitch.test.ts；npm run check:large-files:near-threshold；npm run check:large-files:gate；git diff --check。阶段性未跑 heavy-test-noise，按治理约定留到最终整体收口。
+
+### Main Changes
+
+完成 i18n 大文件治理切片：只移动英文静态翻译对象，不改 key/value。新增 en.part1.base.ts 承接 common/app/searchPalette/tabbar/layout，en.ts 保持合并顺序，原 en.part1.ts 删除对应 namespace。
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `495bb867` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
