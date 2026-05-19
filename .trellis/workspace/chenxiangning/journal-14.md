@@ -905,3 +905,37 @@ Notes:
 ### Next Steps
 
 - None - task complete
+
+
+## Session 497: 拆分 Messages 推理与计划交接测试
+
+**Date**: 2026-05-20
+**Task**: 拆分 Messages 推理与计划交接测试
+**Branch**: `feature/v0.5.0-md`
+
+### Summary
+
+将 Messages.test.tsx 中 Claude reasoning visibility 与 ExitPlanMode handoff 相关用例拆到 Messages.reasoning-exit-plan.test.tsx；主测试文件从 2915 行降到 2526 行，large-file near-threshold watch 从 24 降到 23。验证通过：npm run typecheck；npx vitest run src/features/messages/components/Messages.test.tsx src/features/messages/components/Messages.reasoning-exit-plan.test.tsx；npx vitest run src/features/messages/components/Messages*.test.tsx；npm run check:large-files:near-threshold；npm run check:large-files:gate；git diff --check。阶段性未跑 heavy-test-noise，按治理约定留到最终整体收口。
+
+### Main Changes
+
+完成 Messages 测试大文件治理切片：只移动测试用例，不改生产逻辑。新增 Messages.reasoning-exit-plan.test.tsx 承接 Claude reasoning visibility 和 ExitPlanMode handoff 用例，原 Messages.test.tsx 删除对应块。
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `23c58d2b` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

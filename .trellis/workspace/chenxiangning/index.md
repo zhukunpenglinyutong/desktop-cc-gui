@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-14.md`
-- **Total Sessions**: 496
+- **Total Sessions**: 497
 - **Last Active**: 2026-05-20
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-14.md` | ~907 | Active |
+| `journal-14.md` | ~941 | Active |
 | `journal-13.md` | ~1947 | Archived |
 | `journal-12.md` | ~1971 | Archived |
 | `journal-11.md` | ~1985 | Archived |
@@ -42,6 +42,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 497 | 2026-05-20 | 拆分 Messages 推理与计划交接测试 | `23c58d2b` | `feature/v0.5.0-md` |
 | 496 | 2026-05-20 | 拆分线程消息乐观渲染测试 | `eef1f298` | `feature/v0.5.0-md` |
 | 495 | 2026-05-19 | 拆分 useThreadActions 启动动作测试 | `5b1bafbd` | `feature/v0.5.0-md` |
 | 494 | 2026-05-19 | 解除 useThreadActions 大文件门禁阻塞 | `c382433f` | `feature/v0.5.0-md` |
