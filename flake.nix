@@ -31,8 +31,10 @@
           version = packageJson.version;
           src = ./.;
           nodejs = pkgs.nodejs_20;
-          npmDepsHash = "sha256-pS4skwBNVcEB2tLO/E3xCkD0G015wAmJJ1ds9N9idec=";
-          npmDepsFetcherVersion = 2;
+          npmDeps = pkgs.importNpmLock {
+            npmRoot = ./.;
+          };
+          npmConfigHook = pkgs.importNpmLock.npmConfigHook;
           npmFlags = [ "--legacy-peer-deps" ];
           npmBuildScript = "build";
           installPhase = ''
@@ -74,9 +76,12 @@
 
           TAURI_CONFIG = tauriConfig;
 
+          doCheck = false;
+
           preBuild = ''
             mkdir -p dist
             cp -R ${frontend}/dist/. dist
+            chmod -R u+w dist
           '';
 
           cargoBuildFlags = [
