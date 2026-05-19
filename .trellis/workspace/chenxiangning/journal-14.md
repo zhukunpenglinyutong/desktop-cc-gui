@@ -759,3 +759,41 @@ Notes:
 ### Next Steps
 
 - None - task complete
+
+
+## Session 493: 收口 harness 剩余治理提案
+
+**Date**: 2026-05-19
+**Task**: 收口 harness 剩余治理提案
+**Branch**: `feature/v0.5.0-md`
+
+### Summary
+
+完成 harness 剩余 OpenSpec 提案收口：移除阶段性 heavy-test-noise 硬约束，改为最终整体集成收口再跑；将四个未开始 follow-up 提案明确标记为本阶段 Deferred，不实现产品/运行时扩展；记录 large-file gate 的既有 useThreadActions.ts 阻塞。
+
+### Main Changes
+
+- Recalibrated OpenSpec project inventory for current feature/v0.5.0-md branch.
+- Deferred cross-workspace cost admin view, engine plugin onboarding kit, governance telemetry loop, and agent domain event runtime as follow-up proposals without implementation.
+- Updated policy audit, capability-aware router, and evidence bridge proposals/specs/designs so staged validation skips full noise sentry; final harness-wide closure remains responsible for full noise sentry.
+- Validation: npm run typecheck; openspec validate for seven harness changes; git diff --check; rg confirmed no remaining heavy-test workflow hard constraints in the touched proposal/design/spec/project docs.
+- Known blocker: large-files gate remains blocked by pre-existing src/features/threads/hooks/useThreadActions.ts at 2935 lines.
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `867a4156` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
