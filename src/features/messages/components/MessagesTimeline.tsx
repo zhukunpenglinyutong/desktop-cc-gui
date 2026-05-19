@@ -51,6 +51,7 @@ import {
 type MessagesTimelineProps = {
   activeCollaborationModeId: string | null;
   activeEngine: MessagesEngine;
+  activeUserInputAnchorItemId: string | null;
   activeStickyHeaderCandidate: HistoryStickyCandidate | null;
   activeUserInputRequestId: string | number | null;
   agentTaskNodeByTaskIdRef: MutableRefObject<Map<string, HTMLDivElement>>;
@@ -154,9 +155,17 @@ function resolveLiveRenderItem(
   return item;
 }
 
+function groupedEntryContainsItemId(entry: GroupedEntry, itemId: string): boolean {
+  if (entry.kind === "item") {
+    return entry.item.id === itemId;
+  }
+  return entry.items.some((item) => item.id === itemId);
+}
+
 export const MessagesTimeline = memo(function MessagesTimeline({
   activeCollaborationModeId,
   activeEngine,
+  activeUserInputAnchorItemId,
   activeStickyHeaderCandidate,
   activeUserInputRequestId,
   agentTaskNodeByTaskIdRef,
@@ -226,6 +235,14 @@ export const MessagesTimeline = memo(function MessagesTimeline({
   useEffect(() => {
     setIsStickyHeaderCollapsed(false);
   }, [threadId]);
+
+  const shouldRenderUserInputAtTail = Boolean(
+    userInputNode &&
+      (!activeUserInputAnchorItemId ||
+        !groupedEntries.some((entry) =>
+          groupedEntryContainsItemId(entry, activeUserInputAnchorItemId),
+        )),
+  );
 
   const renderSingleItem = (item: ConversationItem) => {
     const renderItem = resolveLiveRenderItem(
@@ -436,18 +453,36 @@ export const MessagesTimeline = memo(function MessagesTimeline({
   };
 
   const renderEntry = (entry: GroupedEntry) => {
+    const shouldRenderUserInputAfterEntry = Boolean(
+      userInputNode &&
+        activeUserInputAnchorItemId &&
+        groupedEntryContainsItemId(entry, activeUserInputAnchorItemId),
+    );
+    const renderWithAnchoredUserInput = (node: ReactNode) => {
+      if (!shouldRenderUserInputAfterEntry) {
+        return node;
+      }
+      return (
+        <Fragment key={`user-input-anchor:${activeUserInputAnchorItemId}`}>
+          {node}
+          {userInputNode}
+        </Fragment>
+      );
+    };
     if (entry.kind === "readGroup") {
       const firstItem = entry.items[0];
-      return <ReadToolGroupBlock key={`rg-${firstItem?.id ?? "read-group"}`} items={entry.items} />;
+      return renderWithAnchoredUserInput(
+        <ReadToolGroupBlock key={`rg-${firstItem?.id ?? "read-group"}`} items={entry.items} />,
+      );
     }
     if (entry.kind === "editGroup") {
       const firstItem = entry.items[0];
-      return (
+      return renderWithAnchoredUserInput(
         <EditToolGroupBlock
           key={`eg-${firstItem?.id ?? "edit-group"}`}
           items={entry.items}
           onOpenDiffPath={onOpenDiffPath}
-        />
+        />,
       );
     }
     if (entry.kind === "bashGroup") {
@@ -458,19 +493,21 @@ export const MessagesTimeline = memo(function MessagesTimeline({
         return null;
       }
       const firstItem = entry.items[0];
-      return (
+      return renderWithAnchoredUserInput(
         <BashToolGroupBlock
           key={`bg-${firstItem?.id ?? "bash-group"}`}
           items={entry.items}
           onRequestAutoScroll={requestAutoScroll}
-        />
+        />,
       );
     }
     if (entry.kind === "searchGroup") {
       const firstItem = entry.items[0];
-      return <SearchToolGroupBlock key={`sg-${firstItem?.id ?? "search-group"}`} items={entry.items} />;
+      return renderWithAnchoredUserInput(
+        <SearchToolGroupBlock key={`sg-${firstItem?.id ?? "search-group"}`} items={entry.items} />,
+      );
     }
-    return renderSingleItem(entry.item);
+    return renderWithAnchoredUserInput(renderSingleItem(entry.item));
   };
 
   return (
@@ -555,7 +592,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
             streamMitigationProfile={streamMitigationProfile}
           />
         ))}
-        {userInputNode}
+        {shouldRenderUserInputAtTail ? userInputNode : null}
         {isThinking && collapseLiveMiddleStepsEnabled && collapsedMiddleStepCount > 0 && (
           <div className="messages-live-middle-collapsed-indicator" role="status">
             {t("messages.middleStepsCollapsedHint", { count: collapsedMiddleStepCount })}

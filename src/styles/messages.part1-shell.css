@@ -37,6 +37,13 @@
   padding-bottom: 4px;
 }
 
+.messages-inline-user-input-slot {
+  margin: 8px 0 6px;
+  display: flex;
+  justify-content: center;
+  width: 100%;
+}
+
 .app.canvas-width-wide .messages-full {
   max-width: none;
 }

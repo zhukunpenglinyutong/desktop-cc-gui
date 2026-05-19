@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { RequestUserInputRequest } from "../../../types";
 import { RequestUserInputMessage } from "./RequestUserInputMessage";
@@ -24,6 +24,7 @@ const baseRequest: RequestUserInputRequest = {
 describe("RequestUserInputMessage", () => {
   afterEach(() => {
     cleanup();
+    vi.useRealTimers();
   });
 
   it("renders secret questions as password input with visibility toggle", () => {
@@ -112,6 +113,149 @@ describe("RequestUserInputMessage", () => {
 
     expect(onDismiss).toHaveBeenCalledWith(baseRequest);
     expect(onSubmit).not.toHaveBeenCalled();
+    expect(screen.queryByText("Provide input")).toBeNull();
+  });
+
+  it("allows local close even when no runtime dismiss handler is provided", () => {
+    const onSubmit = vi.fn();
+    render(
+      <RequestUserInputMessage
+        requests={[baseRequest]}
+        activeThreadId="thread-1"
+        activeWorkspaceId="ws-1"
+        onSubmit={onSubmit}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Close this input request card" }));
+
+    expect(onSubmit).not.toHaveBeenCalled();
+    expect(screen.queryByText("Provide input")).toBeNull();
+  });
+
+  it("auto-dismisses unanswered stale request after local timeout", () => {
+    vi.useFakeTimers();
+    const onSubmit = vi.fn();
+    const onDismiss = vi.fn();
+    render(
+      <RequestUserInputMessage
+        requests={[baseRequest]}
+        activeThreadId="thread-1"
+        activeWorkspaceId="ws-1"
+        onSubmit={onSubmit}
+        onDismiss={onDismiss}
+      />,
+    );
+
+    expect(screen.getByText("5:00")).toBeTruthy();
+
+    act(() => {
+      vi.advanceTimersByTime(300_000);
+    });
+
+    expect(onDismiss).toHaveBeenCalledWith(baseRequest);
+    expect(onSubmit).not.toHaveBeenCalled();
+    expect(screen.queryByText("Provide input")).toBeNull();
+  });
+
+  it("does not repeat stale timeout dismiss after parent rerender keeps the same request", () => {
+    vi.useFakeTimers();
+    const onDismiss = vi.fn();
+    const { rerender } = render(
+      <RequestUserInputMessage
+        requests={[baseRequest]}
+        activeThreadId="thread-1"
+        activeWorkspaceId="ws-1"
+        onSubmit={vi.fn()}
+        onDismiss={onDismiss}
+      />,
+    );
+
+    act(() => {
+      vi.advanceTimersByTime(300_000);
+    });
+
+    expect(onDismiss).toHaveBeenCalledTimes(1);
+
+    rerender(
+      <RequestUserInputMessage
+        requests={[{ ...baseRequest }]}
+        activeThreadId="thread-1"
+        activeWorkspaceId="ws-1"
+        onSubmit={vi.fn()}
+        onDismiss={onDismiss}
+      />,
+    );
+
+    act(() => {
+      vi.advanceTimersByTime(1_000);
+    });
+
+    expect(onDismiss).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not auto-dismiss while a valid submit is in flight", async () => {
+    vi.useFakeTimers();
+    let resolveSubmit: (() => void) | null = null;
+    const onSubmit = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveSubmit = resolve;
+        }),
+    );
+    const onDismiss = vi.fn();
+    render(
+      <RequestUserInputMessage
+        requests={[baseRequest]}
+        activeThreadId="thread-1"
+        activeWorkspaceId="ws-1"
+        onSubmit={onSubmit}
+        onDismiss={onDismiss}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "approval.submit" }));
+
+    act(() => {
+      vi.advanceTimersByTime(300_000);
+    });
+
+    expect(onDismiss).not.toHaveBeenCalled();
+
+    await act(async () => {
+      resolveSubmit?.();
+      await Promise.resolve();
+    });
+  });
+
+  it("keeps failed submit retryable even when timeout has already elapsed", async () => {
+    vi.useFakeTimers();
+    const onSubmit = vi.fn().mockRejectedValue(new Error("fail"));
+    const onDismiss = vi.fn();
+    render(
+      <RequestUserInputMessage
+        requests={[baseRequest]}
+        activeThreadId="thread-1"
+        activeWorkspaceId="ws-1"
+        onSubmit={onSubmit}
+        onDismiss={onDismiss}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "approval.submit" }));
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(screen.getByText("Submit failed. Please retry.")).toBeTruthy();
+
+    act(() => {
+      vi.advanceTimersByTime(300_000);
+    });
+
+    expect(onDismiss).not.toHaveBeenCalled();
+    expect(screen.getByText("Provide input")).toBeTruthy();
   });
 
   it("preserves draft content when switching threads", () => {
@@ -160,6 +304,48 @@ describe("RequestUserInputMessage", () => {
       (screen.getByPlaceholderText("approval.typeAnswerOptional") as HTMLTextAreaElement)
         .value,
     ).toBe("thread-a-answer");
+  });
+
+  it("shows one question at a time when multiple questions are pending", () => {
+    const request: RequestUserInputRequest = {
+      ...baseRequest,
+      params: {
+        ...baseRequest.params,
+        questions: [
+          {
+            id: "q-1",
+            header: "Scope",
+            question: "First question",
+            options: [{ label: "A", description: "" }],
+          },
+          {
+            id: "q-2",
+            header: "Plan",
+            question: "Second question",
+            options: [{ label: "B", description: "" }],
+          },
+        ],
+      },
+    };
+
+    render(
+      <RequestUserInputMessage
+        requests={[request]}
+        activeThreadId="thread-1"
+        activeWorkspaceId="ws-1"
+        onSubmit={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByRole("tab", { name: /1 Scope/ })).toBeTruthy();
+    expect(screen.getByRole("tab", { name: /2 Plan/ })).toBeTruthy();
+    expect(screen.getByText("First question")).toBeTruthy();
+    expect(screen.queryByText("Second question")).toBeNull();
+
+    fireEvent.click(screen.getByRole("tab", { name: /2 Plan/ }));
+
+    expect(screen.queryByText("First question")).toBeNull();
+    expect(screen.getByText("Second question")).toBeTruthy();
   });
 
   it("submits empty answers when no questions are provided", async () => {
@@ -246,6 +432,59 @@ describe("RequestUserInputMessage", () => {
     expect(screen.getByText("Second question")).toBeTruthy();
   });
 
+  it("uses next until the last tab before submitting multi-question requests", async () => {
+    const onSubmit = vi.fn().mockResolvedValue(undefined);
+    const request: RequestUserInputRequest = {
+      ...baseRequest,
+      params: {
+        ...baseRequest.params,
+        questions: [
+          {
+            id: "q-1",
+            header: "Project",
+            question: "Choose project type",
+            options: [{ label: "Docs", description: "" }],
+          },
+          {
+            id: "q-2",
+            header: "Output",
+            question: "Choose output",
+            options: [{ label: "Report", description: "" }],
+          },
+        ],
+      },
+    };
+
+    render(
+      <RequestUserInputMessage
+        requests={[request]}
+        activeThreadId="thread-1"
+        activeWorkspaceId="ws-1"
+        onSubmit={onSubmit}
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: "askUserQuestion.next" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "approval.submit" })).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "askUserQuestion.next" }));
+
+    expect(onSubmit).not.toHaveBeenCalled();
+    expect(screen.getByText("Choose output")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "askUserQuestion.submit" })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "askUserQuestion.submit" }));
+
+    await waitFor(() => {
+      expect(onSubmit).toHaveBeenCalledWith(request, {
+        answers: {
+          "q-1": { answers: [] },
+          "q-2": { answers: [] },
+        },
+      });
+    });
+  });
+
   it("allows deselecting a selected option by clicking it again", () => {
     const request: RequestUserInputRequest = {
       ...baseRequest,
@@ -280,6 +519,58 @@ describe("RequestUserInputMessage", () => {
 
     fireEvent.click(option);
     expect(option.classList.contains("is-selected")).toBe(false);
+  });
+
+  it("keeps duplicate option labels independently selectable", async () => {
+    const onSubmit = vi.fn().mockResolvedValue(undefined);
+    const request: RequestUserInputRequest = {
+      ...baseRequest,
+      params: {
+        ...baseRequest.params,
+        questions: [
+          {
+            id: "q-duplicate",
+            header: "Duplicate",
+            question: "Pick duplicate labels",
+            multiSelect: true,
+            options: [
+              { label: "Same", description: "First" },
+              { label: "Same", description: "Second" },
+            ],
+          },
+        ],
+      },
+    };
+
+    render(
+      <RequestUserInputMessage
+        requests={[request]}
+        activeThreadId="thread-1"
+        activeWorkspaceId="ws-1"
+        onSubmit={onSubmit}
+      />,
+    );
+
+    const duplicateOptions = screen
+      .getAllByText("Same")
+      .map((node) => node.closest("button")!);
+    fireEvent.click(duplicateOptions[0]);
+    fireEvent.click(duplicateOptions[1]);
+
+    expect(duplicateOptions[0].classList.contains("is-selected")).toBe(true);
+    expect(duplicateOptions[1].classList.contains("is-selected")).toBe(true);
+
+    fireEvent.click(screen.getByRole("button", { name: "approval.submit" }));
+
+    await waitFor(() => {
+      expect(onSubmit).toHaveBeenCalledWith(request, {
+        answers: {
+          "q-duplicate": {
+            answers: ["Same", "Same"],
+          },
+        },
+      });
+    });
   });
 
   it("keeps selected option when notes are entered", async () => {

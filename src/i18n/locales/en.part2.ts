@@ -1356,6 +1356,7 @@ const enPart2 = {
     collapse: "Collapse",
     expand: "Expand",
     clickToAnswer: "Click to answer",
+    questionTab: "Question {{index}}",
     cancel: "Cancel",
     back: "Back",
     next: "Next",

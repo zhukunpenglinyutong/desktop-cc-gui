@@ -478,14 +478,17 @@ export const Messages = memo(function Messages({
   const renderSourceItems = liveTailWorkingSet.items;
   const deferredRenderSourceItems = useDeferredValue(renderSourceItems);
   const firstItemIdRef = useRef<string | null>(items[0]?.id ?? null);
-  const activeUserInputRequestId =
+  const activeUserInputRequest =
     threadId && userInputRequests.length
       ? (userInputRequests.find(
           (request) =>
             request.params.thread_id === threadId &&
             (!workspaceId || request.workspace_id === workspaceId),
-        )?.request_id ?? null)
+        ) ?? null)
       : null;
+  const activeUserInputRequestId = activeUserInputRequest?.request_id ?? null;
+  const activeUserInputAnchorItemId =
+    activeUserInputRequest?.params.item_id?.trim() || null;
   const rawScrollKey = `${scrollKeyForItems(effectiveItems)}-${activeUserInputRequestId ?? "no-input"}`;
   // Throttle scrollKey during streaming to avoid flooding the main thread
   // with smooth-scroll animations that block keyboard input.
@@ -2032,13 +2035,15 @@ export const Messages = memo(function Messages({
   const userInputNode =
     shouldRenderUserInputNode && legacyOnUserInputSubmit
       ? (
-        <RequestUserInputMessage
-          requests={userInputRequests}
-          activeThreadId={threadId ?? null}
-          activeWorkspaceId={workspaceId ?? null}
-          onSubmit={legacyOnUserInputSubmit}
-          onDismiss={legacyOnUserInputDismiss}
-        />
+        <div className="messages-inline-user-input-slot">
+          <RequestUserInputMessage
+            requests={userInputRequests}
+            activeThreadId={threadId ?? null}
+            activeWorkspaceId={workspaceId ?? null}
+            onSubmit={legacyOnUserInputSubmit}
+            onDismiss={legacyOnUserInputDismiss}
+          />
+        </div>
       )
       : null;
   const hasVisibleUserInputRequest =
@@ -2141,6 +2146,7 @@ export const Messages = memo(function Messages({
         <MessagesTimeline
           activeCollaborationModeId={activeCollaborationModeId}
           activeEngine={activeEngine}
+          activeUserInputAnchorItemId={activeUserInputAnchorItemId}
           activeStickyHeaderCandidate={activeStickyHeaderCandidate}
           activeUserInputRequestId={activeUserInputRequestId}
           agentTaskNodeByTaskIdRef={agentTaskNodeByTaskIdRef}

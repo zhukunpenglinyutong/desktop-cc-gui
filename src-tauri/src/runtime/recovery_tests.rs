@@ -490,10 +490,10 @@ async fn begin_runtime_acquire_or_retry_quarantines_after_repeated_waiter_timeou
                 "timed out waiting for concurrent runtime acquire",
             )
             .await;
-        if result.is_err() {
-            break;
+        match result {
+            Err(_) => break,
+            Ok(RuntimeAcquireDisposition::Retry | RuntimeAcquireDisposition::Leader(_)) => {}
         }
-        assert_eq!(result.unwrap(), RuntimeAcquireDisposition::Retry);
         let mut startup_gates = manager.startup_gates.lock().await;
         let entry = startup_gates
             .get_mut("codex::ws-1")

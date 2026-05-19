@@ -114,6 +114,58 @@ describe('AskUserQuestionDialog', () => {
     expect(optionA.classList.contains('is-selected')).toBe(false);
   });
 
+  it('allows deselecting a single-select option by clicking it again', () => {
+    renderDialog();
+
+    const optionA = screen.getByText('Option A').closest('button')!;
+    fireEvent.click(optionA);
+    expect(optionA.classList.contains('is-selected')).toBe(true);
+
+    fireEvent.click(optionA);
+    expect(optionA.classList.contains('is-selected')).toBe(false);
+  });
+
+  it('keeps duplicate option labels independently selectable', async () => {
+    const onSubmit = vi.fn().mockResolvedValue(undefined);
+    renderDialog({
+      onSubmit,
+      requests: [
+        makeRequest({
+          questions: [
+            {
+              id: 'q1',
+              header: 'Header',
+              question: 'Pick duplicate labels',
+              multiSelect: true,
+              options: [
+                { label: 'Same', description: 'First' },
+                { label: 'Same', description: 'Second' },
+              ],
+            },
+          ],
+        }),
+      ],
+    });
+
+    const duplicateOptions = screen.getAllByText('Same').map((node) => node.closest('button')!);
+    fireEvent.click(duplicateOptions[0]);
+    fireEvent.click(duplicateOptions[1]);
+
+    expect(duplicateOptions[0].classList.contains('is-selected')).toBe(true);
+    expect(duplicateOptions[1].classList.contains('is-selected')).toBe(true);
+
+    fireEvent.click(screen.getByText('askUserQuestion.submit'));
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(onSubmit).toHaveBeenCalledWith(
+      expect.objectContaining({ request_id: 1 }),
+      { answers: { q1: { answers: ['Same', 'Same'] } } },
+    );
+  });
+
   it('supports multi-select questions when multiSelect=true', () => {
     renderDialog({
       requests: [
@@ -170,9 +222,38 @@ describe('AskUserQuestionDialog', () => {
     fireEvent.click(screen.getByText('askUserQuestion.next'));
 
     // Now second question should be visible
-    expect(screen.getByText('Second question')).toBeTruthy();
+    expect(screen.getByText('Second question', { selector: '.ask-user-question-text' })).toBeTruthy();
     // And button should now say "Submit"
     expect(screen.getByText('askUserQuestion.submit')).toBeTruthy();
+  });
+
+  it('renders multiple questions as tabs instead of stacking every body', () => {
+    const twoQuestions: RequestUserInputRequest['params']['questions'] = [
+      {
+        id: 'q1',
+        header: 'Scope',
+        question: 'First question',
+        options: [{ label: 'A', description: '' }],
+      },
+      {
+        id: 'q2',
+        header: 'Plan',
+        question: 'Second question',
+        options: [{ label: 'B', description: '' }],
+      },
+    ];
+
+    renderDialog({ requests: [makeRequest({ questions: twoQuestions })] });
+
+    expect(screen.getByRole('tab', { name: /1 Scope/ })).toBeTruthy();
+    expect(screen.getByRole('tab', { name: /2 Plan/ })).toBeTruthy();
+    expect(screen.getByText('First question')).toBeTruthy();
+    expect(screen.queryByText('Second question')).toBeNull();
+
+    fireEvent.click(screen.getByRole('tab', { name: /2 Plan/ }));
+
+    expect(screen.queryByText('First question')).toBeNull();
+    expect(screen.getByText('Second question')).toBeTruthy();
   });
 
   it('calls onSubmit when clicking Submit on last question', async () => {
@@ -196,23 +277,19 @@ describe('AskUserQuestionDialog', () => {
     );
   });
 
-  it('collapses and expands the dialog', () => {
-    renderDialog();
+  it('closes the dialog with empty answers when the top close button is clicked', () => {
+    const onSubmit = vi.fn();
+    renderDialog({ onSubmit });
 
-    // Find collapse button
-    const collapseBtn = screen.getByTitle('askUserQuestion.collapse');
-    fireEvent.click(collapseBtn);
+    fireEvent.click(
+      screen
+        .getAllByRole('button', { name: 'approval.dismissUserInputRequest' })[0],
+    );
 
-    // When collapsed, the question body should be hidden, collapsed hint visible
-    expect(screen.getByText('askUserQuestion.clickToAnswer')).toBeTruthy();
-    expect(screen.queryByText('Pick one')).toBeNull();
-
-    // Expand by clicking the expand button
-    const expandBtn = screen.getByTitle('askUserQuestion.expand');
-    fireEvent.click(expandBtn);
-
-    // Question text should be visible again
-    expect(screen.getByText('Pick one')).toBeTruthy();
+    expect(onSubmit).toHaveBeenCalledWith(
+      expect.objectContaining({ request_id: 1 }),
+      { answers: {} },
+    );
   });
 
   it('calls onSubmit with empty answers when cancel is clicked', () => {

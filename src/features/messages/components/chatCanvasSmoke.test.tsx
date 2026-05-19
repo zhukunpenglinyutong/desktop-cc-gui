@@ -198,7 +198,7 @@ describe("chat canvas smoke", () => {
       params: {
         thread_id: "claude:thread-1",
         turn_id: "turn-claude-1",
-        item_id: "ask-claude-1",
+        item_id: "tool-ask-1",
         questions: [
           {
             id: "q-claude-1",
@@ -226,6 +226,60 @@ describe("chat canvas smoke", () => {
 
     expect(screen.getByText("Continue on claude?")).toBeTruthy();
     expect(screen.queryByText("This feature requires Plan mode")).toBeNull();
+  });
+
+  it("anchors queued request input at the matching transcript item instead of the bottom", () => {
+    const request: RequestUserInputRequest = {
+      workspace_id: "ws-anchor",
+      request_id: "req-anchor-1",
+      params: {
+        thread_id: "thread-anchor",
+        turn_id: "turn-anchor-1",
+        item_id: "ask-anchor-1",
+        questions: [
+          {
+            id: "q-anchor-1",
+            header: "Anchor",
+            question: "Anchored question",
+          },
+        ],
+      },
+    };
+
+    const { container } = render(
+      <Messages
+        items={[
+          createAskUserQuestionTool("ask-anchor-1"),
+          {
+            id: "assistant-after-anchor",
+            kind: "message",
+            role: "assistant",
+            text: "Later assistant output",
+          },
+        ]}
+        threadId="thread-anchor"
+        workspaceId="ws-anchor"
+        isThinking={false}
+        activeEngine="claude"
+        onUserInputSubmit={vi.fn()}
+        userInputRequests={[request]}
+        openTargets={[]}
+        selectedOpenAppId=""
+      />,
+    );
+
+    const toolNode = container.querySelector(".message-tool-block-shell");
+    const inputSlot = container.querySelector(".messages-inline-user-input-slot");
+    const laterMessage = screen.getByText("Later assistant output").closest("[data-message-anchor-id]");
+
+    expect(toolNode).toBeTruthy();
+    expect(inputSlot).toBeTruthy();
+    expect(laterMessage).toBeTruthy();
+    if (!toolNode || !inputSlot || !laterMessage) {
+      throw new Error("Expected anchored request input nodes to exist");
+    }
+    expect(toolNode.compareDocumentPosition(inputSlot) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(inputSlot.compareDocumentPosition(laterMessage) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   it("dismisses queued request input without submitting a stale answer", () => {

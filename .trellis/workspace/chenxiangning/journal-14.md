@@ -300,3 +300,117 @@ PR #564 与 base 分支 `chore/bump-version-0.5` 发生冲突，按合并防回�
 ### Next Steps
 
 - None - task complete
+
+
+## Session 483: 加固 Claude 列表超时兜底
+
+**Date**: 2026-05-18
+**Task**: 加固 Claude 列表超时兜底
+**Branch**: `feature/v0.5.0-md`
+
+### Summary
+
+实现 Claude native listing timeout/reject 时保留 last-good 会话；收紧 last-good 健康判定，避免 degraded 列表自污染；补充 timeout fallback 与连续超时回归测试。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `1f2f87f1` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+## Session 484: 归一化用户提问卡片交互
+
+**Date**: 2026-05-19
+**Task**: 归一化用户提问卡片交互
+**Branch**: `feature/v0.5.0-md`
+
+### Summary
+
+(Add summary)
+
+### Main Changes
+
+| Area | Summary |
+|------|---------|
+| User input cards | Unified AskUserQuestionDialog and RequestUserInputMessage live-card rendering through UserInputQuestionCard. |
+| Interaction fixes | Added visible close/dismiss affordance, timeline anchoring, multi-question tabs, Next-before-final Submit behavior, duplicate option label isolation, and single-select deselect. |
+| Governance | Archived OpenSpec change normalize-user-input-question-card and synced the main elicitation spec plus frontend component guidelines. |
+| Verification | Human tested successfully. Automated checks passed: lint, typecheck, targeted Vitest, chat canvas smoke tests, large-file governance, heavy-test-noise gate, git diff check, and OpenSpec strict validate. |
+
+**Code commit**: `d142510b fix(chat): 归一化用户提问卡片交互`
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `d142510b` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+## Session 485: 稳定 CI flaky 测试
+
+**Date**: 2026-05-19
+**Task**: 稳定 CI flaky 测试
+**Branch**: `feature/v0.5.0-md`
+
+### Summary
+
+(Add summary)
+
+### Main Changes
+
+| Area | Summary |
+|------|---------|
+| Rust runtime recovery tests | Stabilized repeated waiter timeout quarantine coverage so CI scheduler drift around stale takeover does not fail the quarantine assertion path. |
+| File markdown tests | Prewarmed KaTeX assets for the markdown math + lazy mermaid test to avoid dynamic import timing out under batched Vitest load. |
+| Verification | Targeted Rust test passed, runtime recovery test group passed, targeted FileViewPanel math test passed, FileViewPanel full test file passed, lint/typecheck/git diff check passed. |
+
+**Follow-up commit**: `bed69513 test(ci): 稳定运行时恢复和 Markdown 数学测试`
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `bed69513` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

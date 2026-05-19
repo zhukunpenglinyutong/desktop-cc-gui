@@ -15,6 +15,7 @@ import {
 } from "../../../services/tauri";
 import { subscribeDetachedExternalFileChanges } from "../../../services/events";
 import { pushErrorToast } from "../../../services/toasts";
+import { loadKatexAssets } from "../../markdown/markdownMath";
 import { useFilePreviewPayload } from "../hooks/useFilePreviewPayload";
 
 const mockCodeMirrorDispatch = vi.fn();
@@ -1619,6 +1620,7 @@ describe("FileViewPanel markdown modes", () => {
   });
 
   it("renders markdown math formulas while keeping mermaid blocks lazy", async () => {
+    await loadKatexAssets();
     vi.mocked(readWorkspaceFile).mockResolvedValue({
       content: [
         "行内公式：$E=mc^2$。",

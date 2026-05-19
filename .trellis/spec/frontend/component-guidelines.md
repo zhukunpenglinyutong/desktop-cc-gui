@@ -132,3 +132,70 @@ useEffect(() => {
   }}
 />
 ```
+
+## Scenario: Shared User Input Question Card
+
+### 1. Scope / Trigger
+
+- Trigger：修改 `AskUserQuestionDialog`、`RequestUserInputMessage`、`UserInputQuestionCard`、`MessagesTimeline` 中的用户提问卡片渲染、宽度、tab、关闭或提交行为。
+- 目标：Claude `AskUserQuestion` 与 Codex `RequestUserInput` 使用同一交互语义，避免引擎分叉导致卡片 stuck、过窄、提前提交或时间线定位漂移。
+
+### 2. Signatures
+
+- `UserInputQuestionCard` MUST own visual/card interaction contract:
+  - `questions: RequestUserInputRequest["params"]["questions"]`
+  - `activeQuestionIndex: number`
+  - `onQuestionTabChange(nextQuestionIndex: number): void`
+  - `onOptionToggle(questionId: string, optionValue: string, multiSelect: boolean): void`
+  - `onDismiss(): void`
+  - `onSubmit(): void`
+- `RequestUserInputMessage` MUST own queue/draft/timeout/submission state.
+- `AskUserQuestionDialog` MUST own modal/composer-overlay state and final response handoff.
+
+### 3. Contracts
+
+- `questions.length > 1` MUST automatically enter step mode even if the caller does not explicitly pass `showStepActions`.
+- In step mode, non-final active tab primary action MUST be `Next` and MUST NOT call submit.
+- In step mode, final active tab primary action MUST be `Submit` and MUST submit all collected answers through the standard response contract.
+- Only one question body MAY be visible at a time; tabs and active body MUST be synchronized through `activeQuestionIndex`.
+- Live question cards MUST NOT reuse normal message `.bubble` width rules; use a dedicated card class such as `request-user-input-live-card`.
+- Ordinary chat bubble CSS MUST NOT be changed to fix question-card width.
+- Pending cards MUST expose explicit close/dismiss affordance and local dismissal MUST hide stale cards even when runtime-side dismiss has already settled.
+- Timeline rendering SHOULD anchor live request cards near their originating `item_id`; fallback tail rendering is allowed only when no anchor is available.
+
+### 4. Validation & Error Matrix
+
+| 场景 | 必须行为 | 禁止行为 |
+|---|---|---|
+| 多问题第一个 tab | 主按钮显示 `Next`，点击进入下一个 tab | 直接显示 `Submit` 并提交 |
+| 多问题最后一个 tab | 主按钮显示 `Submit`，提交全部答案 | 只提交当前 tab 或继续显示 `Next` |
+| 普通聊天气泡 | 保持原 `.bubble` 宽度语义 | 为放大问答卡片修改 `.bubble` 全局规则 |
+| stale/timeout card | 用户可关闭，本地隐藏 | 卡片一直吸底且无法关闭 |
+| anchored request | 卡片出现在对应 timeline 位置附近 | 永久固定在 composer 上方 |
+
+### 5. Good / Base / Bad Cases
+
+- Good：`RequestUserInputMessage` 使用 `<UserInputQuestionCard className="request-user-input-live-card" />`，自身处理 request state，卡片只处理 UI。
+- Base：`AskUserQuestionDialog` 继续控制 overlay 模式，但 body/options/actions 走同一个 shared card。
+- Bad：在 `RequestUserInputMessage` 里复制一套与 `AskUserQuestionDialog` 相似的 tab/action JSX。
+- Bad：给 live request card 加 `className="bubble"` 后再用更高优先级 CSS 覆盖 `.bubble`。
+
+### 6. Tests Required
+
+- `RequestUserInputMessage.test.tsx` MUST 覆盖多问题 tab 仅显示一个 body、非最终 tab `Next` 不提交、最终 tab `Submit` 提交全部 answers。
+- `AskUserQuestionDialog.test.tsx` MUST 覆盖多问题 `Next` / `Submit` 行为不回归。
+- `chatCanvasSmoke.test.tsx` SHOULD 覆盖 request card timeline anchor 与 dismiss 不污染后续消息顺序。
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```tsx
+<UserInputQuestionCard className="bubble" />
+```
+
+#### Correct
+
+```tsx
+<UserInputQuestionCard className="request-user-input-live-card" />
+```

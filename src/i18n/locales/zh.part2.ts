@@ -1328,6 +1328,7 @@ const zhPart2 = {
     collapse: "收起",
     expand: "展开",
     clickToAnswer: "点击回答",
+    questionTab: "问题 {{index}}",
     cancel: "取消",
     back: "上一步",
     next: "下一步",

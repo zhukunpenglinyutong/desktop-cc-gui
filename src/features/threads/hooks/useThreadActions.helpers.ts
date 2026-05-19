@@ -45,7 +45,7 @@ export function hasHealthyThreadSummaries(
   return (
     Array.isArray(threads) &&
     threads.length > 0 &&
-    !threads.some((thread) => thread.isDegraded)
+    !threads.some((thread) => thread.isDegraded || thread.partialSource || thread.degradedReason)
   );
 }
 
@@ -936,6 +936,43 @@ export function mergeDegradedClaudeContinuitySummaries(
     mergedById.set(entry.id, entry);
   });
   return Array.from(mergedById.values()).sort((left, right) => right.updatedAt - left.updatedAt);
+}
+
+/**
+ * 当 Claude native listing 子请求 timeout/null/rejected 时，把 last-good 列表里
+ * 仍然适用的 Claude 条目（非 archived、非 shared、未被 hidden binding 排除）
+ * seed 进当前正在合并的 mergedById。这是 partial-source merge 之前的第一道防线，
+ * 避免下游 catalog merge / archive merge 在只看到空 Claude 子源时形成残缺基底。
+ *
+ * 该函数原地修改 mergedById；返回实际 seed 进去的条目数，便于诊断与测试。
+ */
+export function seedLastGoodClaudeIntoMerged(
+  mergedById: Map<string, ThreadSummary>,
+  lastGoodSummaries: ThreadSummary[],
+  excludedThreadIds: ReadonlySet<string> = new Set(),
+): number {
+  if (lastGoodSummaries.length === 0) {
+    return 0;
+  }
+  let seeded = 0;
+  for (const entry of lastGoodSummaries) {
+    if (excludedThreadIds.has(entry.id)) {
+      continue;
+    }
+    if (!isRetainableClaudeContinuitySummary(entry)) {
+      continue;
+    }
+    const previous = mergedById.get(entry.id);
+    if (previous && previous.updatedAt >= entry.updatedAt) {
+      continue;
+    }
+    mergedById.set(
+      entry.id,
+      previous ? mergeThreadSummaryPreservingStableIdentity(previous, entry) : entry,
+    );
+    seeded += 1;
+  }
+  return seeded;
 }
 
 export async function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T | null> {
