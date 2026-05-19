@@ -1293,6 +1293,28 @@ fn apply_folder_assignment(
         .cloned();
 }
 
+fn apply_strict_attribution_owner(
+    mut entry: WorkspaceSessionCatalogEntry,
+    workspaces_snapshot: &HashMap<String, WorkspaceEntry>,
+    metadata_by_workspace_id: &HashMap<String, WorkspaceSessionCatalogMetadata>,
+) -> WorkspaceSessionCatalogEntry {
+    let attribution = resolve_catalog_entry_attribution(workspaces_snapshot, &entry);
+    if attribution.status == SessionCatalogAttributionStatus::StrictMatch {
+        if let Some(matched_workspace_id) = attribution.matched_workspace_id.clone() {
+            if let Some(matched_workspace) = workspaces_snapshot.get(&matched_workspace_id) {
+                entry.workspace_id = matched_workspace.id.clone();
+                entry.workspace_label = Some(matched_workspace.name.clone());
+                entry.archived_at = metadata_by_workspace_id
+                    .get(&matched_workspace.id)
+                    .and_then(|metadata| metadata.archived_at_by_session_id.get(&entry.session_id))
+                    .copied();
+            }
+        }
+        entry = apply_attribution_to_entry(entry, attribution);
+    }
+    entry
+}
+
 fn folder_assignment_keys_for_session(session_id: &str, engine: &str) -> Vec<String> {
     let trimmed_session_id = session_id.trim();
     let normalized_engine = engine.trim().to_ascii_lowercase();
@@ -1777,26 +1799,11 @@ async fn build_global_engine_catalog_entries(
                         matched_workspace_label: Some(workspace.name.clone()),
                         folder_id: None,
                     };
-                    let attribution =
-                        resolve_catalog_entry_attribution(&workspaces_snapshot, &entry);
-                    if attribution.status == SessionCatalogAttributionStatus::StrictMatch {
-                        if let Some(matched_workspace_id) = attribution.matched_workspace_id.clone()
-                        {
-                            if let Some(matched_workspace) =
-                                workspaces_snapshot.get(&matched_workspace_id)
-                            {
-                                entry.workspace_id = matched_workspace.id.clone();
-                                entry.workspace_label = Some(matched_workspace.name.clone());
-                                entry.archived_at = metadata_by_workspace_id
-                                    .get(&matched_workspace.id)
-                                    .and_then(|metadata| {
-                                        metadata.archived_at_by_session_id.get(&entry.session_id)
-                                    })
-                                    .copied();
-                            }
-                        }
-                        entry = apply_attribution_to_entry(entry, attribution);
-                    }
+                    entry = apply_strict_attribution_owner(
+                        entry,
+                        &workspaces_snapshot,
+                        &metadata_by_workspace_id,
+                    );
                     apply_folder_assignment(&mut entry, &metadata_by_workspace_id);
                     entries.push(entry);
                 }
@@ -2284,6 +2291,7 @@ async fn build_workspace_scope_catalog_data(
     scan_mode: SessionCatalogScanMode,
 ) -> Result<WorkspaceScopeCatalogData, String> {
     let workspace_scope = catalog_workspace_scope(workspaces, workspace_id).await?;
+    let workspaces_snapshot = workspaces.lock().await.clone();
     let metadata_by_workspace_id = read_catalog_metadata_for_scope(storage_path, &workspace_scope)?;
     let mut partial_sources = Vec::new();
     let mut entries = Vec::new();
@@ -2383,7 +2391,7 @@ async fn build_workspace_scope_catalog_data(
         .await
         {
             Ok(claude_sessions) => {
-                entries.extend(claude_sessions.into_iter().map(|session| {
+                entries.extend(claude_sessions.into_iter().filter_map(|session| {
                     let session_id = format!("claude:{}", session.session_id);
                     let mut entry = WorkspaceSessionCatalogEntry {
                         archived_at: owner_metadata
@@ -2419,8 +2427,16 @@ async fn build_workspace_scope_catalog_data(
                         matched_workspace_label: Some(workspace.name.clone()),
                         folder_id: None,
                     };
+                    entry = apply_strict_attribution_owner(
+                        entry,
+                        &workspaces_snapshot,
+                        &metadata_by_workspace_id,
+                    );
+                    if !owner_workspace_ids.contains(&entry.workspace_id) {
+                        return None;
+                    }
                     apply_folder_assignment(&mut entry, &metadata_by_workspace_id);
-                    entry
+                    Some(entry)
                 }));
             }
             Err(error) => {

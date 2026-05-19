@@ -1,3 +1,9 @@
+## Branch Calibration / 分支校准（2026-05-19）
+
+当前变更只以 `feature/v0.5.0-md` 为事实源。`feature/v0.5` 上曾出现的 batching contract、checker、task 勾选与 `implementation-evidence.md` 不再作为本变更依据；后续必须在当前分支重新实现。
+
+当前分支状态：realtime batching 未落地。近两天当前分支的 sidebar timeout fallback 与 runtime/list fallback 修复提高了恢复链路稳定性，但不改变本 change 的边界：第一版只约束 realtime delivery cadence，不引入 domain event runtime，也不重定义 `NormalizedThreadEvent`。
+
 ## Why
 
 `add-runtime-perf-baseline` 已经把 realtime 扩展场景固化为可对比数据：

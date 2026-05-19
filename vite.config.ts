@@ -59,6 +59,11 @@ export default defineConfig(async ({ mode }) => ({
               id.includes("mdast-") || id.includes("hast-") || id.includes("unist-") ||
               id.includes("remark-") || id.includes("rehype-"))
             return "vendor-markdown";
+          if (id.includes("/mermaid/")) return "vendor-mermaid";
+          if (id.includes("/pdfjs-dist/") || id.includes("/mammoth/") || id.includes("/xlsx/"))
+            return "vendor-docs";
+          if (id.includes("/framer-motion/") || id.includes("/antd/") || id.includes("/lucide-react/"))
+            return "vendor-ui-heavy";
         },
       },
     },

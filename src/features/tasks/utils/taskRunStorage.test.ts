@@ -60,6 +60,18 @@ describe("taskRunStorage", () => {
     ]);
   });
 
+  it("uses capability matrix semantics for codex task center support", () => {
+    const run = createTaskRunRecord({
+      taskId: "task-1",
+      workspaceId: "/repo",
+      engine: "codex",
+      trigger: "manual",
+      now: 100,
+    });
+
+    expect(run.engine).toBe("codex");
+  });
+
   it("persists task runs under an independent app-store key", () => {
     const run = createTaskRunRecord({
       taskId: "task-1",

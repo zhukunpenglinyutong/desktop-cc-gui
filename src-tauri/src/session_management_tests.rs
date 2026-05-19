@@ -98,6 +98,44 @@
         .expect("write codex fixture message");
     }
 
+    fn create_claude_project_dir(
+        base_dir: &Path,
+        workspace_path: &Path,
+    ) -> std::path::PathBuf {
+        let encoded = workspace_path
+            .to_string_lossy()
+            .chars()
+            .map(|c| {
+                if c.is_ascii_alphanumeric() || c == '-' {
+                    c
+                } else {
+                    '-'
+                }
+            })
+            .collect::<String>();
+        let project_dir = base_dir.join(encoded);
+        std::fs::create_dir_all(&project_dir).expect("create claude project dir");
+        project_dir
+    }
+
+    fn write_claude_session_fixture(
+        claude_projects_dir: &Path,
+        workspace_path: &Path,
+        session_id: &str,
+        cwd: &Path,
+        message: &str,
+    ) {
+        let project_dir = create_claude_project_dir(claude_projects_dir, workspace_path);
+        let session_path = project_dir.join(format!("{session_id}.jsonl"));
+        let mut file = std::fs::File::create(session_path).expect("create claude fixture");
+        writeln!(
+            file,
+            r#"{{"uuid":"user-1","timestamp":"2026-01-19T12:00:00.000Z","session_id":"{session_id}","cwd":"{}","message":{{"role":"user","content":"{message}"}}}}"#,
+            cwd.to_string_lossy()
+        )
+        .expect("write claude fixture");
+    }
+
     fn codex_fixture_timestamp(minutes_before_latest: usize) -> String {
         let latest_total_minutes: usize = 20 * 60;
         let total_minutes = latest_total_minutes.saturating_sub(minutes_before_latest);
@@ -1023,6 +1061,192 @@
 
         let ids: Vec<_> = scope.into_iter().map(|entry| entry.id).collect();
         assert_eq!(ids, vec!["worktree-a"]);
+    }
+
+    #[tokio::test]
+    async fn claude_child_workspace_session_is_not_claimed_by_parent_projection() {
+        let base = std::env::temp_dir().join(format!("claude-child-owner-{}", Uuid::new_v4()));
+        std::fs::create_dir_all(&base).expect("create temp dir");
+        let storage_path = base.join("workspaces.json");
+        std::fs::write(&storage_path, "[]").expect("seed storage path");
+
+        let repo_path = base.join("repo");
+        let child_path = repo_path.join("sub");
+        std::fs::create_dir_all(&child_path).expect("create child workspace path");
+
+        let claude_home = base.join("claude-home");
+        let claude_projects_dir = claude_home.join("projects");
+        let session_id = "child-claude-session";
+        write_claude_session_fixture(
+            &claude_projects_dir,
+            &repo_path,
+            session_id,
+            &child_path,
+            "child workspace task",
+        );
+
+        let parent = workspace_entry(
+            "parent",
+            "Parent",
+            &repo_path.to_string_lossy(),
+            WorkspaceKind::Main,
+            None,
+        );
+        let child = workspace_entry(
+            "child",
+            "Child",
+            &child_path.to_string_lossy(),
+            WorkspaceKind::Worktree,
+            Some("parent"),
+        );
+        let workspaces = Mutex::new(HashMap::from([
+            (parent.id.clone(), parent),
+            (child.id.clone(), child),
+        ]));
+        let engine_manager = engine::EngineManager::new();
+        engine_manager
+            .set_engine_config(
+                engine::EngineType::Claude,
+                engine::EngineConfig {
+                    home_dir: Some(claude_home.to_string_lossy().to_string()),
+                    ..engine::EngineConfig::default()
+                },
+            )
+            .await;
+
+        let parent_data = build_workspace_scope_catalog_data(
+            &workspaces,
+            &engine_manager,
+            &storage_path,
+            "parent",
+            SessionCatalogScanMode::Bounded(20),
+        )
+        .await
+        .expect("build parent catalog data");
+        let child_data = build_workspace_scope_catalog_data(
+            &workspaces,
+            &engine_manager,
+            &storage_path,
+            "child",
+            SessionCatalogScanMode::Bounded(20),
+        )
+        .await
+        .expect("build child catalog data");
+
+        let parent_claude_entries = parent_data
+            .entries
+            .iter()
+            .filter(|entry| entry.session_id == format!("claude:{session_id}"))
+            .collect::<Vec<_>>();
+        assert_eq!(parent_claude_entries.len(), 1);
+        assert_eq!(parent_claude_entries[0].workspace_id, "child");
+        assert_eq!(
+            parent_claude_entries[0].matched_workspace_id.as_deref(),
+            Some("child")
+        );
+
+        let child_claude_entries = child_data
+            .entries
+            .iter()
+            .filter(|entry| entry.session_id == format!("claude:{session_id}"))
+            .collect::<Vec<_>>();
+        assert_eq!(child_claude_entries.len(), 1);
+        assert_eq!(child_claude_entries[0].workspace_id, "child");
+        assert_eq!(
+            child_claude_entries[0].matched_workspace_id.as_deref(),
+            Some("child")
+        );
+
+        std::fs::remove_dir_all(base).ok();
+    }
+
+    #[tokio::test]
+    async fn claude_independent_nested_workspace_session_is_not_claimed_by_parent_projection() {
+        let base = std::env::temp_dir().join(format!("claude-nested-owner-{}", Uuid::new_v4()));
+        std::fs::create_dir_all(&base).expect("create temp dir");
+        let storage_path = base.join("workspaces.json");
+        std::fs::write(&storage_path, "[]").expect("seed storage path");
+
+        let repo_path = base.join("repo");
+        let child_path = repo_path.join("sub");
+        std::fs::create_dir_all(&child_path).expect("create child workspace path");
+
+        let claude_home = base.join("claude-home");
+        let claude_projects_dir = claude_home.join("projects");
+        let session_id = "nested-claude-session";
+        write_claude_session_fixture(
+            &claude_projects_dir,
+            &repo_path,
+            session_id,
+            &child_path,
+            "nested workspace task",
+        );
+
+        let parent = workspace_entry(
+            "parent",
+            "Parent",
+            &repo_path.to_string_lossy(),
+            WorkspaceKind::Main,
+            None,
+        );
+        let child = workspace_entry(
+            "child",
+            "Child",
+            &child_path.to_string_lossy(),
+            WorkspaceKind::Main,
+            None,
+        );
+        let workspaces = Mutex::new(HashMap::from([
+            (parent.id.clone(), parent),
+            (child.id.clone(), child),
+        ]));
+        let engine_manager = engine::EngineManager::new();
+        engine_manager
+            .set_engine_config(
+                engine::EngineType::Claude,
+                engine::EngineConfig {
+                    home_dir: Some(claude_home.to_string_lossy().to_string()),
+                    ..engine::EngineConfig::default()
+                },
+            )
+            .await;
+
+        let parent_data = build_workspace_scope_catalog_data(
+            &workspaces,
+            &engine_manager,
+            &storage_path,
+            "parent",
+            SessionCatalogScanMode::Bounded(20),
+        )
+        .await
+        .expect("build parent catalog data");
+        let child_data = build_workspace_scope_catalog_data(
+            &workspaces,
+            &engine_manager,
+            &storage_path,
+            "child",
+            SessionCatalogScanMode::Bounded(20),
+        )
+        .await
+        .expect("build child catalog data");
+
+        assert!(!parent_data
+            .entries
+            .iter()
+            .any(|entry| entry.session_id == format!("claude:{session_id}")));
+
+        let child_claude_entry = child_data
+            .entries
+            .iter()
+            .find(|entry| entry.session_id == format!("claude:{session_id}"))
+            .expect("child projection should include nested claude session");
+        assert_eq!(child_claude_entry.workspace_id, "child");
+        assert_eq!(
+            child_claude_entry.matched_workspace_id.as_deref(),
+            Some("child")
+        );
+
+        std::fs::remove_dir_all(base).ok();
     }
 
     #[test]

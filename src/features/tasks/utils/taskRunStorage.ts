@@ -12,6 +12,7 @@ import type {
   TaskRunTrigger,
 } from "../types";
 import type { EngineType } from "../../../types";
+import { isEngineCapabilityAvailable } from "../../engine/engineCapabilityMatrix";
 
 export const TASK_RUN_STORE_KEY = "taskCenter.taskRuns";
 
@@ -28,11 +29,18 @@ const SETTLED_RUN_STATUSES = new Set<TaskRunStatus>([
   "completed",
   "canceled",
 ]);
+const TASK_CENTER_BASE_ENGINES = new Set<EngineType>(["claude", "gemini"]);
 
 function isSupportedTaskCenterEngine(
   engine: EngineType | unknown,
 ): engine is TaskRunRecord["engine"] {
-  return engine === "claude" || engine === "codex" || engine === "gemini";
+  if (!engine || typeof engine !== "string") {
+    return false;
+  }
+  return (
+    TASK_CENTER_BASE_ENGINES.has(engine as EngineType) ||
+    isEngineCapabilityAvailable(engine as EngineType, "collaboration.mode")
+  );
 }
 
 function normalizeStatus(value: unknown): TaskRunStatus | null {

@@ -3,8 +3,30 @@ import { claudeRealtimeAdapter } from "./claudeRealtimeAdapter";
 import { codexRealtimeAdapter } from "./codexRealtimeAdapter";
 import { geminiRealtimeAdapter } from "./geminiRealtimeAdapter";
 import { opencodeRealtimeAdapter } from "./opencodeRealtimeAdapter";
+import { getRealtimeAdapterByEngine } from "./realtimeAdapterRegistry";
+import type { ConversationEngine } from "../contracts/conversationCurtainContracts";
 
 describe("realtime adapters", () => {
+  it("keeps unknown realtime methods non-fatal for every governance engine", () => {
+    const engines: ConversationEngine[] = ["claude", "codex", "gemini", "opencode"];
+
+    for (const engine of engines) {
+      const event = getRealtimeAdapterByEngine(engine).mapEvent({
+        workspaceId: `ws-${engine}`,
+        message: {
+          method: "governance/unknown-method",
+          params: {
+            threadId: `${engine}:thread-1`,
+            itemId: "item-1",
+            delta: "ignored",
+          },
+        },
+      });
+
+      expect(event, engine).toBeNull();
+    }
+  });
+
   it("maps codex item/started tool payload to normalized tool event", () => {
     const event = codexRealtimeAdapter.mapEvent({
       workspaceId: "ws-1",

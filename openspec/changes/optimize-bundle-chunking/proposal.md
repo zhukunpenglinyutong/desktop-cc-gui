@@ -1,3 +1,9 @@
+## Branch Calibration / 分支校准（2026-05-19）
+
+当前变更只以 `feature/v0.5.0-md` 为事实源。`feature/v0.5` 的任何治理实现尝试不作为本 change 的输入或完成证据。
+
+当前分支状态：bundle chunking 未实施。近两天当前分支新增 Markdown preview、tool-call card、user-input question card 等 UI 体积变化；后续实施必须重新跑当前分支 build/cold-start baseline，不能沿用旧 bundle contributor 判断。
+
 ## Why
 
 `add-runtime-perf-baseline` 已经记录冷启动 / bundle 体积基线：

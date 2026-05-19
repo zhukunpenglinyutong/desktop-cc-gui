@@ -16,7 +16,6 @@ import type {
 import {
   extractClaudeForkParentSessionId,
   isClaudeForkThreadId,
-  isClaudeRuntimeThreadId,
 } from "../utils/claudeForkThread";
 import {
   sendUserMessage as sendUserMessageService,
@@ -26,7 +25,6 @@ import {
   engineSendMessage as engineSendMessageService,
   engineInterrupt as engineInterruptService,
   listGeminiSessions as listGeminiSessionsService,
-  loadClaudeSession as loadClaudeSessionService,
 } from "../../../services/tauri";
 import { sendSharedSessionTurn } from "../../shared-session/runtime/sendSharedSessionTurn";
 import { projectMemoryFacade } from "../../project-memory/services/projectMemoryFacade";
@@ -91,6 +89,7 @@ import {
   resolveThreadStabilityDiagnostic,
 } from "../utils/stabilityDiagnostics";
 import { useThreadMessagingSessionTooling } from "./useThreadMessagingSessionTooling";
+import { useThreadMessagingThreadResolution } from "./useThreadMessagingThreadResolution";
 import {
   createOptimisticGeneratedImageProcessingItem,
   extractOptimisticGeneratedImagePrompt,
@@ -101,7 +100,6 @@ import {
   resolveCodexAcceptedTurnFact,
   shouldDeferCodexActivityUntilTurnAccepted,
 } from "../utils/codexConversationLiveness";
-import { parseClaudeHistoryMessages } from "../loaders/claudeHistoryLoader";
 
 type SendMessageOptions = {
   skipPromptExpansion?: boolean;
@@ -173,22 +171,6 @@ function buildLocalizedMemoryScoutPreviewText(brief: MemoryBrief, t: TFunction) 
   return t("threads.memoryReferenceNoRelated");
 }
 
-const isClaudePendingThreadAwaitingNativeSession = (
-  threadId: string,
-  params: {
-    hasAwaitingMarker: boolean;
-    hasLocalItems: boolean;
-    hasActiveTurn: boolean;
-    isProcessing: boolean;
-  },
-) =>
-  threadId.startsWith("claude-pending-") &&
-  (
-    params.hasAwaitingMarker ||
-    params.hasLocalItems ||
-    params.hasActiveTurn ||
-    params.isProcessing
-  );
 const isThreadMessagingTestMode = (() => {
   try {
     return import.meta.env.MODE === "test";
@@ -208,15 +190,6 @@ const MEMORY_SCOUT_TIMEOUT_MS = 1500;
 function extractClaudeCandidateSessionId(response: Record<string, unknown>): string | null {
   const candidate = extractSessionIdFromEngineSendResponse(response);
   return candidate && candidate !== "pending" ? candidate : null;
-}
-
-function hasClaudeTranscriptRebindEvidence(items: ConversationItem[]): boolean {
-  return items.some((item) => {
-    if (item.kind === "message") {
-      return item.role === "assistant";
-    }
-    return item.kind === "tool" || item.kind === "reasoning";
-  });
 }
 
 function withMemoryScoutTimeout(action: Promise<MemoryBrief>, timeoutMs = MEMORY_SCOUT_TIMEOUT_MS) {
@@ -372,185 +345,28 @@ export function useThreadMessaging({
   const effectiveCodexCompactionInFlightByThreadRef =
     codexCompactionInFlightByThreadRef ?? internalCodexCompactionInFlightByThreadRef;
   const lastOpenCodeModelByThreadRef = useRef<Map<string, string>>(new Map());
-  const claudePendingThreadAwaitingNativeSessionRef = useRef<Set<string>>(new Set());
-  const claudeCandidateSessionIdByPendingThreadRef = useRef<Map<string, string>>(new Map());
-  const geminiSessionIdByPendingThreadRef = useRef<Map<string, string>>(new Map());
   const sessionSpecLinkByThreadRef = useRef<Map<string, SessionSpecLinkContext>>(new Map());
   const sendMessageToThreadRef = useRef<SendMessageToThreadFn | null>(null);
-  const normalizeEngineSelection = useCallback(
-    (
-      engine: "claude" | "codex" | "gemini" | "opencode" | undefined,
-    ): "claude" | "codex" | "gemini" | "opencode" =>
-      engine === "claude"
-        ? "claude"
-        : engine === "opencode"
-          ? "opencode"
-          : engine === "gemini"
-            ? "gemini"
-            : "codex",
-    [],
-  );
-
-  const resolveThreadEngine = useCallback(
-    (
-      workspaceId: string,
-      threadId: string,
-    ): "claude" | "codex" | "gemini" | "opencode" => {
-      const persistedEngine = getThreadEngine(workspaceId, threadId);
-      if (persistedEngine) {
-        return persistedEngine;
-      }
-      if (isClaudeRuntimeThreadId(threadId)) {
-        return "claude";
-      }
-      if (threadId.startsWith("gemini:") || threadId.startsWith("gemini-pending-")) {
-        return "gemini";
-      }
-      if (
-        threadId.startsWith("opencode:") ||
-        threadId.startsWith("opencode-pending-")
-      ) {
-        return "opencode";
-      }
-      return normalizeEngineSelection(activeEngine);
-    },
-    [activeEngine, getThreadEngine, normalizeEngineSelection],
-  );
-
-  const resolveThreadKind = useCallback(
-    (workspaceId: string, threadId: string): "native" | "shared" =>
-      getThreadKind?.(workspaceId, threadId) ?? "native",
-    [getThreadKind],
-  );
-
-  const isThreadIdCompatibleWithEngine = useCallback(
-    (
-      engine: "claude" | "codex" | "gemini" | "opencode",
-      threadId: string,
-    ): boolean => {
-      if (engine === "claude") {
-        return isClaudeRuntimeThreadId(threadId);
-      }
-      if (engine === "gemini") {
-        return (
-          threadId.startsWith("gemini:") ||
-          threadId.startsWith("gemini-pending-")
-        );
-      }
-      if (engine === "opencode") {
-        return (
-          threadId.startsWith("opencode:") ||
-          threadId.startsWith("opencode-pending-")
-        );
-      }
-      return (
-        !threadId.startsWith("claude:")
-        && !threadId.startsWith("claude-pending-")
-        && !threadId.startsWith("gemini:")
-        && !threadId.startsWith("gemini-pending-")
-        && !threadId.startsWith("opencode:")
-        && !threadId.startsWith("opencode-pending-")
-      );
-    },
-    [],
-  );
-
-  const startThreadForMessageSend = useCallback(
-    async (
-      workspace: WorkspaceInfo,
-      engine: "claude" | "codex" | "gemini" | "opencode",
-    ) => {
-      const createThread = () =>
-        startThreadForWorkspace(workspace.id, {
-          activate: true,
-          engine,
-        });
-      if (!runWithCreateSessionLoading) {
-        return createThread();
-      }
-      return runWithCreateSessionLoading({ workspace, engine }, createThread);
-    },
-    [runWithCreateSessionLoading, startThreadForWorkspace],
-  );
-
-  const reconcileClaudePendingThreadFromCandidate = useCallback(
-    async (
-      workspace: WorkspaceInfo,
-      pendingThreadId: string,
-    ): Promise<string | null> => {
-      const candidateSessionId =
-        claudeCandidateSessionIdByPendingThreadRef.current.get(pendingThreadId) ?? null;
-      if (!candidateSessionId) {
-        return null;
-      }
-      const workspacePath = typeof workspace.path === "string" ? workspace.path : "";
-      if (!workspacePath.trim()) {
-        return null;
-      }
-      const finalizedThreadId = `claude:${candidateSessionId}`;
-      try {
-        const result = await loadClaudeSessionService(workspacePath, candidateSessionId);
-        const record =
-          result && typeof result === "object"
-            ? (result as Record<string, unknown>)
-            : {};
-        const messagesData = record.messages ?? result;
-        const parsedItems = parseClaudeHistoryMessages(messagesData, workspacePath);
-        if (!hasClaudeTranscriptRebindEvidence(parsedItems)) {
-          onDebug?.({
-            id: `${Date.now()}-client-claude-candidate-reconcile-empty`,
-            timestamp: Date.now(),
-            source: "client",
-            label: "thread/session candidate transcript lacks rebind evidence",
-            payload: {
-              workspaceId: workspace.id,
-              threadId: pendingThreadId,
-              sessionId: candidateSessionId,
-              itemCount: parsedItems.length,
-            },
-          });
-          return null;
-        }
-        dispatch({
-          type: "renameThreadId",
-          workspaceId: workspace.id,
-          oldThreadId: pendingThreadId,
-          newThreadId: finalizedThreadId,
-        });
-        claudePendingThreadAwaitingNativeSessionRef.current.delete(pendingThreadId);
-        claudeCandidateSessionIdByPendingThreadRef.current.delete(pendingThreadId);
-        onDebug?.({
-          id: `${Date.now()}-client-claude-candidate-reconcile`,
-          timestamp: Date.now(),
-          source: "client",
-          label: "thread/session reconciled from candidate transcript",
-          payload: {
-            workspaceId: workspace.id,
-            oldThreadId: pendingThreadId,
-            newThreadId: finalizedThreadId,
-            sessionId: candidateSessionId,
-            itemCount: parsedItems.length,
-          },
-        });
-        return finalizedThreadId;
-      } catch (error) {
-        onDebug?.({
-          id: `${Date.now()}-client-claude-candidate-reconcile-error`,
-          timestamp: Date.now(),
-          source: "client",
-          label: "thread/session candidate transcript load failed",
-          payload: {
-            workspaceId: workspace.id,
-            threadId: pendingThreadId,
-            sessionId: candidateSessionId,
-            error: error instanceof Error ? error.message : String(error),
-          },
-        });
-        return null;
-      }
-    },
-    [dispatch, onDebug],
-  );
+  const {
+    claudeCandidateSessionIdByPendingThreadRef,
+    claudePendingThreadAwaitingNativeSessionRef,
+    geminiSessionIdByPendingThreadRef,
+    isClaudePendingThreadAwaitingNativeSession,
+    isThreadIdCompatibleWithEngine,
+    normalizeEngineSelection,
+    reconcileClaudePendingThreadFromCandidate,
+    resolveThreadEngine,
+    resolveThreadKind,
+    startThreadForMessageSend,
+  } = useThreadMessagingThreadResolution({
+    activeEngine,
+    dispatch,
+    getThreadEngine,
+    getThreadKind,
+    onDebug,
+    runWithCreateSessionLoading,
+    startThreadForWorkspace,
+  });
 
   const sendMessageToThread = useCallback(
     async (

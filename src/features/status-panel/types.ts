@@ -110,6 +110,12 @@ export interface CheckpointViewModel {
   verdict: CheckpointVerdict;
   headline: CheckpointMessageToken;
   summary: CheckpointMessageToken | null;
+  policyAudit: readonly {
+    policyId: string;
+    verdictContribution: CheckpointVerdict | "no_contribution";
+    reasonKey: string | null;
+    sourceId: string | null;
+  }[];
   evidence: {
     changedFiles: number | null;
     additions: number | null;

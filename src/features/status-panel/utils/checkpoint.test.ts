@@ -55,6 +55,7 @@ describe("buildCheckpointViewModel", () => {
     expect(result.evidence.validations.find((entry) => entry.kind === "lint")?.status).toBe(
       "running",
     );
+    expect(result.policyAudit.map((entry) => entry.policyId)).toContain("corePolicy");
   });
 
   it("marks checkpoint as ready after core validations pass", () => {

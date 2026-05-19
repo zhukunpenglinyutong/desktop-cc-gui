@@ -87,3 +87,52 @@
 - **AND** Claude 子源 timeout 触发 seed
 - **THEN** 已 archived 的条目 MUST NOT 被 seed 进 mergedById
 - **AND** archive state 的 source-of-truth 仍由 `applySessionArchiveState` 维护
+
+### Requirement: Claude Sidebar Listing MUST Treat Successful Empty Results As Authoritative Only When Attribution Is Complete
+
+当 Claude native listing 成功返回空数组时，系统 MUST 区分"真实没有 Claude session"与"扫描/归属不确定导致暂时没有命中"。只有后端或 catalog 明确提供完整、无 partial、无 attribution ambiguity 的结果时，successful empty 才能覆盖 last-good Claude entries。
+
+#### Scenario: successful empty with uncertain attribution preserves last-good claude entries
+
+- **WHEN** sidebar `listThreadsForWorkspace` 进入 full-catalog hydration
+- **AND** `listClaudeSessionsService` 成功返回空数组
+- **AND** 当前 workspace 存在上一轮 last-good Claude entries
+- **AND** 本轮 listing 或 catalog projection 暴露 partial source、scan ambiguity、workspace family ambiguity、或 attribution uncertainty
+- **THEN** 系统 MUST 把该空数组视为 degraded empty
+- **AND** 最终 sidebar store MUST 保留 last-good Claude entries
+- **AND** 系统 MUST 通过 debug / partial-source 机制记录 successful-empty fallback 原因
+
+#### Scenario: authoritative empty may clear last-good claude entries
+
+- **WHEN** `listClaudeSessionsService` 成功返回空数组
+- **AND** 后端确认当前 workspace scan 完整且无 attribution ambiguity
+- **AND** catalog / archive / shared filters 均未报告 partial source
+- **THEN** 系统 MAY 将 Claude entries 更新为空
+- **AND** 该更新 MUST NOT 带 degraded fallback 标记
+
+### Requirement: Claude Session Attribution MUST Prefer Exact Child Workspace Ownership Over Parent Scope
+
+当父 workspace 与子文件夹 workspace 同时存在时，Claude session 的 owner MUST 由最精确的 workspace path / transcript cwd / direct Claude project dir 决定。父 workspace、git root family、parent scope fallback 或 encoded-prefix scan MUST NOT 抢占 exact child workspace 所拥有的 Claude session。
+
+#### Scenario: child workspace cwd remains owned by child projection
+
+- **WHEN** workspace `parent` path 为 `/repo`
+- **AND** workspace `child` path 为 `/repo/sub`
+- **AND** Claude transcript `cwd` 为 `/repo/sub` 或其子路径
+- **THEN** 该 Claude session 的 matched workspace MUST 是 `child`
+- **AND** child sidebar projection MUST 显示该 session
+- **AND** parent sidebar projection MUST NOT 将该 session 当作 parent-owned native session
+
+#### Scenario: parent scope fallback does not override longer child match
+
+- **WHEN** Claude project directories include both parent encoded path and child encoded path candidates
+- **AND** transcript cwd matches both by prefix but child path is longer
+- **THEN** longest child match MUST win over parent match
+- **AND** parent-scope / git-root inference MUST NOT downgrade this exact child ownership into inferred parent ownership
+
+#### Scenario: ambiguous sibling child matches remain degraded instead of choosing parent
+
+- **WHEN** multiple child workspaces under the same parent can plausibly match a Claude session
+- **AND** no exact cwd or direct child project dir evidence disambiguates the owner
+- **THEN** the session MUST NOT be silently assigned to the parent workspace as authoritative truth
+- **AND** the system MUST expose attribution ambiguity through partial-source, degraded state, or equivalent diagnostics

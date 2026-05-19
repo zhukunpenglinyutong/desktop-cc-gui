@@ -92,6 +92,20 @@ jobs:
         run: npm ci
       - name: Runtime contracts
         run: npm run check:runtime-contracts
+      - name: Engine capability matrix
+        run: npm run check:engine-capability-matrix
+      - name: Context ledger cost budget
+        run: npm run check:context-ledger-cost-budget
+      - name: Checkpoint policy chain
+        run: npm run check:checkpoint-policy-chain
+      - name: Governance evidence bridge
+        run: npm run check:governance-evidence-bridge
+      - name: Agent domain event schema
+        run: npm run check:agent-domain-event-schema
+      - name: Realtime event batching
+        run: npm run check:realtime-event-batching
+      - name: Bundle chunking
+        run: npm run check:bundle-chunking
       - name: Typecheck
         run: npm run typecheck
   test-js:

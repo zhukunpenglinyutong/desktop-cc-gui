@@ -52,7 +52,6 @@ import type {
   GitHistoryCommit,
   GitPrWorkflowDefaults,
   GitPrWorkflowResult,
-  WorkspaceInfo,
 } from "../../../../../types";
 import {
   checkoutGitBranch,
@@ -89,7 +88,6 @@ import {
 import { getClientStoreSync, writeClientStoreValue } from "../../../../../services/clientStorage";
 import FileIcon from "../../../../../components/FileIcon";
 import { GitDiffViewer } from "../../../../git/components/GitDiffViewer";
-import type { CodeAnnotationBridgeProps } from "../../../../code-annotations/types";
 import { GitHistoryWorktreePanel } from "../../GitHistoryWorktreePanel";
 import { isWorkingTreeDirtyBlockingError, localizeGitErrorMessage } from "../../../gitErrorI18n";
 import { useGitHistoryPanelInteractions } from "../hooks/useGitHistoryPanelInteractions";
@@ -106,6 +104,7 @@ import {
   DETAILS_SPLIT_MIN,
   DISABLE_HISTORY_ACTION_BUTTONS,
   DISABLE_HISTORY_COMMIT_ACTIONS,
+  GIT_HISTORY_PAGE_SIZE,
   OVERVIEW_MIN_WIDTH,
   PUSH_TARGET_MENU_ESTIMATED_ROW_HEIGHT,
   PUSH_TARGET_MENU_MAX_HEIGHT,
@@ -136,6 +135,7 @@ import type {
   CreatePrFormState,
   ForceDeleteDialogMode,
   ForceDeleteDialogState,
+  GitHistoryPanelProps,
   GitHistoryPanelPersistedState,
   GitOperationErrorState,
   GitOperationNoticeState,
@@ -153,22 +153,6 @@ import {
 import { isRepositoryUnavailableError, formatRelativeTime, statusLabel, buildFileKey, getTreeLineOpacity, renderChangedFilesSummary, getPathLeafName, collectDirPaths, pickSelectedFileKey, buildFileTreeItems, getBranchScope, getBranchLeafName, trimRemotePrefix, getSpecialBranchBadges } from "../utils/gitHistoryPanelSharedUtils";
 
 export { getDefaultColumnWidths } from "./GitHistoryPanelImplHelpers";
-
-type GitHistoryPanelProps = CodeAnnotationBridgeProps & {
-  workspace: WorkspaceInfo | null;
-  workspaces?: WorkspaceInfo[];
-  groupedWorkspaces?: Array<{
-    id: string | null;
-    name: string;
-    workspaces: WorkspaceInfo[];
-  }>;
-  onSelectWorkspace?: (workspaceId: string) => void;
-  onSelectWorkspacePath?: (path: string) => Promise<void> | void;
-  onOpenDiffPath?: (path: string) => void;
-  onRequestClose?: () => void;
-};
-
-const PAGE_SIZE = 100;
 
 export const GitHistoryPanel = memo(function GitHistoryPanel({
   workspace,
@@ -592,7 +576,7 @@ export const GitHistoryPanel = memo(function GitHistoryPanel({
           query: commitQuery.trim() || null,
           snapshotId: append ? historySnapshotIdRef.current : null,
           offset,
-          limit: PAGE_SIZE,
+          limit: GIT_HISTORY_PAGE_SIZE,
         });
 
         setHistoryTotal(response.total);
@@ -623,7 +607,7 @@ export const GitHistoryPanel = memo(function GitHistoryPanel({
               query: commitQuery.trim() || null,
               snapshotId: null,
               offset: 0,
-              limit: PAGE_SIZE,
+              limit: GIT_HISTORY_PAGE_SIZE,
             });
             setHistoryTotal(refreshed.total);
             setHistoryHasMore(refreshed.hasMore);

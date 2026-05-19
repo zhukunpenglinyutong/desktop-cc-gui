@@ -1,6 +1,6 @@
 {
   "schemaVersion": "1.0",
-  "generatedAt": "2026-05-15T18:02:52.976Z",
+  "generatedAt": "2026-05-19T11:23:48.315Z",
   "source": "realtime-extended",
   "metrics": [
     {
@@ -25,7 +25,7 @@
     {
       "scenario": "S-RS-PE",
       "metric": "assemblerLatency",
-      "value": 5.15,
+      "value": 4.05,
       "unit": "ms",
       "notes": "replay reducer-path proxy latency"
     }

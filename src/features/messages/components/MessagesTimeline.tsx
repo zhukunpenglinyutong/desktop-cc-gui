@@ -2,11 +2,13 @@ import {
   Fragment,
   memo,
   useEffect,
+  useMemo,
   useState,
   type MutableRefObject,
   type ReactNode,
   type RefObject,
 } from "react";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import { useTranslation } from "react-i18next";
 import Bell from "lucide-react/dist/esm/icons/bell";
 import ChevronLeft from "lucide-react/dist/esm/icons/chevron-left";
@@ -47,6 +49,11 @@ import {
   resolveProvenanceEngineLabel,
   shouldHideCodexCanvasCommandCard,
 } from "./messagesRenderUtils";
+import { buildTimelineProjectionRows, groupedEntryContainsItemId } from "./messagesTimelineProjection";
+import {
+  estimateTimelineProjectionRowSize,
+  shouldVirtualizeTimelineRows,
+} from "./messagesTimelineVirtualization";
 
 type MessagesTimelineProps = {
   activeCollaborationModeId: string | null;
@@ -120,6 +127,7 @@ type MessagesTimelineProps = {
   reasoningMetaById: Map<string, ReturnType<typeof parseReasoning>>;
   requestAutoScroll: () => void;
   selectedExitPlanExecutionByItemKey: Record<string, Extract<AccessMode, "default" | "full-access">>;
+  scrollElementRef: RefObject<HTMLDivElement | null>;
   showFileLinkMenu?: (event: React.MouseEvent, path: string) => void;
   streamMitigationProfile: StreamMitigationProfile | null;
   streamActivityPhase: "idle" | "waiting" | "ingress";
@@ -153,13 +161,6 @@ function resolveLiveRenderItem(
     return liveReasoningItem;
   }
   return item;
-}
-
-function groupedEntryContainsItemId(entry: GroupedEntry, itemId: string): boolean {
-  if (entry.kind === "item") {
-    return entry.item.id === itemId;
-  }
-  return entry.items.some((item) => item.id === itemId);
 }
 
 export const MessagesTimeline = memo(function MessagesTimeline({
@@ -215,6 +216,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
   reasoningMetaById,
   requestAutoScroll,
   selectedExitPlanExecutionByItemKey,
+  scrollElementRef,
   showFileLinkMenu,
   streamMitigationProfile,
   streamActivityPhase,
@@ -243,6 +245,43 @@ export const MessagesTimeline = memo(function MessagesTimeline({
           groupedEntryContainsItemId(entry, activeUserInputAnchorItemId),
         )),
   );
+  const timelineProjectionRows = buildTimelineProjectionRows({
+    activeUserInputAnchorItemId,
+    approvalVisible: Boolean(approvalNode),
+    claudeDockedReasoningItemIds: claudeDockedReasoningItems.map(({ item }) => item.id),
+    collapsedMiddleStepCount,
+    collapseLiveMiddleStepsEnabled,
+    effectiveItemsCount,
+    groupedEntries,
+    hasVisibleUserInputRequest,
+    hiddenClaudeReasoningOnly,
+    isHistoryLoading,
+    isThinking,
+    shouldRenderUserInputAtTail,
+  });
+  const timelineRowByKey = useMemo(
+    () => new Map(timelineProjectionRows.map((row) => [row.key, row])),
+    [timelineProjectionRows],
+  );
+  const dockedReasoningById = useMemo(
+    () => new Map(claudeDockedReasoningItems.map((entry) => [entry.item.id, entry])),
+    [claudeDockedReasoningItems],
+  );
+  const shouldVirtualizeTimeline = shouldVirtualizeTimelineRows({
+    isThinking,
+    rowCount: timelineProjectionRows.length,
+  });
+  const timelineVirtualizer = useVirtualizer({
+    count: shouldVirtualizeTimeline ? timelineProjectionRows.length : 0,
+    estimateSize: (index) =>
+      estimateTimelineProjectionRowSize(timelineProjectionRows[index] ?? {
+        kind: "bottomAnchor",
+        key: "bottom-anchor",
+      }),
+    getItemKey: (index) => timelineProjectionRows[index]?.key ?? `missing:${index}`,
+    getScrollElement: () => scrollElementRef.current,
+    overscan: 12,
+  });
 
   const renderSingleItem = (item: ConversationItem) => {
     const renderItem = resolveLiveRenderItem(
@@ -509,6 +548,132 @@ export const MessagesTimeline = memo(function MessagesTimeline({
     }
     return renderWithAnchoredUserInput(renderSingleItem(entry.item));
   };
+  const renderProjectionRow = (row: ReturnType<typeof timelineRowByKey.get>) => {
+    if (!row) {
+      return null;
+    }
+    if (row.kind === "entry") {
+      return renderEntry(row.entry);
+    }
+    if (row.kind === "dockedReasoning") {
+      const dockedReasoning = dockedReasoningById.get(row.itemId);
+      if (!dockedReasoning) {
+        return null;
+      }
+      const { item, parsed } = dockedReasoning;
+      return (
+        <ReasoningRow
+          key={`claude-live-${item.id}`}
+          item={item}
+          workspaceId={workspaceId}
+          parsed={parsed}
+          isExpanded={isThinking && latestReasoningId === item.id ? true : expandedItems.has(item.id)}
+          isLive={isThinking && latestReasoningId === item.id}
+          onToggle={toggleExpanded}
+          onOpenFileLink={openFileLink}
+          onOpenFileLinkMenu={showFileLinkMenu}
+          presentationProfile={presentationProfile}
+          streamMitigationProfile={streamMitigationProfile}
+        />
+      );
+    }
+    if (row.kind === "tailUserInput") {
+      return userInputNode;
+    }
+    if (row.kind === "liveMiddleCollapsed") {
+      return (
+        <div className="messages-live-middle-collapsed-indicator" role="status">
+          {t("messages.middleStepsCollapsedHint", { count: row.count })}
+        </div>
+      );
+    }
+    if (row.kind === "workingIndicator") {
+      return (
+        <WorkingIndicator
+          isThinking={isWorking}
+          proxyEnabled={proxyEnabled}
+          proxyUrl={proxyUrl}
+          processingStartedAt={processingStartedAt}
+          lastDurationMs={lastDurationMs}
+          heartbeatPulse={heartbeatPulse}
+          hasItems={effectiveItemsCount > 0}
+          reasoningLabel={latestReasoningLabel}
+          activityLabel={latestWorkingActivityLabel}
+          primaryLabel={primaryWorkingLabel}
+          activeEngine={activeEngine}
+          waitingForFirstChunk={waitingForFirstChunk}
+          presentationProfile={presentationProfile}
+          streamActivityPhase={streamActivityPhase}
+        />
+      );
+    }
+    if (row.kind === "emptyState") {
+      if (row.state === "historyLoading") {
+        return (
+          <div
+            className="empty messages-empty messages-history-loading"
+            role="status"
+            aria-live="polite"
+          >
+            <span className="working-spinner" aria-hidden="true" />
+            <div className="messages-history-loading-copy">
+              <strong>{t("messages.restoringHistory")}</strong>
+              <span>{t("messages.restoringHistoryHint")}</span>
+            </div>
+          </div>
+        );
+      }
+      if (row.state === "hiddenReasoning") {
+        return (
+          <div className="empty messages-empty messages-hidden-reasoning">
+            {t("messages.hiddenThinkingContent")}
+          </div>
+        );
+      }
+      return <div className="empty messages-empty">{t("messages.emptyThread")}</div>;
+    }
+    if (row.kind === "approval") {
+      return approvalNode;
+    }
+    if (row.kind === "bottomAnchor") {
+      return null;
+    }
+    return null;
+  };
+  const renderVirtualProjectionRows = () => (
+    <div
+      className="messages-virtualized-canvas"
+      style={{
+        height: `${timelineVirtualizer.getTotalSize()}px`,
+        position: "relative",
+      }}
+    >
+      {timelineVirtualizer.getVirtualItems().map((virtualRow) => {
+        const row = timelineProjectionRows[virtualRow.index];
+        return (
+          <div
+            key={virtualRow.key}
+            data-index={virtualRow.index}
+            data-timeline-row-kind={row?.kind}
+            ref={timelineVirtualizer.measureElement}
+            style={{
+              left: 0,
+              position: "absolute",
+              top: 0,
+              transform: `translateY(${virtualRow.start}px)`,
+              width: "100%",
+            }}
+          >
+            {renderProjectionRow(row)}
+          </div>
+        );
+      })}
+    </div>
+  );
+  const renderStaticProjectionRows = () =>
+    timelineProjectionRows.map((row) => (
+      <Fragment key={row.key}>{renderProjectionRow(row)}</Fragment>
+    ));
 
   return (
     <>
@@ -566,7 +731,11 @@ export const MessagesTimeline = memo(function MessagesTimeline({
           </div>
         </div>
       )}
-      <div className="messages-full">
+      <div
+        className="messages-full"
+        data-timeline-projection-row-count={timelineProjectionRows.length}
+        data-timeline-virtualized={shouldVirtualizeTimeline ? "true" : "false"}
+      >
         {visibleCollapsedHistoryItemCount > 0 && (
           <div
             className="messages-collapsed-indicator"
@@ -576,68 +745,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
             {t("messages.showEarlierMessages", { count: visibleCollapsedHistoryItemCount })}
           </div>
         )}
-        {groupedEntries.map(renderEntry)}
-        {claudeDockedReasoningItems.map(({ item, parsed }) => (
-          <ReasoningRow
-            key={`claude-live-${item.id}`}
-            item={item}
-            workspaceId={workspaceId}
-            parsed={parsed}
-            isExpanded={isThinking && latestReasoningId === item.id ? true : expandedItems.has(item.id)}
-            isLive={isThinking && latestReasoningId === item.id}
-            onToggle={toggleExpanded}
-            onOpenFileLink={openFileLink}
-            onOpenFileLinkMenu={showFileLinkMenu}
-            presentationProfile={presentationProfile}
-            streamMitigationProfile={streamMitigationProfile}
-          />
-        ))}
-        {shouldRenderUserInputAtTail ? userInputNode : null}
-        {isThinking && collapseLiveMiddleStepsEnabled && collapsedMiddleStepCount > 0 && (
-          <div className="messages-live-middle-collapsed-indicator" role="status">
-            {t("messages.middleStepsCollapsedHint", { count: collapsedMiddleStepCount })}
-          </div>
-        )}
-        <WorkingIndicator
-          isThinking={isWorking}
-          proxyEnabled={proxyEnabled}
-          proxyUrl={proxyUrl}
-          processingStartedAt={processingStartedAt}
-          lastDurationMs={lastDurationMs}
-          heartbeatPulse={heartbeatPulse}
-          hasItems={effectiveItemsCount > 0}
-          reasoningLabel={latestReasoningLabel}
-          activityLabel={latestWorkingActivityLabel}
-          primaryLabel={primaryWorkingLabel}
-          activeEngine={activeEngine}
-          waitingForFirstChunk={waitingForFirstChunk}
-          presentationProfile={presentationProfile}
-          streamActivityPhase={streamActivityPhase}
-        />
-        {!effectiveItemsCount && !hasVisibleUserInputRequest && (
-          isHistoryLoading ? (
-            <div
-              className="empty messages-empty messages-history-loading"
-              role="status"
-              aria-live="polite"
-            >
-              <span className="working-spinner" aria-hidden="true" />
-              <div className="messages-history-loading-copy">
-                <strong>{t("messages.restoringHistory")}</strong>
-                <span>{t("messages.restoringHistoryHint")}</span>
-              </div>
-            </div>
-          ) : hiddenClaudeReasoningOnly ? (
-            <div className="empty messages-empty messages-hidden-reasoning">
-              {t("messages.hiddenThinkingContent")}
-            </div>
-          ) : (
-            <div className="empty messages-empty">
-              {t("messages.emptyThread")}
-            </div>
-          )
-        )}
-        {approvalNode}
+        {shouldVirtualizeTimeline ? renderVirtualProjectionRows() : renderStaticProjectionRows()}
         <div ref={bottomRef} />
       </div>
     </>

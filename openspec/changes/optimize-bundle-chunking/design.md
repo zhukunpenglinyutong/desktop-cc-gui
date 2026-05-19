@@ -1,3 +1,9 @@
+## Branch Calibration / 分支校准（2026-05-19）
+
+本设计面向当前 `feature/v0.5.0-md` 分支重新实施。bundle artifacts、main/vendor size、domain contributors 与 lazy boundary 候选必须按当前分支重新测量；`feature/v0.5` 不作为事实源。
+
+当前定位：**design-ready / implementation-unstarted**。后续实施必须先跑当前 cold-start / build output inventory，再确定 chunk plan。
+
 ## Context
 
 `add-runtime-perf-baseline` 已经把 cold-start bundle 指标落盘：`S-CS-COLD.bundleSizeMain = 1858800 bytes`，`bundleSizeVendor = 163595 bytes`，`firstPaintMs/firstInteractiveMs = unsupported`。

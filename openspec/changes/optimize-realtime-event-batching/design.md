@@ -1,3 +1,9 @@
+## Branch Calibration / 分支校准（2026-05-19）
+
+本设计面向当前 `feature/v0.5.0-md` 分支重新实施。`feature/v0.5` 中曾出现的 `realtimeBatchingContract`、checker 与 validation evidence 均视为废弃实现，不作为当前完成状态。
+
+当前定位：**design-ready / implementation-unstarted**。后续实施必须重新 inventory 当前分支的 realtime adapter/hook/reducer path 与 perf baseline，再选择安全 coalescing boundary。
+
 ## Context
 
 `add-runtime-perf-baseline` established realtime extended fixtures: `S-RS-FT.firstTokenLatency = 5000ms`, `interTokenJitterP95 = 920ms`, `S-RS-PE.dedupHitRatio = 0.25`, and `assemblerLatency = 3.93ms`.

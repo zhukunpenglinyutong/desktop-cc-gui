@@ -38,7 +38,9 @@ export type CodexCatalogSessionSummary = {
   folderId?: string | null;
 };
 
-export function normalizeThreadListPartialSource(value: unknown): string | null {
+export function normalizeThreadListPartialSource(
+  value: unknown,
+): string | null {
   if (typeof value !== "string") {
     return null;
   }
@@ -52,7 +54,10 @@ export function hasHealthyThreadSummaries(
   return (
     Array.isArray(threads) &&
     threads.length > 0 &&
-    !threads.some((thread) => thread.isDegraded || thread.partialSource || thread.degradedReason)
+    !threads.some(
+      (thread) =>
+        thread.isDegraded || thread.partialSource || thread.degradedReason,
+    )
   );
 }
 
@@ -75,7 +80,9 @@ export function isWorkspaceNotConnectedError(error: unknown): boolean {
 }
 
 function normalizeThreadResumeErrorMessage(error: unknown): string {
-  return (error instanceof Error ? error.message : String(error)).trim().toLowerCase();
+  return (error instanceof Error ? error.message : String(error))
+    .trim()
+    .toLowerCase();
 }
 
 export function isThreadResumeNotFoundError(error: unknown): boolean {
@@ -96,13 +103,22 @@ export function inferThreadEngineSource(
     return summary.engineSource;
   }
   const normalized = threadId.trim().toLowerCase();
-  if (normalized.startsWith("claude:") || normalized.startsWith("claude-pending-")) {
+  if (
+    normalized.startsWith("claude:") ||
+    normalized.startsWith("claude-pending-")
+  ) {
     return "claude";
   }
-  if (normalized.startsWith("gemini:") || normalized.startsWith("gemini-pending-")) {
+  if (
+    normalized.startsWith("gemini:") ||
+    normalized.startsWith("gemini-pending-")
+  ) {
     return "gemini";
   }
-  if (normalized.startsWith("opencode:") || normalized.startsWith("opencode-pending-")) {
+  if (
+    normalized.startsWith("opencode:") ||
+    normalized.startsWith("opencode-pending-")
+  ) {
     return "opencode";
   }
   return "codex";
@@ -127,13 +143,14 @@ export function selectReplacementThreadSummary(params: {
   if (candidates.length === 0) {
     return null;
   }
-  const scored = scoreReplacementThreadCandidates(params)
-    .sort((left, right) => {
+  const scored = scoreReplacementThreadCandidates(params).sort(
+    (left, right) => {
       if (right.score !== left.score) {
         return right.score - left.score;
       }
       return right.entry.updatedAt - left.entry.updatedAt;
-    });
+    },
+  );
   const best = scored[0];
   const next = scored[1];
   if (!best) {
@@ -160,9 +177,7 @@ export function selectRecoveredNewThreadSummary(params: {
   }
 
   const previousIds = new Set(
-    params.previousSummaries
-      .map((entry) => entry.id.trim())
-      .filter(Boolean),
+    params.previousSummaries.map((entry) => entry.id.trim()).filter(Boolean),
   );
   const newlyDiscoveredCandidates = candidates.filter(
     (entry) => !previousIds.has(entry.id.trim()),
@@ -200,7 +215,11 @@ function scoreReplacementThreadCandidate(
   if (staleName && entry.name.trim() === staleName) {
     score += 100;
   }
-  if (staleSummary?.source && entry.source && staleSummary.source === entry.source) {
+  if (
+    staleSummary?.source &&
+    entry.source &&
+    staleSummary.source === entry.source
+  ) {
     score += 20;
   }
   if (
@@ -227,7 +246,8 @@ export function listReplacementThreadCandidates(params: {
 }): ThreadSummary[] {
   const { staleThreadId, summaries } = params;
   const staleSummary =
-    params.staleSummary ?? summaries.find((entry) => entry.id === staleThreadId);
+    params.staleSummary ??
+    summaries.find((entry) => entry.id === staleThreadId);
   const staleEngine = inferThreadEngineSource(staleThreadId, staleSummary);
   return summaries.filter((entry) => {
     if (!entry.id || entry.id === staleThreadId) {
@@ -288,13 +308,17 @@ function lineLooksLikeThreadRecoveryError(line: string): boolean {
   if (!THREAD_RECOVERY_PATTERNS.some((pattern) => lowered.includes(pattern))) {
     return false;
   }
-  return THREAD_RECOVERY_ERROR_PREFIXES.some((prefix) => lowered.startsWith(prefix));
+  return THREAD_RECOVERY_ERROR_PREFIXES.some((prefix) =>
+    lowered.startsWith(prefix),
+  );
 }
 
 function lineLooksLikeRuntimeReconnectError(line: string): boolean {
   const lowered = line.toLowerCase();
   return (
-    RUNTIME_PIPE_DISCONNECT_PATTERNS.some((pattern) => lowered.includes(pattern)) ||
+    RUNTIME_PIPE_DISCONNECT_PATTERNS.some((pattern) =>
+      lowered.includes(pattern),
+    ) ||
     lowered.includes("workspace not connected") ||
     lineLooksLikeThreadRecoveryError(line)
   );
@@ -313,7 +337,9 @@ function getRuntimeReconnectCandidate(text: string): string | null {
     return null;
   }
   if (lines.length === 1) {
-    return lineLooksLikeRuntimeReconnectError(lines[0] ?? "") ? (lines[0] ?? null) : null;
+    return lineLooksLikeRuntimeReconnectError(lines[0] ?? "")
+      ? (lines[0] ?? null)
+      : null;
   }
   if (!lines.every((line) => lineLooksLikeRuntimeReconnectError(line))) {
     return null;
@@ -343,26 +369,32 @@ function buildComparableRecoveryMessageSignature(
   ].join("\u0000");
 }
 
-function collectComparableRecoveryMessageSequence(items: ConversationItem[]): string[] {
+function collectComparableRecoveryMessageSequence(
+  items: ConversationItem[],
+): string[] {
   return items
     .filter(
-      (
-        item,
-      ): item is Extract<ConversationItem, { kind: "message" }> =>
+      (item): item is Extract<ConversationItem, { kind: "message" }> =>
         item.kind === "message" && !isTransientReconnectAssistantMessage(item),
     )
     .map(buildComparableRecoveryMessageSignature)
     .filter(Boolean);
 }
 
-function isComparableMessageSequencePrefix(prefix: string[], target: string[]): boolean {
+function isComparableMessageSequencePrefix(
+  prefix: string[],
+  target: string[],
+): boolean {
   if (prefix.length === 0 || prefix.length > target.length) {
     return false;
   }
   return prefix.every((value, index) => value === target[index]);
 }
 
-function countComparableMessageSuffixOverlap(left: string[], right: string[]): number {
+function countComparableMessageSuffixOverlap(
+  left: string[],
+  right: string[],
+): number {
   const maxLength = Math.min(left.length, right.length);
   let overlap = 0;
   while (overlap < maxLength) {
@@ -385,7 +417,8 @@ function scoreThreadRecoveryCandidateByMessages(
   candidateItems: ConversationItem[],
 ): number {
   const staleSequence = collectComparableRecoveryMessageSequence(staleItems);
-  const candidateSequence = collectComparableRecoveryMessageSequence(candidateItems);
+  const candidateSequence =
+    collectComparableRecoveryMessageSequence(candidateItems);
   if (staleSequence.length === 0 || candidateSequence.length === 0) {
     return 0;
   }
@@ -408,16 +441,22 @@ function scoreThreadRecoveryCandidateByMessages(
   if (messageSuffixOverlap >= 2) {
     return 2_000 + messageSuffixOverlap;
   }
-  const staleUserSequence = extractComparableRecoveryUserSequence(staleSequence);
-  const candidateUserSequence = extractComparableRecoveryUserSequence(candidateSequence);
+  const staleUserSequence =
+    extractComparableRecoveryUserSequence(staleSequence);
+  const candidateUserSequence =
+    extractComparableRecoveryUserSequence(candidateSequence);
   if (
     staleUserSequence.length > 0 &&
     staleUserSequence.length === candidateUserSequence.length &&
-    staleUserSequence.every((value, index) => value === candidateUserSequence[index])
+    staleUserSequence.every(
+      (value, index) => value === candidateUserSequence[index],
+    )
   ) {
     return 1_500 + staleUserSequence.length;
   }
-  if (isComparableMessageSequencePrefix(staleUserSequence, candidateUserSequence)) {
+  if (
+    isComparableMessageSequencePrefix(staleUserSequence, candidateUserSequence)
+  ) {
     return 1_000 + staleUserSequence.length;
   }
   const userSuffixOverlap = countComparableMessageSuffixOverlap(
@@ -477,7 +516,9 @@ export function mergeRecoveredThreadSummaries(
       mergedById.set(entry.id, entry);
     }
   });
-  return Array.from(mergedById.values()).sort((left, right) => right.updatedAt - left.updatedAt);
+  return Array.from(mergedById.values()).sort(
+    (left, right) => right.updatedAt - left.updatedAt,
+  );
 }
 
 export function isUserConversationMessage(
@@ -564,10 +605,14 @@ export function resolveClaudeRewindMessageIdFromHistory(params: {
       (item) => item.text === targetText,
     );
     if (historyMatches.length >= targetOccurrenceByText) {
-      return historyMatches[targetOccurrenceByText - 1]?.id ?? requestedMessageId;
+      return (
+        historyMatches[targetOccurrenceByText - 1]?.id ?? requestedMessageId
+      );
     }
     if (historyMatches.length > 0) {
-      return historyMatches[historyMatches.length - 1]?.id ?? requestedMessageId;
+      return (
+        historyMatches[historyMatches.length - 1]?.id ?? requestedMessageId
+      );
     }
   }
 
@@ -576,10 +621,14 @@ export function resolveClaudeRewindMessageIdFromHistory(params: {
   if (fallbackIndex >= 0 && fallbackIndex < historyUserItems.length) {
     return historyUserItems[fallbackIndex]?.id ?? requestedMessageId;
   }
-  return historyUserItems[historyUserItems.length - 1]?.id ?? requestedMessageId;
+  return (
+    historyUserItems[historyUserItems.length - 1]?.id ?? requestedMessageId
+  );
 }
 
-export function findLatestHistoryUserMessageId(items: ConversationItem[]): string {
+export function findLatestHistoryUserMessageId(
+  items: ConversationItem[],
+): string {
   for (let index = items.length - 1; index >= 0; index -= 1) {
     const item = items[index];
     if (!isUserConversationMessage(item)) {
@@ -594,7 +643,9 @@ export function findLatestHistoryUserMessageId(items: ConversationItem[]): strin
   return "";
 }
 
-export function findFirstHistoryUserMessageId(items: ConversationItem[]): string {
+export function findFirstHistoryUserMessageId(
+  items: ConversationItem[],
+): string {
   for (let index = 0; index < items.length; index += 1) {
     const item = items[index];
     if (!isUserConversationMessage(item)) {
@@ -626,7 +677,9 @@ export function extractThreadSizeBytes(record: Record<string, unknown>) {
   );
 }
 
-function normalizeGeminiSessionSummary(value: unknown): GeminiSessionSummary | null {
+function normalizeGeminiSessionSummary(
+  value: unknown,
+): GeminiSessionSummary | null {
   if (!value || typeof value !== "object") {
     return null;
   }
@@ -644,7 +697,9 @@ function normalizeGeminiSessionSummary(value: unknown): GeminiSessionSummary | n
   };
 }
 
-export function normalizeGeminiSessionSummaries(value: unknown): GeminiSessionSummary[] {
+export function normalizeGeminiSessionSummaries(
+  value: unknown,
+): GeminiSessionSummary[] {
   if (!Array.isArray(value)) {
     return [];
   }
@@ -690,10 +745,14 @@ export function mergeGeminiSessionSummaries(
       mergedById.set(id, next);
     }
   });
-  return Array.from(mergedById.values()).sort((a, b) => b.updatedAt - a.updatedAt);
+  return Array.from(mergedById.values()).sort(
+    (a, b) => b.updatedAt - a.updatedAt,
+  );
 }
 
-function normalizeCatalogEngine(engine: CodexCatalogSessionSummary["engine"]): ThreadSummary["engineSource"] {
+function normalizeCatalogEngine(
+  engine: CodexCatalogSessionSummary["engine"],
+): ThreadSummary["engineSource"] {
   switch (engine) {
     case "claude":
     case "codex":
@@ -752,7 +811,7 @@ export function mergeCodexCatalogSessionSummaries(
         ? session.parentSessionId.startsWith("claude:")
           ? session.parentSessionId
           : `claude:${session.parentSessionId}`
-        : session.parentSessionId ?? null;
+        : (session.parentSessionId ?? null);
     const mappedTitle = mappedTitles[session.sessionId];
     const customTitle = getCustomName(workspaceId, session.sessionId);
     const fallbackTitle = previewThreadName(
@@ -791,7 +850,9 @@ export function mergeCodexCatalogSessionSummaries(
       );
     }
   });
-  return Array.from(mergedById.values()).sort((a, b) => b.updatedAt - a.updatedAt);
+  return Array.from(mergedById.values()).sort(
+    (a, b) => b.updatedAt - a.updatedAt,
+  );
 }
 
 /**
@@ -854,7 +915,9 @@ function isRetainableCodexContinuitySummary(summary: ThreadSummary): boolean {
   return isRetainableEngineContinuitySummary("codex", summary);
 }
 
-export function shouldApplyCodexSidebarContinuity(partialSource: string | null): boolean {
+export function shouldApplyCodexSidebarContinuity(
+  partialSource: string | null,
+): boolean {
   if (!partialSource) {
     return false;
   }
@@ -863,12 +926,12 @@ export function shouldApplyCodexSidebarContinuity(partialSource: string | null):
     return false;
   }
   return (
-    normalized.includes("thread-list")
-    || normalized.includes("codex")
-    || normalized.includes("workspace-not-connected")
-    || normalized.includes("runtime unavailable")
-    || normalized.includes("guarded-recovery")
-    || normalized.includes("local-session-scan")
+    normalized.includes("thread-list") ||
+    normalized.includes("codex") ||
+    normalized.includes("workspace-not-connected") ||
+    normalized.includes("runtime unavailable") ||
+    normalized.includes("guarded-recovery") ||
+    normalized.includes("local-session-scan")
   );
 }
 
@@ -882,19 +945,26 @@ export function mergeDegradedCodexContinuitySummaries(
   const mergedById = new Map<string, ThreadSummary>();
   baseSummaries.forEach((entry) => mergedById.set(entry.id, entry));
   fallbackSummaries.forEach((entry) => {
-    if (!isRetainableCodexContinuitySummary(entry) || mergedById.has(entry.id)) {
+    if (
+      !isRetainableCodexContinuitySummary(entry) ||
+      mergedById.has(entry.id)
+    ) {
       return;
     }
     mergedById.set(entry.id, entry);
   });
-  return Array.from(mergedById.values()).sort((left, right) => right.updatedAt - left.updatedAt);
+  return Array.from(mergedById.values()).sort(
+    (left, right) => right.updatedAt - left.updatedAt,
+  );
 }
 
 function isRetainableClaudeContinuitySummary(summary: ThreadSummary): boolean {
   return isRetainableEngineContinuitySummary("claude", summary);
 }
 
-export function shouldApplyClaudeSidebarContinuity(partialSource: string | null): boolean {
+export function shouldApplyClaudeSidebarContinuity(
+  partialSource: string | null,
+): boolean {
   if (!partialSource) {
     return false;
   }
@@ -903,12 +973,12 @@ export function shouldApplyClaudeSidebarContinuity(partialSource: string | null)
     return false;
   }
   return (
-    normalized.includes("claude")
-    || normalized.includes("catalog")
-    || normalized.includes("first-page")
-    || normalized.includes("empty-thread-list")
-    || normalized.includes("partial")
-    || normalized.includes("timeout")
+    normalized.includes("claude") ||
+    normalized.includes("catalog") ||
+    normalized.includes("first-page") ||
+    normalized.includes("empty-thread-list") ||
+    normalized.includes("partial") ||
+    normalized.includes("timeout")
   );
 }
 
@@ -926,6 +996,22 @@ export function mergeDegradedClaudeContinuitySummaries(
     excludedThreadIds,
     canRetainCandidate: isRetainableClaudeContinuitySummary,
     mergeOlderCandidates: true,
+  });
+}
+
+export function filterRetainableContinuitySummaries(
+  summaries: ThreadSummary[],
+  excludedThreadIds: ReadonlySet<string> = new Set(),
+): ThreadSummary[] {
+  return summaries.filter((summary) => {
+    if (excludedThreadIds.has(summary.id)) {
+      return false;
+    }
+    const engine = inferThreadEngineSource(summary.id, summary);
+    if (engine !== "claude" && engine !== "codex" && engine !== "opencode") {
+      return summary.threadKind !== "shared" && (summary.archivedAt ?? 0) <= 0;
+    }
+    return isRetainableEngineContinuitySummary(engine, summary);
   });
 }
 
@@ -1016,7 +1102,10 @@ export function seedLastGoodOpenCodeIntoMerged(
   );
 }
 
-export async function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T | null> {
+export async function withTimeout<T>(
+  promise: Promise<T>,
+  timeoutMs: number,
+): Promise<T | null> {
   let timer: ReturnType<typeof setTimeout> | null = null;
   try {
     return await Promise.race([
@@ -1092,7 +1181,9 @@ export function resolveRewindSupportedEngine(
   return "codex";
 }
 
-export function isLocalSessionScanUnavailable(result: Record<string, unknown>): boolean {
+export function isLocalSessionScanUnavailable(
+  result: Record<string, unknown>,
+): boolean {
   const marker = asString(result.partialSource ?? result.partial_source)
     .trim()
     .toLowerCase();
@@ -1149,10 +1240,9 @@ function normalizeThreadMetaValue(value: unknown): string | undefined {
   return trimmed.length > 0 ? trimmed : undefined;
 }
 
-export function resolveThreadSourceMeta(thread: Record<string, unknown>): Pick<
-  ThreadSummary,
-  "source" | "provider" | "sourceLabel"
-> {
+export function resolveThreadSourceMeta(
+  thread: Record<string, unknown>,
+): Pick<ThreadSummary, "source" | "provider" | "sourceLabel"> {
   const source =
     normalizeThreadMetaValue(thread.source) ??
     normalizeThreadMetaValue(thread.sessionSource);
@@ -1162,7 +1252,7 @@ export function resolveThreadSourceMeta(thread: Record<string, unknown>): Pick<
     normalizeThreadMetaValue(thread.sessionProvider);
   const sourceLabel =
     normalizeThreadMetaValue(thread.sourceLabel) ??
-    (source && provider ? `${source}/${provider}` : source ?? provider);
+    (source && provider ? `${source}/${provider}` : (source ?? provider));
   return {
     source,
     provider,
@@ -1179,7 +1269,8 @@ function shouldIncludeThreadEntry(thread: Record<string, unknown>): boolean {
     asString(thread.title).trim(),
     asString(thread.name).trim(),
   ].filter(Boolean);
-  const isCodexHelperThread = hasCodexBackgroundHelperPreview(previewCandidates);
+  const isCodexHelperThread =
+    hasCodexBackgroundHelperPreview(previewCandidates);
   if (isCodexHelperThread) {
     return false;
   }
@@ -1233,7 +1324,10 @@ export function restoreThreadParentLinksFromSnapshot(
   });
 }
 
-export function collectRelatedThreadIdsFromSnapshot(threadId: string, items: ConversationItem[]) {
+export function collectRelatedThreadIdsFromSnapshot(
+  threadId: string,
+  items: ConversationItem[],
+) {
   const relatedThreadIds = new Set<string>();
   items.forEach((item) => {
     if (item.kind !== "tool" || item.toolType !== "collabToolCall") {
@@ -1294,7 +1388,8 @@ export function shouldReplaceUserInputQueueFromSnapshot(
     return true;
   }
   const hasSubmittedRecord = items.some(
-    (item) => item.kind === "tool" && item.toolType === "requestUserInputSubmitted",
+    (item) =>
+      item.kind === "tool" && item.toolType === "requestUserInputSubmitted",
   );
   if (hasSubmittedRecord) {
     return true;

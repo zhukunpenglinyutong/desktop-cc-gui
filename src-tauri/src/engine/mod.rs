@@ -21,6 +21,8 @@ pub(crate) mod claude_history_subagents;
 pub(crate) mod claude_message_content;
 pub(crate) mod codex_prompt_service;
 pub mod commands;
+#[cfg(test)]
+mod capability_matrix;
 pub(crate) mod error_mapper;
 pub mod events;
 pub mod gemini;

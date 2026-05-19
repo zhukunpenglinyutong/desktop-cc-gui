@@ -2,7 +2,19 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ConversationItem, TurnPlan } from "../../../types";
+import type { GovernanceEvidenceState } from "../../governance/evidence/useGovernanceEvidence";
 import { StatusPanel } from "./StatusPanel";
+
+const EMPTY_GOVERNANCE_EVIDENCE_STATE: GovernanceEvidenceState = {
+  evidence: [],
+  isLoading: false,
+  error: null,
+};
+
+const mockUseGovernanceEvidence = vi.fn(
+  (_workspaceId: string | null, _enabled: boolean): GovernanceEvidenceState =>
+    EMPTY_GOVERNANCE_EVIDENCE_STATE,
+);
 
 const mockEditableDiffReviewSurface = vi.fn((props: Record<string, unknown>) => (
   <div data-testid="checkpoint-diff-viewer">
@@ -17,6 +29,10 @@ const mockEditableDiffReviewSurface = vi.fn((props: Record<string, unknown>) => 
 vi.mock("../../git/components/WorkspaceEditableDiffReviewSurface", () => ({
   WorkspaceEditableDiffReviewSurface: (props: Record<string, unknown>) =>
     mockEditableDiffReviewSurface(props),
+}));
+vi.mock("../../governance/evidence/useGovernanceEvidence", () => ({
+  useGovernanceEvidence: (workspaceId: string | null, enabled: boolean) =>
+    mockUseGovernanceEvidence(workspaceId, enabled),
 }));
 
 const editToolItem: Extract<ConversationItem, { kind: "tool" }> = {
@@ -177,6 +193,8 @@ describe("StatusPanel", () => {
   afterEach(() => {
     cleanup();
     mockEditableDiffReviewSurface.mockClear();
+    mockUseGovernanceEvidence.mockClear();
+    mockUseGovernanceEvidence.mockReturnValue(EMPTY_GOVERNANCE_EVIDENCE_STATE);
   });
 
   it("opens editor when clicking file in checkpoint result panel", () => {
@@ -704,6 +722,71 @@ describe("StatusPanel", () => {
     expect(screen.getByText("statusPanel.checkpoint.actions.hint.needs_review")).toBeTruthy();
   });
 
+  it("renders inline policy audit rationale in the dock checkpoint panel", () => {
+    render(
+      <StatusPanel
+        items={[
+          {
+            id: "tool-policy-audit",
+            kind: "tool",
+            toolType: "commandExecution",
+            title: "Tool: Bash",
+            detail: "npm run typecheck",
+            status: "running",
+            turnId: "turn-1",
+          },
+        ]}
+        isProcessing
+        variant="dock"
+      />,
+    );
+
+    fireEvent.click(screen.getByText("Result"));
+
+    const auditDetails = screen.getByText("statusPanel.audit.title").closest("details");
+    expect(auditDetails?.open).toBe(false);
+
+    fireEvent.click(screen.getByText("statusPanel.audit.title"));
+
+    expect(screen.getByText("corePolicy")).toBeTruthy();
+    expect(screen.getByText("statusPanel.policy.verdict.running")).toBeTruthy();
+    expect(screen.getByText("statusPanel.policy.corePolicy.running")).toBeTruthy();
+  });
+
+  it("renders read-only governance evidence in the dock checkpoint panel", () => {
+    mockUseGovernanceEvidence.mockReturnValue({
+      evidence: [
+        {
+          id: "openspec:tasks",
+          source: "openspec",
+          status: "warn",
+          degraded: false,
+          updatedAt: "1970-01-01T00:00:00.000Z",
+          title: "OpenSpec tasks",
+          summary: "1/2 task(s) complete.",
+        },
+      ],
+      isLoading: false,
+      error: null,
+    });
+
+    render(
+      <StatusPanel
+        workspaceId="ws-1"
+        items={[editToolItem]}
+        isProcessing={false}
+        variant="dock"
+      />,
+    );
+
+    fireEvent.click(screen.getByText("Result"));
+
+    expect(mockUseGovernanceEvidence).toHaveBeenCalledWith("ws-1", true);
+    expect(screen.getByText("statusPanel.governance.title")).toBeTruthy();
+    expect(screen.getByText("OpenSpec tasks")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /OpenSpec tasks/ })).toBeNull();
+  });
+
   it("opens the original diff panel when clicking file row diff action", () => {
     const onOpenDiffPath = vi.fn();
     render(
@@ -1214,6 +1297,37 @@ describe("StatusPanel", () => {
     expect(screen.queryByText("statusPanel.checkpoint.headline.needs_review")).toBeNull();
   });
 
+  it("keeps policy audit out of the compact checkpoint popover", () => {
+    render(
+      <StatusPanel
+        items={[editToolItem]}
+        isProcessing={false}
+        onExpandToDock={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByText("Result"));
+
+    expect(screen.queryByText("statusPanel.audit.title")).toBeNull();
+    expect(screen.getByText("statusPanel.checkpoint.expandToDock")).toBeTruthy();
+  });
+
+  it("keeps governance evidence out of the compact checkpoint popover", () => {
+    render(
+      <StatusPanel
+        workspaceId="ws-1"
+        items={[editToolItem]}
+        isProcessing={false}
+        onExpandToDock={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByText("Result"));
+
+    expect(mockUseGovernanceEvidence).toHaveBeenCalledWith("ws-1", false);
+    expect(screen.queryByText("statusPanel.governance.title")).toBeNull();
+  });
+
   it("does not render when expanded is false", () => {
     const { container } = render(
       <StatusPanel
@@ -1406,6 +1520,43 @@ describe("StatusPanel", () => {
     expect(container.querySelector(".sp-root--dock")).toBeNull();
     expect(screen.queryByText("Result")).toBeNull();
     expect(screen.queryByText("User Conversation")).toBeNull();
+  });
+
+  it("renders cost budget section in checkpoint panel when token usage is available", () => {
+    render(
+      <StatusPanel
+        items={[editToolItem]}
+        isProcessing={false}
+        variant="dock"
+        selectedEngine="codex"
+        selectedModelId="gpt-5.4"
+        activeThreadId="thread-cost"
+        activeTokenUsage={{
+          total: {
+            totalTokens: 2000,
+            inputTokens: 1200,
+            cachedInputTokens: 200,
+            outputTokens: 800,
+            reasoningOutputTokens: 100,
+          },
+          last: {
+            totalTokens: 2000,
+            inputTokens: 1200,
+            cachedInputTokens: 200,
+            outputTokens: 800,
+            reasoningOutputTokens: 100,
+          },
+          modelContextWindow: 200000,
+        }}
+      />,
+    );
+
+    fireEvent.click(screen.getByText("Result"));
+
+    expect(screen.getByText("statusPanel.cost.title")).toBeTruthy();
+    expect(screen.getByText("statusPanel.cost.session: $0.01")).toBeTruthy();
+    expect(screen.getByText("statusPanel.cost.engine: codex")).toBeTruthy();
+    expect(screen.getByText("statusPanel.cost.model: gpt-5.4")).toBeTruthy();
   });
 
   it("shows dock todo and subagent tabs again once status data exists", () => {

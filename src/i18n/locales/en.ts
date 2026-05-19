@@ -1,3 +1,4 @@
+import enPart1Base from "./en.part1.base";
 import enPart1 from "./en.part1";
 import enPart2 from "./en.part2";
 import enPart3 from "./en.part3";
@@ -10,6 +11,7 @@ const enPart2Composer = (enPart2 as { composer?: Partial<typeof enPart1.composer
 const enPart3Composer = (enPart3 as { composer?: Partial<typeof enPart1.composer> }).composer ?? {};
 
 const en = {
+  ...enPart1Base,
   ...enPart1,
   ...enPart2,
   ...enPart3,

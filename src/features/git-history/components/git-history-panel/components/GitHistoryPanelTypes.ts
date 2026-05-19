@@ -5,8 +5,24 @@ import type {
   GitCommitDiff,
   GitFileDiff,
   GitHistoryCommit,
+  WorkspaceInfo,
 } from "../../../../../types";
+import type { CodeAnnotationBridgeProps } from "../../../../code-annotations/types";
 import type { CommitActionId } from "./GitHistoryPanelImplHelpers";
+
+export type GitHistoryPanelProps = CodeAnnotationBridgeProps & {
+  workspace: WorkspaceInfo | null;
+  workspaces?: WorkspaceInfo[];
+  groupedWorkspaces?: Array<{
+    id: string | null;
+    name: string;
+    workspaces: WorkspaceInfo[];
+  }>;
+  onSelectWorkspace?: (workspaceId: string) => void;
+  onSelectWorkspacePath?: (path: string) => Promise<void> | void;
+  onOpenDiffPath?: (path: string) => void;
+  onRequestClose?: () => void;
+};
 
 export type BranchGroup = {
   key: string;

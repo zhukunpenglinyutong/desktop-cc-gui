@@ -13,6 +13,28 @@
 
 不做架构级重构（引擎级独立快照、超时三层对齐），那些留给后续 change。
 
+## Current Status
+
+2026-05-19 复核后，本 change 不归档，继续保持 active。
+
+第一阶段已经实现并验证：
+
+- Claude native listing timeout / null 时，sidebar 会 seed last-good Claude 条目。
+- Claude native listing reject 时，sidebar 走同等 last-good seed。
+- `getLastGoodThreadSummaries` 已拒绝 degraded / partialSource / degradedReason 状态，避免把上一次降级结果当成新的 last-good。
+- partial-source debug 仍保留，timeout fallback 不会把问题消音。
+- `openspec validate harden-claude-sidebar-list-timeout-fallback --strict --no-interactive` 通过。
+- `npx vitest run src/features/threads/hooks/useThreadActions.timeout-fallback.test.tsx` 通过，4/4。
+
+用户仍反馈两个现象：
+
+1. 客户端里仍存在 Claude Code session 从 sidebar 消失的问题。
+2. 在子文件夹 workspace 创建 Claude Code session 时，偶尔被归到父文件夹 workspace。
+
+这两个现象不应被解释为第一阶段 timeout fallback 完全未做；更准确的判断是：原 timeout / reject 路径已止血，但剩余复现很可能进入了更深的 listing successful-empty、catalog projection、archive/shared filtering、request race，或 Claude session attribution / ownership 漂移路径。
+
+因此，本 change 继续扩展为第二阶段 hardening：保持第一阶段修复不回退，同时补齐 session 消失与子文件夹归属漂移的可执行契约。
+
 ## Problem
 
 - `useThreadActions.ts:1840-1842` 用 `withTimeout(listClaudeSessionsService(...), 30_000)` 包装 Claude 列表请求，超时时 `withTimeout` 返回 `null`。
@@ -26,6 +48,8 @@
 - Claude 列表请求超时或返回 null 时，sidebar 列表 MUST 不丢失上一轮可见的 Claude 会话条目。
 - `getLastGoodThreadSummaries` MUST 把"健康"定义为"非 degraded"，避免自污染。
 - 当 Codex / OpenCode / Catalog 任意子源仍返回数据时，Claude 子源 timeout 不得静默把列表覆盖为 "看起来已成功的残缺态"。
+- 当 Claude listing 成功返回空列表但 attribution / catalog state 不确定时，系统 MUST 不得把"成功空结果"静默当成"用户真实没有任何 Claude session"。
+- 子文件夹 workspace 中创建的 Claude session MUST 优先归属 exact / longest matching child workspace，不得因 parent scope、git root family inference 或 all-project-dir fallback 被移动到父 workspace。
 - 维持现有 `first-page` → `full-catalog` 启动时序、orchestrator 调度、archive/hidden 过滤、catalog 分页游标等行为契约不变。
 - 为 `claude-session-sidebar-state-parity` capability 增加针对 timeout / partial-source 的明确 scenarios。
 
@@ -33,9 +57,9 @@
 
 - 不重写引擎级独立快照（每引擎独立 lastGood）。该重构留给后续 change `evolve-thread-list-per-engine-snapshot`（待立）。
 - 不调整三层超时对齐（orchestrator 20s vs withTimeout 30s vs Rust 60s）。
-- 不动 Rust 端 `list_claude_sessions_from_base_dir` 扫描性能。
+- 不做 Rust 端 `list_claude_sessions_from_base_dir` 性能重构；但第二阶段允许收紧 Claude session attribution / ownership 边界。
 - 不改 Codex catalog 分页、folder tree、archive 语义。
-- 不改 Gemini / OpenCode 的 timeout 处理（同病但不在本次范围；同样错配，单独 change）。
+- 不继续扩展 Gemini / OpenCode 的 timeout 处理（OpenCode 已由 `unify-sidebar-list-timeout-fallback-across-engines` 覆盖，Gemini 仍不走主合并链路）。
 - 不调整 `withTimeout` 工具函数语义（保持 `Promise<T | null>` 契约）。
 - 不引入新依赖。
 
@@ -46,10 +70,14 @@
 - `src/features/threads/hooks/useThreadActions.ts`：
   - `getLastGoodThreadSummaries` 取值口收紧 "healthy" 判定，剔除 degraded 状态。
   - Claude 子结果 timeout 分支（行 1847-1860 附近）合并 last-good Claude 条目。
+  - 继续排查 successful-empty、archive/shared filtering、request race 是否会绕过第一阶段 fallback。
 - `src/features/threads/hooks/useThreadActions.helpers.ts`：
   - 若 `hasHealthyThreadSummaries` 需要扩展为 "non-degraded"，在此扩展；或新增 helper。
+- `src-tauri/src/engine/claude_history.rs` / `src-tauri/src/session_management.rs`：
+  - 第二阶段允许收紧 Claude session attribution，确保子文件夹 workspace 的 exact match 优先于父 workspace projection。
 - 单元/集成测试：
   - 新增/修改 `useThreadActions.test.*` 覆盖：(a) Claude timeout + Codex 仍有数据时 Claude 条目保留；(b) lastGood 自污染防御；(c) 连续两次 timeout 不会逐步丢失更多会话。
+  - 新增 Rust attribution 测试覆盖 parent `/repo` 与 child `/repo/sub` 同时存在时的 child-first ownership。
 - Spec delta：
   - `openspec/specs/claude-session-sidebar-state-parity/spec.md` 通过本 change `specs/.../spec.md` 添加 ADDED Requirements。
 
@@ -58,7 +86,7 @@
 - Codex / OpenCode / Gemini 超时分支（同病不同源，单独立项）。
 - session-radar 链路调整。
 - `WorkspaceSessionRadarPanel` 渲染逻辑。
-- 后端 Rust 扫描器性能。
+- 后端 Rust 扫描器性能优化。
 - Settings / 用户偏好相关变更。
 
 ## Impact
@@ -70,6 +98,9 @@
   - `src/features/threads/hooks/useThreadActions.test.ts`（或新建针对 timeout 场景的子文件）
 - Specs：
   - `openspec/specs/claude-session-sidebar-state-parity/spec.md`（通过本 change ADD requirements，归档时 sync 进主 spec）
+- Backend attribution（第二阶段）：
+  - `src-tauri/src/engine/claude_history.rs`
+  - `src-tauri/src/session_management.rs`
 
 ## Acceptance Criteria
 
@@ -80,3 +111,5 @@
 5. `openspec validate --all --strict --no-interactive` 通过；新增 spec delta 中所有 Scenario 至少有 1 个 WHEN + 1 个 THEN。
 6. `npm run typecheck` 与触达模块的 Vitest 全部绿。
 7. 现有 `claude-session-sidebar-state-parity` 既有 Scenarios 全部不退化。
+8. `listClaudeSessionsService` 成功返回空数组但 attribution / catalog state 存疑时，sidebar 不得直接抹掉 last-good Claude session。
+9. 父 workspace `/repo` 与子 workspace `/repo/sub` 同时存在时，`cwd=/repo/sub` 的 Claude session MUST 归属子 workspace；父 workspace projection 不得抢占该 session。

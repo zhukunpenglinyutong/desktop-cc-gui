@@ -1,3 +1,9 @@
+## Branch Calibration / 分支校准（2026-05-19）
+
+当前变更只以 `feature/v0.5.0-md` 为事实源。`feature/v0.5` 的任何治理实现尝试不作为本 change 的输入或完成证据。
+
+当前分支状态：本 change 仍处于 design-ready / implementation-unstarted。近两天当前分支已有 session display projection、tool-call fallback、sidebar timeout fallback 等局部抽取/加固事实；后续选择 primary hub 时必须重新测量当前文件大小、调用关系和 perf baseline，不得沿用旧分支判断。
+
 ## Why
 
 `add-runtime-perf-baseline` 的目的不是直接优化，而是指出后续拆分顺序。当前长列表 baseline

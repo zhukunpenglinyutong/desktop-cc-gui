@@ -1,3 +1,9 @@
+## Branch Calibration / 分支校准（2026-05-19）
+
+当前变更只以 `feature/v0.5.0-md` 为事实源。`feature/v0.5` 的任何治理实现尝试不作为本 change 的输入或完成证据。
+
+当前分支状态：long-list virtualization 未实施。近两天当前分支的 tool-call fallback、Markdown preview 与 session projection 可能改变 message row 复杂度；后续实施必须重新 inventory 当前 `Messages` / timeline / row 渲染路径与 S-LL baseline。
+
 ## Why
 
 `add-runtime-perf-baseline` 已经产出 v0.4.18 的长会话渲染基线。当前 `S-LL-*`

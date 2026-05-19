@@ -2331,6 +2331,9 @@ export function useLayoutNodes(options: LayoutNodesOptions): LayoutNodesResult {
       isCodexEngine={isStatusPanelCodexEngine}
       activeThreadId={options.activeThreadId}
       activeTurnId={options.activeTurnId ?? null}
+      selectedEngine={options.selectedEngine}
+      selectedModelId={options.selectedModelId}
+      activeTokenUsage={options.activeTokenUsage}
       workspaceGitFiles={options.gitStatus.files}
       workspaceGitStagedFiles={options.gitStatus.stagedFiles}
       workspaceGitUnstagedFiles={options.gitStatus.unstagedFiles}

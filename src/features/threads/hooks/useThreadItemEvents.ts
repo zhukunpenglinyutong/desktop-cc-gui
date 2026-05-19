@@ -2,6 +2,10 @@ import { startTransition, useCallback, useEffect, useRef } from "react";
 import type { Dispatch, MutableRefObject } from "react";
 import { buildConversationItem } from "../../../utils/threadItems";
 import type { NormalizedThreadEvent } from "../contracts/conversationCurtainContracts";
+import {
+  createRealtimeEventBatcher,
+  type RealtimeBatcherFlush,
+} from "../contracts/realtimeEventBatcher";
 import { asString } from "../utils/threadNormalize";
 import type { ConversationItem, DebugEntry } from "../../../types";
 import type { ThreadAction } from "./useThreadsReducer";
@@ -189,9 +193,16 @@ function isCodexAssistantMessageItem(
 
 function shouldBatchNormalizedRealtimeEvent(event: NormalizedThreadEvent) {
   return (
-    isCodexAssistantMessageItem(event.item) &&
-    (event.operation === "itemStarted" || event.operation === "itemUpdated")
+    (isCodexAssistantMessageItem(event.item) &&
+      (event.operation === "itemStarted" || event.operation === "itemUpdated")) ||
+    event.operation === "appendReasoningContentDelta" ||
+    event.operation === "appendReasoningSummaryDelta" ||
+    event.operation === "appendToolOutputDelta"
   );
+}
+
+function shouldUseContractRealtimeBatcher(event: NormalizedThreadEvent) {
+  return event.operation === "appendAgentMessageDelta";
 }
 
 function buildPendingNormalizedRealtimeOperationKey(event: NormalizedThreadEvent) {
@@ -252,6 +263,7 @@ export function useThreadItemEvents({
   const pendingNormalizedRealtimeOpsRef = useRef<Map<string, PendingNormalizedRealtimeOperation>>(
     new Map(),
   );
+  const normalizedRealtimeBatcherRef = useRef(createRealtimeEventBatcher());
   const normalizedRealtimeFlushTimerRef = useRef<number | null>(null);
   const isFlushingNormalizedRealtimeOpsRef = useRef(false);
   const activeRealtimeTurnIdByThreadRef = useRef<Map<string, string>>(new Map());
@@ -732,6 +744,37 @@ export function useThreadItemEvents({
     }
   }, [applyNormalizedRealtimeEventNow, safeMessageActivity]);
 
+  const applyNormalizedRealtimeBatcherFlushes = useCallback(
+    (
+      flushes: readonly RealtimeBatcherFlush[],
+      operation: PendingNormalizedRealtimeOperation,
+    ) => {
+      if (flushes.length === 0) {
+        return;
+      }
+      flushNormalizedRealtimeOps();
+      const ensuredThreads = new Set<string>();
+      const markedProcessingThreads = new Set<string>();
+      for (const flush of flushes) {
+        for (const event of flush.events) {
+          applyNormalizedRealtimeEventNow(
+            {
+              event,
+              hasCustomName: operation.hasCustomName,
+            },
+            {
+              ensuredThreads,
+              markedProcessingThreads,
+              useTransitionForDispatch: flush.reason !== "terminal",
+              skipMessageActivity: false,
+            },
+          );
+        }
+      }
+    },
+    [applyNormalizedRealtimeEventNow, flushNormalizedRealtimeOps],
+  );
+
   const enqueueNormalizedRealtimeEvent = useCallback(
     (operation: PendingNormalizedRealtimeOperation) => {
       if (!enableRealtimeBatchingRef.current) {
@@ -740,18 +783,55 @@ export function useThreadItemEvents({
         });
         return;
       }
-      pendingNormalizedRealtimeOpsRef.current.set(
-        buildPendingNormalizedRealtimeOperationKey(operation.event),
-        operation,
-      );
+      if (
+        isCodexAssistantMessageItem(operation.event.item) &&
+        (operation.event.operation === "itemStarted" || operation.event.operation === "itemUpdated")
+      ) {
+        pendingNormalizedRealtimeOpsRef.current.set(
+          buildPendingNormalizedRealtimeOperationKey(operation.event),
+          operation,
+        );
+        if (normalizedRealtimeFlushTimerRef.current !== null) {
+          return;
+        }
+        normalizedRealtimeFlushTimerRef.current = window.setTimeout(() => {
+          flushNormalizedRealtimeOps();
+        }, NORMALIZED_REALTIME_BATCH_FLUSH_MS);
+        return;
+      }
+      const flushes = normalizedRealtimeBatcherRef.current.push(operation.event);
+      if (flushes.some((flush) => flush.reason === "first-token")) {
+        for (const flush of flushes) {
+          for (const event of flush.events) {
+            applyNormalizedRealtimeEventNow(
+              {
+                event,
+                hasCustomName: operation.hasCustomName,
+              },
+              {
+                useTransitionForDispatch: true,
+              },
+            );
+          }
+        }
+        return;
+      }
+      applyNormalizedRealtimeBatcherFlushes(flushes, operation);
       if (normalizedRealtimeFlushTimerRef.current !== null) {
         return;
       }
       normalizedRealtimeFlushTimerRef.current = window.setTimeout(() => {
-        flushNormalizedRealtimeOps();
+        const flush = normalizedRealtimeBatcherRef.current.flush();
+        if (flush) {
+          applyNormalizedRealtimeBatcherFlushes([flush], operation);
+        }
       }, NORMALIZED_REALTIME_BATCH_FLUSH_MS);
     },
-    [applyNormalizedRealtimeEventNow, flushNormalizedRealtimeOps],
+    [
+      applyNormalizedRealtimeBatcherFlushes,
+      applyNormalizedRealtimeEventNow,
+      flushNormalizedRealtimeOps,
+    ],
   );
 
   useEffect(
@@ -1362,7 +1442,10 @@ export function useThreadItemEvents({
         event: normalizedEvent,
         hasCustomName,
       } satisfies PendingNormalizedRealtimeOperation;
-      if (shouldBatchNormalizedRealtimeEvent(normalizedEvent)) {
+      if (
+        shouldBatchNormalizedRealtimeEvent(normalizedEvent) ||
+        (enableRealtimeBatchingRef.current && shouldUseContractRealtimeBatcher(normalizedEvent))
+      ) {
         enqueueNormalizedRealtimeEvent(operation);
         return;
       }

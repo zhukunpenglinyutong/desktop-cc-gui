@@ -1588,6 +1588,102 @@
   color: #89d185;
 }
 
+.sp-policy-audit-row {
+  align-items: baseline;
+}
+
+.sp-policy-audit-copy {
+  display: inline-flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 5px;
+  min-width: 0;
+}
+
+.sp-policy-audit-policy {
+  font-weight: 700;
+  color: var(--text-strong);
+}
+
+.sp-policy-audit-source {
+  color: var(--text-muted);
+  font-size: 10px;
+}
+
+.sp-policy-audit-source::before {
+  content: "·";
+  margin-right: 5px;
+  color: var(--text-faint);
+}
+
+.sp-policy-audit-source.is-missing {
+  color: var(--text-faint);
+}
+
+.sp-governance-evidence-list {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.sp-governance-evidence-item {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 7px;
+  align-items: start;
+  min-width: 0;
+}
+
+.sp-governance-evidence-status {
+  min-width: 44px;
+  padding: 2px 6px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1.25;
+  text-align: center;
+  background: color-mix(in srgb, var(--surface-item) 84%, transparent);
+  color: var(--text-muted);
+}
+
+.sp-governance-evidence-status.is-pass {
+  color: #89d185;
+}
+
+.sp-governance-evidence-status.is-warn {
+  color: #dcdcaa;
+}
+
+.sp-governance-evidence-status.is-fail {
+  color: #f48771;
+}
+
+.sp-governance-evidence-status.is-unknown {
+  color: var(--text-faint);
+}
+
+.sp-governance-evidence-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.sp-governance-evidence-title {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-strong);
+}
+
+.sp-governance-evidence-summary {
+  font-size: 10px;
+  line-height: 1.25;
+  color: var(--text-muted);
+}
+
 .sp-checkpoint-file-detail {
   display: flex;
   flex-direction: column;

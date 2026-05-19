@@ -1,3 +1,9 @@
+## Branch Calibration / 分支校准（2026-05-19）
+
+本设计面向当前 `feature/v0.5.0-md` 分支重新实施。row identity、scroll restoration、active streaming row 与 tool-call fallback 行为必须按当前分支重新校准；`feature/v0.5` 不作为事实源。
+
+当前定位：**design-ready / implementation-unstarted**。后续实施必须先做 rendering inventory，再决定 virtualization boundary。
+
 ## Context
 
 `add-runtime-perf-baseline` recorded long-list render baselines for `S-LL-200`, `S-LL-500`, and `S-LL-1000`. The current browser scroll gate is still a jsdom proxy. This change turns long-list rendering into a measurable UI performance contract.

@@ -23,6 +23,7 @@ import type {
 import { resolveCheckpointValidationProfile } from "../utils/checkpoint";
 import { CheckpointCommitDialog } from "./CheckpointCommitDialog";
 import { FileChangesList } from "./FileChangesList";
+import { PolicyDecisionAuditPanel } from "./audit/PolicyDecisionAuditPanel";
 
 interface CheckpointPanelProps extends CodeAnnotationBridgeProps {
   checkpoint: CheckpointViewModel;
@@ -202,6 +203,9 @@ export const CheckpointPanel = memo(function CheckpointPanel({
   const shouldShowBlockedNotice = Boolean(blockedNotice) && !isNoticeDismissed;
   const shouldSuppressValidationGuideForNeedsReview =
     checkpoint.verdict === "needs_review";
+  const visiblePolicyAudit = checkpoint.policyAudit.filter(
+    (entry) => entry.verdictContribution !== "no_contribution",
+  );
 
   useEffect(() => {
     setIsNoticeDismissed(false);
@@ -437,6 +441,9 @@ export const CheckpointPanel = memo(function CheckpointPanel({
           </div>
         ) : null}
       </section>
+      {!compact && visiblePolicyAudit.length > 0 ? (
+        <PolicyDecisionAuditPanel policyAudit={visiblePolicyAudit} />
+      ) : null}
       {compact ? (
         <section className="sp-checkpoint-section sp-checkpoint-section--summary-line">
           <button

@@ -1,3 +1,9 @@
+## Branch Calibration / 分支校准（2026-05-19）
+
+本设计面向当前 `feature/v0.5.0-md` 分支重新实施。所有 hub 大小、调用关系与 perf 风险必须按当前分支重新测量；`feature/v0.5` 上的治理代码不作为事实源。
+
+当前定位：**design-ready / implementation-unstarted**。后续实施一次只能选择一个 primary hub，并重新生成 split map。
+
 ## Context
 
 The harness governance strategy identifies oversized orchestration hubs as the main implementation blocker for global governance seams. This proposal targets the measured hot hubs listed in the proposal: `useThreadMessaging.ts`, `useAppServerEvents.ts`, `Composer.tsx`, and `MessagesRows.tsx`.

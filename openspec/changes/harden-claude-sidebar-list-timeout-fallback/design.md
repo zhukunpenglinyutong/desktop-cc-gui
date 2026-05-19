@@ -217,3 +217,85 @@ claudeFallbackEntries.forEach((entry) => {
 - 单 PR，无 feature flag。改动仅前端 hook，无后端契约变化。
 - 可在 `useThreadActions.timeout.test.ts` 全绿 + `openspec validate --strict` 通过后直接合并 develop。
 - 回滚极易：revert PR 即可；既有 partial-source 诊断路径不变，回滚不会引入新行为。
+
+## Follow-up Investigation: Remaining Disappearance Reports
+
+第一阶段已覆盖 `withTimeout(...) -> null` 与 `Promise.allSettled(... rejected)` 两条降级路径。若客户端仍看到 Claude Code session 消失，优先假设它绕开了第一阶段防线，而不是重复修同一条 timeout bug。
+
+### Candidate Path 1: Successful Empty Is Treated As Authoritative Truth
+
+当前 Claude 子源只有 `null` / `rejected` 会触发 last-good seed。若后端 listing 成功返回 `[]`，前端会把它解释为"Claude 没有任何 session"。这在真实空 workspace 中是正确的，但在 attribution 不确定、catalog partial、scan skipped 或 all-project-dir fallback 未命中时，会把不完整结果伪装成 authoritative empty。
+
+第二阶段需要区分：
+
+- authoritative empty：后端明确完成扫描，且 attribution scopes 完整。
+- uncertain empty：存在 partial source、扫描上限、目录 attribution 模糊、或同 workspace family 中存在更精确 owner。
+
+仅 authoritative empty 可以删除 last-good Claude；uncertain empty MUST 走 degraded last-good。
+
+### Candidate Path 2: Post-Seed Filters Remove Claude Entries
+
+即使 timeout seed 成功，后续仍可能被以下路径移除：
+
+- `applySessionArchiveState` 误判 archived。
+- `hiddenSharedBindingIds` / shared session merge 将 native Claude id 排除。
+- Gemini async merge 基于旧 baseline 覆盖新 store。
+- request sequence race 中较旧 full-catalog 请求晚到并覆盖较新的 healthy state。
+
+第二阶段不要直接扩大 fallback；应先在 debug payload 中记录每个过滤阶段的 engine counts，再补针对性 regression test。
+
+### Candidate Path 3: Cross-Engine Degraded State Pollutes LastGood
+
+`hasHealthyThreadSummaries` 目前以整个 thread list 为单位拒绝 degraded 状态。这个策略能阻断自污染，但也可能让非 Claude engine 的 degraded 标记影响 Claude last-good 解析。若继续出现复杂混合源降级，应演进为 engine-aware last-good snapshot，而不是继续在全局 list 上叠条件。
+
+## Follow-up Investigation: Subfolder Session Attribution Drift
+
+用户反馈"在子文件夹里创建 Claude Code session 偶尔会被移动到父文件夹里"。这更像后端 attribution / projection ownership 问题，不是 sidebar timeout 问题。
+
+### Current Backend Shape
+
+Claude listing 相关路径：
+
+- `src-tauri/src/engine/claude_history.rs`
+  - `claude_project_dirs_for_path(base_dir, workspace_path)` 会先加入当前 workspace encoded project dir。
+  - 同时它也会扫描 `base_dir` 下所有 Claude project dirs，并用 transcript `cwd` / attribution scopes 决定是否保留。
+- `src-tauri/src/session_management.rs`
+  - `build_claude_attribution_scopes(workspace)` 目前包含 workspace path 与可选 git root。
+  - `infer_related_attribution_for_workspace(...)` 对 worktree / parent scope / git root family 有宽松推断。
+
+这个设计能提升历史发现率，但父 `/repo` 与子 `/repo/sub` 同时存在时，宽松 parent scope 可能把 child-owned session 放进 parent projection，尤其在 transcript cwd、encoded project dir、git root 三者不完全一致时。
+
+### Decision: Child-First Ownership
+
+第二阶段应明确 ownership 优先级：
+
+1. Exact transcript cwd match to a workspace path wins.
+2. Longest path match wins over shorter parent path.
+3. Direct Claude project dir for child workspace wins over parent encoded prefix match.
+4. Parent scope / git_root family inference only applies when no exact or longer child owner exists.
+5. Ambiguous sibling matches MUST remain unassigned/degraded, not silently choose parent.
+
+### Implementation Sketch
+
+Rust 层优先补测试，再改逻辑：
+
+```text
+Given workspaces:
+  parent: /repo
+  child:  /repo/sub
+
+And Claude transcript cwd = /repo/sub
+When listing parent projection
+Then parent MUST NOT claim the child session as strict truth
+
+When listing child projection
+Then child MUST include the session with strict / high-confidence attribution
+```
+
+前端层只消费 backend projection，不应自行猜 owner。若 backend 返回 `workspaceId=child`，settings / session management 可以继续把它作为 project projection 的聚合可见项；但 sidebar thread-list hydration MUST NOT 把 child-owned entry dispatch 到 parent workspace store。当前约束是：`normalizeProjectCatalogSession` 保留 `workspaceId/matchedWorkspaceId`，`listThreadsForWorkspace(parent)` 只合并 `workspaceId == parent` 或 legacy missing owner 的 catalog entries。
+
+## Continued Rollout
+
+- 不归档本 change，直到第二阶段两个问题有 regression tests 与实现结果。
+- 第一阶段 timeout fallback 视为已完成基线，后续改动不得破坏 `useThreadActions.timeout-fallback.test.tsx`。
+- 若第二阶段触及 Rust attribution，执行至少 focused Rust tests + focused frontend sidebar tests；typecheck / full test 视改动半径决定。

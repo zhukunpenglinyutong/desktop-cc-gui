@@ -2196,6 +2196,7 @@ export const Messages = memo(function Messages({
           reasoningMetaById={reasoningMetaById}
           requestAutoScroll={requestAutoScroll}
           selectedExitPlanExecutionByItemKey={selectedExitPlanExecutionByItemKey}
+          scrollElementRef={containerRef}
           showFileLinkMenu={showFileLinkMenu}
           streamMitigationProfile={activeStreamMitigation}
           streamActivityPhase={streamActivityPhase}
