@@ -721,3 +721,41 @@ Notes:
 ### Next Steps
 
 - None - task complete
+
+
+## Session 492: 收口 harness 治理证据只读桥接
+
+**Date**: 2026-05-19
+**Task**: 收口 harness 治理证据只读桥接
+**Branch**: `feature/v0.5.0-md`
+
+### Summary
+
+第三切片实现 StatusPanel 只读治理证据桥接，读取 OpenSpec、package scripts、workflow presence 与 Trellis session evidence；补齐降级态和跨平台 reader 测试。验证通过 typecheck、targeted vitest、heavy-test-noise、large-file unit/near-threshold 与 OpenSpec strict；large-files gate 仍被既有 useThreadActions.ts 超阈值阻塞。
+
+### Main Changes
+
+- Implemented governance evidence DTO/readers/hook under src/features/governance/evidence.
+- Added read-only GovernanceEvidenceSection into dock StatusPanel checkpoint tab without write/watch APIs.
+- Covered CRLF/LF task parsing, path separator normalization, malformed package/tasks fallbacks, workflow presence, Trellis index fallback, and disabled hook behavior.
+- Validation: npm run typecheck; targeted vitest for governance/status-panel; node --test heavy-test-noise scripts; npm run check:heavy-test-noise; node --test scripts/check-large-files.test.mjs; npm run check:large-files:near-threshold; openspec validate integrate-openspec-trellis-bridge-into-status-panel --strict --no-interactive; git diff --check.
+- Known blocker: npm run check:large-files:gate fails on pre-existing src/features/threads/hooks/useThreadActions.ts at 2935 lines, unrelated to this slice.
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `667af011` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

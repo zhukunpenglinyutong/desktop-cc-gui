@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-14.md`
-- **Total Sessions**: 491
+- **Total Sessions**: 492
 - **Last Active**: 2026-05-19
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-14.md` | ~723 | Active |
+| `journal-14.md` | ~761 | Active |
 | `journal-13.md` | ~1947 | Archived |
 | `journal-12.md` | ~1971 | Archived |
 | `journal-11.md` | ~1985 | Archived |
@@ -42,6 +42,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 492 | 2026-05-19 | 收口 harness 治理证据只读桥接 | `667af011` | `feature/v0.5.0-md` |
 | 491 | 2026-05-19 | 收口 harness capability 感知查询入口 | `552b8dc8` | `feature/v0.5.0-md` |
 | 490 | 2026-05-19 | 加固 Claude sidebar 会话列表兜底 | `aa646cb4` | `feature/v0.5.0-md` |
 | 489 | 2026-05-19 | 收口 harness policy 判决审计面板 | `82f34f9e` | `feature/v0.5.0-md` |
