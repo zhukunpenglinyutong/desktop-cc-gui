@@ -53,6 +53,8 @@ pub(super) async fn run_probe(bin: &str, args: &[&str], probe: &str) -> Result<S
     // A timed-out probe must not outlive its budget: kill_on_drop kills the
     // child with the handle instead of leaking a half-finished CLI.
     cmd.kill_on_drop(true);
+    #[cfg(windows)]
+    super::hide_console(&mut cmd);
     let output = tokio::time::timeout(PROBE_TIMEOUT, cmd.output())
         .await
         .map_err(|_| format!("{bin} {probe} timed out"))?

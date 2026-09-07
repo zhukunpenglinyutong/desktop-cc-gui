@@ -17,6 +17,16 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, ChildStderr, ChildStdout, Command};
 use tokio::sync::Mutex as TokioMutex;
 
+/// Windows pops a visible console window for every console-subsystem child a
+/// GUI process spawns (engine CLIs are node/.cmd shims, so every probe and
+/// run flashes one). Suppress it — the child's stdio is piped, the console
+/// would be useless anyway.
+#[cfg(windows)]
+pub(crate) fn hide_console(command: &mut Command) {
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+    command.creation_flags(CREATE_NO_WINDOW);
+}
+
 pub struct SendRequest {
     pub session_id: Option<String>,
     pub workspace: PathBuf,
@@ -633,6 +643,8 @@ pub async fn send_message(
     // inherit the stdout pipe and would otherwise block EOF forever).
     #[cfg(unix)]
     command.process_group(0);
+    #[cfg(windows)]
+    hide_console(&mut command);
 
     let mut child = match command.spawn() {
         Ok(child) => child,

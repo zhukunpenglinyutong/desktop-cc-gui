@@ -91,7 +91,8 @@ const ALLOWED_MACOS_APPS: &[&str] = &[
 fn open_app_command_candidates(app: &str) -> Option<Vec<String>> {
     let trimmed = app.trim();
     // Friendly aliases resolve onto the whitelisted binary names.
-    let mapped = match trimmed.to_ascii_lowercase().as_str() {
+    let lowered = trimmed.to_ascii_lowercase();
+    let mapped = match lowered.as_str() {
         "visual studio code" | "vs code" | "vscode" => "code",
         "intellij idea" | "intellij" => "idea",
         other => other,
@@ -163,6 +164,14 @@ fn open_with_app_candidates(
     for candidate in candidates {
         let mut cmd = std::process::Command::new(&candidate);
         cmd.args(args).arg(path);
+        // Editor candidates can be console apps (.cmd shims); don't pop a
+        // console window for them.
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+            cmd.creation_flags(CREATE_NO_WINDOW);
+        }
         cmd.stdin(Stdio::null());
         cmd.stdout(Stdio::null());
         cmd.stderr(Stdio::null());
