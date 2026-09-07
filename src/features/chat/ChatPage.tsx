@@ -19,7 +19,7 @@ import { fileName, useFilesStore } from "@/features/files/store";
 import { PillTab, PillTabList } from "@/components/base/tabs/pill-tab";
 import { ConfirmDialog, PromptDialog } from "@/components/dialogs";
 import { CenteredSpinner } from "@/components/base/empty-state";
-import { open as openDialog } from "@tauri-apps/plugin-dialog";
+import { isWeb, pickDirectory } from "@/lib/platform";
 import FileText from "lucide-react/dist/esm/icons/file-text";
 import Folder from "lucide-react/dist/esm/icons/folder";
 import GitBranch from "lucide-react/dist/esm/icons/git-branch";
@@ -50,6 +50,8 @@ const PANEL_COLLAPSED_KEY = "ccgui-next.panelCollapsed";
 const SIDEBAR_COLLAPSED_KEY = "ccgui-next.sidebarCollapsed";
 const PANEL_WIDTH_KEY = "ccgui-next.panelWidth";
 const SIDEBAR_WIDTH_KEY = "ccgui-next.sidebarWidth";
+/** Below Tailwind's md breakpoint the sidebar becomes an overlay drawer. */
+const MOBILE_MEDIA = "(max-width: 767px)";
 
 /** Stored width, validated against the live min/max before use. */
 function readStoredWidth(key: string, min: number, max: number, fallback: number): number {
@@ -153,6 +155,15 @@ export default function ChatPage() {
     setSidebarCollapsed((prev) => {
       writeStored(SIDEBAR_COLLAPSED_KEY, prev ? "0" : "1");
       return !prev;
+    });
+  }, []);
+  // Drawer behavior on phones: selecting anything dismisses the overlay.
+  const collapseSidebarOnMobile = useCallback(() => {
+    if (!window.matchMedia(MOBILE_MEDIA).matches) return;
+    setSidebarCollapsed((prev) => {
+      if (prev) return prev;
+      writeStored(SIDEBAR_COLLAPSED_KEY, "1");
+      return true;
     });
   }, []);
   const [dragging, setDragging] = useState<"sidebar" | "panel" | null>(null);
@@ -383,9 +394,8 @@ export default function ChatPage() {
   }, [workspaces, sessions, threadLimit, threadStreaming, unseen, i18n.language]);
 
   const handleAddWorkspace = useCallback(() => {
-    void openDialog({ directory: true, multiple: false, title: t("chat.addWorkspace") })
-      .then((selected) => {
-        const path = Array.isArray(selected) ? selected[0] : selected;
+    void pickDirectory(t("chat.addWorkspace"))
+      .then((path) => {
         if (path) void addWorkspace(path);
       })
       .catch(() => {});
@@ -395,8 +405,9 @@ export default function ChatPage() {
     (id: string) => {
       const session = sessionById.get(id);
       if (session) void selectSession(session.engine, session.sessionId, session.workspacePath);
+      collapseSidebarOnMobile();
     },
-    [sessionById, selectSession],
+    [sessionById, selectSession, collapseSidebarOnMobile],
   );
 
   const handleThreadAction = useCallback(
@@ -428,7 +439,8 @@ export default function ChatPage() {
     }
     startNewChat(workspace.path);
     composerInputRef.current?.focus();
-  }, [workspaces, active?.workspacePath, startNewChat, handleAddWorkspace]);
+    collapseSidebarOnMobile();
+  }, [workspaces, active?.workspacePath, startNewChat, handleAddWorkspace, collapseSidebarOnMobile]);
 
   // Workspace row + button: start (or re-focus) the pending new chat in that
   // workspace.
@@ -438,8 +450,9 @@ export default function ChatPage() {
       if (!workspace) return;
       startNewChat(workspace.path);
       composerInputRef.current?.focus();
+      collapseSidebarOnMobile();
     },
-    [workspaces, startNewChat],
+    [workspaces, startNewChat, collapseSidebarOnMobile],
   );
   const handleReorderWorkspaces = useCallback(
     (orderedIds: string[]) => void reorderWorkspaces(orderedIds),
@@ -462,6 +475,9 @@ export default function ChatPage() {
           !dragging &&
             "transition-[width] duration-200 ease-out motion-reduce:transition-none",
           sidebarCollapsed && "border-r-0",
+          // On phones the sidebar floats over the chat as a drawer instead of
+          // squishing the layout; the backdrop below dismisses it.
+          "max-md:absolute max-md:inset-y-0 max-md:left-0 max-md:z-40 max-md:shadow-2xl",
         )}
         repos={repos}
         activeThreadId={active?.sessionId ? `${active.engine}/${active.sessionId}` : undefined}
@@ -484,7 +500,7 @@ export default function ChatPage() {
           aria-label={t("chat.resizeSidebar")}
           title={t("chat.resizeSidebar")}
           onPointerDown={handleResizeStart("sidebar")}
-          className="group absolute inset-y-0 z-30 w-2 -translate-x-1/2 cursor-col-resize touch-none"
+          className="group absolute inset-y-0 z-30 w-2 -translate-x-1/2 cursor-col-resize touch-none max-md:hidden"
           style={{ left: sidebarWidth }}
         >
           <span
@@ -495,6 +511,14 @@ export default function ChatPage() {
           />
         </div>
       )}
+      {/* Mobile drawer backdrop: tap outside the sidebar to close it. */}
+      {!sidebarCollapsed && (
+        <div
+          aria-hidden
+          onClick={toggleSidebarCollapsed}
+          className="absolute inset-0 z-30 bg-black/40 md:hidden"
+        />
+      )}
       <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
         <SessionTabStrip
           tabs={tabItems}
@@ -502,7 +526,7 @@ export default function ChatPage() {
           onSelect={handleTabSelect}
           onClose={handleTabClose}
           closeLabel={t("common.close")}
-          trafficLightInset={sidebarCollapsed}
+          trafficLightInset={sidebarCollapsed && !isWeb}
           leading={
             sidebarCollapsed ? (
               <button

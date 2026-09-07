@@ -1,4 +1,5 @@
-import { invoke } from "@tauri-apps/api/core";
+// Transport picks Tauri IPC natively and the web-access WS bridge in browsers.
+import { invoke } from "./transport";
 
 // ==================== Shared types (mirror Rust serde camelCase) ====================
 
@@ -156,6 +157,13 @@ export interface AppMetrics {
   /** CPU usage since the previous poll, percent of one core. */
   cpuPercent: number;
 }
+export interface WebAccessInfo {
+  /** Full URL including the auth token — shareable as-is or as a QR code. */
+  url: string;
+  port: number;
+  token: string;
+  lanIp: string;
+}
 
 // ==================== Typed invoke wrappers ====================
 // Shared in-flight/cached app-settings promise: startup, the settings page
@@ -270,4 +278,8 @@ export const ipc = {
     invoke<void>("reveal_in_file_manager", { path }),
   // metrics
   appMetrics: () => invoke<AppMetrics>("app_metrics"),
+  // web access (start/stop are desktop-only; the bridge answers status too)
+  webAccessStart: () => invoke<WebAccessInfo>("web_access_start"),
+  webAccessStop: () => invoke<void>("web_access_stop"),
+  webAccessStatus: () => invoke<WebAccessInfo | null>("web_access_status"),
 };

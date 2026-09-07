@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { getVersion } from "@tauri-apps/api/app";
-import { getCurrentWebview } from "@tauri-apps/api/webview";
+import { getAppVersion, isWeb, setWebviewZoom } from "@/lib/platform";
 import Activity from "lucide-react/dist/esm/icons/activity";
 import Minus from "lucide-react/dist/esm/icons/minus";
 import Plus from "lucide-react/dist/esm/icons/plus";
@@ -25,13 +24,7 @@ function readZoomPct(): number {
 
 function applyZoom(pct: number) {
   writeStored(ZOOM_KEY, pct);
-  // Outside a Tauri webview (plain-browser dev) getCurrentWebview throws
-  // synchronously; the bar still renders, zoom just stays inert.
-  try {
-    void getCurrentWebview()
-      .setZoom(pct / 100)
-      .catch(() => {});
-  } catch {}
+  setWebviewZoom(pct / 100);
 }
 
 function formatMb(bytes: number): number {
@@ -56,9 +49,9 @@ export function AppStatusBar() {
   }, []);
 
   useEffect(() => {
-    getVersion()
-      .then(setVersion)
-      .catch(() => {});
+    void getAppVersion().then((v) => {
+      if (v) setVersion(v);
+    });
   }, []);
 
   useEffect(() => {
@@ -115,6 +108,8 @@ export function AppStatusBar() {
 
         <span className="text-text-disabled">·</span>
 
+        {/* Zoom drives the native webview; browsers zoom natively. */}
+        {!isWeb && (
         <span className="flex items-center gap-1">
           <button
             type="button"
@@ -144,6 +139,7 @@ export function AppStatusBar() {
             <Plus className="size-3.5" aria-hidden />
           </button>
         </span>
+        )}
 
         <span className="text-text-disabled">·</span>
 

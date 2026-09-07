@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { getVersion } from "@tauri-apps/api/app";
+import { getAppVersion } from "@/lib/platform";
 import {
   SettingsCard,
   SettingsRow,
@@ -14,9 +14,9 @@ export function AboutSection() {
 
   useEffect(() => {
     let cancelled = false;
-    getVersion()
+    getAppVersion()
       .then((v) => {
-        if (!cancelled) setVersion(v);
+        if (!cancelled && v) setVersion(v);
       })
       .catch(() => {});
     return () => {

@@ -17,7 +17,6 @@ const FILE_PATH_PATTERN = new RegExp(
 const FILE_PATH_MATCH = new RegExp(`^${FILE_PATH_PATTERN.source}$`);
 const WINDOWS_ABSOLUTE_PATH_MATCH = new RegExp(`^${WINDOWS_ABSOLUTE_PATH_PATTERN}$`);
 
-const TRAILING_PUNCTUATION = { ".": true, ",": true, ";": true, ":": true, "!": true, "?": true, ")": true, "]": true, "}": true } as Record<string, true>;
 // CJK ideographs/kana/full-width punctuation: prose characters that never
 // appear in real file paths — a slash-joined CJK token is prose, not a path,
 // unless its last segment carries a file extension.
@@ -60,12 +59,6 @@ function isPathCandidate(value: string) {
   const lastSegment = value.split("/").pop() ?? "";
   if (lastSegment.includes(".")) return true;
   return RELATIVE_ALLOWED_PREFIXES.some((prefix) => value.startsWith(prefix));
-}
-
-export function splitTrailingPunctuation(value: string) {
-  let end = value.length;
-  while (end > 0 && TRAILING_PUNCTUATION[value[end - 1] ?? ""]) end -= 1;
-  return { path: value.slice(0, end), trailing: value.slice(end) };
 }
 
 /** True when an inline-code / link-target string is a plausible file path. */

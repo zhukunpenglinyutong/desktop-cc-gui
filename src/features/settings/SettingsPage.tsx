@@ -3,9 +3,11 @@ import { useTranslation } from "react-i18next";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import Settings from "lucide-react/dist/esm/icons/settings";
 import Info from "lucide-react/dist/esm/icons/info";
+import Smartphone from "lucide-react/dist/esm/icons/smartphone";
 import { SettingsModal } from "@/components/application/settings/settings-modal";
 import { GeneralSection } from "./GeneralSection";
 import { AboutSection } from "./AboutSection";
+import { WebAccessSection } from "./WebAccessSection";
 
 /**
  * Settings route: overlay for the BoardUI settings modal. ChatPage itself is mounted once
@@ -28,6 +30,7 @@ export default function SettingsPage() {
         label: t("settings.title"),
         items: [
           { key: "general", label: t("settings.general"), icon: Settings },
+          { key: "webAccess", label: t("settings.webAccess"), icon: Smartphone },
           { key: "about", label: t("settings.about"), icon: Info },
         ],
       },
@@ -38,13 +41,18 @@ export default function SettingsPage() {
   const titles = useMemo(
     () => ({
       general: t("settings.general"),
+      webAccess: t("settings.webAccess"),
       about: t("settings.about"),
     }),
     [t],
   );
 
   // Unknown page params fall back to General.
-  const renderPage = (key: string) => (key === "about" ? <AboutSection /> : <GeneralSection />);
+  const renderPage = (key: string) => {
+    if (key === "about") return <AboutSection />;
+    if (key === "webAccess") return <WebAccessSection />;
+    return <GeneralSection />;
+  };
 
   return (
     <SettingsModal

@@ -3,7 +3,7 @@ import { useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import type { ReactNode, MouseEvent, KeyboardEvent } from "react";
 import type { LucideIcon } from "lucide-react";
-import { getCurrentWindow } from "@tauri-apps/api/window";
+import { isWeb, startWindowDrag } from "@/lib/platform";
 import { cx } from "@/utils/cx";
 import { EngineIcon } from "@/components/foundations/icons/engine-icon";
 
@@ -20,10 +20,11 @@ const IS_MAC =
 const DRAG_IGNORE_SELECTOR = "button, a, input, textarea, select, [role='tab']";
 
 function handleStripMouseDown(e: MouseEvent<HTMLDivElement>) {
-  if (e.button !== 0) return;
+  // No native titlebar to drag in web-access mode.
+  if (isWeb || e.button !== 0) return;
   if ((e.target as HTMLElement).closest(DRAG_IGNORE_SELECTOR)) return;
   e.preventDefault();
-  void getCurrentWindow().startDragging();
+  startWindowDrag();
 }
 
 export interface SessionTabItem {

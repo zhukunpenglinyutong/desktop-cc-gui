@@ -1,4 +1,4 @@
-use super::{images, safe_prompt_arg, BuiltCommand, Engine, EngineEvent, SendRequest};
+use super::{images, push_session_id, safe_prompt_arg, BuiltCommand, Engine, EngineEvent, SendRequest};
 use serde_json::Value;
 use std::collections::HashMap;
 use tokio::process::Command;
@@ -98,11 +98,7 @@ fn parse_pi_family_line(line: &str, out: &mut Vec<EngineEvent>) {
     let event_type = value.get("type").and_then(Value::as_str).unwrap_or("");
     match event_type {
         "session" => {
-            if let Some(id) = value.get("id").and_then(Value::as_str) {
-                if !id.trim().is_empty() {
-                    out.push(EngineEvent::SessionId(id.trim().to_string()));
-                }
-            }
+            push_session_id(&value, "id", out);
         }
         "message_update" => {
             let Some(event) = value.get("assistantMessageEvent") else {

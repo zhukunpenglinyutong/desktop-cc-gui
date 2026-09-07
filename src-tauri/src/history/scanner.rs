@@ -3,7 +3,6 @@ use serde::Serialize;
 use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use tauri::Manager;
 
 /// Bump when title derivation changes so unchanged files still re-title.
 const TITLE_VERSION: &str = "4";
@@ -344,16 +343,25 @@ fn dsh_candidates() -> Vec<PathBuf> {
     out
 }
 
+/// Shared by scan_all_workspaces and spawn_scan: the scan only ever needs the
+/// db and the event sink, so both callers pass those two directly.
+fn scan_with_sink(
+    db: &crate::db::Db,
+    sink: &Arc<crate::event_sink::EventSink>,
+) -> Result<ScanReport, String> {
+    let changed_sink = Arc::clone(sink);
+    let progress_sink = Arc::clone(sink);
+    scan_inner(
+        db,
+        move || changed_sink.emit_sessions_changed(),
+        move |p| progress_sink.emit_scan_progress(p),
+    )
+}
+
 /// Scan all registered workspaces; reparse only files whose stat signature
 /// changed; upsert the sessions table; emit sessions://changed once.
 pub fn scan_all_workspaces(state: &crate::AppState) -> Result<ScanReport, String> {
-    let sink = Arc::clone(&state.sink);
-    let progress_sink = Arc::clone(&state.sink);
-    scan_inner(
-        &state.db,
-        move || sink.emit_sessions_changed(),
-        move |p| progress_sink.emit_scan_progress(p),
-    )
+    scan_with_sink(&state.db, &state.sink)
 }
 
 /// The scan itself, decoupled from the event sink for testing.
@@ -718,7 +726,7 @@ fn scan_inner(
 
 /// Spawn a background scan off the Tauri runtime. Concurrent invocations
 /// collapse: a scan already in flight makes the new call a no-op.
-pub fn spawn_scan(app: tauri::AppHandle) {
+pub fn spawn_scan(db: Arc<crate::db::Db>, sink: Arc<crate::event_sink::EventSink>) {
     use std::sync::atomic::{AtomicBool, Ordering};
     static SCAN_RUNNING: AtomicBool = AtomicBool::new(false);
     if SCAN_RUNNING
@@ -736,8 +744,7 @@ pub fn spawn_scan(app: tauri::AppHandle) {
             }
         }
         let _guard = ResetOnDrop;
-        let state = app.state::<crate::AppState>();
-        if let Err(error) = scan_all_workspaces(state.inner()) {
+        if let Err(error) = scan_with_sink(&db, &sink) {
             eprintln!("[scanner] scan failed: {error}");
         }
     });

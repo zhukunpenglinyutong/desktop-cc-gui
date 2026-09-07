@@ -428,13 +428,3 @@ export function StatusBar({
     </div>
   );
 }
-
-/** The production composer and status row as a standalone block. */
-export function AiChatComposerPreview() {
-  return (
-    <div className="flex w-full flex-col gap-2.5">
-      <Composer />
-      <StatusBar />
-    </div>
-  );
-}

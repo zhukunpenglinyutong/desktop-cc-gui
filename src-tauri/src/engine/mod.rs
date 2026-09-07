@@ -110,6 +110,16 @@ pub(crate) fn safe_prompt_arg(prompt: &str) -> String {
     }
 }
 
+/// Push a `SessionId` event from a JSON string field; blank values are ignored.
+/// Engines disagree on the key (`session_id` / `thread_id` / `id`).
+pub(crate) fn push_session_id(value: &Value, key: &str, out: &mut Vec<EngineEvent>) {
+    if let Some(id) = value.get(key).and_then(Value::as_str) {
+        if !id.trim().is_empty() {
+            out.push(EngineEvent::SessionId(id.trim().to_string()));
+        }
+    }
+}
+
 // ==================== Process registry ====================
 
 /// Live engine child processes keyed by session key (native session id once

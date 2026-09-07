@@ -323,8 +323,8 @@ pub fn rename_session(
 }
 
 #[tauri::command]
-pub fn rescan_sessions(app: tauri::AppHandle) {
-    super::scanner::spawn_scan(app);
+pub fn rescan_sessions(state: tauri::State<'_, crate::AppState>) {
+    super::scanner::spawn_scan(Arc::clone(&state.db), Arc::clone(&state.sink));
 }
 
 // ==================== Workspaces ====================
@@ -361,7 +361,6 @@ pub fn list_workspaces(
 
 #[tauri::command]
 pub fn add_workspace(
-    app: tauri::AppHandle,
     state: tauri::State<'_, crate::AppState>,
     path: String,
 ) -> Result<Workspace, String> {
@@ -392,7 +391,7 @@ pub fn add_workspace(
         )
         .map_err(|e| e.to_string())?;
     }
-    super::scanner::spawn_scan(app);
+    super::scanner::spawn_scan(Arc::clone(&state.db), Arc::clone(&state.sink));
     Ok(Workspace {
         id,
         path: trimmed.to_string(),

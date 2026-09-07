@@ -41,6 +41,8 @@ fn build_app(home: &std::path::Path) -> tauri::App<tauri::test::MockRuntime> {
         terminals: terminal::TerminalRegistry::default(),
         processes: Arc::new(ProcessRegistry::default()),
         config_store: ConfigStore::default(),
+        emitters: ccgui_next_lib::event_sink::BroadcastEmit::new(Arc::new(app.handle().clone())),
+        web: ccgui_next_lib::web::WebAccessState::default(),
     });
     app
 }

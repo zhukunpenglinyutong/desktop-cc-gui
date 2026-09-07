@@ -5,8 +5,6 @@ use std::path::Path;
 
 pub struct ParsedSession {
     pub messages: Vec<Message>,
-    pub first_ts: Option<i64>,
-    pub last_ts: Option<i64>,
 }
 
 /// Parse a native session file into the minimal message list. Bad lines are
@@ -122,12 +120,7 @@ fn collect_session(reader: impl BufRead, extract: &LineExtractor<'_>) -> ParsedS
             images: row.images,
         });
     });
-    let (first_ts, last_ts) = session_ts_bounds(&messages);
-    ParsedSession {
-        messages,
-        first_ts,
-        last_ts,
-    }
+    ParsedSession { messages }
 }
 
 /// Bounded scan accumulator: keeps only what the sessions table stores.
@@ -156,7 +149,7 @@ impl ScanAcc {
         self.last_ts = row.ts.clone();
         match row.role.as_str() {
             "user" => {
-                // Mirrors session_title: first non-noise user body wins, the
+                // Mirrors strip_title_noise: first non-noise user body wins, the
                 // first user row (even noise) is the fallback.
                 if self.title.is_none() {
                     let body = super::strip_title_noise(&row.text);
@@ -302,16 +295,6 @@ fn ts_string(value: &Value, keys: &[&str]) -> Option<String> {
     keys.iter()
         .find_map(|k| value.get(k).and_then(Value::as_str))
         .map(str::to_string)
-}
-
-/// (first, last) message timestamps parsed to epoch millis.
-fn session_ts_bounds(messages: &[Message]) -> (Option<i64>, Option<i64>) {
-    let parse = |message: Option<&Message>| {
-        message
-            .and_then(|m| m.ts.as_deref())
-            .and_then(parse_ts_ms_str)
-    };
-    (parse(messages.first()), parse(messages.last()))
 }
 
 /// Join the `text` payloads of content parts; `typed_only` keeps only

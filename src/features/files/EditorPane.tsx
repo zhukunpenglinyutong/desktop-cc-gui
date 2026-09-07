@@ -8,7 +8,7 @@ import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
 import rehypeRaw from "rehype-raw";
 import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
-import { convertFileSrc, invoke } from "@tauri-apps/api/core";
+import { fileUrl, openExternal } from "@/lib/platform";
 import type { Pluggable } from "unified";
 import { useTranslation } from "react-i18next";
 import Eye from "lucide-react/dist/esm/icons/eye";
@@ -91,7 +91,7 @@ function resolveMarkdownImageSrc(src: string, sourceFilePath: string): string {
   }
   const pathOnly = cleaned.replace(/[?#].*$/, "");
   if (/^([a-zA-Z]:[\\/]|\/|\\\\)/.test(pathOnly)) {
-    return convertFileSrc(normalizePathSegments(pathOnly));
+    return fileUrl(normalizePathSegments(pathOnly));
   }
   const sepIdx = Math.max(
     sourceFilePath.lastIndexOf("/"),
@@ -99,7 +99,7 @@ function resolveMarkdownImageSrc(src: string, sourceFilePath: string): string {
   );
   if (sepIdx <= 0) return cleaned;
   try {
-    return convertFileSrc(
+    return fileUrl(
       normalizePathSegments(`${sourceFilePath.slice(0, sepIdx)}/${pathOnly}`),
     );
   } catch {
@@ -265,7 +265,7 @@ function FileEditor({ path, content }: { path: string; content: FileContent }) {
               onClick={(event) => {
                 event.preventDefault();
                 event.stopPropagation();
-                void invoke("plugin:opener|open_url", { url: href }).catch(() => {});
+                openExternal(href);
               }}
             />
           );
