@@ -1,4 +1,4 @@
-use super::{images, BuiltCommand, Engine, EngineEvent, SendRequest};
+use super::{images, push_session_id, BuiltCommand, Engine, EngineEvent, SendRequest};
 use serde_json::Value;
 use std::collections::HashMap;
 use tokio::process::Command;
@@ -70,21 +70,13 @@ impl Engine for ClaudeEngine {
         let event_type = value.get("type").and_then(Value::as_str).unwrap_or("");
         match event_type {
             "system" => {
-                if let Some(id) = value.get("session_id").and_then(Value::as_str) {
-                    if !id.trim().is_empty() {
-                        out.push(EngineEvent::SessionId(id.trim().to_string()));
-                    }
-                }
+                push_session_id(&value, "session_id", out);
             }
             "stream_event" => parse_stream_event(&value, out),
             "assistant" => {
                 // Full message snapshot; only used as session-id source when
                 // partial deltas are active (frontend renders the delta tail).
-                if let Some(id) = value.get("session_id").and_then(Value::as_str) {
-                    if !id.trim().is_empty() {
-                        out.push(EngineEvent::SessionId(id.trim().to_string()));
-                    }
-                }
+                push_session_id(&value, "session_id", out);
             }
             "result" => {
                 let session_id = value

@@ -2,7 +2,7 @@ import { isValidElement, memo, useMemo, type ReactNode } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
-import { invoke } from "@tauri-apps/api/core";
+import { openExternal } from "@/lib/platform";
 import { useTranslation } from "react-i18next";
 import Copy from "lucide-react/dist/esm/icons/copy";
 import Check from "lucide-react/dist/esm/icons/check";
@@ -27,7 +27,7 @@ function openFileFromChat(rawPath: string, workspacePath: string) {
 }
 
 function openExternalUrl(url: string) {
-  void invoke("plugin:opener|open_url", { url }).catch(() => {});
+  openExternal(url);
 }
 
 /** Green dotted-underline file link (parity with desktop-cc-gui). */

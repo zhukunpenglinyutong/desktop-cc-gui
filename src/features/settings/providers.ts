@@ -12,29 +12,8 @@ export type PseudoProviderId = (typeof PSEUDO_PROVIDER_IDS)[number];
 export const isPseudoProvider = (id: string): id is PseudoProviderId =>
   (PSEUDO_PROVIDER_IDS as readonly string[]).includes(id);
 
-export interface ProviderEntry {
-  id: string;
-  name: string;
-  baseUrl: string;
-  apiKey: string;
-  model: string;
-  remark: string;
-}
-
 const asString = (v: unknown): string => (typeof v === "string" ? v : "");
 
-/** Tolerantly parse a provider JSON blob from the config file. */
-export function parseProvider(id: string, raw: unknown): ProviderEntry {
-  const o = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
-  return {
-    id,
-    name: asString(o.name) || id,
-    baseUrl: asString(o.baseUrl),
-    apiKey: asString(o.apiKey),
-    model: asString(o.model),
-    remark: asString(o.remark),
-  };
-}
 /** Per-engine model env var, mirroring the backend env_mapping() table. */
 const ENV_MODEL_KEY: Partial<Record<EngineId, string>> = {
   claude: "ANTHROPIC_MODEL",

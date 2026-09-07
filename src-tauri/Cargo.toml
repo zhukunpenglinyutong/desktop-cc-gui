@@ -21,7 +21,7 @@ serde_json = { version = "1", features = ["preserve_order", "raw_value"] }
 regex = "1"
 toml = "0.8"
 rusqlite = { version = "0.32", features = ["bundled"] }
-tokio = { version = "1", features = ["rt", "macros", "process", "time", "sync", "io-util"] }
+tokio = { version = "1", features = ["rt", "macros", "net", "process", "time", "sync", "io-util"] }
 sha2 = "0.10"
 dirs = "6"
 dunce = "1"
@@ -39,6 +39,11 @@ which = "7"
 portable-pty = "0.8"
 sysinfo = "0.36.1"
 libc = "0.2"
+# LAN web access: serves the built frontend and bridges the command/event
+# surface over a token-authenticated WebSocket (see src/web.rs).
+axum = { version = "0.8", features = ["ws"] }
+futures-util = "0.3"
+include_dir = "0.7"
 
 [dev-dependencies]
 tauri = { version = "2", features = ["test"] }

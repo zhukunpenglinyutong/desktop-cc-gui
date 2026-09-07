@@ -1,5 +1,4 @@
 import type {
-  AnchorHTMLAttributes,
   ButtonHTMLAttributes,
   ComponentType,
   ReactNode,
@@ -60,17 +59,6 @@ export interface ButtonProps
   trailingIcon?: IconComponent;
   children?: ReactNode;
   ref?: Ref<HTMLButtonElement>;
-}
-
-export interface ButtonLinkProps
-  extends Omit<AnchorHTMLAttributes<HTMLAnchorElement>, "children"> {
-  variant?: ButtonVariant;
-  size?: ButtonSize;
-  iconOnly?: boolean;
-  leadingIcon?: IconComponent;
-  trailingIcon?: IconComponent;
-  children?: ReactNode;
-  ref?: Ref<HTMLAnchorElement>;
 }
 
 const styles = sortCx({
@@ -176,41 +164,3 @@ export function Button({
     </button>
   );
 }
-
-/** Anchor counterpart to Button for navigational actions. */
-export function ButtonLink({
-  variant = "primary",
-  size = "medium",
-  iconOnly = false,
-  leadingIcon: Leading,
-  trailingIcon: Trailing,
-  children,
-  className,
-  ref,
-  ...props
-}: ButtonLinkProps) {
-  return (
-    <a
-      ref={ref}
-      className={cx(
-        styles.base,
-        styles.size[size],
-        styles.variant[variant],
-        iconOnly && styles.iconOnlySize[size],
-        className,
-      )}
-      {...props}
-    >
-      {Leading ? <Leading className={styles.icon[size]} aria-hidden /> : null}
-      {!iconOnly && children !== undefined && children !== null && (
-        <span className={styles.label[size]}>{children}</span>
-      )}
-      {!iconOnly && Trailing ? (
-        <Trailing className={styles.icon[size]} aria-hidden />
-      ) : null}
-    </a>
-  );
-}
-
-/** Style maps, exported for advanced composition and the dev Design Tuner. */
-export const buttonStyles = styles;

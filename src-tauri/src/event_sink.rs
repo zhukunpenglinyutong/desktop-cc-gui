@@ -1,5 +1,6 @@
 use serde_json::Value;
 use std::sync::{Arc, Mutex};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 use tauri::Emitter;
 
@@ -39,6 +40,47 @@ impl<R: tauri::Runtime> Emit for tauri::AppHandle<R> {
         // RawValue re-emits the exact bytes — no parse/re-serialize roundtrip.
         if let Ok(raw) = serde_json::value::RawValue::from_string(raw_json.to_string()) {
             let _ = self.emit(name, raw);
+        }
+    }
+}
+/// Fan-out emitter: the webview plus any attached web-access WS broadcaster
+/// (web.rs). Targets are Arc-cloned out of the lock before emitting so a slow
+/// target never holds the registry lock.
+pub struct BroadcastEmit {
+    targets: Mutex<Vec<(u64, Arc<dyn Emit>)>>,
+    next_id: AtomicU64,
+}
+
+impl BroadcastEmit {
+    pub fn new(target: Arc<dyn Emit>) -> Arc<Self> {
+        Arc::new(Self {
+            targets: Mutex::new(vec![(0, target)]),
+            next_id: AtomicU64::new(1),
+        })
+    }
+
+    /// Register an additional target; the returned id removes it again.
+    pub fn add(&self, target: Arc<dyn Emit>) -> u64 {
+        let id = self.next_id.fetch_add(1, Ordering::SeqCst);
+        let mut targets = self.targets.lock().unwrap_or_else(|e| e.into_inner());
+        targets.push((id, target));
+        id
+    }
+
+    pub fn remove(&self, id: u64) {
+        let mut targets = self.targets.lock().unwrap_or_else(|e| e.into_inner());
+        targets.retain(|(target_id, _)| *target_id != id);
+    }
+}
+
+impl Emit for BroadcastEmit {
+    fn emit_json(&self, name: &str, raw_json: &str) {
+        let targets: Vec<Arc<dyn Emit>> = {
+            let guard = self.targets.lock().unwrap_or_else(|e| e.into_inner());
+            guard.iter().map(|(_, t)| Arc::clone(t)).collect()
+        };
+        for target in targets {
+            target.emit_json(name, raw_json);
         }
     }
 }

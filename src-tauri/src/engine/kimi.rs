@@ -1,4 +1,4 @@
-use super::{images, safe_prompt_arg, BuiltCommand, Engine, EngineEvent, SendRequest};
+use super::{images, push_session_id, safe_prompt_arg, BuiltCommand, Engine, EngineEvent, SendRequest};
 use serde_json::Value;
 use std::collections::HashMap;
 use tokio::process::Command;
@@ -89,11 +89,7 @@ impl Engine for KimiEngine {
             }
             "meta" => {
                 if value.get("type").and_then(Value::as_str) == Some("session.resume_hint") {
-                    if let Some(id) = value.get("session_id").and_then(Value::as_str) {
-                        if !id.trim().is_empty() {
-                            out.push(EngineEvent::SessionId(id.trim().to_string()));
-                        }
-                    }
+                    push_session_id(&value, "session_id", out);
                 }
             }
             _ => {}

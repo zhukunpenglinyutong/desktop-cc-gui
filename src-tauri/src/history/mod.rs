@@ -62,23 +62,6 @@ pub fn stat_signature(path: &Path) -> Option<(i64, i64)> {
     Some((meta.len() as i64, mtime_ms))
 }
 
-/// RFC3339 string or epoch millis/seconds -> epoch millis.
-pub fn parse_ts_ms(value: &Value) -> Option<i64> {
-    match value {
-        Value::Number(n) => {
-            let raw = n.as_i64()?;
-            // Heuristic: seconds vs millis.
-            Some(if raw.abs() < 10_000_000_000 {
-                raw * 1000
-            } else {
-                raw
-            })
-        }
-        Value::String(s) => parse_ts_ms_str(s),
-        _ => None,
-    }
-}
-
 /// &str entry point: skips the `Value::String` wrapper allocation the
 /// timestamp hot path used to pay per call.
 pub fn parse_ts_ms_str(text: &str) -> Option<i64> {
@@ -199,27 +182,6 @@ pub fn truncate_chars(text: &str, max: usize) -> String {
         return trimmed.to_string();
     }
     trimmed.chars().take(max).collect()
-}
-/// Sidebar title: the first user message's typed body. Engine file/image
-/// injection wraps attachments as `<file name="…">…</file>` and pastes as
-/// `[Image #N, WxH]` — noise as a title. Grok (and similar CLIs) also wrap
-/// the typed body in `<user_query>` after a `<user_info>` context turn.
-/// Strip all of those and fall through to the next user message when only
-/// noise remains.
-pub fn session_title(messages: &[Message]) -> String {
-    for m in messages.iter().filter(|m| m.role == "user") {
-        let body = strip_title_noise(&m.text);
-        if !body.is_empty() {
-            return truncate_chars(&body, 80);
-        }
-    }
-    // Attachment-only sessions have no typed body; keep the raw text so
-    // the sidebar still shows something recognizable.
-    messages
-        .iter()
-        .find(|m| m.role == "user")
-        .map(|m| truncate_chars(&m.text, 80))
-        .unwrap_or_default()
 }
 
 /// Injected runtime-context turns, not typed input. Shared across engines so
@@ -360,68 +322,54 @@ fn strip_title_noise(text: &str) -> String {
 mod tests {
     use super::*;
 
-    fn user(text: &str) -> Message {
-        Message {
-            seq: 0,
-            role: "user".into(),
-            text: text.into(),
-            ts: None,
-            usage: None,
-            model: None,
-            images: Vec::new(),
-        }
+    /// Title derivation = strip noise, then truncate (mirrors ScanAcc::accept).
+    fn stripped(text: &str) -> String {
+        truncate_chars(&strip_title_noise(text), 80)
     }
 
     #[test]
     fn title_strips_file_envelope() {
-        let msgs = vec![user(
-            "<file name=\"/Users/x/README.md\"># readme body</file>\nMD渲染有点问题",
-        )];
-        assert_eq!(session_title(&msgs), "MD渲染有点问题");
+        assert_eq!(
+            stripped("<file name=\"/Users/x/README.md\"># readme body</file>\nMD渲染有点问题"),
+            "MD渲染有点问题"
+        );
     }
 
     #[test]
     fn title_strips_inline_image_placeholder() {
-        let msgs = vec![user("[Image #1, 1222x848] 历史记录怎么对应不上?")];
-        assert_eq!(session_title(&msgs), "历史记录怎么对应不上?");
+        assert_eq!(
+            stripped("[Image #1, 1222x848] 历史记录怎么对应不上?"),
+            "历史记录怎么对应不上?"
+        );
     }
 
     #[test]
-    fn title_falls_through_noise_only_message() {
-        let msgs = vec![
-            user("<file name=\"/a/b.ts\">code</file>"),
-            user("真正的问题"),
-        ];
-        assert_eq!(session_title(&msgs), "真正的问题");
-    }
-
-    #[test]
-    fn title_keeps_raw_when_everything_is_noise() {
-        let msgs = vec![user("[Image #1, 1568x637]")];
-        assert_eq!(session_title(&msgs), "[Image #1, 1568x637]");
+    fn title_noise_only_message_strips_to_empty() {
+        assert_eq!(stripped("<file name=\"/a/b.ts\">code</file>"), "");
     }
 
     #[test]
     fn title_tolerates_unterminated_envelope() {
-        let msgs = vec![user("<file name=\"/a/b.ts\">code without close\n后续正文")];
-        assert_eq!(session_title(&msgs), "code without close\n后续正文");
+        assert_eq!(
+            stripped("<file name=\"/a/b.ts\">code without close\n后续正文"),
+            "code without close\n后续正文"
+        );
     }
 
     #[test]
-    fn title_skips_injected_user_info_for_next_body() {
-        let msgs = vec![
-            user("<user_info>\nOS Version: macos\nShell: /bin/zsh\n</user_info>"),
-            user("<user_query>Grok CLI 的历史记录怎么没出现？</user_query>"),
-        ];
-        assert_eq!(session_title(&msgs), "Grok CLI 的历史记录怎么没出现？");
+    fn title_skips_injected_user_info() {
+        assert_eq!(
+            strip_title_noise("<user_info>\nOS Version: macos\nShell: /bin/zsh\n</user_info>"),
+            ""
+        );
     }
 
     #[test]
     fn title_uses_user_query_after_image_files() {
-        let msgs = vec![user(
-            "<image_files>\n1. /tmp/a.png\n</image_files>\n\n<user_query>这个鼠标移动上去，有小手的样式</user_query>",
-        )];
-        assert_eq!(session_title(&msgs), "这个鼠标移动上去，有小手的样式");
+        assert_eq!(
+            stripped("<image_files>\n1. /tmp/a.png\n</image_files>\n\n<user_query>这个鼠标移动上去，有小手的样式</user_query>"),
+            "这个鼠标移动上去，有小手的样式"
+        );
     }
 
     #[test]
@@ -463,12 +411,11 @@ mod tests {
     }
 
     #[test]
-    fn title_skips_codex_injections_for_typed_body() {
-        let msgs = vec![
-            user("# AGENTS.md instructions\n\n<INSTRUCTIONS>\n…\n</INSTRUCTIONS>\n<environment_context>\n  <cwd>/tmp/ws</cwd>\n</environment_context>"),
-            user("<skill>\n<name>plan</name>\n</skill>"),
-            user("隐藏 gpt 系统提示词 展示"),
-        ];
-        assert_eq!(session_title(&msgs), "隐藏 gpt 系统提示词 展示");
+    fn title_strips_codex_injections_to_empty() {
+        assert_eq!(
+            strip_title_noise("# AGENTS.md instructions\n\n<INSTRUCTIONS>\n…\n</INSTRUCTIONS>\n<environment_context>\n  <cwd>/tmp/ws</cwd>\n</environment_context>"),
+            ""
+        );
+        assert_eq!(strip_title_noise("<skill>\n<name>plan</name>\n</skill>"), "");
     }
 }

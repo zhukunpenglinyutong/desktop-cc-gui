@@ -10,6 +10,7 @@ pub mod metrics;
 pub mod open_app;
 pub mod settings;
 pub mod terminal;
+pub mod web;
 
 use std::sync::Arc;
 use tauri::Manager;
@@ -18,9 +19,12 @@ pub struct AppState {
     pub db: Arc<db::Db>,
     pub sink: Arc<event_sink::EventSink>,
     pub terminal_sink: Arc<event_sink::EventSink>,
+    /// Webview + any attached web-access broadcasters (web.rs).
+    pub emitters: Arc<event_sink::BroadcastEmit>,
     pub terminals: terminal::TerminalRegistry,
     pub processes: Arc<engine::ProcessRegistry>,
     pub config_store: config::ConfigStore,
+    pub web: web::WebAccessState,
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -42,21 +46,40 @@ pub fn run() {
             // files.rs commands inject State<'_, Arc<db::Db>> for workspace
             // confinement, so the Arc itself must be managed alongside.
             app.manage(Arc::clone(&db));
+            let emitters = event_sink::BroadcastEmit::new(Arc::new(app.handle().clone()));
             let state = AppState {
                 db,
-                sink: event_sink::EventSink::new(Arc::new(app.handle().clone())),
+                sink: event_sink::EventSink::new(emitters.clone()),
                 terminal_sink: event_sink::EventSink::with_name(
-                    Arc::new(app.handle().clone()),
+                    emitters.clone(),
                     terminal::TERMINAL_OUTPUT_EVENT,
                 ),
+                emitters,
                 terminals: terminal::TerminalRegistry::default(),
                 processes: Arc::new(engine::ProcessRegistry::default()),
                 config_store: config::ConfigStore::default(),
+                web: web::WebAccessState::default(),
             };
+            // Clone what the initial scan needs before state moves into manage.
+            let scan_db = Arc::clone(&state.db);
+            let scan_sink = Arc::clone(&state.sink);
             app.manage(state);
             app.manage(metrics::MetricsState::new());
             // Initial history scan, non-blocking.
-            history::scanner::spawn_scan(app.handle().clone());
+            history::scanner::spawn_scan(scan_db, scan_sink);
+            // Dev convenience: `CCGUI_WEB_AUTOSTART=1 pnpm dev` starts the LAN
+            // bridge at launch and prints the URL, so the web build can be
+            // exercised without clicking the settings toggle.
+            #[cfg(debug_assertions)]
+            if std::env::var_os("CCGUI_WEB_AUTOSTART").is_some() {
+                let handle = app.handle().clone();
+                tauri::async_runtime::spawn(async move {
+                    match web::web_access_start(handle).await {
+                        Ok(info) => println!("[web] dev autostart: {}", info.url),
+                        Err(error) => eprintln!("[web] autostart failed: {error}"),
+                    }
+                });
+            }
             Ok(())
         })
         .on_window_event(|window, event| {
@@ -124,6 +147,10 @@ pub fn run() {
             terminal::terminal_close,
             // metrics
             metrics::app_metrics,
+            // web access
+            web::web_access_start,
+            web::web_access_stop,
+            web::web_access_status,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
