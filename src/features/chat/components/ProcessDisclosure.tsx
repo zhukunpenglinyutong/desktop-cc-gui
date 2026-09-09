@@ -154,23 +154,35 @@ function ThinkingSurface({
   );
 }
 
-/** Expanded-state machine: automation opens the latest row and folds older
- * ones as the turn settles, until the user's own click takes over. */
-function useProcessExpansion(autoExpand: boolean, turnLive: boolean) {
+/** Expanded-state machine: automation opens a row while its thinking is
+ *  streaming and folds it the moment that thinking settles (the user asked
+ *  for exactly that rhythm); a superseded or turn-settled row folds too,
+ *  until the user's own click takes over. */
+function useProcessExpansion(autoExpand: boolean, turnLive: boolean, hasLiveThinking: boolean) {
   const [expanded, setExpanded] = useState(autoExpand);
   // Once the user clicks the header, their choice wins over the auto
-  // expand/collapse driven by newer rows appearing below.
+  // expand/collapse driven by streaming state below.
   const [overridden, setOverridden] = useState(false);
   // React-blessed adjust-during-render: previous prop values live in state,
   // so a prop change settles in the same commit that observed it — no
   // one-frame paint of the stale expanded value.
-  const [prev, setPrev] = useState({ auto: autoExpand, live: turnLive });
-  if (prev.auto !== autoExpand || prev.live !== turnLive) {
-    setPrev({ auto: autoExpand, live: turnLive });
+  const [prev, setPrev] = useState({ auto: autoExpand, live: turnLive, thinking: hasLiveThinking });
+  if (prev.auto !== autoExpand || prev.live !== turnLive || prev.thinking !== hasLiveThinking) {
+    setPrev({ auto: autoExpand, live: turnLive, thinking: hasLiveThinking });
     if (autoExpand && !prev.auto) {
       // Became the latest row: open it and hand control back to automation.
       setOverridden(false);
       setExpanded(true);
+    } else if (hasLiveThinking && !prev.thinking && !overridden) {
+      // Thinking resumed inside this row (extended thinking between tool
+      // calls): show it again unless the user folded the row on purpose.
+      setExpanded(true);
+    } else if (!hasLiveThinking && prev.thinking) {
+      // The thinking settled: fold immediately — expanded-on-demand shows
+      // the full text afterwards. Control returns to automation so a later
+      // "became latest" can reopen.
+      setOverridden(false);
+      setExpanded(false);
     } else if (!autoExpand && !turnLive) {
       const superseded = prev.auto;
       const turnJustSettled = prev.live;
@@ -271,15 +283,17 @@ export const ProcessDisclosure = memo(function ProcessDisclosure({
 }: {
   items: ProcessItem[];
   autoExpand?: boolean;
-  /** True while the turn is still streaming: nothing folds away mid-turn —
-   * the reader may be watching a row grow. Older rows fold when the turn
-   * settles instead. */
+  /** True while the turn is still streaming. The row folds when its own
+   *  thinking settles even mid-turn; this only keeps pre-thinking content
+   *  (early tool rows) mounted until the turn ends. */
   turnLive?: boolean;
   processId: number;
   seenTools: Set<string>;
 }) {
   const { t } = useTranslation();
-  const { expanded, toggleExpanded } = useProcessExpansion(autoExpand, turnLive);
+  const sections = useMemo(() => groupProcessSections(items), [items]);
+  const hasLiveThinking = sections.some((s) => s.type === "thinking" && s.live);
+  const { expanded, toggleExpanded } = useProcessExpansion(autoExpand, turnLive, hasLiveThinking);
   const reduceMotion = useReducedMotion() ?? false;
   // Mark after paint, not at animation complete: a virtualizer remount
   // mid-entrance must skip the replay. New keys still play on this first
@@ -293,10 +307,11 @@ export const ProcessDisclosure = memo(function ProcessDisclosure({
   // "思考过程" title itself, and the expanded body drops the inner repeat.
   const singleThinking = items.length === 1 && items[0].type === "thinking";
   const label = processSummaryLabel(t, singleThinking, thinkingCount, toolCount);
-  // Regrouping per render walks every item; items are reference-stable
-  // between flushes (see buildRows caches), so memo on identity.
-  const sections = useMemo(() => groupProcessSections(items), [items]);
-  const showBody = expanded || turnLive;
+  // Body stays mounted while expanded or while this row's own thinking is
+  // streaming (the auto-open above makes both true then); once the thinking
+  // settles the body unmounts, so expanding later re-renders the FULL
+  // settled text — the 2000-char live window only ever applies live.
+  const showBody = expanded || hasLiveThinking;
   return (
     <div className="mb-1.5 flex flex-col">
       <button
