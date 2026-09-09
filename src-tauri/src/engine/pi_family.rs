@@ -144,22 +144,15 @@ fn parse_pi_family_line(line: &str, out: &mut Vec<EngineEvent>) {
             // A message-level error is one failed model call (e.g. an
             // upstream 429): the CLI retries and the turn continues, so this
             // is only a notice. turn_end/agent_end errors stay terminal.
-            if let Some(error) = value
-                .get("message")
-                .and_then(|m| m.get("errorMessage"))
-                .and_then(Value::as_str)
-                .or_else(|| value.get("errorMessage").and_then(Value::as_str))
-            {
-                if !error.trim().is_empty() {
-                    out.push(EngineEvent::Warn(error.trim().to_string()));
-                }
+            // omp shapes vary by version: `message.errorMessage`, top-level
+            // `errorMessage`, and nested `error.message` / `message.error`.
+            if let Some(error) = nested_error_text(&value, &["message"]) {
+                out.push(EngineEvent::Warn(error));
             }
         }
         "turn_end" | "agent_end" => {
-            if let Some(error) = value.get("errorMessage").and_then(Value::as_str) {
-                if !error.trim().is_empty() {
-                    out.push(EngineEvent::Error(error.trim().to_string()));
-                }
+            if let Some(error) = nested_error_text(&value, &[]) {
+                out.push(EngineEvent::Error(error));
             }
             // No terminal result event exists in this protocol; the runner
             // emits Done on clean EOF. agent_end still settles the turn.
@@ -186,6 +179,33 @@ pub fn tool_label(name: &str, intent: Option<&str>) -> String {
         }
         _ => name.to_string(),
     }
+}
+
+/// Find the first non-empty error text across the shapes omp emits:
+/// `<prefix>.errorMessage`, top-level `errorMessage`, `error.message`, and
+/// `<prefix>.error` / `error.error` when they are plain strings. Returns the
+/// trimmed text; None when the event carries no error.
+fn nested_error_text(value: &Value, prefix: &[&str]) -> Option<String> {
+    let mut candidates: Vec<Option<&str>> = Vec::new();
+    for pre in prefix {
+        candidates.push(
+            value
+                .get(*pre)
+                .and_then(|m| m.get("errorMessage"))
+                .and_then(Value::as_str),
+        );
+    }
+    candidates.push(value.get("errorMessage").and_then(Value::as_str));
+    candidates.push(value.get("error").and_then(|e| e.get("message")).and_then(Value::as_str));
+    for pre in prefix {
+        candidates.push(value.get(*pre).and_then(|m| m.get("error")).and_then(Value::as_str));
+    }
+    candidates
+        .into_iter()
+        .flatten()
+        .map(str::trim)
+        .find(|text| !text.is_empty())
+        .map(str::to_string)
 }
 
 #[cfg(test)]
@@ -226,6 +246,38 @@ mod tests {
         match &out[0] {
             EngineEvent::Message { path, .. } => assert_eq!(*path, None),
             _ => panic!("expected tool message"),
+        }
+    }
+
+    #[test]
+    fn message_end_extracts_nested_error_shapes_as_warn() {
+        for line in [
+            serde_json::json!({"type":"message_end","message":{"errorMessage":"upstream 429"}}),
+            serde_json::json!({"type":"message_end","errorMessage":"top-level 429"}),
+            serde_json::json!({"type":"message_end","error":{"message":"nested 429"}}),
+            serde_json::json!({"type":"message_end","message":{"error":"message.error 429"}}),
+        ] {
+            let mut out = Vec::new();
+            parse_pi_family_line(&line.to_string(), &mut out);
+            match out.last() {
+                Some(EngineEvent::Warn(text)) => assert!(text.contains("429"), "{line}"),
+                other => panic!("expected Warn for {line}, got {other:?}"),
+            }
+        }
+    }
+
+    #[test]
+    fn turn_end_extracts_error_from_all_shapes() {
+        for line in [
+            serde_json::json!({"type":"turn_end","errorMessage":"boom"}),
+            serde_json::json!({"type":"turn_end","error":{"message":"nested boom"}}),
+        ] {
+            let mut out = Vec::new();
+            parse_pi_family_line(&line.to_string(), &mut out);
+            match out.first() {
+                Some(EngineEvent::Error(text)) => assert!(text.contains("boom"), "{line}"),
+                other => panic!("expected Error for {line}, got {other:?}"),
+            }
         }
     }
 }
