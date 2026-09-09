@@ -924,7 +924,18 @@ mod tests {
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].role, "user");
         assert_eq!(rows[0].text, "what is this");
-        assert_eq!(rows[0].images, ["/tmp/a.png", "/tmp/b.jpg"]);
+        // `PathBuf::join` normalizes "/"-rooted refs per platform ("/tmp/a.png"
+        // stays verbatim, "b.jpg" joins with the platform separator), so
+        // compare Path equality instead of string equality.
+        let got: Vec<std::path::PathBuf> =
+            rows[0].images.iter().map(std::path::PathBuf::from).collect();
+        assert_eq!(
+            got,
+            vec![
+                std::path::PathBuf::from("/tmp/a.png"),
+                std::path::Path::new("/tmp").join("b.jpg"),
+            ]
+        );
     }
 
     #[test]

@@ -793,21 +793,41 @@ mod tests {
     static HOME_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
     struct HomeGuard {
         _lock: std::sync::MutexGuard<'static, ()>,
-        prev: Option<std::ffi::OsString>,
+        prev: Option<HomeEnvPair>,
     }
     impl HomeGuard {
         fn set(home: &Path) -> Self {
             let lock = HOME_LOCK.lock().unwrap_or_else(|e| e.into_inner());
             let prev = std::env::var_os("HOME");
             std::env::set_var("HOME", home);
-            Self { _lock: lock, prev }
+            // `dirs` resolves the Windows profile from the user's shell
+            // registry entry, ignoring HOME; USERPROFILE is what engine_home
+            // falls back to there, so both must point at the scratch home.
+            let prev_profile = std::env::var_os("USERPROFILE");
+            std::env::set_var("USERPROFILE", home);
+            Self {
+                _lock: lock,
+                prev: prev.map(|p| HomeEnvPair(Some(p), prev_profile)),
+            }
         }
     }
+
+    struct HomeEnvPair(
+        Option<std::ffi::OsString>,
+        Option<std::ffi::OsString>,
+    );
+
     impl Drop for HomeGuard {
         fn drop(&mut self) {
-            match &self.prev {
-                Some(value) => std::env::set_var("HOME", value),
-                None => std::env::remove_var("HOME"),
+            if let Some(HomeEnvPair(home, profile)) = &self.prev {
+                match home {
+                    Some(value) => std::env::set_var("HOME", value),
+                    None => std::env::remove_var("HOME"),
+                }
+                match profile {
+                    Some(value) => std::env::set_var("USERPROFILE", value),
+                    None => std::env::remove_var("USERPROFILE"),
+                }
             }
         }
     }
@@ -922,7 +942,7 @@ mod tests {
                 "{\"type\":\"title\",\"v\":1,\"title\":\"t\"}",
                 format!(
                     "{{\"type\":\"session\",\"version\":3,\"id\":\"sid-1\",\"timestamp\":\"2026-09-05T07:13:57.946Z\",\"cwd\":\"{}\"}}",
-                    workspace.display()
+                    workspace.display().to_string().replace('\\', "\\\\")
                 ),
                 "{\"type\":\"message\",\"timestamp\":\"2026-09-05T07:14:06.682Z\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"hello\"}]}}",
             ),
@@ -1039,15 +1059,11 @@ mod tests {
             .join("06");
         std::fs::create_dir_all(&rollout_dir).map_err(|e| e.to_string())?;
         let big_instructions = "x".repeat(40 * 1024);
+        let cwd_json = workspace.display().to_string().replace('\\', "\\\\");
         std::fs::write(
             rollout_dir.join("rollout-2026-09-06T21-52-11-sid-codex.jsonl"),
             format!(
-                "{}\n{}\n",
-                format!(
-                    "{{\"type\":\"session_meta\",\"payload\":{{\"id\":\"sid-codex\",\"cwd\":\"{}\",\"base_instructions\":{{\"text\":\"{big_instructions}\"}}}}}}",
-                    workspace.display()
-                ),
-                "{\"type\":\"response_item\",\"payload\":{\"type\":\"message\",\"role\":\"user\",\"content\":[{\"type\":\"input_text\",\"text\":\"你好啊\"}]}}",
+                "{{\"type\":\"session_meta\",\"payload\":{{\"id\":\"sid-codex\",\"cwd\":\"{cwd_json}\",\"base_instructions\":{{\"text\":\"{big_instructions}\"}}}}}}\n{{\"type\":\"response_item\",\"payload\":{{\"type\":\"message\",\"role\":\"user\",\"content\":[{{\"type\":\"input_text\",\"text\":\"你好啊\"}}]}}}}\n",
             ),
         )
         .map_err(|e| e.to_string())?;

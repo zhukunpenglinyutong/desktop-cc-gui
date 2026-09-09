@@ -147,7 +147,9 @@ pub(crate) fn engine_home(env_key: Option<&str>, default_dir: &str) -> PathBuf {
             return PathBuf::from(value);
         }
     }
-    dirs::home_dir().unwrap_or_default().join(default_dir)
+    std::env::home_dir()
+        .unwrap_or_default()
+        .join(default_dir)
 }
 
 /// A leading '-' would parse as a flag (pi also treats '@' as a file
