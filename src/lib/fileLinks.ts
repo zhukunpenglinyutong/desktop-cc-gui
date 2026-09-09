@@ -89,9 +89,13 @@ export function decodeFileLink(url: string) {
  * Resolve a markdown-sourced path to an absolute one. Relative paths anchor
  * at the session's workspace; absolute POSIX/Windows paths pass through.
  * Returns null for `~/` paths (home dir unknown to the frontend) and empties.
+ *
+ * Paths that arrive percent-encoded (a model or upstream tool URL-encoded a
+ * CJK filename inside an otherwise plain path) are decoded first — the
+ * filesystem never sees `%E7%BB%86…` as a literal name.
  */
 export function resolveFilePath(path: string, workspacePath: string): string | null {
-  const trimmed = path.trim();
+  const trimmed = percentDecodePath(path.trim());
   if (!trimmed) return null;
   if (trimmed.startsWith("~/")) return null;
   if (trimmed.startsWith("/") || WINDOWS_ABSOLUTE_PATH_MATCH.test(trimmed)) return trimmed;
@@ -99,4 +103,19 @@ export function resolveFilePath(path: string, workspacePath: string): string | n
   if (trimmed.startsWith("../")) return null; // escaping the workspace: don't guess
   const root = workspacePath.replace(/[/\\]+$/, "");
   return root ? `${root}/${relative}` : null;
+}
+
+/** Decode `%XX` sequences when they look like URL-encoding smuggled into a
+ *  file path (CJK filenames pasted as links). A literal path with no `%`
+ *  passes through untouched; a malformed sequence keeps the raw text. */
+function percentDecodePath(path: string): string {
+  if (!path.includes("%")) return path;
+  try {
+    const decoded = decodeURIComponent(path);
+    // Only accept when decoding actually removed escapes; otherwise the `%`
+    // was part of the real name (rare but legal).
+    return decoded === path ? path : decoded;
+  } catch {
+    return path;
+  }
 }
