@@ -103,9 +103,26 @@ function FrozenStepRow({
   );
 }
 
+/** Live thinking window: the last ~2000 chars, cut at a LINE boundary so a
+ *  row slides out as a whole instead of dissolving character by character.
+ *  `truncated` tells the surface to fade its top edge, hinting at the
+ *  content above the window. */
+function liveThinkingWindow(text: string): { body: string; truncated: boolean } {
+  const WINDOW_CHARS = 2000;
+  if (text.length <= WINDOW_CHARS) return { body: text, truncated: false };
+  const cut = text.length - WINDOW_CHARS;
+  const newline = text.indexOf("\n", cut);
+  // No newline inside the window (one enormous line): keep the char cut —
+  // there is no line boundary to honor.
+  const start = newline === -1 ? cut : newline + 1;
+  return { body: text.slice(start), truncated: true };
+}
+
 /** Thinking body: brain header + left-railed gray content, mirroring the
  * reference chat UI. Plain pre-wrapped text — never markdown-reparsed per
- * delta; the live view is windowed to the last 2000 chars. */
+ * delta. The live view is windowed to the last 2000 chars; the cut lands on
+ * a line boundary and the top edge fades out, so overflow leaves as whole
+ * dissolving rows rather than a hard char-by-char wipe. */
 function ThinkingSurface({
   text,
   title,
@@ -115,6 +132,7 @@ function ThinkingSurface({
   title?: string;
   live?: boolean;
 }) {
+  const { body, truncated } = live ? liveThinkingWindow(text) : { body: text, truncated: false };
   return (
     <div className="flex flex-col gap-1">
       {title && (
@@ -123,8 +141,14 @@ function ThinkingSurface({
           <span>{title}</span>
         </div>
       )}
-      <div className="ml-2 whitespace-pre-wrap break-words border-l border-foreground-icon-quaternary pl-4 text-[12px] leading-[1.65] text-text-tertiary">
-        {live ? text.slice(-2000) : text}
+      <div
+        className={cx(
+          "ml-2 whitespace-pre-wrap break-words border-l border-foreground-icon-quaternary pl-4 text-[12px] leading-[1.65] text-text-tertiary",
+          truncated &&
+            "[mask-image:linear-gradient(to_bottom,transparent_0,#000_36px)] [-webkit-mask-image:linear-gradient(to_bottom,transparent_0,#000_36px)]",
+        )}
+      >
+        {body}
       </div>
     </div>
   );
