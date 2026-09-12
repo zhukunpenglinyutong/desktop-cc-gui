@@ -10,7 +10,12 @@
     "core:webview:allow-set-webview-zoom",
     {
       "identifier": "opener:allow-open-url",
-      "allow": [{ "url": "https://*" }, { "url": "mailto:*" }]
+      "allow": [
+        { "url": "https://*" },
+        { "url": "mailto:*" },
+        { "url": "http://127.0.0.1:*" },
+        { "url": "http://localhost:*" }
+      ]
     },
     "dialog:default",
     "updater:default",

@@ -23,6 +23,7 @@ import type {
   PluginManifest,
 } from "@ccgui/plugin-sdk";
 import { assertPluginEmitTopic, pluginBus } from "./events";
+import { setActiveComposerDraft } from "./composer-draft";
 import { runAsPlugin } from "./hardening";
 
 /** Storage transport the context talks to; the loader binds the IPC-backed
@@ -278,6 +279,12 @@ export function createPluginContext(
         requirePermission("events");
         assertPluginEmitTopic(id, topic);
         pluginBus.emit(topic, data);
+      },
+    },
+    composer: {
+      setDraft(text) {
+        requirePermission("composer:draft");
+        setActiveComposerDraft(id, text);
       },
     },
     bridge: {

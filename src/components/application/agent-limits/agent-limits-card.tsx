@@ -8,7 +8,7 @@ import Minimize2 from "lucide-react/dist/esm/icons/minimize-2";
 import RefreshCw from "lucide-react/dist/esm/icons/refresh-cw";
 import { Collapsible } from "@/components/application/collapsible/collapsible";
 import { cx } from "@/utils/cx";
-import { formatTokens } from "./format-tokens";
+import { formatTokens } from "@/utils/format-tokens";
 
 /** Series colours: explicit `color` (+ optional `activeColor`) wins;
  * otherwise the `chart-n` token palette cycles in an order that keeps

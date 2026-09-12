@@ -1,0 +1,17 @@
+name = "ccgui-relay"
+main = "src/index.js"
+compatibility_date = "2025-01-01"
+
+# One Durable Object per relay key: it owns the desktop's socket and every
+# stream multiplexed onto it.
+[[durable_objects.bindings]]
+name = "RELAY"
+class_name = "Relay"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["Relay"]
+
+[vars]
+# Set with:  npx wrangler secret put RELAY_KEY   (or edit here for local dev)
+RELAY_KEY = "change-me"

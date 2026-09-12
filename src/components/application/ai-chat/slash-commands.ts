@@ -8,8 +8,10 @@ import {
  * Catalog for the composer's `/` picker, ported from desktop-cc-gui's
  * slash-command completion (claude_commands.rs + ChatInputBoxAdapter) and
  * extended with skills. The Rust side scans the workspace's `.claude/`
- * plus the CLI's global config home for two distinct kinds — commands
- * (markdown under `commands/`) and skills (`skills/<name>/SKILL.md`) — via
+ * plus the CLIs' global skill roots (Claude home, `$CODEX_HOME/skills`
+ * incl. `.system`, `~/.agents/skills`, Codex plugin cache) for two
+ * distinct kinds — commands (markdown under `commands/`) and skills
+ * (`skills/<name>/SKILL.md`) — via
  * `entry.kind`; this store caches the catalog per workspace root with the
  * same stale-while-revalidate model as the @-mention file index
  * (createRootCacheStore) — one IPC per TTL window, matching is pure JS per

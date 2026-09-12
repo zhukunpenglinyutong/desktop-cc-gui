@@ -406,3 +406,11 @@ input[type="search"]::-webkit-search-cancel-button {
   background-color: transparent;
   scrollbar-width: thin;
 }
+
+/* Password inputs draw their own reveal toggle (see InputBase); hide the
+ * browser's native one so Windows/Edge does not render two eyes side by side,
+ * and macOS — which has none — stays consistent with it. */
+input[type="password"]::-ms-reveal,
+input[type="password"]::-ms-clear {
+  display: none;
+}

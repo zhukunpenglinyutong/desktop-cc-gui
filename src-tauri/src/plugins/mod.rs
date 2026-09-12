@@ -18,6 +18,7 @@
 
 mod fs;
 mod manifest;
+pub mod market;
 mod state;
 
 pub use state::{KV_TOMBSTONE_TTL_SECS, PluginInfo, PluginRecord, PluginsState};
@@ -47,6 +48,7 @@ pub async fn plugin_install_from_path(
             &state::plugins_dir(),
             &state::state_path(),
             Path::new(path.trim()),
+            "local",
             |p| sink.emit_install_progress(p),
         )
     })
@@ -243,7 +245,7 @@ mod tests {
 
         let source = scratch.path("src-life");
         write_plugin(&source, &valid_manifest("life-plugin"));
-        fs::install_from(&plugins_dir, &state_path, &source, |_| {}).unwrap();
+        fs::install_from(&plugins_dir, &state_path, &source, "local", |_| {}).unwrap();
         // Freshly installed plugins start disabled; enable first.
         set_enabled_at(&plugins_dir, &state_path, "life-plugin", true).unwrap();
 

@@ -54,7 +54,14 @@ class WebBridge {
       this.retryMs = 1000;
       resolve();
     };
-    ws.onmessage = (e) => this.onMessage(String(e.data));
+    // Frames arrive as text through the relay only after the Worker learns the
+    // frame type; until then they come back as bytes, and String(blob) is
+    // "[object Blob]" — every response was being dropped on the floor.
+    ws.binaryType = "arraybuffer";
+    ws.onmessage = (e) =>
+      this.onMessage(
+        typeof e.data === "string" ? e.data : new TextDecoder().decode(e.data as ArrayBuffer),
+      );
     ws.onclose = () => this.onClose(ws);
     ws.onerror = () => {
       // onclose follows and handles the retry.

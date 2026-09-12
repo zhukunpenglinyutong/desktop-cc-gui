@@ -126,25 +126,26 @@ pub async fn list_engine_models(engine: String) -> Result<EngineCatalog, String>
 }
 
 /// DSH has no CLI-side catalog: the model list lives on the running host
-/// (`llm.models` RPC), grouped by provider. Never spawns the host — a down
-/// host is an error so the frontend keeps whatever catalog it already has
-/// instead of blanking the picker.
+/// (`session/modelCatalog` RPC — 0.1.2 removed `llm.models`), grouped by
+/// provider with `default` carrying the host's current model. Never spawns
+/// the host — a down host is an error so the frontend keeps whatever catalog
+/// it already has instead of blanking the picker.
 async fn dsh_catalog() -> Result<EngineCatalog, String> {
     let settings = crate::settings::read_settings().unwrap_or_default();
     let origin = crate::dsh_host::configured_origin(&settings);
-    let describe = crate::dsh_host::probe_describe(&origin)
+    let catalog = crate::dsh_host::host_call(&origin, "session/modelCatalog", serde_json::json!({}))
         .await
         .map_err(|_| format!("DSH host 未运行（{origin}）。在设置 → DeepSeek Harness 里启动后再试。"))?;
-    let catalog = crate::dsh_host::host_call(&origin, "llm.models", serde_json::json!({})).await?;
     Ok(EngineCatalog::authoritative(flatten_llm_models(
         &catalog,
-        Some(&describe),
+        catalog.get("default"),
     )))
 }
 
-/// `llm.models` `{groups: [{id, name, models: [{id, name, description,
-/// default}]}]}` → flat catalog entries with `provider/model` selector ids.
-/// The host's current model (describe) or the group-marked default leads.
+/// `session/modelCatalog` value `{groups: [{id, name, models: [{id, name,
+/// description, default}]}], default: {provider, model}}` → flat catalog
+/// entries with `provider/model` selector ids. The host's current model
+/// (`default`) or the group-marked default leads.
 fn flatten_llm_models(catalog: &serde_json::Value, describe: Option<&serde_json::Value>) -> Vec<EngineModel> {
     let current = describe.and_then(|value| {
         let provider = value.get("provider")?.as_str()?.trim();

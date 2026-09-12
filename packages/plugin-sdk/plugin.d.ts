@@ -6,7 +6,7 @@
  * 插件仓用法（包未发布 npm 前的过渡方案）：复制本文件为插件仓的
  * `src/ccgui-plugin.d.ts`，首行版本戳必须与所用宿主 SDK 一致。
  *
- * @ccgui/plugin-sdk v0.3.1
+ * @ccgui/plugin-sdk v0.3.2
  */
 
 /** 宿主实现的 SDK 契约版本。 */
@@ -157,6 +157,11 @@ export interface PluginContext {
      *  `composer://draft`（payload { text }，草稿变化/清空/会话切换均发射）。 */
     on(topic: string, cb: (data: unknown) => void): Disposer;
     emit(topic: string, data: unknown): void;
+  };
+  /** 聊天输入框（composer）草稿写入（权限 composer:draft，0.3.2 起）。
+   *  写入即替换当前活动会话的草稿；不触发发送——发送永远是用户动作。 */
+  composer: {
+    setDraft(text: string): void;
   };
   bridge: {
     /** 通用能力出口（0.3.0 起；旧的 `cmd:<command>` 逐命令授权机制已删除）。

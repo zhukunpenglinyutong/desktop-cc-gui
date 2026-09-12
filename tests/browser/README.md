@@ -33,3 +33,7 @@ the totals summed. A cache-bearing turn is seeded too, so the summary row must
 read 累计 = 输入 + 输出 (输入 being the whole prompt side: fresh + cache). It
 also replays a live report (`usage://changed`) to show the page growing
 mid-turn. No app, no database, no saved state.
+Open `/tests/browser/collapsible-message.html` to check the long-message
+collapse: a user message taller than 480px clamps to 320px behind a bottom
+fade into the bubble fill with a centered chevron, the chevron toggles
+expand/collapse, and a short message is never clamped. No model or session.

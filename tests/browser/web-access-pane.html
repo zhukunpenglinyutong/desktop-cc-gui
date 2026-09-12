@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>WebAccessSection fixture</title>
+</head>
+<body style="margin:0;background:#0b0b0b">
+<div id="fixture"></div>
+<script>
+// Stands in for the Tauri IPC surface: commands answer from one mutable state
+// object, events reach the callbacks the app registers. No real backend.
+const state = {
+  settings: {
+    theme: "dark",
+    webRelayUrl: "https://relay.example.workers.dev",
+    webRelayKey: "RELAYKEY",
+    webAuthEnabled: true,
+    webAuthKey: "PAIR2222",
+    systemProxyEnabled: false,
+    systemProxyUrl: null,
+  },
+  relay: null,
+  devices: [],
+  access: {
+    url: "http://192.168.1.5:1420/?token=abcdef",
+    port: 1420,
+    token: "abcdef",
+    lanIp: "192.168.1.5",
+  },
+  listeners: new Map(),
+};
+let nextId = 1;
+window.__TAURI_INTERNALS__ = {
+  transformCallback(cb) {
+    const id = nextId++;
+    state.listeners.set(id, cb);
+    return id;
+  },
+  unregisterCallback(id) {
+    state.listeners.delete(id);
+  },
+  convertFileSrc: (p) => p,
+  metadata: { currentWebview: { label: "main" }, currentWindow: { label: "main" } },
+  async invoke(cmd, args) {
+    switch (cmd) {
+      case "get_app_settings":
+        return structuredClone(state.settings);
+      case "update_app_settings": {
+        Object.assign(state.settings, args.settings);
+        // Same rule as the real backend: an enabled switch without a key mints
+        // one, and a disabled one clears it.
+        if (state.settings.webAuthEnabled && !state.settings.webAuthKey) {
+          state.settings.webAuthKey = "MINT3333";
+        } else if (!state.settings.webAuthEnabled) {
+          state.settings.webAuthKey = null;
+        }
+        return null;
+      }
+      case "web_access_status":
+        return state.access;
+      case "web_devices":
+        return state.devices;
+      case "web_relay_status":
+        return state.relay;
+      case "web_relay_start":
+        state.relay = {
+          url: String(args.url).replace(/\/$/, "") + "/",
+          agentUrl: "ws://relay/agent",
+          connected: false,
+          error: null,
+        };
+        return state.relay;
+      case "web_relay_stop":
+        state.relay = null;
+        return null;
+      case "plugin:event|listen":
+      case "plugin:event|unlisten":
+        return 1;
+      default:
+        return null;
+    }
+  },
+};
+window.__fixture = {
+  state,
+  /** Push a backend event to every registered listener. */
+  emit(name, payload) {
+    for (const cb of state.listeners.values()) cb({ event: name, id: 0, payload });
+  },
+};
+</script>
+<script type="module" src="./web-access-pane.tsx"></script>
+</body>
+</html>

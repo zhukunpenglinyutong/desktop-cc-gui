@@ -4,15 +4,15 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 /// Catalog discovery for the composer's `/` picker (ported from
-/// desktop-cc-gui's claude_commands.rs, trimmed to the two Claude scopes
-/// the picker surfaces: the workspace's `.claude/` and the CLI's global
-/// config home). Two entry kinds share the one trigger and stay distinct
-/// via `kind`:
+/// desktop-cc-gui's claude_commands.rs, extended past the two Claude
+/// scopes to the global skill roots of the other CLIs the app drives:
+/// Codex, the cross-agent `~/.agents`, and Codex plugins). Two entry
+/// kinds share the one trigger and stay distinct via `kind`:
 ///
 /// - commands: `.claude/commands/**/*.md` — the CLI expands `/name args`
 ///   itself when the prompt is sent;
-/// - skills: `.claude/skills/<name>/SKILL.md` — likewise invoked as
-///   `/name` by the CLI.
+/// - skills: `skills/<name>/SKILL.md` under each scanned root — likewise
+///   invoked as `/name` by the CLI.
 ///
 /// Markdown stays on disk; only the metadata the menu renders crosses IPC.
 
@@ -229,19 +229,73 @@ fn commands_dirs(workspace_root: &Path) -> Vec<(PathBuf, &'static str)> {
     dirs
 }
 
-/// Skill directories in priority order, mirroring `commands_dirs`: the
-/// workspace's `.claude/skills`, then the CLI config home's `skills`.
+/// Skill directories in priority order: the workspace's `.claude/skills`
+/// first, then the global homes of every CLI the picker can drive —
+/// Claude (`$CLAUDE_CONFIG_DIR/skills`), Codex (`$CODEX_HOME/skills` plus
+/// its built-in `.system` tree), the cross-agent `~/.agents/skills`, and
+/// Codex plugin-bundled skills under `$CODEX_HOME/plugins/cache`. `is_dir`
+/// follows symlinks, so cc-switch-managed links inside these roots resolve.
 fn skills_dirs(workspace_root: &Path) -> Vec<(PathBuf, &'static str)> {
     let mut dirs: Vec<(PathBuf, &'static str)> = Vec::new();
     let workspace_dir = workspace_root.join(".claude").join("skills");
     if workspace_dir.is_dir() {
         dirs.push((workspace_dir, "workspace"));
     }
-    let global_dir = crate::engine::engine_home(Some("CLAUDE_CONFIG_DIR"), ".claude").join("skills");
-    if global_dir.is_dir() {
-        dirs.push((global_dir, "global"));
+    let claude_global =
+        crate::engine::engine_home(Some("CLAUDE_CONFIG_DIR"), ".claude").join("skills");
+    if claude_global.is_dir() {
+        dirs.push((claude_global, "global"));
     }
+    let codex_home = crate::engine::engine_home(Some("CODEX_HOME"), ".codex");
+    let codex_skills = codex_home.join("skills");
+    // `.system` holds Codex's built-in skills one level deeper than the
+    // personal ones; both are global scope.
+    for dir in [codex_skills, codex_home.join("skills").join(".system")] {
+        if dir.is_dir() {
+            dirs.push((dir, "global"));
+        }
+    }
+    let agents_dir = crate::engine::engine_home(None, ".agents").join("skills");
+    if agents_dir.is_dir() {
+        dirs.push((agents_dir, "global"));
+    }
+    dirs.extend(codex_plugin_skills_dirs(&codex_home));
     dirs
+}
+
+/// Codex plugin skills: each plugin ships a `skills/` directory inside its
+/// version dir under `plugins/cache`, and the nesting between `cache` and
+/// the version dir isn't fixed — walk the tree (bounded) and collect every
+/// `skills` directory found.
+fn codex_plugin_skills_dirs(codex_home: &Path) -> Vec<(PathBuf, &'static str)> {
+    let cache = codex_home.join("plugins").join("cache");
+    let mut out: Vec<(PathBuf, &'static str)> = Vec::new();
+    let mut stack = vec![(cache, 0usize)];
+    while let Some((dir, depth)) = stack.pop() {
+        if depth > 8 {
+            continue;
+        }
+        let entries = match std::fs::read_dir(&dir) {
+            Ok(entries) => entries,
+            Err(_) => continue,
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            let is_dir = std::fs::metadata(&path)
+                .map(|meta| meta.is_dir())
+                .unwrap_or(false);
+            if !is_dir {
+                continue;
+            }
+            if entry.file_name() == "skills" {
+                out.push((path, "plugin"));
+            } else {
+                stack.push((path, depth + 1));
+            }
+        }
+    }
+    out.sort();
+    out
 }
 
 /// Discover skills directly under a skills dir: each child directory with
@@ -410,5 +464,26 @@ mod tests {
         assert!(entries.iter().all(|e| e.kind == SlashEntryKind::Skill));
         assert_eq!(entries[0].description.as_deref(), Some("审查代码"));
         assert!(entries.iter().all(|e| e.argument_hint.is_none()));
+    }
+
+    #[test]
+    fn collects_plugin_skills_dirs_at_any_nesting() {
+        let root = scratch_dir("plugin-cache");
+        let cache = root.join("plugins").join("cache");
+        // Two layouts seen in the wild: cache/<plugin>/<version>/skills and
+        // cache/<marketplace>/<plugin>/<version>/skills.
+        let flat = cache.join("gsd").join("1.2.0").join("skills");
+        let nested = cache.join("market").join("aimax").join("0.3.1").join("skills");
+        fs::create_dir_all(&flat).unwrap();
+        fs::create_dir_all(&nested).unwrap();
+        // A `skills` file (not dir) and a version dir without skills are ignored.
+        fs::write(cache.join("gsd").join("skills"), "not a dir").unwrap();
+        fs::create_dir_all(cache.join("empty").join("9.9.9")).unwrap();
+
+        let dirs = codex_plugin_skills_dirs(&root);
+        let paths: Vec<&Path> = dirs.iter().map(|(p, _)| p.as_path()).collect();
+        assert_eq!(paths, vec![flat.as_path(), nested.as_path()]);
+        assert!(dirs.iter().all(|(_, source)| *source == "plugin"));
+        assert!(codex_plugin_skills_dirs(&root.join("missing")).is_empty());
     }
 }

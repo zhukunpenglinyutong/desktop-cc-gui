@@ -138,10 +138,15 @@ pub(crate) fn info_for(plugins_dir: &Path, id: &str, record: &PluginRecord) -> P
 /// while its `.backup-<id>` survives, the crash hit between the two swap
 /// renames, so the backup is renamed back before proceeding (see
 /// heal_crash_window).
+///
+/// `source_kind` is the record's origin tag ("local" directory pick,
+/// "marketplace" download, …) — the bits flow through the same transaction
+/// regardless of where they came from.
 pub(crate) fn install_from(
     plugins_dir: &Path,
     state_path: &Path,
     source: &Path,
+    source_kind: &str,
     on_progress: impl Fn(crate::event_sink::InstallProgress),
 ) -> Result<PluginInfo, String> {
     if !source.is_dir() {
@@ -227,9 +232,9 @@ pub(crate) fn install_from(
     let record = {
         let _guard = STATE_LOCK.lock();
         let mut state = read_state(state_path)?;
-        let record = mutate_record(&mut state, &id, "local", |record| {
+        let record = mutate_record(&mut state, &id, source_kind, |record| {
             record.version = manifest.version.clone();
-            record.source = "local".to_string();
+            record.source = source_kind.to_string();
             record.permissions = manifest.permissions.clone();
             record.quarantined = false;
             record.last_error = None;
@@ -289,7 +294,7 @@ mod tests {
         write_plugin(&source, &valid_manifest("cool-plugin"));
         std::fs::write(source.join("main.js"), "v1").unwrap();
 
-        let info = install_from(&plugins_dir, &state_path, &source, |_| {}).unwrap();
+        let info = install_from(&plugins_dir, &state_path, &source, "local", |_| {}).unwrap();
         assert_eq!(info.id, "cool-plugin");
         assert_eq!(info.name, "Test");
         assert_eq!(info.version, "1.2.3");
@@ -312,7 +317,7 @@ mod tests {
             &source_v2,
             r#"{"id":"cool-plugin","name":"Test","version":"2.0.0","tier":"declarative"}"#,
         );
-        let info = install_from(&plugins_dir, &state_path, &source_v2, |_| {}).unwrap();
+        let info = install_from(&plugins_dir, &state_path, &source_v2, "local", |_| {}).unwrap();
         assert_eq!(info.version, "2.0.0");
         assert!(!info.enabled);
         assert!(!plugins_dir.join(".backup-cool-plugin").exists());
@@ -333,7 +338,7 @@ mod tests {
             &source,
             r#"{"id":"bad plugin!","name":"T","version":"1.0.0","tier":"declarative"}"#,
         );
-        let error = install_from(&plugins_dir, &state_path, &source, |_| {}).unwrap_err();
+        let error = install_from(&plugins_dir, &state_path, &source, "local", |_| {}).unwrap_err();
         assert!(error.contains("invalid plugin id"));
         // Rollback: no target, no staging, no state record.
         assert!(!plugins_dir.exists() || std::fs::read_dir(&plugins_dir).unwrap().next().is_none());

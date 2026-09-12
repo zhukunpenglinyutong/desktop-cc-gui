@@ -7,7 +7,6 @@
 
 use std::path::PathBuf;
 
-#[cfg(not(target_os = "macos"))]
 use std::process::Stdio;
 
 #[cfg(target_os = "macos")]

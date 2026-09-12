@@ -4,6 +4,7 @@ import FolderInput from "lucide-react/dist/esm/icons/folder-input";
 import Loader2 from "lucide-react/dist/esm/icons/loader-2";
 import Trash2 from "lucide-react/dist/esm/icons/trash-2";
 import { Switch } from "@/components/base/switch/switch";
+import { isWeb } from "@/lib/platform";
 import {
   SettingsCard,
   SettingsSectionLabel,
@@ -12,6 +13,7 @@ import { cx } from "@/utils/cx";
 import { ConfirmDialog } from "@/components/dialogs";
 import type { PluginInfo } from "@/lib/ipc";
 import { usePluginsStore, usePluginStates } from "./usePlugins";
+import { useMarketplaceStore } from "../marketplace/store";
 
 const BADGE =
   "rounded-md bg-background-secondary-default px-1.5 py-0.5 text-xs text-text-secondary";
@@ -22,6 +24,9 @@ function PluginRow({ plugin }: { plugin: PluginInfo }) {
   const setEnabled = usePluginsStore((s) => s.setEnabled);
   const uninstall = usePluginsStore((s) => s.uninstall);
   const runtime = states.find((s) => s.id === plugin.id);
+  const update = useMarketplaceStore((s) => s.updates.find((u) => u.id === plugin.id));
+  const installing = useMarketplaceStore((s) => s.installing);
+  const installUpdate = useMarketplaceStore((s) => s.install);
 
   const stateText =
     runtime?.state === "quarantined"
@@ -72,6 +77,21 @@ function PluginRow({ plugin }: { plugin: PluginInfo }) {
           isSelected={plugin.enabled}
           onChange={(next) => void setEnabled(plugin, next)}
         />
+        {update && (
+          <button
+            type="button"
+            disabled={!!installing || isWeb}
+            title={isWeb ? t("plugins.market.desktopOnly") : undefined}
+            onClick={() => void installUpdate(plugin.id)}
+            className="flex cursor-pointer items-center gap-1 rounded-lg bg-background-secondary-default whitespace-nowrap px-2.5 py-1.5 text-body-medium text-text-primary transition-colors hover:bg-background-secondary-hover disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {installing?.id === plugin.id ? (
+              <Loader2 className="size-4 animate-spin" aria-hidden />
+            ) : (
+              t("plugins.market.updateTo", { version: update.latestVersion })
+            )}
+          </button>
+        )}
         {plugin.source !== "builtin" && (
           <button
             type="button"
@@ -108,6 +128,9 @@ export default function PluginsSection() {
 
   useEffect(() => {
     void refresh();
+    // Update badges on marketplace rows ride the same 1h index cache; a
+    // failed check just leaves the list empty, so fire and forget.
+    void useMarketplaceStore.getState().checkUpdates();
   }, [refresh]);
 
   return (
@@ -151,7 +174,6 @@ export default function PluginsSection() {
           installed.map((plugin) => <PluginRow key={plugin.id} plugin={plugin} />)
         )}
       </SettingsCard>
-      <p className="text-body-medium text-text-tertiary">{t("plugins.marketHint")}</p>
     </div>
   );
 }

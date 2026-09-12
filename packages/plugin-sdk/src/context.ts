@@ -106,6 +106,11 @@ export interface PluginContext {
     on(topic: string, cb: (data: unknown) => void): Disposer;
     emit(topic: string, data: unknown): void;
   };
+  /** 聊天输入框（composer）草稿写入（权限 `composer:draft`，0.3.2 起）。
+   *  写入即替换当前活动会话的草稿；不触发发送——发送永远是用户动作。 */
+  composer: {
+    setDraft(text: string): void;
+  };
   /** 通用能力出口（0.3.0 起；旧的 `cmd:<command>` 逐命令授权机制已删除）。
    *  仅四条命令，`pluginId` 由宿主自动注入（插件无需也不能传）：
    *

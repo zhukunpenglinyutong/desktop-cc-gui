@@ -1,6 +1,9 @@
 # @ccgui/plugin-sdk changelog
 
-## Unreleased (0.3.2)
+## 0.3.2 — 2026-09-12
+- **新增能力**：`ctx.composer.setDraft(text)`（权限 `composer:draft`）——写入当前活动会话的
+  聊天输入框草稿；替换语义，不触发发送。配合既有 `composer://draft` 事件（host→plugin）构成
+  草稿的双向通道；react-doctor 的「一键修复」填入修复提示词即首个消费者。
 
 - **spec 单一事实源**：`KNOWN_PERMISSIONS` 改为从包内 `spec/permissions.json` 生成；
   授权形状/放行测试向量由 TS、Rust（include_str!）、模板校验脚本三方共享，漂移在 CI 暴露。

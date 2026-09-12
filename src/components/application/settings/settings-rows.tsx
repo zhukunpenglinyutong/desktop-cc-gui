@@ -44,10 +44,13 @@ export function SettingsSectionLabel({ className, children }: { className?: stri
 /** One label + control row. Rows separate themselves; the last has no border. */
 export function SettingsRow({
   label,
+  labelAdornment,
   description,
   children,
 }: {
   label: string;
+  /** Rendered right after the label text (hint icon, badge, …). */
+  labelAdornment?: ReactNode;
   description?: string;
   children?: ReactNode;
 }) {
@@ -59,7 +62,10 @@ export function SettingsRow({
       )}
     >
       <div className="flex min-w-0 flex-col">
-        <p className="text-body-regular text-text-primary">{label}</p>
+        <div className="flex items-center gap-1.5">
+          <p className="text-body-regular text-text-primary">{label}</p>
+          {labelAdornment}
+        </div>
         {description && (
           <p className="truncate text-body-2-regular text-text-secondary" title={description}>
             {description}

@@ -21,6 +21,7 @@ pub mod settings;
 pub mod usage;
 pub mod slash_commands;
 pub mod terminal;
+pub mod relay;
 pub mod web;
 
 use std::sync::Arc;
@@ -35,7 +36,8 @@ pub struct AppState {
     pub terminals: terminal::TerminalRegistry,
     pub processes: Arc<engine::ProcessRegistry>,
     pub web: web::WebAccessState,
-    pub dsh_host: dsh_host::DshHostState,
+    pub relay: relay::RelayState,
+    pub dsh_host: std::sync::Arc<dsh_host::DshHostState>,
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -89,7 +91,8 @@ pub fn run() {
                 terminals: terminal::TerminalRegistry::default(),
                 processes: Arc::new(engine::ProcessRegistry::default()),
                 web: web::WebAccessState::default(),
-                dsh_host: dsh_host::DshHostState::default(),
+                relay: relay::RelayState::default(),
+                dsh_host: std::sync::Arc::new(dsh_host::DshHostState::default()),
             };
             // Clone what the initial scan needs before state moves into manage.
             let scan_db = Arc::clone(&state.db);
@@ -102,6 +105,19 @@ pub fn run() {
             app.manage(config::ConfigStore::default());
             app.manage(metrics::MetricsState::new());
             app.manage(baidu_tongji::BaiduTongjiState::load());
+            // Keep the pairing key from lingering: while the switch is on, a
+            // fresh code is minted every ten minutes and broadcast.
+            {
+                let handle = app.handle().clone();
+                tauri::async_runtime::spawn(async move {
+                    let mut interval =
+                        tokio::time::interval(std::time::Duration::from_secs(600));
+                    loop {
+                        interval.tick().await;
+                        let _ = crate::settings::rotate_web_auth_key(&handle);
+                    }
+                });
+            }
             // Initial history scan, non-blocking.
             history::scanner::spawn_scan(scan_db, scan_sink);
             // DSH host autostart: adopt-or-spawn in the background when
@@ -175,6 +191,10 @@ pub fn run() {
             plugins::plugin_storage_get,
             plugins::plugin_storage_set,
             plugins::plugin_storage_delete,
+            // plugin marketplace (Phase 3, plan §6)
+            plugins::market::plugin_fetch_index,
+            plugins::market::plugin_install_from_marketplace,
+            plugins::market::plugin_check_updates,
             // engine
             engine::send_message,
             engine::interrupt_session,
@@ -196,6 +216,7 @@ pub fn run() {
             history::reader::delete_session,
             history::reader::pin_session,
             history::reader::rename_session,
+            history::reader::remember_session_model,
             history::reader::rescan_sessions,
             history::reader::list_workspaces,
             history::reader::add_workspace,
@@ -255,6 +276,22 @@ pub fn run() {
             web::web_access_start,
             web::web_access_stop,
             web::web_access_status,
+            // Device rows: the bridge already dispatched these for phones,
+            // but the desktop page invokes them over IPC too — without this
+            // registration its list silently stayed empty.
+            web::web_devices,
+            web::web_device_approve,
+            web::web_device_rename,
+            web::web_device_revoke,
+            // Key rotation stays desktop-only: a phone rotating it would lock
+            // every other device out.
+            web::rotate_web_pair_key,
+            web::remote_control_active,
+            relay::web_relay_start,
+            relay::web_relay_stop,
+            relay::web_relay_status,
+            relay::relay_deploy_pack,
+            relay::relay_deploy,
             // dsh host + managed-CLI lifecycle
             dsh_host::dsh_host_status,
             dsh_host::dsh_host_start,

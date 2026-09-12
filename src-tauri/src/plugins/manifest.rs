@@ -80,7 +80,7 @@ pub(crate) fn require_valid_id(id: &str) -> Result<(), String> {
 
 /// Numeric semver triple; anything fancier (prerelease, build metadata) is
 /// rejected — manifests pin plain `x.y.z`.
-fn semver_triple(v: &str) -> Option<(u64, u64, u64)> {
+pub(crate) fn semver_triple(v: &str) -> Option<(u64, u64, u64)> {
     let mut parts = v.split('.');
     let major = parts.next()?.parse().ok()?;
     let minor = parts.next()?.parse().ok()?;

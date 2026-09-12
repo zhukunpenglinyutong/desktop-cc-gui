@@ -93,6 +93,7 @@ export default function ChatPage() {
     handleTabSelect,
     handleTabClose,
     handleTabCloseAll,
+    handleTabCloseInactive,
     handleTabReorder,
     sessionById,
     threadStreaming,
@@ -204,6 +205,7 @@ export default function ChatPage() {
           onSelect={handleTabSelect}
           onClose={handleTabClose}
           onCloseAll={handleTabCloseAll}
+          onCloseInactive={handleTabCloseInactive}
           closeLabel={t("common.close")}
           onReorder={handleTabReorder}
           onNew={handleNewSession}

@@ -75,6 +75,7 @@ function EngineRow({
   selected,
   flyoutOpen,
   onSelect,
+  onHover,
 }: {
   option: MenuOption;
   selected: boolean;
@@ -83,6 +84,9 @@ function EngineRow({
   /** Row click: show this engine's model list (the engine itself switches
    *  when a model is picked there). */
   onSelect: () => void;
+  /** Pointer enter / keyboard focus: pre-open this engine's model flyout
+   *  (desktop only; mobile passes nothing). */
+  onHover?: () => void;
 }) {
   return (
     <button
@@ -91,6 +95,8 @@ function EngineRow({
       title={option.disabled ? option.disabledReason : undefined}
       aria-pressed={selected}
       onClick={onSelect}
+      onMouseEnter={onHover}
+      onFocus={onHover}
       className={cx(
         "flex w-full cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 outline-none transition-colors",
         selected || flyoutOpen
@@ -234,6 +240,7 @@ function EngineMenuBody({
   onQueryChange,
   isMobile,
   onSelectEngine,
+  onHoverEngine,
   onPickModel,
   onEffortChange,
   ompServiceTier,
@@ -254,6 +261,8 @@ function EngineMenuBody({
   onQueryChange: (value: string) => void;
   isMobile: boolean;
   onSelectEngine: (option: MenuOption) => void;
+  /** Row hover/focus: pre-open this engine's model flyout. */
+  onHoverEngine: (option: MenuOption) => void;
   onPickModel: (engine: string, id: string) => void;
   onEffortChange: (engine: string, level: EffortLevel) => void;
   ompServiceTier: OmpServiceTier;
@@ -277,13 +286,14 @@ function EngineMenuBody({
                   className="-mx-1 my-1 border-t border-separator-border"
                 />
               )}
-              {/* Not `disabled`: that attribute would swallow the click
-                  that switches the panel. */}
+              {/* Not `disabled`: that attribute would swallow the hover and
+                  click events that switch the panel. */}
               <EngineRow
                 option={option}
                 selected={option.id === value}
                 flyoutOpen={option.id === openEngine}
                 onSelect={() => onSelectEngine(option)}
+                onHover={isMobile ? undefined : () => onHoverEngine(option)}
               />
             </Fragment>
           ))}
@@ -461,6 +471,16 @@ export function CliMenu({
     if (!isMobile) setOpenEngine(engine);
   };
 
+  // Hover (and keyboard focus) pre-open the hovered engine's flyout without
+  // touching the active engine. Engines without a catalog have nothing to
+  // preview — they stay click-to-switch so a stray pointer can't change
+  // the engine or close the menu.
+  const hoverEngine = (option: MenuOption) => {
+    if (option.disabled) return;
+    if ((modelsByEngine[option.id] ?? []).length === 0) return;
+    setOpenEngine(option.id);
+  };
+
   const selectEngine = (option: MenuOption) => {
     // Mobile: the row tap drills into the second-level model dialog instead
     // of switching engines outright — the engine switches when a model is
@@ -474,7 +494,8 @@ export function CliMenu({
     // Desktop: the row switches WHICH model list is shown, nothing more. The
     // engine itself changes when a model is picked from that list (see
     // pickModel), so browsing another CLI can never yank the panel away
-    // mid-search — a pointer crossing the column does nothing at all.
+    // mid-search — hovering a row only pre-opens that engine's list, and
+    // the shared search query survives the switch.
     // An engine with no catalog has nothing to browse: keep the old
     // behaviour of switching outright.
     if ((modelsByEngine[option.id] ?? []).length === 0) {
@@ -521,6 +542,7 @@ export function CliMenu({
             onQueryChange={setQuery}
             isMobile={isMobile}
             onSelectEngine={selectEngine}
+            onHoverEngine={hoverEngine}
             onPickModel={pickModel}
             onEffortChange={onEffortChange}
             ompServiceTier={ompServiceTier}

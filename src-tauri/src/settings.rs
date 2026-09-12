@@ -52,6 +52,20 @@ pub struct AppSettings {
     /// Per-app Codex Fast override (`service_tier`); None preserves ~/.codex.
     #[serde(default)]
     pub codex_service_tier: Option<String>,
+    /// Require a pairing key before the bridge serves a browser (设置 → 远程
+    /// 访问 → 启用授权). Off by default: on the LAN the token URL is enough.
+    #[serde(default)]
+    pub web_auth_enabled: bool,
+    /// 8-character pairing key, generated when the switch is turned on.
+    #[serde(default)]
+    pub web_auth_key: Option<String>,
+    /// Worker base URL for the outbound relay (设置 → 远程访问 → 外网访问),
+    /// e.g. https://ccgui-relay.<account>.workers.dev.
+    #[serde(default)]
+    pub web_relay_url: Option<String>,
+    /// Shared key the relay worker checks.
+    #[serde(default)]
+    pub web_relay_key: Option<String>,
     /// Max sessions shown per workspace in the sidebar before collapsing
     /// behind a "show more" row.
     #[serde(default = "default_sidebar_thread_limit")]
@@ -102,6 +116,17 @@ fn default_language() -> String {
     "zh".to_string()
 }
 
+/// Random 8-character pairing key: no vowels and no look-alikes, so it can
+/// be read out loud and typed on a phone without ambiguity.
+pub fn generate_pair_key() -> String {
+    const ALPHABET: &[u8] = b"23456789BCDFGHJKLMNPQRSTVWXZ";
+    let mut out = String::with_capacity(8);
+    for _ in 0..8 {
+        out.push(ALPHABET[uuid::Uuid::new_v4().as_bytes()[0] as usize % ALPHABET.len()] as char);
+    }
+    out
+}
+
 impl Default for AppSettings {
     fn default() -> Self {
         Self {
@@ -109,6 +134,10 @@ impl Default for AppSettings {
             workspace_groups: Vec::new(),
             workspace_aliases: HashMap::new(),
             archived_workspaces: Vec::new(),
+            web_auth_enabled: false,
+            web_auth_key: None,
+            web_relay_url: None,
+            web_relay_key: None,
             language: default_language(),
             default_models: HashMap::new(),
             custom_models: HashMap::new(),
@@ -389,6 +418,17 @@ pub fn update_app_settings<R: tauri::Runtime>(
     app: tauri::AppHandle<R>,
     mut settings: AppSettings,
 ) -> Result<(), String> {
+    let result = persist_settings(&mut settings);
+    // Other surfaces (the composer's proxy toggle) follow along without
+    // re-reading settings.json.
+    let _ = app.emit("settings://changed", ());
+    result
+}
+
+/// Validate + persist + apply. Shared by the UI command and internal writers
+/// (key rotation); on Err the settings were still written, and the message
+/// names what was rejected.
+pub fn persist_settings(settings: &mut AppSettings) -> Result<(), String> {
     if settings
         .omp_openai_service_tier
         .as_deref()
@@ -402,6 +442,11 @@ pub fn update_app_settings<R: tauri::Runtime>(
         .is_some_and(|tier| !matches!(tier, "default" | "priority"))
     {
         return Err("Invalid Codex service tier".to_string());
+    }
+    if settings.web_auth_enabled && settings.web_auth_key.is_none() {
+        settings.web_auth_key = Some(generate_pair_key());
+    } else if !settings.web_auth_enabled {
+        settings.web_auth_key = None;
     }
     // Reject only the offending bin-override fields: the rest of the settings
     // still persist, and the error names what was dropped.
@@ -440,14 +485,82 @@ pub fn update_app_settings<R: tauri::Runtime>(
     atomic_write(&path, &content)?;
     // Apply to this process's env so the next spawned child inherits it.
     crate::proxy::apply_app_proxy_settings(&settings)?;
-    // Other surfaces (the composer's proxy toggle) follow along without
-    // re-reading settings.json.
-    let _ = app.emit("settings://changed", ());
     if rejected.is_empty() {
         Ok(())
     } else {
         Err(format!("rejected settings: {}", rejected.join("; ")))
     }
+}
+
+/// A submitted pairing key is accepted only when one is configured and the two
+/// match, case-insensitively (the caller normalises the form field). The cases
+/// that must never pass — no key configured, an empty submission, the
+/// `--------` the UI shows while authorization is off — are pinned by a test.
+pub(crate) fn pairing_key_matches(expected: &str, submitted: &str) -> bool {
+    !expected.is_empty() && !submitted.is_empty() && submitted.eq_ignore_ascii_case(expected)
+}
+
+/// Serialises the read-modify-write of the pairing key. settings.json has no
+/// other guard, so without this two devices posting the same code both read it
+/// before either rotation lands, and one code pairs both of them.
+static PAIR_KEY_LOCK: parking_lot::Mutex<()> = parking_lot::Mutex::new(());
+
+/// Spend the pairing key on one device: rotates `settings` in place and
+/// answers whether the browser may be admitted. Pure, so the property that
+/// matters — a code opens exactly one pairing — is pinned by a test without a
+/// running app; `consume_web_auth_key` adds the lock and the disk round-trip.
+fn spend_pair_key(settings: &mut AppSettings, submitted: &str) -> bool {
+    if !settings.web_auth_enabled {
+        return false;
+    }
+    if !pairing_key_matches(
+        settings.web_auth_key.as_deref().unwrap_or_default(),
+        submitted,
+    ) {
+        return false;
+    }
+    settings.web_auth_key = Some(generate_pair_key());
+    true
+}
+
+/// Spend the pairing key on one device: compare and rotate under a single
+/// lock, so a code is good for exactly one pairing. `false` means the browser
+/// must not be admitted — wrong key, or the switch is off and there is nothing
+/// to pair with.
+pub fn consume_web_auth_key(app: &tauri::AppHandle, submitted: &str) -> Result<bool, String> {
+    let _guard = PAIR_KEY_LOCK.lock();
+    let mut settings = read_settings()?;
+    if !spend_pair_key(&mut settings, submitted) {
+        return Ok(false);
+    }
+    persist_settings(&mut settings)?;
+    announce_settings(app);
+    Ok(true)
+}
+
+/// Rotate the pairing key (only when the switch is on) and tell every surface
+/// that settings moved. Used on a timer and by the 换一个 button, so a code
+/// never lingers even when nobody pairs with it.
+pub fn rotate_web_auth_key(app: &tauri::AppHandle) -> Result<(), String> {
+    let _guard = PAIR_KEY_LOCK.lock();
+    let mut settings = read_settings()?;
+    if !settings.web_auth_enabled {
+        return Ok(());
+    }
+    settings.web_auth_key = Some(generate_pair_key());
+    persist_settings(&mut settings)?;
+    announce_settings(app);
+    Ok(())
+}
+
+/// Through the sink: the webview *and* every browser attached over the bridge
+/// must see the new code, or a phone would keep showing one that is spent.
+fn announce_settings(app: &tauri::AppHandle) {
+    use crate::event_sink::Emit;
+    use tauri::Manager;
+    app.state::<crate::AppState>()
+        .emitters
+        .emit_json("settings://changed", "null");
 }
 
 #[cfg(test)]
@@ -631,6 +744,52 @@ mod tests {
         )
         .unwrap();
         assert!(!scratch.path("settings.json").exists());
+    }
+
+    /// The key box shows `--------` while authorization is off; a placeholder
+    /// (or an empty field, or no configured key at all) must never pair.
+    #[test]
+    fn pairing_key_rejects_placeholders() {
+        assert!(pairing_key_matches("BCDF2345", "bcdf2345"));
+        assert!(!pairing_key_matches("BCDF2345", "--------"));
+        assert!(!pairing_key_matches("BCDF2345", ""));
+        assert!(!pairing_key_matches("", "--------"));
+        assert!(!pairing_key_matches("", ""));
+        assert!(!pairing_key_matches("BCDF2345", "BCDF2346"));
+    }
+
+    /// The property the relay's whole gate rests on: a code opens exactly one
+    /// pairing. The second device replaying the same string must be turned
+    /// away, and the switch being off must admit nobody at all.
+    #[test]
+    fn a_pairing_key_is_spent_by_the_first_device() {
+        let mut settings = AppSettings {
+            web_auth_enabled: true,
+            web_auth_key: Some("BCDF2345".to_string()),
+            ..AppSettings::default()
+        };
+
+        assert!(
+            spend_pair_key(&mut settings, "bcdf2345"),
+            "the first device pairs"
+        );
+        let fresh = settings.web_auth_key.clone().unwrap();
+        assert_ne!(fresh, "BCDF2345", "pairing mints a new code");
+        assert!(
+            !spend_pair_key(&mut settings, "BCDF2345"),
+            "the spent code never pairs a second device"
+        );
+        assert_eq!(
+            settings.web_auth_key.as_deref(),
+            Some(fresh.as_str()),
+            "a rejected attempt leaves the live code alone"
+        );
+
+        settings.web_auth_enabled = false;
+        assert!(
+            !spend_pair_key(&mut settings, &fresh),
+            "with the switch off there is nothing to pair with"
+        );
     }
 }
 #[tauri::command]

@@ -2,7 +2,7 @@ import { convertFileSrc, invoke as tauriInvoke } from "@tauri-apps/api/core";
 import { getVersion } from "@tauri-apps/api/app";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { open as openDialog } from "@tauri-apps/plugin-dialog";
+import { open as openDialog, save as saveDialog } from "@tauri-apps/plugin-dialog";
 import { isWeb, serverVersion, webToken } from "./transport";
 
 export { isWeb } from "./transport";
@@ -90,6 +90,16 @@ export async function pickFile(
   const selected = await openDialog({ multiple: false, title, filters });
   const path = Array.isArray(selected) ? selected[0] : selected;
   return path ?? null;
+}
+
+/**
+ * Save dialog: where an exported file should be written. Desktop-only — web
+ * mode has no filesystem dialog, so it returns null and the caller stays
+ * silent rather than inventing a path.
+ */
+export async function pickSavePath(title: string, defaultPath: string): Promise<string | null> {
+  if (isWeb) return null;
+  return (await saveDialog({ title, defaultPath })) ?? null;
 }
 /**
  * Multi-file picker: native dialog on desktop; on web there is no filesystem

@@ -3,6 +3,7 @@ pub mod codex;
 mod codex_provider_env;
 mod codex_usage;
 pub mod dsh;
+mod dsh_session;
 pub mod grok;
 pub mod images;
 pub mod kimi;
@@ -402,6 +403,13 @@ pub trait Engine: Send + Sync {
     fn build_command(&self, req: &SendRequest, bin: &str) -> Result<BuiltCommand, String>;
     /// Parse one NDJSON stdout line into zero or more events.
     fn parse_line(&self, line: &str, out: &mut Vec<EngineEvent>);
+    /// True when the engine drives its own transport (e.g. a host WS session)
+    /// instead of spawning a child process. send_message routes these to a
+    /// virtual run: no spawn, no pid — the registry entry carries only the
+    /// abort handle, and the transport task settles the turn itself.
+    fn drives_own_transport(&self) -> bool {
+        false
+    }
     /// Whether this engine accepts image attachments.
     fn supports_images(&self) -> bool;
     /// Permission modes this engine can honor at spawn ("auto" | "manual" |
@@ -496,7 +504,11 @@ pub(crate) fn push_session_id(value: &Value, key: &str, out: &mut Vec<EngineEven
 /// `rekey`) — so either route can interrupt it.
 #[derive(Clone)]
 pub struct ChildEntry {
-    pub child: Arc<TokioMutex<Child>>,
+    /// The child process. `None` for virtual runs (host-stream engines): the
+    /// entry then only routes interrupt to the transport task via `killed` /
+    /// `reader_abort`, and `pid` is a synthetic identity token (see
+    /// `next_virtual_pid`), never a real process id.
+    pub child: Option<Arc<TokioMutex<Child>>>,
     pub pid: u32,
     /// The run id this entry started under; after a rekey the map key is the
     /// native session id, but the frontend may still cancel by run id.
@@ -575,9 +587,14 @@ impl ProcessRegistry {
     }
 
     /// Kill one entry (pid-reuse guarded). Returns false when the child was
-    /// already reaped — nothing left to signal.
-    fn kill_entry(pid: u32, child: &Arc<TokioMutex<tokio::process::Child>>, killed: &Arc<std::sync::atomic::AtomicBool>) -> bool {
+    /// already reaped — nothing left to signal. Virtual runs (no child) only
+    /// raise the killed flag: the transport task observes it on its next
+    /// loop tick, cancels the host-side turn, and settles the turn itself.
+    fn kill_entry(child: Option<&Arc<TokioMutex<tokio::process::Child>>>, pid: u32, killed: &Arc<std::sync::atomic::AtomicBool>) -> bool {
         killed.store(true, std::sync::atomic::Ordering::SeqCst);
+        let Some(child) = child else {
+            return true;
+        };
         if let Ok(mut guard) = child.try_lock() {
             // Pid-reuse guard: a reaped child's pid may already belong to
             // someone else — never signal a group we no longer own.
@@ -602,14 +619,14 @@ impl ProcessRegistry {
     /// several parallel runs must all die on a single stop, or the survivors
     /// keep streaming and fight the next run over the session file.
     pub fn kill(&self, key: &str) -> bool {
-        let mut entries: Vec<(u32, Arc<TokioMutex<tokio::process::Child>>, Arc<std::sync::atomic::AtomicBool>, Arc<std::sync::OnceLock<tokio::task::AbortHandle>>)> =
+        let mut entries: Vec<(u32, Option<Arc<TokioMutex<tokio::process::Child>>>, Arc<std::sync::atomic::AtomicBool>, Arc<std::sync::OnceLock<tokio::task::AbortHandle>>)> =
             match self.0.lock() {
                 Ok(map) => {
                     let mut seen_pids = std::collections::HashSet::new();
                     map.iter()
                         .filter(|(k, e)| *k == key || e.run_id == key)
                         .filter(|(_, e)| seen_pids.insert(e.pid))
-                        .map(|(_, e)| (e.pid, Arc::clone(&e.child), Arc::clone(&e.killed), Arc::clone(&e.reader_abort)))
+                        .map(|(_, e)| (e.pid, e.child.clone(), Arc::clone(&e.killed), Arc::clone(&e.reader_abort)))
                         .collect()
                 }
                 Err(_) => Vec::new(),
@@ -624,7 +641,7 @@ impl ProcessRegistry {
         // aggregate kill exists to fix.
         let mut killed_any = false;
         for (pid, child, killed, _) in &entries {
-            killed_any |= Self::kill_entry(*pid, child, killed);
+            killed_any |= Self::kill_entry(child.as_ref(), *pid, killed);
         }
         // Backstop for a child that ignores SIGKILL (uninterruptible
         // sleep): its reader parks on wait() after EOF, pinning the Arcs it
@@ -658,9 +675,13 @@ impl ProcessRegistry {
         entries.sort_by_key(|e| e.pid);
         entries.dedup_by_key(|e| e.pid);
         for entry in entries {
-            kill_process_group(entry.pid);
-            if let Ok(mut guard) = entry.child.try_lock() {
-                let _ = guard.start_kill();
+            // Virtual runs own no process group; their task aborts below/via
+            // the abort handle.
+            if let Some(child) = entry.child.as_ref() {
+                kill_process_group(entry.pid);
+                if let Ok(mut guard) = child.try_lock() {
+                    let _ = guard.start_kill();
+                }
             }
             // Teardown: abort the reader outright so it drops its
             // registry/sink Arcs now instead of parking on wait() past
@@ -683,9 +704,13 @@ impl Drop for ProcessRegistry {
         entries.sort_by_key(|e| e.pid);
         entries.dedup_by_key(|e| e.pid);
         for entry in entries {
-            kill_process_group(entry.pid);
-            if let Ok(mut guard) = entry.child.try_lock() {
-                let _ = guard.start_kill();
+            // Virtual runs own no process group; their task aborts below/via
+            // the abort handle.
+            if let Some(child) = entry.child.as_ref() {
+                kill_process_group(entry.pid);
+                if let Ok(mut guard) = child.try_lock() {
+                    let _ = guard.start_kill();
+                }
             }
         }
     }
@@ -905,7 +930,19 @@ fn prepare_launch(
             .collect(),
     };
     let bin = engine_bin(&settings, engine);
-    let built = engine_impl.build_command(&req, &bin)?;
+    // Host-stream engines never spawn: hand back a placeholder command so
+    // prepare_launch stays shape-compatible; send_message branches to the
+    // virtual path before anything would touch it.
+    let built = if engine_impl.drives_own_transport() {
+        BuiltCommand {
+            command: Command::new("unused-virtual-engine"),
+            stdin_payload: None,
+            cleanup_files: Vec::new(),
+            preassigned_session_id: None,
+        }
+    } else {
+        engine_impl.build_command(&req, &bin)?
+    };
     Ok(Launch {
         req,
         bin,
@@ -1004,11 +1041,8 @@ impl TurnState {
 
 /// Everything the stdout reader task needs (moved in at spawn).
 struct RunContext {
-    sink: Arc<event_sink::EventSink>,
-    registry: Arc<ProcessRegistry>,
+    core: TurnCore,
     engine_impl: Box<dyn Engine>,
-    engine_id: String,
-    run_id: String,
     pid: u32,
     /// Session id fixed before spawn (grok `-s`); seeds TurnState.
     preassigned_session_id: Option<String>,
@@ -1019,7 +1053,18 @@ struct RunContext {
     stderr_buf: Arc<Mutex<String>>,
 }
 
-impl RunContext {
+/// Event-routing core shared by process runs ([`RunContext`]) and virtual
+/// host-stream runs ([`dsh_session::run_host_turn`]): the fields
+/// `dispatch_event` needs to route engine events to the UI sink and keep the
+/// registry's session aliasing in step.
+pub(crate) struct TurnCore {
+    pub(crate) sink: Arc<event_sink::EventSink>,
+    pub(crate) registry: Arc<ProcessRegistry>,
+    pub(crate) engine_id: String,
+    pub(crate) run_id: String,
+}
+
+impl TurnCore {
     /// Adopt a native session id: rekey the registry entry (no overwrite) and
     /// remember it for subsequent event payloads.
     fn adopt_session_id(&self, state: &mut TurnState, id: &str, announce: bool) {
@@ -1178,6 +1223,12 @@ impl RunContext {
     }
 }
 
+impl RunContext {
+    fn dispatch_event(&self, state: &mut TurnState, event: EngineEvent) {
+        self.core.dispatch_event(state, event);
+    }
+}
+
 /// One line read from the engine's stdout, size-capped.
 enum LineRead {
     /// A complete line, newline terminator stripped (may be empty).
@@ -1242,7 +1293,7 @@ async fn run_reader(stdout: ChildStdout, ctx: RunContext) {
     // nothing, and one runaway line can't grow without bound.
     let mut reader = BufReader::new(stdout);
     let mut line_buf = Vec::new();
-    let is_codex = ctx.engine_id == "codex";
+    let is_codex = ctx.core.engine_id == "codex";
     let mut usage_tail: Option<codex_usage::UsageTail> = None;
     // Only the stream's own thread id (thread.started) may open the log: a
     // resumed run's preassigned id can name a thread the CLI is no longer
@@ -1292,7 +1343,7 @@ async fn run_reader(stdout: ChildStdout, ctx: RunContext) {
                     &mut state,
                     EngineEvent::Error(format!(
                         "{} emitted a line over {} MiB without a newline; run terminated",
-                        ctx.engine_id,
+                        ctx.core.engine_id,
                         MAX_LINE_BYTES / (1024 * 1024),
                     )),
                 );
@@ -1335,9 +1386,9 @@ async fn run_reader(stdout: ChildStdout, ctx: RunContext) {
     // Drain this run's registry entries: under the native session id after
     // rekey, and under the run id when the session id never arrived.
     if let Some(key) = state.native_session_id.clone() {
-        ctx.registry.remove_if_pid(&key, ctx.pid);
+        ctx.core.registry.remove_if_pid(&key, ctx.pid);
     }
-    ctx.registry.remove_if_pid(&ctx.run_id, ctx.pid);
+    ctx.core.registry.remove_if_pid(&ctx.core.run_id, ctx.pid);
     // omp writes some failures (upstream 403/5xx, quota exhaustion) to
     // stderr and then exits — sometimes cleanly, after a normal turn_end.
     // A non-empty stderr on a failed exit must reach the user even when a
@@ -1351,9 +1402,9 @@ async fn run_reader(stdout: ChildStdout, ctx: RunContext) {
     let failed = status.map(|s| !s.success()).unwrap_or(true);
     if failed && !state.saw_error && !stderr_tail.is_empty() {
         state.push(
-            &ctx.sink,
-            &ctx.run_id,
-            &ctx.engine_id,
+            &ctx.core.sink,
+            &ctx.core.run_id,
+            &ctx.core.engine_id,
             "warn",
             Value::String(format!("engine stderr: {stderr_tail}")),
         );
@@ -1365,16 +1416,16 @@ async fn run_reader(stdout: ChildStdout, ctx: RunContext) {
             // User-initiated stop: commit whatever streamed so far as a
             // normal turn end — a SIGKILL'd child is not a failure.
             state.push(
-                &ctx.sink,
-                &ctx.run_id,
-                &ctx.engine_id,
+                &ctx.core.sink,
+                &ctx.core.run_id,
+                &ctx.core.engine_id,
                 "done",
                 serde_json::json!({ "usage": null }),
             );
         } else if failed || !state.saw_any_output {
             let mut message = format!(
                 "{} exited with status {}",
-                ctx.engine_id,
+                ctx.core.engine_id,
                 status
                     .map(|s| s.to_string())
                     .unwrap_or_else(|| "unknown".to_string())
@@ -1383,24 +1434,24 @@ async fn run_reader(stdout: ChildStdout, ctx: RunContext) {
                 message.push_str(&format!(": {stderr_tail}"));
             }
             state.push(
-                &ctx.sink,
-                &ctx.run_id,
-                &ctx.engine_id,
+                &ctx.core.sink,
+                &ctx.core.run_id,
+                &ctx.core.engine_id,
                 "error",
                 Value::String(message),
             );
         } else {
             // Clean EOF without an explicit done line (kimi).
             state.push(
-                &ctx.sink,
-                &ctx.run_id,
-                &ctx.engine_id,
+                &ctx.core.sink,
+                &ctx.core.run_id,
+                &ctx.core.engine_id,
                 "done",
                 serde_json::json!({ "usage": null }),
             );
         }
     }
-    ctx.sink.flush();
+    ctx.core.sink.flush();
 }
 
 #[tauri::command]
@@ -1434,6 +1485,12 @@ pub async fn send_message(
         // (each send is a fresh process).
         state.db.granted_roots().unwrap_or_default(),
     )?;
+
+    // Host-stream engines drive their own transport: no child process — the
+    // registry entry only routes interrupts to the transport task.
+    if launch.engine_impl.drives_own_transport() {
+        return send_host_stream(state, launch, engine).await;
+    }
 
     let mut command = launch.built.command;
     if engine == "codex" {
@@ -1492,7 +1549,7 @@ pub async fn send_message(
     state.processes.insert(
         run_id.clone(),
         ChildEntry {
-            child: Arc::clone(&child),
+            child: Some(Arc::clone(&child)),
             pid,
             run_id: run_id.clone(),
             killed: Arc::clone(&killed),
@@ -1503,7 +1560,7 @@ pub async fn send_message(
         state.processes.insert_alias(
             session_id.to_string(),
             ChildEntry {
-                child: Arc::clone(&child),
+                child: Some(Arc::clone(&child)),
                 pid,
                 run_id: run_id.clone(),
                 killed: Arc::clone(&killed),
@@ -1525,11 +1582,13 @@ pub async fn send_message(
         launch.req.model.clone()
     };
     let ctx = RunContext {
-        sink: Arc::clone(&state.sink),
-        registry: Arc::clone(&state.processes),
+        core: TurnCore {
+            sink: Arc::clone(&state.sink),
+            registry: Arc::clone(&state.processes),
+            engine_id: engine.clone(),
+            run_id: run_id.clone(),
+        },
         engine_impl: launch.engine_impl,
-        engine_id: engine.clone(),
-        run_id: run_id.clone(),
         pid,
         preassigned_session_id: launch.built.preassigned_session_id.clone(),
         initial_model,
@@ -1546,6 +1605,63 @@ pub async fn send_message(
     Ok(SendResult {
         run_id,
         session_id: launch.built.preassigned_session_id,
+    })
+}
+
+/// Synthetic registry identity for virtual (host-stream) runs: they own no
+/// process, but the registry's dedup/remove paths are pid-keyed, so each run
+/// gets a unique token well above any real pid. Never passed to an OS call.
+fn next_virtual_pid() -> u32 {
+    static NEXT: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(u32::MAX / 2);
+    NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+}
+
+/// Virtual run path for engines that drive their own transport
+/// ([`Engine::drives_own_transport`]): register a child-less entry whose
+/// `killed` flag and abort handle route interrupts into the transport task,
+/// then detach it. The task dispatches the same event kinds as `run_reader`
+/// and settles the turn itself (done/error + registry cleanup).
+async fn send_host_stream(
+    state: tauri::State<'_, crate::AppState>,
+    launch: Launch,
+    engine: String,
+) -> Result<SendResult, String> {
+    let run_id = uuid::Uuid::new_v4().to_string();
+    let pid = next_virtual_pid();
+    let killed = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let reader_abort = Arc::new(std::sync::OnceLock::new());
+    let entry = ChildEntry {
+        child: None,
+        pid,
+        run_id: run_id.clone(),
+        killed: Arc::clone(&killed),
+        reader_abort: Arc::clone(&reader_abort),
+    };
+    state.processes.insert(run_id.clone(), entry.clone());
+    if let Some(session_id) = launch.req.session_id.as_deref() {
+        // A resumed host session is keyed up front (same contract as grok's
+        // preassigned id): interrupt by conversation session id must route.
+        state.processes.insert_alias(session_id.to_string(), entry);
+    }
+
+    let core = TurnCore {
+        sink: Arc::clone(&state.sink),
+        registry: Arc::clone(&state.processes),
+        engine_id: engine.clone(),
+        run_id: run_id.clone(),
+    };
+    let resume_session_id = launch.req.session_id.clone();
+    let task = tokio::spawn(dsh_session::run_host_turn(
+        core,
+        launch.req,
+        state.dsh_host.clone(),
+        killed,
+        pid,
+    ));
+    let _ = reader_abort.set(task.abort_handle());
+    Ok(SendResult {
+        run_id,
+        session_id: resume_session_id,
     })
 }
 
@@ -1825,7 +1941,7 @@ mod registry_tests {
         .expect("spawn sleep child");
         let pid = child.id().unwrap_or(0);
         let entry = ChildEntry {
-            child: Arc::new(TokioMutex::new(child)),
+            child: Some(Arc::new(TokioMutex::new(child))),
             pid,
             run_id: "run-1".to_string(),
             killed: Arc::new(std::sync::atomic::AtomicBool::new(false)),
@@ -1871,7 +1987,7 @@ mod registry_tests {
             .expect("spawn sleep child");
         let pid = child.id().unwrap_or(0);
         let entry = ChildEntry {
-            child: Arc::new(TokioMutex::new(child)),
+            child: Some(Arc::new(TokioMutex::new(child))),
             pid,
             run_id: "run-preassigned".to_string(),
             killed: Arc::new(std::sync::atomic::AtomicBool::new(false)),
@@ -1928,7 +2044,7 @@ mod registry_tests {
         );
 
         let entry = ChildEntry {
-            child: Arc::new(TokioMutex::new(child)),
+            child: Some(Arc::new(TokioMutex::new(child))),
             pid: cmd_pid,
             run_id: "run-tree".to_string(),
             killed: Arc::new(std::sync::atomic::AtomicBool::new(false)),

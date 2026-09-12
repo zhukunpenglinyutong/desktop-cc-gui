@@ -51,6 +51,7 @@ type _ThemeKeys = Assert<KeyParity<PluginContext["theme"], Pub.PluginContext["th
 type _I18nKeys = Assert<KeyParity<PluginContext["i18n"], Pub.PluginContext["i18n"]>>;
 type _StorageKeys = Assert<KeyParity<PluginContext["storage"], Pub.PluginContext["storage"]>>;
 type _EventsKeys = Assert<KeyParity<PluginContext["events"], Pub.PluginContext["events"]>>;
+type _ComposerKeys = Assert<KeyParity<PluginContext["composer"], Pub.PluginContext["composer"]>>;
 type _BridgeKeys = Assert<KeyParity<PluginContext["bridge"], Pub.PluginContext["bridge"]>>;
 type _HostKeys = Assert<KeyParity<PluginContext["host"], Pub.PluginContext["host"]>>;
 
@@ -60,5 +61,6 @@ type _ThemeShape = Assert<Mutual<PluginContext["theme"], Pub.PluginContext["them
 type _I18nShape = Assert<Mutual<PluginContext["i18n"], Pub.PluginContext["i18n"]>>;
 type _StorageShape = Assert<Mutual<PluginContext["storage"], Pub.PluginContext["storage"]>>;
 type _EventsShape = Assert<Mutual<PluginContext["events"], Pub.PluginContext["events"]>>;
+type _ComposerShape = Assert<Mutual<PluginContext["composer"], Pub.PluginContext["composer"]>>;
 type _BridgeShape = Assert<Mutual<PluginContext["bridge"], Pub.PluginContext["bridge"]>>;
 type _HostShape = Assert<Mutual<PluginContext["host"], Pub.PluginContext["host"]>>;

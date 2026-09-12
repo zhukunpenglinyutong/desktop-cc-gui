@@ -22,6 +22,7 @@ import {
 import { ArchivedSection, WorkspaceSection } from "@/components/application/ai-chat/workspace-sections";
 import type { AiChatRepo, AiChatRepoSection, ThreadAction } from "@/components/application/ai-chat/sidebar-types";
 import { cx } from "@/utils/cx";
+import { useRemoteControl } from "@/hooks/use-remote-control";
 
 export type { AiChatRepo, AiChatRepoSection, AiChatThread, ThreadAction } from "@/components/application/ai-chat/sidebar-types";
 
@@ -171,6 +172,7 @@ export function AiChatSidebar({
     deactivateSearch,
   } = useSidebarSearch();
   const { collapsedGroups, toggleGroup } = useCollapsedGroups();
+  const remoteActive = useRemoteControl();
   const allRepos = useMemo(
     () => (sections ? sections.flatMap((section) => section.repos) : repos),
     [sections, repos],
@@ -276,9 +278,24 @@ export function AiChatSidebar({
 
       <div className="flex w-full shrink-0 flex-col gap-3 px-3 pb-3">
         {/* Secondary nav */}
-        <nav className="flex w-full flex-col gap-1">
-          <NavItem icon={Settings} label={t("settings.title")} onClick={onOpenSettings} />
-        </nav>
+        <div className="relative flex w-full items-center">
+          <nav className="flex w-full flex-col gap-1">
+            <NavItem icon={Settings} label={t("settings.title")} onClick={onOpenSettings} />
+          </nav>
+          {remoteActive && (
+            // Floating, not laid out: it covers the empty half of the row
+            // (设置 keeps its full width and hover) and lets clicks through.
+            <div
+              title={t("settings.webRemoteActive")}
+              className="pointer-events-none absolute right-0 top-1/2 flex -translate-y-1/2 items-center gap-1.5 rounded-full bg-button-primary px-2.5 py-1 shadow-xs"
+            >
+              <span aria-hidden className="size-1.5 animate-pulse rounded-full bg-text-white" />
+              <span className="text-body-2-medium whitespace-nowrap text-text-white">
+                {t("settings.webRemoteActive")}
+              </span>
+            </div>
+          )}
+        </div>
       </div>
 
       {workspaceMenu && (onWorkspaceAlias || onSetWorkspaceArchived) && (

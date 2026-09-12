@@ -18,6 +18,9 @@ export interface SessionMeta {
   messageCount: number;
   pinned: boolean;
   customTitle: string | null;
+  /** Model this app last sent for the session ("provider/model"), absent when
+   * it never sent one — see ipc.rememberSessionModel. */
+  model?: string | null;
 }
 
 export type TodoStatus = "pending" | "active" | "complete" | "blocked" | "dropped";
@@ -209,6 +212,14 @@ export interface AppSettings {
   systemProxyEnabled: boolean;
   /** Proxy URL (http/https/socks5); null = unset. */
   systemProxyUrl: string | null;
+  /** Require a pairing key before the bridge serves a browser. */
+  webAuthEnabled?: boolean | null;
+  /** 8-character pairing key, minted when the switch is turned on. */
+  webAuthKey?: string | null;
+  /** Relay worker base URL (设置 → 远程访问 → 外网访问); null = unset. */
+  webRelayUrl?: string | null;
+  /** Shared relay key; also the phone URL's path segment. */
+  webRelayKey?: string | null;
 }
 
 export interface DirEntry {
@@ -270,6 +281,9 @@ export interface GitFileEntry {
 
 export interface GitStatus {
   branch: string;
+  /** Commits ahead of / behind the upstream; absent when there is none. */
+  ahead?: number;
+  behind?: number;
   staged: GitFileEntry[];
   unstaged: GitFileEntry[];
   untracked: GitFileEntry[];
@@ -297,6 +311,37 @@ export interface AppMetrics {
   /** CPU usage since the previous poll, percent of one core. */
   cpuPercent: number;
 }
+/** The outbound relay: the phone reaches the app through a Worker. */
+export interface RelayInfo {
+  /** Address to open on the phone (key already in the path). */
+  url: string;
+  agentUrl: string;
+  connected: boolean;
+  error: string | null;
+}
+
+/** Outcome of a one-click relay deploy (mirrors Rust `RelayDeployResult`). */
+export interface RelayDeployResult {
+  /** `https://ccgui-relay.<subdomain>.workers.dev` — a suggestion, not a lock:
+   *  the URL field stays editable so a custom domain can replace it. */
+  url: string;
+  /** The relay key that was uploaded with the Worker. */
+  key: string;
+  accountId: string;
+  accountName: string;
+}
+
+/** A browser that reached the LAN bridge; approved devices may use it. */
+export interface WebDevice {
+  id: string;
+  userAgent: string;
+  createdAt: number;
+  lastSeenAt: number;
+  approvedAt: number | null;
+  /** Name the user gave it; empty falls back to the user-agent summary. */
+  name: string | null;
+}
+
 export interface WebAccessInfo {
   /** Full URL including the auth token — shareable as-is or as a QR code. */
   url: string;
@@ -350,13 +395,15 @@ export interface DshHostStatus {
   /** "spawned" = we launched it (and will kill it); "adopted" = pre-existing
    *  listener we attached to and never kill implicitly. */
   ownership: "spawned" | "adopted" | null;
-  /** Raw host.describe value (provider/model/attachedSessions/…). */
+  /** Normalized describe view (provider/model from the host's
+   *  agent-default-model namespace; 0.1.2 removed raw host.describe). */
   describe: {
     provider?: string | null;
     model?: string | null;
-    attachedSessions?: number | null;
-    version?: string | null;
   } | null;
+  /** Web UI entry carrying the persisted launch token (BrowserAuth gates
+   *  the web UI like every RPC); fall back to origin when null. */
+  webUrl: string | null;
   /** Probe error, set only when the host is down. */
   error: string | null;
 }
@@ -390,6 +437,15 @@ export interface CliUpdatePlan {
 // Shared in-flight/cached app-settings promise: startup, the settings page
 // and the chat store all read the same settings, so fetch once.
 let settingsPromise: Promise<AppSettings> | null = null;
+
+function fetchAppSettings(): Promise<AppSettings> {
+  return (settingsPromise ??= invoke<AppSettings>("get_app_settings").catch((e) => {
+    // Allow retry after a failed fetch instead of caching the rejection.
+    settingsPromise = null;
+    throw e;
+  }));
+}
+
 // ---- pi-family (pi/omp) provider auth & custom providers (供应商认证) ----
 
 export type PiFamilyAuthState = "configured" | "none";
@@ -444,6 +500,27 @@ export interface PluginInfo {
   permissions: string[];
   installedAt: number;
   minAppVersion: string | null;
+}
+/** Marketplace listing row (plan §6.1): community-plugins.json merged with
+ *  plugins/<id>.json — the fields the market UI renders. */
+export interface MarketPlugin {
+  id: string;
+  repo: string;
+  name: string;
+  description: string;
+  author: string;
+  tier: "declarative" | "js";
+  version: string;
+  minAppVersion: string | null;
+  sdkVersion: string | null;
+  permissions: string[];
+}
+
+/** One installed marketplace plugin with a newer indexed version. */
+export interface PluginUpdate {
+  id: string;
+  currentVersion: string;
+  latestVersion: string;
 }
 
 export interface OfficialConfigFile {
@@ -508,16 +585,21 @@ export const ipc = {
   fetchProviderModels: (baseUrl: string, apiKey: string) =>
     invoke<ProviderModelList>("fetch_provider_models", { baseUrl, apiKey }),
   // settings
-  getAppSettings: () =>
-    (settingsPromise ??= invoke<AppSettings>("get_app_settings").catch((e) => {
-      // Allow retry after a failed fetch instead of caching the rejection.
-      settingsPromise = null;
-      throw e;
-    })),
+  getAppSettings: fetchAppSettings,
+  /** De-cached read: settings the backend changed on its own (the pairing key
+   *  rotates after a pairing and on a timer) never pass through a write here,
+   *  so the cached copy would keep showing the retired code. */
+  refreshAppSettings: () => {
+    settingsPromise = null;
+    return fetchAppSettings();
+  },
   updateAppSettings: async (settings: AppSettings) => {
     await invoke<void>("update_app_settings", { settings });
-    // Keep the cache in sync with the authoritative value just persisted.
-    settingsPromise = Promise.resolve(settings);
+    // Drop the cache instead of caching `settings`: the backend adjusts what
+    // it stores (it mints the pairing key, drops rejected bin paths), and a
+    // write must never seed the shared copy with something the backend did
+    // not answer — one bad value here blanks every settings page.
+    settingsPromise = null;
   },
   setWindowTheme: (dark: boolean) =>
     invoke<void>("set_window_theme", { dark }),
@@ -559,6 +641,11 @@ export const ipc = {
     invoke<void>("pin_session", { engine, sessionId, pinned }),
   renameSession: (engine: string, sessionId: string, title: string) =>
     invoke<void>("rename_session", { engine, sessionId, title }),
+  /** Remember the model id this session ran ("provider/model", as the picker
+   * spells it) — the engine's own transcript keeps only the bare name, so
+   * this is what survives a restart or another client. */
+  rememberSessionModel: (engine: string, sessionId: string, model: string) =>
+    invoke<void>("remember_session_model", { engine, sessionId, model }),
   rescanSessions: () => invoke<void>("rescan_sessions"),
   listWorkspaces: () => invoke<Workspace[]>("list_workspaces"),
   addWorkspace: (path: string) => invoke<Workspace>("add_workspace", { path }),
@@ -598,9 +685,11 @@ export const ipc = {
    * paths; backend caps at 20k entries). */
   listFileIndex: (path: string) =>
     withGrantRetry(() => invoke<FileIndexEntry[]>("list_file_index", { path })),
-  /** Catalog for the composer `/` picker (workspace
-   *  `.claude/commands` + `.claude/skills`, plus the CLI's global config
-   *  home). Commands and skills are distinguished by `entry.kind`. */
+  /** Catalog for the composer `/` picker (workspace `.claude/commands` +
+   *  `.claude/skills`, plus the global skill roots of the CLIs the app
+   *  drives — Claude home, `$CODEX_HOME/skills` incl. `.system`,
+   *  `~/.agents/skills`, Codex plugin cache). Commands and skills are
+   *  distinguished by `entry.kind`. */
   listSlashCommands: (path: string) =>
     withGrantRetry(() => invoke<SlashCommandEntry[]>("list_slash_commands", { path })),
   // granted directories (desktop-only commands; the settings list hides on web)
@@ -663,7 +752,38 @@ export const ipc = {
     invoke<void>("plugin_storage_set", { id, key, value }),
   pluginStorageDelete: (id: string, key: string) =>
     invoke<void>("plugin_storage_delete", { id, key }),
+  // plugin marketplace (Phase 3, plan §6) — install is desktop-only on the
+  // web bridge; fetch/checkUpdates ride the read-only whitelist.
+  pluginFetchIndex: (force = false) =>
+    invoke<MarketPlugin[]>("plugin_fetch_index", { force }),
+  pluginInstallFromMarketplace: (id: string) =>
+    invoke<PluginInfo>("plugin_install_from_marketplace", { id }),
+  pluginCheckUpdates: () => invoke<PluginUpdate[]>("plugin_check_updates"),
   // web access (start/stop are desktop-only; the bridge answers status too)
+  webDevices: () => invoke<WebDevice[]>("web_devices"),
+  webDeviceApprove: (id: string) => invoke<boolean>("web_device_approve", { id }),
+  webDeviceRevoke: (id: string) => invoke<boolean>("web_device_revoke", { id }),
+  webDeviceRename: (id: string, name: string) =>
+    invoke<boolean>("web_device_rename", { id, name }),
+  webRelayStatus: () => invoke<RelayInfo | null>("web_relay_status"),
+  webRelayStart: (url: string, key: string) => invoke<RelayInfo>("web_relay_start", { url, key }),
+  webRelayStop: () => invoke<void>("web_relay_stop"),
+  /** Is a browser driving this machine through the relay right now? */
+  remoteControlActive: () => invoke<boolean>("remote_control_active"),
+  /** Replace the pairing key now instead of waiting for the automatic
+   *  rotation. Desktop-only — a phone rotating it would lock others out. */
+  rotateWebPairKey: () => invoke<string>("rotate_web_pair_key"),
+  /** Write the deploy pack (source + wrangler project + how-to) to `path` as a
+   *  STORE-only zip; resolves with the relay key baked into it. */
+  relayDeployPack: (path: string, key: string | null) =>
+    invoke<string>("relay_deploy_pack", { path, key }),
+  /** Deploy the relay Worker into the token's account: creates the Durable
+   *  Object class, its binding and a freshly minted key in one upload.
+   *  `accountId` is only needed for account-owned tokens (`cfat_…`), which
+   *  Cloudflare does not let list their own accounts. The key is never taken
+   *  from the caller — it is the only guard on the agent endpoint. */
+  relayDeploy: (token: string, accountId: string | null) =>
+    invoke<RelayDeployResult>("relay_deploy", { token, accountId }),
   webAccessStart: () => invoke<WebAccessInfo>("web_access_start"),
   webAccessStop: () => invoke<void>("web_access_stop"),
   webAccessStatus: () => invoke<WebAccessInfo | null>("web_access_status"),

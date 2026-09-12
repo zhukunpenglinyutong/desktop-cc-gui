@@ -56,7 +56,8 @@ fn build_app(
         processes: Arc::new(ProcessRegistry::default()),
         emitters: ccgui_next_lib::event_sink::BroadcastEmit::new(Arc::new(app.handle().clone())),
         web: ccgui_next_lib::web::WebAccessState::default(),
-        dsh_host: ccgui_next_lib::dsh_host::DshHostState::default(),
+        relay: ccgui_next_lib::relay::RelayState::default(),
+        dsh_host: Arc::new(ccgui_next_lib::dsh_host::DshHostState::default()),
     };
     app.manage(state);
     app.manage(ConfigStore::default());
@@ -282,7 +283,8 @@ fn ipc_send_message_accepts_camel_case_args() {
         processes: Arc::new(ProcessRegistry::default()),
         emitters: ccgui_next_lib::event_sink::BroadcastEmit::new(Arc::new(app.handle().clone())),
         web: ccgui_next_lib::web::WebAccessState::default(),
-        dsh_host: ccgui_next_lib::dsh_host::DshHostState::default(),
+        relay: ccgui_next_lib::relay::RelayState::default(),
+        dsh_host: Arc::new(ccgui_next_lib::dsh_host::DshHostState::default()),
     });
     app.manage(ConfigStore::default());
     let webview = tauri::WebviewWindowBuilder::new(&app, "main", Default::default())

@@ -46,6 +46,7 @@ import {
   handleEngineEvents,
   optimisticMeta,
   patchGrantBySeq,
+  rememberModelForRun,
   settleOrphanedRuns,
   upsertSessionMetaInto,
 } from "./store/engine-events";
@@ -195,6 +196,20 @@ export const useChatStore = create<ChatStore>((set, get) => {
     const model =
       resolveSessionModel(tab, get().bySession[key], get().models[engine]) ||
       null;
+    // Remember what this session runs, spelled as the picker spells it: the
+    // engine's own transcript keeps only the bare model name, so this record
+    // is what a restart or another client reads back (see
+    // ipc.rememberSessionModel). A brand-new session has no id yet — its
+    // `session` event carries the model instead.
+    if (model) {
+      if (tab.sessionId) {
+        void ipc
+          .rememberSessionModel(engine, tab.sessionId, model)
+          .catch(() => {});
+      } else {
+        rememberModelForRun(key, model);
+      }
+    }
     const effort = tab.effort ?? get().efforts[engine] ?? null;
     // Optimistic user message.
     set((s) => ({
@@ -244,6 +259,11 @@ export const useChatStore = create<ChatStore>((set, get) => {
           result.sessionId,
           tab.workspacePath,
         );
+        if (model) {
+          void ipc
+            .rememberSessionModel(engine, result.sessionId, model)
+            .catch(() => {});
+        }
         settleOrphanedRuns(set, routeRun(result.runId, newKey));
         set((s) => {
           const bySession = { ...s.bySession };
@@ -600,6 +620,17 @@ export const useChatStore = create<ChatStore>((set, get) => {
 
     selectSession: async (engine, sessionId, workspacePath) => {
       const key = sessionKey(engine, sessionId, workspacePath);
+      // The session remembers the model it ran, and our own record is the
+      // only place that carries the provider ("agentrouter qunyou/x", while
+      // the engine transcript keeps the bare "x"). Without it a session
+      // reopened here — after a restart, or in another window — showed the
+      // engine default and sent that instead.
+      const remembered = get().sessions.find(
+        (x) => x.engine === engine && x.sessionId === sessionId,
+      )?.model;
+      if (remembered && !get().bySession[key]?.activeModel) {
+        patchSession(set, key, { activeModel: remembered });
+      }
       const syncEngine = engine !== get().activeEngine;
       if (syncEngine) writeStored(ENGINE_PREF_KEY, engine);
       set((s) => {

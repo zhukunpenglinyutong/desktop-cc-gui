@@ -23,6 +23,7 @@ import {
   type ContextSegment,
   type UsageLimit,
 } from "@/components/application/agent-limits/agent-limits-card";
+import { Tooltip, TooltipContent } from "@/components/base/tooltip/tooltip";
 import { ProjectFolderMenu } from "@/components/application/ai-chat/project-folder-menu";
 import {
   BranchMenu,
@@ -420,20 +421,48 @@ const EMPTY_LIMITS: UsageLimit[] = [];
 const EMPTY_PLAN = "";
 
 /**
+ * Mirrors `validate_proxy_settings` in src-tauri/src/proxy.rs: enabling the
+ * proxy requires a configured URL with an http(s)/socks5 scheme and a host.
+ * Disabling never fails validation, so an enabled toggle stays operable even
+ * if the stored URL is later broken.
+ */
+function isUsableProxyUrl(value: string | null): boolean {
+  const trimmed = value?.trim() ?? "";
+  if (!trimmed) return false;
+  let parsed: URL;
+  try {
+    parsed = new URL(trimmed);
+  } catch {
+    return false;
+  }
+  const scheme = parsed.protocol.replace(":", "");
+  return (
+    ["http", "https", "socks5", "socks5h"].includes(scheme) &&
+    parsed.hostname.length > 0
+  );
+}
+
+/**
  * One-click network-proxy switch for the composer footer: the glyph carries
  * the state (dim = off, green = on) and the click persists `systemProxyEnabled`
  * through the same read-modify-write funnel the settings page uses, so the two
  * surfaces can never clobber each other.
+ *
+ * Hidden entirely while off without a usable proxy URL — enabling would fail
+ * backend validation anyway, so the entry only appears once the settings page
+ * has a valid URL to flip on.
  */
 function ProxyQuickToggle() {
   const { t } = useTranslation();
-  const [enabled, setEnabled] = useState<boolean | null>(null);
+  const [state, setState] = useState<{ enabled: boolean; url: string | null } | null>(null);
   const [busy, setBusy] = useState(false);
 
   const read = useCallback(() => {
     void ipc
       .getAppSettings()
-      .then((s) => setEnabled(s.systemProxyEnabled ?? false))
+      .then((s) =>
+        setState({ enabled: s.systemProxyEnabled ?? false, url: s.systemProxyUrl ?? null }),
+      )
       .catch(() => {});
   }, []);
 
@@ -442,39 +471,47 @@ function ProxyQuickToggle() {
   useTauriEvent(() => listenSettingsChanged(read));
 
   const toggle = useCallback(async () => {
-    if (busy || enabled === null) return;
+    if (busy || !state) return;
     setBusy(true);
     try {
       const latest = await ipc.getAppSettings();
       const next = !(latest.systemProxyEnabled ?? false);
       await ipc.updateAppSettings({ ...latest, systemProxyEnabled: next });
-      setEnabled(next);
+      setState({ enabled: next, url: latest.systemProxyUrl ?? null });
     } catch {
-      // Persist failed (e.g. the proxy URL is empty): keep the old glyph, the
-      // settings page is where the reason is shown.
+      // Persist failed: keep the old glyph, the settings page is where the
+      // reason is shown.
     } finally {
       setBusy(false);
     }
-  }, [busy, enabled]);
+  }, [busy, state]);
 
-  if (enabled === null) return null;
+  if (!state) return null;
+  const { enabled } = state;
+  // Off + no valid URL → enabling is impossible; hide the entry. On → always
+  // shown, disabling never fails validation.
+  if (!enabled && !isUsableProxyUrl(state.url)) return null;
   const label = enabled ? t("chat.proxyOn") : t("chat.proxyOff");
+  const tip = enabled ? t("chat.proxyTipOn") : t("chat.proxyTipOff");
   // Mirror the context-meter button exactly: react-aria AriaButton, the same
   // shape/focus classes, colour carries the state. That control never shows
   // a stray circle, so this one should not either.
   return (
-    <AriaButton
-      aria-label={label}
-      aria-pressed={enabled}
-      isDisabled={busy}
-      onPress={() => void toggle()}
-      className={cx(
-        "flex cursor-pointer items-center rounded-full p-1.5 outline-none transition-colors duration-150 ease focus-visible:ring-2 focus-visible:ring-border-focus-ring",
-        enabled ? "text-notification-success-foreground" : "text-foreground-icon-tertiary",
-      )}
-    >
-      <Globe className="size-4 shrink-0" strokeWidth={1.75} aria-hidden />
-    </AriaButton>
+    <Tooltip>
+      <AriaButton
+        aria-label={label}
+        aria-pressed={enabled}
+        isDisabled={busy}
+        onPress={() => void toggle()}
+        className={cx(
+          "flex cursor-pointer items-center rounded-full p-1.5 outline-none transition-colors duration-150 ease focus-visible:ring-2 focus-visible:ring-border-focus-ring",
+          enabled ? "text-notification-success-foreground" : "text-foreground-icon-tertiary",
+        )}
+      >
+        <Globe className="size-4 shrink-0" strokeWidth={1.75} aria-hidden />
+      </AriaButton>
+      <TooltipContent>{tip}</TooltipContent>
+    </Tooltip>
   );
 }
 

@@ -49,10 +49,13 @@ libc = "0.2"
 # surface over a token-authenticated WebSocket (see src/web.rs).
 axum = { version = "0.8", features = ["ws"] }
 futures-util = "0.3"
+# DSH host session streams (ws:// loopback mux) plus the outbound relay, which
+# dials the Cloudflare Worker over wss:// — hence the TLS feature.
+tokio-tungstenite = { version = "0.26", default-features = false, features = ["connect", "rustls-tls-webpki-roots"] }
 serde_yaml = "0.9"
 # Linux-native Baidu Tongji transport: fixed hm.js fetch + hm.gif beacon with
 # rustls so it never touches the vendored-openssl stack or WebKit networking.
-reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "stream"] }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "stream", "multipart", "json"] }
 
 [dev-dependencies]
 tauri = { version = "2", features = ["test"] }

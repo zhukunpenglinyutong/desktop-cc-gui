@@ -31,15 +31,7 @@ function HostFacts({ describe, t }: { describe: DshHostStatus["describe"] | unde
       <Fragment key="model">
         {t("settings.dshCurrentModel")}{" "}
         <span className="text-text-primary">{describe.model}</span>
-      </Fragment>,
-    );
-  }
-  if (describe?.attachedSessions != null) {
-    facts.push(
-      <Fragment key="sessions">
-        {t("settings.dshAttachedSessions")}{" "}
-        <span className="text-text-primary">{describe.attachedSessions}</span>
-      </Fragment>,
+      </Fragment>
     );
   }
   if (facts.length === 0) return null;
@@ -64,9 +56,12 @@ function HostActions({
   statusTitle: Record<HostState, string>;
 }) {
   const { t, hostState, origin, actionBusy, updating, start, stop, refreshStatus, updateCli } = dsh;
+  // 0.1.2 BrowserAuth gates the Web UI too: prefer the tokenized entry URL,
+  // falling back to the bare origin when we hold no launch token.
+  const uiUrl = dsh.status?.webUrl ?? origin;
 
   const openUi = (
-    <Button size="small" variant="secondary" onClick={() => openExternal(origin)}>
+    <Button size="small" variant="secondary" onClick={() => openExternal(uiUrl)}>
       {t("settings.dshOpenUi")}
     </Button>
   );
@@ -85,7 +80,7 @@ function HostActions({
     case "connected":
       return (
         <>
-          <Button size="small" onClick={() => openExternal(origin)}>
+          <Button size="small" onClick={() => openExternal(uiUrl)}>
             {t("settings.dshOpenUi")}
           </Button>
           <Button size="small" variant="secondary" disabled={actionBusy} onClick={() => void stop()}>

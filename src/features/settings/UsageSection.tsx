@@ -13,6 +13,7 @@ import {
 import { UsageChart } from "./UsageChart";
 import { modelDisplayName } from "./usage-model";
 import { tokensOf } from "./usage-totals";
+import { formatTokens } from "@/utils/format-tokens";
 import { EngineIcon } from "@/components/foundations/icons/engine-icon";
 import { CLI_DISPLAY_NAMES } from "@/components/foundations/icons/engine-brands";
 import { ModelBadge } from "@/components/foundations/icons/model-badge";
@@ -46,13 +47,6 @@ function rangeStart(range: Range, now: Date): string {
   const back = (monday.getDay() + 6) % 7;
   monday.setDate(monday.getDate() - back);
   return dayKey(monday);
-}
-
-/** "1.2M" / "84k" / "512" — compact enough for a row of numbers. */
-function formatTokens(n: number): string {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1).replace(/\.0$/, "")}M`;
-  if (n >= 1000) return `${(n / 1000).toFixed(1).replace(/\.0$/, "")}k`;
-  return String(n);
 }
 
 interface Totals {

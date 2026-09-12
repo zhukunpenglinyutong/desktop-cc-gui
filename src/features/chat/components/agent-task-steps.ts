@@ -96,6 +96,43 @@ export function extractSubagentTaskInfo(message: Message): {
   return { label, subagentType, detail };
 }
 
+/** The subagents one delegation call names, in call order. A `task` call
+ *  spells out the agents it spawns under `tasks[]`; a `hub` wait names the
+ *  ids it is waiting on. A call that names none (a roster check, a bare
+ *  delegation) is left to the caller as a single step of its own. */
+export function subagentRefsFromArgs(args: unknown): {
+  id: string;
+  label?: string;
+  agent?: string;
+  detail?: string;
+}[] {
+  if (!args || typeof args !== "object") return [];
+  const record = args as Record<string, unknown>;
+  const refs: { id: string; label?: string; agent?: string; detail?: string }[] = [];
+  const text = (v: unknown) => (typeof v === "string" && v.trim() ? v.trim() : undefined);
+  for (const entry of Array.isArray(record.tasks) ? record.tasks : []) {
+    if (!entry || typeof entry !== "object") continue;
+    const row = entry as Record<string, unknown>;
+    // `name` is the job id the run reports back ("CoreInvokeFilterParse");
+    // older shapes only carry an id.
+    const id = text(row.name) ?? text(row.id) ?? text(row.label);
+    if (!id) continue;
+    const task = text(row.task) ?? text(row.prompt);
+    refs.push({
+      id,
+      label: text(row.description) ?? id,
+      agent: text(row.agent) ?? text(row.subagent_type),
+      // The instruction text is the useful detail; its first line is enough.
+      detail: task ? task.split("\n").find((line) => line.trim()) ?? undefined : undefined,
+    });
+  }
+  for (const entry of Array.isArray(record.ids) ? record.ids : []) {
+    const id = text(entry);
+    if (id) refs.push({ id });
+  }
+  return refs;
+}
+
 /** Edit-class tool labels (write/edit/patch families) — the file
  * modification surface. Mirrors the edit branch of ProcessDisclosure's
  * toolTypeKey. */
@@ -127,6 +164,11 @@ function currentTurnStart(messages: Message[]): number {
  * Fold subagent tool rows across the session into panel steps.
  * Steps in prior turns are settled/complete; current-turn steps stay active
  * while streaming until tool result returns or subsequent assistant response arrives.
+ *
+ * A call is counted by the subagents it names, not by the call itself: one
+ * `task` can dispatch four agents ("Spawned 4 background agents") and one
+ * `hub` wait can cover them again, so a per-call count showed 2 where four
+ * were running. Ids name the subagent, so a later wait on them adds nothing.
  */
 export function deriveAgentTaskSteps(
   messages: Message[],
@@ -136,10 +178,15 @@ export function deriveAgentTaskSteps(
   const turnStart = currentTurnStart(messages);
   const blockingSpawn = engine === "claude";
   const steps: AgentTaskStep[] = [];
+  const seen = new Set<string>();
 
   for (let i = 0; i < messages.length; i++) {
     const message = messages[i];
-    if (message.role !== "tool" || !isSubagentToolLabel(message.text)) continue;
+    if (message.role !== "tool") continue;
+    // Naming ids is itself proof of delegation (`hub` waits carry a generic
+    // "hub ·…" label the name heuristic cannot classify).
+    const refs = subagentRefsFromArgs(message.args);
+    if (refs.length === 0 && !isSubagentToolLabel(message.text)) continue;
 
     const isCurrentTurn = i >= turnStart;
     let settled = !isCurrentTurn || !streaming;
@@ -163,13 +210,28 @@ export function deriveAgentTaskSteps(
     }
 
     const info = extractSubagentTaskInfo(message);
-    steps.push({
-      key: String(message.seq),
-      label: info.label,
-      state: settled ? "complete" : "active",
-      subagentType: info.subagentType,
-      detail: info.detail,
-    });
+    const state = settled ? "complete" : "active";
+    if (refs.length === 0) {
+      steps.push({
+        key: String(message.seq),
+        label: info.label,
+        state,
+        subagentType: info.subagentType,
+        detail: info.detail,
+      });
+      continue;
+    }
+    for (const ref of refs) {
+      if (seen.has(ref.id)) continue;
+      seen.add(ref.id);
+      steps.push({
+        key: `${message.seq}:${ref.id}`,
+        label: ref.label ?? ref.id,
+        state,
+        subagentType: ref.agent ?? info.subagentType,
+        detail: ref.detail ?? info.detail,
+      });
+    }
   }
   return steps;
 }

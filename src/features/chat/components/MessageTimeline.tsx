@@ -6,6 +6,7 @@ import Check from "lucide-react/dist/esm/icons/check";
 import type { Message } from "@/lib/ipc";
 import type { SessionState } from "../store";
 import { parseUsage } from "../usage";
+import { formatTokens } from "@/utils/format-tokens";
 import { AgentThinking } from "@/components/application/agent-thinking/agent-thinking";
 import { streamParseInterval, useThrottled } from "@/hooks/use-throttled";
 import { useCopied } from "@/hooks/use-copied";
@@ -16,6 +17,7 @@ import { createAnchorRowsBuilder } from "./timeline-anchors";
 import { buildRows, collectToolKeys, rowKey, type TimelineRow } from "./timeline-rows";
 import { formatDuration } from "./format-duration";
 import { ProcessDisclosure } from "./ProcessDisclosure";
+import { CollapsibleMessage } from "./CollapsibleMessage";
 import { useScrollFollow, useTailPin } from "./use-scroll-follow";
 import { ScrollToBottomButton } from "./ScrollToBottomButton";
 import { pluginIdFromRegistryKey, timelineRowRegistry, useRegistry } from "@ccgui/plugin-sdk";
@@ -121,11 +123,9 @@ function formatUsage(usage: unknown): string | null {
   if (!u) return null;
   const input = u.input + u.cacheRead + u.cacheWrite;
   if (!input && !u.output) return null;
-  const fmt = (n: number) =>
-    n >= 1000 ? `${(n / 1000).toFixed(1).replace(/\.0$/, "")}k` : String(n);
   const parts: string[] = [];
-  if (input) parts.push(`↑${fmt(input)}`);
-  if (u.output) parts.push(`↓${fmt(u.output)}`);
+  if (input) parts.push(`↑${formatTokens(input)}`);
+  if (u.output) parts.push(`↓${formatTokens(u.output)}`);
   return parts.join(" ");
 }
 
@@ -188,9 +188,12 @@ function MessageActions({ text }: { text: string }) {
   );
 }
 
-/** Copy affordance for a user bubble: icon only, no chrome, sitting at the
- *  bubble's left edge. Mirrors the assistant row's hover-reveal so a settled
- *  conversation stays clean, and stays reachable by keyboard. */
+/** Copy affordance for a user bubble: icon only, no chrome, in a footer row
+ *  under the bubble's bottom-right corner. A side-slot button vertically
+ *  centers against the bubble, so long messages push it far from the text
+ *  it copies; a footer stays put regardless of bubble height. Mirrors the
+ *  assistant row's hover-reveal so a settled conversation stays clean, and
+ *  stays reachable by keyboard. */
 function UserMessageCopy({ text }: { text: string }) {
   const { t } = useTranslation();
   const { copied, copy } = useCopied();
@@ -201,7 +204,7 @@ function UserMessageCopy({ text }: { text: string }) {
       aria-label={t("chat.copy")}
       title={t("chat.copy")}
       onClick={() => copy(text)}
-      className="flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-full bg-transparent text-foreground-icon-secondary opacity-0 transition-opacity duration-150 group-hover:opacity-100 focus-visible:opacity-100 hover:text-foreground-icon-primary"
+      className="flex size-6 cursor-pointer items-center justify-center rounded-md bg-transparent text-foreground-icon-secondary opacity-0 transition-opacity duration-150 group-hover:opacity-100 focus-visible:opacity-100 hover:bg-background-tertiary-hover hover:text-foreground-icon-primary"
     >
       {copied ? (
         <Check className="size-3.5 text-lime-500" aria-hidden />
@@ -212,7 +215,7 @@ function UserMessageCopy({ text }: { text: string }) {
   );
 }
 
-const MessageRow = memo(function MessageRow({
+export const MessageRow = memo(function MessageRow({
   message,
   workspacePath,
   turnFinal,
@@ -232,14 +235,16 @@ const MessageRow = memo(function MessageRow({
   }
   if (message.role === "user") {
     return (
-      <div className="group -mr-1.5 ml-auto flex w-fit max-w-[85%] items-center gap-1">
-        <UserMessageCopy text={message.text} />
+      <div className="group -mr-1.5 ml-auto flex w-fit max-w-[85%] flex-col items-end">
         <div className="flex flex-col rounded-xl bg-bubble-user px-3.5 py-2.5 text-left text-body-regular whitespace-pre-wrap break-words text-text-white">
-          {message.images && message.images.length > 0 && (
-            <MessageImages images={message.images} />
-          )}
-          {message.text}
+          <CollapsibleMessage>
+            {message.images && message.images.length > 0 && (
+              <MessageImages images={message.images} />
+            )}
+            {message.text}
+          </CollapsibleMessage>
         </div>
+        <UserMessageCopy text={message.text} />
       </div>
     );
   }

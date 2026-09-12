@@ -14,7 +14,8 @@
     "theme",
     "i18n",
     "events",
-    "network:none"
+    "network:none",
+    "composer:draft"
   ],
   "networkGrantShapes": {
     "$comment": "完整权限字符串（含 network: 前缀）的形状校验。network:none 是基座权限，永远不是授权。host 精确匹配（大小写不敏感，无通配/子域）；端口 1..=65535，区间含端点且不可倒置。",

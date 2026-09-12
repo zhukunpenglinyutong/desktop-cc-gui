@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>CollapsibleMessage fixture</title>
+</head>
+<body style="margin:0">
+<div id="fixture"></div>
+<script>
+// Minimal Tauri IPC stand-in (Markdown/plugin-sdk touch it on load).
+window.__TAURI_INTERNALS__ = {
+  transformCallback() { return 1; },
+  unregisterCallback() {},
+  convertFileSrc: (p) => p,
+  metadata: { currentWebview: { label: "main" }, currentWindow: { label: "main" } },
+  async invoke() { return null; },
+};
+</script>
+<script type="module" src="./collapsible-message.tsx"></script>
+</body>
+</html>

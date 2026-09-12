@@ -3,7 +3,7 @@
  */
 
 /** 本包版本。插件可用 `ctx.host.sdkVersion` 在运行时自检。 */
-export const SDK_VERSION = "0.3.1";
+export const SDK_VERSION = "0.3.2";
 
 /**
  * Compare dotted numeric versions; >0 when a is newer. 缺省段按 0 计

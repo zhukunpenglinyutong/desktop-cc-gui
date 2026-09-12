@@ -39,3 +39,11 @@ commandRegistry.register({
     window.location.hash = "#/settings?page=plugins";
   },
 });
+commandRegistry.register({
+  id: "builtin:openMarketplace",
+  title: () => i18n.t("commands.openMarketplace"),
+  keywords: keywords("commands.openMarketplaceKeywords"),
+  run: () => {
+    window.location.hash = "#/settings?page=marketplace";
+  },
+});

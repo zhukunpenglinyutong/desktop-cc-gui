@@ -85,6 +85,8 @@ export function ChangesPanel({
       workspacePath={workspacePath}
       notRepo={notRepo}
       branch={status?.branch}
+      ahead={status?.ahead}
+      behind={status?.behind}
       branches={branches}
       pending={pending}
       error={actionError ?? refreshError}

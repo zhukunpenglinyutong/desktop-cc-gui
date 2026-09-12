@@ -42,11 +42,37 @@ export interface ScanProgress {
   finished: boolean;
 }
 
-/** App settings were persisted (any page, any surface). */
+/** App settings were persisted (any page, any surface, any rotation). */
 export function listenSettingsChanged(cb: () => void): Promise<UnlistenFn> {
   return listen("settings://changed", () => cb());
 }
 
+/**
+ * The outbound relay's connection state changed. `error` is set only when the
+ * backend gave up on a dial and dropped the session — the status it would
+ * otherwise be read from is gone by then.
+ */
+export function listenRelay(cb: (error: string | null) => void): Promise<UnlistenFn> {
+  return listen<{ error?: string } | null>("web://relay", (event) =>
+    cb(event.payload?.error ?? null),
+  );
+}
+
+/**
+ * A remote (relayed) browser started or stopped driving this machine. Fired
+ * with the current state, so the badge is right even if the socket opened
+ * before the window did.
+ */
+export function listenRemoteControl(cb: (active: boolean) => void): Promise<UnlistenFn> {
+  return listen<{ active?: boolean } | null>("web://remote", (event) =>
+    cb(Boolean(event.payload?.active)),
+  );
+}
+
+/** The LAN bridge's device list changed (new pending device, approve, revoke). */
+export function listenWebDevices(cb: () => void): Promise<UnlistenFn> {
+  return listen("web://devices", () => cb());
+}
 /** History-scan progress, throttled by the scanner (~50 updates per run). */
 export function listenScanProgress(cb: (p: ScanProgress) => void): Promise<UnlistenFn> {
   return listen<ScanProgress>("scan://progress", (e) => cb(e.payload));

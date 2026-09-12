@@ -1,12 +1,15 @@
 import { createElement, lazy, Suspense } from "react";
 import Puzzle from "lucide-react/dist/esm/icons/puzzle";
+import Store from "lucide-react/dist/esm/icons/store";
 import i18n from "@/lib/i18n";
 import { settingsRegistry } from "@ccgui/plugin-sdk";
 import { bootstrapPlugins, ipcBackend } from "./runtime/loader";
 import { BUILTIN_PLUGINS } from "./builtin";
 import { usePluginsStore } from "./manager/usePlugins";
+import { useMarketplaceStore } from "./marketplace/store";
 
 const PluginsSection = lazy(() => import("./manager/PluginsSection"));
+const MarketplaceSection = lazy(() => import("./marketplace/MarketplaceSection"));
 
 let started = false;
 
@@ -30,8 +33,25 @@ export function startPluginSystem(): void {
       return createElement(Suspense, { fallback: null }, createElement(PluginsSection));
     },
   });
+  settingsRegistry.register({
+    id: "marketplace",
+    key: "marketplace",
+    label: () => i18n.t("plugins.marketTitle"),
+    icon: Store,
+    group: "settings",
+    order: 6,
+    component: function MarketplacePage() {
+      return createElement(Suspense, { fallback: null }, createElement(MarketplaceSection));
+    },
+  });
   void bootstrapWithRetry()
     .then(() => usePluginsStore.getState().refresh())
+    // Update hints (plan ADR-4): check at startup and once every 24h.
+    .then(() => {
+      const check = () => void useMarketplaceStore.getState().checkUpdates();
+      check();
+      setInterval(check, 24 * 3600 * 1000);
+    })
     .catch((error) => console.error("[plugins] bootstrap failed", error));
 }
 

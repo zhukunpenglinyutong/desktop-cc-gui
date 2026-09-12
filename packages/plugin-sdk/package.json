@@ -1,6 +1,6 @@
 {
   "name": "@ccgui/plugin-sdk",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "CC GUI 插件系统契约包：PluginContext/manifest/扩展点注册表/版本握手。宿主与插件仓共享的单一事实源。",
   "type": "module",
   "private": true,

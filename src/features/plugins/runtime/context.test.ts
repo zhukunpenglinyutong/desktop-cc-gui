@@ -13,7 +13,11 @@ import {
   timelineRowRegistry,
 } from "@ccgui/plugin-sdk";
 import { pluginBus } from "./events";
+import { setActiveComposerDraft } from "./composer-draft";
 import type { PluginManifest } from "@ccgui/plugin-sdk";
+// composer.setDraft 的 store 落点由 composer-draft.test.ts 单独覆盖；
+// 这里只验证权限门与委派，不拉入 chat store 依赖链。
+vi.mock("./composer-draft", () => ({ setActiveComposerDraft: vi.fn() }));
 
 function fakeStorage(): PluginContextBackend & { data: Map<string, unknown>; bridgeInvoke: Mock } {
   const data = new Map<string, unknown>();
@@ -230,6 +234,17 @@ describe("createPluginContext", () => {
     expect(ran).toBe(1);
     dispose();
     expect(commandRegistry.get("plugin:test-plugin:go")).toBeUndefined();
+  });
+  it("composer.setDraft is gated by composer:draft and delegates with the plugin id", () => {
+    const denied = createPluginContext(manifest([]), fakeStorage(), { appVersion: "1.0.0" });
+    expect(() => denied.ctx.composer.setDraft("x")).toThrow(/composer:draft/);
+    expect(setActiveComposerDraft).not.toHaveBeenCalled();
+
+    const { ctx } = createPluginContext(manifest(["composer:draft"]), fakeStorage(), {
+      appVersion: "1.0.0",
+    });
+    ctx.composer.setDraft("fix these");
+    expect(setActiveComposerDraft).toHaveBeenCalledWith("test-plugin", "fix these");
   });
 
   it("injectBundleCss mounts bundle styles without the theme permission and rejects remote refs", () => {

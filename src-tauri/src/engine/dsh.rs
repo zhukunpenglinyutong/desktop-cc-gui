@@ -1,8 +1,14 @@
-use super::{command_for_binary, safe_prompt_arg, BuiltCommand, Engine, EngineEvent, SendRequest};
+//! DeepSeek Harness (dsh) engine — host-session variant.
+//!
+//! 0.1.2's durable streaming lives on the host (`/api/remote.mux` follow
+//! stream with the `assistantStream` opt-in), so the engine drives its own
+//! transport ([`Engine::drives_own_transport`]) instead of spawning a child
+//! process: the turn runs as a host session (create → prompt → deltas),
+//! projected in [`super::dsh_session::run_host_turn`]. The host itself is
+//! probed/adopted/spawned by [`crate::dsh_host`].
 
-/// DeepSeek Harness (dsh) one-shot: `dsh --profile headless "<task>"`.
-/// Headless profile prints the final assistant message as plain text and
-/// exits — no streaming protocol, no resume flag (verified live).
+use super::{BuiltCommand, Engine, SendRequest};
+
 pub struct DshEngine;
 
 impl Engine for DshEngine {
@@ -10,28 +16,21 @@ impl Engine for DshEngine {
         "dsh"
     }
 
+    fn drives_own_transport(&self) -> bool {
+        true
+    }
+
+    /// Never invoked on the virtual path (`send_host_stream` branches before
+    /// the process spawn); a stub keeps the trait contract honest.
+    fn build_command(&self, _req: &SendRequest, _bin: &str) -> Result<BuiltCommand, String> {
+        Err("dsh runs as a host session; no child process to build".to_string())
+    }
+
+    /// Never invoked on the virtual path: frames arrive over the mux WS and
+    /// are projected directly to engine events.
+    fn parse_line(&self, _line: &str, _out: &mut Vec<super::EngineEvent>) {}
+
     fn supports_images(&self) -> bool {
         false
-    }
-
-    fn build_command(&self, req: &SendRequest, bin: &str) -> Result<BuiltCommand, String> {
-        let mut cmd = command_for_binary(bin);
-        cmd.arg("--profile");
-        cmd.arg("headless");
-        cmd.arg(safe_prompt_arg(&req.prompt));
-        Ok(BuiltCommand {
-            command: cmd,
-            stdin_payload: None,
-            cleanup_files: Vec::new(),
-            preassigned_session_id: None,
-        })
-    }
-
-    /// Headless output is plain text (not NDJSON): every non-empty stdout
-    /// line is streamed as a delta.
-    fn parse_line(&self, line: &str, out: &mut Vec<EngineEvent>) {
-        if !line.trim().is_empty() {
-            out.push(EngineEvent::Delta(format!("{line}\n")));
-        }
     }
 }

@@ -131,8 +131,14 @@ function onModel(
   key: string,
   deps: EngineEventDeps,
 ) {
-  const model = typeof event.data === "string" ? event.data.trim() : "";
-  if (!model) return;
+  const reported = typeof event.data === "string" ? event.data.trim() : "";
+  if (!reported) return;
+  // The engine reports the bare model name; our own record spells it
+  // "provider/model" (see ipc.rememberSessionModel). Same model, more
+  // context — keep the qualified one instead of dropping the provider.
+  const current = deps.get().bySession[key]?.activeModel ?? "";
+  const model =
+    current === reported || current.endsWith(`/${reported}`) ? current : reported;
   updatePendingStreamModel(key, model);
   deps.set((s) => {
     const cur = s.bySession[key];
@@ -247,12 +253,33 @@ function onMessage(
   });
 }
 
+/** Model a local send resolved for a session key, held until the run reports
+ *  the native session id (`session` event) so the two can be remembered
+ *  together — the engine transcript only carries the bare model name, and the
+ *  new session's id is not known before that event. Only local sends fill
+ *  this: an observer must never write its own (bare) reading of a run. */
+const pendingSessionModels = new Map<string, string>();
+
+export function rememberModelForRun(
+  key: string,
+  model: string | null | undefined,
+) {
+  if (model) pendingSessionModels.set(key, model);
+}
+
 function onSession(
   event: EngineEventPayload,
   key: string,
   deps: EngineEventDeps,
 ) {
   const nativeId = event.data as string;
+  const sentModel = pendingSessionModels.get(key);
+  if (sentModel) {
+    pendingSessionModels.delete(key);
+    void ipc
+      .rememberSessionModel(event.engine, nativeId, sentModel)
+      .catch(() => {});
+  }
   // Resolve the workspace from the tab that owns this key — not from the
   // active tab. A first message sent on a background tab must not adopt the
   // foreground tab's workspace (the session would be orphaned there).
@@ -715,6 +742,32 @@ function recordTurnUsage(
   writeUsageRow(deps, event, key, parsed, 1);
 }
 
+/** Mark a session running off an event of a turn this client never sent: the
+ *  phone watching the desktop's run, or the desktop watching the phone's.
+ *  Routes the run first so Stop and the orphan sweep reach it, then lifts the
+ *  two flags the composer / sidebar / tab dots read. */
+function adoptObservedRun(
+  event: EngineEventPayload,
+  key: string,
+  deps: EngineEventDeps,
+) {
+  if (!runRouting.has(event.runId)) {
+    settleOrphanedRuns(deps.set, routeRun(event.runId, key));
+  }
+  const cur = deps.get().bySession[key];
+  if (!cur?.streaming) {
+    patchSession(deps.set, key, {
+      streaming: true,
+      turnStartedAt: cur?.turnStartedAt ?? Date.now(),
+    });
+  }
+  if (!deps.get().streamingByKey[key]) {
+    deps.set((s) => ({
+      streamingByKey: setStreamingFlag(s.streamingByKey, key, true),
+    }));
+  }
+}
+
 /** Resolve an event's session key (run routing, then session-id match) and
  * dispatch to the per-kind handler. */
 export function handleEngineEvents(
@@ -736,6 +789,16 @@ export function handleEngineEvents(
       }
     }
     if (!key) continue;
+
+    // Engine events reach every attached client, but the running flag is set
+    // by the sender's own send path — so an observer (a phone watching the
+    // desktop's turn) would never see one. The events are the shared truth:
+    // adopt any run still talking, let done/error settle it below. A denial
+    // is excluded on purpose: the CLI has stopped to ask, and the grant
+    // card's resend has to stay available while it waits.
+    if (event.kind !== "done" && event.kind !== "error" && event.kind !== "permission_denied") {
+      adoptObservedRun(event, key, deps);
+    }
 
     switch (event.kind) {
       case "delta":

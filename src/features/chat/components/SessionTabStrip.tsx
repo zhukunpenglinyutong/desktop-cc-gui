@@ -1,4 +1,5 @@
 import X from "lucide-react/dist/esm/icons/x";
+import CircleX from "lucide-react/dist/esm/icons/circle-x";
 import Plus from "lucide-react/dist/esm/icons/plus";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -44,6 +45,8 @@ interface SessionTabStripProps {
   onClose: (key: string) => void;
   /** Tab right-click menu entry: close every tab. Omit to hide the menu. */
   onCloseAll?: () => void;
+  /** Tab right-click menu entry: close every tab but the one in view. */
+  onCloseInactive?: () => void;
   closeLabel: string;
   /** Drag-reorder: dragged tab key dropped before/after a target tab key. */
   onReorder?: (draggedKey: string, targetKey: string, before: boolean) => void;
@@ -318,6 +321,7 @@ export function SessionTabStrip({
   onSelect,
   onClose,
   onCloseAll,
+  onCloseInactive,
   closeLabel,
   onReorder,
   actions,
@@ -415,7 +419,7 @@ export function SessionTabStrip({
           dragged={dropTarget?.draggedKey === tab.key}
           dropBefore={dropTarget?.key === tab.key ? dropTarget.before : null}
           closeLabel={closeLabel}
-          onShowMenu={onCloseAll ? setMenu : undefined}
+          onShowMenu={onCloseAll || onCloseInactive ? setMenu : undefined}
           onSelect={onSelect}
           onClose={onClose}
           onPointerDown={onReorder ? handleTabPointerDown(tab) : undefined}
@@ -440,18 +444,33 @@ export function SessionTabStrip({
           {actions}
         </div>
       )}
-      {menu && onCloseAll && (
+      {menu && (onCloseAll || onCloseInactive) && (
         <ContextMenu
           x={menu.x}
           y={menu.y}
           ariaLabel={t("chat.closeAllTabs")}
           entries={[
-            {
-              id: "close-all",
-              label: t("chat.closeAllTabs"),
-              icon: <X className="size-4" aria-hidden />,
-              onSelect: onCloseAll,
-            },
+            ...(onCloseInactive
+              ? [
+                  {
+                    id: "close-inactive",
+                    label: t("chat.closeInactiveTabs"),
+                    icon: <CircleX className="size-4" aria-hidden />,
+                    onSelect: onCloseInactive,
+                  },
+                ]
+              : []),
+            ...(onCloseInactive && onCloseAll ? ["separator" as const] : []),
+            ...(onCloseAll
+              ? [
+                  {
+                    id: "close-all",
+                    label: t("chat.closeAllTabs"),
+                    icon: <X className="size-4" aria-hidden />,
+                    onSelect: onCloseAll,
+                  },
+                ]
+              : []),
           ]}
           onClose={() => setMenu(null)}
         />

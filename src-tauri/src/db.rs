@@ -95,6 +95,128 @@ impl Db {
     /// Per-plugin KV value (plugins::plugin_storage_get). Stored as JSON text;
     /// a corrupt row surfaces as an error instead of a silent `None` so the
     /// plugin host notices instead of losing state quietly.
+    /// Devices that have reached the LAN bridge, newest first. `approved_at`
+    /// being set is what lets a device through: the user approves each new
+    /// device in the app before it can see or drive anything.
+    pub fn web_devices(&self) -> Result<Vec<crate::web::WebDevice>, String> {
+        let conn = self.0.lock();
+        let mut stmt = conn
+            .prepare(
+                "SELECT id, user_agent, created_at, last_seen_at, approved_at, name
+                 FROM web_devices ORDER BY COALESCE(approved_at, 0) DESC, last_seen_at DESC",
+            )
+            .map_err(|e| e.to_string())?;
+        let rows = stmt
+            .query_map([], |r| {
+                Ok(crate::web::WebDevice {
+                    id: r.get(0)?,
+                    user_agent: r.get(1)?,
+                    created_at: r.get(2)?,
+                    last_seen_at: r.get(3)?,
+                    approved_at: r.get(4)?,
+                    name: r.get(5)?,
+                })
+            })
+            .map_err(|e| e.to_string())?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| e.to_string())?;
+        Ok(rows)
+    }
+
+    pub fn web_device_get(&self, id: &str) -> Result<Option<crate::web::WebDevice>, String> {
+        let conn = self.0.lock();
+        conn.query_row(
+            "SELECT id, user_agent, created_at, last_seen_at, approved_at, name
+             FROM web_devices WHERE id=?1",
+            rusqlite::params![id],
+            |r| {
+                Ok(crate::web::WebDevice {
+                    id: r.get(0)?,
+                    user_agent: r.get(1)?,
+                    created_at: r.get(2)?,
+                    last_seen_at: r.get(3)?,
+                    approved_at: r.get(4)?,
+                    name: r.get(5)?,
+                })
+            },
+        )
+        .optional()
+        .map_err(|e| e.to_string())
+    }
+
+    /// Remember a device that is asking for access (idempotent: a device that
+    /// keeps polling just refreshes `last_seen_at`, and an approval survives).
+    pub fn web_device_touch(&self, id: &str, user_agent: &str, now: i64) -> Result<(), String> {
+        let conn = self.0.lock();
+        conn.execute(
+            "INSERT INTO web_devices (id, user_agent, created_at, last_seen_at)
+             VALUES (?1, ?2, ?3, ?3)
+             ON CONFLICT(id) DO UPDATE SET last_seen_at=?3,
+               user_agent=CASE WHEN excluded.user_agent != '' THEN excluded.user_agent ELSE user_agent END",
+            rusqlite::params![id, user_agent, now],
+        )
+        .map_err(|e| e.to_string())?;
+        Ok(())
+    }
+
+    /// Remember the model id a session ran, spelled as the picker spells it
+    /// ("provider/model"). The engine's own transcript keeps only the bare
+    /// model name, so this row is the session's provider + model memory for
+    /// every other client and for the next app start.
+    pub fn remember_session_model(
+        &self,
+        engine: &str,
+        session_id: &str,
+        model: &str,
+        now: i64,
+    ) -> Result<(), String> {
+        let conn = self.0.lock();
+        conn.execute(
+            "INSERT INTO session_models(engine, session_id, model, updated_at)
+             VALUES (?1, ?2, ?3, ?4)
+             ON CONFLICT(engine, session_id) DO UPDATE SET model=excluded.model, updated_at=excluded.updated_at",
+            rusqlite::params![engine, session_id, model, now],
+        )
+        .map_err(|e| e.to_string())?;
+        Ok(())
+    }
+
+    /// Approve (or re-approve) a device. Unknown ids are ignored: the row is
+    /// created by the device's own request, never by the UI.
+    pub fn web_device_approve(&self, id: &str, now: i64) -> Result<bool, String> {
+        let conn = self.0.lock();
+        let changed = conn
+            .execute(
+                "UPDATE web_devices SET approved_at=?2 WHERE id=?1",
+                rusqlite::params![id, now],
+            )
+            .map_err(|e| e.to_string())?;
+        Ok(changed > 0)
+    }
+
+    /// Remember a name for a paired device. An empty name clears it, so the row
+    /// falls back to the user-agent summary on its own.
+    pub fn web_device_set_name(&self, id: &str, name: &str) -> Result<bool, String> {
+        let conn = self.0.lock();
+        let trimmed = name.trim();
+        let changed = conn
+            .execute(
+                "UPDATE web_devices SET name=?2 WHERE id=?1",
+                rusqlite::params![id, (!trimmed.is_empty()).then_some(trimmed)],
+            )
+            .map_err(|e| e.to_string())?;
+        Ok(changed > 0)
+    }
+
+    /// Revoke a device; its cookie stops matching on the next request.
+    pub fn web_device_revoke(&self, id: &str) -> Result<bool, String> {
+        let conn = self.0.lock();
+        let changed = conn
+            .execute("DELETE FROM web_devices WHERE id=?1", rusqlite::params![id])
+            .map_err(|e| e.to_string())?;
+        Ok(changed > 0)
+    }
+
     pub fn plugin_kv_get(
         &self,
         plugin_id: &str,
@@ -314,6 +436,14 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
             path TEXT PRIMARY KEY,
             granted_at INTEGER NOT NULL
         );
+        CREATE TABLE IF NOT EXISTS web_devices(
+            id TEXT PRIMARY KEY,
+            user_agent TEXT NOT NULL DEFAULT '',
+            created_at INTEGER NOT NULL,
+            last_seen_at INTEGER NOT NULL,
+            approved_at INTEGER,
+            name TEXT
+        );
         CREATE TABLE IF NOT EXISTS usage_ledger(
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             ts INTEGER NOT NULL,
@@ -335,6 +465,13 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
             value TEXT NOT NULL,
             PRIMARY KEY(plugin_id, key)
         );
+        CREATE TABLE IF NOT EXISTS session_models(
+            engine TEXT NOT NULL,
+            session_id TEXT NOT NULL,
+            model TEXT NOT NULL,
+            updated_at INTEGER NOT NULL,
+            PRIMARY KEY(engine, session_id)
+        );
         ",
     )?;
     // NB: no `cache_version` meta row — it was written but never read; cache
@@ -351,6 +488,17 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
             [],
         )?;
     }
+    // Additive migration: a name the user gave a paired device, shown instead
+    // of the user-agent summary.
+    let has_device_name = conn
+        .prepare("PRAGMA table_info(web_devices)")?
+        .query_map([], |row| row.get::<_, String>(1))?
+        .flatten()
+        .any(|name| name == "name");
+    if !has_device_name {
+        conn.execute("ALTER TABLE web_devices ADD COLUMN name TEXT", [])?;
+    }
+
     // Additive migration: user-defined workspace order (drag reorder).
     let has_sort_order = conn
         .prepare("PRAGMA table_info(workspaces)")?
@@ -394,6 +542,86 @@ mod tests {
         fn drop(&mut self) {
             let _ = std::fs::remove_dir_all(&self.0);
         }
+    }
+
+    #[test]
+    fn session_model_record_round_trips_and_takes_the_newest() {
+        let scratch = Scratch::new();
+        let db = Db::open_at(&scratch.path("app.db")).unwrap();
+        db.0.lock()
+            .execute(
+                "INSERT INTO sessions(engine, session_id, workspace_path, file_path, file_size, file_mtime_ms, title)
+                 VALUES('omp', 's1', '/ws', 'f.jsonl', 1, 1, 'first message')",
+                [],
+            )
+            .unwrap();
+        // The join list_sessions runs: a session with no record has no model.
+        let read = || -> Option<String> {
+            let conn = db.0.lock();
+            conn.query_row(
+                "SELECT m.model FROM sessions s
+                 LEFT JOIN session_models m ON m.engine = s.engine AND m.session_id = s.session_id
+                 WHERE s.engine='omp' AND s.session_id='s1'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap()
+        };
+        assert_eq!(read(), None, "no record yet");
+
+        db.remember_session_model("omp", "s1", "agentrouter qunyou/deepseek-v4-flash", 10)
+            .unwrap();
+        assert_eq!(
+            read().as_deref(),
+            Some("agentrouter qunyou/deepseek-v4-flash"),
+            "the provider-qualified id is what survives"
+        );
+
+        db.remember_session_model("omp", "s1", "薄荷/claude-opus-5", 20)
+            .unwrap();
+        assert_eq!(read().as_deref(), Some("薄荷/claude-opus-5"), "newest wins");
+    }
+
+    #[test]
+    fn web_device_needs_approval_before_the_gate_lets_it_through() {
+        let scratch = Scratch::new();
+        let db = Db::open_at(&scratch.path("app.db")).unwrap();
+
+        db.web_device_touch("d1", "iPhone Safari", 1_000).unwrap();
+        let pending = db.web_device_get("d1").unwrap().unwrap();
+        assert!(pending.approved_at.is_none(), "a fresh device is pending");
+        assert_eq!(pending.user_agent, "iPhone Safari");
+
+        assert!(db.web_device_approve("d1", 2_000).unwrap());
+        let approved = db.web_device_get("d1").unwrap().unwrap();
+        assert_eq!(approved.approved_at, Some(2_000));
+        assert_eq!(approved.created_at, 1_000, "approval keeps the first-seen time");
+
+        assert!(db.web_device_revoke("d1").unwrap());
+        assert!(db.web_device_get("d1").unwrap().is_none(), "revoked = forgotten");
+    }
+
+    #[test]
+    fn web_device_touch_keeps_approval_and_lists_approved_first() {
+        let scratch = Scratch::new();
+        let db = Db::open_at(&scratch.path("app.db")).unwrap();
+
+        db.web_device_touch("old", "ua", 1).unwrap();
+        db.web_device_approve("old", 2).unwrap();
+        db.web_device_touch("new", "ua", 3).unwrap();
+
+        // Polling again must not lose the approval, blank the UA, or reset
+        // first-seen — the waiting page reloads every 2.5s.
+        db.web_device_touch("old", "", 4).unwrap();
+        let old = db.web_device_get("old").unwrap().unwrap();
+        assert_eq!(old.approved_at, Some(2));
+        assert_eq!(old.user_agent, "ua");
+        assert_eq!(old.last_seen_at, 4);
+
+        let listed = db.web_devices().unwrap();
+        assert_eq!(listed.len(), 2);
+        assert_eq!(listed[0].id, "old", "approved devices list first");
+        assert_eq!(listed[1].id, "new");
     }
 
     fn list(db: &Db) -> Vec<(String, String, Option<i64>)> {

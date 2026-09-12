@@ -4,10 +4,14 @@ import {
   createContext,
   useContext,
   useMemo,
+  useState,
   type ComponentType,
   type ReactNode,
   type Ref,
 } from "react";
+import { useTranslation } from "react-i18next";
+import Eye from "lucide-react/dist/esm/icons/eye";
+import EyeOff from "lucide-react/dist/esm/icons/eye-off";
 import {
   Group as AriaGroup,
   Input as AriaInput,
@@ -174,8 +178,14 @@ export function InputBase({
   ...inputProps
 }: InputBaseProps) {
   const ctx = useContext(TextFieldContext);
+  const { t } = useTranslation();
   const size: InputSize = sizeProp ?? ctx.size ?? "medium";
   const hasAddon = leadingAddon !== undefined && leadingAddon !== null;
+  // Password fields get the app's own reveal toggle: the browser's native one
+  // only exists on some platforms (Windows), so a user on macOS would have no
+  // way to check what they pasted.
+  const isPassword = inputProps.type === "password";
+  const [revealed, setRevealed] = useState(false);
 
   return (
     <AriaGroup
@@ -217,10 +227,30 @@ export function InputBase({
           <AriaInput
             ref={ref}
             {...inputProps}
+            type={isPassword && revealed ? "text" : inputProps.type}
             className={cx(inputStyles.input, ctx.inputClassName, className)}
           />
         </div>
-        {Trailing ? (
+        {isPassword ? (
+          <button
+            type="button"
+            aria-label={revealed ? t("common.hidePassword") : t("common.showPassword")}
+            // pointerdown, not click: inside the webview the click never
+            // reaches this button (react-aria's field plumbing swallows it),
+            // while the press itself does.
+            onPointerDown={(event) => {
+              event.preventDefault();
+              setRevealed((prev) => !prev);
+            }}
+            className="flex shrink-0 cursor-pointer items-center justify-center rounded-md text-foreground-icon-secondary transition-colors hover:text-foreground-icon-primary"
+          >
+            {revealed ? (
+              <EyeOff className={inputStyles.icon} aria-hidden />
+            ) : (
+              <Eye className={inputStyles.icon} aria-hidden />
+            )}
+          </button>
+        ) : Trailing ? (
           <Trailing className={inputStyles.icon} aria-hidden />
         ) : null}
       </div>
@@ -293,6 +323,10 @@ export function Input({
           <InputBase
             ref={ref}
             groupRef={groupRef}
+            // `type` normally rides on the TextField (react-aria hands it to
+            // the input through context), but InputBase needs to see it too —
+            // it is what draws the password reveal toggle.
+            type={textFieldProps.type}
             placeholder={placeholder}
             leadingIcon={leadingIcon}
             trailingIcon={trailingIcon}
