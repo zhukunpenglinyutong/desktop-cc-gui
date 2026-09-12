@@ -137,6 +137,7 @@ fn build_windows_extra_search_paths(
         // Fallback: npm global install path via USERPROFILE.
         paths.push(user_profile.join("AppData\\Roaming\\npm"));
         paths.push(user_profile.join(".local\\bin"));
+        paths.push(user_profile.join(".codex-cli\\bin"));
         paths.push(user_profile.join(".local\\share\\mise\\shims"));
         // Hermes ships dsh as a Node-global bin, same layout as ~/.hermes/node/bin.
         paths.push(user_profile.join(".hermes\\node"));
@@ -232,6 +233,7 @@ fn build_unix_extra_search_paths() -> Vec<PathBuf> {
     ];
     if let Some(home) = dirs::home_dir() {
         paths.push(home.join(".local/bin"));
+        paths.push(home.join(".codex-cli/bin"));
         paths.push(home.join(".local/share/mise/shims"));
         paths.push(home.join(".cargo/bin"));
         paths.push(home.join(".bun/bin"));
@@ -262,6 +264,12 @@ fn get_extra_search_paths() -> Vec<PathBuf> {
     #[cfg(not(windows))]
     {
         paths.extend(build_unix_extra_search_paths());
+    }
+
+    if let Ok(codex_home) = std::env::var("CODEX_HOME") {
+        if !codex_home.trim().is_empty() {
+            push_unique_path(&mut paths, PathBuf::from(codex_home.trim()).join("bin"));
+        }
     }
 
     for prefix_key in ["NPM_CONFIG_PREFIX", "npm_config_prefix"] {

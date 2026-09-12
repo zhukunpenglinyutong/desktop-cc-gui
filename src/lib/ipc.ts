@@ -195,6 +195,8 @@ export interface AppSettings {
   ompOpenaiServiceTier?: "default" | "priority" | null;
   /** Codex Fast override; null preserves ~/.codex/config.toml. */
   codexServiceTier?: "default" | "priority" | null;
+  /** Codex config/session home (`CODEX_HOME`); null uses ~/.codex. */
+  codexHome?: string | null;
   /** Max sessions listed per workspace in the sidebar (default 5). */
   sidebarThreadLimit: number;
   /** Composer send gesture: "enter" (Enter sends) or "cmdEnter" (⌘/Ctrl+Enter sends). */

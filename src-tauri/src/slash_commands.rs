@@ -246,7 +246,7 @@ fn skills_dirs(workspace_root: &Path) -> Vec<(PathBuf, &'static str)> {
     if claude_global.is_dir() {
         dirs.push((claude_global, "global"));
     }
-    let codex_home = crate::engine::engine_home(Some("CODEX_HOME"), ".codex");
+    let codex_home = crate::engine::codex_home();
     let codex_skills = codex_home.join("skills");
     // `.system` holds Codex's built-in skills one level deeper than the
     // personal ones; both are global scope.

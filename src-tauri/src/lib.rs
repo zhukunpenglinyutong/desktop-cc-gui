@@ -56,6 +56,7 @@ pub fn run() {
         if let Err(error) = proxy::apply_app_proxy_settings(&settings) {
             eprintln!("[proxy] failed to apply persisted proxy settings: {error}");
         }
+        settings::apply_codex_home(&settings);
     }
 
     tauri::Builder::default()

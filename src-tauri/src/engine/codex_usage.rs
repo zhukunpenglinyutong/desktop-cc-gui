@@ -36,7 +36,7 @@ impl UsageTail {
     /// appends from here on. None until the CLI has created the file, so
     /// callers retry while the run streams.
     pub fn open(thread_id: &str) -> Option<Self> {
-        let home = crate::engine::engine_home(Some("CODEX_HOME"), ".codex");
+        let home = crate::engine::codex_home();
         Self::open_in(&home, thread_id)
     }
 

@@ -13,6 +13,7 @@ vi.mock("./PiFamilyAuthSection", () => ({
   PiFamilyAuthSection: () => <div data-testid="pi-auth-section" />,
 }));
 
+import { CLI_DISPLAY_NAMES } from "@/components/foundations/icons/engine-brands";
 import i18n from "@/lib/i18n";
 import { CliConfigBody } from "./CliConfigBody";
 import type { CliConfigState } from "./useCliConfig";
@@ -164,5 +165,20 @@ describe("CliEngineSettingsCard official edit entry", () => {
   it("dsh: no official config row at all (no native config file)", async () => {
     await render(makeCli({ engine: "dsh" }));
     expect(container.textContent).not.toContain(i18n.t("settings.cliOfficial"));
+  });
+
+  it("codex: one path row (config home), not a separate binary override", async () => {
+    await render(makeCli({ engine: "codex" }));
+    expect(container.textContent).toContain(
+      i18n.t("settings.cliCustomHome", { name: CLI_DISPLAY_NAMES.codex }),
+    );
+    expect(container.textContent).not.toContain(i18n.t("settings.cliCustomPathUnset"));
+  });
+
+  it("claude: does not show a Codex config-home row", async () => {
+    await render(makeCli({ engine: "claude" }));
+    expect(container.textContent).not.toContain(
+      i18n.t("settings.cliCustomHome", { name: CLI_DISPLAY_NAMES.codex }),
+    );
   });
 });

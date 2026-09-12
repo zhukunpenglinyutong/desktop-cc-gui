@@ -75,7 +75,7 @@ fn targets(engine: &str) -> Vec<Target> {
             "settings.json",
         )],
         "codex" => {
-            let home = home(Some("CODEX_HOME"), ".codex");
+            let home = crate::engine::codex_home();
             vec![
                 target(home.join("config.toml"), "config.toml"),
                 target(home.join("auth.json"), "auth.json"),

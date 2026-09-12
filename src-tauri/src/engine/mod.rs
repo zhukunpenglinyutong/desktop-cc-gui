@@ -457,6 +457,28 @@ pub(crate) fn engine_home(env_key: Option<&str>, default_dir: &str) -> PathBuf {
     fallback_home().join(default_dir)
 }
 
+/// Codex config/session home. Settings override wins in production so CLI
+/// 管理's directory is what history, official config, and `codex exec` all
+/// read — not a leftover `~/.codex` default. Tests keep using `CODEX_HOME`
+/// / `HOME/.codex` so HomeGuard scratch dirs stay isolated.
+pub(crate) fn codex_home() -> PathBuf {
+    #[cfg(not(test))]
+    if let Some(path) = settings_codex_home() {
+        return path;
+    }
+    engine_home(Some("CODEX_HOME"), ".codex")
+}
+
+#[cfg(not(test))]
+fn settings_codex_home() -> Option<PathBuf> {
+    let custom = crate::settings::read_settings().ok()?.codex_home?;
+    let trimmed = custom.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    crate::open_app::expand_user_path(trimmed).ok()
+}
+
 /// Home dir for the default engine path. Production uses `dirs` (Known
 /// Folder API on Windows); tests steer the fallback through HOME /
 /// USERPROFILE env instead, because `dirs` ignores env on Windows and would
@@ -814,7 +836,22 @@ pub struct EngineInfo {
     pub permissions: Vec<String>,
 }
 
+fn codex_bin_from_home(settings: &crate::settings::AppSettings) -> Option<String> {
+    let home = settings.codex_home.as_deref()?.trim();
+    if home.is_empty() {
+        return None;
+    }
+    let expanded = crate::open_app::expand_user_path(home).ok()?;
+    let candidate = expanded.join("bin").join("codex");
+    candidate.exists().then(|| resolve::resolve_launchable_cli_binary(&candidate.to_string_lossy()))
+}
+
 pub(crate) fn engine_bin(settings: &crate::settings::AppSettings, engine_id: &str) -> String {
+    if engine_id == "codex" {
+        if let Some(from_home) = codex_bin_from_home(settings) {
+            return from_home;
+        }
+    }
     if let Some(custom) = settings.bin_override(engine_id) {
         let trimmed = custom.trim();
         if !trimmed.is_empty() {
@@ -843,6 +880,7 @@ pub fn list_engines() -> Vec<EngineInfo> {
                 Some(custom) if !custom.trim().is_empty() => {
                     crate::settings::validate_bin_override(custom).is_ok()
                 }
+                _ if *id == "codex" && codex_bin_from_home(&settings).is_some() => true,
                 _ => resolve::find_cli_binary(id, None).is_some(),
             };
             EngineInfo {
@@ -2119,5 +2157,31 @@ mod tool_args_tests {
             EngineEvent::Message { patch, .. } => assert!(patch),
             _ => panic!("expected patch"),
         }
+    }
+}
+
+#[cfg(test)]
+mod codex_home_bin_tests {
+    use super::*;
+
+    #[test]
+    fn engine_bin_prefers_codex_home_bin() {
+        let dir = std::env::temp_dir().join(format!(
+            "ccgui-codex-home-bin-{}",
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::create_dir_all(dir.join("bin")).unwrap();
+        let candidate = dir.join("bin").join("codex");
+        std::fs::write(&candidate, "#!/bin/sh\n").unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&candidate, std::fs::Permissions::from_mode(0o755)).unwrap();
+        }
+        let mut settings = crate::settings::AppSettings::default();
+        settings.codex_home = Some(dir.to_string_lossy().into_owned());
+        let resolved = engine_bin(&settings, "codex");
+        assert_eq!(PathBuf::from(&resolved), candidate);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

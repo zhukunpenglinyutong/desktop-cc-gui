@@ -429,6 +429,11 @@ export const en: Messages = {
     cliCustomPathUnset: "Auto-detect",
     cliCustomPathChoose: "Choose file",
     cliCustomPathClear: "Clear",
+    cliCustomHome: "Custom {{name}} path",
+    cliCustomHomeDesc:
+      "Official config, session history, and skills read this directory; the binary prefers bin/codex inside it. Leave empty to use ~/.codex and auto-detect the binary.",
+    cliCustomHomeUnset: "~/.codex (default)",
+    cliCustomHomeChoose: "Choose folder",
     cliCustomModels: "Custom models",
     cliCustomModelsDesc: "Add custom models for this CLI",
     cliCustomModelsDialogDesc: "Added models appear in this CLI's model picker.",

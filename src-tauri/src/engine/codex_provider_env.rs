@@ -26,7 +26,7 @@ done
 "#;
 
 pub(crate) async fn apply(command: &mut Command) {
-    let config_path = crate::engine::engine_home(Some("CODEX_HOME"), ".codex").join("config.toml");
+    let config_path = crate::engine::codex_home().join("config.toml");
     let Ok(contents) = tokio::fs::read_to_string(config_path).await else {
         return;
     };

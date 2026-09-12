@@ -52,6 +52,10 @@ pub struct AppSettings {
     /// Per-app Codex Fast override (`service_tier`); None preserves ~/.codex.
     #[serde(default)]
     pub codex_service_tier: Option<String>,
+    /// Codex config/session home (`CODEX_HOME`). None keeps ~/.codex, or a
+    /// CODEX_HOME already present in the process environment at launch.
+    #[serde(default)]
+    pub codex_home: Option<String>,
     /// Require a pairing key before the bridge serves a browser (设置 → 远程
     /// 访问 → 启用授权). Off by default: on the LAN the token URL is enough.
     #[serde(default)]
@@ -144,6 +148,7 @@ impl Default for AppSettings {
             default_efforts: HashMap::new(),
             omp_openai_service_tier: None,
             codex_service_tier: None,
+            codex_home: None,
             sidebar_thread_limit: default_sidebar_thread_limit(),
             composer_send_shortcut: default_composer_send_shortcut(),
             terminal_shell_path: None,
@@ -179,21 +184,70 @@ pub(crate) fn validate_bin_override(value: &str) -> Result<std::path::PathBuf, S
     }
     let canonical = std::fs::canonicalize(&path)
         .map_err(|e| format!("{}: cannot resolve ({e})", path.display()))?;
-    const TEMP_ROOTS: &[&str] = &[
-        "/tmp",
-        "/var/folders",
-        "/private/tmp",
-        "/private/var/folders",
-    ];
+    reject_temp_root(&canonical, "binaries")?;
+    Ok(canonical)
+}
+
+const TEMP_ROOTS: &[&str] = &[
+    "/tmp",
+    "/var/folders",
+    "/private/tmp",
+    "/private/var/folders",
+];
+
+fn reject_temp_root(path: &std::path::Path, kind: &str) -> Result<(), String> {
     for root in TEMP_ROOTS {
-        if canonical.starts_with(root) {
+        if path.starts_with(root) {
             return Err(format!(
-                "{}: binaries under {root} are not allowed",
-                canonical.display()
+                "{}: {kind} under {root} are not allowed",
+                path.display()
             ));
         }
     }
-    Ok(canonical)
+    Ok(())
+}
+
+/// Codex home override: absolute directory (may not exist yet). `~` is
+/// expanded. Same temp-dir refusal as bin overrides.
+fn validate_home_override(value: &str) -> Result<std::path::PathBuf, String> {
+    let expanded = crate::open_app::expand_user_path(value.trim())?;
+    if !expanded.is_absolute() {
+        return Err(format!("{}: not an absolute path", expanded.display()));
+    }
+    if expanded.exists() && !expanded.is_dir() {
+        return Err(format!("{}: not a directory", expanded.display()));
+    }
+    let check = if expanded.exists() {
+        std::fs::canonicalize(&expanded).unwrap_or_else(|_| expanded.clone())
+    } else {
+        expanded.clone()
+    };
+    reject_temp_root(&check, "homes")?;
+    Ok(expanded)
+}
+
+/// Push `settings.codex_home` into this process's `CODEX_HOME` so every
+/// existing `engine_home(Some("CODEX_HOME"), ".codex")` call site — official
+/// config, history, skills, catalog probes, and spawned `codex` — sees the
+/// same directory. Clearing the setting only unsets an env we previously
+/// applied, so a launch-time `CODEX_HOME` survives.
+pub(crate) fn apply_codex_home(settings: &AppSettings) {
+    static APPLIED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+    if let Some(home) = settings
+        .codex_home
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
+        if let Ok(expanded) = validate_home_override(home) {
+            std::env::set_var("CODEX_HOME", expanded);
+            APPLIED.store(true, std::sync::atomic::Ordering::Relaxed);
+            return;
+        }
+    }
+    if APPLIED.swap(false, std::sync::atomic::Ordering::Relaxed) {
+        std::env::remove_var("CODEX_HOME");
+    }
 }
 
 pub fn read_settings() -> Result<AppSettings, String> {
@@ -418,10 +472,20 @@ pub fn update_app_settings<R: tauri::Runtime>(
     app: tauri::AppHandle<R>,
     mut settings: AppSettings,
 ) -> Result<(), String> {
+    let prev_home = read_settings().ok().and_then(|s| s.codex_home);
     let result = persist_settings(&mut settings);
     // Other surfaces (the composer's proxy toggle) follow along without
     // re-reading settings.json.
     let _ = app.emit("settings://changed", ());
+    if result.is_ok() && prev_home != settings.codex_home {
+        use tauri::Manager;
+        if let Some(state) = app.try_state::<crate::AppState>() {
+            crate::history::scanner::spawn_scan(
+                std::sync::Arc::clone(&state.db),
+                std::sync::Arc::clone(&state.sink),
+            );
+        }
+    }
     result
 }
 
@@ -477,6 +541,15 @@ pub fn persist_settings(settings: &mut AppSettings) -> Result<(), String> {
             }
         }
     }
+    if let Some(home) = settings.codex_home.take() {
+        let trimmed = home.trim().to_string();
+        if !trimmed.is_empty() {
+            match validate_home_override(&trimmed) {
+                Ok(path) => settings.codex_home = Some(path.to_string_lossy().into_owned()),
+                Err(reason) => rejected.push(format!("codexHome: {reason}")),
+            }
+        }
+    }
     let path = crate::paths::settings_path();
     let content = serde_json::to_string_pretty(&settings).map_err(|e| e.to_string())?;
     // Reject before persisting: an invalid proxy URL must not be saved (the
@@ -485,6 +558,7 @@ pub fn persist_settings(settings: &mut AppSettings) -> Result<(), String> {
     atomic_write(&path, &content)?;
     // Apply to this process's env so the next spawned child inherits it.
     crate::proxy::apply_app_proxy_settings(&settings)?;
+    apply_codex_home(settings);
     if rejected.is_empty() {
         Ok(())
     } else {
@@ -756,6 +830,15 @@ mod tests {
         assert!(!pairing_key_matches("", "--------"));
         assert!(!pairing_key_matches("", ""));
         assert!(!pairing_key_matches("BCDF2345", "BCDF2346"));
+    }
+
+    #[test]
+    fn home_override_expands_tilde_and_rejects_temp() {
+        let home = validate_home_override("~/.codex-cli").unwrap();
+        assert!(home.is_absolute());
+        assert!(home.ends_with(".codex-cli"));
+        assert!(validate_home_override("/tmp/codex-home").is_err());
+        assert!(validate_home_override("relative/codex").is_err());
     }
 
     /// The property the relay's whole gate rests on: a code opens exactly one

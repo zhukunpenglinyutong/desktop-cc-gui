@@ -409,6 +409,11 @@ export const zh = {
     cliCustomPathUnset: "自动检测",
     cliCustomPathChoose: "选择文件",
     cliCustomPathClear: "清除",
+    cliCustomHome: "自定义 {{name}} 路径",
+    cliCustomHomeDesc:
+      "官方配置、会话历史和技能都读这个目录；可执行文件优先用其中的 bin/codex。留空则使用 ~/.codex 并自动检测二进制。",
+    cliCustomHomeUnset: "~/.codex（默认）",
+    cliCustomHomeChoose: "选择目录",
     cliCustomModels: "自定义模型",
     cliCustomModelsDesc: "在此CLI添加自定义模型",
     cliCustomModelsDialogDesc: "添加的模型会出现在该 CLI 的模型选择列表中。",

@@ -339,7 +339,7 @@ fn identify_head(engine: &str, path: &Path) -> Option<(String, String)> {
 
 /// Codex rollout files (readdir only, no content reads).
 fn codex_candidates() -> Vec<PathBuf> {
-    let home = crate::engine::engine_home(Some("CODEX_HOME"), ".codex");
+    let home = crate::engine::codex_home();
     let mut out = Vec::new();
     for root in [home.join("sessions"), home.join("archived_sessions")] {
         let mut stack = vec![root];
@@ -476,6 +476,9 @@ fn gather_candidates(workspaces: &[String]) -> Vec<Candidate> {
 fn stat_all(workspaces: &[String], candidates: &[Candidate]) -> (Vec<Option<(i64, i64)>>, String) {
     let mut signature_hasher = Sha256::new();
     signature_hasher.update(format!("v{}|", crate::db::CACHE_VERSION).as_bytes());
+    signature_hasher.update(b"codex_home=");
+    signature_hasher.update(crate::engine::codex_home().to_string_lossy().as_bytes());
+    signature_hasher.update(b"|");
     for w in workspaces {
         signature_hasher.update(w.as_bytes());
         signature_hasher.update(b"|");
@@ -693,6 +696,77 @@ fn prune_codex_subagent_sessions(db: &crate::db::Db) -> Result<bool, String> {
     Ok(true)
 }
 
+fn path_is_under(path: &str, home: &Path) -> bool {
+    let path = Path::new(path);
+    if path.starts_with(home) {
+        return true;
+    }
+    match (std::fs::canonicalize(path), std::fs::canonicalize(home)) {
+        (Ok(path), Ok(home)) => path.starts_with(home),
+        _ => false,
+    }
+}
+
+/// Drop Codex rows indexed from a previous CODEX_HOME after the user points
+/// CLI 管理 at another directory. Returns true when any row was removed.
+///
+/// No custom home → no-op. Default `~/.codex` users must not lose history
+/// because of a path-prefix mismatch (symlink, case, missing file).
+fn prune_codex_sessions_outside_home(db: &crate::db::Db) -> Result<bool, String> {
+    #[cfg(not(test))]
+    {
+        let custom = crate::settings::read_settings()
+            .ok()
+            .and_then(|s| s.codex_home)
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty());
+        if custom.is_none() {
+            return Ok(false);
+        }
+    }
+    let home = crate::engine::codex_home();
+    let paths: Vec<(String, String)> = {
+        let conn = db.0.lock();
+        let mut stmt = conn
+            .prepare("SELECT session_id, file_path FROM sessions WHERE engine='codex'")
+            .map_err(|e| e.to_string())?;
+        let rows = stmt
+            .query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))
+            .map_err(|e| e.to_string())?;
+        let mut out = Vec::new();
+        for row in rows {
+            match row {
+                Ok(pair) => out.push(pair),
+                Err(e) => eprintln!("[scanner] skipping undecodable codex session row: {e}"),
+            }
+        }
+        out
+    };
+    let dead: Vec<String> = paths
+        .into_iter()
+        .filter(|(_, path)| !path_is_under(path, &home))
+        .map(|(id, _)| id)
+        .collect();
+    if dead.is_empty() {
+        return Ok(false);
+    }
+    let conn = db.0.lock();
+    for id in &dead {
+        conn.execute(
+            "DELETE FROM sessions WHERE engine='codex' AND session_id=?1",
+            rusqlite::params![id],
+        )
+        .map_err(|e| e.to_string())?;
+    }
+    Ok(true)
+}
+
+fn prune_stale_codex_sessions(db: &crate::db::Db) -> Result<bool, String> {
+    let outside = prune_codex_sessions_outside_home(db)?;
+    let subagent = prune_codex_subagent_sessions(db)?;
+    Ok(outside || subagent)
+}
+
 /// Phase B (one lock, one transaction): upsert every prepared row, then
 /// record the signature that makes the next scan a short-circuit.
 fn upsert_rows(db: &crate::db::Db, rows: &[PreparedUpsert], tier1: &Tier1) -> Result<(), String> {
@@ -759,7 +833,7 @@ fn scan_inner(
     let candidates = gather_candidates(&workspaces);
     let (stats, signature) = stat_all(&workspaces, &candidates);
     let Some(tier1) = tier1_gate(db, signature)? else {
-        let pruned = prune_codex_subagent_sessions(db)?;
+        let pruned = prune_stale_codex_sessions(db)?;
         if super::codex_titles::sync(db)? || pruned {
             on_changed();
         }
@@ -808,7 +882,7 @@ fn scan_inner(
     // Phase B: the db lock is held only for the upsert transaction.
     let reparsed = rows.len();
     upsert_rows(db, &rows, &tier1)?;
-    prune_codex_subagent_sessions(db)?;
+    prune_stale_codex_sessions(db)?;
     super::codex_titles::sync(db)?;
     on_changed();
     if total > 0 {
@@ -1296,6 +1370,86 @@ mod tests {
                 .map_err(|e| e.to_string())?
         };
         assert_eq!(ids, vec!["parent".to_string()]);
+        drop(db);
+        std::fs::remove_dir_all(&home).ok();
+        Ok(())
+    }
+
+    #[test]
+    fn default_codex_home_keeps_indexed_sessions() -> Result<(), String> {
+        let home = scratch_dir("scan-codex-default-keep");
+        let workspace = home.join("ws");
+        std::fs::create_dir_all(&workspace).map_err(|e| e.to_string())?;
+        let rollout = home
+            .join(".codex")
+            .join("sessions")
+            .join("rollout-keep.jsonl");
+        std::fs::create_dir_all(rollout.parent().unwrap()).map_err(|e| e.to_string())?;
+        let _guard = HomeGuard::set(&home);
+        let db = crate::db::Db::open_at(&home.join("app.db")).map_err(|e| e.to_string())?;
+        {
+            let conn = db.0.lock();
+            conn.execute(
+                "INSERT INTO workspaces(id, path, name) VALUES('w1', ?1, 'ws')",
+                [workspace.to_string_lossy().to_string()],
+            )
+            .map_err(|e| e.to_string())?;
+            conn.execute(
+                "INSERT INTO sessions(engine, session_id, workspace_path, file_path, file_size, file_mtime_ms, title) VALUES('codex', 'keep', ?1, ?2, 1, 1, '默认目录')",
+                rusqlite::params![
+                    workspace.to_string_lossy().to_string(),
+                    rollout.to_string_lossy().to_string()
+                ],
+            )
+            .map_err(|e| e.to_string())?;
+        }
+        scan_with(&db, || {})?;
+        let count: i64 = {
+            let conn = db.0.lock();
+            conn.query_row(
+                "SELECT COUNT(*) FROM sessions WHERE engine='codex' AND session_id='keep'",
+                [],
+                |r| r.get(0),
+            )
+            .map_err(|e| e.to_string())?
+        };
+        assert_eq!(count, 1);
+        drop(db);
+        std::fs::remove_dir_all(&home).ok();
+        Ok(())
+    }
+
+    #[test]
+    fn scan_prunes_codex_rows_from_another_home() -> Result<(), String> {
+        let home = scratch_dir("scan-codex-wrong-home");
+        let workspace = home.join("ws");
+        std::fs::create_dir_all(&workspace).map_err(|e| e.to_string())?;
+        let _guard = HomeGuard::set(&home);
+        let db = crate::db::Db::open_at(&home.join("app.db")).map_err(|e| e.to_string())?;
+        {
+            let conn = db.0.lock();
+            conn.execute(
+                "INSERT INTO workspaces(id, path, name) VALUES('w1', ?1, 'ws')",
+                [workspace.to_string_lossy().to_string()],
+            )
+            .map_err(|e| e.to_string())?;
+            conn.execute(
+                "INSERT INTO sessions(engine, session_id, workspace_path, file_path, file_size, file_mtime_ms, title) VALUES('codex', 'old', ?1, '/Users/demo/.codex/sessions/old.jsonl', 1, 1, '旧目录')",
+                [workspace.to_string_lossy().to_string()],
+            )
+            .map_err(|e| e.to_string())?;
+        }
+        scan_with(&db, || {})?;
+        let count: i64 = {
+            let conn = db.0.lock();
+            conn.query_row(
+                "SELECT COUNT(*) FROM sessions WHERE engine='codex'",
+                [],
+                |r| r.get(0),
+            )
+            .map_err(|e| e.to_string())?
+        };
+        assert_eq!(count, 0);
         drop(db);
         std::fs::remove_dir_all(&home).ok();
         Ok(())

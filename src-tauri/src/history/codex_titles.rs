@@ -31,7 +31,7 @@ fn read_names(path: &Path) -> HashMap<String, String> {
 /// modify its rollout. Update the derived title, leaving local custom titles
 /// and message timestamps intact.
 pub(super) fn sync(db: &crate::db::Db) -> Result<bool, String> {
-    let home = crate::engine::engine_home(Some("CODEX_HOME"), ".codex");
+    let home = crate::engine::codex_home();
     sync_from(db, &home.join("session_index.jsonl"))
 }
 
