@@ -56,6 +56,7 @@ fn normalize_target_value(value: Option<String>) -> Option<String> {
         .map(ToOwned::to_owned)
 }
 
+#[cfg(target_os = "macos")]
 fn format_exit_detail(code: Option<i32>) -> String {
     code.map(|value| format!("exit code {value}"))
         .unwrap_or_else(|| "terminated by signal".to_string())

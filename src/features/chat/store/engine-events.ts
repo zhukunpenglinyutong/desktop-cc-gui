@@ -12,6 +12,7 @@ import {
   patchSession,
   resolveSessionEffort,
   resolveSessionModel,
+  rememberSettledRun,
   routeRun,
   runRouting,
   scheduleDeltaFlush,
@@ -22,7 +23,7 @@ import {
   updatePendingStreamModel,
 } from "./stream";
 import type { ChatStore } from "../store";
-import { mergeUsage, parseUsage, type ParsedUsage } from "../usage";
+import { mergeUsage, parseUsage, reportedContextWindow, type ParsedUsage } from "../usage";
 import { usageTrackingEnabled } from "@/features/settings/usage-tracking";
 
 /**
@@ -262,6 +263,9 @@ const pendingSessionModels = new Map<string, string>();
  *  of a new session and can only be filed under the id the `session` event
  *  carries. */
 const pendingSessionEfforts = new Map<string, string>();
+/** Same hand-off for the in-app channel: spawn injects env from this id, and
+ *  a brand-new session only learns its native id from the `session` event. */
+const pendingSessionProviders = new Map<string, string>();
 
 export function rememberModelForRun(
   key: string,
@@ -277,34 +281,36 @@ export function rememberEffortForRun(
   if (effort) pendingSessionEfforts.set(key, effort);
 }
 
+export function rememberProviderForRun(
+  key: string,
+  provider: string | null | undefined,
+) {
+  if (provider) pendingSessionProviders.set(key, provider);
+}
+
 function onSession(
   event: EngineEventPayload,
   key: string,
   deps: EngineEventDeps,
 ) {
   const nativeId = event.data as string;
-  const sentModel = pendingSessionModels.get(key);
-  if (sentModel) {
-    pendingSessionModels.delete(key);
-    void ipc
-      .rememberSessionModel(event.engine, nativeId, sentModel)
-      .catch(() => {});
-  }
-  const sentEffort = pendingSessionEfforts.get(key);
-  if (sentEffort) {
-    pendingSessionEfforts.delete(key);
-    void ipc
-      .rememberSessionEffort(event.engine, nativeId, sentEffort)
-      .catch(() => {});
-  }
   // Resolve the workspace from the tab that owns this key — not from the
   // active tab. A first message sent on a background tab must not adopt the
   // foreground tab's workspace (the session would be orphaned there).
-  const tab = deps
-    .get()
-    .openTabs.find(
-      (t) => sessionKey(t.engine, t.sessionId, t.workspacePath) === key,
-    );
+  const tab =
+    deps
+      .get()
+      .openTabs.find(
+        (t) => sessionKey(t.engine, t.sessionId, t.workspacePath) === key,
+      ) ??
+    deps
+      .get()
+      .openTabs.find(
+        (t) =>
+          t.engine === event.engine &&
+          t.sessionId === null &&
+          deps.get().bySession[sessionKey(t.engine, null, t.workspacePath)] !== undefined,
+      );
   const workspacePath =
     tab?.workspacePath ?? deps.get().active?.workspacePath ?? "";
   const newKey = sessionKey(event.engine, nativeId, workspacePath);
@@ -313,11 +319,39 @@ function onSession(
   // flag still sit under the pending key then; migrate from there instead of
   // orphaning them on a key nothing renders.
   const pendingKey = sessionKey(event.engine, null, workspacePath);
-  const fromKey = deps.get().bySession[key]
-    ? key
-    : pendingKey !== key && deps.get().bySession[pendingKey]
+  const fromKey =
+    pendingKey !== newKey && deps.get().bySession[pendingKey]
       ? pendingKey
       : key;
+
+  const sentModel =
+    pendingSessionModels.get(fromKey) ?? pendingSessionModels.get(key);
+  if (sentModel) {
+    pendingSessionModels.delete(fromKey);
+    pendingSessionModels.delete(key);
+    void ipc
+      .rememberSessionModel?.(event.engine, nativeId, sentModel)
+      ?.catch(() => {});
+  }
+  const sentEffort =
+    pendingSessionEfforts.get(fromKey) ?? pendingSessionEfforts.get(key);
+  if (sentEffort) {
+    pendingSessionEfforts.delete(fromKey);
+    pendingSessionEfforts.delete(key);
+    void ipc
+      .rememberSessionEffort?.(event.engine, nativeId, sentEffort)
+      ?.catch(() => {});
+  }
+  const sentProvider =
+    pendingSessionProviders.get(fromKey) ?? pendingSessionProviders.get(key);
+  if (sentProvider) {
+    pendingSessionProviders.delete(fromKey);
+    pendingSessionProviders.delete(key);
+    void ipc
+      .rememberSessionProvider?.(event.engine, nativeId, sentProvider)
+      ?.catch(() => {});
+  }
+
   settleOrphanedRuns(deps.set, routeRun(event.runId, newKey));
   // Unflushed stream chunks sit under the pre-migration key; move them too.
   migratePendingStream(fromKey, newKey);
@@ -325,7 +359,15 @@ function onSession(
   deps.set((s) => {
     const prev = s.bySession[fromKey];
     if (!prev) return {};
-    const bySession = { ...s.bySession, [newKey]: prev };
+    const cur = s.bySession[newKey];
+    const messages =
+      cur && cur !== prev && cur.messages.length > 0
+        ? [...prev.messages, ...cur.messages]
+        : prev.messages;
+    const bySession = {
+      ...s.bySession,
+      [newKey]: { ...prev, ...cur, messages },
+    };
     if (fromKey !== newKey) delete bySession[fromKey];
     const drafts = { ...s.drafts };
     if (fromKey in drafts) {
@@ -430,7 +472,7 @@ function onUsage(
   const parsed = parseUsage(event.data);
   const totals = parsed ? addTurnUsage(event.runId, parsed) : null;
   patchSession(deps.set, key, {
-    usage: event.data,
+    usage: mergeUsage(event.data, deps.get().bySession[key]?.usage),
     ...(totals ? { turnUsage: usageSnapshot(totals) } : {}),
   });
   if (parsed) recordUsageReport(deps, event, key, parsed);
@@ -552,6 +594,7 @@ function onError(
           streaming: false,
           turnStartedAt: null,
           turnUsage: null,
+          settledRunIds: rememberSettledRun(cur, event.runId),
         },
       },
       streamingByKey: setStreamingFlag(s.streamingByKey, key, false),
@@ -563,6 +606,7 @@ function onError(
   untrackRun(event.runId);
   dropRunUsage(event.runId);
   deps.markUnseenIfBackground(key);
+  void deps.refreshSessionUsage?.(key).catch(() => {});
   // An error settles the turn exactly like done does — the messages typed
   // behind it are the user's next step, and parking them here left the queue
   // stuck until it was sent or cleared by hand. A stop is still the user's
@@ -673,10 +717,14 @@ function onDone(event: EngineEventPayload, key: string, deps: EngineEventDeps) {
   const data = event.data as { usage: unknown };
   // Occupancy for the context meter: the newest single report (claude's one
   // payload already carries the turn's totals).
-  const settledUsage = mergeUsage(data.usage, prev.usage);
+  const turnTotals = turnUsageTotals.get(event.runId);
+  let settledUsage = mergeUsage(turnTotals ? prev.usage : data.usage, prev.usage);
+  const finalWindow = reportedContextWindow(data.usage);
+  if (finalWindow && settledUsage && typeof settledUsage === "object") {
+    settledUsage = { ...settledUsage, model_context_window: finalWindow };
+  }
   // The row tells the reader what the reply cost: every report of this run
   // summed, which for a multi-request reply is more than its last request.
-  const turnTotals = turnUsageTotals.get(event.runId);
   turnUsageTotals.delete(event.runId);
   const finalUsage = turnTotals
     ? mergeUsage(usageSnapshot(turnTotals), settledUsage)
@@ -729,6 +777,7 @@ function onDone(event: EngineEventPayload, key: string, deps: EngineEventDeps) {
           usage: settledUsage,
           turnUsage: null,
           interrupted: false,
+          settledRunIds: rememberSettledRun(cur, event.runId),
         },
       },
       streamingByKey: setStreamingFlag(s.streamingByKey, key, false),
@@ -742,20 +791,13 @@ function onDone(event: EngineEventPayload, key: string, deps: EngineEventDeps) {
   // feature's own switch gates it (localStorage-backed, see usage-tracking.ts).
   recordTurnUsage(deps, event, key, finalUsage);
   // Native file changed; refresh list cache in background.
-  ipc.rescanSessions().catch(() => {});
+  if (deps.refreshSessionUsage) void deps.refreshSessionUsage(key).catch(() => {});
+  else void ipc.rescanSessions().catch(() => {});
   deps.markUnseenIfBackground(key);
   // An interrupted turn settles here too: keep the queue parked — the user
   // stopped the session, the next message is theirs to send.
   if (!prev.interrupted) {
     deps.drainQueue(key);
-    // If this turn was a /compact command, refresh latest token usage from session history
-    // once the engine settles the session file on disk.
-    const lastUser = [...prev.messages].reverse().find((m) => m.role === "user");
-    if (lastUser?.text.trim().startsWith("/compact")) {
-      setTimeout(() => {
-        deps.refreshSessionUsage?.(key)?.catch(() => {});
-      }, 400);
-    }
   }
 }
 
@@ -809,7 +851,9 @@ export function handleEngineEvents(
 ) {
   for (const event of events) {
     const state = deps.get();
-    let key = runRouting.get(event.runId);
+    let key = runRouting.get(event.runId) ?? Object.keys(state.bySession).find(
+      (candidate) => state.bySession[candidate]?.settledRunIds?.includes(event.runId),
+    );
     if (key) touchRun(event.runId);
     if (!key && event.sessionId) {
       key = sessionKey(event.engine, event.sessionId, "");
@@ -822,6 +866,12 @@ export function handleEngineEvents(
       }
     }
     if (!key) continue;
+    if (state.bySession[key]?.settledRunIds?.includes(event.runId)) {
+      // Shutdown diagnostics remain visible, but cannot restart a turn or
+      // overwrite a newer turn's state.
+      if (event.kind === "warn" && !state.bySession[key]?.streaming) onWarn(event, key, deps);
+      continue;
+    }
 
     // Engine events reach every attached client, but the running flag is set
     // by the sender's own send path — so an observer (a phone watching the

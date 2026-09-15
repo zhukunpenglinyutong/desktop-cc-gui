@@ -1,6 +1,6 @@
 import type { EngineId } from "./providers";
 import { CliConfigBody } from "./CliConfigBody";
-import { CliDeleteConfirm, CliProviderDialog, CliSwitchConfirm } from "./CliConfigDialogs";
+import { CliDeleteConfirm, CliProviderDialog } from "./CliConfigDialogs";
 import { CliOfficialEditDialog } from "./CliOfficialEditDialog";
 import { useCliConfig } from "./useCliConfig";
 
@@ -36,7 +36,6 @@ export function CliConfigSection({ engine }: { engine: EngineId }) {
       <CliProviderDialog cli={cli} />
       <CliOfficialEditDialog cli={cli} />
       <CliDeleteConfirm cli={cli} />
-      <CliSwitchConfirm cli={cli} />
     </div>
   );
 }

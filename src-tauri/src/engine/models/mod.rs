@@ -247,11 +247,18 @@ fn flatten_llm_models(catalog: &serde_json::Value, describe: Option<&serde_json:
 async fn codex_catalog() -> EngineCatalog {
     let settings = crate::settings::read_settings().unwrap_or_default();
     let bin = super::engine_bin(&settings, "codex");
-    if let Ok(models) = codex::run_codex_debug_models(&bin).await {
+    if let Ok(mut models) = codex::run_codex_debug_models(&bin).await {
         if !models.is_empty() {
+            let configured = codex::codex_config_model();
+            // The explicit CLI setting overrides its catalog default (e.g.
+            // a configured 1M window). max_context_window alone is capability,
+            // not the window this request actually uses.
+            if let Some(window) = configured.as_ref().and_then(|model| model.context_window) {
+                for model in &mut models { model.context_window = Some(window); }
+            }
             return EngineCatalog::authoritative(with_default_first(
                 models,
-                codex::codex_config_model(),
+                configured,
             ));
         }
     }

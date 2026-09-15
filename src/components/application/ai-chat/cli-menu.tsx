@@ -20,7 +20,7 @@ import { cx } from "@/utils/cx";
 import { usePopoverState } from "@/utils/use-dismiss-on-outside-press";
 import { EFFORT_LEVELS } from "./effort-levels";
 import { EFFORT_LABEL_KEYS, type EffortLevel } from "./effort-levels";
-import { EngineFlyout, EngineModelPanel } from "./engine-model-panel";
+import { EngineFlyout, EngineModelPanel, type ChannelOption } from "./engine-model-panel";
 
 export type { EffortLevel } from "./effort-levels";
 
@@ -243,6 +243,9 @@ function EngineMenuBody({
   onHoverEngine,
   onPickModel,
   onEffortChange,
+  channelsByEngine,
+  selectedChannels,
+  onPickChannel,
   ompServiceTier,
   onOmpServiceTierChange,
   codexServiceTier,
@@ -265,6 +268,9 @@ function EngineMenuBody({
   onHoverEngine: (option: MenuOption) => void;
   onPickModel: (engine: string, id: string) => void;
   onEffortChange: (engine: string, level: EffortLevel) => void;
+  channelsByEngine?: Record<string, ChannelOption[]>;
+  selectedChannels?: Record<string, string>;
+  onPickChannel?: (engine: string, id: string) => void;
   ompServiceTier: OmpServiceTier;
   onOmpServiceTierChange: (tier: OmpServiceTier) => Promise<void>;
   codexServiceTier: OmpServiceTier;
@@ -309,6 +315,9 @@ function EngineMenuBody({
               effort={efforts[flyoutOption.id] ?? "medium"}
               onPickModel={onPickModel}
               onEffortChange={onEffortChange}
+              channels={channelsByEngine?.[flyoutOption.id]}
+              selectedChannelId={selectedChannels?.[flyoutOption.id]}
+              onPickChannel={onPickChannel}
               ompServiceTier={ompServiceTier}
               onOmpServiceTierChange={onOmpServiceTierChange}
               codexServiceTier={codexServiceTier}
@@ -333,6 +342,9 @@ function EngineModelDialog({
   onQueryChange,
   onPickModel,
   onEffortChange,
+  channelsByEngine,
+  selectedChannels,
+  onPickChannel,
   ompServiceTier,
   onOmpServiceTierChange,
   codexServiceTier,
@@ -349,6 +361,9 @@ function EngineModelDialog({
   onQueryChange: (value: string) => void;
   onPickModel: (engine: string, id: string) => void;
   onEffortChange: (engine: string, level: EffortLevel) => void;
+  channelsByEngine?: Record<string, ChannelOption[]>;
+  selectedChannels?: Record<string, string>;
+  onPickChannel?: (engine: string, id: string) => void;
   ompServiceTier: OmpServiceTier;
   onOmpServiceTierChange: (tier: OmpServiceTier) => Promise<void>;
   codexServiceTier: OmpServiceTier;
@@ -371,6 +386,9 @@ function EngineModelDialog({
         effort={efforts[option.id] ?? "medium"}
         onPickModel={onPickModel}
         onEffortChange={onEffortChange}
+        channels={option ? channelsByEngine?.[option.id] : undefined}
+        selectedChannelId={option ? selectedChannels?.[option.id] : undefined}
+        onPickChannel={onPickChannel}
         ompServiceTier={ompServiceTier}
         onOmpServiceTierChange={onOmpServiceTierChange}
         codexServiceTier={codexServiceTier}
@@ -399,6 +417,9 @@ export function CliMenu({
   onModelChange,
   efforts,
   onEffortChange,
+  channelsByEngine,
+  selectedChannels,
+  onChannelChange,
   ompServiceTier,
   onOmpServiceTierChange,
   codexServiceTier,
@@ -417,6 +438,9 @@ export function CliMenu({
   /** Per-engine reasoning effort, rendered under each flyout's model list. */
   efforts: Record<string, EffortLevel>;
   onEffortChange: (engine: string, level: EffortLevel) => void;
+  channelsByEngine?: Record<string, ChannelOption[]>;
+  selectedChannels?: Record<string, string>;
+  onChannelChange?: (engine: string, id: string) => void;
   ompServiceTier: OmpServiceTier;
   onOmpServiceTierChange: (tier: OmpServiceTier) => Promise<void>;
   codexServiceTier: OmpServiceTier;
@@ -466,6 +490,13 @@ export function CliMenu({
   // engine still switches the active CLI; the flyout stays on that engine.
   const pickModel = (engine: string, id: string) => {
     onModelChange(engine, id);
+    const target = options.find((o) => o.id === engine);
+    if (engine !== value && target && !target.disabled) onChange(engine);
+    if (!isMobile) setOpenEngine(engine);
+  };
+
+  const pickChannel = (engine: string, id: string) => {
+    onChannelChange?.(engine, id);
     const target = options.find((o) => o.id === engine);
     if (engine !== value && target && !target.disabled) onChange(engine);
     if (!isMobile) setOpenEngine(engine);
@@ -545,6 +576,9 @@ export function CliMenu({
             onHoverEngine={hoverEngine}
             onPickModel={pickModel}
             onEffortChange={onEffortChange}
+            channelsByEngine={channelsByEngine}
+            selectedChannels={selectedChannels}
+            onPickChannel={pickChannel}
             ompServiceTier={ompServiceTier}
             onOmpServiceTierChange={onOmpServiceTierChange}
             codexServiceTier={codexServiceTier}
@@ -565,6 +599,9 @@ export function CliMenu({
       onQueryChange={setQuery}
       onPickModel={pickModel}
       onEffortChange={onEffortChange}
+      channelsByEngine={channelsByEngine}
+      selectedChannels={selectedChannels}
+      onPickChannel={pickChannel}
       ompServiceTier={ompServiceTier}
       onOmpServiceTierChange={onOmpServiceTierChange}
       codexServiceTier={codexServiceTier}

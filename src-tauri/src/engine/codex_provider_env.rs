@@ -27,12 +27,20 @@ done
 
 pub(crate) async fn apply(command: &mut Command) {
     let config_path = crate::engine::codex_home().join("config.toml");
-    let Ok(contents) = tokio::fs::read_to_string(config_path).await else {
-        return;
-    };
-    let missing: Vec<String> = collect_env_keys(&contents)
+    let contents = tokio::fs::read_to_string(config_path)
+        .await
+        .unwrap_or_default();
+    let mut keys = collect_env_keys(&contents);
+    // A channel can introduce an env_key via -c without changing config.toml.
+    let args: Vec<_> = command.as_std().get_args().collect();
+    for pair in args.windows(2) {
+        if pair[0] == "-c" {
+            keys.extend(collect_env_keys(&pair[1].to_string_lossy()));
+        }
+    }
+    let missing: Vec<String> = keys
         .into_iter()
-        .filter(|key| !env_has_non_empty_value(key))
+        .filter(|key| !env_has_non_empty_value(command, key))
         .collect();
     if missing.is_empty() {
         return;
@@ -45,8 +53,16 @@ pub(crate) async fn apply(command: &mut Command) {
     }
 }
 
-fn env_has_non_empty_value(key: &str) -> bool {
-    env::var_os(key).is_some_and(|value| !value.is_empty())
+fn env_has_non_empty_value(command: &Command, key: &str) -> bool {
+    // Explicit values (including empty/removal) belong to this launch. Never
+    // replace them with a credential from another account's login shell.
+    command.as_std().get_envs().any(|(name, _)| {
+        if cfg!(windows) {
+            name.to_string_lossy().eq_ignore_ascii_case(key)
+        } else {
+            name == key
+        }
+    }) || env::var_os(key).is_some_and(|value| !value.is_empty())
 }
 
 fn collect_env_keys(contents: &str) -> BTreeSet<String> {
@@ -132,6 +148,16 @@ fn parse_framed_values(stdout: &[u8], keys: &[String]) -> BTreeMap<String, Strin
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn shell_credentials_never_replace_explicit_child_env() {
+        let mut command = Command::new("codex");
+        command.env("CCGUI_TEST_CHANNEL_KEY", "channel-key");
+        assert!(env_has_non_empty_value(&command, "CCGUI_TEST_CHANNEL_KEY"));
+        // An explicit removal is also intentional, not a missing inherited key.
+        command.env_remove("CCGUI_TEST_CHANNEL_KEY");
+        assert!(env_has_non_empty_value(&command, "CCGUI_TEST_CHANNEL_KEY"));
+    }
 
     #[test]
     fn collects_only_valid_provider_env_keys() {

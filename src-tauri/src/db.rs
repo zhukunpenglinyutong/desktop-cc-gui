@@ -203,6 +203,28 @@ impl Db {
         Ok(())
     }
 
+    /// Remember the in-app channel a session ran. Spawn injects that channel's
+    /// env onto the child and never rewrites the CLI's own files, so this row
+    /// is what keeps two concurrent sessions of the same engine on different
+    /// channels across restarts and other clients.
+    pub fn remember_session_provider(
+        &self,
+        engine: &str,
+        session_id: &str,
+        provider_id: &str,
+        now: i64,
+    ) -> Result<(), String> {
+        let conn = self.0.lock();
+        conn.execute(
+            "INSERT INTO session_providers(engine, session_id, provider_id, updated_at)
+             VALUES (?1, ?2, ?3, ?4)
+             ON CONFLICT(engine, session_id) DO UPDATE SET provider_id=excluded.provider_id, updated_at=excluded.updated_at",
+            rusqlite::params![engine, session_id, provider_id, now],
+        )
+        .map_err(|e| e.to_string())?;
+        Ok(())
+    }
+
     /// Approve (or re-approve) a device. Unknown ids are ignored: the row is
     /// created by the device's own request, never by the UI.
     pub fn web_device_approve(&self, id: &str, now: i64) -> Result<bool, String> {
@@ -504,6 +526,15 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
             updated_at INTEGER NOT NULL,
             PRIMARY KEY(engine, session_id)
         );
+        -- Channel the session last ran. Spawn injects env from this id; the
+        -- CLI's own files stay official so concurrent sessions can differ.
+        CREATE TABLE IF NOT EXISTS session_providers(
+            engine TEXT NOT NULL,
+            session_id TEXT NOT NULL,
+            provider_id TEXT NOT NULL,
+            updated_at INTEGER NOT NULL,
+            PRIMARY KEY(engine, session_id)
+        );
         ",
     )?;
     // NB: no `cache_version` meta row — it was written but never read; cache
@@ -606,6 +637,43 @@ mod tests {
 
         db.remember_session_effort("omp", "s1", "low", 20).unwrap();
         assert_eq!(read().as_deref(), Some("low"), "newest wins");
+    }
+
+    #[test]
+    fn session_provider_record_round_trips_and_takes_the_newest() {
+        let scratch = Scratch::new();
+        let db = Db::open_at(&scratch.path("app.db")).unwrap();
+        db.0.lock()
+            .execute(
+                "INSERT INTO sessions(engine, session_id, workspace_path, file_path, file_size, file_mtime_ms, title)
+                 VALUES('claude', 's1', '/ws', 'f.jsonl', 1, 1, 'first message')",
+                [],
+            )
+            .unwrap();
+        let read = || -> Option<String> {
+            let conn = db.0.lock();
+            conn.query_row(
+                "SELECT p.provider_id FROM sessions s
+                 LEFT JOIN session_providers p ON p.engine = s.engine AND p.session_id = s.session_id
+                 WHERE s.engine='claude' AND s.session_id='s1'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap()
+        };
+        assert_eq!(read(), None, "no record yet");
+
+        db.remember_session_provider("claude", "s1", "chan-a", 10)
+            .unwrap();
+        assert_eq!(read().as_deref(), Some("chan-a"), "the channel survives");
+
+        db.remember_session_provider("claude", "s1", "__local_settings_json__", 20)
+            .unwrap();
+        assert_eq!(
+            read().as_deref(),
+            Some("__local_settings_json__"),
+            "newest wins"
+        );
     }
 
     #[test]

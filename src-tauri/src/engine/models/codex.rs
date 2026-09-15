@@ -1,18 +1,24 @@
-use super::{parse_top_level_toml_string, run_probe, EngineModel};
+use super::{run_probe, EngineModel};
 
 /// Codex's active model from its own config: `$CODEX_HOME/config.toml`
-/// (default ~/.codex), the same file `codex exec` reads — provider channels are written there on switch
-/// (provider_files), so this reflects the active channel.
+/// (default ~/.codex). Channel overrides remain scoped to their child process.
 pub(super) fn codex_config_model() -> Option<EngineModel> {
     let home = crate::engine::codex_home();
     let content = std::fs::read_to_string(home.join("config.toml")).ok()?;
-    let model = parse_top_level_toml_string(&content, "model")?;
+    parse_codex_config_model(&content)
+}
+
+fn parse_codex_config_model(content: &str) -> Option<EngineModel> {
+    let config: toml::Value = toml::from_str(content).ok()?;
+    let model = config.get("model")?.as_str()?.trim().to_string();
+    if model.is_empty() { return None; }
     Some(EngineModel {
         id: model,
         name: None,
         description: None,
         provider: "codex".to_string(),
-        context_window: None,
+        context_window: config.get("model_context_window").and_then(toml::Value::as_integer)
+            .filter(|window| *window > 0).map(|window| window as u64),
     })
 }
 /// `codex debug models` → {"models":[{slug,display_name,visibility,
@@ -60,6 +66,13 @@ pub fn parse_codex_models_json(stdout: &str) -> Result<Vec<EngineModel>, String>
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn reads_explicit_one_million_context_from_native_config() {
+        let model = parse_codex_config_model("model = 'large'\nmodel_context_window = 1000000").unwrap();
+        assert_eq!(model.context_window, Some(1_000_000));
+        assert_eq!(parse_codex_config_model("model = 'default'").unwrap().context_window, None);
+    }
 
     #[test]
     fn codex_catalog_keeps_only_picker_visible_entries() {

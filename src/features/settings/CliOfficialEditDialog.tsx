@@ -4,10 +4,8 @@
  * kimi/grok config.toml). Panes come from `official_config_read`, so the
  * frontend never hardcodes paths or formats.
  *
- * Editing is gated on 官方配置 being active (the caller disables the entry
- * otherwise): while a channel is current the files carry cc-gui's managed
- * patch and the official original lives in the backend's backup snapshot.
- * The backend re-validates (JSON/TOML parse) and re-checks the gate on save.
+ * The backend retires known legacy channel writes before reading these
+ * files; migration conflicts are shown without overwriting either copy.
  */
 import { useEffect, useState } from "react";
 import X from "lucide-react/dist/esm/icons/x";
@@ -17,6 +15,7 @@ import { ModalShell } from "@/components/dialogs";
 import { ipc, type OfficialConfigFile } from "@/lib/ipc";
 import { CLI_DISPLAY_NAMES } from "@/components/foundations/icons/engine-brands";
 import type { CliConfigState } from "./useCliConfig";
+import { errorText } from "@/lib/errors";
 
 /** Client-side JSON check so the save button disables before the round-trip;
  *  TOML panes rely on the backend's parse error, shown inline. */
@@ -68,7 +67,7 @@ export function CliOfficialEditDialog({ cli }: { cli: CliConfigState }) {
         );
       })
       .catch((e) => {
-        if (!cancelled) setLoadError(String(e));
+        if (!cancelled) setLoadError(errorText(e));
       });
     return () => {
       cancelled = true;

@@ -231,6 +231,7 @@ mod tests {
             service_tier: None,
             permission: permission.map(str::to_string),
             additional_dirs: Vec::new(),
+            provider_id: None,
         }
     }
 

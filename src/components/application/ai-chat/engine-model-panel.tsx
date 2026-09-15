@@ -18,6 +18,11 @@ import { EFFORT_LABEL_KEYS, type EffortLevel } from "./effort-levels";
 import { EffortSlider } from "./effort-slider";
 import type { MenuOption, ModelOption } from "./cli-menu";
 
+export interface ChannelOption {
+  id: string;
+  label: string;
+}
+
 /** Per-engine model flyout: pops to the right of the CLI popover, bottom-
  *  aligned with the engine list so the taller panel never clips below the
  *  composer-anchored popover. */
@@ -27,6 +32,76 @@ const FLYOUT_CLASSES = cx(
 );
 
 /* ------------------------------------------------------------------ flyout */
+
+/** One checkmark channel row. Shown only when the engine has in-app channels. */
+function ChannelRow({
+  option,
+  selected,
+  engineId,
+  onPick,
+}: {
+  option: ChannelOption;
+  selected: boolean;
+  engineId: string;
+  onPick: (engine: string, id: string) => void;
+}) {
+  return (
+    <button
+      type="button"
+      role="radio"
+      aria-checked={selected}
+      onClick={() => onPick(engineId, option.id)}
+      className={cx(
+        "flex w-full cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-left outline-none transition-colors",
+        selected
+          ? "bg-background-primary-hover"
+          : "hover:bg-background-primary-hover focus-visible:bg-background-primary-hover",
+      )}
+    >
+      <span className="min-w-0 truncate text-body-medium text-text-primary">
+        {option.label}
+      </span>
+      {selected && (
+        <Check
+          className="ml-auto size-4 shrink-0 text-foreground-icon-primary"
+          aria-hidden
+        />
+      )}
+    </button>
+  );
+}
+
+function ChannelList({
+  channels,
+  selectedChannelId,
+  engineId,
+  onPickChannel,
+}: {
+  channels: ChannelOption[];
+  selectedChannelId: string;
+  engineId: string;
+  onPickChannel: (engine: string, id: string) => void;
+}) {
+  const { t } = useTranslation();
+  if (channels.length === 0) return null;
+  return (
+    <div className="flex w-full flex-col" role="radiogroup" aria-label={t("chat.channelPicker")}>
+      <span className="px-2 pt-0.5 pb-0.5 text-body-2-medium text-text-tertiary">
+        {t("chat.channelPicker")}
+      </span>
+      {channels.map((channel) => (
+        <ChannelRow
+          key={channel.id}
+          option={channel}
+          selected={channel.id === selectedChannelId}
+          engineId={engineId}
+          onPick={onPickChannel}
+        />
+      ))}
+      <div aria-hidden className="-mx-1 mt-1 mb-1 h-px bg-border-button-default" />
+    </div>
+  );
+}
 
 /** One checkmark model row inside the flyout's radio group. */
 function ModelRow({
@@ -250,6 +325,9 @@ export function EngineModelPanel({
   effort,
   onPickModel,
   onEffortChange,
+  channels,
+  selectedChannelId,
+  onPickChannel,
   ompServiceTier,
   onOmpServiceTierChange,
   codexServiceTier,
@@ -266,6 +344,9 @@ export function EngineModelPanel({
   effort: EffortLevel;
   onPickModel: (engine: string, id: string) => void;
   onEffortChange: (engine: string, level: EffortLevel) => void;
+  channels?: ChannelOption[];
+  selectedChannelId?: string;
+  onPickChannel?: (engine: string, id: string) => void;
   ompServiceTier: OmpServiceTier;
   onOmpServiceTierChange: (tier: OmpServiceTier) => Promise<void>;
   codexServiceTier: OmpServiceTier;
@@ -320,6 +401,14 @@ export function EngineModelPanel({
         </span>
         <PanelActions onRefresh={onRefresh} onClose={onClose} />
       </div>
+      {channels && onPickChannel && (
+        <ChannelList
+          channels={channels}
+          selectedChannelId={selectedChannelId ?? ""}
+          engineId={option.id}
+          onPickChannel={onPickChannel}
+        />
+      )}
       <div className="relative mx-1 -mt-1.5 pb-1">
         <Search
           className="pointer-events-none absolute top-1/2 left-2 size-3.5 -translate-y-[calc(50%+2px)] text-foreground-icon-secondary"

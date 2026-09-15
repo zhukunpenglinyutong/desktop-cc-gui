@@ -100,7 +100,8 @@ describe("usage accounting", () => {
     // ...while the context meter still reads the newest single report.
     expect(parseUsage(session().usage)).toMatchObject({ input: 500, output: 10 });
 
-    handleEngineEvents([event("done", 9, { usage: null })], deps());
+    handleEngineEvents([event("done", 9, { usage: report(1500, 50) })], deps());
+    // The aggregate in done must not replace the newest context occupancy.
     // The settled row carries the reply's total, and the running counter is
     // gone so the next reply starts from zero.
     const settled = session();

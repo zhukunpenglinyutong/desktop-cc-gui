@@ -11,7 +11,7 @@ function asEffortLevel(value: string | null | undefined): EffortLevel | undefine
     : undefined;
 }
 
-/** Model/effort the composer menus show for the active tab.
+/** Model/effort/channel the composer menus show for the active tab.
  *
  * The picker follows the SESSION, not the CLI: an explicit pick for this
  * tab, else the model this session actually ran, else the engine default.
@@ -27,12 +27,14 @@ export function useTabModelDisplay({
   sessionKey,
   models,
   efforts,
+  providers,
 }: {
   active: ActiveSession | null;
   activeEngine: string;
   sessionKey: string;
   models: Record<string, string>;
   efforts: Record<string, EffortLevel>;
+  providers: Record<string, string>;
 }) {
   const sessionActiveModel = useChatStore((s) =>
     sessionKey ? (s.bySession[sessionKey]?.activeModel ?? null) : null,
@@ -98,5 +100,25 @@ export function useTabModelDisplay({
         : efforts,
     [tabEffort, efforts, activeEngine],
   );
-  return { displayModels, displayEfforts };
+  // Channel has no transcript scan: native files never record it. Tab
+  // override only on a pending new-chat (same as effort).
+  const sessionActiveProvider = useChatStore((s) =>
+    sessionKey ? (s.bySession[sessionKey]?.activeProvider ?? null) : null,
+  );
+  const tabProvider = useMemo(() => {
+    if (!active || active.engine !== activeEngine) return undefined;
+    return (
+      (active.sessionId === null ? active.provider : undefined) ||
+      sessionActiveProvider ||
+      providers[activeEngine]
+    );
+  }, [active, activeEngine, sessionActiveProvider, providers]);
+  const displayProviders = useMemo(
+    () =>
+      tabProvider !== undefined
+        ? { ...providers, [activeEngine]: tabProvider }
+        : providers,
+    [tabProvider, providers, activeEngine],
+  );
+  return { displayModels, displayEfforts, displayProviders };
 }

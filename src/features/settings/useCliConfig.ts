@@ -21,16 +21,9 @@ import {
   type ProviderEntry,
 } from "./providers";
 import type { ProviderFormValue } from "./ProviderDialog";
+import { errorText } from "@/lib/errors";
 /** Add (no entry) or edit (with entry) dialog state. */
 type DialogState = { entry?: ProviderEntry } | null;
-
-/** A channel switch awaiting the user's overwrite confirmation. `paths` are
- *  the native config files the switch would rewrite. */
-export interface PendingSwitch {
-  engine: EngineId;
-  id: string;
-  paths: string[];
-}
 
 export interface CliConfigState {
   t: TFunction;
@@ -43,14 +36,11 @@ export interface CliConfigState {
   setDialog: Dispatch<SetStateAction<DialogState>>;
   pendingDelete: ProviderEntry | null;
   setPendingDelete: Dispatch<SetStateAction<ProviderEntry | null>>;
-  pendingSwitch: PendingSwitch | null;
-  setPendingSwitch: Dispatch<SetStateAction<PendingSwitch | null>>;
   /** 官方配置 edit dialog open state (claude/codex/kimi/grok only). */
   officialEditing: boolean;
   setOfficialEditing: Dispatch<SetStateAction<boolean>>;
   /** Save the edited official files; returns the error message (dialog
-   *  stays open) or null on success (dialog closed). Backend re-validates
-   *  and gates on 官方配置 being active. */
+   *  stays open) or null on success (dialog closed). Backend re-validates. */
   saveOfficialConfig: (files: OfficialConfigDraft[]) => Promise<string | null>;
   ccStatus: CcSwitchStatus | null;
   currentId: string;
@@ -59,8 +49,6 @@ export interface CliConfigState {
   officialActive: boolean;
   mutate: <T>(fn: () => Promise<T>) => Promise<T | undefined>;
   activate: (id: string) => void;
-  requestActivate: (id: string) => void;
-  confirmSwitch: () => void;
   saveProvider: (value: ProviderFormValue) => void;
   confirmDelete: () => void;
   syncCcSwitch: (target: string) => Promise<void>;
@@ -89,7 +77,6 @@ export function useCliConfig(engine: EngineId): CliConfigState {
   const [busy, setBusy] = useState(false);
   const [dialog, setDialog] = useState<DialogState>(null);
   const [pendingDelete, setPendingDelete] = useState<ProviderEntry | null>(null);
-  const [pendingSwitch, setPendingSwitch] = useState<PendingSwitch | null>(null);
   const [officialEditing, setOfficialEditing] = useState(false);
   const [ccStatus, setCcStatus] = useState<CcSwitchStatus | null>(null);
   useEffect(() => {
@@ -100,7 +87,7 @@ export function useCliConfig(engine: EngineId): CliConfigState {
         if (!cancelled) setConfig(c);
       })
       .catch((e) => {
-        if (!cancelled) setError(String(e));
+        if (!cancelled) setError(errorText(e));
       });
     ipc
       .checkCcSwitch()
@@ -125,7 +112,7 @@ export function useCliConfig(engine: EngineId): CliConfigState {
       setError(null);
       return result;
     } catch (e) {
-      setError(String(e));
+      setError(errorText(e));
       return undefined;
     } finally {
       setBusy(false);
@@ -133,33 +120,13 @@ export function useCliConfig(engine: EngineId): CliConfigState {
   }, []);
 
   const section = config?.[engine];
-  // Unset current behaves as 官方配置 (set_current_provider restores the CLI's own config file).
+  // Unset current uses the CLI's own configuration without a channel overlay.
   const currentId = section?.current || PSEUDO_LOCAL;
   const enabled = currentId !== PSEUDO_DISABLED;
   const entries = useMemo(() => providerEntries(engine, section), [engine, section]);
 
   const activate = (id: string) => {
     if (id !== currentId) void mutate(() => ipc.setCurrentProvider(engine, id));
-  };
-  /** Switching rewrites the CLI's own config files, so gate it on a
-   *  confirmation that lists exactly which paths will be overwritten.
-   *  Engines without writable provider config (pi/omp/dsh) switch directly. */
-  const requestActivate = (id: string) => {
-    if (id === currentId) return;
-    void ipc
-      .providerFilePaths(engine)
-      .then((paths) => {
-        if (paths.length === 0) activate(id);
-        else setPendingSwitch({ engine, id, paths });
-      })
-      .catch((e) => setError(String(e)));
-  };
-
-  const confirmSwitch = () => {
-    if (!pendingSwitch) return;
-    const { engine: switchEngine, id } = pendingSwitch;
-    setPendingSwitch(null);
-    void mutate(() => ipc.setCurrentProvider(switchEngine, id));
   };
 
   const saveProvider = (value: ProviderFormValue) => {
@@ -283,7 +250,7 @@ export function useCliConfig(engine: EngineId): CliConfigState {
         setOfficialEditing(false);
         return null;
       } catch (e) {
-        return String(e);
+        return errorText(e);
       } finally {
         setBusy(false);
       }
@@ -302,8 +269,6 @@ export function useCliConfig(engine: EngineId): CliConfigState {
     setDialog,
     pendingDelete,
     setPendingDelete,
-    pendingSwitch,
-    setPendingSwitch,
     officialEditing,
     setOfficialEditing,
     saveOfficialConfig,
@@ -314,8 +279,6 @@ export function useCliConfig(engine: EngineId): CliConfigState {
     officialActive,
     mutate,
     activate,
-    requestActivate,
-    confirmSwitch,
     saveProvider,
     confirmDelete,
     syncCcSwitch,

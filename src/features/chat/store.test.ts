@@ -158,6 +158,66 @@ describe("stop during an in-flight send", () => {
 describe("compactContext and refreshSessionUsage", () => {
   beforeEach(resetStore);
 
+  it("retries a successful but unchanged history read until the final usage is persisted", async () => {
+    const key = "codex/delayed-write";
+    const previous = { input_tokens: 1000, model_context_window: 200000 };
+    const latest = { input_tokens: 90000, model_context_window: 1000000 };
+    useChatStore.setState({ bySession: { [key]: { ...EMPTY_SESSION, usage: previous } } });
+    vi.mocked(ipc.loadSessionPage)
+      .mockResolvedValueOnce({ messages: [{ usage: previous }] } as any)
+      .mockResolvedValueOnce({ messages: [{ usage: latest }] } as any);
+    await useChatStore.getState().refreshSessionUsage(key);
+    expect(useChatStore.getState().bySession[key].usage).toEqual(latest);
+  });
+
+  it("refreshes an existing session before sending without waiting for history", async () => {
+    const tab = { engine: "codex", sessionId: "before-send", workspacePath: WS };
+    const key = "codex/before-send";
+    useChatStore.setState({ active: tab, openTabs: [tab], bySession: { [key]: { ...EMPTY_SESSION } } });
+    const history = Promise.withResolvers<any>();
+    vi.mocked(ipc.loadSessionPage).mockReturnValueOnce(history.promise);
+    await useChatStore.getState().send("hello", []);
+    expect(ipc.loadSessionPage).toHaveBeenLastCalledWith("codex", "before-send", 100);
+    expect(ipc.sendMessage).toHaveBeenCalled();
+    history.resolve({ messages: [], nextBefore: null, subagentHistory: [] });
+  });
+
+  it("refreshes again when a send fails before any engine event", async () => {
+    const tab = { engine: "codex", sessionId: "failed-send", workspacePath: WS };
+    const key = "codex/failed-send";
+    useChatStore.setState({ active: tab, openTabs: [tab], bySession: { [key]: { ...EMPTY_SESSION } } });
+    vi.mocked(ipc.loadSessionPage).mockClear();
+    vi.mocked(ipc.sendMessage).mockRejectedValueOnce(new Error("spawn failed"));
+    await useChatStore.getState().send("hello", []);
+    expect(ipc.loadSessionPage).toHaveBeenCalledTimes(2);
+    expect(useChatStore.getState().bySession[key].streaming).toBe(false);
+  });
+
+  it("refreshing a closed background session reads its own id, not the active tab", async () => {
+    const active = { engine: "claude", sessionId: "foreground", workspacePath: WS };
+    const key = "codex/background";
+    useChatStore.setState({ active, openTabs: [active], bySession: { [key]: { ...EMPTY_SESSION } } });
+    await useChatStore.getState().refreshSessionUsage(key);
+    expect(ipc.loadSessionPage).toHaveBeenLastCalledWith("codex", "background", 100);
+  });
+
+  it("a slow refresh cannot overwrite newer live usage or lose a 1M window", async () => {
+    const key = "codex/refresh-race";
+    const oldUsage = { input_tokens: 1000, model_context_window: 1_000_000 };
+    useChatStore.setState({ bySession: { [key]: { ...EMPTY_SESSION, usage: oldUsage } } });
+    const history = Promise.withResolvers<any>();
+    vi.mocked(ipc.loadSessionPage).mockReturnValueOnce(history.promise);
+    const refreshing = useChatStore.getState().refreshSessionUsage(key);
+    const latestUsage = { input_tokens: 90000, model_context_window: 1_000_000 };
+    useChatStore.setState({ bySession: { [key]: { ...EMPTY_SESSION, usage: latestUsage } } });
+    history.resolve({ messages: [{ usage: { input_tokens: 2000 } }] });
+    await refreshing;
+    expect(useChatStore.getState().bySession[key].usage).toBe(latestUsage);
+    vi.mocked(ipc.loadSessionPage).mockResolvedValueOnce({ messages: [{ usage: { input_tokens: 91000 } }] } as any);
+    await useChatStore.getState().refreshSessionUsage(key);
+    expect(useChatStore.getState().bySession[key].usage).toEqual({ input_tokens: 91000, model_context_window: 1_000_000 });
+  });
+
   it("refreshSessionUsage updates session usage from session history", async () => {
     const tab = { engine: "claude", sessionId: "sess-compact", workspacePath: WS };
     const key = "claude/sess-compact";

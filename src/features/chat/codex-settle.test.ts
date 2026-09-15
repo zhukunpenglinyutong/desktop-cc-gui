@@ -84,6 +84,69 @@ function resetStore() {
 describe("codex turn settling", () => {
   beforeEach(resetStore);
 
+  it("handles an error before invoke resolves and before a native session id exists", async () => {
+    useChatStore.getState().startNewChat(WS);
+    vi.mocked(ipc.sendMessage).mockImplementationOnce(async (args) => {
+      expect(args.runId).toBeTruthy();
+      handleEngineEvents([{ ...ev("error", 1, "early failure", null), runId: args.runId! }], deps());
+      return { runId: args.runId!, sessionId: null };
+    });
+    await useChatStore.getState().send("hello", []);
+    const state = useChatStore.getState();
+    expect(state.bySession[PENDING]?.error).toBe("early failure");
+    expect(state.bySession[PENDING]?.streaming).toBe(false);
+    expect(state.streamingByKey).toEqual({});
+    expect(runRouting.size).toBe(0);
+  });
+
+  it("preserves fast final text and completion even without a native session id", async () => {
+    useChatStore.getState().startNewChat(WS);
+    vi.mocked(ipc.sendMessage).mockImplementationOnce(async (args) => {
+      handleEngineEvents([
+        { ...ev("message", 1, { role: "assistant", text: "中文 🧪 complete" }, null), runId: args.runId! },
+        { ...ev("done", 2, { usage: null }, null), runId: args.runId! },
+      ], deps());
+      return { runId: args.runId!, sessionId: null };
+    });
+    await useChatStore.getState().send("hello", []);
+    const state = useChatStore.getState();
+    expect(state.bySession[PENDING]?.messages.at(-1)?.text).toBe("中文 🧪 complete");
+    expect(state.bySession[PENDING]?.streaming).toBe(false);
+    expect(state.streamingByKey).toEqual({});
+    expect(runRouting.size).toBe(0);
+  });
+
+  it("a session announcement arriving after Stop cannot revive the pending conversation", async () => {
+    useChatStore.getState().startNewChat(WS);
+    const response = Promise.withResolvers<{ runId: string; sessionId: null }>();
+    vi.mocked(ipc.sendMessage).mockReturnValueOnce(response.promise);
+    const sending = useChatStore.getState().send("hello", []);
+    const runId = vi.mocked(ipc.sendMessage).mock.calls.at(-1)![0].runId!;
+    await useChatStore.getState().interrupt();
+    handleEngineEvents([{ ...ev("session", 1, "tid-1"), runId }], deps());
+    response.resolve({ runId, sessionId: null });
+    await sending;
+    expect(useChatStore.getState().bySession[PENDING]?.streaming).toBe(false);
+    expect(useChatStore.getState().streamingByKey).toEqual({});
+    expect(runRouting.size).toBe(0);
+  });
+
+  it("adopts a preassigned session after Stop and retries interruption without restarting it", async () => {
+    useChatStore.getState().startNewChat(WS);
+    const response = Promise.withResolvers<{ runId: string; sessionId: string }>();
+    vi.mocked(ipc.sendMessage).mockReturnValueOnce(response.promise);
+    const sending = useChatStore.getState().send("hello", []);
+    const runId = vi.mocked(ipc.sendMessage).mock.calls.at(-1)![0].runId!;
+    await useChatStore.getState().interrupt();
+    response.resolve({ runId, sessionId: "tid-1" });
+    await sending;
+    expect(useChatStore.getState().active?.sessionId).toBe("tid-1");
+    expect(useChatStore.getState().bySession[NATIVE]?.streaming).toBe(false);
+    expect(useChatStore.getState().streamingByKey).toEqual({});
+    expect(ipc.interruptSession).toHaveBeenCalledWith("tid-1");
+    expect(runRouting.size).toBe(0);
+  });
+
   it("clears streaming once done lands after the run is routed", async () => {
     useChatStore.getState().startNewChat(WS);
     await useChatStore.getState().send("hello", []);
@@ -132,5 +195,23 @@ describe("codex turn settling", () => {
     expect((s.bySession[NATIVE]?.messages ?? []).some((m) => m.role === "user")).toBe(
       true,
     );
+  });
+
+  it("does not route a finished turn back to its pending key after send resolves", async () => {
+    useChatStore.getState().startNewChat(WS);
+    const response = Promise.withResolvers<{ runId: string; sessionId: null }>();
+    vi.mocked(ipc.sendMessage).mockReturnValueOnce(response.promise);
+    const sending = useChatStore.getState().send("hello", []);
+    handleEngineEvents([
+      ev("session", 1, "tid-1"),
+      ev("message", 2, { role: "assistant", text: "complete" }),
+      ev("done", 3, { usage: null }),
+    ], deps());
+    response.resolve({ runId: "run-1", sessionId: null });
+    await sending;
+    expect(runRouting.has("run-1")).toBe(false);
+    handleEngineEvents([ev("warn", 4, "shutdown notice")], deps());
+    expect(useChatStore.getState().bySession[PENDING]).toBeUndefined();
+    expect(useChatStore.getState().streamingByKey).toEqual({});
   });
 });

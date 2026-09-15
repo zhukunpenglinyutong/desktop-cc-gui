@@ -359,9 +359,6 @@ fn get_extra_search_paths() -> Vec<PathBuf> {
 
     #[cfg(windows)]
     {
-        // Live User/Machine PATH first: it reflects installs made while the
-        // app was running, which the inherited process PATH snapshot misses.
-        paths.extend(registry_environment_paths());
         let appdata = std::env::var("APPDATA").ok();
         let user_profile = std::env::var("USERPROFILE").ok();
         let local_app_data = std::env::var("LOCALAPPDATA").ok();
@@ -374,6 +371,9 @@ fn get_extra_search_paths() -> Vec<PathBuf> {
             program_files.as_deref().map(Path::new),
             program_files_x86.as_deref().map(Path::new),
         ));
+        // Live User/Machine PATH: it reflects installs made while the
+        // app was running, which the inherited process PATH snapshot misses.
+        paths.extend(registry_environment_paths());
     }
     #[cfg(not(windows))]
     {
@@ -401,6 +401,12 @@ fn get_extra_search_paths() -> Vec<PathBuf> {
     }
 
     paths
+}
+
+pub fn clear_search_paths_cache() {
+    if let Ok(mut guard) = EXTRA_SEARCH_PATHS_CACHE.lock() {
+        *guard = None;
+    }
 }
 
 fn cached_extra_search_paths() -> Vec<PathBuf> {

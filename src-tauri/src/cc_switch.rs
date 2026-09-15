@@ -455,33 +455,8 @@ fn run_import(
             merge_engine(engine, list, prune, &mut result)?;
         }
     }
-    // An import may have rewritten or pruned the channel that is current:
-    // re-materialize it into the CLI's native config (a pruned current
-    // already fell back to None = 官方配置, so restore). A file error must
-    // not misreport the import itself, which already persisted.
-    for (engine, providers) in &loaded {
-        if providers.is_none() {
-            continue;
-        }
-        let config = config::read_config()?;
-        let Some(section) = config.section(engine) else {
-            continue;
-        };
-        let current = section.current.as_deref().unwrap_or("");
-        if current == config::DISABLED_PROVIDER_ID {
-            continue;
-        }
-        // Empty current = the current channel was pruned above → fell back
-        // to 官方配置, so restore the CLI's own file.
-        let (id, provider) = if current.is_empty() {
-            (config::LOCAL_PROVIDER_ID, None)
-        } else {
-            (current, section.providers.get(current).cloned())
-        };
-        if let Err(e) = crate::provider_files::apply(engine, id, provider.as_ref()) {
-            eprintln!("[cc_switch] re-apply current provider for {engine} failed: {e}");
-        }
-    }
+    // Import only updates our in-app channel list. Spawn injects env; native
+    // CLI files stay official.
     Ok(result)
 }
 

@@ -2,8 +2,8 @@
  * 引擎设置 rows under the enable switch, one SettingsCard with
  * hairline-separated rows:
  *   官方配置 — the CLI's own config files: 使用 (radio-style switch) + 编辑
- *     (claude/codex/kimi/grok/agy open the multi-file editor, gated on 官方配置
- *     being active; pi/omp hand off to their models.json/models.yml editor;
+ *     (claude/codex/kimi/grok/agy open the multi-file editor; pi/omp hand
+ *     off to their models.json/models.yml editor;
  *     dsh has no native config file and hides the row).
  *   自定义 CLI 路径 — AppSettings.<engine>Bin override (dsh keeps its own
  *     picker inside DshHostSection and hides the row here). Codex hides
@@ -25,8 +25,7 @@ import X from "lucide-react/dist/esm/icons/x";
 import { Button } from "@/components/base/buttons/button";
 import { Input } from "@/components/base/input/input";
 import { Switch } from "@/components/base/switch/switch";
-import { Focusable } from "react-aria-components";
-import { InfoTip, Tooltip, TooltipContent } from "@/components/base/tooltip/tooltip";
+import { InfoTip } from "@/components/base/tooltip/tooltip";
 import { SettingsCard } from "@/components/application/settings/settings-rows";
 import { ModalShell } from "@/components/dialogs";
 import { CLI_DISPLAY_NAMES } from "@/components/foundations/icons/engine-brands";
@@ -37,9 +36,6 @@ import { Badge, ChannelAvatar, ROW } from "./CliChannelRow";
 import { notifyCliConfigChanged, PSEUDO_LOCAL, type EngineId } from "./providers";
 import type { CliConfigState } from "./useCliConfig";
 
-/** Engines whose official config the generic file editor covers. pi/omp edit
- *  their models config in the auth section; dsh has no config files at all. */
-const FILE_MANAGED_ENGINES: readonly EngineId[] = ["claude", "codex", "kimi", "grok", "agy"];
 /** AppSettings bin-override field per engine (dsh's picker stays in
  *  DshConnectionCard, next to the host settings it interacts with). */
 const BIN_FIELDS = {
@@ -134,16 +130,14 @@ function OfficialRow({
   /** pi/omp: open the models.json/models.yml editor in the auth section. */
   onEdit: () => void;
 }) {
-  const { t, engine, officialActive, busy, requestActivate } = cli;
-  // File-managed engines rewrite the native files on channel switches, so
-  // editing is only meaningful while 官方配置 is live. pi/omp files are
-  // never cc-gui-managed, so their editor is always available.
-  const gated = FILE_MANAGED_ENGINES.includes(engine) && !officialActive;
+  const { t, engine, officialActive, busy, activate } = cli;
+  // Official files stay live regardless of which in-app channel is the
+  // engine default, so the editor is never gated on 官方配置 being current.
   const editButton = (
     <Button
       variant="secondary"
       size="small"
-      disabled={busy || gated}
+      disabled={busy}
       onClick={onEdit}
     >
       {t("settings.cliEdit")}
@@ -159,27 +153,16 @@ function OfficialRow({
         </>
       }
       desc={t("settings.cliOfficialDesc")}
-      onClick={() => !busy && requestActivate(PSEUDO_LOCAL)}
+      onClick={() => !busy && activate(PSEUDO_LOCAL)}
     >
       <span onClick={(e) => e.stopPropagation()} className="flex items-center gap-2">
-        {gated ? (
-          <Tooltip>
-            {/* Focusable wrapper: the disabled button can't anchor a tooltip
-                itself; the span consumes TooltipTrigger's ref/handlers. */}
-            <Focusable>
-              <span>{editButton}</span>
-            </Focusable>
-            <TooltipContent>{t("settings.cliOfficialEditGate")}</TooltipContent>
-          </Tooltip>
-        ) : (
-          editButton
-        )}
+        {editButton}
         <Switch
           size="sm"
           aria-label={t("settings.cliOfficial")}
           isSelected={officialActive}
           onChange={(on) => {
-            if (on) requestActivate(PSEUDO_LOCAL);
+            if (on) activate(PSEUDO_LOCAL);
           }}
           isDisabled={busy}
         />

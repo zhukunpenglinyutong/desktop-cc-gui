@@ -20,6 +20,7 @@ vi.mock("@/lib/ipc", () => ({
     getAppSettings: vi.fn(async () => ({})),
     updateAppSettings: vi.fn(async () => {}),
     rescanSessions: vi.fn(async () => {}),
+    getCliConfig: vi.fn(async () => ({})),
   },
 }));
 

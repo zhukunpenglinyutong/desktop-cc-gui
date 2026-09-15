@@ -37,8 +37,6 @@ function makeCli(over: Partial<CliConfigState> = {}): CliConfigState {
     setDialog: () => {},
     pendingDelete: null,
     setPendingDelete: () => {},
-    pendingSwitch: null,
-    setPendingSwitch: () => {},
     ccStatus: null,
     currentId: "",
     enabled: true,
@@ -49,8 +47,6 @@ function makeCli(over: Partial<CliConfigState> = {}): CliConfigState {
     saveOfficialConfig: () => Promise.resolve(null),
     mutate: vi.fn(),
     activate: () => {},
-    requestActivate: () => {},
-    confirmSwitch: () => {},
     saveProvider: () => {},
     confirmDelete: () => {},
     syncCcSwitch: vi.fn(),
@@ -144,9 +140,9 @@ describe("CliEngineSettingsCard official edit entry", () => {
     return button as HTMLButtonElement;
   }
 
-  it("file-managed engine: 编辑 is disabled until 官方配置 is active", async () => {
+  it("file-managed engine: 编辑 stays available while a custom channel is current", async () => {
     await render(makeCli({ engine: "claude", officialActive: false, currentId: "chan-a" }));
-    expect(editButton().disabled).toBe(true);
+    expect(editButton().disabled).toBe(false);
   });
 
   it("file-managed engine: 编辑 opens the generic editor when 官方配置 is active", async () => {

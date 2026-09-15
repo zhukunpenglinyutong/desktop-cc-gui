@@ -2,7 +2,6 @@ import { ConfirmDialog } from "@/components/dialogs";
 import { CLI_DISPLAY_NAMES } from "@/components/foundations/icons/engine-brands";
 import { ProviderDialog } from "./ProviderDialog";
 import {
-  PSEUDO_LOCAL,
   claudeSettingsJson,
   codexAuthJson,
   codexConfigToml,
@@ -53,38 +52,5 @@ export function CliDeleteConfirm({ cli }: { cli: CliConfigState }) {
       onConfirm={confirmDelete}
       onCancel={() => setPendingDelete(null)}
     />
-  );
-}
-
-/** Channel switch confirmation, listing the native config files the switch
- *  would rewrite. */
-export function CliSwitchConfirm({ cli }: { cli: CliConfigState }) {
-  const { t, pendingSwitch, setPendingSwitch, entries, confirmSwitch } = cli;
-  if (!pendingSwitch) return null;
-  return (
-    <ConfirmDialog
-      message={t("settings.cliSwitchConfirm", {
-        name:
-          pendingSwitch.id === PSEUDO_LOCAL
-            ? t("settings.cliOfficial")
-            : (entries.find((e) => e.id === pendingSwitch.id)?.name ?? pendingSwitch.id),
-      })}
-      onConfirm={confirmSwitch}
-      onCancel={() => setPendingSwitch(null)}
-    >
-      <ul className="mt-2 flex flex-col gap-1">
-        {pendingSwitch.paths.map((path) => (
-          <li
-            key={path}
-            className="break-all rounded-lg bg-background-secondary-default px-2 py-1 font-mono text-body-2-regular text-text-secondary"
-          >
-            {path}
-          </li>
-        ))}
-      </ul>
-      <p className="mt-2 text-body-2-regular text-text-tertiary">
-        {t("settings.cliSwitchConfirmHint")}
-      </p>
-    </ConfirmDialog>
   );
 }

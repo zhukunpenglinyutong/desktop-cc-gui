@@ -582,6 +582,7 @@ mod tests {
             service_tier: None,
             permission: None,
             additional_dirs: Vec::new(),
+            provider_id: None,
         };
         run_host_turn(
             core,
@@ -657,6 +658,7 @@ mod tests {
                     service_tier: None,
                     permission: None,
                     additional_dirs: Vec::new(),
+                    provider_id: None,
                 };
                 run_host_turn(
                     core,

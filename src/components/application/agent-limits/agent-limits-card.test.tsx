@@ -75,6 +75,12 @@ describe("AgentLimitsCard", () => {
     expect(onRefresh).toHaveBeenCalledTimes(1);
   });
 
+  it("renders a one-million-token window as 1M", async () => {
+    await renderCard({ context: { max: 1_000_000, segments: [{ label: "输入", tokens: 90_000 }] } });
+    expect(container.textContent).toContain("90k / 1M (9%)");
+    expect(container.textContent).toContain("空闲910k91.0%");
+  });
+
   it("disables compact button when compacting is true or canCompact is false", async () => {
     const onCompact = vi.fn();
 

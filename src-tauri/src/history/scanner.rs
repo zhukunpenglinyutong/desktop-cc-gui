@@ -440,7 +440,7 @@ fn grok_url_decode(encoded: &str) -> String {
 }
 
 fn discover_grok(workspace: &Path) -> Vec<SessionFile> {
-    let mut roots = vec![crate::engine::engine_home(None, ".grok").join("sessions")];
+    let mut roots = vec![crate::engine::engine_home(Some("GROK_HOME"), ".grok").join("sessions")];
     roots.extend(
         legacy_provider_homes("grok-provider-homes")
             .into_iter()

@@ -59,13 +59,16 @@ pub struct SendRequest {
     /// headless permission denials. Engines without an equivalent flag
     /// ignore them.
     pub additional_dirs: Vec<String>,
+    /// Session-scoped channel id. Official / empty injects nothing; spawn
+    /// falls back to the engine's `current` when this is None.
+    pub provider_id: Option<String>,
 }
 
 pub struct BuiltCommand {
     pub command: Command,
     /// Written to stdin after spawn; stdin is then closed.
     pub stdin_payload: Option<String>,
-    /// Temp files to remove once the process exits.
+    /// Private staging files/directories to remove once the process exits.
     pub cleanup_files: Vec<PathBuf>,
     /// Session id assigned before spawn (grok `-s <uuid>`).
     pub preassigned_session_id: Option<String>,
@@ -653,18 +656,29 @@ impl ProcessRegistry {
     /// several parallel runs must all die on a single stop, or the survivors
     /// keep streaming and fight the next run over the session file.
     pub fn kill(&self, key: &str) -> bool {
-        let mut entries: Vec<(u32, Option<Arc<TokioMutex<tokio::process::Child>>>, Arc<std::sync::atomic::AtomicBool>, Arc<std::sync::OnceLock<tokio::task::AbortHandle>>)> =
-            match self.0.lock() {
-                Ok(map) => {
-                    let mut seen_pids = std::collections::HashSet::new();
-                    map.iter()
-                        .filter(|(k, e)| *k == key || e.run_id == key)
-                        .filter(|(_, e)| seen_pids.insert(e.pid))
-                        .map(|(_, e)| (e.pid, e.child.clone(), Arc::clone(&e.killed), Arc::clone(&e.reader_abort)))
-                        .collect()
-                }
-                Err(_) => Vec::new(),
-            };
+        let mut entries: Vec<(
+            u32,
+            Option<Arc<TokioMutex<tokio::process::Child>>>,
+            Arc<std::sync::atomic::AtomicBool>,
+            Arc<std::sync::OnceLock<tokio::task::AbortHandle>>,
+        )> = match self.0.lock() {
+            Ok(map) => {
+                let mut seen_pids = std::collections::HashSet::new();
+                map.iter()
+                    .filter(|(k, e)| *k == key || e.run_id == key)
+                    .filter(|(_, e)| seen_pids.insert(e.pid))
+                    .map(|(_, e)| {
+                        (
+                            e.pid,
+                            e.child.clone(),
+                            Arc::clone(&e.killed),
+                            Arc::clone(&e.reader_abort),
+                        )
+                    })
+                    .collect()
+            }
+            Err(_) => Vec::new(),
+        };
         // The registry keys one child under BOTH its session id and run id
         // (rekey copies): de-duplicate by pid so one stop fires one
         // taskkill, not one per key.
@@ -855,7 +869,9 @@ fn codex_bin_from_home(settings: &crate::settings::AppSettings) -> Option<String
     }
     let expanded = crate::open_app::expand_user_path(home).ok()?;
     let candidate = expanded.join("bin").join("codex");
-    candidate.exists().then(|| resolve::resolve_launchable_cli_binary(&candidate.to_string_lossy()))
+    candidate
+        .exists()
+        .then(|| resolve::resolve_launchable_cli_binary(&candidate.to_string_lossy()))
 }
 
 /// CLI binary name behind an engine id, when they differ: qoder's engine ids
@@ -957,11 +973,19 @@ fn prepare_launch(
     effort: Option<String>,
     permission: Option<String>,
     additional_dirs: Vec<String>,
+    provider_id: Option<String>,
 ) -> Result<Launch, String> {
     let engine_impl = engine_by_id(engine).ok_or_else(|| format!("unknown engine: {engine}"))?;
-    // Channels live in each CLI's native config file (provider_files); the
-    // only launch-time gate left is the 停用 pseudo-provider.
+    // 停用 still gates sending. Channel settings apply to this child below;
+    // native CLI files remain the official configuration.
     crate::config::ensure_engine_enabled(engine)?;
+    let provider_id = provider_id.filter(|s| !s.trim().is_empty());
+    let provider = crate::config::resolve_provider(engine, provider_id.as_deref())?;
+    let channel_env = provider
+        .as_ref()
+        .map(|p| crate::provider_files::channel_env(engine, p))
+        .transpose()?
+        .unwrap_or_default();
     let settings = crate::settings::read_settings().unwrap_or_default();
     let model = model
         .filter(|m| !m.trim().is_empty())
@@ -992,12 +1016,13 @@ fn prepare_launch(
             .filter(|d| !d.is_empty() && Path::new(d).is_absolute())
             .take(32)
             .collect(),
+        provider_id,
     };
     let bin = engine_bin(&settings, engine);
     // Host-stream engines never spawn: hand back a placeholder command so
     // prepare_launch stays shape-compatible; send_message branches to the
     // virtual path before anything would touch it.
-    let built = if engine_impl.drives_own_transport() {
+    let mut built = if engine_impl.drives_own_transport() {
         BuiltCommand {
             command: Command::new("unused-virtual-engine"),
             stdin_payload: None,
@@ -1007,6 +1032,18 @@ fn prepare_launch(
     } else {
         engine_impl.build_command(&req, &bin)?
     };
+    for (key, value) in &channel_env {
+        built.command.env(key, value);
+    }
+    let configured = match (engine, provider.as_ref()) {
+        ("codex", Some(provider)) => codex::apply_channel(&mut built.command, provider, &channel_env, &req),
+        ("grok", Some(provider)) => grok::isolate_channel(&mut built, provider, &req),
+        _ => Ok(()),
+    };
+    if let Err(error) = configured {
+        cleanup_staged_files(&built.cleanup_files);
+        return Err(error);
+    }
     Ok(Launch {
         req,
         bin,
@@ -1117,6 +1154,100 @@ struct RunContext {
     stderr_buf: Arc<Mutex<String>>,
 }
 
+impl Drop for RunContext {
+    fn drop(&mut self) {
+        // Also runs when the reader is aborted during interrupt or shutdown.
+        cleanup_staged_files(&self.cleanup_files);
+    }
+}
+
+fn cleanup_staged_files(paths: &[PathBuf]) {
+    for path in paths {
+        let result = if path.is_dir() { std::fs::remove_dir_all(path) } else { std::fs::remove_file(path) };
+        if let Err(error) = result {
+            if error.kind() != std::io::ErrorKind::NotFound {
+                eprintln!("[engine] failed to remove staging path {}: {error}", path.display());
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod staging_tests {
+    use super::*;
+
+    struct Noop;
+    impl event_sink::Emit for Noop {
+        fn emit_json(&self, _: &str, _: &str) {}
+    }
+
+    #[tokio::test]
+    async fn reader_context_cleans_private_configs_on_completion_and_abort() {
+        for abort in [false, true] {
+            let directory = std::env::temp_dir().join(format!("ccgui-reader-cleanup-{}", uuid::Uuid::new_v4()));
+            std::fs::create_dir_all(&directory).unwrap();
+            std::fs::write(directory.join("config.toml"), "temporary credential").unwrap();
+            let mut command = Command::new(if cfg!(windows) {"cmd.exe"} else {"sh"});
+            command.args(if cfg!(windows) {["/c", "exit 0"]} else {["-c", "exit 0"]});
+            let mut child = command.spawn().unwrap();
+            child.wait().await.unwrap();
+            let ctx = RunContext {
+                core: TurnCore {sink: event_sink::EventSink::new(Arc::new(Noop)), registry: Arc::new(ProcessRegistry::default()), engine_id: "grok".into(), run_id: "test".into()},
+                engine_impl: Box::new(grok::GrokEngine), pid: 0,
+                preassigned_session_id: None, initial_model: None,
+                child: Arc::new(TokioMutex::new(child)), killed: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+                cleanup_files: vec![directory.clone()], stderr_buf: Arc::new(Mutex::new(String::new())),
+            };
+            let task = tokio::spawn(async move {
+                if abort { std::future::pending::<()>().await; }
+                drop(ctx);
+            });
+            if abort { task.abort(); }
+            let result = task.await;
+            assert_eq!(result.is_err(), abort);
+            assert!(!directory.exists());
+        }
+    }
+}
+
+#[cfg(test)]
+mod terminal_event_tests {
+    use super::*;
+
+    #[derive(Default)]
+    struct Collector(Mutex<Vec<Value>>);
+    impl event_sink::Emit for Collector {
+        fn emit_json(&self, _: &str, raw: &str) {
+            self.0.lock().unwrap().extend(serde_json::from_str::<Vec<Value>>(raw).unwrap());
+        }
+    }
+
+    #[tokio::test]
+    async fn terminal_runs_do_not_emit_late_usage_text_or_duplicate_completion() {
+        for fail in [false, true] {
+            let collector = Arc::new(Collector::default());
+            let core = TurnCore {
+                sink: event_sink::EventSink::new(collector.clone()),
+                registry: Arc::new(ProcessRegistry::default()),
+                engine_id: "codex".into(), run_id: "terminal-test".into(),
+            };
+            let mut state = TurnState::new(Some("session".into()));
+            core.dispatch_event(&mut state, EngineEvent::Delta("完成中文与 emoji 🐎".into()));
+            core.dispatch_event(&mut state, EngineEvent::Usage(serde_json::json!({"input_tokens": 90000, "model_context_window":1000000})));
+            core.dispatch_event(&mut state, if fail { EngineEvent::Error("failed".into()) }
+                else { EngineEvent::Done { session_id: None, usage: None } });
+            core.dispatch_event(&mut state, EngineEvent::Usage(serde_json::json!({"input_tokens":90000})));
+            core.dispatch_event(&mut state, EngineEvent::Delta("late".into()));
+            core.dispatch_event(&mut state, EngineEvent::Done { session_id: None, usage: None });
+            core.sink.flush();
+            let events = collector.0.lock().unwrap();
+            let kinds: Vec<_> = events.iter().map(|event| event["kind"].as_str().unwrap()).collect();
+            assert_eq!(kinds, ["delta", "usage", if fail {"error"} else {"done"}]);
+            assert_eq!(events[0]["data"], "完成中文与 emoji 🐎");
+        }
+    }
+}
+
 /// Event-routing core shared by process runs ([`RunContext`]) and virtual
 /// host-stream runs ([`dsh_session::run_host_turn`]): the fields
 /// `dispatch_event` needs to route engine events to the UI sink and keep the
@@ -1149,6 +1280,11 @@ impl TurnCore {
     }
 
     fn dispatch_event(&self, state: &mut TurnState, event: EngineEvent) {
+        // Terminal state is monotonic, even if a CLI or its usage tail emits
+        // more data before exiting. Diagnostics may still be reported.
+        if (state.saw_done || state.saw_error) && !matches!(event, EngineEvent::Warn(_)) {
+            return;
+        }
         match event {
             EngineEvent::Delta(text) => state.push(
                 &self.sink,
@@ -1376,7 +1512,7 @@ async fn run_reader(stdout: ChildStdout, ctx: RunContext) {
     let mut poll = tokio::time::interval(std::time::Duration::from_millis(500));
     poll.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     loop {
-        let read = if is_codex {
+        let read = if is_codex && !state.saw_done && !state.saw_error {
             tokio::select! {
                 line = read_line_capped(&mut reader, &mut line_buf) => line,
                 _ = poll.tick() => {
@@ -1431,7 +1567,21 @@ async fn run_reader(stdout: ChildStdout, ctx: RunContext) {
         stream_session_id |= events
             .iter()
             .any(|event| matches!(event, EngineEvent::SessionId(_)));
-        for event in events {
+        for mut event in events {
+            // Flush the final rollout records BEFORE done/error. Sending them
+            // afterwards made observers adopt the already-finished run again.
+            if matches!(event, EngineEvent::Done { .. } | EngineEvent::Error(_))
+                && !state.saw_done && !state.saw_error
+            {
+                if let Some(tail) = usage_tail.as_mut() {
+                    for usage in tail.poll() {
+                        ctx.dispatch_event(&mut state, EngineEvent::Usage(usage));
+                    }
+                    if let EngineEvent::Done { usage: Some(usage), .. } = &mut event {
+                        *usage = tail.with_window(usage);
+                    }
+                }
+            }
             ctx.dispatch_event(&mut state, event);
         }
     }
@@ -1449,9 +1599,6 @@ async fn run_reader(stdout: ChildStdout, ctx: RunContext) {
         let mut guard = ctx.child.lock().await;
         guard.wait().await.ok()
     };
-    for path in &ctx.cleanup_files {
-        let _ = std::fs::remove_file(path);
-    }
     // Drain this run's registry entries: under the native session id after
     // rekey, and under the run id when the session id never arrived.
     if let Some(key) = state.native_session_id.clone() {
@@ -1534,6 +1681,8 @@ pub async fn send_message(
     model: Option<String>,
     effort: Option<String>,
     permission: Option<String>,
+    provider_id: Option<String>,
+    run_id: Option<String>,
 ) -> Result<SendResult, String> {
     send_message_inner(
         &state,
@@ -1545,6 +1694,8 @@ pub async fn send_message(
         model,
         effort,
         permission,
+        provider_id,
+        run_id,
     )
     .await
 }
@@ -1563,7 +1714,18 @@ pub async fn send_message_inner(
     model: Option<String>,
     effort: Option<String>,
     permission: Option<String>,
+    provider_id: Option<String>,
+    run_id: Option<String>,
 ) -> Result<SendResult, String> {
+    let run_id = run_id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+    if run_id.is_empty() || run_id.len() > 128
+        || !run_id.bytes().all(|c| c.is_ascii_alphanumeric() || c == b'-' || c == b'_')
+    {
+        return Err("invalid run id".into());
+    }
+    if state.processes.0.lock().map_err(|e| e.to_string())?.contains_key(&run_id) {
+        return Err("run id already active".into());
+    }
     if state.processes.len() >= MAX_CONCURRENT_RUNS {
         return Err(format!(
             "too many concurrent runs ({MAX_CONCURRENT_RUNS}); wait for one to finish"
@@ -1582,12 +1744,13 @@ pub async fn send_message_inner(
         // a grant approved mid-conversation takes effect on the next send
         // (each send is a fresh process).
         state.db.granted_roots().unwrap_or_default(),
+        provider_id,
     )?;
 
     // Host-stream engines drive their own transport: no child process — the
     // registry entry only routes interrupts to the transport task.
     if launch.engine_impl.drives_own_transport() {
-        return send_host_stream(state, launch, engine).await;
+        return send_host_stream(state, launch, engine, run_id).await;
     }
 
     let mut command = launch.built.command;
@@ -1614,16 +1777,13 @@ pub async fn send_message_inner(
         Ok(child) => child,
         Err(error) => {
             // Never strand the staging files build_command wrote (grok).
-            for path in &launch.built.cleanup_files {
-                let _ = std::fs::remove_file(path);
-            }
+            cleanup_staged_files(&launch.built.cleanup_files);
             return Err(format!("failed to spawn {}: {error}", launch.bin));
         }
     };
 
     spawn_stdin_writer(&mut child, launch.built.stdin_payload);
 
-    let run_id = uuid::Uuid::new_v4().to_string();
     let pid = child.id().unwrap_or(0);
     // Detach both pipes while we still own the child outright. A missing pipe
     // after spawn is fatal: kill the child so it cannot run unobserved and
@@ -1634,9 +1794,7 @@ pub async fn send_message_inner(
             Some(pair) => pair,
             None => {
                 let _ = child.start_kill();
-                for path in &launch.built.cleanup_files {
-                    let _ = std::fs::remove_file(path);
-                }
+                cleanup_staged_files(&launch.built.cleanup_files);
                 return Err("missing stdout/stderr pipe after spawn".to_string());
             }
         }
@@ -1723,8 +1881,8 @@ async fn send_host_stream(
     state: &crate::AppState,
     launch: Launch,
     engine: String,
+    run_id: String,
 ) -> Result<SendResult, String> {
-    let run_id = uuid::Uuid::new_v4().to_string();
     let pid = next_virtual_pid();
     let killed = Arc::new(std::sync::atomic::AtomicBool::new(false));
     let reader_abort = Arc::new(std::sync::OnceLock::new());
@@ -1805,6 +1963,7 @@ mod permission_tests {
             service_tier: None,
             permission: permission.map(str::to_string),
             additional_dirs: Vec::new(),
+            provider_id: None,
         }
     }
 
@@ -2114,17 +2273,17 @@ mod registry_tests {
     /// moving rekey leaked the child (user pressed Stop, nothing died).
     #[tokio::test]
     async fn rekey_keeps_both_keys_and_kill_routes_by_either() {
-        let mut child = tokio::process::Command::new(if cfg!(windows) {
-            "cmd"
-        } else {
-            "sh"
-        })
-        .args(if cfg!(windows) { ["/c", "ping -n 30 127.0.0.1"] } else { ["-c", "sleep 30"] })
-        .stdin(std::process::Stdio::null())
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .spawn()
-        .expect("spawn sleep child");
+        let child = tokio::process::Command::new(if cfg!(windows) { "cmd" } else { "sh" })
+            .args(if cfg!(windows) {
+                ["/c", "ping -n 30 127.0.0.1"]
+            } else {
+                ["-c", "sleep 30"]
+            })
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .expect("spawn sleep child");
         let pid = child.id().unwrap_or(0);
         let entry = ChildEntry {
             child: Some(Arc::new(TokioMutex::new(child))),

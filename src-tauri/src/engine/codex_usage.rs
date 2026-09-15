@@ -70,8 +70,17 @@ impl UsageTail {
         };
         self.offset += last_newline as u64 + 1;
         for line in text[..last_newline].lines() {
+            let previous_window = self.context_window;
             if let Some(usage) = self.line_usage(line) {
                 out.push(usage);
+            } else if self.context_window != previous_window {
+                // token_count commonly follows its response record. Carry the
+                // newly reported window (including 1M) with that same response.
+                if let (Some(window), Some(last)) = (self.context_window, out.last_mut()) {
+                    if let Some(object) = last.as_object_mut() {
+                        object.insert("model_context_window".into(), Value::from(window));
+                    }
+                }
             }
         }
         out
@@ -107,7 +116,7 @@ impl UsageTail {
 
     /// Stamp the newest reported window onto a report: records carry none,
     /// and the context meter needs the denominator.
-    fn with_window(&self, usage: &Value) -> Value {
+    pub(super) fn with_window(&self, usage: &Value) -> Value {
         let mut usage = usage.clone();
         if let (Some(window), Some(object)) = (self.context_window, usage.as_object_mut()) {
             object
@@ -298,6 +307,19 @@ mod tests {
         assert_eq!(polled.len(), 1);
         assert_eq!(polled[0]["total_tokens"], 730);
         assert_eq!(polled[0]["model_context_window"], 258_400);
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn following_token_count_attaches_one_million_window_without_double_billing() {
+        let dir = scratch("million");
+        let (mut tail, path) = tail_over(&dir, "t-million");
+        append(&path, &record_line(89_000, 1_000, 90_000));
+        append(&path, &token_count_line(89_000, 1_000, 90_000, 1_000_000));
+        let reports = tail.poll();
+        assert_eq!(reports.len(), 1);
+        assert_eq!(reports[0]["model_context_window"], 1_000_000);
+        assert!(tail.poll().is_empty());
         std::fs::remove_dir_all(&dir).ok();
     }
 

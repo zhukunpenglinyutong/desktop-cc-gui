@@ -16,6 +16,10 @@ export interface ActiveSession {
   model?: string;
   /** Per-tab effort override; undefined => follow the engine's global default. */
   effort?: EffortLevel;
+  /** Per-tab channel override; undefined => follow the engine's `current`.
+   *  Only a pending (sessionId === null) tab may carry this; native sessions
+   *  own the channel in SessionState / session_providers. */
+  provider?: string;
 }
 
 export function sessionKey(
@@ -95,7 +99,8 @@ function isActiveSession(t: unknown): t is ActiveSession {
     typeof tab.workspacePath === "string" &&
     (tab.sessionId === null || typeof tab.sessionId === "string") &&
     (tab.model === undefined || typeof tab.model === "string") &&
-    (tab.effort === undefined || typeof tab.effort === "string")
+    (tab.effort === undefined || typeof tab.effort === "string") &&
+    (tab.provider === undefined || typeof tab.provider === "string")
   );
 }
 

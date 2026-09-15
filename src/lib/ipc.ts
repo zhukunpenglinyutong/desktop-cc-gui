@@ -24,6 +24,9 @@ export interface SessionMeta {
   /** Reasoning effort this app last sent for the session, absent when it never
    * recorded one — see ipc.rememberSessionEffort. */
   effort?: string | null;
+  /** In-app channel this session last ran. Spawn injects that channel's env;
+   * native CLI files stay official. Absent until a send remembers one. */
+  provider?: string | null;
 }
 
 export type TodoStatus = "pending" | "active" | "complete" | "blocked" | "dropped";
@@ -580,8 +583,8 @@ export const ipc = {
     invoke<void>("delete_provider", { engine, id }),
   setCurrentProvider: (engine: string, id: string) =>
     invoke<void>("set_current_provider", { engine, id }),
-  /** Native config files a channel switch would overwrite (shown in the
-   *  switch confirmation); empty for display-only engines. */
+  /** Native config files of this engine (官方配置 editor). Empty for
+   *  engines whose official state lives in auth stores. */
   providerFilePaths: (engine: string) =>
     invoke<string[]>("provider_file_paths", { engine }),
   /** Editable files of the engine's 官方配置 (pane order); empty for
@@ -638,6 +641,8 @@ export const ipc = {
     invoke<void>("set_window_theme", { dark }),
   // engine
   sendMessage: (args: {
+    /** Route events before the send invocation resolves (older callers may omit). */
+    runId?: string;
     engine: string;
     workspacePath: string;
     sessionId: string | null;
@@ -646,6 +651,7 @@ export const ipc = {
     model: string | null;
     effort: string | null;
     permission: string | null;
+    providerId: string | null;
   }) => invoke<SendResult>("send_message", args),
   interruptSession: (sessionId: string) =>
     invoke<boolean>("interrupt_session", { sessionId }),
@@ -683,6 +689,10 @@ export const ipc = {
    *  another window, or on the phone — keeps that level. */
   rememberSessionEffort: (engine: string, sessionId: string, effort: string) =>
     invoke<void>("remember_session_effort", { engine, sessionId, effort }),
+  /** Remember the in-app channel a session ran, so reopening it keeps that
+   *  channel without rewriting the CLI's own config file. */
+  rememberSessionProvider: (engine: string, sessionId: string, providerId: string) =>
+    invoke<void>("remember_session_provider", { engine, sessionId, providerId }),
   rescanSessions: () => invoke<void>("rescan_sessions"),
   listWorkspaces: () => invoke<Workspace[]>("list_workspaces"),
   addWorkspace: (path: string) => invoke<Workspace>("add_workspace", { path }),

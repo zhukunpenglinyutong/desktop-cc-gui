@@ -190,3 +190,15 @@ export const CLI_CONFIG_CHANGED_EVENT = "ccgui:cli-config-changed";
 export function notifyCliConfigChanged() {
   window.dispatchEvent(new Event(CLI_CONFIG_CHANGED_EVENT));
 }
+
+/** Per-engine default channel (`section.current`). Unset / empty → 官方配置. */
+export function engineCurrents(
+  config: Pick<Record<EngineId, ProviderSection | undefined>, EngineId>,
+): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const id of ENGINE_IDS) {
+    const current = config[id]?.current?.trim();
+    out[id] = current && current !== PSEUDO_DISABLED ? current : PSEUDO_LOCAL;
+  }
+  return out;
+}

@@ -29,10 +29,22 @@ function num(u: Record<string, unknown>, k: string): number {
 
 function reportedWindow(...sources: Array<Record<string, unknown> | null>): number | undefined {
   for (const source of sources) {
-    const n = source ? num(source, "model_context_window") : 0;
-    if (n > 0) return n;
+    for (const key of ["model_context_window", "context_window", "contextWindow"]) {
+      const raw = source?.[key];
+      const match = typeof raw === "string" ? raw.trim().match(/^(\d+(?:\.\d+)?)\s*([kKmM]?)$/) : null;
+      const n = typeof raw === "number" ? raw : match
+        ? Number(match[1]) * ({ k: 1000, m: 1000000 }[match[2].toLowerCase()] ?? 1) : 0;
+      if (Number.isFinite(n) && n > 0) return n;
+    }
   }
   return undefined;
+}
+
+/** Window metadata is useful even before any tokens have been reported. */
+export function reportedContextWindow(usage: unknown): number | undefined {
+  const raw = asRecord(usage);
+  const info = asRecord(raw?.info);
+  return reportedWindow(raw, info, asRecord(raw?.last_token_usage), asRecord(info?.last_token_usage));
 }
 
 /** Engines whose cache counters sit *inside* `input_tokens`. Codex reports
@@ -51,8 +63,9 @@ export function parseUsage(usage: unknown): ParsedUsage | null {
   if (!raw) return null;
   // Codex token_count info: occupancy is last_token_usage; the sibling
   // total_token_usage is session-billed cumulative and must not fill the bar.
-  const nested = asRecord(raw.last_token_usage);
-  const u = nested ?? raw;
+  const info = asRecord(raw.info) ?? raw;
+  const nested = asRecord(info.last_token_usage);
+  const u = nested ?? info;
   const reportedInput = num(u, "input_tokens") || num(u, "input");
   const output = num(u, "output_tokens") || num(u, "output");
   // Codex names its cache fields differently (cached_input_tokens /
@@ -79,7 +92,7 @@ export function parseUsage(usage: unknown): ParsedUsage | null {
     cacheRead,
     cacheWrite,
     total,
-    contextWindow: reportedWindow(raw, u),
+    contextWindow: reportedContextWindow(raw),
   };
 }
 
@@ -89,8 +102,8 @@ export function mergeUsage(next: unknown, prev: unknown): unknown {
   const nextObj = asRecord(next);
   const prevObj = asRecord(prev);
   if (!nextObj || !prevObj) return next;
-  if (num(nextObj, "model_context_window") > 0) return next;
-  const window = reportedWindow(prevObj, asRecord(prevObj.last_token_usage));
+  if (reportedContextWindow(nextObj)) return next;
+  const window = reportedContextWindow(prevObj);
   if (!window) return next;
   return { ...nextObj, model_context_window: window };
 }

@@ -57,6 +57,7 @@ fn redirect_env(home: &std::path::Path) {
     std::env::set_var("APPDATA", home.join("appdata"));
     std::env::set_var("USERPROFILE", home.join("profile"));
     std::env::set_var("LOCALAPPDATA", home.join("localappdata"));
+    ccgui_next_lib::engine::resolve::clear_search_paths_cache();
 }
 
 /// Fake codex CLI: `%APPDATA%\npm\codex.cmd` running a Node script that reads
@@ -84,6 +85,10 @@ process.stdin.on("data", (c) => (prompt += c));
 process.stdin.on("end", () => {
   const scenario = process.env.CODEX_PROBE_SCENARIO || "normal";
   const out = (s) => process.stdout.write(s + "\n");
+  if (scenario === "early-error") {
+    out(JSON.stringify({ type: "turn.failed", error: { message: "failed before thread started" } }));
+    return;
+  }
   out(JSON.stringify({ type: "thread.started", thread_id: "thread-probe-1" }));
   if (scenario === "long") {
     // A very long agent_message line, delivered in chunks with pauses so a
@@ -144,7 +149,7 @@ fn build_state(home: &std::path::Path) -> (AppState, Arc<Capture>) {
 async fn send_codex_and_wait(state: &AppState, events: &Arc<Capture>, deadline_ms: u64) -> Vec<Value> {
     let workspace = std::env::temp_dir().join(format!("ccgui-codex-ws-{}", std::process::id()));
     std::fs::create_dir_all(&workspace).unwrap();
-    engine::send_message_inner(
+    let result = engine::send_message_inner(
         state,
         "codex".to_string(),
         workspace.to_string_lossy().to_string(),
@@ -154,9 +159,12 @@ async fn send_codex_and_wait(state: &AppState, events: &Arc<Capture>, deadline_m
         None,
         None,
         None,
+        None,
+        Some("run-client-probe".into()),
     )
     .await
     .expect("send_message must succeed");
+    assert_eq!(result.run_id, "run-client-probe");
 
     let deadline = std::time::Instant::now() + std::time::Duration::from_millis(deadline_ms);
     loop {
@@ -176,7 +184,9 @@ async fn send_codex_and_wait(state: &AppState, events: &Arc<Capture>, deadline_m
         );
         tokio::time::sleep(std::time::Duration::from_millis(50)).await;
     }
-    events.0.lock().unwrap().clone()
+    let collected = events.0.lock().unwrap().clone();
+    assert!(collected.iter().all(|event| event["runId"] == "run-client-probe"));
+    collected
 }
 
 fn collected_text(events: &[Value]) -> String {
@@ -185,6 +195,21 @@ fn collected_text(events: &[Value]) -> String {
         .filter(|e| e.get("kind").and_then(Value::as_str) == Some("message"))
         .filter_map(|e| e.get("data").and_then(|d| d.get("text")).and_then(Value::as_str))
         .collect()
+}
+
+#[tokio::test]
+#[allow(clippy::await_holding_lock)]
+async fn codex_error_before_session_id_keeps_the_client_run_id() {
+    let _env_guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let home = temp_home("early-error");
+    redirect_env(&home);
+    write_fake_codex(&home);
+    std::env::set_var("CODEX_PROBE_SCENARIO", "early-error");
+    let (state, events) = build_state(&home);
+    let collected = send_codex_and_wait(&state, &events, 15_000).await;
+    let error = collected.iter().find(|e| e["kind"] == "error").unwrap();
+    assert!(error["sessionId"].is_null());
+    assert_eq!(error["data"], "failed before thread started");
 }
 
 #[tokio::test]

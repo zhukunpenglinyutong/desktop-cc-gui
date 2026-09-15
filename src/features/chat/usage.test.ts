@@ -1,8 +1,23 @@
 import { describe, expect, it } from "vitest";
-import { mergeUsage, parseUsage } from "./usage";
+import { mergeUsage, parseUsage, reportedContextWindow } from "./usage";
 import { usageBreakdown } from "./components/usage-breakdown";
 
 describe("parseUsage", () => {
+  it("recognizes 1M metadata before tokens arrive and rejects invalid capacities", () => {
+    expect(reportedContextWindow({ contextWindow: "1M" })).toBe(1_000_000);
+    for (const value of [0, -1, Infinity, "-1M", "unknown"]) {
+      expect(reportedContextWindow({ model_context_window: value })).toBeUndefined();
+    }
+  });
+  it.each([1_000_000, "1M", "1000000"])("recognizes a %s context window from token_count info", (window) => {
+    const parsed = parseUsage({ info: { model_context_window: window,
+      last_token_usage: { input_tokens: 89000, output_tokens: 1000 },
+      total_token_usage: { input_tokens: 2000000, output_tokens: 50000 } } });
+    expect(parsed?.contextWindow).toBe(1_000_000);
+    expect(parsed?.total).toBe(90000);
+    expect(usageBreakdown({ input_tokens: 90000 }, parsed!.contextWindow!)?.pct).toBe(9);
+  });
+
   it("folds a codex record's cache counters out of its input", () => {
     // The session-log tail emits token_usage_record payloads: a flat usage
     // with codex's own cache field names and the stamped context window.

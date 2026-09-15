@@ -655,7 +655,7 @@ fn ff_conflicting_files(repo: &Repository, target: git2::Oid) -> Vec<String> {
     let mut touched_paths = std::collections::HashSet::new();
     let _ = touched.foreach(
         &mut |delta, _| {
-            if let Some(p) = delta.new_file().path() {
+            for p in [delta.old_file().path(), delta.new_file().path()].into_iter().flatten() {
                 touched_paths.insert(p.to_string_lossy().into_owned());
             }
             true
@@ -665,17 +665,12 @@ fn ff_conflicting_files(repo: &Repository, target: git2::Oid) -> Vec<String> {
         None,
     );
     let mut opts = StatusOptions::new();
-    opts.include_untracked(false);
+    opts.include_untracked(true).recurse_untracked_dirs(true);
     let Ok(statuses) = repo.statuses(Some(&mut opts)) else {
         return Vec::new();
     };
     statuses
         .iter()
-        .filter(|s| {
-            s.status().intersects(
-                git2::Status::WT_MODIFIED | git2::Status::WT_DELETED | git2::Status::WT_TYPECHANGE,
-            )
-        })
         .filter_map(|s| s.path().map(str::to_string))
         .filter(|p| touched_paths.contains(p))
         .collect()
@@ -708,13 +703,14 @@ fn git_pull_blocking(path: &str) -> Result<(), String> {
     if analysis.is_fast_forward() {
         let refname = format!("refs/heads/{branch}");
         let mut reference = repo.find_reference(&refname).map_err(|e| e.to_string())?;
-        reference
-            .set_target(fetch_commit.id(), "fast-forward")
-            .map_err(|e| e.to_string())?;
-        repo.set_head(&refname).map_err(|e| e.to_string())?;
         // Safe checkout (no force): a fast-forward must never clobber
         // uncommitted local edits — report the conflicting files instead.
-        if let Err(e) = repo.checkout_head(None) {
+        // Keep HEAD at the old tree until checkout succeeds, otherwise local
+        // edits are compared against the new commit and the index is stranded.
+        let target = repo.find_commit(fetch_commit.id()).map_err(|e| e.to_string())?;
+        let mut checkout = git2::build::CheckoutBuilder::new();
+        checkout.safe();
+        if let Err(e) = repo.checkout_tree(target.as_object(), Some(&mut checkout)) {
             let conflicts = ff_conflicting_files(&repo, fetch_commit.id());
             return Err(if conflicts.is_empty() {
                 format!("fast-forward checkout failed: {e}")
@@ -725,6 +721,9 @@ fn git_pull_blocking(path: &str) -> Result<(), String> {
                 )
             });
         }
+        reference
+            .set_target(fetch_commit.id(), "fast-forward")
+            .map_err(|e| e.to_string())?;
         return Ok(());
     }
     Err("pull requires a merge; not supported in v1".to_string())
@@ -855,6 +854,60 @@ mod tests {
         let parents: Vec<&git2::Commit> = parent.iter().collect();
         repo.commit(Some("HEAD"), &signature, &signature, "init", &tree, &parents)
             .unwrap();
+    }
+
+    #[test]
+    fn pull_conflict_preserves_head_index_and_worktree() {
+        for staged in [false, true] {
+            let scratch = Scratch::new();
+            let origin_path = scratch.0.join("origin");
+            let origin = Repository::init(&origin_path).unwrap();
+            commit_file(&origin, "shared.txt", "base\n");
+            let local_path = scratch.0.join("local");
+            let local = Repository::clone(origin_path.to_str().unwrap(), &local_path).unwrap();
+            local.config().unwrap().set_bool("core.autocrlf", false).unwrap();
+            let old_head = local.head().unwrap().target().unwrap();
+            std::fs::write(local_path.join("shared.txt"), "local\n").unwrap();
+            if staged {
+                let mut index = local.index().unwrap();
+                index.add_path(Path::new("shared.txt")).unwrap();
+                index.write().unwrap();
+            }
+            let old_index = local.index().unwrap().write_tree().unwrap();
+            commit_file(&origin, "shared.txt", "remote\n");
+            let error = git_pull_blocking(local_path.to_str().unwrap()).unwrap_err();
+            assert_eq!(local.head().unwrap().target(), Some(old_head), "{error}");
+            assert_eq!(local.index().unwrap().write_tree().unwrap(), old_index);
+            assert_eq!(std::fs::read_to_string(local_path.join("shared.txt")).unwrap(), "local\n");
+            assert!(error.contains("shared.txt"), "{error}");
+        }
+    }
+
+    #[test]
+    fn pull_fast_forward_preserves_unrelated_local_changes() {
+        let scratch = Scratch::new();
+        let origin_path = scratch.0.join("origin");
+        let origin = Repository::init(&origin_path).unwrap();
+        commit_file(&origin, "shared.txt", "base\n");
+        commit_file(&origin, "local.txt", "base\n");
+        let local_path = scratch.0.join("local");
+        let local = Repository::clone(origin_path.to_str().unwrap(), &local_path).unwrap();
+        local.config().unwrap().set_bool("core.autocrlf", false).unwrap();
+        std::fs::write(local_path.join("local.txt"), "staged\n").unwrap();
+        let mut index = local.index().unwrap();
+        index.add_path(Path::new("local.txt")).unwrap();
+        index.write().unwrap();
+        let staged_blob = index.get_path(Path::new("local.txt"), 0).unwrap().id;
+        std::fs::write(local_path.join("local.txt"), "unstaged\n").unwrap();
+        std::fs::write(local_path.join("new.txt"), "untracked\n").unwrap();
+        commit_file(&origin, "shared.txt", "remote\n");
+        git_pull_blocking(local_path.to_str().unwrap()).unwrap();
+        assert_eq!(local.head().unwrap().target(), origin.head().unwrap().target());
+        assert_eq!(std::fs::read_to_string(local_path.join("shared.txt")).unwrap(), "remote\n");
+        assert_eq!(std::fs::read_to_string(local_path.join("local.txt")).unwrap(), "unstaged\n");
+        assert_eq!(std::fs::read_to_string(local_path.join("new.txt")).unwrap(), "untracked\n");
+        assert_eq!(local.index().unwrap().get_path(Path::new("local.txt"), 0).unwrap().id, staged_blob);
+        git_pull_blocking(local_path.to_str().unwrap()).unwrap();
     }
 
     #[test]

@@ -136,9 +136,8 @@ pub fn import_legacy_config_once() {
     let _ = write_config(&config);
 }
 
-/// Launch gate: the 停用 pseudo-provider refuses sends. The active channel
-/// itself lives in each CLI's native config file — `provider_files::apply`
-/// writes it on every switch, so there is nothing to resolve at spawn time.
+/// Launch gate: the 停用 pseudo-provider refuses sends. Channel env is
+/// resolved at spawn (`resolve_provider_env`) and injected onto the child.
 pub fn ensure_engine_enabled(engine: &str) -> Result<(), String> {
     let config = read_config()?;
     let section = config
@@ -148,6 +147,98 @@ pub fn ensure_engine_enabled(engine: &str) -> Result<(), String> {
         return Err(format!("engine {engine} is disabled"));
     }
     Ok(())
+}
+
+fn is_official_provider(id: &str) -> bool {
+    id.is_empty() || id == LOCAL_PROVIDER_ID || id == LEGACY_LOCAL_CONFIG_TOML_ID
+}
+
+/// Helper to find a provider in a section by exact id or by plugin prefix/suffix match.
+/// For example, "custom_123" matches "plugin_model-switcher_custom_123",
+/// and "plugin_model-switcher_custom_123" matches "custom_123".
+pub(crate) fn find_provider<'a>(
+    section: &'a ProviderSection,
+    id: &str,
+) -> Option<(&'a str, &'a Value)> {
+    if let Some((k, v)) = section.providers.get_key_value(id) {
+        return Some((k.as_str(), v));
+    }
+    // Check if any key ends with "_<id>" (caller passed id without plugin prefix)
+    for (k, v) in &section.providers {
+        if k.ends_with(&format!("_{id}")) {
+            return Some((k.as_str(), v));
+        }
+    }
+    // Check if id ends with "_<k>" (caller passed id with extra prefix)
+    for (k, v) in &section.providers {
+        if id.ends_with(&format!("_{k}")) {
+            return Some((k.as_str(), v));
+        }
+    }
+    None
+}
+
+/// Env a spawn should inject for `provider_id` on `engine`. Official / empty
+/// / unknown-but-pseudo ids yield an empty map (the CLI's own files apply).
+/// `__disabled__` is a launch error. Claude is injected the same way as the
+/// other engines — unlike the old spawn path which skipped it.
+pub fn resolve_provider_env(
+    engine: &str,
+    provider_id: Option<&str>,
+) -> Result<HashMap<String, String>, String> {
+    resolve_provider(engine, provider_id)?
+        .map(|provider| crate::provider_files::channel_env(engine, &provider))
+        .unwrap_or_else(|| Ok(HashMap::new()))
+}
+
+/// Read one channel snapshot for the whole launch (env and native overrides).
+pub(crate) fn resolve_provider(
+    engine: &str,
+    provider_id: Option<&str>,
+) -> Result<Option<Value>, String> {
+    let config = read_config()?;
+    let section = config
+        .section(engine)
+        .ok_or_else(|| format!("unknown engine: {engine}"))?;
+    crate::provider_files::migrate_legacy(engine, section)?;
+    let id = provider_id
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| section.current.as_deref().unwrap_or("").trim());
+    if id == DISABLED_PROVIDER_ID {
+        return Err(format!("engine {engine} is disabled"));
+    }
+    if is_official_provider(id) {
+        return Ok(None);
+    }
+
+    if let Some((_matched_key, provider)) = find_provider(section, id) {
+        return Ok(Some(provider.clone()));
+    }
+
+    // If an explicit provider_id was passed (e.g. from an old session or plugin discrepancy)
+    // but no longer exists directly in config, fall back to the engine's current provider
+    // instead of failing the send.
+    if let Some(current_id) = section
+        .current
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
+        if current_id == DISABLED_PROVIDER_ID {
+            return Err(format!("engine {engine} is disabled"));
+        }
+        if is_official_provider(current_id) {
+            return Ok(None);
+        }
+        if let Some((_matched_key, provider)) = find_provider(section, current_id) {
+            eprintln!("[config] provider {id} not found for {engine}, falling back to current provider: {current_id}");
+            return Ok(Some(provider.clone()));
+        }
+    }
+
+    eprintln!("[config] provider {id} not found for {engine}, falling back to official config");
+    Ok(None)
 }
 
 // ==================== Commands ====================
@@ -167,7 +258,9 @@ pub(crate) fn mutate_section_unlocked(
     let section = config
         .section_mut(engine)
         .ok_or_else(|| format!("unknown engine: {engine}"))?;
+    let previous = section.clone();
     mutate(section)?;
+    crate::provider_files::migrate_legacy(engine, &previous)?;
     write_config(&config)
 }
 
@@ -182,21 +275,6 @@ fn mutate_section(
     mutate_section_unlocked(engine, mutate)
 }
 
-/// Re-apply the active channel to the CLI's native config after its stored
-/// value changed (edit/save on the current channel, delete of the current
-/// channel, enable-switch restore).
-fn apply_if_current(engine: &str, id: &str) -> Result<(), String> {
-    let config = read_config()?;
-    let Some(section) = config.section(engine) else {
-        return Ok(());
-    };
-    let current = section.current.as_deref().unwrap_or("");
-    if current == id {
-        crate::provider_files::apply(engine, id, section.providers.get(id))?;
-    }
-    Ok(())
-}
-
 #[tauri::command]
 pub fn upsert_provider(
     store: tauri::State<'_, ConfigStore>,
@@ -204,11 +282,19 @@ pub fn upsert_provider(
     id: String,
     json: Value,
 ) -> Result<(), String> {
+    upsert_provider_inner(&store, engine, id, json)
+}
+
+fn upsert_provider_inner(
+    store: &ConfigStore,
+    engine: String,
+    id: String,
+    json: Value,
+) -> Result<(), String> {
     mutate_section(&store, &engine, |section| {
         section.providers.insert(id.clone(), json);
         Ok(())
-    })?;
-    apply_if_current(&engine, &id)
+    })
 }
 
 #[tauri::command]
@@ -217,21 +303,18 @@ pub fn delete_provider(
     engine: String,
     id: String,
 ) -> Result<(), String> {
-    let mut deleted_current = false;
+    delete_provider_inner(&store, engine, id)
+}
+
+fn delete_provider_inner(store: &ConfigStore, engine: String, id: String) -> Result<(), String> {
     mutate_section(&store, &engine, |section| {
         section.providers.remove(&id);
         if section.current.as_deref() == Some(id.as_str()) {
+            // Fall back to 官方配置: spawn injects nothing for official.
             section.current = None;
-            deleted_current = true;
         }
         Ok(())
-    })?;
-    if deleted_current {
-        // Deleting the active channel falls back to 官方配置: restore the
-        // CLI's own config file.
-        crate::provider_files::apply(&engine, LOCAL_PROVIDER_ID, None)?;
-    }
-    Ok(())
+    })
 }
 
 /// Enable-switch semantics: disabling remembers the current provider in
@@ -244,7 +327,14 @@ pub fn set_engine_enabled(
     engine: String,
     enabled: bool,
 ) -> Result<(), String> {
-    let mut restored: Option<(String, Option<Value>)> = None;
+    set_engine_enabled_inner(&store, engine, enabled)
+}
+
+fn set_engine_enabled_inner(
+    store: &ConfigStore,
+    engine: String,
+    enabled: bool,
+) -> Result<(), String> {
     mutate_section(&store, &engine, |section| {
         if enabled {
             if section.current.as_deref() == Some(DISABLED_PROVIDER_ID) {
@@ -253,7 +343,6 @@ pub fn set_engine_enabled(
                     .take()
                     .filter(|id| id != DISABLED_PROVIDER_ID && section.providers.contains_key(id));
                 let id = restore.unwrap_or_else(|| LOCAL_PROVIDER_ID.to_string());
-                restored = Some((id.clone(), section.providers.get(&id).cloned()));
                 section.current = Some(id);
             }
         } else if section.current.as_deref() != Some(DISABLED_PROVIDER_ID) {
@@ -261,13 +350,7 @@ pub fn set_engine_enabled(
             section.current = Some(DISABLED_PROVIDER_ID.to_string());
         }
         Ok(())
-    })?;
-    // Re-enabling onto a real channel re-materializes it into the CLI's
-    // config file; disabling touches no files (gate only).
-    if let Some((id, provider)) = restored {
-        crate::provider_files::apply(&engine, &id, provider.as_ref())?;
-    }
-    Ok(())
+    })
 }
 
 #[tauri::command]
@@ -276,25 +359,28 @@ pub fn set_current_provider(
     engine: String,
     id: String,
 ) -> Result<(), String> {
-    let _guard = store.0.lock().map_err(|e| e.to_string())?;
-    let provider = {
-        let config = read_config()?;
-        let section = config
-            .section(&engine)
-            .ok_or_else(|| format!("unknown engine: {engine}"))?;
+    set_current_provider_inner(&store, engine, id)
+}
+
+fn set_current_provider_inner(
+    store: &ConfigStore,
+    engine: String,
+    id: String,
+) -> Result<(), String> {
+    mutate_section(&store, &engine, |section| {
         if id != LOCAL_PROVIDER_ID
             && id != DISABLED_PROVIDER_ID
             && id != LEGACY_LOCAL_CONFIG_TOML_ID
-            && !section.providers.contains_key(&id)
         {
+            if let Some((matched_key, _)) = find_provider(section, &id) {
+                section.current = Some(matched_key.to_string());
+                return Ok(());
+            }
             return Err(format!("provider {id} not found for {engine}"));
         }
-        section.providers.get(&id).cloned()
-    };
-    // Write the CLI's native config first: a file error leaves our store
-    // untouched, so the UI never shows a channel the CLI isn't running on.
-    crate::provider_files::apply(&engine, &id, provider.as_ref())?;
-    mutate_section_unlocked(&engine, |section| {
+        // Session-scoped: this is the default for new chats. Existing sessions
+        // keep the provider they remembered; spawn injects env, never writes
+        // the CLI's own config file.
         section.current = Some(id.clone());
         Ok(())
     })
@@ -323,4 +409,223 @@ pub fn reorder_providers(
         section.providers = ordered;
         Ok(())
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    struct Scratch {
+        dir: std::path::PathBuf,
+        prev_home: Option<std::ffi::OsString>,
+        prev_profile: Option<std::ffi::OsString>,
+        engine_homes: Vec<(&'static str, Option<std::ffi::OsString>)>,
+        _lock: std::sync::MutexGuard<'static, ()>,
+    }
+    impl Scratch {
+        fn new() -> Self {
+            let lock = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+            let dir = std::env::temp_dir()
+                .join(format!("ccgui-next-config-test-{}", uuid::Uuid::new_v4()));
+            std::fs::create_dir_all(&dir).unwrap();
+            let prev_home = std::env::var_os("HOME");
+            let prev_profile = std::env::var_os("USERPROFILE");
+            std::env::set_var("HOME", &dir);
+            std::env::set_var("USERPROFILE", &dir);
+            let engine_homes = [
+                "CLAUDE_CONFIG_DIR",
+                "CODEX_HOME",
+                "KIMI_CODE_HOME",
+                "GROK_HOME",
+                "GROK_CONFIG_PATH",
+                "GROK_AUTH_PATH",
+                "ANTIGRAVITY_HOME",
+            ]
+            .into_iter()
+            .map(|key| {
+                let previous = std::env::var_os(key);
+                let path = match key {
+                    "GROK_CONFIG_PATH" => dir.join("grok-override/config.toml"),
+                    "GROK_AUTH_PATH" => dir.join("grok-override/auth.json"),
+                    _ => dir.join(key),
+                };
+                std::env::set_var(key, path);
+                (key, previous)
+            })
+            .collect();
+            Self {
+                dir,
+                prev_home,
+                prev_profile,
+                engine_homes,
+                _lock: lock,
+            }
+        }
+    }
+    impl Drop for Scratch {
+        fn drop(&mut self) {
+            for (key, previous) in &self.engine_homes {
+                match previous {
+                    Some(value) => std::env::set_var(key, value),
+                    None => std::env::remove_var(key),
+                }
+            }
+            match &self.prev_home {
+                Some(v) => std::env::set_var("HOME", v),
+                None => std::env::remove_var("HOME"),
+            }
+            match &self.prev_profile {
+                Some(v) => std::env::set_var("USERPROFILE", v),
+                None => std::env::remove_var("USERPROFILE"),
+            }
+            let _ = std::fs::remove_dir_all(&self.dir);
+        }
+    }
+
+    fn seed_channel(engine: &str, id: &str, current: Option<&str>, provider: Value) {
+        crate::paths::ensure_dirs().unwrap();
+        let mut config = CliConfig::default();
+        let section = config.section_mut(engine).unwrap();
+        section.providers.insert(id.to_string(), provider);
+        section.current = current.map(str::to_string);
+        write_config(&config).unwrap();
+    }
+
+    #[test]
+    fn resolve_provider_env_official_is_empty_and_claude_injects() {
+        let _scratch = Scratch::new();
+        seed_channel(
+            "claude",
+            "chan-a",
+            Some("chan-a"),
+            json!({
+                "baseUrl": "https://a.example",
+                "apiKey": "sk-a",
+                "model": "m-a",
+            }),
+        );
+        let env = resolve_provider_env("claude", Some("chan-a")).unwrap();
+        assert_eq!(
+            env.get("ANTHROPIC_BASE_URL").map(String::as_str),
+            Some("https://a.example")
+        );
+        assert_eq!(
+            env.get("ANTHROPIC_AUTH_TOKEN").map(String::as_str),
+            Some("sk-a")
+        );
+        assert_eq!(env.get("ANTHROPIC_MODEL").map(String::as_str), Some("m-a"));
+
+        let official = resolve_provider_env("claude", Some(LOCAL_PROVIDER_ID)).unwrap();
+        assert!(official.is_empty());
+        let empty = resolve_provider_env("claude", Some("")).unwrap();
+        // Empty id falls back to section.current (chan-a).
+        assert_eq!(
+            empty.get("ANTHROPIC_BASE_URL").map(String::as_str),
+            Some("https://a.example")
+        );
+    }
+
+    #[test]
+    fn resolve_provider_env_disabled_errors() {
+        let _scratch = Scratch::new();
+        seed_channel("kimi", "chan-a", Some(DISABLED_PROVIDER_ID), json!({}));
+        assert!(resolve_provider_env("kimi", Some(DISABLED_PROVIDER_ID)).is_err());
+    }
+
+    #[test]
+    fn resolve_provider_env_matches_plugin_prefix_and_falls_back() {
+        let _scratch = Scratch::new();
+        seed_channel(
+            "claude",
+            "plugin_model-switcher_custom_1789366959743",
+            Some("plugin_model-switcher_custom_1789366959743"),
+            json!({
+                "baseUrl": "https://tobapi.example.com",
+                "apiKey": "sk-test",
+            }),
+        );
+        // Suffix match: caller passes unprefixed id from plugin
+        let env = resolve_provider_env("claude", Some("custom_1789366959743")).unwrap();
+        assert_eq!(
+            env.get("ANTHROPIC_BASE_URL").map(String::as_str),
+            Some("https://tobapi.example.com")
+        );
+        assert_eq!(
+            env.get("ANTHROPIC_AUTH_TOKEN").map(String::as_str),
+            Some("sk-test")
+        );
+
+        // Stale id from old session falls back to current
+        let fallback = resolve_provider_env("claude", Some("deleted_channel_123")).unwrap();
+        assert_eq!(
+            fallback.get("ANTHROPIC_BASE_URL").map(String::as_str),
+            Some("https://tobapi.example.com")
+        );
+    }
+
+    #[test]
+    fn set_current_provider_does_not_write_native_files() {
+        let _scratch = Scratch::new();
+        let store = ConfigStore::default();
+        for engine in ENGINES {
+            seed_channel(
+                engine,
+                "chan-a",
+                None,
+                json!({"baseUrl":"https://a.example", "apiKey":"sk-a"}),
+            );
+            let paths = crate::provider_files::provider_file_paths(engine.into());
+            for path in &paths {
+                std::fs::create_dir_all(std::path::Path::new(path).parent().unwrap()).unwrap();
+                // Intentionally arbitrary bytes: switching must not parse/reformat
+                // an existing native file when there is no legacy migration.
+                std::fs::write(path, "# user's own config\n中文 🧪\n").unwrap();
+            }
+            for id in ["chan-a", LOCAL_PROVIDER_ID, "chan-a"] {
+                set_current_provider_inner(&store, engine.into(), id.into()).unwrap();
+                assert_eq!(
+                    read_config()
+                        .unwrap()
+                        .section(engine)
+                        .unwrap()
+                        .current
+                        .as_deref(),
+                    Some(id)
+                );
+            }
+            assert!(set_current_provider_inner(&store, engine.into(), "missing".into()).is_err());
+            upsert_provider_inner(
+                &store,
+                engine.into(),
+                "chan-a".into(),
+                json!({"apiKey":"updated"}),
+            )
+            .unwrap();
+            set_engine_enabled_inner(&store, engine.into(), false).unwrap();
+            set_engine_enabled_inner(&store, engine.into(), true).unwrap();
+            delete_provider_inner(&store, engine.into(), "chan-a".into()).unwrap();
+            for path in &paths {
+                assert_eq!(
+                    std::fs::read_to_string(path).unwrap(),
+                    "# user's own config\n中文 🧪\n",
+                    "{engine}: {path}"
+                );
+                std::fs::remove_file(path).unwrap();
+            }
+            upsert_provider_inner(
+                &store,
+                engine.into(),
+                "chan-a".into(),
+                json!({"apiKey":"new"}),
+            )
+            .unwrap();
+            set_current_provider_inner(&store, engine.into(), "chan-a".into()).unwrap();
+            for path in paths {
+                assert!(!std::path::Path::new(&path).exists());
+            }
+        }
+    }
 }

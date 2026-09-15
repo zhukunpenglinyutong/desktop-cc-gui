@@ -42,7 +42,7 @@ export function CliConfigBody({ cli }: { cli: CliConfigState }) {
     entries,
     currentId,
     mutate,
-    requestActivate,
+    activate,
     setDialog,
     setPendingDelete,
     syncCcSwitch,
@@ -123,7 +123,7 @@ export function CliConfigBody({ cli }: { cli: CliConfigState }) {
                   current={currentId === entry.id}
                   busy={busy}
                   drag={drag}
-                  onToggle={(on) => requestActivate(on ? entry.id : PSEUDO_LOCAL)}
+                  onToggle={(on) => activate(on ? entry.id : PSEUDO_LOCAL)}
                   onEdit={() => setDialog({ entry })}
                   onDelete={() => setPendingDelete(entry)}
                 />

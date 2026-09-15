@@ -28,6 +28,7 @@ function Probe() {
     sessionKey: key,
     models: {},
     efforts: ENGINE_DEFAULT,
+    providers: {},
   });
   return (
     <span data-testid="effort">{displayEfforts[activeEngine] ?? ""}</span>

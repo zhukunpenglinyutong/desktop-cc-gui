@@ -73,6 +73,10 @@ pub struct SessionMeta {
     /// same reason: a reopened session has to keep its level, wherever it is
     /// opened from.
     pub effort: Option<String>,
+    /// In-app channel this session last ran. Spawn injects that channel's env
+    /// onto the child; native CLI files stay official. Absent until a send
+    /// remembers one — the engine default `current` then applies.
+    pub provider: Option<String>,
 }
 
 /// A native session file discovered on disk, matched to a workspace.
