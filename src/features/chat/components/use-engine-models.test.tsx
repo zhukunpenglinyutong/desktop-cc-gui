@@ -3,7 +3,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { EngineCatalog, EngineInfo } from "@/lib/ipc";
 import { ipc } from "@/lib/ipc";
-import { useEngineModels } from "./use-engine-models";
+import { useEngineModels, type EngineModelsState } from "./use-engine-models";
 
 vi.mock("@/lib/ipc", () => ({
   ipc: {
@@ -16,18 +16,32 @@ vi.mock("@/lib/ipc", () => ({
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
 const ENGINE = { id: "omp", enabled: true, available: true } as EngineInfo;
-// 模块级稳定引用:与应用内 zustand 提供的 engines 同形 —— 每 render 新建
-// 数组会让探针 effect 反复触发(pending 中的引擎不在 catalogs 过滤条件里)。
+// 模块级稳定引用:与应用内 zustand 提供的 engines 同形。探针记录存在 ref
+// 里,数组身份抖动不再引发重复探测(见 use-engine-models 的探针 effect)。
 const ENGINES = [ENGINE];
 const WS_REMOTE = "//wsl$/Ubuntu/home/u/proj";
 
 let container: HTMLDivElement;
 let root: Root;
+// 当前 render 的 engines(默认稳定引用;探针类用例按需替换)。
+let engines: EngineInfo[] = ENGINES;
+let latest: EngineModelsState;
+
+const engineInfo = (id: string, available: boolean): EngineInfo => ({
+  id,
+  available,
+  enabled: true,
+  supportsImages: false,
+  permissions: [],
+});
+
+const noopPin = async () => {};
 
 beforeEach(() => {
   container = document.createElement("div");
   document.body.appendChild(container);
   root = createRoot(container);
+  engines = ENGINES;
 });
 
 afterEach(async () => {
@@ -45,7 +59,7 @@ function Harness({
   pinModels: (updates: Record<string, string>, persist?: boolean) => Promise<void>;
   workspacePath?: string;
 }) {
-  useEngineModels(ENGINES, models, pinModels, workspacePath);
+  latest = useEngineModels(engines, models, pinModels, workspacePath);
   return null;
 }
 
@@ -56,6 +70,22 @@ async function render(props: Parameters<typeof Harness>[0]) {
     await Promise.resolve();
     await Promise.resolve();
   });
+}
+
+/** 让队列中的 promise 回调与随后的 re-render 全部落定:失控的探针循环
+ *  会在这么长的窗口里打出成百上千次调用。 */
+const settle = () =>
+  act(async () => {
+    const { promise, resolve } = Promise.withResolvers<void>();
+    setTimeout(resolve, 80);
+    await promise;
+  });
+
+/** 探针类用例的渲染入口:可换 engines,渲染后等窗口落定。 */
+async function show(next: EngineInfo[] | null, workspacePath?: string) {
+  if (next) engines = next;
+  await render({ models: {}, pinModels: noopPin, workspacePath });
+  await settle();
 }
 
 describe("useEngineModels pin effect", () => {
@@ -80,5 +110,61 @@ describe("useEngineModels pin effect", () => {
     const pinModels = vi.fn(async () => {});
     await render({ models: { omp: "stale-id" }, pinModels });
     expect(pinModels).toHaveBeenCalledWith({ omp: "m1" });
+  });
+});
+
+describe("useEngineModels probe dispatch", () => {
+  it("探针失败只派发一次:不会被 pending 抖动反复重发", async () => {
+    vi.mocked(ipc.listEngineModels).mockRejectedValue(new Error("DSH host 未运行"));
+    await show([engineInfo("dsh", true)]);
+    expect(ipc.listEngineModels).toHaveBeenCalledTimes(1);
+    expect(latest.pendingEngines).toEqual({});
+  });
+
+  it("另一引擎的 catalog 落地不会连带重试失败引擎", async () => {
+    vi.mocked(ipc.listEngineModels).mockImplementation(async (id: string) => {
+      if (id === "dsh") throw new Error("DSH host 未运行");
+      return { models: [{ id: "pi/m1", provider: "pi" }], authoritative: true };
+    });
+    await show([engineInfo("dsh", true), engineInfo("pi", true)]);
+    expect(ipc.listEngineModels).toHaveBeenCalledTimes(2);
+    expect(latest.catalogs.pi?.models[0]?.id).toBe("pi/m1");
+    await settle();
+    expect(ipc.listEngineModels).toHaveBeenCalledTimes(2);
+  });
+
+  it("refresh 重探所有引擎(失败者也算)", async () => {
+    vi.mocked(ipc.listEngineModels).mockRejectedValue(new Error("down"));
+    await show([engineInfo("dsh", true)]);
+    expect(ipc.listEngineModels).toHaveBeenCalledTimes(1);
+    vi.mocked(ipc.listEngineModels).mockResolvedValue({
+      models: [{ id: "deepseek/x", provider: "deepseek" }],
+      authoritative: true,
+    });
+    await act(async () => {
+      await latest.refresh();
+    });
+    expect(ipc.listEngineModels).toHaveBeenCalledTimes(2);
+    expect(latest.catalogs.dsh?.models[0]?.id).toBe("deepseek/x");
+  });
+
+  it("引擎可用性翻转后允许再探一次", async () => {
+    vi.mocked(ipc.listEngineModels).mockRejectedValue(new Error("missing CLI"));
+    await show([engineInfo("dsh", false)]);
+    expect(ipc.listEngineModels).toHaveBeenCalledTimes(1);
+    await show([engineInfo("dsh", true)]);
+    expect(ipc.listEngineModels).toHaveBeenCalledTimes(2);
+  });
+
+  it("探针记录按工作区隔离", async () => {
+    vi.mocked(ipc.listEngineModels).mockRejectedValue(new Error("down"));
+    await show([engineInfo("dsh", true)], "/ws-a");
+    expect(ipc.listEngineModels).toHaveBeenCalledTimes(1);
+    await show(null, "/ws-b");
+    expect(ipc.listEngineModels).toHaveBeenCalledTimes(2);
+    expect(vi.mocked(ipc.listEngineModels).mock.calls.map((call) => call[1])).toEqual([
+      "/ws-a",
+      "/ws-b",
+    ]);
   });
 });

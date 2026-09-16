@@ -38,6 +38,8 @@
 
 use serde::Serialize;
 use std::collections::HashMap;
+#[cfg(windows)]
+use std::sync::Arc;
 use std::sync::LazyLock;
 use std::time::Duration;
 
@@ -242,23 +244,38 @@ fn parse_lifecycle(plugin_id: &str, lifecycle: Option<&str>) -> Result<Lifecycle
 /// by plugin id. Detached spawns never land here. Only children a plugin
 /// spawned itself are reachable through its id, so no entry in this map can
 /// ever be used to kill another plugin's (or the host's) processes.
-static TRACKED_CHILDREN: LazyLock<Mutex<HashMap<String, Vec<tokio::process::Child>>>> =
+struct TrackedChild {
+    child: tokio::process::Child,
+    /// Kill-on-close job guard (Windows): dropping the entry closes the job
+    /// and the kernel sweeps grandchildren the start_kill tree walk missed.
+    #[cfg(windows)]
+    _tree_guard: Option<Arc<crate::engine::job::KillOnCloseJob>>,
+}
+
+static TRACKED_CHILDREN: LazyLock<Mutex<HashMap<String, Vec<TrackedChild>>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
 
-fn tracked_children() -> &'static Mutex<HashMap<String, Vec<tokio::process::Child>>> {
+fn tracked_children() -> &'static Mutex<HashMap<String, Vec<TrackedChild>>> {
     &TRACKED_CHILDREN
 }
 
 pub(crate) fn register_tracked_child(plugin_id: &str, child: tokio::process::Child) {
+    #[cfg(windows)]
+    let tree_guard = crate::engine::job::assign_kill_on_close(&child);
     let mut registry = tracked_children().lock();
     let children = registry.entry(plugin_id.to_string()).or_default();
     // Prune dead handles before pushing: a plugin that respawns a child in
     // a loop would otherwise accumulate one entry per spawn until an
     // explicit kill/disable/uninstall/exit. try_wait reaps the zombie as a
     // side effect; an error means the handle can no longer be waited on, so
-    // treat it as exited too.
-    children.retain_mut(|child| matches!(child.try_wait(), Ok(None)));
-    children.push(child);
+    // treat it as exited too. Pruning drops the entry — its job guard then
+    // sweeps any orphaned grandchildren of that dead child.
+    children.retain_mut(|entry| matches!(entry.child.try_wait(), Ok(None)));
+    children.push(TrackedChild {
+        child,
+        #[cfg(windows)]
+        _tree_guard: tree_guard,
+    });
 }
 
 /// Remove every tracked child of `plugin_id` and SIGKILL each one, returning
@@ -272,8 +289,9 @@ pub(crate) fn kill_tracked_children(plugin_id: &str) -> usize {
         .remove(plugin_id)
         .unwrap_or_default();
     let killed = children.len();
-    for mut child in children {
-        let _ = child.start_kill();
+    for mut entry in children {
+        let _ = entry.child.start_kill();
+        // Entry drops here: on Windows its job guard sweeps the whole tree.
     }
     killed
 }
@@ -285,8 +303,8 @@ pub(crate) fn kill_all_tracked_children() {
     let mut registry = tracked_children()
         .lock();
     for (_, children) in registry.drain() {
-        for mut child in children {
-            let _ = child.start_kill();
+        for mut entry in children {
+            let _ = entry.child.start_kill();
         }
     }
 }
@@ -518,6 +536,10 @@ pub(crate) async fn plugin_exec_run(
     if let Some(env) = env {
         command.envs(env);
     }
+    // Own process group (unix) so the timeout sweep below can take the
+    // whole tree, not just the direct child.
+    #[cfg(unix)]
+    command.process_group(0);
     // Windows：别让控制台子进程弹出窗口/在 Windows Terminal 开选项卡（宿主其它 spawn 点
     // 都用了 hide_console，插件桥是唯一漏的；不加则插件每次 exec/spawn 都闪控制台）。
     #[cfg(windows)]
@@ -526,6 +548,12 @@ pub(crate) async fn plugin_exec_run(
     let mut child = command
         .spawn()
         .map_err(|error| format!("{plugin_id}: failed to start {bin}: {error}"))?;
+    let child_pid = child.id();
+    // Kill-on-close job (Windows): sweeps grandchildren whenever this guard
+    // drops — including the timeout path, where kill_on_drop only reaches
+    // the direct child and an orphaned grandchild would escape taskkill.
+    #[cfg(windows)]
+    let tree_guard = crate::engine::job::assign_kill_on_close(&child);
     // Bounded streaming reads of both pipes at once, then wait — all under
     // the same timeout; a timeout drops the child and kill_on_drop fires.
     let stdout_pipe = child.stdout.take().expect("stdout is piped");
@@ -538,9 +566,26 @@ pub(crate) async fn plugin_exec_run(
         let status = child.wait().await;
         (stdout, stderr, status)
     };
-    let (stdout, stderr, status) = tokio::time::timeout(Duration::from_millis(timeout_ms), run)
-        .await
-        .map_err(|_| format!("{plugin_id}: {bin} timed out after {timeout_ms}ms"))?;
+    let (stdout, stderr, status) = match tokio::time::timeout(Duration::from_millis(timeout_ms), run).await {
+        Ok(result) => result,
+        Err(_) => {
+            // The dropped run future kill_on_drop-kills the direct child;
+            // sweep the tree it may have orphaned before dying.
+            #[cfg(unix)]
+            if let Some(pid) = child_pid.filter(|p| *p != 0) {
+                crate::engine::kill_process_group(pid);
+            }
+            #[cfg(windows)]
+            drop(tree_guard);
+            return Err(format!("{plugin_id}: {bin} timed out after {timeout_ms}ms"));
+        }
+    };
+    // Settle sweep (unix): the group is empty on a clean exit (ESRCH no-op);
+    // anything left is an orphaned grandchild of the finished process.
+    #[cfg(unix)]
+    if let Some(pid) = child_pid.filter(|p| *p != 0) {
+        crate::engine::kill_process_group(pid);
+    }
     let stdout =
         stdout.map_err(|error| format!("{plugin_id}: failed to read {bin} stdout: {error}"))?;
     let stderr =

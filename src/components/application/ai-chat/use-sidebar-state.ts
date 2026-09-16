@@ -210,9 +210,10 @@ function matchRepo(repo: AiChatRepo, normalizedQuery: string): AiChatRepo | null
 }
 
 /** The query filter applied to the whole workspace tree: flat repos, grouped
- *  sections (groups with no matches drop out while searching; the ungrouped
- *  section stays), and the 已归档 labels (label match only — archived rows
- *  carry no threads). */
+ *  sections (groups with no matches drop out while searching; empty groups
+ *  stay when not searching so they can render as mid-drag drop targets; the
+ *  ungrouped section always stays), and the 已归档 labels (label match only
+ *  — archived rows carry no threads). */
 export function useFilteredWorkspaces(
   repos: AiChatRepo[],
   sections: AiChatRepoSection[] | undefined,
@@ -234,7 +235,7 @@ export function useFilteredWorkspaces(
         const match = matchRepo(repo, normalizedQuery);
         return match ? [match] : [];
       });
-      if (section.id === null || repos.length > 0) {
+      if (section.id === null || repos.length > 0 || !normalizedQuery) {
         acc.push({ ...section, repos });
       }
       return acc;

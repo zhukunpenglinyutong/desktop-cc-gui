@@ -62,6 +62,16 @@ reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"
 # snapshot of its launcher, so engine::resolve re-reads the registry at
 # detection time to see CLIs installed while the app is running.
 winreg = "0.55"
+# Job Objects (engine/job.rs): kill-on-close membership for spawned CLIs so
+# an orphaned grandchild (a CLI's pwsh.exe and its hidden conhost.exe) dies
+# with the run. taskkill /T can only walk a tree whose root is still alive,
+# which is exactly what an orphan no longer has.
+windows = { version = "0.61", features = [
+    "Win32_Foundation",
+    "Win32_Security",
+    "Win32_System_JobObjects",
+    "Win32_System_Threading",
+] }
 
 [dev-dependencies]
 tauri = { version = "2", features = ["test"] }

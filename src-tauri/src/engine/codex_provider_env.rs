@@ -84,6 +84,10 @@ async fn resolve_from_login_shell(keys: &[String]) -> Option<BTreeMap<String, St
         .arg(SHELL_SCRIPT)
         .arg("ccgui")
         .args(keys);
+    // tokio's output() does NOT kill on drop: a login shell whose rc files
+    // block past the timeout would otherwise be abandoned alive — one orphan
+    // `zsh -l -i` per codex send, same leak class as orphaned grandchildren.
+    command.kill_on_drop(true);
     let output = timeout(RESOLUTION_TIMEOUT, command.output())
         .await
         .ok()?

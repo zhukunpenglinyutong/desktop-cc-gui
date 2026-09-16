@@ -5,10 +5,21 @@ import { useTranslation } from "react-i18next";
 import ChevronRight from "lucide-react/dist/esm/icons/chevron-right";
 import FolderPlus from "lucide-react/dist/esm/icons/folder-plus";
 import FolderSymlink from "lucide-react/dist/esm/icons/folder-symlink";
-import { WorkspaceSortableList } from "@/components/application/ai-chat/workspace-sortable-list";
+import {
+  WORKSPACE_DROP_TARGET_ATTR,
+  WorkspaceSortableList,
+} from "@/components/application/ai-chat/workspace-sortable-list";
+import { ARCHIVED_SECTION_ID } from "@/components/application/ai-chat/use-sidebar-state";
 import { RepoItem } from "@/components/application/ai-chat/repo-tree";
 import type { AiChatRepo, AiChatRepoSection, ThreadAction } from "@/components/application/ai-chat/sidebar-types";
 import { cx } from "@/utils/cx";
+
+/** Drop-target container chrome: the drag layer marks the hovered section
+ *  with data-drop-hover; group/ungrouped/已归档 all share the look. */
+const dropTargetClasses = cx(
+  "flex w-full flex-col rounded-2lg transition-colors duration-150",
+  "data-[drop-hover=true]:bg-background-secondary-hover data-[drop-hover=true]:ring-1 data-[drop-hover=true]:ring-border-button-active",
+);
 
 /** Workspace group header (› name): click toggles the group's
  *  repo list; collapsed state is owned (and persisted) by the sidebar. */
@@ -86,7 +97,7 @@ export function ArchivedSection({
 }) {
   const { t } = useTranslation();
   return (
-    <div className="flex w-full flex-col">
+    <div {...{ [WORKSPACE_DROP_TARGET_ATTR]: ARCHIVED_SECTION_ID }} className={dropTargetClasses}>
       <GroupHeaderRow
         name={t("chat.archivedWorkspaces", { count: repos.length })}
         collapsed={!searching && collapsed}
@@ -131,6 +142,9 @@ export function WorkspaceSection({
   onReorderWorkspaces,
   onToggleGroup,
   onRepoContextMenu,
+  workspaceDragging = false,
+  onWorkspaceDragActiveChange,
+  onDropWorkspaceToSection,
 }: {
   filteredRepos: AiChatRepo[];
   /** Grouped repo tree; absent/empty = legacy flat list. */
@@ -152,6 +166,12 @@ export function WorkspaceSection({
   onToggleGroup?: (groupId: string) => void;
   /** Right-click on a repo header row (workspace context menu). */
   onRepoContextMenu?: (event: ReactMouseEvent<HTMLElement>, workspaceId: string) => void;
+  /** A workspace drag is in flight: empty groups render as drop targets. */
+  workspaceDragging?: boolean;
+  onWorkspaceDragActiveChange?: (active: boolean) => void;
+  /** Drop of a workspace row onto a section container (group id, the
+   *  archived sentinel, or null = ungrouped). */
+  onDropWorkspaceToSection?: (workspaceId: string, targetSectionId: string | null) => void;
 }) {
   const { t } = useTranslation();
   const hasGroups = Boolean(sections?.some((section) => section.id !== null));
@@ -160,7 +180,10 @@ export function WorkspaceSection({
     repos.length > 0 && (
       <WorkspaceSortableList
         items={repos}
+        sectionId={sectionId}
         disabled={searching}
+        onDropToSection={onDropWorkspaceToSection}
+        onDragActiveChange={onWorkspaceDragActiveChange}
         onReorder={
           onReorderWorkspaces
             ? (orderedIds) => {
@@ -203,7 +226,10 @@ export function WorkspaceSection({
 
   return (
     <div className="flex w-full flex-col gap-2.5">
-      <div className="flex w-full items-center justify-between">
+      <div
+        {...{ [WORKSPACE_DROP_TARGET_ATTR]: "" }}
+        className="flex w-full items-center justify-between rounded-2lg transition-colors duration-150 data-[drop-hover=true]:bg-background-secondary-hover data-[drop-hover=true]:ring-1 data-[drop-hover=true]:ring-border-button-active"
+      >
         <span className="text-body-2-medium text-text-secondary">
           {t("chat.workspaces")}
         </span>
@@ -221,19 +247,23 @@ export function WorkspaceSection({
       {hasGroups &&
         sections!.map((section) =>
           section.id === null ? (
-            <div key="ungrouped" className="flex w-full flex-col">
+            <div key="ungrouped" {...{ [WORKSPACE_DROP_TARGET_ATTR]: "" }} className={dropTargetClasses}>
               {renderRepoList(section.repos, null)}
             </div>
           ) : (
-            <div key={section.id} className="flex w-full flex-col">
-              <GroupHeaderRow
-                name={section.name}
-                collapsed={!searching && collapsedGroups.has(section.id)}
-                onToggle={() => onToggleGroup?.(section.id!)}
-              />
-              {(searching || !collapsedGroups.has(section.id)) &&
-                renderRepoList(section.repos, section.id)}
-            </div>
+            // Empty groups hide at rest (matches the reference sidebar) but
+            // stay mounted mid-drag so they can accept a dropped row.
+            (section.repos.length > 0 || workspaceDragging) && (
+              <div key={section.id} {...{ [WORKSPACE_DROP_TARGET_ATTR]: section.id }} className={dropTargetClasses}>
+                <GroupHeaderRow
+                  name={section.name}
+                  collapsed={!searching && collapsedGroups.has(section.id)}
+                  onToggle={() => onToggleGroup?.(section.id!)}
+                />
+                {(searching || !collapsedGroups.has(section.id)) &&
+                  renderRepoList(section.repos, section.id)}
+              </div>
+            )
           ),
         )}
     </div>

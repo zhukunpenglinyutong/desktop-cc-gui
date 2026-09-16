@@ -152,6 +152,7 @@ export default function ChatPage() {
     handleNewSession,
     handleNewSessionInWorkspace,
     handleReorderWorkspaces,
+    handleDropWorkspaceToSection,
   } = useChatSidebar({
     sessionById,
     threadStreaming,
@@ -205,6 +206,7 @@ export default function ChatPage() {
         onNewSessionInWorkspace={handleNewSessionInWorkspace}
         onNewSession={handleNewSession}
         onReorderWorkspaces={handleReorderWorkspaces}
+        onDropWorkspaceToSection={handleDropWorkspaceToSection}
       />
       <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-background-primary-default md:rounded-l-[14px] md:border-l md:border-separator-border">
         <SessionTabStrip

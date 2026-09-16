@@ -33,6 +33,7 @@ export function ChatSidebarFrame({
   onNewSessionInWorkspace,
   onNewSession,
   onReorderWorkspaces,
+  onDropWorkspaceToSection,
   archivedRepos,
 }: {
   active: ActiveSession | null;
@@ -56,6 +57,8 @@ export function ChatSidebarFrame({
   onNewSessionInWorkspace: (workspaceId: string) => void;
   onNewSession: () => void;
   onReorderWorkspaces: (orderedIds: string[]) => void;
+  /** Workspace row dropped onto a group / 已归档 / ungrouped container. */
+  onDropWorkspaceToSection: (workspaceId: string, targetSectionId: string | null) => void;
   /** Archived workspaces for the sidebar's bottom 已归档 section. */
   archivedRepos: AiChatRepo[];
 }) {
@@ -90,6 +93,7 @@ export function ChatSidebarFrame({
         onNewSessionInWorkspace={onNewSessionInWorkspace}
         onNewSession={onNewSession}
         onReorderWorkspaces={onReorderWorkspaces}
+        onDropWorkspaceToSection={onDropWorkspaceToSection}
         onOpenSettings={() => navigate("/settings")}
         onClose={onClose}
       />

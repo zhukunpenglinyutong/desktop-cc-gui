@@ -41,7 +41,7 @@ export const en: Messages = {
     expandWorkspace: "Expand session list",
     collapseWorkspace: "Collapse session list",
     noProjectSelected: "No project selected",
-    dragToReorder: "Drag to reorder",
+    dragToReorder: "Drag to reorder, or drop onto a group to move",
     attach: "Add",
     addFilesFolders: "Files and folders",
     addSkills: "Skills",

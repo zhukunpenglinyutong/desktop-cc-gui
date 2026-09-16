@@ -1,7 +1,7 @@
 "use client";
 
 import type { ComponentType, Ref, RefObject } from "react";
-import { useMemo } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import MessageSquarePlus from "lucide-react/dist/esm/icons/message-square-plus";
 import PanelLeft from "lucide-react/dist/esm/icons/panel-left";
@@ -133,6 +133,7 @@ export function AiChatSidebar({
   onRemoveWorkspace,
   onWorkspaceAlias,
   onSetWorkspaceArchived,
+  onDropWorkspaceToSection,
   onOpenSettings,
   onClose,
   flat = false,
@@ -162,6 +163,9 @@ export function AiChatSidebar({
   onNewSessionInWorkspace?: (id: string) => void;
   /** Commit of a drag-handle reorder (ordered workspace ids). */
   onReorderWorkspaces?: (orderedIds: string[]) => void;
+  /** Workspace row dropped onto a section container: group id, the archived
+   *  sentinel (drop on 已归档), or null (ungrouped). */
+  onDropWorkspaceToSection?: (workspaceId: string, targetSectionId: string | null) => void;
   /** 新建会话 nav entry: start a new chat in the current workspace. */
   onNewSession?: () => void;
   onOpenSettings?: () => void;
@@ -196,6 +200,19 @@ export function AiChatSidebar({
     sections,
     archivedRepos,
     normalizedQuery,
+  );
+  // Mid-drag the sidebar reveals every drop target: empty group headers and
+  // the 已归档 section mount even when they have no rows.
+  const [workspaceDragging, setWorkspaceDragging] = useState(false);
+  const handleDropWorkspaceToSection = useCallback(
+    (workspaceId: string, target: string | null) => {
+      // Landing in a collapsed group expands it so the moved row is visible.
+      if (target && target !== ARCHIVED_SECTION_ID && collapsedGroups.has(target)) {
+        toggleGroup(target);
+      }
+      onDropWorkspaceToSection?.(workspaceId, target);
+    },
+    [collapsedGroups, toggleGroup, onDropWorkspaceToSection],
   );
 
   return (
@@ -272,8 +289,11 @@ export function AiChatSidebar({
             onReorderWorkspaces={onReorderWorkspaces}
             onToggleGroup={toggleGroup}
             onRepoContextMenu={openWorkspaceMenu}
+            workspaceDragging={workspaceDragging}
+            onWorkspaceDragActiveChange={setWorkspaceDragging}
+            onDropWorkspaceToSection={handleDropWorkspaceToSection}
           />
-          {filteredArchivedRepos.length > 0 && (
+          {(filteredArchivedRepos.length > 0 || workspaceDragging) && (
             <ArchivedSection
               repos={filteredArchivedRepos}
               searching={Boolean(normalizedQuery)}

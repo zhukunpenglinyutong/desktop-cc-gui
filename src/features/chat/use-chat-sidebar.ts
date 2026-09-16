@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { useShallow } from "zustand/react/shallow";
 import type { ComposerInputHandle } from "@/components/application/ai-chat/ai-chat-composer";
 import type { AiChatRepo, AiChatRepoSection, ThreadAction } from "@/components/application/ai-chat/ai-chat-sidebar";
+import { ARCHIVED_SECTION_ID } from "@/components/application/ai-chat/use-sidebar-state";
 import type { SessionMeta } from "@/lib/ipc";
 import { pickDirectory } from "@/lib/platform";
 import { useChatStore, sortedWorkspaceGroups } from "./store";
@@ -40,7 +41,7 @@ export function useChatSidebar({
     })),
   );
   // Store actions are stable references — one shallow subscription for all.
-  const { selectSession, startNewChat, addWorkspace, reorderWorkspaces, pinSession, setWorkspaceArchived } =
+  const { selectSession, startNewChat, addWorkspace, reorderWorkspaces, pinSession, setWorkspaceArchived, assignWorkspaceGroup } =
     useChatStore(
       useShallow((s) => ({
         selectSession: s.selectSession,
@@ -49,6 +50,7 @@ export function useChatSidebar({
         reorderWorkspaces: s.reorderWorkspaces,
         pinSession: s.pinSession,
         setWorkspaceArchived: s.setWorkspaceArchived,
+        assignWorkspaceGroup: s.assignWorkspaceGroup,
       })),
     );
 
@@ -101,8 +103,9 @@ export function useChatSidebar({
     });
   }, [visibleWorkspaces, workspaceAliases, sessions, threadLimit, threadStreaming, unseen, i18n.language, uiHooks]);
   // 工作区二级分类: bucket repos by their workspace's group assignment.
-  // Ungrouped repos come first (no header), then groups in settings order;
-  // empty groups are hidden (matches the reference sidebar).
+  // Ungrouped repos come first (no header), then groups in settings order.
+  // Empty groups stay in the tree — the sidebar hides them at rest but
+  // reveals them as drop targets while a workspace is being dragged.
   const sections: AiChatRepoSection[] | undefined = useMemo(() => {
     const groups = sortedWorkspaceGroups(workspaceGroups);
     if (groups.length === 0) return undefined;
@@ -124,8 +127,7 @@ export function useChatSidebar({
     const result: AiChatRepoSection[] = [];
     if (ungrouped.length > 0) result.push({ id: null, name: "", repos: ungrouped });
     groups.forEach((group) => {
-      const list = byGroup.get(group.id);
-      if (list && list.length > 0) result.push({ id: group.id, name: group.name, repos: list });
+      result.push({ id: group.id, name: group.name, repos: byGroup.get(group.id) ?? [] });
     });
     return result.some((s) => s.id !== null) ? result : undefined;
   }, [repos, visibleWorkspaces, workspaceGroups]);
@@ -240,6 +242,19 @@ export function useChatSidebar({
     (orderedIds: string[]) => void reorderWorkspaces(orderedIds),
     [reorderWorkspaces],
   );
+  // Sidebar drag-and-drop: a workspace row released over a section container
+  // moves there — group assignment, ungroup (null), or archive (已归档
+  // sentinel, the row keeps its groupId so unarchiving restores it).
+  const handleDropWorkspaceToSection = useCallback(
+    (workspaceId: string, targetSectionId: string | null) => {
+      if (targetSectionId === ARCHIVED_SECTION_ID) {
+        void setWorkspaceArchived(workspaceId, true);
+      } else {
+        void assignWorkspaceGroup(workspaceId, targetSectionId);
+      }
+    },
+    [setWorkspaceArchived, assignWorkspaceGroup],
+  );
 
   return {
     active,
@@ -258,5 +273,6 @@ export function useChatSidebar({
     handleNewSession,
     handleNewSessionInWorkspace,
     handleReorderWorkspaces,
+    handleDropWorkspaceToSection,
   };
 }

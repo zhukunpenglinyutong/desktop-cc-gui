@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ModelOption } from "@/components/application/ai-chat/cli-menu";
 import { ipc, type CliConfig, type EngineCatalog, type EngineInfo } from "@/lib/ipc";
 import {
@@ -13,6 +13,18 @@ import {
 const EMPTY_CATALOGS: Record<string, EngineCatalog> = {};
 const EMPTY_PENDING: Record<string, true> = {};
 
+/** Probe identity: an engine whose availability flips (CLI installed or
+ *  removed) is worth one fresh probe even in the same workspace. */
+const probeKey = (engine: EngineInfo) => `${engine.id}:${engine.available ? 1 : 0}`;
+
+/** What the composer's model picker consumes from [`useEngineModels`]. */
+export interface EngineModelsState {
+  catalogs: Record<string, EngineCatalog>;
+  modelsByEngine: Record<string, ModelOption[]>;
+  refresh: () => Promise<void>;
+  pendingEngines: Record<string, true>;
+}
+
 /** Provider configs and per-engine model catalogs feeding the CLI menu's
  * per-engine model flyouts, plus the pin effect that repairs unset or stale
  * stored model picks. */
@@ -21,7 +33,7 @@ export function useEngineModels(
   models: Record<string, string>,
   pinModels: (updates: Record<string, string>, persist?: boolean) => Promise<void>,
   workspacePath?: string,
-) {
+): EngineModelsState {
   const [cliConfig, setCliConfig] = useState<CliConfig | null>(null);
   // Catalogs are workspace-scoped (a WSL distro's CLIs answer differently
   // than local ones), so the cache is keyed by workspace path: switching
@@ -38,6 +50,8 @@ export function useEngineModels(
   // it already knows (usually just the configured model) until it lands, so
   // the panel needs to say "still loading" instead of looking truncated.
   const [pendingByWs, setPendingByWs] = useState<Record<string, Record<string, true>>>({});
+  // Probes already dispatched, keyed by workspace — see the probe effect.
+  const probedByWs = useRef<Record<string, Set<string>>>({});
 
   // Provider configs feed the model picker's per-engine model lists.
   useEffect(() => {
@@ -90,12 +104,20 @@ export function useEngineModels(
     [wsKey, workspacePath],
   );
   useEffect(() => {
-    // pending 也要拦:首个探针落地前 catalogs 里没有槽位,没有 pending
-    // 守卫会对同一引擎反复发 IPC。
+    // One probe per engine (per workspace, per availability state). A probe
+    // that resolves without a catalog — a down DSH host, for instance —
+    // must not be re-dispatched by a re-render: with `pending` in the deps
+    // the flag leaving the map re-ran this effect and refired the probe, so
+    // a dead host got one `session/modelCatalog` call per render (~200/s).
+    // Retrying is explicit (`refresh`) or follows an availability flip.
+    const probed = (probedByWs.current[wsKey] ??= new Set<string>());
     engines
-      .filter((engine) => !(engine.id in catalogs) && !pending[engine.id])
-      .forEach((engine) => probeCatalog(engine.id));
-  }, [engines, catalogs, pending, probeCatalog]);
+      .filter((engine) => !(engine.id in catalogs) && !probed.has(probeKey(engine)))
+      .forEach((engine) => {
+        probed.add(probeKey(engine));
+        probeCatalog(engine.id);
+      });
+  }, [engines, catalogs, wsKey, probeCatalog]);
 
   // Per-engine model lists for the CLI menu flyouts: the backend catalog
   // plus, for channel-driven engines, the current provider channel's

@@ -800,12 +800,18 @@ struct SpawnedAcp {
     child: Child,
     acp: AcpProcess,
     stderr_buf: Arc<Mutex<String>>,
+    /// Kill-on-close job guard (Windows): drops after teardown, sweeping any
+    /// grandchild the CLI orphaned before `taskkill /T` could see a tree.
+    #[cfg(windows)]
+    _tree_guard: Option<Arc<super::job::KillOnCloseJob>>,
 }
 
 async fn spawn_acp(bin: &str, workspace: &Path) -> Result<SpawnedAcp, String> {
     let mut child = spawn_acp_command(bin, workspace)
         .spawn()
         .map_err(|error| format!("failed to spawn {bin}: {error}"))?;
+    #[cfg(windows)]
+    let tree_guard = super::job::assign_kill_on_close(&child);
     let (stdin, stdout, stderr) = match (child.stdin.take(), child.stdout.take(), child.stderr.take())
     {
         (Some(stdin), Some(stdout), Some(stderr)) => (stdin, stdout, stderr),
@@ -818,6 +824,8 @@ async fn spawn_acp(bin: &str, workspace: &Path) -> Result<SpawnedAcp, String> {
         child,
         acp: AcpProcess::new(stdin, stdout, workspace.to_path_buf()),
         stderr_buf: super::spawn_stderr_capture(stderr),
+        #[cfg(windows)]
+        _tree_guard: tree_guard,
     })
 }
 

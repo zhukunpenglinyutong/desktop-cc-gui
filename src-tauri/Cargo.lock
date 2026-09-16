@@ -510,7 +510,7 @@ dependencies = [
 
 [[package]]
 name = "ccgui-next"
-version = "1.0.2"
+version = "1.0.3"
 dependencies = [
  "axum",
  "base64 0.22.1",
@@ -544,6 +544,7 @@ dependencies = [
  "trash",
  "uuid",
  "which",
+ "windows 0.61.3",
  "winreg 0.55.0",
  "zstd",
 ]

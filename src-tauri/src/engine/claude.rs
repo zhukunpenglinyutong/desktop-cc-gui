@@ -68,6 +68,15 @@ impl Engine for ClaudeEngine {
                     "plan" => "plan",
                     _ => "acceptEdits",
                 });
+                if mode == "auto" {
+                    // acceptEdits pre-approves file edits only; WebSearch and
+                    // WebFetch still ask, and headless -p cannot prompt, so
+                    // the CLI would deny every web call outright. Pre-approve
+                    // the two read-only network tools in auto mode.
+                    cmd.arg("--allowedTools");
+                    cmd.arg("WebSearch");
+                    cmd.arg("WebFetch");
+                }
             }
         }
         if let Some(model) = req.model.as_deref() {

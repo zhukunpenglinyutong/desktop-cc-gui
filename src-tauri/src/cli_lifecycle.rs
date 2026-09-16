@@ -455,6 +455,11 @@ async fn run_capture(command: &mut Command, limit: Duration) -> Result<ProcOutpu
     crate::engine::hide_console(command);
     let mut child = command.spawn().map_err(|e| e.to_string())?;
     let pid = child.id();
+    // Kill-on-close job (Windows): the taskkill timeout path only walks a
+    // live tree, so a grandchild orphaned before it ran would escape; the
+    // job sweeps members whenever this guard drops — timeout or completion.
+    #[cfg(windows)]
+    let _tree_guard = crate::engine::job::assign_kill_on_close(&child);
     let stdout = child.stdout.take().map(spawn_read_all);
     let stderr = child.stderr.take().map(spawn_read_all);
     let (status, timed_out) = match timeout(limit, child.wait()).await {
@@ -469,6 +474,12 @@ async fn run_capture(command: &mut Command, limit: Duration) -> Result<ProcOutpu
             (None, true)
         }
     };
+    // Settle sweep (unix): the group is empty on a clean exit (ESRCH); what
+    // remains is a grandchild the probed CLI orphaned — kill it now.
+    #[cfg(unix)]
+    if let Some(pid) = pid.filter(|p| *p != 0) {
+        crate::engine::kill_process_group(pid);
+    }
     let stdout = match stdout {
         Some(handle) => handle.await.unwrap_or_default(),
         None => String::new(),
@@ -515,6 +526,9 @@ async fn run_streaming(
     crate::engine::hide_console(command);
     let mut child = command.spawn().map_err(|e| e.to_string())?;
     let pid = child.id();
+    // Same kill-on-close job rationale as run_capture above.
+    #[cfg(windows)]
+    let _tree_guard = crate::engine::job::assign_kill_on_close(&child);
     reporter.emit("started", None, None);
     let stdout = child
         .stdout
@@ -536,6 +550,11 @@ async fn run_streaming(
             (None, true)
         }
     };
+    // Same unix settle sweep as run_capture above.
+    #[cfg(unix)]
+    if let Some(pid) = pid.filter(|p| *p != 0) {
+        crate::engine::kill_process_group(pid);
+    }
     let stdout = match stdout {
         Some(handle) => handle.await.unwrap_or_default(),
         None => String::new(),

@@ -37,7 +37,7 @@ export const zh = {
     expandWorkspace: "展开会话列表",
     collapseWorkspace: "收起会话列表",
     noProjectSelected: "未选择项目",
-    dragToReorder: "拖拽调整顺序",
+    dragToReorder: "拖拽排序，拖到分组或「已归档」上可移动",
     attach: "添加",
     addFilesFolders: "文件和文件夹",
     addSkills: "技能",

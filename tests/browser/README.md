@@ -74,3 +74,13 @@ next growth pins to the tail again. Both hooks under test (`useScrollFollow`,
 `useTailPin`) are the production ones; the rows are static, so no model, no IPC
 and no saved conversation. Note the refs are not reactive — read them through
 the `window.__live()` probe, not the rendered readout.
+
+Open `/tests/browser/workspace-drag.html` to check the sidebar workspace
+drag with synthetic pointer gestures against the real AiChatSidebar:
+dropping a row onto another group's container reports
+`onDropWorkspaceToSection` with the group id, dropping onto 已归档 reports
+the archived sentinel, dropping onto the ungrouped block reports null, a
+single-member section still has a working grip, empty groups mount only
+mid-drag and accept a drop there, and a plain in-section drag still commits
+`onReorderWorkspaces` without also firing a section drop. Static props, no
+app, no backend.

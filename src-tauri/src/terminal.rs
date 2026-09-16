@@ -112,6 +112,7 @@ fn spawn_reader(
         };
         let mut buffer = [0u8; 8192];
         let mut pending: Vec<u8> = Vec::new();
+        let mut read_failed = false;
         loop {
             match reader.read(&mut buffer) {
                 Ok(0) => break,
@@ -144,12 +145,20 @@ fn spawn_reader(
                         }
                     }
                 }
-                Err(_) => break,
+                Err(_) => {
+                    read_failed = true;
+                    break;
+                }
             }
         }
         // Shell exited (or read failed): drop the session so a later write
-        // fails with "not found" and the frontend respawns on demand.
+        // fails with "not found" and the frontend respawns on demand. A read
+        // FAILURE with the shell still alive is different from a clean EOF:
+        // kill the shell too, or it leaks as an ownerless process.
         tauri::async_runtime::block_on(async move {
+            if read_failed {
+                kill_session(Arc::clone(&session)).await;
+            }
             let mut sessions = registry.lock().await;
             if sessions
                 .get(&id)
