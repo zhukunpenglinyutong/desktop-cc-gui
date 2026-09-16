@@ -165,6 +165,36 @@ pub fn run() {
                     }
                 });
             }
+            // 窗口在 setup 末尾创建（tauri.conf.json 不再声明 windows），这样能按持久化
+            // 设置决定装饰：Windows 可选仿 mac 自绘标题栏（decorations=false + shadow，
+            // 保留 DWM 阴影与四边缩放），macOS 保持 Overlay + 系统原生红绿灯（与原配置
+            // 一致）。放在 manage(state) 之后：窗口一开始加载前端就会 invoke 命令，
+            // 状态必须已经就位。设置改动需重启应用。
+            let settings = settings::read_settings().unwrap_or_default();
+            let mut window_builder =
+                tauri::WebviewWindowBuilder::new(app, "main", tauri::WebviewUrl::App("index.html".into()))
+                    .title("CC GUI")
+                    .inner_size(1400.0, 900.0)
+                    .min_inner_size(900.0, 600.0);
+            #[cfg(target_os = "macos")]
+            {
+                // 原 tauri.conf.json: titleBarStyle "Overlay" + hiddenTitle true。
+                window_builder = window_builder
+                    .title_bar_style(tauri::TitleBarStyle::Overlay)
+                    .hidden_title(true);
+            }
+            #[cfg(target_os = "windows")]
+            {
+                let mac_like = settings.titlebar == "mac";
+                window_builder = window_builder.decorations(!mac_like);
+                if mac_like {
+                    // 无装饰窗口默认没有 DWM 阴影；打开它保住阴影（也让四边缩放走原生路径）。
+                    window_builder = window_builder.shadow(true);
+                }
+            }
+            window_builder
+                .build()
+                .expect("failed to create main window");
             Ok(())
         })
         .on_window_event(|window, event| {
@@ -178,6 +208,8 @@ pub fn run() {
             }
         })
         .invoke_handler(tauri::generate_handler![
+            // 窗口
+            settings::restart_app,
             // config
             config::get_cli_config,
             config::upsert_provider,

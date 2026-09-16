@@ -4,13 +4,16 @@ import type { Key, KeyboardEvent } from "react";
 
 import { Select, SelectItem } from "@/components/base/select/select";
 import { Input } from "@/components/base/input/input";
+import { Button } from "@/components/base/buttons/button";
 import { Switch } from "@/components/base/switch/switch";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
   SettingsCard,
   SettingsRow,
   SettingsSectionLabel,
 } from "@/components/application/settings/settings-rows";
 import { ipc, type AppSettings } from "@/lib/ipc";
+import { IS_WINDOWS } from "@/lib/platform";
 import { applyTheme } from "./theme";
 import { PromptHistoryManager, PromptHistoryToggleRow } from "./PromptHistorySettings";
 import { useChatStore } from "@/features/chat/store";
@@ -32,6 +35,8 @@ export function GeneralSection() {
   const [error, setError] = useState<string | null>(null);
   // Raw digits while editing the thread limit; null = show the saved value.
   const [limitText, setLimitText] = useState<string | null>(null);
+  // 窗口当前是否有系统装饰（isDecorated）；null = 还没读回来。
+  const [decorated, setDecorated] = useState<boolean | null>(null);
   useEffect(() => {
     let cancelled = false;
     ipc
@@ -73,6 +78,29 @@ export function GeneralSection() {
     setSettings({ ...settings, theme });
     applyTheme(theme);
     void save({ theme });
+  };
+
+  // 「窗口现在有没有系统装饰」= 当前实际生效的标题栏样式，用来判断设置是否
+  // 需要重启才生效（restart 按钮的可用态）。仅 Windows 需要。
+  useEffect(() => {
+    if (!IS_WINDOWS) return;
+    let alive = true;
+    getCurrentWindow()
+      .isDecorated()
+      .then((value) => {
+        if (alive) setDecorated(value);
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  const onTitlebarChange = (key: Key | null) => {
+    if (!settings || key == null) return;
+    const titlebar = String(key);
+    setSettings({ ...settings, titlebar });
+    void save({ titlebar });
   };
 
   const onLanguageChange = (key: Key | null) => {
@@ -149,6 +177,34 @@ export function GeneralSection() {
                 <SelectItem id="dark">{t("settings.themeDark")}</SelectItem>
               </Select>
             </SettingsRow>
+            {IS_WINDOWS && (
+              <SettingsRow
+                label={t("settings.titlebar")}
+                description={t("settings.titlebarRestartHint")}
+              >
+                <div className="flex items-center gap-2">
+                  <Select
+                    aria-label={t("settings.titlebar")}
+                    selectedKey={settings.titlebar}
+                    onSelectionChange={onTitlebarChange}
+                    triggerClassName={SELECT_TRIGGER}
+                  >
+                    <SelectItem id="native">{t("settings.titlebarNative")}</SelectItem>
+                    <SelectItem id="mac">{t("settings.titlebarMac")}</SelectItem>
+                  </Select>
+                  <Button
+                    size="small"
+                    variant="ghost"
+                    disabled={
+                      decorated === null || (settings.titlebar === "native") === decorated
+                    }
+                    onClick={() => void ipc.restartApp()}
+                  >
+                    {t("settings.restartNow")}
+                  </Button>
+                </div>
+              </SettingsRow>
+            )}
             <SettingsRow label={t("settings.language")}>
               <Select
                 aria-label={t("settings.language")}

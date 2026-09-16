@@ -3,9 +3,12 @@ import CircleX from "lucide-react/dist/esm/icons/circle-x";
 import Plus from "lucide-react/dist/esm/icons/plus";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import type { ReactNode, KeyboardEvent, PointerEvent as ReactPointerEvent } from "react";
+import type { ReactNode, KeyboardEvent, MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from "react";
 import type { LucideIcon } from "lucide-react";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { isWeb, startWindowDrag } from "@/lib/platform";
+import { needsWindowControls, useTitlebarStyle } from "@/features/settings/titlebar";
+import { WindowControls } from "@/components/application/window-controls";
 import { cx } from "@/utils/cx";
 import { ContextMenu } from "@/components/context-menu";
 import { EngineIcon } from "@/components/foundations/icons/engine-icon";
@@ -334,6 +337,9 @@ export function SessionTabStrip({
   const { t } = useTranslation();
   const { dropTarget, suppressClickRef, handleTabPointerDown } =
     useTabDragReorder(onReorder);
+  const titlebarStyle = useTitlebarStyle();
+  // 左侧红绿灯区：macOS 系统原生红绿灯 或 Windows 仿 mac 自绘按钮。
+  const customControls = needsWindowControls(titlebarStyle);
   // Tab right-click menu (a single "Close All" entry for now), anchored at
   // the pointer like every other context menu in the app.
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
@@ -354,6 +360,15 @@ export function SessionTabStrip({
     el.addEventListener("mousedown", onMouseDown);
     return () => el.removeEventListener("mousedown", onMouseDown);
   }, []);
+
+  // Double-click on empty strip space maximizes/restores: the custom Windows
+  // titlebar has no native caption, so this is the only titlebar affordance.
+  // macOS keeps its native traffic-light/zoom behaviors — untouched.
+  const handleStripDoubleClick = (e: ReactMouseEvent) => {
+    if (isWeb || !customControls) return;
+    if ((e.target as HTMLElement).closest(DRAG_IGNORE_SELECTOR)) return;
+    void getCurrentWindow().toggleMaximize();
+  };
 
   // Vertical wheel drives the horizontal tab scroll (VSCode behavior).
   // Native non-passive listener: React wheel handlers cannot preventDefault.
@@ -399,11 +414,17 @@ export function SessionTabStrip({
     <div
       ref={stripRef}
       data-tauri-drag-region
+      onDoubleClick={handleStripDoubleClick}
       className={cx(
         "flex h-10 shrink-0 items-center border-b border-separator-border bg-background-primary-default select-none",
-        IS_MAC && trafficLightInset && "pl-[80px]",
+        (IS_MAC || customControls) && trafficLightInset && "pl-[80px]",
       )}
     >
+      {customControls && trafficLightInset && (
+        <div className="flex h-full shrink-0 items-center pl-3 pr-4">
+          <WindowControls />
+        </div>
+      )}
       {leading && <div className="flex h-full shrink-0 items-center pl-2">{leading}</div>}
       <div
         ref={scrollRef}

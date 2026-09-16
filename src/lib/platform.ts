@@ -7,6 +7,10 @@ import { isWeb, serverVersion, webToken } from "./transport";
 
 export { isWeb } from "./transport";
 
+/** Windows desktop: 唯一有「原生标题栏 / 仿 mac」切换的平台。 */
+export const IS_WINDOWS =
+  typeof navigator !== "undefined" && /windows/i.test(navigator.userAgent);
+
 /**
  * Platform shims for the few places that touch native APIs outside the
  * invoke/listen surface. Each has a browser fallback used in web-access mode.

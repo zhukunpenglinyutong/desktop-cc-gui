@@ -204,6 +204,11 @@ export const en: Messages = {
     themeDark: "Dark",
     language: "Language",
     appearance: "Appearance",
+    titlebar: "Titlebar style",
+    titlebarNative: "Windows native",
+    titlebarMac: "Mac-style (traffic lights)",
+    titlebarRestartHint: "Windows only; restart the app to apply",
+    restartNow: "Restart now",
     sidebarThreadLimit: "Sessions shown per workspace",
     proxy: "Network Proxy",
     proxyDesc:

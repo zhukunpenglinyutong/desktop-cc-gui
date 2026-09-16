@@ -26,6 +26,8 @@ import {
 import { ArchivedSection, WorkspaceSection } from "@/components/application/ai-chat/workspace-sections";
 import type { AiChatRepo, AiChatRepoSection, ThreadAction } from "@/components/application/ai-chat/sidebar-types";
 import { cx } from "@/utils/cx";
+import { needsWindowControls, useTitlebarStyle } from "@/features/settings/titlebar";
+import { WindowControls } from "@/components/application/window-controls";
 import { useRemoteControl } from "@/hooks/use-remote-control";
 
 export type { AiChatRepo, AiChatRepoSection, AiChatThread, ThreadAction } from "@/components/application/ai-chat/sidebar-types";
@@ -184,6 +186,7 @@ export function AiChatSidebar({
   } = useSidebarSearch();
   const { collapsedGroups, toggleGroup } = useCollapsedGroups();
   const remoteActive = useRemoteControl();
+  const titlebarStyle = useTitlebarStyle();
   const allRepos = useMemo(
     () => (sections ? sections.flatMap((section) => section.repos) : repos),
     [sections, repos],
@@ -228,12 +231,16 @@ export function AiChatSidebar({
       )}
     >
       {/* Window drag strip reaching the overlay titlebar: macOS traffic
-          lights float over its left edge, action icons pin right. */}
+          lights float over its left edge, action icons pin right. Windows
+          仿 mac 模式在这里放自绘三色按钮。 */}
       {!flat && (
         <div
           data-tauri-drag-region
-          className="flex h-10 w-full shrink-0 items-center justify-end gap-1 border-b border-separator-border px-3"
+          className="flex h-10 w-full shrink-0 items-center justify-between gap-1 border-b border-separator-border px-3"
         >
+          <div className="flex min-w-0 items-center">
+            {needsWindowControls(titlebarStyle) && <WindowControls />}
+          </div>
           <button
             type="button"
             aria-label={t("chat.collapseSidebar")}

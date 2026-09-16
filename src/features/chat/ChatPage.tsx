@@ -6,6 +6,7 @@ import { ErrorBanner } from "./components/ErrorBanner";
 import type { ComposerInputHandle } from "@/components/application/ai-chat/ai-chat-composer";
 import { AppStatusBar } from "@/components/application/app-status-bar/app-status-bar";
 import { isWeb } from "@/lib/platform";
+import { useTitlebarStyle } from "@/features/settings/titlebar";
 import PanelLeftOpen from "lucide-react/dist/esm/icons/panel-left-open";
 import { TerminalDock } from "@/features/terminal/TerminalDock";
 import { useTerminalStore } from "@/features/terminal/store";
@@ -47,6 +48,7 @@ const CHAT_MIN_WIDTH = 320;
 
 export default function ChatPage() {
   const { t } = useTranslation();
+  const titlebarStyle = useTitlebarStyle();
   // Store actions/slices are stable or low-frequency references. The
   // high-frequency session/draft subscriptions live in ChatConversation
   // (components/ChatConversation.tsx).
@@ -180,7 +182,7 @@ export default function ChatPage() {
         "pt-[env(safe-area-inset-top)]",
         // Same for the home indicator: it overlays AppStatusBar otherwise.
         "pb-[env(safe-area-inset-bottom)]",
-        NEEDS_TITLEBAR_HAIRLINE && "border-t border-separator-border",
+        NEEDS_TITLEBAR_HAIRLINE && titlebarStyle === "native" && "border-t border-separator-border",
         dragging && "cursor-col-resize select-none",
       )}
     >
