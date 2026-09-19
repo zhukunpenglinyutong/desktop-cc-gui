@@ -95,6 +95,9 @@ function SortableRow<T extends { id?: string }>({
       draggingRef.current = false;
       setDragging(false);
       clearDropHover();
+      // 确保清理 window 事件监听器
+      gestureCleanupRef.current?.();
+      gestureCleanupRef.current = null;
       // A click without movement never counts as a section drop: motion
       // skips onDragEnd for those, so commit=false lands here instead.
       const groupDrop = commit ? groupDropRef.current : null;

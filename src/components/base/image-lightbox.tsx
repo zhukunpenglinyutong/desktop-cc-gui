@@ -160,11 +160,13 @@ export function ImageLightbox({
         }}
         onPointerUp={(e) => {
           if (panRef.current?.pointerId !== e.pointerId) return;
+          e.currentTarget.releasePointerCapture(e.pointerId);
           panRef.current = null;
           setPanning(false);
         }}
         onPointerCancel={(e) => {
           if (panRef.current?.pointerId !== e.pointerId) return;
+          e.currentTarget.releasePointerCapture(e.pointerId);
           panRef.current = null;
           setPanning(false);
         }}
