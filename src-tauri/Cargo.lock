@@ -510,7 +510,7 @@ dependencies = [
 
 [[package]]
 name = "ccgui-next"
-version = "1.0.5"
+version = "1.0.6"
 dependencies = [
  "axum",
  "base64 0.22.1",

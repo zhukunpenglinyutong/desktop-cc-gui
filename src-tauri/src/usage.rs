@@ -82,24 +82,34 @@ pub fn usage_record(
     Ok(())
 }
 
-/// Per-(day, engine, model) totals over the last `days` local days.
-/// `tz_offset_minutes` is the caller's UTC offset so buckets match the
-/// calendar the user is looking at.
+/// Per-(day, engine, model) totals. `days` is the local-day window; `0` means
+/// the whole ledger (the 总和 range), and any other value keeps the last
+/// `days` calendar days. `tz_offset_minutes` is the caller's UTC offset so
+/// buckets match the calendar the user is looking at.
 #[tauri::command]
 pub fn usage_summary(
     state: tauri::State<'_, crate::AppState>,
     days: u32,
     tz_offset_minutes: i32,
 ) -> Result<Vec<UsageRow>, String> {
-    let days = days.clamp(1, 365) as i64;
-    let shift_ms = i64::from(tz_offset_minutes) * 60_000;
     let conn = state.db.0.lock();
+    summarize(&conn, days, tz_offset_minutes).map_err(|e| e.to_string())
+}
+
+/// The ledger read behind `usage_summary`, split out so the day-window logic
+/// (including the unbounded 总和 case) is unit-testable without a live app.
+fn summarize(
+    conn: &rusqlite::Connection,
+    days: u32,
+    tz_offset_minutes: i32,
+) -> rusqlite::Result<Vec<UsageRow>> {
+    let shift_ms = i64::from(tz_offset_minutes) * 60_000;
     // Bucketing happens in SQL so the whole ledger never crosses into Rust
     // for a daily view. The offset must be bound as a NUMBER: `date(x, …)`
-    // yields NULL when x arrives as text.
-    let mut stmt = conn
-        .prepare(
-            "SELECT date((ts + ?1) / 1000, 'unixepoch') AS day,
+    // yields NULL when x arrives as text. `days == 0` drops the lower bound
+    // so 总和 spans every recorded turn; a finite window keeps the last
+    // `days` calendar days (upper cap only guards against absurd inputs).
+    let select = "SELECT date((ts + ?1) / 1000, 'unixepoch') AS day,
                     engine,
                     model,
                     SUM(input_tokens),
@@ -107,30 +117,35 @@ pub fn usage_summary(
                     SUM(cache_read),
                     SUM(cache_write),
                     SUM(reports)
-             FROM usage_ledger
-             WHERE day >= date('now', ?2)
-             GROUP BY day, engine, model
-             ORDER BY day, engine, model",
-        )
-        .map_err(|e| e.to_string())?;
+             FROM usage_ledger";
+    let tail = " GROUP BY day, engine, model
+             ORDER BY day, engine, model";
+    let map_row = |r: &rusqlite::Row| {
+        Ok(UsageRow {
+            day: r.get(0)?,
+            engine: r.get(1)?,
+            model: r.get::<_, String>(2).unwrap_or_default(),
+            input: r.get(3)?,
+            output: r.get(4)?,
+            cache_read: r.get(5)?,
+            cache_write: r.get(6)?,
+            requests: r.get(7)?,
+        })
+    };
+    if days == 0 {
+        let mut stmt = conn.prepare(&format!("{select}{tail}"))?;
+        let rows = stmt
+            .query_map(rusqlite::params![shift_ms], map_row)?
+            .collect();
+        return rows;
+    }
+    let days = days.min(36_500) as i64;
+    let mut stmt = conn.prepare(&format!("{select} WHERE day >= date('now', ?2){tail}"))?;
     let range_param = format!("-{} days", days - 1);
     let rows = stmt
-        .query_map(rusqlite::params![shift_ms, range_param], |r| {
-            Ok(UsageRow {
-                day: r.get(0)?,
-                engine: r.get(1)?,
-                model: r.get::<_, String>(2).unwrap_or_default(),
-                input: r.get(3)?,
-                output: r.get(4)?,
-                cache_read: r.get(5)?,
-                cache_write: r.get(6)?,
-                requests: r.get(7)?,
-            })
-        })
-        .map_err(|e| e.to_string())?
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(|e| e.to_string())?;
-    Ok(rows)
+        .query_map(rusqlite::params![shift_ms, range_param], map_row)?
+        .collect();
+    rows
 }
 
 /// Drop the whole ledger. The page offers this as an explicit reset; nothing
@@ -141,4 +156,91 @@ pub fn usage_clear(state: tauri::State<'_, crate::AppState>) -> Result<(), Strin
     conn.execute("DELETE FROM usage_ledger", [])
         .map_err(|e| e.to_string())?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rusqlite::Connection;
+
+    /// A ledger with the columns `summarize` reads; timestamps are supplied
+    /// per row so the day-window boundary can be exercised deterministically.
+    fn ledger() -> Connection {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE usage_ledger(
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                ts INTEGER NOT NULL,
+                engine TEXT NOT NULL,
+                model TEXT NOT NULL DEFAULT '',
+                session_id TEXT,
+                workspace_path TEXT,
+                input_tokens INTEGER NOT NULL DEFAULT 0,
+                output_tokens INTEGER NOT NULL DEFAULT 0,
+                cache_read INTEGER NOT NULL DEFAULT 0,
+                cache_write INTEGER NOT NULL DEFAULT 0,
+                duration_ms INTEGER,
+                reports INTEGER NOT NULL DEFAULT 1
+            );",
+        )
+        .unwrap();
+        conn
+    }
+
+    fn insert(conn: &Connection, ts_ms: i64, input: i64) {
+        conn.execute(
+            "INSERT INTO usage_ledger(ts, engine, model, input_tokens, reports)
+             VALUES(?1, 'omp', 'm', ?2, 1)",
+            rusqlite::params![ts_ms, input],
+        )
+        .unwrap();
+    }
+
+    fn now_ms() -> i64 {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_millis() as i64
+    }
+
+    const DAY_MS: i64 = 86_400_000;
+
+    #[test]
+    fn all_history_includes_rows_a_finite_window_drops() {
+        let conn = ledger();
+        let now = now_ms();
+        // Today, and a turn from ~two years ago.
+        insert(&conn, now, 100);
+        insert(&conn, now - 730 * DAY_MS, 50);
+
+        // A 30-day window sees only the recent turn.
+        let recent = summarize(&conn, 30, 0).unwrap();
+        assert_eq!(recent.len(), 1, "old turn is outside the 30-day window");
+        assert_eq!(recent[0].input, 100);
+
+        // days == 0 is 总和: every recorded turn, oldest included.
+        let all = summarize(&conn, 0, 0).unwrap();
+        let total: i64 = all.iter().map(|r| r.input).sum();
+        assert_eq!(total, 150, "总和 spans the whole ledger");
+    }
+
+    #[test]
+    fn a_year_window_reaches_past_the_old_365_day_cap() {
+        let conn = ledger();
+        let now = now_ms();
+        // A turn 400 days back: excluded by 365, kept by a full-year request.
+        insert(&conn, now - 400 * DAY_MS, 7);
+        insert(&conn, now, 3);
+
+        assert_eq!(
+            summarize(&conn, 365, 0).unwrap().iter().map(|r| r.input).sum::<i64>(),
+            3,
+            "the 400-day-old turn is past a 365-day window",
+        );
+        assert_eq!(
+            summarize(&conn, 500, 0).unwrap().iter().map(|r| r.input).sum::<i64>(),
+            10,
+            "a wider window is no longer clamped to 365 days",
+        );
+    }
 }

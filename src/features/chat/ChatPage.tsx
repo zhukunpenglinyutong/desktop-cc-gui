@@ -27,6 +27,7 @@ import { PANEL_TOGGLE_CLASSES } from "./panel-toggle-classes";
 import { ChatSidebarFrame } from "./ChatSidebarFrame";
 import { ChatSidePanel } from "./ChatSidePanel";
 import { ChatCenterPane } from "./ChatCenterPane";
+import { resolvePanelLayout } from "./panel-layout";
 // Side-effect import: registers the builtin files/changes tabs into
 // panelTabRegistry (plan §4.2 #4).
 import "./panel-tabs";
@@ -43,8 +44,6 @@ const NEEDS_TITLEBAR_HAIRLINE =
 // both be comfortable, so the panel defaults to collapsed there. It stays
 // expandable: the titlebar toggle renders at every width.
 const PANEL_MEDIA = "(max-width: 1279px)";
-// Floor reserved for the chat column when clamping the panel width.
-const CHAT_MIN_WIDTH = 320;
 
 export default function ChatPage() {
   const { t } = useTranslation();
@@ -95,9 +94,7 @@ export default function ChatPage() {
     if (narrowPanel) setNarrowPanelExpanded((prev) => !prev);
     else togglePanelCollapsed();
   }, [narrowPanel, togglePanelCollapsed]);
-  // The persisted width can exceed what is left beside the sidebar, so clamp
-  // it for rendering only: storage keeps the user's width, and drags still
-  // mutate style.width imperatively against the real min/max. Measured off
+  // Panel width is clamped against the row actually available. Measured off
   // the center row rather than window.innerWidth because the sidebar overlays
   // the content below md instead of taking layout space.
   const centerRowRef = useRef<HTMLDivElement>(null);
@@ -111,12 +108,16 @@ export default function ChatPage() {
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
-  // Before the first measurement centerRowWidth is 0; fall back to the stored
-  // width so the panel does not flash collapsed on mount.
-  const panelWidthEffective =
-    centerRowWidth > 0
-      ? Math.min(panelWidth, Math.max(0, centerRowWidth - CHAT_MIN_WIDTH))
-      : panelWidth;
+  // The persisted width can exceed what is available in the current row.
+  // Wide and native layouts reserve a readable chat column; a narrow remote
+  // browser overlays the panel instead so its contents are never halved.
+  const { panelWidth: panelWidthEffective, overlay: panelOverlay } =
+    resolvePanelLayout({
+      storedWidth: panelWidth,
+      centerRowWidth,
+      narrowPanel,
+      isWeb,
+    });
 
   useLayoutCommands(handleTogglePanel, toggleSidebarCollapsed);
   const {
@@ -294,6 +295,7 @@ export default function ChatPage() {
             dragging={dragging}
             panelTab={panelTab}
             onResizeStart={handleResizeStart("panel")}
+            overlay={panelOverlay}
           />
         </div>
         {active && <TerminalDock workspacePath={active.workspacePath} />}

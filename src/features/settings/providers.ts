@@ -42,6 +42,43 @@ export const isPseudoProvider = (id: string): id is PseudoProviderId =>
 
 const asString = (v: unknown): string => (typeof v === "string" ? v : "");
 
+/** The channel's env record; settingsConfig.env wins over the flat env —
+ *  the backend lets raw env override flat fields, so the more specific shape
+ *  is the authoritative one. */
+function channelEnv(raw: unknown): Record<string, unknown> {
+  const o = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
+  const flat = o.env && typeof o.env === "object" ? (o.env as Record<string, unknown>) : {};
+  const settings = (o.settingsConfig as Record<string, unknown> | undefined)?.env;
+  const nested =
+    settings && typeof settings === "object" ? (settings as Record<string, unknown>) : {};
+  return { ...flat, ...nested };
+}
+
+/** Claude's family aliases: the env key that remaps each one, and the CLI
+ *  menu's own wording for a remapped row ("Custom Opus model"). Mirrors the
+ *  backend's FAMILY_ENV_KEYS (engine/models/claude.rs). */
+export const CLAUDE_FAMILY_ALIASES: Record<string, { envKey: string; label: string }> = {
+  opus: { envKey: "ANTHROPIC_DEFAULT_OPUS_MODEL", label: "Opus" },
+  sonnet: { envKey: "ANTHROPIC_DEFAULT_SONNET_MODEL", label: "Sonnet" },
+  haiku: { envKey: "ANTHROPIC_DEFAULT_HAIKU_MODEL", label: "Haiku" },
+  fable: { envKey: "ANTHROPIC_DEFAULT_FABLE_MODEL", label: "Fable" },
+};
+
+/** Family-alias remaps a channel defines: family → concrete model id. This
+ *  is what a pick of that alias runs while the channel is selected (spawn
+ *  injects the channel's env), so the picker names it instead of the id the
+ *  CLI's own settings would resolve. */
+export function providerFamilyModels(engine: string, raw: unknown): Record<string, string> {
+  if (engine !== "claude") return {};
+  const env = channelEnv(raw);
+  const result: Record<string, string> = {};
+  for (const [family, { envKey }] of Object.entries(CLAUDE_FAMILY_ALIASES)) {
+    const value = asString(env[envKey]).trim();
+    if (value) result[family] = value;
+  }
+  return result;
+}
+
 /** Per-engine model env var, mirroring the backend provider_files::env_mapping() table. */
 const ENV_MODEL_KEY: Partial<Record<EngineId, string>> = {
   claude: "ANTHROPIC_MODEL",
@@ -59,14 +96,7 @@ export function providerModel(engine: EngineId, raw: unknown): string {
   if (flat) return flat;
   const key = ENV_MODEL_KEY[engine];
   if (!key) return "";
-  const settingsEnv = (o.settingsConfig as Record<string, unknown> | undefined)?.env;
-  for (const source of [settingsEnv, o.env]) {
-    if (source && typeof source === "object") {
-      const value = asString((source as Record<string, unknown>)[key]).trim();
-      if (value) return value;
-    }
-  }
-  return "";
+  return asString(channelEnv(raw)[key]).trim();
 }
 
 /**

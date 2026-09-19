@@ -28,7 +28,7 @@ use serde_json::{json, Value};
 use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 use tokio_tungstenite::tungstenite::Message;
 
-use super::{EngineEvent, SendRequest, TurnCore, TurnState};
+use super::{EngineEvent, SendRequest, TurnCore, TurnState, VirtualRunGuard};
 use crate::dsh_host::host_call;
 
 /// 提取并规范化上下文窗口字段
@@ -99,6 +99,11 @@ pub(crate) async fn run_host_turn(
     let mut state = TurnState::new(req.session_id.clone());
     let mut view = TurnView::default();
     let preassigned_session_id = req.session_id.clone();
+    // Abort-safe backstop: the by-name removals below only run when the task
+    // finishes normally. An abort or a panic would otherwise leave this run's
+    // keys pinning a concurrency slot until app exit.
+    let _registry_guard =
+        VirtualRunGuard::new(Arc::clone(&core.registry), core.run_id.clone(), virtual_pid);
     let result = turn_inner(&core, &mut state, &mut view, &req, &host, &killed).await;
     if let Err(error) = result {
         core.dispatch_event(&mut state, EngineEvent::Error(error));

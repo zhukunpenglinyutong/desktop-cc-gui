@@ -37,8 +37,9 @@ pub(crate) use registry::{kill_process_group, next_virtual_pid};
 // Stdout reader / per-turn streaming plumbing (reader.rs).
 pub use reader::sweep_staging_dirs;
 pub(crate) use reader::{
-    LineRead, MAX_LINE_BYTES, RunContext, TurnCore, TurnState, cleanup_staged_files,
-    read_line_capped, run_reader, spawn_stderr_capture, spawn_stdin_writer,
+    LineRead, MAX_LINE_BYTES, RunContext, TurnCore, TurnState, VirtualRunGuard,
+    cleanup_staged_files, read_line_capped, run_reader, spawn_stderr_capture,
+    spawn_stdin_writer,
 };
 
 #[cfg(test)]
@@ -406,6 +407,7 @@ fn prepare_launch(
         engine_impl,
     })
 }
+
 #[tauri::command]
 pub async fn send_message(
     state: tauri::State<'_, crate::AppState>,

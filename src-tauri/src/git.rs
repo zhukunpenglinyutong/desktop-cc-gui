@@ -893,6 +893,15 @@ mod tests {
         let local_path = scratch.0.join("local");
         let local = Repository::clone(origin_path.to_str().unwrap(), &local_path).unwrap();
         local.config().unwrap().set_bool("core.autocrlf", false).unwrap();
+        // Windows CI clones with global core.autocrlf=true, so the worktree
+        // lands CRLF while the index stays LF — shared.txt then reads dirty and
+        // the fast-forward refuses. Re-checkout under autocrlf=false so the
+        // files match the index before we stage the unrelated local edits.
+        {
+            let mut checkout = git2::build::CheckoutBuilder::new();
+            checkout.force();
+            local.checkout_head(Some(&mut checkout)).unwrap();
+        }
         std::fs::write(local_path.join("local.txt"), "staged\n").unwrap();
         let mut index = local.index().unwrap();
         index.add_path(Path::new("local.txt")).unwrap();

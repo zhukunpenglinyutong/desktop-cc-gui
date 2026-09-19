@@ -1,7 +1,7 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { EngineCatalog, EngineInfo } from "@/lib/ipc";
+import type { CliConfig, EngineCatalog, EngineInfo, ProviderSection } from "@/lib/ipc";
 import { ipc } from "@/lib/ipc";
 import { useEngineModels, type EngineModelsState } from "./use-engine-models";
 
@@ -54,12 +54,15 @@ function Harness({
   models,
   pinModels,
   workspacePath,
+  providers = {},
 }: {
   models: Record<string, string>;
   pinModels: (updates: Record<string, string>, persist?: boolean) => Promise<void>;
   workspacePath?: string;
+  /** Session-resolved channel per engine (what the picker refreshes on). */
+  providers?: Record<string, string>;
 }) {
-  latest = useEngineModels(engines, models, pinModels, {}, workspacePath);
+  latest = useEngineModels(engines, models, pinModels, providers, workspacePath);
   return null;
 }
 
@@ -82,11 +85,68 @@ const settle = () =>
   });
 
 /** 探针类用例的渲染入口:可换 engines,渲染后等窗口落定。 */
-async function show(next: EngineInfo[] | null, workspacePath?: string) {
+async function show(
+  next: EngineInfo[] | null,
+  workspacePath?: string,
+  providers?: Record<string, string>,
+) {
   if (next) engines = next;
-  await render({ models: {}, pinModels: noopPin, workspacePath });
+  await render({ models: {}, pinModels: noopPin, workspacePath, providers });
   await settle();
 }
+
+describe("useEngineModels channel models", () => {
+  const EMPTY_SECTION: ProviderSection = { providers: {}, current: null };
+  const cliConfigWith = (claude: ProviderSection): CliConfig => ({
+    claude,
+    kimi: EMPTY_SECTION,
+    grok: EMPTY_SECTION,
+    codex: EMPTY_SECTION,
+    pi: EMPTY_SECTION,
+    omp: EMPTY_SECTION,
+    dsh: EMPTY_SECTION,
+    agy: EMPTY_SECTION,
+    opencode: EMPTY_SECTION,
+    qoder: EMPTY_SECTION,
+    "qoder-cn": EMPTY_SECTION,
+  });
+
+  it("切换渠道后别名行改指该渠道映射的模型", async () => {
+    // 报告的问题:选中渠道 ss2a 后模型列表仍是官方 settings.json 解析出的行
+    // （后端 catalog 只认 CLI 自己的配置）。渠道自己的 ANTHROPIC_DEFAULT_*_MODEL
+    // 才是这次选择真正会跑的 id，切渠道必须让别名行跟着换。
+    vi.mocked(ipc.getCliConfig).mockResolvedValue(
+      cliConfigWith({
+        current: "c1",
+        providers: {
+          c1: {
+            name: "one",
+            settingsConfig: { env: { ANTHROPIC_DEFAULT_OPUS_MODEL: "one-opus" } },
+          },
+          c2: {
+            name: "two",
+            settingsConfig: { env: { ANTHROPIC_DEFAULT_OPUS_MODEL: "two-opus" } },
+          },
+        },
+      }),
+    );
+    vi.mocked(ipc.listEngineModels).mockResolvedValue({
+      models: [
+        { id: "default", name: "Default", description: "Use the default model" },
+        { id: "opus", name: "official-opus", description: "Custom Opus model" },
+      ],
+      authoritative: true,
+    } as unknown as EngineCatalog);
+
+    await show([engineInfo("claude", true)], undefined, { claude: "c1" });
+    const opusLabel = () =>
+      latest.modelsByEngine.claude?.find((model) => model.id === "opus")?.label;
+    expect(opusLabel()).toBe("one-opus");
+
+    await show(null, undefined, { claude: "c2" });
+    expect(opusLabel()).toBe("two-opus");
+  });
+});
 
 describe("useEngineModels pin effect", () => {
   it("远端(remote)catalog 只做展示:永不触发 pin,不污染全局 models / persisted 默认", async () => {

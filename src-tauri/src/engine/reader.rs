@@ -464,6 +464,17 @@ impl Drop for RunContext {
     fn drop(&mut self) {
         // Also runs when the reader is aborted during interrupt or shutdown.
         cleanup_staged_files(&self.cleanup_files);
+        // Last line of defence for the run's concurrency slot. The settle
+        // path removes keys by name and `kill`'s abort backstop drains them
+        // by run id, but a reader that dies any other way (a panic inside
+        // dispatch, a task dropped without either path running) never
+        // reaches those — and nothing sweeps dead pids, so the slot would
+        // stay pinned until app exit and sending would eventually wedge on
+        // "too many concurrent runs". Idempotent: on a healthy settle the
+        // keys are already gone and this finds nothing.
+        self.core
+            .registry
+            .remove_run_if_pid(&self.core.run_id, self.pid);
     }
 }
 impl RunContext {
@@ -471,6 +482,29 @@ impl RunContext {
         self.core.dispatch_event(state, event);
     }
 }
+/// Abort-safe registry cleanup for virtual (host-stream) runs, which own no
+/// [`RunContext`]: their settle code sits at the end of the transport task,
+/// so an abort (`kill`'s force-abort, shutdown) or a panic inside the turn
+/// would strand their keys and pin a concurrency slot until app exit. Held
+/// by the task for its whole life; idempotent on a healthy settle.
+pub(crate) struct VirtualRunGuard {
+    registry: Arc<ProcessRegistry>,
+    run_id: String,
+    virtual_pid: u32,
+}
+
+impl VirtualRunGuard {
+    pub(crate) fn new(registry: Arc<ProcessRegistry>, run_id: String, virtual_pid: u32) -> Self {
+        Self { registry, run_id, virtual_pid }
+    }
+}
+
+impl Drop for VirtualRunGuard {
+    fn drop(&mut self) {
+        self.registry.remove_run_if_pid(&self.run_id, self.virtual_pid);
+    }
+}
+
 /// Remove leftover channel staging dirs (`claude-staging`/`grok-staging`
 /// under app_home) from a crashed run: they hold per-send credentials and
 /// must not linger on disk. Live runs recreate them per send, so sweeping
@@ -810,6 +844,8 @@ pub(crate) async fn run_reader(stdout: ChildStdout, ctx: RunContext) {
 #[cfg(test)]
 mod staging_tests {
     use super::*;
+    use crate::engine::ChildEntry;
+    use std::collections::HashMap;
 
     /// The ring truncates by byte count: a naive drain start can land
     /// mid-CJK and panic (killing the stderr capture task silently).
@@ -846,6 +882,10 @@ mod staging_tests {
                 child: Arc::new(TokioMutex::new(child)), killed: Arc::new(std::sync::atomic::AtomicBool::new(false)),
                 cleanup_files: vec![directory.clone()], stderr_buf: Arc::new(Mutex::new(String::new())),
                 stdout_plain_buf: Arc::new(Mutex::new(String::new())),
+                // Upstream's own constructor omits this Windows-only guard
+                // field (E0063 on Windows); a plain test child owns no job.
+                #[cfg(windows)]
+                _tree_guard: None,
             };
             let task = tokio::spawn(async move {
                 if abort { std::future::pending::<()>().await; }
@@ -856,6 +896,99 @@ mod staging_tests {
             assert_eq!(result.is_err(), abort);
             assert!(!directory.exists());
         }
+    }
+
+    /// Slot accounting must survive a reader that dies without reaching
+    /// either settle path (abort here; a panic inside dispatch is the same
+    /// shape). Nothing sweeps dead pids, so a stranded key pins a
+    /// concurrency slot until app exit and sending eventually wedges on
+    /// "too many concurrent runs".
+    #[tokio::test]
+    async fn dropping_a_run_context_frees_the_runs_concurrency_slot() {
+        let mut command = Command::new(if cfg!(windows) { "cmd.exe" } else { "sh" });
+        command.args(if cfg!(windows) { ["/c", "exit 0"] } else { ["-c", "exit 0"] });
+        let mut child = command.spawn().unwrap();
+        child.wait().await.unwrap();
+        let registry = Arc::new(ProcessRegistry::default());
+        let entry = ChildEntry {
+            child: None,
+            pid: 4242,
+            run_id: "run-abort".into(),
+            killed: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            reader_abort: Arc::new(std::sync::OnceLock::new()),
+            stdin: None,
+            questions: Arc::new(Mutex::new(HashMap::new())),
+        };
+        registry.insert("run-abort".into(), entry.clone());
+        registry.insert_alias("session-abort".into(), entry);
+        let ctx = RunContext {
+            core: TurnCore {
+                sink: event_sink::EventSink::new(Arc::new(Noop)),
+                registry: Arc::clone(&registry),
+                engine_id: "grok".into(),
+                run_id: "run-abort".into(),
+            },
+            engine_impl: Box::new(grok::GrokEngine),
+            pid: 4242,
+            preassigned_session_id: None,
+            initial_model: None,
+            child: Arc::new(TokioMutex::new(child)),
+            killed: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            cleanup_files: Vec::new(),
+            stderr_buf: Arc::new(Mutex::new(String::new())),
+            stdout_plain_buf: Arc::new(Mutex::new(String::new())),
+            #[cfg(windows)]
+            _tree_guard: None,
+        };
+        let task = tokio::spawn(async move {
+            let _held = ctx;
+            std::future::pending::<()>().await;
+        });
+        task.abort();
+        assert!(task.await.is_err());
+
+        assert!(registry.get("run-abort").is_none(), "run-id key survived the abort");
+        assert!(registry.get("session-abort").is_none(), "session alias survived the abort");
+    }
+
+    /// Virtual (host-stream) runs own no RunContext: the guard is what frees
+    /// their keys when the transport task is aborted instead of settling.
+    #[tokio::test]
+    async fn dropping_a_virtual_run_guard_frees_every_key_of_that_run() {
+        let registry = Arc::new(ProcessRegistry::default());
+        let entry = ChildEntry {
+            child: None,
+            pid: 5150,
+            run_id: "run-v".into(),
+            killed: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            reader_abort: Arc::new(std::sync::OnceLock::new()),
+            stdin: None,
+            questions: Arc::new(Mutex::new(HashMap::new())),
+        };
+        registry.insert("run-v".into(), entry.clone());
+        registry.insert_alias("session-v".into(), entry);
+        // Another run's entry must be left alone.
+        registry.insert(
+            "run-other".into(),
+            ChildEntry {
+                child: None,
+                pid: 5151,
+                run_id: "run-other".into(),
+                killed: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+                reader_abort: Arc::new(std::sync::OnceLock::new()),
+                stdin: None,
+                questions: Arc::new(Mutex::new(HashMap::new())),
+            },
+        );
+
+        {
+            let _guard = VirtualRunGuard::new(Arc::clone(&registry), "run-v".into(), 5150);
+            assert!(registry.get("run-v").is_some());
+        }
+
+        assert!(registry.get("run-v").is_none());
+        assert!(registry.get("session-v").is_none());
+        assert!(registry.get("run-other").is_some(), "unrelated run was swept");
     }
 }
 #[cfg(test)]

@@ -809,14 +809,17 @@ mod tests {
         fs::write(custom_home.join("prompts/c.md"), "custom home body").unwrap();
 
         let workspaces_json = root.join("workspaces.json");
+        // Backslashes in a Windows path are invalid JSON escapes; escape them
+        // the way a real settings writer would so the fixture parses on Windows.
+        let json_path = |p: std::path::PathBuf| p.display().to_string().replace('\\', "\\\\");
         fs::write(
             &workspaces_json,
             format!(
                 r#"[{{"id":"w1","path":"{}","settings":{{"codexHome":"{}"}}}},
                    {{"id":"gone","path":"{}"}}]"#,
-                project.display(),
-                custom_home.display(),
-                root.join("missing").display(),
+                json_path(project.clone()),
+                json_path(custom_home.clone()),
+                json_path(root.join("missing")),
             ),
         )
         .unwrap();

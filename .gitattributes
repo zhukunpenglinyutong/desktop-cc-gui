@@ -1,0 +1,5 @@
+# The bundled agent-catalog prompts and manifests are hashed as LF in
+# manifest.json (see agent_catalog::resolve_prompt). Windows checks out CRLF
+# by default, which flips those bytes and breaks the hash check — pin them to
+# LF on every platform so the on-disk content matches the recorded hash.
+src-tauri/resources/agent-catalogs/** text eol=lf

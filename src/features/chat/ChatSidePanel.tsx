@@ -17,6 +17,7 @@ export function ChatSidePanel({
   dragging,
   panelTab,
   onResizeStart,
+  overlay = false,
 }: {
   active: ActiveSession | null;
   panelRef: React.RefObject<HTMLDivElement>;
@@ -25,6 +26,7 @@ export function ChatSidePanel({
   dragging: "sidebar" | "panel" | null;
   panelTab: string;
   onResizeStart: (e: React.PointerEvent) => void;
+  overlay?: boolean;
 }) {
   const { t } = useTranslation();
   const panelTabs = useSortedPanelTabs();
@@ -36,16 +38,19 @@ export function ChatSidePanel({
     <div
       ref={panelRef}
       className={cx(
-        // Visibility is state-driven (width 0 when collapsed), never
-        // breakpoint-gated: a narrow window auto-collapses in ChatPage, but an
-        // explicit expand there must produce a real panel at any width.
-        "relative flex shrink-0 overflow-hidden",
+        overlay
+          ? "absolute inset-y-0 right-0 z-20 max-w-full shadow-xl"
+          : "relative",
+        "flex shrink-0 overflow-hidden",
         // Width transition for collapse/expand; disabled mid-drag
         // since resizes mutate style.width imperatively.
         !dragging &&
           "transition-[width] duration-200 ease-out motion-reduce:transition-none",
       )}
-      style={{ width: panelCollapsed ? 0 : panelWidth }}
+      style={{
+        width: panelCollapsed ? 0 : panelWidth,
+        maxWidth: overlay ? "100%" : undefined,
+      }}
     >
       {/* Panel resize strip: full height, straddling the border. */}
       <div

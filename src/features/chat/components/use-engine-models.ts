@@ -4,9 +4,11 @@ import type { ModelOption } from "@/components/application/ai-chat/cli-menu";
 import type { ChannelOption } from "@/components/application/ai-chat/engine-model-panel";
 import { ipc, type CliConfig, type EngineCatalog, type EngineInfo } from "@/lib/ipc";
 import {
+  CLAUDE_FAMILY_ALIASES,
   CLI_CONFIG_CHANGED_EVENT,
   isPseudoProvider,
   providerEntries,
+  providerFamilyModels,
   providerModel,
   PSEUDO_LOCAL,
   type EngineId,
@@ -156,6 +158,10 @@ export function useEngineModels(
     const result: Record<string, ModelOption[]> = {};
     for (const engine of engines) {
       const configured = configuredModel(engine.id, cliConfig, providers[engine.id]);
+      const families = providerFamilyModels(
+        engine.id,
+        channelRaw(engine.id, cliConfig, providers[engine.id]),
+      );
       const providerModels = configured ? [configured] : [];
       const current = models[engine.id]?.trim();
       const catalog = catalogs[engine.id]?.models ?? [];
@@ -184,10 +190,18 @@ export function useEngineModels(
       const byId = new Map(catalog.map((m) => [m.id, m]));
       result[engine.id] = known.map((m) => {
         const entry = byId.get(m);
+        // The CLI's alias rows (Default/Opus/…) describe the CLI's OWN
+        // settings — the official channel's. Under another channel the alias
+        // runs that channel's mapped id (spawn injects its env), so the row
+        // has to name it; without this the list kept showing the official
+        // mapping after a channel switch.
+        const mapped = families[m];
         return {
           id: m,
-          label: entry?.name || m,
-          description: entry?.description ?? undefined,
+          label: mapped ?? (entry?.name || m),
+          description: mapped
+            ? `Custom ${CLAUDE_FAMILY_ALIASES[m]?.label ?? m} model`
+            : entry?.description ?? undefined,
           // Channel/override ids keep the "provider/model" shape, so the
           // prefix stands in when the catalog doesn't name the provider.
           provider: entry?.provider ?? (m.includes("/") ? m.slice(0, m.indexOf("/")) : undefined),

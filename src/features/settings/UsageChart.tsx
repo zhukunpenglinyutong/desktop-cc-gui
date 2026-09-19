@@ -5,13 +5,15 @@ import { CLI_DISPLAY_NAMES } from "@/components/foundations/icons/engine-brands"
 import { ModelBadge } from "@/components/foundations/icons/model-badge";
 import { modelDisplayName } from "./usage-model";
 import { tokensOf } from "./usage-totals";
+import type { UsageBucket } from "./usage-buckets";
 import type { UsageRow } from "@/lib/ipc";
 
 /**
- * Stacked token chart: one bar per local day, one segment per model, with a
- * hover breakdown. Hand-rolled SVG on purpose — the page ships no chart
- * dependency, and the shape needed here (stacked bars + tooltip + legend) is
- * smaller than the smallest library that could draw it.
+ * Stacked token chart: one bar per bucket — a local day, a local month, or a
+ * whole CLI — with one segment per model and a hover breakdown. Hand-rolled
+ * SVG on purpose — the page ships no chart dependency, and the shape needed
+ * here (stacked bars + tooltip + legend) is smaller than the smallest library
+ * that could draw it.
  */
 
 /** Series colors, assigned by descending total. Categorical palette that
@@ -34,12 +36,18 @@ const MODEL_SHADES = ["#34d399", "#fbbf24", "#38bdf8", "#a78bfa", "#fb7185", "#f
 
 export interface UsageChartProps {
   rows: UsageRow[];
-  /** Every local day in the selected range, oldest first. */
-  days: string[];
-  /** Scale cap in tokens; bars share it so days stay comparable. */
+  /** One column per bucket, in draw order. */
+  buckets: UsageBucket[];
+  /** Bucket key a ledger row belongs to; a row whose key is missing from
+   *  `buckets` is not drawn. */
+  bucketOf: (row: UsageRow) => string;
+  /** Scale cap in tokens; bars share it so buckets stay comparable. */
   formatTokens: (n: number) => string;
-  /** Name of the selected range (今日/本周/本月) — the axis tooltip's title. */
+  /** Name of the selected range (今日/本周/本月/本年/总和) — the axis
+   *  tooltip's title. */
   axisLabel: string;
+  /** Per-column total label, e.g. 当天合计 / 当月合计 / 合计. */
+  bucketTotalLabel: string;
 }
 
 interface Series {
@@ -48,10 +56,10 @@ interface Series {
   /** Engine id behind the CLI, for its brand mark. */
   engine: string;
   color: string;
-  byDay: number[];
+  values: number[];
   total: number;
   /** Models inside this CLI, largest first — the tooltip's second level. */
-  models: { name: string; color: string; byDay: number[]; total: number }[];
+  models: { name: string; color: string; values: number[]; total: number }[];
 }
 
 /** Readable axis step: 1/2/5 × 10^n covering `max` in ~4 ticks. */
@@ -67,19 +75,19 @@ function axisMax(max: number): number {
 
 /** Tooltip breakdown: one pass over the series (and one over each CLI's
  *  models), keeping non-zero entries in series order. `tokensFor` picks the
- *  number to show per CLI/model — one day's slot, or the range's sum. */
+ *  number to show per CLI/model — one bucket's slot, or the range's sum. */
 function buildTooltipRows(
   series: Series[],
-  tokensFor: (byDay: number[]) => number,
+  tokensFor: (values: number[]) => number,
   formatTokens: (n: number) => string,
 ): ReactNode[] {
   const rows: ReactNode[] = [];
   for (const cli of series) {
-    const tokens = tokensFor(cli.byDay);
+    const tokens = tokensFor(cli.values);
     if (tokens <= 0) continue;
     const modelRows: ReactNode[] = [];
     for (const model of cli.models) {
-      const modelTokens = tokensFor(model.byDay);
+      const modelTokens = tokensFor(model.values);
       if (modelTokens <= 0) continue;
       modelRows.push(
         <span
@@ -123,11 +131,18 @@ function buildTooltipRows(
   return rows;
 }
 
-export function UsageChart({ rows, days, formatTokens, axisLabel }: UsageChartProps) {
+export function UsageChart({
+  rows,
+  buckets,
+  bucketOf,
+  formatTokens,
+  axisLabel,
+  bucketTotalLabel,
+}: UsageChartProps) {
   const { t } = useTranslation();
-  const [hoverDay, setHoverDay] = useState<string | null>(null);
+  const [hoverKey, setHoverKey] = useState<string | null>(null);
   /** The axis gutter answers the other question the columns cannot: how much
-   *  the whole selected range holds, not one day of it. */
+   *  the whole selected range holds, not one bucket of it. */
   const [hoverAxis, setHoverAxis] = useState(false);
   // The tooltip trails the pointer (clamped to the chart box) instead of
   // being pinned to the hovered column: pinning made it jump to the other
@@ -137,7 +152,15 @@ export function UsageChart({ rows, days, formatTokens, axisLabel }: UsageChartPr
   const [cursor, setCursor] = useState<{ x: number; y: number } | null>(null);
   const [tipPos, setTipPos] = useState<{ left: number; top: number } | null>(null);
 
-  const { series, dayTotals, max } = useMemo(() => {
+  // Rows are matched to columns by bucket key, never by array position: the
+  // CLI columns are ordered by total while the series are ordered by their
+  // own totals, and the two must not have to agree.
+  const indexOf = useMemo(
+    () => new Map(buckets.map((bucket, index) => [bucket.key, index])),
+    [buckets],
+  );
+
+  const { series, bucketTotals, max } = useMemo(() => {
     // Stack by CLI (the details card's top level), with each CLI's models kept
     // for the tooltip — the chart and 详细数据 then describe the same thing.
     const byCli = new Map<string, Map<string, number[]>>();
@@ -146,20 +169,20 @@ export function UsageChart({ rows, days, formatTokens, axisLabel }: UsageChartPr
       // one model per row, whatever slug the session ran.
       const name = modelDisplayName(row.model) || t("usage.unknownModel");
       const models = byCli.get(row.engine) ?? new Map<string, number[]>();
-      const perDay = models.get(name) ?? new Array(days.length).fill(0);
-      const index = days.indexOf(row.day);
-      if (index >= 0) {
-        perDay[index] += tokensOf(row);
+      const perBucket = models.get(name) ?? new Array(buckets.length).fill(0);
+      const index = indexOf.get(bucketOf(row));
+      if (index !== undefined) {
+        perBucket[index] += tokensOf(row);
       }
-      models.set(name, perDay);
+      models.set(name, perBucket);
       byCli.set(row.engine, models);
     }
     const built: Series[] = [...byCli.entries()]
       .map(([engine, models]) => {
-        const entries = [...models.entries()].map(([name, byDay]) => ({
+        const entries = [...models.entries()].map(([name, values]) => ({
           name,
-          byDay,
-          total: byDay.reduce((acc, n) => acc + n, 0),
+          values,
+          total: values.reduce((acc, n) => acc + n, 0),
           color: OTHER_COLOR,
         }));
         entries.sort((a, b) => b.total - a.total);
@@ -167,7 +190,7 @@ export function UsageChart({ rows, days, formatTokens, axisLabel }: UsageChartPr
           model: CLI_DISPLAY_NAMES[engine] ?? engine,
           engine,
           color: OTHER_COLOR,
-          byDay: days.map((_, index) => entries.reduce((acc, e) => acc + (e.byDay[index] ?? 0), 0)),
+          values: buckets.map((_, index) => entries.reduce((acc, e) => acc + (e.values[index] ?? 0), 0)),
           total: entries.reduce((acc, e) => acc + e.total, 0),
           models: entries,
         };
@@ -181,12 +204,12 @@ export function UsageChart({ rows, days, formatTokens, axisLabel }: UsageChartPr
         model.color = MODEL_SHADES[modelIndex % MODEL_SHADES.length];
       });
     });
-    const totals = days.map((_day, index) =>
-      built.reduce((acc, s) => acc + (s.byDay[index] ?? 0), 0),
+    const totals = buckets.map((_bucket, index) =>
+      built.reduce((acc, s) => acc + (s.values[index] ?? 0), 0),
     );
     const peak = Math.max(...totals, 0);
-    return { series: built, dayTotals: totals, max: axisMax(peak) };
-  }, [rows, days, t]);
+    return { series: built, bucketTotals: totals, max: axisMax(peak) };
+  }, [rows, buckets, bucketOf, indexOf, t]);
 
   // Fixed viewBox: the panel is a known width, and uniform scaling keeps the
   // label sizes honest instead of stretching text non-uniformly.
@@ -198,23 +221,24 @@ export function UsageChart({ rows, days, formatTokens, axisLabel }: UsageChartPr
   const padBottom = 26;
   const plotW = W - padLeft - padRight;
   const plotH = H - padTop - padBottom;
-  const step = plotW / Math.max(days.length, 1);
-  // Bar width follows the range: a month packs slim columns, a single day
-  // fills a readable slab instead of leaving one hairline in the plot.
-  // The cap keeps ≤7-day views from looking like solid blocks.
+  const step = plotW / Math.max(buckets.length, 1);
+  // Bar width follows the bucket count: a month of days packs slim columns,
+  // a single day fills a readable slab instead of leaving one hairline in the
+  // plot. The cap keeps ≤7-bucket views from looking like solid blocks.
   const barW = Math.max(3, Math.min(step * 0.62, 76));
   const y = (tokens: number) => padTop + plotH - (tokens / max) * plotH;
   const ticks = [0, 0.25, 0.5, 0.75, 1].map((f) => f * max);
-  // Thin the date labels so they never collide.
-  const labelEvery = Math.max(1, Math.ceil(days.length / 8));
+  // Thin the labels so they never collide.
+  const labelEvery = Math.max(1, Math.ceil(buckets.length / 8));
 
-  const hoverIndex = hoverDay ? days.indexOf(hoverDay) : -1;
-  const hoverTotal = hoverIndex >= 0 ? dayTotals[hoverIndex] : 0;
-  const tooltipRows = hoverIndex >= 0 ? buildTooltipRows(series, (byDay) => byDay[hoverIndex] ?? 0, formatTokens) : [];
-  /** Same breakdown, summed over every day the range covers. */
-  const rangeTotal = dayTotals.reduce((acc, n) => acc + n, 0);
+  const hoverIndex = hoverKey ? indexOf.get(hoverKey) ?? -1 : -1;
+  const hoverBucket = hoverIndex >= 0 ? buckets[hoverIndex] : undefined;
+  const hoverTotal = hoverIndex >= 0 ? bucketTotals[hoverIndex] : 0;
+  const tooltipRows = hoverIndex >= 0 ? buildTooltipRows(series, (values) => values[hoverIndex] ?? 0, formatTokens) : [];
+  /** Same breakdown, summed over every bucket the range covers. */
+  const rangeTotal = bucketTotals.reduce((acc, n) => acc + n, 0);
   const axisRows = hoverAxis
-    ? buildTooltipRows(series, (byDay) => byDay.reduce((acc, n) => acc + n, 0), formatTokens)
+    ? buildTooltipRows(series, (values) => values.reduce((acc, n) => acc + n, 0), formatTokens)
     : [];
 
   useLayoutEffect(() => {
@@ -242,7 +266,7 @@ export function UsageChart({ rows, days, formatTokens, axisLabel }: UsageChartPr
       left: Math.max(left, Math.min(desiredLeft, right - size.width)),
       top: Math.max(top, Math.min(cursor.y + 14, bottom - size.height)),
     });
-  }, [cursor, hoverDay, hoverAxis]);
+  }, [cursor, hoverKey, hoverAxis]);
 
   return (
     <div
@@ -281,7 +305,7 @@ export function UsageChart({ rows, days, formatTokens, axisLabel }: UsageChartPr
           </g>
         ))}
         {/* Axis gutter: hovering the scale totals the whole selected range —
-            the question the per-day columns cannot answer. Covers the tick
+            the question the per-bucket columns cannot answer. Covers the tick
             labels too, so the hit area is forgiving. */}
         <rect
           x={0}
@@ -291,27 +315,27 @@ export function UsageChart({ rows, days, formatTokens, axisLabel }: UsageChartPr
           fill="transparent"
           onMouseEnter={() => {
             setHoverAxis(true);
-            setHoverDay(null);
+            setHoverKey(null);
           }}
           onMouseLeave={() => setHoverAxis(false)}
         />
-        {days.map((day, dayIndex) => {
-          const x = padLeft + dayIndex * step + (step - barW) / 2;
+        {buckets.map((bucket, bucketIndex) => {
+          const x = padLeft + bucketIndex * step + (step - barW) / 2;
           let cursor = 0;
           return (
-            <g key={day}>
+            <g key={bucket.key}>
               {/* Hit area spans the full column so hovering is forgiving. */}
               <rect
-                x={padLeft + dayIndex * step}
+                x={padLeft + bucketIndex * step}
                 y={padTop}
                 width={step}
                 height={plotH}
-                fill={hoverIndex === dayIndex ? "var(--color-background-primary-hover)" : "transparent"}
-                onMouseEnter={() => setHoverDay(day)}
-                onMouseLeave={() => setHoverDay((current) => (current === day ? null : current))}
+                fill={hoverIndex === bucketIndex ? "var(--color-background-primary-hover)" : "transparent"}
+                onMouseEnter={() => setHoverKey(bucket.key)}
+                onMouseLeave={() => setHoverKey((current) => (current === bucket.key ? null : current))}
               />
               {series.map((s) => {
-                const tokens = s.byDay[dayIndex] ?? 0;
+                const tokens = s.values[bucketIndex] ?? 0;
                 if (tokens <= 0) return null;
                 const height = (tokens / max) * plotH;
                 const segmentY = padTop + plotH - cursor - height;
@@ -328,15 +352,15 @@ export function UsageChart({ rows, days, formatTokens, axisLabel }: UsageChartPr
                   />
                 );
               })}
-              {dayIndex % labelEvery === 0 && (
+              {bucketIndex % labelEvery === 0 && (
                 <text
-                  x={padLeft + dayIndex * step + step / 2}
+                  x={padLeft + bucketIndex * step + step / 2}
                   y={H - 8}
                   textAnchor="middle"
                   className="fill-text-tertiary"
                   style={{ fontSize: 10 }}
                 >
-                  {day.slice(5)}
+                  {bucket.axis}
                 </text>
               )}
             </g>
@@ -351,10 +375,10 @@ export function UsageChart({ rows, days, formatTokens, axisLabel }: UsageChartPr
           style={tipPos ? { left: tipPos.left, top: tipPos.top } : { left: 0, top: 0, visibility: "hidden" }}
         >
           <span className="text-body-2-regular text-text-tertiary">
-            {hoverAxis ? axisLabel : hoverDay}
+            {hoverAxis ? axisLabel : hoverBucket?.title}
           </span>
           <span className="flex items-baseline justify-between gap-3 text-body-2-medium text-text-primary">
-            <span>{t(hoverAxis ? "usage.rangeTooltipTotal" : "usage.tooltipTotal")}</span>
+            <span>{hoverAxis ? t("usage.rangeTooltipTotal") : bucketTotalLabel}</span>
             <span className="tabular-nums">
               {formatTokens(hoverAxis ? rangeTotal : hoverTotal)}
             </span>
