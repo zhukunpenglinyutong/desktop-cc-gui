@@ -1,5 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ipc, type SessionMeta } from "@/lib/ipc";
+import {
+  pluginBus,
+  resetPluginBusForTests,
+  SESSION_ACTIVATED_TOPIC,
+} from "@/features/plugins/runtime/events";
 import { setPluginSessionEffort, useChatStore } from "./store";
 import { OPEN_TABS_KEY } from "./store/persistence";
 import { EMPTY_SESSION } from "./store/stream";
@@ -32,6 +37,7 @@ const WS = "/tmp/ws";
 
 function resetStore() {
   localStorage.clear();
+  resetPluginBusForTests();
   vi.mocked(ipc.sendMessage).mockClear();
   vi.mocked(ipc.interruptSession).mockClear();
   vi.mocked(ipc.archiveSession).mockClear();
@@ -127,6 +133,25 @@ describe("per-session composer selection", () => {
     expect(s.active?.engine).toBe("claude");
     expect(s.active?.model).toBeUndefined();
     expect(s.active?.effort).toBeUndefined();
+  });
+
+  it("announces the picker switch to plugins only when the tab actually retargets", () => {
+    const seen: unknown[] = [];
+    const dispose = pluginBus.on(SESSION_ACTIVATED_TOPIC, (data) => seen.push(data));
+    try {
+      useChatStore.setState({ activeEngine: "omp" });
+      useChatStore.getState().startNewChat(WS);
+
+      useChatStore.getState().setActiveEngine("claude");
+      expect(seen.at(-1)).toEqual({ engine: "claude", sessionId: null });
+
+      // 已经是该引擎：不重复广播（避免插件被无意义的重复事件打扰）
+      const afterRetarget = seen.length;
+      useChatStore.getState().setActiveEngine("claude");
+      expect(seen.length).toBe(afterRetarget);
+    } finally {
+      dispose();
+    }
   });
 });
 
