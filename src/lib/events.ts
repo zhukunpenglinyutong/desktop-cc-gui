@@ -22,7 +22,11 @@ export interface EngineEventPayload {
     | "question_settled"
     | "done"
     | "model"
-    | "effort";
+    | "effort"
+    | "task_started"
+    | "task_progress"
+    | "task_notification"
+    | "tasks";
   data: unknown;
   /** Emit-side timestamp (Unix ms), stamped in TurnState::push. Absent from
    *  payloads produced before SDK 0.3.8. */

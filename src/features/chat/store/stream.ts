@@ -16,6 +16,29 @@ export interface QueuedMessage {
   computerUse?: boolean;
 }
 
+/** One background task of a run (claude task frames): a Workflow, a Task-tool
+ *  subagent, or a background shell. `runId` groups tasks under their turn. */
+export interface BackgroundTask {
+  id: string;
+  runId: string;
+  taskType: string;
+  description: string;
+  subagentType?: string;
+  workflowName?: string;
+  isBackgrounded?: boolean;
+  spawnDepth?: number;
+  ambient?: boolean;
+  /** `interrupted` = its run died without a terminal notification. */
+  status: "running" | "completed" | "failed" | "stopped" | "interrupted";
+  /** Live activity line ("<phase>: <agent>" / "Running Wait 590 seconds"). */
+  progress?: string;
+  lastTool?: string;
+  usage?: unknown;
+  startedAt: number;
+  updatedAt: number;
+}
+export const EMPTY_TASKS: BackgroundTask[] = [];
+
 export interface SessionState {
   messages: Message[];
   /** Older delegation metadata kept outside the paginated message window. */
@@ -27,6 +50,13 @@ export interface SessionState {
    * indicator's elapsed timer so it survives the indicator's unmount/remount
    * cycle (idle ↔ growing) instead of restarting from 0 every pause. */
   turnStartedAt: number | null;
+  /** The run that owns the live turn of this session. Two runs of ONE session
+   * can overlap — a reply settles with background tasks still running and the
+   * user sends the next message before the CLI's completion turn arrives — and
+   * the settling run must not write the session's turn-level state under the
+   * newer run's feet. `null` = no claim: nothing is being attributed to a run
+   * (idle, or a turn this client did not mark), so any run may own it. */
+  currentRunId: string | null;
   activeModel?: string | null;
   activeEffort?: string | null;
   /** In-app channel this session runs; spawn injects its env. */
@@ -56,6 +86,15 @@ export interface SessionState {
   /** Set by interrupt(): the next "done" settles the turn but must not
    * auto-drain the queue — pressing stop is not "go on to the next". */
   interrupted: boolean;
+  /** Background tasks of this session, oldest first. Running tasks always
+   *  survive the retention trim. */
+  tasks: BackgroundTask[];
+  /** A running task exists: drives the background indicator and the pill. */
+  backgroundActive: boolean;
+  /** The reply settled but its background tasks are still running: the turn
+   *  reads as "运行中（后台任务）" and the CLI's completion turn may still
+   *  arrive in this run. */
+  awaitingTasks: boolean;
 }
 
 export const EMPTY_SESSION: SessionState = {
@@ -65,6 +104,7 @@ export const EMPTY_SESSION: SessionState = {
   loading: false,
   streaming: false,
   turnStartedAt: null,
+  currentRunId: null,
   activeModel: null,
   activeEffort: null,
   activeProvider: null,
@@ -75,6 +115,9 @@ export const EMPTY_SESSION: SessionState = {
   compaction: null,
   queue: [],
   interrupted: false,
+  tasks: EMPTY_TASKS,
+  backgroundActive: false,
+  awaitingTasks: false,
 };
 
 /** The model one session runs with, most specific first:
@@ -155,7 +198,12 @@ export type SetFn<T extends BySessionSlice> = (fn: (s: T) => Partial<T>) => void
  * monotonically over the app's lifetime. */
 export const runRouting = new Map<string, string>();
 
-export function rememberSettledRun(session: SessionState | undefined, runId: string): string[] {
+/** Append a terminal run identity. Takes just the field it reads so a caller
+ *  can fold a list of runs before it has a session to write them to. */
+export function rememberSettledRun(
+  session: Pick<SessionState, "settledRunIds"> | undefined,
+  runId: string,
+): string[] {
   return [...(session?.settledRunIds ?? []).filter((id) => id !== runId), runId].slice(-32);
 }
 /** runId -> last activity (stamped at routing, refreshed on each routed

@@ -798,6 +798,11 @@ impl AcpProcess {
                         super::MAX_LINE_BYTES / (1024 * 1024),
                     ));
                 }
+                // Only the reader's own stdin-close deadline synthesizes this
+                // (this loop reads without one), so it cannot occur here: keep
+                // the idle-tick behavior of the timeout arm below rather than
+                // inventing a teardown this RPC has no background tasks for.
+                Ok(Ok(super::LineRead::Deadline)) => continue,
                 Ok(Err(error)) => {
                     return match settled.take() {
                         Some(result) => Ok(result),

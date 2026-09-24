@@ -305,6 +305,25 @@ export const zh = {
     metaDuration: "耗时 {{duration}}",
     metaModel: "模型 {{model}}",
     metaEffort: "推理档位 {{effort}}",
+    tasks: {
+      tab: "后台任务",
+      empty: "暂无后台任务",
+      turnAt: "回合 {{time}}",
+      runningIndicator: "后台任务运行中 · {{count}} 个",
+      status: {
+        running: "运行中",
+        completed: "已完成",
+        failed: "失败",
+        stopped: "已停止",
+        interrupted: "已中断",
+      },
+      type: {
+        local_bash: "后台命令",
+        local_agent: "子代理",
+        local_workflow: "工作流",
+        other: "其他",
+      },
+    },
   },
   settings: {
     title: "设置",
@@ -453,6 +472,9 @@ export const zh = {
     sendShortcutEnter: "Enter",
     sendShortcutCmdEnter: "Cmd+Enter",
     sendShortcutCmdEnterCtrl: "Ctrl+Enter",
+    thinkingAutoExpand: "思考过程自动展开",
+    thinkingAutoExpandDesc:
+      "输出时自动展开思考与工具调用面板；关闭后这些面板保持折叠，点击行头可手动展开",
     thinkingAutoCollapse: "思考结束后自动收起",
     thinkingAutoCollapseDesc:
       "关闭后，思考结束时思考过程保持展开（界面不再跳动），可点击标题手动收起",

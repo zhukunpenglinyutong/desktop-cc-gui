@@ -5,11 +5,14 @@ import { cx } from "@/utils/cx";
 import { useGitStore } from "@/features/git/store";
 import type { GitStatus, Message, TodoItem } from "@/lib/ipc";
 import { useChatStore } from "../store";
+import { EMPTY_TASKS } from "../store/stream";
+import { stepsFromTasks } from "../background-tasks";
 import {
   deriveAgentTaskSteps,
   deriveEditedFiles,
   deriveTodoList,
   type AgentTaskStep,
+  type AgentTaskStepState,
 } from "./agent-task-steps";
 import { createEditLineStatsBuilder, type EditLineStat } from "./edit-line-stats";
 import { RollingStat } from "./RollingStat";
@@ -492,11 +495,22 @@ function TodoRows({ items, live }: { items: TodoItem[]; live: boolean }) {
   );
 }
 
+/** One step's status text. The settled-without-success states reuse the
+ *  background-task status keys so the report panel and the pill panel name
+ *  the same state the same way. */
+function agentStatusText(t: TFunction, state: AgentTaskStepState): string {
+  if (state === "complete") return t("chat.agentStatusDone");
+  if (state === "active") return t("chat.agentStatusRunning");
+  return t(`chat.tasks.status.${state}`);
+}
 /** One agent's full assignment, overlaid on the list inside the same panel:
  *  task briefs run long, and leaving the strip to read one loses the panel. */
 function SubagentDetail({ step, onBack }: { step: AgentTaskStep; onBack: () => void }) {
   const { t } = useTranslation();
-  const complete = step.state === "complete";
+  // Settled steps step down so their name does not fight the status beside
+  // it; a dead run (failed/interrupted) goes red, a stopped one gray.
+  const settled = step.state !== "active";
+  const dead = step.state === "failed" || step.state === "interrupted";
   // The row that opened this overlay unmounted with the list; move focus
   // into the overlay instead of dropping it on document.body.
   const backRef = useRef<HTMLButtonElement>(null);
@@ -520,15 +534,28 @@ function SubagentDetail({ step, onBack }: { step: AgentTaskStep; onBack: () => v
               {step.subagentType}
             </span>
           )}
-          <span className="truncate text-caption-1-medium text-text-primary">{step.label}</span>
+          <span
+            className={cx(
+              "truncate text-caption-1-medium",
+              settled ? "text-text-secondary" : "text-text-primary",
+            )}
+          >
+            {step.label}
+          </span>
         </div>
         <span
           className={cx(
             "ml-auto shrink-0 text-caption-2-medium",
-            complete ? "text-[var(--color-status-unseen)]" : "font-medium text-blue-500",
+            dead
+              ? "font-medium text-text-error-primary"
+              : step.state === "stopped"
+                ? "text-text-tertiary"
+                : step.state === "complete"
+                  ? "text-[var(--color-status-unseen)]"
+                  : "font-medium text-blue-500",
           )}
         >
-          {complete ? t("chat.agentStatusDone") : t("chat.agentStatusRunning")}
+          {agentStatusText(t, step.state)}
         </span>
       </div>
       <pre className="max-h-52 overflow-y-auto rounded bg-background-secondary-default px-2 py-1.5 text-caption-1-medium break-words whitespace-pre-wrap text-text-secondary">
@@ -572,6 +599,11 @@ function SubagentRows({ steps }: { steps: AgentTaskStep[] }) {
       <ul className="flex flex-col gap-0.5 p-1">
         {steps.map((step) => {
           const complete = step.state === "complete";
+          // A dead run (failed/interrupted) gets the static error dot the
+          // blocked todo row uses; a stopped one a gray dot — breathing
+          // means "still working".
+          const dead = step.state === "failed" || step.state === "interrupted";
+          const stopped = step.state === "stopped";
           return (
             <li key={step.key}>
               <button
@@ -582,7 +614,17 @@ function SubagentRows({ steps }: { steps: AgentTaskStep[] }) {
                 className="grid w-full cursor-pointer grid-cols-[14px_minmax(0,1fr)_auto] items-center gap-2 rounded px-2 py-1.5 text-left transition-colors hover:bg-background-tertiary-default/50"
               >
                 <div className="flex items-center justify-center">
-                  <BreathingDot active={!complete} />
+                  {dead ? (
+                    <span className="grid size-3.5 place-items-center">
+                      <span className="size-1.5 rounded-full bg-text-error-primary" />
+                    </span>
+                  ) : stopped ? (
+                    <span className="grid size-3.5 place-items-center">
+                      <span className="size-1.5 rounded-full bg-foreground-icon-tertiary" />
+                    </span>
+                  ) : (
+                    <BreathingDot active={!complete} />
+                  )}
                 </div>
                 <div className="flex min-w-0 items-center gap-1.5">
                   {step.subagentType && (
@@ -593,7 +635,9 @@ function SubagentRows({ steps }: { steps: AgentTaskStep[] }) {
                   <span
                     className={cx(
                       "truncate text-caption-1-medium",
-                      complete ? "text-text-secondary" : "text-text-primary",
+                      // A settled step is as dim as a finished one: the
+                      // brightest text would fight the status beside it.
+                      step.state !== "active" ? "text-text-secondary" : "text-text-primary",
                     )}
                   >
                     {step.label}
@@ -602,12 +646,16 @@ function SubagentRows({ steps }: { steps: AgentTaskStep[] }) {
                 <span
                   className={cx(
                     "text-caption-2-medium flex shrink-0 items-center gap-1",
-                    complete
-                      ? "text-[var(--color-status-unseen)]"
-                      : "font-medium text-blue-500",
+                    dead
+                      ? "font-medium text-text-error-primary"
+                      : stopped
+                        ? "text-text-tertiary"
+                        : complete
+                          ? "text-[var(--color-status-unseen)]"
+                          : "font-medium text-blue-500",
                   )}
                 >
-                  {complete ? t("chat.agentStatusDone") : t("chat.agentStatusRunning")}
+                  {agentStatusText(t, step.state)}
                 </span>
               </button>
             </li>
@@ -721,8 +769,13 @@ function RunStatusPills({
   onToggle: (id: SectionId) => void;
 }) {
   const { t } = useTranslation();
-  const completedCount = steps.filter((step) => step.state === "complete").length;
-  const anyRunning = streaming && completedCount < steps.length;
+  // The numerator counts SETTLED steps, not just succeeded ones: a failed
+  // step is as settled as a finished one, and a settled pill reading "1/2"
+  // forever would imply outstanding work that is not coming.
+  const settledCount = steps.filter((step) => step.state !== "active").length;
+  // "Still working" is the active state, not "not complete": a pill that keeps
+  // breathing after a failure promises progress that is not coming.
+  const anyRunning = steps.some((step) => step.state === "active");
   const todosDone = todos.filter((item) => item.status === "complete").length;
   const todosRunning = streaming && todos.some((item) => item.status === "active");
   return (
@@ -742,7 +795,7 @@ function RunStatusPills({
           selected={section === "subagent"}
           running={anyRunning}
           label={t("chat.subagentPill")}
-          count={`${completedCount}/${steps.length}`}
+          count={`${settledCount}/${steps.length}`}
           icon={<BotIcon />}
           onClick={() => onToggle("subagent")}
         />
@@ -790,6 +843,7 @@ export const RunStatusStrip = memo(function RunStatusStrip({
   const messages = useChatStore((s) =>
     sessionKey ? (s.bySession[sessionKey]?.messages ?? EMPTY_MESSAGES) : EMPTY_MESSAGES,
   );
+  const { t } = useTranslation();
   const subagentHistory = useChatStore((s) =>
     sessionKey ? (s.bySession[sessionKey]?.subagentHistory ?? EMPTY_MESSAGES) : EMPTY_MESSAGES,
   );
@@ -800,9 +854,27 @@ export const RunStatusStrip = memo(function RunStatusStrip({
     () => (subagentHistory.length ? [...subagentHistory, ...messages] : messages),
     [subagentHistory, messages],
   );
+  // Claude reports its subagents as background tasks, so that table is the
+  // real data for its pill — a task that failed says so, which the message
+  // fold cannot tell. Keep the baseline's combined history for other engines
+  // and todo extraction (including separately paged subagent history).
+  const tasks = useChatStore((s) =>
+    sessionKey ? (s.bySession[sessionKey]?.tasks ?? EMPTY_TASKS) : EMPTY_TASKS,
+  );
+  // The run the session's live turn belongs to: the pill's task subset follows
+  // it (see stepsFromTasks) so it counts this turn's subagents, not every row
+  // the session ever reported.
+  const currentRunId = useChatStore((s) =>
+    sessionKey ? (s.bySession[sessionKey]?.currentRunId ?? null) : null,
+  );
   const steps = useMemo(
-    () => deriveAgentTaskSteps(allHistory, streaming, engine),
-    [allHistory, streaming, engine],
+    () =>
+      engine === "claude" && tasks.length > 0
+        ? stepsFromTasks(tasks, currentRunId, (type) =>
+            t(`chat.tasks.type.${type}`, { defaultValue: type }),
+          )
+        : deriveAgentTaskSteps(allHistory, streaming, engine),
+    [tasks, currentRunId, allHistory, streaming, engine, t],
   );
   const files = useMemo(() => deriveEditedFiles(messages), [messages]);
   const todos = useMemo(() => deriveTodoList(allHistory), [allHistory]);

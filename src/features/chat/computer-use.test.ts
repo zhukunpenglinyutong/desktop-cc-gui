@@ -30,9 +30,13 @@ vi.mock("@/lib/events", () => ({
 }));
 
 const WS = "/tmp/ws";
+// Dynamic imports: the mocked ipc/events modules above must be in place
+// before the store (and its engine-events wiring) is first evaluated.
 const { useChatStore } = await import("./store");
 const { sessionKey } = await import("./store/persistence");
 const { engineSupportsComputerUse } = await import("./computer-use");
+const { handleEngineEvents, settledRuns } = await import("./store/engine-events");
+const { EMPTY_SESSION, runRouting } = await import("./store/stream");
 
 const KEY = sessionKey("omp", "s-1", WS);
 
@@ -62,7 +66,14 @@ describe("engineSupportsComputerUse", () => {
 describe("computer-use sends", () => {
   beforeEach(() => {
     vi.mocked(ipc.sendMessage).mockClear();
+    // Default backend shape: an older backend that chooses its own run id.
+    vi.mocked(ipc.sendMessage).mockImplementation(async () => ({
+      runId: "run-1",
+      sessionId: null,
+    }));
     vi.mocked(ipc.computerUseSetActive).mockClear();
+    runRouting.clear();
+    settledRuns.clear();
     useChatStore.setState({
       engines: [engine("omp", true)],
       active: { engine: "omp", sessionId: "s-1", workspacePath: WS },
@@ -121,6 +132,92 @@ describe("computer-use sends", () => {
     expect(vi.mocked(ipc.sendMessage)).toHaveBeenCalledWith(
       expect.objectContaining({ prompt: "打开计算器", computerUse: true }),
     );
+  });
+
+  it("keeps Esc armed through the held done, disarms on the terminal one", async () => {
+    // The echo-back backend: the run keeps the id the client requested, so
+    // the claim and the routing stay intact.
+    vi.mocked(ipc.sendMessage).mockImplementation(async (args) => ({
+      runId: args.runId ?? "run-1",
+      sessionId: "s-1",
+    }));
+    await useChatStore.getState().send("打开计算器", [], { computerUse: true });
+    vi.mocked(ipc.computerUseSetActive).mockClear();
+    // The send claims the session under the run id it requested.
+    const runId = vi.mocked(ipc.sendMessage).mock.calls[0][0].runId ?? "run-1";
+    const d = {
+      set: useChatStore.setState,
+      get: useChatStore.getState,
+      drainQueue: () => {},
+      markUnseenIfBackground: () => {},
+      upsertSessionMeta: () => {},
+    };
+    const done = (data: unknown) => ({
+      runId, sessionId: "s-1", engine: "omp", seq: 2, kind: "done" as const, data,
+    });
+
+    // The reply settled but background tasks keep the run alive: the Esc
+    // hotkey belongs to the run, not the reply segment.
+    handleEngineEvents([done({ usage: null, backgroundTasks: 1 })], d);
+    expect(vi.mocked(ipc.computerUseSetActive)).not.toHaveBeenCalled();
+
+    handleEngineEvents([done({ usage: null, backgroundTasks: 0 })], d);
+    expect(vi.mocked(ipc.computerUseSetActive)).toHaveBeenCalledWith(false);
+  });
+
+  it("does not disarm Esc for a foreign run's done", async () => {
+    vi.mocked(ipc.sendMessage).mockImplementation(async (args) => ({
+      runId: args.runId ?? "run-1",
+      sessionId: "s-1",
+    }));
+    await useChatStore.getState().send("打开计算器", [], { computerUse: true });
+    vi.mocked(ipc.computerUseSetActive).mockClear();
+    // 同会话双 run：电脑操控 run 仍在流且认领会话，另一个 run 的终局 done 到达。
+    runRouting.set("run-9", KEY);
+    handleEngineEvents(
+      [
+        {
+          runId: "run-9", sessionId: "s-1", engine: "omp", seq: 2,
+          kind: "done" as const, data: { usage: null, backgroundTasks: 0 },
+        },
+      ],
+      {
+        set: useChatStore.setState,
+        get: useChatStore.getState,
+        drainQueue: () => {},
+        markUnseenIfBackground: () => {},
+        upsertSessionMeta: () => {},
+      },
+    );
+    expect(vi.mocked(ipc.computerUseSetActive)).not.toHaveBeenCalled();
+    expect(useChatStore.getState().bySession[KEY]?.streaming).toBe(true);
+  });
+
+  it("does not disarm Esc for another session's done", async () => {
+    await useChatStore.getState().send("打开计算器", [], { computerUse: true });
+    vi.mocked(ipc.computerUseSetActive).mockClear();
+    // 另一会话（非电脑操控）的 run 收尾：全局热键属于 run-1，不得解除。
+    const OTHER_KEY = sessionKey("omp", "s-2", WS);
+    useChatStore.setState((s) => ({
+      bySession: { ...s.bySession, [OTHER_KEY]: { ...EMPTY_SESSION, streaming: true } },
+    }));
+    runRouting.set("run-2", OTHER_KEY);
+    handleEngineEvents(
+      [
+        {
+          runId: "run-2", sessionId: "s-2", engine: "omp", seq: 2,
+          kind: "done" as const, data: { usage: null, backgroundTasks: 0 },
+        },
+      ],
+      {
+        set: useChatStore.setState,
+        get: useChatStore.getState,
+        drainQueue: () => {},
+        markUnseenIfBackground: () => {},
+        upsertSessionMeta: () => {},
+      },
+    );
+    expect(vi.mocked(ipc.computerUseSetActive)).not.toHaveBeenCalled();
   });
 
   it("disarms Esc-to-stop when the turn settles", async () => {

@@ -165,6 +165,12 @@ function useGeneralSettingsState() {
     useChatStore.getState().setThinkingAutoCollapse(autoCollapse);
     void save({ thinkingAutoCollapse: autoCollapse });
   };
+  const onThinkingAutoExpandChange = (autoExpand: boolean) => {
+    if (!settings) return;
+    setSettings({ ...settings, thinkingAutoExpand: autoExpand });
+    useChatStore.getState().setThinkingAutoExpand(autoExpand);
+    void save({ thinkingAutoExpand: autoExpand });
+  };
   const onPetEnabledChange = (enabled: boolean) => {
     if (!settings) return;
     if (enabled && !pets.some((pet) => pet.id === settings.petId)) {
@@ -238,7 +244,6 @@ function useGeneralSettingsState() {
   };
   const selectedPetId = settings?.petId?.trim() ?? "";
   const selectedPet = pets.find((pet) => pet.id === selectedPetId);
-
   return {
     settings,
     error,
@@ -259,6 +264,7 @@ function useGeneralSettingsState() {
     onThreadLimitKeyDown,
     onSendShortcutChange,
     onThinkingAutoCollapseChange,
+    onThinkingAutoExpandChange,
     onPetEnabledChange,
     onPetScaleChange,
     onPetChange,
@@ -467,10 +473,12 @@ function BehaviorCard({
   settings,
   onSendShortcutChange,
   onThinkingAutoCollapseChange,
+  onThinkingAutoExpandChange,
 }: {
   settings: AppSettings;
   onSendShortcutChange: (key: Key | null) => void;
   onThinkingAutoCollapseChange: (autoCollapse: boolean) => void;
+  onThinkingAutoExpandChange: (autoExpand: boolean) => void;
 }) {
   const { t } = useTranslation();
   return (
@@ -495,6 +503,17 @@ function BehaviorCard({
           </Select>
         </SettingsRow>
 
+        <SettingsRow
+          label={t("settings.thinkingAutoExpand")}
+          description={t("settings.thinkingAutoExpandDesc")}
+        >
+          <Switch
+            size="sm"
+            aria-label={t("settings.thinkingAutoExpand")}
+            isSelected={settings.thinkingAutoExpand ?? true}
+            onChange={onThinkingAutoExpandChange}
+          />
+        </SettingsRow>
         <SettingsRow
           label={t("settings.thinkingAutoCollapse")}
           description={t("settings.thinkingAutoCollapseDesc")}
@@ -536,6 +555,7 @@ export function GeneralSection() {
     onThreadLimitKeyDown,
     onSendShortcutChange,
     onThinkingAutoCollapseChange,
+    onThinkingAutoExpandChange,
     onPetEnabledChange,
     onPetScaleChange,
     onPetChange,
@@ -584,6 +604,7 @@ export function GeneralSection() {
           settings={settings}
           onSendShortcutChange={onSendShortcutChange}
           onThinkingAutoCollapseChange={onThinkingAutoCollapseChange}
+          onThinkingAutoExpandChange={onThinkingAutoExpandChange}
         />
       )}
       {settings && <PromptHistoryManager />}

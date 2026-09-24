@@ -7,6 +7,7 @@ import { useGitStore } from "@/features/git/store";
 import { RunStatusStrip } from "./RunStatusStrip";
 import { deriveTodoList } from "./agent-task-steps";
 import { ipc } from "@/lib/ipc";
+import { type BackgroundTask } from "../store/stream";
 import type { Message, TodosPayload } from "@/lib/ipc";
 
 // React's act() environment flag — a well-known global the runtime can't
@@ -34,6 +35,33 @@ const TURN: Message[] = [
 function seed(messages: Message[], streaming: boolean) {
   useChatStore.setState({
     bySession: { [KEY]: { messages, streaming } as never },
+  });
+}
+
+function task(over: Partial<BackgroundTask>): BackgroundTask {
+  return {
+    id: "t", runId: "r1", taskType: "local_agent", description: "d",
+    status: "running", startedAt: 1, updatedAt: 1, ...over,
+  };
+}
+
+/** Claude reports its subagents as background tasks; this seeds that table. */
+function seedTasks(
+  tasks: BackgroundTask[],
+  messages: Message[] = [msg(1, "user", "跑一下")],
+  streaming = false,
+  currentRunId: string | null = null,
+) {
+  useChatStore.setState({
+    bySession: {
+      [KEY]: {
+        messages,
+        streaming,
+        tasks,
+        currentRunId,
+        backgroundActive: tasks.some((t) => t.status === "running" && !t.ambient),
+      } as never,
+    },
   });
 }
 
@@ -67,9 +95,9 @@ afterEach(async () => {
   vi.restoreAllMocks();
 });
 
-async function renderStrip() {
+async function renderStrip(engine = "pi") {
   await act(async () => {
-    root.render(<RunStatusStrip sessionKey={KEY} engine="pi" workspacePath={WS} />);
+    root.render(<RunStatusStrip sessionKey={KEY} engine={engine} workspacePath={WS} />);
   });
 }
 
@@ -446,6 +474,192 @@ describe("RunStatusStrip", () => {
     expect(panel).toContain("code-reviewer");
     expect(panel).toContain("检查代码安全漏洞");
     expect(panel).toContain("已完成");
+  });
+
+  it("reads the claude subagent steps from the session's task table", async () => {
+    // TURN carries a message-derived subagent row of its own: the task table
+    // is the real data and must win over the message fold.
+    seedTasks(
+      [
+        task({ id: "a", subagentType: "general-purpose", description: "读文档" }),
+        task({ id: "b", status: "completed", workflowName: "ccgui-full-parse" }),
+        task({ id: "c", status: "failed", description: "坏掉的子代理" }),
+      ],
+      TURN,
+    );
+    await renderStrip("claude");
+
+    // Settled over total: 1 running, 1 completed, 1 failed → 2/3.
+    expect(pill("子代理").textContent).toContain("2/3");
+    await click(pill("子代理"));
+    const panel = container.querySelector("[data-testid='run-status-subagents']")?.textContent;
+    expect(panel).toContain("general-purpose");
+    expect(panel).toContain("ccgui-full-parse");
+    expect(panel).toContain("坏掉的子代理");
+    expect(panel).toContain("运行中");
+    expect(panel).toContain("已完成");
+    expect(panel).toContain("失败");
+  });
+
+  /** Turn-level surface: ambient housekeeping never belongs to the pill, and
+   *  once a run is claimed only its own tasks tell the turn's story. */
+  it("keeps ambient tasks and other runs' settled tasks out of the subagent pill", async () => {
+    seedTasks(
+      [
+        task({ id: "mon", ambient: true, description: "夜间巡检" }),
+        task({ id: "old", runId: "old-run", status: "completed", description: "旧回合" }),
+        task({ id: "now", runId: "now-run" }),
+      ],
+      TURN,
+      false,
+      "now-run",
+    );
+    await renderStrip("claude");
+
+    expect(pill("子代理").textContent).toContain("0/1");
+    await click(pill("子代理"));
+    const panel = container.querySelector("[data-testid='run-status-subagents']")?.textContent;
+    expect(panel).toContain("运行中");
+    expect(panel).not.toContain("夜间巡检");
+    expect(panel).not.toContain("旧回合");
+  });
+
+  it("renders a failed task in the error palette without a breathing dot", async () => {
+    seedTasks([
+      task({ id: "a", status: "failed", subagentType: "code-reviewer", description: "审查" }),
+    ]);
+    await renderStrip("claude");
+    // The only task is dead: the pill must not claim something is running.
+    // Settled semantics: the failed step counts toward the numerator (1/1) —
+    // what matters is that nothing claims to be running.
+    expect(pill("子代理").textContent).toContain("1/1");
+    expect(container.querySelector(".animate-ping")).toBeNull();
+
+    await click(pill("子代理"));
+    const row = container.querySelector<HTMLButtonElement>("[data-agent-step-key]");
+    expect(row?.textContent).toContain("失败");
+    expect(row?.querySelector(".animate-ping")).toBeNull();
+    expect(row?.querySelector(".text-text-error-primary")).not.toBeNull();
+    // The name steps down to the settled tone instead of fighting the red.
+    expect(row?.querySelector(".text-caption-1-medium")?.className).toContain(
+      "text-text-secondary",
+    );
+  });
+
+  it("keeps the message-derived steps for engines that report no task frames", async () => {
+    seedTasks([task({ id: "a" }), task({ id: "b", status: "completed" })], TURN, true);
+    await renderStrip("pi");
+
+    // pi has no task table: the pill still follows the message stream (one
+    // active subagent in TURN), not the claude-only task rows.
+    expect(pill("子代理").textContent).toContain("0/1");
+  });
+
+  /** 详情覆盖层沿用列表行的色调规则：failed 步的名字降为次级色，不与旁边
+   *  红色「失败」抢焦点。 */
+  it("steps a failed subagent's name down inside the detail overlay", async () => {
+    seedTasks([
+      task({ id: "a", status: "failed", subagentType: "code-reviewer", description: "审查" }),
+    ]);
+    await renderStrip("claude");
+
+    await click(pill("子代理"));
+    const row = container.querySelector<HTMLButtonElement>("[data-agent-step-key]")!;
+    await click(row);
+
+    const overlay = container.querySelector("[data-testid='subagent-detail-overlay']");
+    expect(overlay).not.toBeNull();
+    // The step's label is its brief (the chain prefers the description over
+    // the bare type); the subagentType rides along as the type chip, and the
+    // row that opened this overlay read the same text.
+    const label = overlay!.querySelector(".text-caption-1-medium");
+    expect(label?.textContent).toContain("审查");
+    expect(label?.className).toContain("text-text-secondary");
+    expect(label?.className).not.toContain("text-text-primary");
+    expect(overlay!.textContent).toContain("code-reviewer");
+  });
+
+  /** 新回合的 runId 在发送时被乐观写入，先于该 run 的首个任务帧到达：
+   *  pill 不得闪烁消失，已打开的面板不得收起；新 run 的首个任务帧到达后
+   *  才切换为新回合的计数。 */
+  it("freezes the pill over the turn gap instead of blinking away", async () => {
+    const history = [
+      task({ id: "old-1", runId: "r1", status: "completed", description: "旧任务一" }),
+      task({ id: "old-2", runId: "r1", status: "completed", description: "旧任务二" }),
+    ];
+    seedTasks(history, undefined, false, "r1");
+    await renderStrip("claude");
+    expect(pill("子代理").textContent).toContain("2/2");
+    await click(pill("子代理"));
+    expect(container.querySelector("[data-testid='run-status-subagents']")?.textContent).toContain(
+      "旧任务一",
+    );
+
+    // 发送新消息：currentRunId 切到 r2，任务表里还没有 r2 的任何帧。
+    await act(async () => {
+      useChatStore.setState({
+        bySession: {
+          [KEY]: {
+            messages: [msg(1, "user", "跑一下"), msg(2, "user", "再来一轮")],
+            streaming: true,
+            tasks: history,
+            currentRunId: "r2",
+            backgroundActive: false,
+          } as never,
+        },
+      });
+    });
+    // Pill 冻结在上一回合的计数上，面板保持打开。
+    expect(pill("子代理").textContent).toContain("2/2");
+    expect(container.querySelector("[data-testid='run-status-subagents']")?.textContent).toContain(
+      "旧任务一",
+    );
+
+    // r2 的首个任务帧到达：pill 切换为新回合的计数与内容。
+    await act(async () => {
+      useChatStore.setState({
+        bySession: {
+          [KEY]: {
+            messages: [msg(1, "user", "跑一下"), msg(2, "user", "再来一轮")],
+            streaming: true,
+            tasks: [...history, task({ id: "new-1", runId: "r2", description: "新任务" })],
+            currentRunId: "r2",
+            backgroundActive: true,
+          } as never,
+        },
+      });
+    });
+    expect(pill("子代理").textContent).toContain("0/1");
+    const panel = container.querySelector("[data-testid='run-status-subagents']")?.textContent;
+    expect(panel).toContain("新任务");
+    expect(panel).not.toContain("旧任务一");
+  });
+
+  /** stopped/interrupted 不是「已完成」：pill 面板与后台任务面板用同一份
+   *  i18n 状态文案（灰「已停止」/红「已中断」），不得显示绿勾已完成。 */
+  it("names stopped and interrupted tasks instead of reading them as done", async () => {
+    seedTasks([
+      task({ id: "s", status: "stopped", description: "被停下的" }),
+      task({ id: "i", status: "interrupted", description: "被中断的" }),
+    ]);
+    await renderStrip("claude");
+    // Both settled: they count toward the numerator, but nothing breathes
+    // and nothing claims completion.
+    expect(pill("子代理").textContent).toContain("2/2");
+    expect(container.querySelector(".animate-ping")).toBeNull();
+
+    await click(pill("子代理"));
+    const panelEl = container.querySelector("[data-testid='run-status-subagents']")!;
+    const panel = panelEl.textContent ?? "";
+    expect(panel).toContain("已停止");
+    expect(panel).toContain("已中断");
+    expect(panel).not.toContain("已完成");
+    // interrupted goes red like failed; stopped stays gray.
+    const rows = [...panelEl.querySelectorAll<HTMLButtonElement>("[data-agent-step-key]")];
+    const stoppedRow = rows.find((r) => r.textContent?.includes("已停止"))!;
+    const interruptedRow = rows.find((r) => r.textContent?.includes("已中断"))!;
+    expect(stoppedRow.querySelector(".text-text-error-primary")).toBeNull();
+    expect(interruptedRow.querySelector(".text-text-error-primary")).not.toBeNull();
   });
 
   it("correctly maps TaskCreate and subsequent TaskUpdate by taskId to complete status", async () => {

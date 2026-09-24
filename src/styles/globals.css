@@ -433,3 +433,143 @@ input[type="password"]::-ms-reveal,
 input[type="password"]::-ms-clear {
   display: none;
 }
+
+/* ---------------------------------------------------------------------------
+ * Collapsed streaming thinking
+ *
+ * The full-width folded process button is the status control. Its border is
+ * the status indicator: a narrow accent highlight travels from left to right
+ * around the entire frame, while the existing text shimmer and the brain icon
+ * give the same direction cue inside the box.
+ * --------------------------------------------------------------------------- */
+@keyframes process-live-border-flow {
+  from {
+    background-position: -120% 0;
+  }
+
+  to {
+    background-position: 120% 0;
+  }
+}
+
+@keyframes process-live-icon-glow {
+  0%,
+  100% {
+    color: var(--color-text-secondary);
+    filter: drop-shadow(0 0 0 transparent);
+  }
+
+  45%,
+  65% {
+    color: var(--color-accent-400);
+    filter: drop-shadow(
+      0 0 3px color-mix(in oklab, var(--color-accent-400) 65%, transparent)
+    );
+  }
+}
+
+@keyframes process-live-content-sheen {
+  0% {
+    opacity: 0;
+    transform: translateX(-180%);
+  }
+
+  18%,
+  72% {
+    opacity: 0.42;
+  }
+
+  100% {
+    opacity: 0;
+    transform: translateX(420%);
+  }
+}
+
+.process-live-marquee {
+  position: relative;
+  isolation: isolate;
+}
+
+.process-live-marquee::before {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  padding: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    transparent 35%,
+    color-mix(in oklab, var(--color-accent-500) 35%, transparent) 43%,
+    var(--color-accent-400) 50%,
+    color-mix(in oklab, var(--color-accent-500) 35%, transparent) 57%,
+    transparent 65%,
+    transparent 100%
+  );
+  background-size: 220% 100%;
+  background-position: -120% 0;
+  -webkit-mask:
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask:
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  mask-composite: exclude;
+  pointer-events: none;
+  filter: drop-shadow(
+    0 0 4px color-mix(in oklab, var(--color-accent-400) 60%, transparent)
+  );
+  animation: process-live-border-flow 1.8s linear infinite;
+}
+
+.process-live-content {
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  overflow: hidden;
+  border-radius: 4px;
+}
+
+.process-live-content-live::after {
+  content: "";
+  position: absolute;
+  inset: -4px auto -4px 0;
+  width: 34%;
+  border-radius: 999px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    color-mix(in oklab, var(--color-accent-400) 70%, transparent) 50%,
+    transparent
+  );
+  filter: blur(3px);
+  mix-blend-mode: screen;
+  pointer-events: none;
+  animation: process-live-content-sheen 1.8s linear infinite;
+}
+
+.process-live-thinking-icon {
+  animation: process-live-icon-glow 1.8s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .process-live-marquee::before {
+    animation: none;
+    background-position: 50% 0;
+    opacity: 0.65;
+  }
+
+  .process-live-thinking-icon {
+    animation: none;
+    color: var(--color-accent-400);
+    filter: none;
+  }
+
+  .process-live-content-live::after {
+    animation: none;
+    opacity: 0;
+  }
+}

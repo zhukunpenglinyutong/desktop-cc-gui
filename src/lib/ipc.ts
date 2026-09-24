@@ -401,6 +401,10 @@ export interface AppSettings {
   /** Beta entry points (设置 → 其他 → 内测功能): feature id -> enabled.
    *  Missing/false = the entry stays hidden (default off). */
   betaFeatures?: Record<string, boolean> | null;
+  /** Streaming process rows (thinking + tool calls) auto-open while they
+   *  stream: true/absent = auto-open (default), false = stay collapsed
+   *  until the user expands one (设置 → 通用 → 行为). */
+  thinkingAutoExpand?: boolean | null;
   /** Terminal shell override; null/empty = auto-detect. */
   terminalShellPath: string | null;
   /** DSH host address (default "127.0.0.1"). */

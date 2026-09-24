@@ -2,6 +2,7 @@ use super::{
     command_for_binary, images, push_session_id, tool_call_message, tool_call_patch, BuiltCommand,
     Engine, EngineEvent, SendRequest,
 };
+use super::events::TaskSummary;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::Mutex;
@@ -299,6 +300,104 @@ impl Engine for ClaudeEngine {
                             "total_tokens": post_tokens,
                         });
                         out.push(EngineEvent::Usage(usage_obj));
+                    }
+                } else if let Some(sub) = subtype {
+                    match sub {
+                        "task_started" => {
+                            if let Some(id) = value.get("task_id").and_then(Value::as_str) {
+                                out.push(EngineEvent::TaskStarted {
+                                    id: id.to_string(),
+                                    task_type: value
+                                        .get("task_type")
+                                        .and_then(Value::as_str)
+                                        .unwrap_or("")
+                                        .to_string(),
+                                    description: value
+                                        .get("description")
+                                        .and_then(Value::as_str)
+                                        .unwrap_or("")
+                                        .to_string(),
+                                    subagent_type: value
+                                        .get("subagent_type")
+                                        .and_then(Value::as_str)
+                                        .map(str::to_string),
+                                    is_backgrounded: value
+                                        .get("is_backgrounded")
+                                        .and_then(Value::as_bool),
+                                    spawn_depth: value.get("spawn_depth").and_then(Value::as_u64),
+                                    workflow_name: value
+                                        .get("workflow_name")
+                                        .and_then(Value::as_str)
+                                        .map(str::to_string),
+                                });
+                            }
+                        }
+                        "task_progress" => {
+                            if let Some(id) = value.get("task_id").and_then(Value::as_str) {
+                                out.push(EngineEvent::TaskProgress {
+                                    id: id.to_string(),
+                                    description: value
+                                        .get("description")
+                                        .and_then(Value::as_str)
+                                        .map(str::to_string),
+                                    last_tool: value
+                                        .get("last_tool_name")
+                                        .and_then(Value::as_str)
+                                        .map(str::to_string),
+                                    usage: value.get("usage").cloned(),
+                                });
+                            }
+                        }
+                        "task_notification" => {
+                            // A notification without a status is malformed:
+                            // defaulting it to "stopped" would mislabel the
+                            // task as user-stopped in the panel. Drop it; the
+                            // authoritative level frame converges the row.
+                            if let (Some(id), Some(status)) = (
+                                value.get("task_id").and_then(Value::as_str),
+                                value.get("status").and_then(Value::as_str),
+                            ) {
+                                out.push(EngineEvent::TaskNotification {
+                                    id: id.to_string(),
+                                    status: status.to_string(),
+                                });
+                            }
+                        }
+                        "background_tasks_changed" => {
+                            // A missing/non-array `tasks` field is not an empty set:
+                            // emitting TasksChanged with [] would REPLACE-wipe
+                            // genuinely running tasks in the reader and panel.
+                            if let Some(arr) = value.get("tasks").and_then(Value::as_array) {
+                                let tasks = arr
+                                    .iter()
+                                    .filter_map(|t| {
+                                        let id = t.get("task_id").and_then(Value::as_str)?;
+                                        Some(TaskSummary {
+                                            id: id.to_string(),
+                                            task_type: t
+                                                .get("task_type")
+                                                .and_then(Value::as_str)
+                                                .unwrap_or("")
+                                                .to_string(),
+                                            description: t
+                                                .get("description")
+                                                .and_then(Value::as_str)
+                                                .unwrap_or("")
+                                                .to_string(),
+                                            ambient: t
+                                                .get("ambient")
+                                                .and_then(Value::as_bool)
+                                                .unwrap_or(false),
+                                        })
+                                    })
+                                    .collect();
+                                out.push(EngineEvent::TasksChanged { tasks });
+                            }
+                        }
+                        // `task_updated` carries a wire-safe merge subset with no
+                        // stable schema; status converges via task_notification
+                        // and membership via background_tasks_changed.
+                        _ => {}
                     }
                 }
             }
@@ -1703,5 +1802,112 @@ mod tests {
         assert!(!args
             .windows(2)
             .any(|w| w == ["--permission-mode", "acceptEdits"]));
+    }
+}
+
+#[cfg(test)]
+mod task_frame_tests {
+    use super::*;
+    use serde_json::json;
+
+    fn parse(value: serde_json::Value) -> Vec<EngineEvent> {
+        let mut out = Vec::new();
+        ClaudeEngine::new().parse_line(&value.to_string(), &mut out);
+        out
+    }
+
+    #[test]
+    fn parses_task_started_with_subagent_meta() {
+        let events = parse(json!({
+            "type": "system", "subtype": "task_started",
+            "task_id": "ac32cb3e", "tool_use_id": "call_1",
+            "description": "回答 1+1 等于几", "subagent_type": "general-purpose",
+            "is_backgrounded": false, "spawn_depth": 1, "task_type": "local_agent"
+        }));
+        match &events[..] {
+            [EngineEvent::TaskStarted { id, task_type, description, subagent_type, is_backgrounded, spawn_depth, workflow_name }] => {
+                assert_eq!(id, "ac32cb3e");
+                assert_eq!(task_type, "local_agent");
+                assert_eq!(description, "回答 1+1 等于几");
+                assert_eq!(subagent_type.as_deref(), Some("general-purpose"));
+                assert_eq!(*is_backgrounded, Some(false));
+                assert_eq!(*spawn_depth, Some(1));
+                assert_eq!(*workflow_name, None);
+            }
+            other => panic!("unexpected events: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parses_workflow_name_from_task_started() {
+        let events = parse(json!({
+            "type": "system", "subtype": "task_started",
+            "task_id": "w1z0vpoph", "task_type": "local_workflow",
+            "description": "最小探针工作流", "workflow_name": "probe-wf"
+        }));
+        match &events[..] {
+            [EngineEvent::TaskStarted { workflow_name, .. }] => {
+                assert_eq!(workflow_name.as_deref(), Some("probe-wf"));
+            }
+            other => panic!("unexpected events: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parses_progress_description() {
+        let events = parse(json!({
+            "type": "system", "subtype": "task_progress",
+            "task_id": "w1z0vpoph", "description": "探针阶段: probe-1plus1"
+        }));
+        match &events[..] {
+            [EngineEvent::TaskProgress { id, description, .. }] => {
+                assert_eq!(id, "w1z0vpoph");
+                assert_eq!(description.as_deref(), Some("探针阶段: probe-1plus1"));
+            }
+            other => panic!("unexpected events: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parses_task_notification_status() {
+        let events = parse(json!({
+            "type": "system", "subtype": "task_notification",
+            "task_id": "w1z0vpoph", "status": "completed"
+        }));
+        match &events[..] {
+            [EngineEvent::TaskNotification { id, status }] => {
+                assert_eq!(id, "w1z0vpoph");
+                assert_eq!(status, "completed");
+            }
+            other => panic!("unexpected events: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parses_background_tasks_changed_as_replace_set() {
+        let events = parse(json!({
+            "type": "system", "subtype": "background_tasks_changed",
+            "tasks": [
+                {"task_id": "a", "task_type": "local_bash", "description": "ping"},
+                {"task_id": "b", "task_type": "local_agent", "description": "子代理", "ambient": true}
+            ]
+        }));
+        match &events[..] {
+            [EngineEvent::TasksChanged { tasks }] => {
+                assert_eq!(tasks.len(), 2);
+                assert_eq!(tasks[0].id, "a");
+                assert!(!tasks[0].ambient);
+                assert!(tasks[1].ambient);
+            }
+            other => panic!("unexpected events: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn ignores_task_updated_without_crashing() {
+        let events = parse(json!({
+            "type": "system", "subtype": "task_updated", "task_id": "x"
+        }));
+        assert!(events.is_empty());
     }
 }

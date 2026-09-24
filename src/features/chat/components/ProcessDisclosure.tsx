@@ -176,11 +176,29 @@ const FrozenStepRow = memo(function FrozenStepRow({
   );
 });
 
+/** Live thinking window: the last ~2000 chars, cut at a LINE boundary so a
+ *  row slides out as a whole instead of dissolving character by character.
+ *  `truncated` tells the surface to fade its top edge, hinting at the
+ *  content above the window. Exported for tests. */
+export function liveThinkingWindow(text: string): { body: string; truncated: boolean } {
+  const WINDOW_CHARS = 2000;
+  if (text.length <= WINDOW_CHARS) return { body: text, truncated: false };
+  const cut = text.length - WINDOW_CHARS;
+  const newline = text.indexOf("\n", cut);
+  // Keep the char cut when there is no newline inside the window (one
+  // enormous line) — and when the first newline sits so close to the tail
+  // that snapping to it would collapse the window to the few characters
+  // after a giant line. Half the budget is the least a snapped window keeps.
+  const start = newline === -1 || text.length - newline - 1 < WINDOW_CHARS / 2 ? cut : newline + 1;
+  return { body: text.slice(start), truncated: true };
+}
+
 /** Thinking body: brain header + left-railed gray content, mirroring the
  * reference chat UI. Plain pre-wrapped text — never markdown-reparsed per
- * delta — but paced by the same reveal as assistant markdown: a provider
- * burst (at 200 tok/s OMP writes ~100 characters every ~144ms) is spread
- * across the frames of its own arrival cadence instead of landing whole. */
+ * delta — but paced by the same reveal as assistant markdown. During live
+ * output, only the last ~2000 revealed characters are shown; after settlement
+ * the full text is available. Titled sections (mixed bodies) fold individually
+ * from their own header without losing their state as live text grows. */
 export function ThinkingSurface({
   text,
   title,
@@ -195,19 +213,45 @@ export function ThinkingSurface({
   const controller = useLiveReveal(text, Boolean(live));
   const revealed = useRevealed(controller, 0, text.length);
   const reader = useMemo(() => createVisibleTextReader(text), [text]);
-  const body = live ? reader.prefix(revealed) : text;
+  const revealedText = live ? reader.prefix(revealed) : text;
+  const { body, truncated } = live
+    ? liveThinkingWindow(revealedText)
+    : { body: text, truncated: false };
+  const [open, setOpen] = useState(true);
   return (
     <div className="flex flex-col gap-1" data-process-item-index={itemIndex}>
       {title && (
-        <div className="flex items-center gap-1.5 text-body-regular text-text-tertiary">
+        <button
+          type="button"
+          aria-expanded={open}
+          onClick={() => setOpen((v) => !v)}
+          className="flex w-fit cursor-pointer items-center gap-1.5 text-body-regular text-text-tertiary transition-colors hover:text-text-secondary"
+        >
           <Brain className="size-3.5" aria-hidden />
           <span>{title}</span>
-        </div>
+          <ChevronRight
+            className={cx("size-3 transition-transform duration-150", open && "rotate-90")}
+            aria-hidden
+          />
+        </button>
       )}
       <div
-        className="ml-2 whitespace-pre-wrap break-words border-l border-foreground-icon-quaternary pl-4 text-[12px] leading-[1.65] text-text-tertiary"
+        className={cx(
+          "grid transition-[grid-template-rows] duration-300 ease-out motion-reduce:transition-none",
+          open ? "grid-rows-[1fr]" : "grid-rows-[0fr]",
+        )}
       >
-        {body}
+        <div className="min-h-0 overflow-hidden">
+          <div
+            className={cx(
+              "ml-2 whitespace-pre-wrap break-words border-l border-foreground-icon-quaternary pl-4 text-[12px] leading-[1.65] text-text-tertiary",
+              truncated &&
+                "[mask-image:linear-gradient(to_bottom,transparent_0,#000_36px)] [-webkit-mask-image:linear-gradient(to_bottom,transparent_0,#000_36px)]",
+            )}
+          >
+            {body}
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -221,7 +265,9 @@ type ExpansionProps = { auto: boolean; live: boolean; thinking: boolean };
  *  expanded/overridden pair. Automation opens a row while its thinking is
  *  streaming and folds it the moment that thinking settles — unless
  *  `thinkingAutoCollapse` is off (设置 → 通用 → 行为), in which case the row
- *  stays open so the timeline does not jump shut. A superseded or
+ *  stays open so the timeline does not jump shut. With `thinkingAutoExpand`
+ *  off, a row never opens itself on streaming changes; the timeline's search
+ *  jump is unaffected (it arrives as an `auto` flip below). A superseded or
  *  turn-settled row folds either way, until the user's own click takes
  *  over. */
 function expansionTransition(
@@ -230,12 +276,13 @@ function expansionTransition(
   expanded: boolean,
   overridden: boolean,
   thinkingAutoCollapse: boolean,
+  thinkingAutoExpand: boolean,
 ): { expanded: boolean; overridden: boolean } {
   if (next.auto && !prev.auto) {
     // Became the latest row: open it and hand control back to automation.
     return { expanded: true, overridden: false };
   }
-  if (next.thinking && !prev.thinking && !overridden) {
+  if (thinkingAutoExpand && next.thinking && !prev.thinking && !overridden) {
     // Thinking resumed inside this row (extended thinking between tool
     // calls): show it again unless the user folded the row on purpose.
     return { expanded: true, overridden };
@@ -264,6 +311,7 @@ function useProcessExpansion(
   turnLive: boolean,
   hasLiveThinking: boolean,
   thinkingAutoCollapse: boolean,
+  thinkingAutoExpand: boolean,
   searchRequest?: string,
 ) {
   const [expanded, setExpanded] = useState(autoExpand || searchRequest !== undefined);
@@ -279,7 +327,7 @@ function useProcessExpansion(
     setPrev(next);
     const settled = searchRequest !== undefined && searchRequest !== prev.searchRequest
       ? { expanded: true, overridden: true }
-      : expansionTransition(prev, next, expanded, overridden, thinkingAutoCollapse);
+      : expansionTransition(prev, next, expanded, overridden, thinkingAutoCollapse, thinkingAutoExpand);
     // Setting state to its current value bails out without a re-render, so
     // the no-op transitions are free.
     setOverridden(settled.overridden);
@@ -442,6 +490,7 @@ export const ProcessDisclosure = memo(function ProcessDisclosure({
   autoExpand = false,
   turnLive = false,
   thinkingAutoCollapse = true,
+  thinkingAutoExpand = true,
   processId,
   seenTools,
   searchTarget,
@@ -456,13 +505,25 @@ export const ProcessDisclosure = memo(function ProcessDisclosure({
    *  通用 → 行为): keep the settled thinking expanded so the timeline does
    *  not jump shut; the user can still fold it by hand. */
   thinkingAutoCollapse?: boolean;
+  /** True (default): the row opens itself while its thinking streams and
+   *  when thinking resumes mid-turn. False (设置 → 通用 → 行为): streaming
+   *  rows stay collapsed until the user expands one; a search jump still
+   *  opens the row (the timeline feeds that in through autoExpand). */
+  thinkingAutoExpand?: boolean;
   processId: number;
   seenTools: Set<string>;
   searchTarget?: ProcessSearchTarget;
 }) {
   const { t } = useTranslation();
   const hasLiveThinking = items.some((item) => item.type === "thinking" && item.live);
-  const { expanded, toggleExpanded } = useProcessExpansion(autoExpand, turnLive, hasLiveThinking, thinkingAutoCollapse, searchTarget?.requestKey);
+  const { expanded, toggleExpanded } = useProcessExpansion(
+    autoExpand,
+    turnLive,
+    hasLiveThinking,
+    thinkingAutoCollapse,
+    thinkingAutoExpand,
+    searchTarget?.requestKey,
+  );
   const reduceMotion = useReducedMotion() ?? false;
   const largeProcess = items.length > PROCESS_PAGE_SIZE;
   const unseenToolCount = largeProcess
@@ -477,6 +538,7 @@ export const ProcessDisclosure = memo(function ProcessDisclosure({
   }, [items, processId, seenTools]);
   const thinkingCount = items.filter((item) => item.type === "thinking").length;
   const toolCount = items.length - thinkingCount;
+  const hasThinking = thinkingCount > 0;
   // A lone thinking block skips the "思考 1 次" summary: the header is the
   // "思考过程" title itself, and the expanded body drops the inner repeat.
   const singleThinking = items.length === 1 && items[0].type === "thinking";
@@ -495,21 +557,46 @@ export const ProcessDisclosure = memo(function ProcessDisclosure({
     const timeout = window.setTimeout(() => setBodyMounted(false), PROCESS_COLLAPSE_MS);
     return () => window.clearTimeout(timeout);
   }, [showBody, skipProcessAnimation]);
+  // Folded while this row's own thinking still streams: mark the header so
+  // CSS can dress it with the live ring (decorative "still working" cue).
+  const liveCollapsed = !expanded && hasLiveThinking;
   return (
     <div className="mb-1.5 flex flex-col">
       <button
         type="button"
         aria-expanded={expanded}
         onClick={toggleExpanded}
-        className="flex w-full cursor-pointer flex-col text-left"
+        className={cx(
+          "group flex w-full cursor-pointer flex-col rounded-lg text-left",
+          liveCollapsed && "process-live-marquee",
+        )}
       >
-        <span className="flex items-center gap-1 py-0.5 text-body-regular text-text-secondary transition-colors hover:text-text-primary">
-          {singleThinking && <Brain className="size-3.5" aria-hidden />}
-          {label}
-          <ChevronRight
-            className={cx("size-3.5 transition-transform duration-200", expanded && "rotate-90")}
-            aria-hidden
-          />
+        <span className="flex w-fit items-center gap-1 rounded-lg py-0.5 text-body-regular text-text-secondary transition-colors group-hover:text-text-primary">
+          <span
+            className={cx(
+              "process-live-content",
+              liveCollapsed && "process-live-content-live",
+            )}
+          >
+            {hasThinking && (
+              <Brain
+                className={cx("size-3.5", liveCollapsed && "process-live-thinking-icon")}
+                aria-hidden
+              />
+            )}
+            <span className={liveCollapsed ? "agent-progress-loading-text" : undefined}>
+              {label}
+              {/* The marquee is purely visual: announce the still-working
+                  state to screen readers while folded and streaming. */}
+              {liveCollapsed && (
+                <span className="sr-only">{` (${t("chat.tasks.status.running")})`}</span>
+              )}
+            </span>
+            <ChevronRight
+              className={cx("size-3.5 transition-transform duration-200", expanded && "rotate-90")}
+              aria-hidden
+            />
+          </span>
         </span>
       </button>
       {/* Height-only clip, not AnimatePresence / scaleY: a presence context

@@ -116,6 +116,81 @@ describe("a turn this client did not start", () => {
     expect(d.refreshSessionUsage).toHaveBeenCalledWith(KEY);
   });
 
+  it("routes a task frame without letting it claim the turn", () => {
+    // Session restored mid-turn: streaming, but no run owns it yet.
+    useChatStore.setState({
+      bySession: {
+        [KEY]: {
+          ...EMPTY_SESSION,
+          streaming: true,
+          currentRunId: null,
+          messages: [{ seq: 1, role: "user", text: "go", ts: null }],
+        },
+      },
+      streamingByKey: { [KEY]: true },
+    });
+
+    handleEngineEvents(
+      [{ runId: "run-9", sessionId: "s-1", engine: "codex", seq: 2, kind: "task_started" as const,
+        data: { taskId: "w1", taskType: "local_agent", description: "a" } }],
+      deps(),
+    );
+    const mid = useChatStore.getState().bySession[KEY]!;
+    // Task frames are panel state: routed, but no claim and no flag changes.
+    expect(runRouting.get("run-9")).toBe(KEY);
+    expect(mid.currentRunId).toBeNull();
+    expect(mid.streaming).toBe(true);
+    expect(mid.tasks).toHaveLength(1);
+
+    // The run's first content frame is what claims the turn.
+    handleEngineEvents(
+      [{ runId: "run-9", sessionId: "s-1", engine: "codex", seq: 3, kind: "delta" as const, data: "正文" }],
+      deps(),
+    );
+    expect(useChatStore.getState().bySession[KEY]!.currentRunId).toBe("run-9");
+  });
+
+  it("claims a streaming unclaimed session only on a content frame", () => {
+    useChatStore.setState({
+      bySession: {
+        [KEY]: {
+          ...EMPTY_SESSION,
+          streaming: true,
+          currentRunId: null,
+          messages: [{ seq: 1, role: "user", text: "go", ts: null }],
+        },
+      },
+      streamingByKey: { [KEY]: true },
+    });
+
+    // Bookkeeping frames (usage/model/...) route and apply, but only content
+    // proves the run owns the reply — no claim yet.
+    handleEngineEvents(
+      [observed("usage", 2, { input_tokens: 100, output_tokens: 5 })],
+      deps(),
+    );
+    expect(useChatStore.getState().bySession[KEY]!.currentRunId).toBeNull();
+    expect(runRouting.get("run-7")).toBe(KEY);
+
+    handleEngineEvents([observed("delta", 3, "正文")], deps());
+    expect(useChatStore.getState().bySession[KEY]!.currentRunId).toBe("run-7");
+  });
+
+  it("does not light an idle session up for a bare task frame", () => {
+    handleEngineEvents(
+      [{ runId: "run-9", sessionId: "s-1", engine: "codex", seq: 2, kind: "tasks" as const,
+        data: { tasks: [{ taskId: "w1", taskType: "local_agent", description: "a" }] } }],
+      deps(),
+    );
+    const s = useChatStore.getState().bySession[KEY]!;
+    expect(s.streaming).toBe(false);
+    expect(s.currentRunId).toBeNull();
+    expect(useChatStore.getState().streamingByKey[KEY]).toBeUndefined();
+    // Still routed (Stop and the sweep reach it) and the row still lands.
+    expect(runRouting.get("run-9")).toBe(KEY);
+    expect(s.tasks).toHaveLength(1);
+  });
+
   it("ignores an old completion after the next run has started", () => {
     handleEngineEvents([observed("done", 2, { usage: null })], deps());
     handleEngineEvents([{ ...observed("delta", 1, "next"), runId: "run-next" }], deps());

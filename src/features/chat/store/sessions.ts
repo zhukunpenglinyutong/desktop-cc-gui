@@ -2,6 +2,7 @@ import { normalizeOmpServiceTier } from "@/lib/omp-service-tier";
 import {
   ipc,
   type EngineInfo,
+  type Message,
   type SessionMeta,
   type Workspace,
 } from "@/lib/ipc";
@@ -62,6 +63,108 @@ function withoutArchived(
     (session) =>
       !archived[sessionKey(session.engine, session.sessionId, session.workspacePath)],
   );
+}
+
+/** Merge transcript rows the live view is missing into the open session's
+ *  message list, without touching what is already on screen.
+ *
+ *  Used when a foreign run's frames were dropped (same-session dual run):
+ *  its completion turn is in the transcript but was never streamed here.
+ *  History rows are aligned against the local rows in order (role + text;
+ *  live rows never match — their text is a prefix of the final one). A
+ *  history row with no local counterpart is inserted where the alignment
+ *  says it belongs; unmatched local rows (the live row of the run still
+ *  streaming, ephemeral grant/question cards) keep their place. Inserted
+ *  rows get fresh seqs so existing row identities (React keys, card seq
+ *  references) stay stable. Idempotent: once every history row has a local
+ *  counterpart, the input is returned unchanged. */
+export function mergeMissingTranscriptRows(
+  local: Message[],
+  history: Message[],
+): Message[] {
+  if (history.length === 0) return local;
+  // Greedy in-order alignment of history rows to local rows.
+  const matchAt = new Array<number>(history.length).fill(-1);
+  let li = 0;
+  for (let hi = 0; hi < history.length && li < local.length; hi++) {
+    const h = history[hi];
+    for (let j = li; j < local.length; j++) {
+      const m = local[j];
+      if (!m.live && m.role === h.role && m.text === h.text) {
+        matchAt[hi] = j;
+        li = j + 1;
+        break;
+      }
+    }
+  }
+  if (matchAt.every((j) => j >= 0)) return local;
+  let nextSeq = Math.max(0, ...local.map((m) => m.seq), ...history.map((m) => m.seq)) + 1;
+  const out: Message[] = [];
+  let cursor = 0;
+  for (let hi = 0; hi < history.length; hi++) {
+    const j = matchAt[hi];
+    if (j < 0) {
+      // Missing locally: a dropped run's row. Insert it ahead of the next
+      // aligned local row so the transcript's order is preserved.
+      out.push({ ...history[hi], seq: nextSeq++ });
+      continue;
+    }
+    for (; cursor < j; cursor++) out.push(local[cursor]);
+    out.push(local[j]);
+    cursor = j + 1;
+  }
+  for (; cursor < local.length; cursor++) out.push(local[cursor]);
+  return out;
+}
+
+/** Targeted transcript re-read for one open session: fold transcript rows
+ *  the live view missed (a foreign run's dropped completion turn) into
+ *  bySession[key].messages. Unlike selectSession's load — which returns
+ *  early once messages exist — this merges on top of a live session
+ *  without disturbing the in-flight run's rows or pending streams. The
+ *  transcript write can trail the terminal event that triggered this, so
+ *  an empty first merge retries once after a short delay; the merge is
+ *  idempotent, and a session already holding the rows is a no-op. */
+export async function mergeTranscriptTail(
+  set: StoreSet,
+  get: StoreGet,
+  loadHistoryPage: LoadHistoryPage,
+  key: string,
+  retryDelayMs = 400,
+): Promise<void> {
+  // Native session keys are `${engine}/${sessionId}`; the workspace comes
+  // from the tab that owns the key (remote transcripts resolve through it).
+  const tab = get().openTabs.find(
+    (t) => sessionKey(t.engine, t.sessionId, t.workspacePath) === key,
+  );
+  const slash = key.indexOf("/");
+  const engine = tab?.engine ?? (slash > 0 ? key.slice(0, slash) : "");
+  const sessionId = tab?.sessionId ?? (slash > 0 ? key.slice(slash + 1) : "");
+  if (!engine || !sessionId) return;
+  const workspacePath = tab?.workspacePath ?? get().active?.workspacePath ?? "";
+  const mergeOnce = async (): Promise<boolean> => {
+    const page = await loadHistoryPage(engine, sessionId, workspacePath, 100).catch(
+      () => null,
+    );
+    if (!page || page.messages.length === 0) return false;
+    let merged = false;
+    set((s) => {
+      const cur = s.bySession[key];
+      if (!cur) return {};
+      const messages = mergeMissingTranscriptRows(cur.messages, page.messages);
+      if (messages === cur.messages) return {};
+      merged = true;
+      return { bySession: { ...s.bySession, [key]: { ...cur, messages } } };
+    });
+    return merged;
+  };
+  if (await mergeOnce()) return;
+  if (retryDelayMs > 0) {
+    const { promise, resolve } = Promise.withResolvers<void>();
+    setTimeout(resolve, retryDelayMs);
+    await promise;
+    await mergeOnce();
+  }
 }
 
 /**
@@ -136,6 +239,14 @@ export function createSessionActions(
               markUnseenIfBackground,
               upsertSessionMeta: (meta) => upsertSessionMetaInto(set, meta),
               refreshSessionUsage: (k) => get().refreshSessionUsage(k),
+              // A foreign run's dropped frames (dual-run) are backfilled from
+              // the transcript when that run settles — rescanSessions only
+              // refreshes the sidebar, it never touches an open session's
+              // messages.
+              reloadTranscript: (k) =>
+                void mergeTranscriptTail(set, get, loadHistoryPage, k).catch(
+                  () => {},
+                ),
             }),
           ),
         ),
@@ -224,6 +335,7 @@ export function createSessionActions(
             archivedWorkspaces: settings.archivedWorkspaces ?? [],
             sendShortcut: settings.composerSendShortcut ?? "enter",
             thinkingAutoCollapse: settings.thinkingAutoCollapse ?? true,
+            thinkingAutoExpand: settings.thinkingAutoExpand ?? true,
           }),
         )
         .catch(() => {});

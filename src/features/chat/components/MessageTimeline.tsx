@@ -22,6 +22,8 @@ import { buildRows, collectToolKeys, rowKey, type TimelineRow } from "./timeline
 import { formatDuration } from "./format-duration";
 import { modelDisplayName } from "@/features/settings/usage-model";
 import { ProcessDisclosure, type ProcessSearchTarget } from "./ProcessDisclosure";
+import { BackgroundTasksLine } from "./BackgroundTasksPanel";
+import { runningTaskCount } from "../background-tasks";
 import { CollapsibleMessage } from "./CollapsibleMessage";
 import { useScrollFollow, useTailPin } from "./use-scroll-follow";
 import { ScrollControl } from "./ScrollControl";
@@ -46,6 +48,7 @@ const TimelineRowView = memo(function TimelineRowView({
   turnLive,
   autoExpand,
   thinkingAutoCollapse,
+  thinkingAutoExpand,
   seenTools,
   searchTarget,
 }: {
@@ -54,10 +57,14 @@ const TimelineRowView = memo(function TimelineRowView({
   /** True while the current turn is still streaming; suppresses the footer. */
   turnLive: boolean;
   /** True on the timeline's last process row: it rides open until a newer
-   * one appears, and stays open once the turn settles. */
+   *  one appears, and stays open once the turn settles. Only fed through
+   *  when the auto-expand setting allows it (or on a search jump). */
   autoExpand: boolean;
   /** False keeps a settled thinking row expanded (设置 → 通用 → 行为). */
   thinkingAutoCollapse: boolean;
+  /** False keeps streaming process rows collapsed until the user expands
+   *  one (设置 → 通用 → 行为). */
+  thinkingAutoExpand: boolean;
   seenTools: Set<string>;
   searchTarget?: ProcessSearchTarget;
 }) {
@@ -85,6 +92,7 @@ const TimelineRowView = memo(function TimelineRowView({
         autoExpand={autoExpand}
         turnLive={turnLive}
         thinkingAutoCollapse={thinkingAutoCollapse}
+        thinkingAutoExpand={thinkingAutoExpand}
         processId={row.firstSeq}
         seenTools={seenTools}
         searchTarget={searchTarget}
@@ -463,6 +471,7 @@ export const MessageTimeline = memo(function MessageTimeline({
 
   const { t } = useTranslation();
   const thinkingAutoCollapse = useChatStore((s) => s.thinkingAutoCollapse);
+  const thinkingAutoExpand = useChatStore((s) => s.thinkingAutoExpand);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const items = session.messages;
   const rows = useMemo(() => buildRows(items), [items]);
@@ -498,7 +507,12 @@ export const MessageTimeline = memo(function MessageTimeline({
   // settles: while streaming, mid-turn segments (kimi multi-message replies)
   // are not the final word.
   const turnLive = streaming;
-  const count = rows.length + (streaming ? 1 : 0);
+  // A turn whose reply settled but whose background tasks still run keeps its
+  // tail slot: the marker below it is what tells the reader the turn is not
+  // over, even though nothing streams.
+  const backgroundActive = session.backgroundActive;
+  const runningCount = runningTaskCount(session.tasks);
+  const count = rows.length + (streaming || backgroundActive ? 1 : 0);
 
   const virtualizer = useVirtualizer({
     count,
@@ -646,37 +660,50 @@ export const MessageTimeline = memo(function MessageTimeline({
                 className="py-2"
               >
                 {isTail ? (
-                  <AgentThinking
-                    variant="wave"
-                    label={session.compaction ? t("chat.compactingContext") : t("chat.thinking")}
-                    className="py-2"
-                    startedAt={session.turnStartedAt ?? undefined}
-                    durationFormatter={(d) => t("chat.metaDuration", { duration: d })}
-                    model={activeModelFormatted}
-                    effort={activeEffortFormatted}
-                    usage={liveUsage}
-                    retry={
-                      session.retry
-                        ? session.retry.max > 0
-                          ? t("chat.retrying", {
-                              attempt: session.retry.attempt,
-                              max: session.retry.max,
-                            })
-                          : t("chat.retryingNoMax", { attempt: session.retry.attempt })
-                        : null
-                    }
-                    retryDetail={session.retry?.message || null}
-                  />
+                  streaming ? (
+                    <>
+                      {/* Both phases of the turn share this one slot: the
+                          background marker stays visible above the thinking
+                          row while the completion turn streams, and becomes
+                          the slot's only content once the reply settles. */}
+                      {backgroundActive && <BackgroundTasksLine count={runningCount} />}
+                      <AgentThinking
+                        variant="wave"
+                        label={session.compaction ? t("chat.compactingContext") : t("chat.thinking")}
+                        className="py-2"
+                        startedAt={session.turnStartedAt ?? undefined}
+                        durationFormatter={(d) => t("chat.metaDuration", { duration: d })}
+                        model={activeModelFormatted}
+                        effort={activeEffortFormatted}
+                        usage={liveUsage}
+                        retry={
+                          session.retry
+                            ? session.retry.max > 0
+                              ? t("chat.retrying", {
+                                  attempt: session.retry.attempt,
+                                  max: session.retry.max,
+                                })
+                              : t("chat.retryingNoMax", { attempt: session.retry.attempt })
+                            : null
+                        }
+                        retryDetail={session.retry?.message || null}
+                      />
+                    </>
+                  ) : (
+                    <BackgroundTasksLine count={runningCount} />
+                  )
                 ) : (
                   <TimelineRowView
                     row={rows[item.index]}
                     workspacePath={workspacePath}
                     turnLive={turnLive}
                     autoExpand={
-                      rowKey(rows[item.index]) === lastProcessKey ||
+                      (thinkingAutoExpand &&
+                        rowKey(rows[item.index]) === lastProcessKey) ||
                       item.index === currentSearchRow
                     }
                     thinkingAutoCollapse={thinkingAutoCollapse}
+                    thinkingAutoExpand={thinkingAutoExpand}
                     seenTools={seenTools}
                     searchTarget={item.index === currentSearchRow ? processSearchTarget : undefined}
                   />

@@ -36,6 +36,7 @@ import {
   patchQuestionByRequestId,
   rememberProviderForRun,
   settleOrphanedRuns,
+  settleRunTasks,
   upsertSessionMetaInto,
 } from "./engine-events";
 import { ASK_OTHER_OPTION, askLoops, beginAskSubmit, revertAskSubmit } from "./ask-loop";
@@ -210,6 +211,11 @@ export function createMessagingActions(
         rememberProviderForRun(key, provider);
       }
     }
+    // The run id exists before the optimistic write: the turn claims the
+    // session for it (currentRunId), so an older run of this session that is
+    // still streaming its completion turn cannot settle this turn's state
+    // under it (see ownsTurn / isForeignContent).
+    const requestedRunId = `run-${newId()}`;
     // Optimistic user message.
     set((s) => ({
       streamingByKey: setStreamingFlag(s.streamingByKey, key, true),
@@ -230,6 +236,10 @@ export function createMessagingActions(
         error: null,
         interrupted: false,
         turnStartedAt: Date.now(),
+        currentRunId: requestedRunId,
+        // This send starts the session's new turn: any background wait
+        // left over from the previous run no longer describes the phase.
+        awaitingTasks: false,
         activeModel: model,
         activeEffort: effort,
         activeProvider: provider,
@@ -243,7 +253,6 @@ export function createMessagingActions(
     );
     // Refresh independently: a slow history read must not delay sending or Stop.
     void get().refreshSessionUsage(key);
-    const requestedRunId = `run-${newId()}`;
     settleOrphanedRuns(set, routeRun(requestedRunId, key));
     if (agentResolveError) {
       patchSession(set, key, { error: agentResolveError });
@@ -272,7 +281,10 @@ export function createMessagingActions(
         providerId: provider,
         computerUse: options?.computerUse === true,
       });
-      // Older backends choose their own id. Retire the provisional route.
+      // Older backends choose their own id. Retire the provisional route —
+      // and with it the provisional claim: a claim whose run is no longer
+      // routed to this session reads as no claim (see turnOwner), so the run
+      // the backend actually started can still own and settle the turn.
       if (result.runId !== requestedRunId) {
         runRouting.delete(requestedRunId);
         untrackRun(requestedRunId);
@@ -410,6 +422,8 @@ export function createMessagingActions(
         error: String(error),
         streaming: false,
         turnStartedAt: null,
+        // The send never became a turn: drop the claim it wrote.
+        currentRunId: null,
       });
       // The send never became a turn, so no engine event will report one:
       // without this the rest of the queue waits for a settle that is not
@@ -650,6 +664,13 @@ export function createMessagingActions(
         active.sessionId,
         active.workspacePath,
       );
+      // This session's current runs: the ones Stop is about to kill, so no
+      // task frame will ever report a terminal status for what they left
+      // running. Read here — before the awaits below — because the settle
+      // that follows must not catch a run started while Stop was in flight.
+      const stoppedRunIds = [...runRouting]
+        .filter(([, routed]) => routed === key)
+        .map(([runId]) => runId);
       // Settle locally FIRST: the killed run's done event can arrive while
       // the kill IPCs below are still in flight, and onDone drains the queue
       // whenever interrupted is still false — that would fire the next
@@ -662,6 +683,26 @@ export function createMessagingActions(
             ? applyStreamParts(cur.messages, pending.parts, pending.model)
             : cur.messages,
         );
+        // A session that is (or was) waiting on background work has rows the
+        // stop just killed; a plain streaming turn has nothing to settle.
+        // `stopped`, not `interrupted`: the user asked for this stop, and the
+        // store reserves 已中断 for a run that died without a notification.
+        // Runs whose routing entry is already gone are out of this scope:
+        // the orphan sweep settles whatever they left running.
+        // backgroundActive excludes ambient tasks, so it alone would skip
+        // the settle for a session whose only running rows are ambient —
+        // those rows would spin forever (routing is deleted below and the
+        // settledRunIds gate drops their late frames). Look at the stopped
+        // runs' own rows instead.
+        const stoppingTasks =
+          cur.awaitingTasks ||
+          cur.tasks.some((t) => stoppedRunIds.includes(t.runId) && t.status === "running");
+        const tasks = stoppingTasks
+          ? stoppedRunIds.reduce(
+              (acc, runId) => settleRunTasks(acc, runId, "stopped"),
+              cur.tasks,
+            )
+          : cur.tasks;
         return {
           bySession: {
             ...s.bySession,
@@ -672,6 +713,32 @@ export function createMessagingActions(
               interrupted: true,
               turnStartedAt: null,
               retry: null,
+              // The stopped runs are settled: the session is unclaimed again,
+              // so their late frames cannot read as a newer run's turn.
+              currentRunId: null,
+              // The wait ends with the work it waited for: without this the
+              // tail indicator keeps claiming a task is running and the pill
+              // keeps breathing over rows the user just stopped.
+              ...(stoppingTasks
+                ? {
+                    tasks,
+                    awaitingTasks: false,
+                    // Same derivation as withTaskDerived: ambient tasks never
+                    // drive the turn-level flag.
+                    backgroundActive: tasks.some((t) => t.status === "running" && !t.ambient),
+                  }
+                : {}),
+              // Mark the runs dead in this same write. The kill IPCs below can
+              // take a while, and the last task frames of the dying process
+              // arrive inside that window — still routed, with no done that
+              // ever marked them settled. Without this the cleared wait above
+              // would no longer shield them: adoptObservedRun would reopen the
+              // turn (streaming true, composer queueing) for a process that is
+              // already gone. Idempotent with the loop at the end of the stop.
+              settledRunIds: stoppedRunIds.reduce(
+                (acc, runId) => rememberSettledRun({ settledRunIds: acc }, runId),
+                cur.settledRunIds ?? [],
+              ),
             },
           },
           streamingByKey: setStreamingFlag(s.streamingByKey, key, false),
@@ -684,7 +751,11 @@ export function createMessagingActions(
         await ipc.interruptSession(active.sessionId).catch(() => false);
       const deadRunIds: string[] = [];
       for (const [runId, routed] of runRouting) {
-        if (routed === key) deadRunIds.push(runId);
+        // Intersect with the pre-kill snapshot: a run started while the kill
+        // IPCs were in flight (Stop→Send race) is routed to this key but was
+        // never asked to stop — killing and settling it here would strand its
+        // streaming state and drop all its frames.
+        if (routed === key && stoppedRunIds.includes(runId)) deadRunIds.push(runId);
       }
       // Independent kills, one IPC call per routed run — fired together.
       await Promise.all(

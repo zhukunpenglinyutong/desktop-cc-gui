@@ -114,6 +114,42 @@ pub enum EngineEvent {
         servers: Vec<(String, Option<String>)>,
         tools: Vec<String>,
     },
+    /// A background task started inside the run (claude `system/task_started`):
+    /// a Workflow, a Task-tool subagent, or a background shell. Non-terminal:
+    /// these frames also arrive after the turn's done, while the task runs.
+    TaskStarted {
+        id: String,
+        task_type: String,
+        description: String,
+        subagent_type: Option<String>,
+        is_backgrounded: Option<bool>,
+        spawn_depth: Option<u64>,
+        workflow_name: Option<String>,
+    },
+    /// Live progress for one task (`system/task_progress`). The description is
+    /// what the task is doing right now: a workflow reports "<phase>: <agent>",
+    /// a subagent its current tool activity ("Running Wait 590 seconds").
+    TaskProgress {
+        id: String,
+        description: Option<String>,
+        last_tool: Option<String>,
+        usage: Option<Value>,
+    },
+    /// One task reached a terminal status (`system/task_notification`):
+    /// completed | failed | stopped.
+    TaskNotification { id: String, status: String },
+    /// The full set of live background tasks (`system/background_tasks_changed`).
+    /// REPLACE semantics: consumers swap their set for this payload, so a
+    /// missed start/stop edge cannot wedge a stale running indicator.
+    TasksChanged { tasks: Vec<TaskSummary> },
+}
+/// One live background task, as the CLI's level-signal frame reports it.
+#[derive(Debug, Clone)]
+pub struct TaskSummary {
+    pub id: String,
+    pub task_type: String,
+    pub description: String,
+    pub ambient: bool,
 }
 /// One todo entry carried to the frontend.
 #[derive(Debug, Clone, Serialize)]

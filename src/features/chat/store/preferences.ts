@@ -38,6 +38,7 @@ export function createPreferenceActions(
   | "setThreadLimit"
   | "setSendShortcut"
   | "setThinkingAutoCollapse"
+  | "setThinkingAutoExpand"
 > {
   const { set, get, stampActiveTab } = deps;
 
@@ -144,6 +145,9 @@ export function createPreferenceActions(
     },
     setThinkingAutoCollapse: (autoCollapse) => {
       set({ thinkingAutoCollapse: autoCollapse });
+    },
+    setThinkingAutoExpand: (autoExpand) => {
+      set({ thinkingAutoExpand: autoExpand });
     },
   };
 }

@@ -131,6 +131,11 @@ pub struct AppSettings {
     /// Empty/missing = the entry stays hidden; every id is off by default.
     #[serde(default)]
     pub beta_features: HashMap<String, bool>,
+    /// Whether streaming process rows (thinking + tool calls) auto-open while
+    /// streaming: None/Some(true) = auto-open (default), Some(false) = stay
+    /// collapsed until the user expands one (设置 → 通用 → 行为 → 思考过程).
+    #[serde(default)]
+    pub thinking_auto_expand: Option<bool>,
     /// Terminal shell override; None/empty = auto-detect from $SHELL/COMSPEC.
     /// Validated with the same spawn-target rules as bin overrides.
     #[serde(default)]
@@ -330,6 +335,7 @@ impl Default for AppSettings {
             reset_ui_scale_shortcut: default_reset_ui_scale_shortcut(),
             thinking_auto_collapse: None,
             beta_features: HashMap::new(),
+            thinking_auto_expand: None,
             terminal_shell_path: None,
             dsh_host: None,
             dsh_port: None,

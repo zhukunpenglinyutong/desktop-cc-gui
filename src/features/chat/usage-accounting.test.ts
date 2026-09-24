@@ -96,6 +96,29 @@ describe("usage accounting", () => {
     expect(ipc.usageRecord).toHaveBeenCalledTimes(1);
   });
 
+  /** A reply that ends with background tasks still running is booked the
+   *  moment its own segment ends: the process can die in the background phase
+   *  (no completion turn ever arrives), and the turn's tokens must not be lost
+   *  with it. The completion turn's done then skips the booking. */
+  it("books a reply ending on background tasks, once, at its own done", () => {
+    handleEngineEvents(
+      [event("done", 9, { usage: { input_tokens: 7, output_tokens: 3 }, backgroundTasks: 1 })],
+      deps(),
+    );
+    expect(ipc.usageRecord).toHaveBeenCalledTimes(1);
+    expect(ipc.usageRecord).toHaveBeenCalledWith(
+      expect.objectContaining({ input: 7, output: 3, reports: 1 }),
+    );
+
+    // The completion turn's result line belongs to the same run: booking it
+    // too would count the reply's tokens twice.
+    handleEngineEvents(
+      [event("done", 10, { usage: { input_tokens: 1200, output_tokens: 8 } })],
+      deps(),
+    );
+    expect(ipc.usageRecord).toHaveBeenCalledTimes(1);
+  });
+
   it("sums the reply's reports for the strip and keeps occupancy separate", () => {
     handleEngineEvents([event("usage", 2, report(1000, 40))], deps());
     handleEngineEvents([event("usage", 3, report(500, 10))], deps());

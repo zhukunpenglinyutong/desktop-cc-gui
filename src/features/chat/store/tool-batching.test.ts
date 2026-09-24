@@ -14,8 +14,12 @@ const OTHER = "codex/second";
 function setup(messages: Message[] = []) {
   const store = createStore<ChatStore>(() => ({
     bySession: {
-      [KEY]: { ...EMPTY_SESSION, streaming: true, messages },
-      [OTHER]: { ...EMPTY_SESSION, streaming: true },
+      // Pre-claimed by their runs, as any real active turn is (sendPrompt or
+      // the observed-run adoption claims on the first content frame): these
+      // tests measure batch-commit work, not the adoption path, and an
+      // unclaimed fixture would let the first message pay a claim write.
+      [KEY]: { ...EMPTY_SESSION, streaming: true, currentRunId: "run-first", messages },
+      [OTHER]: { ...EMPTY_SESSION, streaming: true, currentRunId: "run-second" },
     },
     streamingByKey: { [KEY]: true, [OTHER]: true },
     retryingByKey: {},
