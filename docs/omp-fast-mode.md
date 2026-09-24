@@ -20,3 +20,17 @@ Fast 会增加额度或费用消耗，实际支持与速度取决于模型、账
 
 验证覆盖：三档参数、设置兼容与保存、思考强度独立、供应商与引擎隔离，
 以及使用假 OMP 进程的真实发送链路；前端测试覆盖选择、保存中状态及保存失败。
+
+## 推理参数的协议边界
+
+Pi/OMP 的推理档位通过 `--thinking` 和 RPC `set_thinking_level` 原样交给 CLI，
+由 CLI 根据实际模型与供应商协议生成请求。本应用的提问桥不再追加推理字段。
+例如 Codex Responses 使用 `reasoning.effort`，不能同时加入 Chat Completions 的
+顶层 `reasoning_effort`；Anthropic 和 Google 的原生思考配置也由 CLI 负责。
+这修复了 1.0.6 起通用字段注入导致的 `Unsupported parameter: reasoning_effort`，
+不要求降低 `xhigh`，也不改变 Fast 的 `service_tier` 行为。
+
+协议回归：`node --experimental-strip-types --test tests/pi-request-payload.test.ts`。
+本地验证还使用 OMP 18.2.10 的 Codex 请求模块发送至回环校验端点：
+旧桥触发参数拒绝，修复后保留 `reasoning.effort=xhigh` 并完成 SSE 响应。
+这不是线上账户或已打包桌面应用的端到端验证。
