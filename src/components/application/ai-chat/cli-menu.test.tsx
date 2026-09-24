@@ -1,4 +1,4 @@
-import { act } from "react";
+import { act, useState } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import "@/lib/i18n";
@@ -19,22 +19,31 @@ const MODELS = {
   omp: [{ id: "openai/gpt-5", label: "gpt-5" }],
 };
 
-const CHANNELS = { codex: [{ id: "c1", label: "codex-one" }] };
+const CHANNELS = {
+  codex: [
+    { id: "c1", label: "codex-one" },
+    { id: "c2", label: "codex-two" },
+  ],
+};
 
-function Harness() {
+function Harness({ initialEngine = "claude" }: { initialEngine?: string }) {
+  const [engine, setEngine] = useState(initialEngine);
+  const [selectedChannels, setSelectedChannels] = useState({ codex: "c1" });
   return (
     <CliMenu
       options={OPTIONS}
-      value="claude"
-      onChange={() => {}}
+      value={engine}
+      onChange={setEngine}
       modelsByEngine={MODELS}
       models={{}}
       onModelChange={() => {}}
       efforts={{}}
       onEffortChange={() => {}}
       channelsByEngine={CHANNELS}
-      selectedChannels={{ codex: "c1" }}
-      onChannelChange={() => {}}
+      selectedChannels={selectedChannels}
+      onChannelChange={(engine, id) => {
+        setSelectedChannels((channels) => ({ ...channels, [engine]: id }));
+      }}
       ompServiceTier={null}
       onOmpServiceTierChange={async () => {}}
       codexServiceTier={null}
@@ -70,9 +79,9 @@ describe("CliMenu flyout switching", () => {
     vi.unstubAllGlobals();
   });
 
-  const render = () =>
+  const render = (initialEngine?: string) =>
     act(() => {
-      root.render(<Harness />);
+      root.render(<Harness initialEngine={initialEngine} />);
     });
 
   /** The flyout is the panel carrying the engine header. */
@@ -123,6 +132,33 @@ describe("CliMenu flyout switching", () => {
       (element as HTMLElement).click();
     });
   };
+
+  it("切换 Codex 渠道后保留面板并将焦点交回渠道按钮", async () => {
+    render("codex");
+    await openMenu();
+    await click(engineRow("Codex")!);
+    const trigger = document.querySelector<HTMLButtonElement>(
+      "[data-engine-flyout] button[aria-expanded]",
+    )!;
+    await click(trigger);
+    const list = document.getElementById(trigger.getAttribute("aria-controls")!)!;
+    const row = [...list.querySelectorAll<HTMLButtonElement>('[role="radio"]')].find(
+      (button) => button.textContent?.trim() === "codex-two",
+    )!;
+
+    // A real pointer/keyboard activation focuses the row before selecting it.
+    // A bare .click() misses the focus loss when the dropdown unmounts it.
+    await act(async () => {
+      row.focus();
+      row.click();
+    });
+
+    expect(trigger.getAttribute("aria-expanded")).toBe("false");
+    expect(trigger.textContent).toContain("codex-two");
+    expect(document.activeElement).toBe(trigger);
+    expect(flyoutTitle()).toBe("Codex CLI 引擎");
+    expect(engineRow("Codex")?.getAttribute("aria-pressed")).toBe("true");
+  });
 
   it("指针掠过引擎行不触发切换", async () => {
     render();

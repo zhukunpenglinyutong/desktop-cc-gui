@@ -156,8 +156,10 @@ as one dropdown row — no provider names in the DOM until it is opened — and
 the opened list must be height-capped (clientHeight ≤ 200 with a taller
 scrollHeight). The header's channel filter must narrow that list to the
 matching rows while holding it open, and a pick must clear the filter and
-close the list. The fixture drives the real CliMenu and reports PASS/FAIL
-with the measured heights. No app, no backend.
+close the list. With Claude first and Codex active, a focused channel pick
+must leave the Codex panel mounted and return focus to its channel trigger.
+The fixture drives the real CliMenu with controlled selection state and reports
+PASS/FAIL with measured heights and focus. No app, no backend.
 
 Open `/tests/browser/branch-picker.html` to check the changes-panel branch
 dropdown: filtering to `1.0.6` and clicking the `v1.0.6` row must run the

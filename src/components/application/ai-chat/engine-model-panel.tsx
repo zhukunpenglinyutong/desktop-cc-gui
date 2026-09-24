@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useId, useState } from "react";
+import { useMemo, useId, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import Check from "lucide-react/dist/esm/icons/check";
@@ -117,6 +117,7 @@ function ChannelPicker({
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const listId = useId();
+  const triggerRef = useRef<HTMLButtonElement>(null);
   if (channels.length === 0) return null;
   const needle = query.trim().toLowerCase();
   // Match the id too: the visible label is the channel's name, but people
@@ -131,6 +132,7 @@ function ChannelPicker({
   return (
     <div className="flex w-full flex-col">
       <button
+        ref={triggerRef}
         type="button"
         aria-expanded={expanded}
         aria-controls={listId}
@@ -173,6 +175,9 @@ function ChannelPicker({
               selected={channel.id === selectedChannelId}
               engineId={engineId}
               onPick={(engine, id) => {
+                // Restore focus before this row unmounts; otherwise the overlay
+                // focuses the first engine row and switches away from this panel.
+                triggerRef.current?.focus({ preventScroll: true });
                 onPickChannel(engine, id);
                 onQueryChange("");
                 setOpen(false);

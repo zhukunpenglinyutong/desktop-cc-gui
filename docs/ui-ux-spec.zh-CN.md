@@ -74,6 +74,7 @@
 - **急停只在电脑操控回合期间武装**：`computerUseSetActive` 在发送时武装、回合终止（`engine-events.ts` 的 `done`/`error`）时解除，全局 Esc 不超出它的运行期。
 - **排队行可上下调序**：排队卡片每行在发送 / 移除之外给「上移 / 下移」箭头（`message-queue.tsx` 的 `onMove` → store 的 `moveQueued(id, "up" | "down")`），仅在队列多于一行时渲染；首尾行各有一个方向禁用（`disabled:cursor-default` + 降透明，不隐藏，控件不换位）。箭头按用户看到的列表方向移动——卡片是「最新在上、队首在下」，所以上移 = 更晚发送、下移 = 更早发送（`moveQueued` 里 `up` 即数组后移一位；越界与未知 id 为 no-op），行首编号随重排实时重算。回归：`message-queue.test.tsx`、`queue-drain.test.ts`。
 - 可交互元素至少实现：默认 / hover / `focus-visible`（`ring-border-focus-ring`）/ active / disabled。按钮类控件的焦点环只走 `focus-visible`（不打扰鼠标用户）；输入类控件可以用 `focus:border-border-focus-ring` 表示聚焦，因为文本输入聚焦本身就是用户意图。三个搜索面板（⌘K 命令 / ⌘L 会话 / ⌘P 文件）的输入框例外：无边框，聚焦只靠光标与键盘高亮行，`.palette-search-field`（`globals.css`）负责压掉平台默认焦点框——Windows WebView2 会在 `outline-none` 之外再画一圈，macOS WKWebView 不画。
+- **渠道选择后保留当前引擎面板**：`engine-model-panel.tsx` 的 `ChannelPicker` 在选项卸载前将焦点交回同一面板的渠道按钮（`preventScroll: true`），桌面浮层与移动端弹窗共用。不能让选项卸载后的焦点恢复落到首个引擎行，触发 `onFocus` 把 Codex 面板切成 Claude Code；正常的引擎行点击、键盘导航与悬停切换保持不变。
 - disabled 必须改变光标语义（`disabled:cursor-not-allowed` 或 `disabled:cursor-default`）并降低强调（`opacity-50`~`60` 或语义 disabled token），不能只是点不动。
 - **异步动作进行中不可重入**：进行中禁用按钮（或首行拦截 `if (running) return`），避免重复请求。
 - **反馈不改变布局**：图标在默认态与反馈态之间切换时，外层容器尺寸固定（`ActionFeedbackIcon` 用 `iconClassName` 同时约束容器和图标），按钮不能因为换图标而抖动。
@@ -247,6 +248,7 @@ const feedback = useRunningFeedback(store.loading);
 
 | 版本 | 时间 | 内容 |
 |---|---|---|
+| v0.59 | 2026-09-24 | 渠道下拉收起前归还触发按钮焦点，修复 Codex 切换供应商后面板跳到 Claude Code；增加焦点回归用例，浏览器夹具覆盖多引擎与真实聚焦的渠道选择；§3 补充规则 |
 | v0.58 | 2026-09-24 | 排队消息可调序：每行新增「上移 / 下移」箭头（`moveQueued(id, "up" \| "down")`，方向按用户看到的列表——上移更晚发送、下移更早发送，越界 no-op），仅队列多于一行时渲染，首尾行禁用对应方向；行首编号随行重算；§3 补充规则 |
 | v0.57 | 2026-09-24 | 设置 → 通用 → 外观新增「界面缩放 / 界面字体 / 代码字体」：缩放抽出 `src/lib/zoom.ts` 与状态栏 ±、快捷键共用一份存储并事件同步；字体覆盖根 `--font-inter` / `--font-mono-source` 变量（系统默认（内置 Inter + 系统回退，与旧「系统」选项合并；旧值与已安装字体名归一到系统默认）/ 自定义），自定义为上传字体文件（原生对话框选择 TTF/OTF/TTC/WOFF/WOFF2，Rust `read_font_file` 校验魔数与大小上限，前端 FontFace 注册为固定家族名，重选替换旧 face），读取失败给本地化错误并保留原选择，路径持久化、再次进入自定义自动重新应用；代码字体同步作用于聊天代码块与内置终端（终端热更 + refit），bootstrap 首帧前预应用；修复自带 Tailwind 的插件（kimi-lb 等）改写并成环 `--font-sans` / `--default-font-family` 导致字体设置静默失效：宿主在 `:root` 无层重推字体栈；§3 补充规则 |
 | v0.56 | 2026-09-24 | 收起的 worktree 子行聚合显示运行中状态点：折叠态下子行内显示与会话行同一套 `sidebar-thread-status` 呼吸点（全部退避重试降为静态点），展开后让位给各线程行；§3 worktree 条目同步 |

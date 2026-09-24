@@ -1,9 +1,8 @@
 // Open /tests/browser/cli-channel-dropdown.html with the Vite dev server
-// running. Mounts the real CliMenu for one engine with a dozen providers —
-// the same shape as the reported screenshot — and checks that the flyout's
-// provider list is a bounded dropdown: collapsed to the current channel,
-// opened into a height-capped scroll list, closed again after a pick.
-// Reports PASS/FAIL plus the measured heights. No app, no backend.
+// running. Mounts the real CliMenu with Claude first and Codex active, plus
+// a dozen providers. Checks the bounded dropdown and that choosing a focused
+// channel keeps Codex's panel open instead of falling back to Claude's row.
+// Reports PASS/FAIL plus measured heights and focus. No app, no backend.
 import { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { CliMenu, type EffortLevel } from "../../src/components/application/ai-chat/cli-menu";
@@ -48,12 +47,20 @@ async function waitFor<T>(get: () => T | null | undefined, what: string, timeout
 const observed = { picked: "" };
 
 function Test() {
+  const [engine, setEngine] = useState("codex");
+  const [channel, setChannel] = useState(CHANNELS[0].id);
   const [effort, setEffort] = useState<EffortLevel>("medium");
   useEffect(() => {
     let cancelled = false;
     async function run() {
       await document.fonts.ready;
       document.querySelector<HTMLButtonElement>("[data-trigger] button")!.click();
+      const codexRow = await waitFor(
+        () => [...document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button')]
+          .find((button) => button.textContent?.trim() === "Codex CLI"),
+        "the Codex engine row",
+      );
+      codexRow.click();
 
       // The composer's own CLI chip also carries aria-expanded; the channel
       // trigger is the one showing the selected channel (fixture data).
@@ -119,6 +126,9 @@ function Test() {
       const pick = [...flyout.querySelectorAll<HTMLButtonElement>("button")].find((button) =>
         button.textContent?.trim().startsWith("agentrouter"),
       )!;
+      // Native activation focuses the row. A bare click misses the bug where
+      // unmounting it lets the overlay restore focus to the first engine row.
+      pick.focus();
       pick.click();
       await waitFor(
         () => (channelRows().length === 0 ? true : null),
@@ -133,6 +143,9 @@ function Test() {
         triggerText: channelTrigger.textContent ?? "",
         filterCleared: filter.value === "",
         panelHeight: Math.round(flyout.getBoundingClientRect().height),
+        panelConnected: flyout.isConnected,
+        focusReturned: document.activeElement === channelTrigger,
+        focusedText: document.activeElement?.textContent?.trim(),
       };
 
       const pass =
@@ -146,7 +159,10 @@ function Test() {
         filteredText[0] === "agentrouter" &&
         closed.picked === "agentrouter" &&
         closed.rows === 0 &&
-        closed.filterCleared;
+        closed.filterCleared &&
+        closed.panelConnected &&
+        closed.focusReturned &&
+        closed.triggerText.includes("agentrouter");
       document.querySelector("#result")!.textContent = JSON.stringify(
         { status: pass ? "PASS" : "FAIL", collapsed, opened, filtered: { rows: filtered.rows, text: filteredText }, closed },
         null,
@@ -167,10 +183,14 @@ function Test() {
     <>
       <div data-trigger style={{ position: "fixed", bottom: 30, left: 40 }}>
         <CliMenu
-          options={[{ id: "codex", label: "Codex", available: true }]}
-          value="codex"
-          onChange={() => {}}
+          options={[
+            { id: "claude", label: "Claude Code", available: true },
+            { id: "codex", label: "Codex", available: true },
+          ]}
+          value={engine}
+          onChange={setEngine}
           modelsByEngine={{
+            claude: [{ id: "", label: "Default" }],
             codex: [
               { id: "", label: "Default", description: "Use the default model" },
               { id: "gpt-5.4", label: "gpt-5.4" },
@@ -181,9 +201,10 @@ function Test() {
           efforts={{ codex: effort }}
           onEffortChange={(_, level) => setEffort(level)}
           channelsByEngine={{ codex: CHANNELS }}
-          selectedChannels={{ codex: "local" }}
+          selectedChannels={{ codex: channel }}
           onChannelChange={(_, id) => {
             observed.picked = id;
+            setChannel(id);
           }}
           ompServiceTier={null}
           onOmpServiceTierChange={async () => {}}
