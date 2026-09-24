@@ -1,5 +1,17 @@
 use std::path::PathBuf;
 
+fn portable_app_home() -> Option<PathBuf> {
+    let exe_dir = std::env::current_exe().ok()?.parent()?.to_path_buf();
+    let path = exe_dir.join("portable-data.json");
+    let text = std::fs::read_to_string(path).ok()?;
+    let value: serde_json::Value = serde_json::from_str(&text).ok()?;
+    let raw = value.get("appHome")?.as_str()?.trim();
+    if raw.is_empty() {
+        return None;
+    }
+    Some(PathBuf::from(raw))
+}
+
 /// Home dir without panicking: a headless/odd environment falls back to the
 /// current directory so startup degrades instead of crashing.
 ///
@@ -32,6 +44,9 @@ pub(crate) static HOME_ENV_LOCK: parking_lot::Mutex<()> = parking_lot::Mutex::ne
 
 /// Application home directory: ~/.ccgui-next/
 pub fn app_home() -> PathBuf {
+    if let Some(path) = portable_app_home() {
+        return path;
+    }
     home_dir().join(".ccgui-next")
 }
 

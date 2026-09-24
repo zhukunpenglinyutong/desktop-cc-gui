@@ -1,7 +1,7 @@
 <!-- 由 src/features/plugins/skill/creator-skill-docs.ts 从源码生成，请勿手改。 -->
 <!-- 重新生成：pnpm plugin-skill:docs（测试 creator-skill-docs.test.ts 会断言本文件与源码一致）。 -->
 
-# CC GUI 插件 SDK 参考（SDK 0.3.15）
+# CC GUI 插件 SDK 参考（SDK 0.3.16）
 
 本文件由脚本从 `packages/plugin-sdk`（公共契约）与宿主运行时（权限门禁）派生，属于 `ccgui-plugin-creator` skill。
 字段、方法、权限以本文件为准：**文中没有的 API 一律视为不存在**，不要凭记忆猜测方法名或权限名。
@@ -75,6 +75,12 @@ export default function activate(ctx: PluginContext): void | (() => void) {
 | `ctx.sessions.refresh` | `host:session` | 请求宿主立即刷新会话目录（侧栏/标签页），0.3.7 起。 插件绕过宿主直写会话数据（如 sqlite custom_title、转录 title 行）后 调用——否则变更要等用户手动同步或下次常规刷新才可见。 |
 | `ctx.sessions.setEffort` | `host:session` | 修改已有会话的 effort 档位，0.3.10 起。直写宿主会话状态并持久化 （等价于用户在会话内切换档位，refreshSessions 不会回滚）。未知会话 或空 effort 以 rejection 失败——不会创建幽灵会话条目。 |
 | `ctx.sessions.registerSource` | `host:session` | — |
+| `ctx.window.getState` | `host:window` | — |
+| `ctx.window.setNormalBounds` | `host:window` | — |
+| `ctx.window.sampleWechat` | `host:window` | — |
+| `ctx.models.listEngines` | `host:models` | — |
+| `ctx.models.listEngineModels` | `host:models` | — |
+| `ctx.models.catalog` | `host:models` | Aggregated safe catalog. Provider endpoints are contacted only when refreshProviders is true (must be tied to an explicit user action). |
 | `ctx.agent.catalog` | `agent` | — |
 | `ctx.agent.start` | `agent` | 启动一个 agent 轮次；返回的 runId 用于事件过滤与 interrupt。 |
 | `ctx.agent.interrupt` | `agent` | 中断本插件启动的 run（run id 属主前缀由宿主强制）。 |
@@ -204,6 +210,36 @@ sessions: {
 }
 ```
 
+### ctx.window
+
+主窗口访问（权限 `host:window`，0.3.16 起）。坐标与尺寸均为物理像素； setNormalBounds 仅接受普通态窗口，并要求至少 64x64 像素落在当前任一屏幕。 sampleWechat 在 Windows 按可执行名 Weixin.exe/WeChat.exe 采样；其他平台 以 Unsupported 拒绝，找不到以 NotFound 拒绝。
+
+```ts
+window: {
+  /** 权限：host:window */
+  getState(): Promise<PluginWindowSnapshot>;
+  /** 权限：host:window */
+  setNormalBounds(bounds: PluginWindowBounds): Promise<PluginWindowSnapshot>;
+  /** 权限：host:window */
+  sampleWechat(): Promise<PluginWechatWindow>;
+}
+```
+
+### ctx.models
+
+宿主模型目录（权限 `host:models`，0.3.16 起）。结果来自宿主权威 list_engines/list_engine_models，不包含 API key、token 或完整 provider 配置。 workspace 可选；远程工作区由拥有 CLI 的远程宿主/WSL 侧探测。
+
+```ts
+models: {
+  /** 权限：host:models */
+  listEngines(): Promise<PluginEngineInfo[]>;
+  /** 权限：host:models */
+  listEngineModels(engine: string, workspace?: string): Promise<PluginEngineCatalog>;
+  /** 权限：host:models */
+  catalog(options?: { workspace?: string; refreshProviders?: boolean }): Promise<PluginModelCatalogResult>;
+}
+```
+
 ### ctx.agent
 
 Agent 轮次（权限 `agent`，0.3.13 起）：经宿主引擎管线拉起 agent 进程——渠道注入、进程注册与聊天发送同构。事件走独立的 `agent://<pluginId>` 总线话题（ctx.events.on 订阅；payload 为引擎 事件信封 { runId, sessionId, engine, seq, kind, data, ts }，kind ∈ delta | tool | usage | done | error …）。桌面专属（isWeb 下不可用的 插件要自呈现）。
@@ -277,6 +313,8 @@ ctx.react: typeof React; // Shared host React instance: external bundles can't r
 | `host:session` | `ctx.sessions.selectSession`、`ctx.sessions.refresh`、`ctx.sessions.setEffort`、`ctx.sessions.registerSource` |
 | `host:workspace` | `ctx.workspaces.add` |
 | `host:workspace:remote` | `ctx.workspaces.add` |
+| `host:window` | `ctx.window.getState`、`ctx.window.setNormalBounds`、`ctx.window.sampleWechat` |
+| `host:models` | `ctx.models.listEngines`、`ctx.models.listEngineModels`、`ctx.models.catalog` |
 
 ### network: / exec: 授权形状
 

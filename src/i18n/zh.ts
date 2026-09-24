@@ -1170,6 +1170,8 @@ export const zh = {
         hostSession: "读取当前会话",
         hostWorkspace: "读取当前工作区",
         hostWorkspaceRemote: "访问远程工作区",
+        hostWindow: "读取和定位主窗口，并采样微信窗口范围",
+        hostModels: "读取宿主引擎与模型目录",
         networkNone: "无网络访问",
         uiSettingsSection: "添加设置页",
         uiAddMenu: "添加「+」菜单项",

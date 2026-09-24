@@ -106,7 +106,7 @@ fn extract_model_ids(value: &Value) -> Vec<String> {
 /// GET the channel's model list. The key rides both auth headers — OpenAI
 /// relays read `Authorization: Bearer`, Anthropic relays read `x-api-key`.
 #[tauri::command]
-pub async fn fetch_provider_models(
+pub(crate) async fn fetch_provider_models_inner(
     base_url: String,
     api_key: String,
 ) -> Result<ProviderModelList, String> {
@@ -169,6 +169,14 @@ pub async fn fetch_provider_models(
         "failed to fetch models: {}",
         last_error.unwrap_or_else(|| "no candidate endpoint succeeded".to_string())
     ))
+}
+
+#[tauri::command]
+pub async fn fetch_provider_models(
+    base_url: String,
+    api_key: String,
+) -> Result<ProviderModelList, String> {
+    fetch_provider_models_inner(base_url, api_key).await
 }
 
 #[cfg(test)]
