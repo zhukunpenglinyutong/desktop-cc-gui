@@ -76,7 +76,7 @@
 ### 一个客户端，装下十个 AI 引擎
 
 - 注册了 **Claude Code**、**Codex CLI**、**Kimi CLI**、**Grok CLI**、**Pi CLI**、**OMP CLI**、**DeepSeek Harness**、**Antigravity**、**OpenCode**、**Qoder**（全球版与国内版）的 runtime adapter——在输入框里按会话切换引擎。
-- **供应商渠道**直接写入各 CLI 自己的原生配置文件（不搞平行的凭证存储），内置 GLM、Kimi、DeepSeek、MiniMax、MiMo、百炼、LongCat、OpenCode Go、OpenRouter 等精选预设；Claude / Codex / Grok 的渠道还能从 [CC Switch](https://github.com/farion1231/cc-switch) 一键导入。
+- **供应商渠道**直接写入各 CLI 自己的原生配置文件（不搞平行的凭证存储），内置 GLM、Kimi、DeepSeek、MiniMax、MiMo、百炼、LongCat、OpenCode Go、OpenRouter、Requesty 等精选预设；Claude / Codex / Grok 的渠道还能从 [CC Switch](https://github.com/farion1231/cc-switch) 一键导入。
 - Pi 系引擎（Pi / OMP）支持在设置页内完成 API Key 与 OAuth 登录。
 - 支持**按标签页覆盖模型与 effort 档位**：同一个窗口里，不同标签页可以跑不同模型或思考强度。
 - 会话历史不丢：历史扫描器直接读取各 CLI 的原生会话文件并保持标题同步，关掉应用再打开还能接着聊。

@@ -78,7 +78,7 @@ Kimi question cards use the local CLI's ACP form channel (verified with Kimi 2.0
 ### One client, ten AI engines
 
 - Registers runtime adapters for **Claude Code**, **Codex CLI**, **Kimi CLI**, **Grok CLI**, **Pi CLI**, **OMP CLI**, **DeepSeek Harness**, **Antigravity**, **OpenCode**, and **Qoder** (global and CN distributions) — pick the engine per session from the composer.
-- **Provider channels** are written to each CLI's own native config files (no parallel credential store), with curated presets for GLM, Kimi, DeepSeek, MiniMax, MiMo, Bailian, LongCat, OpenCode Go, OpenRouter, and more. Claude / Codex / Grok channels can be imported from [CC Switch](https://github.com/farion1231/cc-switch).
+- **Provider channels** are written to each CLI's own native config files (no parallel credential store), with curated presets for GLM, Kimi, DeepSeek, MiniMax, MiMo, Bailian, LongCat, OpenCode Go, OpenRouter, Requesty, and more. Claude / Codex / Grok channels can be imported from [CC Switch](https://github.com/farion1231/cc-switch).
 - Pi-family engines (Pi / OMP) support API-key and OAuth sign-in flows from inside Settings.
 - Per-tab **model and effort overrides**: different tabs in the same window can run different models or thinking levels.
 - Session history survives restarts; the history scanner reads each CLI's native session files and keeps titles in sync.
