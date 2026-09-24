@@ -12,6 +12,7 @@ import openrouterIcon from "@lobehub/icons-static-svg/icons/openrouter-color.svg
 import xaiIcon from "@lobehub/icons-static-svg/icons/xai.svg";
 import xiaomimimoIcon from "@lobehub/icons-static-svg/icons/xiaomimimo.svg";
 import zhipuIcon from "@lobehub/icons-static-svg/icons/zhipu-color.svg";
+import requestyIcon from "@/assets/model-icons/requesty.svg";
 import type { EngineId } from "./providers";
 
 export interface ProviderPreset {
@@ -305,6 +306,18 @@ export const PRESETS: Partial<Record<EngineId, ProviderPreset[]>> = {
         ANTHROPIC_DEFAULT_OPUS_MODEL: "anthropic/claude-opus-4.5",
       },
     },
+    {
+      name: "Requesty",
+      baseUrl: "https://router.requesty.ai",
+      model: "anthropic/claude-sonnet-4-5",
+      iconSrc: requestyIcon,
+      env: {
+        ANTHROPIC_DEFAULT_FABLE_MODEL: "anthropic/claude-fable-5",
+        ANTHROPIC_DEFAULT_HAIKU_MODEL: "anthropic/claude-haiku-4-5",
+        ANTHROPIC_DEFAULT_SONNET_MODEL: "anthropic/claude-sonnet-4-5",
+        ANTHROPIC_DEFAULT_OPUS_MODEL: "anthropic/claude-opus-4-5",
+      },
+    },
   ],
   kimi: [
     { name: "Kimi Coding", baseUrl: "https://api.kimi.com/coding/v1", model: "kimi-for-coding", iconSrc: kimiIcon, iconClassName: DARK_MONO_ICON_CLASS },
@@ -322,6 +335,7 @@ export const PRESETS: Partial<Record<EngineId, ProviderPreset[]>> = {
     { name: "LongCat", baseUrl: "https://api.longcat.chat/openai/v1", model: "LongCat-2.0", iconSrc: longcatIcon, wireApi: "chat" },
     { name: "OpenCode Go", baseUrl: "https://opencode.ai/zen/go/v1", model: "glm-5.2", iconSrc: opencodeIcon, iconClassName: DARK_MONO_ICON_CLASS, wireApi: "chat" },
     { name: "OpenRouter", baseUrl: "https://openrouter.ai/api/v1", model: "", iconSrc: openrouterIcon, wireApi: "chat" },
+    { name: "Requesty", baseUrl: "https://router.requesty.ai/v1", model: "", iconSrc: requestyIcon, wireApi: "chat" },
   ],
 };
 
