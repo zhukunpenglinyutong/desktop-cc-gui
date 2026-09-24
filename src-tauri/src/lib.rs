@@ -1,4 +1,5 @@
 pub mod agent_catalog;
+pub mod app_info;
 pub mod agents;
 pub mod baidu_tongji;
 pub mod browser;
@@ -25,6 +26,7 @@ pub mod paths;
 pub mod pet_overlay;
 pub mod pets;
 pub mod plugin_caps;
+pub mod plugin_host;
 pub mod plugins;
 pub mod prompts;
 pub mod provider_files;
@@ -317,6 +319,7 @@ pub fn run() {
             }
         })
         .invoke_handler(tauri::generate_handler![
+            app_info::host_app_version,
             // 窗口
             settings::restart_app,
             // config
@@ -371,6 +374,13 @@ pub fn run() {
             plugins::plugin_storage_get,
             plugins::plugin_storage_set,
             plugins::plugin_storage_delete,
+            // narrow host capabilities exposed through PluginContext
+            plugin_host::plugin_window_state,
+            plugin_host::plugin_window_set_normal_bounds,
+            plugin_host::plugin_window_sample_wechat,
+            plugin_host::plugin_list_engines,
+            plugin_host::plugin_list_engine_models,
+            plugin_host::plugin_model_catalog,
             // plugin marketplace (Phase 3, plan §6)
             plugins::market::plugin_fetch_index,
             plugins::market::plugin_fetch_market_readme,

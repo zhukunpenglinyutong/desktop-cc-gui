@@ -280,7 +280,7 @@ pub struct SendResult {
     pub run_id: String,
     pub session_id: Option<String>,
 }
-#[derive(Serialize)]
+#[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct EngineInfo {
     pub id: String,

@@ -55,11 +55,27 @@ export interface LoaderBackend extends PluginContextBackend {
 
 export const ipcBackend: LoaderBackend = {
   agentCatalog: (workspacePath) => buildAgentCatalog(ipc, workspacePath, (key) => i18n.t(key)),
+  windowGetState: (pluginId) => invoke("plugin_window_state", { pluginId }),
+  windowSetNormalBounds: (pluginId, bounds) =>
+    invoke("plugin_window_set_normal_bounds", { pluginId, bounds }),
+  windowSampleWechat: (pluginId) => invoke("plugin_window_sample_wechat", { pluginId }),
+  modelListEngines: (pluginId) => invoke("plugin_list_engines", { pluginId }),
+  modelListEngineModels: (pluginId, engine, workspace) =>
+    invoke("plugin_list_engine_models", { pluginId, engine, workspace: workspace ?? null }),
+  modelCatalog: (pluginId, options) =>
+    invoke("plugin_model_catalog", {
+      pluginId,
+      workspace: options?.workspace ?? null,
+      refreshProviders: options?.refreshProviders ?? false,
+    }),
   list: () => ipc.pluginList(),
   readFile: (id, name) => ipc.pluginReadFile(id, name),
   quarantine: (id, error) => ipc.pluginQuarantine(id, error),
   setEnabled: (id, enabled) => ipc.pluginSetEnabled(id, enabled),
-  appVersion: async () => (await getAppVersion()) ?? "0.0.0",
+  // A missing native version bridge must not turn every installed plugin into
+  // a false `incompatible` result.  The fallback is the version of this host
+  // build and is only used when the bridge is unavailable.
+  appVersion: async () => (await getAppVersion()) ?? "1.0.10",
   get: (id, key) => ipc.pluginStorageGet(id, key),
   set: (id, key, value) => ipc.pluginStorageSet(id, key, value),
   delete: (id, key) => ipc.pluginStorageDelete(id, key),

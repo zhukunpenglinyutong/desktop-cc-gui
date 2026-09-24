@@ -698,6 +698,44 @@ fn codex_api_key(provider: &Value) -> Option<String> {
         .or_else(|| channel_field("codex", provider, "apiKey"))
 }
 
+/// Minimal channel fields needed by the internal model-catalog service. This
+/// type must never be serialized into a plugin DTO: endpoint and credential
+/// values are used only to perform an explicitly requested refresh.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct SafeProviderProbeConfig {
+    pub name: String,
+    pub base_url: Option<String>,
+    pub api_key: Option<String>,
+    pub configured_model: Option<String>,
+}
+
+pub(crate) fn safe_provider_probe_config(
+    engine: &str,
+    provider: &Value,
+) -> SafeProviderProbeConfig {
+    let name = non_empty_str(provider.get("name")).unwrap_or_else(|| "Provider".to_string());
+    let configured_model = channel_field(engine, provider, "model").or_else(|| {
+        if engine != "codex" {
+            return None;
+        }
+        provider
+            .pointer("/settingsConfig/config")
+            .and_then(Value::as_str)
+            .and_then(|text| text.parse::<DocumentMut>().ok())
+            .and_then(|doc| doc.get("model").and_then(Item::as_str).map(str::to_string))
+    });
+    SafeProviderProbeConfig {
+        name,
+        base_url: channel_field(engine, provider, "baseUrl"),
+        api_key: if engine == "codex" {
+            codex_api_key(provider)
+        } else {
+            channel_field(engine, provider, "apiKey")
+        },
+        configured_model,
+    }
+}
+
 fn render_codex_auth(base: &str, provider: &Value) -> Result<String, String> {
     if let Some(key) = codex_api_key(provider) {
         let mut doc: Value =

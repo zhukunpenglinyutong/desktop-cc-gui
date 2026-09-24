@@ -7,6 +7,16 @@ import type {
   PluginContext,
   PluginConversationProps,
   PluginAgentCatalogEntry,
+  PluginEngineCatalog,
+  PluginEngineInfo,
+  PluginEngineModel,
+  PluginModelCatalogEngine,
+  PluginModelCatalogError,
+  PluginModelCatalogResult,
+  PluginModelSource,
+  PluginWindowBounds,
+  PluginWindowSnapshot,
+  PluginWechatWindow,
   PluginManifest,
   PluginTier,
   SessionMenuTarget,
@@ -48,6 +58,16 @@ type _PluginTier = Assert<Mutual<PluginTier, Pub.PluginTier>>;
 type _Disposer = Assert<Mutual<Disposer, Pub.Disposer>>;
 type _ConversationProps = Assert<Mutual<PluginConversationProps, Pub.PluginConversationProps>>;
 type _AgentCatalogEntry = Assert<Mutual<PluginAgentCatalogEntry, Pub.PluginAgentCatalogEntry>>;
+type _WindowBounds = Assert<Mutual<PluginWindowBounds, Pub.PluginWindowBounds>>;
+type _WindowSnapshot = Assert<Mutual<PluginWindowSnapshot, Pub.PluginWindowSnapshot>>;
+type _WechatWindow = Assert<Mutual<PluginWechatWindow, Pub.PluginWechatWindow>>;
+type _EngineInfo = Assert<Mutual<PluginEngineInfo, Pub.PluginEngineInfo>>;
+type _EngineModel = Assert<Mutual<PluginEngineModel, Pub.PluginEngineModel>>;
+type _EngineCatalog = Assert<Mutual<PluginEngineCatalog, Pub.PluginEngineCatalog>>;
+type _ModelCatalogEngine = Assert<Mutual<PluginModelCatalogEngine, Pub.PluginModelCatalogEngine>>;
+type _ModelSource = Assert<Mutual<PluginModelSource, Pub.PluginModelSource>>;
+type _ModelCatalogError = Assert<Mutual<PluginModelCatalogError, Pub.PluginModelCatalogError>>;
+type _ModelCatalogResult = Assert<Mutual<PluginModelCatalogResult, Pub.PluginModelCatalogResult>>;
 type _AgentShape = Assert<Mutual<PluginContext["agent"], Pub.PluginContext["agent"]>>;
 
 // --- PluginContext：顶层与各能力组 key 完全对齐 ------------------------------
@@ -61,6 +81,8 @@ type _EventsKeys = Assert<KeyParity<PluginContext["events"], Pub.PluginContext["
 type _ComposerKeys = Assert<KeyParity<PluginContext["composer"], Pub.PluginContext["composer"]>>;
 type _WorkspacesKeys = Assert<KeyParity<PluginContext["workspaces"], Pub.PluginContext["workspaces"]>>;
 type _SessionsKeys = Assert<KeyParity<PluginContext["sessions"], Pub.PluginContext["sessions"]>>;
+type _WindowKeys = Assert<KeyParity<PluginContext["window"], Pub.PluginContext["window"]>>;
+type _ModelsKeys = Assert<KeyParity<PluginContext["models"], Pub.PluginContext["models"]>>;
 type _BridgeKeys = Assert<KeyParity<PluginContext["bridge"], Pub.PluginContext["bridge"]>>;
 type _HostKeys = Assert<KeyParity<PluginContext["host"], Pub.PluginContext["host"]>>;
 
@@ -73,5 +95,7 @@ type _EventsShape = Assert<Mutual<PluginContext["events"], Pub.PluginContext["ev
 type _ComposerShape = Assert<Mutual<PluginContext["composer"], Pub.PluginContext["composer"]>>;
 type _WorkspacesShape = Assert<Mutual<PluginContext["workspaces"], Pub.PluginContext["workspaces"]>>;
 type _SessionsShape = Assert<Mutual<PluginContext["sessions"], Pub.PluginContext["sessions"]>>;
+type _WindowShape = Assert<Mutual<PluginContext["window"], Pub.PluginContext["window"]>>;
+type _ModelsShape = Assert<Mutual<PluginContext["models"], Pub.PluginContext["models"]>>;
 type _BridgeShape = Assert<Mutual<PluginContext["bridge"], Pub.PluginContext["bridge"]>>;
 type _HostShape = Assert<Mutual<PluginContext["host"], Pub.PluginContext["host"]>>;
