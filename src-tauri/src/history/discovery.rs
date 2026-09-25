@@ -470,6 +470,13 @@ pub(crate) fn dir_session_anchor_roots(engine: &str) -> Vec<PathBuf> {
             roots
         }
         "dsh" => vec![crate::engine::engine_home(Some("DSH_HOME"), ".dsh").join("sessions")],
+        // minimax: 会话目录落在 <data>/v2/sessions/<日期>/…-session_<id>/ 下,
+        // db 行的 history_relative_dir 记录相对路径;锚定根与发现同源。
+        "minimax" => {
+            vec![crate::engine::engine_home(Some("MINIMAX_DATA_DIR"), ".minimax")
+                .join("v2")
+                .join("sessions")]
+        }
         _ => Vec::new(),
     }
 }
@@ -571,6 +578,69 @@ pub(super) fn discover_agy(workspace: &Path) -> Vec<SessionFile> {
             file_path,
         })
         .collect()
+}
+
+/// MiniMax Code indexes its conversations in the runtime sqlite
+/// (`<data>/v2/sqlite/runtime-state.sqlite`, columns `workspace_dir` /
+/// `history_relative_dir`); transcripts live at
+/// `<data>/v2/sessions/<history_relative_dir>/messages.jsonl`. The dated
+/// directory names carry no workspace, so the db row is the only
+/// workspace→session link.
+pub(super) fn discover_minimax(workspace: &Path) -> Vec<SessionFile> {
+    let data_dir = crate::engine::engine_home(Some("MINIMAX_DATA_DIR"), ".minimax");
+    let sessions_root = data_dir.join("v2").join("sessions");
+    let db_path = data_dir.join("v2").join("sqlite").join("runtime-state.sqlite");
+    let mut out = Vec::new();
+    let Ok(conn) = rusqlite::Connection::open_with_flags(
+        &db_path,
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+    ) else {
+        return out;
+    };
+    let Ok(mut stmt) = conn.prepare(
+        "SELECT session_id, COALESCE(workspace_dir, ''), COALESCE(project_workspace_dir, ''), \
+         COALESCE(history_relative_dir, '') FROM local_runtime_sessions \
+         WHERE session_kind = 'conversation' AND visibility = 'visible' AND archived = 0",
+    ) else {
+        return out;
+    };
+    let Ok(rows) = stmt.query_map([], |row| {
+        Ok((
+            row.get::<_, String>(0)?,
+            row.get::<_, String>(1)?,
+            row.get::<_, String>(2)?,
+            row.get::<_, String>(3)?,
+        ))
+    }) else {
+        return out;
+    };
+    for (session_id, workspace_dir, project_dir, relative) in rows.flatten() {
+        let session_id = session_id.trim();
+        let relative = relative.trim().trim_matches('/');
+        if session_id.is_empty() || relative.is_empty() {
+            continue;
+        }
+        let matches = |session_workspace: &str| {
+            !session_workspace.is_empty()
+                && same_or_child(Path::new(session_workspace), workspace)
+        };
+        if !matches(workspace_dir.trim()) && !matches(project_dir.trim()) {
+            continue;
+        }
+        // The db row can outlive a GUI-side delete (the CLI keeps its own
+        // ledger); a missing transcript simply drops out of the list.
+        let messages = sessions_root.join(relative).join("messages.jsonl");
+        if !messages.is_file() {
+            continue;
+        }
+        out.push(SessionFile {
+            engine: "minimax",
+            session_id: session_id.to_string(),
+            workspace_path: workspace.to_string_lossy().to_string(),
+            file_path: messages,
+        });
+    }
+    out
 }
 
 fn agy_uris_match_workspace(uris_json: &str, workspace: &Path) -> bool {
@@ -1244,5 +1314,48 @@ mod tests {
         assert!(peek_head_json_lines(&path, false, 8).is_empty());
         assert_eq!(identify_head("codex", &path), None);
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// minimax: runtime sqlite rows are the only workspace→session link; a
+    /// row without a transcript on disk (GUI-side delete leaves the CLI's
+    /// row behind) must drop out instead of resurrecting.
+    #[test]
+    fn discover_minimax_links_runtime_rows_to_transcripts() {
+        let home = scratch_dir("discover-minimax");
+        let data = home.join("minimax-data");
+        let workspace = home.join("ws");
+        let relative = "2026/09/20/17-19-21-163-session_bXZzX2Nj";
+        let session_dir = data.join("v2").join("sessions").join(relative);
+        std::fs::create_dir_all(&session_dir).unwrap();
+        std::fs::write(session_dir.join("manifest.json"), "{}\n").unwrap();
+        std::fs::write(session_dir.join("messages.jsonl"), "{}\n").unwrap();
+
+        let db_dir = data.join("v2").join("sqlite");
+        std::fs::create_dir_all(&db_dir).unwrap();
+        let conn = rusqlite::Connection::open(db_dir.join("runtime-state.sqlite")).unwrap();
+        let ws = workspace.to_string_lossy().replace('\'', "''");
+        conn.execute_batch(&format!(
+            "CREATE TABLE local_runtime_sessions (
+                session_id TEXT PRIMARY KEY, workspace_dir TEXT, project_workspace_dir TEXT,
+                history_relative_dir TEXT, session_kind TEXT, visibility TEXT, archived INTEGER);
+            INSERT INTO local_runtime_sessions VALUES ('mvs_hit', '{ws}', '{ws}', '{relative}', 'conversation', 'visible', 0);
+            INSERT INTO local_runtime_sessions VALUES ('mvs_other_workspace', '/elsewhere', '/elsewhere', '{relative}', 'conversation', 'visible', 0);
+            INSERT INTO local_runtime_sessions VALUES ('mvs_task', '{ws}', '{ws}', '{relative}', 'task', 'visible', 0);
+            INSERT INTO local_runtime_sessions VALUES ('mvs_archived', '{ws}', '{ws}', '{relative}', 'conversation', 'visible', 1);
+            INSERT INTO local_runtime_sessions VALUES ('mvs_missing_transcript', '{ws}', '{ws}', 'gone/session', 'conversation', 'visible', 0);",
+        ))
+        .unwrap();
+
+        let prev = std::env::var_os("MINIMAX_DATA_DIR");
+        std::env::set_var("MINIMAX_DATA_DIR", &data);
+        let found = discover_minimax(&workspace);
+        match &prev {
+            Some(value) => std::env::set_var("MINIMAX_DATA_DIR", value),
+            None => std::env::remove_var("MINIMAX_DATA_DIR"),
+        }
+        assert_eq!(found.len(), 1, "only the matching visible conversation");
+        assert_eq!(found[0].session_id, "mvs_hit");
+        assert!(found[0].file_path.ends_with("messages.jsonl"));
+        std::fs::remove_dir_all(&home).ok();
     }
 }

@@ -607,6 +607,7 @@ export const zh = {
       opencode: "OpenCode",
       qoder: "Qoder CLI",
       "qoder-cn": "Qoder CLI 国内版",
+      minimax: "MiniMax",
     },
     cliManage: "CLI 管理",
     groupSystem: "系统",

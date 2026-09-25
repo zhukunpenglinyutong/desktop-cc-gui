@@ -13,7 +13,7 @@
 
 </div>
 
-**ccgui** 是一个开源的 **multi-engine AI 编程桌面客户端**。简单说：它把 **Claude Code**、**Codex CLI**、**Kimi CLI**、**Grok CLI**、**Pi CLI**、**OMP CLI**、**DeepSeek Harness（DSH）**、**Antigravity**、**OpenCode**、**Qoder** 等命令行 AI 编程 runtime，放进一个统一的图形界面里。
+**ccgui** 是一个开源的 **multi-engine AI 编程桌面客户端**。简单说：它把 **Claude Code**、**Codex CLI**、**Kimi CLI**、**Grok CLI**、**Pi CLI**、**OMP CLI**、**DeepSeek Harness（DSH）**、**Antigravity**、**OpenCode**、**Qoder**、**MiniMax Code** 等命令行 AI 编程 runtime，放进一个统一的图形界面里。
 
 你不用再盯着黑乎乎的终端敲命令——打开 ccgui，选好项目，像聊天一样让 AI 帮你写代码、改 Bug、提交 Git。流式输出、思考过程和工具调用都会实时展示；token 用量在引擎上报时同步呈现。
 
@@ -35,47 +35,50 @@
   <a href="https://github.com/deepseek-ai/dsh"><kbd><img src="https://www.google.com/s2/favicons?domain=deepseek.com&sz=64" alt="DeepSeek Harness logo" width="16" valign="middle" /> DeepSeek Harness</kbd></a> &nbsp;
   <a href="https://www.antigravity.google/docs/cli/headless/"><kbd><img src="https://www.google.com/s2/favicons?domain=antigravity.google&sz=64" alt="Antigravity logo" width="16" valign="middle" /> Antigravity</kbd></a> &nbsp;
   <a href="https://opencode.ai/docs/"><kbd><img src="https://www.google.com/s2/favicons?domain=opencode.ai&sz=64" alt="OpenCode logo" width="16" valign="middle" /> OpenCode</kbd></a> &nbsp;
-  <a href="https://docs.qoder.com/zh/cli/using-cli"><kbd><img src="https://www.google.com/s2/favicons?domain=qoder.com&sz=64" alt="Qoder logo" width="16" valign="middle" /> Qoder</kbd></a>
+  <a href="https://docs.qoder.com/zh/cli/using-cli"><kbd><img src="https://www.google.com/s2/favicons?domain=qoder.com&sz=64" alt="Qoder logo" width="16" valign="middle" /> Qoder</kbd></a> &nbsp;
+  <a href="https://agent.minimax.cn/docs/cli/quick-start"><kbd><img src="https://www.google.com/s2/favicons?domain=agent.minimax.cn&sz=64" alt="MiniMax Code logo" width="16" valign="middle" /> MiniMax Code</kbd></a>
 </p>
 
 ### 功能兼容矩阵
 
 图例:✅ 支持 · ⚠️ 部分支持 · ❌ 暂不支持 · 🔁 CLI 不支持但 ccgui 有等价 GUI · ➖ 不适用
 
-| 功能 | <kbd><img src="https://www.google.com/s2/favicons?domain=anthropic.com&sz=64" width="16" valign="middle" /> Claude Code</kbd> | <kbd><img src="https://www.google.com/s2/favicons?domain=openai.com&sz=64" width="16" valign="middle" /> Codex CLI</kbd> | <kbd><img src="https://www.google.com/s2/favicons?domain=moonshot.cn&sz=64" width="16" valign="middle" /> Kimi CLI</kbd> | <kbd><img src="https://www.google.com/s2/favicons?domain=x.ai&sz=64" width="16" valign="middle" /> Grok CLI</kbd> | <kbd><img src="https://pi.dev/favicon.svg" width="16" valign="middle" /> Pi CLI</kbd> | <kbd><img src="https://omp.sh/favicon.svg" width="16" valign="middle" /> OMP CLI</kbd> | <kbd><img src="https://www.google.com/s2/favicons?domain=deepseek.com&sz=64" width="16" valign="middle" /> DSH</kbd> | <kbd><img src="https://www.google.com/s2/favicons?domain=antigravity.google&sz=64" width="16" valign="middle" /> Antigravity</kbd> | <kbd><img src="https://www.google.com/s2/favicons?domain=opencode.ai&sz=64" width="16" valign="middle" /> OpenCode</kbd> | <kbd><img src="https://www.google.com/s2/favicons?domain=qoder.com&sz=64" width="16" valign="middle" /> Qoder(全球/国内)</kbd> |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| 流式输出(逐 token) | ✅ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| 会话历史与恢复 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| 中断(Stop) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| 消息排队 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| 图片附件 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ |
-| 权限模式 | 自动·手动·计划·绕过 | 自动·手动·绕过 | 自动·计划·绕过 | 仅绕过 | 仅自动 | 自动·计划·绕过 | 仅自动 | 自动·计划·绕过 | 自动·计划 | 仅绕过 |
-| 模型选择 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| 推理强度(Effort) | ✅ | ✅ | ❌ | ❌ | ✅ | ✅ | ❌ | ⚠️ | ❌ | ✅ |
-| Token 用量与上下文窗口 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ⚠️ | ✅ |
-| Todo 列表渲染 | ✅ | ❌ | ❌ | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ |
-| 子代理展示(任务分发面板) | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ✅ | ⚠️ | ⚠️ | ⚠️ |
-| 团队模式(多代理编排) | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| `/` 斜杠命令与技能(选择器) | ✅ | ✅ | ⚠️ | ⚠️ | ⚠️ | ⚠️ | ⚠️ | ❌ | ⚠️ | ⚠️ |
-| `@` 文件引用 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| 渠道/供应商切换 | ✅ | ✅ | ✅ | ✅ | ⚠️ | ⚠️ | ⚠️ | ⚠️ | ⚠️ | ⚠️ |
-| CC Switch 渠道导入 | ✅ | ✅ | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| Fast 模式(service tier) | ❌ | ✅ | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ |
-| 会话重命名 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| 原生命令 `/new`(新会话) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| 原生命令 `/clear`(清空上下文) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| 原生命令 `/compact`(压缩上下文) | ✅ | ⚠️ | ⚠️ | ⚠️ | ⚠️ | ✅ | ⚠️ | ⚠️ | ⚠️ | ⚠️ |
-| 原生命令 `ask`(提问卡片) | ✅ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ | ✅ | ❌ |
-| 原生命令 `/mcp` | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ |
-| 原生命令 `/plugins` | ➖ | ➖ | ➖ | ➖ | ❌ | ✅ | ➖ | ➖ | ➖ | ➖ |
-| 原生命令 `/goal`(持久目标) | ➖ | ➖ | ➖ | ➖ | ➖ | ❌ | ➖ | ➖ | ➖ | ➖ |
+| 功能 | <kbd><img src="https://www.google.com/s2/favicons?domain=anthropic.com&sz=64" width="16" valign="middle" /> Claude Code</kbd> | <kbd><img src="https://www.google.com/s2/favicons?domain=openai.com&sz=64" width="16" valign="middle" /> Codex CLI</kbd> | <kbd><img src="https://www.google.com/s2/favicons?domain=moonshot.cn&sz=64" width="16" valign="middle" /> Kimi CLI</kbd> | <kbd><img src="https://www.google.com/s2/favicons?domain=x.ai&sz=64" width="16" valign="middle" /> Grok CLI</kbd> | <kbd><img src="https://pi.dev/favicon.svg" width="16" valign="middle" /> Pi CLI</kbd> | <kbd><img src="https://omp.sh/favicon.svg" width="16" valign="middle" /> OMP CLI</kbd> | <kbd><img src="https://www.google.com/s2/favicons?domain=deepseek.com&sz=64" width="16" valign="middle" /> DSH</kbd> | <kbd><img src="https://www.google.com/s2/favicons?domain=antigravity.google&sz=64" width="16" valign="middle" /> Antigravity</kbd> | <kbd><img src="https://www.google.com/s2/favicons?domain=opencode.ai&sz=64" width="16" valign="middle" /> OpenCode</kbd> | <kbd><img src="https://www.google.com/s2/favicons?domain=qoder.com&sz=64" width="16" valign="middle" /> Qoder(全球/国内)</kbd> | <kbd><img src="https://www.google.com/s2/favicons?domain=agent.minimax.cn&sz=64" width="16" valign="middle" /> MiniMax Code</kbd> |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 流式输出(逐 token) | ✅ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| 会话历史与恢复 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| 中断(Stop) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| 消息排队 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| 图片附件 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ✅ |
+| 权限模式 | 自动·手动·计划·绕过 | 自动·手动·绕过 | 自动·计划·绕过 | 仅绕过 | 仅自动 | 自动·计划·绕过 | 仅自动 | 自动·计划·绕过 | 自动·计划 | 仅绕过 | 自动·手动·计划·绕过 |
+| 模型选择 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| 推理强度(Effort) | ✅ | ✅ | ❌ | ❌ | ✅ | ✅ | ❌ | ⚠️ | ❌ | ✅ | ⚠️ |
+| Token 用量与上下文窗口 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ⚠️ | ✅ | ✅ |
+| Todo 列表渲染 | ✅ | ❌ | ❌ | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| 子代理展示(任务分发面板) | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ✅ | ⚠️ | ⚠️ | ⚠️ | ❌ |
+| 团队模式(多代理编排) | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| `/` 斜杠命令与技能(选择器) | ✅ | ✅ | ⚠️ | ⚠️ | ⚠️ | ⚠️ | ⚠️ | ❌ | ⚠️ | ⚠️ | ❌ |
+| `@` 文件引用 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| 渠道/供应商切换 | ✅ | ✅ | ✅ | ✅ | ⚠️ | ⚠️ | ⚠️ | ⚠️ | ⚠️ | ⚠️ | ❌ |
+| CC Switch 渠道导入 | ✅ | ✅ | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| Fast 模式(service tier) | ❌ | ✅ | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| 会话重命名 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| 原生命令 `/new`(新会话) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| 原生命令 `/clear`(清空上下文) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| 原生命令 `/compact`(压缩上下文) | ✅ | ⚠️ | ⚠️ | ⚠️ | ⚠️ | ✅ | ⚠️ | ⚠️ | ⚠️ | ⚠️ | ⚠️ |
+| 原生命令 `ask`(提问卡片) | ✅ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ | ✅ | ❌ | ✅ |
+| 原生命令 `/mcp` | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| 原生命令 `/plugins` | ➖ | ➖ | ➖ | ➖ | ❌ | ✅ | ➖ | ➖ | ➖ | ➖ | ➖ |
+| 原生命令 `/goal`(持久目标) | ➖ | ➖ | ➖ | ➖ | ➖ | ❌ | ➖ | ➖ | ➖ | ➖ | ➖ |
+
+MiniMax Code（命令 `mcode`）走它的原生 ACP 传输（`mcode acp`）：逐 token 流式、权限提问卡片（ACP `session/request_permission`）、会话恢复均为原生接入，并已对 mcode 0.5.1 实测。模型列表来自对会话握手的实时探针，你在 mcode 里自己添加的渠道（如 GLM）会自动出现。mcode 的 ACP 不接受内联图片块，图片以绝对路径注入、由 agent 用自己的文件工具读取。推理强度折叠进 mcode 的模型变体，没有独立旋钮。WSL 工作区回退到 headless `mcode exec --output-format stream-json` 子进程（仅支持自动/绕过，无提问卡与计划模式）。渠道管理与应用的 MCP/Skills 同步暂未覆盖该引擎；认证用 `mcode login`。
 
 ---
 ## ccgui 能干什么
 
-### 一个客户端，装下十个 AI 引擎
+### 一个客户端，装下十一个 AI 引擎
 
-- 注册了 **Claude Code**、**Codex CLI**、**Kimi CLI**、**Grok CLI**、**Pi CLI**、**OMP CLI**、**DeepSeek Harness**、**Antigravity**、**OpenCode**、**Qoder**（全球版与国内版）的 runtime adapter——在输入框里按会话切换引擎。
+- 注册了 **Claude Code**、**Codex CLI**、**Kimi CLI**、**Grok CLI**、**Pi CLI**、**OMP CLI**、**DeepSeek Harness**、**Antigravity**、**OpenCode**、**Qoder**（全球版与国内版）、**MiniMax Code** 的 runtime adapter——在输入框里按会话切换引擎。
 - **供应商渠道**直接写入各 CLI 自己的原生配置文件（不搞平行的凭证存储），内置 GLM、Kimi、DeepSeek、MiniMax、MiMo、百炼、LongCat、OpenCode Go、OpenRouter 等精选预设；Claude / Codex / Grok 的渠道还能从 [CC Switch](https://github.com/farion1231/cc-switch) 一键导入。
 - Pi 系引擎（Pi / OMP）支持在设置页内完成 API Key 与 OAuth 登录。
 - 支持**按标签页覆盖模型与 effort 档位**：同一个窗口里，不同标签页可以跑不同模型或思考强度。

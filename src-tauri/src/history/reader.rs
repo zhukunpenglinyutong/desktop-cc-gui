@@ -701,7 +701,7 @@ fn delete_session_disk(engine: &str, path: &Path) -> Result<(), String> {
         // the transcript also lives in `storage/message/<id>/` and one
         // `storage/part/<msg>/` dir per message — all under the same storage root.
         "opencode" => delete_opencode_session_disk(path),
-        "kimi" | "grok" | "dsh" => delete_dir_session_disk(engine, path),
+        "kimi" | "grok" | "dsh" | "minimax" => delete_dir_session_disk(engine, path),
         // 未知引擎硬失败:宁可删除报错,也不能静默跳过磁盘删除让会话在下次
         // 扫描"复活"(dsh 曾落进 kimi/grok 兜底 arm,锚定校验必失败而删不掉)。
         _ => Err(format!("delete_session: unknown engine {engine}")),
@@ -756,6 +756,10 @@ fn delete_dir_session_disk_anchored(
             .join("wire.jsonl")
             .is_file(),
         "grok" => session_dir.join("chat_history.jsonl").is_file(),
+        // minimax 会话目录 = manifest.json + messages.jsonl 的 dated dir。
+        "minimax" => {
+            path.is_file() && session_dir.join("manifest.json").is_file()
+        }
         // dsh 主转录本的世代文件名即结构标记(db 路径本就来自同名规则的扫描)。
         _ => {
             path.is_file()

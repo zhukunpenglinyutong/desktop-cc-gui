@@ -17,6 +17,8 @@ pub mod images;
 pub(crate) mod job;
 pub mod kimi;
 mod kimi_acp;
+pub mod minimax;
+mod minimax_acp;
 pub mod models;
 pub mod opencode;
 pub mod opencode_server;
@@ -205,6 +207,7 @@ pub fn engine_by_id(id: &str) -> Option<Box<dyn Engine>> {
     match id {
         "claude" => Some(Box::new(claude::ClaudeEngine::new())),
         "kimi" => Some(Box::new(kimi::KimiEngine)),
+        "minimax" => Some(Box::new(minimax::MiniMaxEngine)),
         "grok" => Some(Box::new(grok::GrokEngine)),
         "codex" => Some(Box::new(codex::CodexEngine)),
         "pi" => Some(Box::new(pi_family::pi())),
@@ -319,6 +322,9 @@ pub(crate) fn cli_binary_name(engine_id: &str) -> &str {
     match engine_id {
         "qoder" => qoder::QoderDistribution::Global.cli_name(),
         "qoder-cn" => qoder::QoderDistribution::Cn.cli_name(),
+        // MiniMax Code ships its CLI under the product-independent `mcode`
+        // command, not the engine id.
+        "minimax" => "mcode",
         _ => engine_id,
     }
 }
@@ -1107,6 +1113,13 @@ async fn send_host_stream(
             killed,
             pid,
         )),
+        "minimax" => tokio::spawn(minimax_acp::run_acp_turn(
+            core,
+            launch.req,
+            launch.built,
+            killed,
+            pid,
+        )),
         "codex" => tokio::spawn(codex_app::run_app_server_turn(
             core,
             launch.req,
@@ -1185,6 +1198,20 @@ pub async fn answer_question(
     // the answer is the JSON-RPC response line on the CLI's stdin.
     if let Some(acp) = input.get("grokAcp") {
         let frame = grok_acp::answer_frame(acp, answers.as_ref())?;
+        state
+            .processes
+            .write_line(&session_id, frame.to_string())
+            .await?;
+        if let Ok(mut questions) = entry.questions.lock() {
+            questions.remove(&request_id);
+        }
+        return Ok(());
+    }
+    // MiniMax's ACP driver parks `session/request_permission`: the answer is
+    // the JSON-RPC response line on the CLI's stdin, selecting one of the
+    // ask's advertised options.
+    if let Some(acp) = input.get("minimaxAcp") {
+        let frame = minimax_acp::answer_frame(acp, answers.as_ref())?;
         state
             .processes
             .write_line(&session_id, frame.to_string())

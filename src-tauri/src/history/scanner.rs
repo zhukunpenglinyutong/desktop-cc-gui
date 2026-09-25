@@ -1,7 +1,7 @@
 use super::discovery::{
     codex_candidates, discover_agy, discover_claude, discover_grok, discover_kimi,
-    discover_opencode, discover_qoder, dsh_candidates, identify_head, is_codex_subagent_file,
-    is_dsh_subagent_file, path_is_under, pi_family_candidates,
+    discover_minimax, discover_opencode, discover_qoder, dsh_candidates, identify_head,
+    is_codex_subagent_file, is_dsh_subagent_file, path_is_under, pi_family_candidates,
 };
 use super::{same_or_child, scan_summary_file, stat_signature, ScanSummary};
 use serde::Serialize;
@@ -97,6 +97,7 @@ fn gather_candidates(workspaces: &[String]) -> Vec<Candidate> {
             .chain(discover_kimi(&workspace))
             .chain(discover_grok(&workspace))
             .chain(discover_agy(&workspace))
+            .chain(discover_minimax(&workspace))
             .chain(discover_qoder(
                 &workspace,
                 crate::engine::qoder::QoderDistribution::Global,

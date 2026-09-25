@@ -49,6 +49,7 @@ const BIN_FIELDS = {
   opencode: "opencodeBin",
   qoder: "qoderBin",
   "qoder-cn": "qoderCnBin",
+  minimax: "minimaxBin",
 } as const;
 type BinEngine = keyof typeof BIN_FIELDS;
 

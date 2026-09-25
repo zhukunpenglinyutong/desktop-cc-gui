@@ -268,6 +268,31 @@ pub fn kimi_prompt_with_images(prompt: &str, images: &[String], workspace: &Path
     out
 }
 
+/// MiniMax image injection: mcode's ACP advertises `promptCapabilities
+/// .image: false` (live 0.5.1), so pictures travel as absolute paths the
+/// agent reads with its own file tools. Marker lets history parsing strip
+/// the instruction block.
+pub const MINIMAX_IMAGE_MARKER: &str = "\n\n<!-- ccgui:minimax-image-attachments -->\n";
+
+pub fn minimax_prompt_with_images(prompt: &str, images: &[String], workspace: &Path) -> String {
+    let paths: Vec<PathBuf> = images
+        .iter()
+        .filter_map(|raw| absolutize_image_path(raw, workspace))
+        .collect();
+    if paths.is_empty() {
+        return prompt.to_string();
+    }
+    let mut out = prompt.trim_end().to_string();
+    out.push_str(MINIMAX_IMAGE_MARKER);
+    out.push_str("The user attached the following image file(s). ");
+    out.push_str("Read each path below with your file tools before answering any question about visual content.\n");
+    for (index, path) in paths.iter().enumerate() {
+        out.push_str(&format!("{}. {}\n", index + 1, path.display()));
+        out.push_str(&format!("<image path=\"{}\"></image>\n", path.display()));
+    }
+    out
+}
+
 /// Grok ACP content blocks for `--prompt-file`; None when no images.
 pub fn grok_prompt_json(
     prompt: &str,

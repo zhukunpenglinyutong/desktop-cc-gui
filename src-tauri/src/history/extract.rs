@@ -480,9 +480,155 @@ fn extract_line_messages(engine: &str, value: &Value, images: ImageMode) -> Line
         "codex" => extract_codex_line(value, images),
         "pi" | "omp" => extract_pi_family_line(value, images),
         "qoder" | "qoder-cn" => extract_qoder_line(value, images),
+        "minimax" => extract_minimax_line(value),
         _ => Vec::new(),
     }
 }
+
+// ==================== MiniMax Code ====================
+
+/// MiniMax Code transcript lines: `{message_id, turn_id, message:{role,
+/// content:[parts], timestamp(ms), usage?, model?, toolCallId?, toolName?}}`
+/// (shape verified against a live install's
+/// `~/.minimax/v2/sessions/<…>/messages.jsonl`). Content parts spell
+/// `text` / `thinking` / `toolCall`; a `toolResult` message resolves the
+/// matching call by its `toolCallId`.
+fn extract_minimax_line(value: &Value) -> LineRows {
+    let Some(message) = value.get("message") else {
+        return Vec::new();
+    };
+    let role = message.get("role").and_then(Value::as_str).unwrap_or("");
+    let ts = message
+        .get("timestamp")
+        .and_then(Value::as_i64)
+        .map(|ms| ms.to_string());
+    match role {
+        "user" => {
+            let text = minimax_text_of_content(message.get("content"));
+            // Strip the ACP image-injection marker block (same `<image
+            // path>` tag format as kimi, so one tag parser serves both).
+            let (display, images) = match text.find(crate::engine::images::MINIMAX_IMAGE_MARKER) {
+                Some(idx) => (
+                    text[..idx].trim_end().to_string(),
+                    kimi_image_paths(&text[idx..]),
+                ),
+                None => (text, Vec::new()),
+            };
+            if display.trim().is_empty() && images.is_empty() {
+                Vec::new()
+            } else {
+                vec![LineRow {
+                    images,
+                    ..LineRow::new("user", display, ts)
+                }]
+            }
+        }
+        "assistant" => {
+            let mut out = Vec::new();
+            let mut text = String::new();
+            for part in message
+                .get("content")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+            {
+                match part.get("type").and_then(Value::as_str) {
+                    Some("text") => {
+                        if let Some(t) = part.get("text").and_then(Value::as_str) {
+                            text.push_str(t);
+                        }
+                    }
+                    Some("thinking") => {
+                        pi_flush_text(&mut out, &mut text, &ts, "assistant");
+                        if let Some(t) = part.get("thinking").and_then(Value::as_str) {
+                            out.push(LineRow::new("thinking", t.to_string(), ts.clone()));
+                        }
+                    }
+                    Some("toolCall") => {
+                        pi_flush_text(&mut out, &mut text, &ts, "assistant");
+                        let name = part.get("name").and_then(Value::as_str).unwrap_or("tool");
+                        let arguments = part.get("arguments");
+                        out.push(LineRow {
+                            path: arguments.and_then(crate::engine::tool_path_arg),
+                            args: arguments.and_then(crate::engine::parse_tool_args_value),
+                            tool_call_id: part
+                                .get("id")
+                                .and_then(Value::as_str)
+                                .map(str::to_string),
+                            todos: arguments.and_then(crate::engine::parse_todo_args),
+                            ..LineRow::new("tool", name.to_string(), ts.clone())
+                        });
+                    }
+                    _ => {}
+                }
+            }
+            pi_flush_text(&mut out, &mut text, &ts, "assistant");
+            if let Some(row) = out.iter_mut().rev().find(|row| row.role == "assistant") {
+                row.model = message
+                    .get("model")
+                    .and_then(Value::as_str)
+                    .map(str::to_string);
+            }
+            if let Some(usage) = minimax_usage(message.get("usage")) {
+                out.push(LineRow {
+                    usage: Some(usage),
+                    ..LineRow::new("__usage__", String::new(), ts)
+                });
+            }
+            out
+        }
+        "toolResult" => {
+            let text = minimax_text_of_content(message.get("content"));
+            let mut result = serde_json::Map::new();
+            result.insert("text".to_string(), serde_json::Value::String(text));
+            if message.get("isError").and_then(Value::as_bool) == Some(true) {
+                result.insert("isError".to_string(), serde_json::Value::Bool(true));
+            }
+            vec![LineRow {
+                tool_call_id: message
+                    .get("toolCallId")
+                    .and_then(Value::as_str)
+                    .map(str::to_string),
+                result: Some(serde_json::Value::Object(result)),
+                ..LineRow::new("__tool_result__", String::new(), ts)
+            }]
+        }
+        _ => Vec::new(),
+    }
+}
+
+/// Join the `text` payloads of a minimax content block list.
+fn minimax_text_of_content(content: Option<&Value>) -> String {
+    content
+        .and_then(Value::as_array)
+        .map(|parts| {
+            parts
+                .iter()
+                .filter(|part| type_str(part) == "text")
+                .filter_map(|part| part.get("text").and_then(Value::as_str))
+                .collect::<Vec<_>>()
+                .join("")
+        })
+        .unwrap_or_default()
+}
+
+/// minimax usage `{input, output, totalTokens, cacheRead…}` → the snake_case
+/// keys the history ledger stores.
+fn minimax_usage(usage: Option<&Value>) -> Option<Value> {
+    let usage = usage?.as_object()?;
+    let get = |key: &str| usage.get(key).and_then(Value::as_u64);
+    let input = get("input")?;
+    let output = get("output")?;
+    let total = usage.get("totalTokens").and_then(Value::as_u64)?;
+    Some(serde_json::json!({
+        "input_tokens": input,
+        "output_tokens": output,
+        "total_tokens": total,
+        "cache_read": get("cacheRead"),
+    }))
+}
+
+// ==================== OpenCode ====================
 
 /// Codex rollout lines: {timestamp, type, payload}. Messages are
 /// response_item payloads of type "message".
@@ -2074,5 +2220,67 @@ mod tests {
         assert_eq!(summary.last_ts, Some(1_700_000_001_000));
         assert_eq!(summary.message_count, 4);
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// minimax transcript line: content parts spell text/thinking/toolCall,
+    /// usage rides the assistant message, toolResult resolves by toolCallId,
+    /// and the ACP image-injection marker is stripped from user turns.
+    #[test]
+    fn minimax_lines_project_roles_parts_usage_and_images() {
+        let rows = extract_line_messages(
+            "minimax",
+            &serde_json::json!({
+                "message_id": "m1", "turn_id": "t1",
+                "message": {"role": "user", "content": [
+                    {"type": "text", "text": "看这张图"},
+                    {"type": "text", "text": "\n\n<!-- ccgui:minimax-image-attachments -->\n附件如下\n1. /tmp/pic.png\n<image path=\"/tmp/pic.png\"></image>\n"}
+                ], "timestamp": 1_700_000_000_000i64}
+            }),
+            ImageMode::SkipDataUrls,
+        );
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].role, "user");
+        assert_eq!(rows[0].text, "看这张图");
+        assert_eq!(rows[0].images, vec!["/tmp/pic.png".to_string()]);
+
+        let rows = extract_line_messages(
+            "minimax",
+            &serde_json::json!({
+                "message_id": "m2", "turn_id": "t1",
+                "message": {"role": "assistant", "content": [
+                    {"type": "thinking", "thinking": "想一下"},
+                    {"type": "text", "text": "答案是 "},
+                    {"type": "text", "text": "42"},
+                    {"type": "toolCall", "id": "call-9", "name": "read_file", "arguments": {"path": "/tmp/a"}}
+                ], "timestamp": 1_700_000_001_000i64,
+                "model": "minimax/MiniMax-M2.7",
+                "usage": {"input": 10, "output": 5, "totalTokens": 15, "cacheRead": 2}}
+            }),
+            ImageMode::SkipDataUrls,
+        );
+        assert_eq!(
+            rows.iter().map(|r| r.role.as_str()).collect::<Vec<_>>(),
+            ["thinking", "assistant", "tool", "__usage__"]
+        );
+        assert_eq!(rows[1].text, "答案是 42");
+        assert_eq!(rows[1].model.as_deref(), Some("minimax/MiniMax-M2.7"));
+        assert_eq!(rows[2].text, "read_file");
+        assert_eq!(rows[2].tool_call_id.as_deref(), Some("call-9"));
+        assert_eq!(rows[3].usage.as_ref().unwrap()["total_tokens"], 15);
+
+        let rows = extract_line_messages(
+            "minimax",
+            &serde_json::json!({
+                "message_id": "m3", "turn_id": "t1",
+                "message": {"role": "toolResult", "toolCallId": "call-9",
+                    "content": [{"type": "text", "text": "文件内容"}],
+                    "timestamp": 1_700_000_002_000i64}
+            }),
+            ImageMode::SkipDataUrls,
+        );
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].role, "__tool_result__");
+        assert_eq!(rows[0].tool_call_id.as_deref(), Some("call-9"));
+        assert_eq!(rows[0].result.as_ref().unwrap()["text"], "文件内容");
     }
 }

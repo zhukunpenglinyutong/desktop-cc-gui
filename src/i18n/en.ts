@@ -629,6 +629,7 @@ export const en: Messages = {
       opencode: "OpenCode",
       qoder: "Qoder CLI",
       "qoder-cn": "Qoder CLI (CN)",
+      minimax: "MiniMax",
     },
     cliManage: "CLI Management",
     groupSystem: "System",

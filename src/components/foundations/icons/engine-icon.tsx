@@ -6,6 +6,7 @@ import chatglmIcon from "@/assets/model-icons/chatglm.svg";
 import qwenIcon from "@/assets/model-icons/qwen.svg";
 import doubaoIcon from "@/assets/model-icons/doubao.svg";
 import minimaxIcon from "@/assets/model-icons/minimax.svg";
+import minimaxCodeIcon from "@/assets/model-icons/minimax-code.png";
 import yiIcon from "@/assets/model-icons/yi.svg";
 import baichuanIcon from "@/assets/model-icons/baichuan.svg";
 import hunyuanIcon from "@/assets/model-icons/hunyuan.svg";
@@ -206,6 +207,20 @@ export function EngineIcon({ engine, size = 14, className, style }: EngineIconPr
   }
   if (engine === "qoder" || engine === "qoder-cn") {
     return <QoderGlyph size={size} className={className} style={style} />;
+  }
+  // The MiniMax Code CLI wears the app's own blue badge (converted from the
+  // shipped .icns); the flat `minimax` mark below stays for model-vendor
+  // inference on other engines.
+  if (engine === "minimax") {
+    return (
+      <img
+        src={minimaxCodeIcon}
+        alt="MiniMax Code"
+        className={className}
+        style={iconStyle}
+        aria-hidden
+      />
+    );
   }
 
   const raster = RASTER_ICONS[engine as EngineIconId];

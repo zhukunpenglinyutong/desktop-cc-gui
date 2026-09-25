@@ -13,6 +13,7 @@ export const CLI_DISPLAY_NAMES: Record<string, string> = {
   opencode: "OpenCode",
   qoder: "Qoder CLI",
   "qoder-cn": "Qoder CLI CN",
+  minimax: "MiniMax Code",
 };
 
 /**

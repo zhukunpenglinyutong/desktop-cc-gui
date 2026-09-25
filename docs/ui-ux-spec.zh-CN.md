@@ -242,6 +242,7 @@ const feedback = useRunningFeedback(store.loading);
 
 | 版本 | 时间 | 内容 |
 |---|---|---|
+| v0.53 | 2026-09-25 | 新增 MiniMax Code CLI（命令 `mcode`）引擎：聊天引擎下拉与设置 CLI 管理按既有数据驱动形态自动出现，引擎图标采用随 app 分发的蓝色徽章（.icns 转 PNG），模型厂商推断沿用原扁平标志；权限问答走 ACP `session/request_permission` 问题卡（同 grok/kimi 形态）；MCP 页如实标注不支持（不伪造 native 空来源）；渠道/技能同步暂不接入 |
 | v0.52 | 2026-09-24 | 设置「电脑操控」移除拖拽授权引导：删掉“重启生效 / 把图标拖进授权列表”提示与可拖拽 App 图标，macOS 授权只保留「打开系统设置」深链（`computer_use_open_permission_settings`）；同步删除 `computer_use_drag_source` 命令、`tauri-plugin-drag` 依赖与 `drag:default` 权限；§3 更新权限行规则 |
 | v0.51 | 2026-09-24 | AskUserQuestion 多题卡片：单选自动前进、多选逐题确认与单选/多选样式区分 |
 | v0.50 | 2026-09-23 | 桌面宠物（§4.3）：透明置顶宠物窗口的点击穿透/拖动/右键缩放交互、状态气泡动效时长、位置与尺寸记忆、多会话轮播；移除宠物改用 `ConfirmDialog`（danger），后端宠物错误码本地化 |

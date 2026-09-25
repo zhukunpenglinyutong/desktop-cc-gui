@@ -146,6 +146,7 @@ const ENGINE_ICON_IDS: readonly EngineIconId[] = [
   "opencode",
   "qoder",
   "qoder-cn",
+  "minimax",
 ];
 const isEngineIcon = (engine: string): engine is EngineIconId =>
   ENGINE_ICON_IDS.includes(engine as EngineIconId);

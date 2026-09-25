@@ -111,6 +111,7 @@ describe("useEngineModels channel models", () => {
     opencode: EMPTY_SECTION,
     qoder: EMPTY_SECTION,
     "qoder-cn": EMPTY_SECTION,
+    minimax: EMPTY_SECTION,
   });
 
   it("切换渠道后别名行改指该渠道映射的模型", async () => {

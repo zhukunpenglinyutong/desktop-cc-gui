@@ -14,6 +14,7 @@ export const ENGINE_IDS = [
   "opencode",
   "qoder",
   "qoder-cn",
+  "minimax",
 ] as const;
 export type EngineId = (typeof ENGINE_IDS)[number];
 /** Official docs per engine — the CLI 管理 header "官方文档" link. */
@@ -29,6 +30,7 @@ export const ENGINE_DOCS_URLS: Record<EngineId, string> = {
   opencode: "https://opencode.ai/docs/",
   qoder: "https://docs.qoder.com/en/cli/using-cli",
   "qoder-cn": "https://docs.qoder.com/zh/cli/using-cli",
+  minimax: "https://agent.minimax.cn/docs/cli/quick-start",
 };
 
 export const PSEUDO_LOCAL = "__local_settings_json__";
