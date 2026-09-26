@@ -176,40 +176,6 @@ export default function ccguiAskBridge(pi: ExtensionAPI) {
 			};
 		},
 	});
-	pi.on("before_provider_request", (event, ctx) => {
-		const payload = event.payload;
-		if (!payload || typeof payload !== "object") return;
-		const rawLevel = (typeof process !== "undefined" && process.env?.CCGUI_REQUESTED_EFFORT) || ctx?.thinkingLevel || pi.getThinkingLevel?.();
-		if (!rawLevel || rawLevel === "off") return;
-		const effort = rawLevel;
-		const p = payload as Record<string, any>;
-		const api = ctx?.model?.api;
-		if (api === "google-generative-ai" || api === "google-gemini-cli" || api === "google-vertex") {
-			// Google 传输使用 generationConfig.thinkingConfig；Cloud Code Assist 会将下方
-			// 通用推理字段识别为未知 protobuf 字段并拒绝请求。
-			delete p.reasoning_effort;
-			delete p.reasoning;
-			return p;
-		}
-		if (ctx?.model?.api === "anthropic-messages") {
-			if (!p.output_config || typeof p.output_config !== "object") {
-				p.output_config = { effort };
-			} else if (!p.output_config.effort) {
-				p.output_config.effort = effort;
-			}
-		}
-		// 2. OpenAI completions format: top-level reasoning_effort
-		if (!p.reasoning_effort) {
-			p.reasoning_effort = effort;
-		}
-		// 3. OpenRouter / vLLM format: reasoning.effort
-		if (!p.reasoning) {
-			p.reasoning = { effort };
-		} else if (typeof p.reasoning === "object" && !p.reasoning.effort) {
-			p.reasoning.effort = effort;
-		}
-		return p;
-	});
 }
 "#;
 
@@ -427,11 +393,11 @@ impl Engine for PiFamilyEngine {
                 cmd.args(["--service-tier", tier]);
             }
         }
-        // Pass the requested level through unchanged.
+        // Let the CLI encode thinking for the selected provider; adding generic
+        // effort fields in the bridge breaks Responses and other strict APIs.
         if let Some(effort) = req.effort.as_deref() {
             cmd.arg("--thinking");
             cmd.arg(effort);
-            cmd.env("CCGUI_REQUESTED_EFFORT", effort);
         }
         match self.resolve_permission(req.permission.as_deref()) {
             // Skips every approval tier for this run, and also sets the
@@ -1846,15 +1812,6 @@ mod tests {
             .map(|a| a.to_string_lossy().to_string())
             .collect();
         assert!(args.windows(2).any(|w| w == ["--thinking", "ultra"]));
-        assert_eq!(
-            built
-                .command
-                .as_std()
-                .get_envs()
-                .find(|(k, _)| *k == "CCGUI_REQUESTED_EFFORT")
-                .and_then(|(_, v)| v),
-            Some(std::ffi::OsStr::new("ultra"))
-        );
     }
 
     #[test]
