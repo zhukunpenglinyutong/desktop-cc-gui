@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { safeRandomUUID } from "@/lib/id";
 import {
   ipc,
   type WorktreeCreateArgs,
@@ -103,7 +104,7 @@ export function ensureWorktreeEvents(): void {
 }
 
 function newCreationId(): string {
-  return crypto.randomUUID();
+  return safeRandomUUID();
 }
 
 export const useWorktreeStore = create<WorktreeStore>((set, get) => {

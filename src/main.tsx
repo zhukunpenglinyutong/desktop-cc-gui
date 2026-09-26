@@ -1,9 +1,13 @@
 import "./index.css";
+import { installCryptoRandomUUIDPolyfill } from "./lib/id";
 import {
   installReactScanHook,
   isReactScanEnabled,
   startReactScanOverlay,
 } from "./lib/react-scan";
+
+// Ensure crypto.randomUUID is available in non-secure HTTP contexts (e.g. LAN web bridge).
+installCryptoRandomUUIDPolyfill();
 
 /**
  * react-scan must instrument React before the first `react` import runs —

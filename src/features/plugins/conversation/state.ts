@@ -1,3 +1,4 @@
+import { safeRandomUUID } from "@/lib/id";
 import { readStoredJson, writeStored } from "@/lib/storage";
 
 export class ConversationModeState {
@@ -20,7 +21,7 @@ export class ConversationModeState {
     const key = JSON.stringify([workspacePath, sessionKey]);
     let identity = this.identities.get(key);
     if (!identity) {
-      identity = draft ? JSON.stringify([workspacePath, sessionKey, crypto.randomUUID()]) : key;
+      identity = draft ? JSON.stringify([workspacePath, sessionKey, safeRandomUUID()]) : key;
       this.identities.set(key, identity);
       this.persist(Object.fromEntries(this.identities));
     }
