@@ -124,4 +124,20 @@ describe("shortcut runtime dispatch", () => {
     unregister();
     stop();
   });
+
+  it("ignores the bare keydown Event Chromium fires when a datalist option is picked", () => {
+    // WebFormControlElement::SetAutofillValue dispatches Event("keydown") on
+    // the field (no key, no modifiers) before filling in the picked value.
+    const stop = startShortcutRuntime();
+    const errors: unknown[] = [];
+    const onError = (event: ErrorEvent) => errors.push(event.error);
+    window.addEventListener("error", onError);
+    const input = document.createElement("input");
+    document.body.appendChild(input);
+    input.dispatchEvent(new Event("keydown", { bubbles: true }));
+    window.removeEventListener("error", onError);
+    expect(errors).toEqual([]);
+    input.remove();
+    stop();
+  });
 });
