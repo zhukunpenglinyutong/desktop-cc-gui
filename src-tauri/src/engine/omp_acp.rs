@@ -1010,6 +1010,7 @@ mod tests {
             session_id: None,
             workspace: PathBuf::from("/tmp/ccgui-omp-acp-test"),
             prompt: "规划一下".to_string(),
+            prompt_contributions: Vec::new(),
             images: Vec::new(),
             model: None,
             effort: None,

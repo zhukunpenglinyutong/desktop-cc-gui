@@ -3,3 +3,10 @@
 # by default, which flips those bytes and breaks the hash check — pin them to
 # LF on every platform so the on-disk content matches the recorded hash.
 src-tauri/resources/agent-catalogs/** text eol=lf
+
+# The built-in plugin-creator skill is generated with LF by
+# creator-skill-docs.ts and asserted byte-for-byte by its test; it is also
+# copied verbatim into the CLI skill roots at runtime. A CRLF checkout on
+# Windows flips those bytes and fails both the equality check and the
+# frontmatter match, so pin them to LF everywhere.
+src-tauri/resources/skills/** text eol=lf

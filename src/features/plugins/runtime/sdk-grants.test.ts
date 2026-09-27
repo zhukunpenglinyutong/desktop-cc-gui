@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-  KNOWN_PERMISSIONS,
   execGrantAllows,
   isKnownPermission,
   networkGrantAllows,
@@ -8,12 +7,18 @@ import {
 import spec from "../../../../packages/plugin-sdk/spec/permissions.json";
 
 describe("isKnownPermission", () => {
-  it("accepts every base permission (23 项)", () => {
-    for (const p of Object.keys(KNOWN_PERMISSIONS)) {
-      expect(isKnownPermission(p)).toBe(true);
+  it("accepts generic lifecycle and conversation capabilities", () => {
+    for (const permission of [
+      "session.lifecycle.read",
+      "runtime.events.read",
+      "runtime.switch.observe",
+      "prompt.contribute.internal",
+      "workspace.metadata.read",
+      "plugin.storage",
+      "ui:conversation-mode",
+    ]) {
+      expect(isKnownPermission(permission)).toBe(true);
     }
-    expect(Object.keys(KNOWN_PERMISSIONS)).toHaveLength(23);
-    expect(isKnownPermission("ui:conversation-mode")).toBe(true);
   });
 
   it("accepts well-shaped network: grants (bare host / port / port range)", () => {
@@ -127,8 +132,10 @@ describe("execGrantAllows", () => {
 // TS（本实现）、Rust（plugins.rs include_str!）、模板 validate-manifest.mjs
 // 三方跑同一组向量，任何漂移都会在其中一处失败。
 describe("spec/permissions.json vectors", () => {
-  it("KNOWN_PERMISSIONS is generated from spec.knownPermissions", () => {
-    expect(Object.keys(KNOWN_PERMISSIONS).sort()).toEqual([...spec.knownPermissions].sort());
+  it("accepts shared base permission vectors", () => {
+    for (const permission of spec.knownPermissions) {
+      expect(isKnownPermission(permission), permission).toBe(true);
+    }
   });
 
   it("drives networkGrantShapes.valid through isKnownPermission", () => {

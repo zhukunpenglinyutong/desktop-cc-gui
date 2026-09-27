@@ -221,7 +221,12 @@ fn stamp_failure(db: &crate::db::Db, row: &PendingSession) -> Result<(), String>
 /// its stat moves.
 fn index_one(db: &crate::db::Db, row: &PendingSession) -> Result<bool, String> {
     let parsed = if row.message_count > 0 {
-        match parse_session_file(&row.engine, Path::new(&row.file_path)) {
+        // Index the same text the reader shows: parse with this session's
+        // accepted internal frames, so hidden frames stay out of the index
+        // (an empty set would re-reveal every frame the capture validator hid).
+        let (accepted_frames, _) =
+            db.accepted_internal_frames(&row.engine, &row.session_id)?;
+        match parse_session_file(&row.engine, Path::new(&row.file_path), &accepted_frames) {
             Ok(parsed) => parsed,
             Err(error) => {
                 eprintln!(

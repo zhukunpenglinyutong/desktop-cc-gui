@@ -13,7 +13,7 @@ import { notePluginRenderOk, reportPluginCrash } from "../runtime/loader";
  * reloading the plugin.
  */
 export class PluginBoundary extends Component<
-  { pluginId: string; children: ReactNode },
+  { pluginId: string; children: ReactNode; fallback?: ReactNode },
   { failed: boolean }
 > {
   override state = { failed: false };
@@ -32,6 +32,7 @@ export class PluginBoundary extends Component<
 
   override render() {
     if (this.state.failed) {
+      if (this.props.fallback !== undefined) return this.props.fallback;
       return (
         <div className="flex items-center gap-2 text-body-medium text-text-tertiary">
           <span>{i18n.t("plugins.boundary.crashed")}</span>

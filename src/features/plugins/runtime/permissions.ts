@@ -1,4 +1,4 @@
-import { isKnownPermission, type PluginManifest } from "@ccgui/plugin-sdk";
+import { isKnownPermission, isValidPluginId, type PluginManifest } from "@ccgui/plugin-sdk";
 
 /**
  * Manifest validation beyond Rust's install-time checks (Rust is the
@@ -21,7 +21,7 @@ export function unknownPermissions(permissions: string[]): string[] {
  *  human-readable problems; empty = valid. */
 export function validateManifest(manifest: PluginManifest): string[] {
   const problems: string[] = [];
-  if (!/^[a-z0-9][a-z0-9-]{1,63}$/.test(manifest.id)) problems.push(`bad id "${manifest.id}"`);
+  if (!isValidPluginId(manifest.id)) problems.push(`bad id "${manifest.id}"`);
   if (!manifest.name?.trim()) problems.push("name is empty");
   if (!/^\d+\.\d+\.\d+$/.test(manifest.version)) problems.push(`bad version "${manifest.version}"`);
   if (manifest.minAppVersion !== undefined && !/^\d+\.\d+\.\d+$/.test(manifest.minAppVersion)) {

@@ -17,7 +17,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: pnpm
 
       - uses: dtolnay/rust-toolchain@stable
@@ -25,11 +25,19 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      # The computer-use Windows dependencies make the lib-test EXE fail at
-      # process load on windows-latest (0xc0000139), before any test runs.
-      # Keep Windows compile coverage explicit until the runner loader issue is fixed.
+      - name: SDK contract typecheck
+        run: pnpm --filter @ccgui/plugin-sdk typecheck
+
+      - name: Frontend tests
+        run: pnpm exec vitest run src
+
+      # The computer-use Windows dependencies make the test EXEs fail at
+      # process load on windows-latest (0xc0000139), before any test runs, and
+      # this step gates packaging — so Windows coverage stays compile-only.
+      # Includes the integration targets (src-tauri/tests/*) so send-path
+      # signature drift fails here rather than in the bundle step.
       - name: Rust test compilation
-        run: cargo test --manifest-path src-tauri/Cargo.toml --lib --no-run
+        run: cargo test --manifest-path src-tauri/Cargo.toml --tests --no-run
 
       - name: Disable updater signing for artifact build
         shell: pwsh

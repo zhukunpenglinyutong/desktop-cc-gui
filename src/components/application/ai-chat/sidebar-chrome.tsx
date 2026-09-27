@@ -290,7 +290,10 @@ export function SidebarContextMenus({
 }) {
   return (
     <>
-      {workspaceMenu && (onWorkspaceAlias || onSetWorkspaceArchived) && (
+      {/* The opener already decided the menu has entries (builtin or
+          registered), and WorkspaceContextMenu renders null once it has none —
+          so a plugin-only menu must not be gated on host handlers here. */}
+      {workspaceMenu && (
         <WorkspaceContextMenu
           menu={workspaceMenu}
           onClose={onCloseWorkspaceMenu}

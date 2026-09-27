@@ -9,6 +9,7 @@ import {
   execGrantAllows,
   markdownRegistry,
   networkGrantAllows,
+  overlayRegistry,
   pageRegistry,
   panelTabRegistry,
   scopedPluginId,
@@ -17,24 +18,34 @@ import {
   statusBarRegistry,
   composerStatusRegistry,
   timelineRowRegistry,
+  workspaceMenuRegistry,
   sidebarNavRegistry,
   centerTabRegistry,
   conversationModeRegistry,
 } from "@ccgui/plugin-sdk";
 import type {
+  AssetDirectoryGrant,
   Disposer,
   PluginAgentCatalogEntry,
   MarkdownRendererDef,
   PluginContext,
   PluginManifest,
+  RegisteredWorkspace,
+  WorkspaceMetadata,
 } from "@ccgui/plugin-sdk";
+import {
+  registerRuntimeSwitchHooks,
+  registerSessionHooks,
+  registerTurnHooks,
+} from "./hooks";
 import { assertPluginEmitTopic, pluginBus } from "./events";
 import { setActiveComposerDraft } from "./composer-draft";
 import { dismissCenterSurfaces } from "@/features/chat/center-surfaces";
 import { addPluginWorkspace, openPluginSession } from "./workspace-bridge";
 import { registerSessionSource } from "./session-source";
+import { directoryAssetUrl, fileAssetUrl, remoteAssetUrl } from "./asset-url";
 import { usePluginTabsStore } from "./center-tabs";
-import { runAsPlugin } from "./hardening";
+import { runAsPlugin, withAuthorizedHostInvoke } from "./hardening";
 
 /** Storage transport the context talks to; the loader binds the IPC-backed
  *  implementation, tests bind fakes. */
@@ -44,12 +55,50 @@ export interface PluginStorageBackend {
   delete(id: string, key: string): Promise<void>;
 }
 
-/** Full backend seam the context needs: KV storage plus the bridge invoke
- *  (grant-checked below, then routed through the host's transport by the
- *  loader's IPC-backed implementation). */
+export type DocumentStorageLocationResponse = {
+  kind: "data" | "program" | "custom";
+  displayPath: string;
+  writable: boolean;
+};
+
+export type DocumentStorageWriteResponse =
+  | { status: "written"; version: string }
+  | { status: "conflict"; currentVersion: string | null };
+
+export type DocumentStorageRemoveResponse =
+  | { status: "removed" }
+  | { status: "conflict"; currentVersion: string | null };
+
+/** Full backend seam the context needs. Every method accepts pluginId first;
+ * the loader binds these calls to IPC and tests bind minimal fakes. */
 export interface PluginContextBackend extends PluginStorageBackend {
   agentCatalog?(workspacePath: string): Promise<PluginAgentCatalogEntry[]>;
   bridgeInvoke(command: string, args: Record<string, unknown>): Promise<unknown>;
+  workspaceMetadata(id: string): Promise<WorkspaceMetadata>;
+  workspaceList(id: string): Promise<RegisteredWorkspace[]>;
+  pickDirectory(title?: string): Promise<string | null>;
+  documentStorageGetLocation(id: string): Promise<DocumentStorageLocationResponse>;
+  documentStorageSelectLocation(
+    id: string,
+    kind: "data" | "program" | "custom",
+    customPath: string | null,
+  ): Promise<DocumentStorageLocationResponse>;
+  documentStorageReadText(
+    id: string,
+    relativePath: string,
+  ): Promise<{ content: string; version: string } | null>;
+  documentStorageWriteTextAtomic(
+    id: string,
+    relativePath: string,
+    content: string,
+    expectedVersion: string | null,
+  ): Promise<DocumentStorageWriteResponse>;
+  documentStorageRemove(
+    id: string,
+    relativePath: string,
+    expectedVersion: string | null,
+  ): Promise<DocumentStorageRemoveResponse>;
+  documentStorageList(id: string, prefix?: string): Promise<string[]>;
 }
 
 export interface PluginHandle {
@@ -60,6 +109,21 @@ export interface PluginHandle {
    *  reversed — outermost effects unwind before the registrations they were
    *  built on. */
   disposers: Disposer[];
+}
+
+export class DocumentStorageConflictError extends Error {
+  readonly code = "DOCUMENT_STORAGE_CONFLICT";
+
+  constructor(readonly currentVersion: string | null) {
+    super(
+      `document storage version conflict (current: ${currentVersion ?? "missing"})`,
+    );
+    this.name = "DocumentStorageConflictError";
+  }
+}
+
+function sdkLocation(location: DocumentStorageLocationResponse) {
+  return { kind: location.kind, path: location.displayPath };
 }
 
 const REMOTE_CSS = /@import|url\(\s*['"]?https?:/i;
@@ -142,6 +206,141 @@ export function createPluginContext(
     pluginId: id,
     version: manifest.version,
     react: React,
+    hooks: {
+      registerSessionHooks(hooks) {
+        requirePermission("session.lifecycle.read");
+        return track(registerSessionHooks(id, hooks));
+      },
+      registerTurnHooks(hooks) {
+        if (hooks.onTurnStarted || hooks.onRuntimeEvent || hooks.afterTurn) {
+          requirePermission("runtime.events.read");
+        }
+        if (hooks.beforeTurn || hooks.onInternalMessage) {
+          requirePermission("prompt.contribute.internal");
+        }
+        return track(registerTurnHooks(id, hooks));
+      },
+      registerRuntimeSwitchHooks(hooks) {
+        requirePermission("runtime.switch.observe");
+        return track(registerRuntimeSwitchHooks(id, hooks));
+      },
+    },
+    workspace: {
+      async getMetadata() {
+        requirePermission("workspace.metadata.read");
+        return withAuthorizedHostInvoke(() => backend.workspaceMetadata(id));
+      },
+    },
+    documentStorage: {
+      async getLocation() {
+        requirePermission("plugin.storage");
+        return sdkLocation(await withAuthorizedHostInvoke(() => backend.documentStorageGetLocation(id)));
+      },
+      async selectLocation(kind) {
+        requirePermission("plugin.storage");
+        let customPath: string | null = null;
+        if (kind === "custom") {
+          customPath = await withAuthorizedHostInvoke(() => backend.pickDirectory());
+          if (customPath === null) throw new Error("document storage directory selection cancelled");
+        }
+        return sdkLocation(await withAuthorizedHostInvoke(() =>
+          backend.documentStorageSelectLocation(id, kind, customPath),
+        ));
+      },
+      async readText(relativePath) {
+        requirePermission("plugin.storage");
+        return withAuthorizedHostInvoke(() => backend.documentStorageReadText(id, relativePath));
+      },
+      async writeTextAtomic(relativePath, content, expectedVersion) {
+        requirePermission("plugin.storage");
+        const result = await withAuthorizedHostInvoke(() => backend.documentStorageWriteTextAtomic(
+          id,
+          relativePath,
+          content,
+          expectedVersion,
+        ));
+        if (result.status === "conflict") {
+          throw new DocumentStorageConflictError(result.currentVersion);
+        }
+        return { version: result.version };
+      },
+      async remove(relativePath, expectedVersion) {
+        requirePermission("plugin.storage");
+        const result = await withAuthorizedHostInvoke(() => backend.documentStorageRemove(
+          id,
+          relativePath,
+          expectedVersion ?? null,
+        ));
+        if (result.status === "conflict") {
+          throw new DocumentStorageConflictError(result.currentVersion);
+        }
+      },
+      async list(prefix) {
+        requirePermission("plugin.storage");
+        return withAuthorizedHostInvoke(() => backend.documentStorageList(id, prefix));
+      },
+    },
+    assets: {
+      bundleUrl(relativePath) {
+        requirePermission("assets:bundle");
+        return fileAssetUrl(id, "bundle", relativePath);
+      },
+      documentUrl(relativePath) {
+        requirePermission("plugin.storage");
+        return fileAssetUrl(id, "doc", relativePath);
+      },
+      remoteUrl(url) {
+        if (typeof url !== "string") throw new Error("asset URL must be an HTTP(S) string");
+        const parsed = new URL(url);
+        if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+          throw new Error("asset URL must use HTTP or HTTPS");
+        }
+        if (parsed.username || parsed.password) {
+          throw new Error("asset URL credentials are not allowed");
+        }
+        if (!networkGrantAllows(manifest.permissions, parsed.href)) {
+          throw new Error(`[plugins] "${id}" asset request matches no declared network: grant`);
+        }
+        return remoteAssetUrl(id, parsed);
+      },
+      async grantDirectory() {
+        requirePermission("assets:directory");
+        const title = i18n.t("plugins.assetPickTitle");
+        const path = await withAuthorizedHostInvoke(() => backend.pickDirectory(title));
+        if (path === null) throw new Error("asset directory selection cancelled");
+        return withAuthorizedHostInvoke(() => backend.bridgeInvoke(
+          "plugin_asset_grant_directory", { pluginId: id, path },
+        )) as Promise<AssetDirectoryGrant>;
+      },
+      async listDirectories() {
+        requirePermission("assets:directory");
+        return withAuthorizedHostInvoke(() => backend.bridgeInvoke(
+          "plugin_asset_list_directories", { pluginId: id },
+        )) as Promise<AssetDirectoryGrant[]>;
+      },
+      async revokeDirectory(grantId) {
+        requirePermission("assets:directory");
+        if (typeof grantId !== "string") throw new Error("asset grant id must be a string");
+        await withAuthorizedHostInvoke(() => backend.bridgeInvoke(
+          "plugin_asset_revoke_directory", { pluginId: id, grantId },
+        ));
+      },
+      directoryUrl(grantId, relativePath) {
+        requirePermission("assets:directory");
+        return directoryAssetUrl(id, grantId, relativePath);
+      },
+    },
+    shell: {
+      async revealPath(path) {
+        if (!manifest.permissions.includes("plugin.storage") && !manifest.permissions.includes("assets:directory")) {
+          throw new Error(`[plugins] "${id}" revealPath requires plugin.storage or assets:directory`);
+        }
+        if (typeof path !== "string") throw new Error("reveal path must be a string");
+        await withAuthorizedHostInvoke(() => backend.bridgeInvoke(
+          "plugin_reveal_path", { pluginId: id, path },
+        ));
+      },
+    },
     ui: {
       registerConversationMode(def) {
         requirePermission("ui:conversation-mode");
@@ -223,6 +422,14 @@ export function createPluginContext(
           }),
         );
       },
+      registerOverlay(def) {
+        requirePermission("ui:overlay");
+        return track(overlayRegistry.register({
+          id: scopedPluginId(id, def.key),
+          component: def.component,
+          order: def.order,
+        }));
+      },
       registerCommand(def) {
         requirePermission("ui:command");
         return track(
@@ -279,6 +486,22 @@ export function createPluginContext(
             id: scopedPluginId(id, def.key),
             kind: def.kind,
             component: def.component,
+          }),
+        );
+      },
+      registerWorkspaceMenuItem(def) {
+        requirePermission("ui:workspace-menu");
+        // Callbacks fire from host render/click paths, so each hop is marked
+        // as plugin code (same as registerAddMenuRow/registerCommand).
+        const visible = def.visible;
+        return track(
+          workspaceMenuRegistry.register({
+            id: scopedPluginId(id, def.key),
+            label: (target) => runAsPlugin(() => def.label(target)),
+            icon: def.icon,
+            visible: visible && ((target) => runAsPlugin(() => visible(target))),
+            onSelect: (target) => runAsPlugin(() => def.onSelect(target)),
+            order: def.order,
           }),
         );
       },
@@ -342,16 +565,16 @@ export function createPluginContext(
     storage: {
       async get<T>(key: string): Promise<T | null> {
         requirePermission("storage");
-        const value = await backend.get(id, key);
+        const value = await withAuthorizedHostInvoke(() => backend.get(id, key));
         return (value ?? null) as T | null;
       },
       async set(key, value) {
         requirePermission("storage");
-        await backend.set(id, key, value);
+        await withAuthorizedHostInvoke(() => backend.set(id, key, value));
       },
       async delete(key) {
         requirePermission("storage");
-        await backend.delete(id, key);
+        await withAuthorizedHostInvoke(() => backend.delete(id, key));
       },
     },
     events: {
@@ -379,6 +602,10 @@ export function createPluginContext(
         return addPluginWorkspace(id, path, meta, () =>
           requirePermission("host:workspace:remote"),
         );
+      },
+      async list() {
+        requirePermission("workspace.metadata.read");
+        return withAuthorizedHostInvoke(() => backend.workspaceList(id));
       },
     },
     sessions: {
@@ -459,8 +686,11 @@ export function createPluginContext(
       invoke<T>(command: string, args: Record<string, unknown> = {}): Promise<T> {
         // JS 侧预检（DX；真边界是 Rust 侧的服务端强制）：授权未命中即
         // reject，不打 IPC。通过后注入 pluginId 再 invoke。
+        // Serialize before granting authority: getters/toJSON cannot change the
+        // checked payload or carry executable Tauri serialization hooks onward.
+        const hostArgs: Record<string, unknown> = { ...JSON.parse(JSON.stringify(args)), pluginId: id };
         if (command === "plugin_http_request") {
-          const url = typeof args.url === "string" ? args.url : "";
+          const url = typeof hostArgs.url === "string" ? hostArgs.url : "";
           if (!networkGrantAllows(manifest.permissions, url)) {
             return Promise.reject(
               new Error(
@@ -469,7 +699,7 @@ export function createPluginContext(
             );
           }
         } else if (command === "plugin_exec_run" || command === "plugin_exec_spawn") {
-          const bin = typeof args.bin === "string" ? args.bin : "";
+          const bin = typeof hostArgs.bin === "string" ? hostArgs.bin : "";
           if (!execGrantAllows(manifest.permissions, bin)) {
             return Promise.reject(
               new Error(
@@ -500,10 +730,7 @@ export function createPluginContext(
             ),
           );
         }
-        // Not wrapped in runAsPlugin: the hardening guard would reject the
-        // call it makes through the host's own transport. The grant checks
-        // above are the DX gate; the invoke itself is host-authorized.
-        return backend.bridgeInvoke(command, { ...args, pluginId: id }) as Promise<T>;
+        return withAuthorizedHostInvoke(() => backend.bridgeInvoke(command, hostArgs)) as Promise<T>;
       },
     },
     host: {

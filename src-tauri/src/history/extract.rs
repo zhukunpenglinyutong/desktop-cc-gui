@@ -1,6 +1,8 @@
 use super::{content_text, parse_ts_ms_str, Message};
 use serde_json::Value;
+use sha2::{Digest, Sha256};
 use std::collections::HashMap;
+use std::collections::HashSet;
 use std::io::BufRead;
 use std::path::{Path, PathBuf};
 
@@ -10,17 +12,22 @@ pub struct ParsedSession {
 
 /// Parse a native session file into the minimal message list. Bad lines are
 /// skipped individually.
-pub fn parse_session_file(engine: &str, path: &Path) -> Result<ParsedSession, String> {
+pub fn parse_session_file(
+    engine: &str,
+    path: &Path,
+    accepted_internal_frames: &HashSet<String>,
+) -> Result<ParsedSession, String> {
     if engine == "agy" {
-        return Ok(super::agy::parse_agy_session(path));
+        return Ok(super::agy::parse_agy_session(path, accepted_internal_frames));
     }
     if engine == "opencode" {
-        return Ok(parse_opencode_session(path));
+        return Ok(parse_opencode_session(path, accepted_internal_frames));
     }
     let reader = open_line_reader(engine, path)?;
     Ok(collect_session(
         reader,
         &extractor_for(engine, ImageMode::Collect),
+        accepted_internal_frames,
     ))
 }
 
@@ -39,18 +46,23 @@ pub struct ScanSummary {
 /// each row into a bounded accumulator instead of a Vec<Message>. Image-only
 /// user turns (whose data URLs are skipped here) fall out of the count —
 /// the sidebar counts text, and the reader path stays authoritative.
-pub fn scan_summary_file(engine: &str, path: &Path) -> Result<ScanSummary, String> {
+pub fn scan_summary_file(
+    engine: &str,
+    path: &Path,
+    accepted_internal_frames: &HashSet<String>,
+) -> Result<ScanSummary, String> {
     if engine == "agy" {
-        return Ok(super::agy::scan_agy_summary(path));
+        return Ok(super::agy::scan_agy_summary(path, accepted_internal_frames));
     }
     if engine == "opencode" {
-        return Ok(scan_opencode_summary(path));
+        return Ok(scan_opencode_summary(path, accepted_internal_frames));
     }
     let reader = open_line_reader(engine, path)?;
     let mut acc = ScanAcc::default();
     walk_lines(
         reader,
         &extractor_for(engine, ImageMode::SkipDataUrls),
+        accepted_internal_frames,
         |row| {
             acc.accept(row);
         },
@@ -90,7 +102,12 @@ fn extractor_for(engine: &str, images: ImageMode) -> LineExtractor<'static> {
 
 /// Line-loop skeleton shared by the full parse and the scan summary: decode
 /// one NDJSON line, extract rows, normalize, hand each to `consume`.
-fn walk_lines(reader: impl BufRead, extract: &LineExtractor<'_>, mut consume: impl FnMut(LineRow)) {
+fn walk_lines(
+    reader: impl BufRead,
+    extract: &LineExtractor<'_>,
+    accepted_internal_frames: &HashSet<String>,
+    mut consume: impl FnMut(LineRow),
+) {
     for line in reader.lines() {
         let Ok(line) = line else { continue };
         let trimmed = line.trim();
@@ -101,7 +118,7 @@ fn walk_lines(reader: impl BufRead, extract: &LineExtractor<'_>, mut consume: im
             continue;
         };
         for row in extract(&value) {
-            let Some(row) = normalize_extracted_row(row) else {
+            let Some(row) = normalize_extracted_row(row, accepted_internal_frames) else {
                 continue;
             };
             consume(row);
@@ -109,9 +126,15 @@ fn walk_lines(reader: impl BufRead, extract: &LineExtractor<'_>, mut consume: im
     }
 }
 
-fn collect_session(reader: impl BufRead, extract: &LineExtractor<'_>) -> ParsedSession {
+fn collect_session(
+    reader: impl BufRead,
+    extract: &LineExtractor<'_>,
+    accepted_internal_frames: &HashSet<String>,
+) -> ParsedSession {
     let mut rows = Vec::new();
-    walk_lines(reader, extract, |row| rows.push(row));
+    walk_lines(reader, extract, accepted_internal_frames, |row| {
+        rows.push(row)
+    });
     fold_rows(rows)
 }
 
@@ -453,14 +476,139 @@ impl LineRow {
 }
 
 type LineRows = Vec<LineRow>;
+const INTERNAL_PROMPT_MARKERS: [&str; 2] = [
+    "\n\n[CCGUI internal system-tail]\n",
+    "\n\n[CCGUI internal request-tail]\n",
+];
 
-/// Drop injected context turns and unwrap `<user_query>` so every engine's
-/// message list (and therefore titles) share one envelope cleaner.
-fn normalize_extracted_row(mut row: LineRow) -> Option<LineRow> {
+fn strip_internal_prompt_tail(text: &str) -> &str {
+    INTERNAL_PROMPT_MARKERS
+        .iter()
+        .filter_map(|marker| text.find(marker))
+        .min()
+        .map_or(text, |index| &text[..index])
+}
+
+fn valid_internal_nonce(nonce: &str) -> bool {
+    (1..=128).contains(&nonce.len())
+        && nonce
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_' || byte == b'-')
+}
+
+/// Opening marker of an internal frame. Shared by the recorder (which derives
+/// an identity from one complete frame) and the parser (which hides only the
+/// frames whose identities were recorded), so both agree on what a frame is.
+const INTERNAL_FRAME_OPEN: &str = "<CCGUI_INTERNAL_";
+
+/// Identity of one internal frame: the exact bytes the engine wrote.
+pub fn internal_frame_hash(frame: &str) -> String {
+    format!("{:x}", Sha256::digest(frame.as_bytes()))
+}
+
+/// Largest frame the host will ever record an identity for. A capture may
+/// declare a smaller `maxBytes`; this is the absolute ceiling that keeps a
+/// hostile/buggy caller from filling the table with arbitrary text.
+pub const MAX_RECORDED_FRAME_BYTES: usize = 64 * 1024;
+
+/// Accept `frame` only when it is exactly one complete internal frame with a
+/// JSON payload, and return its identity. The IPC command is reachable by any
+/// enabled plugin, so the host re-derives this instead of trusting the caller.
+pub fn recordable_internal_frame_hash(frame: &str) -> Option<String> {
+    if frame.len() > MAX_RECORDED_FRAME_BYTES {
+        return None;
+    }
+    let rest = frame.strip_prefix(INTERNAL_FRAME_OPEN)?;
+    let open_end = rest.find('>')?;
+    let nonce = &rest[..open_end];
+    if !valid_internal_nonce(nonce) {
+        return None;
+    }
+    let close = format!("</CCGUI_INTERNAL_{nonce}>");
+    let payload = rest[open_end + 1..].strip_suffix(&close)?;
+    // A second close tag inside the payload would make the recorded identity
+    // cover more than the frame the parser will later find.
+    if payload.contains(&close) {
+        return None;
+    }
+    serde_json::from_str::<Value>(payload).ok()?;
+    Some(internal_frame_hash(frame))
+}
+
+/// Hide only those internal frames whose exact identities a live capture
+/// validator accepted. `text` comes back untouched, without allocating, when
+/// no identity is recorded or the row carries no frame marker at all — the
+/// case for every ordinary assistant row the scanner walks.
+pub(super) fn strip_recorded_internal_frames(
+    text: String,
+    accepted_internal_frames: &HashSet<String>,
+) -> String {
+    if accepted_internal_frames.is_empty() || !text.contains(INTERNAL_FRAME_OPEN) {
+        return text;
+    }
+    let mut out = String::with_capacity(text.len());
+    let mut removed = false;
+    let mut rest = text.as_str();
+    while let Some(start) = rest.find(INTERNAL_FRAME_OPEN) {
+        out.push_str(&rest[..start]);
+        let candidate = &rest[start..];
+        let Some(open_end) = candidate.find('>') else {
+            out.push_str(candidate);
+            rest = "";
+            break;
+        };
+        let nonce = &candidate[INTERNAL_FRAME_OPEN.len()..open_end];
+        if !valid_internal_nonce(nonce) {
+            out.push_str(&candidate[..open_end + 1]);
+            rest = &candidate[open_end + 1..];
+            continue;
+        }
+        let close = format!("</CCGUI_INTERNAL_{nonce}>");
+        let payload_start = open_end + 1;
+        let Some(close_offset) = candidate[payload_start..].find(&close) else {
+            out.push_str(candidate);
+            rest = "";
+            break;
+        };
+        let frame_end = payload_start + close_offset + close.len();
+        let frame = &candidate[..frame_end];
+        if accepted_internal_frames.contains(&internal_frame_hash(frame)) {
+            removed = true;
+        } else {
+            out.push_str(frame);
+        }
+        rest = &candidate[frame_end..];
+    }
+    out.push_str(rest);
+    // Only a removed frame can leave the surrounding text padded; a row that
+    // kept everything it had must keep its own spacing too.
+    if !removed {
+        return text;
+    }
+    out.trim().to_string()
+}
+/// Remove host-only prompt tails and only those internal frames whose exact
+/// identities were accepted by a live capture validator.
+fn normalize_extracted_row(
+    mut row: LineRow,
+    accepted_internal_frames: &HashSet<String>,
+) -> Option<LineRow> {
+    if row.role == "assistant" {
+        // Nothing recorded, or no marker in the row: the row stands exactly as
+        // the engine wrote it. Only a row that lost a hidden frame can end up
+        // empty here, and only that row may be dropped — an assistant row the
+        // engine itself left blank is the history's business, not ours.
+        if accepted_internal_frames.is_empty() || !row.text.contains(INTERNAL_FRAME_OPEN) {
+            return Some(row);
+        }
+        row.text = strip_recorded_internal_frames(row.text, accepted_internal_frames);
+        return (!row.text.trim().is_empty() || !row.images.is_empty()).then_some(row);
+    }
     if row.role != "user" {
         return Some(row);
     }
-    let text = super::clean_user_turn(&row.text);
+    let visible = strip_internal_prompt_tail(&row.text);
+    let text = super::clean_user_turn(visible);
     if super::is_injected_user_context(&text) {
         return None;
     }
@@ -1209,7 +1357,12 @@ fn opencode_usage(part: &Value) -> Option<Value> {
 /// Walk the storage tree behind one session-metadata file into extracted
 /// rows. `part_byte_cap` bounds per-part reads (scan mode); None reads fully
 /// (reader mode).
-fn opencode_rows(session_meta: &Path, images: ImageMode, part_byte_cap: Option<u64>) -> LineRows {
+fn opencode_rows(
+    session_meta: &Path,
+    images: ImageMode,
+    part_byte_cap: Option<u64>,
+    accepted_internal_frames: &HashSet<String>,
+) -> LineRows {
     let mut out = Vec::new();
     let Some(storage) = opencode_storage_root(session_meta) else {
         return out;
@@ -1362,7 +1515,7 @@ fn opencode_rows(session_meta: &Path, images: ImageMode, part_byte_cap: Option<u
             }
         }
         for row in message_rows {
-            let Some(row) = normalize_extracted_row(row) else {
+            let Some(row) = normalize_extracted_row(row, accepted_internal_frames) else {
                 continue;
             };
             out.push(row);
@@ -1371,16 +1524,28 @@ fn opencode_rows(session_meta: &Path, images: ImageMode, part_byte_cap: Option<u
     out
 }
 
-fn parse_opencode_session(path: &Path) -> ParsedSession {
-    fold_rows(opencode_rows(path, ImageMode::Collect, None))
+fn parse_opencode_session(
+    path: &Path,
+    accepted_internal_frames: &HashSet<String>,
+) -> ParsedSession {
+    fold_rows(opencode_rows(
+        path,
+        ImageMode::Collect,
+        None,
+        accepted_internal_frames,
+    ))
 }
 
-fn scan_opencode_summary(path: &Path) -> ScanSummary {
+fn scan_opencode_summary(
+    path: &Path,
+    accepted_internal_frames: &HashSet<String>,
+) -> ScanSummary {
     let mut acc = ScanAcc::default();
     for row in opencode_rows(
         path,
         ImageMode::SkipDataUrls,
         Some(SCAN_OPENCODE_PART_BYTES),
+        accepted_internal_frames,
     ) {
         acc.accept(row);
     }
@@ -1390,6 +1555,79 @@ fn scan_opencode_summary(path: &Path) -> ScanSummary {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn normalization_hides_internal_prompt_contributions_from_user_history() {
+        let row = LineRow::new(
+            "user",
+            "visible request\n\n[CCGUI internal request-tail]\nsecret handoff\n\n[CCGUI internal request-tail]\nsemantic protocol".into(),
+            None,
+        );
+
+        let normalized = normalize_extracted_row(row, &HashSet::new()).expect("visible user row");
+        assert_eq!(normalized.text, "visible request");
+    }
+
+    #[test]
+    fn normalization_hides_only_recorded_internal_frames_from_assistant_history() {
+        let accepted = "<CCGUI_INTERNAL_n-1>{\"ok\":true}</CCGUI_INTERNAL_n-1>";
+        let unrecorded = "<CCGUI_INTERNAL_n-2>{\"ok\":true}</CCGUI_INTERNAL_n-2>";
+        let row = LineRow::new(
+            "assistant",
+            format!("visible {accepted} keep {unrecorded}"),
+            None,
+        );
+        let accepted_frames = HashSet::from([internal_frame_hash(accepted)]);
+
+        assert_eq!(
+            normalize_extracted_row(row, &accepted_frames)
+                .expect("visible assistant row")
+                .text,
+            format!("visible  keep {unrecorded}")
+        );
+
+        let malformed = LineRow::new(
+            "assistant",
+            "keep <CCGUI_INTERNAL_n-1>{bad}</CCGUI_INTERNAL_n-1>".into(),
+            None,
+        );
+        assert_eq!(
+            normalize_extracted_row(malformed, &accepted_frames)
+                .expect("unrecorded malformed frame remains visible")
+                .text,
+            "keep <CCGUI_INTERNAL_n-1>{bad}</CCGUI_INTERNAL_n-1>"
+        );
+    }
+
+    /// The overwhelmingly common case: nothing recorded. The frame filter must
+    /// then be invisible — an assistant row keeps its own bytes, spacing
+    /// included, and is never dropped for looking empty. Both are observable
+    /// as sidebar message counts and rendered text, and both regressed when
+    /// the filter trimmed and dropped rows unconditionally.
+    #[test]
+    fn assistant_rows_are_untouched_when_no_frame_identity_is_recorded() {
+        let padded = LineRow::new("assistant", "  spaced reply\n".into(), None);
+        assert_eq!(
+            normalize_extracted_row(padded, &HashSet::new())
+                .expect("assistant row survives")
+                .text,
+            "  spaced reply\n"
+        );
+
+        // A frame present but unrecorded is still ordinary text: keeping it is
+        // what leaves the row non-empty.
+        let only_frame = LineRow::new(
+            "assistant",
+            "<CCGUI_INTERNAL_n-1>{\"ok\":true}</CCGUI_INTERNAL_n-1>".into(),
+            None,
+        );
+        assert_eq!(
+            normalize_extracted_row(only_frame, &HashSet::new())
+                .expect("unrecorded frame keeps the row")
+                .text,
+            "<CCGUI_INTERNAL_n-1>{\"ok\":true}</CCGUI_INTERNAL_n-1>"
+        );
+    }
 
     #[test]
     fn pi_family_line_extracts_thinking_in_order() {
@@ -1467,7 +1705,7 @@ mod tests {
             .join("\n");
         let extractor: LineExtractor<'_> =
             Box::new(|value: &Value| extract_pi_family_line(value, ImageMode::Collect));
-        let parsed = collect_session(std::io::Cursor::new(input), &extractor);
+        let parsed = collect_session(std::io::Cursor::new(input), &extractor, &HashSet::new());
 
         let (first, second) = (&parsed.messages[0], &parsed.messages[1]);
         assert_eq!(
@@ -1511,7 +1749,7 @@ mod tests {
         let input = format!("{}\n{}", call, result);
         let extractor: LineExtractor<'_> =
             Box::new(|value: &Value| extract_pi_family_line(value, ImageMode::Collect));
-        let parsed = collect_session(std::io::Cursor::new(input), &extractor);
+        let parsed = collect_session(std::io::Cursor::new(input), &extractor, &HashSet::new());
         assert_eq!(parsed.messages.len(), 1);
         let todos = parsed.messages[0].todos.as_ref().expect("todos must be populated");
         assert_eq!(todos.items.len(), 1);
@@ -1785,7 +2023,7 @@ mod tests {
         });
         let context_rows = extract_grok_line(&context);
         assert_eq!(context_rows.len(), 1);
-        assert!(normalize_extracted_row(context_rows.into_iter().next().unwrap()).is_none());
+        assert!(normalize_extracted_row(context_rows.into_iter().next().unwrap(), &HashSet::new()).is_none());
 
         let query: Value = serde_json::json!({
             "type": "user",
@@ -1797,7 +2035,7 @@ mod tests {
         });
         let rows = extract_grok_line(&query);
         assert_eq!(rows.len(), 1);
-        let normalized = normalize_extracted_row(rows.into_iter().next().unwrap()).unwrap();
+        let normalized = normalize_extracted_row(rows.into_iter().next().unwrap(), &HashSet::new()).unwrap();
         assert_eq!(normalized.role, "user");
         assert_eq!(normalized.text, "Grok CLI 的历史记录怎么没出现？");
 
@@ -1806,7 +2044,7 @@ mod tests {
             "please look at <user_info> in grok logs, not the typed <user_query>".into(),
             None,
         );
-        let kept = normalize_extracted_row(mentioned).unwrap();
+        let kept = normalize_extracted_row(mentioned, &HashSet::new()).unwrap();
         assert_eq!(
             kept.text,
             "please look at <user_info> in grok logs, not the typed <user_query>"
@@ -1970,7 +2208,7 @@ mod tests {
             .join("\n");
         let extractor: LineExtractor<'_> =
             Box::new(|value: &Value| extract_qoder_line(value, ImageMode::Collect));
-        let parsed = collect_session(std::io::Cursor::new(input), &extractor);
+        let parsed = collect_session(std::io::Cursor::new(input), &extractor, &HashSet::new());
         assert_eq!(parsed.messages.len(), 2);
         assert_eq!(parsed.messages[0].result, Some(serde_json::json!("body a")));
         assert_eq!(parsed.messages[1].result, Some(serde_json::json!("body b")));
@@ -2040,7 +2278,7 @@ mod tests {
     #[test]
     fn opencode_parse_reads_storage_tree() {
         let (dir, meta) = opencode_fixture();
-        let parsed = parse_session_file("opencode", &meta).unwrap();
+        let parsed = parse_session_file("opencode", &meta, &HashSet::new()).unwrap();
         let roles: Vec<&str> = parsed.messages.iter().map(|m| m.role.as_str()).collect();
         assert_eq!(roles, ["user", "thinking", "tool", "assistant"]);
         assert_eq!(parsed.messages[0].text, "hello opencode");
@@ -2067,7 +2305,7 @@ mod tests {
     #[test]
     fn opencode_scan_summary_from_storage_tree() {
         let (dir, meta) = opencode_fixture();
-        let summary = scan_summary_file("opencode", &meta).unwrap();
+        let summary = scan_summary_file("opencode", &meta, &HashSet::new()).unwrap();
         assert_eq!(summary.title, "hello opencode");
         assert_eq!(summary.preview, "done");
         assert_eq!(summary.first_ts, Some(1_700_000_000_000));

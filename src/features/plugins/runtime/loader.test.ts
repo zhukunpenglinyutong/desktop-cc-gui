@@ -35,6 +35,23 @@ function fakeBackend(files: Record<string, string> = {}) {
     set: async () => {},
     delete: async () => {},
     bridgeInvoke: async () => null,
+    workspaceMetadata: async () => ({ id: "workspace-id", path: "C:/work" }),
+    workspaceList: async () => [],
+    pickDirectory: async () => null,
+    documentStorageGetLocation: async () => ({
+      kind: "data",
+      displayPath: "C:/data/plugin",
+      writable: true,
+    }),
+    documentStorageSelectLocation: async (_id, kind, customPath) => ({
+      kind,
+      displayPath: customPath ?? "C:/data/plugin",
+      writable: true,
+    }),
+    documentStorageReadText: async () => null,
+    documentStorageWriteTextAtomic: async () => ({ status: "written", version: "v1" }),
+    documentStorageRemove: async () => ({ status: "removed" }),
+    documentStorageList: async () => [],
   };
   return backend;
 }
@@ -296,6 +313,24 @@ describe("loader", () => {
     await loadPlugin({ info: info("lp-bad", { tier: "declarative" }) }, backend);
     expect(getPluginState("lp-bad")).toBe("quarantined");
     expect(backend.quarantined).toEqual(["lp-bad"]);
+  });
+
+  it("accepts a safe dotted plugin id", async () => {
+    const id = "ccgui.client-context-bridge";
+    const backend = fakeBackend({
+      [`${id}/manifest.json`]: JSON.stringify({
+        id,
+        name: "Client Context Bridge",
+        version: "1.0.0",
+        tier: "declarative",
+        permissions: [],
+      }),
+    });
+
+    await loadPlugin({ info: info(id, { tier: "declarative" }) }, backend);
+    expect(getPluginState(id)).toBe("active");
+    expect(backend.quarantined).toEqual([]);
+    unloadPlugin(id);
   });
 
   it("activates a builtin whose backend record has empty manifest fields (quarantine-upsert regression)", async () => {

@@ -79,6 +79,26 @@ struct PluginStorageGetArgs {
     id: String,
     key: String,
 }
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PluginAssetIdArgs {
+    plugin_id: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PluginAssetPathArgs {
+    plugin_id: String,
+    path: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PluginAssetRevokeArgs {
+    plugin_id: String,
+    grant_id: String,
+}
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct UpsertProviderArgs {
@@ -129,6 +149,8 @@ struct SendMessageArgs {
     workspace_path: String,
     session_id: Option<String>,
     prompt: String,
+    #[serde(default)]
+    prompt_contributions: Vec<crate::engine::PromptContribution>,
     image_paths: Option<Vec<String>>,
     model: Option<String>,
     effort: Option<String>,
@@ -198,6 +220,7 @@ struct LoadRemoteSessionPageArgs {
 struct DeleteRemoteSessionArgs {
     workspace_path: String,
     engine: String,
+    session_id: String,
     remote_path: String,
 }
 #[derive(Deserialize)]
@@ -216,6 +239,14 @@ struct UsageRecordArgs {
 struct EngineSessionArgs {
     engine: String,
     session_id: String,
+}
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RecordAcceptedFrameArgs {
+    engine: String,
+    session_id: String,
+    frame: String,
+    workspace_path: String,
 }
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -584,6 +615,7 @@ pub(super) async fn dispatch(
                 a.workspace_path,
                 a.session_id,
                 a.prompt,
+                a.prompt_contributions,
                 a.image_paths,
                 a.model,
                 a.effort,
@@ -697,6 +729,7 @@ pub(super) async fn dispatch(
                 app.state(),
                 a.workspace_path,
                 a.engine,
+                a.session_id,
                 a.remote_path,
             )
             .await)
@@ -766,6 +799,17 @@ pub(super) async fn dispatch(
         "rescan_sessions" => {
             crate::history::reader::rescan_sessions(app.state());
             Ok(Value::Null)
+        }
+        "record_accepted_internal_frame" => {
+            let a: RecordAcceptedFrameArgs = parse_args(&raw)?;
+            ser(crate::history::reader::record_accepted_internal_frame(
+                app.state(),
+                a.engine,
+                a.session_id,
+                a.frame,
+                a.workspace_path,
+            )
+            .await)
         }
         "list_workspaces" => ser(crate::history::reader::list_workspaces(app.state())),
         "reorder_workspaces" => {
@@ -1067,7 +1111,7 @@ pub(super) async fn dispatch(
         // plugins (plan §9 risk table ruling): read-only commands ride the
         // bridge so web clients render plugin UI; install/uninstall/enable/
         // storage writes stay desktop-only and fall through to unknown.
-        "plugin_list" => ser(crate::plugins::plugin_list(app.state())),
+        "plugin_list" => ser(crate::plugins::plugin_list(app.state()).await),
         "plugin_read_artwork" => {
             let a: PluginReadArtworkArgs = parse_args(&raw)?;
             ser(crate::plugins::plugin_read_artwork(a.id, a.path))
@@ -1079,6 +1123,25 @@ pub(super) async fn dispatch(
         "plugin_storage_get" => {
             let a: PluginStorageGetArgs = parse_args(&raw)?;
             ser(crate::plugins::plugin_storage_get(app.state(), a.id, a.key))
+        }
+        // Asset capabilities use the same authenticated bridge and the same
+        // backend permission gates as desktop; they grant no general file
+        // access, so unlike document-storage writes they are routed here.
+        "plugin_asset_grant_directory" => {
+            let a: PluginAssetPathArgs = parse_args(&raw)?;
+            ser(crate::plugins::assets::plugin_asset_grant_directory(a.plugin_id, a.path).await)
+        }
+        "plugin_asset_list_directories" => {
+            let a: PluginAssetIdArgs = parse_args(&raw)?;
+            ser(crate::plugins::assets::plugin_asset_list_directories(a.plugin_id))
+        }
+        "plugin_asset_revoke_directory" => {
+            let a: PluginAssetRevokeArgs = parse_args(&raw)?;
+            ser(crate::plugins::assets::plugin_asset_revoke_directory(a.plugin_id, a.grant_id))
+        }
+        "plugin_reveal_path" => {
+            let a: PluginAssetPathArgs = parse_args(&raw)?;
+            ser(crate::plugins::assets::plugin_reveal_path(a.plugin_id, a.path).await)
         }
         // Marketplace browsing is read-only too, so the web client renders
         // the market page; plugin_install_from_marketplace stays desktop-only.

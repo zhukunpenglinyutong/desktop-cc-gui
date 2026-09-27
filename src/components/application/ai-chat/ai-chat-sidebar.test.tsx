@@ -1,7 +1,7 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { sessionMenuRegistry } from "@ccgui/plugin-sdk";
+import { sessionMenuRegistry, workspaceMenuRegistry } from "@ccgui/plugin-sdk";
 import { AiChatSidebar } from "./ai-chat-sidebar";
 import type { AiChatRepo } from "./ai-chat-sidebar";
 
@@ -322,6 +322,33 @@ it("renders plugin session-menu items and dispatches the parsed target", async (
     expect(document.body.querySelector("[role='menu']")).toBeNull();
   } finally {
     dispose();
+  }
+});
+
+it("renders plugin workspace-menu items for the right-clicked workspace", async () => {
+  const onSelect = vi.fn();
+  const dispose = workspaceMenuRegistry.register({
+    id: "plugin:client-context-bridge:toggle",
+    label: ({ workspaceId }) => ({
+      text: "CCB",
+      status: { text: workspaceId === "b" ? "Disabled" : "Enabled", tone: "muted" },
+    }),
+    visible: ({ workspaceId }) => workspaceId === "b",
+    onSelect,
+  });
+  try {
+    await render([
+      repo("a", true),
+      repo("b"),
+    ]);
+    await rightClick(rowFor("b"));
+    const menu = openMenu();
+    expect(menuItem(menu, "CCB").textContent).toContain("Disabled");
+    await act(async () => menuItem(menu, "CCB").click());
+    expect(onSelect).toHaveBeenCalledWith({ workspaceId: "b", archived: false });
+  } finally {
+    // Disposal re-renders the still-mounted sidebar (useSyncExternalStore).
+    await act(async () => dispose());
   }
 });
 

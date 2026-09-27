@@ -822,18 +822,20 @@ mod tests {
         fs::write(custom_home.join("prompts/c.md"), "custom home body").unwrap();
 
         let workspaces_json = root.join("workspaces.json");
-        // Backslashes in a Windows path are invalid JSON escapes; escape them
-        // the way a real settings writer would so the fixture parses on Windows.
-        let json_path = |p: std::path::PathBuf| p.display().to_string().replace('\\', "\\\\");
+        // Serialize, never interpolate: a Windows path lands backslashes inside
+        // the JSON string literal ("C:\Users\…" → invalid escape) and the
+        // fixture fails to parse before the import under test even runs.
         fs::write(
             &workspaces_json,
-            format!(
-                r#"[{{"id":"w1","path":"{}","settings":{{"codexHome":"{}"}}}},
-                   {{"id":"gone","path":"{}"}}]"#,
-                json_path(project.clone()),
-                json_path(custom_home.clone()),
-                json_path(root.join("missing")),
-            ),
+            serde_json::to_vec(&serde_json::json!([
+                {
+                    "id": "w1",
+                    "path": project,
+                    "settings": {"codexHome": custom_home},
+                },
+                {"id": "gone", "path": root.join("missing")},
+            ]))
+            .unwrap(),
         )
         .unwrap();
 

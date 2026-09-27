@@ -125,6 +125,7 @@ describe("codex turn settling", () => {
     const response = Promise.withResolvers<{ runId: string; sessionId: null }>();
     vi.mocked(ipc.sendMessage).mockReturnValueOnce(response.promise);
     const sending = useChatStore.getState().send("hello", []);
+    await vi.waitFor(() => expect(ipc.sendMessage).toHaveBeenCalledTimes(1));
     const runId = vi.mocked(ipc.sendMessage).mock.calls.at(-1)![0].runId!;
     await useChatStore.getState().interrupt();
     handleEngineEvents([{ ...ev("session", 1, "tid-1"), runId }], deps());
@@ -140,6 +141,7 @@ describe("codex turn settling", () => {
     const response = Promise.withResolvers<{ runId: string; sessionId: string }>();
     vi.mocked(ipc.sendMessage).mockReturnValueOnce(response.promise);
     const sending = useChatStore.getState().send("hello", []);
+    await vi.waitFor(() => expect(ipc.sendMessage).toHaveBeenCalledTimes(1));
     const runId = vi.mocked(ipc.sendMessage).mock.calls.at(-1)![0].runId!;
     await useChatStore.getState().interrupt();
     response.resolve({ runId, sessionId: "tid-1" });
@@ -147,7 +149,8 @@ describe("codex turn settling", () => {
     expect(useChatStore.getState().active?.sessionId).toBe("tid-1");
     expect(useChatStore.getState().bySession[NATIVE]?.streaming).toBe(false);
     expect(useChatStore.getState().streamingByKey).toEqual({});
-    expect(ipc.interruptSession).toHaveBeenCalledWith("tid-1");
+    expect(ipc.interruptSession).toHaveBeenCalledWith(runId);
+    expect(ipc.interruptSession).not.toHaveBeenCalledWith("tid-1");
     expect(runRouting.size).toBe(0);
   });
 
@@ -172,12 +175,11 @@ describe("codex turn settling", () => {
 
   it("keeps the pending turn visible when events beat the send response", async () => {
     useChatStore.getState().startNewChat(WS);
-    let resolveSend: (value: { runId: string; sessionId: null }) => void = () => {};
-    vi.mocked(ipc.sendMessage).mockImplementation(
-      () => new Promise((resolve) => { resolveSend = resolve; }),
-    );
+    const response = Promise.withResolvers<{ runId: string; sessionId: null }>();
+    vi.mocked(ipc.sendMessage).mockReturnValueOnce(response.promise);
 
     const inflight = useChatStore.getState().send("hello", []);
+    await vi.waitFor(() => expect(ipc.sendMessage).toHaveBeenCalledTimes(1));
 
     // The engine can start streaming before the invoke promise resolves.
     handleEngineEvents(
@@ -188,7 +190,7 @@ describe("codex turn settling", () => {
       deps(),
     );
 
-    resolveSend({ runId, sessionId: null });
+    response.resolve({ runId, sessionId: null });
     await inflight;
     handleEngineEvents([ev("done", 3, { usage: null })], deps());
 
@@ -206,14 +208,15 @@ describe("codex turn settling", () => {
     const response = Promise.withResolvers<{ runId: string; sessionId: null }>();
     vi.mocked(ipc.sendMessage).mockReturnValueOnce(response.promise);
     const sending = useChatStore.getState().send("hello", []);
+    await vi.waitFor(() => expect(ipc.sendMessage).toHaveBeenCalledTimes(1));
     handleEngineEvents([
       ev("session", 1, "tid-1"),
       ev("message", 2, { role: "assistant", text: "complete" }),
       ev("done", 3, { usage: null }),
     ], deps());
-    response.resolve({ runId: "run-1", sessionId: null });
+    response.resolve({ runId, sessionId: null });
     await sending;
-    expect(runRouting.has("run-1")).toBe(false);
+    expect(runRouting.has(runId)).toBe(false);
     handleEngineEvents([ev("warn", 4, "shutdown notice")], deps());
     expect(useChatStore.getState().bySession[PENDING]).toBeUndefined();
     expect(useChatStore.getState().streamingByKey).toEqual({});

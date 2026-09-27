@@ -50,4 +50,5 @@ impl Engine for OpenCodeEngine {
         // the prompt body.
         &["auto", "plan", "bypass"]
     }
+
 }

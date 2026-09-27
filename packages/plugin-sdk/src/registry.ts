@@ -91,6 +91,13 @@ export interface ComposerStatusItemDef {
   order?: number;
 }
 
+/** Persistent viewport content. The host does not control its placement. */
+export interface OverlayDef {
+  id: string;
+  component: ComponentType;
+  order?: number;
+}
+
 /** Command palette entry (plan §4.2 #9). */
 export interface CommandDef {
   id: string;
@@ -151,6 +158,29 @@ export interface TimelineRowRendererDef {
    *  owned by the host switch; registering one only shadows it. */
   kind: string;
   component: ComponentType<{ row: { kind: string } }>;
+}
+
+export type WorkspaceMenuStatusTone = "success" | "muted";
+
+export interface WorkspaceMenuLabel {
+  text: string;
+  status?: { text: string; tone: WorkspaceMenuStatusTone };
+}
+
+export type WorkspaceMenuLabelValue = string | WorkspaceMenuLabel;
+
+/** Sidebar workspace row context-menu entry (generic extension point). The
+ *  host renders its builtin entries (别名 / 归档) first and appends registry
+ *  entries after a separator; an owner decides per workspace what it shows. */
+export interface WorkspaceMenuItemDef {
+  id: string;
+  /** Resolved at menu-open time; receives the workspace the user right-clicked. */
+  label: (ctx: { workspaceId: string; archived: boolean }) => WorkspaceMenuLabelValue;
+  icon?: ComponentType<{ className?: string }>;
+  /** Hidden when false; lets an owner scope its entry to some workspaces. */
+  visible?: (ctx: { workspaceId: string; archived: boolean }) => boolean;
+  onSelect: (ctx: { workspaceId: string; archived: boolean }) => void;
+  order?: number;
 }
 
 /** Home sidebar nav entry (0.3.12): one row under the builtin 自动化 entry,
@@ -243,6 +273,9 @@ export const statusBarRegistry = new Registry<StatusBarItemDef>();
 /** Composer status-row item registry (0.3.9). */
 export const composerStatusRegistry = new Registry<ComposerStatusItemDef>();
 
+/** Non-modal viewport mounts, independent of the current route. */
+export const overlayRegistry = new Registry<OverlayDef>();
+
 /** Command palette registry (plan §4.2 #9). */
 export const commandRegistry = new Registry<CommandDef>();
 
@@ -258,6 +291,8 @@ export const pageRegistry = new Registry<PageDef>();
 /** Chat timeline row renderer registry (plan §4.2 #5). */
 export const timelineRowRegistry = new Registry<TimelineRowRendererDef>();
 
+/** Sidebar workspace row context-menu registry (generic extension point). */
+export const workspaceMenuRegistry = new Registry<WorkspaceMenuItemDef>();
 /** Home sidebar nav entries (0.3.12); rendered after the builtin 自动化 row. */
 export const sidebarNavRegistry = new Registry<SidebarNavEntryDef>();
 

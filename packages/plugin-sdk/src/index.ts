@@ -22,3 +22,11 @@ export * from "./permissions";
 export * from "./version";
 export * from "./registry";
 export * from "./context";
+/**
+ * 类型漂移守卫的编译锚点（P3）：contract-check.ts 纯类型、无运行时代码，
+ * 但只有被编译图引用才会真正参与 typecheck。此前它既不在 barrel 里也没人
+ * import，宿主 `tsc --noEmit` 与包自身的 typecheck 脚本都不覆盖它，
+ * plugin.d.ts 与 src/* 的漂移会静默发布。这条副作用 import 让任何导入本包
+ * 的编译单元（含宿主 build 的 tsc 阶段）都把守卫拉进编译图——运行时零产物。
+ */
+import "./contract-check";

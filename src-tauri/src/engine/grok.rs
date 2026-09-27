@@ -673,6 +673,7 @@ mod tests {
         let req = SendRequest {
             session_id: Some("s1".into()),
             prompt: "hi".into(),
+            prompt_contributions: vec![],
             images: vec![],
             workspace: PathBuf::from("/tmp"),
             model: Some("grok-3".into()),

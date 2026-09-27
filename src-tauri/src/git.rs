@@ -41,6 +41,24 @@ pub struct RepositorySummary {
     pub untracked: usize,
 }
 
+#[derive(Debug, Clone)]
+pub struct WorkspaceVcsMetadata {
+    pub git_branch: Option<String>,
+    pub git_head: Option<String>,
+    pub dirty: bool,
+}
+
+/// Small read-only VCS summary used by the generic workspace metadata API.
+pub fn workspace_vcs_metadata(path: &Path) -> Option<WorkspaceVcsMetadata> {
+    let repo = Repository::discover(path).ok()?;
+    let git_branch = repo.head().ok().and_then(|head| head.shorthand().map(str::to_owned));
+    let git_head = repo.head().ok().and_then(|head| head.target()).map(|oid| oid.to_string());
+    let mut opts = StatusOptions::new();
+    opts.include_untracked(true).recurse_untracked_dirs(true);
+    let dirty = repo.statuses(Some(&mut opts)).map(|statuses| !statuses.is_empty()).unwrap_or(false);
+    Some(WorkspaceVcsMetadata { git_branch, git_head, dirty })
+}
+
 /// Open `path` only when that directory is itself a worktree root. Standard
 /// worktrees have a `.git` directory; linked worktrees carry a `.git` file.
 /// The cheap `.git` existence guard avoids `Repository::discover` walking up
@@ -1573,6 +1591,24 @@ mod tests {
         .unwrap();
     }
 
+    /// Clone with the initial checkout skipped, pin `core.autocrlf=false`, then
+    /// check out. The CI Windows runner's global `core.autocrlf=true` otherwise
+    /// rewrites the LF blobs to CRLF during clone, so a never-touched file reads
+    /// dirty against its LF blob — which blocks the fast-forward that must
+    /// preserve unrelated local edits.
+    fn clone_lf(origin_url: &str, into: &Path) -> Repository {
+        let mut builder = git2::build::RepoBuilder::new();
+        // Empty CheckoutBuilder = GIT_CHECKOUT_NONE: no worktree bytes are
+        // written until autocrlf is pinned off just below.
+        builder.with_checkout(git2::build::CheckoutBuilder::new());
+        let repo = builder.clone(origin_url, into).unwrap();
+        repo.config().unwrap().set_bool("core.autocrlf", false).unwrap();
+        let mut checkout = git2::build::CheckoutBuilder::new();
+        checkout.force();
+        repo.checkout_head(Some(&mut checkout)).unwrap();
+        repo
+    }
+
     #[test]
     fn pull_conflict_preserves_head_index_and_worktree() {
         for staged in [false, true] {
@@ -1581,12 +1617,7 @@ mod tests {
             let origin = Repository::init(&origin_path).unwrap();
             commit_file(&origin, "shared.txt", "base\n");
             let local_path = scratch.0.join("local");
-            let local = Repository::clone(origin_path.to_str().unwrap(), &local_path).unwrap();
-            local
-                .config()
-                .unwrap()
-                .set_bool("core.autocrlf", false)
-                .unwrap();
+            let local = clone_lf(origin_path.to_str().unwrap(), &local_path);
             let old_head = local.head().unwrap().target().unwrap();
             std::fs::write(local_path.join("shared.txt"), "local\n").unwrap();
             if staged {
@@ -1635,21 +1666,7 @@ mod tests {
         commit_file(&origin, "shared.txt", "base\n");
         commit_file(&origin, "local.txt", "base\n");
         let local_path = scratch.0.join("local");
-        let local = Repository::clone(origin_path.to_str().unwrap(), &local_path).unwrap();
-        local
-            .config()
-            .unwrap()
-            .set_bool("core.autocrlf", false)
-            .unwrap();
-        // Windows CI clones with global core.autocrlf=true, so the worktree
-        // lands CRLF while the index stays LF — shared.txt then reads dirty and
-        // the fast-forward refuses. Re-checkout under autocrlf=false so the
-        // files match the index before we stage the unrelated local edits.
-        {
-            let mut checkout = git2::build::CheckoutBuilder::new();
-            checkout.force();
-            local.checkout_head(Some(&mut checkout)).unwrap();
-        }
+        let local = clone_lf(origin_path.to_str().unwrap(), &local_path);
         std::fs::write(local_path.join("local.txt"), "staged\n").unwrap();
         let mut index = local.index().unwrap();
         index.add_path(Path::new("local.txt")).unwrap();

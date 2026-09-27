@@ -7,10 +7,12 @@
     "ui:composer-status",
     "ui:panel-tab",
     "ui:status-bar",
+    "ui:overlay",
     "ui:command",
     "ui:markdown",
     "ui:page",
     "ui:timeline-row",
+    "ui:workspace-menu",
     "ui:session-menu",
     "ui:sidebar-entry",
     "ui:center-tab",
@@ -23,8 +25,44 @@
     "composer:draft",
     "host:session",
     "host:workspace",
-    "host:workspace:remote"
+    "host:workspace:remote",
+    "session.lifecycle.read",
+    "runtime.events.read",
+    "runtime.switch.observe",
+    "prompt.contribute.internal",
+    "workspace.metadata.read",
+    "plugin.storage",
+    "assets:bundle",
+    "assets:directory"
   ],
+  "pluginIdShapes": {
+    "$comment": "插件 id 语法单一事实源，与 Rust src-tauri/src/plugins/manifest.rs::is_valid_id 逐字节一致：总长（字节）2..=64；点分段，每段为 [a-z0-9][a-z0-9-]*（首字节小写字母或数字，其余小写字母/数字/连字符）。id 同时用作目录名，故本规则也是路径穿越护栏。",
+    "valid": [
+      "ab",
+      "a-",
+      "a.b",
+      "a1-2.b3",
+      "ccgui.client-context-bridge",
+      "vendor.plugin2.feature-x",
+      "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    ],
+    "invalid": [
+      "",
+      "a",
+      ".",
+      "..",
+      ".plugin",
+      "plugin.",
+      "a..b",
+      "../plugin",
+      "a/b",
+      "a\\b",
+      "Plugin",
+      "-a",
+      "a+b",
+      "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    ]
+  },
   "networkGrantShapes": {
     "$comment": "完整权限字符串（含 network: 前缀）的形状校验。network:none 是基座权限，永远不是授权。host 精确匹配（大小写不敏感，无通配/子域）；端口 1..=65535，区间含端点且不可倒置。",
     "valid": [

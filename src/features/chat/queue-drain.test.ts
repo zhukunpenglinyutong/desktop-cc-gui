@@ -42,8 +42,8 @@ const TAB = { engine: "claude", sessionId: "s-1", workspacePath: WS };
 let runCounter = 0;
 let runId: string;
 
-/** Settle the turn and let the synchronous drain run: sendPrompt reaches
- *  `ipc.sendMessage` before its first await, so one microtask turn is enough. */
+/** Deliver a terminal event; sending may still wait on asynchronous plugin
+ * preparation, so positive send assertions wait for the IPC boundary. */
 async function settle(kind: "done" | "error", interrupted = false) {
   useChatStore.setState((s) => ({
     bySession: {
@@ -99,9 +99,9 @@ describe("queued messages after a turn settles", () => {
     await settle("done");
 
     expect(deliver, "engine listener registered").not.toBeNull();
-    expect(ipc.sendMessage).toHaveBeenCalledWith(
+    await vi.waitFor(() => expect(ipc.sendMessage).toHaveBeenCalledWith(
       expect.objectContaining({ prompt: "继续" }),
-    );
+    ));
     expect(queueOf()).toHaveLength(0);
   });
 
@@ -111,9 +111,9 @@ describe("queued messages after a turn settles", () => {
     await settle("error");
 
     expect(deliver, "engine listener registered").not.toBeNull();
-    expect(ipc.sendMessage).toHaveBeenCalledWith(
+    await vi.waitFor(() => expect(ipc.sendMessage).toHaveBeenCalledWith(
       expect.objectContaining({ prompt: "继续" }),
-    );
+    ));
     expect(queueOf()).toHaveLength(0);
   });
 
@@ -143,9 +143,9 @@ describe("queued messages after a turn settles", () => {
     await useChatStore.getState().sendQueuedNow("q-2");
 
     expect(ipc.interruptSession).toHaveBeenCalled();
-    expect(ipc.sendMessage).toHaveBeenCalledWith(
+    await vi.waitFor(() => expect(ipc.sendMessage).toHaveBeenCalledWith(
       expect.objectContaining({ prompt: "再看一遍" }),
-    );
+    ));
     expect(queueOf().map((item) => item.text)).toEqual(["继续"]);
   });
 
@@ -157,9 +157,9 @@ describe("queued messages after a turn settles", () => {
     await useChatStore.getState().sendQueuedNow("q-1");
 
     expect(ipc.interruptSession).not.toHaveBeenCalled();
-    expect(ipc.sendMessage).toHaveBeenCalledWith(
+    await vi.waitFor(() => expect(ipc.sendMessage).toHaveBeenCalledWith(
       expect.objectContaining({ prompt: "继续" }),
-    );
+    ));
   });
 
   /** A send that never becomes a turn reports no engine event, so the queue
@@ -181,7 +181,7 @@ describe("queued messages after a turn settles", () => {
 
     await settle("error");
 
-    expect(ipc.sendMessage).toHaveBeenCalledTimes(2);
+    await vi.waitFor(() => expect(ipc.sendMessage).toHaveBeenCalledTimes(2));
     expect(ipc.sendMessage).toHaveBeenLastCalledWith(
       expect.objectContaining({ prompt: "再看一遍" }),
     );

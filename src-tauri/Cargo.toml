@@ -40,6 +40,7 @@ trash = "5"
 ignore = "0.4"
 uuid = { version = "1", features = ["v4"] }
 parking_lot = "0.12"
+fs2 = "0.4.3"
 base64 = "0.22"
 zstd = "0.13"
 which = "7"

@@ -131,6 +131,8 @@ async fn plan_requests_fail_closed_for_unproven_engines() {
             workspace.to_string_lossy().to_string(),
             None,
             "make a plan".to_string(),
+            // 集成测试不经插件回合,没有可注入的贡献。
+            Vec::new(),
             None,
             None,
             None,

@@ -1,9 +1,35 @@
 use parking_lot::Mutex;
 use rusqlite::{Connection, OptionalExtension};
+use sha2::{Digest, Sha256};
+use std::collections::{HashMap, HashSet};
 
 /// Folded into the scanner's stat signature so a schema/derivation change
 /// still invalidates cached parse results.
 pub const CACHE_VERSION: &str = "2";
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkspaceMetadata {
+    pub id: String,
+    pub path: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub git_branch: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub git_head: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub dirty: Option<bool>,
+}
+/// Minimal workspace identity exposed through the plugin capability boundary.
+/// UI-only ordering/grouping and opaque metadata stay inside the host.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PluginWorkspaceSummary {
+    pub id: String,
+    pub name: String,
+    pub path: String,
+}
 
 pub struct Db(pub Mutex<Connection>);
 
@@ -56,6 +82,58 @@ impl Db {
             }
         }
         Ok(out)
+    }
+
+    /// Return the persistent registration identity for an exact workspace path.
+    pub fn workspace_metadata(&self, path: &str) -> Result<Option<WorkspaceMetadata>, String> {
+        let conn = self.0.lock();
+        let mut metadata = conn
+            .query_row(
+                "SELECT id, path, name FROM workspaces WHERE path=?1",
+                [path],
+                |row| {
+                    Ok(WorkspaceMetadata {
+                        id: row.get(0)?,
+                        path: row.get(1)?,
+                        name: row.get(2)?,
+                        git_branch: None,
+                        git_head: None,
+                        dirty: None,
+                    })
+                },
+            )
+            .optional()
+            .map_err(|error| error.to_string())?;
+        drop(conn);
+
+        if let Some(metadata) = metadata.as_mut() {
+            if let Some(vcs) = crate::git::workspace_vcs_metadata(std::path::Path::new(&metadata.path)) {
+                metadata.git_branch = vcs.git_branch;
+                metadata.git_head = vcs.git_head;
+                metadata.dirty = Some(vcs.dirty);
+            }
+        }
+        Ok(metadata)
+    }
+    /// List registered workspaces for the plugin read-only capability.
+    pub fn workspace_list(&self) -> Result<Vec<PluginWorkspaceSummary>, String> {
+        let conn = self.0.lock();
+        let mut stmt = conn
+            .prepare(
+                "SELECT id, name, path FROM workspaces
+                 ORDER BY sort_order IS NULL, sort_order, COALESCE(last_opened_at, 0) DESC",
+            )
+            .map_err(|e| e.to_string())?;
+        let rows = stmt
+            .query_map([], |row| {
+                Ok(PluginWorkspaceSummary {
+                    id: row.get(0)?,
+                    name: row.get(1)?,
+                    path: row.get(2)?,
+                })
+            })
+            .map_err(|e| e.to_string())?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
     }
 
     /// Directories the user explicitly granted file access to on top of the
@@ -327,6 +405,172 @@ impl Db {
         .map_err(|e| e.to_string())?;
         Ok(())
     }
+
+    pub fn record_accepted_internal_frame_hash(
+        &self,
+        engine: &str,
+        session_id: &str,
+        frame_hash: &str,
+        workspace_path: &str,
+    ) -> Result<bool, String> {
+        let conn = self.0.lock();
+        conn.execute(
+            "INSERT OR IGNORE INTO accepted_internal_frames(engine, session_id, frame_hash, workspace_path)
+             VALUES(?1, ?2, ?3, ?4)",
+            rusqlite::params![engine, session_id, frame_hash, workspace_path],
+        )
+        .map(|changed| changed != 0)
+        .map_err(|error| error.to_string())
+    }
+
+    pub fn accepted_internal_frames(
+        &self,
+        engine: &str,
+        session_id: &str,
+    ) -> Result<(HashSet<String>, String), String> {
+        let conn = self.0.lock();
+        let mut stmt = conn
+            .prepare(
+                "SELECT frame_hash FROM accepted_internal_frames WHERE engine=?1 AND session_id=?2 ORDER BY frame_hash",
+            )
+            .map_err(|error| error.to_string())?;
+        let rows = stmt
+            .query_map(rusqlite::params![engine, session_id], |row| row.get::<_, String>(0))
+            .map_err(|error| error.to_string())?;
+        let mut hashes = HashSet::new();
+        for row in rows {
+            hashes.insert(row.map_err(|error| error.to_string())?);
+        }
+        let signature = accepted_frame_set_signature(&hashes);
+        Ok((hashes, signature))
+    }
+
+    /// Every recorded identity, grouped `engine -> session -> set`, plus a
+    /// signature over the whole table. The scanner folds the table signature
+    /// into its global stat signature so newly recorded identities re-open a
+    /// scan that no file change would otherwise justify, and compares each
+    /// row's stored per-session signature to decide which files to re-derive.
+    pub fn accepted_internal_frame_index(&self) -> Result<(AcceptedFrameIndex, String), String> {
+        let conn = self.0.lock();
+        let mut stmt = conn
+            .prepare(
+                "SELECT engine, session_id, frame_hash FROM accepted_internal_frames
+                 ORDER BY engine, session_id, frame_hash",
+            )
+            .map_err(|error| error.to_string())?;
+        let rows = stmt
+            .query_map([], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                ))
+            })
+            .map_err(|error| error.to_string())?;
+        let mut index: HashMap<String, HashMap<String, HashSet<String>>> = HashMap::new();
+        let mut hasher = Sha256::new();
+        let mut any = false;
+        for row in rows {
+            let (engine, session_id, frame_hash) = row.map_err(|error| error.to_string())?;
+            hasher.update(engine.as_bytes());
+            hasher.update(b"/");
+            hasher.update(session_id.as_bytes());
+            hasher.update(b"/");
+            hasher.update(frame_hash.as_bytes());
+            any = true;
+            index
+                .entry(engine)
+                .or_default()
+                .entry(session_id)
+                .or_default()
+                .insert(frame_hash);
+        }
+        // Per-session signatures are derived once here: the scanner asks for
+        // them per candidate file, and re-hashing a set per candidate would
+        // make a cold scan quadratic in recorded frames.
+        let index = index
+            .into_iter()
+            .map(|(engine, sessions)| {
+                let sessions = sessions
+                    .into_iter()
+                    .map(|(session_id, hashes)| {
+                        let signature = accepted_frame_set_signature(&hashes);
+                        (session_id, AcceptedFrameSet { hashes, signature })
+                    })
+                    .collect();
+                (engine, sessions)
+            })
+            .collect();
+        let signature = if any {
+            format!("{:x}", hasher.finalize())
+        } else {
+            String::new()
+        };
+        Ok((index, signature))
+    }
+}
+
+/// One session's recorded frame identities plus the signature that identifies
+/// the set. An empty set signs as `""`, matching the stored column default so
+/// sessions that never carried an internal frame are never re-derived.
+#[derive(Debug, Default)]
+pub struct AcceptedFrameSet {
+    pub hashes: HashSet<String>,
+    pub signature: String,
+}
+
+/// Recorded frame identities grouped by engine, then native session id.
+pub type AcceptedFrameIndex = HashMap<String, HashMap<String, AcceptedFrameSet>>;
+
+/// Identity of one session's accepted-frame set: two sets with the same
+/// members produce the same signature regardless of insertion order.
+pub fn accepted_frame_set_signature(hashes: &HashSet<String>) -> String {
+    if hashes.is_empty() {
+        return String::new();
+    }
+    let mut ordered: Vec<&str> = hashes.iter().map(String::as_str).collect();
+    ordered.sort_unstable();
+    let mut hasher = Sha256::new();
+    for hash in ordered {
+        hasher.update(hash.as_bytes());
+    }
+    format!("{:x}", hasher.finalize())
+}
+#[tauri::command]
+pub fn workspace_metadata(
+    db: tauri::State<'_, std::sync::Arc<Db>>,
+    plugin_id: String,
+    workspace_path: String,
+) -> Result<WorkspaceMetadata, String> {
+    let (enabled, quarantined, permissions) = crate::plugins::plugin_access(&plugin_id)?;
+    if !enabled {
+        return Err(format!("{plugin_id}: plugin is disabled"));
+    }
+    if quarantined {
+        return Err(format!("{plugin_id}: plugin is quarantined"));
+    }
+    if !permissions.iter().any(|permission| permission == "workspace.metadata.read") {
+        return Err(format!("{plugin_id}: missing workspace.metadata.read permission"));
+    }
+    db.workspace_metadata(workspace_path.trim())?
+        .ok_or_else(|| format!("workspace is not registered: {}", workspace_path.trim()))
+}
+#[tauri::command]
+pub fn plugin_list_workspaces(
+    db: tauri::State<'_, std::sync::Arc<Db>>,
+    plugin_id: String,
+) -> Result<Vec<PluginWorkspaceSummary>, String> {
+    let (enabled, quarantined, permissions) = crate::plugins::plugin_access(&plugin_id)?;
+    if !enabled {
+        return Err(format!("{plugin_id}: plugin is disabled"));
+    }
+    if quarantined {
+        return Err(format!("{plugin_id}: plugin is quarantined"));
+    }
+    if !permissions.iter().any(|permission| permission == "workspace.metadata.read") {
+        return Err(format!("{plugin_id}: missing workspace.metadata.read permission"));
+    }
+    db.workspace_list()
 }
 
 /// One-time import of the legacy desktop-cc-gui workspace list
@@ -595,6 +839,17 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
             value TEXT NOT NULL,
             PRIMARY KEY(plugin_id, key)
         );
+        -- `workspace_path` is the workspace the frame was accepted in. A
+        -- remote session has no `sessions` row, so a purge that joins through
+        -- it can never reach these identities; the column is what lets
+        -- removing a workspace reclaim them.
+        CREATE TABLE IF NOT EXISTS accepted_internal_frames(
+            engine TEXT NOT NULL,
+            session_id TEXT NOT NULL,
+            frame_hash TEXT NOT NULL,
+            workspace_path TEXT NOT NULL DEFAULT '',
+            PRIMARY KEY(engine, session_id, frame_hash)
+        );
         CREATE TABLE IF NOT EXISTS session_models(
             engine TEXT NOT NULL,
             session_id TEXT NOT NULL,
@@ -748,6 +1003,19 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
     if !has_group_id {
         conn.execute("ALTER TABLE workspaces ADD COLUMN group_id TEXT", [])?;
     }
+    // Additive migration: history hides only internal frames accepted by a
+    // live validator. The signature participates in scanner reuse decisions.
+    let has_accepted_frames_signature = conn
+        .prepare("PRAGMA table_info(sessions)")?
+        .query_map([], |row| row.get::<_, String>(1))?
+        .flatten()
+        .any(|name| name == "accepted_frames_signature");
+    if !has_accepted_frames_signature {
+        conn.execute(
+            "ALTER TABLE sessions ADD COLUMN accepted_frames_signature TEXT NOT NULL DEFAULT ''",
+            [],
+        )?;
+    }
 
     // Additive migration: opaque per-workspace metadata from host-capability
     // callers (plugin `workspaces.add`, e.g. { wsl: { hostId, distro } } for
@@ -759,6 +1027,22 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
         .any(|name| name == "meta");
     if !has_meta {
         conn.execute("ALTER TABLE workspaces ADD COLUMN meta TEXT", [])?;
+    }
+
+    // Additive migration: recorded frame identities carry the workspace they
+    // were accepted in. Remote sessions never get a `sessions` row, so without
+    // this the workspace purge cannot reach their rows and the table grows
+    // until the global cap rejects every later recording.
+    let has_frame_workspace = conn
+        .prepare("PRAGMA table_info(accepted_internal_frames)")?
+        .query_map([], |row| row.get::<_, String>(1))?
+        .flatten()
+        .any(|name| name == "workspace_path");
+    if !has_frame_workspace {
+        conn.execute(
+            "ALTER TABLE accepted_internal_frames ADD COLUMN workspace_path TEXT NOT NULL DEFAULT ''",
+            [],
+        )?;
     }
 
     // Additive migration: git worktree children hang under their parent
@@ -1136,5 +1420,144 @@ mod tests {
             db.plugin_kv_get("p2", "k").unwrap(),
             Some(serde_json::json!(true))
         );
+    }
+
+    #[test]
+    fn accepted_internal_frames_are_deduplicated_and_signed_per_session() {
+        let scratch = Scratch::new();
+        let db = Db::open_at(&scratch.path("app.db")).unwrap();
+        let first = "a".repeat(64);
+        let second = "b".repeat(64);
+
+        assert!(db
+            .record_accepted_internal_frame_hash("claude", "s1", &first, "C:/repo")
+            .unwrap());
+        assert!(!db
+            .record_accepted_internal_frame_hash("claude", "s1", &first, "C:/repo")
+            .unwrap());
+        assert!(db
+            .record_accepted_internal_frame_hash("claude", "s1", &second, "C:/repo")
+            .unwrap());
+
+        let (hashes, signature) = db.accepted_internal_frames("claude", "s1").unwrap();
+        assert_eq!(hashes, HashSet::from([first, second]));
+        assert_eq!(signature, accepted_frame_set_signature(&hashes));
+
+        // The scanner-facing index carries the same members and the same
+        // per-session signature, so a reuse decision and a parse agree.
+        let (index, table_signature) = db.accepted_internal_frame_index().unwrap();
+        let indexed = index
+            .get("claude")
+            .and_then(|sessions| sessions.get("s1"))
+            .expect("indexed session");
+        assert_eq!(indexed.hashes, hashes);
+        assert_eq!(indexed.signature, signature);
+        assert!(!table_signature.is_empty());
+        assert!(index.get("codex").is_none());
+    }
+
+    #[test]
+    fn plugin_workspace_list_returns_only_identity_fields() {
+        let scratch = Scratch::new();
+        let db = Db::open_at(&scratch.path("app.db")).unwrap();
+        {
+            let conn = db.0.lock();
+            conn.execute(
+                "INSERT INTO workspaces(id, path, name, sort_order, group_id, meta)
+                 VALUES('plugin-id', '/ws/plugin', 'Plugin', 0, 'group', '{\"secret\":true}')",
+                [],
+            )
+            .unwrap();
+        }
+        let rows = db.workspace_list().unwrap();
+        assert_eq!(rows, vec![PluginWorkspaceSummary {
+            id: "plugin-id".into(),
+            name: "Plugin".into(),
+            path: "/ws/plugin".into(),
+        }]);
+        let json = serde_json::to_value(&rows[0]).unwrap();
+        assert_eq!(json.as_object().unwrap().len(), 3);
+        assert!(json.get("meta").is_none());
+        assert!(json.get("groupId").is_none());
+        assert!(json.get("sortOrder").is_none());
+    }
+
+    #[test]
+    fn workspace_metadata_reuses_registered_uuid() {
+        let scratch = Scratch::new();
+        let db = Db::open_at(&scratch.path("app.db")).unwrap();
+        {
+            let conn = db.0.lock();
+            conn.execute(
+                "INSERT INTO workspaces(id, path, name) VALUES('persistent-id', '/ws/project', 'project')",
+                [],
+            )
+            .unwrap();
+        }
+        assert_eq!(
+            db.workspace_metadata("/ws/project").unwrap(),
+            Some(WorkspaceMetadata {
+                id: "persistent-id".into(),
+                path: "/ws/project".into(),
+                name: Some("project".into()),
+                git_branch: None,
+                git_head: None,
+                dirty: None,
+            })
+        );
+        assert_eq!(db.workspace_metadata("/ws/missing").unwrap(), None);
+    }
+
+    #[test]
+    fn workspace_metadata_includes_repository_facts_only_for_repositories() {
+        let scratch = Scratch::new();
+        let db = Db::open_at(&scratch.path("app.db")).unwrap();
+        let repo_path = scratch.path("repo");
+        let repo = git2::Repository::init(&repo_path).unwrap();
+        std::fs::write(repo_path.join("tracked.txt"), "clean\n").unwrap();
+        let mut index = repo.index().unwrap();
+        index.add_path(std::path::Path::new("tracked.txt")).unwrap();
+        index.write().unwrap();
+        let tree_id = index.write_tree().unwrap();
+        let tree = repo.find_tree(tree_id).unwrap();
+        let signature = git2::Signature::now("test", "test@example.com").unwrap();
+        let head = repo
+            .commit(Some("HEAD"), &signature, &signature, "init", &tree, &[])
+            .unwrap();
+        let plain_path = scratch.path("plain");
+        std::fs::create_dir(&plain_path).unwrap();
+        {
+            let conn = db.0.lock();
+            conn.execute(
+                "INSERT INTO workspaces(id, path, name) VALUES(?1, ?2, ?3)",
+                rusqlite::params!["repo-id", repo_path.to_string_lossy(), "repo"],
+            )
+            .unwrap();
+            conn.execute(
+                "INSERT INTO workspaces(id, path, name) VALUES(?1, ?2, ?3)",
+                rusqlite::params!["plain-id", plain_path.to_string_lossy(), "plain"],
+            )
+            .unwrap();
+        }
+
+        let repository = serde_json::to_value(
+            db.workspace_metadata(&repo_path.to_string_lossy())
+                .unwrap()
+                .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(repository["gitBranch"], repo.head().unwrap().shorthand().unwrap());
+        assert_eq!(repository["gitHead"], head.to_string());
+        assert_eq!(repository["dirty"], false);
+
+        let plain = serde_json::to_value(
+            db.workspace_metadata(&plain_path.to_string_lossy())
+                .unwrap()
+                .unwrap(),
+        )
+        .unwrap();
+        assert!(plain.get("gitBranch").is_none());
+        assert!(plain.get("gitHead").is_none());
+        assert!(plain.get("dirty").is_none());
     }
 }

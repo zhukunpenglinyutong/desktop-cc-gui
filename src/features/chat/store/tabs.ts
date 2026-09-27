@@ -8,6 +8,8 @@ import {
 } from "./persistence";
 import { moveRetryingFlag, moveStreamingFlag } from "./stream";
 import { emitSessionActivated } from "@/features/plugins/runtime/events";
+import { dispatchSessionClosed } from "@/features/plugins/runtime/hooks";
+import { clearScopedContributions, sessionLifecycleBase } from "./lifecycle";
 import { getConversationModeState } from "@/features/plugins/conversation/state";
 import type { ChatStore } from "./types";
 import type { StoreGet, StoreSet } from "./context";
@@ -193,12 +195,31 @@ export function createTabActions(
           workspacePath,
         };
         const openTabs = existing ? s.openTabs : [...s.openTabs, tab];
+        const source = s.active;
+        const pendingRuntimeSwitch =
+          source &&
+          source.sessionId !== null &&
+          source.workspacePath === workspacePath &&
+          source.engine !== tab.engine
+            ? {
+                sourceEngine: source.engine,
+                targetEngine: tab.engine,
+                sourceSessionId: source.sessionId,
+                targetSessionId: null,
+                workspacePath,
+              }
+            : s.pendingRuntimeSwitch;
         persistTabs(openTabs, tab);
-        return { openTabs, active: tab };
+        return { openTabs, active: tab, pendingRuntimeSwitch };
       });
     },
 
     closeTab: (engine, sessionId, workspacePath) => {
+      if (getConversationModeState().isTabCloseBlocked(sessionKey(engine, sessionId, workspacePath), workspacePath)) return;
+      dispatchSessionClosed(
+        sessionLifecycleBase(get, { engine, sessionId, workspacePath }),
+      );
+      clearScopedContributions(set, engine, sessionId, workspacePath);
       removeTab(engine, sessionId, workspacePath);
     },
     focusTab: (engine, sessionId, workspacePath) => {
@@ -315,6 +336,13 @@ export function createTabActions(
           active: nextActive,
           bySession,
           streamingByKey: moveStreamingFlag(s.streamingByKey, oldKey, newKey),
+          pendingRuntimeSwitch: {
+            sourceEngine: active.engine,
+            targetEngine: engine,
+            sourceSessionId: active.sessionId,
+            targetSessionId: null,
+            workspacePath: active.workspacePath,
+          },
           retryingByKey: moveRetryingFlag(s.retryingByKey, oldKey, newKey),
         };
       });

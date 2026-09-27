@@ -99,7 +99,7 @@ pub fn run() {
         settings::apply_codex_home(&settings);
     }
 
-    tauri::Builder::default()
+    plugins::asset_protocol::register(tauri::Builder::default())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
@@ -374,6 +374,19 @@ pub fn run() {
             plugins::plugin_storage_get,
             plugins::plugin_storage_set,
             plugins::plugin_storage_delete,
+            plugins::storage::plugin_document_storage_get_location,
+            plugins::storage::plugin_document_storage_select_location,
+            plugins::storage::plugin_document_storage_read_text,
+            plugins::storage::plugin_document_storage_write_text_atomic,
+            plugins::storage::plugin_document_storage_remove,
+            plugins::storage::plugin_document_storage_list,
+            plugins::assets::plugin_asset_grant_directory,
+            plugins::assets::plugin_asset_list_directories,
+            plugins::assets::plugin_asset_revoke_directory,
+            plugins::assets::plugin_reveal_path,
+            db::workspace_metadata,
+            db::plugin_list_workspaces,
+            history::reader::record_accepted_internal_frame,
             // plugin marketplace (Phase 3, plan §6)
             plugins::market::plugin_fetch_index,
             plugins::market::plugin_fetch_market_readme,

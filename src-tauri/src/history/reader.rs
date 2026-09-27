@@ -2,7 +2,8 @@ use super::{parse_session_file, Message, ParsedSession, SessionMeta};
 use base64::Engine as _;
 use rusqlite::OptionalExtension;
 use serde::Serialize;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
+use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, LazyLock, Mutex};
 
@@ -301,10 +302,13 @@ struct CachedSession {
     fold: SubagentFold,
 }
 
-/// Parsed sessions keyed by (path, size, mtime_ms): paging re-slices a cached
-/// parse instead of re-reading the file. Bounded two ways: 32 entries and a
-/// ~128MB byte budget (image data URLs make entries heavy).
-static PARSED_CACHE: LazyLock<Mutex<HashMap<(PathBuf, i64, i64), Arc<CachedSession>>>> =
+/// Parsed sessions keyed by (path, size, mtime_ms, accepted-frame signature):
+/// paging re-slices a cached parse instead of re-reading the file. The
+/// signature belongs in the key because recording a newly accepted frame
+/// changes what the parse must hide while the file's stat key is unchanged.
+/// Bounded two ways: 32 entries and a ~128MB byte budget (image data URLs
+/// make entries heavy).
+static PARSED_CACHE: LazyLock<Mutex<HashMap<(PathBuf, i64, i64, String), Arc<CachedSession>>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
 static PARSED_CACHE_BYTES: LazyLock<Mutex<usize>> = LazyLock::new(|| Mutex::new(0));
 
@@ -356,18 +360,28 @@ fn parsed_footprint(parsed: &ParsedSession) -> usize {
     parsed.messages.iter().map(message_footprint).sum()
 }
 
-fn cached_session(engine: &str, path: &Path) -> Result<Arc<CachedSession>, String> {
+fn cached_session(
+    engine: &str,
+    path: &Path,
+    accepted_frames: &HashSet<String>,
+    accepted_signature: &str,
+) -> Result<Arc<CachedSession>, String> {
     let Some((size, mtime_ms)) = super::stat_signature(path) else {
         // Unstattable file: let the parse produce the real error.
-        let parsed = parse_session_file(engine, path)?;
+        let parsed = parse_session_file(engine, path, accepted_frames)?;
         let fold = subagent_fold(&parsed.messages);
         return Ok(Arc::new(CachedSession { parsed, fold }));
     };
-    let key = (path.to_path_buf(), size, mtime_ms);
+    let key = (
+        path.to_path_buf(),
+        size,
+        mtime_ms,
+        accepted_signature.to_string(),
+    );
     if let Some(hit) = PARSED_CACHE.lock().map_err(|e| e.to_string())?.get(&key) {
         return Ok(Arc::clone(hit));
     }
-    let parsed = parse_session_file(engine, path)?;
+    let parsed = parse_session_file(engine, path, accepted_frames)?;
     let fold = subagent_fold(&parsed.messages);
     // The fold's cloned delegation rows count toward the budget too.
     let footprint = parsed_footprint(&parsed)
@@ -573,7 +587,28 @@ fn load_session_page_blocking(
     before_seq: Option<i64>,
 ) -> Result<SessionPage, String> {
     let path = session_file_path(db, engine, session_id)?;
-    let cached = cached_session(engine, &path)?;
+    let (accepted_frames, accepted_signature) = db.accepted_internal_frames(engine, session_id)?;
+    let cached = cached_session(engine, &path, &accepted_frames, &accepted_signature)?;
+    Ok(page_from_cached(&cached, limit, before_seq))
+}
+
+/// Sync body of `load_remote_session_page`, once the remote transcript is
+/// cached on this machine. A remote page must consult the same accepted-frame
+/// table as a local one: `record_accepted_internal_frame` scopes an identity by
+/// `(engine, session_id)` alone and never consults the `sessions` table, and a
+/// turn run in a remote workspace goes through the same send path, so its
+/// accepted frames are recorded exactly like a local session's. Parsing with an
+/// empty set would re-reveal every frame the capture validator hid.
+fn remote_session_page_blocking(
+    db: &crate::db::Db,
+    engine: &str,
+    session_id: &str,
+    cache_path: &Path,
+    limit: Option<usize>,
+    before_seq: Option<i64>,
+) -> Result<SessionPage, String> {
+    let (accepted_frames, accepted_signature) = db.accepted_internal_frames(engine, session_id)?;
+    let cached = cached_session(engine, cache_path, &accepted_frames, &accepted_signature)?;
     Ok(page_from_cached(&cached, limit, before_seq))
 }
 
@@ -674,9 +709,16 @@ pub async fn load_remote_session_page(
     }
 
     let engine_for_parse = engine.clone();
+    let db = Arc::clone(&state.db);
     tauri::async_runtime::spawn_blocking(move || {
-        let cached = cached_session(&engine_for_parse, &cache_path)?;
-        Ok(page_from_cached(&cached, limit, before_seq))
+        remote_session_page_blocking(
+            &db,
+            &engine_for_parse,
+            &session_id,
+            &cache_path,
+            limit,
+            before_seq,
+        )
     })
     .await
     .map_err(|e| e.to_string())?
@@ -861,7 +903,10 @@ pub(super) fn delete_session_blocking(
     // Model and effort can already exist even when no transcript was created.
     let mut conn = db.0.lock();
     let tx = conn.transaction().map_err(|e| e.to_string())?;
+    // Recorded frame identities become unreachable with their session and
+    // must be reclaimed in the same transaction as its indexed metadata.
     for table in [
+        "accepted_internal_frames",
         "sessions",
         "session_models",
         "session_efforts",
@@ -895,35 +940,69 @@ pub async fn delete_session(
     Ok(())
 }
 
+fn remote_session_delete_script(engine: &str, remote_path: &str) -> Result<String, String> {
+    if !is_plausible_remote_session_path(engine, remote_path) {
+        return Err(format!("远程会话路径不合法: {remote_path}"));
+    }
+    let quoted = crate::engine::wsl_transport::sh_quote(remote_path);
+    // run_script_output checks the final status, without enabling set -e.
+    // Only empty-directory cleanup may mask a failure, never transcript rm.
+    let mut script = format!("rm -f -- {quoted} || exit $?");
+    if engine == "dsh" {
+        // 世代日志同目录共存(session.jsonl.zstd / session.vN.jsonl.zstd),
+        // 只删当前代会留下旧代被插件源重新列出;目录删空才移除。
+        script.push_str(&format!(
+            "\ndir=$(dirname -- {quoted}) || exit $?\nrm -f -- \"$dir\"/session.jsonl.zstd \"$dir\"/session.v*.jsonl.zstd || exit $?\nrmdir -- \"$dir\" 2>/dev/null || true"
+        ));
+    }
+    Ok(script)
+}
+
+/// Reclaim session-scoped identities only after the remote disk operation
+/// succeeds. Remote sessions need not have a local `sessions` row.
+async fn delete_remote_session_and_frames(
+    db: Arc<crate::db::Db>,
+    engine: String,
+    session_id: String,
+    delete_disk: impl Future<Output = Result<String, String>>,
+) -> Result<(), String> {
+    delete_disk.await?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let conn = db.0.lock();
+        conn.execute(
+            "DELETE FROM accepted_internal_frames WHERE engine=?1 AND session_id=?2",
+            rusqlite::params![engine, session_id],
+        )
+        .map(|_| ())
+        .map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 /// 远程(WSL 发行版内)会话删除:插件会话源上报的 remotePath 经与
 /// load_remote_session_page 相同的形状白名单校验后,走同一套远程通道
 /// rm。dsh 的同目录旧世代日志一并清掉,目录仅在删空时移除(有其它文件
-/// 则保留)。远程会话没有本地 db 行,无需 emit_sessions_changed——前端
-/// 删除后自行刷新,插件源重新 list 时文件已不存在。
+/// 则保留)。成功后回收本地 accepted_internal_frames;远程会话没有本地
+/// sessions 行,无需 emit_sessions_changed——前端删除后自行刷新。
 #[tauri::command]
 pub async fn delete_remote_session(
     state: tauri::State<'_, crate::AppState>,
     workspace_path: String,
     engine: String,
+    session_id: String,
     remote_path: String,
 ) -> Result<(), String> {
-    if !is_plausible_remote_session_path(&engine, &remote_path) {
-        return Err(format!("远程会话路径不合法: {remote_path}"));
-    }
-    let transport =
-        crate::engine::wsl_transport::transport_for_workspace(&state.db, &workspace_path)
-            .ok_or_else(|| format!("工作区 {workspace_path} 未登记远程传输"))?;
-    let quoted = crate::engine::wsl_transport::sh_quote(&remote_path);
-    let mut script = format!("rm -f -- {quoted}");
-    if engine == "dsh" {
-        // 世代日志同目录共存(session.jsonl.zstd / session.vN.jsonl.zstd),
-        // 只删当前代会留下旧代被插件源重新列出;目录删空才移除。
-        script.push_str(&format!(
-            "\ndir=$(dirname -- {quoted})\nrm -f -- \"$dir\"/session.jsonl.zstd \"$dir\"/session.v*.jsonl.zstd\nrmdir -- \"$dir\" 2>/dev/null || true"
-        ));
-    }
-    crate::engine::wsl_transport::run_script_output(&transport, &script).await?;
-    Ok(())
+    let script = remote_session_delete_script(&engine, &remote_path)?;
+    let transport = crate::engine::wsl_transport::transport_for_workspace(&state.db, &workspace_path)
+        .ok_or_else(|| format!("工作区 {workspace_path} 未登记远程传输"))?;
+    delete_remote_session_and_frames(
+        Arc::clone(&state.db),
+        engine,
+        session_id,
+        crate::engine::wsl_transport::run_script_output(&transport, &script),
+    )
+    .await
 }
 
 #[tauri::command]
@@ -962,6 +1041,120 @@ pub fn rename_session(
 #[tauri::command]
 pub fn rescan_sessions(state: tauri::State<'_, crate::AppState>) {
     super::scanner::spawn_scan(Arc::clone(&state.db), Arc::clone(&state.sink));
+}
+
+/// Frames recorded for one session. A long-lived session can accept a snapshot
+/// every turn; this bounds what one session contributes to the table. The
+/// earliest identities are the ones kept — evicting one would unhide a frame
+/// the user has already stopped seeing.
+const MAX_RECORDED_FRAMES_PER_SESSION: i64 = 5_000;
+
+/// Ceiling across every session. The per-session cap alone bounds nothing
+/// globally, because the scope is chosen by the caller; every scan reads and
+/// hashes this whole table, so unbounded growth is a permanent tax.
+const MAX_RECORDED_FRAMES_TOTAL: i64 = 100_000;
+
+/// Longest native session id an identity is scoped to. Native ids are short
+/// (uuid-like), so this only rejects abuse.
+const MAX_RECORDED_SESSION_ID_LEN: usize = 128;
+
+/// Normalize and bound the scope one recorded identity is stored under: the
+/// engine must be one this app runs, and the session id must be short enough
+/// to be a native id. Without both, a caller could turn the table into
+/// arbitrary unbounded storage that slows every later scan.
+fn recordable_frame_scope(engine: &str, session_id: &str) -> Result<(String, String), String> {
+    let engine = engine.trim();
+    let session_id = session_id.trim();
+    if !crate::config::ENGINES.contains(&engine) {
+        return Err(format!("unknown engine: {engine}"));
+    }
+    if session_id.is_empty() || session_id.len() > MAX_RECORDED_SESSION_ID_LEN {
+        return Err("session id is empty or longer than a native id".to_string());
+    }
+    Ok((engine.to_string(), session_id.to_string()))
+}
+
+/// Record the identity of one internal frame a live capture validator accepted.
+/// The frame itself stays in the native transcript; only its hash is stored, so
+/// the history parser can hide exactly the frames the user was never meant to
+/// see while unrecorded look-alikes, malformed frames, and model prose stay
+/// visible.
+///
+/// The host re-derives the identity from the frame bytes rather than trusting
+/// the caller, and bounds the scope it will store. It cannot verify *which*
+/// capture accepted the frame — validators run in the renderer — so this is a
+/// trusted-caller command: the plugin bridge's allowlist covers only its
+/// http/exec commands and rejects this one.
+#[tauri::command]
+pub async fn record_accepted_internal_frame(
+    state: tauri::State<'_, crate::AppState>,
+    engine: String,
+    session_id: String,
+    frame: String,
+    workspace_path: String,
+) -> Result<(), String> {
+    let (engine, session_id) = recordable_frame_scope(&engine, &session_id)?;
+    // The workspace the frame was accepted in. A remote session never gets a
+    // `sessions` row, so a purge that joins through it cannot reach these
+    // identities: this is the only key `remove_workspace` can reclaim them by.
+    let workspace_path = workspace_path.trim().to_string();
+    let Some(frame_hash) = super::recordable_internal_frame_hash(&frame) else {
+        return Err("frame is not one complete internal frame with a JSON payload".to_string());
+    };
+    let db = Arc::clone(&state.db);
+    let sink = Arc::clone(&state.sink);
+    let stale_summary = tauri::async_runtime::spawn_blocking(move || -> Result<bool, String> {
+        let conn = db.0.lock();
+        let (for_session, total): (i64, i64) = conn
+            .query_row(
+                "SELECT
+                    (SELECT COUNT(*) FROM accepted_internal_frames
+                      WHERE engine=?1 AND session_id=?2),
+                    (SELECT COUNT(*) FROM accepted_internal_frames)",
+                rusqlite::params![engine, session_id],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .map_err(|error| error.to_string())?;
+        // At capacity the identity cannot be stored, so the frame will be
+        // visible again on reload: report it instead of answering success,
+        // which would look identical to a stored identity.
+        if for_session >= MAX_RECORDED_FRAMES_PER_SESSION || total >= MAX_RECORDED_FRAMES_TOTAL {
+            return Err(format!(
+                "accepted-frame table is at capacity for {engine}/{session_id}"
+            ));
+        }
+        let inserted = conn
+            .execute(
+                "INSERT OR IGNORE INTO accepted_internal_frames(engine, session_id, frame_hash, workspace_path)
+                 VALUES(?1, ?2, ?3, ?4)",
+                rusqlite::params![engine, session_id, frame_hash, workspace_path],
+            )
+            .map_err(|error| error.to_string())?
+            != 0;
+        if !inserted {
+            return Ok(false);
+        }
+        // Only an indexed session has a stored summary that now hides fewer
+        // frames than it should. One the scanner has never reached derives its
+        // summary from the identity set current at that time, so rescanning for
+        // it here would be pure amplification.
+        let indexed: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM sessions WHERE engine=?1 AND session_id=?2",
+                rusqlite::params![engine, session_id],
+                |row| row.get(0),
+            )
+            .map_err(|error| error.to_string())?;
+        Ok(indexed > 0)
+    })
+    .await
+    .map_err(|error| error.to_string())??;
+    if stale_summary {
+        // This session's stored summary still hides only the previously
+        // recorded frames; rebuild it from the enlarged identity set.
+        super::scanner::spawn_scan(Arc::clone(&state.db), Arc::clone(&sink));
+    }
+    Ok(())
 }
 
 // ==================== Workspaces ====================
@@ -1176,12 +1369,10 @@ pub fn reorder_workspaces(
     Ok(())
 }
 
-#[tauri::command]
-pub fn remove_workspace(
-    state: tauri::State<'_, crate::AppState>,
-    id: String,
-) -> Result<(), String> {
-    let conn = state.db.0.lock();
+/// Sync body of `remove_workspace`. Split out so the identity reclamation
+/// below is reachable from a test without a Tauri `State`.
+fn remove_workspace_blocking(db: &crate::db::Db, id: &str) -> Result<(), String> {
+    let conn = db.0.lock();
     let path: Option<String> = conn
         .query_row(
             "SELECT path FROM workspaces WHERE id=?1",
@@ -1192,6 +1383,18 @@ pub fn remove_workspace(
     conn.execute("DELETE FROM workspaces WHERE id=?1", rusqlite::params![id])
         .map_err(|e| e.to_string())?;
     if let Some(path) = path {
+        // Same cleanup as delete_session: these identities are scoped to
+        // sessions that no longer exist. Remote sessions have no `sessions`
+        // row, so the workspace the frame was accepted in is matched directly
+        // — without it their identities would never be reclaimed.
+        conn.execute(
+            "DELETE FROM accepted_internal_frames
+              WHERE workspace_path=?1
+                 OR (engine, session_id) IN
+                    (SELECT engine, session_id FROM sessions WHERE workspace_path=?1)",
+            rusqlite::params![path],
+        )
+        .map_err(|e| e.to_string())?;
         conn.execute(
             "DELETE FROM sessions WHERE workspace_path=?1",
             rusqlite::params![path],
@@ -1200,7 +1403,15 @@ pub fn remove_workspace(
         // 审批记录不声明 FK(sessions 行可能晚于计划到达),由清理路径级联。
         crate::engine::plan_review::delete_reviews_for_workspace(&conn, &path)?;
     }
-    drop(conn);
+    Ok(())
+}
+
+#[tauri::command]
+pub fn remove_workspace(
+    state: tauri::State<'_, crate::AppState>,
+    id: String,
+) -> Result<(), String> {
+    remove_workspace_blocking(&state.db, &id)?;
     state.sink.emit_sessions_changed();
     Ok(())
 }
@@ -1208,6 +1419,337 @@ pub fn remove_workspace(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn scratch_dir(tag: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!(
+            "ccgui-reader-{tag}-{}",
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    /// One omp rollout whose assistant turn carries two look-alike frames.
+    fn write_session(path: &Path, workspace: &Path, text: &str) {
+        let lines = [
+            serde_json::json!({"type": "title", "v": 1, "title": "t"}),
+            serde_json::json!({
+                "type": "session",
+                "version": 3,
+                "id": "sid-1",
+                "timestamp": "2026-09-05T07:13:57.946Z",
+                "cwd": workspace.to_string_lossy(),
+            }),
+            serde_json::json!({
+                "type": "message",
+                "timestamp": "2026-09-05T07:14:06.682Z",
+                "message": {"role": "user", "content": [{"type": "text", "text": "hello"}]},
+            }),
+            serde_json::json!({
+                "type": "message",
+                "timestamp": "2026-09-05T07:14:07.682Z",
+                "message": {"role": "assistant", "content": [{"type": "text", "text": text}]},
+            }),
+        ];
+        let body = lines
+            .iter()
+            .map(|line| serde_json::to_string(line).unwrap())
+            .collect::<Vec<_>>()
+            .join("\n");
+        std::fs::write(path, format!("{body}\n")).unwrap();
+    }
+
+    /// The page a restored conversation renders hides exactly the frames a live
+    /// capture validator accepted, and recording a new identity re-derives the
+    /// page instead of serving the parse cached under the older identity set.
+    #[test]
+    fn session_page_hides_only_recorded_internal_frames() {
+        let home = scratch_dir("page-frames");
+        let workspace = home.join("ws");
+        std::fs::create_dir_all(&workspace).unwrap();
+        let file = home.join("s.jsonl");
+        let recorded = "<CCGUI_INTERNAL_abcdefgh>{\"pluginId\":\"bridge\"}</CCGUI_INTERNAL_abcdefgh>";
+        let unrecorded = "<CCGUI_INTERNAL_zzzzzzzz>{\"pluginId\":\"other\"}</CCGUI_INTERNAL_zzzzzzzz>";
+        write_session(&file, &workspace, &format!("answer {recorded} tail {unrecorded}"));
+
+        let db = crate::db::Db::open_at(&home.join("app.db")).unwrap();
+        {
+            let conn = db.0.lock();
+            conn.execute(
+                "INSERT INTO sessions(engine, session_id, workspace_path, file_path, file_size, file_mtime_ms)
+                 VALUES('omp', 'sid-1', ?1, ?2, 1, 1)",
+                rusqlite::params![
+                    workspace.to_string_lossy(),
+                    file.to_string_lossy(),
+                ],
+            )
+            .unwrap();
+        }
+
+        // Nothing recorded yet: both frames are ordinary model output.
+        let page = load_session_page_blocking(&db, "omp", "sid-1", None, None).unwrap();
+        let assistant = |page: &SessionPage| {
+            page.messages
+                .iter()
+                .find(|m| m.role == "assistant")
+                .expect("assistant row")
+                .text
+                .clone()
+        };
+        assert_eq!(
+            assistant(&page),
+            format!("answer {recorded} tail {unrecorded}")
+        );
+
+        // Recording one identity hides that frame only. The first page was
+        // cached under the empty identity set, so a cache keyed on file stat
+        // alone would still serve the stale text here.
+        db.record_accepted_internal_frame_hash(
+            "omp",
+            "sid-1",
+            &super::super::internal_frame_hash(recorded),
+            &workspace.to_string_lossy(),
+        )
+        .unwrap();
+        let page = load_session_page_blocking(&db, "omp", "sid-1", None, None).unwrap();
+        assert_eq!(assistant(&page), format!("answer  tail {unrecorded}"));
+
+        drop(db);
+        std::fs::remove_dir_all(&home).ok();
+    }
+
+    /// A remote workspace's turn records accepted frame identities exactly like
+    /// a local one — `record_accepted_internal_frame` scopes them by
+    /// `(engine, session_id)` and never consults the `sessions` table — so the
+    /// remote page must consult the same table. Parsing a remote transcript with
+    /// an empty set re-reveals the whole handoff payload the capture validator
+    /// hid from the live transcript. Note there is deliberately no `sessions`
+    /// row here: a remote session has none, which is what made the empty-set
+    /// resolution look defensible.
+    #[test]
+    fn remote_session_page_hides_recorded_internal_frames() {
+        let home = scratch_dir("remote-frames");
+        let workspace = home.join("ws");
+        std::fs::create_dir_all(&workspace).unwrap();
+        let cache = home.join("remote-cache.jsonl");
+        let recorded = "<CCGUI_INTERNAL_abcdefgh>{\"pluginId\":\"bridge\"}</CCGUI_INTERNAL_abcdefgh>";
+        let unrecorded = "<CCGUI_INTERNAL_zzzzzzzz>{\"pluginId\":\"other\"}</CCGUI_INTERNAL_zzzzzzzz>";
+        write_session(&cache, &workspace, &format!("answer {recorded} tail {unrecorded}"));
+
+        let db = crate::db::Db::open_at(&home.join("app.db")).unwrap();
+        let assistant = |page: &SessionPage| {
+            page.messages
+                .iter()
+                .find(|m| m.role == "assistant")
+                .expect("assistant row")
+                .text
+                .clone()
+        };
+
+        db.record_accepted_internal_frame_hash(
+            "omp",
+            "sid-1",
+            &super::super::internal_frame_hash(recorded),
+            &workspace.to_string_lossy(),
+        )
+        .unwrap();
+
+        let page = remote_session_page_blocking(&db, "omp", "sid-1", &cache, None, None).unwrap();
+        assert_eq!(assistant(&page), format!("answer  tail {unrecorded}"));
+
+        drop(db);
+        std::fs::remove_dir_all(&home).ok();
+    }
+
+    /// The scope one identity is stored under is bounded: only engines this app
+    /// runs, and only ids short enough to be native session ids. Without both,
+    /// the table becomes arbitrary storage that taxes every later scan.
+    #[test]
+    fn recorded_frame_scope_rejects_unknown_engines_and_oversized_ids() {
+        assert_eq!(
+            recordable_frame_scope(" omp ", " sid-1 ").unwrap(),
+            ("omp".to_string(), "sid-1".to_string())
+        );
+        assert!(recordable_frame_scope("not-an-engine", "sid-1").is_err());
+        assert!(recordable_frame_scope("omp", "").is_err());
+        assert!(
+            recordable_frame_scope("omp", &"x".repeat(MAX_RECORDED_SESSION_ID_LEN + 1)).is_err()
+        );
+    }
+
+    /// Deleting a conversation drops the identities scoped to it. They can never
+    /// match another session's frames again, and every scan re-reads and hashes
+    /// the whole table, so orphans are a permanent tax.
+    #[test]
+    fn deleting_a_session_drops_its_recorded_frame_identities() {
+        let home = scratch_dir("delete-frames");
+        let workspace = home.join("ws");
+        std::fs::create_dir_all(&workspace).unwrap();
+        let file = home.join("s.jsonl");
+        write_session(&file, &workspace, "answer");
+        let db = crate::db::Db::open_at(&home.join("app.db")).unwrap();
+        {
+            let conn = db.0.lock();
+            conn.execute(
+                "INSERT INTO sessions(engine, session_id, workspace_path, file_path, file_size, file_mtime_ms)
+                 VALUES('omp', 'sid-1', ?1, ?2, 1, 1)",
+                rusqlite::params![workspace.to_string_lossy(), file.to_string_lossy()],
+            )
+            .unwrap();
+        }
+        db.record_accepted_internal_frame_hash("omp", "sid-1", &"a".repeat(64), &workspace.to_string_lossy())
+            .unwrap();
+        db.record_accepted_internal_frame_hash("omp", "kept", &"b".repeat(64), &workspace.to_string_lossy())
+            .unwrap();
+        for session_id in ["sid-1", "kept"] {
+            db.remember_session_provider("omp", session_id, "provider", 1).unwrap();
+            let session = SessionMeta {
+                engine: "omp".into(),
+                session_id: session_id.into(),
+                workspace_path: workspace.to_string_lossy().into_owned(),
+                ..archived_fixture()
+            };
+            archive_session_in(&db, &session).unwrap();
+        }
+
+        delete_session_blocking(&db, "omp", "sid-1").unwrap();
+
+        assert!(db.accepted_internal_frames("omp", "sid-1").unwrap().0.is_empty());
+        assert_eq!(db.accepted_internal_frames("omp", "kept").unwrap().0.len(), 1);
+        let archived = list_archived_sessions_from(&db).unwrap();
+        assert_eq!(archived.len(), 1);
+        assert_eq!(archived[0].session_id, "kept");
+        let providers: Vec<String> = db.0.lock()
+            .prepare("SELECT session_id FROM session_providers WHERE engine='omp'")
+            .unwrap()
+            .query_map([], |row| row.get(0))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        assert_eq!(providers, ["kept"]);
+
+        drop(db);
+        std::fs::remove_dir_all(&home).ok();
+    }
+
+    #[tokio::test]
+    async fn remote_delete_failure_preserves_all_frame_identities() {
+        let scratch = Scratch::new();
+        let db = Arc::new(crate::db::Db::open_at(&scratch.0.join("app.db")).unwrap());
+        for (engine, session_id, hash) in [
+            ("dsh", "remote-1", "a"),
+            ("dsh", "kept", "b"),
+            ("omp", "remote-1", "c"),
+        ] {
+            db.record_accepted_internal_frame_hash(engine, session_id, &hash.repeat(64), "/remote/ws")
+                .unwrap();
+        }
+        let before = (
+            db.accepted_internal_frames("dsh", "remote-1").unwrap(),
+            db.accepted_internal_frames("dsh", "kept").unwrap(),
+            db.accepted_internal_frames("omp", "remote-1").unwrap(),
+        );
+
+        let result = delete_remote_session_and_frames(
+            Arc::clone(&db),
+            "dsh".to_string(),
+            "remote-1".to_string(),
+            async { Err("remote transcript removal failed".to_string()) },
+        )
+        .await;
+
+        assert_eq!(result, Err("remote transcript removal failed".to_string()));
+        assert_eq!(
+            (
+                db.accepted_internal_frames("dsh", "remote-1").unwrap(),
+                db.accepted_internal_frames("dsh", "kept").unwrap(),
+                db.accepted_internal_frames("omp", "remote-1").unwrap(),
+            ),
+            before
+        );
+    }
+
+    #[tokio::test]
+    async fn remote_delete_success_reclaims_only_its_session_frame_identities() {
+        let scratch = Scratch::new();
+        let db = Arc::new(crate::db::Db::open_at(&scratch.0.join("app.db")).unwrap());
+        // Remote identities have no local sessions row to join against.
+        for (engine, session_id, hash) in [
+            ("dsh", "remote-1", "a"),
+            ("dsh", "remote-1", "b"),
+            ("dsh", "kept", "c"),
+            ("omp", "remote-1", "d"),
+        ] {
+            db.record_accepted_internal_frame_hash(engine, session_id, &hash.repeat(64), "/remote/ws")
+                .unwrap();
+        }
+        let before = db.accepted_internal_frames("dsh", "remote-1").unwrap();
+        let same_engine = db.accepted_internal_frames("dsh", "kept").unwrap();
+        let same_session_id = db.accepted_internal_frames("omp", "remote-1").unwrap();
+
+        delete_remote_session_and_frames(
+            Arc::clone(&db),
+            "dsh".to_string(),
+            "remote-1".to_string(),
+            async {
+                // Nothing can be reclaimed before the remote operation succeeds.
+                assert_eq!(db.accepted_internal_frames("dsh", "remote-1").unwrap(), before);
+                Ok(String::new())
+            },
+        )
+        .await
+        .unwrap();
+
+        assert!(db.accepted_internal_frames("dsh", "remote-1").unwrap().0.is_empty());
+        assert_eq!(db.accepted_internal_frames("dsh", "kept").unwrap(), same_engine);
+        assert_eq!(db.accepted_internal_frames("omp", "remote-1").unwrap(), same_session_id);
+    }
+
+    /// Removing a workspace reclaims every identity accepted in it. A remote
+    /// session never gets a `sessions` row, so the stored workspace is the only
+    /// key that can reach its rows: without it they accumulate until the global
+    /// cap makes every later record fail and hidden frames reappear app-wide.
+    #[test]
+    fn removing_a_workspace_reclaims_remote_session_frame_identities() {
+        let home = scratch_dir("workspace-frames");
+        let workspace = home.join("ws");
+        std::fs::create_dir_all(&workspace).unwrap();
+        let db = crate::db::Db::open_at(&home.join("app.db")).unwrap();
+        let ws_path = workspace.to_string_lossy().to_string();
+        {
+            let conn = db.0.lock();
+            conn.execute(
+                "INSERT INTO workspaces(id, path, name) VALUES('w1', ?1, 'ws')",
+                rusqlite::params![ws_path],
+            )
+            .unwrap();
+        }
+        // Deliberately no `sessions` row: this is the remote shape, the one the
+        // old `sessions`-only purge could never reach.
+        db.record_accepted_internal_frame_hash("codex", "remote-1", &"a".repeat(64), &ws_path)
+            .unwrap();
+        db.record_accepted_internal_frame_hash("codex", "elsewhere", &"b".repeat(64), "C:/other")
+            .unwrap();
+
+        remove_workspace_blocking(&db, "w1").unwrap();
+
+        assert!(db
+            .accepted_internal_frames("codex", "remote-1")
+            .unwrap()
+            .0
+            .is_empty());
+        assert_eq!(
+            db.accepted_internal_frames("codex", "elsewhere")
+                .unwrap()
+                .0
+                .len(),
+            1
+        );
+
+        drop(db);
+        std::fs::remove_dir_all(&home).ok();
+    }
+
     use serde_json::json;
 
     struct Scratch(PathBuf);
@@ -1503,26 +2045,28 @@ mod tests {
                 "INSERT INTO sessions(engine,session_id,workspace_path,file_path,file_size,file_mtime_ms) VALUES(?1,'failed','/ws',?2,0,0)",
                 rusqlite::params![engine, path.to_string_lossy().as_ref()],
             ).unwrap();
-            db.remember_session_model(engine, "failed", "model", 1)
-                .unwrap();
-            db.remember_session_effort(engine, "failed", "high", 1)
+            db.remember_session_model(engine, "failed", "model", 1).unwrap();
+            db.remember_session_effort(engine, "failed", "high", 1).unwrap();
+            db.remember_session_provider(engine, "failed", "provider", 1).unwrap();
+            let session = SessionMeta {
+                engine: engine.into(),
+                session_id: "failed".into(),
+                workspace_path: "/ws".into(),
+                ..archived_fixture()
+            };
+            archive_session_in(&db, &session).unwrap();
+            db.record_accepted_internal_frame_hash(engine, "failed", &"a".repeat(64), "/ws")
                 .unwrap();
 
             let error = delete_session_blocking(&db, engine, "failed").unwrap_err();
             assert!(error.contains("remove "), "{error}");
             assert!(path.is_dir());
-            for table in ["sessions", "session_models", "session_efforts"] {
-                let count: i64 = db
-                    .0
-                    .lock()
-                    .query_row(
-                        &format!(
-                            "SELECT COUNT(*) FROM {table} WHERE engine=?1 AND session_id='failed'"
-                        ),
-                        [engine],
-                        |r| r.get(0),
-                    )
-                    .unwrap();
+            for table in ["accepted_internal_frames", "sessions", "session_models", "session_efforts", "session_providers", "session_archives"] {
+                let count: i64 = db.0.lock().query_row(
+                    &format!("SELECT COUNT(*) FROM {table} WHERE engine=?1 AND session_id='failed'"),
+                    [engine],
+                    |r| r.get(0),
+                ).unwrap();
                 assert_eq!(count, 1, "{engine}: {table}");
             }
         }
@@ -1655,6 +2199,80 @@ mod tests {
         std::fs::write(&path, "{}").unwrap();
         assert!(delete_session_disk("future-engine", &path).is_err());
         assert!(path.exists());
+    }
+
+    // Unix runs the actual production script. Windows CI still exercises the
+    // async deletion/identity gate above without depending on an installed sh.
+    #[cfg(unix)]
+    fn run_remote_delete_script(engine: &str, path: &Path) -> std::process::Output {
+        let script = remote_session_delete_script(engine, path.to_str().unwrap()).unwrap();
+        std::process::Command::new("/bin/sh")
+            .args(["-c", &script])
+            .output()
+            .unwrap()
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn remote_dsh_delete_propagates_primary_transcript_failure() {
+        let scratch = Scratch::new();
+        let dir = scratch.0.join("sessions").join("session-1");
+        let transcript = dir.join("session.v2.jsonl.zstd");
+        // rm -f cannot remove a directory, even when tests run as root.
+        std::fs::create_dir_all(&transcript).unwrap();
+        let old = dir.join("session.v1.jsonl.zstd");
+        std::fs::write(&old, "old transcript").unwrap();
+
+        let output = run_remote_delete_script("dsh", &transcript);
+
+        assert!(!output.status.success());
+        assert!(transcript.is_dir());
+        assert_eq!(std::fs::read_to_string(old).unwrap(), "old transcript");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn remote_dsh_delete_propagates_old_generation_failure() {
+        let scratch = Scratch::new();
+        let dir = scratch.0.join("sessions").join("session-1");
+        let old = dir.join("session.v1.jsonl.zstd");
+        std::fs::create_dir_all(&old).unwrap();
+        let transcript = dir.join("session.v2.jsonl.zstd");
+        std::fs::write(&transcript, "current transcript").unwrap();
+
+        let output = run_remote_delete_script("dsh", &transcript);
+
+        assert!(!output.status.success());
+        assert!(!transcript.exists());
+        assert!(old.is_dir());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn remote_dsh_delete_removes_generations_but_preserves_unrelated_files() {
+        let scratch = Scratch::new();
+        let dir = scratch.0.join("sessions").join("session 'one");
+        std::fs::create_dir_all(&dir).unwrap();
+        let generations = ["session.jsonl.zstd", "session.v1.jsonl.zstd", "session.v2.jsonl.zstd"];
+        for name in generations {
+            std::fs::write(dir.join(name), "transcript").unwrap();
+        }
+        let unrelated = dir.join("notes.txt");
+        std::fs::write(&unrelated, "keep").unwrap();
+        let sibling = scratch.0.join("sessions").join("session-two");
+        std::fs::create_dir_all(&sibling).unwrap();
+        let sibling_transcript = sibling.join("session.jsonl.zstd");
+        std::fs::write(&sibling_transcript, "other session").unwrap();
+
+        let output = run_remote_delete_script("dsh", &dir.join("session.v2.jsonl.zstd"));
+
+        assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+        for name in generations {
+            assert!(!dir.join(name).exists(), "generation remains: {name}");
+        }
+        // Nonempty-directory cleanup is best effort, not a transcript failure.
+        assert_eq!(std::fs::read_to_string(unrelated).unwrap(), "keep");
+        assert_eq!(std::fs::read_to_string(sibling_transcript).unwrap(), "other session");
     }
 
     /// dsh 远程转录本是 zstd 压缩:同 /sessions/ 形态下放行 .jsonl.zstd。

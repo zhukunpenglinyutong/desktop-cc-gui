@@ -5,7 +5,7 @@
 use std::path::{Path, PathBuf};
 
 use super::manifest::{manifest_path, validate_manifest, PluginManifest};
-use super::state::{mutate_record, read_state, write_state, PluginInfo, PluginRecord, STATE_LOCK};
+use super::state::{lock_state, mutate_record, read_state, write_state, PluginInfo, PluginRecord};
 
 /// Hard per-file size cap, enforced both at install validation and on reads.
 // Local installs get a generous 16MB sanity cap: it exists to catch picking
@@ -315,10 +315,11 @@ pub(crate) fn install_from(
 
     // Step 3: record. A reinstall keeps the original enabled flag and install
     // time; quarantine state and the stored error always reset on fresh bits.
-    // STATE_LOCK covers this read→mutate→write only — the copy phase above
-    // runs lock-free.
+    // The state lock covers this read→mutate→write only — the copy phase
+    // above runs lock-free. Cross-process (file lock), so a second host
+    // installing the same id cannot interleave its own record write.
     let record = {
-        let _guard = STATE_LOCK.lock();
+        let _guard = lock_state(state_path)?;
         let mut state = read_state(state_path)?;
         let record = mutate_record(&mut state, &id, source_kind, |record| {
             record.version = manifest.version.clone();

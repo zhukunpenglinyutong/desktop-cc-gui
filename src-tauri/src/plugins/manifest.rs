@@ -64,15 +64,25 @@ pub(crate) struct PluginManifest {
 
 /// ids double as directory names, so the manifest charset whitelist is also
 /// the path-traversal guard for plugin_read_file/uninstall.
+///
+/// Grammar (single source of truth: packages/plugin-sdk/spec/permissions.json
+/// `pluginIdShapes`, mirrored by the SDK's `isValidPluginId`): total length
+/// 2..=64 bytes, dot-separated segments each `[a-z0-9][a-z0-9-]*`. Empty
+/// segments (`a..b`, `.a`, `a.`) and `.`/`..` therefore reject, so dots never
+/// become traversal.
 fn is_valid_id(id: &str) -> bool {
-    let bytes = id.as_bytes();
-    if bytes.len() < 2 || bytes.len() > 64 {
+    let len = id.len();
+    if len < 2 || len > 64 {
         return false;
     }
-    (bytes[0].is_ascii_lowercase() || bytes[0].is_ascii_digit())
-        && bytes[1..]
-            .iter()
-            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || *b == b'-')
+    id.split('.').all(|segment| {
+        let bytes = segment.as_bytes();
+        !bytes.is_empty()
+            && (bytes[0].is_ascii_lowercase() || bytes[0].is_ascii_digit())
+            && bytes[1..]
+                .iter()
+                .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || *b == b'-')
+    })
 }
 
 pub(crate) fn require_valid_id(id: &str) -> Result<(), String> {
@@ -80,7 +90,7 @@ pub(crate) fn require_valid_id(id: &str) -> Result<(), String> {
         Ok(())
     } else {
         Err(format!(
-            "{id}: invalid plugin id (want ^[a-z0-9][a-z0-9-]{{1,63}}$)"
+            "{id}: invalid plugin id (want dot-separated [a-z0-9][a-z0-9-]* segments, 2..=64 bytes)"
         ))
     }
 }
@@ -204,6 +214,42 @@ mod tests {
         assert!(!is_valid_id("a_b")); // underscore not allowed
         assert!(!is_valid_id("../evil")); // traversal
         assert!(!is_valid_id(&"a".repeat(65))); // too long
+    }
+
+    /// The id grammar is shared with the SDK validator through
+    /// spec/permissions.json (`pluginIdShapes`). Dotted ids are the common
+    /// case in practice (`docs.plugin`, `ccgui.client-context-bridge`) and
+    /// every host id gate — plugin dirs, document storage, asset sources —
+    /// funnels through this check, so both ends are pinned to one vector set
+    /// instead of each carrying its own grammar.
+    #[test]
+    fn plugin_id_shapes_match_the_shared_spec() {
+        let spec: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../packages/plugin-sdk/spec/permissions.json"
+        ))
+        .expect("permissions spec JSON is valid");
+        let shapes = &spec["pluginIdShapes"];
+        let vectors = |key: &str| -> Vec<String> {
+            shapes[key]
+                .as_array()
+                .unwrap_or_else(|| panic!("pluginIdShapes.{key} is an array"))
+                .iter()
+                .map(|entry| entry.as_str().expect("id vectors are strings").to_owned())
+                .collect()
+        };
+        let valid = vectors("valid");
+        let invalid = vectors("invalid");
+        assert!(valid.len() >= 5 && invalid.len() >= 5, "id vectors shrank");
+        for id in &valid {
+            assert!(is_valid_id(id), "spec-valid plugin id rejected: {id:?}");
+        }
+        for id in &invalid {
+            assert!(!is_valid_id(id), "spec-invalid plugin id accepted: {id:?}");
+        }
+        // Dots may separate segments but can never form a traversal step.
+        assert!(require_valid_id("docs.plugin").is_ok());
+        assert!(require_valid_id("..").is_err());
+        assert!(require_valid_id("a/../b").is_err());
     }
 
     #[test]

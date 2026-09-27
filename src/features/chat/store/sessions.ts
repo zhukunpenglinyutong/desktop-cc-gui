@@ -33,6 +33,11 @@ import {
 } from "@/features/plugins/runtime/session-source";
 import { emitSessionActivated } from "@/features/plugins/runtime/events";
 import {
+  dispatchSessionClosed,
+  dispatchSessionRestored,
+} from "@/features/plugins/runtime/hooks";
+import { clearScopedContributions, sessionLifecycleBase } from "./lifecycle";
+import {
   mergeExternalSessions,
   preserveUnscannedSessions,
   visibleSessions,
@@ -246,6 +251,13 @@ export function createSessionActions(
         mergeExternalSessions(sessions, external, get().workspaces.map((w) => w.path)),
         archivedSessionKeys,
       );
+      for (const session of archivedSessions) {
+        clearScopedContributions(set, session.engine, session.sessionId, session.workspacePath);
+        const tab = get().openTabs.find((candidate) =>
+          sameTab(candidate, session.engine, session.sessionId, session.workspacePath),
+        );
+        if (tab) dispatchSessionClosed(sessionLifecycleBase(get, tab));
+      }
       set((s) => {
         const visible = visibleSessions(
           withoutArchived(
@@ -390,6 +402,13 @@ export function createSessionActions(
         const unseen = key in s.unseen ? omitKey(s.unseen, key) : s.unseen;
         return { openTabs, active: tab, unseen, activeEngine: engine };
       });
+      // A selection restores the session whether or not its messages are
+      // already cached (e.g. reopened after a tab close): the hook fires once
+      // per frontend lifetime, before any load.
+      if (!get().restoredSessionKeys[key]) {
+        set((s) => ({ restoredSessionKeys: { ...s.restoredSessionKeys, [key]: true } }));
+        dispatchSessionRestored({ ...sessionLifecycleBase(get, { engine, sessionId, workspacePath }), sessionId });
+      }
       emitSessionActivated(engine, sessionId);
       const existing = get().bySession[key];
       if (existing && existing.messages.length > 0) return;
@@ -500,7 +519,8 @@ export function createSessionActions(
       const tab = get().openTabs.find(
         (item) => item.engine === engine && item.sessionId === sessionId,
       );
-      if (tab) removeTab(engine, sessionId, tab.workspacePath);
+      if (tab) get().closeTab(engine, sessionId, tab.workspacePath);
+      else clearScopedContributions(set, engine, sessionId, workspacePath);
     },
 
     deleteSession: async (engine, sessionId) => {
@@ -511,7 +531,7 @@ export function createSessionActions(
       );
       try {
         if (meta?.remote && meta.remotePath) {
-          await ipc.deleteRemoteSession(meta.workspacePath, engine, meta.remotePath);
+          await ipc.deleteRemoteSession(meta.workspacePath, engine, sessionId, meta.remotePath);
         } else {
           await ipc.deleteSession(engine, sessionId);
         }
@@ -524,6 +544,8 @@ export function createSessionActions(
       const tab = get().openTabs.find(
         (t) => t.engine === engine && t.sessionId === sessionId,
       );
+      // The session is gone: its remembered contributions go with it.
+      clearScopedContributions(set, engine, sessionId, "");
       set((s) => {
         // Permanent delete: the cached session state is dead weight.
         const bySession = { ...s.bySession };

@@ -1134,6 +1134,7 @@ export const zh = {
     installing: "安装中…",
     installingPct: "安装中 {{pct}}%",
     installPickTitle: "选择插件目录（含 manifest.json）",
+    assetPickTitle: "选择允许此插件读取的资源目录",
     uninstall: "卸载",
     uninstallConfirm: "确定卸载插件「{{name}}」吗？（其保存的数据将保留 30 天）",
     reload: "重新加载",

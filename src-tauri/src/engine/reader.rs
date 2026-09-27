@@ -377,6 +377,7 @@ impl TurnCore {
                 args,
                 result,
                 patch,
+                tool_call_id,
             } => {
                 // A tool row opening (or its arg patch), or a completed
                 // assistant snapshot (codex/kimi report whole messages), ends
@@ -403,6 +404,12 @@ impl TurnCore {
                 }
                 if let Some(result) = result {
                     payload["result"] = result;
+                }
+                // The engine's own call id, when it reported one: the
+                // frontend pairs a result with its call on this rather than
+                // on the tool name, which collides across parallel calls.
+                if let Some(tool_call_id) = tool_call_id {
+                    payload["toolCallId"] = Value::String(tool_call_id);
                 }
                 if patch {
                     payload["patch"] = Value::Bool(true);
@@ -1436,6 +1443,7 @@ mod terminal_event_tests {
             args: None,
             result: None,
             patch: false,
+            tool_call_id: None,
         };
 
         // Explicit window: a mid-response tool row (claude streams tool args

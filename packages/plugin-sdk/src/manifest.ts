@@ -14,6 +14,23 @@ export type PluginTier = "declarative" | "js";
 
 /** 插件入口唯一约定（ADR-5）：宿主动态 import main.js 后调用默认导出。 */
 export type PluginActivate = (ctx: PluginContext) => void | (() => void);
+/** Safe stable plugin id: total length 2..=64 bytes, dot-separated segments
+ *  each matching `[a-z0-9][a-z0-9-]*` (first byte lowercase alphanumeric,
+ *  the rest lowercase alphanumerics or hyphens). Empty/dot-only/path-like
+ *  segments reject, as does a lone one-character id.
+ *
+ *  Kept byte-for-byte identical to Rust `is_valid_id`
+ *  (src-tauri/src/plugins/manifest.rs) — ids double as directory names, so
+ *  this is also the path-traversal guard. Shared vectors:
+ *  spec/permissions.json `pluginIdShapes`. */
+export function isValidPluginId(id: string): boolean {
+  return (
+    id.length >= 2 &&
+    id.length <= 64 &&
+    /^[a-z0-9][a-z0-9-]*(?:\.[a-z0-9][a-z0-9-]*)*$/.test(id)
+  );
+}
+
 
 export interface PluginManifest {
   id: string;
@@ -22,7 +39,7 @@ export interface PluginManifest {
   version: string;
   /** 要求的宿主最低版本。 */
   minAppVersion?: string;
-  /** 要求的 SDK 版本区间（"^0.3" / "~0.3.0" / ">=0.3.0" / 精确 / "*"）。
+  /** 要求的 SDK 版本区间（"^0.4" / "~0.4.0" / ">=0.4.0" / 精确 / "*"）。
    *  缺省 = "*"（不校验）。宿主 SDK 不满足时插件进入 incompatible 态。 */
   sdkVersion?: string;
   author?: string;

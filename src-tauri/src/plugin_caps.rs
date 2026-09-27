@@ -650,6 +650,9 @@ pub(crate) async fn plugin_exec_run(
     let mut child = command
         .spawn()
         .map_err(|error| format!("{plugin_id}: failed to start {bin}: {error}"))?;
+    // Only the unix group sweeps below need the pid; Windows takes the tree
+    // through the kill-on-close job instead.
+    #[cfg(unix)]
     let child_pid = child.id();
     // Kill-on-close job (Windows): sweeps grandchildren whenever this guard
     // drops — including the timeout path, where kill_on_drop only reaches

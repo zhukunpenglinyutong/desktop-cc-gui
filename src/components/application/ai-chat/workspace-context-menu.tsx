@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
 import Archive from "lucide-react/dist/esm/icons/archive";
@@ -7,10 +8,21 @@ import FolderPlus from "lucide-react/dist/esm/icons/folder-plus";
 import GitBranchPlus from "lucide-react/dist/esm/icons/git-branch-plus";
 import Pencil from "lucide-react/dist/esm/icons/pencil";
 import Trash2 from "lucide-react/dist/esm/icons/trash-2";
+import Puzzle from "lucide-react/dist/esm/icons/puzzle";
 import { ContextMenu, type ContextMenuEntry } from "@/components/context-menu";
 import { useChatStore } from "@/features/chat/store";
 import { useWorktreeStore } from "@/features/worktree/store";
 import { ipc, worktreeMetaOf, type Workspace } from "@/lib/ipc";
+import {
+  compareByOrder,
+  pluginIdFromRegistryKey,
+  useRegistry,
+  workspaceMenuRegistry,
+  type WorkspaceMenuItemDef,
+  type WorkspaceMenuLabelValue,
+  type WorkspaceMenuStatusTone,
+} from "@ccgui/plugin-sdk";
+import { PluginBoundary } from "@/features/plugins/boundary/PluginBoundary";
 
 export interface WorkspaceMenuState {
   x: number;
@@ -114,6 +126,74 @@ function buildWorkspaceMenuEntries({
   return entries;
 }
 
+/** Status parenthetical tones (SDK `WorkspaceMenuLabel.status`): semantic
+ *  tokens only — a plugin picks a tone, never a color. */
+const workspaceMenuStatusClassNames: Record<WorkspaceMenuStatusTone, string> = {
+  success: "text-notification-success-foreground",
+  muted: "text-text-tertiary",
+};
+
+function renderWorkspaceMenuLabel(label: WorkspaceMenuLabelValue): ContextMenuEntry["label"] {
+  if (typeof label === "string") return label;
+  if (!label.status) return label.text;
+  return (
+    <>
+      {label.text}{" "}
+      <span
+        className={workspaceMenuStatusClassNames[label.status.tone]}
+        data-workspace-menu-status
+      >
+        ({label.status.text})
+      </span>
+    </>
+  );
+}
+
+/** Registered extension entries (`ctx.ui.registerWorkspaceMenuItem`), resolved
+ *  against the row the user right-clicked — never the active workspace.
+ *  Extension callbacks are foreign code: a throwing `label`/`visible` drops
+ *  that one entry instead of taking the sidebar down, and a failing `onSelect`
+ *  (sync throw or rejected promise) is reported and swallowed. */
+function buildExtensionEntries(
+  defs: readonly WorkspaceMenuItemDef[],
+  target: { workspaceId: string; archived: boolean },
+): ContextMenuEntry[] {
+  const entries: ContextMenuEntry[] = [];
+  // compareByOrder: undefined order sorts last, ties break by id.
+  for (const def of [...defs].sort(compareByOrder)) {
+    const Icon = def.icon ?? Puzzle;
+    try {
+      if (def.visible?.(target) === false) continue;
+      entries.push({
+        id: def.id,
+        label: renderWorkspaceMenuLabel(def.label(target)),
+        icon: def.icon ? (
+          <PluginBoundary
+            pluginId={pluginIdFromRegistryKey(def.id)}
+            fallback={<Puzzle className="size-4" aria-hidden />}
+          >
+            <Icon className="size-4" aria-hidden />
+          </PluginBoundary>
+        ) : (
+          <Icon className="size-4" aria-hidden />
+        ),
+        onSelect: () => {
+          try {
+            void Promise.resolve(def.onSelect(target)).catch((error: unknown) =>
+              console.error(`[plugins] workspace menu ${def.id} onSelect failed`, error),
+            );
+          } catch (error) {
+            console.error(`[plugins] workspace menu ${def.id} onSelect failed`, error);
+          }
+        },
+      });
+    } catch (error) {
+      console.error(`[plugins] workspace menu ${def.id} failed to resolve`, error);
+    }
+  }
+  return entries;
+}
+
 /**
  * Right-click menu for sidebar workspace rows. Chrome (portal anchoring,
  * viewport clamping, Escape/outside dismissal) comes from the shared
@@ -143,8 +223,12 @@ export function WorkspaceContextMenu({
   const lockReason = useWorktreeStore((s) =>
     workspace ? s.lockedPaths[workspace.path] : undefined,
   );
+  // Read in render so a language flip or an owner's state change re-labels an
+  // open menu.
+  const extensionDefs = useRegistry(workspaceMenuRegistry);
+  const target = { workspaceId: menu.workspaceId, archived: menu.archived };
 
-  const entries = buildWorkspaceMenuEntries({
+  const builtins = buildWorkspaceMenuEntries({
     menu,
     workspace,
     isWorktree,
@@ -155,6 +239,17 @@ export function WorkspaceContextMenu({
     onNewWorktree,
     onDeleteWorktree,
   });
+  const extensions = buildExtensionEntries(extensionDefs, target);
+  const entries: (ContextMenuEntry | "separator")[] =
+    builtins.length > 0 && extensions.length > 0
+      ? [...builtins, "separator", ...extensions]
+      : [...builtins, ...extensions];
+  // An extension-only menu whose last owner unloads while it is open has
+  // nothing left to show: close instead of leaving an empty popover.
+  useEffect(() => {
+    if (entries.length === 0) onClose();
+  }, [entries.length, onClose]);
+  if (entries.length === 0) return null;
 
   return (
     <ContextMenu

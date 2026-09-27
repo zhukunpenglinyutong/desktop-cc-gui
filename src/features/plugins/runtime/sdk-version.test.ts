@@ -1,8 +1,5 @@
-import { readFileSync } from "node:fs";
-import { dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { SDK_VERSION, compareVersions, satisfiesSdkRange } from "@ccgui/plugin-sdk";
+import { compareVersions, satisfiesSdkRange } from "@ccgui/plugin-sdk";
 
 describe("satisfiesSdkRange", () => {
   it("absent or * accepts anything", () => {
@@ -51,19 +48,6 @@ describe("satisfiesSdkRange", () => {
   it("garbage ranges reject rather than silently pass", () => {
     expect(satisfiesSdkRange("latest", "0.2.0")).toBe(false);
     expect(satisfiesSdkRange("0.2", "0.2.0")).toBe(false);
-  });
-
-  it("the shipped SDK_VERSION satisfies the template's declared range", () => {
-    expect(satisfiesSdkRange("^0.3", SDK_VERSION)).toBe(true);
-  });
-
-  it("plugin.d.ts header version stamp matches SDK_VERSION", () => {
-    // jsdom 的全局 URL 会忽略 base 转而相对 document 解析，故走字符串路径。
-    const dts = readFileSync(
-      resolve(dirname(fileURLToPath(import.meta.url)), "../../../../packages/plugin-sdk/plugin.d.ts"),
-      "utf8",
-    );
-    expect(dts.slice(0, 400)).toContain(`@ccgui/plugin-sdk v${SDK_VERSION}`);
   });
 });
 

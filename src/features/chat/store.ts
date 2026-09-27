@@ -136,6 +136,10 @@ export const useChatStore = create<ChatStore>((set, get) => {
     pendingMention: null,
     actionError: null,
     initialized: false,
+    restoredSessionKeys: {},
+    createdSessionKeys: {},
+    sessionContributions: {},
+    pendingRuntimeSwitch: null,
 
     ...sessionActions,
     ...workspaceActions,

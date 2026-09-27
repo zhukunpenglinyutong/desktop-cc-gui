@@ -1,6 +1,7 @@
 import { ipc } from "@/lib/ipc";
 import { dismissCenterSurfaces } from "@/features/chat/center-surfaces";
 import { useChatStore } from "@/features/chat/store";
+import { withAuthorizedHostInvoke } from "./hardening";
 
 /**
  * ctx.workspaces.add 的宿主实现：把任意路径登记为侧栏工作区（可选携带
@@ -33,7 +34,7 @@ export async function addPluginWorkspace(
   // 走 plugin_add_workspace(Rust 侧复核 manifest 授权,见 plugin_caps.rs)
   // 而非通用 add_workspace——后者拒绝 wsl meta,直连 IPC 绕过 JS 门的插件
   // 会在服务端被拦。错误经 invoke 真实传播,不走 store actionError 静默路径。
-  await ipc.pluginAddWorkspace(pluginId, trimmed, meta);
+  await withAuthorizedHostInvoke(() => ipc.pluginAddWorkspace(pluginId, trimmed, meta));
   await useChatStore.getState().refreshWorkspaces();
 }
 

@@ -1,8 +1,9 @@
 import { ipc, type PluginInfo } from "@/lib/ipc";
+import { getAppVersion, pickDirectory } from "@/lib/platform";
 import i18n from "@/lib/i18n";
 import { buildAgentCatalog } from "../conversation/agent-catalog";
-import { getAppVersion } from "@/lib/platform";
 import { invoke } from "@/lib/transport";
+import { useChatStore } from "@/features/chat/store";
 import {
   createPluginContext,
   injectBundleCss,
@@ -64,6 +65,23 @@ export const ipcBackend: LoaderBackend = {
   set: (id, key, value) => ipc.pluginStorageSet(id, key, value),
   delete: (id, key) => ipc.pluginStorageDelete(id, key),
   bridgeInvoke: (command, args) => invoke(command, args),
+  workspaceMetadata: async (id) => {
+    const workspacePath = useChatStore.getState().active?.workspacePath;
+    if (!workspacePath) throw new Error("no active workspace");
+    return ipc.pluginWorkspaceMetadata(id, workspacePath);
+  },
+  workspaceList: (id) => ipc.pluginListWorkspaces(id),
+  pickDirectory: (title = "Select plugin document storage directory") => pickDirectory(title),
+  documentStorageGetLocation: (id) => ipc.pluginDocumentStorageGetLocation(id),
+  documentStorageSelectLocation: (id, kind, customPath) =>
+    ipc.pluginDocumentStorageSelectLocation(id, kind, customPath),
+  documentStorageReadText: (id, relativePath) =>
+    ipc.pluginDocumentStorageReadText(id, relativePath),
+  documentStorageWriteTextAtomic: (id, relativePath, content, expectedVersion) =>
+    ipc.pluginDocumentStorageWriteTextAtomic(id, relativePath, content, expectedVersion),
+  documentStorageRemove: (id, relativePath, expectedVersion) =>
+    ipc.pluginDocumentStorageRemove(id, relativePath, expectedVersion),
+  documentStorageList: (id, prefix) => ipc.pluginDocumentStorageList(id, prefix),
 };
 
 /** Run a handle's registration stack in reverse (unload order). A throwing

@@ -623,6 +623,7 @@ mod tests {
             session_id: None,
             workspace: std::path::PathBuf::from("/tmp"),
             prompt: "hi".into(),
+            prompt_contributions: Vec::new(),
             images: Vec::new(),
             model: Some("gpt-6-astra".into()),
             effort: None,

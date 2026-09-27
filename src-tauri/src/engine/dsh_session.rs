@@ -505,7 +505,14 @@ fn handle_session_event(
                 .and_then(Value::as_str)
                 .and_then(|text| serde_json::from_str::<Value>(text).ok())
                 .or_else(|| data.get("arguments").cloned());
-            core.dispatch_event(state, super::tool_call_message(name, args.as_ref()));
+            core.dispatch_event(
+                state,
+                super::tool_call_message_with_id(
+                    name,
+                    args.as_ref(),
+                    data.get("callId").and_then(Value::as_str),
+                ),
+            );
         }
         "tool/result" => {
             let call_id = data
@@ -532,9 +539,10 @@ fn handle_session_event(
                 .any(|block| block.get("isError").and_then(Value::as_bool) == Some(true));
             core.dispatch_event(
                 state,
-                super::tool_result_patch(
+                super::tool_result_patch_with_id(
                     &name,
                     Some(&json!({ "text": text, "isError": is_error })),
+                    (!call_id.is_empty()).then_some(call_id),
                 ),
             );
         }
@@ -1162,6 +1170,55 @@ mod tests {
         }
     }
 
+    #[tokio::test]
+    async fn tool_messages_preserve_call_id_in_emitted_payloads() {
+        let emitter = Arc::new(CollectingEmitter(StdMutex::new(Vec::new())));
+        let core = TurnCore {
+            sink: EventSink::new(emitter.clone()),
+            registry: Arc::new(ProcessRegistry::default()),
+            engine_id: "dsh".to_string(),
+            run_id: "test-run".to_string(),
+            db: None,
+        };
+        let mut state = TurnState::new(None);
+        let mut view = TurnView::default();
+
+        handle_session_event(
+            &core,
+            &mut state,
+            &mut view,
+            "tool/call",
+            &json!({
+                "callId": "call-17",
+                "name": "bash",
+                "arguments": { "command": "pnpm test" }
+            }),
+        );
+        handle_session_event(
+            &core,
+            &mut state,
+            &mut view,
+            "tool/result",
+            &json!({
+                "message": {
+                    "source": { "callId": "call-17" },
+                    "content": [{ "type": "text", "text": "done", "isError": false }]
+                }
+            }),
+        );
+        core.sink.flush();
+
+        let events = emitter.0.lock().unwrap().clone();
+        let messages: Vec<Value> = collect_kinds(&events)
+            .into_iter()
+            .filter_map(|(kind, data)| (kind == "message").then_some(data))
+            .collect();
+        assert_eq!(messages.len(), 2);
+        assert!(messages
+            .iter()
+            .all(|data| data.get("toolCallId").and_then(Value::as_str) == Some("call-17")));
+    }
+
     /// End-to-end against the configured local host (skipped by default):
     /// `cargo test --lib dsh_session -- --ignored --nocapture`.
     /// Proves the full chain: ensure host → workspace/session → prompt →
@@ -1182,6 +1239,7 @@ mod tests {
             session_id: None,
             workspace: PathBuf::from("/tmp"),
             prompt: "用一句话回答：1+1等于几？".to_string(),
+            prompt_contributions: Vec::new(),
             images: Vec::new(),
             model: None,
             effort: None,
@@ -1268,6 +1326,7 @@ mod tests {
                     session_id,
                     workspace: PathBuf::from("/tmp"),
                     prompt,
+                    prompt_contributions: Vec::new(),
                     images: Vec::new(),
                     model: None,
                     effort: None,

@@ -8,6 +8,9 @@ import {
 import { setPluginSessionEffort, useChatStore } from "./store";
 import { OPEN_TABS_KEY } from "./store/persistence";
 import { EMPTY_SESSION } from "./store/stream";
+import { handleEngineEvents, type EngineEventDeps } from "./store/engine-events";
+import { registerSessionHooks, registerTurnHooks } from "@/features/plugins/runtime/hooks";
+import { getConversationModeState } from "@/features/plugins/conversation/state";
 
 vi.mock("@/lib/ipc", () => ({
   ipc: {
@@ -21,6 +24,7 @@ vi.mock("@/lib/ipc", () => ({
     restoreSession: vi.fn(async () => {}),
     loadSessionPage: vi.fn(async () => ({ messages: [], nextBefore: null, subagentHistory: [] })),
     loadRemoteSessionPage: vi.fn(async () => ({ messages: [], nextBefore: null, subagentHistory: [] })),
+    listPlanReviews: vi.fn(async () => []),
     deleteSession: vi.fn(async () => {}),
     deleteRemoteSession: vi.fn(async () => {}),
     getAppSettings: vi.fn(async () => ({})),
@@ -52,9 +56,24 @@ function resetStore() {
     archivedSessionKeys: {},
     bySession: {},
     streamingByKey: {},
+    retryingByKey: {},
     unseen: {},
     drafts: {},
+    restoredSessionKeys: {},
+    createdSessionKeys: {},
+    sessionContributions: {},
+    pendingRuntimeSwitch: null,
   });
+}
+
+function engineDeps(): EngineEventDeps {
+  return {
+    set: (fn) => useChatStore.setState(fn),
+    get: () => useChatStore.getState(),
+    drainQueue: () => {},
+    markUnseenIfBackground: () => {},
+    upsertSessionMeta: () => {},
+  };
 }
 
 describe("per-session composer selection", () => {
@@ -154,6 +173,37 @@ describe("per-session composer selection", () => {
       dispose();
     }
   });
+
+  it("keeps the session lifecycle open while its conversation mode blocks closing", async () => {
+    const tab = { engine: "claude", sessionId: "mode-locked", workspacePath: WS };
+    const key = "claude/mode-locked";
+    const contributions = { [key]: { remembered: {}, resets: {}, overflowed: false } };
+    useChatStore.setState({ active: tab, openTabs: [tab], sessionContributions: contributions });
+    const modes = getConversationModeState();
+    const identity = modes.identity(key, WS, false);
+    modes.setExitBlocked(identity, "test.mode", true);
+    const closed = vi.fn();
+    const dispose = registerSessionHooks("test.mode-close", { onClosed: closed });
+    try {
+      useChatStore.getState().closeTab(tab.engine, tab.sessionId, WS);
+      await Promise.resolve();
+      expect(useChatStore.getState().openTabs).toEqual([tab]);
+      expect(useChatStore.getState().sessionContributions).toEqual(contributions);
+      expect(closed).not.toHaveBeenCalled();
+
+      modes.setExitBlocked(identity, "test.mode", false);
+      useChatStore.getState().closeTab(tab.engine, tab.sessionId, WS);
+      await Promise.resolve();
+      expect(useChatStore.getState().openTabs).toEqual([]);
+      expect(useChatStore.getState().sessionContributions).toEqual({});
+      expect(closed).toHaveBeenCalledTimes(1);
+      expect(closed).toHaveBeenCalledWith(expect.objectContaining({ engine: tab.engine, sessionId: tab.sessionId }));
+    } finally {
+      modes.setExitBlocked(identity, "test.mode", false);
+      modes.exit(identity);
+      dispose();
+    }
+  });
 });
 
 describe("stop during an in-flight send", () => {
@@ -165,8 +215,7 @@ describe("stop during an in-flight send", () => {
     const tab = { engine: "omp", sessionId: "sess-42", workspacePath: WS };
     useChatStore.setState({ activeEngine: "omp", openTabs: [tab], active: tab });
 
-    // Hold sendMessage open so Stop lands while the invoke is still pending —
-    // exactly the window where runRouting has no entry for this run yet.
+    // Hold the actual launch open so Stop precedes its acknowledgement.
     const { promise, resolve: resolveSend } = Promise.withResolvers<{
       runId: string;
       sessionId: string | null;
@@ -174,6 +223,7 @@ describe("stop during an in-flight send", () => {
     vi.mocked(ipc.sendMessage).mockReturnValueOnce(promise);
 
     const sending = useChatStore.getState().send("hello", []);
+    await vi.waitFor(() => expect(ipc.sendMessage).toHaveBeenCalledTimes(1));
     // User presses Stop mid-flight.
     await useChatStore.getState().interrupt();
     expect(useChatStore.getState().bySession["omp/sess-42"]?.interrupted).toBe(
@@ -188,6 +238,87 @@ describe("stop during an in-flight send", () => {
     // sendPrompt saw the interrupted flag once the ids materialized and
     // killed the run that Stop could not reach.
     expect(vi.mocked(ipc.interruptSession)).toHaveBeenCalledWith("run-9");
+  });
+
+  it("does not launch a stopped before-turn generation after a replacement starts", async () => {
+    const tab = { engine: "omp", sessionId: "preparing-42", workspacePath: WS };
+    useChatStore.setState({ activeEngine: "omp", openTabs: [tab], active: tab });
+    const preparation = Promise.withResolvers<void>();
+    const beforeTurns: string[] = [];
+    const started: string[] = [];
+    const finished: string[] = [];
+    const dispose = registerTurnHooks("test.stop-preparation", {
+      beforeTurn: (event) => {
+        beforeTurns.push(event.turnId);
+        if (beforeTurns.length === 1) return preparation.promise;
+      },
+      onTurnStarted: (event) => { started.push(event.turnId); },
+      afterTurn: (event) => { finished.push(event.turnId); },
+    });
+    const first = useChatStore.getState().send("stopped", []);
+    try {
+      await vi.waitFor(() => expect(beforeTurns).toHaveLength(1));
+      await useChatStore.getState().interrupt();
+      expect(ipc.sendMessage).not.toHaveBeenCalled();
+      expect(started).toEqual([]);
+      vi.mocked(ipc.sendMessage).mockResolvedValueOnce({ runId: "run-replacement", sessionId: "preparing-42" });
+      await useChatStore.getState().send("replacement", []);
+      preparation.resolve();
+      await first;
+      expect(ipc.sendMessage).toHaveBeenCalledTimes(1);
+      expect(started).toEqual([beforeTurns[1]]);
+      handleEngineEvents([
+        { runId: "run-replacement", sessionId: "preparing-42", engine: "omp", seq: 1, kind: "done", data: { usage: null } },
+      ], engineDeps());
+      await Promise.resolve();
+      expect(finished).toEqual(started);
+    } finally {
+      preparation.resolve();
+      await first;
+      dispose();
+    }
+  });
+
+  it("cancels only the old run when its acknowledgement follows a replacement launch", async () => {
+    const tab = { engine: "omp", sessionId: "overlap-session", workspacePath: WS };
+    const key = "omp/overlap-session";
+    useChatStore.setState({ activeEngine: "omp", openTabs: [tab], active: tab });
+    const oldLaunch = Promise.withResolvers<{ runId: string; sessionId: string | null }>();
+    vi.mocked(ipc.sendMessage).mockReturnValueOnce(oldLaunch.promise);
+    const started: string[] = [];
+    const finished: Array<{ turnId: string; status: string }> = [];
+    const dispose = registerTurnHooks("test.overlapping-launches", {
+      onTurnStarted: (event) => { started.push(event.turnId); },
+      afterTurn: (event) => { finished.push({ turnId: event.turnId, status: event.status }); },
+    });
+    const oldSending = useChatStore.getState().send("first", []);
+    try {
+      await vi.waitFor(() => expect(ipc.sendMessage).toHaveBeenCalledTimes(1));
+      await useChatStore.getState().interrupt();
+      vi.mocked(ipc.sendMessage).mockResolvedValueOnce({ runId: "run-overlap-b", sessionId: tab.sessionId });
+      await useChatStore.getState().send("replacement", []);
+      const replacementTurnId = started[1];
+      vi.mocked(ipc.interruptSession).mockClear();
+      oldLaunch.resolve({ runId: "run-overlap-a", sessionId: tab.sessionId });
+      await oldSending;
+      expect(ipc.interruptSession).toHaveBeenCalledWith("run-overlap-a");
+      expect(ipc.interruptSession).not.toHaveBeenCalledWith(tab.sessionId);
+      expect(ipc.interruptSession).not.toHaveBeenCalledWith("run-overlap-b");
+      expect(useChatStore.getState().streamingByKey[key]).toBe(true);
+      expect(finished).toEqual([{ turnId: started[0], status: "cancelled" }]);
+      handleEngineEvents([
+        { runId: "run-overlap-b", sessionId: tab.sessionId, engine: "omp", seq: 1, kind: "done", data: { usage: null } },
+      ], engineDeps());
+      await Promise.resolve();
+      expect(finished).toEqual([
+        { turnId: started[0], status: "cancelled" },
+        { turnId: replacementTurnId, status: "completed" },
+      ]);
+    } finally {
+      oldLaunch.resolve({ runId: "run-overlap-a", sessionId: tab.sessionId });
+      await oldSending;
+      dispose();
+    }
   });
 });
 
@@ -368,6 +499,7 @@ describe("compactContext and refreshSessionUsage", () => {
     expect(ipc.deleteRemoteSession).toHaveBeenCalledWith(
       WS,
       "dsh",
+      "remote-1",
       "/home/u/.dsh/sessions/-tmp-ws/s-1/session.jsonl.zstd",
     );
     expect(ipc.deleteSession).not.toHaveBeenCalled();
@@ -462,9 +594,9 @@ describe("compactContext and refreshSessionUsage", () => {
     const compactPromise = useChatStore.getState().compactContext(key);
 
     // Verify /compact message was sent
-    expect(ipc.sendMessage).toHaveBeenCalledWith(
+    await vi.waitFor(() => expect(ipc.sendMessage).toHaveBeenCalledWith(
       expect.objectContaining({ prompt: "/compact" }),
-    );
+    ));
 
     // Simulate completion by clearing streamingByKey
     useChatStore.setState({

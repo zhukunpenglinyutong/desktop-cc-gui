@@ -10,6 +10,7 @@ import type {
 import type { AiChatRepo } from "./ai-chat-sidebar";
 import type { ThreadAction } from "./sidebar-types";
 import { registerShortcutHandler } from "@/features/shortcuts/runtime";
+import { useRegistry, workspaceMenuRegistry } from "@ccgui/plugin-sdk";
 
 /**
  * AiChatSidebar state hooks: search palette (⌘L), persisted workspace
@@ -151,13 +152,29 @@ export function useWorkspaceMenu(
   onSetWorkspaceArchived?: (id: string, archived: boolean) => void,
 ) {
   const [workspaceMenu, setWorkspaceMenu] = useState<WorkspaceMenuState | null>(null);
+  // Registered extension entries can make the menu worth opening even when the
+  // host passed no builtin handlers. Read in render (not from a snapshot inside
+  // the callback) so a (de)registration re-binds the opener.
+  const extensionDefs = useRegistry(workspaceMenuRegistry);
   const openWorkspaceMenu = useCallback(
     (event: ReactMouseEvent<HTMLElement>, workspaceId: string, archived = false) => {
-      if (!onWorkspaceAlias && !onSetWorkspaceArchived) return;
+      const target = { workspaceId, archived };
+      // Foreign `visible` predicates can throw; a throwing entry counts as
+      // hidden, matching what WorkspaceContextMenu ends up rendering.
+      const hasEntries =
+        Boolean(onWorkspaceAlias || onSetWorkspaceArchived) ||
+        extensionDefs.some((def) => {
+          try {
+            return def.visible?.(target) !== false;
+          } catch {
+            return false;
+          }
+        });
+      if (!hasEntries) return;
       event.preventDefault();
-      setWorkspaceMenu({ x: event.clientX, y: event.clientY, workspaceId, archived });
+      setWorkspaceMenu({ x: event.clientX, y: event.clientY, ...target });
     },
-    [onWorkspaceAlias, onSetWorkspaceArchived],
+    [extensionDefs, onWorkspaceAlias, onSetWorkspaceArchived],
   );
   const openArchivedMenu = useCallback(
     (event: ReactMouseEvent<HTMLElement>, workspaceId: string) =>

@@ -92,6 +92,15 @@ pub fn db_path() -> PathBuf {
     app_home().join("app.db")
 }
 
+/// Directory containing the running executable (portable/program storage base).
+pub fn program_dir() -> Result<PathBuf, String> {
+    std::env::current_exe()
+        .map_err(|error| format!("resolve current executable: {error}"))?
+        .parent()
+        .map(PathBuf::from)
+        .ok_or_else(|| "current executable has no parent directory".to_string())
+}
+
 pub fn ensure_dirs() -> std::io::Result<()> {
     std::fs::create_dir_all(app_home())?;
     Ok(())

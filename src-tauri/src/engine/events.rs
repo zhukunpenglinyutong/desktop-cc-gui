@@ -27,6 +27,10 @@ pub enum EngineEvent {
         args: Option<Value>,
         result: Option<Value>,
         patch: bool,
+        /// The engine's own id for this call, when it reports one. A result
+        /// paired to its call by tool name alone mislabels parallel calls of
+        /// the same tool; this is the key the frontend correlates on.
+        tool_call_id: Option<String>,
     },
     /// Native session id became known.
     SessionId(String),
@@ -205,8 +209,24 @@ pub(crate) fn parse_tool_args_value(value: &Value) -> Option<Value> {
         other => Some(other.clone()),
     }
 }
+/// Engines spell "no id" two ways: an absent field and an empty string. Both
+/// mean unpaired, and the frontend only correlates on a non-blank id, so
+/// normalize here instead of in every adapter.
+fn tool_call_identity(id: Option<&str>) -> Option<String> {
+    id.map(str::trim)
+        .filter(|id| !id.is_empty())
+        .map(str::to_string)
+}
 /// Tool-call start: name plus parsed args (path / todos derived from args).
 pub(crate) fn tool_call_message(name: impl Into<String>, args: Option<&Value>) -> EngineEvent {
+    tool_call_message_with_id(name, args, None)
+}
+/// Same as [`tool_call_message`], carrying the engine's id for the call.
+pub(crate) fn tool_call_message_with_id(
+    name: impl Into<String>,
+    args: Option<&Value>,
+    tool_call_id: Option<&str>,
+) -> EngineEvent {
     let name = name.into();
     let args = args.and_then(parse_tool_args_value);
     let todos = args.as_ref().and_then(parse_todo_args);
@@ -218,17 +238,24 @@ pub(crate) fn tool_call_message(name: impl Into<String>, args: Option<&Value>) -
         args,
         result: None,
         patch: false,
+        tool_call_id: tool_call_identity(tool_call_id),
     }
 }
-/// Same as [`tool_call_message`] but patches the matching in-flight tool row.
-pub(crate) fn tool_call_patch(name: impl Into<String>, args: Option<&Value>) -> EngineEvent {
-    match tool_call_message(name, args) {
+/// Patches the matching in-flight tool row, carrying the engine's id for the
+/// call when it reports one.
+pub(crate) fn tool_call_patch_with_id(
+    name: impl Into<String>,
+    args: Option<&Value>,
+    tool_call_id: Option<&str>,
+) -> EngineEvent {
+    match tool_call_message_with_id(name, args, tool_call_id) {
         EngineEvent::Message {
             role,
             text,
             path,
             todos,
             args,
+            tool_call_id,
             ..
         } => EngineEvent::Message {
             role,
@@ -238,6 +265,7 @@ pub(crate) fn tool_call_patch(name: impl Into<String>, args: Option<&Value>) -> 
             args,
             result: None,
             patch: true,
+            tool_call_id,
         },
         other => other,
     }
@@ -301,6 +329,14 @@ pub(crate) fn parse_todo_result(result: &Value) -> Option<TodosPayload> {
 /// an authoritative todo snapshot — the live path's only reliable source for
 /// this tool (see [`parse_todo_result`]).
 pub(crate) fn tool_result_patch(name: impl Into<String>, result: Option<&Value>) -> EngineEvent {
+    tool_result_patch_with_id(name, result, None)
+}
+/// Same as [`tool_result_patch`], carrying the id of the call it settles.
+pub(crate) fn tool_result_patch_with_id(
+    name: impl Into<String>,
+    result: Option<&Value>,
+    tool_call_id: Option<&str>,
+) -> EngineEvent {
     let todos = result.and_then(parse_todo_result);
     EngineEvent::Message {
         role: "tool".to_string(),
@@ -310,6 +346,7 @@ pub(crate) fn tool_result_patch(name: impl Into<String>, result: Option<&Value>)
         args: None,
         result: result.cloned(),
         patch: true,
+        tool_call_id: tool_call_identity(tool_call_id),
     }
 }
 /// Assistant snapshot with no tool metadata.
@@ -322,6 +359,7 @@ pub(crate) fn assistant_message(text: String) -> EngineEvent {
         args: None,
         result: None,
         patch: false,
+        tool_call_id: None,
     }
 }
 /// First path-like argument of a tool call (`read`/`edit`/`write` use
@@ -581,7 +619,7 @@ mod tool_args_tests {
             }
             _ => panic!("expected tool message"),
         }
-        match tool_call_patch("Read", Some(&json!({"file_path": "src/a.ts"}))) {
+        match tool_call_patch_with_id("Read", Some(&json!({"file_path": "src/a.ts"})), None) {
             EngineEvent::Message { patch, .. } => assert!(patch),
             _ => panic!("expected patch"),
         }

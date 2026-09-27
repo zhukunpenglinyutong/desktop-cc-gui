@@ -5,7 +5,7 @@ import { useBrowserOcclusion } from "@/features/browser/occlusion";
 
 export interface ContextMenuEntry {
   id: string;
-  label: string;
+  label: ReactNode;
   icon: ReactNode;
   danger?: boolean;
   disabled?: boolean;

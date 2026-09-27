@@ -116,10 +116,15 @@ describe("computer-use sends", () => {
     expect(queued).toHaveLength(1);
     expect(queued[0].computerUse).toBe(true);
 
-    // Drain it the way the queue does on user request.
+    // Drain it the way the queue does on user request. sendQueuedNow hands the
+    // row to drainQueue, which fires sendPrompt without awaiting it, and
+    // sendPrompt collects plugin turn contributions before the send — the
+    // invoke lands a few microtasks later.
     await useChatStore.getState().sendQueuedNow(queued[0].id);
-    expect(vi.mocked(ipc.sendMessage)).toHaveBeenCalledWith(
-      expect.objectContaining({ prompt: "打开计算器", computerUse: true }),
+    await vi.waitFor(() =>
+      expect(vi.mocked(ipc.sendMessage)).toHaveBeenCalledWith(
+        expect.objectContaining({ prompt: "打开计算器", computerUse: true }),
+      ),
     );
   });
 

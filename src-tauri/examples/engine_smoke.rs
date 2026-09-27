@@ -33,6 +33,8 @@ async fn run_one(engine_id: &str, workspace: &PathBuf) -> Result<(), String> {
         session_id: None,
         workspace: workspace.clone(),
         prompt: "Reply with exactly: ok".to_string(),
+        // 冒烟示例不经插件回合,没有可注入的贡献。
+        prompt_contributions: Vec::new(),
         images: Vec::new(),
         model: None,
         effort: None,

@@ -3,21 +3,18 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::LazyLock;
-
-use parking_lot::Mutex;
 
 /// Uninstalled-plugin KV retention window (plan §9.1: 保留 30 天).
 pub const KV_TOMBSTONE_TTL_SECS: i64 = 30 * 24 * 3600;
 
-/// Serializes every plugins.json read→mutate→write critical section so
-/// concurrent commands (install/uninstall/enable/quarantine/list) can't
-/// interleave into a lost update. Take it once per public operation, around
-/// the state mutation only — never across install_from's file-copy phase.
-/// Pure reads (plugin_enabled_permissions) stay lock-free: they re-read the
-/// file fresh on every call, and a read racing a write simply resolves as
-/// the pre- or post-write value.
-pub(crate) static STATE_LOCK: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
+/// Serializes plugin state read→mutate→write and document root selection across
+/// threads and host processes. Lock order is state first, document roots second.
+/// The sidecar is never replaced alongside plugins.json or removed on uninstall.
+pub(super) fn lock_state(path: &Path) -> Result<super::file_lock::FileLock, String> {
+    let mut name = path.file_name().ok_or_else(|| format!("state has no filename: {}", path.display()))?.to_os_string();
+    name.push(".lock");
+    super::file_lock::exclusive(&path.with_file_name(name))
+}
 
 /// Installed plugin as the frontend sees it. Manifest-derived fields fall
 /// back to the state record (or empty) when the plugin directory is gone —
@@ -53,6 +50,17 @@ pub struct PluginInfo {
 pub struct PluginsState {
     pub plugins: HashMap<String, PluginRecord>,
     pub kv_tombstones: HashMap<String, i64>,
+    pub document_storage: HashMap<String, DocumentStorageSelection>,
+    /// Per-plugin granted resource directories. Capabilities, not user data:
+    /// uninstall always clears them, independent of `delete_data`.
+    pub asset_directories: HashMap<String, Vec<super::assets::AssetDirectoryGrant>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct DocumentStorageSelection {
+    pub(crate) kind: String,
+    pub(crate) custom_path: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -120,7 +128,7 @@ pub(crate) fn write_state(path: &Path, state: &PluginsState) -> Result<(), Strin
 }
 
 /// Mutate (or create) a record in an already-loaded state; the caller holds
-/// STATE_LOCK and writes the state back. Returns the updated record clone.
+/// the state lock and writes the state back. Returns the updated record clone.
 pub(crate) fn mutate_record(
     state: &mut PluginsState,
     id: &str,
@@ -143,7 +151,7 @@ pub(crate) fn update_record(
     id: &str,
     mutate: impl FnOnce(&mut PluginRecord),
 ) -> Result<PluginRecord, String> {
-    let _guard = STATE_LOCK.lock();
+    let _guard = lock_state(state_path)?;
     let mut state = read_state(state_path)?;
     let record = mutate_record(&mut state, id, "builtin", mutate);
     write_state(state_path, &state)?;
@@ -169,15 +177,34 @@ pub(crate) fn record_enabled_permissions(
     Ok((record.enabled, record.permissions.clone()))
 }
 
+pub(crate) fn plugin_access(id: &str) -> Result<(bool, bool, Vec<String>), String> {
+    record_access(&state_path(), id)
+}
+
+/// (enabled, quarantined, permissions) for an explicitly given state file —
+/// the injectable half of `plugin_access`, so command gates can be tested
+/// against a scratch plugins.json.
+pub(crate) fn record_access(
+    path: &Path,
+    id: &str,
+) -> Result<(bool, bool, Vec<String>), String> {
+    let state = read_state(path)?;
+    let record = state
+        .plugins
+        .get(id)
+        .ok_or_else(|| format!("{id}: plugin is not installed"))?;
+    Ok((record.enabled, record.quarantined, record.permissions.clone()))
+}
+
 pub(crate) fn list_plugins(
     db: &crate::db::Db,
     plugins_dir: &Path,
     state_path: &Path,
 ) -> Result<Vec<PluginInfo>, String> {
-    // The tombstone purge is a read→mutate→write section: hold STATE_LOCK so
-    // a concurrent install/enable/uninstall can't lose it (or be lost to it).
+    // Hold the state lock so concurrent install/enable/uninstall cannot lose
+    // the retention sweep, including in another host process.
     let state = {
-        let _guard = STATE_LOCK.lock();
+        let _guard = lock_state(state_path)?;
         let mut state = read_state(state_path)?;
 
         // Retention sweep: tombstoned KV older than the window is gone for good.

@@ -6,7 +6,10 @@ pub mod reader;
 pub mod scanner;
 pub mod search;
 
-pub use extract::{parse_session_file, scan_summary_file, ParsedSession, ScanSummary};
+pub use extract::{
+    internal_frame_hash, parse_session_file, recordable_internal_frame_hash, scan_summary_file,
+    ParsedSession, ScanSummary,
+};
 
 use crate::engine::TodosPayload;
 use serde::{Deserialize, Serialize};

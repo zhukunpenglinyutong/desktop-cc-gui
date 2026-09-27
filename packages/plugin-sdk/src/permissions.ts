@@ -9,9 +9,9 @@ import spec from "../spec/permissions.json";
  * 同一份文件，漂移在 CI 暴露。修改 spec = 修改安全边界。
  */
 
-/** 基座权限全集（14 项；`network:none` 保留作"声明无网络"语义，是基座权限，
- *  永远不是授权——`network:none` 不会被解析为放行任何主机的 grant）。
- *  除此之外还可声明 `network:`/`exec:` 授权（见下），未知权限 = 安装期拒绝。 */
+/** 基座权限全集；`network:none` 保留作"声明无网络"语义，是基座权限，
+ * 永远不是授权——`network:none` 不会被解析为放行任何主机的 grant。
+ * 除此之外还可声明 `network:`/`exec:` 授权（见下），未知权限 = 安装期拒绝。 */
 export const KNOWN_PERMISSIONS: Record<string, true> = Object.fromEntries(
   spec.knownPermissions.map((p) => [p, true]),
 );
@@ -45,9 +45,9 @@ function parseNetworkGrant(spec: string): NetworkGrant | null {
   return { host, portFrom: from, portTo: to };
 }
 
-/** manifest permissions 元素是否已知：基座 14 项，或形状合法的
- *  `network:`/`exec:` 授权。宿主 permissions.ts、模板 validate-manifest.mjs
- *  与 Rust plugins.rs 均跑 spec/permissions.json 的同一组向量。 */
+/** manifest permissions 元素是否已知：spec 中的基座权限，或形状合法的
+ * `network:`/`exec:` 授权。宿主 permissions.ts、模板 validate-manifest.mjs
+ * 与 Rust plugins.rs 均跑 spec/permissions.json 的同一组向量。 */
 export function isKnownPermission(p: string): boolean {
   if (KNOWN_PERMISSIONS[p]) return true;
   if (p.startsWith("network:")) return parseNetworkGrant(p.slice("network:".length)) !== null;

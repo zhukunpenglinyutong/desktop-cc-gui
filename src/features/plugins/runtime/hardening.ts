@@ -17,6 +17,7 @@
  */
 
 let pluginDepth = 0;
+let authorizedInvokeDepth: number | null = null;
 
 /** Run `fn` marked as plugin code: direct Tauri IPC inside throws. */
 export function runAsPlugin<T>(fn: () => T): T {
@@ -25,6 +26,22 @@ export function runAsPlugin<T>(fn: () => T): T {
     return fn();
   } finally {
     pluginDepth -= 1;
+  }
+}
+
+/** Authorize one synchronous IPC hop from a permission-checked host SDK path.
+ * Keep pluginDepth intact: nested runAsPlugin calls must not inherit the grant.
+ * The callback must only call the trusted transport; evaluate plugin arguments
+ * (including spreads/getters) before entering. The invoke wrapper consumes the
+ * grant before native serialization can execute plugin getters or toJSON.
+ * This does not wrap/await the return value or authorize async continuations. */
+export function withAuthorizedHostInvoke<T>(fn: () => T): T {
+  const previous = authorizedInvokeDepth;
+  authorizedInvokeDepth = pluginDepth;
+  try {
+    return fn();
+  } finally {
+    authorizedInvokeDepth = previous;
   }
 }
 
@@ -38,39 +55,35 @@ declare global {
 }
 
 let installed = false;
-
-/** Test-only: the guard is process-global, so a case that needs a fresh
- *  install has to clear the flag explicitly. */
-export function resetHardeningForTests(): void {
-  installed = false;
-}
+let reportedUnwrappable = false;
 
 /** Wrap the Tauri IPC entry point with the plugin-execution guard. Idempotent;
  *  no-op outside the desktop webview (web bridge has no __TAURI_INTERNALS__).
- *  Failure to wrap is not fatal: bootstrap must still load plugins. */
+ *  A failed wrap must not abort plugin bootstrap. Report once and keep the
+ *  installed flag clear so a later attempt can still install the guard;
+ *  server-side permission checks are unaffected. */
 export function installHardening(): void {
   if (installed) return;
-  installed = true;
   const internals = window.__TAURI_INTERNALS__;
   const original = internals?.invoke;
   if (!internals || !original) return;
   const wrapped: typeof original = (cmd, args) => {
-    if (pluginDepth > 0) {
+    if (pluginDepth > 0 && authorizedInvokeDepth !== pluginDepth) {
       return Promise.reject(
         new Error(
           `[plugins] direct Tauri invoke("${cmd}") is blocked inside plugin code; use the PluginContext APIs`,
         ),
       );
     }
+    authorizedInvokeDepth = null;
     return original(cmd, args);
   };
-  // Tauri 2.11 defines `invoke` with Object.defineProperty and leaves it
-  // non-writable and non-configurable. A bare assignment throws in strict
-  // mode ("Cannot assign to read only property 'invoke'") and used to abort
-  // plugin bootstrap before plugin_list ran. When the property can't be
-  // replaced the guard stays off — plugins still load.
+  // Tauri 2.11 defines invoke as non-writable and non-configurable. A
+  // configurable descriptor can still be replaced; otherwise leave it intact.
   const descriptor = Object.getOwnPropertyDescriptor(internals, "invoke");
   const warnInactive = (error?: unknown) => {
+    if (reportedUnwrappable) return;
+    reportedUnwrappable = true;
     console.warn(
       "[plugins] could not wrap __TAURI_INTERNALS__.invoke; plugin IPC guard is inactive",
       error,
@@ -82,10 +95,10 @@ export function installHardening(): void {
     } else if (descriptor?.writable !== false) {
       internals.invoke = wrapped;
     } else {
-      // Non-writable and non-configurable: the Tauri 2.11 descriptor.
-      // Replacing it is impossible; do not throw out of bootstrap.
       warnInactive(new TypeError("invoke is read-only"));
+      return;
     }
+    installed = true;
   } catch (error) {
     warnInactive(error);
   }

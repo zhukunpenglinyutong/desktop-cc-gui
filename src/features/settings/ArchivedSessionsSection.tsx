@@ -109,6 +109,7 @@ export function ArchivedSessionsSection() {
         await ipc.deleteRemoteSession(
           session.workspacePath,
           session.engine,
+          session.sessionId,
           session.remotePath,
         );
         // Remote rows have no local sessions-table record, so their archive
