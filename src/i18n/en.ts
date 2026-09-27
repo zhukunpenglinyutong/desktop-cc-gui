@@ -956,6 +956,10 @@ export const en: Messages = {
     noChanges: "No changes",
     uncommittedChanges: "uncommitted changes",
     newFile: "New",
+    viewAsTree: "View as tree",
+    viewAsList: "View as list",
+    commitWithCount: "Commit ({{count}})",
+    selectedCount: "{{count}} selected",
   },
   worktree: {
     // Sidebar

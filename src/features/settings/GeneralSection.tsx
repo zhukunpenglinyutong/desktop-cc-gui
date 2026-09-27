@@ -15,7 +15,7 @@ import {
 import { ConfirmDialog } from "@/components/dialogs";
 import { ipc, type AppSettings, type PetSummary } from "@/lib/ipc";
 import { petErrorMessage } from "@/features/pet/pet-errors";
-import { IS_WINDOWS, pickDirectory } from "@/lib/platform";
+import { IS_WINDOWS, isWeb, pickDirectory } from "@/lib/platform";
 import { applyTheme } from "./theme";
 import { PromptHistoryManager, PromptHistoryToggleRow } from "./PromptHistorySettings";
 import { useChatStore } from "@/features/chat/store";
@@ -95,16 +95,20 @@ function useGeneralSettingsState() {
   };
 
   // 「窗口现在有没有系统装饰」= 当前实际生效的标题栏样式，用来判断设置是否
-  // 需要重启才生效（restart 按钮的可用态）。仅 Windows 需要。
+  // 需要重启才生效（restart 按钮的可用态）。仅 Windows 桌面环境需要。
   useEffect(() => {
-    if (!IS_WINDOWS) return;
+    if (!IS_WINDOWS || isWeb) return;
     let alive = true;
-    getCurrentWindow()
-      .isDecorated()
-      .then((value) => {
-        if (alive) setDecorated(value);
-      })
-      .catch(() => {});
+    try {
+      getCurrentWindow()
+        .isDecorated()
+        .then((value) => {
+          if (alive) setDecorated(value);
+        })
+        .catch(() => {});
+    } catch {
+      // 在浏览器/非 Tauri 环境下静默跳过
+    }
     return () => {
       alive = false;
     };
@@ -305,7 +309,7 @@ function AppearanceCard({
             <SelectItem id="dark">{t("settings.themeDark")}</SelectItem>
           </Select>
         </SettingsRow>
-        {IS_WINDOWS && (
+        {IS_WINDOWS && !isWeb && (
           <SettingsRow
             label={t("settings.titlebar")}
             description={t("settings.titlebarRestartHint")}

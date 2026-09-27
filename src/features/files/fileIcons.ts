@@ -34,13 +34,42 @@ const icon_file_code = svg24(
   `${FILE_SHAPE}<path d="M10 12.5 8 15l2 2.5"/><path d="m14 12.5 2 2.5-2 2.5"/>`,
 );
 
-const badgeText = (bg: string, fg: string, label: string): string =>
-  svg16(
-    `<rect x="1.5" y="1.5" width="13" height="13" rx="3" fill="${bg}"/><text x="8" y="10.9" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif" font-size="7" font-weight="700" fill="${fg}">${label}</text>`,
+const badgeText = (bg: string, fg: string, label: string, fontSize?: number): string => {
+  const size = fontSize ?? (label.length > 2 ? 5.5 : 7);
+  const y = size <= 6 ? 10.5 : 10.9;
+  return svg16(
+    `<rect x="1.5" y="1.5" width="13" height="13" rx="3" fill="${bg}"/><text x="8" y="${y}" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif" font-size="${size}" font-weight="700" fill="${fg}">${label}</text>`,
   );
+};
 
 const icon_js = badgeText('#F5DE19', '#33301C', 'JS');
 const icon_ts = badgeText('#3178C6', '#FFFFFF', 'TS');
+const icon_jsx = badgeText('#00D8FF', '#002C33', 'JSX');
+const icon_tsx = badgeText('#3178C6', '#FFFFFF', 'TSX');
+const icon_vue = badgeText('#41B883', '#35495E', 'Vue');
+
+const icon_java = svg16(
+  '<rect x="1.5" y="1.5" width="13" height="13" rx="3" fill="#EA2D2E"/><path d="M4.5 6.5h5a2 2 0 0 1 2 2v1a1.5 1.5 0 0 1-1.5 1.5h-4A1.5 1.5 0 0 1 4.5 9.5v-3Zm5 1.5h1.2a.8.8 0 0 1 .8.8v.2a.8.8 0 0 1-.8.8H9.5V8ZM4 12.5h7" stroke="#fff" stroke-width="1" stroke-linecap="round" fill="none"/><path d="M6 3.5c-.5.8.5 1.4 0 2m2.5-2c-.5.8.5 1.4 0 2" stroke="#FFC107" stroke-width="0.8" stroke-linecap="round"/>',
+);
+
+const icon_kotlin = svg16(
+  '<rect x="1.5" y="1.5" width="13" height="13" rx="3" fill="#0D0D11"/><polygon points="1.5,1.5 14.5,1.5 8,8 14.5,14.5 1.5,14.5" fill="#7F52FF"/><polygon points="1.5,14.5 8,8 14.5,14.5" fill="#C711E1"/>',
+);
+
+const icon_python = badgeText('#3776AB', '#FFD43B', 'Py');
+const icon_rust = badgeText('#CE412B', '#FFFFFF', 'RS');
+const icon_go = badgeText('#00ADD8', '#FFFFFF', 'GO');
+const icon_c = badgeText('#659AD2', '#FFFFFF', 'C');
+const icon_cpp = badgeText('#00599C', '#FFFFFF', 'C++');
+const icon_cs = badgeText('#178600', '#FFFFFF', 'C#');
+const icon_sql = badgeText('#E38C00', '#FFFFFF', 'SQL');
+const icon_xml = badgeText('#E44D26', '#FFFFFF', 'XML');
+const icon_php = badgeText('#777BB4', '#FFFFFF', 'PHP');
+const icon_ruby = badgeText('#CC342D', '#FFFFFF', 'RB');
+const icon_swift = badgeText('#F05138', '#FFFFFF', 'SW');
+const icon_gradle = badgeText('#02303A', '#00C7B7', 'Gr');
+const icon_properties = badgeText('#3E8E41', '#FFFFFF', 'prop');
+const icon_docker = badgeText('#2496ED', '#FFFFFF', '🐳', 8);
 
 const icon_json = svg16(
   '<path d="M6.1 2.4c-1.35 0-2 .68-2 2.02v1.5c0 .9-.45 1.5-1.5 1.72v.72c1.05.22 1.5.82 1.5 1.72v1.5c0 1.34.65 2.02 2 2.02" stroke="#D9A62E" stroke-width="1.25" stroke-linecap="round"/><path d="M9.9 2.4c1.35 0 2 .68 2 2.02v1.5c0 .9.45 1.5 1.5 1.72v.72c-1.05.22-1.5.82-1.5 1.72v1.5c0 1.34-.65 2.02-2 2.02" stroke="#D9A62E" stroke-width="1.25" stroke-linecap="round"/>',
@@ -88,11 +117,11 @@ const icon_config = svg24(
 
 const EXT_ICONS: Record<string, string> = {
   js: icon_js,
-  jsx: icon_js,
+  jsx: icon_jsx,
   cjs: icon_js,
   mjs: icon_js,
   ts: icon_ts,
-  tsx: icon_ts,
+  tsx: icon_tsx,
   cts: icon_ts,
   mts: icon_ts,
   json: icon_json,
@@ -112,8 +141,7 @@ const EXT_ICONS: Record<string, string> = {
   postcss: icon_css,
   html: icon_html,
   htm: icon_html,
-  xml: icon_html,
-  vue: icon_html,
+  vue: icon_vue,
   svelte: icon_html,
   astro: icon_html,
   sh: icon_shell,
@@ -129,8 +157,33 @@ const EXT_ICONS: Record<string, string> = {
   ini: icon_config,
   cfg: icon_config,
   conf: icon_config,
-  properties: icon_config,
+  properties: icon_properties,
   editorconfig: icon_config,
+  java: icon_java,
+  class: icon_java,
+  jar: icon_java,
+  kt: icon_kotlin,
+  kts: icon_kotlin,
+  py: icon_python,
+  pyw: icon_python,
+  rs: icon_rust,
+  go: icon_go,
+  c: icon_c,
+  h: icon_c,
+  cpp: icon_cpp,
+  cc: icon_cpp,
+  cxx: icon_cpp,
+  hpp: icon_cpp,
+  hxx: icon_cpp,
+  cs: icon_cs,
+  sql: icon_sql,
+  xml: icon_xml,
+  fxml: icon_xml,
+  xsd: icon_xml,
+  php: icon_php,
+  rb: icon_ruby,
+  swift: icon_swift,
+  gradle: icon_gradle,
   png: icon_image,
   jpg: icon_image,
   jpeg: icon_image,
@@ -177,6 +230,9 @@ function getFileTreeFileIcon(fileName: string): string {
   }
   if (name.startsWith('.eslint') || name.startsWith('eslint.config')) {
     return icon_eslint;
+  }
+  if (name === 'dockerfile' || name.startsWith('dockerfile.') || name.endsWith('.dockerfile')) {
+    return icon_docker;
   }
   if (CODE_FILE_NAMES.has(name)) {
     return icon_file_code;

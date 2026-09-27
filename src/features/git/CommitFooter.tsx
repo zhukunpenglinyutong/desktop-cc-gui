@@ -11,6 +11,10 @@ interface CommitFooterProps {
   commitMsg: string;
   onCommitMsgChange: (msg: string) => void;
   run: (key: string, action: () => Promise<unknown>) => void;
+  /** Total files currently selected for commit */
+  selectedCount?: number;
+  /** Custom handler when committing selected files (auto-stages selected before commit) */
+  onCommitSelected?: () => Promise<void>;
 }
 
 /** Commit message box + commit button pinned to the bottom of the panel. */
@@ -21,6 +25,8 @@ export function CommitFooter({
   commitMsg,
   onCommitMsgChange,
   run,
+  selectedCount,
+  onCommitSelected,
 }: CommitFooterProps) {
   const { t } = useTranslation();
   return (
@@ -38,16 +44,26 @@ export function CommitFooter({
       />
       <Button
         className="self-stretch"
-        disabled={stagedCount === 0 || commitMsg.trim().length === 0 || busy}
+        disabled={
+          (selectedCount !== undefined ? selectedCount === 0 : stagedCount === 0) ||
+          commitMsg.trim().length === 0 ||
+          busy
+        }
         onClick={() => {
-          const message = commitMsg.trim();
-          run("commit", async () => {
-            await useGitStore.getState().commit(workspacePath, message);
-            onCommitMsgChange("");
-          });
+          if (onCommitSelected) {
+            void onCommitSelected();
+          } else {
+            const message = commitMsg.trim();
+            run("commit", async () => {
+              await useGitStore.getState().commit(workspacePath, message);
+              onCommitMsgChange("");
+            });
+          }
         }}
       >
-        {t("git.commit")}
+        {selectedCount !== undefined && selectedCount > 0
+          ? t("git.commitWithCount", { count: selectedCount })
+          : t("git.commit")}
       </Button>
     </div>
   );

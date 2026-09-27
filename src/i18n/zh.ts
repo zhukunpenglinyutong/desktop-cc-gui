@@ -916,6 +916,10 @@ export const zh = {
     noChanges: "没有变更",
     uncommittedChanges: "个未提交变更",
     newFile: "新文件",
+    viewAsTree: "切换为树状视图",
+    viewAsList: "切换为列表视图",
+    commitWithCount: "提交 ({{count}})",
+    selectedCount: "已选 {{count}} 项",
   },
   worktree: {
     // 侧栏

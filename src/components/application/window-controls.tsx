@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { isWeb } from "@/lib/platform";
 
 import { cx } from "@/utils/cx";
 
@@ -12,7 +13,13 @@ export function WindowControls({ className }: { className?: string }) {
   const [maximized, setMaximized] = useState(false);
 
   useEffect(() => {
-    const win = getCurrentWindow();
+    if (isWeb) return;
+    let win: ReturnType<typeof getCurrentWindow>;
+    try {
+      win = getCurrentWindow();
+    } catch {
+      return;
+    }
     let alive = true;
     const refresh = () => {
       win

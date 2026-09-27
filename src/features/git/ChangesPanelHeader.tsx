@@ -7,6 +7,8 @@ import CloudDownload from "lucide-react/dist/esm/icons/cloud-download";
 import GitBranch from "lucide-react/dist/esm/icons/git-branch";
 import RefreshCw from "lucide-react/dist/esm/icons/refresh-cw";
 import CloudUpload from "lucide-react/dist/esm/icons/cloud-upload";
+import FolderTree from "lucide-react/dist/esm/icons/folder-tree";
+import List from "lucide-react/dist/esm/icons/list";
 import { ActionFeedbackIcon, useActionFeedback } from "@/components/base/action-feedback";
 import { Button } from "@/components/base/buttons/button";
 import { IconButton } from "@/components/base/buttons/icon-button";
@@ -38,6 +40,8 @@ interface ChangesPanelHeaderProps {
   error: string | null;
   run: (key: string, action: () => Promise<unknown>) => void;
   onDismissError: () => void;
+  viewMode?: "flat" | "tree";
+  onToggleViewMode?: () => void;
 }
 
 /** Title row with refresh/pull/push, the branch picker, and the new-branch form. */
@@ -53,6 +57,8 @@ export function ChangesPanelHeader({
   error,
   run,
   onDismissError,
+  viewMode,
+  onToggleViewMode,
 }: ChangesPanelHeaderProps) {
   const { t } = useTranslation();
   const [branchOpen, setBranchOpen] = useState(false);
@@ -112,6 +118,15 @@ export function ChangesPanelHeader({
           </span>
         )}
         <div className="ml-auto flex items-center gap-1">
+          {onToggleViewMode && (
+            <IconButton
+              icon={viewMode === "tree" ? List : FolderTree}
+              size="small"
+              aria-label={viewMode === "tree" ? t("git.viewAsList") : t("git.viewAsTree")}
+              title={viewMode === "tree" ? t("git.viewAsList") : t("git.viewAsTree")}
+              onClick={onToggleViewMode}
+            />
+          )}
           <IconButton
             icon={RefreshCw}
             size="small"
