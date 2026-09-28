@@ -5,6 +5,7 @@ import ClipboardList from "lucide-react/dist/esm/icons/clipboard-list";
 import Copy from "lucide-react/dist/esm/icons/copy";
 import X from "lucide-react/dist/esm/icons/x";
 import type { Message, PlanReview, PlanReviewStatus } from "@/lib/ipc";
+import { useCopied } from "@/hooks/use-copied";
 import { useChatStore } from "../store";
 import { useScopedSessionKey } from "../split/session-scope";
 import Markdown from "./Markdown";
@@ -70,16 +71,11 @@ export function planSummary(content: string, max = 240): string {
 /** Copy the plan's raw markdown (verbatim — what the user approved). */
 export function CopyPlanButton({ content }: { content: string }) {
   const { t } = useTranslation();
-  const [copied, setCopied] = useState(false);
+  const { copied, copy } = useCopied();
   return (
     <button
       type="button"
-      onClick={() => {
-        void navigator.clipboard.writeText(content).then(() => {
-          setCopied(true);
-          setTimeout(() => setCopied(false), 1500);
-        }).catch(() => {});
-      }}
+      onClick={() => copy(content)}
       className="inline-flex cursor-pointer items-center gap-1 rounded-md border border-border-secondary bg-background-secondary-default px-2.5 py-1 text-caption-1-medium text-text-secondary transition-colors hover:bg-background-tertiary-hover"
     >
       {copied ? (

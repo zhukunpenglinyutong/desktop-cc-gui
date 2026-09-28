@@ -7,6 +7,7 @@ import { useMissionStore } from "@/features/mission/store";
 import { usePluginHubStore } from "@/features/plugins/hub/store";
 import type { AiChatRepo, AiChatRepoSection, ThreadAction } from "@/components/application/ai-chat/ai-chat-sidebar";
 import { ARCHIVED_SECTION_ID } from "@/components/application/ai-chat/use-sidebar-state";
+import { copyText } from "@/lib/clipboard";
 import { worktreeMetaOf, type SessionMeta, type Workspace } from "@/lib/ipc";
 import { isWeb, pickDirectory } from "@/lib/platform";
 import { recentPointerAnchor } from "@/lib/pointer-anchor";
@@ -262,7 +263,7 @@ export function useChatSidebar({
     (id: string) => {
       const session = sessionById.get(id);
       if (!session) return;
-      void navigator.clipboard.writeText(session.sessionId).catch(() => {});
+      void copyText(session.sessionId);
     },
     [sessionById],
   );

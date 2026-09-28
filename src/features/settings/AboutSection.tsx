@@ -1,8 +1,8 @@
-import { useCallback, useState } from "react";
 import { useTranslation } from "react-i18next";
 import BookOpen from "lucide-react/dist/esm/icons/book-open";
 import Check from "lucide-react/dist/esm/icons/check";
 import { Button } from "@/components/base/buttons/button";
+import { useCopied } from "@/hooks/use-copied";
 import { SettingsSectionLabel } from "@/components/application/settings/settings-rows";
 import { openExternal } from "@/lib/platform";
 import { GITHUB_REPO_URL } from "@/version/changelog";
@@ -58,20 +58,13 @@ function SocialLink({ url, label, path }: { url: string; label: string; path: st
 /** Douyin has no stable profile URL: hover shows the QR, click copies the ID. */
 function DouyinChip() {
   const { t } = useTranslation();
-  const [copied, setCopied] = useState(false);
-
-  const copyId = useCallback(() => {
-    void navigator.clipboard.writeText(DOUYIN_ID).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
-    });
-  }, []);
+  const { copied, copy } = useCopied();
 
   return (
     <div className="group relative">
       <button
         type="button"
-        onClick={copyId}
+        onClick={() => copy(DOUYIN_ID)}
         title={t("settings.socialDouyin")}
         aria-label={t("settings.socialDouyin")}
         aria-describedby="douyin-popover"

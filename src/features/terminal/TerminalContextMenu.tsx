@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import Copy from "lucide-react/dist/esm/icons/copy";
 import FolderOpen from "lucide-react/dist/esm/icons/folder-open";
 import { ContextMenu, type ContextMenuEntry } from "@/components/context-menu";
+import { copyText } from "@/lib/clipboard";
 import { isPathUnder, pathExistsOnDisk } from "@/features/chat/file-link-resolution";
 import { resolveFilePath } from "@/lib/fileLinks";
 import { ipc } from "@/lib/ipc";
@@ -79,7 +80,7 @@ export function TerminalContextMenu({
       label: t("terminal.copy"),
       icon: <Copy className="size-4" aria-hidden />,
       onSelect: () => {
-        void navigator.clipboard.writeText(menu.text).catch(() => {});
+        void copyText(menu.text);
       },
     },
   ];

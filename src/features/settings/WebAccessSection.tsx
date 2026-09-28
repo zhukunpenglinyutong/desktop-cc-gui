@@ -4,6 +4,7 @@ import { QRCodeSVG } from "qrcode.react";
 import Copy from "lucide-react/dist/esm/icons/copy";
 import Check from "lucide-react/dist/esm/icons/check";
 import { Button } from "@/components/base/buttons/button";
+import { useCopied } from "@/hooks/use-copied";
 import {
   SettingsCard,
   SettingsRow,
@@ -32,7 +33,7 @@ export function WebAccessSection() {
   const [info, setInfo] = useState<WebAccessInfo | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [copied, setCopied] = useState(false);
+  const { copied, copy } = useCopied();
   const [pane, setPane] = useState<"lan" | "wan">("lan");
   /** The 外网访问 tab stays behind a one-time warning: everything it enables
    *  hands a remote browser the same reach the user has on this machine. A
@@ -107,11 +108,8 @@ export function WebAccessSection() {
 
   const copyUrl = useCallback(() => {
     if (!info) return;
-    void navigator.clipboard.writeText(info.url).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
-    });
-  }, [info]);
+    copy(info.url);
+  }, [copy, info]);
 
   return (
     <div className="flex w-full flex-col gap-2">

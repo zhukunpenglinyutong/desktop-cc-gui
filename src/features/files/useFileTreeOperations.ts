@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState, type MouseEvent } from "react";
 import { useTranslation } from "react-i18next";
+import { copyText } from "@/lib/clipboard";
 import { ipc } from "@/lib/ipc";
 import { errorText } from "@/lib/errors";
 import { joinPath, parentPath, useFilesStore, type TreeClipboard } from "./store";
@@ -180,7 +181,9 @@ export function useFileTreeOperations(): FileTreeOperations {
 
   const copyPath = useCallback(() => {
     if (!menu) return;
-    void navigator.clipboard.writeText(menu.path).catch(opFailed);
+    void copyText(menu.path).then((ok) => {
+      if (!ok) opFailed(new Error("Failed to copy path"));
+    }).catch(opFailed);
   }, [menu, opFailed]);
 
   const sendPath = useCallback(() => {

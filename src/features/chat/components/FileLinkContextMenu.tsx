@@ -3,6 +3,7 @@ import FileText from "lucide-react/dist/esm/icons/file-text";
 import FolderOpen from "lucide-react/dist/esm/icons/folder-open";
 import Link2 from "lucide-react/dist/esm/icons/link-2";
 import { ContextMenu, type ContextMenuEntry } from "@/components/context-menu";
+import { copyText } from "@/lib/clipboard";
 import { ipc } from "@/lib/ipc";
 import { useFilesStore } from "@/features/files/store";
 import { resolveChatFileLink } from "@/features/chat/file-link-resolution";
@@ -114,7 +115,7 @@ export function FileLinkContextMenu({
       onSelect: () =>
         act((path) => {
           const link = path.startsWith("/") ? `file://${path}` : path;
-          void navigator.clipboard.writeText(link).catch(() => {});
+          void copyText(link);
         }),
     },
   ];

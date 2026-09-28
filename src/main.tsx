@@ -1,4 +1,5 @@
 import "./index.css";
+import { installClipboardPolyfill } from "./lib/clipboard";
 import { installCryptoRandomUUIDPolyfill } from "./lib/id";
 import {
   installReactScanHook,
@@ -6,8 +7,9 @@ import {
   startReactScanOverlay,
 } from "./lib/react-scan";
 
-// Ensure crypto.randomUUID is available in non-secure HTTP contexts (e.g. LAN web bridge).
+// Ensure crypto.randomUUID and clipboard APIs are available in non-secure HTTP contexts (e.g. LAN web bridge).
 installCryptoRandomUUIDPolyfill();
+installClipboardPolyfill();
 
 /**
  * react-scan must instrument React before the first `react` import runs —

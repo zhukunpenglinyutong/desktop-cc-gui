@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import CircleAlert from "lucide-react/dist/esm/icons/circle-alert";
+import Check from "lucide-react/dist/esm/icons/check";
 import Copy from "lucide-react/dist/esm/icons/copy";
 import RefreshCw from "lucide-react/dist/esm/icons/refresh-cw";
 import { Button } from "@/components/base/buttons/button";
+import { useCopied } from "@/hooks/use-copied";
 import { InfoTip } from "@/components/base/tooltip/tooltip";
 import {
   SettingsCard,
@@ -23,6 +25,7 @@ export function WebAuthCard() {
   const [authEnabled, setAuthEnabled] = useState(false);
   const [authKey, setAuthKey] = useState("");
   const [authBusy, setAuthBusy] = useState(false);
+  const { copied, copy } = useCopied();
 
   /** Re-read the switch and the code from the backend: it rotates the key on
    *  its own (after a pairing, and on a timer), so the cached copy is exactly
@@ -124,15 +127,19 @@ export function WebAuthCard() {
           <span aria-hidden className="mx-2 h-4 w-px shrink-0 bg-separator-border-strong" />
           <button
             type="button"
-            aria-label={t("settings.webAuthCopy")}
-            title={t("settings.webAuthCopy")}
+            aria-label={copied ? t("common.copied") : t("settings.webAuthCopy")}
+            title={copied ? t("common.copied") : t("settings.webAuthCopy")}
             disabled={!canCopyKey}
             onClick={() => {
-              if (canCopyKey) void navigator.clipboard.writeText(authKey);
+              if (canCopyKey) copy(authKey);
             }}
             className="flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-lg text-foreground-icon-secondary transition-colors hover:bg-background-secondary-hover hover:text-foreground-icon-primary disabled:cursor-default disabled:text-foreground-icon-quaternary disabled:hover:bg-transparent"
           >
-            <Copy className="size-4" aria-hidden />
+            {copied ? (
+              <Check className="size-4 text-notification-success-foreground" aria-hidden />
+            ) : (
+              <Copy className="size-4" aria-hidden />
+            )}
           </button>
         </div>
       </div>

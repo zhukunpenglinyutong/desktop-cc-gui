@@ -10,6 +10,7 @@ import { ModalShell } from "@/components/dialogs";
 import { ipc } from "@/lib/ipc";
 import { getAppVersion } from "@/lib/platform";
 import { collectPerformanceReport } from "@/lib/performance-report";
+import { copyText } from "@/lib/clipboard";
 import { COPY_FEEDBACK_MS } from "@/hooks/use-copied";
 import { Switch } from "@/components/base/switch/switch";
 import { summarizePerformanceReport, type PerformanceReport } from "@/lib/performance-summary";
@@ -171,7 +172,11 @@ export function PerformanceDiagnosticsDialog({ onClose }: { onClose: () => void 
     setCopyFailed(false);
     clearTimeout(resetTimer.current);
     try {
-      await navigator.clipboard.writeText(text);
+      const ok = await copyText(text);
+      if (!ok) {
+        if (mounted.current && reportRevision.current === revision) setCopyFailed(true);
+        return;
+      }
       if (mounted.current && reportRevision.current === revision) {
         setCopied(true);
         resetTimer.current = setTimeout(() => setCopied(false), COPY_FEEDBACK_MS);

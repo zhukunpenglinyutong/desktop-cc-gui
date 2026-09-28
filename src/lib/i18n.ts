@@ -3,7 +3,15 @@ import { initReactI18next } from "react-i18next";
 import { zh } from "@/i18n/zh";
 import { en } from "@/i18n/en";
 
-const stored = localStorage.getItem("ccgui-next.language");
+const stored = (() => {
+  try {
+    return typeof window !== "undefined" && window.localStorage
+      ? window.localStorage.getItem("ccgui-next.language")
+      : null;
+  } catch {
+    return null;
+  }
+})();
 
 i18n.use(initReactI18next).init({
   resources: {

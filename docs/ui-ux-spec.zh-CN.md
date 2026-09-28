@@ -184,6 +184,7 @@ const feedback = useRunningFeedback(store.loading);
 - 用 `src/hooks/use-copied.ts` 的 `useCopied(resetMs = COPY_FEEDBACK_MS)`，成功后图标换成 `Check`，**1500ms** 后复位。性能诊断需要显式处理复制失败，使用同一 `COPY_FEEDBACK_MS` 常量，成功反馈与卸载清理语义保持一致。
 - 与刷新反馈的差异：复制没有别的成功信号，所以**可访问名一起改成"已复制"**（`aria-label` / `title`），刷新反馈则不改名。这是刻意的差别，不要强行统一。
 - 复制按钮旁边有明文内容时（如密钥框），保留原布局尺寸与分隔符，只换图标。
+- **非安全环境（局域网 HTTP）安全降级**：通过 `src/lib/clipboard.ts` 的 `copyText()` 或 `useCopied()` 复制，当 `navigator.clipboard` 因非安全上下文（如 `http://<ip>:<port>` 局域网 Web 桥）为 `undefined` 或调用失败时，自动降级到 `document.execCommand('copy')` 并安装全局 polyfill，避免抛出 `TypeError: Cannot read properties of undefined (reading 'writeText')` 导致界面崩溃。
 
 ### 4.3 桌面宠物（pet overlay）
 
@@ -252,6 +253,7 @@ const feedback = useRunningFeedback(store.loading);
 
 | 版本 | 时间 | 内容 |
 |---|---|---|
+| v0.63 | 2026-09-28 | 复制到剪贴板支持非安全上下文（局域网 HTTP）降级：提供 copyText 与 polyfill，自动回退到 execCommand，避免 navigator.clipboard 为 undefined 导致应用崩溃；WebAuthCard 补齐 Copy → Check 反馈；§4.2 补充规则 |
 | v0.62 | 2026-09-28 | 文件 Markdown 预览换 Streamdown：GFM 表格/代码块（Shiki + 行号 + 复制）/KaTeX 数学/Mermaid 图（懒渲染）/CJK 支持，shadcn token 桥接语义 token 随暗色翻转，控制按钮文案入 `files.markdown.*`；§3 补充规则 |
 | v0.61 | 2026-09-24 | 渠道下拉收起前归还触发按钮焦点，修复 Codex 切换供应商后面板跳到 Claude Code；增加焦点回归用例，浏览器夹具覆盖多引擎与真实聚焦的渠道选择；§3 补充规则 |
 | v0.60 | 2026-09-27 | 对话区分屏：侧栏拖拽 / 右键 / 格子标题栏入口，边带切分 + 中心替换、格子拖动重排与内容互换、分隔条比例（最小 220/140px）、每格独立输入框与队列、聚焦格跟随页签条高亮、布局持久化并随页签关闭收敛；§3 补充规则 |
