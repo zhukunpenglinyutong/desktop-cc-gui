@@ -1,5 +1,21 @@
 # @ccgui/plugin-sdk changelog
 
+## 0.3.16 — 2026-09-24
+- 新增权限 `host:window` 与 `ctx.window`：读取主窗口物理像素 bounds/state/DPI、
+  在普通态经最小尺寸和多屏可见范围校验后设置 size+position，以及在 Windows
+  按 `Weixin.exe` / `WeChat.exe` 可执行名采样微信主窗口。非 Windows 返回
+  `Unsupported`，未找到返回 `NotFound`。自动恢复偏好继续存于插件自有 storage，
+  不改变宿主默认窗口，也不引入第二套窗口状态所有者。
+- 新增权限 `host:models` 与 `ctx.models`：直接复用宿主 `list_engines` 与
+  `list_engine_models` 权威实现，公开 engines、逐引擎 catalog 和聚合 catalog；
+  保留 provider/contextWindow/authoritative/remote，显式排除 API key、token 与
+  完整 provider 配置。模型 API 可经远程宿主执行；窗口 API 保持桌面专属。
+- 这些能力需要宿主 `minAppVersion: "1.0.10"`；SDK 契约升至 0.3.16。
+- `ctx.models.catalog({ workspace?, refreshProviders? })` 按引擎、来源部分成功，返回
+  `engines[].sources[]`、`errors` 与 `refreshedAt`，并标注 CLI、中转渠道、自定义与默认模型来源。
+  默认不联网；只有显式 `refreshProviders: true`（必须绑定用户手动动作）才刷新渠道
+  模型。单个探针失败只返回脱敏错误，URL、key、响应体和底层错误均不外泄。
+
 ## 0.3.15 — 2026-09-23
 - **payload 增强**：引擎事件 wire payload 新增 `genMs`（宿主实测生成窗口毫秒数）——只出现在 `usage` / `done` 事件上，计量该报告对应的模型
   真实生成时间：从响应流打开（引擎 message_start，或首个文本/思考 delta）

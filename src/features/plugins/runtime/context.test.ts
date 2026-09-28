@@ -72,6 +72,117 @@ describe("createPluginContext", () => {
     expect(conversationModeRegistry.getSnapshot()).toEqual([]);
   });
 
+  it("gates and validates the controlled main-window API", async () => {
+    const backend = {
+      ...fakeStorage(),
+      windowGetState: vi.fn(async () => ({
+        bounds: { x: 10, y: 20, width: 1000, height: 800 },
+        state: "normal" as const,
+        scaleFactor: 1.25,
+      })),
+      windowSetNormalBounds: vi.fn(async (_id: string, bounds: { x: number; y: number; width: number; height: number }) => ({
+        bounds,
+        state: "normal" as const,
+        scaleFactor: 1.25,
+      })),
+      windowSampleWechat: vi.fn(async () => ({
+        bounds: { x: 30, y: 40, width: 1100, height: 850 },
+        executable: "Weixin.exe" as const,
+      })),
+    };
+    const denied = createPluginContext(manifest([]), backend, { appVersion: "1", isWeb: false });
+    await expect(denied.ctx.window.getState()).rejects.toThrow(/host:window/);
+    expect(backend.windowGetState).not.toHaveBeenCalled();
+
+    const { ctx } = createPluginContext(manifest(["host:window"]), backend, {
+      appVersion: "1",
+      isWeb: false,
+    });
+    expect((await ctx.window.getState()).state).toBe("normal");
+    expect(backend.windowGetState).toHaveBeenCalledWith("test-plugin");
+    await expect(ctx.window.setNormalBounds({ x: 0, y: 0, width: 639, height: 480 })).rejects.toThrow(/Invalid window bounds/);
+    expect(backend.windowSetNormalBounds).not.toHaveBeenCalled();
+    await ctx.window.setNormalBounds({ x: -100, y: 20, width: 800, height: 600 });
+    expect(backend.windowSetNormalBounds).toHaveBeenCalledWith("test-plugin", { x: -100, y: 20, width: 800, height: 600 });
+    expect((await ctx.window.sampleWechat()).executable).toBe("Weixin.exe");
+
+    const remote = createPluginContext(manifest(["host:window"]), backend, {
+      appVersion: "1",
+      isWeb: true,
+    });
+    await expect(remote.ctx.window.getState()).rejects.toThrow(/remote web hosts/);
+  });
+
+  it("gates authoritative model discovery and preserves only catalog fields", async () => {
+    const modelResult = {
+      models: [{ id: "provider/model", name: "Model", provider: "provider", contextWindow: 128000 }],
+      authoritative: true,
+      remote: false,
+    };
+    const engineResult = {
+      id: "codex",
+      available: true,
+      enabled: true,
+      supportsImages: true,
+      supportsComputerUse: false,
+      supportsEffort: true,
+      supportsToolConstraints: false,
+      permissions: ["default"],
+    };
+    const backend = {
+      ...fakeStorage(),
+      modelListEngines: vi.fn(async () => [engineResult]),
+      modelListEngineModels: vi.fn(async () => modelResult),
+      modelCatalog: vi.fn(async () => ({
+        engines: [{ engine: engineResult, sources: [{
+          id: "codex:cli",
+          name: "CLI",
+          kind: "cli" as const,
+          authoritative: true,
+          remote: false,
+          models: modelResult.models,
+          refreshedAt: 1,
+        }] }],
+        errors: [{ engine: "dsh", message: "model catalog unavailable" }],
+        refreshedAt: 1,
+      })),
+    };
+    const denied = createPluginContext(manifest([]), backend, { appVersion: "1" });
+    await expect(denied.ctx.models.listEngines()).rejects.toThrow(/host:models/);
+    expect(backend.modelListEngines).not.toHaveBeenCalled();
+
+    const { ctx } = createPluginContext(manifest(["host:models"]), backend, { appVersion: "1" });
+    await expect(ctx.models.listEngineModels(" ")).rejects.toThrow(/non-empty/);
+    const catalog = await ctx.models.listEngineModels("codex", "/workspace");
+    expect(catalog.authoritative).toBe(true);
+    expect(catalog.models[0]).toEqual({ id: "provider/model", name: "Model", provider: "provider", contextWindow: 128000 });
+    expect(catalog.models[0]).not.toHaveProperty("apiKey");
+    expect(backend.modelListEngineModels).toHaveBeenCalledWith("test-plugin", "codex", "/workspace");
+    const aggregate = await ctx.models.catalog();
+    expect(aggregate.engines[0].sources[0]).toEqual({
+      id: "codex:cli",
+      name: "CLI",
+      kind: "cli",
+      authoritative: true,
+      remote: false,
+      models: modelResult.models,
+      refreshedAt: 1,
+    });
+    expect(aggregate.errors[0].message).toBe("model catalog unavailable");
+    expect(backend.modelCatalog).toHaveBeenLastCalledWith("test-plugin", undefined);
+    await ctx.models.catalog({ workspace: "/workspace", refreshProviders: true });
+    expect(backend.modelCatalog).toHaveBeenLastCalledWith("test-plugin", {
+      workspace: "/workspace",
+      refreshProviders: true,
+    });
+    await expect(ctx.models.catalog(null as never)).rejects.toThrow(/object/);
+    await expect(ctx.models.catalog([] as never)).rejects.toThrow(/object/);
+    await expect(ctx.models.catalog({ workspace: 1 as never })).rejects.toThrow(/string/);
+    await expect(
+      ctx.models.catalog({ refreshProviders: "yes" as unknown as boolean }),
+    ).rejects.toThrow(/boolean/);
+  });
+
   it("gates the private agent catalog seam and forwards readOnly", async () => {
     const backend = { ...fakeStorage(), agentCatalog: vi.fn(async () => []) };
     const denied = createPluginContext(manifest([]), backend, { appVersion: "1" });

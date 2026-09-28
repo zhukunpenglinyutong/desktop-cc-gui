@@ -1300,6 +1300,8 @@ export const en: Messages = {
         hostSession: "Read the active session",
         hostWorkspace: "Read the active workspace",
         hostWorkspaceRemote: "Access remote workspaces",
+        hostWindow: "Read and position the main window; sample WeChat bounds",
+        hostModels: "Read the host engine and model catalog (explicit provider refresh uses the network)",
         networkNone: "No network access",
         uiSettingsSection: "Add a settings page",
         uiAddMenu: "Add an “+ menu” entry",

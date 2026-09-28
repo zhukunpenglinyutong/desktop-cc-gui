@@ -1,5 +1,4 @@
 import { convertFileSrc, invoke as tauriInvoke } from "@tauri-apps/api/core";
-import { getVersion } from "@tauri-apps/api/app";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { open as openDialog, save as saveDialog } from "@tauri-apps/plugin-dialog";
 import { isWeb, serverVersion, webToken } from "./transport";
@@ -32,7 +31,11 @@ export function openExternal(url: string) {
 /** App version: bundle metadata natively, bridge hello frame on web. */
 export function getAppVersion(): Promise<string | null> {
   if (isWeb) return serverVersion();
-  return getVersion().catch(() => null);
+  // The native host exposes this through its command surface.  Calling the
+  // optional `plugin:app|version` command requires tauri-plugin-app to be
+  // registered; the host intentionally does not ship that plugin, so use the
+  // always-available host command instead.
+  return tauriInvoke<string>("host_app_version").catch(() => null);
 }
 
 /**

@@ -160,6 +160,26 @@ struct EngineArgs {
 }
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
+struct PluginHostArgs {
+    plugin_id: String,
+}
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PluginEngineArgs {
+    plugin_id: String,
+    engine: String,
+    workspace: Option<String>,
+}
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PluginCatalogArgs {
+    plugin_id: String,
+    workspace: Option<String>,
+    #[serde(default)]
+    refresh_providers: Option<bool>,
+}
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct OfficialConfigWriteArgs {
     engine: String,
     files: Vec<crate::provider_files::OfficialConfigDraft>,
@@ -612,6 +632,33 @@ pub(super) async fn dispatch(
         "list_engine_models" => {
             let a: EngineArgs = parse_args(&raw)?;
             ser(crate::engine::models::list_engine_models(app.state(), a.engine, a.workspace).await)
+        }
+        // Plugin model discovery is safe for remote hosts: the desktop that
+        // owns the engines performs the authoritative probes and re-checks
+        // host:models. Window control remains desktop-Tauri only.
+        "plugin_list_engines" => {
+            let a: PluginHostArgs = parse_args(&raw)?;
+            ser(crate::plugin_host::plugin_list_engines(a.plugin_id).await)
+        }
+        "plugin_list_engine_models" => {
+            let a: PluginEngineArgs = parse_args(&raw)?;
+            ser(crate::plugin_host::plugin_list_engine_models(
+                app.state(),
+                a.plugin_id,
+                a.engine,
+                a.workspace,
+            )
+            .await)
+        }
+        "plugin_model_catalog" => {
+            let a: PluginCatalogArgs = parse_args(&raw)?;
+            ser(crate::plugin_host::plugin_model_catalog(
+                app.state(),
+                a.plugin_id,
+                a.workspace,
+                a.refresh_providers,
+            )
+            .await)
         }
         "save_pasted_image" => {
             let a: SavePastedImageArgs = parse_args(&raw)?;

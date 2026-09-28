@@ -8,11 +8,13 @@ import {
 import spec from "../../../../packages/plugin-sdk/spec/permissions.json";
 
 describe("isKnownPermission", () => {
-  it("accepts every base permission (23 项)", () => {
+  it("accepts every base permission registered in the spec", () => {
     for (const p of Object.keys(KNOWN_PERMISSIONS)) {
       expect(isKnownPermission(p)).toBe(true);
     }
-    expect(Object.keys(KNOWN_PERMISSIONS)).toHaveLength(23);
+    // Count derives from the spec, not a hand-maintained literal: adding a
+    // permission to spec/permissions.json must never stale-fail this test.
+    expect(Object.keys(KNOWN_PERMISSIONS)).toHaveLength(spec.knownPermissions.length);
     expect(isKnownPermission("ui:conversation-mode")).toBe(true);
   });
 
