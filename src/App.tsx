@@ -16,6 +16,7 @@ import { startShortcutRuntime } from "@/features/shortcuts/runtime";
 import { ShortcutsGuideModal } from "@/features/shortcuts/ShortcutsGuideModal";
 import PetOverlayApp from "@/features/pet/PetOverlayApp";
 import { PetRuntime } from "@/features/pet/PetRuntime";
+import { NativeTitleTooltip } from "@/components/base/tooltip/native-title-tooltip";
 
 // Settings is a rare route; load it on demand so startup ships less JS.
 // Warm the chunk shortly after startup so the first click has no fetch gap.
@@ -29,8 +30,12 @@ export default function App() {
     window.addEventListener("hashchange", update);
     return () => window.removeEventListener("hashchange", update);
   }, []);
-  if (overlay) return <PetOverlayApp />;
-  return <MainApp />;
+  return (
+    <>
+      {overlay ? <PetOverlayApp /> : <MainApp />}
+      <NativeTitleTooltip />
+    </>
+  );
 }
 
 function MainApp() {
