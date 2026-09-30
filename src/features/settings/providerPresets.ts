@@ -13,6 +13,7 @@ import xaiIcon from "@lobehub/icons-static-svg/icons/xai.svg";
 import xiaomimimoIcon from "@lobehub/icons-static-svg/icons/xiaomimimo.svg";
 import zhipuIcon from "@lobehub/icons-static-svg/icons/zhipu-color.svg";
 import requestyIcon from "@/assets/model-icons/requesty.svg";
+import cheaperInferenceIcon from "@/assets/model-icons/cheaperinference.svg";
 import type { EngineId } from "./providers";
 
 export interface ProviderPreset {
@@ -318,6 +319,19 @@ export const PRESETS: Partial<Record<EngineId, ProviderPreset[]>> = {
         ANTHROPIC_DEFAULT_OPUS_MODEL: "anthropic/claude-opus-4-5",
       },
     },
+    {
+      name: "Cheaper Inference",
+      baseUrl: "https://api.cheaperinference.com",
+      model: "claude-sonnet-5",
+      iconSrc: cheaperInferenceIcon,
+      iconClassName: DARK_MONO_ICON_CLASS,
+      env: {
+        ANTHROPIC_DEFAULT_FABLE_MODEL: "claude-fable-5",
+        ANTHROPIC_DEFAULT_HAIKU_MODEL: "claude-haiku-4.5",
+        ANTHROPIC_DEFAULT_SONNET_MODEL: "claude-sonnet-5",
+        ANTHROPIC_DEFAULT_OPUS_MODEL: "claude-opus-5",
+      },
+    },
   ],
   kimi: [
     { name: "Kimi Coding", baseUrl: "https://api.kimi.com/coding/v1", model: "kimi-for-coding", iconSrc: kimiIcon, iconClassName: DARK_MONO_ICON_CLASS },
@@ -336,6 +350,7 @@ export const PRESETS: Partial<Record<EngineId, ProviderPreset[]>> = {
     { name: "OpenCode Go", baseUrl: "https://opencode.ai/zen/go/v1", model: "glm-5.2", iconSrc: opencodeIcon, iconClassName: DARK_MONO_ICON_CLASS, wireApi: "chat" },
     { name: "OpenRouter", baseUrl: "https://openrouter.ai/api/v1", model: "", iconSrc: openrouterIcon, wireApi: "chat" },
     { name: "Requesty", baseUrl: "https://router.requesty.ai/v1", model: "", iconSrc: requestyIcon, wireApi: "chat" },
+    { name: "Cheaper Inference", baseUrl: "https://api.cheaperinference.com/v1", model: "gpt-5.4-mini", iconSrc: cheaperInferenceIcon, iconClassName: DARK_MONO_ICON_CLASS, wireApi: "chat" },
   ],
 };
 
