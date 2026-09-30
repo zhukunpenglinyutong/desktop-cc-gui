@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <title>Concurrent session status fixture</title>
+</head>
+<body>
+  <div id="fixture"></div>
+  <script>
+    // In-memory stand-in only: this fixture never calls a model or native IPC.
+    window.__TAURI_INTERNALS__ = {
+      transformCallback() { return 1; },
+      unregisterCallback() {},
+      convertFileSrc: (path) => path,
+      metadata: { currentWebview: { label: "main" }, currentWindow: { label: "main" } },
+      async invoke() { return null; },
+    };
+    window.__TAURI_EVENT_PLUGIN_INTERNALS__ = { unregisterListener() {} };
+  </script>
+  <script type="module" src="./concurrent-status.tsx"></script>
+</body>
+</html>

@@ -166,20 +166,83 @@ pub fn disarm_esc(app: &tauri::AppHandle) {
 // ==================== omp MCP injection ====================
 
 /// omp discovers MCP servers only from fixed files (mcp.json / .mcp.json /
-/// .omp/mcp.json / ~/.omp/agent/mcp.json — there is no launch flag), so a
-/// computer-use send merge-writes the workspace's `.omp/mcp.json` and
-/// restores it when the run ends. The journal survives a crash mid-run: the
-/// next app start restores every recorded injection (sweep_mcp_injections).
+/// .omp/mcp.json / ~/.omp/agent/mcp.json — there is no launch flag), so an
+/// omp send merge-writes the workspace's `.omp/mcp.json` and restores it when
+/// the run ends. The journal survives a crash mid-run: the next app start
+/// restores every recorded injection (sweep_mcp_injections).
+///
+/// The machinery is generic on purpose: computer use and the per-bot memory
+/// tool both ride it, and a run may inject both (one file, two entries, two
+/// journal refs). omp 的本机驱动在 WSL 远端跑不了，调用方负责拒绝。
 pub const MCP_SERVER_NAME: &str = "ccgui-computer";
 const MCP_SCHEMA_URL: &str = "https://raw.githubusercontent.com/can1357/oh-my-pi/main/packages/coding-agent/src/config/mcp-schema.json";
 
-/// Handle restoring one workspace's `.omp/mcp.json` once its run ends.
+/// One app-served MCP entry to merge into the workspace file. `command` is
+/// this app's own binary; `args`/`env` are what that child needs to know
+/// (which mode to serve, which bot it acts for).
+#[derive(Debug, Clone)]
+pub struct McpServerSpec {
+    pub name: String,
+    pub command: String,
+    pub args: Vec<String>,
+    pub env: Vec<(String, String)>,
+}
+
+/// The computer-use driver's spec: `--computer-use-mcp`, plus the overlay
+/// control channel when the main app is running (absent in tests).
+pub fn computer_use_spec() -> Result<McpServerSpec, String> {
+    let exe = std::env::current_exe()
+        .map_err(|e| format!("resolve own exe for computer use: {e}"))?;
+    let mut env = Vec::new();
+    if let (Some(base), Some(token)) = (
+        crate::cu_overlay::control_base(),
+        crate::cu_overlay::control_token(),
+    ) {
+        env.push(("CCGUI_CU_CONTROL".to_string(), base));
+        env.push(("CCGUI_CU_TOKEN".to_string(), token));
+    }
+    Ok(McpServerSpec {
+        name: MCP_SERVER_NAME.to_string(),
+        command: exe.to_string_lossy().into_owned(),
+        args: vec!["--computer-use-mcp".to_string()],
+        env,
+    })
+}
+
+/// The `mcpServers` entry for claude's inline `--mcp-config` JSON.
+pub fn mcp_server_json(spec: &McpServerSpec) -> serde_json::Value {
+    let mut server = serde_json::json!({
+        "command": spec.command,
+        "args": spec.args,
+    });
+    if !spec.env.is_empty() {
+        server["env"] = serde_json::Value::Object(
+            spec.env
+                .iter()
+                .map(|(key, value)| (key.clone(), serde_json::Value::String(value.clone())))
+                .collect(),
+        );
+    }
+    server
+}
+
+/// Handle restoring every entry one run injected into a workspace file.
 #[derive(Debug, Clone)]
 pub struct McpRestore {
+    refs: Vec<RestoreRef>,
+}
+
+#[derive(Debug, Clone)]
+struct RestoreRef {
     path: PathBuf,
     /// We created the file (vs. merged into the user's): a final restore
-    /// deletes it when nothing but our entry remains.
+    /// deletes it when nothing but the skeleton remains.
     created_file: bool,
+    server: String,
+}
+
+fn default_server_name() -> String {
+    MCP_SERVER_NAME.to_string()
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -187,8 +250,12 @@ pub struct McpRestore {
 struct InjectionRecord {
     path: PathBuf,
     created_file: bool,
-    /// Concurrent computer-use runs in one workspace share one injection.
+    /// Concurrent runs in one workspace share one injection per server.
     count: u32,
+    /// Which entry this ref counts. Records written before the memory tool
+    /// existed carry no field and are computer-use injections.
+    #[serde(default = "default_server_name")]
+    server: String,
 }
 
 static JOURNAL_LOCK: parking_lot::Mutex<()> = parking_lot::Mutex::new(());
@@ -220,99 +287,145 @@ fn journal_write(records: &[InjectionRecord]) {
     }
 }
 
-/// Merge our driver into the workspace's `.omp/mcp.json`. Returns None when
-/// the file already names our server — the user's own entry always wins and
-/// nothing then needs restoring.
-pub fn inject_workspace_mcp(workspace: &Path) -> Result<Option<McpRestore>, String> {
+/// Merge our MCP entries into the workspace's `.omp/mcp.json`. One spec per
+/// server; entries the user's own file already names are skipped (the user's
+/// entry always wins, and nothing then needs restoring). Returns None when
+/// this call injected nothing.
+pub fn inject_workspace_mcp(
+    workspace: &Path,
+    specs: &[McpServerSpec],
+) -> Result<Option<McpRestore>, String> {
+    if specs.is_empty() {
+        return Ok(None);
+    }
     let _guard = JOURNAL_LOCK.lock();
     let path = workspace.join(".omp").join("mcp.json");
-    let created_file = !path.exists();
-    // Already injected by a concurrent run in this workspace: just take a
-    // reference; the file write happened on the first inject.
     let mut records = journal_read();
-    if let Some(record) = records.iter_mut().find(|r| r.path == path) {
-        record.count += 1;
-        let created = record.created_file;
-        journal_write(&records);
-        return Ok(Some(McpRestore {
-            path,
-            created_file: created,
-        }));
-    }
-    let mut doc: serde_json::Value = if created_file {
-        serde_json::json!({ "$schema": MCP_SCHEMA_URL, "mcpServers": {} })
-    } else {
-        let text =
-            std::fs::read_to_string(&path).map_err(|e| format!("read {}: {e}", path.display()))?;
-        serde_json::from_str(&text).map_err(|e| format!("parse {}: {e}", path.display()))?
-    };
-    {
+    let mut refs = Vec::new();
+    let mut doc: Option<serde_json::Value> = None;
+    for spec in specs {
+        // Already injected by a concurrent run in this workspace: just take a
+        // reference; the file write happened on the first inject.
+        if let Some(record) = records
+            .iter_mut()
+            .find(|r| r.path == path && r.server == spec.name)
+        {
+            record.count += 1;
+            refs.push(RestoreRef {
+                path: path.clone(),
+                created_file: record.created_file,
+                server: spec.name.clone(),
+            });
+            continue;
+        }
+        // A file an earlier inject created stays "ours" for deletion even
+        // when this second entry found it already on disk.
+        let created_file = records
+            .iter()
+            .find(|r| r.path == path)
+            .map(|r| r.created_file)
+            .unwrap_or(!path.exists());
+        if doc.is_none() {
+            doc = Some(load_workspace_doc(&path)?);
+        }
         let servers = doc
+            .as_mut()
+            .expect("the doc was loaded above")
             .get_mut("mcpServers")
             .and_then(serde_json::Value::as_object_mut)
             .ok_or_else(|| format!("{}: mcpServers is not an object", path.display()))?;
-        if servers.contains_key(MCP_SERVER_NAME) {
-            return Ok(None);
+        if servers.contains_key(&spec.name) {
+            continue;
         }
-        let exe = std::env::current_exe()
-            .map_err(|e| format!("resolve own exe for computer use: {e}"))?;
         let mut server = serde_json::json!({
             "type": "stdio",
-            "command": exe.to_string_lossy(),
-            "args": ["--computer-use-mcp"],
+            "command": spec.command,
+            "args": spec.args,
         });
-        // Same overlay control channel as the claude --mcp-config path.
-        if let (Some(base), Some(token)) = (
-            crate::cu_overlay::control_base(),
-            crate::cu_overlay::control_token(),
-        ) {
-            server["env"] = serde_json::json!({
-                "CCGUI_CU_CONTROL": base,
-                "CCGUI_CU_TOKEN": token,
-            });
+        if !spec.env.is_empty() {
+            server["env"] = serde_json::Value::Object(
+                spec.env
+                    .iter()
+                    .map(|(key, value)| (key.clone(), serde_json::Value::String(value.clone())))
+                    .collect(),
+            );
         }
-        servers.insert(MCP_SERVER_NAME.to_string(), server);
+        servers.insert(spec.name.clone(), server);
+        records.push(InjectionRecord {
+            path: path.clone(),
+            created_file,
+            count: 1,
+            server: spec.name.clone(),
+        });
+        refs.push(RestoreRef {
+            path: path.clone(),
+            created_file,
+            server: spec.name.clone(),
+        });
     }
-    if created_file {
-        let parent = path.parent().unwrap();
-        std::fs::create_dir_all(parent).map_err(|e| format!("create {}: {e}", parent.display()))?;
+    if refs.is_empty() {
+        return Ok(None);
     }
-    let tmp = path.with_extension("json.ccgui-tmp");
-    let json = serde_json::to_string_pretty(&doc).map_err(|e| e.to_string())?;
-    std::fs::write(&tmp, json).map_err(|e| format!("write {}: {e}", tmp.display()))?;
-    std::fs::rename(&tmp, &path).map_err(|e| format!("replace {}: {e}", path.display()))?;
-    records.push(InjectionRecord {
-        path: path.clone(),
-        created_file,
-        count: 1,
-    });
+    if let Some(doc) = doc {
+        if refs.iter().any(|r| r.created_file) {
+            let parent = path.parent().unwrap();
+            std::fs::create_dir_all(parent)
+                .map_err(|e| format!("create {}: {e}", parent.display()))?;
+        }
+        let tmp = path.with_extension("json.ccgui-tmp");
+        let json = serde_json::to_string_pretty(&doc).map_err(|e| e.to_string())?;
+        std::fs::write(&tmp, json).map_err(|e| format!("write {}: {e}", tmp.display()))?;
+        std::fs::rename(&tmp, &path).map_err(|e| format!("replace {}: {e}", path.display()))?;
+    }
     journal_write(&records);
-    Ok(Some(McpRestore { path, created_file }))
+    Ok(Some(McpRestore { refs }))
+}
+
+/// 文件在就合并（哪怕是本次运行早先创建的），不在才用骨架。`created_file`
+/// 只决定恢复时删不删文件，不参与读取——第二轮注入拿到的是同一份已合并的
+/// 文档，不会把上一轮写进去的条目覆盖掉。
+fn load_workspace_doc(path: &Path) -> Result<serde_json::Value, String> {
+    if !path.exists() {
+        return Ok(serde_json::json!({ "$schema": MCP_SCHEMA_URL, "mcpServers": {} }));
+    }
+    let text =
+        std::fs::read_to_string(path).map_err(|e| format!("read {}: {e}", path.display()))?;
+    serde_json::from_str(&text).map_err(|e| format!("parse {}: {e}", path.display()))
 }
 
 impl McpRestore {
-    /// Release this run's reference; the last one out removes our entry
-    /// from the workspace file (deleting it when we created it and nothing
-    /// else remains).
+    /// Release this run's references; the last holder of an entry removes it
+    /// from the workspace file (deleting the file when we created it and
+    /// nothing but the skeleton remains).
     pub fn restore(&self) {
         let _guard = JOURNAL_LOCK.lock();
         let mut records = journal_read();
-        let mut remaining = 0u32;
-        if let Some(record) = records.iter_mut().find(|r| r.path == self.path) {
-            record.count = record.count.saturating_sub(1);
-            remaining = record.count;
+        for reference in &self.refs {
+            if let Some(record) = records
+                .iter_mut()
+                .find(|r| r.path == reference.path && r.server == reference.server)
+            {
+                record.count = record.count.saturating_sub(1);
+                if record.count > 0 {
+                    continue;
+                }
+            }
+            records.retain(|r| !(r.path == reference.path && r.server == reference.server));
+            // Delete the file only when no other run still refs this path;
+            // otherwise just drop our entry and keep the rest.
+            let delete_when_empty = reference.created_file
+                && !records.iter().any(|r| r.path == reference.path);
+            remove_server_entry(
+                &reference.path,
+                std::slice::from_ref(&reference.server),
+                delete_when_empty,
+            );
         }
-        if remaining > 0 {
-            journal_write(&records);
-            return;
-        }
-        records.retain(|r| r.path != self.path);
         journal_write(&records);
-        remove_server_entry(&self.path, self.created_file);
     }
 }
 
-fn remove_server_entry(path: &Path, created_file: bool) {
+fn remove_server_entry(path: &Path, servers_to_remove: &[String], delete_when_empty: bool) {
     let Ok(text) = std::fs::read_to_string(path) else {
         return;
     };
@@ -325,7 +438,9 @@ fn remove_server_entry(path: &Path, created_file: bool) {
     else {
         return;
     };
-    servers.remove(MCP_SERVER_NAME);
+    for server in servers_to_remove {
+        servers.remove(server);
+    }
     // A file we created goes away once it carries nothing but the skeleton;
     // the user's file keeps everything else it ever had, edits included.
     let skeleton_only = servers.is_empty()
@@ -333,7 +448,7 @@ fn remove_server_entry(path: &Path, created_file: bool) {
             .as_object()
             .map(|o| o.keys().all(|k| k == "$schema" || k == "mcpServers"))
             .unwrap_or(false);
-    if created_file && skeleton_only {
+    if delete_when_empty && skeleton_only {
         let _ = std::fs::remove_file(path);
         // The .omp dir we created for it goes too; non-empty is a no-op.
         if let Some(parent) = path.parent() {
@@ -350,13 +465,27 @@ fn remove_server_entry(path: &Path, created_file: bool) {
 }
 
 /// Crash recovery: the app died between inject and restore, so every
-/// journaled workspace file still carries our entry. Restore them all at
+/// journaled workspace file still carries our entries. Restore them all at
 /// startup; runs never outlive the app, so none can still be active.
 pub fn sweep_mcp_injections() {
     let _guard = JOURNAL_LOCK.lock();
     let records = journal_read();
+    let mut by_path: Vec<(PathBuf, bool, Vec<String>)> = Vec::new();
     for record in &records {
-        remove_server_entry(&record.path, record.created_file);
+        match by_path.iter_mut().find(|(path, _, _)| *path == record.path) {
+            Some((_, created_file, servers)) => {
+                *created_file = *created_file || record.created_file;
+                servers.push(record.server.clone());
+            }
+            None => by_path.push((
+                record.path.clone(),
+                record.created_file,
+                vec![record.server.clone()],
+            )),
+        }
+    }
+    for (path, created_file, servers) in &by_path {
+        remove_server_entry(path, servers, *created_file);
     }
     journal_write(&[]);
 }
@@ -1413,12 +1542,33 @@ mod tests {
         .unwrap()
     }
 
+    /// 测试用的驱动 spec：不看本机 exe，只验证注入/恢复的账。
+    fn test_spec() -> McpServerSpec {
+        McpServerSpec {
+            name: MCP_SERVER_NAME.to_string(),
+            command: "/tmp/ccgui-test".to_string(),
+            args: vec!["--computer-use-mcp".to_string()],
+            env: Vec::new(),
+        }
+    }
+
+    fn memory_spec() -> McpServerSpec {
+        McpServerSpec {
+            name: crate::memory::mcp::SERVER_NAME.to_string(),
+            command: "/tmp/ccgui-test".to_string(),
+            args: vec!["--memory-mcp".to_string()],
+            env: Vec::new(),
+        }
+    }
+
     #[test]
     fn inject_creates_then_restore_deletes_workspace_file() {
         let _guard = crate::paths::HOME_ENV_LOCK.lock();
         steer_home("create");
         let ws = temp_workspace("create");
-        let restore = inject_workspace_mcp(&ws).unwrap().expect("must inject");
+        let restore = inject_workspace_mcp(&ws, &[test_spec()])
+            .unwrap()
+            .expect("must inject");
         let doc = mcp_json(&ws);
         let server = &doc["mcpServers"][MCP_SERVER_NAME];
         assert_eq!(server["type"], "stdio");
@@ -1439,7 +1589,9 @@ mod tests {
             r#"{"mcpServers":{"mine":{"type":"stdio","command":"user-tool"}}}"#,
         )
         .unwrap();
-        let restore = inject_workspace_mcp(&ws).unwrap().expect("must inject");
+        let restore = inject_workspace_mcp(&ws, &[test_spec()])
+            .unwrap()
+            .expect("must inject");
         let doc = mcp_json(&ws);
         assert!(doc["mcpServers"].get("mine").is_some());
         assert!(doc["mcpServers"].get(MCP_SERVER_NAME).is_some());
@@ -1457,7 +1609,7 @@ mod tests {
         std::fs::create_dir_all(ws.join(".omp")).unwrap();
         let original = r#"{"mcpServers":{"ccgui-computer":{"type":"stdio","command":"mine"}}}"#;
         std::fs::write(ws.join(".omp").join("mcp.json"), original).unwrap();
-        assert!(inject_workspace_mcp(&ws).unwrap().is_none());
+        assert!(inject_workspace_mcp(&ws, &[test_spec()]).unwrap().is_none());
         assert_eq!(
             std::fs::read_to_string(ws.join(".omp").join("mcp.json")).unwrap(),
             original
@@ -1470,8 +1622,8 @@ mod tests {
         let _guard = crate::paths::HOME_ENV_LOCK.lock();
         steer_home("shared");
         let ws = temp_workspace("shared");
-        let first = inject_workspace_mcp(&ws).unwrap().unwrap();
-        let second = inject_workspace_mcp(&ws).unwrap().unwrap();
+        let first = inject_workspace_mcp(&ws, &[test_spec()]).unwrap().unwrap();
+        let second = inject_workspace_mcp(&ws, &[test_spec()]).unwrap().unwrap();
         // 两次注入只写一次文件、只留一条记录。
         assert_eq!(journal_read().len(), 1);
         first.restore();
@@ -1486,9 +1638,50 @@ mod tests {
         let _guard = crate::paths::HOME_ENV_LOCK.lock();
         steer_home("sweep");
         let ws = temp_workspace("sweep");
-        let _restore = inject_workspace_mcp(&ws).unwrap().unwrap();
+        let _restore = inject_workspace_mcp(&ws, &[test_spec()]).unwrap().unwrap();
         // 模拟崩溃:不 restore 直接扫尾。
         sweep_mcp_injections();
+        assert!(!ws.join(".omp").join("mcp.json").exists());
+        assert!(journal_read().is_empty());
+    }
+
+    #[test]
+    fn two_tools_share_one_file_and_restore_independently() {
+        let _guard = crate::paths::HOME_ENV_LOCK.lock();
+        steer_home("two-tools");
+        let ws = temp_workspace("two-tools");
+        // 两个工具先后注入同一工作区文件：两个条目、两条记录，各自持有。
+        let computer = inject_workspace_mcp(&ws, &[test_spec()]).unwrap().unwrap();
+        let memory = inject_workspace_mcp(&ws, &[memory_spec()]).unwrap().unwrap();
+        let doc = mcp_json(&ws);
+        assert!(doc["mcpServers"].get(MCP_SERVER_NAME).is_some());
+        assert!(doc["mcpServers"]
+            .get(crate::memory::mcp::SERVER_NAME)
+            .is_some());
+        assert_eq!(journal_read().len(), 2);
+        // 只恢复记忆那一个：文件还在，电脑操控条目不动。
+        memory.restore();
+        let doc = mcp_json(&ws);
+        assert!(doc["mcpServers"].get(MCP_SERVER_NAME).is_some());
+        assert!(doc["mcpServers"]
+            .get(crate::memory::mcp::SERVER_NAME)
+            .is_none());
+        computer.restore();
+        assert!(!ws.join(".omp").join("mcp.json").exists());
+        assert!(journal_read().is_empty());
+    }
+
+    #[test]
+    fn same_tool_twice_counts_as_one_entry() {
+        let _guard = crate::paths::HOME_ENV_LOCK.lock();
+        steer_home("two-runs");
+        let ws = temp_workspace("two-runs");
+        // 同一次运行同时挂电脑操控与记忆：一个文件两个条目、两条记录。
+        let both = inject_workspace_mcp(&ws, &[test_spec(), memory_spec()])
+            .unwrap()
+            .expect("must inject");
+        assert_eq!(journal_read().len(), 2);
+        both.restore();
         assert!(!ws.join(".omp").join("mcp.json").exists());
         assert!(journal_read().is_empty());
     }

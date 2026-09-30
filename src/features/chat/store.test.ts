@@ -17,6 +17,7 @@ vi.mock("@/lib/ipc", () => ({
     rememberSessionEffort: vi.fn(async () => {}),
     listSessions: vi.fn(async () => []),
     listArchivedSessions: vi.fn(async () => []),
+    listPlanReviews: vi.fn(async () => []),
     archiveSession: vi.fn(async () => {}),
     restoreSession: vi.fn(async () => {}),
     loadSessionPage: vi.fn(async () => ({ messages: [], nextBefore: null, subagentHistory: [] })),

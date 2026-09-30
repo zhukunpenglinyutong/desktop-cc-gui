@@ -1,0 +1,1323 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>CC GUI · 智能体 → Bot 改版 · 交互设计稿 v1</title>
+<style>
+/* ===== 设计 token（对齐 src/styles/theme.css 暗色语义 token）===== */
+:root{
+  --bg-full:#0d0d0d; --bg-1:#171717; --bg-2:#111111; --bg-3:#1c1c1c;
+  --hover:rgba(255,255,255,.08); --active:rgba(255,255,255,.12);
+  --sep:#262626; --bd:#404040; --bd-hover:#737373; --focus:#3392ff;
+  --tx-1:#e5e5e5; --tx-2:#d4d4d4; --tx-3:#a3a3a3; --tx-4:#737373; --tx-dis:#525252;
+  --ic-1:#ebebeb; --ic-2:#d4d4d4; --ic-3:#a3a3a3;
+  --accent:#3b82f6; --accent-600:#2563eb; --accent-soft:rgba(59,130,246,.16);
+  --lime:#84cc16; --green:#4ade80; --red:#fca5a5; --orange:#fdba74;
+  --purple-bg:rgba(88,28,135,.5); --purple-tx:#d8b4fe;
+  --lime-bg:rgba(26,46,5,.6); --blue-text:#60a5fa; --blue-bg:rgba(59,130,246,.14);
+  --r:8px; --r-2lg:10px; --r-xl:12px;
+  --mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:var(--bg-full);color:var(--tx-1);font:14px/1.55 "Inter",-apple-system,BlinkMacSystemFont,"PingFang SC","Helvetica Neue",sans-serif;padding:48px 24px 120px;-webkit-font-smoothing:antialiased}
+.page{max-width:1480px;margin:0 auto}
+button,input,textarea,select{font:inherit;color:inherit}
+button{cursor:pointer;background:none;border:0}
+button:focus-visible,input:focus-visible,textarea:focus-visible,[tabindex]:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+[hidden]{display:none!important}
+.mono{font-family:var(--mono)}
+
+/* ===== 文档头 ===== */
+.doc-header h1{font-size:27px;font-weight:650;letter-spacing:-.02em}
+.doc-header .sub{color:var(--tx-3);margin-top:8px;max-width:760px}
+.meta-line{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}
+.meta-line span{font-size:12px;color:var(--tx-3);background:var(--bg-3);border:1px solid var(--sep);border-radius:999px;padding:3px 10px}
+.hint-banner{margin-top:22px;padding:14px 16px;background:var(--bg-2);border:1px solid var(--sep);border-radius:var(--r-xl);font-size:13px;color:var(--tx-2)}
+.hint-banner b{color:var(--tx-1)}
+.hint-banner ul{margin:8px 0 0 18px;color:var(--tx-3)}
+.hint-banner li{margin:3px 0}
+
+/* ===== 场景框架 ===== */
+.scene{margin-top:64px}
+.scene-title{display:flex;align-items:baseline;gap:10px;margin-bottom:6px;flex-wrap:wrap}
+.scene-title .no{font-size:12px;font-weight:700;color:var(--blue-text);background:var(--blue-bg);padding:2px 8px;border-radius:999px;font-family:var(--mono)}
+.scene-title h2{font-size:19px;font-weight:650}
+.scene-title .later{font-size:11px;color:var(--tx-3);border:1px solid var(--sep);border-radius:999px;padding:2px 8px}
+.scene-desc{color:var(--tx-3);font-size:13.5px;margin-bottom:18px;max-width:820px}
+.scene-body{display:grid;grid-template-columns:minmax(0,1fr) 292px;gap:24px;align-items:start}
+.notes h4{font-size:11px;color:var(--tx-3);font-weight:600;letter-spacing:.08em;text-transform:uppercase;margin-bottom:10px}
+.notes ul{list-style:none}
+.notes li{position:relative;padding-left:18px;margin-bottom:9px;color:var(--tx-2);font-size:13px}
+.notes li::before{content:"";position:absolute;left:2px;top:8px;width:6px;height:6px;border-radius:50%;background:var(--accent)}
+.notes li b{color:var(--tx-1)}
+.notes li.q::before{background:var(--orange)}
+.notes .tag{font-family:var(--mono);font-size:11px;color:var(--tx-3);background:var(--bg-3);border-radius:4px;padding:1px 5px}
+@media(max-width:1560px){.page{max-width:1000px}.scene-body{grid-template-columns:1fr}}
+
+/* ===== 应用窗口 ===== */
+.win{background:var(--bg-1);border:1px solid var(--bd);border-radius:var(--r-xl);overflow:hidden;box-shadow:0 18px 50px rgba(0,0,0,.5);display:flex;height:660px}
+.win.tall{height:720px}
+.rail{width:206px;flex-shrink:0;background:var(--bg-2);border-right:1px solid var(--sep);padding:12px 10px;display:flex;flex-direction:column;gap:2px;overflow:hidden}
+.rail .back{display:flex;align-items:center;gap:8px;color:var(--tx-3);font-size:13px;padding:5px 8px;border-radius:var(--r)}
+.rail .search{margin-top:6px;height:28px;border-radius:var(--r);background:var(--bg-3);display:flex;align-items:center;gap:7px;padding:0 9px;color:var(--tx-4);font-size:12.5px;border:1px solid transparent}
+.rail .grp{margin-top:14px;padding:0 8px 4px;font-size:11px;color:var(--tx-3);letter-spacing:.04em}
+.rail .it{display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:var(--r);color:var(--tx-2);font-size:13.5px}
+.rail .it:hover{background:var(--hover)}
+.rail .it.on{background:var(--hover);color:var(--tx-1)}
+.rail .it svg{opacity:.9}
+.pane{flex:1;min-width:0;display:flex;flex-direction:column;position:relative;overflow:hidden}
+
+/* ===== 通用控件 ===== */
+.btn{display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 12px;border-radius:var(--r-2lg);font-size:13px;border:1px solid transparent;white-space:nowrap;transition:background .15s ease, border-color .15s ease}
+.btn.pri{background:linear-gradient(var(--accent),var(--accent-600));color:#fff;box-shadow:inset 0 1px 0 rgba(255,255,255,.25)}
+.btn.pri:hover{filter:brightness(1.06)}
+.btn.sec{background:var(--bg-1);border-color:var(--bd);color:var(--tx-1)}
+.btn.sec:hover{background:var(--hover);border-color:var(--bd-hover)}
+.btn.ghost{color:var(--tx-2)}
+.btn.ghost:hover{background:var(--hover);color:var(--tx-1)}
+.btn.sm{height:28px;font-size:12.5px;padding:0 10px}
+.btn.icon{width:28px;padding:0;justify-content:center}
+.btn[disabled]{opacity:.5;cursor:not-allowed}
+.seg{display:inline-flex;background:var(--bg-3);border-radius:var(--r-2lg);padding:3px;gap:2px}
+.seg button{height:26px;padding:0 11px;border-radius:7px;font-size:12.5px;color:var(--tx-3)}
+.seg button[aria-selected=true]{background:var(--bg-1);color:var(--tx-1);box-shadow:0 1px 3px rgba(0,0,0,.45)}
+.pilltab{display:inline-flex;gap:4px}
+.pilltab button{display:inline-flex;align-items:center;gap:6px;height:30px;padding:0 12px;border-radius:999px;font-size:13px;color:var(--tx-3)}
+.pilltab button[aria-selected=true]{background:var(--accent-soft);color:#bfdbfe}
+.chip{display:inline-flex;align-items:center;gap:4px;height:24px;padding:0 9px;border-radius:999px;border:1px solid var(--sep);background:var(--bg-2);color:var(--tx-3);font-size:12px;white-space:nowrap}
+.chip svg{width:12px;height:12px}
+.chip[aria-pressed=true]{border-color:var(--accent);color:#bfdbfe;background:var(--accent-soft)}
+.badge{display:inline-flex;align-items:center;gap:4px;height:20px;padding:0 7px;border-radius:5px;font-size:11px;background:var(--bg-3);color:var(--tx-3);white-space:nowrap}
+.badge.lime{background:var(--lime-bg);color:var(--lime)}
+.badge.purple{background:var(--purple-bg);color:var(--purple-tx)}
+.badge.blue{background:var(--blue-bg);color:var(--blue-text)}
+.badge.warn{background:rgba(120,53,15,.45);color:var(--orange)}
+.input{display:flex;align-items:center;gap:8px;height:32px;padding:0 10px;border-radius:var(--r-2lg);background:var(--bg-3);border:1px solid transparent;color:var(--tx-1);font-size:13px}
+.input:hover{border-color:var(--sep)}
+.input:focus-within{border-color:var(--focus)}
+.input input{flex:1;min-width:0;background:transparent;border:0;outline:0;color:inherit}
+.input input::placeholder{color:var(--tx-4)}
+textarea.area{width:100%;background:var(--bg-3);border:1px solid transparent;border-radius:var(--r-2lg);padding:9px 10px;color:var(--tx-1);font-size:13px;resize:vertical;line-height:1.7}
+textarea.area:hover{border-color:var(--sep)}
+textarea.area:focus{border-color:var(--focus);outline:0}
+.sw{width:30px;height:17px;border-radius:999px;background:var(--bd);position:relative;flex-shrink:0;transition:background .15s ease}
+.sw::after{content:"";position:absolute;top:2px;left:2px;width:13px;height:13px;border-radius:50%;background:#fff;transition:transform .15s ease}
+.sw[aria-checked=true]{background:var(--accent)}
+.sw[aria-checked=true]::after{transform:translateX(13px)}
+.bar{height:6px;border-radius:999px;background:var(--bg-3);overflow:hidden}
+.bar>i{display:block;height:100%;border-radius:999px;background:linear-gradient(90deg,var(--accent),#60a5fa)}
+.bar>i.warn{background:linear-gradient(90deg,#d97706,var(--orange))}
+.rowflex{display:flex;align-items:center;gap:10px}
+.card{background:var(--bg-2);border:1px solid var(--sep);border-radius:var(--r-xl)}
+.card .hd{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 14px;border-bottom:1px solid var(--sep)}
+.card .bd{padding:12px 14px}
+.card .row{display:flex;align-items:center;gap:12px;padding:11px 14px;border-bottom:1px solid var(--sep)}
+.card .row:last-child{border-bottom:0}
+.card .row:hover{background:var(--hover)}
+.sec-label{font-size:11px;color:var(--tx-3);letter-spacing:.06em;text-transform:uppercase}
+.empty{border:1px dashed var(--bd);border-radius:var(--r-xl);padding:22px;text-align:center;color:var(--tx-3);font-size:13px}
+
+/* ===== 头像（生成形象）===== */
+[data-avatar]{display:inline-flex;align-items:center;justify-content:center;flex-shrink:0}
+[data-avatar] svg{display:block;width:100%;height:100%}
+.ava-tile{display:inline-flex;align-items:center;justify-content:center;border-radius:12px;background:var(--bg-3);flex-shrink:0}
+
+/* ===== 列表页 ===== */
+.pane-head{padding:14px 28px 0;flex-shrink:0}
+.pane-head h2{font-size:17px;font-weight:600}
+.pane-body{padding:14px 28px 24px;overflow-y:auto;flex:1}
+.col{max-width:720px;margin:0 auto;display:flex;flex-direction:column;gap:14px}
+.toolbar{display:flex;align-items:center;gap:8px}
+.toolbar .input{flex:1}
+.agentrow{display:flex;align-items:center;gap:12px;padding:12px 14px;border-bottom:1px solid var(--sep);cursor:pointer}
+.agentrow:last-child{border-bottom:0}
+.agentrow:hover{background:var(--hover)}
+.agentrow .nm{font-size:14px;color:var(--tx-1);display:flex;align-items:center;gap:6px;min-width:0}
+.agentrow .nm .ti{color:var(--tx-3);font-size:12.5px}
+.agentrow .de{color:var(--tx-3);font-size:12.5px;margin-top:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.agentrow .rt{margin-left:auto;display:flex;flex-direction:column;align-items:flex-end;gap:6px;flex-shrink:0}
+.agentrow .acts{display:flex;gap:2px;opacity:0;transition:opacity .12s ease}
+.agentrow:hover .acts,.agentrow:focus-within .acts{opacity:1}
+.agentrow .acts .on{opacity:1;color:var(--accent)}
+.iconbtn svg{width:14px;height:14px}
+.iconbtn{width:26px;height:26px;border-radius:7px;display:inline-flex;align-items:center;justify-content:center;color:var(--ic-3)}
+.iconbtn:hover{background:var(--hover);color:var(--ic-1)}
+.menu{position:absolute;z-index:20;min-width:184px;background:var(--bg-1);border:1px solid var(--bd);border-radius:var(--r-xl);box-shadow:0 12px 32px rgba(0,0,0,.55);padding:5px}
+.menu button{display:flex;align-items:center;gap:9px;width:100%;padding:7px 9px;border-radius:7px;font-size:13px;color:var(--tx-1);text-align:left}
+.menu button:hover{background:var(--hover)}
+.menu button.danger{color:var(--red)}
+.menu .div{height:1px;background:var(--sep);margin:5px 2px}
+.menu .k{margin-left:auto;color:var(--tx-4);font-size:11px}
+
+/* ===== 编辑器 ===== */
+.editor{position:absolute;inset:0;background:var(--bg-1);display:flex;flex-direction:column}
+.ed-head{display:flex;align-items:center;gap:12px;padding:12px 20px;border-bottom:1px solid var(--sep);flex-shrink:0}
+.ed-head .t{display:flex;align-items:center;gap:8px;min-width:0}
+.ed-head .t .nm{font-size:15px;font-weight:600}
+.ed-head .save{margin-left:auto;font-size:12px;color:var(--tx-3)}
+.ed-body{flex:1;min-height:0;display:flex}
+.idcol{width:308px;flex-shrink:0;border-right:1px solid var(--sep);overflow-y:auto;padding:16px;background:var(--bg-2);display:flex;flex-direction:column;gap:16px}
+.ava-stage{display:flex;flex-direction:column;align-items:center;gap:10px;padding:18px 0 14px;background:radial-gradient(120px 90px at 50% 40%,rgba(59,130,246,.14),transparent 70%);border-radius:var(--r-xl)}
+.ava-stage .big{width:104px;height:104px}
+.ava-stage .cap{font-size:12px;color:var(--tx-3)}
+.pk-label{font-size:12px;color:var(--tx-3);margin-bottom:7px}
+.picker{display:flex;flex-direction:column;gap:14px;padding:12px;border:1px solid var(--sep);border-radius:var(--r-xl);background:var(--bg-1)}
+.shape-row,.color-row,.face-row,.emoji-grid{display:flex;flex-wrap:wrap;gap:6px}
+.shape-row button{width:34px;height:34px;border-radius:9px;display:grid;place-items:center;border:1px solid transparent}
+.shape-row button[aria-pressed=true],.face-row button[aria-pressed=true],.emoji-grid button[aria-pressed=true]{border-color:var(--tx-2);background:var(--bg-3)}
+.shape-row button:hover,.face-row button:hover,.emoji-grid button:hover{background:var(--bg-3)}
+.shape-row [data-avatar]{width:24px;height:24px}
+.color-row button{width:26px;height:26px;border-radius:50%;border:2px solid transparent}
+.color-row button[aria-pressed=true]{border-color:#fff;box-shadow:0 0 0 2px var(--bg-1) inset}
+.color-row button.custom{background:conic-gradient(from 0deg,#ef4444,#f97316,#84cc16,#22c55e,#06b6d4,#3b82f6,#8b5cf6,#ec4899,#ef4444);display:grid;place-items:center;color:#fff}
+.face-row button{width:34px;height:34px;border-radius:9px;display:grid;place-items:center;border:1px solid transparent}
+.face-row [data-avatar]{width:26px;height:26px}
+.emoji-grid button{width:30px;height:30px;border-radius:8px;font-size:16px;display:grid;place-items:center;border:1px solid transparent}
+.dropzone{width:100%;border:1px dashed var(--bd);border-radius:var(--r-xl);padding:18px;text-align:center;color:var(--tx-3);font-size:12.5px}
+.fields{display:flex;flex-direction:column;gap:11px}
+.fld label{display:block;font-size:12px;color:var(--tx-3);margin-bottom:5px}
+.fld .cnt{font-size:11px;color:var(--tx-4);margin-top:4px;text-align:right}
+.fld .hint{font-size:11.5px;color:var(--tx-4);margin-top:5px}
+.maincol{flex:1;min-width:0;display:flex;flex-direction:column}
+.tabsrow{display:flex;align-items:center;gap:6px;padding:10px 20px;border-bottom:1px solid var(--sep);flex-shrink:0;overflow-x:auto;scrollbar-width:none}
+.tabsrow button{height:28px;padding:0 11px;border-radius:999px;font-size:13px;color:var(--tx-3);white-space:nowrap}
+.tabsrow button[aria-selected=true]{background:var(--bg-3);color:var(--tx-1)}
+.tabsrow button:hover{color:var(--tx-1)}
+.tabsrow .sp{flex:1}
+.secbody{flex:1;min-height:0;overflow-y:auto;padding:20px}
+.secwrap{max-width:680px;margin:0 auto;display:flex;flex-direction:column;gap:16px}
+.secttl{font-size:15px;font-weight:600}
+.secdesc{font-size:13px;color:var(--tx-3);margin-top:4px}
+.note{display:flex;gap:9px;padding:11px 13px;border-radius:var(--r-xl);background:var(--bg-2);border:1px solid var(--sep);font-size:12.5px;color:var(--tx-3)}
+.note b{color:var(--tx-2);font-weight:600}
+.md-editor{border:1px solid var(--sep);border-radius:var(--r-xl);overflow:hidden;background:var(--bg-2)}
+.md-editor .bar{display:flex;align-items:center;gap:8px;padding:8px 12px;border-bottom:1px solid var(--sep);font-size:12px;color:var(--tx-3)}
+.md-editor .txt{padding:14px;font-family:var(--mono);font-size:12.5px;line-height:1.85;color:var(--tx-2);white-space:pre-wrap;min-height:230px}
+.md-editor .txt em{color:var(--tx-4);font-style:normal}
+.md-editor .foot{display:flex;align-items:center;gap:10px;padding:9px 12px;border-top:1px solid var(--sep);font-size:12px;color:var(--tx-3);flex-wrap:wrap}
+.md-editor .foot>span{white-space:nowrap}
+.usage{display:flex;flex-direction:column;gap:6px;margin-left:auto;min-width:190px;flex-shrink:0}
+.usage .l{display:flex;justify-content:space-between;font-size:11px;color:var(--tx-3)}
+.usage .l b{color:var(--tx-2);font-weight:500}
+.skillrow{display:flex;align-items:center;gap:11px;padding:10px 14px;border-bottom:1px solid var(--sep)}
+.skillrow:last-child{border-bottom:0}
+.skillrow .ico{width:26px;height:26px;border-radius:7px;background:var(--bg-3);display:grid;place-items:center;color:var(--ic-3);flex-shrink:0}
+.skillrow .nm{font-size:13.5px;font-family:var(--mono)}
+.skillrow .de{font-size:12px;color:var(--tx-3)}
+.skillrow.off .nm,.skillrow.off .de{color:var(--tx-4)}
+.rtcard{flex:1;border:1px solid var(--sep);border-radius:var(--r-xl);padding:13px;background:var(--bg-2);display:flex;flex-direction:column;gap:9px;text-align:left}
+.rtcard[aria-pressed=true]{border-color:var(--accent);background:linear-gradient(var(--accent-soft),transparent)}
+.rtcard[disabled]{opacity:.5;cursor:not-allowed}
+.rtcard .h{display:flex;align-items:center;gap:8px;font-size:13.5px;white-space:nowrap}
+.rtcard .h b{font-weight:600}
+.rtcard .s{font-size:12px;color:var(--tx-3)}
+.rtgrid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:11px}
+.memrow{display:flex;align-items:flex-start;gap:10px;padding:10px 0;border-bottom:1px dashed var(--sep);font-size:12.5px;color:var(--tx-2)}
+.memrow:last-child{border-bottom:0}
+.sidenav{display:flex;flex-direction:column;gap:2px}
+/* 拼装预览抽屉 */
+.drawer{position:absolute;top:0;right:0;bottom:0;width:400px;background:var(--bg-2);border-left:1px solid var(--bd);z-index:12;display:flex;flex-direction:column;box-shadow:-18px 0 40px rgba(0,0,0,.45)}
+.drawer .hd{display:flex;align-items:center;gap:8px;padding:13px 16px;border-bottom:1px solid var(--sep)}
+.drawer .hd .t{font-size:14px;font-weight:600}
+.drawer .bd{flex:1;overflow-y:auto;padding:14px 16px;display:flex;flex-direction:column;gap:8px}
+.blk{border:1px solid var(--sep);border-radius:var(--r-2lg);padding:9px 11px;background:var(--bg-1)}
+.blk .h{display:flex;align-items:center;gap:8px;font-size:12.5px}
+.blk .h .n{font-family:var(--mono);color:var(--blue-text);font-size:11px}
+.blk .h .c{margin-left:auto;font-size:11px;color:var(--tx-3)}
+.blk .prev{margin-top:6px;font-size:11.5px;color:var(--tx-4);font-family:var(--mono);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.blk.skip{border-style:dashed}
+.blk.skip .h .n,.blk.skip .h .t{color:var(--tx-4)}
+.drawer .ft{padding:12px 16px;border-top:1px solid var(--sep);display:flex;align-items:center;gap:8px}
+
+/* ===== composer / # 选择器 ===== */
+.composer-mock{padding:26px 28px;display:flex;flex-direction:column;gap:10px;max-width:760px;margin:0 auto;width:100%}
+.msg{max-width:78%;background:var(--bg-3);border-radius:12px 12px 4px 12px;padding:9px 13px;font-size:13px;color:var(--tx-2);align-self:flex-end}
+.cbox{border:1px solid var(--bd);border-radius:14px;background:var(--bg-1);box-shadow:0 10px 30px rgba(0,0,0,.4)}
+.cbox .txt{padding:12px 14px;font-size:13px;color:var(--tx-2);min-height:56px}
+.cbox .txt .hash{color:var(--blue-text);background:var(--accent-soft);border-radius:4px;padding:0 3px}
+.cbox .btm{display:flex;align-items:center;gap:8px;padding:8px 10px;border-top:1px solid var(--sep);color:var(--tx-3);font-size:12px}
+.picker-menu{background:var(--bg-1);border:1px solid var(--bd);border-radius:var(--r-xl);box-shadow:0 16px 40px rgba(0,0,0,.55);padding:6px;max-height:330px;overflow-y:auto}
+.picker-menu .gh{padding:6px 9px 3px;font-size:11px;color:var(--tx-4);letter-spacing:.05em}
+.picker-menu .op{display:flex;align-items:center;gap:10px;padding:7px 9px;border-radius:9px;font-size:13px}
+.picker-menu .op:hover,.picker-menu .op[aria-selected=true]{background:var(--hover)}
+.picker-menu .op .de{color:var(--tx-3);font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.picker-menu .op .meta{margin-left:auto;display:flex;align-items:center;gap:6px;color:var(--tx-4);font-size:11.5px;flex-shrink:0}
+.picker-menu .ft{display:flex;align-items:center;gap:8px;padding:8px 9px 6px;margin-top:4px;border-top:1px solid var(--sep);color:var(--tx-3);font-size:12.5px}
+.picker-menu .ft .k{margin-left:auto;color:var(--tx-4);font-size:11px}
+.toast{display:inline-flex;align-items:center;gap:8px;padding:7px 12px;border-radius:999px;background:var(--bg-3);border:1px solid var(--sep);font-size:12.5px;color:var(--tx-2)}
+.approval{border:1px solid var(--bd);border-radius:var(--r-xl);background:var(--bg-2);overflow:hidden}
+.approval .h{padding:11px 13px;border-bottom:1px solid var(--sep);display:flex;align-items:center;gap:9px;font-size:13px}
+.approval .diff{padding:10px 13px;font-size:12.5px;font-family:var(--mono);display:flex;flex-direction:column;gap:5px;border-bottom:1px solid var(--sep)}
+.approval .diff .del{color:var(--red)}
+.approval .diff .add{color:var(--green)}
+.approval .ft{padding:10px 13px;display:flex;gap:8px;align-items:center}
+.deleg{display:flex;align-items:center;gap:9px;padding:9px 12px;border:1px dashed var(--bd);border-radius:var(--r-xl);font-size:12.5px;color:var(--tx-3)}
+
+/* ===== 概览卡片 / 表格 ===== */
+.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+.tile{background:var(--bg-2);border:1px solid var(--sep);border-radius:var(--r-xl);padding:14px}
+.tile h3{font-size:13.5px;margin-bottom:6px}
+.tile p{font-size:12.5px;color:var(--tx-3)}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{text-align:left;font-weight:600;color:var(--tx-3);font-size:11.5px;letter-spacing:.05em;padding:8px 10px;border-bottom:1px solid var(--sep)}
+td{padding:9px 10px;border-bottom:1px solid var(--sep);color:var(--tx-2);vertical-align:top}
+td b{color:var(--tx-1);font-weight:550}
+.ok{color:var(--lime)}
+.warn{color:var(--orange)}
+.dim{color:var(--tx-4)}
+</style>
+</head>
+<body>
+<div class="page">
+
+<header class="doc-header">
+  <h1>智能体 → Bot：智能体区改版 · 交互设计稿</h1>
+  <p class="sub">把「名称 + 图标 + 提示词」的静态预设，升级成有身份、有能力、有记忆、能指定运行后端、能被查看和导出的长期助手。本稿覆盖设置页 <b>智能体与提示词 → 智能体</b> 的列表、编辑器（身份 / 人格 / 工作规则 / 能力 / 运行 / 记忆 / 定时 / 协作）、拼装预览，以及输入框 <span class="mono">#</span> 选择器和会话里的身份体现。</p>
+  <div class="meta-line">
+    <span>依据 计划.md（阶段 1–5）</span>
+    <span>视觉参考 BoardUI · Agent Creator</span>
+    <span>v1 · 待确认</span>
+  </div>
+  <div class="hint-banner">
+    <b>这份稿子是可点的</b>，下面的窗口都是真的 DOM，不是截图：
+    <ul>
+      <li>列表页：搜名字 / 点头衔、筛选条、置顶（📌）、行尾 <b>⋯</b> 菜单、隐藏分组</li>
+      <li>编辑器：左栏头像工作室（形状 / 颜色 / 表情）、右侧分区页签、右上「拼装预览」抽屉</li>
+      <li>本稿不含真实数据与真实文件读写，也不调用任何模型</li>
+    </ul>
+  </div>
+</header>
+
+<!-- ============ 0. 总览 ============ -->
+<section class="scene" id="s0">
+  <div class="scene-title"><span class="no">00</span><h2>这一版改了什么</h2></div>
+  <p class="scene-desc">旧版智能体是「一个弹窗里填三个字段」；新版把它当成一个长期存在的 Bot，字段分区块、每块都能看能改能导出，并且随时能看清楚这些配置最终拼成什么提示词。</p>
+  <div class="scene-body">
+    <div>
+      <div class="grid3" style="margin-bottom:14px">
+        <div class="tile"><h3>① 身份优先</h3><p>先让人（和其他 Bot）认出「这是谁」：头像、名称、头衔、一句话简介、唯一 @标识。身份常驻左栏，切到任何分区都不会丢。</p></div>
+        <div class="tile"><h3>② 说的和做的分开</h3><p>「怎么说」（人格 SOUL）与「怎么做」（工作规则 AGENTS）拆成两页，各自有引导和用量上限，不再堆在一个提示词框里。</p></div>
+        <div class="tile"><h3>③ 配置 → 提示词可见</h3><p>「拼装预览」抽屉按顺序列出每个区块的字符数与开头内容，空区块自动省略、超限实时提示。</p></div>
+      </div>
+      <table>
+        <thead><tr><th style="width:150px">维度</th><th>旧：智能体</th><th>新：Bot</th></tr></thead>
+        <tbody>
+          <tr><td><b>字段</b></td><td>名称、图标（emoji）、提示词</td><td>身份（头像 / 名称 / 头衔 / 简介 / @标识）、人格、工作规则、能力、运行后端、记忆、定时、协作</td></tr>
+          <tr><td><b>编辑器</b></td><td>480px 弹窗，提示词一个 textarea</td><td>全屏工作台：左身份栏 + 右分区，自动保存，可回列表</td></tr>
+          <tr><td><b>头像</b></td><td>12 个 emoji 快捷选择</td><td>三选一：生成形象（9 形状 × 10 颜色 × 6 表情）/ 表情符号 / 图片</td></tr>
+          <tr><td><b>能力</b></td><td>无</td><td>按 Bot 勾选 Skills、内置工具、MCP；只把名称 + 描述放进 prompt</td></tr>
+          <tr><td><b>入口</b></td><td>输入框 <span class="mono">#</span>，只显示名字</td><td><span class="mono">#</span> 菜单显示头像 + 头衔 + 运行后端，支持置顶分组与搜索简介</td></tr>
+          <tr><td><b>兼容</b></td><td colspan="2">旧数据自动迁移：名称 → 名称，emoji → 头像，提示词 → 人格；只有人格的 Bot 与旧智能体行为一致。<span class="mono">#</span> 选择器照常可用。</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="notes">
+      <h4>从 BoardUI agent-creator 借了什么</h4>
+      <ul>
+        <li><b>头像工作室</b>：直接用 BoardUI agent-creator 的组件——情绪轮盘套在实时头像外圈、九种轮廓沿底部弧形排布、颜色行是光泽色球 + 自定义取色器（<span class="mono">AgentAvatar / EmotionPicker / ShapeArc / GlossSwatch</span>）。</li>
+        <li><b>卡片行</b>：一行 = 图标 + 标签 + 说明 + 右侧控件，说明文字常驻，不靠 tooltip 才看得懂。</li>
+        <li><b>窄列身份 + 宽列内容</b>：左栏只放「它是谁」，内容区只放「它会什么」。</li>
+        <li class="q"><b>没照搬的</b>：语言 / 通知 / 语音与播放速度那三段偏好属于具体场景，没有对应产品需求，不引入（<span class="mono">agent-preferences</span> 未采用）。</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 1. 列表页 ============ -->
+<section class="scene" id="s1">
+  <div class="scene-title"><span class="no">01</span><h2>智能体列表</h2></div>
+  <p class="scene-desc">列表行的信息量按「认人 → 认能力 → 认状态」分三层：名称 + 头衔在第一行，简介在第二行，运行后端和规模（技能 / 记忆 / 定时）收在右侧。置顶与 ⋯ 只在悬停时出现，不抢视线。</p>
+  <div class="scene-body">
+    <div id="mount-list"></div>
+    <div class="notes">
+      <h4>要点</h4>
+      <ul>
+        <li>「新建」右侧是<b>导入 ▾</b>：从文件导入 <span class="mono">.zip</span> / 从内置目录复制 / 粘贴 Markdown。</li>
+        <li>筛选条按<b>用户会问的问题</b>分组：全部 / 置顶 / 自定义 / 内置，而不是按数据字段。</li>
+        <li>⋯ 菜单：编辑、复制、导出为 zip、隐藏、删除。删除 <b>danger 色</b>且进 ConfirmDialog。</li>
+        <li>被隐藏的 Bot 折成一条「已隐藏 · n」，不消失——隐藏只是不在 <span class="mono">#</span> 菜单出现。</li>
+        <li class="q">空列表时不给一张大插画，给 3 个可点的起步模板（讲解 / 评审 / 写作）+「从内置目录复制」。</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 2. 编辑器：身份 ============ -->
+<section class="scene" id="s2">
+  <div class="scene-title"><span class="no">02</span><h2>Bot 编辑器 · 身份与头像</h2></div>
+  <p class="scene-desc">左栏是「它是谁」，常驻不切换：大头像工作室 + 名称 / 头衔 / 简介 / @标识。右栏按分区切换。编辑器是<b>弹窗</b>（Esc / 点背景 / 右上角 X 都能关），不是全屏页。</p>
+  <div class="scene-body">
+    <div id="mount-ed-identity"></div>
+    <div class="notes">
+      <h4>要点</h4>
+      <ul>
+        <li><b>生成形象</b> = BoardUI 的纸片头像引擎（canvas）：9 种轮廓、16 种表情、HSL 颜色 + 自定义取色器，离线可用，不需要用户找图。</li>
+        <li>不再提供「表情符号 / 图片」两种来源：已存在的 emoji 头像照常显示，编辑器给一行说明，用户挑形状/表情/颜色时才替换。</li>
+        <li>舞台右上角一个骰子：一键随机形状 + 表情 + 预设色。</li>
+        <li><b>简介</b>不是装饰：它会进其他 Bot 的「协作者」区块，是 Bot 之间互相认识的唯一信息，所以给字数上限和一行说明。</li>
+        <li><b>@标识</b>由名称自动生成（中文转拼音）、保证唯一，用于群聊 @ 和委派；改了名称不会静默改标识，需要用户确认。</li>
+        <li>保存是<b>自动的</b>：离开分区、切换 Bot、关闭编辑器都落盘，头部显示「已自动保存 14:32」；失败时原地变红并给重试。</li>
+        <li class="q">内置目录里的 Bot 打开是只读态，第一次编辑时提示「将复制一份到我的智能体」，不静默改内置数据。</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 3. 编辑器：人格 / 工作规则 ============ -->
+<section class="scene" id="s3">
+  <div class="scene-title"><span class="no">03</span><h2>Bot 编辑器 · 人格与工作规则</h2></div>
+  <p class="scene-desc">原来一个「提示词」框拆成两个：人格决定语气、性格、立场；工作规则决定职责、流程、限制、输出格式。两页结构一样，避免用户学两套东西。</p>
+  <div class="scene-body">
+    <div id="mount-ed-soul"></div>
+    <div class="notes">
+      <h4>要点</h4>
+      <ul>
+        <li>旧提示词迁移到<b>人格</b>（默认决策），工作规则留空 —— 空区块在拼装时整块省略，行为与旧智能体一致。</li>
+        <li>底部用量条是<b>人格 + 工作规则合计 / 10,000</b>，超过 80% 变橙、超过上限变红并提示拆分到 Skills。</li>
+        <li>「插入模板 ▾」：空白、结构化骨架（职责 / 流程 / 输出格式 / 不做什么）、从内置 Bot 整段复制。</li>
+        <li>两页都做<b>重复检测</b>：同一句话两边都有时给一条黄色提示，因为模型会读到两次，占额度还互相打架。</li>
+        <li>Markdown 是可选的：不认语法的用户写纯文本也没问题，编辑器不强行套格式。</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 4. 编辑器：能力 ============ -->
+<section class="scene" id="s4">
+  <div class="scene-title"><span class="no">04</span><h2>Bot 编辑器 · 能力（Skills / 工具 / MCP）</h2><span class="later">阶段 1 只做 Skills</span></div>
+  <p class="scene-desc">Skills 是这次升级里最实在的一块：从「一段提示词」升级成可导入、可分配的技能包（SKILL.md + 脚本 + 参考资料），Bot 平时只看到名称和描述，需要时才读全文。</p>
+  <div class="scene-body">
+    <div id="mount-ed-skills"></div>
+    <div class="notes">
+      <h4>要点</h4>
+      <ul>
+        <li>未勾选的 skill 对这个 Bot <b>完全不可见</b>——不列在 prompt、也不能被 <span class="mono">skill_view</span> 读到（阶段 1 验收项）。</li>
+        <li>「全部技能 <span class="mono">*</span>」是一个明确的开关，等价于 <span class="mono">skills: ['*']</span>；将来新建的 skill 自动生效。默认关闭，避免 Bot 悄悄长出能力。</li>
+        <li>索引只占 prompt 的「名称 + 描述」，底部实时显示 <b>索引 420 / 3,000 字</b>；超出按使用频率截断并注明还有几个。</li>
+        <li>行内显示<b>使用次数</b>，帮用户判断哪些 skill 其实没在用。</li>
+        <li>工具与 MCP 带阶段徽标：不可用时不隐藏，置灰并说明「阶段 3 可用」，避免用户以为功能坏了。</li>
+        <li class="q">没有装任何 skill 时，空状态直接给「从技能库导入」和「新建 SKILL.md」两个入口，不写「暂无数据」。</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 5. 编辑器：运行后端 ============ -->
+<section class="scene" id="s5">
+  <div class="scene-title"><span class="no">05</span><h2>Bot 编辑器 · 运行后端</h2><span class="later">阶段 3</span></div>
+  <p class="scene-desc">同一个 Bot，可以选直连模型、Claude Code 或 Codex 来干活。检测结果显示在卡片上，没装的置灰并说清楚原因，不让用户点了才发现跑不了。</p>
+  <div class="scene-body">
+    <div id="mount-ed-runtime"></div>
+    <div class="notes">
+      <h4>要点</h4>
+      <ul>
+        <li>三张卡平铺，选中态用<b>边框 + 底色</b>，未安装的卡 <b>disabled + 原因</b>，不隐藏（用户需要知道有这条路）。</li>
+        <li>CLI 模式必须选工作目录，没选时「保存」禁用并给原因——默认决策里写的是「禁止运行，提示用户选择目录」。</li>
+        <li>权限模式是<b>逐档升级</b>的三档：每次询问（默认）/ 自动安全 / 完全放行；完全放行要二次确认，且卡片上标红。</li>
+        <li>CLI 模式下的记忆走「会话结束必触发一次复盘」，这一条要在界面上明说，否则用户会以为没有记忆。</li>
+        <li>「重新检测」是刷新型动作（转圈 → 对号），结果带时间戳，不每次打开都重跑。</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 6. 编辑器：记忆 / 定时 / 协作 ============ -->
+<section class="scene" id="s6">
+  <div class="scene-title"><span class="no">06</span><h2>Bot 编辑器 · 记忆 / 定时 / 协作</h2><span class="later">阶段 2 / 3 / 4</span></div>
+  <p class="scene-desc">三个分区共用同一套页面骨架，都用「开关行 + 列表 + 一个主操作」，不各造一套。切换页签即可在本稿里对比。</p>
+  <div class="scene-body">
+    <div id="mount-ed-memory"></div>
+    <div class="notes">
+      <h4>记忆</h4>
+      <ul>
+        <li>三个开关：启用记忆 / 写入需要审批 / 后台复盘，另加「每 N 轮复盘」。</li>
+        <li>两条用量条分开：<b>Bot 笔记 2,200</b>（每个 Bot 各自一份）、<b>用户画像 1,375</b>（全局共享，所以标「全局」并用不同措辞，避免用户以为删了会影响别的 Bot）。</li>
+        <li>最近条目带<b>来源徽标</b>（你要求 / Bot 自己 / 复盘）和时间，可点进来源会话——记忆不是黑盒。</li>
+        <li>导出 MEMORY.md、清空（二次确认）放这里；聊天里的 <span class="mono">💾 记忆已更新</span> 开关也放这里。</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 7. 拼装预览 ============ -->
+<section class="scene" id="s7">
+  <div class="scene-title"><span class="no">07</span><h2>拼装预览：配置是怎么变成提示词的</h2></div>
+  <p class="scene-desc">右上「拼装预览」打开右侧抽屉，按顺序列出每个区块、字符数和开头一行。空区块显示为「已省略」，超限区块变橙。这是这一版最重要的「可解释性」入口。</p>
+  <div class="scene-body">
+    <div id="mount-ed-preview"></div>
+    <div class="notes">
+      <h4>要点</h4>
+      <ul>
+        <li>顺序固定：应用基础 → 身份 → 人格 → 工作规则 → 用户画像 → Bot 笔记 → Skills 索引 → 记忆说明 → 协作者；<b>空区块整块省略</b>。</li>
+        <li>抽屉里每个区块的<b>开头一行</b>是活的（跟着左边编辑即时变），不是渲染时的快照。</li>
+        <li>会话中途改配置<b>不会</b>改变当前会话的提示词（会话开始时冻结快照）；想立刻生效要点「刷新上下文」，按钮旁写明「会让缓存失效」。</li>
+        <li>「复制全文」用于调试和给别人看；不含任何密钥（凭证不在这条链路上）。</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 8. # 选择器 ============ -->
+<section class="scene" id="s8">
+  <div class="scene-title"><span class="no">08</span><h2>输入框：<span class="mono">#</span> 选择器</h2></div>
+  <p class="scene-desc">选择器照旧是 <span class="mono">#</span> 触发，但每一行现在能回答「它是谁、干什么、跑在哪」。置顶的排在前面，内置目录按分区收在下面。</p>
+  <div class="scene-body">
+    <div class="win" style="height:540px">
+      <aside class="rail">
+        <div class="back">☰ 回到应用</div>
+        <div class="grp">TODAY</div>
+        <div class="it on">太奶 · 讲解一段 Rust 所有权</div>
+        <div class="it">代码评审员 · 看看这个 PR</div>
+      </aside>
+      <main class="pane" style="background:var(--bg-1)">
+        <div class="composer-mock" style="margin-top:auto;margin-bottom:auto">
+          <div class="msg">帮我用大白话讲一下 ETag 和 Last-Modified 的区别</div>
+          <div class="picker-menu">
+            <div class="gh">置顶</div>
+            <div class="op"><span class="ava-tile" style="width:24px;height:24px" data-avatar data-shape="flower" data-color="#14b8a6" data-face="smile"></span><span>太奶</span><span class="de">耐心的讲解员</span><span class="meta"><span class="badge">直连</span><span>3 技能</span></span></div>
+            <div class="gh">我的智能体</div>
+            <div class="op"><span class="ava-tile" style="width:24px;height:24px" data-avatar data-shape="shield" data-color="#ec4899" data-face="focused"></span><span>代码评审员</span><span class="de">严格的代码守门员</span><span class="meta"><span class="badge">Claude Code</span><span>5 技能</span></span></div>
+            <div class="op"><span class="ava-tile" style="width:24px;height:24px" data-avatar data-shape="star" data-color="#8b5cf6" data-face="calm"></span><span>产品文案师</span><span class="de">中文写得像人话</span><span class="meta"><span class="badge">直连</span><span>2 技能</span></span></div>
+            <div class="op"><span class="ava-tile" style="width:24px;height:24px" data-avatar data-shape="diamond" data-color="#f97316" data-face="curious"></span><span>数据侦探</span><span class="de">用 SQL 回答问题</span><span class="meta"><span class="badge">直连</span><span>4 技能</span></span></div>
+            <div class="gh">内置目录 · 写作</div>
+            <div class="op"><span class="ava-tile" style="width:24px;height:24px;font-size:14px">✍️</span><span>技术写作者</span><span class="de">把实现细节写成读者能照做的文档</span><span class="meta"><span class="badge purple">内置</span></span></div>
+            <div class="ft"><span>＋ 新建智能体</span><span style="color:var(--tx-4)">·</span><span>管理智能体</span><span class="k">⌘, </span></div>
+          </div>
+          <div class="cbox">
+            <div class="txt"><span class="hash">#太奶</span> 帮我用大白话讲一下 ETag 和 Last-Modified 的区别</div>
+            <div class="btm"><span class="badge blue">⌘ Enter 发送</span><span style="margin-left:auto">按 <b style="color:var(--tx-2)">↑↓</b> 选择 · <b style="color:var(--tx-2)">Enter</b> 确认 · <b style="color:var(--tx-2)">Esc</b> 关闭</span></div>
+          </div>
+        </div>
+      </main>
+    </div>
+    <div class="notes">
+      <h4>要点</h4>
+      <ul>
+        <li>搜索同时匹配<b>名称 / 头衔 / 简介 / @标识</b>，中文名称也支持拼音首字母（由 @标识 提供）。</li>
+        <li>行尾的运行后端徽标让「这个 Bot 会用 CLI 改我的文件」在按 Enter 之前就能看见。</li>
+        <li>已隐藏的 Bot 不进菜单但仍在列表页；内置 Bot 只显示被启用且属于已开启分区的。</li>
+        <li>选中后输入框里的 <span class="mono">#名称</span> 高亮成一个 token，删掉即取消绑定（沿用现有行为）。</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 9. 会话中的 Bot ============ -->
+<section class="scene" id="s9">
+  <div class="scene-title"><span class="no">09</span><h2>会话里的身份、记忆与审批</h2></div>
+  <p class="scene-desc">Bot 干活的痕迹要出现在聊天里：谁在回答、跑在哪个后端、刚才是否写了记忆、有没有等你批准。</p>
+  <div class="scene-body">
+    <div class="win" style="height:640px">
+      <aside class="rail">
+        <div class="grp" style="margin-top:4px">线程 · 太奶</div>
+        <div class="it on">● ETag 和 Last-Modified</div>
+        <div class="it">昨天 · 讲讲正则回溯</div>
+        <div class="it">上周 · 复习一下 Git rebase</div>
+      </aside>
+      <main class="pane" style="background:var(--bg-1)">
+        <div class="composer-mock" style="gap:14px;max-width:720px;padding-top:22px">
+          <div class="rowflex" style="gap:9px;font-size:12.5px;color:var(--tx-3)">
+            <span class="ava-tile" style="width:22px;height:22px" data-avatar data-shape="flower" data-color="#14b8a6" data-face="smile"></span>
+            <b style="color:var(--tx-1);font-weight:600">太奶</b>
+            <span class="badge">直连 · claude-sonnet-4.5</span>
+            <span style="margin-left:auto">14:26</span>
+          </div>
+          <p style="font-size:13.5px;color:var(--tx-2);line-height:1.85">
+            一句话：<b style="color:var(--tx-1)">Last-Modified 是「东西什么时候改的」，ETag 是「东西现在长什么样」。</b><br>
+            时间能对上但内容被改回来了，Last-Modified 会误判成没变；ETag 用内容指纹，就不会。<br>
+            所以浏览器两个都带的时候，优先信 ETag。
+          </p>
+          <div class="toast">💾 记忆已更新 · <span style="color:var(--tx-3)">用户偏好「先结论后解释」</span> <span style="color:var(--blue-text)">查看变更</span></div>
+          <div class="approval">
+            <div class="h"><span>🧠</span><b style="font-weight:600">复盘建议写入 2 条记忆</b><span style="margin-left:auto;color:var(--tx-3);font-size:12px">需要你批准</span></div>
+            <div class="diff">
+              <div class="add">+ 用户在讲协议字段时，希望先给一句话结论，再展开原理。</div>
+              <div class="del">− 用户喜欢简短的回答。</div>
+              <div class="add">+ 用户的项目用 Tauri v2 + pnpm workspace，测试走 vitest。</div>
+            </div>
+            <div class="ft">
+              <button class="btn pri sm">全部批准</button>
+              <button class="btn sec sm">逐条审阅</button>
+              <button class="btn ghost sm">全部拒绝</button>
+              <span style="margin-left:auto;color:var(--tx-4);font-size:11.5px">写入后下一个会话生效</span>
+            </div>
+          </div>
+          <div class="deleg">
+            <span>↳</span><span>已委派给 <b style="color:var(--tx-2)">数据侦探</b> 查这张表的写入频率</span>
+            <span style="margin-left:auto;color:var(--blue-text)">展开子会话</span>
+          </div>
+        </div>
+      </main>
+    </div>
+    <div class="notes">
+      <h4>要点</h4>
+      <ul>
+        <li>消息头显示 <b>Bot 头像 + 名称 + 运行时</b>（含模型），切换 Bot 或后端后旧消息仍显示当时的身份。</li>
+        <li><span class="mono">💾 记忆已更新</span> 是<b>可点的一行</b>，不是一次性 toast：点开看变更预览，符合「所有写入都可见」。</li>
+        <li>待批队列按 <b>diff 形式</b>展示（新增绿、删除红），replace 会显示修改前后；顶部是唯一入口。</li>
+        <li>委派子会话以折叠行内联在这里，点开就是那个 Bot 自己的会话——不用去别处找。</li>
+        <li class="q">不做「正在思考…」这类假状态；不确定就显示真实阶段（等待首字 / 调用工具 / 等待你批准）。</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 10. 落地顺序 ============ -->
+<section class="scene" id="s10">
+  <div class="scene-title"><span class="no">10</span><h2>落地顺序与待确认</h2></div>
+  <p class="scene-desc">按 计划.md 分阶段做，每个阶段单独可发布、单独验收。本稿一次把最终形态画出来，是为了避免每次都改编辑器结构；实现时分阶段打开对应的页签。</p>
+  <div class="scene-body">
+    <div>
+      <table>
+        <thead><tr><th style="width:120px">阶段</th><th>内容</th><th style="width:150px">本稿覆盖</th></tr></thead>
+        <tbody>
+          <tr><td><b>阶段 1</b></td><td>Bot 数据结构 + 迁移 + 列表 + 编辑器（身份 / 人格 / 工作规则 / 能力-Skills）+ 拼装快照 + 导入导出 + 复制</td><td>场景 01–04、07、08</td></tr>
+          <tr><td><b>阶段 2</b></td><td>记忆（MEMORY / USER、工具、容量、安全扫描、审批）、会话检索、记忆面板</td><td>场景 06 记忆页、09 的记忆部分</td></tr>
+          <tr><td><b>阶段 3</b></td><td>运行后端三种 + 检测 + 定时任务与面板</td><td>场景 05、06 定时页</td></tr>
+          <tr><td><b>阶段 4</b></td><td>委派、协作者区块、群聊</td><td>场景 06 协作页、09 的委派行</td></tr>
+          <tr><td><b>阶段 5</b></td><td>AI 自写 skill、复盘建议、规则路由、学习时间线</td><td>未展开</td></tr>
+        </tbody>
+      </table>
+      <div class="card" style="margin-top:16px">
+        <div class="hd"><b style="font-size:13.5px">待你拍板的三件事</b><span class="badge warn">阻塞</span></div>
+        <div class="bd" style="display:flex;flex-direction:column;gap:12px;font-size:13px;color:var(--tx-2)">
+          <div><b>1. 生成形象要不要做？</b><br><span style="color:var(--tx-3)">做：Bot 有辨识度、离线生成、无需素材；代价是头像数据要从「emoji 字符串」扩成结构体（<span class="mono">{type,shape,color,face}</span>），迁移多一步。不做：只保留 emoji + 图片，工作量少一半。</span></div>
+          <div><b>2. 编辑器放在哪？</b><br><span style="color:var(--tx-3)">A. 设置页内的全屏编辑器（本稿方案，改动小、跟着设置页走）；B. 独立中心页签（像插件中心，不占设置页、可从侧栏直达，但要接入中心面互斥体系）。</span></div>
+          <div><b>3. 阶段 2–5 的页签现在显示吗？</b><br><span style="color:var(--tx-3)">A. 显示但置灰 + 「阶段 N 可用」说明（本稿方案，用户能预期路线）；B. 只显示已实现的页签，做完一阶段加一个（界面更干净，但每次升级布局会变）。</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="notes">
+      <h4>验收对齐</h4>
+      <ul>
+        <li>旧智能体全部迁移成功、内容一致，<span class="mono">#</span> 选择器正常。</li>
+        <li>只有人格的 Bot 与旧智能体<b>行为完全一致</b>（拼装结果除新增空区块外内容相同）。</li>
+        <li>导入标准 <span class="mono">SKILL.md</span> 目录后，Bot 能在需要时调用 <span class="mono">skill_view</span> 并按 skill 执行；未启用的 skill 不可见。</li>
+        <li>导出的 Bot 在另一台机器上能完整导入。</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<p style="margin-top:64px;color:var(--tx-4);font-size:12.5px">本稿为交互设计稿，仅用于确认结构与交互；确认后再进入实现。颜色、圆角、字号均取自 <span class="mono">src/styles/theme.css</span> 的暗色语义 token。</p>
+</div>
+
+<!-- ================= 模板：列表页 ================= -->
+<template id="list-template">
+  <div class="win">
+    <aside class="rail">
+      <div class="back">☰ 回到应用</div>
+      <div class="search">🔍 搜索设置</div>
+      <div class="grp">系统</div>
+      <div class="it">⚙ 通用</div>
+      <div class="it">🌐 网络代理</div>
+      <div class="it on">🤖 智能体与提示词</div>
+      <div class="grp">工作区</div>
+      <div class="it">🗂 工作区</div>
+      <div class="grp">能力扩展</div>
+      <div class="it">🧩 Skills</div>
+      <div class="it">🔌 MCP</div>
+    </aside>
+    <main class="pane" data-pane="list">
+      <div class="pane-head">
+        <h2>智能体与提示词</h2>
+        <div class="pilltab" style="margin-top:12px"><button aria-selected="true">🤖 智能体</button><button aria-selected="false">📄 提示词</button></div>
+      </div>
+      <div class="pane-body">
+        <div class="col">
+          <div class="pilltab"><button aria-selected="true">我的智能体 <span class="badge">6</span></button><button aria-selected="false">内置目录</button></div>
+          <div class="toolbar">
+            <div class="input">🔍<input data-search placeholder="搜索名称、头衔、简介或 @标识"></div>
+            <span style="position:relative">
+              <button class="btn sec" data-import-toggle>导入 ▾</button>
+              <span class="menu" data-import-menu hidden style="right:0;top:36px">
+                <button>📦 从文件导入（.zip）<span class="k">⌘O</span></button>
+                <button>📚 从内置目录复制…</button>
+                <button>📝 粘贴 Markdown…</button>
+              </span>
+            </span>
+            <button class="btn pri" data-new>＋ 新建智能体</button>
+          </div>
+          <div class="rowflex" style="gap:6px;flex-wrap:wrap">
+            <button class="chip" aria-pressed="true" data-filter="all">全部 6</button>
+            <button class="chip" data-filter="pinned"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 17v5"/><path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z"/></svg> 置顶 2</button>
+            <button class="chip" data-filter="custom">自定义 6</button>
+            <button class="chip" data-filter="builtin">内置 0</button>
+          </div>
+          <div class="card" data-list>
+            <div class="agentrow" data-name="太奶 耐心的讲解员 把复杂的东西讲成家常话 先讲结论再讲道理 tainai" data-pinned="1" data-kind="custom">
+              <span class="ava-tile" style="width:40px;height:40px" data-avatar data-shape="flower" data-color="#14b8a6" data-face="smile"></span>
+              <div style="min-width:0">
+                <div class="nm">太奶 <span class="ti">· 耐心的讲解员</span></div>
+                <div class="de">把复杂的东西讲成家常话，先讲结论再讲道理。</div>
+              </div>
+              <div class="rt">
+                <div class="rowflex" style="gap:2px">
+                  <span class="badge">直连</span>
+                  <button class="iconbtn on" data-pin title="取消置顶"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 17v5"/><path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z"/></svg></button>
+                  <button class="iconbtn" data-more title="更多">⋯</button>
+                </div>
+                <div style="font-size:11.5px;color:var(--tx-4)">3 技能 · 12 条记忆 · 1 定时</div>
+              </div>
+            </div>
+            <div class="agentrow" data-name="代码评审员 严格的代码守门员 只挑真正会影响运行的毛病 按严重程度排序 reviewer" data-pinned="1" data-kind="custom">
+              <span class="ava-tile" style="width:40px;height:40px" data-avatar data-shape="shield" data-color="#ec4899" data-face="focused"></span>
+              <div style="min-width:0">
+                <div class="nm">代码评审员 <span class="ti">· 严格的代码守门员</span></div>
+                <div class="de">只挑真正会影响运行的毛病，按严重程度排序，不给风格建议。</div>
+              </div>
+              <div class="rt">
+                <div class="rowflex" style="gap:2px">
+                  <span class="badge">Claude Code</span>
+                  <button class="iconbtn on" data-pin title="取消置顶"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 17v5"/><path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z"/></svg></button>
+                  <button class="iconbtn" data-more title="更多">⋯</button>
+                </div>
+                <div style="font-size:11.5px;color:var(--tx-4)">5 技能 · 8 条记忆</div>
+              </div>
+            </div>
+            <div class="agentrow" data-name="产品文案师 中文写得像人话 把功能点写成用户能读懂的短句 copy" data-kind="custom">
+              <span class="ava-tile" style="width:40px;height:40px" data-avatar data-shape="star" data-color="#8b5cf6" data-face="calm"></span>
+              <div style="min-width:0">
+                <div class="nm">产品文案师 <span class="ti">· 中文写得像人话</span></div>
+                <div class="de">把功能点写成用户能读懂的短句，不堆形容词。</div>
+              </div>
+              <div class="rt">
+                <div class="rowflex" style="gap:2px">
+                  <span class="badge">直连</span>
+                  <button class="iconbtn" data-pin title="置顶"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 17v5"/><path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z"/></svg></button>
+                  <button class="iconbtn" data-more title="更多">⋯</button>
+                </div>
+                <div style="font-size:11.5px;color:var(--tx-4)">2 技能</div>
+              </div>
+            </div>
+            <div class="agentrow" data-name="数据侦探 用 SQL 回答问题 先确认口径 再动手查数 sql" data-kind="custom">
+              <span class="ava-tile" style="width:40px;height:40px" data-avatar data-shape="diamond" data-color="#f97316" data-face="curious"></span>
+              <div style="min-width:0">
+                <div class="nm">数据侦探 <span class="ti">· 用 SQL 回答问题</span></div>
+                <div class="de">先确认口径，再动手查数；结果一定带查询语句。</div>
+              </div>
+              <div class="rt">
+                <div class="rowflex" style="gap:2px">
+                  <span class="badge">直连</span>
+                  <button class="iconbtn" data-pin title="置顶"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 17v5"/><path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z"/></svg></button>
+                  <button class="iconbtn" data-more title="更多">⋯</button>
+                </div>
+                <div style="font-size:11.5px;color:var(--tx-4)">4 技能 · 21 条记忆</div>
+              </div>
+            </div>
+            <div class="agentrow" data-name="会议纪要员 从录音到行动项 提取决议 负责人与截止时间 notes" data-kind="custom">
+              <span class="ava-tile" style="width:40px;height:40px" data-avatar data-shape="cloud" data-color="#3b82f6" data-face="neutral"></span>
+              <div style="min-width:0">
+                <div class="nm">会议纪要员 <span class="ti">· 从录音到行动项</span></div>
+                <div class="de">提取决议、负责人与截止时间，散会十分钟内给出纪要。</div>
+              </div>
+              <div class="rt">
+                <div class="rowflex" style="gap:2px">
+                  <span class="badge">Codex</span>
+                  <button class="iconbtn" data-pin title="置顶"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 17v5"/><path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z"/></svg></button>
+                  <button class="iconbtn" data-more title="更多">⋯</button>
+                </div>
+                <div style="font-size:11.5px;color:var(--tx-4)">1 技能 · 2 定时</div>
+              </div>
+            </div>
+            <div class="agentrow" data-name="系统架构师 内置 John 从边界条件开始 架构" data-kind="builtin">
+              <span class="ava-tile" style="width:40px;height:40px;font-size:18px">🏛</span>
+              <div style="min-width:0">
+                <div class="nm">系统架构师 <span class="ti">· 内置目录</span></div>
+                <div class="de">从边界条件和失败路径开始设计，先给取舍再给方案。</div>
+              </div>
+              <div class="rt">
+                <div class="rowflex" style="gap:2px">
+                  <span class="badge purple">内置，只读</span>
+                  <button class="iconbtn" data-more title="更多">⋯</button>
+                </div>
+                <div style="font-size:11.5px;color:var(--tx-4)">编辑时复制一份到我的智能体</div>
+              </div>
+            </div>
+          </div>
+          <div class="dim" style="font-size:12.5px">已隐藏 · 1</div>
+          <div class="card" data-hidden hidden>
+            <div class="agentrow" data-name="临时翻译 中英互译 translate" data-hidden-row>
+              <span class="ava-tile" style="width:40px;height:40px;font-size:18px">🌐</span>
+              <div style="min-width:0">
+                <div class="nm">临时翻译 <span class="ti">· 中英互译</span></div>
+                <div class="de">只做翻译，不加解释。</div>
+              </div>
+              <div class="rt">
+                <div class="rowflex" style="gap:2px">
+                  <span class="badge">直连</span>
+                  <button class="iconbtn" data-unhide title="恢复显示">↩</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+</template>
+
+<!-- ================= 模板：编辑器 ================= -->
+<template id="editor-template">
+  <div class="win tall">
+    <aside class="rail">
+      <div class="back">☰ 回到应用</div>
+      <div class="search">🔍 搜索设置</div>
+      <div class="grp">系统</div>
+      <div class="it">⚙ 通用</div>
+      <div class="it on">🤖 智能体与提示词</div>
+      <div class="grp">能力扩展</div>
+      <div class="it">🧩 Skills</div>
+      <div class="it">🔌 MCP</div>
+    </aside>
+    <main class="pane" data-pane="editor">
+      <div class="editor">
+        <div class="ed-head">
+          <button class="btn ghost sm" data-back>← 返回列表</button>
+          <div class="t">
+            <span class="ava-tile" style="width:26px;height:26px" data-avatar data-live data-shape="flower" data-color="#14b8a6" data-face="smile"></span>
+            <span class="nm">太奶</span>
+            <span class="badge">自定义</span>
+          </div>
+          <span class="save">已自动保存 · 14:32</span>
+          <button class="btn sec sm" data-preview-toggle>👁 拼装预览</button>
+          <button class="btn ghost sm icon" title="更多">⋯</button>
+        </div>
+        <div class="ed-body">
+          <!-- 左：身份 -->
+          <div class="idcol">
+            <div class="ava-stage">
+              <span class="big" data-avatar data-live data-shape="flower" data-color="#14b8a6" data-face="smile"></span>
+              <span class="cap" data-ava-cap>生成形象 · 花色</span>
+            </div>
+            <div class="seg" style="width:100%;justify-content:center" data-src>
+              <button aria-selected="true" data-src-btn="gen">生成形象</button>
+              <button aria-selected="false" data-src-btn="emoji">表情符号</button>
+              <button aria-selected="false" data-src-btn="image">图片</button>
+            </div>
+            <div class="picker" data-when="gen">
+              <div>
+                <div class="pk-label">形状</div>
+                <div class="shape-row">
+                  <button data-shape="petal" aria-pressed="false" title="圆角方"><span data-avatar data-shape="petal" data-color="#14b8a6" data-face="smile"></span></button>
+                  <button data-shape="flower" aria-pressed="true" title="四瓣"><span data-avatar data-shape="flower" data-color="#14b8a6" data-face="smile"></span></button>
+                  <button data-shape="star" aria-pressed="false" title="星"><span data-avatar data-shape="star" data-color="#14b8a6" data-face="smile"></span></button>
+                  <button data-shape="heart" aria-pressed="false" title="心"><span data-avatar data-shape="heart" data-color="#14b8a6" data-face="smile"></span></button>
+                  <button data-shape="cloud" aria-pressed="false" title="云"><span data-avatar data-shape="cloud" data-color="#14b8a6" data-face="smile"></span></button>
+                  <button data-shape="diamond" aria-pressed="false" title="菱"><span data-avatar data-shape="diamond" data-color="#14b8a6" data-face="smile"></span></button>
+                  <button data-shape="shield" aria-pressed="false" title="盾"><span data-avatar data-shape="shield" data-color="#14b8a6" data-face="smile"></span></button>
+                  <button data-shape="slender" aria-pressed="false" title="瘦长"><span data-avatar data-shape="slender" data-color="#14b8a6" data-face="smile"></span></button>
+                  <button data-shape="pocket" aria-pressed="false" title="口袋"><span data-avatar data-shape="pocket" data-color="#14b8a6" data-face="smile"></span></button>
+                </div>
+              </div>
+              <div>
+                <div class="pk-label">颜色</div>
+                <div class="color-row">
+                  <button data-color="#3b82f6" style="background:#3b82f6" title="蓝"></button>
+                  <button data-color="#14b8a6" style="background:#14b8a6" aria-pressed="true" title="青"></button>
+                  <button data-color="#8b5cf6" style="background:#8b5cf6" title="紫"></button>
+                  <button data-color="#ec4899" style="background:#ec4899" title="粉"></button>
+                  <button data-color="#ef4444" style="background:#ef4444" title="红"></button>
+                  <button data-color="#f97316" style="background:#f97316" title="橙"></button>
+                  <button data-color="#06b6d4" style="background:#06b6d4" title="天蓝"></button>
+                  <button data-color="#84cc16" style="background:#84cc16" title="黄绿"></button>
+                  <button data-color="#22c55e" style="background:#22c55e" title="绿"></button>
+                  <button class="custom" title="自定义">＋</button>
+                </div>
+              </div>
+              <div>
+                <div class="pk-label">表情</div>
+                <div class="face-row">
+                  <button data-face="neutral" aria-pressed="false" title="平静"><span data-avatar data-shape="flower" data-color="#14b8a6" data-face="neutral"></span></button>
+                  <button data-face="smile" aria-pressed="true" title="微笑"><span data-avatar data-shape="flower" data-color="#14b8a6" data-face="smile"></span></button>
+                  <button data-face="curious" aria-pressed="false" title="好奇"><span data-avatar data-shape="flower" data-color="#14b8a6" data-face="curious"></span></button>
+                  <button data-face="focused" aria-pressed="false" title="认真"><span data-avatar data-shape="flower" data-color="#14b8a6" data-face="focused"></span></button>
+                  <button data-face="sleepy" aria-pressed="false" title="困了"><span data-avatar data-shape="flower" data-color="#14b8a6" data-face="sleepy"></span></button>
+                  <button data-face="wink" aria-pressed="false" title="俏皮"><span data-avatar data-shape="flower" data-color="#14b8a6" data-face="wink"></span></button>
+                </div>
+              </div>
+            </div>
+            <div class="picker" data-when="emoji" hidden>
+              <div class="pk-label">表情符号</div>
+              <div class="emoji-grid">
+                <button>🤖</button><button>🧠</button><button>🦊</button><button>🧭</button><button>🛠️</button><button>🎨</button>
+                <button>📝</button><button>🔍</button><button>🧪</button><button>📊</button><button>🚀</button><button>💡</button>
+                <button>🐛</button><button>📚</button><button>🏛</button><button>🧩</button><button>🌐</button><button>⚡</button>
+              </div>
+            </div>
+            <div class="picker" data-when="image" hidden>
+              <div class="dropzone">拖入图片，或点击选择<br><span style="color:var(--tx-4)">PNG / JPG / WebP · 建议 512×512</span></div>
+            </div>
+            <div class="fields">
+              <div class="fld"><label>名称</label><div class="input"><input value="太奶" maxlength="16"></div></div>
+              <div class="fld"><label>头衔</label><div class="input"><input value="耐心的讲解员" maxlength="24"></div><div class="hint">一句话说清它在团队里的角色，会出现在列表和 # 菜单里。</div></div>
+              <div class="fld"><label>简介</label><textarea class="area" rows="3" maxlength="80">把复杂的东西讲成家常话，先讲结论再讲道理。</textarea><div class="cnt">24 / 80</div><div class="hint">其他 Bot 靠这句认识它，会进「协作者」区块。</div></div>
+              <div class="fld"><label>@ 标识</label><div class="input"><span style="color:var(--tx-4)">@</span><input value="tainai" class="mono"></div><div class="hint">用于群聊 @ 与任务委派；由名称自动生成，可改，全库唯一。</div></div>
+            </div>
+            <div style="margin-top:auto;font-size:11.5px;color:var(--tx-4);line-height:1.9">
+              创建于 2026-09-01 · 更新于 2 分钟前<br>数据结构版本 v1 · 来源：自定义
+            </div>
+          </div>
+          <!-- 右：分区 -->
+          <div class="maincol">
+            <div class="tabsrow" data-tabs>
+              <button data-tab="soul" aria-selected="true">人格</button>
+              <button data-tab="rules" aria-selected="false">工作规则</button>
+              <button data-tab="skills" aria-selected="false">能力</button>
+              <button data-tab="runtime" aria-selected="false">运行后端 <span class="badge" style="height:16px;font-size:10px">阶段 3</span></button>
+              <button data-tab="memory" aria-selected="false">记忆</button>
+              <button data-tab="routines" aria-selected="false">定时任务</button>
+              <button data-tab="collab" aria-selected="false">协作</button>
+              <span class="sp"></span>
+            </div>
+            <div class="secbody">
+
+              <!-- 人格 -->
+              <div class="secwrap" data-sec="soul">
+                <div>
+                  <div class="secttl">人格（SOUL）</div>
+                  <div class="secdesc">决定它「怎么说」——性格、语气、价值观，以及不确定的时候怎么表态。</div>
+                </div>
+                <div class="note"><span>💡</span><div><b>迁移提示：</b>旧智能体的提示词已经放进这里了。原来怎么用，现在照旧。</div></div>
+                <div class="md-editor">
+                  <div class="bar"><span>Markdown</span><span style="margin-left:auto">插入模板 ▾</span></div>
+                  <div class="txt">你是「太奶」，家里最会讲道理的人。
+
+- 说话像唠家常，先给结论，再讲为什么，最后给一个能立刻试的例子。
+- 不爱用行话；出现专业词就顺手用一句大白话解释。
+- 不确定就直说「这块我没把握」，然后给出你判断的依据，不要硬答。
+- 从不催促用户，也不说「你应该早就知道」。</div>
+                  <div class="foot"><span>1,240 字</span><span>·</span><span>纯文本也可以</span>
+                    <div class="usage"><div class="l"><span>人格 + 工作规则</span><b>4,420 / 10,000</b></div><div class="bar"><i style="width:44%"></i></div></div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- 工作规则 -->
+              <div class="secwrap" data-sec="rules" hidden>
+                <div>
+                  <div class="secttl">工作规则（AGENTS）</div>
+                  <div class="secdesc">决定它「怎么做」——职责、工作流程、限制条件、输出格式。</div>
+                </div>
+                <div class="note"><span>⚠️</span><div><b>和人格重复了 1 处：</b>「先给结论」在两页都写了一次，模型会读到两次。建议只留一处。</div></div>
+                <div class="md-editor">
+                  <div class="bar"><span>Markdown</span><span style="margin-left:auto">插入模板 ▾</span></div>
+                  <div class="txt"># 职责
+- 解释概念、对比方案、复习知识点。
+
+# 流程
+1. 先判断用户在问什么层次的问题（是什么 / 为什么 / 怎么选）。
+2. 给结论 → 给最少必要的原理 → 给一个可试的例子。
+3. 涉及代码时给出能直接运行的最小片段。
+
+# 输出格式
+- 不超过 300 字，除非用户要求展开。
+- 需要对比时用表格，不用长段落。
+
+# 不做什么
+- 不编造 API 或版本号。
+- 不替用户做决定，只给取舍。</div>
+                  <div class="foot"><span>3,180 字</span><span>·</span><span>与人格合计 4,420 / 10,000</span></div>
+                </div>
+              </div>
+
+              <!-- 能力 -->
+              <div class="secwrap" data-sec="skills" hidden>
+                <div>
+                  <div class="secttl">能力</div>
+                  <div class="secdesc">只把技能的名称和描述放进提示词；Bot 需要时再读全文。未勾选的技能对这个 Bot 完全不可见。</div>
+                </div>
+                <div class="card">
+                  <div class="hd">
+                    <b style="font-size:13px">Skills（3 / 12 已启用）</b>
+                    <div class="rowflex" style="gap:8px">
+                      <span class="rowflex" style="gap:6px;font-size:12.5px;color:var(--tx-3)"><span class="sw" aria-checked="false"></span>全部技能 *</span>
+                      <button class="btn sec sm">打开技能库 →</button>
+                    </div>
+                  </div>
+                  <div class="skillrow">
+                    <span class="ico">📄</span>
+                    <div style="flex:1;min-width:0"><div class="nm">pdf-translate</div><div class="de">翻译 PDF 或长文档并保留中英对照时使用</div></div>
+                    <span class="badge">应用托管</span><span style="font-size:11.5px;color:var(--tx-4)">用过 12 次</span>
+                    <span class="sw" aria-checked="true"></span>
+                  </div>
+                  <div class="skillrow">
+                    <span class="ico">📊</span>
+                    <div style="flex:1;min-width:0"><div class="nm">sql-explain</div><div class="de">解释一条 SQL 的执行计划与索引命中情况</div></div>
+                    <span class="badge">内置</span><span style="font-size:11.5px;color:var(--tx-4)">用过 3 次</span>
+                    <span class="sw" aria-checked="true"></span>
+                  </div>
+                  <div class="skillrow">
+                    <span class="ico">🧪</span>
+                    <div style="flex:1;min-width:0"><div class="nm">vitest-repro</div><div class="de">把线上 bug 收敛成一个能跑失败的 vitest 用例</div></div>
+                    <span class="badge">我导入的</span><span style="font-size:11.5px;color:var(--tx-4)">还没用过</span>
+                    <span class="sw" aria-checked="true"></span>
+                  </div>
+                  <div class="skillrow off">
+                    <span class="ico">🎨</span>
+                    <div style="flex:1;min-width:0"><div class="nm">slide-deck</div><div class="de">把一篇文档转成 12 页以内的演示稿</div></div>
+                    <span class="badge">应用托管</span><span style="font-size:11.5px;color:var(--tx-4)">未启用</span>
+                    <span class="sw" aria-checked="false"></span>
+                  </div>
+                  <div class="skillrow off">
+                    <span class="ico">📦</span>
+                    <div style="flex:1;min-width:0"><div class="nm">release-notes</div><div class="de">从 git log 生成给用户看的版本说明</div></div>
+                    <span class="badge">应用托管</span><span style="font-size:11.5px;color:var(--tx-4)">未启用</span>
+                    <span class="sw" aria-checked="false"></span>
+                  </div>
+                  <div class="foot" style="padding:10px 14px;display:flex;align-items:center;font-size:12px;color:var(--tx-3)">
+                    提示词里的技能索引 <b style="color:var(--tx-2);margin:0 4px">420 / 3,000 字</b>
+                    <div class="bar" style="flex:1;margin:0 12px"><i style="width:14%"></i></div>
+                  </div>
+                </div>
+                <div class="card">
+                  <div class="hd"><b style="font-size:13px">内置工具</b><span class="badge warn">阶段 2–4 逐个开放</span></div>
+                  <div class="skillrow"><span class="ico">🧠</span><div style="flex:1"><div class="nm" style="font-family:inherit">记忆读写</div><div class="de">memory：记下偏好、纠正与踩坑经验</div></div><span class="badge">阶段 2</span><span class="sw" aria-checked="true"></span></div>
+                  <div class="skillrow"><span class="ico">🔎</span><div style="flex:1"><div class="nm" style="font-family:inherit">历史会话检索</div><div class="de">session_search：翻过去的对话找依据</div></div><span class="badge">阶段 2</span><span class="sw" aria-checked="true"></span></div>
+                  <div class="skillrow off"><span class="ico">🤝</span><div style="flex:1"><div class="nm" style="font-family:inherit">委派任务</div><div class="de">delegate_task：把子任务交给其他 Bot</div></div><span class="badge">阶段 4</span><span class="sw" aria-checked="false"></span></div>
+                </div>
+                <div class="card">
+                  <div class="hd"><b style="font-size:13px">MCP 服务</b><button class="btn ghost sm">跟随全局设置 →</button></div>
+                  <div class="skillrow"><span class="ico">🔌</span><div style="flex:1"><div class="nm" style="font-family:inherit">github</div><div class="de">读取仓库、issue 与 PR</div></div><span class="sw" aria-checked="true"></span></div>
+                  <div class="skillrow off"><span class="ico">🔌</span><div style="flex:1"><div class="nm" style="font-family:inherit">postgres</div><div class="de">只读查询本地数据库</div></div><span class="sw" aria-checked="false"></span></div>
+                </div>
+              </div>
+
+              <!-- 运行后端 -->
+              <div class="secwrap" data-sec="runtime" hidden>
+                <div>
+                  <div class="secttl">运行后端</div>
+                  <div class="secdesc">这个 Bot 用谁来干活。检测结果来自本机，最后检测于 14:20。</div>
+                </div>
+                <div class="rtgrid">
+                  <button class="rtcard" aria-pressed="true">
+                    <div class="h">✨ <b style="font-weight:600">直连模型</b></div>
+                    <div class="s">用应用里配置的模型直接跑，支持记忆与技能工具。</div>
+                    <div class="s" style="color:var(--blue-text)">✓ 可用</div>
+                  </button>
+                  <button class="rtcard">
+                    <div class="h">🧡 <b style="font-weight:600">Claude Code</b></div>
+                    <div class="s">在本机仓库里执行，能改文件、跑测试。</div>
+                    <div class="s ok">✓ v2.0.30 · 已登录</div>
+                  </button>
+                  <button class="rtcard" disabled>
+                    <div class="h">🖤 <b style="font-weight:600">Codex</b></div>
+                    <div class="s">未检测到可执行文件。</div>
+                    <div class="s warn">⚠ 未安装 · 装好后点重新检测</div>
+                  </button>
+                </div>
+                <div class="card">
+                  <div class="hd"><b style="font-size:13px">直连模型的设置</b><button class="btn sec sm">重新检测</button></div>
+                  <div class="bd" style="display:flex;flex-direction:column;gap:14px">
+                    <div class="fld"><label>模型</label><div class="input"><select style="flex:1;background:transparent;border:0;outline:0"><option>跟随默认（claude-sonnet-4.5）</option><option>gpt-5.1</option><option>claude-opus-4.1</option></select></div></div>
+                    <div class="fld"><label>权限模式</label>
+                      <div class="seg"><button aria-selected="true">每次询问</button><button aria-selected="false">自动安全</button><button aria-selected="false">完全放行</button></div>
+                      <div class="hint">涉及写文件、跑命令、装依赖时会先问你。选「完全放行」需要二次确认。</div>
+                    </div>
+                  </div>
+                </div>
+                <div class="note"><span>ℹ️</span><div><b>CLI 模式下的记忆：</b>CLI 进程里拿不到应用内工具，所以改由「会话结束后必跑一次复盘」写入记忆。这一条在选 CLI 后会在卡片上明确写出。</div></div>
+              </div>
+
+              <!-- 记忆 -->
+              <div class="secwrap" data-sec="memory" hidden>
+                <div>
+                  <div class="secttl">记忆</div>
+                  <div class="secdesc">Bot 自己记下的偏好、纠正与踩坑经验；用户画像是全局的，所有 Bot 共用一份。</div>
+                </div>
+                <div class="card">
+                  <div class="skillrow"><span class="ico">🧠</span><div style="flex:1"><div class="nm" style="font-family:inherit">启用记忆</div><div class="de">会话开始时把这些笔记注入提示词</div></div><span class="sw" aria-checked="true"></span></div>
+                  <div class="skillrow"><span class="ico">✋</span><div style="flex:1"><div class="nm" style="font-family:inherit">写入需要我审批</div><div class="de">开启后写入先进待批队列，批准才生效</div></div><span class="sw" aria-checked="false"></span></div>
+                  <div class="skillrow"><span class="ico">🔁</span><div style="flex:1"><div class="nm" style="font-family:inherit">后台复盘</div><div class="de">每轮结束后自动提炼值得长期保存的内容</div></div><span class="sw" aria-checked="true"></span></div>
+                  <div class="skillrow"><span class="ico">⏱</span><div style="flex:1"><div class="nm" style="font-family:inherit">复盘间隔</div><div class="de">累计多少轮对话触发一次</div></div><span class="input" style="width:84px;height:28px"><input class="mono" value="5" style="width:100%"></span><span style="font-size:12.5px;color:var(--tx-3)">轮</span></div>
+                  <div class="skillrow"><span class="ico">💾</span><div style="flex:1"><div class="nm" style="font-family:inherit">聊天里显示「记忆已更新」</div><div class="de">关闭后写入仍会发生，只是不提示</div></div><span class="sw" aria-checked="true"></span></div>
+                </div>
+                <div class="card">
+                  <div class="hd"><b style="font-size:13px">用量</b><span style="font-size:12px;color:var(--tx-3)">超过上限时 Bot 会在同一轮里合并条目，不会静默丢弃</span></div>
+                  <div class="bd" style="display:flex;flex-direction:column;gap:16px">
+                    <div><div class="l" style="display:flex;justify-content:space-between;font-size:12.5px;color:var(--tx-2);margin-bottom:6px"><span>太奶的笔记（MEMORY）</span><span>1,474 / 2,200</span></div><div class="bar"><i style="width:67%"></i></div></div>
+                    <div><div class="l" style="display:flex;justify-content:space-between;font-size:12.5px;color:var(--tx-2);margin-bottom:6px"><span>用户画像（USER）<span class="badge" style="margin-left:6px">全局</span></span><span>612 / 1,375</span></div><div class="bar"><i style="width:45%"></i></div></div>
+                  </div>
+                </div>
+                <div class="card">
+                  <div class="hd"><b style="font-size:13px">最近的笔记</b><button class="btn sec sm">打开记忆面板 →</button></div>
+                  <div class="bd" style="display:flex;flex-direction:column;gap:2px">
+                    <div class="memrow"><span class="badge blue">复盘</span><div>用户在讲协议字段时，希望先给一句话结论，再展开原理。</div><span style="margin-left:auto;color:var(--tx-4);font-size:11.5px">今天 14:26</span></div>
+                    <div class="memrow"><span class="badge">Bot</span><div>项目用 Tauri v2 + pnpm workspace，测试走 vitest；不要建议 npm。</div><span style="margin-left:auto;color:var(--tx-4);font-size:11.5px">昨天</span></div>
+                    <div class="memrow"><span class="badge lime">你要求</span><div>解释概念时不要用「简单来说」开头。</div><span style="margin-left:auto;color:var(--tx-4);font-size:11.5px">3 天前</span></div>
+                  </div>
+                  <div class="foot" style="padding:10px 14px;display:flex;gap:8px;border-top:1px solid var(--sep)">
+                    <button class="btn sec sm">导出 MEMORY.md</button>
+                    <button class="btn ghost sm" style="color:var(--red)">清空这个 Bot 的记忆…</button>
+                  </div>
+                </div>
+              </div>
+
+              <!-- 定时任务 -->
+              <div class="secwrap" data-sec="routines" hidden>
+                <div>
+                  <div class="secttl">定时任务</div>
+                  <div class="secdesc">到点自动跑一次，结果出现在这个 Bot 的聊天里。客户端没运行时不会跑，启动后最多补跑一次。</div>
+                </div>
+                <div class="card">
+                  <div class="hd"><b style="font-size:13px">1 个任务</b><button class="btn pri sm">＋ 新建定时任务</button></div>
+                  <div class="skillrow">
+                    <span class="ico">⏰</span>
+                    <div style="flex:1;min-width:0">
+                      <div class="nm" style="font-family:inherit">每天早上梳理待办</div>
+                      <div class="de">每天 09:00 · 下次 明天 09:00 · 上次 ✓ 今天 09:00</div>
+                    </div>
+                    <button class="btn ghost sm">运行一次</button>
+                    <span class="sw" aria-checked="true"></span>
+                    <button class="iconbtn" title="更多">⋯</button>
+                  </div>
+                </div>
+                <div class="note"><span>🕘</span><div><b>新建时的选择方式：</b>频率（每天 / 每周 / 每月 / 自定义）→ 具体时间，用结构化选择器；高级模式才直接填 cron 表达式。</div></div>
+              </div>
+
+              <!-- 协作 -->
+              <div class="secwrap" data-sec="collab" hidden>
+                <div>
+                  <div class="secttl">协作</div>
+                  <div class="secdesc">这个 Bot 可以把子任务交给谁；被委派的 Bot 用它自己的人格、规则和运行后端执行。</div>
+                </div>
+                <div class="card">
+                  <div class="skillrow"><span class="ico">🤝</span><div style="flex:1"><div class="nm" style="font-family:inherit">可以委派给</div><div class="de">默认全部未隐藏的 Bot</div></div>
+                    <div class="seg"><button aria-selected="false">全部</button><button aria-selected="true">手动指定</button></div>
+                  </div>
+                  <div class="bd" style="display:flex;gap:6px;flex-wrap:wrap">
+                    <span class="chip" aria-pressed="true"><span data-avatar data-shape="shield" data-color="#ec4899" data-face="focused" style="width:14px;height:14px"></span>代码评审员</span>
+                    <span class="chip" aria-pressed="true"><span data-avatar data-shape="diamond" data-color="#f97316" data-face="curious" style="width:14px;height:14px"></span>数据侦探</span>
+                    <span class="chip" aria-pressed="false"><span data-avatar data-shape="star" data-color="#8b5cf6" data-face="calm" style="width:14px;height:14px"></span>产品文案师</span>
+                  </div>
+                </div>
+                <div class="note"><span>🧭</span><div><b>限制：</b>委派深度最多 2 层（A→B→C），同时进行的委派最多 3 个；被委派的会话是独立子会话，结果以工具结果返回，可展开查看。</div></div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <!-- 拼装预览抽屉 -->
+        <div class="drawer" data-drawer hidden>
+          <div class="hd"><span>👁</span><span class="t">拼装预览</span><span class="badge" style="margin-left:auto">会话开始时冻结</span><button class="iconbtn" data-preview-close title="关闭">✕</button></div>
+          <div class="bd">
+            <div class="blk"><div class="h"><span class="n">1</span><span class="t">应用基础系统提示</span><span class="c">2,140 字</span></div><div class="prev">你是 CC GUI 的编码助手…</div></div>
+            <div class="blk"><div class="h"><span class="n">2</span><span class="t"># 你的身份</span><span class="c">86 字</span></div><div class="prev">你是「太奶」，头衔「耐心的讲解员」…</div></div>
+            <div class="blk"><div class="h"><span class="n">3</span><span class="t"># 你的人格</span><span class="c">1,240 字</span></div><div class="prev">你是「太奶」，家里最会讲道理的人。</div></div>
+            <div class="blk"><div class="h"><span class="n">4</span><span class="t"># 工作规则</span><span class="c">3,180 字</span></div><div class="prev"># 职责 - 解释概念、对比方案…</div></div>
+            <div class="blk"><div class="h"><span class="n">5</span><span class="t"># 关于用户 (USER)</span><span class="c">612 字</span></div><div class="prev">- 用户是独立开发者，中文沟通…</div></div>
+            <div class="blk"><div class="h"><span class="n">6</span><span class="t"># 你的笔记 (MEMORY)</span><span class="c">1,474 / 2,200</span></div><div class="prev">- 项目用 Tauri v2 + pnpm workspace…</div></div>
+            <div class="blk"><div class="h"><span class="n">7</span><span class="t"># 可用 Skills</span><span class="c">420 / 3,000</span></div><div class="prev">- pdf-translate：翻译 PDF 或长文档并保留中英对照时使用</div></div>
+            <div class="blk"><div class="h"><span class="n">8</span><span class="t"># 记忆使用说明</span><span class="c">980 字</span></div><div class="prev">你有持久记忆，下次对话还能看到。用 memory 工具管理…</div></div>
+            <div class="blk skip"><div class="h"><span class="n">9</span><span class="t"># 协作者</span><span class="c">已省略 · 未指定</span></div><div class="prev">（该区块为空，整块不进提示词）</div></div>
+            <div class="blk"><div class="h"><span class="t">合计</span><span class="c">10,132 字 · 约 6.4k tokens</span></div><div class="bar" style="margin-top:8px"><i style="width:84%"></i></div></div>
+          </div>
+          <div class="ft">
+            <button class="btn sec sm">复制全文</button>
+            <button class="btn ghost sm">刷新上下文</button>
+            <span style="margin-left:auto;font-size:11.5px;color:var(--tx-4)">刷新会让前缀缓存失效</span>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+</template>
+
+<script>
+/* ===================== 生成形象（SVG） ===================== */
+const SHAPES = {
+  petal:  { kind:"path", d:"M50 4C84 4 96 16 96 50C96 84 84 96 50 96C16 96 4 84 4 50C4 16 16 4 50 4Z" },
+  flower: { kind:"g", parts:[[50,26,22],[74,50,22],[50,74,22],[26,50,22],[50,50,26]] },
+  star:   { kind:"poly", pts:"50,8 62,37 93,39 69,58 78,88 50,71 22,88 31,58 7,39 38,37" },
+  heart:  { kind:"path", d:"M50 90C20 68 8 52 8 36C8 22 19 12 32 12C40 12 46 16 50 23C54 16 60 12 68 12C81 12 92 22 92 36C92 52 80 68 50 90Z" },
+  cloud:  { kind:"g", parts:[[30,60,20],[52,45,26],[74,60,18],[50,66,24]] },
+  diamond:{ kind:"path", d:"M50 6C53 6 56 7 59 10L90 41C96 47 96 53 90 59L59 90C53 96 47 96 41 90L10 59C4 53 4 47 10 41L41 10C44 7 47 6 50 6Z" },
+  shield: { kind:"path", d:"M50 5C61 11 73 14 87 14C89 40 88 62 76 78C68 89 59 94 50 96C41 94 32 89 24 78C12 62 11 40 13 14C27 14 39 11 50 5Z" },
+  slender:{ kind:"path", d:"M50 5C61 5 70 14 70 25L70 75C70 86 61 95 50 95C39 95 30 86 30 75L30 25C30 14 39 5 50 5Z" },
+  pocket: { kind:"path", d:"M24 5H76C86 5 95 14 95 24V76C95 86 86 95 76 95H24C14 95 5 86 5 76V24C5 14 14 5 24 5Z" }
+};
+const FACES = {
+  neutral: `<circle cx="38" cy="50" r="4.6"/><circle cx="62" cy="50" r="4.6"/><rect x="42" y="65" width="16" height="3.4" rx="1.7"/>`,
+  smile:   `<circle cx="38" cy="49" r="4.6"/><circle cx="62" cy="49" r="4.6"/><path d="M41 62q9 9 18 0" fill="none" stroke-width="3.6" stroke-linecap="round"/>`,
+  curious: `<circle cx="37" cy="48" r="5.6"/><circle cx="63" cy="50" r="4"/><circle cx="50" cy="67" r="3.6"/>`,
+  focused: `<rect x="28" y="40" width="15" height="3.4" rx="1.7" transform="rotate(-8 35 42)"/><rect x="58" y="40" width="15" height="3.4" rx="1.7" transform="rotate(8 65 42)"/><circle cx="37" cy="52" r="4.4"/><circle cx="63" cy="52" r="4.4"/><rect x="42" y="67" width="16" height="3.4" rx="1.7"/>`,
+  sleepy:  `<path d="M31 50q7 8 14 0" fill="none" stroke-width="3.8" stroke-linecap="round"/><path d="M55 50q7 8 14 0" fill="none" stroke-width="3.8" stroke-linecap="round"/><circle cx="50" cy="68" r="3.6"/>`,
+  wink:    `<circle cx="38" cy="49" r="4.6"/><path d="M56 49q6 6 12 0" fill="none" stroke-width="3.4" stroke-linecap="round"/><path d="M41 63q9 8 18 -1" fill="none" stroke-width="3.6" stroke-linecap="round"/>`
+};
+const SHAPE_NAMES = { petal:"圆角方", flower:"四瓣", star:"星", heart:"心", cloud:"云", diamond:"菱", shield:"盾", slender:"瘦长", pocket:"口袋" };
+const FACE_NAMES = { neutral:"平静", smile:"微笑", curious:"好奇", focused:"认真", sleepy:"困了", wink:"俏皮" };
+
+function avatarSvg(shape, color, face, size) {
+  const s = SHAPES[shape] || SHAPES.flower;
+  const id = "g" + Math.random().toString(36).slice(2, 8);
+  let body = "";
+  if (s.kind === "path") body = `<path d="${s.d}" fill="url(#${id})"/>`;
+  else if (s.kind === "poly") body = `<polygon points="${s.pts}" fill="url(#${id})" stroke="url(#${id})" stroke-width="13" stroke-linejoin="round"/>`;
+  else body = s.parts.map(p => `<circle cx="${p[0]}" cy="${p[1]}" r="${p[2]}" fill="url(#${id})"/>`).join("");
+  const pocketNotch = shape === "pocket" ? `<rect x="16" y="16" width="68" height="24" rx="12" fill="rgba(0,0,0,.16)"/>` : "";
+  return `<svg viewBox="0 0 100 100" role="img" aria-hidden="true">
+    <defs><linearGradient id="${id}" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="${color}" stop-opacity="1"/>
+      <stop offset="1" stop-color="${color}" stop-opacity=".72"/>
+    </linearGradient></defs>
+    ${body}${pocketNotch}
+    <g fill="#0d0d0d" fill-opacity=".78" stroke="#0d0d0d" stroke-opacity=".78">${FACES[face] || FACES.smile}</g>
+    <ellipse cx="50" cy="34" rx="30" ry="17" fill="#fff" fill-opacity=".16"/>
+  </svg>`;
+}
+
+function renderAvatars(scope) {
+  (scope || document).querySelectorAll("[data-avatar]:not([data-rendered])").forEach(el => {
+    el.setAttribute("data-rendered", "1");
+    el.innerHTML = avatarSvg(el.dataset.shape || "flower", el.dataset.color || "#14b8a6", el.dataset.face || "smile");
+  });
+}
+
+/* ===================== 挂载 ===================== */
+function mount(tplId, targetSel) {
+  const host = document.querySelector(targetSel);
+  if (!host) return null;
+  host.appendChild(document.getElementById(tplId).content.cloneNode(true));
+  return host;
+}
+
+/* 列表页 */
+mount("list-template", "#mount-list");
+document.querySelectorAll('[data-pane="list"]').forEach(pane => {
+  const searchInput = pane.querySelector("[data-search]");
+  const rows = [...pane.querySelectorAll(".agentrow")];
+  let filter = "all";
+  const apply = () => {
+    const q = (searchInput.value || "").trim().toLowerCase();
+    let shown = 0;
+    rows.forEach(r => {
+      const hitQ = !q || r.dataset.name.toLowerCase().includes(q);
+      const hitF =
+        filter === "all" ? true :
+        filter === "pinned" ? r.dataset.pinned === "1" :
+        filter === "builtin" ? r.dataset.kind === "builtin" :
+        r.dataset.kind === "custom";
+      const show = hitQ && hitF && !r.dataset.hid;
+      r.hidden = !show;
+      if (show) shown++;
+    });
+    const hiddenWrap = pane.querySelector("[data-hidden]");
+    if (hiddenWrap) hiddenWrap.hidden = !pane.querySelector("[data-hidden-row]:not([hidden])") || filter !== "all" || !!q;
+    const list = pane.querySelector("[data-list]");
+    list.hidden = shown === 0;
+  };
+  searchInput.addEventListener("input", apply);
+  pane.querySelectorAll("[data-filter]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      filter = btn.dataset.filter;
+      pane.querySelectorAll("[data-filter]").forEach(b => b.setAttribute("aria-pressed", String(b === btn)));
+      apply();
+    });
+  });
+  pane.querySelectorAll("[data-pin]").forEach(btn => {
+    btn.addEventListener("click", e => {
+      e.stopPropagation();
+      const row = btn.closest(".agentrow");
+      const on = btn.classList.toggle("on");
+      row.dataset.pinned = on ? "1" : "0";
+      btn.title = on ? "取消置顶" : "置顶";
+    });
+  });
+  // ⋯ 菜单
+  let openMenu = null;
+  pane.querySelectorAll("[data-more]").forEach(btn => {
+    btn.addEventListener("click", e => {
+      e.stopPropagation();
+      closeMenus();
+      const row = btn.closest(".agentrow");
+      const builtin = row.dataset.kind === "builtin";
+      const menu = document.createElement("div");
+      menu.className = "menu";
+      menu.style.position = "absolute";
+      menu.style.top = "30px";
+      menu.style.right = "10px";
+      menu.innerHTML = `
+        <button>✏️ 编辑${builtin ? "（复制一份）" : ""}</button>
+        <button>📄 复制为新的 Bot</button>
+        <button>📦 导出为 .zip</button>
+        <div class="div"></div>
+        <button>🙈 隐藏（不出现在 # 菜单）</button>
+        <div class="div"></div>
+        <button class="danger">🗑 删除</button>`;
+      row.appendChild(menu);
+      openMenu = menu;
+    });
+  });
+  function closeMenus() {
+    if (openMenu) { openMenu.remove(); openMenu = null; }
+  }
+  pane.addEventListener("click", closeMenus);
+  const imp = pane.querySelector("[data-import-toggle]"), impMenu = pane.querySelector("[data-import-menu]");
+  imp.addEventListener("click", e => { e.stopPropagation(); closeMenus(); impMenu.hidden = !impMenu.hidden; });
+  pane.addEventListener("click", () => { impMenu.hidden = true; });
+});
+
+/* 编辑器：一个模板多份挂载 */
+const frames = {
+  "#mount-ed-identity": "soul",
+  "#mount-ed-soul": "soul",
+  "#mount-ed-skills": "skills",
+  "#mount-ed-runtime": "runtime",
+  "#mount-ed-memory": "memory",
+  "#mount-ed-preview": "soul"
+};
+Object.entries(frames).forEach(([sel, tab]) => {
+  const host = mount("editor-template", sel);
+  if (!host) return;
+  const pane = host.querySelector('[data-pane="editor"]');
+  const state = { shape: "flower", color: "#14b8a6", face: "smile" };
+
+  const selectTab = name => {
+    pane.querySelectorAll("[data-tab]").forEach(b => b.setAttribute("aria-selected", String(b.dataset.tab === name)));
+    pane.querySelectorAll("[data-sec]").forEach(s => { s.hidden = s.dataset.sec !== name; });
+  };
+  selectTab(tab);
+  pane.querySelectorAll("[data-tab]").forEach(b => b.addEventListener("click", () => selectTab(b.dataset.tab)));
+
+  const syncLive = () => {
+    pane.querySelectorAll("[data-live]").forEach(el => {
+      el.dataset.shape = state.shape; el.dataset.color = state.color; el.dataset.face = state.face;
+      el.innerHTML = avatarSvg(state.shape, state.color, state.face);
+    });
+    const cap = pane.querySelector("[data-ava-cap]");
+    if (cap) cap.textContent = "生成形象 · " + (SHAPE_NAMES[state.shape] || "") + " · " + (FACE_NAMES[state.face] || "");
+  };
+  pane.querySelectorAll("[data-shape]").forEach(b => b.addEventListener("click", () => {
+    state.shape = b.dataset.shape;
+    pane.querySelectorAll("[data-shape]").forEach(x => x.setAttribute("aria-pressed", String(x === b)));
+    syncLive();
+  }));
+  pane.querySelectorAll("[data-color]").forEach(b => b.addEventListener("click", () => {
+    state.color = b.dataset.color;
+    pane.querySelectorAll("[data-color]").forEach(x => x.setAttribute("aria-pressed", String(x === b)));
+    syncLive();
+  }));
+  pane.querySelectorAll("[data-face]").forEach(b => b.addEventListener("click", () => {
+    state.face = b.dataset.face;
+    pane.querySelectorAll("[data-face]").forEach(x => x.setAttribute("aria-pressed", String(x === b)));
+    syncLive();
+  }));
+  pane.querySelectorAll("[data-src-btn]").forEach(b => b.addEventListener("click", () => {
+    const src = b.dataset.srcBtn;
+    pane.querySelectorAll("[data-src-btn]").forEach(x => x.setAttribute("aria-selected", String(x === b)));
+    pane.querySelectorAll("[data-when]").forEach(x => { x.hidden = x.dataset.when !== src; });
+  }));
+  const drawer = pane.querySelector("[data-drawer]");
+  if (sel === "#mount-ed-preview") drawer.hidden = false;
+  pane.querySelector("[data-preview-toggle]").addEventListener("click", () => { drawer.hidden = !drawer.hidden; });
+  pane.querySelector("[data-preview-close]").addEventListener("click", () => { drawer.hidden = true; });
+  pane.querySelector("[data-back]").addEventListener("click", () => {
+    host.scrollIntoView({ behavior: "smooth", block: "center" });
+  });
+  syncLive();
+});
+
+renderAvatars();
+</script>
+</body>
+</html>

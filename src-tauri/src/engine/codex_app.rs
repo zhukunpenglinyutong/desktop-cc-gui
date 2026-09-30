@@ -1693,6 +1693,7 @@ pub(crate) async fn run_plan_decision(
         additional_dirs: state.db.granted_roots().unwrap_or_default(),
         provider_id,
         computer_use: None,
+        memory_bot: None,
         allowed_tools: None,
     };
     let mut built = super::codex::CodexEngine.host_command(&req, &bin)?;
@@ -2030,6 +2031,7 @@ mod tests {
             additional_dirs: vec![],
             provider_id: None,
             computer_use: None,
+            memory_bot: None,
             allowed_tools: None,
         };
         assert!(crate::engine::codex::CodexEngine
@@ -2112,6 +2114,7 @@ mod tests {
             additional_dirs: vec![],
             provider_id: None,
             computer_use: None,
+            memory_bot: None,
             allowed_tools: None,
         };
         let built = BuiltCommand {

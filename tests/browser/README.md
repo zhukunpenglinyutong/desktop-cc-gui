@@ -1,5 +1,17 @@
 # Chat streaming regression
 
+Open `/tests/browser/concurrent-status.html` for concurrent session indicators:
+the real `AiChatSidebar` and `SessionTab` each render 1, 6 (default), or 12
+synthetic sessions. Switch Processing / Retry / Complete, light / dark, and
+Normal / Reduced motion. The fixture selects the shipped reduced-motion CSS
+declaration by changing its media condition, without overriding its animation
+styles. Processing must retain a changing `transform` on all status dots, while
+Retry, Complete and Reduced motion must have no running status animation.
+The JSON readout reports FAIL if an active keyframe includes any property other
+than `transform` or `opacity` (including `boxShadow`, `filter` or
+`backgroundPosition`). This checks animation contracts and visible states,
+not native CPU/GPU usage; no model, real IPC or saved conversation is used.
+
 Open `/tests/browser/relay-plugin.html` for the installable Relay plugin's actual
 React UI with a fake Agent transport. The plugin source is a sibling checkout at
 `../ccgui-plugin/ccgui-plugin-plan-execute-relay` (dev server allows sibling
@@ -16,6 +28,23 @@ The production disclosure renders 120 or 500 synthetic tools with at most 40
 items per page. Previous/next/latest preserve access to every item; append while
 reading an earlier page must not switch it. Arguments and results remain lazy.
 This is a DOM-bound check, not a native CPU benchmark.
+
+Open `/tests/browser/bot-editor.html` for the real 智能体 pane and bot editor
+against in-memory bots: the list shows identity, runtime and skill counts,
+filters and pin toggles work, a row opens the full-bleed editor, the avatar
+studio repaints the generated avatar (canvas, not SVG — the 36px list rows
+paint new frames too, sample one canvas twice to check it is animating, not
+frozen), and 拼装预览 lists the blocks the model
+would receive (empty ones marked 已省略, blocks waiting on a tool this build
+lacks marked 即将支持). The
+`?open=1&tab=能力&preview=1&theme=dark` query opens the editor, a section tab,
+the preview drawer and the dark theme directly. A short window is the check
+for the identity column: it scrolls on its own (the identity card, hints and
+footer keep their own heights instead of being squeezed) while the section
+column scrolls separately, and none of the dialog's own scrollers paints a
+scrollbar (`scrollbar-none`, same as the settings column and the tab strip).
+Every `bot_*` invoke is answered from the fixtures: no file is written and no
+model is called.
 
 Open `/tests/browser/performance-diagnostics.html` for the real diagnostic dialog
 with synthetic native data and the real renderer monitor. The selectable JSON
@@ -157,7 +186,9 @@ Open `/tests/browser/agent-prompt-menus.html` to check the composer's `#`
 agent picker and `!` prompt picker against seeded stores: the agent menu
 groups 我的智能体 then one section per enabled built-in division (flat when
 filtering), and the prompt menu rows carry 工作区/全局 scope badges; both
-end in a fixed "new" row that jumps to Settings. No app, no backend.
+end in a fixed "new" row that jumps to Settings. Generated avatars animate in
+the 16px rows (the popover mounts above the viewport in this fixture, so pin
+it into view before sampling a canvas twice). No app, no backend.
 
 Open `/tests/browser/delete-confirm-popover.html` to check the session-delete
 confirmation: right-clicking the thread row and picking 删除 must open a

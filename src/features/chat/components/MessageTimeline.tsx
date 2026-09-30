@@ -31,6 +31,8 @@ import { PluginBoundary } from "@/features/plugins/boundary/PluginBoundary";
 import { useAnchorRailScroll } from "./use-anchor-rail-scroll";
 import { useLoadEarlier } from "./use-load-earlier";
 import { stripAgentBlock } from "./agent-block";
+import { BotAvatarView, avatarFromLegacyIcon } from "@/features/bots/bot-avatar";
+import { useBotStore } from "@/features/bots/bot-store";
 import { registerShortcutHandler } from "@/features/shortcuts/runtime";
 import { TimelineSearchBar } from "./TimelineSearchBar";
 import {
@@ -240,22 +242,54 @@ function UserMessageCopy({ text }: { text: string }) {
   );
 }
 
+/** The badge above a user bubble: which bot authored the prompt.
+ *
+ *  The committed message only carries the name, icon and bot id, so the avatar
+ *  resolves against the live bot list first (an edited bot shows its new look
+ *  on old turns too). When the bot is gone or built-in, the recorded icon is
+ *  the fallback — an emoji as-is, an id-shaped stand-in otherwise — so the
+ *  slot is never empty. Rendering goes through the same `BotAvatarView` every
+ *  other surface uses, so the badge avatar moves like the settings list. */
+function AgentBadge({
+  name,
+  icon,
+  botId,
+}: {
+  name: string;
+  icon?: string;
+  botId?: string;
+}) {
+  const { t } = useTranslation();
+  const bot = useBotStore((s) =>
+    botId ? s.bots.find((entry) => entry.id === botId) : undefined,
+  );
+  const avatar = bot?.avatar ?? avatarFromLegacyIcon(icon, botId || icon || name);
+  return (
+    <span
+      aria-label={t("chat.agentBadge", { name })}
+      className="mb-1 flex items-center gap-1 text-caption-1-regular text-text-tertiary"
+    >
+      <span aria-hidden className="flex">
+        <BotAvatarView avatar={avatar} seed={botId || name} size={14} />
+      </span>
+      {name}
+    </span>
+  );
+}
+
 /** User bubble. The agent block sendPrompt appended stays in history (the
  *  CLI transcript owns it), but the bubble strips it and carries the agent
  *  identity as a small badge above, mirroring the meta row's caption type. */
 function UserMessageRow({ message }: { message: Message }) {
-  const { t } = useTranslation();
   const stripped = useMemo(() => stripAgentBlock(message.text), [message.text]);
   return (
     <div className="group -mr-1.5 ml-auto flex w-full min-w-0 flex-col items-end">
       {stripped.agentName && (
-        <span
-          aria-label={t("chat.agentBadge", { name: stripped.agentName })}
-          className="mb-1 flex items-center gap-1 text-caption-1-regular text-text-tertiary"
-        >
-          {stripped.agentIcon && <span aria-hidden>{stripped.agentIcon}</span>}
-          {stripped.agentName}
-        </span>
+        <AgentBadge
+          name={stripped.agentName}
+          icon={stripped.agentIcon}
+          botId={stripped.botId}
+        />
       )}
       <div className="flex w-fit min-w-0 max-w-[72%] flex-col rounded-xl bg-bubble-user px-3.5 py-2.5 text-left text-body-regular whitespace-pre-wrap [overflow-wrap:anywhere] text-text-white max-md:max-w-[85%]">
         <CollapsibleMessage>

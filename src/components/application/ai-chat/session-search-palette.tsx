@@ -9,6 +9,7 @@ import { cx } from "@/utils/cx";
 import { useBrowserOcclusion } from "@/features/browser/occlusion";
 import { ipc, type MessageSearchHit } from "@/lib/ipc";
 import { relativeTime } from "@/features/chat/time";
+import { isModalDialogOpen, hideModalDialog, showModalDialog } from "@/lib/engine-compat";
 
 /** Hard cap on listed rows: the palette is a jumper, not a browser. */
 const MAX_RESULTS = 50;
@@ -210,8 +211,8 @@ export function SessionSearchPalette({
   useEffect(() => {
     const dialog = dialogRef.current;
     if (!dialog) return;
-    if (open && !dialog.open) dialog.showModal();
-    if (!open && dialog.open) dialog.close();
+    if (open && !isModalDialogOpen(dialog)) showModalDialog(dialog);
+    if (!open && isModalDialogOpen(dialog)) hideModalDialog(dialog);
   }, [open]);
 
   // Fresh query + cursor every time the palette opens, adjusted during

@@ -17,6 +17,11 @@ patchedDependencies:
   # Reorder auto-scroll (motion 12.23+) is opt-in via data-reorder-autoscroll;
   # default off — edge scrolling fights the drag offset and stutters upward drags.
   framer-motion@12.43.0: patches/framer-motion@12.43.0.patch
+  # Drop the GFM email-literal lookbehind: Safari/WKWebView < 16.4 cannot parse
+  # lookbehind and throws `invalid group specifier name` on the first Markdown
+  # render, crashing the whole app. `findEmail` re-checks the previous character,
+  # so behavior is unchanged. See patches/mdast-util-gfm-autolink-literal@2.0.1.patch.
+  mdast-util-gfm-autolink-literal@2.0.1: patches/mdast-util-gfm-autolink-literal@2.0.1.patch
 
 # Refuse resolutions whose trust signals (provenance/signatures) weaken
 # between updates.

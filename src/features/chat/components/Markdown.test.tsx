@@ -1,4 +1,6 @@
 import { act } from "react";
+import { readFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import Markdown from "./Markdown";
@@ -199,5 +201,38 @@ describe("math rendering", () => {
     expect(katex).not.toBeNull();
     expect(katex?.textContent ?? "").toContain("a");
     expect(katex?.textContent ?? "").toContain("+");
+  });
+});
+
+describe("GFM email autolinks (WKWebView lookbehind compatibility)", () => {
+  it("autolinks an email at a word boundary", async () => {
+    await renderMarkdown("联系 a@b.co 谢谢");
+    const link = container.querySelector("a[href='mailto:a@b.co']");
+    expect(link?.textContent).toBe("a@b.co");
+  });
+
+  it("still refuses an email glued to a preceding non-boundary character", async () => {
+    // Boundary behavior the lookbehind used to contribute: an email glued to a
+    // preceding "/" must not become a link. The tokenizer rejects it first
+    // here, and `findEmail`'s own `previous(match, true)` check keeps rejecting
+    // it on any transform-only path.
+    await renderMarkdown("请发/a@b.co");
+    expect(container.querySelector("a[href^='mailto:']")).toBeNull();
+  });
+
+  it("resolves a lookbehind-free email regex for Safari/WKWebView < 16.4", () => {
+    // Regression: remark-gfm's email autolink regex used to carry the
+    // lookbehind `(?<=^|\s|\p{P}|\p{S})`. JavaScriptCore before Safari 16.4
+    // cannot parse lookbehind and throws
+    // `SyntaxError: invalid group specifier name` on every Markdown parse,
+    // which crashed the whole app on launch (chat restore / release notes).
+    // The pnpm patch in patches/ removes it; keep this guard so a future
+    // dependency bump cannot silently bring the crash back.
+    const requireFromTest = createRequire(import.meta.url);
+    const requireFromRemarkGfm = createRequire(requireFromTest.resolve("remark-gfm"));
+    const requireFromGfm = createRequire(requireFromRemarkGfm.resolve("mdast-util-gfm"));
+    const autolinkEntry = requireFromGfm.resolve("mdast-util-gfm-autolink-literal");
+    const source = readFileSync(autolinkEntry, "utf8");
+    expect(source).not.toMatch(/\(\?<[=!]/);
   });
 });

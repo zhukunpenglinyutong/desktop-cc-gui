@@ -69,6 +69,9 @@ async function mutate<T = SkillMutationResult>(mutation: SkillsMutation): Promis
     // mutation changed what the CLI would discover there. Invalidate instead
     // of claiming the running session reloaded its skills.
     invalidateSlashCommandCatalog();
+    // Same for the bot prompt assembler's skills index: it must not keep
+    // listing a skill the user just uninstalled.
+    invalidateInstalledSkillsCache();
     return result;
   } catch (error) {
     throw normalizeError(error);
@@ -79,6 +82,36 @@ async function mutate<T = SkillMutationResult>(mutation: SkillsMutation): Promis
  *  semantics (`params.force === "1"`). */
 function forceParam(force?: boolean): Record<string, unknown> {
   return force ? { force: "1" } : {};
+}
+
+/**
+ * Process-wide cache of the installed-skill list, for callers that are not
+ * components: the bot prompt assembler builds a skills index on every send
+ * and must not re-scan the skills directories each time.
+ *
+ * Only the first call's promise is shared (a failure clears it, so the next
+ * call retries); `invalidateInstalledSkillsCache` runs after any mutation.
+ */
+let installedCache: Promise<SkillsInstalledResult> | null = null;
+const INSTALLED_TTL_MS = 30_000;
+let installedAt = 0;
+
+export function invalidateInstalledSkillsCache(): void {
+  installedCache = null;
+  installedAt = 0;
+}
+
+export function cachedInstalledSkills(): Promise<SkillsInstalledResult> {
+  const fresh = installedCache && Date.now() - installedAt < INSTALLED_TTL_MS;
+  if (fresh && installedCache) return installedCache;
+  const promise = skillsHubApi.installed().catch((error: unknown) => {
+    // A failed scan must not be cached: the next send retries.
+    if (installedCache === promise) invalidateInstalledSkillsCache();
+    throw error;
+  });
+  installedCache = promise;
+  installedAt = Date.now();
+  return promise;
 }
 
 export const skillsHubApi = {

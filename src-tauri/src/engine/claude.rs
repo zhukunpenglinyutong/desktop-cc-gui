@@ -51,6 +51,9 @@ impl Engine for ClaudeEngine {
     fn supports_computer_use(&self) -> bool {
         true
     }
+    fn supports_memory(&self) -> bool {
+        true
+    }
     fn supports_effort(&self) -> bool {
         true
     }
@@ -124,37 +127,29 @@ impl Engine for ClaudeEngine {
                 }
             }
         }
+        // App-served MCP children, one --mcp-config carrying all of them.
+        // Computer use: the screenshot/input driver (see computer_use.rs),
+        // pre-approved because a click-per-approval loop is unusable; the
+        // user opted in via the computer-use dialog and the driver itself
+        // fails closed on missing OS grants. Memory: the per-bot memory tool
+        // (memory/mcp.rs), pre-approved because remembering is a background
+        // bookkeeping act the user opted into per bot — the write gate is the
+        // scan/capacity check in the server, not a per-call prompt.
+        let mut mcp_servers = serde_json::Map::new();
         if req.computer_use == Some(true) {
-            // Computer use: expose this app's screenshot/input driver as an
-            // MCP child process (see computer_use.rs) and pre-approve its
-            // tools — a click-per-approval loop is unusable; the user opted
-            // in via the computer-use dialog and the driver itself fails
-            // closed on missing OS grants.
-            let exe = std::env::current_exe()
-                .map_err(|e| format!("resolve own exe for computer use: {e}"))?;
-            let mut server = serde_json::json!({
-                "command": exe.to_string_lossy(),
-                "args": ["--computer-use-mcp"],
-            });
-            // Overlay control channel: the child reports action targets so
-            // the main app's virtual cursor can follow (absent in tests).
-            if let (Some(base), Some(token)) = (
-                crate::cu_overlay::control_base(),
-                crate::cu_overlay::control_token(),
-            ) {
-                server["env"] = serde_json::json!({
-                    "CCGUI_CU_CONTROL": base,
-                    "CCGUI_CU_TOKEN": token,
-                });
-            }
-            let config = serde_json::json!({
-                "mcpServers": {
-                    "ccgui-computer": server,
-                }
-            });
+            let spec = crate::computer_use::computer_use_spec()?;
+            mcp_servers.insert(spec.name.clone(), crate::computer_use::mcp_server_json(&spec));
+            preapproved.push("mcp__ccgui-computer");
+        }
+        if let Some(bot_id) = req.memory_bot.as_deref() {
+            let spec = crate::memory::mcp::bound_spec(bot_id)?;
+            mcp_servers.insert(spec.name.clone(), crate::computer_use::mcp_server_json(&spec));
+            preapproved.push("mcp__ccgui-memory");
+        }
+        if !mcp_servers.is_empty() {
+            let config = serde_json::json!({ "mcpServers": mcp_servers });
             cmd.arg("--mcp-config");
             cmd.arg(config.to_string());
-            preapproved.push("mcp__ccgui-computer");
         }
         if !preapproved.is_empty() {
             cmd.arg("--allowedTools");
@@ -1629,6 +1624,7 @@ mod tests {
             additional_dirs: vec![],
             provider_id: None,
             computer_use: None,
+            memory_bot: None,
             allowed_tools: None,
         };
         let built = engine.build_command(&request, "claude").unwrap();
@@ -1678,6 +1674,7 @@ mod tests {
             additional_dirs: vec![],
             provider_id: None,
             computer_use: None,
+            memory_bot: None,
             allowed_tools: Some(vec!["Read".into(), "Grep".into()]),
         };
         let built = engine.build_command(&request, "claude").unwrap();

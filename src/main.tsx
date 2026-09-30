@@ -1,3 +1,7 @@
+// Engine-compat polyfills (Object.hasOwn, Promise.withResolvers, .at,
+// URL.canParse, structuredClone) must be installed before any other module
+// can run; this side-effect import is intentionally first.
+import "./lib/engine-compat";
 import "./index.css";
 import { installCryptoRandomUUIDPolyfill } from "./lib/id";
 import {

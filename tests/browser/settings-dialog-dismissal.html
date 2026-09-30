@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Settings-shell dialog dismissal fixture</title>
+</head>
+<body>
+<div id="fixture"></div>
+<script>
+// Minimal Tauri IPC stand-in: every command resolves to null except the bot
+// ones below. No app shell, no files, no model.
+window.__TAURI_INTERNALS__ = {
+  transformCallback() { return 1; },
+  unregisterCallback() {},
+  convertFileSrc: (p) => p,
+  metadata: { currentWebview: { label: "main" }, currentWindow: { label: "main" } },
+  async invoke() { return null; },
+};
+</script>
+<script type="module" src="./settings-dialog-dismissal.tsx"></script>
+</body>
+</html>

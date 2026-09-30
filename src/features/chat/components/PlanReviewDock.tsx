@@ -1,9 +1,10 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { Message, PlanReviewDecision } from "@/lib/ipc";
 import { useChatStore } from "../store";
 import { useScopedSession, useScopedSessionKey } from "../split/session-scope";
 import { isPlanActionable } from "../store/plan-review";
+import { memoizeMessageHistory } from "./memoize-message-history";
 import {
   CopyPlanButton,
   PlanCardHeader,
@@ -26,11 +27,7 @@ import {
  *  the visible effect of the click. Resolved like usePendingQuestion. */
 export function usePendingPlanReview() {
   const key = useScopedSessionKey();
-  return useChatStore((s) => {
-    if (!key) return null;
-    const session = s.bySession[key];
-    const messages = session?.messages ?? [];
-    const resume = session?.planReviewResume;
+  const pendingPlan = useMemo(() => memoizeMessageHistory<Message | null, string | null>((messages, resume) => {
     for (let i = messages.length - 1; i >= 0; i--) {
       const record = messages[i].planReview;
       if (!record) continue;
@@ -45,6 +42,11 @@ export function usePendingPlanReview() {
       }
     }
     return null;
+  }), []);
+  return useChatStore((s) => {
+    if (!key) return null;
+    const session = s.bySession[key];
+    return pendingPlan(session?.messages, session?.planReviewResume);
   });
 }
 
@@ -54,15 +56,16 @@ export function usePendingPlanReview() {
  *  settled plan turn (next_turn) does not block the switch. */
 export function usePlanReviewGateActive(): boolean {
   const key = useScopedSessionKey();
-  return useChatStore((s) => {
-    if (!key) return false;
-    const session = s.bySession[key];
-    if (!session?.streaming) return false;
-    for (let i = session.messages.length - 1; i >= 0; i--) {
-      const record = session.messages[i].planReview;
+  const actionablePlan = useMemo(() => memoizeMessageHistory((messages) => {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const record = messages[i].planReview;
       if (record && isPlanActionable(record.status)) return true;
     }
     return false;
+  }), []);
+  return useChatStore((s) => {
+    const session = key ? s.bySession[key] : undefined;
+    return session?.streaming ? actionablePlan(session.messages) : false;
   });
 }
 

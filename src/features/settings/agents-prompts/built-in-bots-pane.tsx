@@ -11,11 +11,12 @@ import { Input } from "@/components/base/input/input";
 import { Switch } from "@/components/base/switch/switch";
 import {
   currentCatalogLocale,
-  useAgentStore,
-} from "@/features/agents/agent-store";
+  useBotStore,
+} from "@/features/bots/bot-store";
 import { errorText } from "@/lib/errors";
 import {
   ipc,
+  type BotConfig,
   type BuiltInAgentCatalogView,
   type BuiltInAgentDivisionView,
   type BuiltInAgentView,
@@ -33,10 +34,15 @@ import {
  * revision), search / enabled-only / division filters, and card rows with
  * an enable switch, a prompt viewer, and copy-as-custom. The catalog is
  * read-only and bundled; enabled ids persist in app settings. Toggles
- * reload the catalog and revalidate useAgentStore so the composer `#`
+ * reload the catalog and revalidate useBotStore so the composer `#`
  * menu picks up the change.
  */
-export function BuiltInAgentsPane({ onCopied }: { onCopied: () => void }) {
+export function BuiltInBotsPane({
+  onCopied,
+}: {
+  /** The copy landed: hand the new bot back so the caller can open it. */
+  onCopied: (bot: BotConfig) => void;
+}) {
   const { t, i18n } = useTranslation();
   const [catalog, setCatalog] = useState<BuiltInAgentCatalogView | null>(null);
   const [loading, setLoading] = useState(true);
@@ -103,7 +109,7 @@ export function BuiltInAgentsPane({ onCopied }: { onCopied: () => void }) {
       try {
         await op();
         await load();
-        void useAgentStore.getState().refresh();
+        void useBotStore.getState().refresh();
       } catch (e) {
         setError(errorText(e));
       }
@@ -152,13 +158,22 @@ export function BuiltInAgentsPane({ onCopied }: { onCopied: () => void }) {
       ipc
         .getBuiltInAgentPrompt(agent.id)
         .then(({ prompt }) =>
-          useAgentStore
-            .getState()
-            .create({ name: agent.name, icon: agent.icon ?? undefined, prompt }),
+          useBotStore.getState().create({
+            name: agent.name,
+            // The catalog description is the bot's one-line intro; the prompt
+            // becomes its 人格 (same mapping the v1 migration uses).
+            description: agent.description,
+            avatar: agent.icon
+              ? { type: "emoji" as const, value: agent.icon }
+              : undefined,
+            soul: prompt,
+            source: "builtin" as const,
+            builtinId: agent.id,
+          }),
         )
-        .then(() => {
+        .then((bot) => {
           setPromptView(null);
-          onCopied();
+          onCopied(bot);
         })
         .catch((e: unknown) => setError(errorText(e)))
         .finally(() => setCopyingId(null));

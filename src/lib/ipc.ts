@@ -242,6 +242,10 @@ export interface EngineInfo {
    *  server it accepts at launch). The composer's `/ccgui-cua` refuses on
    *  engines that answer false instead of sending a text-only turn. */
   supportsComputerUse?: boolean;
+  /** Whether the engine can mount the per-bot memory tool. False means the
+   *  session still gets MEMORY/USER injected, but the prompt omits the
+   *  记忆使用说明 (it would instruct a tool that does not exist). */
+  supportsMemory?: boolean;
   /** Permission modes the engine honors at spawn ("auto" | "manual" |
    * "plan" | "bypass"); the composer picker greys out the rest. */
   permissions: string[];
@@ -603,20 +607,210 @@ export interface SlashCommandEntry {
   source: string;
   kind: SlashEntryKind;
 }
-/** A user-defined agent persona (`agent_list`): picked in the composer `#`
- *  menu, its prompt appended to the outgoing message. Stored in
- *  `~/.ccgui-next/agents.json`. */
-export interface AgentConfig {
-  id: string;
-  name: string;
-  prompt?: string;
-  icon?: string;
-  /** Frontend-only pick origin: built-in catalog picks carry no prompt —
-   *  sendPrompt resolves the current catalog prompt at send time. Absent
-   *  (older persisted selections) means "custom". */
-  source?: "custom" | "builtIn";
-  createdAt?: number;
+/** Avatar of a bot: a generated "paper" look, an emoji glyph, or an uploaded
+ *  image file name inside the bot's directory.
+ *
+ *  The generated look stores only what a user picks — one of nine fold
+ *  silhouettes, one of sixteen expressions, and an HSL colour. The BoardUI
+ *  avatar engine fills the rest of its config from its own defaults, so the
+ *  stored shape stays small and survives engine upgrades. */
+export interface BotAvatar {
+  type: "generated" | "emoji" | "image";
+  /** emoji glyph (type=emoji) or image file name inside the bot dir. */
+  value?: string;
+  /** Paper silhouette: slender | pocket | petal | flower | star | heart |
+   *  cloud | diamond | shield. */
+  foldShape?: string;
+  /** Expression of the emotion wheel, e.g. neutral | happy | curious. */
+  eyes?: string;
+  hue?: number;
+  saturation?: number;
+  /** Custom lightness; presets leave it unset. */
+  lightness?: number;
+  /** @deprecated first-pass fields, folded into the ones above on read. */
+  shape?: string;
+  color?: string;
+  face?: string;
 }
+
+/** Per-bot capability switches. `skills: ["*"]` means "every skill". */
+export interface BotCapabilities {
+  skills: string[];
+  tools: string[];
+  mcpServers: string[];
+}
+
+/** Where a bot's work runs. `direct` uses the app's own model config; the
+ *  CLI kinds drive a subprocess and need a `cwd`. */
+export interface BotRuntimeConfig {
+  kind: "direct" | "claude-code" | "codex";
+  model?: string | null;
+  cwd?: string | null;
+  extraArgs: string[];
+  permissionMode: "ask" | "auto-safe" | "full";
+}
+
+/** Memory behaviour of one bot. `memoryCharLimit` bounds the bot's own
+ *  MEMORY; the global USER profile has its own limit. */
+export interface BotMemoryConfig {
+  enabled: boolean;
+  writeApproval: boolean;
+  memoryCharLimit: number;
+  reviewEnabled: boolean;
+  reviewEveryNTurns: number;
+}
+
+/** A bot (`bot_list`): identity + SOUL + AGENTS + capabilities + runtime +
+ *  memory, stored as `~/.ccgui-next/bots/<id>/{bot.json,SOUL.md,AGENTS.md}`.
+ *  v1 agents (name + emoji + prompt) migrate into this shape with the prompt
+ *  as `soul`. */
+export interface BotConfig {
+  id: string;
+  /** `@`-mention handle; unique across bots. */
+  slug: string;
+  name: string;
+  title?: string | null;
+  description?: string | null;
+  avatar: BotAvatar;
+  /** 人格: how it talks (v1's agent prompt lands here). */
+  soul: string;
+  /** 工作规则: what it does and how. */
+  instructions: string;
+  capabilities: BotCapabilities;
+  runtime: BotRuntimeConfig;
+  memory: BotMemoryConfig;
+  source: "custom" | "builtin";
+  builtinId?: string | null;
+  pinned: boolean;
+  hidden: boolean;
+  schemaVersion: number;
+  createdAt: number;
+  updatedAt: number;
+}
+
+/** 一条持久记忆（memory/mcp.rs）。`target=user` 的条目全局共用、`botId` 为空；
+ *  `target=memory` 的条目属于 `botId` 这一个 Bot。 */
+export interface MemoryEntry {
+  id: string;
+  target: "memory" | "user";
+  botId: string;
+  content: string;
+  /** `user` = 面板手动写入；`agent` = memory 工具写入；`review` = 后台复盘写入。 */
+  source: "user" | "agent" | "review";
+  createdAt: number;
+  updatedAt: number;
+}
+
+/** 一个账本：条目 + 注入时实际占用的字符数（把每条渲染成 `- 内容` 行）。 */
+export interface MemoryLedger {
+  target: "memory" | "user";
+  botId: string;
+  entries: MemoryEntry[];
+  used: number;
+  limit: number;
+}
+
+/** 一条等待用户批准的写入（memory/pending.rs，启用「写入需要审批」时出现）。
+ *  `content`/`oldText` 的必填组合与记忆工具一致：add 要 content，replace 两个
+ *  都要，remove 只要 oldText。 */
+export interface PendingMemoryWrite {
+  id: string;
+  op: "add" | "replace" | "remove";
+  target: "memory" | "user";
+  botId: string;
+  content?: string;
+  oldText?: string;
+  /** 暂存时锁定的条目 id（replace/remove）。 */
+  targetEntryId?: string;
+  /** 暂存时目标条目的原文；审批时原文已变会拒绝执行。 */
+  targetSnapshot?: string;
+  /** `agent`（记忆工具）| `review`（后台复盘）。 */
+  origin: "agent" | "review";
+  createdAt: number;
+}
+
+/** `memory_pending_approve` 的结果：落盘/删除成功后的条目信息。 */
+export interface MemoryWriteOutcome {
+  kind: "applied";
+  /** remove 成功时为 null。 */
+  entry: MemoryEntry | null;
+  created: boolean;
+}
+
+/** `memory_review` 的结果（Rust `ReviewOutcome`）。 */
+export interface MemoryReviewOutcome {
+  status: "applied" | "staged" | "empty" | "skipped" | "failed";
+  applied: number;
+  staged: number;
+  /** 解析跳过或执行失败的条目数。 */
+  failed: number;
+  /** 跳过/失败的原因（`no_channel`、`busy` 或渠道错误原文）。 */
+  message?: string;
+  at: number;
+}
+
+/** `memory_list` 的返回值；没有选中 Bot 时 `memory` 为 null。 */
+export interface MemoryView {
+  memory: MemoryLedger | null;
+  user: MemoryLedger;
+  /** 等待用户批准的写入（这个 Bot 的 MEMORY + 全局 USER）。 */
+  pending: PendingMemoryWrite[];
+}
+
+/** 记忆写入被退回的结构化原因（Rust `MemoryError`）。`code` 本地化用，
+ *  `message` 是具体细节（安全扫描说明命中什么 / 超限的用量）。 */
+export interface MemoryErrorPayload {
+  code:
+    | "bad_target"
+    | "bad_scope"
+    | "bad_op"
+    | "db"
+    | "empty"
+    | "scan"
+    | "limit"
+    | "no_match"
+    | "ambiguous"
+    | "not_found"
+    | "stale";
+  message: string;
+  kind?: "injection" | "secret" | "invisible";
+  used?: number;
+  limit?: number;
+}
+
+/** Partial update for `bot_update`: absent fields stay unchanged, `""`
+ *  clears an optional text field. */
+export type BotPatch = Partial<
+  Pick<
+    BotConfig,
+    | "name"
+    | "slug"
+    | "title"
+    | "description"
+    | "avatar"
+    | "soul"
+    | "instructions"
+    | "capabilities"
+    | "runtime"
+    | "memory"
+    | "pinned"
+    | "hidden"
+  >
+>;
+
+/** Payload of `bot_create`. */
+export interface BotCreateInput {
+  name: string;
+  title?: string;
+  description?: string;
+  avatar?: BotAvatar;
+  soul?: string;
+  instructions?: string;
+  slug?: string;
+  source?: "custom" | "builtin";
+  builtinId?: string;
+}
+
 /** Provider block of the built-in agent catalog (`list_built_in_agents`). */
 export interface BuiltInAgentProviderView {
   id: string;
@@ -1146,6 +1340,9 @@ export const ipc = {
     /** 电脑操控: hand the agent the app's screenshot/input driver for this
      *  turn (see features/chat/computer-use.ts). */
     computerUse?: boolean;
+    /** 记忆：把 memory MCP 工具挂给本次会话并绑定到这个 Bot（仅当这个 Bot
+     *  开启了记忆、引擎支持挂载时传）。 */
+    memoryBot?: string | null;
   }) => invoke<SendResult>("send_message", args),
   interruptSession: (sessionId: string) =>
     invoke<boolean>("interrupt_session", { sessionId }),
@@ -1316,15 +1513,39 @@ export const ipc = {
    *  distinguished by `entry.kind`. */
   listSlashCommands: (path: string) =>
     withGrantRetry(() => invoke<SlashCommandEntry[]>("list_slash_commands", { path })),
-  // agents — user personas stored in ~/.ccgui-next/agents.json (app home,
-  // so no grant flow); picked via the composer `#` menu, managed in
-  // settings. agent_update takes a partial; absent fields stay unchanged.
-  listAgents: () => invoke<AgentConfig[]>("agent_list"),
-  addAgent: (input: { name: string; prompt?: string; icon?: string }) =>
-    invoke<AgentConfig>("agent_add", input),
-  updateAgent: (id: string, updates: { name?: string; prompt?: string; icon?: string }) =>
-    invoke<boolean>("agent_update", { id, ...updates }),
-  deleteAgent: (id: string) => invoke<boolean>("agent_delete", { id }),
+  // bots — one directory per bot under ~/.ccgui-next/bots (app home, so no
+  // grant flow); picked via the composer `#` menu, managed in settings.
+  // bot_update takes a patch; absent fields stay unchanged.
+  listBots: () => invoke<BotConfig[]>("bot_list"),
+  createBot: (input: BotCreateInput) => invoke<BotConfig>("bot_create", { input }),
+  updateBot: (id: string, patch: BotPatch) =>
+    invoke<BotConfig | null>("bot_update", { id, patch }),
+  deleteBot: (id: string) => invoke<boolean>("bot_delete", { id }),
+  duplicateBot: (id: string) => invoke<BotConfig | null>("bot_duplicate", { id }),
+  // 记忆（memory/mcp.rs）：两个账本、写入前扫描 + 容量闸。写入失败时 reject
+  // 的值是 MemoryErrorPayload（对象，或 JSON 字符串）——用 memoryErrorMessage
+  // 转成用户可读文案。
+  memoryList: (botId: string | null) => invoke<MemoryView>("memory_list", { botId }),
+  memoryAdd: (args: { botId: string | null; target: "memory" | "user"; content: string }) =>
+    invoke<MemoryEntry>("memory_add", args),
+  memoryUpdate: (id: string, content: string) =>
+    invoke<MemoryEntry>("memory_update", { id, content }),
+  memoryRemove: (id: string) => invoke<void>("memory_remove", { id }),
+  memoryClear: (args: { botId: string | null; target: "memory" | "user" }) =>
+    invoke<number>("memory_clear", args),
+  memoryPendingApprove: (id: string) =>
+    invoke<MemoryWriteOutcome>("memory_pending_approve", { id }),
+  memoryPendingReject: (id: string) =>
+    invoke<PendingMemoryWrite>("memory_pending_reject", { id }),
+  /** 后台复盘：用该引擎已配置的 API 渠道整理一段对话。失败原因收在返回值里
+   *  （status=skipped/failed），不抛异常。 */
+  memoryReview: (args: {
+    botId: string;
+    engine: string;
+    providerId?: string | null;
+    model?: string | null;
+    transcript: string;
+  }) => invoke<MemoryReviewOutcome>("memory_review", args),
   // built-in agent catalog — bundled read-only personas (resources/
   // agent-catalogs); enabled ids live in app settings. The composer `#`
   // menu merges enabled ones; sendPrompt resolves the current prompt via

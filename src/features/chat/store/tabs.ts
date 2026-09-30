@@ -21,6 +21,9 @@ import type { StoreGet, StoreSet } from "./context";
 export interface TabDeps {
   set: StoreSet;
   get: StoreGet;
+  /** 离开一个会话（关标签 / 切走）时的钩子：后台复盘用它补一次收尾
+   *  （features/bots/memory-review.ts）。 */
+  sessionEnded?: (engine: string, sessionId: string, workspacePath: string) => void;
 }
 
 /** Private tab helpers other action groups use (lifecycle closes tabs on
@@ -53,6 +56,15 @@ export function createTabActions(
 
   /** Activate a tab: existing sessions lazy-load via selectSession, pending chats just set. */
   function activateTab(tab: ActiveSession | null) {
+    // 切走一个已建立的会话 = 会话结束：后台复盘若还有没整理的轮次就补一次。
+    // 关标签后激活邻居也走这里，记忆模块自己的轮次计数保证不会重复触发。
+    const previous = get().active;
+    if (
+      previous?.sessionId &&
+      (!tab || !sameTab(previous, tab.engine, tab.sessionId, tab.workspacePath))
+    ) {
+      deps.sessionEnded?.(previous.engine, previous.sessionId, previous.workspacePath);
+    }
     if (!tab) {
       set({ active: null });
       persistTabs(get().openTabs, null);
@@ -151,8 +163,10 @@ export function createTabActions(
     set({ openTabs });
     rememberClosedTab(sessionKey(engine, sessionId, workspacePath));
     if (s.active && sameTab(s.active, engine, sessionId, workspacePath)) {
+      // activateTab 会为这个被关掉的会话触发一次 sessionEnded。
       activateTab(openTabs[Math.min(idx, openTabs.length - 1)] ?? null);
     } else {
+      if (sessionId) deps.sessionEnded?.(engine, sessionId, workspacePath);
       persistTabs(openTabs, s.active);
     }
   }

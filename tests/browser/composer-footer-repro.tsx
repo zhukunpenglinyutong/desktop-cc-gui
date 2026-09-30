@@ -10,14 +10,48 @@ import "../../src/index.css";
 import "../../src/lib/i18n";
 import { ConversationFooter } from "../../src/features/chat/components/ConversationFooter";
 import { useChatStore } from "../../src/features/chat/store";
-import { useAgentStore } from "../../src/features/agents/agent-store";
+import { useBotStore } from "../../src/features/bots/bot-store";
+import type { BotConfig } from "../../src/lib/ipc";
 import { usePromptStore } from "../../src/features/prompts/prompt-store";
 
 const ROOT = "/fixture-ws";
 
-useAgentStore.setState({
-  agents: [
-    { id: "a1", name: "代码审查员", prompt: "你是严格的代码审查员…", icon: "🔍" },
+const makeBot = (
+  overrides: Partial<BotConfig> & Pick<BotConfig, "id" | "name">,
+): BotConfig => ({
+  slug: overrides.id,
+  title: null,
+  description: null,
+  avatar: { type: "emoji", value: "🔍" },
+  soul: "",
+  instructions: "",
+  capabilities: { skills: [], tools: [], mcpServers: [] },
+  runtime: { kind: "direct", model: null, cwd: null, extraArgs: [], permissionMode: "ask" },
+  memory: {
+    enabled: true,
+    writeApproval: false,
+    memoryCharLimit: 2200,
+    reviewEnabled: true,
+    reviewEveryNTurns: 5,
+  },
+  source: "custom",
+  builtinId: null,
+  pinned: false,
+  hidden: false,
+  schemaVersion: 1,
+  createdAt: 0,
+  updatedAt: 0,
+  ...overrides,
+});
+
+useBotStore.setState({
+  bots: [
+    makeBot({
+      id: "a1",
+      name: "代码审查员",
+      title: "严格的守门员",
+      description: "只挑会影响运行的毛病。",
+    }),
   ],
   builtInAgents: [],
   builtInDivisions: [],

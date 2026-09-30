@@ -8,6 +8,9 @@ patchedDependencies:
   framer-motion@12.43.0:
     hash: b669732395f614733671f6fe303fa2909e1fd06d70b939d329d9b76639691a5b
     path: patches/framer-motion@12.43.0.patch
+  mdast-util-gfm-autolink-literal@2.0.1:
+    hash: 4c0bc82718606da84c963a7194414ad94953e47118e1cbb8efe610469aff3ab6
+    path: patches/mdast-util-gfm-autolink-literal@2.0.1.patch
 
 importers:
 
@@ -6687,7 +6690,7 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  mdast-util-gfm-autolink-literal@2.0.1:
+  mdast-util-gfm-autolink-literal@2.0.1(patch_hash=4c0bc82718606da84c963a7194414ad94953e47118e1cbb8efe610469aff3ab6):
     dependencies:
       '@types/mdast': 4.0.4
       ccount: 2.0.1
@@ -6735,7 +6738,7 @@ snapshots:
   mdast-util-gfm@3.1.0:
     dependencies:
       mdast-util-from-markdown: 2.0.3
-      mdast-util-gfm-autolink-literal: 2.0.1
+      mdast-util-gfm-autolink-literal: 2.0.1(patch_hash=4c0bc82718606da84c963a7194414ad94953e47118e1cbb8efe610469aff3ab6)
       mdast-util-gfm-footnote: 2.1.0
       mdast-util-gfm-strikethrough: 2.0.0
       mdast-util-gfm-table: 2.0.0

@@ -207,7 +207,7 @@ export function PromptsPane() {
 
       <div className="flex items-center justify-between gap-3">
         <SettingsSectionLabel>
-          {t("settings.agentPromptTabPrompts")}
+          {t("settings.prompts")}
           <span className="ml-2 text-body-2-regular font-normal text-text-tertiary">
             {t("settings.promptSectionDesc")}
           </span>

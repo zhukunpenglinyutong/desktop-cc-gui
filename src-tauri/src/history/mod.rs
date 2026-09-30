@@ -294,6 +294,36 @@ pub(crate) fn slash_command_display(text: &str) -> Option<String> {
     })
 }
 
+/// The turn is nothing but the command tags. Extra typed text stays a real
+/// user message even when it mentions the tags.
+pub(crate) fn slash_command_envelope_only(text: &str) -> bool {
+    if slash_command_display(text).is_none() {
+        return false;
+    }
+    let mut rest = text.to_string();
+    for tag in ["command-message", "command-name", "command-args"] {
+        rest = strip_one_tag_pair(&rest, tag);
+    }
+    rest.trim().is_empty()
+}
+
+fn strip_one_tag_pair(text: &str, tag: &str) -> String {
+    let open = format!("<{tag}>");
+    let close = format!("</{tag}>");
+    let Some(start) = text.find(&open) else {
+        return text.to_string();
+    };
+    let after = start + open.len();
+    let Some(rel) = text[after..].find(&close) else {
+        return text.to_string();
+    };
+    let end = after + rel + close.len();
+    let mut out = String::with_capacity(text.len() - (end - start));
+    out.push_str(&text[..start]);
+    out.push_str(&text[end..]);
+    out
+}
+
 /// Body of the first `<tag>…</tag>` pair, trimmed. None when absent or
 /// unterminated.
 fn tagged_body<'a>(text: &'a str, tag: &str) -> Option<&'a str> {
@@ -557,6 +587,17 @@ mod tests {
     fn clean_keeps_typed_body_mentioning_one_command_tag() {
         let text = "帮我看看 <command-name> 这个标签是什么意思";
         assert_eq!(clean_user_turn(text), text);
+    }
+
+    #[test]
+    fn envelope_only_requires_both_command_tags() {
+        let text = "<command-name>/model</command-name>\n            <command-message>model</command-message>\n            <command-args></command-args>";
+        assert!(slash_command_envelope_only(text));
+        assert!(!slash_command_envelope_only(
+            "帮我看看 <command-name> 这个标签是什么意思"
+        ));
+        let with_tail = format!("{text}\n然后再看看这个报错");
+        assert!(!slash_command_envelope_only(&with_tail));
     }
 
     #[test]

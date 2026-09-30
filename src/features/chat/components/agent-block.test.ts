@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
-import {
-  buildAgentBlock,
-  hasAgentBlock,
-  stripAgentBlock,
-} from "./agent-block";
+import { buildBotBlock, hasAgentBlock, stripAgentBlock } from "./agent-block";
+
+/** The v1 shape of the block, minus the bot id line. */
+const buildAgentBlock = (input: { name: string; icon?: string; prompt: string }) =>
+  buildBotBlock({ name: input.name, icon: input.icon, body: input.prompt });
 
 describe("stripAgentBlock", () => {
   it("leaves text without an agent block untouched", () => {
@@ -51,6 +51,23 @@ describe("stripAgentBlock", () => {
     expect(stripped.text).toBe("");
     expect(stripped.agentName).toBe("Opener");
     expect(stripped.agentIcon).toBe("🚀");
+  });
+
+  it("parses the bot id line so the badge can render a generated avatar", () => {
+    const text =
+      "hi" +
+      buildBotBlock({
+        name: "太奶",
+        icon: "",
+        botId: "bot-123",
+        body: "# 你的人格\n先讲结论。",
+      });
+    expect(stripAgentBlock(text)).toEqual({
+      text: "hi",
+      agentName: "太奶",
+      agentIcon: undefined,
+      botId: "bot-123",
+    });
   });
 
   it("tolerates CRLF line endings", () => {

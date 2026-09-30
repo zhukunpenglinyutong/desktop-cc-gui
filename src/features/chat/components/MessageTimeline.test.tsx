@@ -3,7 +3,9 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { formatDuration } from "./format-duration";
 import { MessageRow, MessageTimeline } from "./MessageTimeline";
-import type { Message } from "@/lib/ipc";
+import { buildBotBlock } from "./agent-block";
+import { useBotStore } from "@/features/bots/bot-store";
+import type { BotConfig, Message } from "@/lib/ipc";
 import { EMPTY_SESSION } from "../store/stream";
 import i18n from "@/lib/i18n";
 
@@ -253,5 +255,119 @@ describe("user bubble copy affordance", () => {
     const shown = container.textContent ?? "";
     expect(shown).toContain("↑1.5M");
     expect(shown).toContain("↓2.2k");
+  });
+});
+
+describe("user bubble agent badge", () => {
+  let container: HTMLDivElement;
+  let root: Root;
+  const realGetContext = HTMLCanvasElement.prototype.getContext;
+
+  beforeEach(() => {
+    // jsdom has no 2D context. The engine skips its loop when getContext
+    // returns null, but jsdom would also log the missing implementation.
+    HTMLCanvasElement.prototype.getContext = (() =>
+      null) as typeof HTMLCanvasElement.prototype.getContext;
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+  });
+
+  afterEach(async () => {
+    await act(async () => root.unmount());
+    container.remove();
+    HTMLCanvasElement.prototype.getContext = realGetContext;
+    useBotStore.setState({ bots: [], builtInAgents: [], builtInDivisions: [], loaded: false });
+  });
+
+  function bot(overrides: Partial<BotConfig> = {}): BotConfig {
+    return {
+      id: "bot-1",
+      slug: "reviewer",
+      name: "CCGUI PR审查工程师",
+      title: null,
+      description: null,
+      avatar: { type: "generated", foldShape: "shield", eyes: "angry", hue: 0, saturation: 78 },
+      soul: "",
+      instructions: "",
+      capabilities: { skills: [], tools: [], mcpServers: [] },
+      runtime: { kind: "direct", model: null, cwd: null, extraArgs: [], permissionMode: "ask" },
+      memory: {
+        enabled: true,
+        writeApproval: false,
+        memoryCharLimit: 2200,
+        reviewEnabled: true,
+        reviewEveryNTurns: 5,
+      },
+      source: "custom",
+      builtinId: null,
+      pinned: false,
+      hidden: false,
+      schemaVersion: 1,
+      createdAt: 0,
+      updatedAt: 0,
+      ...overrides,
+    };
+  }
+
+  /** A committed user turn: the bare prompt followed by the frozen block
+   *  sendPrompt appends. */
+  function messageWithBlock(input: { name?: string; icon?: string; botId?: string }): Message {
+    return {
+      seq: 1,
+      role: "user",
+      text: `https://github.com/zhukunpenglinyutong/jetbrains-cc-gui/pull/1895\n\n${buildBotBlock({
+        name: input.name ?? "CCGUI PR审查工程师",
+        icon: input.icon ?? "",
+        botId: input.botId ?? "bot-1",
+        body: "你是评审工程师。",
+      })}`,
+      ts: null,
+    };
+  }
+
+  async function renderBadge(message: Message) {
+    await act(async () => {
+      root.render(<MessageRow message={message} workspacePath="/ws" turnFinal />);
+    });
+    return container.querySelector<HTMLElement>(".text-caption-1-regular");
+  }
+
+  it("renders the bot's paper avatar next to the frozen name", async () => {
+    useBotStore.setState({ bots: [bot()], loaded: true });
+    const badge = await renderBadge(messageWithBlock({}));
+    expect(badge?.textContent).toContain("CCGUI PR审查工程师");
+    const avatar = badge?.querySelector<HTMLElement>('[data-testid="bot-avatar"]');
+    expect(avatar?.dataset.avatarType).toBe("generated");
+    expect(avatar?.querySelector("canvas")).not.toBeNull();
+  });
+
+  it("follows the live bot when its avatar was edited after the send", async () => {
+    useBotStore.setState({ bots: [bot({ avatar: { type: "emoji", value: "🧐" } })], loaded: true });
+    const badge = await renderBadge(messageWithBlock({}));
+    const avatar = badge?.querySelector<HTMLElement>('[data-testid="bot-avatar"]');
+    expect(avatar?.dataset.avatarType).toBe("emoji");
+    expect(avatar?.textContent).toBe("🧐");
+  });
+
+  it("keeps the recorded emoji when the bot no longer exists", async () => {
+    const badge = await renderBadge(messageWithBlock({ icon: "🔍", botId: "deleted" }));
+    const avatar = badge?.querySelector<HTMLElement>('[data-testid="bot-avatar"]');
+    expect(avatar?.dataset.avatarType).toBe("emoji");
+    expect(avatar?.textContent).toBe("🔍");
+  });
+
+  it("falls back to a deterministic paper avatar when only an id was recorded", async () => {
+    const badge = await renderBadge(messageWithBlock({ botId: "deleted" }));
+    const avatar = badge?.querySelector<HTMLElement>('[data-testid="bot-avatar"]');
+    expect(avatar?.dataset.avatarType).toBe("generated");
+    const label = avatar?.querySelector("canvas")?.getAttribute("aria-label");
+    expect(label).toBeTruthy();
+    // Same message, same face: the fallback seed is the recorded id, not a
+    // random pick that repaints on every mount.
+    await renderBadge(messageWithBlock({ botId: "deleted" }));
+    expect(
+      container.querySelector("canvas")?.getAttribute("aria-label"),
+    ).toBe(label);
   });
 });

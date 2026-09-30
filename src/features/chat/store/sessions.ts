@@ -85,6 +85,8 @@ export interface SessionDeps {
   forgetClosedTab: (key: string) => void;
   drainQueue: (key: string) => void;
   markUnseenIfBackground: (key: string) => void;
+  /** 一轮结束后的复盘计数钩子（store.ts 接记忆模块）。 */
+  turnSettled: (key: string) => void;
 }
 
 export function createSessionActions(
@@ -111,6 +113,7 @@ export function createSessionActions(
     forgetClosedTab,
     drainQueue,
     markUnseenIfBackground,
+    turnSettled,
   } = deps;
 
   /** Migrate the engine pref off a CLI that is gone or disabled in
@@ -137,6 +140,7 @@ export function createSessionActions(
               markUnseenIfBackground,
               upsertSessionMeta: (meta) => upsertSessionMetaInto(set, meta),
               refreshSessionUsage: (k) => get().refreshSessionUsage(k),
+              turnSettled,
             }),
           ),
         ),

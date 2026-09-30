@@ -46,6 +46,19 @@ fn ser<T: serde::Serialize>(r: Result<T, String>) -> Result<Value, String> {
     r.and_then(|v| serde_json::to_value(v).map_err(|e| e.to_string()))
 }
 
+/// 记忆写入失败保持结构化：错误以 JSON 字符串过桥，前端 memoryErrorMessage
+/// 按 code/kind 本地化。
+fn memory_ser<T: serde::Serialize>(
+    r: Result<T, crate::memory::MemoryError>,
+) -> Result<Value, String> {
+    match r {
+        Ok(value) => serde_json::to_value(value).map_err(|e| e.to_string()),
+        Err(error) => Err(
+            serde_json::to_string(&error).unwrap_or_else(|_| error.message),
+        ),
+    }
+}
+
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct EngineIdArgs {
@@ -137,6 +150,9 @@ struct SendMessageArgs {
     /// Desktop-only feature; default keeps older web clients compatible.
     #[serde(default)]
     computer_use: Option<bool>,
+    /// 记忆工具挂载（memory/mcp.rs）：默认值让旧客户端保持可用。
+    #[serde(default)]
+    memory_bot: Option<String>,
 }
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -298,18 +314,49 @@ struct IdArgs {
 }
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct AgentAddArgs {
-    name: String,
-    prompt: Option<String>,
-    icon: Option<String>,
+struct BotCreateArgs {
+    input: crate::bots::BotCreate,
 }
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct AgentUpdateArgs {
+struct BotUpdateArgs {
     id: String,
-    name: Option<String>,
-    prompt: Option<String>,
-    icon: Option<String>,
+    patch: crate::bots::BotPatch,
+}
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct MemoryListArgs {
+    bot_id: Option<String>,
+}
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct MemoryAddArgs {
+    bot_id: Option<String>,
+    target: String,
+    content: String,
+}
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct MemoryUpdateArgs {
+    id: String,
+    content: String,
+}
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct MemoryClearArgs {
+    bot_id: Option<String>,
+    target: String,
+}
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct MemoryReviewArgs {
+    bot_id: String,
+    engine: String,
+    #[serde(default)]
+    provider_id: Option<String>,
+    #[serde(default)]
+    model: Option<String>,
+    transcript: String,
 }
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -591,6 +638,7 @@ pub(super) async fn dispatch(
                 a.provider_id,
                 a.run_id,
                 a.computer_use,
+                a.memory_bot,
             )
             .await)
         }
@@ -847,19 +895,74 @@ pub(super) async fn dispatch(
             let a: PathArgs = parse_args(&raw)?;
             ser(crate::slash_commands::list_slash_commands(app.state(), a.path).await)
         }
-        // agents & prompts (composer `#`/`!` pickers)
-        "agent_list" => ser(crate::agents::agent_list().await),
-        "agent_add" => {
-            let a: AgentAddArgs = parse_args(&raw)?;
-            ser(crate::agents::agent_add(a.name, a.prompt, a.icon).await)
+        // bots & prompts (composer `#`/`!` pickers)
+        "bot_list" => ser(crate::bots::bot_list().await),
+        "bot_create" => {
+            let a: BotCreateArgs = parse_args(&raw)?;
+            ser(crate::bots::bot_create(a.input).await)
         }
-        "agent_update" => {
-            let a: AgentUpdateArgs = parse_args(&raw)?;
-            ser(crate::agents::agent_update(a.id, a.name, a.prompt, a.icon).await)
+        "bot_update" => {
+            let a: BotUpdateArgs = parse_args(&raw)?;
+            ser(crate::bots::bot_update(a.id, a.patch).await)
         }
-        "agent_delete" => {
+        "bot_delete" => {
             let a: IdArgs = parse_args(&raw)?;
-            ser(crate::agents::agent_delete(a.id).await)
+            ser(crate::bots::bot_delete(app.state(), a.id).await)
+        }
+        "bot_duplicate" => {
+            let a: IdArgs = parse_args(&raw)?;
+            ser(crate::bots::bot_duplicate(a.id).await)
+        }
+        // 记忆（memory/mcp.rs）：写入错误保持结构化（JSON 字符串过桥），
+        // 远程界面才能和桌面一致地本地化「超限 / 安全扫描」。
+        "memory_list" => {
+            let a: MemoryListArgs = parse_args(&raw)?;
+            memory_ser(crate::memory::view(&app.state(), a.bot_id.as_deref()))
+        }
+        "memory_add" => {
+            let a: MemoryAddArgs = parse_args(&raw)?;
+            let target = crate::memory::Target::parse(&a.target)
+                .map_err(|error| serde_json::to_string(&error).unwrap_or(error.message))?;
+            memory_ser(
+                crate::memory::add(&app.state(), target, a.bot_id.as_deref(), &a.content, "user")
+                    .map(|(entry, _created)| entry),
+            )
+        }
+        "memory_update" => {
+            let a: MemoryUpdateArgs = parse_args(&raw)?;
+            memory_ser(crate::memory::update(&app.state(), &a.id, &a.content))
+        }
+        "memory_remove" => {
+            let a: IdArgs = parse_args(&raw)?;
+            memory_ser(crate::memory::remove_by_id(&app.state(), &a.id))
+        }
+        "memory_clear" => {
+            let a: MemoryClearArgs = parse_args(&raw)?;
+            let target = crate::memory::Target::parse(&a.target)
+                .map_err(|error| serde_json::to_string(&error).unwrap_or(error.message))?;
+            memory_ser(crate::memory::clear(&app.state(), target, a.bot_id.as_deref()))
+        }
+        "memory_pending_approve" => {
+            let a: IdArgs = parse_args(&raw)?;
+            memory_ser(crate::memory::pending::approve(&app.state(), &a.id))
+        }
+        "memory_pending_reject" => {
+            let a: IdArgs = parse_args(&raw)?;
+            memory_ser(crate::memory::pending::reject(&app.state(), &a.id))
+        }
+        "memory_review" => {
+            let a: MemoryReviewArgs = parse_args(&raw)?;
+            let state = app.state();
+            let outcome = crate::memory::review::review(
+                &state,
+                &a.bot_id,
+                &a.engine,
+                a.provider_id.as_deref(),
+                a.model.as_deref(),
+                &a.transcript,
+            )
+            .await;
+            serde_json::to_value(outcome).map_err(|e| e.to_string())
         }
         // built-in agent catalog (agency-agents pack)
         "list_built_in_agents" => {

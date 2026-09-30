@@ -1190,6 +1190,7 @@ mod tests {
             additional_dirs: Vec::new(),
             provider_id: None,
             computer_use: None,
+            memory_bot: None,
             allowed_tools: None,
         };
         run_host_turn(
@@ -1276,6 +1277,7 @@ mod tests {
                     additional_dirs: Vec::new(),
                     provider_id: None,
                     computer_use: None,
+                    memory_bot: None,
                     allowed_tools: None,
                 };
                 run_host_turn(

@@ -308,11 +308,11 @@ input[type="search"]::-webkit-search-cancel-button {
   0%,
   100% {
     transform: scale(1);
-    box-shadow: 0 0 0 4px color-mix(in srgb, var(--color-status-streaming) 18%, transparent);
+    opacity: 1;
   }
   50% {
     transform: scale(1.35);
-    box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-status-streaming) 10%, transparent);
+    opacity: 0.65;
   }
 }
 @media (prefers-reduced-motion: reduce) {

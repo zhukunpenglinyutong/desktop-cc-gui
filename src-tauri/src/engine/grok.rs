@@ -682,6 +682,7 @@ mod tests {
             additional_dirs: vec![],
             provider_id: None,
             computer_use: None,
+            memory_bot: None,
             allowed_tools: None,
         };
         let built = GrokEngine.build_command(&req, "grok").unwrap();

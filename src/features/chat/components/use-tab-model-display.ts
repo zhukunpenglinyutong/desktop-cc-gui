@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import { EFFORT_LEVELS, type EffortLevel } from "@/components/application/ai-chat/effort-levels";
 import { useChatStore, type ActiveSession } from "../store";
+import { memoizeMessageHistory } from "./memoize-message-history";
 
 /** Session records and history rows carry plain strings; anything that is not
  *  one of the picker's stops (a hand-edited settings file, an engine that
@@ -39,16 +40,16 @@ export function useTabModelDisplay({
   const sessionActiveModel = useChatStore((s) =>
     sessionKey ? (s.bySession[sessionKey]?.activeModel ?? null) : null,
   );
-  const sessionHistoryModel = useChatStore((s) => {
-    if (!sessionKey) return null;
-    const messages = s.bySession[sessionKey]?.messages;
-    if (!messages) return null;
+  const historyModel = useMemo(() => memoizeMessageHistory((messages) => {
     for (let i = messages.length - 1; i >= 0; i--) {
       const model = messages[i].model;
       if (model) return model;
     }
     return null;
-  });
+  }), []);
+  const sessionHistoryModel = useChatStore((s) =>
+    sessionKey ? historyModel(s.bySession[sessionKey]?.messages) : null,
+  );
   const tabModel = useMemo(() => {
     if (!active || active.engine !== activeEngine) return undefined;
     // tab pick → what the engine reported running → this session's history
@@ -63,16 +64,16 @@ export function useTabModelDisplay({
   const sessionActiveEffort = useChatStore((s) =>
     sessionKey ? (s.bySession[sessionKey]?.activeEffort ?? null) : null,
   );
-  const sessionHistoryEffort = useChatStore((s) => {
-    if (!sessionKey) return null;
-    const messages = s.bySession[sessionKey]?.messages;
-    if (!messages) return null;
+  const historyEffort = useMemo(() => memoizeMessageHistory((messages) => {
     for (let i = messages.length - 1; i >= 0; i--) {
       const effort = messages[i].effort;
       if (effort) return effort;
     }
     return null;
-  });
+  }), []);
+  const sessionHistoryEffort = useChatStore((s) =>
+    sessionKey ? historyEffort(s.bySession[sessionKey]?.messages) : null,
+  );
   const tabEffort = useMemo(() => {
     if (!active || active.engine !== activeEngine) return undefined;
     return (

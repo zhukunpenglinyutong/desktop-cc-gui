@@ -103,13 +103,17 @@ export default function SettingsPage() {
   }, [sections, cliNavOrder]);
   // Legacy links land on a CLI 管理 page: ?page=cliConfig → first CLI,
   // ?page=dsh → the DSH engine page (its host section merged there).
+  // ?page=agentsPrompts was the old combined 智能体与提示词 page; it opens the
+  // 智能体 half, which was that page's default tab.
   const rawPage = searchParams.get("page") ?? "general";
   const pageParam =
     rawPage === "cliConfig"
       ? (orderedCliKeys[0] ?? "general")
       : rawPage === "dsh"
         ? "cli:dsh"
-        : rawPage;
+        : rawPage === "agentsPrompts"
+          ? "agents"
+          : rawPage;
 
   const groups = useMemo<RailGroup[]>(() => {
     const sorted = [...sections].sort((a, b) => a.order - b.order);

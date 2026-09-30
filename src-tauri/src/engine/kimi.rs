@@ -241,6 +241,7 @@ mod channel_tests {
             additional_dirs: vec![],
             provider_id: None,
             computer_use: None,
+            memory_bot: None,
             allowed_tools: None,
         };
         let built = KimiEngine.host_command(&req, "kimi").unwrap();
@@ -263,6 +264,7 @@ mod channel_tests {
             additional_dirs: vec![],
             provider_id: Some("plugin_model-switcher_probe".into()),
             computer_use: None,
+            memory_bot: None,
             allowed_tools: None,
         };
         let mut env = HashMap::from([

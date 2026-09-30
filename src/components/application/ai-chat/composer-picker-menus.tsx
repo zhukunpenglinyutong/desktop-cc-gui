@@ -1,11 +1,11 @@
 import { FileMentionMenu } from "@/components/application/ai-chat/file-mention-menu";
 import { SlashCommandMenu } from "@/components/application/ai-chat/slash-command-menu";
-import { AgentMenu } from "@/components/application/ai-chat/agent-menu";
+import { BotMenu } from "@/components/application/ai-chat/bot-menu";
 import { PromptMenu } from "@/components/application/ai-chat/prompt-menu";
 import type { ComposerPickers } from "@/components/application/ai-chat/use-composer-pickers";
 
 /**
- * The composer's floating pickers (`@` files, `/` commands, `#` agents,
+ * The composer's floating pickers (`@` files, `/` commands, `#` bots,
  * `!` prompts). All four anchor above the field; only one is active at a
  * time (see useComposerPickers). Hidden while the composer is collapsed.
  */
@@ -28,10 +28,10 @@ export function ComposerPickerMenus({
     setSlash,
     slashMenuRef,
     handleSlashSelect,
-    agent,
-    setAgent,
-    agentMenuRef,
-    handleAgentSelect,
+    bot,
+    setBot,
+    botMenuRef,
+    handleBotSelect,
     prompt,
     setPrompt,
     promptMenuRef,
@@ -59,13 +59,13 @@ export function ComposerPickerMenus({
           menuRef={slashMenuRef}
         />
       )}
-      {agent && (
-        <AgentMenu
-          query={agent.query}
-          left={agent.left}
-          onSelect={handleAgentSelect}
-          onClose={() => setAgent(null)}
-          menuRef={agentMenuRef}
+      {bot && (
+        <BotMenu
+          query={bot.query}
+          left={bot.left}
+          onSelect={handleBotSelect}
+          onClose={() => setBot(null)}
+          menuRef={botMenuRef}
         />
       )}
       {prompt && (

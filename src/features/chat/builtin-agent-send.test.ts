@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { ipc, type AgentConfig } from "@/lib/ipc";
+import { ipc } from "@/lib/ipc";
 
 /**
  * Built-in agent picks (`source: "builtIn"`) store no prompt: sendPrompt
@@ -38,23 +38,23 @@ vi.mock("@/lib/events", () => ({
 }));
 
 const WS = "/tmp/ws";
-const STORAGE_KEY = "ccgui-next.selectedAgentByThread:v1";
-const BUILT_IN_PICK: AgentConfig = {
+const STORAGE_KEY = "ccgui-next.selectedBotByThread:v1";
+const BUILT_IN_PICK = {
   id: "agency-agents:design/design-ui-designer",
   name: "UI 设计师",
-  icon: "🎨",
-  source: "builtIn",
+  avatar: { type: "emoji" as const, value: "🎨" },
+  source: "builtIn" as const,
 };
 // Seeded before the store module loads (a test exercising the module-load
-// boundary): selected-agent reads localStorage once at import time.
+// boundary): selected-bot reads localStorage once at import time.
 localStorage.setItem(
   STORAGE_KEY,
   JSON.stringify({ [`${WS}::draft`]: BUILT_IN_PICK }),
 );
 
 const { useChatStore } = await import("./store");
-const { getSelectedAgent, selectSelectedAgent } = await import(
-  "@/features/agents/selected-agent"
+const { getSelectedBot, selectSelectedBot } = await import(
+  "@/features/bots/selected-bot"
 );
 const { sessionKey } = await import("./store/persistence");
 describe("sendPrompt with a built-in agent pinned", () => {
@@ -74,7 +74,7 @@ describe("sendPrompt with a built-in agent pinned", () => {
     });
     // Re-seed the in-memory selection too: a previous test's clear()
     // removes the entry from both the store and localStorage.
-    selectSelectedAgent(WS, null, BUILT_IN_PICK);
+    selectSelectedBot(WS, null, BUILT_IN_PICK);
   });
 
   it("resolves the catalog prompt at send time and appends the block", async () => {
@@ -115,7 +115,7 @@ describe("sendPrompt with a built-in agent pinned", () => {
       prompt: string;
     };
     expect(sent.prompt).toBe("hi");
-    expect(getSelectedAgent(WS, null)).toBeNull();
+    expect(getSelectedBot(WS, null)).toBeNull();
     const key = sessionKey("claude", null, WS);
     expect(useChatStore.getState().bySession[key]?.error).toBeTruthy();
 

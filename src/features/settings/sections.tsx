@@ -11,6 +11,7 @@ import Activity from "lucide-react/dist/esm/icons/activity";
 import FlaskConical from "lucide-react/dist/esm/icons/flask-conical";
 import RefreshCw from "lucide-react/dist/esm/icons/refresh-cw";
 import Bot from "lucide-react/dist/esm/icons/bot";
+import FileText from "lucide-react/dist/esm/icons/file-text";
 import Smartphone from "lucide-react/dist/esm/icons/smartphone";
 import ChartColumn from "lucide-react/dist/esm/icons/chart-column";
 import Sparkles from "lucide-react/dist/esm/icons/sparkles";
@@ -28,7 +29,8 @@ import { PetSection } from "./PetSection";
 import { ProxySection } from "./ProxySection";
 import { WorkspacesSection } from "./WorkspacesSection";
 import { ArchivedSessionsSection } from "./ArchivedSessionsSection";
-import { AgentsPromptsSection } from "./agents-prompts/AgentsPromptsSection";
+import { BotsPane } from "./agents-prompts/BotsPane";
+import { PromptsPane } from "./agents-prompts/PromptsPane";
 import { CliConfigSection } from "./CliConfigSection";
 import { AboutSection } from "./AboutSection";
 import { PerformanceDiagnosticsSection } from "./PerformanceDiagnostics";
@@ -83,7 +85,7 @@ settingsRegistry.register({
   label: () => i18n.t("settings.proxy"),
   icon: Globe,
   group: "system",
-  order: 4,
+  order: 5,
   component: ProxySection,
 });
 settingsRegistry.register({
@@ -105,13 +107,22 @@ settingsRegistry.register({
   component: ArchivedSessionsSection,
 });
 settingsRegistry.register({
-  id: "agentsPrompts",
-  key: "agentsPrompts",
-  label: () => i18n.t("settings.agentsPrompts"),
+  id: "agents",
+  key: "agents",
+  label: () => i18n.t("settings.agents"),
   icon: Bot,
   group: "system",
   order: 3,
-  component: AgentsPromptsSection,
+  component: BotsPane,
+});
+settingsRegistry.register({
+  id: "prompts",
+  key: "prompts",
+  label: () => i18n.t("settings.prompts"),
+  icon: FileText,
+  group: "system",
+  order: 4,
+  component: PromptsPane,
 });
 settingsRegistry.register({
   id: "webAccess",

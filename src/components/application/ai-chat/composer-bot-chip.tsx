@@ -1,31 +1,26 @@
 import { useTranslation } from "react-i18next";
-import Bot from "lucide-react/dist/esm/icons/bot";
-import { type AgentConfig } from "@/lib/ipc";
+import { BotAvatarView } from "@/features/bots/bot-avatar";
+import { type SelectedBot } from "@/features/bots/selected-bot";
 
 /**
- * Pinned-agent chip rendered above the composer input, styled after the
- * attachment chips (ConversationFooter); × clears the selection.
+ * Pinned-bot chip rendered above the composer input, styled after the
+ * attachment chips (ConversationFooter); × clears the selection. It renders
+ * the frozen pick (name + avatar as of selection), not the live bot row: a bot
+ * renamed mid-conversation must not relabel the prompt it already produced.
  */
-export function SelectedAgentChip({
-  agent,
+export function SelectedBotChip({
+  bot,
   onClear,
 }: {
-  agent: AgentConfig;
+  bot: SelectedBot;
   onClear: () => void;
 }) {
   const { t } = useTranslation();
   return (
     <div className="flex flex-wrap gap-1.5 px-1.5">
       <span className="inline-flex items-center gap-1 rounded-full bg-background-tertiary-default py-0.5 pl-2 text-caption-1-medium text-text-secondary">
-        {agent.icon ? (
-          <span aria-hidden>{agent.icon}</span>
-        ) : (
-          <Bot
-            aria-hidden
-            className="size-3.5 shrink-0 text-foreground-icon-secondary"
-          />
-        )}
-        <span className="max-w-48 truncate">{agent.name}</span>
+        <BotAvatarView avatar={bot.avatar} seed={bot.id} size={14} />
+        <span className="max-w-48 truncate">{bot.name}</span>
         <button
           type="button"
           aria-label={t("chat.selectedAgentRemove")}

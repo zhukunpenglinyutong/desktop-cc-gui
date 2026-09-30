@@ -275,6 +275,19 @@ fn build_omp_acp_plan_command(
             "操作电脑与 OMP ACP 计划会话不兼容：.omp/mcp.json 注入未在 ACP 传输验证".to_string(),
         );
     }
+    // 记忆不受此限：它只是读写本机数据库，没有指针/急停这类绑定 rpc 通道
+    // 的状态；同一个 omp 二进制读同一份工作区 mcp.json，omp_acp 驱动在回合
+    // 结束时按引用计数恢复（与 rpc 路径同一条链）。
+    let mcp_restore = if req.memory_bot.is_some() {
+        let bot_id = req.memory_bot.as_deref().unwrap_or_default();
+        cmd.env(crate::memory::mcp::BOT_ENV, bot_id);
+        crate::computer_use::inject_workspace_mcp(
+            &req.workspace,
+            &[crate::memory::mcp::server_spec()?],
+        )?
+    } else {
+        None
+    };
     cmd.args(["--mode", "acp"]);
     // service-tier 没有 ACP 配置等价物，保持启动 flag（与 rpc 路径同一
     // 校验与 gating：仅显式 openai-codex 选择器才传）。
@@ -294,7 +307,7 @@ fn build_omp_acp_plan_command(
         stdin_payload: None,
         keep_stdin_open: false,
         cleanup_files: Vec::new(),
-        mcp_restore: None,
+        mcp_restore,
         preassigned_session_id: None,
     })
 }
@@ -314,6 +327,10 @@ impl Engine for PiFamilyEngine {
     /// omp reads `.omp/mcp.json` from the workspace, which the send injects;
     /// pi's MCP discovery differs and is not wired up (honest no).
     fn supports_computer_use(&self) -> bool {
+        self.id == "omp"
+    }
+    /// 只有 omp 有工作区 mcp.json 注入通道；pi 没有，不假装能挂。
+    fn supports_memory(&self) -> bool {
         self.id == "omp"
     }
     /// omp exposes real approval switches (`--approval-mode`,
@@ -516,11 +533,17 @@ impl Engine for PiFamilyEngine {
             // omp 没有 --mcp-config 启动参数(MCP 只从固定文件发现):
             // 注入工作区 .omp/mcp.json,回合结束按引用计数恢复,崩溃残留
             // 由下次启动的 sweep 兜底(见 computer_use::inject_workspace_mcp)。
-            let mcp_restore = if req.computer_use == Some(true) && self.id == "omp" {
-                crate::computer_use::inject_workspace_mcp(&req.workspace)?
-            } else {
-                None
-            };
+            // 文档里不带每次运行的 Bot id:并发的不同 Bot 会话共用这一个文件，
+            // 身份靠父进程环境变量传给各自拉起的 MCP 子进程。
+            let mut specs = Vec::new();
+            if req.computer_use == Some(true) && self.id == "omp" {
+                specs.push(crate::computer_use::computer_use_spec()?);
+            }
+            if let Some(bot_id) = req.memory_bot.as_deref() {
+                cmd.env(crate::memory::mcp::BOT_ENV, bot_id);
+                specs.push(crate::memory::mcp::server_spec()?);
+            }
+            let mcp_restore = crate::computer_use::inject_workspace_mcp(&req.workspace, &specs)?;
             return Ok(BuiltCommand {
                 command: cmd,
                 stdin_payload: Some(payload),
@@ -1072,6 +1095,7 @@ mod tests {
             additional_dirs: Vec::new(),
             provider_id: None,
             computer_use: None,
+            memory_bot: None,
             allowed_tools: None,
         }
     }
@@ -1162,6 +1186,59 @@ mod tests {
         assert!(omp().build_command(&req, "fake-omp").is_err());
         // auto/bypass 路径不受影响（回归护栏）。
         assert!(omp().build_command(&plan_req(Some("auto")), "fake-omp").is_ok());
+    }
+
+    #[test]
+    fn omp_plan_mounts_memory_and_restores_the_workspace_file() {
+        // app_home 走 HOME（paths::home_dir 的 cfg(test) 分支），与其它
+        // 改 HOME 的测试共用同一把锁。
+        let _guard = crate::paths::HOME_ENV_LOCK.lock();
+        let home = std::env::temp_dir().join(format!(
+            "ccgui-next-omp-plan-home-{}",
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::create_dir_all(&home).unwrap();
+        std::env::set_var("HOME", &home);
+        let ws = std::env::temp_dir().join(format!(
+            "ccgui-next-omp-plan-ws-{}",
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::create_dir_all(&ws).unwrap();
+
+        let mut req = plan_req(Some("plan"));
+        req.workspace = ws.clone();
+        req.memory_bot = Some("bot-1".to_string());
+        let built = omp().build_command(&req, "fake-omp").unwrap();
+
+        // 身份走环境变量（工作区文件被并发会话共用），文件里只有服务器条目。
+        let envs: Vec<(String, Option<String>)> = built
+            .command
+            .as_std()
+            .get_envs()
+            .map(|(key, value)| {
+                (
+                    key.to_string_lossy().into_owned(),
+                    value.map(|value| value.to_string_lossy().into_owned()),
+                )
+            })
+            .collect();
+        assert!(
+            envs.iter().any(|(key, value)| {
+                key == crate::memory::mcp::BOT_ENV && value.as_deref() == Some("bot-1")
+            }),
+            "{envs:?}"
+        );
+        let doc: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(ws.join(".omp").join("mcp.json")).unwrap(),
+        )
+        .unwrap();
+        assert!(doc["mcpServers"][crate::memory::mcp::SERVER_NAME].is_object());
+
+        // 回合结束由 omp_acp 驱动恢复；这里直接验证恢复账不残留。
+        built.mcp_restore.unwrap().restore();
+        assert!(!ws.join(".omp").join("mcp.json").exists());
+        let _ = std::fs::remove_dir_all(&home);
+        let _ = std::fs::remove_dir_all(&ws);
     }
 
     #[test]
@@ -1836,6 +1913,7 @@ mod tests {
             additional_dirs: vec![],
             provider_id: None,
             computer_use: None,
+            memory_bot: None,
             allowed_tools: None,
         };
         let built = engine.build_command(&req, "omp").unwrap();
@@ -1872,6 +1950,7 @@ mod tests {
             additional_dirs: vec![],
             provider_id: None,
             computer_use: None,
+            memory_bot: None,
             allowed_tools: None,
         };
         let built = engine.build_command(&req, "omp").unwrap();
@@ -1920,6 +1999,7 @@ mod tests {
             additional_dirs: vec![],
             provider_id: None,
             computer_use: None,
+            memory_bot: None,
             allowed_tools: None,
         };
         let built = engine.build_command(&req, "omp").unwrap();

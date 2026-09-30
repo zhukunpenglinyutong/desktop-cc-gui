@@ -232,21 +232,22 @@ function cliPageEntries(engine: EngineId): SettingsSearchEntry[] {
   return rows.map((row) => ({ page: `cli:${engine}`, ...row }));
 }
 
-/** 智能体与提示词 (`AgentsPromptsSection.tsx`): the two panes; the tab itself is
- *  the searchable target (the pane content is the user's agents/prompts), so
- *  a hit for 提示词 also selects that tab. */
-const agentsPromptsEntries: SettingsSearchEntry[] = [
+/** 智能体 (`BotsPane.tsx`): its two pane tabs (自定义 / 内置目录); the tab
+ *  itself is the searchable target (the pane content is the user's bots), so a
+ *  hit selects that tab. 提示词 (`PromptsPane.tsx`) indexes nothing — its list
+ *  is the user's own prompts, so the page is reachable by title alone. */
+const agentsEntries: SettingsSearchEntry[] = [
   {
-    page: "agentsPrompts",
-    anchor: "agents",
-    labelKey: "settings.agentPromptTabAgents",
-    activatorAnchor: "agents",
+    page: "agents",
+    anchor: "custom",
+    labelKey: "settings.agentTabCustom",
+    activatorAnchor: "custom",
   },
   {
-    page: "agentsPrompts",
-    anchor: "prompts",
-    labelKey: "settings.agentPromptTabPrompts",
-    activatorAnchor: "prompts",
+    page: "agents",
+    anchor: "builtIn",
+    labelKey: "settings.agentTabBuiltIn",
+    activatorAnchor: "builtIn",
   },
 ];
 
@@ -324,7 +325,7 @@ export const builtinSearchEntries: SettingsSearchEntry[] = [
 
   ...ENGINE_IDS.flatMap(cliPageEntries),
 
-  ...agentsPromptsEntries,
+  ...agentsEntries,
 
   ...skillsEntries,
 

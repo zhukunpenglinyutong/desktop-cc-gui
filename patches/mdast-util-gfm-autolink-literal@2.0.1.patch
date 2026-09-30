@@ -1,0 +1,21 @@
+diff --git a/lib/index.js b/lib/index.js
+index c5ca771c24dd914e342f791716a822431ee32b3a..d565b373a5c5875581ac36468e0a6029d3a745fa 100644
+--- a/lib/index.js
++++ b/lib/index.js
+@@ -132,7 +132,15 @@ function transformGfmAutolinkLiterals(tree) {
+     tree,
+     [
+       [/(https?:\/\/|www(?=\.))([-.\w]+)([^ \t\r\n]*)/gi, findUrl],
+-      [/(?<=^|\s|\p{P}|\p{S})([-.\w+]+)@([-\w]+(?:\.[-\w]+)+)/gu, findEmail]
++      // PATCH(ccgui): the 2.0.1 lookbehind `(?<=^|\s|\p{P}|\p{S})` makes
++      // older Safari/WKWebView (Safari < 16.4) throw
++      // `SyntaxError: invalid group specifier name` when *any* Markdown is
++      // parsed, which surfaces as a full-app crash. `findEmail` re-checks the
++      // preceding character through `previous(match, true)` (start / \s /
++      // \p{P} / \p{S}, excluding `/`), so dropping the lookbehind keeps the
++      // same result — 2.0.1 changed this line only as a performance refactor
++      // (see the 2.0.1 release notes).
++      [/([-.\w+]+)@([-\w]+(?:\.[-\w]+)+)/gu, findEmail]
+     ],
+     {ignore: ['link', 'linkReference']}
+   )

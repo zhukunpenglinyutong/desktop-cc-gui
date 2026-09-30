@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Bot editor fixture</title>
+</head>
+<body>
+<div id="fixture"></div>
+<script>
+// Minimal Tauri IPC stand-in: the bot list, its mutations and the installed
+// skills all come from in-memory fixtures below. No app, no files, no model.
+window.__TAURI_INTERNALS__ = {
+  transformCallback() { return 1; },
+  unregisterCallback() {},
+  convertFileSrc: (p) => p,
+  metadata: { currentWebview: { label: "main" }, currentWindow: { label: "main" } },
+  async invoke() { return null; },
+};
+</script>
+<script type="module" src="./bot-editor.tsx"></script>
+</body>
+</html>

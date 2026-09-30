@@ -208,14 +208,15 @@ describe("SettingsPage misc rail", () => {
 });
 
 describe("SettingsPage system rail", () => {
-  it("keeps 智能体与提示词 and 网络代理 under 系统, after 快捷键", async () => {
+  it("keeps 智能体, 提示词 and 网络代理 under 系统, after 快捷键", async () => {
     await render([]);
 
     expect(itemsUnder("settings.groupSystem")).toEqual([
       i18n.t("settings.general"),
       i18n.t("settings.webAccess"),
       i18n.t("shortcuts.sectionTitle"),
-      i18n.t("settings.agentsPrompts"),
+      i18n.t("settings.agents"),
+      i18n.t("settings.prompts"),
       i18n.t("settings.proxy"),
     ]);
 

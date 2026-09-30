@@ -5,6 +5,7 @@ import ZoomOut from "lucide-react/dist/esm/icons/zoom-out";
 import X from "lucide-react/dist/esm/icons/x";
 import { dataUrlBytes, imageMetaText } from "@/utils/image-meta";
 import { useBrowserOcclusion } from "@/features/browser/occlusion";
+import { isModalDialogOpen, showModalDialog } from "@/lib/engine-compat";
 
 /** Zoom bounds and button step; zoom 1 = fit the viewport. */
 const MIN_ZOOM = 0.25;
@@ -76,7 +77,7 @@ export function ImageLightbox({
   useEffect(() => {
     const dialog = dialogRef.current;
     if (!dialog) return;
-    if (!dialog.open) dialog.showModal();
+    if (!isModalDialogOpen(dialog)) showModalDialog(dialog);
     const close = () => onCloseRef.current();
     // Press on the backdrop closes; a press on the image closes at fit zoom
     // (the historical behavior) but starts a pan while zoomed in.

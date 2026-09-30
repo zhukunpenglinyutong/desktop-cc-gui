@@ -15,9 +15,9 @@ import {
   type SlashTriggerState,
 } from "@/components/application/ai-chat/use-slash-picker";
 import {
-  useAgentPicker,
-  type AgentTriggerState,
-} from "@/components/application/ai-chat/use-agent-picker";
+  useBotPicker,
+  type BotTriggerState,
+} from "@/components/application/ai-chat/use-bot-picker";
 import {
   usePromptPicker,
   type PromptTriggerState,
@@ -36,9 +36,10 @@ import { findSlashTrigger } from "@/components/application/ai-chat/slash-command
 import { type FileMentionMenuHandle } from "@/components/application/ai-chat/file-mention-menu";
 import { type SlashCommandMenuHandle } from "@/components/application/ai-chat/slash-command-menu";
 import {
-  CREATE_NEW_AGENT_ID,
-  type AgentMenuHandle,
-} from "@/components/application/ai-chat/agent-menu";
+  toSelectedBot,
+  type BotMenuEntry,
+  type BotMenuHandle,
+} from "@/components/application/ai-chat/bot-menu";
 import {
   CREATE_NEW_PROMPT_PATH,
   type PromptMenuHandle,
@@ -48,8 +49,8 @@ import {
   findHashTrigger,
 } from "@/components/application/ai-chat/agent-prompt-triggers";
 import { type MentionEntry } from "@/components/application/ai-chat/mention-files";
-import { type AgentConfig, type CustomPromptEntry, type SlashCommandEntry } from "@/lib/ipc";
-import { useSelectedAgent } from "@/features/agents/selected-agent";
+import { type CustomPromptEntry, type SlashCommandEntry } from "@/lib/ipc";
+import { useSelectedBot, type SelectedBot } from "@/features/bots/selected-bot";
 import { useChatStore } from "@/features/chat/store";
 import { useMcpPanel } from "@/features/mcp/panel";
 import { joinPath } from "@/features/files/store";
@@ -69,9 +70,9 @@ export interface UseComposerPickersArgs {
 
 /**
  * The composer's picker bundle: trigger state and menu handles for each
- * picker (`@` mention, `/` slash, `#` agent, `!` prompt), the
+ * picker (`@` mention, `/` slash, `#` bot, `!` prompt), the
  * priority-arbitrated `updateTriggers` pass, the select actions, and the
- * pinned-agent chip state.
+ * pinned-bot chip state.
  */
 export interface ComposerPickers {
   mention: MentionTriggerState | null;
@@ -82,9 +83,9 @@ export interface ComposerPickers {
   slashMenuRef: MutableRefObject<SlashCommandMenuHandle | null>;
   /** Re-derive the `/` trigger from the DOM; returns whether one is active. */
   updateSlashTrigger: () => boolean;
-  agent: AgentTriggerState | null;
-  setAgent: Dispatch<SetStateAction<AgentTriggerState | null>>;
-  agentMenuRef: MutableRefObject<AgentMenuHandle | null>;
+  bot: BotTriggerState | null;
+  setBot: Dispatch<SetStateAction<BotTriggerState | null>>;
+  botMenuRef: MutableRefObject<BotMenuHandle | null>;
   prompt: PromptTriggerState | null;
   setPrompt: Dispatch<SetStateAction<PromptTriggerState | null>>;
   promptMenuRef: MutableRefObject<PromptMenuHandle | null>;
@@ -92,17 +93,17 @@ export interface ComposerPickers {
   updateTriggers: () => void;
   handleMentionSelect: (entry: MentionEntry) => void;
   handleSlashSelect: (entry: SlashCommandEntry) => void;
-  handleAgentSelect: (entry: AgentConfig) => void;
+  handleBotSelect: (entry: BotMenuEntry) => void;
   handlePromptSelect: (entry: CustomPromptEntry) => void;
-  selectedAgent: AgentConfig | null;
-  clearSelectedAgent: () => void;
+  selectedBot: SelectedBot | null;
+  clearSelectedBot: () => void;
 }
 
 /**
- * `@` mention / `/` slash / `#` agent / `!` prompt pickers for the composer:
+ * `@` mention / `/` slash / `#` bot / `!` prompt pickers for the composer:
  * trigger tracking, priority arbitration (one picker at a time), select
- * actions that rewrite the field, and the per-thread pinned-agent selection.
- * Returns everything the Composer renders (menus, pinned-agent chip) plus the
+ * actions that rewrite the field, and the per-thread pinned-bot selection.
+ * Returns everything the Composer renders (menus, pinned-bot chip) plus the
  * callbacks the editable field and input handle consume.
  */
 export function useComposerPickers({
@@ -123,21 +124,21 @@ export function useComposerPickers({
   const { slash, setSlash, slashMenuRef, updateSlashTrigger } =
     useSlashPicker({ editableRef, wrapperRef, workspacePath, value, lastEmittedRef });
 
-  // `#` agent picker and `!` prompt picker: same trigger-tracking model.
-  const { agent, setAgent, agentMenuRef, updateAgentTrigger } =
-    useAgentPicker({ editableRef, wrapperRef, workspacePath, value, lastEmittedRef });
+  // `#` bot picker and `!` prompt picker: same trigger-tracking model.
+  const { bot, setBot, botMenuRef, updateBotTrigger } =
+    useBotPicker({ editableRef, wrapperRef, workspacePath, value, lastEmittedRef });
   const { prompt, setPrompt, promptMenuRef, updatePromptTrigger } =
     usePromptPicker({ editableRef, wrapperRef, workspacePath, value, lastEmittedRef });
 
   const navigate = useNavigate();
-  // The pinned agent is keyed per thread; draft tabs share a slot until the
-  // engine stamps a native session id (see selected-agent.ts).
+  // The pinned bot is keyed per thread; draft tabs share a slot until the
+  // engine stamps a native session id (see selected-bot.ts).
   const activeSessionId = useChatStore((s) => s.active?.sessionId ?? null);
   const {
-    agent: selectedAgent,
-    select: selectAgent,
-    clear: clearSelectedAgent,
-  } = useSelectedAgent(workspacePath ?? "", activeSessionId);
+    bot: selectedBot,
+    select: selectBot,
+    clear: clearSelectedBot,
+  } = useSelectedBot(workspacePath ?? "", activeSessionId);
 
   // One detection pass per input, priority `/` > `@` > `#` > `!`
   // (desktop-cc-gui parity: a line-start slash owns the completion surface;
@@ -146,7 +147,7 @@ export function useComposerPickers({
   const updateTriggers = useCallback(() => {
     if (updateSlashTrigger()) {
       setMention(null);
-      setAgent(null);
+      setBot(null);
       setPrompt(null);
       return;
     }
@@ -161,12 +162,12 @@ export function useComposerPickers({
       findMentionTrigger(extractText(el), caret)
     ) {
       updateMentionTrigger();
-      setAgent(null);
+      setBot(null);
       setPrompt(null);
       return;
     }
     setMention(null);
-    if (updateAgentTrigger()) {
+    if (updateBotTrigger()) {
       setPrompt(null);
       return;
     }
@@ -174,10 +175,10 @@ export function useComposerPickers({
   }, [
     updateSlashTrigger,
     updateMentionTrigger,
-    updateAgentTrigger,
+    updateBotTrigger,
     updatePromptTrigger,
     setMention,
-    setAgent,
+    setBot,
     setPrompt,
     workspacePath,
     editableRef,
@@ -249,19 +250,19 @@ export function useComposerPickers({
     },
     [emitChange, syncTags, setSlash, editableRef],
   );
-  /** Pin the picked agent to this thread and strip the `#query` trigger
-   *  from the field (the agent rides the message as a role block on send,
+  /** Pin the picked bot to this thread and strip the `#query` trigger
+   *  from the field (the bot rides the message as a role block on send,
    *  not as text). The create row jumps to the settings page instead. */
-  const handleAgentSelect = useCallback(
-    (entry: AgentConfig) => {
-      setAgent(null);
-      if (entry.id === CREATE_NEW_AGENT_ID) {
-        navigate("/settings?page=agentsPrompts");
+  const handleBotSelect = useCallback(
+    (entry: BotMenuEntry) => {
+      setBot(null);
+      if (entry.kind === "create") {
+        navigate("/settings?page=agents");
         return;
       }
       const el = editableRef.current;
       if (!el) return;
-      selectAgent(entry);
+      selectBot(toSelectedBot(entry));
       const caret = getCaretOffset(el);
       const text = extractText(el);
       // Recompute the trigger at select time — the caret may have moved
@@ -278,7 +279,7 @@ export function useComposerPickers({
       emitChange();
       syncTags();
     },
-    [emitChange, syncTags, setAgent, selectAgent, navigate, editableRef],
+    [emitChange, syncTags, setBot, selectBot, navigate, editableRef],
   );
   /** Replace the active `!query` trigger with the picked prompt's content,
    *  caret to the end of the inserted text. The create row jumps to the
@@ -287,7 +288,7 @@ export function useComposerPickers({
     (entry: CustomPromptEntry) => {
       setPrompt(null);
       if (entry.path === CREATE_NEW_PROMPT_PATH) {
-        navigate("/settings?page=agentsPrompts");
+        navigate("/settings?page=prompts");
         return;
       }
       const el = editableRef.current;
@@ -323,9 +324,9 @@ export function useComposerPickers({
     setSlash,
     slashMenuRef,
     updateSlashTrigger,
-    agent,
-    setAgent,
-    agentMenuRef,
+    bot,
+    setBot,
+    botMenuRef,
     prompt,
     setPrompt,
     promptMenuRef,
@@ -334,10 +335,10 @@ export function useComposerPickers({
     // Menu select actions.
     handleMentionSelect,
     handleSlashSelect,
-    handleAgentSelect,
+    handleBotSelect,
     handlePromptSelect,
-    // Pinned-agent chip state.
-    selectedAgent,
-    clearSelectedAgent,
+    // Pinned-bot chip state.
+    selectedBot,
+    clearSelectedBot,
   };
 }

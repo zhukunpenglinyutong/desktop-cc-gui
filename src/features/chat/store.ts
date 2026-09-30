@@ -1,11 +1,20 @@
 import { create } from "zustand";
 import { ipc, type SessionMeta, type SessionPage } from "@/lib/ipc";
+import { botById } from "@/features/bots/bot-store";
+import { getSelectedBot } from "@/features/bots/selected-bot";
+import {
+  noteSessionEnded,
+  noteTurnCompleted,
+  reviewSchedule,
+  reviewTranscript,
+  type ReviewContext,
+} from "@/features/bots/memory-review";
 import {
   ENGINE_PREF_KEY,
   persistTabs,
   sessionKey,
 } from "./store/persistence";
-import { patchSession } from "./store/stream";
+import { patchSession, resolveSessionModel } from "./store/stream";
 import { readPermissionPref } from "./store/permissions";
 import { createTabActions } from "./store/tabs";
 import { createMessagingActions } from "./store/messaging";
@@ -69,6 +78,59 @@ function loadHistoryPage(
 }
 
 export const useChatStore = create<ChatStore>((set, get) => {
+  /** 一轮对话 / 一个会话的复盘上下文：选中了开着重盘的 Bot 才返回。
+   *  复盘是记忆的子功能：记忆或复盘任一关着、Bot 已删，都不触发。 */
+  function memoryReviewContext(key: string): ReviewContext | null {
+    const s = get();
+    const session = s.bySession[key];
+    // 正在流式的轮次不算「结束」：等它落定或用户真的离开会话再复盘，
+    // 否则整理的是半截对话还多付一次调用。
+    if (!session || session.streaming) return null;
+    const tab = s.openTabs.find(
+      (t) => sessionKey(t.engine, t.sessionId, t.workspacePath) === key,
+    );
+    const meta = tab
+      ? undefined
+      : s.sessions.find(
+          (m) => sessionKey(m.engine, m.sessionId, m.workspacePath) === key,
+        );
+    const engine = tab?.engine ?? meta?.engine;
+    const sessionId = tab?.sessionId ?? meta?.sessionId;
+    const workspacePath = tab?.workspacePath ?? meta?.workspacePath;
+    if (!engine || !sessionId || !workspacePath) return null;
+    const selected = getSelectedBot(workspacePath, sessionId);
+    const bot = selected ? botById(selected.id) : null;
+    const schedule = reviewSchedule(bot);
+    if (!bot || !schedule) return null;
+    const transcript = reviewTranscript(session.messages);
+    // 只有工具行没有正文的轮次没什么可整理。
+    if (!transcript.trim()) return null;
+    return {
+      key,
+      botId: bot.id,
+      engine,
+      providerId: session.activeProvider ?? s.providers[engine] ?? null,
+      model: resolveSessionModel(tab ?? { engine }, session, s.models[engine]) ?? null,
+      everyNTurns: schedule.everyNTurns,
+      transcript,
+    };
+  }
+
+  const turnSettled = (key: string) => {
+    const context = memoryReviewContext(key);
+    if (context) noteTurnCompleted(context);
+  };
+  const sessionEnded = (
+    engine: string,
+    sessionId: string,
+    workspacePath: string,
+  ) => {
+    const context = memoryReviewContext(
+      sessionKey(engine, sessionId, workspacePath),
+    );
+    if (context) noteSessionEnded(context);
+  };
+
   const {
     activateTab,
     stampActiveTab,
@@ -76,7 +138,7 @@ export const useChatStore = create<ChatStore>((set, get) => {
     forgetClosedTab,
     forgetClosedTabs,
     ...tabActions
-  } = createTabActions({ set, get });
+  } = createTabActions({ set, get, sessionEnded });
   const { drainQueue, markUnseenIfBackground, ...messagingActions } =
     createMessagingActions({
       set,
@@ -94,6 +156,7 @@ export const useChatStore = create<ChatStore>((set, get) => {
     forgetClosedTab,
     drainQueue,
     markUnseenIfBackground,
+    turnSettled,
   });
   const workspaceActions = createWorkspaceActions({
     set,
