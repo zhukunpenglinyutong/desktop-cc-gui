@@ -13,6 +13,7 @@ import xaiIcon from "@lobehub/icons-static-svg/icons/xai.svg";
 import xiaomimimoIcon from "@lobehub/icons-static-svg/icons/xiaomimimo.svg";
 import zhipuIcon from "@lobehub/icons-static-svg/icons/zhipu-color.svg";
 import requestyIcon from "@/assets/model-icons/requesty.svg";
+import apiRouteIcon from "@/assets/model-icons/api-route.png";
 import type { EngineId } from "./providers";
 
 export interface ProviderPreset {
@@ -172,6 +173,18 @@ export function authJsonApiKey(authJson: string): string {
 export const PRESETS: Partial<Record<EngineId, ProviderPreset[]>> = {
   claude: [
     {
+      name: "API Route",
+      baseUrl: "https://global.api-route.com",
+      model: "claude-fable-5-1",
+      iconSrc: apiRouteIcon,
+      env: {
+        ANTHROPIC_DEFAULT_FABLE_MODEL: "claude-fable-5-1",
+        ANTHROPIC_DEFAULT_HAIKU_MODEL: "claude-haiku-4-5",
+        ANTHROPIC_DEFAULT_SONNET_MODEL: "claude-sonnet-5",
+        ANTHROPIC_DEFAULT_OPUS_MODEL: "claude-opus-5",
+      },
+    },
+    {
       name: "智谱GLM",
       baseUrl: "https://open.bigmodel.cn/api/anthropic",
       model: "glm-5.2",
@@ -325,6 +338,7 @@ export const PRESETS: Partial<Record<EngineId, ProviderPreset[]>> = {
   ],
   grok: [{ name: "xAI Official", baseUrl: "https://api.x.ai/v1", model: "grok-build", iconSrc: xaiIcon, iconClassName: DARK_MONO_ICON_CLASS }],
   codex: [
+    { name: "API Route", baseUrl: "https://global.api-route.com/v1", model: "gpt-6.1-sol", iconSrc: apiRouteIcon, wireApi: "responses" },
     { name: "Zhipu GLM", baseUrl: "https://open.bigmodel.cn/api/coding/paas/v4", model: "glm-5.2", iconSrc: zhipuIcon, wireApi: "chat" },
     { name: "Kimi", baseUrl: "https://api.moonshot.cn/v1", model: "kimi-k3", iconSrc: kimiIcon, iconClassName: DARK_MONO_ICON_CLASS, wireApi: "chat" },
     { name: "Kimi Coding", baseUrl: "https://api.kimi.com/coding/v1", model: "kimi-k3", iconSrc: kimiIcon, iconClassName: DARK_MONO_ICON_CLASS, wireApi: "chat" },

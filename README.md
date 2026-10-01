@@ -78,7 +78,9 @@ Kimi question cards use the local CLI's ACP form channel (verified with Kimi 2.0
 ### One client, ten AI engines
 
 - Registers runtime adapters for **Claude Code**, **Codex CLI**, **Kimi CLI**, **Grok CLI**, **Pi CLI**, **OMP CLI**, **DeepSeek Harness**, **Antigravity**, **OpenCode**, and **Qoder** (global and CN distributions) — pick the engine per session from the composer.
-- **Provider channels** are written to each CLI's own native config files (no parallel credential store), with curated presets for GLM, Kimi, DeepSeek, MiniMax, MiMo, Bailian, LongCat, OpenCode Go, OpenRouter, Requesty, and more. Claude / Codex / Grok channels can be imported from [CC Switch](https://github.com/farion1231/cc-switch).
+- **Provider channels** are written to each CLI's own native config files (no parallel credential store), with curated presets for GLM, Kimi, DeepSeek, MiniMax, MiMo, Bailian, LongCat, OpenCode Go, OpenRouter, Requesty, [API Route](https://www.api-route.com), and more. Claude / Codex / Grok channels can be imported from [CC Switch](https://github.com/farion1231/cc-switch).
+
+  To use API Route, create an API key in its dashboard and select the **API Route** preset in Settings for Claude or Codex. Claude uses the Anthropic-compatible root endpoint; Codex uses `/v1` with the Responses protocol. Adjust the preset's model names to models available to your key; see the [API Route setup guide](https://www.api-route.com/docs/quickstart).
 - Pi-family engines (Pi / OMP) support API-key and OAuth sign-in flows from inside Settings.
 - Per-tab **model and effort overrides**: different tabs in the same window can run different models or thinking levels.
 - Session history survives restarts; the history scanner reads each CLI's native session files and keeps titles in sync.
