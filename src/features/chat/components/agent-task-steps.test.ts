@@ -44,8 +44,10 @@ describe("subagent counting", () => {
     const steps = deriveAgentTaskSteps([DISPATCH, WAIT_BY_ID], true, "omp");
     expect(steps).toHaveLength(3);
 
+    // 父 assistant 暂停流式（streaming=false）不该把刚派出去的 subagent
+    // 标 complete；只有显式 hub roster / jobs snapshot 才会推动状态。
     const settled = deriveAgentTaskSteps([DISPATCH, WAIT_BY_ID], false, "omp");
-    expect(settled.filter((s) => s.state === "complete")).toHaveLength(3);
+    expect(settled.every((s) => s.state === "active")).toBe(true);
   });
 
   it("ignores a call that names no subagent", () => {
@@ -68,7 +70,11 @@ describe("subagent counting", () => {
     const steps = deriveAgentTaskSteps([DISPATCH, snapshot], false, "omp");
     expect(steps.map(({ label, state }) => ({ label, state }))).toEqual([
       { label: "CoreInvokeFilterParse", state: "active" },
-      { label: "IdolLiveDemosaic", state: "complete" },
+      // IdolLiveDemosaic was dispatched but not mentioned in the running hub
+      // snapshot. Settling the parent turn must NOT force it to "complete" —
+      // the agent is still in flight and only an explicit hub status (or a
+      // complete jobs roster) should settle it.
+      { label: "IdolLiveDemosaic", state: "active" },
       { label: "IdolLiveTranslate", state: "active" },
     ]);
   });
@@ -203,6 +209,46 @@ describe("subagent counting", () => {
       details: { op: "jobs", jobs: [] },
     });
     expect(deriveAgentTaskSteps([DISPATCH, running, filtered], false, "omp")[0].state).toBe("active");
+  });
+
+  it("does not mark dispatched subagents complete just because the parent stops streaming", () => {
+    // 回归用例：父 assistant 派完 subagent 后停一拍等工具结果（streaming
+    // 变 false），不该让刚派出去的 agent 瞬间变 complete。RunStatusStrip
+    // 之前会因此把所有子代理渲染成"已完成"，但 hub roster 此时还没回来。
+    const dispatch = tool(2, "task · Dispatching workers", {
+      tasks: [
+        { agent: "task", name: "WorkerA", task: "# Target\nOwn relay.rs." },
+        { agent: "task", name: "WorkerB", task: "# Target\nOwn web relay." },
+      ],
+    });
+    const stoppedStreaming = deriveAgentTaskSteps([dispatch], false, "omp");
+    expect(stoppedStreaming.every((s) => s.state === "active")).toBe(true);
+
+    // 后续 hub jobs snapshot 显式推进到 running → 仍 active
+    const runningSnapshot = tool(3, "hub · Waiting for workers", { op: "wait" }, {
+      details: {
+        op: "wait",
+        jobs: [
+          { id: "WorkerA", type: "task", status: "running" },
+          { id: "WorkerB", type: "task", status: "running" },
+        ],
+      },
+    });
+    const withSnapshot = deriveAgentTaskSteps([dispatch, runningSnapshot], false, "omp");
+    expect(withSnapshot.every((s) => s.state === "active")).toBe(true);
+
+    // hub jobs snapshot 显式报 complete → 才标 complete
+    const doneSnapshot = tool(3, "hub · Waiting for workers", { op: "wait" }, {
+      details: {
+        op: "wait",
+        jobs: [
+          { id: "WorkerA", type: "task", status: "complete" },
+          { id: "WorkerB", type: "task", status: "complete" },
+        ],
+      },
+    });
+    const allDone = deriveAgentTaskSteps([dispatch, doneSnapshot], false, "omp");
+    expect(allDone.every((s) => s.state === "complete")).toBe(true);
   });
 
   it("reads named agents but ignores background-job ids", () => {

@@ -552,10 +552,16 @@ describe("RunStatusStrip", () => {
     expect(pill("子代理").textContent).toContain("3/4");
     expect(container.querySelectorAll(".animate-ping").length).toBeGreaterThanOrEqual(2);
 
-    // When turn ends (streaming: false): breathing lights MUST turn off
+    // When turn ends (streaming: false): breathing lights MUST turn off.
+    // (animate-ping is gated on `streaming`, not on per-agent state, so it
+    // correctly turns off the instant the host stops speaking.)
     await act(async () => seed(messages, false));
     expect(pill("任务").textContent).toContain("0/1");
-    expect(pill("子代理").textContent).toContain("4/4");
+    // Subagent D was explicitly reported as "running" by the hub snapshot.
+    // Settling the parent turn must NOT promote it to complete — it stays
+    // 3/4 until the hub reports a real completion. (Without this fix the
+    // pill would show 4/4 with the green tick the moment streaming flipped.)
+    expect(pill("子代理").textContent).toContain("3/4");
     expect(container.querySelector(".animate-ping")).toBeNull();
 
     // Inside panel: when not live, active item displays 待处理 instead of 运行中

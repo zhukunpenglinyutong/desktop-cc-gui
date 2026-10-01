@@ -339,7 +339,7 @@ export function deriveAgentTaskSteps(
     if (message.role !== "tool") continue;
     const refs = subagentRefsFromArgs(message.args);
     if (refs.length > 0) {
-      const spawned = i >= turnStart && streaming ? "active" : "complete";
+      const spawned = i >= turnStart ? "active" : "complete";
       for (const ref of refs) {
         if (!states.has(ref.id)) states.set(ref.id, spawned);
       }
@@ -425,9 +425,7 @@ export function deriveAgentTaskSteps(
       seen.add(runtimeId);
       const source = ref.agent && ref.detail ? undefined : resolveDispatch(ref.id, dispatched);
       const reportedState = states.get(runtimeId) ?? states.get(ref.id);
-      const finalState = settledTurn
-        ? "complete"
-        : (reportedState ?? state);
+      const finalState = reportedState ?? state;
       steps.push({
         key: `${message.seq}:${runtimeId}`,
         label: ref.label && ref.label !== ref.id ? ref.label : runtimeId,
