@@ -95,8 +95,8 @@ export const EMPTY_SESSION: SessionState = {
  *  4. the engine default (new chats, sessions with no history yet).
  *
  * Per session on purpose: two omp sessions may run different models, so the
- * picker, the send, and the stamped rows must all read the session's model —
- * an engine-wide default would make one session's pick leak into the other.
+ * picker and send must read the session's choice. Event-stamped rows instead
+ * prefer activeModel: the concrete model this turn ran, not its selector.
  */
 export function resolveSessionModel(
   tab: { engine: string; model?: string } | null | undefined,

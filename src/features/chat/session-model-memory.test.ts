@@ -226,6 +226,24 @@ describe("a session's provider and model memory", () => {
     );
   });
 
+  it("keeps a running Claude model when session refresh returns its saved alias", async () => {
+    const tab = { engine: "claude", sessionId: SID, workspacePath: WS, model: "haiku" };
+    const key = sessionKey(tab.engine, SID, WS);
+    const model = "gpt-6-astra-cc-format[1m]";
+    useChatStore.setState({
+      active: tab,
+      openTabs: [tab],
+      engines: [],
+      bySession: { [key]: { ...EMPTY_SESSION, activeModel: model, streaming: true } },
+    });
+    vi.mocked(ipc.listSessions).mockResolvedValueOnce([{ ...meta("haiku"), engine: "claude" }]);
+
+    await useChatStore.getState().refreshSessions();
+
+    expect(useChatStore.getState().bySession[key]!.activeModel).toBe(model);
+    expect(useChatStore.getState().openTabs[0].model).toBe("haiku");
+  });
+
   it("falls back to the engine default when the session never recorded a level", async () => {
     const tab = { engine: "omp", sessionId: SID, workspacePath: WS };
     useChatStore.setState({

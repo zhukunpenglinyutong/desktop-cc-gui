@@ -132,22 +132,21 @@ export function upsertSessionMetaInto(
   });
 }
 
-/** Effective model for event-stamped rows: the session's activeModel wins,
- * followed by the owning tab's per-tab override, then the session's own
- * history, then the engine default — the same resolveSessionModel the send
- * path uses, so a row can never claim a model the turn did not run. */
+/** Rows and the ledger describe this turn, not the next picker selection.
+ * activeModel is seeded on send and updated by engine reports; it may be a
+ * concrete custom model while the tab deliberately keeps a family alias. */
 function stampedModel(
   deps: EngineEventDeps,
   engine: string,
   key: string,
 ): string | null {
   const s = deps.get();
+  const session = s.bySession[key];
+  if (session?.activeModel) return session.activeModel;
   const tab = s.openTabs.find(
     (t) => sessionKey(t.engine, t.sessionId, t.workspacePath) === key,
   );
-  return (
-    resolveSessionModel(tab, s.bySession[key], s.models[engine]) || null
-  );
+  return resolveSessionModel(tab, session, s.models[engine]) || null;
 }
 
 /** Effective reasoning effort for event-stamped rows. Native-session state

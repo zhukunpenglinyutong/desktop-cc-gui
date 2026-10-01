@@ -76,6 +76,7 @@
 - **排队行可上下调序**：排队卡片每行在发送 / 移除之外给「上移 / 下移」箭头（`message-queue.tsx` 的 `onMove` → store 的 `moveQueued(id, "up" | "down")`），仅在队列多于一行时渲染；首尾行各有一个方向禁用（`disabled:cursor-default` + 降透明，不隐藏，控件不换位）。箭头按用户看到的列表方向移动——卡片是「最新在上、队首在下」，所以上移 = 更晚发送、下移 = 更早发送（`moveQueued` 里 `up` 即数组后移一位；越界与未知 id 为 no-op），行首编号随重排实时重算。回归：`message-queue.test.tsx`、`queue-drain.test.ts`。
 - 可交互元素至少实现：默认 / hover / `focus-visible`（`ring-border-focus-ring`）/ active / disabled。按钮类控件的焦点环只走 `focus-visible`（不打扰鼠标用户）；输入类控件可以用 `focus:border-border-focus-ring` 表示聚焦，因为文本输入聚焦本身就是用户意图。三个搜索面板（⌘K 命令 / ⌘L 会话 / ⌘P 文件）的输入框例外：无边框，聚焦只靠光标与键盘高亮行，`.palette-search-field`（`globals.css`）负责压掉平台默认焦点框——Windows WebView2 会在 `outline-none` 之外再画一圈，macOS WKWebView 不画。
 - **渠道选择后保留当前引擎面板**：`engine-model-panel.tsx` 的 `ChannelPicker` 在选项卸载前将焦点交回同一面板的渠道按钮（`preventScroll: true`），桌面浮层与移动端弹窗共用。不能让选项卸载后的焦点恢复落到首个引擎行，触发 `onFocus` 把 Codex 面板切成 Claude Code；正常的引擎行点击、键盘导航与悬停切换保持不变。
+- **用量与消息记录按本轮实际模型归属**：`src/features/chat/store/engine-events.ts` 的 `stampedModel` 优先使用发送时初始化、由引擎上报更新的 `activeModel`；Claude 的 `haiku` / `sonnet` 等选择器别名不能压过已解析的自定义模型名。`sessions.ts` 的会话列表刷新不覆盖运行中已知的模型，标签页选择仍保留供下次发送。用量页按台账记录的模型名聚合，不按当前渠道映射猜测回填旧台账。回归：`usage-accounting.test.ts`、`session-model-memory.test.ts`。
 - disabled 必须改变光标语义（`disabled:cursor-not-allowed` 或 `disabled:cursor-default`）并降低强调（`opacity-50`~`60` 或语义 disabled token），不能只是点不动。
 - **异步动作进行中不可重入**：进行中禁用按钮（或首行拦截 `if (running) return`），避免重复请求。
 - **反馈不改变布局**：图标在默认态与反馈态之间切换时，外层容器尺寸固定（`ActionFeedbackIcon` 用 `iconClassName` 同时约束容器和图标），按钮不能因为换图标而抖动。
@@ -258,6 +259,7 @@ const feedback = useRunningFeedback(store.loading);
 
 | 版本 | 时间 | 内容 |
 |---|---|---|
+| v0.67 | 2026-10-01 | 用量与消息标记优先采用本轮实际模型，修复 Claude 自定义模型被统计成 haiku 等别名；会话刷新保留运行中模型，选择器与下次发送规则不变；§3 补充模型归属规则 |
 | v0.66 | 2026-09-30 | 智能体记忆补齐两个开关：「写入需要审批」把模型 / 复盘写入转成待审批队列（面板逐条或全部批准 / 驳回，replace/remove 展示前后对比，批准时才过容量闸，暂存后原文已变则拒绝执行；面板手动写入不审批）；「会话结束后台复盘」每 N 轮 + 离开会话触发，用该引擎的 API 渠道跑一次整理（无渠道 / 官方登录 / 忙碌明确跳过并就地说明），结果逐条走同一套写入闸；§3 更新记忆规则 |
 | v0.65 | 2026-09-30 | 智能体「记忆」上线：设置 → 智能体 → 记忆页签从概念图换成真面板（MEMORY / USER 两个账本、用量条、手动增删改、导出 / 清空），写入与容量规则后端单点（安全扫描 + 超限拒绝不截断），`memory` MCP 工具按引擎挂载（Claude Code / Codex / omp），USER/MEMORY 注入下次会话、引擎不支持时不写「记忆使用说明」；审批与后台复盘仍标「即将支持」；§3 补两条规则 |
 | v0.64 | 2026-09-30 | 多会话运行状态点改为静态阴影 + 缩放/透明度呼吸，保留 0.92s 节奏与重试/减少动态效果的静态反馈；增加真实侧栏与页签的并发动画回归 |

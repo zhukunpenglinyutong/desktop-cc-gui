@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ipc } from "@/lib/ipc";
 import { useChatStore } from "./store";
-import { handleEngineEvents, type EngineEventDeps } from "./store/engine-events";
+import { handleEngineEvents, type ChatEngineEvent, type EngineEventDeps } from "./store/engine-events";
 import { sessionKey } from "./store/persistence";
 import { EMPTY_SESSION, runRouting } from "./store/stream";
 import { parseUsage } from "./usage";
@@ -32,8 +32,8 @@ function deps(): EngineEventDeps {
   };
 }
 
-function event(kind: "usage" | "done", seq: number, data: unknown) {
-  return { runId, sessionId: "s-1", engine: "codex", seq, kind, data };
+function event(kind: ChatEngineEvent["kind"], seq: number, data: unknown, engine = "codex"): ChatEngineEvent {
+  return { runId, sessionId: "s-1", engine, seq, kind, data };
 }
 
 function report(inputTokens: number, outputTokens: number) {
@@ -113,5 +113,49 @@ describe("usage accounting", () => {
     const assistant = settled.messages.filter((m) => m.role === "assistant").at(-1);
     expect(parseUsage(assistant?.usage)).toMatchObject({ input: 1500, output: 50 });
     expect(parseUsage(settled.usage)).toMatchObject({ input: 500, output: 10 });
+  });
+
+  it("records Claude's resolved custom model instead of the selected family alias", () => {
+    const tab = { engine: "claude", sessionId: "s-1", workspacePath: "/tmp/ws", model: "haiku" };
+    const key = sessionKey(tab.engine, tab.sessionId, tab.workspacePath);
+    const model = "gpt-6-astra-cc-format[1m]";
+    runRouting.set(runId, key);
+    useChatStore.setState({
+      active: tab,
+      openTabs: [tab],
+      models: { claude: "sonnet" },
+      bySession: { [key]: { ...EMPTY_SESSION, streaming: true, activeModel: tab.model } },
+    });
+
+    handleEngineEvents([
+      event("model", 1, model, "claude"),
+      event("delta", 2, "Custom model reply", "claude"),
+      event("done", 3, { usage: { input_tokens: 7, output_tokens: 3 } }, "claude"),
+    ], deps());
+
+    expect(ipc.usageRecord).toHaveBeenCalledWith(expect.objectContaining({
+      engine: "claude", model, input: 7, output: 3, reports: 1,
+    }));
+    expect(ipc.usageRecord).toHaveBeenCalledTimes(1);
+    expect(useChatStore.getState().bySession[key]!.messages.at(-1)).toMatchObject({
+      role: "assistant", text: "Custom model reply", model, live: false,
+    });
+    // Keep the selector for the next send: aliases must still follow channel remaps.
+    expect(useChatStore.getState().openTabs[0].model).toBe("haiku");
+  });
+
+  it("attributes live reports to an observed run even without an open tab", () => {
+    useChatStore.setState({ models: { codex: "different-default-model" } });
+
+    handleEngineEvents([
+      event("model", 1, "gpt-5.4"),
+      event("usage", 2, report(1000, 40)),
+      event("done", 3, { usage: null }),
+    ], deps());
+
+    expect(ipc.usageRecord).toHaveBeenCalledWith(expect.objectContaining({
+      model: "gpt-5.4", input: 1000, output: 40,
+    }));
+    expect(ipc.usageRecord).toHaveBeenCalledTimes(1);
   });
 });

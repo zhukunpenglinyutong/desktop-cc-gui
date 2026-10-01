@@ -276,7 +276,10 @@ export function createSessionActions(
           if (!current) continue;
           bySession[key] = {
             ...current,
-            activeModel: meta.model ?? current.activeModel,
+            // Saved selectors drive the next send, not the model already running.
+            activeModel: current.streaming && current.activeModel
+              ? current.activeModel
+              : meta.model ?? current.activeModel,
             activeEffort: meta.effort ?? current.activeEffort,
             activeProvider: meta.provider ?? current.activeProvider,
           };
