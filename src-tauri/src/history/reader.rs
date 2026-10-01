@@ -787,6 +787,11 @@ fn delete_dir_session_disk_anchored(
 /// can never point remove_dir_all at an arbitrary tree — same guard as the
 /// kimi/grok arm above.
 fn delete_opencode_session_disk(path: &Path) -> Result<(), String> {
+    // OpenCode ≥1.18: one SQLite file holds every session; the virtual address
+    // carries the session id. Delete the row (FK cascades clear message/part).
+    if let Some((db, session_id)) = super::split_opencode_db_path(path) {
+        return delete_opencode_db_session(&db, &session_id);
+    }
     let session_id = path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
     let storage = path
         .parent()
@@ -833,6 +838,39 @@ fn delete_opencode_session_disk(path: &Path) -> Result<(), String> {
                 .map_err(|e| format!("remove {}: {e}", part_dir.display()))?;
         }
     }
+    Ok(())
+}
+
+/// Remove one SQLite-backed OpenCode session: delete its `session` row and let
+/// the schema's `ON DELETE CASCADE` foreign keys take the message, part, todo
+/// and share rows with it. The filename + id-shape guard mirrors the storage
+/// arm so a corrupt history row can never point a delete at an arbitrary db.
+fn delete_opencode_db_session(db: &Path, session_id: &str) -> Result<(), String> {
+    let structure_ok = session_id.starts_with("ses_")
+        && db.file_name().and_then(|n| n.to_str()) == Some("opencode.db");
+    if !structure_ok {
+        eprintln!(
+            "[history] refusing opencode db delete outside opencode.db layout: {}#{}",
+            db.display(),
+            session_id
+        );
+        return Ok(());
+    }
+    match std::fs::metadata(db) {
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(e) => return Err(format!("stat {}: {e}", db.display())),
+        Ok(_) => {}
+    }
+    let conn = rusqlite::Connection::open(db).map_err(|e| format!("open {}: {e}", db.display()))?;
+    // Cascades are off by default per connection; without this the child rows
+    // would orphan rather than follow the session.
+    conn.execute_batch("PRAGMA foreign_keys=ON;")
+        .map_err(|e| e.to_string())?;
+    conn.execute(
+        "DELETE FROM session WHERE id=?1",
+        rusqlite::params![session_id],
+    )
+    .map_err(|e| e.to_string())?;
     Ok(())
 }
 
@@ -1575,6 +1613,50 @@ mod tests {
         std::fs::write(&stray, "{}").unwrap();
         delete_session_disk("opencode", &stray).unwrap();
         assert!(stray.exists());
+    }
+
+    /// OpenCode ≥1.18: one SQLite db holds every session. The virtual address
+    /// deletes just this session's row, and the schema's cascades take its
+    /// message/part rows — other sessions survive.
+    #[test]
+    fn delete_opencode_db_removes_session_and_children() {
+        let scratch = Scratch::new();
+        let db = scratch.0.join("opencode.db");
+        let conn = rusqlite::Connection::open(&db).unwrap();
+        conn.execute_batch(
+            "CREATE TABLE session(id TEXT PRIMARY KEY);
+             CREATE TABLE message(id TEXT PRIMARY KEY, session_id TEXT NOT NULL
+                REFERENCES session(id) ON DELETE CASCADE);
+             CREATE TABLE part(id TEXT PRIMARY KEY, message_id TEXT NOT NULL
+                REFERENCES message(id) ON DELETE CASCADE);",
+        )
+        .unwrap();
+        conn.execute_batch(
+            "INSERT INTO session VALUES('ses_doomed');
+             INSERT INTO session VALUES('ses_keep');
+             INSERT INTO message VALUES('msg_a','ses_doomed');
+             INSERT INTO message VALUES('msg_b','ses_keep');
+             INSERT INTO part VALUES('prt_a','msg_a');
+             INSERT INTO part VALUES('prt_b','msg_b');",
+        )
+        .unwrap();
+        drop(conn);
+
+        let address = super::super::opencode_db_session_path(&db, "ses_doomed");
+        delete_session_disk("opencode", &address).unwrap();
+
+        let conn = rusqlite::Connection::open(&db).unwrap();
+        let count = |table: &str| -> i64 {
+            conn.query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |r| r.get(0))
+                .unwrap()
+        };
+        assert_eq!(count("session"), 1);
+        assert_eq!(count("message"), 1);
+        assert_eq!(count("part"), 1);
+        let remaining: String = conn
+            .query_row("SELECT id FROM session", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(remaining, "ses_keep");
     }
     /// dsh sessions live in a per-session dir (`<home>/sessions/<cwd>/<dir>/
     /// session*.jsonl.zstd`) with subagent logs alongside — deleting takes

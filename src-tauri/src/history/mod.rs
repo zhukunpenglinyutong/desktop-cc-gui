@@ -96,6 +96,10 @@ pub struct SessionFile {
 }
 
 pub fn stat_signature(path: &Path) -> Option<(i64, i64)> {
+    // OpenCode ≥1.18 keeps every session in one SQLite file; the virtual
+    // address below carries the session id, so stat the shared database.
+    let target = split_opencode_db_path(path).map(|(db, _)| db);
+    let path = target.as_deref().unwrap_or(path);
     let meta = std::fs::metadata(path).ok()?;
     let mtime_ms = meta
         .modified()
@@ -104,6 +108,33 @@ pub fn stat_signature(path: &Path) -> Option<(i64, i64)> {
         .ok()?
         .as_millis() as i64;
     Some((meta.len() as i64, mtime_ms))
+}
+
+/// Separator between the OpenCode SQLite database path and the session id in
+/// a history row's `file_path`. The record separator is illegal in filenames
+/// on Windows and vanishingly rare elsewhere, so it cannot collide with a
+/// real on-disk path — the virtual address is never opened directly.
+const OPENCODE_DB_SEP: char = '\u{1f}';
+
+/// Virtual history address for one SQLite-backed OpenCode session:
+/// `<…/opencode.db>\u{1f}<sessionId>`. Keeps the path-keyed scan/read/delete
+/// pipeline working while the transcript itself lives in one shared db.
+pub(crate) fn opencode_db_session_path(db: &Path, session_id: &str) -> PathBuf {
+    let mut address = db.to_string_lossy().into_owned();
+    address.push(OPENCODE_DB_SEP);
+    address.push_str(session_id);
+    PathBuf::from(address)
+}
+
+/// Split a virtual address back into `(db_path, session_id)`. None for every
+/// real on-disk path (the OpenCode storage-tree layout included).
+pub(crate) fn split_opencode_db_path(path: &Path) -> Option<(PathBuf, String)> {
+    let text = path.to_str()?;
+    let (db, session_id) = text.split_once(OPENCODE_DB_SEP)?;
+    if db.is_empty() || session_id.is_empty() {
+        return None;
+    }
+    Some((PathBuf::from(db), session_id.to_string()))
 }
 
 /// &str entry point: skips the `Value::String` wrapper allocation the

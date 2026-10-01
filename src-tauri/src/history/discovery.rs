@@ -354,68 +354,131 @@ fn read_small_json(path: &Path, max_bytes: u64) -> Option<serde_json::Value> {
     serde_json::from_str(&buf).ok()
 }
 
-/// OpenCode sessions: `<root>/storage/session/<projectId>/<sessionId>.json`
-/// (shape verified against opencode 1.1.16 on disk: `{id, projectID,
-/// directory, title, time:{created,updated}}`). Attribution comes from the
-/// metadata's `directory` field — the projectId dir is a content hash, not
-/// a path encoding, so the tiny metadata file must be read (bounded above).
+/// OpenCode sessions, from either storage generation. Legacy (≤1.1.x) keeps
+/// one JSON tree per data root (`<root>/storage/session/<projectId>/<id>.json`,
+/// shape `{id, projectID, directory, title, time:{created,updated}}`); ≥1.18
+/// keeps one SQLite database per root (`<root>/opencode.db`). Both attribute a
+/// session to a workspace by its recorded `directory`.
 pub(super) fn discover_opencode(workspace: &Path) -> Vec<SessionFile> {
     let mut out = Vec::new();
     let mut seen_sessions = std::collections::HashSet::new();
     for root in opencode_data_roots(workspace) {
-        let session_root = root.join("storage").join("session");
-        let Ok(projects) = std::fs::read_dir(&session_root) else {
-            continue;
-        };
-        for (index, project) in projects.flatten().enumerate() {
-            if index >= MAX_OPENCODE_PROJECT_DIRS {
-                break;
-            }
-            let project_dir = project.path();
-            if !project_dir.is_dir() {
-                continue;
-            }
-            let Ok(files) = std::fs::read_dir(&project_dir) else {
-                continue;
-            };
-            for (index, file) in files.flatten().enumerate() {
-                if index >= MAX_OPENCODE_SESSION_FILES {
-                    break;
-                }
-                let path = file.path();
-                if path.extension().and_then(|e| e.to_str()) != Some("json") {
-                    continue;
-                }
-                let Some(meta) = read_small_json(&path, MAX_OPENCODE_META_BYTES) else {
-                    continue;
-                };
-                let directory = meta.get("directory").and_then(|v| v.as_str()).unwrap_or("");
-                if directory.is_empty() || !same_or_child(Path::new(directory), workspace) {
-                    continue;
-                }
-                let session_id = meta
-                    .get("id")
-                    .and_then(|v| v.as_str())
-                    .map(str::to_string)
-                    .or_else(|| {
-                        path.file_stem()
-                            .and_then(|s| s.to_str())
-                            .map(str::to_string)
-                    })
-                    .unwrap_or_default();
-                if session_id.is_empty() || !seen_sessions.insert(session_id.clone()) {
-                    continue;
-                }
-                out.push(SessionFile {
-                    engine: "opencode",
-                    session_id,
-                    workspace_path: workspace.to_string_lossy().to_string(),
-                    file_path: path,
-                });
-            }
-        }
+        discover_opencode_tree(&root, workspace, &mut seen_sessions, &mut out);
+        discover_opencode_db(&root, workspace, &mut seen_sessions, &mut out);
     }
     out
+}
+
+/// Legacy JSON storage tree: `storage/session/<projectId>/<sessionId>.json`
+/// (opencode ≤1.1.x). Attribution comes from the metadata's `directory`.
+fn discover_opencode_tree(
+    root: &Path,
+    workspace: &Path,
+    seen_sessions: &mut std::collections::HashSet<String>,
+    out: &mut Vec<SessionFile>,
+) {
+    let session_root = root.join("storage").join("session");
+    let Ok(projects) = std::fs::read_dir(&session_root) else {
+        return;
+    };
+    for (index, project) in projects.flatten().enumerate() {
+        if index >= MAX_OPENCODE_PROJECT_DIRS {
+            break;
+        }
+        let project_dir = project.path();
+        if !project_dir.is_dir() {
+            continue;
+        }
+        let Ok(files) = std::fs::read_dir(&project_dir) else {
+            continue;
+        };
+        for (index, file) in files.flatten().enumerate() {
+            if index >= MAX_OPENCODE_SESSION_FILES {
+                break;
+            }
+            let path = file.path();
+            if path.extension().and_then(|e| e.to_str()) != Some("json") {
+                continue;
+            }
+            let Some(meta) = read_small_json(&path, MAX_OPENCODE_META_BYTES) else {
+                continue;
+            };
+            let directory = meta.get("directory").and_then(|v| v.as_str()).unwrap_or("");
+            if directory.is_empty() || !same_or_child(Path::new(directory), workspace) {
+                continue;
+            }
+            let session_id = meta
+                .get("id")
+                .and_then(|v| v.as_str())
+                .map(str::to_string)
+                .or_else(|| path.file_stem().and_then(|s| s.to_str()).map(str::to_string))
+                .unwrap_or_default();
+            if session_id.is_empty() || !seen_sessions.insert(session_id.clone()) {
+                continue;
+            }
+            out.push(SessionFile {
+                engine: "opencode",
+                session_id,
+                workspace_path: workspace.to_string_lossy().to_string(),
+                file_path: path,
+            });
+        }
+    }
+}
+
+/// OpenCode ≥1.18 collapsed the tree into one SQLite database per data root
+/// (`<root>/opencode.db`, `session`/`message`/`part` tables). Without this
+/// arm a restart finds no OpenCode session at all — the old tree no longer
+/// exists to scan. Each row gets a virtual [`super::opencode_db_session_path`]
+/// address so the path-keyed pipeline can read/delete it.
+fn discover_opencode_db(
+    root: &Path,
+    workspace: &Path,
+    seen_sessions: &mut std::collections::HashSet<String>,
+    out: &mut Vec<SessionFile>,
+) {
+    let db = root.join("opencode.db");
+    if !db.is_file() {
+        return;
+    }
+    // Read-only: a live `opencode serve` holds the database (WAL), and a scan
+    // must never mutate it.
+    let Ok(conn) = rusqlite::Connection::open_with_flags(
+        &db,
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+    ) else {
+        return;
+    };
+    let Ok(mut stmt) = conn.prepare(
+        "SELECT id, directory FROM session
+         WHERE time_archived IS NULL
+         ORDER BY time_updated DESC
+         LIMIT ?1",
+    ) else {
+        return;
+    };
+    let Ok(rows) = stmt.query_map([MAX_OPENCODE_SESSION_FILES as i64], |r| {
+        Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
+    }) else {
+        return;
+    };
+    for row in rows.flatten() {
+        let (session_id, directory) = row;
+        if session_id.is_empty() || directory.is_empty() {
+            continue;
+        }
+        if !same_or_child(Path::new(&directory), workspace)
+            || !seen_sessions.insert(session_id.clone())
+        {
+            continue;
+        }
+        out.push(SessionFile {
+            engine: "opencode",
+            session_id: session_id.clone(),
+            workspace_path: workspace.to_string_lossy().to_string(),
+            file_path: super::opencode_db_session_path(&db, &session_id),
+        });
+    }
 }
 
 fn grok_url_decode(encoded: &str) -> String {
@@ -1180,6 +1243,48 @@ mod tests {
         assert_eq!(found.len(), 1);
         assert_eq!(found[0].engine, "opencode");
         assert_eq!(found[0].session_id, "ses_a");
+
+        std::fs::remove_dir_all(&home).ok();
+    }
+
+    /// OpenCode ≥1.18 dropped the JSON storage tree for a single
+    /// `<root>/opencode.db`. Sessions attributed to the workspace by the
+    /// `session.directory` column must still be discovered, addressed by a
+    /// virtual path that round-trips to the db file + session id.
+    #[test]
+    fn discover_opencode_reads_sqlite_database() {
+        let home = scratch_dir("discover-opencode-db");
+        let workspace = home.join("ws");
+        std::fs::create_dir_all(&workspace).unwrap();
+        let data_root = home.join(".local/share/opencode");
+        std::fs::create_dir_all(&data_root).unwrap();
+        let db = data_root.join("opencode.db");
+        let conn = rusqlite::Connection::open(&db).unwrap();
+        conn.execute_batch(
+            "CREATE TABLE session(id TEXT PRIMARY KEY, directory TEXT NOT NULL,
+                time_archived INTEGER, time_updated INTEGER NOT NULL);",
+        )
+        .unwrap();
+        let insert = |id: &str, directory: &str, archived: Option<i64>, updated: i64| {
+            conn.execute(
+                "INSERT INTO session VALUES(?1,?2,?3,?4)",
+                rusqlite::params![id, directory, archived, updated],
+            )
+            .unwrap();
+        };
+        insert("ses_live", &workspace.to_string_lossy(), None, 2);
+        insert("ses_elsewhere", "/elsewhere", None, 1);
+        insert("ses_archived", &workspace.to_string_lossy(), Some(9), 3);
+        drop(conn);
+
+        let _guard = HomeGuard::set(&home);
+        let found = discover_opencode(&workspace);
+        let ids: Vec<&str> = found.iter().map(|f| f.session_id.as_str()).collect();
+        assert_eq!(ids, ["ses_live"]);
+        let (db_path, session_id) =
+            super::super::split_opencode_db_path(&found[0].file_path).unwrap();
+        assert_eq!(db_path, db);
+        assert_eq!(session_id, "ses_live");
 
         std::fs::remove_dir_all(&home).ok();
     }
