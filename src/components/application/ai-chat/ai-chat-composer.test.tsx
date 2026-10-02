@@ -3,7 +3,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { HashRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import "@/lib/i18n";
-import { Composer } from "./ai-chat-composer";
+import { Composer, getProxyQuickToggleAction } from "./ai-chat-composer";
 import { extractText, getCaretOffset } from "./file-tags";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT =
@@ -59,5 +59,22 @@ describe("Composer 草稿恢复", () => {
     const el = await render(PREFILL);
     expect(extractText(el)).toBe(PREFILL);
     expect(getCaretOffset(el)).toBe(PREFILL.length);
+  });
+});
+
+describe("代理快捷开关", () => {
+  it("无配置时保留图标并打开代理设置", () => {
+    expect(getProxyQuickToggleAction({ enabled: false, url: null })).toBe("settings");
+    expect(getProxyQuickToggleAction({ enabled: false, url: "" })).toBe("settings");
+  });
+
+  it("有有效地址时切换代理，而不是打开设置", () => {
+    expect(getProxyQuickToggleAction({ enabled: false, url: "http://127.0.0.1:7890" })).toBe(
+      "toggle",
+    );
+  });
+
+  it("已启用时即使地址失效也允许关闭", () => {
+    expect(getProxyQuickToggleAction({ enabled: true, url: "not-a-url" })).toBe("toggle");
   });
 });

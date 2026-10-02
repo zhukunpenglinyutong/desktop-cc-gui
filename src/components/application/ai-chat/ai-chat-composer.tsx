@@ -9,6 +9,7 @@ import {
   type MutableRefObject,
   type ReactNode,
 } from "react";
+import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import GitMerge from "lucide-react/dist/esm/icons/git-merge";
 import Globe from "lucide-react/dist/esm/icons/globe";
@@ -370,19 +371,27 @@ function isUsableProxyUrl(value: string | null): boolean {
   );
 }
 
+type ProxyQuickToggleState = { enabled: boolean; url: string | null };
+
+/** Decide whether an unconfigured footer glyph should open proxy settings. */
+export function getProxyQuickToggleAction(state: ProxyQuickToggleState): "settings" | "toggle" {
+  if (!state.enabled && !isUsableProxyUrl(state.url)) return "settings";
+  return "toggle";
+}
+
 /**
  * One-click network-proxy switch for the composer footer: the glyph carries
  * the state (dim = off, green = on) and the click persists `systemProxyEnabled`
  * through the same read-modify-write funnel the settings page uses, so the two
  * surfaces can never clobber each other.
  *
- * Hidden entirely while off without a usable proxy URL — enabling would fail
- * backend validation anyway, so the entry only appears once the settings page
- * has a valid URL to flip on.
+ * When off without a usable proxy URL, clicking the visible glyph opens the
+ * proxy settings instead of attempting an invalid enable operation.
  */
 function ProxyQuickToggle() {
   const { t } = useTranslation();
-  const [state, setState] = useState<{ enabled: boolean; url: string | null } | null>(null);
+  const navigate = useNavigate();
+  const [state, setState] = useState<ProxyQuickToggleState | null>(null);
   const [busy, setBusy] = useState(false);
 
   const read = useCallback(() => {
@@ -400,6 +409,10 @@ function ProxyQuickToggle() {
 
   const toggle = useCallback(async () => {
     if (busy || !state) return;
+    if (getProxyQuickToggleAction(state) === "settings") {
+      navigate("/settings?page=proxy");
+      return;
+    }
     setBusy(true);
     try {
       const latest = await ipc.getAppSettings();
@@ -412,15 +425,19 @@ function ProxyQuickToggle() {
     } finally {
       setBusy(false);
     }
-  }, [busy, state]);
+  }, [busy, navigate, state]);
 
   if (!state) return null;
   const { enabled } = state;
-  // Off + no valid URL → enabling is impossible; hide the entry. On → always
-  // shown, disabling never fails validation.
-  if (!enabled && !isUsableProxyUrl(state.url)) return null;
-  const label = enabled ? t("chat.proxyOn") : t("chat.proxyOff");
-  const tip = enabled ? t("chat.proxyTipOn") : t("chat.proxyTipOff");
+  const action = getProxyQuickToggleAction(state);
+  const label =
+    action === "settings" ? t("chat.proxyConfigure") : enabled ? t("chat.proxyOn") : t("chat.proxyOff");
+  const tip =
+    action === "settings"
+      ? t("chat.proxyTipConfigure")
+      : enabled
+        ? t("chat.proxyTipOn")
+        : t("chat.proxyTipOff");
   // Mirror the context-meter button exactly: react-aria AriaButton, the same
   // shape/focus classes, colour carries the state. That control never shows
   // a stray circle, so this one should not either.
@@ -428,7 +445,7 @@ function ProxyQuickToggle() {
     <Tooltip>
       <AriaButton
         aria-label={label}
-        aria-pressed={enabled}
+        aria-pressed={action === "toggle" ? enabled : undefined}
         isDisabled={busy}
         onPress={() => void toggle()}
         className={cx(
