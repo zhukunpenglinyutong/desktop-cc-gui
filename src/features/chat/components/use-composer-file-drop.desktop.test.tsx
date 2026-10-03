@@ -4,8 +4,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { useComposerFileDrop } from "./use-composer-file-drop";
 
-// Desktop branch: force native mode and capture the window drag-drop
-// listener the hook registers through @tauri-apps/api/window.
+// Desktop branch: force native mode and capture the webview drag-drop
+// listener the hook registers through @tauri-apps/api/webview.
 vi.mock("@/lib/transport", () => ({ isWeb: false }));
 
 type DragDropPayload = {
@@ -14,8 +14,8 @@ type DragDropPayload = {
   paths?: string[];
 };
 const dragDropListeners: Array<(e: { payload: DragDropPayload }) => void> = [];
-vi.mock("@tauri-apps/api/window", () => ({
-  getCurrentWindow: () => ({
+vi.mock("@tauri-apps/api/webview", () => ({
+  getCurrentWebview: () => ({
     onDragDropEvent: (cb: (e: { payload: DragDropPayload }) => void) => {
       dragDropListeners.push(cb);
       return Promise.resolve(() => {});

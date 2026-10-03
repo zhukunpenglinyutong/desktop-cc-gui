@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type RefObject } from "react";
-import { getCurrentWindow } from "@tauri-apps/api/window";
+import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { isWeb } from "@/lib/transport";
 
 /** Drag OS files onto the chat composer.
@@ -44,7 +44,9 @@ export function useComposerFileDrop({
     if (disabled || isWeb) return;
     let unlisten: (() => void) | null = null;
     let disposed = false;
-    void getCurrentWindow()
+    // Tauri emits native file-drop events to the Webview target. Subscribe
+    // with that same target instead of the Window-scoped compatibility helper.
+    void getCurrentWebview()
       .onDragDropEvent((event) => {
         const el = dropRef.current;
         if (!el) return;
