@@ -80,6 +80,8 @@ winreg = "0.55"
 # which is exactly what an orphan no longer has.
 windows = { version = "0.61", features = [
     "Win32_Foundation",
+    "Win32_NetworkManagement_IpHelper",
+    "Win32_Networking_WinSock",
     "Win32_Security",
     "Win32_System_JobObjects",
     "Win32_System_Threading",

@@ -517,6 +517,12 @@ export interface AppSettings {
   webRelayUrl?: string | null;
   /** Shared relay key; also the phone URL's path segment. */
   webRelayKey?: string | null;
+  /** LAN web access auto-start on app launch (设置 → 远程访问 → 内网访问: 随应用自动开启). */
+  webAccessAutoStart?: boolean | null;
+  /** LAN web access fixed port (null/0 = auto). */
+  webAccessPort?: number | null;
+  /** LAN web access fixed auth token (null = auto generate & persist). */
+  webAccessToken?: string | null;
 }
 
 export interface DirEntry {
@@ -971,12 +977,19 @@ export interface WebDevice {
   name: string | null;
 }
 
+export interface LanIpEntry {
+  ip: string;
+  label: string;
+  interfaceName?: string | null;
+}
+
 export interface WebAccessInfo {
   /** Full URL including the auth token — shareable as-is or as a QR code. */
   url: string;
   port: number;
   token: string;
   lanIp: string;
+  availableIps?: LanIpEntry[];
 }
 
 /** One finished turn as it enters the usage ledger. */
@@ -1768,6 +1781,8 @@ export const ipc = {
   webAccessStart: () => invoke<WebAccessInfo>("web_access_start"),
   webAccessStop: () => invoke<void>("web_access_stop"),
   webAccessStatus: () => invoke<WebAccessInfo | null>("web_access_status"),
+  webAccessAvailableIps: () => invoke<LanIpEntry[]>("web_access_available_ips"),
+  webAccessRotateToken: () => invoke<string>("web_access_rotate_token"),
   // usage ledger (settings 用量)
   usageRecord: (entry: UsageEntryInput) => invoke<void>("usage_record", { entry }),
   usageSummary: (days: number, tzOffsetMinutes: number) =>

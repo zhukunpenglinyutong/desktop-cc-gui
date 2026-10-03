@@ -84,6 +84,18 @@ pub struct AppSettings {
     /// keeps the machine reachable unattended, so an app relaunch restores it.
     #[serde(default)]
     pub web_relay_on: Option<bool>,
+    /// LAN web access auto-start switch (设置 → 远程访问 → 内网访问: 随应用自动开启).
+    /// Some(true) starts the LAN bridge at application launch.
+    #[serde(default)]
+    pub web_access_auto_start: Option<bool>,
+    /// LAN web access fixed port (设置 → 远程访问 → 内网访问: 服务端口).
+    /// None or Some(0) binds a random ephemeral port.
+    #[serde(default)]
+    pub web_access_port: Option<u16>,
+    /// LAN web access fixed auth token (设置 → 远程访问 → 内网访问: 访问凭证).
+    /// If None, a token is generated at first start and persisted.
+    #[serde(default)]
+    pub web_access_token: Option<String>,
     /// Max sessions shown per workspace in the sidebar before collapsing
     /// behind a "show more" row.
     #[serde(default = "default_sidebar_thread_limit")]
@@ -323,6 +335,9 @@ impl Default for AppSettings {
             web_relay_url: None,
             web_relay_key: None,
             web_relay_on: None,
+            web_access_auto_start: None,
+            web_access_port: None,
+            web_access_token: None,
             language: default_language(),
             default_models: HashMap::new(),
             custom_models: HashMap::new(),

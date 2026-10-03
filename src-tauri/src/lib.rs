@@ -255,6 +255,19 @@ pub fn run() {
                     }
                 });
             }
+            // Web access autostart (设置 → 远程访问 → 内网访问: 随应用自动开启)
+            {
+                let handle = app.handle().clone();
+                tauri::async_runtime::spawn(async move {
+                    let settings = settings::read_settings().unwrap_or_default();
+                    if settings.web_access_auto_start == Some(true) {
+                        match web::web_access_start(handle).await {
+                            Ok(info) => println!("[web] autostart: {}", info.url),
+                            Err(error) => eprintln!("[web] autostart failed: {error}"),
+                        }
+                    }
+                });
+            }
             // Dev convenience: `CCGUI_WEB_AUTOSTART=1 pnpm dev` starts the LAN
             // bridge at launch and prints the URL, so the web build can be
             // exercised without clicking the settings toggle.
@@ -546,6 +559,8 @@ pub fn run() {
             web::web_access_start,
             web::web_access_stop,
             web::web_access_status,
+            web::web_access_available_ips,
+            web::web_access_rotate_token,
             // Device rows: the bridge already dispatched these for phones,
             // but the desktop page invokes them over IPC too — without this
             // registration its list silently stayed empty.

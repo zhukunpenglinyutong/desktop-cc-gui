@@ -127,6 +127,8 @@
 
 - **文件 Markdown 预览用 Streamdown 渲染**：`MarkdownPreview.tsx` 用 Vercel Streamdown（`mode="static"` + `code`/`math`/`mermaid`/`cjk` 插件），不再是裸 react-markdown 加手写标题样式（旧预览的 GFM 表格渲染成无边框纯文本）。它的 shadcn token（`bg-background`、`text-muted-foreground`、`border-border` 等）在 `src/styles/globals.css` 桥接到语义 token（`:root` 映射 + `@theme inline` 导出、`@source` 扫描 dist），暗色随 `.dark` 翻转，不另写 `dark:`。表格/代码块/图表的复制、下载、全屏按钮文案走 `files.markdown.*` i18n；外链一律 `openExternal` 交系统浏览器（内置 link-safety 弹层关闭，避免双重确认）；本地相对图片仍解析到 Markdown 文件旁的真实路径（`resolveMarkdownImageSrc`）。Mermaid 图滚入视口才渲染（IntersectionObserver 懒渲染），离屏留白是设计行为；编辑预览用 deferred 草稿整篇重解析，不逐键击卡顿。回归：`tests/browser/markdown-preview.html`。
 
+- **内网访问自启、访问 IP 切换与端口/Token配置**：设置「远程访问 / 内网访问」（`WebAccessSection.tsx`）提供「随应用自动开启」滑动开关（`Switch`），开启时客户端启动即自动运行内网 Web 服务（后端持久化于 `AppSettings.web_access_auto_start`，前端启动时带兜底探测与自启保障）。运行态下提供「访问 IP / 网卡」下拉框（`Select`），通过平台原生接口（Windows `GetAdaptersAddresses` / Unix `getifaddrs`）动态枚举本机网络接口 IPv4 列表，优先置顶 Tailscale 虚拟网卡与 CGNAT IP（100.64.0.0/10），并列出物理网卡及 Localhost 回环地址；切换 IP 联动实时更新访问地址、复制内容与二维码，并在本地持久化所选偏好（`WEB_ACCESS_SELECTED_IP_KEY`）。支持自定义监听端口（`web_access_port`，留空为自动分配随机端口）与持久化鉴权 Token（`web_access_token`，支持一键「重新生成」）；服务运行中修改配置在卡片内展示重启提示与快捷「立即重启服务」动作，绑定失败时在界面显式展示端口冲突原因。回归：`WebAccessSection.test.tsx`、`web::tests::*`。
+
 ## 4. 动作反馈
 
 - **并发会话运行状态点**：侧栏、页签和收起的 worktree 聚合状态复用 `sidebar-thread-status`。运行中保持 0.92s 呼吸节奏，只动画 `transform` / `opacity`，光晕阴影保持静态，避免并发会话逐帧重绘阴影。退避重试与系统减少动态效果下保持静态蓝点，未读完成态保持静态绿点。浏览器回归：`tests/browser/concurrent-status.html`（1 / 6 / 12 会话，侧栏 + 页签，正常 / 重试 / 完成、亮暗主题和减少动态效果）。
@@ -258,6 +260,7 @@ const feedback = useRunningFeedback(store.loading);
 
 | 版本 | 时间 | 内容 |
 |---|---|---|
+| v0.67 | 2026-09-28 | 内网访问支持自启开关、IP/网卡下拉切换与固定端口/Token表单：启动后根据可用 IP 列表（Windows 通过 `GetAdaptersAddresses` 枚举虚拟隧道与物理网卡，优先置顶 Tailscale CGNAT IP 与虚拟网卡，兼顾局域网与本地回环）下拉选择，自动联动变更访问地址、复制内容与二维码；增加「随应用自动开启」滑动开关；增加固定端口设置（自动分配/重置/占用友好提示）与持久化 Token 配置（可重新生成，运行中修改提示一键重启）；§3 补充规则 |
 | v0.66 | 2026-09-30 | 智能体记忆补齐两个开关：「写入需要审批」把模型 / 复盘写入转成待审批队列（面板逐条或全部批准 / 驳回，replace/remove 展示前后对比，批准时才过容量闸，暂存后原文已变则拒绝执行；面板手动写入不审批）；「会话结束后台复盘」每 N 轮 + 离开会话触发，用该引擎的 API 渠道跑一次整理（无渠道 / 官方登录 / 忙碌明确跳过并就地说明），结果逐条走同一套写入闸；§3 更新记忆规则 |
 | v0.65 | 2026-09-30 | 智能体「记忆」上线：设置 → 智能体 → 记忆页签从概念图换成真面板（MEMORY / USER 两个账本、用量条、手动增删改、导出 / 清空），写入与容量规则后端单点（安全扫描 + 超限拒绝不截断），`memory` MCP 工具按引擎挂载（Claude Code / Codex / omp），USER/MEMORY 注入下次会话、引擎不支持时不写「记忆使用说明」；审批与后台复盘仍标「即将支持」；§3 补两条规则 |
 | v0.64 | 2026-09-30 | 多会话运行状态点改为静态阴影 + 缩放/透明度呼吸，保留 0.92s 节奏与重试/减少动态效果的静态反馈；增加真实侧栏与页签的并发动画回归 |

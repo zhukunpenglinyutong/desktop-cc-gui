@@ -16,6 +16,10 @@ import { startShortcutRuntime } from "@/features/shortcuts/runtime";
 import { ShortcutsGuideModal } from "@/features/shortcuts/ShortcutsGuideModal";
 import PetOverlayApp from "@/features/pet/PetOverlayApp";
 import { PetRuntime } from "@/features/pet/PetRuntime";
+import { ipc } from "@/lib/ipc";
+import { isWeb } from "@/lib/platform";
+import { readStoredBool } from "@/lib/storage";
+import { WEB_ACCESS_AUTO_START_KEY } from "@/features/settings/web-access-keys";
 
 // Settings is a rare route; load it on demand so startup ships less JS.
 // Warm the chunk shortly after startup so the first click has no fetch gap.
@@ -65,6 +69,16 @@ function MainApp() {
     if (import.meta.env.DEV) return;
     const id = setTimeout(() => void useUpdateStore.getState().checkForUpdates(), 3000);
     return () => clearTimeout(id);
+  }, []);
+  // LAN web access autostart: starts the LAN bridge on launch when enabled in settings.
+  useEffect(() => {
+    if (!isWeb && readStoredBool(WEB_ACCESS_AUTO_START_KEY, false)) {
+      void ipc.webAccessStatus().then((status) => {
+        if (!status) {
+          void ipc.webAccessStart().catch(() => {});
+        }
+      });
+    }
   }, []);
 
   return (

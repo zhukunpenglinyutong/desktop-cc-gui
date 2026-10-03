@@ -95,6 +95,14 @@ struct Running {
     stop_watch: watch::Sender<bool>,
 }
 
+#[derive(serde::Serialize, serde::Deserialize, Clone, Debug, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct LanIpEntry {
+    pub ip: String,
+    pub label: String,
+    pub interface_name: Option<String>,
+}
+
 #[derive(serde::Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct WebAccessInfo {
@@ -102,6 +110,7 @@ pub struct WebAccessInfo {
     pub port: u16,
     pub token: String,
     pub lan_ip: String,
+    pub available_ips: Vec<LanIpEntry>,
 }
 
 /// A browser that reached the bridge. Rows are created by the request itself;
@@ -246,7 +255,17 @@ async fn ensure_web_access_locked(app: tauri::AppHandle) -> Result<(WebAccessInf
         return Ok((running.info.clone(), false));
     }
 
-    let token = format!("{}{}", Uuid::new_v4().simple(), Uuid::new_v4().simple());
+    let settings = crate::settings::get_app_settings().unwrap_or_default();
+    let token = if let Some(custom_token) = settings.web_access_token.as_ref().filter(|t| !t.trim().is_empty()).cloned() {
+        custom_token
+    } else {
+        let generated = format!("{}{}", Uuid::new_v4().simple(), Uuid::new_v4().simple());
+        let mut new_settings = settings.clone();
+        new_settings.web_access_token = Some(generated.clone());
+        let _ = crate::settings::update_app_settings(app.clone(), new_settings);
+        generated
+    };
+
     // Lagging receivers drop events rather than back-pressuring the app.
     let (events_tx, _) = broadcast::channel::<String>(512);
     let emit_id = state.emitters.add(Arc::new(WsEmit {
@@ -255,9 +274,16 @@ async fn ensure_web_access_locked(app: tauri::AppHandle) -> Result<(WebAccessInf
     let (stop_watch, _) = watch::channel(false);
     let (shutdown_tx, shutdown_rx) = oneshot::channel::<()>();
 
-    let listener = tokio::net::TcpListener::bind((std::net::Ipv4Addr::UNSPECIFIED, 0))
+    let bind_port = settings.web_access_port.unwrap_or(0);
+    let listener = tokio::net::TcpListener::bind((std::net::Ipv4Addr::UNSPECIFIED, bind_port))
         .await
-        .map_err(|e| format!("bind: {e}"))?;
+        .map_err(|e| {
+            if bind_port > 0 {
+                format!("端口 {bind_port} 绑定失败（可能已被占用或权限不足）: {e}")
+            } else {
+                format!("bind: {e}")
+            }
+        })?;
     let port = listener
         .local_addr()
         .map_err(|e| format!("local_addr: {e}"))?
@@ -283,12 +309,19 @@ async fn ensure_web_access_locked(app: tauri::AppHandle) -> Result<(WebAccessInf
         .await;
     });
 
-    let lan_ip = lan_ip().unwrap_or_else(|| "127.0.0.1".to_string());
+    let available_ips = available_lan_ips();
+    let lan_ip = lan_ip().unwrap_or_else(|| {
+        available_ips
+            .first()
+            .map(|e| e.ip.clone())
+            .unwrap_or_else(|| "127.0.0.1".to_string())
+    });
     let info = WebAccessInfo {
         url: format!("http://{lan_ip}:{port}/?token={token}"),
         port,
         token,
         lan_ip,
+        available_ips,
     };
     let mut candidate = Some(Running {
         info: info.clone(),
@@ -336,7 +369,25 @@ pub async fn web_access_stop(app: tauri::AppHandle) -> Result<(), String> {
 pub fn web_access_status(app: tauri::AppHandle) -> Option<WebAccessInfo> {
     let state = app.state::<crate::AppState>();
     let guard = state.web.inner.lock();
-    guard.as_ref().map(|running| running.info.clone())
+    guard.as_ref().map(|running| {
+        let mut info = running.info.clone();
+        info.available_ips = available_lan_ips();
+        info
+    })
+}
+
+#[tauri::command]
+pub fn web_access_available_ips() -> Vec<LanIpEntry> {
+    available_lan_ips()
+}
+
+#[tauri::command]
+pub fn web_access_rotate_token(app: tauri::AppHandle) -> Result<String, String> {
+    let new_token = format!("{}{}", Uuid::new_v4().simple(), Uuid::new_v4().simple());
+    let mut settings = crate::settings::get_app_settings()?;
+    settings.web_access_token = Some(new_token.clone());
+    crate::settings::update_app_settings(app, settings)?;
+    Ok(new_token)
 }
 
 // ==================== Device gate ====================
@@ -966,9 +1017,229 @@ fn interface_ips() -> Vec<std::net::Ipv4Addr> {
     }
 }
 
-#[cfg(not(unix))]
-fn interface_ips() -> Vec<std::net::Ipv4Addr> {
+#[cfg(unix)]
+fn native_interface_ips() -> Vec<(std::net::Ipv4Addr, String)> {
+    let mut out = Vec::new();
+    let mut addrs: *mut libc::ifaddrs = std::ptr::null_mut();
+    unsafe {
+        if libc::getifaddrs(&mut addrs) != 0 || addrs.is_null() {
+            return out;
+        }
+        let mut cur = addrs;
+        while !cur.is_null() {
+            let ifa = &*cur;
+            let sa = ifa.ifa_addr;
+            if !sa.is_null() && (*sa).sa_family == libc::AF_INET as libc::sa_family_t {
+                let sin = sa as *const libc::sockaddr_in;
+                let ip = Ipv4Addr::from(u32::from_be((*sin).sin_addr.s_addr));
+                let name = if !ifa.ifa_name.is_null() {
+                    std::ffi::CStr::from_ptr(ifa.ifa_name)
+                        .to_string_lossy()
+                        .to_string()
+                } else {
+                    String::new()
+                };
+                out.push((ip, name));
+            }
+            cur = ifa.ifa_next;
+        }
+        libc::freeifaddrs(addrs);
+    }
+    out
+}
+
+#[cfg(windows)]
+fn native_interface_ips() -> Vec<(std::net::Ipv4Addr, String)> {
+    use windows::Win32::Foundation::{ERROR_BUFFER_OVERFLOW, ERROR_SUCCESS};
+    use windows::Win32::NetworkManagement::IpHelper::{
+        GetAdaptersAddresses, GAA_FLAG_SKIP_ANYCAST, GAA_FLAG_SKIP_DNS_SERVER,
+        GAA_FLAG_SKIP_MULTICAST, IP_ADAPTER_ADDRESSES_LH,
+    };
+    use windows::Win32::Networking::WinSock::{AF_INET, AF_UNSPEC, SOCKADDR_IN};
+
+    let mut out = Vec::new();
+    let mut size: u32 = 16384;
+    let mut buf: Vec<u8> = vec![0u8; size as usize];
+
+    for _ in 0..3 {
+        let ret = unsafe {
+            GetAdaptersAddresses(
+                AF_UNSPEC.0 as u32,
+                GAA_FLAG_SKIP_ANYCAST | GAA_FLAG_SKIP_MULTICAST | GAA_FLAG_SKIP_DNS_SERVER,
+                None,
+                Some(buf.as_mut_ptr() as *mut IP_ADAPTER_ADDRESSES_LH),
+                &mut size,
+            )
+        };
+        if ret == ERROR_SUCCESS.0 {
+            break;
+        } else if ret == ERROR_BUFFER_OVERFLOW.0 {
+            buf.resize(size as usize, 0);
+        } else {
+            return out;
+        }
+    }
+
+    let mut cur = buf.as_ptr() as *const IP_ADAPTER_ADDRESSES_LH;
+    while !cur.is_null() {
+        let adapter = unsafe { &*cur };
+        let name = unsafe { adapter.FriendlyName.to_string().unwrap_or_default() };
+        let mut unicast = adapter.FirstUnicastAddress;
+        while !unicast.is_null() {
+            let u = unsafe { &*unicast };
+            if let Some(sockaddr_ptr) = std::ptr::NonNull::new(u.Address.lpSockaddr) {
+                let family = unsafe { sockaddr_ptr.as_ref().sa_family };
+                if family == AF_INET {
+                    let sin = unsafe { sockaddr_ptr.cast::<SOCKADDR_IN>().as_ref() };
+                    let addr_u32 = unsafe { sin.sin_addr.S_un.S_addr };
+                    let ip = std::net::Ipv4Addr::from(addr_u32.to_ne_bytes());
+                    out.push((ip, name.clone()));
+                }
+            }
+            unicast = u.Next;
+        }
+        cur = adapter.Next;
+    }
+    out
+}
+
+#[cfg(not(any(unix, windows)))]
+fn native_interface_ips() -> Vec<(std::net::Ipv4Addr, String)> {
     Vec::new()
+}
+
+fn interface_ips() -> Vec<std::net::Ipv4Addr> {
+    let mut out: Vec<std::net::Ipv4Addr> = native_interface_ips().into_iter().map(|(ip, _)| ip).collect();
+    if out.is_empty() {
+        let networks = sysinfo::Networks::new_with_refreshed_list();
+        for (_name, data) in &networks {
+            for ip_net in data.ip_networks() {
+                if let std::net::IpAddr::V4(ipv4) = ip_net.addr {
+                    out.push(ipv4);
+                }
+            }
+        }
+    }
+    out
+}
+
+fn is_tailscale(ip: &std::net::Ipv4Addr, iface: Option<&str>) -> bool {
+    let o = ip.octets();
+    let is_cgnat = o[0] == 100 && (o[1] & 0xC0) == 64; // 100.64.0.0/10
+    let is_named = iface.is_some_and(|name| name.to_lowercase().contains("tailscale"));
+    is_cgnat || is_named
+}
+
+fn format_ip_label(ip: &std::net::Ipv4Addr, iface: Option<&str>) -> String {
+    let ip_str = ip.to_string();
+    if ip.is_loopback() {
+        return format!("{ip_str} (Localhost)");
+    }
+    if is_tailscale(ip, iface) {
+        if let Some(name) = iface {
+            if name.to_lowercase().contains("tailscale") {
+                return format!("{ip_str} ({name})");
+            }
+        }
+        return format!("{ip_str} (Tailscale)");
+    }
+    if let Some(name) = iface {
+        let trimmed = name.trim();
+        if !trimmed.is_empty() {
+            return format!("{ip_str} ({trimmed})");
+        }
+    }
+    ip_str
+}
+
+pub fn available_lan_ips() -> Vec<LanIpEntry> {
+    let mut entries = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+
+    for (ipv4, interface_name) in native_interface_ips() {
+        if ipv4.is_unspecified() || ipv4.is_link_local() || is_benchmark_range(&ipv4) {
+            continue;
+        }
+        let ip_str = ipv4.to_string();
+        if seen.insert(ip_str.clone()) {
+            let label = format_ip_label(&ipv4, Some(&interface_name));
+            entries.push(LanIpEntry {
+                ip: ip_str,
+                label,
+                interface_name: if interface_name.is_empty() {
+                    None
+                } else {
+                    Some(interface_name)
+                },
+            });
+        }
+    }
+
+    let networks = sysinfo::Networks::new_with_refreshed_list();
+    for (interface_name, data) in &networks {
+        for ip_net in data.ip_networks() {
+            if let std::net::IpAddr::V4(ipv4) = ip_net.addr {
+                if ipv4.is_unspecified() || ipv4.is_link_local() || is_benchmark_range(&ipv4) {
+                    continue;
+                }
+                let ip_str = ipv4.to_string();
+                if seen.insert(ip_str.clone()) {
+                    let label = format_ip_label(&ipv4, Some(interface_name));
+                    entries.push(LanIpEntry {
+                        ip: ip_str,
+                        label,
+                        interface_name: Some(interface_name.clone()),
+                    });
+                }
+            }
+        }
+    }
+
+    if let Some(primary) = lan_ip() {
+        if seen.insert(primary.clone()) {
+            let label = if let Ok(parsed) = primary.parse::<std::net::Ipv4Addr>() {
+                format_ip_label(&parsed, None)
+            } else {
+                primary.clone()
+            };
+            entries.push(LanIpEntry {
+                ip: primary,
+                label,
+                interface_name: None,
+            });
+        }
+    }
+
+    let loopback = "127.0.0.1".to_string();
+    if seen.insert(loopback.clone()) {
+        entries.push(LanIpEntry {
+            ip: loopback,
+            label: "127.0.0.1 (Localhost)".to_string(),
+            interface_name: Some("Loopback".to_string()),
+        });
+    }
+
+    entries.sort_by(|a, b| {
+        let score = |e: &LanIpEntry| -> i32 {
+            if let Ok(ip) = e.ip.parse::<std::net::Ipv4Addr>() {
+                if is_tailscale(&ip, e.interface_name.as_deref()) {
+                    return 0;
+                }
+                if ip.is_private() {
+                    return 1;
+                }
+                if ip.is_loopback() {
+                    return 3;
+                }
+                2
+            } else {
+                2
+            }
+        };
+        score(a).cmp(&score(b)).then_with(|| a.ip.cmp(&b.ip))
+    });
+
+    entries
 }
 
 #[cfg(test)]
@@ -995,6 +1266,7 @@ mod tests {
                 port: 1420,
                 token: token.to_string(),
                 lan_ip: "127.0.0.1".to_string(),
+                available_ips: Vec::new(),
             },
             emit_id: 1,
             shutdown: None,
@@ -1017,6 +1289,7 @@ mod tests {
                 port: 1420,
                 token: "candidate".into(),
                 lan_ip: "127.0.0.1".into(),
+                available_ips: Vec::new(),
             },
             emit_id: 1,
             shutdown: None,
@@ -1107,5 +1380,36 @@ mod tests {
         );
         assert_eq!(form_field("key=a+b%2C", "key").as_deref(), Some("a b,"));
         assert_eq!(form_field("other=1", "key"), None);
+    }
+
+    #[test]
+    fn tailscale_detection_identifies_cgnat_and_named_interfaces() {
+        let ts_ip: std::net::Ipv4Addr = "100.101.102.103".parse().unwrap();
+        let normal_ip: std::net::Ipv4Addr = "192.168.1.10".parse().unwrap();
+        let loopback_ip: std::net::Ipv4Addr = "127.0.0.1".parse().unwrap();
+
+        assert!(is_tailscale(&ts_ip, None));
+        assert!(is_tailscale(&normal_ip, Some("Tailscale")));
+        assert!(is_tailscale(&normal_ip, Some("tailscale0")));
+        assert!(!is_tailscale(&normal_ip, Some("Ethernet")));
+        assert!(!is_tailscale(&normal_ip, None));
+
+        assert_eq!(format_ip_label(&loopback_ip, None), "127.0.0.1 (Localhost)");
+        assert_eq!(format_ip_label(&ts_ip, None), "100.101.102.103 (Tailscale)");
+        assert_eq!(format_ip_label(&normal_ip, Some("Wi-Fi")), "192.168.1.10 (Wi-Fi)");
+    }
+
+    #[test]
+    fn available_lan_ips_always_includes_loopback() {
+        let ips = available_lan_ips();
+        assert!(!ips.is_empty());
+        assert!(ips.iter().any(|entry| entry.ip == "127.0.0.1"));
+    }
+
+    #[test]
+    fn token_format_is_valid() {
+        let token = format!("{}{}", uuid::Uuid::new_v4().simple(), uuid::Uuid::new_v4().simple());
+        assert_eq!(token.len(), 64);
+        assert!(token.chars().all(|c| c.is_ascii_hexdigit()));
     }
 }
