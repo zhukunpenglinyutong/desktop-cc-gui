@@ -1,9 +1,10 @@
 use super::discovery::{
     codex_candidates, discover_agy, discover_claude, discover_grok, discover_kimi,
     discover_minimax, discover_opencode, discover_qoder, dsh_candidates, identify_head,
-    is_codex_subagent_file, is_dsh_subagent_file, path_is_under, pi_family_candidates,
+    is_codex_subagent_file, is_dsh_subagent_file, opencode_db_visible_sessions, path_is_under,
+    pi_family_candidates,
 };
-use super::{same_or_child, scan_summary_file, stat_signature, ScanSummary};
+use super::{same_or_child, scan_summary_file, split_opencode_db_path, stat_signature, ScanSummary};
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 use std::collections::HashSet;
@@ -445,10 +446,63 @@ fn prune_codex_sessions_outside_home(db: &crate::db::Db) -> Result<bool, String>
     Ok(true)
 }
 
+/// Drop OpenCode subagent (child) and never-messaged sessions that an earlier
+/// scan indexed before `discover_opencode` learned to filter them. The flat
+/// file check used for codex/dsh can't inspect a virtual db address, so this
+/// re-asks the shared database which indexed sessions are still visible.
+fn prune_opencode_hidden_sessions(db: &crate::db::Db) -> Result<bool, String> {
+    let grouped: std::collections::HashMap<PathBuf, Vec<String>> = {
+        let conn = db.0.lock();
+        let mut stmt = conn
+            .prepare("SELECT session_id, file_path FROM sessions WHERE engine='opencode'")
+            .map_err(|e| e.to_string())?;
+        let rows = stmt
+            .query_map([], |r| {
+                Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
+            })
+            .map_err(|e| e.to_string())?;
+        let mut grouped: std::collections::HashMap<PathBuf, Vec<String>> =
+            std::collections::HashMap::new();
+        for row in rows.flatten() {
+            let (session_id, path) = row;
+            if let Some((db_path, _)) = split_opencode_db_path(Path::new(&path)) {
+                grouped.entry(db_path).or_default().push(session_id);
+            }
+        }
+        grouped
+    };
+    let mut dead: Vec<String> = Vec::new();
+    for (db_path, session_ids) in grouped {
+        // Unreadable db (missing/locked): leave every indexed row alone.
+        let Some(visible) = opencode_db_visible_sessions(&db_path, &session_ids) else {
+            continue;
+        };
+        dead.extend(
+            session_ids
+                .into_iter()
+                .filter(|id| !visible.contains(id)),
+        );
+    }
+    if dead.is_empty() {
+        return Ok(false);
+    }
+    let conn = db.0.lock();
+    for id in &dead {
+        conn.execute(
+            "DELETE FROM sessions WHERE engine='opencode' AND session_id=?1",
+            rusqlite::params![id],
+        )
+        .map_err(|e| e.to_string())?;
+        crate::engine::plan_review::delete_reviews_for_session(&conn, "opencode", id)?;
+    }
+    Ok(true)
+}
+
 fn prune_stale_sessions(db: &crate::db::Db) -> Result<bool, String> {
     let outside = prune_codex_sessions_outside_home(db)?;
     let subagent = prune_hidden_subagent_sessions(db)?;
-    Ok(outside || subagent)
+    let opencode = prune_opencode_hidden_sessions(db)?;
+    Ok(outside || subagent || opencode)
 }
 
 /// Phase B (one lock, one transaction): upsert every prepared row, then
@@ -1390,6 +1444,85 @@ pub(super) mod tests {
                 .map_err(|e| e.to_string())?
         };
         assert_eq!(ids, vec!["parent".to_string()]);
+        drop(db);
+        std::fs::remove_dir_all(&home).ok();
+        Ok(())
+    }
+
+    /// An earlier scan (before the db arm filtered subagents / empty sessions)
+    /// indexed rows that discovery no longer returns. The prune must drop them
+    /// from the sidebar while leaving the still-visible session alone.
+    #[test]
+    fn scan_prunes_hidden_opencode_sessions() -> Result<(), String> {
+        let home = scratch_dir("scan-opencode-hidden");
+        let workspace = home.join("ws");
+        std::fs::create_dir_all(&workspace).map_err(|e| e.to_string())?;
+        let ws = workspace.to_string_lossy().to_string();
+        let data_root = home.join(".local/share/opencode");
+        std::fs::create_dir_all(&data_root).map_err(|e| e.to_string())?;
+        let opencode_db = data_root.join("opencode.db");
+        {
+            let conn = rusqlite::Connection::open(&opencode_db).map_err(|e| e.to_string())?;
+            conn.execute_batch(
+                "CREATE TABLE session(id TEXT PRIMARY KEY, directory TEXT NOT NULL,
+                    parent_id TEXT, time_archived INTEGER, time_updated INTEGER NOT NULL);
+                 CREATE TABLE message(id TEXT PRIMARY KEY, session_id TEXT NOT NULL);",
+            )
+            .map_err(|e| e.to_string())?;
+            let session = |id: &str, parent: Option<&str>, updated: i64| {
+                conn.execute(
+                    "INSERT INTO session VALUES(?1,?2,?3,NULL,?4)",
+                    rusqlite::params![id, ws, parent, updated],
+                )
+                .map_err(|e| e.to_string())
+            };
+            session("ses_visible", None, 3)?;
+            session("ses_subagent", Some("ses_visible"), 2)?;
+            session("ses_empty", None, 1)?;
+            conn.execute("INSERT INTO message VALUES('m_visible','ses_visible')", [])
+                .map_err(|e| e.to_string())?;
+            conn.execute("INSERT INTO message VALUES('m_subagent','ses_subagent')", [])
+                .map_err(|e| e.to_string())?;
+        }
+        let _guard = HomeGuard::set(&home);
+        let db = crate::db::Db::open_at(&home.join("app.db")).map_err(|e| e.to_string())?;
+        {
+            let conn = db.0.lock();
+            conn.execute(
+                "INSERT INTO workspaces(id, path, name) VALUES('w1', ?1, 'ws')",
+                [&ws],
+            )
+            .map_err(|e| e.to_string())?;
+            let index = |id: &str| {
+                conn.execute(
+                    "INSERT INTO sessions(engine, session_id, workspace_path, file_path, file_size, file_mtime_ms, title) VALUES('opencode', ?1, ?2, ?3, 1, 1, '')",
+                    rusqlite::params![
+                        id,
+                        ws,
+                        super::super::opencode_db_session_path(&opencode_db, id)
+                            .to_string_lossy()
+                            .to_string()
+                    ],
+                )
+                .map_err(|e| e.to_string())
+            };
+            index("ses_visible")?;
+            index("ses_subagent")?;
+            index("ses_empty")?;
+        }
+        scan_with(&db, || {})?;
+        let ids: Vec<String> = {
+            let conn = db.0.lock();
+            let mut stmt = conn
+                .prepare("SELECT session_id FROM sessions WHERE engine='opencode' ORDER BY session_id")
+                .map_err(|e| e.to_string())?;
+            let rows = stmt
+                .query_map([], |r| r.get::<_, String>(0))
+                .map_err(|e| e.to_string())?;
+            rows.collect::<Result<Vec<_>, _>>()
+                .map_err(|e| e.to_string())?
+        };
+        assert_eq!(ids, vec!["ses_visible".to_string()]);
         drop(db);
         std::fs::remove_dir_all(&home).ok();
         Ok(())

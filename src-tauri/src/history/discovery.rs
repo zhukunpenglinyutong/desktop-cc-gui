@@ -354,6 +354,65 @@ fn read_small_json(path: &Path, max_bytes: u64) -> Option<serde_json::Value> {
     serde_json::from_str(&buf).ok()
 }
 
+/// True when a one-row probe (`SELECT 1 …`) matches. Used to feature-detect
+/// optional OpenCode schema (`session.parent_id`, the `message` table) before
+/// referencing it in a query, so a database that predates a column still
+/// scans instead of silently returning nothing.
+fn sqlite_has(conn: &rusqlite::Connection, probe: &str) -> bool {
+    conn.query_row(probe, [], |_| Ok(())).is_ok()
+}
+
+/// `AND …` fragment restricting `session` rows to those the sidebar should
+/// show: no spawned subagents (`parent_id` set) and at least one message.
+/// Empty when the schema predates `parent_id` / the `message` table, so such a
+/// database degrades to "show everything" instead of "show nothing".
+fn opencode_visible_filter(conn: &rusqlite::Connection) -> String {
+    let mut filter = String::new();
+    if sqlite_has(conn, "SELECT 1 FROM pragma_table_info('session') WHERE name='parent_id'") {
+        filter.push_str(" AND parent_id IS NULL");
+    }
+    if sqlite_has(conn, "SELECT 1 FROM sqlite_master WHERE type='table' AND name='message'") {
+        filter.push_str(" AND EXISTS (SELECT 1 FROM message m WHERE m.session_id = session.id)");
+    }
+    filter
+}
+
+/// Of `session_ids`, the subset still visible in the sidebar. `None` when the
+/// address is not a db one or the database can't be read — callers must then
+/// leave the indexed rows alone rather than prune on a transient failure.
+pub(super) fn opencode_db_visible_sessions(
+    db: &Path,
+    session_ids: &[String],
+) -> Option<std::collections::HashSet<String>> {
+    if db.file_name().and_then(|n| n.to_str()) != Some("opencode.db") {
+        return None;
+    }
+    let conn = rusqlite::Connection::open_with_flags(
+        db,
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+    )
+    .ok()?;
+    let filter = opencode_visible_filter(&conn);
+    let mut visible = std::collections::HashSet::new();
+    // Chunk to stay well under SQLite's bound-variable limit.
+    for chunk in session_ids.chunks(200) {
+        let placeholders = std::iter::repeat_n("?", chunk.len())
+            .collect::<Vec<_>>()
+            .join(",");
+        let sql = format!("SELECT id FROM session WHERE id IN ({placeholders}){filter}");
+        let mut stmt = conn.prepare(&sql).ok()?;
+        let rows = stmt
+            .query_map(rusqlite::params_from_iter(chunk.iter()), |r| {
+                r.get::<_, String>(0)
+            })
+            .ok()?;
+        for id in rows.flatten() {
+            visible.insert(id);
+        }
+    }
+    Some(visible)
+}
+
 /// OpenCode sessions, from either storage generation. Legacy (≤1.1.x) keeps
 /// one JSON tree per data root (`<root>/storage/session/<projectId>/<id>.json`,
 /// shape `{id, projectID, directory, title, time:{created,updated}}`); ≥1.18
@@ -449,12 +508,20 @@ fn discover_opencode_db(
     ) else {
         return;
     };
-    let Ok(mut stmt) = conn.prepare(
-        "SELECT id, directory FROM session
-         WHERE time_archived IS NULL
-         ORDER BY time_updated DESC
-         LIMIT ?1",
-    ) else {
+    // Since 1.18 a spawned subagent is its own `session` row: `parent_id` is
+    // set and `directory` is the parent's workspace, so an unfiltered scan
+    // lists every subagent next to its parent — the same duplicate-conversation
+    // problem the codex/dsh subagent arms below already drop (the live turn
+    // surfaces subagents in the subagent strip instead). A row that never
+    // received a message is an abandoned new-chat and belongs in the same
+    // bucket. `opencode_visible_filter` probes the columns/tables first: a
+    // database whose schema predates them degrades to "list everything".
+    let query = format!(
+        "SELECT id, directory FROM session WHERE time_archived IS NULL{} \
+         ORDER BY time_updated DESC LIMIT ?1",
+        opencode_visible_filter(&conn)
+    );
+    let Ok(mut stmt) = conn.prepare(&query) else {
         return;
     };
     let Ok(rows) = stmt.query_map([MAX_OPENCODE_SESSION_FILES as i64], |r| {
@@ -1355,6 +1422,61 @@ mod tests {
             super::super::split_opencode_db_path(&found[0].file_path).unwrap();
         assert_eq!(db_path, db);
         assert_eq!(session_id, "ses_live");
+
+        std::fs::remove_dir_all(&home).ok();
+    }
+
+    /// Since 1.18 a spawned subagent is its own `session` row: `parent_id` set,
+    /// `directory` = the parent's workspace. A never-used new chat is a row
+    /// with no `message`. An unfiltered scan lists both next to real sessions;
+    /// the live turn already surfaces subagents in the subagent strip, so both
+    /// must be dropped here while a top-level session with a message stays.
+    #[test]
+    fn discover_opencode_db_skips_subagent_and_empty_sessions() {
+        let home = scratch_dir("discover-opencode-db-filter");
+        let workspace = home.join("ws");
+        std::fs::create_dir_all(&workspace).unwrap();
+        let data_root = home.join(".local/share/opencode");
+        std::fs::create_dir_all(&data_root).unwrap();
+        let db = data_root.join("opencode.db");
+        let conn = rusqlite::Connection::open(&db).unwrap();
+        conn.execute_batch(
+            "CREATE TABLE session(id TEXT PRIMARY KEY, directory TEXT NOT NULL,
+                parent_id TEXT, time_archived INTEGER, time_updated INTEGER NOT NULL);
+             CREATE TABLE message(id TEXT PRIMARY KEY, session_id TEXT NOT NULL);",
+        )
+        .unwrap();
+        let ws = workspace.to_string_lossy().to_string();
+        let insert =
+            |id: &str, directory: &str, parent: Option<&str>, archived: Option<i64>, updated: i64| {
+                conn.execute(
+                    "INSERT INTO session VALUES(?1,?2,?3,?4,?5)",
+                    rusqlite::params![id, directory, parent, archived, updated],
+                )
+                .unwrap();
+            };
+        let message = |id: &str, session_id: &str| {
+            conn.execute(
+                "INSERT INTO message VALUES(?1,?2)",
+                rusqlite::params![id, session_id],
+            )
+            .unwrap();
+        };
+        insert("ses_top", &ws, None, None, 5); // top-level, has message: kept
+        insert("ses_subagent", &ws, Some("ses_top"), None, 4); // subagent: dropped
+        insert("ses_empty", &ws, None, None, 3); // no message: dropped
+        insert("ses_archived", &ws, None, Some(9), 2); // archived: dropped
+        insert("ses_elsewhere", "/elsewhere", None, None, 1); // other ws: dropped
+        message("msg_top", "ses_top");
+        message("msg_subagent", "ses_subagent");
+        message("msg_archived", "ses_archived");
+        message("msg_elsewhere", "ses_elsewhere");
+        drop(conn);
+
+        let _guard = HomeGuard::set(&home);
+        let found = discover_opencode(&workspace);
+        let ids: Vec<&str> = found.iter().map(|f| f.session_id.as_str()).collect();
+        assert_eq!(ids, ["ses_top"]);
 
         std::fs::remove_dir_all(&home).ok();
     }
