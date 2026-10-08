@@ -168,6 +168,7 @@ export function HeaderOpenActions({ workspacePath }: { workspacePath: string }) 
   const [selectedId, setSelectedId] = useState(readSelectedOpenAppId);
   const [customApps, setCustomApps] = useState<CustomApp[]>(readCustomApps);
   const [addDialogOpen, setAddDialogOpen] = useState(false);
+  const [openError, setOpenError] = useState<string | null>(null);
   const {
     isOpen: menuOpen,
     triggerRef,
@@ -179,18 +180,20 @@ export function HeaderOpenActions({ workspacePath }: { workspacePath: string }) 
   const openTarget = useCallback(
     async (target: OpenAppTarget | CustomApp) => {
       const path = resolveOpenAppPath(target, { workspacePath, activeFilePath });
+      setOpenError(null);
       try {
         if ("path" in target) {
           await openCustomProgram(path, target);
         } else {
           await openPathInTarget(path, target);
         }
-      } catch {
-        // Silent by design: the target app is typically just not installed,
-        // and the header cluster has no error surface worth interrupting for.
+      } catch (error) {
+        setOpenError(
+          t("openApp.openFailed", { target: target.label, message: String(error) }),
+        );
       }
     },
-    [workspacePath, activeFilePath],
+    [workspacePath, activeFilePath, t],
   );
 
   const handleSelectTarget = useCallback(
@@ -314,6 +317,18 @@ export function HeaderOpenActions({ workspacePath }: { workspacePath: string }) 
 
   return (
     <div className="flex items-center gap-0.5 px-1.5">
+      {openError && (
+        <ModalShell onClose={() => setOpenError(null)} label={t("openApp.openFailedTitle")}>
+          <p role="alert" className="break-words text-body-medium text-text-error-primary">
+            {openError}
+          </p>
+          <div className="mt-4 flex justify-end">
+            <Button size="small" onClick={() => setOpenError(null)}>
+              {t("common.close")}
+            </Button>
+          </div>
+        </ModalShell>
+      )}
       {OPEN_APP_TARGETS.flatMap((target) => {
         if (!pinnedIdSet.has(target.id)) return [];
         return [

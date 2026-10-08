@@ -152,6 +152,8 @@
 
 异步动作必须让用户看到三件事：**正在进行**、**成功**、**失败**。失败要么有对号以外的显式反馈（错误文案 / 状态标记），要么保持原样不误导。
 
+- **顶栏外部应用打开**：`HeaderOpenActions.tsx` 的固定按钮和更多菜单共用打开入口；启动失败用 `ModalShell` 展示目标应用及错误原因，允许关闭后重试，不静默吞掉失败。macOS 的 IntelliJ IDEA 使用应用包内 `Contents/MacOS/idea` 命令行入口，使已打开的项目复用窗口；其他预置应用继续使用 `open -a`。
+
 ### 4.1 刷新 / 重新加载：转圈 → 对号
 
 参考实现：变更面板的刷新按钮（`src/features/git/ChangesPanelHeader.tsx`），公共实现：`src/components/base/action-feedback.tsx`。

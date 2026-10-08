@@ -202,6 +202,79 @@ fn open_with_app_candidates(
     Err(format!("Failed to open app ({target_label}): {detail}"))
 }
 
+/// Resolve the bundled CLI without requiring a user-installed shell command.
+#[cfg(target_os = "macos")]
+async fn idea_launcher() -> Result<PathBuf, String> {
+    let mut bundles = vec![PathBuf::from("/Applications/IntelliJ IDEA.app")];
+    if let Some(home) = dirs::home_dir() {
+        bundles.push(home.join("Applications/IntelliJ IDEA.app"));
+    }
+    if let Some(launcher) = bundles
+        .iter()
+        .map(|bundle| bundle.join("Contents/MacOS/idea"))
+        .find(|launcher| launcher.is_file())
+    {
+        return Ok(launcher);
+    }
+    // Toolbox and user-selected installation locations are indexed by bundle ID.
+    let output = tokio::process::Command::new("/usr/bin/mdfind")
+        .arg("kMDItemCFBundleIdentifier == 'com.jetbrains.intellij' || kMDItemCFBundleIdentifier == 'com.jetbrains.intellij.ce'")
+        .output()
+        .await
+        .map_err(|error| format!("Failed to locate IntelliJ IDEA: {error}"))?;
+    if output.status.success() {
+        for bundle in String::from_utf8_lossy(&output.stdout).lines() {
+            let launcher = Path::new(bundle).join("Contents/MacOS/idea");
+            if launcher.is_file() {
+                return Ok(launcher);
+            }
+        }
+    }
+    Err("Cannot find the IntelliJ IDEA command-line launcher".to_string())
+}
+
+#[cfg(target_os = "macos")]
+fn macos_open_command(
+    app: &str,
+    launcher: Option<&Path>,
+    path: &str,
+    args: &[String],
+) -> tokio::process::Command {
+    if let Some(launcher) = launcher {
+        // JetBrains' CLI checks already-open projects. macOS OpenDocuments
+        // events can initialize a duplicate project and leave an orphan frame.
+        let mut cmd = tokio::process::Command::new(launcher);
+        cmd.args(args).arg(path);
+        return cmd;
+    }
+    let mut cmd = tokio::process::Command::new("open");
+    cmd.arg("-a").arg(app).arg(path);
+    if !args.is_empty() {
+        cmd.arg("--args").args(args);
+    }
+    cmd
+}
+
+#[cfg(target_os = "macos")]
+async fn start_idea(mut cmd: tokio::process::Command) -> Result<(), String> {
+    let mut child = cmd
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .map_err(|error| format!("Failed to start IntelliJ IDEA: {error}"))?;
+    // With an existing IDE, the launcher forwards the request and exits.
+    // On a cold start it becomes the IDE process and lives until the user quits.
+    match tokio::time::timeout(std::time::Duration::from_secs(2), child.wait()).await {
+        Ok(Ok(status)) if !status.success() => Err(format!(
+            "Failed to start IntelliJ IDEA ({})",
+            format_exit_detail(status.code())
+        )),
+        Ok(Err(error)) => Err(format!("Failed to start IntelliJ IDEA: {error}")),
+        Ok(Ok(_)) | Err(_) => Ok(()),
+    }
+}
+
 /// Open a folder (or file) in an external application by name.
 #[tauri::command]
 pub(crate) async fn open_workspace_in(
@@ -219,21 +292,22 @@ pub(crate) async fn open_workspace_in(
                 "Failed to open app ({target_label}): app is not allowed"
             ));
         }
-        let mut cmd = tokio::process::Command::new("open");
-        cmd.arg("-a").arg(&app).arg(&path);
-        if !args.is_empty() {
-            cmd.arg("--args").args(&args);
+        if app == "IntelliJ IDEA" {
+            let launcher = idea_launcher().await?;
+            return start_idea(macos_open_command(&app, Some(&launcher), &path, &args)).await;
         }
-        let status = cmd
-            .status()
+        let output = macos_open_command(&app, None, &path, &args)
+            .stdin(Stdio::null())
+            .output()
             .await
             .map_err(|error| format!("Failed to open app ({target_label}): {error}"))?;
-        if status.success() {
+        if output.status.success() {
             return Ok(());
         }
         return Err(format!(
-            "Failed to open app ({target_label} returned {}).",
-            format_exit_detail(status.code())
+            "Failed to open app ({target_label} returned {}): {}",
+            format_exit_detail(output.status.code()),
+            String::from_utf8_lossy(&output.stderr).trim()
         ));
     }
 
@@ -582,6 +656,66 @@ mod tests {
         assert_eq!(
             explorer_select_arg("C:\\tmp\\a.zip"),
             "/select,\"C:\\tmp\\a.zip\""
+        );
+    }
+}
+
+#[cfg(all(test, target_os = "macos"))]
+mod macos_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn cold_start_does_not_wait_for_the_ide_to_quit() {
+        let mut cmd = tokio::process::Command::new("/bin/sleep");
+        cmd.arg("3");
+        let result =
+            tokio::time::timeout(std::time::Duration::from_millis(2500), start_idea(cmd)).await;
+        assert_eq!(result.unwrap(), Ok(()));
+    }
+
+    #[tokio::test]
+    async fn launcher_failure_is_reported() {
+        let cmd = tokio::process::Command::new("/usr/bin/false");
+        assert!(start_idea(cmd).await.unwrap_err().contains("exit code 1"));
+    }
+
+    #[test]
+    fn idea_uses_cli_arguments_instead_of_open_documents() {
+        let launcher = Path::new("/Applications/IntelliJ IDEA.app/Contents/MacOS/idea");
+        let path = "/Users/example/My Project/中文 文件.java";
+        let cmd = macos_open_command(
+            "IntelliJ IDEA",
+            Some(launcher),
+            path,
+            &["--line".into(), "12".into()],
+        );
+        let cmd = cmd.as_std();
+        assert_eq!(cmd.get_program(), launcher.as_os_str());
+        assert_eq!(
+            cmd.get_args().collect::<Vec<_>>(),
+            vec!["--line", "12", path]
+        );
+    }
+
+    #[test]
+    fn other_apps_keep_launch_services_arguments() {
+        let cmd = macos_open_command(
+            "Visual Studio Code",
+            None,
+            "/Users/example/My Project",
+            &["--reuse-window".into()],
+        );
+        let cmd = cmd.as_std();
+        assert_eq!(cmd.get_program(), "open");
+        assert_eq!(
+            cmd.get_args().collect::<Vec<_>>(),
+            vec![
+                "-a",
+                "Visual Studio Code",
+                "/Users/example/My Project",
+                "--args",
+                "--reuse-window"
+            ]
         );
     }
 }

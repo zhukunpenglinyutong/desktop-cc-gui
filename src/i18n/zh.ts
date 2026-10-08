@@ -1376,6 +1376,8 @@ export const zh = {
     syncNow: "同步历史",
   },
   openApp: {
+    openFailedTitle: "打开失败",
+    openFailed: "无法在 {{target}} 中打开：{{message}}",
     openIn: "在 {{target}} 中打开",
     more: "更多",
     terminal: "终端",

@@ -1432,6 +1432,8 @@ export const en: Messages = {
     syncNow: "Sync history",
   },
   openApp: {
+    openFailedTitle: "Could not open",
+    openFailed: "Could not open in {{target}}: {{message}}",
     openIn: "Open in {{target}}",
     more: "More",
     terminal: "Terminal",

@@ -94,6 +94,35 @@ describe("HeaderOpenActions add-program", () => {
     });
   }
 
+  it("opens IDEA from the pinned button and reports launcher failures", async () => {
+    await act(async () => {
+      writePinnedIds(["idea"]);
+      root.render(<HeaderOpenActions workspacePath="/workspace" />);
+    });
+    mocks.openWorkspaceIn.mockRejectedValueOnce("IDEA launcher failed");
+    await act(async () => {
+      document
+        .querySelector<HTMLButtonElement>('[aria-label="在 IntelliJ IDEA 中打开"]')!
+        .click();
+    });
+    expect(mocks.openWorkspaceIn).toHaveBeenLastCalledWith("/workspace", {
+      appName: "IntelliJ IDEA",
+    });
+    expect(document.querySelector('[role="alert"]')?.textContent).toBe(
+      "无法在 IntelliJ IDEA 中打开：IDEA launcher failed",
+    );
+    await act(async () => {
+      buttonByText("关闭")!.click();
+    });
+    expect(document.querySelector('[role="alert"]')).toBeNull();
+    await act(async () => {
+      document
+        .querySelector<HTMLButtonElement>('[aria-label="在 IntelliJ IDEA 中打开"]')!
+        .click();
+    });
+    expect(document.querySelector('[role="alert"]')).toBeNull();
+  });
+
   it("adds a custom program: menu row appears, is pinned to the header, persisted", async () => {
     await openMenu();
 
