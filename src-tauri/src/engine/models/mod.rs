@@ -55,6 +55,21 @@ pub(crate) fn resolve_claude_launch_model(selector: &str) -> String {
     claude::resolve_launch_model(selector)
 }
 
+pub(crate) fn claude_comparison_model(
+    selector: &str,
+    bin: &str,
+    channel_env: Option<&std::collections::HashMap<String, String>>,
+    workspace: &std::path::Path,
+    remote: bool,
+) -> Option<String> {
+    let path = if remote {
+        None
+    } else {
+        super::resolve::find_cli_binary("claude", Some(bin))
+    };
+    claude::comparison_model(selector, path.as_deref(), channel_env, workspace, remote)
+}
+
 use serde::Serialize;
 
 /// Catalog probe budget; with extension boot skipped the call lands in ~1s,

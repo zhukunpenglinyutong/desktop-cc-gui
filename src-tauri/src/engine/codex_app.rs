@@ -1512,12 +1512,16 @@ async fn handshake_and_start(
         core.dispatch_event(
             state,
             EngineEvent::Launch {
+                comparison_model: None,
                 model: req.model.clone(),
                 effort: req.effort.clone(),
             },
         );
     }
-    let thread_model = result.get("model").and_then(Value::as_str).map(str::to_string);
+    let thread_model = result
+        .get("model")
+        .and_then(Value::as_str)
+        .map(str::to_string);
     if let Some(model) = thread_model.as_deref() {
         core.dispatch_event(state, EngineEvent::Model(model.to_string()));
     }

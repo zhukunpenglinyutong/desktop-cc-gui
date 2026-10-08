@@ -19,6 +19,7 @@ use super::EngineModel;
 pub(super) struct EmbeddedRegistry {
     /// alias family → resolved first-party model id ("opus" → "claude-opus-5").
     alias_defaults: std::collections::HashMap<String, String>,
+    provider_defaults: std::collections::HashMap<(String, String), String>,
     /// model id → human name ("claude-opus-5" → "Opus 5").
     display_names: std::collections::HashMap<String, String>,
     /// The CLI's built-in default alias when no model is configured.
@@ -60,6 +61,9 @@ fn parse_registry(bytes: &[u8]) -> EmbeddedRegistry {
     // window to keep unrelated `{default:"…"}` code from leaking in.
     let aliases_re = Regex::new(r"aliases:\{").unwrap();
     let family_re = Regex::new(r#"([a-z]+):\{default:"([^"]+)""#).unwrap();
+    let provider_family_re =
+        Regex::new(r#"([a-z]+):\{default:"[^"]+",per_provider:\{([^}]+)\}"#).unwrap();
+    let provider_re = Regex::new(r#"([a-z]+):"([^"]+)""#).unwrap();
     let best_re = Regex::new(r#",best:"([^"]+)""#).unwrap();
     for m in aliases_re.find_iter(bytes) {
         let window = &bytes[m.start()..(m.start() + 2048).min(bytes.len())];
@@ -68,6 +72,17 @@ fn parse_registry(bytes: &[u8]) -> EmbeddedRegistry {
                 String::from_utf8_lossy(&f[1]).into_owned(),
                 String::from_utf8_lossy(&f[2]).into_owned(),
             );
+        }
+        for family in provider_family_re.captures_iter(window) {
+            for provider in provider_re.captures_iter(&family[2]) {
+                registry.provider_defaults.insert(
+                    (
+                        String::from_utf8_lossy(&family[1]).into_owned(),
+                        String::from_utf8_lossy(&provider[1]).into_owned(),
+                    ),
+                    String::from_utf8_lossy(&provider[2]).into_owned(),
+                );
+            }
         }
         if registry.best.is_none() {
             if let Some(b) = best_re.captures(window) {
@@ -152,6 +167,7 @@ struct CliModelConfig {
     model_key: Option<String>,
     /// env.ANTHROPIC_DEFAULT_<FAMILY>_MODEL overrides, keyed by family.
     overrides: std::collections::HashMap<String, String>,
+    provider_flags: std::collections::HashMap<String, String>,
 }
 
 impl CliModelConfig {
@@ -197,6 +213,94 @@ fn resolve_launch_model_from(config: &CliModelConfig, selector: &str) -> String 
         .unwrap_or_else(|| selector.to_string())
 }
 
+/// Resolve only the comparison evidence; keep the CLI's selector unchanged.
+/// Remote binaries are not inferred from the host's registry.
+pub(crate) fn comparison_model(
+    selector: &str,
+    bin: Option<&std::path::Path>,
+    channel_env: Option<&std::collections::HashMap<String, String>>,
+    workspace: &std::path::Path,
+    remote: bool,
+) -> Option<String> {
+    let config = match channel_env {
+        Some(env) => {
+            let mut config = CliModelConfig::default();
+            merge_settings_json(&mut config, &serde_json::json!({"env": env}).to_string());
+            config
+        }
+        None if remote => CliModelConfig::default(),
+        None => {
+            let mut config = CliModelConfig::default();
+            let env: std::collections::HashMap<_, _> = FAMILY_ENV_KEYS
+                .iter()
+                .map(|(_, key, _)| *key)
+                .chain([
+                    "ANTHROPIC_MODEL",
+                    "CLAUDE_CODE_USE_BEDROCK",
+                    "CLAUDE_CODE_USE_VERTEX",
+                    "CLAUDE_CODE_USE_FOUNDRY",
+                ])
+                .filter_map(|key| std::env::var(key).ok().map(|value| (key, value)))
+                .collect();
+            merge_settings_json(&mut config, &serde_json::json!({"env": env}).to_string());
+            for dir in [claude_config_dir(), workspace.join(".claude")] {
+                for name in ["settings.json", "settings.local.json"] {
+                    if let Ok(content) = std::fs::read_to_string(dir.join(name)) {
+                        merge_settings_json(&mut config, &content);
+                    }
+                }
+            }
+            config
+        }
+    };
+    let registry = if remote {
+        None
+    } else {
+        bin.and_then(embedded_registry)
+    };
+    comparison_model_from(selector, &config, registry.as_ref())
+}
+
+fn comparison_model_from(
+    selector: &str,
+    config: &CliModelConfig,
+    registry: Option<&EmbeddedRegistry>,
+) -> Option<String> {
+    let selector = if selector == "default" {
+        config
+            .resolved_default()
+            .or_else(|| registry.and_then(|r| r.best.clone()))?
+    } else {
+        selector.to_string()
+    };
+    let bare = selector.strip_suffix("[1m]").unwrap_or(&selector);
+    let mapped = config.override_for(bare).unwrap_or(bare);
+    if !CLI_ALIASES.iter().any(|(alias, _)| *alias == mapped) {
+        return Some(mapped.to_string());
+    }
+    let registry = registry?;
+    let provider = [
+        ("CLAUDE_CODE_USE_BEDROCK", "bedrock"),
+        ("CLAUDE_CODE_USE_VERTEX", "vertex"),
+        ("CLAUDE_CODE_USE_FOUNDRY", "foundry"),
+    ]
+    .into_iter()
+    .find_map(|(key, provider)| {
+        config
+            .provider_flags
+            .get(key)
+            .filter(|value| value.as_str() == "1" || value.as_str() == "true")
+            .map(|_| provider)
+    });
+    match provider {
+        Some(provider) => registry
+            .provider_defaults
+            .get(&(mapped.to_string(), provider.to_string()))
+            .cloned(),
+        None => registry.alias_defaults.get(mapped).cloned(),
+    }
+}
+
 fn read_cli_config_from(dir: &std::path::Path) -> CliModelConfig {
     let mut config = CliModelConfig::default();
     // User settings first so the local file overrides per field.
@@ -222,6 +326,15 @@ fn merge_settings_json(config: &mut CliModelConfig, content: &str) {
         return;
     };
     let env = v.get("env");
+    for key in [
+        "CLAUDE_CODE_USE_BEDROCK",
+        "CLAUDE_CODE_USE_VERTEX",
+        "CLAUDE_CODE_USE_FOUNDRY",
+    ] {
+        if let Some(value) = pick(env.and_then(|e| e.get(key))) {
+            config.provider_flags.insert(key.to_string(), value);
+        }
+    }
     if let Some(m) = pick(env.and_then(|e| e.get("ANTHROPIC_MODEL"))) {
         config.env_model = Some(m);
     }
@@ -430,6 +543,7 @@ mod tests {
     #[test]
     fn resolved_default_maps_alias_through_override() {
         let config = CliModelConfig {
+            provider_flags: Default::default(),
             env_model: None,
             model_key: Some("opus[1m]".to_string()),
             overrides: [("opus".to_string(), "grok-4.5".to_string())]
@@ -451,6 +565,79 @@ mod tests {
         parse_registry(
             br#"[{id:"claude-opus-4-5",family:"opus",display_name:"Opus 4.5"},{id:"claude-opus-5",family:"opus",display_name:"Opus 5"},{id:"claude-fable-5",family:"fable",display_name:"Fable 5"}],aliases:{opus:{default:"claude-opus-5",per_provider:{bedrock:"claude-opus-5",gateway:"claude-opus-4-7"}},fable:{default:"claude-fable-5"}},defaults:{},best:"fable",latest_per_family:{opus:"claude-opus-5"}});"#,
         )
+    }
+
+    #[test]
+    fn comparison_resolves_aliases_overrides_and_provider_variants() {
+        let registry = fake_registry();
+        let mut config = CliModelConfig::default();
+        assert_eq!(
+            comparison_model_from("opus", &config, Some(&registry)).as_deref(),
+            Some("claude-opus-5")
+        );
+        assert_eq!(
+            comparison_model_from("opus[1m]", &config, Some(&registry)).as_deref(),
+            Some("claude-opus-5")
+        );
+        assert_eq!(
+            comparison_model_from("default", &config, Some(&registry)).as_deref(),
+            Some("claude-fable-5")
+        );
+        merge_settings_json(&mut config, r#"{"env":{"CLAUDE_CODE_USE_BEDROCK":"1"}}"#);
+        assert_eq!(
+            comparison_model_from("opus", &config, Some(&registry)).as_deref(),
+            Some("claude-opus-5")
+        );
+        merge_settings_json(
+            &mut config,
+            r#"{"env":{"CLAUDE_CODE_USE_BEDROCK":"0","CLAUDE_CODE_USE_VERTEX":"1"}}"#,
+        );
+        assert_eq!(
+            comparison_model_from("opus", &config, Some(&registry)),
+            None
+        );
+        merge_settings_json(
+            &mut config,
+            r#"{"model":"opus","env":{"ANTHROPIC_DEFAULT_OPUS_MODEL":"custom-opus"}}"#,
+        );
+        assert_eq!(
+            comparison_model_from("opus", &config, Some(&registry)).as_deref(),
+            Some("custom-opus")
+        );
+        assert_eq!(
+            comparison_model_from("default", &config, None).as_deref(),
+            Some("custom-opus")
+        );
+    }
+
+    #[test]
+    fn remote_comparison_uses_only_explicit_channel_mapping() {
+        let empty = std::collections::HashMap::new();
+        let workspace = std::path::Path::new("/unused");
+        assert_eq!(comparison_model("opus", None, None, workspace, true), None);
+        assert_eq!(
+            comparison_model("opus", None, Some(&empty), workspace, true),
+            None
+        );
+        let mapped = [("ANTHROPIC_DEFAULT_OPUS_MODEL".into(), "remote-opus".into())]
+            .into_iter()
+            .collect();
+        assert_eq!(
+            comparison_model("opus", None, Some(&mapped), workspace, true).as_deref(),
+            Some("remote-opus")
+        );
+    }
+
+    #[test]
+    fn comparison_does_not_guess_aliases_without_a_registry() {
+        let config = CliModelConfig::default();
+        for selector in ["opus", "sonnet", "haiku", "fable", "default"] {
+            assert_eq!(comparison_model_from(selector, &config, None), None);
+        }
+        assert_eq!(
+            comparison_model_from("claude-opus-5-5", &config, None).as_deref(),
+            Some("claude-opus-5-5")
+        );
     }
 
     #[test]

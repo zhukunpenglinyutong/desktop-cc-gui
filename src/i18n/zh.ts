@@ -368,6 +368,8 @@ export const zh = {
     checkServedModel: "响应模型",
     checkRequestedEffort: "请求档位",
     checkServedEffort: "响应档位",
+    checkUnresolved: "无法确认",
+    checkUnknownAria: "响应校验：无法确认",
     checkUnreported: "未上报",
     checkMismatch: "不一致",
     checkOkAria: "响应校验：与响应一致",

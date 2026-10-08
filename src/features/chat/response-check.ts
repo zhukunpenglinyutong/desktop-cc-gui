@@ -20,6 +20,8 @@
 
 export interface SelectionSide {
   model: string | null;
+  /** Adapter-resolved request id. Null means the selector could not be resolved. */
+  comparisonModel?: string | null;
   effort: string | null;
 }
 
@@ -34,11 +36,10 @@ export type SelectionVerdict = "match" | "variant" | "mismatch" | "unknown";
 export interface ResponseCheckView {
   model: SelectionVerdict;
   effort: SelectionVerdict;
-  /** "mismatch" when any reported side disagrees, "match" when at least one
-   *  reported side agrees and none disagrees, "unknown" when nothing was
-   *  reported to compare. */
+  /** "mismatch" when a reported side disagrees; "unknown" when a request
+   *  alias is unresolved or nothing is comparable; otherwise "match". */
   verdict: "match" | "mismatch" | "unknown";
-  /** False when there is nothing to show: no comparable side at all. */
+  /** Visible when evidence can be compared or an alias needs clarification. */
   visible: boolean;
 }
 
@@ -74,7 +75,10 @@ export function compareModel(
 
 /** Separator/case-insensitive; `extra-high` is the same level as `xhigh`. */
 function effortKey(level: string): string {
-  const key = level.trim().toLowerCase().replace(/[-_\s]/g, "");
+  const key = level
+    .trim()
+    .toLowerCase()
+    .replace(/[-_\s]/g, "");
   return key === "extrahigh" ? "xhigh" : key;
 }
 
@@ -91,13 +95,27 @@ export function checkResponseSelection(
 ): ResponseCheckView {
   const requested = check?.requested ?? EMPTY_SIDE;
   const served = check?.served ?? EMPTY_SIDE;
-  const model = compareModel(requested.model, served.model);
+  const model = compareModel(
+    requested.comparisonModel === undefined
+      ? requested.model
+      : requested.comparisonModel,
+    served.model,
+  );
   const effort = compareEffort(requested.effort, served.effort);
+  const unresolvedAlias =
+    requested.comparisonModel === null && !!requested.model && !!served.model;
   const verdict =
     model === "mismatch" || effort === "mismatch"
       ? "mismatch"
-      : model !== "unknown" || effort !== "unknown"
-        ? "match"
-        : "unknown";
-  return { model, effort, verdict, visible: verdict !== "unknown" };
+      : unresolvedAlias
+        ? "unknown"
+        : model !== "unknown" || effort !== "unknown"
+          ? "match"
+          : "unknown";
+  return {
+    model,
+    effort,
+    verdict,
+    visible: verdict !== "unknown" || unresolvedAlias,
+  };
 }

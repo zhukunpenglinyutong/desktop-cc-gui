@@ -32,6 +32,27 @@ describe("ResponseCheckBadge", () => {
 
   const trigger = () => container.querySelector("button");
 
+  it("uses a neutral question badge for an unresolved request alias", () => {
+    render({
+      requested: { model: "opus", comparisonModel: null, effort: "high" },
+      served: { model: "claude-opus-5-5", effort: null },
+    });
+    expect(trigger()!.getAttribute("aria-label")).toBe("响应校验：无法确认");
+    expect(trigger()!.className).not.toContain("text-text-warning-primary");
+  });
+
+  it("checks the resolved alias against the concrete response model", () => {
+    render({
+      requested: {
+        model: "opus",
+        comparisonModel: "claude-opus-5-5",
+        effort: "high",
+      },
+      served: { model: "claude-opus-5-5", effort: null },
+    });
+    expect(trigger()!.getAttribute("aria-label")).toBe("响应校验：与响应一致");
+  });
+
   it("renders nothing until a side was reported", () => {
     render({
       requested: { model: "claude-opus-5-5", effort: "xhigh" },
@@ -76,6 +97,29 @@ describe("ResponseCheckBadge", () => {
     const button = trigger()!;
     expect(button.getAttribute("aria-label")).toBe("响应校验：与响应不一致");
     expect(button.className).toContain("text-text-warning-primary");
+  });
+
+  it("shows the original selector and its resolution in the card", async () => {
+    vi.useFakeTimers();
+    try {
+      for (const comparisonModel of ["claude-opus-5-5", null]) {
+        render({
+          requested: { model: "opus", comparisonModel, effort: "high" },
+          served: { model: "claude-opus-5-5", effort: null },
+        });
+        await act(async () => {
+          trigger()!.focus();
+          vi.advanceTimersByTime(400);
+        });
+        const text = document.querySelector('[role="tooltip"]')!.textContent;
+        expect(text).toContain(
+          comparisonModel ? "opus → claude-opus-5-5" : "opus · 无法确认",
+        );
+        expect(text).not.toContain("不一致");
+      }
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("opens the card listing both sides on focus", async () => {

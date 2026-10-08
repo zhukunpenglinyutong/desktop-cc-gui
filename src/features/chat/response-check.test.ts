@@ -10,7 +10,9 @@ describe("compareModel", () => {
     expect(compareModel("百倍baibei/claude-opus-5-5", "claude-opus-5-5")).toBe(
       "match",
     );
-    expect(compareModel("claude-opus-5-5[1m]", "claude-opus-5-5")).toBe("match");
+    expect(compareModel("claude-opus-5-5[1m]", "claude-opus-5-5")).toBe(
+      "match",
+    );
   });
 
   it("reads a dated snapshot as a variant of the requested family", () => {
@@ -50,6 +52,65 @@ describe("compareEffort", () => {
 });
 
 describe("checkResponseSelection", () => {
+  it("compares an adapter-resolved alias without losing the selector", () => {
+    const requested = {
+      model: "opus",
+      comparisonModel: "claude-opus-5-5",
+      effort: "high",
+    };
+    expect(
+      checkResponseSelection({
+        requested,
+        served: { model: "claude-opus-5-5", effort: null },
+      }).verdict,
+    ).toBe("match");
+    expect(
+      checkResponseSelection({
+        requested,
+        served: { model: "claude-opus-4-5", effort: null },
+      }).verdict,
+    ).toBe("mismatch");
+    expect(
+      checkResponseSelection({
+        requested: { ...requested, comparisonModel: "custom-model" },
+        served: { model: "custom-model", effort: null },
+      }).verdict,
+    ).toBe("match");
+  });
+
+  it("shows an unresolved alias as unknown, never a mismatch or pass", () => {
+    const requested = { model: "opus", comparisonModel: null, effort: "high" };
+    expect(
+      checkResponseSelection({
+        requested,
+        served: { model: "claude-opus-5-5", effort: null },
+      }),
+    ).toEqual({
+      model: "unknown",
+      effort: "unknown",
+      verdict: "unknown",
+      visible: true,
+    });
+    expect(
+      checkResponseSelection({
+        requested,
+        served: { model: "claude-opus-5-5", effort: "high" },
+      }).verdict,
+    ).toBe("unknown");
+    expect(
+      checkResponseSelection({
+        requested,
+        served: { model: null, effort: null },
+      }).visible,
+    ).toBe(false);
+    expect(
+      checkResponseSelection({
+        requested,
+        served: { model: "claude-opus-5-5", effort: "low" },
+      }).verdict,
+    ).toBe("mismatch");
+  });
+
   it("reports a match when every reported side agrees", () => {
     const view = checkResponseSelection({
       requested: { model: "claude-opus-5-5", effort: "xhigh" },

@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import CircleAlert from "lucide-react/dist/esm/icons/circle-alert";
+import CircleHelp from "lucide-react/dist/esm/icons/circle-help";
 import CircleCheck from "lucide-react/dist/esm/icons/circle-check";
 import { Focusable } from "react-aria-components";
 import { useTranslation } from "react-i18next";
@@ -30,14 +31,29 @@ export function ResponseCheckBadge({
   const view = useMemo(() => checkResponseSelection(check), [check]);
   if (!view.visible) return null;
   const ok = view.verdict !== "mismatch";
-  const Icon = ok ? CircleCheck : CircleAlert;
+  const Icon =
+    view.verdict === "unknown" ? CircleHelp : ok ? CircleCheck : CircleAlert;
+  const requested = check?.requested;
+  const requestedModel =
+    requested?.comparisonModel === null && requested.model
+      ? `${requested.model} · ${t("chat.checkUnresolved")}`
+      : requested?.comparisonModel &&
+          requested.comparisonModel !== requested.model
+        ? `${requested.model} → ${requested.comparisonModel}`
+        : (requested?.model ?? null);
   const mismatch = t("chat.checkMismatch");
   return (
     <Tooltip delay={200}>
       <Focusable>
         <button
           type="button"
-          aria-label={ok ? t("chat.checkOkAria") : t("chat.checkMismatchAria")}
+          aria-label={
+            view.verdict === "unknown"
+              ? t("chat.checkUnknownAria")
+              : ok
+                ? t("chat.checkOkAria")
+                : t("chat.checkMismatchAria")
+          }
           className={cx(
             "inline-flex shrink-0 cursor-help items-center justify-center transition-colors",
             ok
@@ -51,7 +67,7 @@ export function ResponseCheckBadge({
       <TooltipPanel title={t("chat.checkTitle")}>
         <CheckRow
           label={t("chat.checkRequestedModel")}
-          value={check?.requested.model ?? null}
+          value={requestedModel}
         />
         <CheckRow
           label={t("chat.checkServedModel")}

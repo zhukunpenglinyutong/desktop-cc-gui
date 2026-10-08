@@ -644,13 +644,14 @@ function selectionFields(event: ChatEngineEvent): {
 
 /** The run's launch selection: seed the display exactly as the old
  *  model/effort echo did, and open a fresh request side for the check. */
-function onLaunch(
-  event: ChatEngineEvent,
-  key: string,
-  deps: EngineEventDeps,
-) {
+function onLaunch(event: ChatEngineEvent, key: string, deps: EngineEventDeps) {
   const { model, effort } = selectionFields(event);
   if (!model && !effort) return;
+  const data = event.data as { comparisonModel?: string | null };
+  const comparison =
+    data.comparisonModel === undefined
+      ? {}
+      : { comparisonModel: data.comparisonModel };
   if (model) applyModelDisplay(model, key, deps);
   if (effort) applyEffortDisplay(effort, key, deps);
   deps.set((s) => {
@@ -662,7 +663,7 @@ function onLaunch(
         [key]: {
           ...cur,
           responseCheck: {
-            requested: { model, effort },
+            requested: { model, effort, ...comparison },
             served: { model: null, effort: null },
           },
         },

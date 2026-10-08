@@ -507,6 +507,7 @@ fn ensure_plan_approval(
 
 /// Resolved launch parameters for one send: request, binary, built command.
 struct Launch {
+    comparison_model: Option<Option<String>>,
     req: SendRequest,
     bin: String,
     built: BuiltCommand,
@@ -667,7 +668,17 @@ fn prepare_launch(
         }
         return Err(error);
     }
+    let comparison_model = (engine == "claude").then(|| {
+        models::claude_comparison_model(
+            req.model.as_deref().unwrap_or("default"),
+            &bin,
+            provider.as_ref().map(|_| &channel_env),
+            &req.workspace,
+            wsl,
+        )
+    });
     Ok(Launch {
+        comparison_model,
         req,
         bin,
         built,
@@ -1202,6 +1213,7 @@ async fn send_reserved(
         pid,
         preassigned_session_id: launch.built.preassigned_session_id.clone(),
         initial_model,
+        comparison_model: launch.comparison_model,
         initial_effort,
         child,
         killed,
@@ -2589,6 +2601,7 @@ mod retry_lifecycle_tests {
             pid: child.id().unwrap(),
             preassigned_session_id: Some("session".to_string()),
             initial_model: None,
+            comparison_model: None,
             initial_effort: None,
             child: Arc::new(TokioMutex::new(child)),
             killed: Arc::new(std::sync::atomic::AtomicBool::new(false)),
@@ -2638,6 +2651,7 @@ mod retry_lifecycle_tests {
             pid: child.id().unwrap(),
             preassigned_session_id: None,
             initial_model: None,
+            comparison_model: None,
             initial_effort: None,
             child: Arc::new(TokioMutex::new(child)),
             killed: Arc::new(std::sync::atomic::AtomicBool::new(false)),
@@ -2759,6 +2773,7 @@ mod retry_lifecycle_tests {
             pid,
             preassigned_session_id: Some("session-held".to_string()),
             initial_model: None,
+            comparison_model: None,
             initial_effort: None,
             child,
             killed,

@@ -383,6 +383,8 @@ export const en: Messages = {
     checkServedModel: "Responded model",
     checkRequestedEffort: "Requested effort",
     checkServedEffort: "Responded effort",
+    checkUnresolved: "Unable to verify",
+    checkUnknownAria: "Response verification: unable to verify",
     checkUnreported: "Not reported",
     checkMismatch: "Mismatch",
     checkOkAria: "Response check: matches the response",

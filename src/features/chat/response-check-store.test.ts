@@ -1,6 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useChatStore } from "./store";
-import { handleEngineEvents, type EngineEventDeps } from "./store/engine-events";
+import {
+  handleEngineEvents,
+  type EngineEventDeps,
+} from "./store/engine-events";
 import { sessionKey } from "./store/persistence";
 import { EMPTY_SESSION, runRouting } from "./store/stream";
 
@@ -57,7 +60,12 @@ describe("the response check's engine wiring", () => {
 
   it("a launch opens the request side and seeds the display", () => {
     handleEngineEvents(
-      [ev("launch", 1, { model: "百倍baibei/claude-opus-5-5", effort: "xhigh" })],
+      [
+        ev("launch", 1, {
+          model: "百倍baibei/claude-opus-5-5",
+          effort: "xhigh",
+        }),
+      ],
       deps(),
     );
 
@@ -67,6 +75,40 @@ describe("the response check's engine wiring", () => {
     });
     expect(session().activeModel).toBe("百倍baibei/claude-opus-5-5");
     expect(session().activeEffort).toBe("xhigh");
+  });
+
+  it("preserves the adapter's resolved and explicitly unresolved model through settlement", () => {
+    for (const comparisonModel of ["claude-opus-5-5", null]) {
+      useChatStore.setState({
+        bySession: {
+          [KEY]: {
+            ...EMPTY_SESSION,
+            streaming: true,
+            messages: [
+              { seq: 1, role: "assistant", text: "ok", ts: null, live: true },
+            ],
+          },
+        },
+      });
+      handleEngineEvents(
+        [ev("launch", 1, { model: "opus", comparisonModel, effort: "high" })],
+        deps(),
+      );
+      handleEngineEvents(
+        [ev("served", 2, { model: "claude-opus-5-5" })],
+        deps(),
+      );
+      expect(session().responseCheck?.requested).toEqual({
+        model: "opus",
+        comparisonModel,
+        effort: "high",
+      });
+      handleEngineEvents([ev("done", 3, { code: 0 })], deps());
+      expect(
+        session().messages.at(-1)?.responseCheck?.requested.comparisonModel,
+      ).toBe(comparisonModel);
+      runId = `response-check-run-${++runCounter}`;
+    }
   });
 
   it("a served report fills only the response side", () => {
@@ -106,7 +148,10 @@ describe("the response check's engine wiring", () => {
       [ev("launch", 1, { model: "claude-opus-5-5", effort: "xhigh" })],
       deps(),
     );
-    handleEngineEvents([ev("model", 2, "glm-5.3"), ev("effort", 3, "low")], deps());
+    handleEngineEvents(
+      [ev("model", 2, "glm-5.3"), ev("effort", 3, "low")],
+      deps(),
+    );
 
     expect(session().activeModel).toBe("glm-5.3");
     expect(session().activeEffort).toBe("low");
@@ -139,8 +184,14 @@ describe("the response check's engine wiring", () => {
         },
       },
     });
-    handleEngineEvents([ev("launch", 1, { model: "gpt-6-astra", effort: "max" })], deps());
-    handleEngineEvents([ev("served", 2, { model: "gpt-5.6-luna", effort: "low" })], deps());
+    handleEngineEvents(
+      [ev("launch", 1, { model: "gpt-6-astra", effort: "max" })],
+      deps(),
+    );
+    handleEngineEvents(
+      [ev("served", 2, { model: "gpt-5.6-luna", effort: "low" })],
+      deps(),
+    );
     handleEngineEvents([ev("done", 3, {})], deps());
 
     const assistant = session().messages.filter((m) => m.role === "assistant");

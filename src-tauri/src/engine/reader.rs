@@ -712,14 +712,16 @@ impl TurnCore {
                     Value::String(effort),
                 );
             }
-            EngineEvent::Launch { model, effort } => {
-                state.push(
-                    &self.sink,
-                    &self.run_id,
-                    &self.engine_id,
-                    "launch",
-                    selection_payload(model, effort),
-                );
+            EngineEvent::Launch {
+                model,
+                effort,
+                comparison_model,
+            } => {
+                let mut payload = selection_payload(model, effort);
+                if let Some(model) = comparison_model {
+                    payload["comparisonModel"] = model.map(Value::String).unwrap_or(Value::Null);
+                }
+                state.push(&self.sink, &self.run_id, &self.engine_id, "launch", payload);
             }
             EngineEvent::Served { model, effort } => {
                 state.push(
@@ -770,6 +772,7 @@ pub(crate) struct RunContext {
     /// Session id fixed before spawn (grok `-s`); seeds TurnState.
     pub(crate) preassigned_session_id: Option<String>,
     pub(crate) initial_model: Option<String>,
+    pub(crate) comparison_model: Option<Option<String>>,
     pub(crate) initial_effort: Option<String>,
     pub(crate) child: Arc<TokioMutex<Child>>,
     pub(crate) killed: Arc<std::sync::atomic::AtomicBool>,
@@ -951,6 +954,7 @@ pub(crate) async fn run_reader(stdout: ChildStdout, ctx: RunContext) {
         ctx.dispatch_event(
             &mut state,
             EngineEvent::Launch {
+                comparison_model: ctx.comparison_model.clone(),
                 model: ctx.initial_model.clone(),
                 effort: ctx.initial_effort.clone(),
             },
@@ -1254,6 +1258,53 @@ mod staging_tests {
         );
     }
 
+    #[tokio::test]
+    async fn launch_event_preserves_resolved_and_unresolved_alias_evidence() {
+        struct Capture(Mutex<Vec<Value>>);
+        impl event_sink::Emit for Capture {
+            fn emit_json(&self, _: &str, payload: &str) {
+                self.0
+                    .lock()
+                    .unwrap()
+                    .push(serde_json::from_str(payload).unwrap());
+            }
+        }
+        let capture = Arc::new(Capture(Mutex::new(Vec::new())));
+        let sink = event_sink::EventSink::new(capture.clone());
+        let core = TurnCore {
+            sink,
+            registry: Arc::new(ProcessRegistry::default()),
+            engine_id: "claude".into(),
+            run_id: "test".into(),
+            db: None,
+        };
+        let mut state = TurnState::new(None);
+        for model in [Some("claude-opus-5-5".to_string()), None] {
+            core.dispatch_event(
+                &mut state,
+                EngineEvent::Launch {
+                    model: Some("opus".into()),
+                    effort: Some("high".into()),
+                    comparison_model: Some(model),
+                },
+            );
+        }
+        core.sink.flush();
+        let emitted = capture.0.lock().unwrap();
+        let events: Vec<_> = emitted
+            .iter()
+            .flat_map(|batch| batch.as_array().unwrap())
+            .collect();
+        assert_eq!(
+            events[0]["data"],
+            serde_json::json!({"model":"opus", "effort":"high", "comparisonModel":"claude-opus-5-5"})
+        );
+        assert_eq!(
+            events[1]["data"],
+            serde_json::json!({"model":"opus", "effort":"high", "comparisonModel":null})
+        );
+    }
+
     struct Noop;
     impl event_sink::Emit for Noop {
         fn emit_json(&self, _: &str, _: &str) {}
@@ -1286,6 +1337,7 @@ mod staging_tests {
                 pid: 0,
                 preassigned_session_id: None,
                 initial_model: None,
+                comparison_model: None,
                 initial_effort: None,
                 child: Arc::new(TokioMutex::new(child)),
                 killed: Arc::new(std::sync::atomic::AtomicBool::new(false)),
@@ -1353,6 +1405,7 @@ mod staging_tests {
             pid: 4242,
             preassigned_session_id: None,
             initial_model: None,
+            comparison_model: None,
             initial_effort: None,
             child: Arc::new(TokioMutex::new(child)),
             killed: Arc::new(std::sync::atomic::AtomicBool::new(false)),
@@ -1648,6 +1701,7 @@ mod terminal_event_tests {
                 pid,
                 preassigned_session_id: None,
                 initial_model: None,
+                comparison_model: None,
                 initial_effort: None,
                 child: child.clone(),
                 killed,

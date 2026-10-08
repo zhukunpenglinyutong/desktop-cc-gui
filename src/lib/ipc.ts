@@ -82,7 +82,11 @@ export interface Message {
    *  the response check in the tail indicator). Runtime-only: the CLI
    *  transcript does not carry it, so a reloaded session shows no badge. */
   responseCheck?: {
-    requested: { model: string | null; effort: string | null };
+    requested: {
+      model: string | null;
+      effort: string | null;
+      comparisonModel?: string | null;
+    };
     served: { model: string | null; effort: string | null };
   } | null;
   /** Turn duration in milliseconds (measured from prompt send to turn completion) */

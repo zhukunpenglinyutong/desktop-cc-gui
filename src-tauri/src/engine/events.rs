@@ -138,6 +138,8 @@ pub enum EngineEvent {
     /// for it, and vice versa. Absent sides stay `None` rather than echoing
     /// a default the CLI picked on its own.
     Launch {
+        /// Some(None) explicitly marks an unresolved alias; None is legacy/direct comparison.
+        comparison_model: Option<Option<String>>,
         model: Option<String>,
         effort: Option<String>,
     },
