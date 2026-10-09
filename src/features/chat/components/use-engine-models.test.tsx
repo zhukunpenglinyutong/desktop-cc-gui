@@ -153,6 +153,41 @@ describe("useEngineModels channel models", () => {
     await show(null, undefined, { claude: "c2" });
     expect(opusLabel()).toBe("two-opus");
   });
+
+  it("DSH 渠道裸模型 id 与目录的 provider/model 复合 id 合并为一行", async () => {
+    // 报告的问题:DSH 选择器里 deepseek-v4-pro(渠道配置的裸 id)与
+    // DeepSeek-V4-Pro(catalog 的 deepseek-official/deepseek-v4-pro)重复出现。
+    vi.mocked(ipc.getCliConfig).mockResolvedValue({
+      ...cliConfigWith(EMPTY_SECTION),
+      dsh: {
+        current: "ch1",
+        providers: { ch1: { name: "Deepseek", model: "deepseek-v4-pro" } },
+      },
+    });
+    vi.mocked(ipc.listEngineModels).mockResolvedValue({
+      models: [
+        {
+          id: "deepseek-official/deepseek-v4-pro",
+          name: "DeepSeek-V4-Pro",
+          description: "Stronger agentic coding",
+          provider: "deepseek-official",
+        },
+        {
+          id: "deepseek-official/deepseek-flash",
+          name: "DeepSeek-V41-Flash",
+          provider: "deepseek-official",
+        },
+      ],
+      authoritative: true,
+    } as unknown as EngineCatalog);
+
+    await show([engineInfo("dsh", true)]);
+    const rows = latest.modelsByEngine.dsh ?? [];
+    expect(rows).toHaveLength(2);
+    expect(rows[0]?.id).toBe("deepseek-official/deepseek-v4-pro");
+    expect(rows[0]?.label).toBe("DeepSeek-V4-Pro");
+    expect(rows[0]?.description).toBe("Stronger agentic coding");
+  });
 });
 
 describe("useEngineModels pin effect", () => {
