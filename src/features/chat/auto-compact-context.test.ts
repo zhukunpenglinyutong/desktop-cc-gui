@@ -6,6 +6,8 @@ import {
   hasPendingUserInput,
   migrateAutoCompactSettings,
   normalizeAutoCompactThreshold,
+  nativeAutoCompactThreshold,
+  autoCompactThresholdRange,
   setAutoCompactEnabled,
   setAutoCompactThreshold,
   shouldAutoCompact,
@@ -93,6 +95,26 @@ describe("auto compact context settings", () => {
   });
 });
 
+describe("native auto-compaction thresholds", () => {
+  it("converts the chosen window without clamping Claude's invalid values", () => {
+    expect(nativeAutoCompactThreshold("claude", { enabled: true, threshold: 50 }, 200_000)).toBe(100_000);
+    expect(nativeAutoCompactThreshold("claude", { enabled: true, threshold: 100 }, 1_000_000)).toBe(1_000_000);
+    expect(() => nativeAutoCompactThreshold("claude", { enabled: true, threshold: 49 }, 200_000)).toThrow();
+    expect(() => nativeAutoCompactThreshold("claude", { enabled: true, threshold: 80 }, 2_000_000)).toThrow();
+    expect(autoCompactThresholdRange("claude", 200_000)).toEqual({ min: 50, max: 100 });
+    expect(autoCompactThresholdRange("claude", 50_000)).toBeNull();
+  });
+
+  it("keeps off and non-native engines unset and accepts positive safe Codex tokens", () => {
+    expect(nativeAutoCompactThreshold("claude", { enabled: false, threshold: 1 }, 200_000)).toBeUndefined();
+    expect(nativeAutoCompactThreshold("omp", { enabled: true, threshold: 1 }, 200_000)).toBeUndefined();
+    expect(nativeAutoCompactThreshold("codex", { enabled: true, threshold: 1 }, 100)).toBe(1);
+    expect(nativeAutoCompactThreshold("codex", { enabled: true, threshold: 29 }, 100)).toBe(29);
+    expect(nativeAutoCompactThreshold("codex", { enabled: true, threshold: 100 }, Number.MAX_SAFE_INTEGER)).toBe(Number.MAX_SAFE_INTEGER);
+    expect(() => nativeAutoCompactThreshold("codex", { enabled: true, threshold: 100 }, Number.MAX_SAFE_INTEGER + 1)).toThrow();
+  });
+});
+
 describe("shouldAutoCompact", () => {
   const base = {
     enabled: true,
@@ -101,6 +123,7 @@ describe("shouldAutoCompact", () => {
     streaming: false,
     compacting: false,
     attemptedAtPct: null as number | null,
+    canCompactWhileStreaming: false,
   };
 
   it("triggers at the threshold", () => {
@@ -119,6 +142,38 @@ describe("shouldAutoCompact", () => {
     expect(shouldAutoCompact({ ...base, attemptedAtPct: 80 })).toBe(false);
     expect(shouldAutoCompact({ ...base, attemptedAtPct: 79 })).toBe(true);
     expect(shouldAutoCompact({ ...base, usagePct: 82, attemptedAtPct: 80 })).toBe(true);
+    expect(shouldAutoCompact({ ...base, usagePct: 80.2, attemptedAtPct: 80.1 })).toBe(false);
+    expect(shouldAutoCompact({ ...base, usagePct: 80.6, attemptedAtPct: 80.1 })).toBe(true);
+  });
+
+  it("compacts inside a live turn only when the run can compact while streaming", () => {
+    // OMP rpc-ui: the host can compact in place, so a never-settling turn
+    // still gets maintenance.
+    expect(
+      shouldAutoCompact({ ...base, streaming: true, canCompactWhileStreaming: true }),
+    ).toBe(true);
+    // Codex/Claude: no lossless in-place compact, so streaming still blocks.
+    expect(
+      shouldAutoCompact({ ...base, streaming: true, canCompactWhileStreaming: false }),
+    ).toBe(false);
+    // The latch still applies inside a live turn.
+    expect(
+      shouldAutoCompact({
+        ...base,
+        streaming: true,
+        canCompactWhileStreaming: true,
+        attemptedAtPct: 80,
+      }),
+    ).toBe(false);
+    // Compacting already in flight wins over the live capability.
+    expect(
+      shouldAutoCompact({
+        ...base,
+        streaming: true,
+        canCompactWhileStreaming: true,
+        compacting: true,
+      }),
+    ).toBe(false);
   });
 });
 

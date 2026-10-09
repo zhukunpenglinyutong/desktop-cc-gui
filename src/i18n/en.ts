@@ -370,6 +370,13 @@ export const en: Messages = {
     autoCompactEnable: "Enable auto-compact",
     autoCompactDisable: "Disable auto-compact",
     autoCompactNoSession: "Open or start a chat to configure; the threshold is saved per session",
+    autoCompactNextSend: "Claude/Codex apply this setting on the next send, not the response already running. Claude requires 100,000–1,000,000 tokens.",
+    autoCompactPercentRange: "Enter a whole-number threshold from {{min}}% to {{max}}% for this context window.",
+    autoCompactUnavailableRange: "This context window cannot represent a valid native threshold. Disable auto-compact or choose another model.",
+    autoCompactClaudeRange: "Auto-compact threshold {{tokens}} tokens is invalid: Claude requires 100,000–1,000,000 tokens. Adjust the threshold or disable auto-compact.",
+    autoCompactTokenRange: "Auto-compact threshold {{tokens}} tokens must be a positive safe integer. Adjust the threshold or disable auto-compact.",
+    compactNativeBusy: "Manual compaction is unavailable during this response. Enabled native auto-compaction is configured on the next send.",
+    compactUnsupportedBusy: "This run has not confirmed live compaction support. Manual compaction is available when idle.",
     autoCompactResume:
       "Auto-compaction finished. Continue the previous task; if nothing remains, just say so briefly.",
     refreshing: "Refreshing…",

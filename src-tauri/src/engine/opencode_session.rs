@@ -923,6 +923,7 @@ mod tests {
                 stdin: None,
                 questions: Arc::new(StdMutex::new(HashMap::new())),
                 plans: Arc::new(StdMutex::new(HashMap::new())),
+                live_compact: None,
             },
         );
         let req = SendRequest {
@@ -941,6 +942,7 @@ mod tests {
             computer_use: None,
             memory_bot: None,
             allowed_tools: None,
+            auto_compact_threshold_tokens: None,
         };
         let turn = tokio::spawn(run_server_turn_with_probe_port(
             core,

@@ -10,7 +10,7 @@
  * localStorage-backed and best effort: a missing or throwing storage just
  * means the gauge keeps its old fallback behaviour.
  */
-import { ASSUMED_CONTEXT_WINDOW, parseUsage } from "./usage";
+import { ASSUMED_CONTEXT_WINDOW, reportedContextWindow } from "./usage";
 
 const PREFIX = "ccgui.context-window";
 
@@ -64,7 +64,7 @@ export function resolveContextMax(opts: {
   catalogWindow?: number | null;
 }): number {
   return (
-    parseUsage(opts.usage)?.contextWindow ||
+    reportedContextWindow(opts.usage) ||
     recallContextWindow(opts.engine, opts.model) ||
     opts.catalogWindow ||
     ASSUMED_CONTEXT_WINDOW

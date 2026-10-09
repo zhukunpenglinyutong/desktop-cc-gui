@@ -128,6 +128,21 @@ impl Engine for ClaudeEngine {
                 }
             }
         }
+        // Native in-turn compaction: claude compacts and keeps going inside
+        // the same headless turn, so a long response needs no host round
+        // trip. Passed per send (each turn is a fresh `-p --resume`), so the
+        // session setting applies next message and the user's own claude
+        // configuration is never rewritten. Reject values outside the CLI's
+        // supported range instead of silently dropping the session setting.
+        if let Some(tokens) = req.auto_compact_threshold_tokens {
+            if !(100_000..=1_000_000).contains(&tokens) {
+                return Err(format!(
+                    "Claude auto-compaction threshold must be in 100000..=1000000 tokens (received {tokens})"
+                ));
+            }
+            cmd.arg("--autocompact");
+            cmd.arg(tokens.to_string());
+        }
         // App-served MCP children, one --mcp-config carrying all of them.
         // Computer use: the screenshot/input driver (see computer_use.rs),
         // pre-approved because a click-per-approval loop is unusable; the
@@ -1748,6 +1763,7 @@ mod tests {
             computer_use: None,
             memory_bot: None,
             allowed_tools: None,
+            auto_compact_threshold_tokens: None,
         };
         let built = engine.build_command(&request, "claude").unwrap();
         let args: Vec<String> = built
@@ -1778,6 +1794,68 @@ mod tests {
         );
     }
 
+    /// Claude compacts inside its own headless turn, so a long response is
+    /// covered by its native threshold rather than by the host waiting for
+    /// the turn to end. Passed per send: the session setting takes effect on
+    /// the next message instead of writing the user's claude config.
+    #[test]
+    fn build_command_validates_the_session_autocompact_threshold() {
+        let engine = ClaudeEngine::new();
+        let mut request = SendRequest {
+            session_id: None,
+            prompt: "hi".into(),
+            prompt_contributions: vec![],
+            native_compact: false,
+            images: vec![],
+            workspace: std::path::PathBuf::from("/tmp"),
+            model: None,
+            effort: None,
+            service_tier: None,
+            permission: None,
+            additional_dirs: vec![],
+            provider_id: None,
+            computer_use: None,
+            memory_bot: None,
+            allowed_tools: None,
+            auto_compact_threshold_tokens: Some(160_000),
+        };
+        let args = |req: &SendRequest| -> Vec<String> {
+            engine
+                .build_command(req, "claude")
+                .unwrap()
+                .command
+                .as_std()
+                .get_args()
+                .map(|a| a.to_string_lossy().to_string())
+                .collect()
+        };
+        for session_id in [None, Some("existing-session".to_string())] {
+            request.session_id = session_id;
+            for tokens in [100_000, 160_000, 1_000_000] {
+                request.auto_compact_threshold_tokens = Some(tokens);
+                let expected = tokens.to_string();
+                assert!(args(&request)
+                    .windows(2)
+                    .any(|w| w[0] == "--autocompact" && w[1] == expected));
+            }
+        }
+
+        // Auto-compaction off: no override, so claude keeps its own setting.
+        request.auto_compact_threshold_tokens = None;
+        assert!(!args(&request).iter().any(|a| a == "--autocompact"));
+
+        // Refuse invalid settings before spawning; silently omitting the
+        // override would report a threshold that the CLI is not honoring.
+        for tokens in [0, 99_999, 1_000_001, u64::MAX] {
+            request.auto_compact_threshold_tokens = Some(tokens);
+            let Err(error) = engine.build_command(&request, "claude") else {
+                panic!("invalid auto-compaction threshold {tokens} must reject launch");
+            };
+            assert!(error.contains("100000..=1000000"), "{error}");
+            assert!(error.contains(&tokens.to_string()), "{error}");
+        }
+    }
+
     /// 任务工作台只读节点：必须真正落到启动参数（plan 模式 + 白名单 +
     /// 显式拒绝写工具），不允许只靠节点名假装。
     #[test]
@@ -1800,6 +1878,7 @@ mod tests {
             computer_use: None,
             memory_bot: None,
             allowed_tools: Some(vec!["Read".into(), "Grep".into()]),
+            auto_compact_threshold_tokens: None,
         };
         let built = engine.build_command(&request, "claude").unwrap();
         let args: Vec<String> = built

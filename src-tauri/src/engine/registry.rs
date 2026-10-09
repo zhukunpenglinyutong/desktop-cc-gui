@@ -49,6 +49,16 @@ pub struct ChildEntry {
     /// 后端,永不下发前端;由 respond_plan_review 按 planId+revision 消费,
     /// 运行结束时随进程一并过期(与 questions 同生命周期)。
     pub plans: Arc<Mutex<HashMap<String, Value>>>,
+    /// Present only for local OMP rpc-ui, shared by this run's aliases.
+    pub live_compact: Option<Arc<parking_lot::Mutex<LiveCompactionState>>>,
+}
+
+#[derive(Default)]
+pub struct LiveCompactionState {
+    /// Prompt admission is asynchronous: only agent_start makes it safe to abort/resume.
+    pub ready: bool,
+    pending: Option<u64>,
+    native_busy: bool,
 }
 
 #[derive(Default)]
@@ -82,10 +92,7 @@ impl ProcessRegistry {
         }
     }
 
-    /// Write one NDJSON control line to a live run's interactive stdin.
-    /// Err when the run is unknown, its stdin is already closed, or the
-    /// pipe refuses the write — a swallowed failure would leave the CLI
-    /// parked while the caller believes the answer landed.
+    /// Write one NDJSON control line; delivery errors must reach the caller.
     pub(crate) async fn write_line(&self, key: &str, line: String) -> Result<(), String> {
         let stdin = self
             .get(key)
@@ -95,14 +102,72 @@ impl ProcessRegistry {
         let handle = guard
             .as_mut()
             .ok_or_else(|| "the session's stdin is already closed".to_string())?;
-        handle
-            .write_all(line.as_bytes())
-            .await
+        handle.write_all(line.as_bytes()).await
             .map_err(|e| format!("write to the session's stdin: {e}"))?;
-        handle
-            .write_all(b"\n")
-            .await
+        handle.write_all(b"\n").await
             .map_err(|e| format!("write to the session's stdin: {e}"))
+    }
+
+    /// Compact exactly this live run, never a mutable session alias. Hold
+    /// its stdin lock for both serial RPC commands and reject duplicate or
+    /// native-maintenance requests until the matching response arrives.
+    pub(crate) async fn compact_run(&self, run_id: &str) -> Result<(), String> {
+        use std::sync::atomic::Ordering;
+        let entry = self.get(run_id).filter(|entry| entry.run_id == run_id)
+            .ok_or("no active run for compaction")?;
+        let pending = entry.live_compact.as_ref()
+            .ok_or("this run does not support live compaction")?;
+        let stdin = entry.stdin.as_ref().ok_or("the run has no interactive stdin")?;
+        let mut guard = stdin.lock().await;
+        let handle = guard.as_mut().ok_or("the run's stdin is already closed")?;
+        if entry.killed.load(Ordering::Acquire) {
+            return Err("the run has been stopped".into());
+        }
+        static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+        let nonce = NEXT.fetch_add(1, Ordering::Relaxed);
+        {
+            let mut state = pending.lock();
+            if state.pending.is_some() || state.native_busy {
+                return Err("compaction is already in progress".into());
+            }
+            if !state.ready {
+                return Err("the agent loop has not started yet".into());
+            }
+            state.pending = Some(nonce);
+            state.ready = false;
+        }
+        let frames = format!(
+            "{{\"id\":\"ccgui-live-compact:{nonce}\",\"type\":\"compact\"}}\n{{\"id\":\"ccgui-live-state:{nonce}\",\"type\":\"get_state\"}}\n"
+        );
+        if let Err(error) = handle.write_all(frames.as_bytes()).await {
+            let mut state = pending.lock();
+            if state.pending == Some(nonce) { state.pending = None; }
+            return Err(format!("write compaction to the run's stdin: {error}"));
+        }
+        Ok(())
+    }
+
+    pub(crate) fn set_agent_active(&self, run_id: &str, active: bool) -> bool {
+        let Some(shared) = self.get(run_id).and_then(|entry| entry.live_compact) else { return false; };
+        let mut state = shared.lock();
+        state.ready = active;
+        true
+    }
+
+    /// Native maintenance never clears a pending host request; stale host
+    /// replies never clear a newer request. Readiness comes from agent_start.
+    pub(crate) fn observe_compaction(&self, run_id: &str, active: bool, reason: Option<&str>) -> bool {
+        let Some(shared) = self.get(run_id).and_then(|entry| entry.live_compact) else { return true; };
+        let mut state = shared.lock();
+        if let Some(nonce) = reason.and_then(|r| r.strip_prefix("ccgui-live-compact:")) {
+            if active || nonce.parse::<u64>().ok() != state.pending || state.pending.is_none() {
+                return false;
+            }
+            state.pending = None;
+        } else {
+            state.native_busy = active;
+        }
+        true
     }
 
     /// Close a run's interactive stdin: the CLI treats EOF as the end of the
@@ -496,6 +561,7 @@ mod registry_tests {
             stdin: None,
             questions: Arc::new(Mutex::new(HashMap::new())),
             plans: Arc::new(Mutex::new(HashMap::new())),
+            live_compact: None,
         };
         let registry = Arc::new(ProcessRegistry::default());
         registry.insert("run-1".to_string(), entry);
@@ -520,6 +586,73 @@ mod registry_tests {
         registry.remove_if_pid("session-9", pid);
         registry.remove_if_pid("run-1", pid);
         assert_eq!(registry.len(), 0);
+    }
+
+    #[tokio::test]
+    async fn compact_requests_reject_aliases_duplicates_and_stale_completion() {
+        use tokio::io::AsyncReadExt;
+
+        let mut command = tokio::process::Command::new(if cfg!(windows) { "cmd" } else { "cat" });
+        if cfg!(windows) { command.args(["/c", "more"]); }
+        #[cfg(windows)]
+        command.creation_flags(0x08000000);
+        let mut child = command.stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped()).stderr(std::process::Stdio::null())
+            .kill_on_drop(true).spawn().expect("spawn pipe reader");
+        let stdin = Arc::new(TokioMutex::new(child.stdin.take()));
+        let mut stdout = child.stdout.take().unwrap();
+        let pending = Arc::new(parking_lot::Mutex::new(LiveCompactionState::default()));
+        let mut entry = stub_entry("run-1", child.id().unwrap());
+        entry.stdin = Some(stdin.clone());
+        entry.live_compact = Some(pending.clone());
+        let registry = ProcessRegistry::default();
+        registry.insert("run-1".into(), entry.clone());
+        registry.insert_alias("session-1".into(), entry);
+
+        assert!(registry.compact_run("session-1").await.is_err());
+        assert!(registry.compact_run("run-1").await.is_err(), "prompt setup is not a live agent loop");
+        registry.set_agent_active("run-1", true);
+        registry.compact_run("run-1").await.unwrap();
+        let first = pending.lock().pending.unwrap();
+        assert!(registry.compact_run("run-1").await.is_err());
+        assert!(!registry.observe_compaction("run-1", false, Some("ccgui-live-compact:0")));
+        assert_eq!(pending.lock().pending, Some(first));
+        assert!(registry.observe_compaction("run-1", false, Some(&format!("ccgui-live-compact:{first}"))));
+        assert!(registry.compact_run("run-1").await.is_err(), "wait for native continuation");
+        registry.set_agent_active("run-1", true);
+        registry.compact_run("run-1").await.unwrap();
+        let second = pending.lock().pending.unwrap();
+        assert_ne!(second, first);
+        assert!(!registry.observe_compaction("run-1", false, Some(&format!("ccgui-live-compact:{first}"))));
+        assert_eq!(pending.lock().pending, Some(second));
+
+        *stdin.lock().await = None;
+        let mut echoed = String::new();
+        tokio::time::timeout(std::time::Duration::from_secs(5), stdout.read_to_string(&mut echoed))
+            .await.expect("pipe reader exited").unwrap();
+        child.wait().await.unwrap();
+        let frames: Vec<Value> = echoed.lines().filter(|line| !line.trim().is_empty())
+            .map(|line| serde_json::from_str(line).unwrap()).collect();
+        assert_eq!(frames, vec![
+            serde_json::json!({"id":format!("ccgui-live-compact:{first}"),"type":"compact"}),
+            serde_json::json!({"id":format!("ccgui-live-state:{first}"),"type":"get_state"}),
+            serde_json::json!({"id":format!("ccgui-live-compact:{second}"),"type":"compact"}),
+            serde_json::json!({"id":format!("ccgui-live-state:{second}"),"type":"get_state"}),
+        ]);
+        assert!(registry.compact_run("run-1").await.is_err());
+    }
+
+    #[tokio::test]
+    async fn compaction_rejects_missing_unsupported_and_closed_runs() {
+        let registry = ProcessRegistry::default();
+        assert!(registry.compact_run("missing").await.is_err());
+        registry.insert("run-1".into(), stub_entry("run-1", 101));
+        assert!(registry.compact_run("run-1").await.is_err());
+        let mut closed = stub_entry("closed", 102);
+        closed.live_compact = Some(Arc::new(parking_lot::Mutex::new(LiveCompactionState::default())));
+        closed.stdin = Some(Arc::new(TokioMutex::new(None)));
+        registry.insert("closed".into(), closed);
+        assert!(registry.compact_run("closed").await.is_err());
     }
 
     /// A resumed session is registered under its preassigned id at spawn:
@@ -549,6 +682,7 @@ mod registry_tests {
             stdin: None,
             questions: Arc::new(Mutex::new(HashMap::new())),
             plans: Arc::new(Mutex::new(HashMap::new())),
+            live_compact: None,
         };
         let registry = Arc::new(ProcessRegistry::default());
         registry.insert("run-preassigned".to_string(), entry.clone());
@@ -609,6 +743,7 @@ mod registry_tests {
             stdin: None,
             questions: Arc::new(Mutex::new(HashMap::new())),
             plans: Arc::new(Mutex::new(HashMap::new())),
+            live_compact: None,
         };
         let registry = Arc::new(ProcessRegistry::default());
         registry.insert("run-tree".to_string(), entry);
@@ -648,7 +783,28 @@ mod registry_tests {
             stdin: None,
             questions: Arc::new(Mutex::new(HashMap::new())),
             plans: Arc::new(Mutex::new(HashMap::new())),
+            live_compact: None,
         }
+    }
+
+    #[test]
+    fn native_maintenance_does_not_clear_a_pending_host_request() {
+        let registry = ProcessRegistry::default();
+        let pending = Arc::new(parking_lot::Mutex::new(LiveCompactionState { pending: Some(7), ..Default::default() }));
+        let mut entry = stub_entry("run-1", 101);
+        entry.live_compact = Some(pending.clone());
+        registry.insert("run-1".into(), entry);
+        registry.observe_compaction("run-1", true, Some("threshold"));
+        registry.observe_compaction("run-1", false, None);
+        assert_eq!(pending.lock().pending, Some(7));
+        assert!(registry.observe_compaction("run-1", false, Some("ccgui-live-compact:7")));
+        registry.observe_compaction("run-1", true, Some("threshold"));
+        assert!(pending.lock().native_busy);
+        registry.observe_compaction("run-1", false, None);
+        assert!(!pending.lock().native_busy);
+        registry.remove_if_pid("run-1", 101);
+        registry.insert("run-1".into(), stub_entry("run-1", 102));
+        assert!(registry.get("run-1").unwrap().live_compact.is_none());
     }
 
     /// The concurrency limit counts RUNS, not map entries: a run keyed

@@ -23,6 +23,7 @@ import {
   AgentLimitsCard,
   type ContextSegment,
   type UsageLimit,
+  type AgentLimitsCardProps,
 } from "@/components/application/agent-limits/agent-limits-card";
 import { Tooltip, TooltipContent } from "@/components/base/tooltip/tooltip";
 import { ProjectFolderMenu } from "@/components/application/ai-chat/project-folder-menu";
@@ -51,7 +52,6 @@ import { ipc } from "@/lib/ipc";
 import { listenSettingsChanged } from "@/lib/events";
 import { useTauriEvent } from "@/hooks/use-tauri-event";
 import { ASSUMED_CONTEXT_WINDOW } from "@/features/chat/usage";
-import type { AutoCompactSettings } from "@/features/chat/auto-compact-context";
 import {
   usePromptCompletion,
   usePromptHistoryNav,
@@ -469,6 +469,7 @@ export function StatusBar({
   compacting,
   refreshing,
   canCompact,
+  compactHint,
   autoCompact,
   autoCompactDisabled,
   onAutoCompactEnabledChange,
@@ -489,7 +490,8 @@ export function StatusBar({
   compacting?: boolean;
   refreshing?: boolean;
   canCompact?: boolean;
-  autoCompact?: AutoCompactSettings;
+  compactHint?: string;
+  autoCompact?: Omit<NonNullable<AgentLimitsCardProps["autoCompact"]>, "onEnabledChange" | "onThresholdChange">;
   /** No active session: keep the controls visible but inert. */
   autoCompactDisabled?: boolean;
   onAutoCompactEnabledChange?: (enabled: boolean) => void;
@@ -520,7 +522,7 @@ export function StatusBar({
       planUsageLimits: t("chat.planUsageLimits"),
       managePlan: t("chat.managePlan"),
       compactContext: t("chat.compactContext"),
-      compactContextTooltip: t("chat.compactContextTooltip"),
+      compactContextTooltip: compactHint ?? t("chat.compactContextTooltip"),
       compacting: t("chat.compacting"),
       refreshUsage: t("chat.refreshUsage"),
       refreshUsageTooltip: t("chat.refreshUsageTooltip"),
@@ -530,7 +532,7 @@ export function StatusBar({
       autoCompactDisable: t("chat.autoCompactDisable"),
       autoCompactNoSession: t("chat.autoCompactNoSession"),
     }),
-    [t],
+    [t, compactHint],
   );
   return (
     <div className="flex h-[26px] w-full items-center justify-between select-none">

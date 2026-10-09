@@ -12,6 +12,7 @@ import {
   EMPTY_SESSION,
   applyStreamParts,
   drainPending,
+  findActiveRunForKey,
   moveStreamingFlag,
   patchSession,
   resolveSessionModel,
@@ -25,7 +26,9 @@ import {
   settleLiveRows,
   untrackRun,
 } from "./stream";
-import { mergeUsage, parseUsage } from "../usage";
+import { mergeUsage, parseUsage, reportedContextWindow } from "../usage";
+import { getAutoCompactSettings, migrateAutoCompactSettings, nativeAutoCompactThreshold, usesNativeAutoCompact } from "../auto-compact-context";
+import { recallContextWindow, resolveContextMax } from "../context-window-memory";
 import {
   bindRunLifecycle,
   finishRunLifecycle,
@@ -311,6 +314,7 @@ export function createMessagingActions(
       {
         streaming: true,
         error: null,
+        liveCompactRunId: null,
         interrupted: false,
         turnStartedAt: Date.now(),
         activeModel: model,
@@ -404,6 +408,23 @@ export function createMessagingActions(
         workspace,
         occurredAt: new Date().toISOString(),
       });
+      const autoSettings = getAutoCompactSettings(key);
+      let autoCompactThresholdTokens: number | undefined;
+      if (autoSettings.enabled && usesNativeAutoCompact(engine)) {
+        const usage = get().bySession[key]?.usage;
+        // Same source and priority as the gauge, including background tabs
+        // whose catalog hook is not mounted. No probe when a report is known.
+        const catalog = reportedContextWindow(usage) || recallContextWindow(engine, model)
+          ? undefined
+          : await ipc.listEngineModels(engine, tab.workspacePath).catch(() => undefined);
+        if (pendingSend.cancelled) return;
+        autoCompactThresholdTokens = nativeAutoCompactThreshold(engine, getAutoCompactSettings(key), resolveContextMax({
+          usage: get().bySession[key]?.usage,
+          engine,
+          model,
+          catalogWindow: catalog?.models.find((entry) => entry.id === model)?.contextWindow,
+        }));
+      }
       const result = await ipc.sendMessage({
         runId: requestedRunId,
         engine,
@@ -423,6 +444,7 @@ export function createMessagingActions(
         providerId: provider,
         computerUse: options?.computerUse === true,
         memoryBot: memoryToolAvailable ? pinnedBot.id : null,
+        ...(autoCompactThresholdTokens !== undefined ? { autoCompactThresholdTokens } : {}),
       });
       confirmPromptContributions(promptContributions);
       if (switchEvent) {
@@ -466,6 +488,7 @@ export function createMessagingActions(
           tab.workspacePath,
         );
         adoptNativeContributions(set, engine, tab.workspacePath, result.sessionId);
+        migrateAutoCompactSettings(key, newKey);
         if (model) {
           void ipc
             .rememberSessionModel?.(engine, result.sessionId, model)
@@ -565,6 +588,14 @@ export function createMessagingActions(
         result.sessionId && !tab.sessionId
           ? sessionKey(engine, result.sessionId, tab.workspacePath)
           : key);
+      // Readiness can arrive before this acknowledgement resolves; a false
+      // ACK (an older backend, or a run that already started its loop) must
+      // not retire a capability the engine already confirmed.
+      if (result.liveCompact === true && !pendingSend.cancelled &&
+          !get().bySession[liveKey]?.interrupted &&
+          get().streamingByKey[liveKey] && findActiveRunForKey(liveKey) === result.runId) {
+        patchSession(set, liveKey, { liveCompactRunId: result.runId });
+      }
       if (pendingSend.cancelled || get().bySession[liveKey]?.interrupted) {
         finishRunLifecycle(result.runId, "cancelled");
         patchSession(set, liveKey, { settledRunIds: rememberSettledRun(get().bySession[liveKey], result.runId) });
@@ -592,6 +623,8 @@ export function createMessagingActions(
         error: String(error),
         streaming: false,
         turnStartedAt: null,
+        liveCompactRunId: null,
+        compaction: null,
       });
       // The send never became a turn, so no engine event will report one:
       // without this the rest of the queue waits for a settle that is not
@@ -667,6 +700,8 @@ export function createMessagingActions(
             streaming: false,
             interrupted: true,
             turnStartedAt: null,
+            liveCompactRunId: null,
+            compaction: null,
             retry: null,
           },
         },
@@ -979,26 +1014,47 @@ export function createMessagingActions(
           ? sessionKey(active.engine, active.sessionId, active.workspacePath)
           : "");
       if (!targetKey) return;
-      if (streamingByKey[targetKey]) return;
-      const targetTab =
-        openTabs.find(
-          (t) =>
-            sessionKey(t.engine, t.sessionId, t.workspacePath) === targetKey,
-        ) ?? active;
-      if (!targetTab) return;
+      const targetTab = openTabs.find(
+        (t) => sessionKey(t.engine, t.sessionId, t.workspacePath) === targetKey,
+      ) ?? (active && keyOfTarget(active, null) === targetKey ? active : null);
+      if (!targetTab || get().bySession[targetKey]?.compaction) return;
+
+      if (streamingByKey[targetKey]) {
+        const runId = get().bySession[targetKey]?.liveCompactRunId;
+        if (!runId || findActiveRunForKey(targetKey) !== runId) return;
+        const compaction = {
+          automatic: false,
+          startedAt: Date.now(),
+          trigger: options?.trigger ?? "manual" as const,
+          runId,
+        };
+        patchSession(set, targetKey, { compaction });
+        try {
+          await ipc.compactActiveRun(runId);
+        } catch (error) {
+          // Rekey may happen during delivery; never clear a replacement run.
+          const ownerKey = runRouting.get(runId) ?? targetKey;
+          if (get().bySession[ownerKey]?.compaction === compaction) {
+            patchSession(set, ownerKey, { compaction: null, error: errorText(error) });
+          }
+          throw error;
+        }
+        // ACK is not completion. OMP owns abort/resume; the correlated event
+        // clears progress without a host continuation prompt.
+        return;
+      }
 
       // The tail status strip swaps its label for the whole run. `automatic`
       // stays false: this is a /compact turn we own, so the settle path below
       // (and the done/end handlers) clear it. The engine's own mid-turn
       // compaction events are the only producer of automatic: true, and they
       // must not take ownership of this flag. `trigger` records who asked.
-      patchSession(set, targetKey, {
-        compaction: {
-          automatic: false,
-          startedAt: Date.now(),
-          trigger: options?.trigger ?? "manual",
-        },
-      });
+      const compaction = {
+        automatic: false,
+        startedAt: Date.now(),
+        trigger: options?.trigger ?? "manual" as const,
+      };
+      patchSession(set, targetKey, { compaction });
 
       // Track the compaction turn completion so callers (and UI) can await it.
       let cleanup: (() => void) | undefined;
@@ -1042,31 +1098,23 @@ export function createMessagingActions(
         await sendPrompt(targetTab, "/compact", [], { nativeCompact: true });
       } catch (error) {
         cleanup?.();
-        patchSession(set, targetKey, { compaction: null });
+        if (get().bySession[targetKey]?.compaction === compaction) {
+          patchSession(set, targetKey, { compaction: null });
+        }
         throw error;
       }
 
       await completionPromise;
       // After compaction turn finishes, wait briefly for engine to persist session file,
       // then refresh session usage snapshot.
-      await new Promise((r) => setTimeout(r, 400));
-      const latestTab =
-        get().openTabs.find(
-          (t) =>
-            sessionKey(t.engine, t.sessionId, t.workspacePath) === targetKey,
-        ) ?? get().active;
-      const finalKey = latestTab
-        ? sessionKey(
-            latestTab.engine,
-            latestTab.sessionId,
-            latestTab.workspacePath,
-          )
-        : targetKey;
-      await get().refreshSessionUsage(finalKey);
+      const persisted = Promise.withResolvers<void>();
+      setTimeout(persisted.resolve, 400);
+      await persisted.promise;
+      await get().refreshSessionUsage(targetKey);
       // The settle paths clear the flag as well; this covers the subscription
       // timing out while the run keeps streaming in the background — the
       // indicator then belongs to that turn, not to compaction.
-      if (get().bySession[targetKey]?.compaction?.automatic === false) {
+      if (get().bySession[targetKey]?.compaction === compaction) {
         patchSession(set, targetKey, { compaction: null });
       }
     },

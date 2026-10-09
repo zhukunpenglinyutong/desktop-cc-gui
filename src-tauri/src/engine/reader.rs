@@ -341,6 +341,26 @@ impl TurnCore {
             return;
         }
         match event {
+            EngineEvent::AgentActivity { active } => {
+                if self.registry.set_agent_active(&self.run_id, active) {
+                    state.push(&self.sink, &self.run_id, &self.engine_id,
+                        "live_compact_ready", serde_json::json!({"active": active}));
+                }
+            }
+            EngineEvent::AssistantMessageStart => state.push(
+                &self.sink,
+                &self.run_id,
+                &self.engine_id,
+                "assistant_message_start",
+                Value::Null,
+            ),
+            EngineEvent::AssistantMessageEnd => state.push(
+                &self.sink,
+                &self.run_id,
+                &self.engine_id,
+                "assistant_message_end",
+                Value::Null,
+            ),
             EngineEvent::Delta(text) => {
                 state.gen_begin(false);
                 state.push(
@@ -463,6 +483,9 @@ impl TurnCore {
                 tokio::task::spawn_blocking(move || registry.kill(&run_id));
             }
             EngineEvent::Compaction { active, reason } => {
+                if !self.registry.observe_compaction(&self.run_id, active, reason.as_deref()) {
+                    return;
+                }
                 // Not terminal: compaction is a mid-turn pause while the CLI
                 // summarizes; the UI swaps its status label until the end
                 // event (or turn settle) clears it.
@@ -1390,6 +1413,7 @@ mod staging_tests {
             stdin: None,
             questions: Arc::new(Mutex::new(HashMap::new())),
             plans: Arc::new(Mutex::new(HashMap::new())),
+            live_compact: None,
         };
         registry.insert("run-abort".into(), entry.clone());
         registry.insert_alias("session-abort".into(), entry);
@@ -1447,6 +1471,7 @@ mod staging_tests {
             stdin: None,
             questions: Arc::new(Mutex::new(HashMap::new())),
             plans: Arc::new(Mutex::new(HashMap::new())),
+            live_compact: None,
         };
         registry.insert("run-v".into(), entry.clone());
         registry.insert_alias("session-v".into(), entry);
@@ -1462,6 +1487,7 @@ mod staging_tests {
                 stdin: None,
                 questions: Arc::new(Mutex::new(HashMap::new())),
                 plans: Arc::new(Mutex::new(HashMap::new())),
+                live_compact: None,
             },
         );
 
@@ -1483,12 +1509,11 @@ mod terminal_event_tests {
     use super::*;
 
     #[derive(Default)]
-    struct Collector(Mutex<Vec<Value>>);
+    struct Collector(parking_lot::Mutex<Vec<Value>>);
     impl event_sink::Emit for Collector {
         fn emit_json(&self, _: &str, raw: &str) {
             self.0
                 .lock()
-                .unwrap()
                 .extend(serde_json::from_str::<Vec<Value>>(raw).unwrap());
         }
     }
@@ -1521,13 +1546,60 @@ mod terminal_event_tests {
                     },
                 );
                 core.sink.flush();
-                assert!(collector.0.lock().unwrap().is_empty());
+                assert!(collector.0.lock().is_empty());
                 state.confirm_exit(&core);
                 state.confirm_exit(&core);
                 core.sink.flush();
-                let events = collector.0.lock().unwrap();
+                let events = collector.0.lock();
                 assert_eq!(events.len(), 1);
                 assert_eq!(events[0]["kind"], if fail { "error" } else { "done" });
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn assistant_boundaries_use_the_ordered_run_envelope_without_settling() {
+        let collector = Arc::new(Collector::default());
+        let core = TurnCore {
+            sink: event_sink::EventSink::new(collector.clone()),
+            registry: Arc::new(ProcessRegistry::default()),
+            engine_id: "omp".into(),
+            run_id: "assistant-boundary-test".into(),
+            db: None,
+        };
+        let mut state = TurnState::new(Some("session".into()));
+        state.attempt_error = Some("previous attempt".into());
+        core.dispatch_event(&mut state, EngineEvent::Generation { active: true });
+        let generation_start = state.gen_open_since;
+        for event in [
+            EngineEvent::AssistantMessageStart,
+            EngineEvent::Thinking("reason".into()),
+            EngineEvent::Delta("first".into()),
+            EngineEvent::AssistantMessageEnd,
+            EngineEvent::AssistantMessageStart,
+            EngineEvent::Delta("second".into()),
+            EngineEvent::AssistantMessageEnd,
+        ] {
+            core.dispatch_event(&mut state, event);
+        }
+        assert!(!state.saw_done && !state.saw_error);
+        assert_eq!(state.attempt_error.as_deref(), Some("previous attempt"));
+        assert_eq!(state.gen_open_since, generation_start);
+        assert!(state.gen_explicit);
+        core.sink.flush();
+        let events = collector.0.lock();
+        let kinds: Vec<_> = events.iter().map(|event| event["kind"].as_str().unwrap()).collect();
+        assert_eq!(kinds, [
+            "assistant_message_start", "thinking", "delta", "assistant_message_end",
+            "assistant_message_start", "delta", "assistant_message_end",
+        ]);
+        for (index, event) in events.iter().enumerate() {
+            assert_eq!(event["runId"], "assistant-boundary-test");
+            assert_eq!(event["sessionId"], "session");
+            assert_eq!(event["engine"], "omp");
+            assert_eq!(event["seq"], (index + 1) as u64);
+            if matches!(event["kind"].as_str(), Some("assistant_message_start" | "assistant_message_end")) {
+                assert_eq!(event.get("data"), Some(&Value::Null));
             }
         }
     }
@@ -1578,7 +1650,7 @@ mod terminal_event_tests {
         );
 
         core.sink.flush();
-        let events = collector.0.lock().unwrap();
+        let events = collector.0.lock();
         let usages: Vec<u64> = events
             .iter()
             .filter(|event| event["kind"] == "usage")
@@ -1624,6 +1696,8 @@ mod terminal_event_tests {
                 EngineEvent::Usage(serde_json::json!({"input_tokens":90000})),
             );
             core.dispatch_event(&mut state, EngineEvent::Delta("late".into()));
+            core.dispatch_event(&mut state, EngineEvent::AssistantMessageStart);
+            core.dispatch_event(&mut state, EngineEvent::AssistantMessageEnd);
             core.dispatch_event(
                 &mut state,
                 EngineEvent::Done {
@@ -1632,7 +1706,7 @@ mod terminal_event_tests {
                 },
             );
             core.sink.flush();
-            let events = collector.0.lock().unwrap();
+            let events = collector.0.lock();
             let kinds: Vec<_> = events
                 .iter()
                 .map(|event| event["kind"].as_str().unwrap())
@@ -1687,6 +1761,7 @@ mod terminal_event_tests {
                     stdin: None,
                     questions: Arc::new(Mutex::new(std::collections::HashMap::new())),
                     plans: Arc::new(Mutex::new(std::collections::HashMap::new())),
+                    live_compact: None,
                 },
             );
             let context = RunContext {
@@ -1714,7 +1789,7 @@ mod terminal_event_tests {
             tokio::time::timeout(std::time::Duration::from_secs(3), async {
                 loop {
                     sink.flush();
-                    if !collector.0.lock().unwrap().is_empty() {
+                    if !collector.0.lock().is_empty() {
                         break;
                     }
                     tokio::time::sleep(std::time::Duration::from_millis(10)).await;
@@ -1727,7 +1802,6 @@ mod terminal_event_tests {
             assert!(!collector
                 .0
                 .lock()
-                .unwrap()
                 .iter()
                 .any(|event| matches!(event["kind"].as_str(), Some("done" | "error"))));
             assert!(registry.kill(run_id));
@@ -1737,7 +1811,7 @@ mod terminal_event_tests {
                 .unwrap();
             assert!(child.lock().await.try_wait().unwrap().is_some());
             assert_eq!(registry.active_run_count(), 0);
-            let events = collector.0.lock().unwrap();
+            let events = collector.0.lock();
             assert_eq!(
                 events
                     .iter()
@@ -1804,6 +1878,7 @@ mod plan_dispatch_tests {
                 stdin: None,
                 questions: Arc::new(Mutex::new(HashMap::new())),
                 plans: Arc::new(Mutex::new(HashMap::new())),
+                live_compact: None,
             },
         );
         (core, collector, db)

@@ -1473,15 +1473,21 @@ async fn handshake_and_start(
         params["model"] = json!(model);
     }
     if !codex_read_only::requested(req) {
+        let mut config = serde_json::Map::new();
         if let Some(effort) = req.effort.as_deref() {
-            if let Some(obj) = params.as_object_mut() {
-                if !obj.contains_key("config") || obj["config"].is_null() {
-                    obj.insert("config".to_string(), json!({}));
-                }
-                if let Some(config) = obj.get_mut("config").and_then(Value::as_object_mut) {
-                    config.insert("model_reasoning_effort".to_string(), json!(effort));
-                }
-            }
+            config.insert("model_reasoning_effort".to_string(), json!(effort));
+        }
+        // Native in-turn compaction: codex compacts at this token limit and
+        // keeps the task going, which is the only safe way to maintain a
+        // long response — `thread/compact/start` aborts the running turn.
+        // Applied to both start and resume so the session setting takes
+        // effect on this turn; absent when auto-compaction is off, leaving
+        // the user's own codex config alone.
+        if let Some(tokens) = req.auto_compact_threshold_tokens {
+            config.insert("model_auto_compact_token_limit".to_string(), json!(tokens));
+        }
+        if !config.is_empty() {
+            params["config"] = Value::Object(config);
         }
     }
     let key = server.request(method, params).await?;
@@ -1758,6 +1764,7 @@ pub(crate) async fn run_plan_decision(
         computer_use: None,
         memory_bot: None,
         allowed_tools: None,
+        auto_compact_threshold_tokens: None,
     };
     let mut built = super::codex::CodexEngine.host_command(&req, &bin)?;
     built.command.current_dir(&req.workspace);
@@ -1784,6 +1791,7 @@ pub(crate) async fn run_plan_decision(
         killed: Arc::clone(&killed),
         reader_abort: Arc::clone(&reader_abort),
         stdin: None,
+        live_compact: None,
         questions: Arc::new(Mutex::new(HashMap::new())),
         plans: Arc::new(Mutex::new(HashMap::new())),
     };
@@ -2023,6 +2031,7 @@ mod tests {
                 killed: Arc::new(AtomicBool::new(false)),
                 reader_abort: Arc::new(std::sync::OnceLock::new()),
                 stdin: None,
+                live_compact: None,
                 questions: Arc::new(Mutex::new(HashMap::new())),
                 plans: Arc::new(Mutex::new(HashMap::new())),
             },
@@ -2456,6 +2465,7 @@ require('node:readline').createInterface({input: process.stdin}).on('line', line
                 computer_use: None,
                 memory_bot: None,
                 allowed_tools: None,
+                auto_compact_threshold_tokens: None,
             };
             let decision = (mode == "decision").then(|| DecisionCheck {
                 mode: "default",

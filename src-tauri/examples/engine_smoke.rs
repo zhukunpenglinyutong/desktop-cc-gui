@@ -46,6 +46,8 @@ async fn run_one(engine_id: &str, workspace: &PathBuf) -> Result<(), String> {
         computer_use: None,
         allowed_tools: None,
         memory_bot: None,
+        // 冒烟只验证进程能起、能回一行,不覆盖引擎自己的自动压缩阈值。
+        auto_compact_threshold_tokens: None,
     };
     let bin = which::which(if engine_id == "minimax" { "mcode" } else { engine_id })
         .map(|p| p.to_string_lossy().to_string())

@@ -42,9 +42,16 @@ class WebBridge {
     ) {
       return this.openGate!;
     }
-    const proto = location.protocol === "https:" ? "wss" : "ws";
+    // `isWeb` already allows for `window` being absent, and the retry below
+    // outlives the page it belongs to: a pending reconnect still fires after a
+    // jsdom test environment is torn down, where touching `location` throws
+    // `ReferenceError` and fails an otherwise green run. No window means no page
+    // to serve, so there is nothing to connect for — callers of `invoke` see the
+    // same "web bridge disconnected" they get from a socket that never opened.
+    if (typeof window === "undefined") return Promise.resolve();
+    const proto = window.location.protocol === "https:" ? "wss" : "ws";
     const ws = new WebSocket(
-      `${proto}://${location.host}/ws?token=${encodeURIComponent(webToken ?? "")}`,
+      `${proto}://${window.location.host}/ws?token=${encodeURIComponent(webToken ?? "")}`,
     );
     this.ws = ws;
     const { promise, resolve } = Promise.withResolvers<void>();

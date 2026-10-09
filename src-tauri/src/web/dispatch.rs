@@ -178,11 +178,20 @@ struct SendMessageArgs {
     /// 记忆工具挂载（memory/mcp.rs）：默认值让旧客户端保持可用。
     #[serde(default)]
     memory_bot: Option<String>,
+    /// 自动压缩：会话阈值换算出的 token 数（claude/codex 原生回合内压缩）。
+    /// 默认值让旧客户端保持可用。
+    #[serde(default)]
+    auto_compact_threshold_tokens: Option<u64>,
 }
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct SessionIdArgs {
     session_id: String,
+}
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RunIdArgs {
+    run_id: String,
 }
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -695,12 +704,17 @@ pub(super) async fn dispatch(
                 a.run_id,
                 a.computer_use,
                 a.memory_bot,
+                a.auto_compact_threshold_tokens,
             )
             .await)
         }
         "interrupt_session" => {
             let a: SessionIdArgs = parse_args(&raw)?;
             ser(crate::engine::interrupt_session(app.state(), a.session_id).await)
+        }
+        "compact_active_run" => {
+            let a: RunIdArgs = parse_args(&raw)?;
+            ser(crate::engine::compact_active_run(app.state(), a.run_id).await)
         }
         // The remote UI renders the same AskUserQuestion card as the desktop
         // (events already reach it); without this case its 提交/忽略 buttons

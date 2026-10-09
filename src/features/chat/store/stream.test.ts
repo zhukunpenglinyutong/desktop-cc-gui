@@ -1,6 +1,16 @@
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import type { Message } from "@/lib/ipc";
-import { appendToolMessage, applyStreamParts, settleLiveRows, EMPTY_SESSION, type BySessionSlice } from "./stream";
+import {
+  appendToolMessage,
+  applyStreamParts,
+  findActiveRunForKey,
+  routeRun,
+  runRouting,
+  settleLiveRows,
+  untrackRun,
+  EMPTY_SESSION,
+  type BySessionSlice,
+} from "./stream";
 
 function harness() {
   let state: BySessionSlice = { bySession: { k: { ...EMPTY_SESSION, messages: [] } } };
@@ -91,5 +101,34 @@ describe("applyStreamParts / settleLiveRows contract", () => {
   it("settleLiveRows clears every live flag", () => {
     const result = applyStreamParts([], [{ kind: "delta", text: "hello" }], null);
     expect(settleLiveRows(result).every((m) => !m.live)).toBe(true);
+  });
+});
+
+describe("findActiveRunForKey", () => {
+  beforeEach(() => {
+    for (const runId of [...runRouting.keys()]) {
+      runRouting.delete(runId);
+      untrackRun(runId);
+    }
+  });
+
+  it("resolves the live run id routed to a session key", () => {
+    routeRun("run-a", "omp/s1");
+    expect(findActiveRunForKey("omp/s1")).toBe("run-a");
+  });
+
+  it("returns null for a key with no routed run", () => {
+    routeRun("run-a", "omp/s1");
+    expect(findActiveRunForKey("omp/s2")).toBeNull();
+    expect(findActiveRunForKey("")).toBeNull();
+  });
+
+  it("returns null when the key is ambiguous so a control frame cannot pick wrong", () => {
+    // One session must own at most one live chat run. Two routed runs mean
+    // the host cannot prove which one owns the turn, and compacting the
+    // wrong run would hit an unrelated task.
+    routeRun("run-a", "omp/s1");
+    routeRun("run-b", "omp/s1");
+    expect(findActiveRunForKey("omp/s1")).toBeNull();
   });
 });

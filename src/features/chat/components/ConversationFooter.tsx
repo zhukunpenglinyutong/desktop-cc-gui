@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import {
   Composer,
@@ -18,12 +18,15 @@ import { QuestionDock, usePendingQuestion } from "./QuestionDock";
 import { PlanReviewDock, usePendingPlanReview } from "./PlanReviewDock";
 import { ErrorBanner } from "./ErrorBanner";
 import { sessionKey } from "../store";
+import { findActiveRunForKey, patchSession } from "../store/stream";
 import { ComposerSlotExtras } from "@/features/plugins/boundary/composer-slot-extras";
 import { COMPOSER_DRAFT_TOPIC, pluginBus } from "@/features/plugins/runtime/events";
 import { USAGE_PART_LABEL_KEYS, usageBreakdown } from "./usage-breakdown";
 import { useComposerFileDrop } from "./use-composer-file-drop";
 import {
   hasPendingUserInput,
+  autoCompactThresholdRange,
+  usesNativeAutoCompact,
   setAutoCompactEnabled,
   setAutoCompactThreshold,
   shouldAutoCompact,
@@ -238,18 +241,26 @@ function FooterStatusBar({
   const archivedWorkspaces = useChatStore((s) => s.archivedWorkspaces);
   const compactContext = useChatStore((s) => s.compactContext);
   const refreshSessionUsage = useChatStore((s) => s.refreshSessionUsage);
-  const [compacting, setCompacting] = useState(false);
+  const [delivery, setDelivery] = useState<{ key: string } | null>(null);
   const [refreshing, setRefreshing] = useState(false);
 
   // 压缩/刷新按本格子的会话 key 发出：分屏时不能再落到全局 active 上。
   const sessionKeyValue = active
     ? sessionKey(active.engine, active.sessionId, active.workspacePath)
     : "";
+  const compaction = useChatStore((s) => s.bySession[sessionKeyValue]?.compaction);
+  const liveCompactRunId = useChatStore((s) => s.bySession[sessionKeyValue]?.liveCompactRunId);
+  const compacting = Boolean(compaction || delivery?.key === sessionKeyValue);
   const autoCompact = useAutoCompactSettings(sessionKeyValue);
-  const autoCompactLatch = useRef<{
-    sessionKey: string;
-    attemptedAtPct: number | null;
-  }>({ sessionKey: "", attemptedAtPct: null });
+  const attemptedAtPct = useChatStore((s) => s.bySession[sessionKeyValue]?.autoCompactAttemptedAtPct ?? null);
+
+  const canCompactWhileStreaming = Boolean(liveCompactRunId && findActiveRunForKey(sessionKeyValue) === liveCompactRunId);
+  const nativeAutoCompact = usesNativeAutoCompact(active?.engine ?? "");
+  const thresholdRange = autoCompactThresholdRange(active?.engine ?? "", contextMax);
+  const thresholdHint = thresholdRange
+    ? t("chat.autoCompactPercentRange", { min: thresholdRange.min, max: thresholdRange.max })
+    : t("chat.autoCompactUnavailableRange");
+  const thresholdInvalid = !thresholdRange || autoCompact.threshold < thresholdRange.min || autoCompact.threshold > thresholdRange.max;
 
   /** Hand the task back after a threshold compaction: the point of
    *  auto-compact is not having to type 「继续」 by hand. Manual clicks stay
@@ -295,49 +306,63 @@ function FooterStatusBar({
 
   const compactSession = useCallback(
     async (trigger: "manual" | "threshold") => {
-      if (!sessionKeyValue || streaming || compacting) return;
-      setCompacting(true);
+      if (!sessionKeyValue || compacting || useChatStore.getState().bySession[sessionKeyValue]?.compaction) return;
+      const wasStreaming = Boolean(useChatStore.getState().streamingByKey[sessionKeyValue] || streaming);
+      if (wasStreaming && !canCompactWhileStreaming) return;
+      const request = { key: sessionKeyValue };
+      setDelivery(request);
       try {
         await compactContext(sessionKeyValue, { trigger });
-        if (trigger === "threshold") {
+        // Live OMP continuation is native; only idle maintenance needs a nudge.
+        if (trigger === "threshold" && !wasStreaming) {
           resumeAfterAutoCompact(sessionKeyValue);
         }
       } finally {
-        setCompacting(false);
+        setDelivery((current) => current === request ? null : current);
       }
     },
-    [compactContext, compacting, resumeAfterAutoCompact, sessionKeyValue, streaming],
+    [
+      canCompactWhileStreaming,
+      compactContext,
+      compacting,
+      resumeAfterAutoCompact,
+      sessionKeyValue,
+      streaming,
+    ],
   );
 
   const handleCompact = useCallback(() => {
     if (usage?.pct !== undefined && usage.pct >= autoCompact.threshold) {
-      autoCompactLatch.current = {
-        sessionKey: sessionKeyValue,
-        attemptedAtPct: usage.pct,
-      };
+      patchSession(useChatStore.setState, sessionKeyValue, { autoCompactAttemptedAtPct: usage.pct });
     }
     void compactSession("manual").catch(() => {});
   }, [autoCompact.threshold, compactSession, sessionKeyValue, usage?.pct]);
 
   useEffect(() => {
-    if (autoCompactLatch.current.sessionKey !== sessionKeyValue) {
-      autoCompactLatch.current = { sessionKey: sessionKeyValue, attemptedAtPct: null };
-    }
 
     const usagePct = usage?.pct;
+    if (compacting) {
+      // Occupancy may grow before the post-compaction snapshot arrives. Do
+      // not treat that in-flight growth as another threshold crossing.
+      if (usagePct !== undefined && attemptedAtPct !== null && usagePct > attemptedAtPct) {
+        patchSession(useChatStore.setState, sessionKeyValue, { autoCompactAttemptedAtPct: usagePct });
+      }
+      return;
+    }
     if (usagePct !== undefined && usagePct < autoCompact.threshold) {
       // Back under the threshold: the next upward crossing is a new event.
-      autoCompactLatch.current.attemptedAtPct = null;
+      if (attemptedAtPct !== null) patchSession(useChatStore.setState, sessionKeyValue, { autoCompactAttemptedAtPct: null });
     }
     if (
       !sessionKeyValue ||
       !shouldAutoCompact({
-        enabled: autoCompact.enabled,
+        enabled: autoCompact.enabled && !nativeAutoCompact,
         threshold: autoCompact.threshold,
         usagePct,
         streaming,
         compacting,
-        attemptedAtPct: autoCompactLatch.current.attemptedAtPct,
+        attemptedAtPct,
+        canCompactWhileStreaming,
       })
     ) {
       return;
@@ -346,13 +371,16 @@ function FooterStatusBar({
     // Arm at the level just tried: a retry needs the context to grow past it,
     // so a failed compaction (or one that left usage above the threshold)
     // neither spins nor disarms the session for good.
-    autoCompactLatch.current.attemptedAtPct = usagePct ?? null;
+    patchSession(useChatStore.setState, sessionKeyValue, { autoCompactAttemptedAtPct: usagePct ?? null });
     void compactSession("threshold").catch(() => {});
   }, [
+    attemptedAtPct,
     autoCompact.enabled,
     autoCompact.threshold,
+    canCompactWhileStreaming,
     compactSession,
     compacting,
+    nativeAutoCompact,
     sessionKeyValue,
     streaming,
     usage?.pct,
@@ -396,15 +424,28 @@ function FooterStatusBar({
         folders={statusFolders}
         selectedFolder={active ? baseName(active.workspacePath) : undefined}
         onFolderSelect={handleFolderSelect}
-        usagePct={usage?.pct}
+        usagePct={usage ? Math.round(usage.pct) : undefined}
         contextMax={contextMax}
         contextSegments={contextSegments}
         onCompactContext={handleCompact}
         onRefreshUsage={handleRefresh}
         compacting={compacting}
         refreshing={refreshing}
-        canCompact={Boolean(active) && !streaming && !compacting}
-        autoCompact={autoCompact}
+        canCompact={
+          Boolean(active) &&
+          !compacting &&
+          (!streaming || canCompactWhileStreaming)
+        }
+        compactHint={streaming && !canCompactWhileStreaming ? t(nativeAutoCompact ? "chat.compactNativeBusy" : "chat.compactUnsupportedBusy") : undefined}
+        autoCompact={{
+          ...autoCompact,
+          minThreshold: thresholdRange?.min,
+          maxThreshold: thresholdRange?.max,
+          thresholdUnavailable: !thresholdRange,
+          validationHint: thresholdHint,
+          error: thresholdInvalid ? thresholdHint : undefined,
+          hint: nativeAutoCompact ? t("chat.autoCompactNextSend") : undefined,
+        }}
         autoCompactDisabled={!sessionKeyValue}
         onAutoCompactEnabledChange={(enabled) => setAutoCompactEnabled(sessionKeyValue, enabled)}
         onAutoCompactThresholdChange={(threshold) => setAutoCompactThreshold(sessionKeyValue, threshold)}

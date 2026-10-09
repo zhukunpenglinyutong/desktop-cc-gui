@@ -11,6 +11,7 @@ export const USAGE_PART_LABEL_KEYS: Record<UsagePartKind, string> = {
 };
 
 export interface UsageBreakdown {
+  /** Exact occupancy for threshold decisions; round only at display time. */
   pct: number;
   parts: { kind: UsagePartKind; tokens: number }[];
 }
@@ -28,7 +29,7 @@ export function usageBreakdown(usage: unknown, maxTokens: number): UsageBreakdow
     // Clamp at 0 as well: a malformed payload with negative tokens must not
     // produce a negative percentage. The dynamic context window is resolved
     // upstream in ChatConversation (contextMax), keeping a single source.
-    pct: Math.max(0, Math.min(100, Math.round((u.total / maxTokens) * 100))),
+    pct: Math.max(0, Math.min(100, (u.total * 100) / maxTokens)),
     parts: parts.length ? parts : [{ kind: "total", tokens: u.total }],
   };
 }

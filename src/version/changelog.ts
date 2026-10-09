@@ -29,6 +29,20 @@ export function changelogEntryFor(version: string): ChangelogEntry | undefined {
 
 export const CHANGELOG_DATA: ChangelogEntry[] = [
   {
+    version: "1.1.3",
+    date: "2026-10-09",
+    content: {
+      zh: `修复
+- **响应中的上下文压缩**：手动压缩按钮在 OMP 回合响应期间可用，压缩在同一进程内原地完成，原任务继续跑，不再中断重发；自动压缩不再要求会话空闲，持续响应中实时占用越过阈值即在当前回合内压缩，压缩后由 OMP 原生续接，不补发「继续」。Codex / Claude 改为每次发送下发该会话阈值，由引擎在安全边界自行压缩；其余引擎保持空闲回合压缩。
+- **压缩续接后正文不再粘住半句**：OMP 原地压缩会先断开事件订阅再中断回合，被打断的那条消息收不到结束帧，宿主于是把续接后重新生成的正文继续追加进旧的未完成行，读起来像「阳光穿过枝头清晨走进山间」这种拼接。现在按原生消息起止（assistant_message_start / assistant_message_end）界定正文：新消息开始只替换尚未结束的那段，已完成的回复、工具行和其它会话都不动，连续两条正常回复也不会被并成一条；边界不是回合终态，按停止后已输出的内容仍然保留。
+- **显示取整不再误触发自动压缩**：阈值判定此前用的是仪表取整后的百分比，18,410 / 400,000 实际只有 4.6%、显示成 5% 就被当作达到 5% 阈值，于是回合收尾又压一次并弹出「Nothing to compact (session too small)」。现在判定与重新布防都用真实占用，仪表显示仍是整数，真正达到或越过阈值照常触发，重试间距保持整百分点。`,
+      en: `Fixes
+- **Compaction during a response**: The manual compact button is available while an OMP turn is streaming; the compaction runs in place inside the same process and the original task keeps going, with no interrupt-and-resend. Automatic compaction no longer waits for an idle session: once live usage crosses the threshold during a long response, the current turn compacts and OMP's own loop continues the task, so no "continue" nudge is sent. Codex and Claude now receive the session threshold on every send and compact at their own safe boundaries; other engines keep idle-turn compaction.
+- **Resumed text no longer sticks to a half-finished sentence**: OMP's in-place compaction disconnects its event subscription before aborting the turn, so the interrupted message never reports an end frame and the host kept appending the regenerated text to that unfinished row, reading as spliced prose. Native message boundaries (assistant_message_start / assistant_message_end) now delimit a reply: a new message replaces only the still-unfinished part, leaving completed replies, tool rows and other sessions untouched, and two consecutive normal replies are never merged into one. The boundaries are not turn completion, so text already streamed before a Stop stays visible.
+- **Rounded display no longer triggers automatic compaction**: threshold decisions used the gauge's rounded percentage, so 18,410 / 400,000 — really 4.6%, displayed as 5% — counted as reaching a 5% threshold and compacted again at the end of the turn, surfacing "Nothing to compact (session too small)". Decisions and rearming now use the actual occupancy, the gauge still shows whole percent, a real crossing still triggers, and retries keep their whole-percent spacing.`,
+    },
+  },
+  {
     version: "1.1.2",
     date: "2026-10-08",
     content: {

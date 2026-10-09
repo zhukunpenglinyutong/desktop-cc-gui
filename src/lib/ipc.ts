@@ -379,6 +379,8 @@ export interface EngineCatalog {
 export interface SendResult {
   runId: string;
   sessionId: string | null;
+  /** Explicit backend capability for this run, absent on older backends. */
+  liveCompact?: boolean;
 }
 
 export interface ProviderSection {
@@ -1430,9 +1432,19 @@ export const ipc = {
     /** 记忆：把 memory MCP 工具挂给本次会话并绑定到这个 Bot（仅当这个 Bot
      *  开启了记忆、引擎支持挂载时传）。 */
     memoryBot?: string | null;
+    /** 自动压缩：会话阈值换算出的 token 数，交给引擎自己的原生回合内压缩
+     *  （claude `--autocompact`、codex `model_auto_compact_token_limit`）。
+     *  只在该会话开启自动压缩、且引擎有这个旋钮时传；省略 = 不覆盖 CLI 自
+     *  己的配置。 */
+    autoCompactThresholdTokens?: number | null;
   }) => invoke<SendResult>("send_message", args),
   interruptSession: (sessionId: string) =>
     invoke<boolean>("interrupt_session", { sessionId }),
+  /** Deliver live compaction to the immutable run id. ACK means delivery only;
+   *  a correlated compaction event ends progress. OMP aborts and resumes via
+   *  its native continuation; unsupported transports reject the request. */
+  compactActiveRun: (runId: string) =>
+    invoke<void>("compact_active_run", { runId }),
   // 电脑操控 (computer use)
   /** macOS TCC probe. `osPermissionsRequired` is false on Windows/Linux,
    *  where the driver needs no OS grant. */

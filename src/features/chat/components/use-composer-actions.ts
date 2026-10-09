@@ -103,8 +103,12 @@ export function useComposerActions({
         startNewChat(active.workspacePath);
         return;
       }
-      if (appCommand?.command === "compact" && active.sessionId && !streaming) {
-        void compactContext(sessionKey);
+      if (appCommand?.command === "compact") {
+        if (streaming && !useChatStore.getState().bySession[sessionKey]?.liveCompactRunId) {
+          setSessionError(sessionKey, t(active.engine === "claude" || active.engine === "codex" ? "chat.compactNativeBusy" : "chat.compactUnsupportedBusy"));
+          return;
+        }
+        void compactContext(sessionKey).catch(() => {});
         return;
       }
       if (appCommand?.command === "mcp") {

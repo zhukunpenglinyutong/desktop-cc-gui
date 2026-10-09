@@ -686,6 +686,7 @@ mod tests {
             computer_use: None,
             memory_bot: None,
             allowed_tools: None,
+            auto_compact_threshold_tokens: None,
         };
         let built = GrokEngine.build_command(&req, "grok").unwrap();
         let args: Vec<String> = built

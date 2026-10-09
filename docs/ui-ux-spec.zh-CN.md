@@ -1,6 +1,6 @@
 # CC GUI 界面与交互规范（UI/UX Spec）
 
-> **版本**：v0.1（首版，随实现增量维护）
+> **版本**：v0.81（随实现增量维护）
 > **适用范围**：`src/styles`、`src/components`、`src/features` 中所有用户可见的界面与交互
 > **关联代码**：`src/styles/theme.css`（设计 token）、`src/styles/typography.css`（文本样式）、`src/components/base/*`（基础组件）、`src/i18n/{zh,en}.ts`（文案）
 
@@ -143,6 +143,8 @@
 - **压缩期间尾部指示器让位，但槽位保留**：`session.compaction` 非空时 tail 槽位不再渲染 `AgentThinking` 波浪行（原位或尾部的幕布已经在表达进行中），`null` 占位而不是把槽位整个拿掉；`count = rows.length + (streaming || session.compaction ? 1 : 0)` 保证压缩轮与续接轮之间的空档幕布不闪断、结束后也不留悬空占位。
 - **阈值控件按会话保存，无会话时可见但不可操作**：阈值数字输入（1–100 整数，`normalizeAutoCompactThreshold` 统一夹取与取整）与闪电开关在状态栏上下文弹层的用量卡底部（`AutoCompactControls`，`agent-limits-card.tsx`），存储键 `ccgui-next.chat.autoCompactBySession`（`auto-compact-context.ts`，默认阈值 `DEFAULT_AUTO_COMPACT_THRESHOLD = 80`），按 `sessionKey` 读写，换会话即换设置、新建待发会话的设置在拿到真实 sessionId 时随会话迁移。没有会话时两个控件保持可见（首启就能看到入口、卡片行高不跳）但禁用：`cursor-not-allowed opacity-50`，输入框走原生 `disabled`；开关**刻意不用原生 `disabled`**——原生禁用收不到 hover/focus，解释禁用原因的 tooltip 就永远读不到，所以用 `aria-disabled` + press 守卫（`agent-limits-card.tsx` 注释），tooltip 文案换成 `chat.autoCompactNoSession`（「新建或打开一个会话后可设置；阈值按会话保存」），可用态才显示「开启 / 关闭自动压缩」。
 - **续接只回到原来那个会话标签页**：自动压缩完成后由 footer 发一次 `chat.autoCompactResume` 把任务接回去，条件收在 `shouldResumeAfterAutoCompact`：必须是阈值触发、同一个会话的标签页仍在 `openTabs` 里、压缩没有报错、用户没有按停止、没有排队消息、会话没有停在问答 / 审批 dock。压缩期间用户关掉了标签页就什么都不做，绝不回落到当前活动会话（`ConversationFooter.tsx` 的 `resumeAfterAutoCompact`，与 `refreshSessionUsage` 的「closed tab 不得回退到 active」是同一条约束）——那条续接指令是一条真实用户消息，落到别的会话会让它真的开始续作。
+- **压缩续接的正文边界由原生消息起止决定**：OMP 的原地压缩会先断开事件订阅再中断当前回合，被打断的那条消息**没有** `message_end`，所以宿主不能靠「上一行还活着」继续往里追加。后端按原生消息边界下发 `assistant_message_start` / `assistant_message_end`（`pi_family.rs` 只在 assistant `message_start` 发起始、只在 assistant 且 `stopReason` 为 `stop`/`length`/`toolUse` 时发结束，`reader.rs` 以 `data: null` 走既有有序信封）。前端收到起始时只丢弃**尚未结束**的 assistant / thinking 活动行与未刷新的 chunk（`stream.ts` 的 `applyAssistantMessageBoundary`），已落定正文、工具行与其它会话不动；收到结束时把缓冲内容落定成一条独立消息。因此压缩前的半句不会和续接后的新正文拼成一段，连续两条正常消息也不会被并进同一行。两个边界都不是回合终态：`streaming`、压缩状态与路由保持不变，用户按停止后已输出的半句仍保留，迟到的边界不会复活已结束的回合。
+- **阈值判定用真实占用，显示仍是整数**：`usageBreakdown` 的 `pct` 现在是未取整的真实比例（`usage-breakdown.ts`），仪表与用量卡在渲染时才 `Math.round`（`ConversationFooter.tsx`）。判定与重新布防都用真实值：18,410 / 400,000 实为 4.6025%，显示成 5% 但不再触发 5% 阈值，回合收尾因此不会再多发一次压缩、也不会出现 `Nothing to compact (session too small)` 告警；真正达到或越过阈值（如 20,000 / 400,000 = 5%）照常触发。重试间距保持整百分点：`shouldAutoCompact` 比较两侧取整后的百分比（`auto-compact-context.ts`），所以更高的精度不会把微小增长变成压缩风暴。
 
 - **编辑精选轮播（市场首屏）**：首屏轮播是**编辑层**，数据来自索引仓的 `featured.json`（实现见 `src/features/plugins/hub/PluginSpotlight.tsx`）。三条硬约定：
   - **装饰数据不挡路**：文件缺失/坏掉，或某一行的 `id` 不在索引里，就整块/该行不渲染——不弹错误、不占位、不影响下方表格与筛选（`marketplaceStore.featured` 为空即整块 `return null`，索引本身的失败才进 `error`）。
@@ -287,6 +289,7 @@ const feedback = useRunningFeedback(store.loading);
 
 | 版本 | 时间 | 内容 |
 |---|---|---|
+| v0.81 | 2026-10-09 | 压缩续接与阈值精度（§3.1）：按原生 `assistant_message_start` / `assistant_message_end` 界定正文，起始只替换未结束的 assistant / thinking 活动行、结束落定独立消息，两者都不是回合终态（停止后已输出内容保留、迟到边界不复活回合）；阈值判定与重新布防改用未取整的真实占用，仪表显示仍取整，整百分点的重试间距不变。Web 桥接重连在页面消失后停止排程（`transport.ts` 的 `ensure()` 与模块顶层 `isWeb` 同口径），不再在页面不存在时触碰 `location` |
 | v0.80 | 2026-10-08 | 插件市场首屏新增**编辑精选轮播**（方案 A）：数据走索引仓新增的 `featured.json`（后端 `plugin_fetch_featured`，与索引共用 1h 缓存且串行调用以复用同一次索引拉取；id 不在索引 / 重复 / 超 8 条由后端与索引仓 `validate.mjs` 双重拦下）。市场行与轮播共用抽出的 `MarketActionButton`，两处安装/更新/已安装状态永不打架。自动播放由进度条关键帧驱动（悬停 / 焦点 / 后台 / reduced-motion 同点冻结），封面按「编辑封面 → 插件截图（原比例）→ icon → 品牌首字块」四级回落，缺图不留空洞；`plugin_fetch_featured` 同时进 web 只读白名单；§3 补规则、§7 登记刷新范围 |
 | v0.79 | 2026-10-08 | HTML 文件点开即渲染预览：`.html/.htm/.xhtml` 走新增的桌面 `ccgui-preview` 协议（`preview_protocol.rs` 保留真实路径结构，`draft.css` / 脚本 / module / fetch 按浏览器语义解析；asset 协议的单段编码会让同级资源全 404）、iframe sandbox 允许脚本/表单但进不了应用状态，头部与 Markdown 共用「编辑/预览」并新增「刷新」（§7 登记）；`tauri.conf.json` CSP 放行 `frame-src`；web 访问模式保持源码视图；§3 补充规则 |
 | v0.78 | 2026-10-08 | ⌘W 改为关闭当前标签页（新增 `closeTab` 快捷键动作，默认 ⌘W；macOS 由 `app_menu.rs` 重建应用菜单拿掉原生 Close Window，键事件回到 webview）；文件 Markdown 预览链接恢复可见样式并安全处理点击（外链系统浏览器、相对路径开成编辑器页签、锚点 / 未知 scheme 惰性），新增 ⌘F 查找（右上角查找条、全部命中 + 当前项双色高亮、Enter / Shift+Enter 跳转，与对话搜索互不覆盖）；对话内 ⌘F 只在对话面在视时响应；§3 补两条规则 |

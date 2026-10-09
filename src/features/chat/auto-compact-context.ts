@@ -1,5 +1,6 @@
 import { useCallback, useSyncExternalStore } from "react";
 import { readStoredJson, writeStored } from "@/lib/storage";
+import i18n from "@/lib/i18n";
 
 export const AUTO_COMPACT_STORAGE_KEY = "ccgui-next.chat.autoCompactBySession";
 const AUTO_COMPACT_CHANGED_EVENT = "ccgui-next:auto-compact-changed";
@@ -29,6 +30,35 @@ export function normalizeAutoCompactThreshold(value: unknown, fallback = DEFAULT
   const safeFallback = Math.round(Math.max(1, Math.min(100, fallback)));
   if (!Number.isFinite(parsed)) return safeFallback;
   return Math.round(Math.max(1, Math.min(100, parsed)));
+}
+
+export function usesNativeAutoCompact(engine: string): boolean {
+  return engine === "claude" || engine === "codex";
+}
+
+/** Integer percentages representable by this engine's native token range. */
+export function autoCompactThresholdRange(engine: string, contextMax: number): { min: number; max: number } | null {
+  if (!Number.isFinite(contextMax) || contextMax <= 0) return null;
+  const minTokens = engine === "claude" ? 100_000 : 1;
+  const maxTokens = engine === "claude" ? 1_000_000 : Number.MAX_SAFE_INTEGER;
+  const min = Math.max(1, Math.ceil(minTokens / contextMax * 100));
+  const max = Math.min(100, Math.floor(maxTokens / contextMax * 100));
+  return min <= max ? { min, max } : null;
+}
+
+/** Undefined means no launch override. Invalid enabled settings fail visibly
+ *  rather than silently falling back to a different native threshold. */
+export function nativeAutoCompactThreshold(engine: string, settings: AutoCompactSettings, contextMax: number): number | undefined {
+  if (!settings.enabled || !usesNativeAutoCompact(engine)) return undefined;
+  // Divide before multiplying so every safe integer window stays exact,
+  // including percentage fractions such as 29% and the 100% upper bound.
+  const tokens = Math.floor(contextMax / 100) * settings.threshold +
+    Math.floor((contextMax % 100) * settings.threshold / 100);
+  if (!Number.isSafeInteger(tokens) || tokens <= 0 ||
+      (engine === "claude" && (tokens < 100_000 || tokens > 1_000_000))) {
+    throw new Error(i18n.t(engine === "claude" ? "chat.autoCompactClaudeRange" : "chat.autoCompactTokenRange", { tokens }));
+  }
+  return tokens;
 }
 
 function readStoredSettings(): StoredSettings {
@@ -131,11 +161,13 @@ export interface AutoCompactDecisionInput {
   usagePct: number | undefined;
   streaming: boolean;
   compacting: boolean;
-  /** Usage pct of this session's last threshold-triggered attempt; null =
-   *  nothing tried (or re-armed). Only context that grew past that level may
-   *  fire again, so a compaction that failed (or one that left usage above
-   *  the threshold) cannot spin — and does not disarm the session either. */
+  /** Exact usage pct at the last attempt; null means untried or re-armed.
+   *  Repeat attempts retain whole-percent growth buckets, so exposing more
+   *  precise usage cannot turn tiny increments into a compaction loop. */
   attemptedAtPct: number | null;
+  /** Confirmed live transport capability. OMP aborts and resumes natively;
+   *  the host must not start a second chat turn to continue it. */
+  canCompactWhileStreaming: boolean;
 }
 
 export function shouldAutoCompact({
@@ -145,14 +177,15 @@ export function shouldAutoCompact({
   streaming,
   compacting,
   attemptedAtPct,
+  canCompactWhileStreaming,
 }: AutoCompactDecisionInput): boolean {
   return Boolean(
     enabled &&
-      !streaming &&
+      (!streaming || canCompactWhileStreaming) &&
       !compacting &&
       usagePct !== undefined &&
       usagePct >= threshold &&
-      (attemptedAtPct === null || usagePct > attemptedAtPct),
+      (attemptedAtPct === null || Math.round(usagePct) > Math.round(attemptedAtPct)),
   );
 }
 

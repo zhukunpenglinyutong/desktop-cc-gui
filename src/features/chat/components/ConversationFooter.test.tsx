@@ -5,7 +5,8 @@ import i18n from "@/lib/i18n";
 import { ipc } from "@/lib/ipc";
 import { useChatStore } from "../store";
 import { sessionKey } from "../store/persistence";
-import { EMPTY_SESSION } from "../store/stream";
+import { EMPTY_SESSION, routeRun, runRouting, untrackRun } from "../store/stream";
+import { handleEngineEvents, settledRuns, type EngineEventDeps } from "../store/engine-events";
 import {
   setAutoCompactEnabled,
   setAutoCompactThreshold,
@@ -16,6 +17,7 @@ vi.mock("@/lib/ipc", () => ({
   ipc: {
     sendMessage: vi.fn(async () => ({ runId: "run-1", sessionId: null })),
     interruptSession: vi.fn(async () => true),
+    compactActiveRun: vi.fn(async () => {}),
     rememberSessionModel: vi.fn(async () => {}),
     rememberSessionEffort: vi.fn(async () => {}),
     listSessions: vi.fn(async () => []),
@@ -30,6 +32,7 @@ vi.mock("@/lib/ipc", () => ({
     getAppSettings: vi.fn(async () => ({})),
     updateAppSettings: vi.fn(async () => {}),
     rescanSessions: vi.fn(async () => {}),
+    usageRecord: vi.fn(async () => {}),
   },
 }));
 vi.mock("@/lib/events", () => ({
@@ -41,7 +44,9 @@ vi.mock("@/lib/events", () => ({
 // orchestration is under test.
 vi.mock("@/components/application/ai-chat/ai-chat-composer", () => ({
   Composer: () => null,
-  StatusBar: () => null,
+  StatusBar: ({ compacting, canCompact, onCompactContext, compactHint }: { compacting: boolean; canCompact: boolean; onCompactContext: () => void; compactHint?: string }) => (
+    <button disabled={!canCompact} onClick={onCompactContext} title={compactHint}>{compacting ? "busy" : "compact"}</button>
+  ),
 }));
 vi.mock("@/components/application/ai-chat/message-queue", () => ({
   MessageQueue: () => null,
@@ -63,9 +68,11 @@ vi.mock("./use-composer-file-drop", () => ({
 }));
 
 const WS = "/tmp/ws";
-const TAB_A = { engine: "claude", sessionId: "s-a", workspacePath: WS };
-const TAB_B = { engine: "claude", sessionId: "s-b", workspacePath: WS };
+const TAB_A = { engine: "pi", sessionId: "s-a", workspacePath: WS };
+const TAB_B = { engine: "pi", sessionId: "s-b", workspacePath: WS };
 const KEY_A = sessionKey(TAB_A.engine, TAB_A.sessionId, TAB_A.workspacePath);
+const TAB_OMP = { engine: "omp", sessionId: "s-omp", workspacePath: WS };
+const KEY_OMP = sessionKey(TAB_OMP.engine, TAB_OMP.sessionId, TAB_OMP.workspacePath);
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -113,6 +120,13 @@ function footerProps() {
 
 beforeEach(async () => {
   localStorage.clear();
+  settledRuns.clear();
+  vi.mocked(ipc.sendMessage).mockClear();
+  vi.mocked(ipc.compactActiveRun).mockClear();
+  for (const runId of [...runRouting.keys()]) {
+    runRouting.delete(runId);
+    untrackRun(runId);
+  }
   await i18n.changeLanguage("zh");
   useChatStore.setState({
     openTabs: [TAB_A, TAB_B],
@@ -142,35 +156,138 @@ afterEach(async () => {
   vi.restoreAllMocks();
 });
 
-describe("ConversationFooter 自动压缩续接", () => {
-  it("压缩进行中关掉标签页后不发送续接消息，也不落到当前活动会话", async () => {
-    // Hold the compaction turn open so the tab can be closed in between.
-    const deferred = Promise.withResolvers<void>();
-    const compactSpy = vi.fn(() => deferred.promise);
-    useChatStore.setState({ compactContext: compactSpy as never });
-    const sendSpy = vi.spyOn(useChatStore.getState(), "send");
+function compactionEvent(active: boolean, reason: string, kind: "compaction" | "live_compact_ready" = "compaction") {
+  const deps: EngineEventDeps = {
+    set: (fn) => useChatStore.setState(fn), get: useChatStore.getState,
+    drainQueue: () => {}, markUnseenIfBackground: () => {}, upsertSessionMeta: () => {},
+  };
+  handleEngineEvents([{ seq: 1, engine: "omp", sessionId: TAB_OMP.sessionId, runId: "run-omp-live", kind, data: { active, reason } }], deps);
+}
 
-    await act(async () => {
-      root.render(<ConversationFooter {...footerProps()} />);
-    });
-    expect(compactSpy).toHaveBeenCalledWith(KEY_A, { trigger: "threshold" });
-
-    // The user closes session A's tab while /compact is still running; the
-    // store falls back to tab B as the active conversation.
+describe("ConversationFooter compaction ownership", () => {
+  it("does not resume into the active tab after an idle compaction tab closes", async () => {
+    await act(async () => { root.render(<ConversationFooter {...footerProps()} />); });
+    expect(useChatStore.getState().bySession[KEY_A]?.compaction?.trigger).toBe("threshold");
+    expect(useChatStore.getState().bySession[KEY_A]?.messages[0]?.text).toBe("/compact");
     await act(async () => {
       useChatStore.getState().closeTab(TAB_A.engine, TAB_A.sessionId, TAB_A.workspacePath);
+      handleEngineEvents([{ seq: 1, engine: "pi", runId: "run-1", sessionId: TAB_A.sessionId, kind: "done", data: { usage: null } }], {
+        set: (fn) => useChatStore.setState(fn), get: useChatStore.getState,
+        drainQueue: () => {}, markUnseenIfBackground: () => {}, upsertSessionMeta: () => {},
+      });
+      const settled = Promise.withResolvers<void>();
+      setTimeout(settled.resolve, 450);
+      await settled.promise;
     });
-    expect(useChatStore.getState().openTabs.some((t) => t.sessionId === "s-a")).toBe(false);
-    expect(useChatStore.getState().active?.sessionId).toBe("s-b");
+    expect(useChatStore.getState().active?.sessionId).toBe(TAB_B.sessionId);
+    expect(useChatStore.getState().bySession[`${TAB_B.engine}/${TAB_B.sessionId}`]?.messages).toEqual([]);
+    expect(ipc.sendMessage).toHaveBeenCalledTimes(1);
+  });
+
+  it("holds progress after ACK and through growing usage until correlated completion", async () => {
+    useChatStore.setState({
+      openTabs: [TAB_OMP], active: TAB_OMP,
+      bySession: { [KEY_OMP]: { ...EMPTY_SESSION, streaming: true, liveCompactRunId: "run-omp-live" } },
+      streamingByKey: { [KEY_OMP]: true },
+    });
+    routeRun("run-omp-live", KEY_OMP);
+    setAutoCompactThreshold(KEY_OMP, 50);
+    setAutoCompactEnabled(KEY_OMP, false);
+    await act(async () => { root.render(<ConversationFooter {...footerProps()} active={TAB_OMP} streaming />); });
+    expect(ipc.compactActiveRun).not.toHaveBeenCalled();
+    // Enabling in the middle of this response must take effect now.
+    await act(async () => { setAutoCompactEnabled(KEY_OMP, true); });
+    expect(useChatStore.getState().bySession[KEY_OMP]?.compaction?.trigger).toBe("threshold");
+    expect(container.querySelector("button")?.disabled).toBe(true);
+    expect(container.textContent).toContain("busy");
+    await act(async () => { root.render(<ConversationFooter {...footerProps()} active={TAB_OMP} streaming sessionUsage={{ input: 95 }} />); });
+    await act(async () => { compactionEvent(false, "auto"); });
+    expect(container.textContent).toContain("busy");
+    expect(ipc.compactActiveRun).toHaveBeenCalledTimes(1);
+    await act(async () => { compactionEvent(false, "ccgui-live-compact:1"); });
+    expect(useChatStore.getState().bySession[KEY_OMP]?.compaction).toBeNull();
+    expect(useChatStore.getState().bySession[KEY_OMP]?.streaming).toBe(true);
+    expect(container.querySelector("button")?.disabled).toBe(true);
+    await act(async () => { compactionEvent(true, "", "live_compact_ready"); });
+    expect(container.querySelector("button")?.disabled).toBe(false);
+    expect(ipc.compactActiveRun).toHaveBeenCalledTimes(1);
+    expect(ipc.sendMessage).not.toHaveBeenCalled();
+    await act(async () => { root.render(<ConversationFooter {...footerProps()} active={TAB_B} sessionUsage={{ input: 0 }} />); });
+    await act(async () => { root.render(<ConversationFooter {...footerProps()} active={TAB_OMP} streaming sessionUsage={{ input: 95 }} />); });
+    expect(ipc.compactActiveRun).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not recompact rounded-up post-turn usage and still triggers a real crossing", async () => {
+    useChatStore.setState({
+      openTabs: [TAB_OMP], active: TAB_OMP,
+      bySession: { [KEY_OMP]: { ...EMPTY_SESSION, streaming: true, liveCompactRunId: "run-omp-live" } },
+      streamingByKey: { [KEY_OMP]: true },
+    });
+    routeRun("run-omp-live", KEY_OMP);
+    setAutoCompactThreshold(KEY_OMP, 5);
+    setAutoCompactEnabled(KEY_OMP, false);
+    await act(async () => {
+      root.render(<ConversationFooter {...footerProps()} active={TAB_OMP} streaming contextMax={400_000} sessionUsage={{ input: 44_000 }} />);
+    });
+    await act(async () => { setAutoCompactEnabled(KEY_OMP, true); });
+    expect(ipc.compactActiveRun).toHaveBeenCalledTimes(1);
 
     await act(async () => {
-      deferred.resolve();
-      await deferred.promise;
+      compactionEvent(false, "ccgui-live-compact:1");
+      compactionEvent(true, "", "live_compact_ready");
+      root.render(<ConversationFooter {...footerProps()} active={TAB_OMP} streaming contextMax={400_000} sessionUsage={{ input_tokens: 17_563, contextOnly: true }} />);
     });
+    const finalUsage = { input: 17_772, output: 638, totalTokens: 18_410 };
+    await act(async () => {
+      handleEngineEvents([
+        { seq: 2, engine: "omp", sessionId: TAB_OMP.sessionId, runId: "run-omp-live", kind: "usage", data: finalUsage },
+        { seq: 3, engine: "omp", sessionId: TAB_OMP.sessionId, runId: "run-omp-live", kind: "done", data: { usage: null } },
+      ], {
+        set: (fn) => useChatStore.setState(fn), get: useChatStore.getState,
+        drainQueue: () => {}, markUnseenIfBackground: () => {}, upsertSessionMeta: () => {},
+      });
+      root.render(<ConversationFooter {...footerProps()} active={TAB_OMP} contextMax={400_000} sessionUsage={finalUsage} />);
+    });
+    expect(useChatStore.getState().bySession[KEY_OMP]?.messages.some((m) => m.text === "/compact")).toBe(false);
+    expect(useChatStore.getState().bySession[KEY_OMP]?.streaming).toBe(false);
+    expect(ipc.sendMessage).not.toHaveBeenCalled();
 
-    expect(sendSpy).not.toHaveBeenCalled();
-    expect(ipc.sendMessage).not.toHaveBeenCalledWith(
-      expect.objectContaining({ prompt: i18n.t("chat.autoCompactResume") }),
-    );
+    routeRun("run-omp-next", KEY_OMP);
+    await act(async () => {
+      useChatStore.setState((s) => ({
+        bySession: { ...s.bySession, [KEY_OMP]: { ...s.bySession[KEY_OMP], streaming: true, liveCompactRunId: "run-omp-next" } },
+        streamingByKey: { [KEY_OMP]: true },
+      }));
+      root.render(<ConversationFooter {...footerProps()} active={TAB_OMP} streaming contextMax={400_000} sessionUsage={{ input: 20_000 }} />);
+    });
+    expect(ipc.compactActiveRun).toHaveBeenCalledTimes(2);
+    expect(useChatStore.getState().bySession[KEY_OMP]?.compaction?.runId).toBe("run-omp-next");
+  });
+
+  it.each(["claude", "codex"])("%s uses native auto settings without a host idle fallback", async (engine) => {
+    const tab = { ...TAB_A, engine };
+    const key = `${engine}/${tab.sessionId}`;
+    setAutoCompactEnabled(key, true);
+    useChatStore.setState({ active: tab, openTabs: [tab], bySession: { [key]: { ...EMPTY_SESSION, streaming: true } }, streamingByKey: { [key]: true } });
+    await act(async () => { root.render(<ConversationFooter {...footerProps()} active={tab} streaming />); });
+    expect(container.querySelector("button")?.disabled).toBe(true);
+    expect(container.querySelector("button")?.title).toBe(i18n.t("chat.compactNativeBusy"));
+    await act(async () => {
+      useChatStore.setState({ bySession: { [key]: { ...EMPTY_SESSION } }, streamingByKey: {} });
+      root.render(<ConversationFooter {...footerProps()} active={tab} />);
+    });
+    expect(useChatStore.getState().bySession[key]?.compaction).toBeNull();
+    expect(ipc.sendMessage).not.toHaveBeenCalled();
+  });
+
+  it("does not infer OMP capability from the engine or its routed run", async () => {
+    useChatStore.setState({ active: TAB_OMP, openTabs: [TAB_OMP], bySession: { [KEY_OMP]: { ...EMPTY_SESSION, streaming: true } }, streamingByKey: { [KEY_OMP]: true } });
+    routeRun("run-omp-live", KEY_OMP);
+    setAutoCompactEnabled(KEY_OMP, true);
+    await act(async () => { root.render(<ConversationFooter {...footerProps()} active={TAB_OMP} streaming />); });
+    expect(container.querySelector("button")?.disabled).toBe(true);
+    expect(container.querySelector("button")?.title).toBe(i18n.t("chat.compactUnsupportedBusy"));
+    expect(useChatStore.getState().bySession[KEY_OMP]?.compaction).toBeNull();
+    expect(ipc.compactActiveRun).not.toHaveBeenCalled();
   });
 });

@@ -123,6 +123,12 @@ export interface AgentLimitsCardProps {
     threshold: number;
     /** No active session: render the controls but keep them inert. */
     disabled?: boolean;
+    minThreshold?: number;
+    maxThreshold?: number;
+    thresholdUnavailable?: boolean;
+    validationHint?: string;
+    error?: string;
+    hint?: string;
     onEnabledChange: (enabled: boolean) => void;
     onThresholdChange: (threshold: number) => void;
   };
@@ -372,11 +378,19 @@ function AutoCompactControls({
   text: AgentLimitsCardProps["text"];
 }) {
   const [draft, setDraft] = useState(String(settings.threshold));
+  const min = settings.minThreshold ?? 1;
+  const max = settings.maxThreshold ?? 100;
+  const invalidDraft = draft.trim() === "" || !Number.isInteger(Number(draft)) || Number(draft) < min || Number(draft) > max;
+  const error = settings.thresholdUnavailable || invalidDraft ? settings.validationHint : settings.error;
 
   // No threshold-sync effect: the parent keys this component by threshold, so
   // a change from outside remounts it with the right draft.
 
   const commitThreshold = (value = draft) => {
+    if (settings.thresholdUnavailable || (settings.validationHint && (value.trim() === "" || !Number.isInteger(Number(value)) || Number(value) < min || Number(value) > max))) {
+      setDraft(value);
+      return;
+    }
     const next = normalizeAutoCompactThreshold(value, settings.threshold);
     setDraft(String(next));
     settings.onThresholdChange(next);
@@ -388,10 +402,11 @@ function AutoCompactControls({
   // No session to bind to: the controls stay visible (the row keeps its shape
   // from the first launch) but cannot be edited until a chat exists.
   const disabled = settings.disabled === true;
-  const hint = disabled ? text.autoCompactNoSession ?? toggleLabel : toggleLabel;
+  const hint = disabled ? text.autoCompactNoSession ?? toggleLabel : error ?? settings.hint ?? toggleLabel;
 
   return (
-    <div className="mr-auto flex items-center gap-1.5">
+    <div className="mr-auto flex flex-col gap-1">
+      <div className="flex items-center gap-1.5">
       <div
         className={cx(
           "flex h-6 w-11 items-center rounded-md border border-border-button-default bg-background-primary-default px-1.5",
@@ -400,11 +415,12 @@ function AutoCompactControls({
       >
         <input
           type="number"
-          min={1}
-          max={100}
+          min={min}
+          max={max}
           step={1}
           inputMode="numeric"
-          disabled={disabled}
+          disabled={disabled || settings.thresholdUnavailable}
+          aria-invalid={Boolean(error) || undefined}
           data-testid="auto-compact-threshold"
           aria-label={text.autoCompactThreshold ?? "自动压缩阈值"}
           value={draft}
@@ -427,11 +443,11 @@ function AutoCompactControls({
           // neither hover nor focus, so its tooltip could never be read — and
           // this hint is exactly what explains the inert state. The press is
           // guarded instead.
-          aria-disabled={disabled || undefined}
+          aria-disabled={disabled || (!settings.enabled && Boolean(error)) || undefined}
           aria-label={toggleLabel}
           aria-pressed={settings.enabled}
           onPress={() => {
-            if (disabled) return;
+            if (disabled || (!settings.enabled && error)) return;
             settings.onEnabledChange(!settings.enabled);
           }}
           className={cx(
@@ -447,6 +463,8 @@ function AutoCompactControls({
         </AriaButton>
         <TooltipContent>{hint}</TooltipContent>
       </Tooltip>
+      </div>
+      {(error || settings.hint) && <span role={error ? "alert" : undefined} className="max-w-64 text-caption-1-medium text-text-tertiary">{error ?? settings.hint}</span>}
     </div>
   );
 }

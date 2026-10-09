@@ -1251,6 +1251,7 @@ mod tests {
             computer_use: None,
             memory_bot: None,
             allowed_tools: None,
+            auto_compact_threshold_tokens: None,
         };
         run_host_turn(
             core,
@@ -1340,6 +1341,7 @@ mod tests {
                     computer_use: None,
                     memory_bot: None,
                     allowed_tools: None,
+                    auto_compact_threshold_tokens: None,
                 };
                 run_host_turn(
                     core,
@@ -1410,6 +1412,7 @@ mod tests {
                 stdin: None,
                 questions: Arc::new(StdMutex::new(HashMap::new())),
                 plans: Arc::new(StdMutex::new(HashMap::new())),
+                live_compact: None,
             },
         );
         let core = TurnCore {

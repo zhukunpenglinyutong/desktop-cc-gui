@@ -251,6 +251,8 @@ pub(super) fn apply_channel(
     ] {
         if (key == "model" && req.model.is_some())
             || (key == "model_reasoning_effort" && req.effort.is_some())
+            || (key == "model_auto_compact_token_limit"
+                && req.auto_compact_threshold_tokens.is_some())
         {
             continue;
         }
@@ -307,6 +309,10 @@ impl Engine for CodexEngine {
         if let Some(effort) = req.effort.as_deref() {
             cmd.arg("-c");
             cmd.arg(format!("model_reasoning_effort=\"{effort}\""));
+        }
+        if let Some(tokens) = req.auto_compact_threshold_tokens {
+            cmd.arg("-c");
+            cmd.arg(format!("model_auto_compact_token_limit={tokens}"));
         }
         Ok(BuiltCommand {
             command: cmd,
@@ -413,6 +419,12 @@ impl Engine for CodexEngine {
         if let Some(effort) = req.effort.as_deref() {
             cmd.arg("-c");
             cmd.arg(format!("model_reasoning_effort=\"{effort}\""));
+        }
+        // Each exec/resume is a fresh process, so the per-session threshold
+        // applies on this send without rewriting the user's native config.
+        if let Some(tokens) = req.auto_compact_threshold_tokens {
+            cmd.arg("-c");
+            cmd.arg(format!("model_auto_compact_token_limit={tokens}"));
         }
         // Fast mode is Codex's service_tier=priority (same id the desktop app
         // uses). Explicit default opts out; None leaves the CLI's config alone.
@@ -676,6 +688,7 @@ mod tests {
             computer_use: None,
             memory_bot: None,
             allowed_tools: None,
+            auto_compact_threshold_tokens: None,
         }
     }
 
@@ -890,6 +903,42 @@ mod tests {
             config["model_auto_compact_token_limit"].as_integer(),
             Some(900_000)
         );
+    }
+
+    #[test]
+    fn session_compaction_threshold_overrides_channel_on_each_launch() {
+        let provider = serde_json::json!({"settingsConfig": {"config":
+            "model_context_window = 1000000\nmodel_auto_compact_token_limit = 900000"}});
+        let mut req = base_req();
+        for session_id in [None, Some("existing-session".to_string())] {
+            req.session_id = session_id;
+            for tokens in [Some(160_000), Some(320_000), None] {
+                req.auto_compact_threshold_tokens = tokens;
+                for host in [true, false] {
+                    let mut built = if host {
+                        CodexEngine.host_command(&req, "fake-bin")
+                    } else {
+                        CodexEngine.build_command(&req, "fake-bin")
+                    }
+                    .unwrap();
+                    if tokens.is_none() {
+                        assert!(!overrides(&built.command)
+                            .contains_key("model_auto_compact_token_limit"));
+                    }
+                    // Channel overrides are appended after command creation.
+                    // An explicit session choice must still win; Off must
+                    // restore inheritance instead of retaining the last send.
+                    apply_channel(&mut built.command, &provider, &Default::default(), &req)
+                        .unwrap();
+                    let config = overrides(&built.command);
+                    assert_eq!(
+                        config["model_auto_compact_token_limit"].as_integer(),
+                        Some(tokens.unwrap_or(900_000) as i64)
+                    );
+                    assert_eq!(config["model_context_window"].as_integer(), Some(1_000_000));
+                }
+            }
+        }
     }
 
     #[test]

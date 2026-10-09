@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ipc } from "@/lib/ipc";
 import { collectBeforeTurnContributions, registerTurnHooks } from "@/features/plugins/runtime/hooks";
-import { routeRun } from "./stream";
+import { drainPending, EMPTY_SESSION, flushPendingStreams, routeRun, runRouting, untrackRun } from "./stream";
 import {
   bindRunLifecycle,
   finishRunLifecycle,
@@ -12,6 +12,8 @@ import {
   replayBufferedEngineEvents,
   settleOrphanedRuns,
   unregisterRunLifecycle,
+  type ChatEngineEvent,
+  type EngineEventDeps,
 } from "./engine-events";
 
 vi.mock("@/lib/ipc", () => ({
@@ -314,6 +316,105 @@ describe("incremental internal frame routing", () => {
       record.mockReset();
       record.mockResolvedValue(undefined);
     }
+  });
+});
+
+describe("native message capture boundaries", () => {
+  const runId = "capture-boundary-run";
+  const key = "claude/capture-boundary-session";
+
+  function boundaryDeps() {
+    const state = {
+      bySession: { [key]: { ...EMPTY_SESSION, streaming: true } },
+      openTabs: [],
+      models: { claude: "claude-test" },
+      efforts: {},
+      streamingByKey: { [key]: true },
+      retryingByKey: {},
+    };
+    const deps: EngineEventDeps = {
+      set: (update) => { Object.assign(state, update(state as never)); },
+      get: () => state as never,
+      drainQueue: vi.fn(),
+      markUnseenIfBackground: vi.fn(),
+      upsertSessionMeta: vi.fn(),
+    };
+    routeRun(runId, key);
+    return {
+      state,
+      deps,
+      emit: (kind: ChatEngineEvent["kind"], data: unknown = null) => {
+        handleEngineEvents([{ engine: "claude", runId, sessionId: null, seq: 1, kind, data }], deps);
+      },
+    };
+  }
+
+  afterEach(() => {
+    unregisterRunLifecycle(runId);
+    runRouting.delete(runId);
+    untrackRun(runId);
+    drainPending(key);
+  });
+
+  it("resets only unfinished parser text and preserves captures, accepted frames and afterTurn", async () => {
+    const delivered = vi.fn();
+    const afterTurn = vi.fn();
+    fixtureDisposers.push(registerTurnHooks("test.capture-boundaries", { onInternalMessage: delivered, afterTurn }));
+    await startRun(runId, "test.capture-boundaries", { channel: "facts", nonce: "abc123", maxBytes: 1024 });
+    const { state, deps, emit } = boundaryDeps();
+    const firstFrame = '<CCGUI_INTERNAL_abc123>{"attempt":1}</CCGUI_INTERNAL_abc123>';
+    const secondFrame = '<CCGUI_INTERNAL_abc123>{"attempt":2}</CCGUI_INTERNAL_abc123>';
+    emit("assistant_message_start");
+    emit("delta", `old partial${firstFrame}<CCGUI_INTERNAL_abc123>{"abandoned":`);
+    flushPendingStreams(deps.set);
+    emit("assistant_message_start");
+    emit("delta", `fresh answer${secondFrame}`);
+    emit("assistant_message_end");
+    await Promise.resolve();
+
+    expect(state.bySession[key].messages).toEqual([
+      expect.objectContaining({ role: "assistant", text: "fresh answer", live: false }),
+    ]);
+    expect(delivered).toHaveBeenCalledTimes(2);
+    expect(delivered.mock.calls.map(([event]) => event.payload)).toEqual([{ attempt: 1 }, { attempt: 2 }]);
+    expect(ipc.recordAcceptedInternalFrame).not.toHaveBeenCalled();
+    expect(afterTurn).not.toHaveBeenCalled();
+    expect(state.bySession[key].streaming).toBe(true);
+
+    bindRunLifecycle(`pending:${runId}`, runId, "capture-boundary-session");
+    expect(vi.mocked(ipc.recordAcceptedInternalFrame).mock.calls).toEqual([
+      ["claude", "capture-boundary-session", firstFrame, workspace.path],
+      ["claude", "capture-boundary-session", secondFrame, workspace.path],
+    ]);
+    finishRunLifecycle(runId, "completed");
+    await Promise.resolve();
+    expect(afterTurn).toHaveBeenCalledTimes(1);
+    expect(afterTurn).toHaveBeenCalledWith(expect.objectContaining({ runId, sessionId: "capture-boundary-session", status: "completed" }));
+  });
+
+  it.each(['<CCGUI_INTERNAL_abc123>{"ok":', "<CCGUI_INTERNAL_abc"])("commits incomplete frame text at message end: %s", async (partial) => {
+    const delivered = vi.fn();
+    fixtureDisposers.push(registerTurnHooks("test.capture-boundaries", { onInternalMessage: delivered }));
+    await startRun(runId, "test.capture-boundaries", { channel: "facts", nonce: "abc123", maxBytes: 1024 });
+    const { state, emit } = boundaryDeps();
+    emit("assistant_message_start");
+    emit("delta", `visible${partial}`);
+    emit("thinking", "first reasoning");
+    emit("assistant_message_end");
+    const committed = state.bySession[key].messages;
+    expect(committed).toEqual([
+      expect.objectContaining({ role: "assistant", text: `visible${partial}`, live: false }),
+      expect.objectContaining({ role: "thinking", text: "first reasoning", live: false }),
+    ]);
+    emit("assistant_message_start");
+    emit("delta", 'next<CCGUI_INTERNAL_abc123>{"ok":true}</CCGUI_INTERNAL_abc123>');
+    emit("assistant_message_end");
+    await Promise.resolve();
+
+    committed.forEach((message, index) => expect(state.bySession[key].messages[index]).toBe(message));
+    expect(state.bySession[key].messages[2]).toEqual(expect.objectContaining({ role: "assistant", text: "next", live: false }));
+    expect(delivered).toHaveBeenCalledTimes(1);
+    expect(flushInternalFrameDelta(runId)).toBe("");
   });
 });
 

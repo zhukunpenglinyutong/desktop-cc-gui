@@ -131,6 +131,42 @@ describe("AgentLimitsCard", () => {
     expect(onThresholdChange).toHaveBeenCalledWith(100);
   });
 
+  it("keeps an out-of-range native threshold visible and blocks enabling it", async () => {
+    const onThresholdChange = vi.fn();
+    await renderCard({ autoCompact: {
+      enabled: false, threshold: 80, minThreshold: 50, maxThreshold: 100,
+      validationHint: "Allowed: 50–100%", hint: "Applies next send",
+      onEnabledChange: vi.fn(), onThresholdChange,
+    } });
+    const input = container.querySelector<HTMLInputElement>("[data-testid='auto-compact-threshold']")!;
+    expect(input.min).toBe("50");
+    expect(input.max).toBe("100");
+    await act(async () => { input.focus(); input.value = "45"; input.blur(); });
+    expect(input.value).toBe("45");
+    expect(input.getAttribute("aria-invalid")).toBe("true");
+    expect(container.querySelector("[role='alert']")?.textContent).toBe("Allowed: 50–100%");
+    expect(container.querySelector("[data-testid='auto-compact-toggle']")?.getAttribute("aria-disabled")).toBe("true");
+    expect(onThresholdChange).not.toHaveBeenCalled();
+    await act(async () => { input.focus(); input.value = "50"; input.blur(); });
+    expect(input.getAttribute("aria-invalid")).toBeNull();
+    expect(container.textContent).toContain("Applies next send");
+    expect(onThresholdChange).toHaveBeenCalledWith(50);
+  });
+
+  it("allows disabling an enabled setting when the model window has no valid threshold", async () => {
+    const onEnabledChange = vi.fn();
+    await renderCard({ autoCompact: {
+      enabled: true, threshold: 80, thresholdUnavailable: true,
+      validationHint: "No attainable threshold", onEnabledChange, onThresholdChange: vi.fn(),
+    } });
+    expect(container.querySelector<HTMLInputElement>("input[data-testid='auto-compact-threshold']")?.disabled).toBe(true);
+    expect(container.querySelector("[role='alert']")?.textContent).toBe("No attainable threshold");
+    const toggle = container.querySelector<HTMLButtonElement>("[data-testid='auto-compact-toggle']")!;
+    expect(toggle.getAttribute("aria-disabled")).toBeNull();
+    await act(async () => { toggle.dispatchEvent(new MouseEvent("click", { bubbles: true })); });
+    expect(onEnabledChange).toHaveBeenCalledWith(false);
+  });
+
   it("keeps the auto-compact controls visible but inert without a session", async () => {
     await renderCard({
       autoCompact: {
