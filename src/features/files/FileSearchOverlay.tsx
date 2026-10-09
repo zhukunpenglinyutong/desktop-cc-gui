@@ -7,31 +7,41 @@ import {
   MENU_ITEM_ACTIVE,
   MENU_ITEMS_CONTAINER,
 } from "@/components/base/dropdown/menu-styles";
-import {
-  useMentionIndexStore,
-  type MentionEntry,
-} from "@/components/application/ai-chat/mention-files";
+import { useMentionIndexStore } from "@/components/application/ai-chat/mention-files";
 import { getFileTreeIconSvg } from "./fileIcons";
-import { searchEntries } from "./file-search";
+import {
+  combineRootEntries,
+  scopeToPrimaryRoot,
+  searchEntries,
+  searchRowLabel,
+  type ScopedSearchEntry,
+} from "./file-search";
 import { joinPath, useFilesStore } from "./store";
 
 const INPUT_ID = "file-search-input";
 
 /**
  * Workspace file search scoped to one folder, opened from the tree's
- * right-click menu. Shares the @-mention index cache for the active
- * workspace root (no extra walk), and exists only while `searchRoot` is set
- * — see FilesPanel. Escape closes; the input keeps focus, so the pointer and
- * the keyboard both work without a focus dance.
+ * right-click menu. Shares the @-mention index cache for every root of the
+ * active workspace (no extra walk), merges them into one namespace and
+ * searches across all of them — same-volume roots rebase by relative path,
+ * cross-drive roots by absolute path (see combineRootEntries). Exists only
+ * while `searchRoot` is set — see FilesPanel. Escape closes; the input keeps
+ * focus, so the pointer and the keyboard both work without a focus dance.
  */
 export function FileSearchOverlay({ searchRoot }: { searchRoot: string }) {
   const { t } = useTranslation();
-  const root = useFilesStore((s) => s.root);
+  const roots = useFilesStore((s) => s.roots);
+  // 每个根的 @-mention 索引都参与检索,合并进主目录命名空间(跨根搜索)。
+  // 订阅稳定的 byRoot 记录后在 useMemo 里取用,避免 selector 每次返回新数组
+  // (zustand 5 下会导致重渲染循环)。
+  const byRoot = useMentionIndexStore((s) => s.byRoot);
+  const indices = useMemo(() => roots.map((r) => byRoot[r]), [roots, byRoot]);
   const closeSearch = useFilesStore((s) => s.closeSearch);
-  const index = useMentionIndexStore((s) => (root ? s.byRoot[root] : undefined));
+  const root = roots[0] ?? "";
   useEffect(() => {
-    if (root) useMentionIndexStore.getState().ensure(root);
-  }, [root]);
+    for (const r of roots) useMentionIndexStore.getState().ensure(r);
+  }, [roots]);
 
   const [query, setQuery] = useState("");
   const [activeIndex, setActiveIndex] = useState(0);
@@ -43,24 +53,31 @@ export function FileSearchOverlay({ searchRoot }: { searchRoot: string }) {
     inputRef.current?.focus();
   }, []);
 
+  const combined = useMemo(
+    () => combineRootEntries(roots, indices.map((i) => i?.entries)),
+    [roots, indices],
+  );
+  const scope = useMemo(() => scopeToPrimaryRoot(roots, searchRoot), [roots, searchRoot]);
   const items = useMemo(
-    () => searchEntries(index?.entries ?? [], root, searchRoot, query),
-    [index, root, searchRoot, query],
+    () => (scope === null ? [] : searchEntries(combined, root, scope, query)),
+    [combined, root, scope, query],
   );
 
   // The match list can shrink under the cursor; clamp the active row.
   const active = items.length > 0 ? Math.min(activeIndex, items.length - 1) : -1;
 
   const activate = useCallback(
-    (entry: MentionEntry) => {
-      // Index rels are workspace-relative with "/" — back to the absolute,
-      // platform-separator paths the tree/store use.
-      const absolute = joinPath(root, entry.rel);
+    (entry: ScopedSearchEntry) => {
+      // innerRel 是条目在自身根内的相对路径(重定基前),直接拼回来源根的绝对
+      // 路径;追加根里的文件也以绝对路径打开(编辑器跨根保留)。
+      const absolute = entry.innerRel
+        ? joinPath(entry.root, entry.innerRel)
+        : entry.root;
       if (entry.isDir) useFilesStore.getState().selectPath(absolute, true);
       else void useFilesStore.getState().openFile(absolute);
       closeSearch();
     },
-    [root, closeSearch],
+    [closeSearch],
   );
 
   // Keys live on the window (same pattern as the command palette): the input
@@ -139,9 +156,10 @@ export function FileSearchOverlay({ searchRoot }: { searchRoot: string }) {
           ) : null
         ) : (
           items.map((entry, i) => {
-            // Containing folder ("" for workspace-root entries), same split
-            // the @-mention rows use.
-            const dir = entry.rel.slice(0, entry.rel.length - entry.name.length);
+            // Gray folder label: source root token + in-root relative dir
+            // (e.g. `lib/docs`); single root keeps the bare relative dir —
+            // see `searchRowLabel`.
+            const dir = searchRowLabel(roots, entry);
             return (
               <div
                 key={entry.rel}
