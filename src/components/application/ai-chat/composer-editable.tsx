@@ -35,6 +35,7 @@ export function ComposerEditable({
   acceptCompletion,
   setEditableText,
   handleHistoryKeyDown,
+  resetHistoryNavigation,
   mentionMenuRef,
   slashMenuRef,
   botMenuRef,
@@ -65,6 +66,8 @@ export function ComposerEditable({
   acceptCompletion: () => string | null;
   setEditableText: (text: string) => void;
   handleHistoryKeyDown: (event: ReactKeyboardEvent<HTMLDivElement>) => boolean;
+  /** Editing a recalled prompt ends history navigation without changing text. */
+  resetHistoryNavigation: () => void;
   mentionMenuRef: MutableRefObject<FileMentionMenuHandle | null>;
   slashMenuRef: MutableRefObject<SlashCommandMenuHandle | null>;
   botMenuRef: MutableRefObject<BotMenuHandle | null>;
@@ -107,6 +110,9 @@ export function ComposerEditable({
       onCompositionStart={() => {
         isComposingRef.current = true;
         setIsComposing(true);
+        // IME keydowns bypass shortcuts, including the key that normally
+        // leaves history navigation. Reset now so later arrows keep edits.
+        resetHistoryNavigation();
       }}
       onCompositionEnd={() => {
         isComposingRef.current = false;

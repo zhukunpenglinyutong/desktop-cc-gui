@@ -28,6 +28,7 @@ describe("ComposerEditable IME Enter", () => {
       acceptCompletion: vi.fn(),
       setEditableText: vi.fn(),
       handleHistoryKeyDown: vi.fn(() => false),
+      resetHistoryNavigation: vi.fn(),
       mentionMenuRef: { current: null },
       slashMenuRef: { current: null },
       botMenuRef: { current: null },
@@ -107,10 +108,15 @@ describe("ComposerEditable IME Enter", () => {
     expect(props.handleHistoryKeyDown).not.toHaveBeenCalled();
   });
 
-  it("候选确认不选补全菜单，独立回车仍由菜单接管", async () => {
+  it.each([
+    ["mentionOpen", "mentionMenuRef"],
+    ["slashOpen", "slashMenuRef"],
+    ["botOpen", "botMenuRef"],
+    ["promptOpen", "promptMenuRef"],
+  ] as const)("%s 菜单不接管候选确认，独立回车仍由菜单接管", async (openKey, refKey) => {
     const handleKey = vi.fn(() => true);
-    props.mentionOpen = true;
-    props.mentionMenuRef.current = { handleKey };
+    props[openKey] = true;
+    props[refKey].current = { handleKey };
     await render();
     await compose("compositionstart");
     await compose("compositionend");

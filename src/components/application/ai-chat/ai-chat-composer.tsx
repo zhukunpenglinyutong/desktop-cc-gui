@@ -216,7 +216,10 @@ export function Composer({
   );
 
   // ArrowUp/ArrowDown recall of previously submitted prompts.
-  const { handleKeyDown: handleHistoryKeyDown } = usePromptHistoryNav({
+  const {
+    handleKeyDown: handleHistoryKeyDown,
+    resetNavigation: resetHistoryNavigation,
+  } = usePromptHistoryNav({
     editableRef,
     setText: setEditableText,
   });
@@ -303,6 +306,7 @@ export function Composer({
           acceptCompletion={completion.accept}
           setEditableText={setEditableText}
           handleHistoryKeyDown={handleHistoryKeyDown}
+          resetHistoryNavigation={resetHistoryNavigation}
           mentionMenuRef={mentionMenuRef}
           slashMenuRef={slashMenuRef}
           botMenuRef={botMenuRef}
