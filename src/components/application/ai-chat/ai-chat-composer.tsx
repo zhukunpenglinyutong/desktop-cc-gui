@@ -131,13 +131,9 @@ export function Composer({
   workspacePath,
 }: ComposerProps = {}) {
   const editableRef = useRef<HTMLDivElement>(null);
-  // IME composition tracking (desktop-cc-gui parity): WKWebView fires
-  // `compositionend` BEFORE the Enter keydown that commits the candidate, so
-  // `nativeEvent.isComposing` is already false at that keydown and the plain
-  // check would send the message. Gate Enter on a sync ref plus a 100ms
-  // "recently settled" window after compositionend.
+  // Track active IME composition synchronously; ComposerEditable also checks
+  // keyCode 229 for WebKit's candidate-confirming Enter after compositionend.
   const isComposingRef = useRef(false);
-  const lastCompositionEndTimeRef = useRef(0);
   // Reactive mirror of isComposingRef: gates the ghost completion so IME
   // candidates never produce a suggestion.
   const [isComposing, setIsComposing] = useState(false);
@@ -312,7 +308,6 @@ export function Composer({
           botMenuRef={botMenuRef}
           promptMenuRef={promptMenuRef}
           isComposingRef={isComposingRef}
-          lastCompositionEndTimeRef={lastCompositionEndTimeRef}
           setIsComposing={setIsComposing}
           emitChange={emitChange}
           syncTags={syncTags}

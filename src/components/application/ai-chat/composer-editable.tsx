@@ -19,7 +19,7 @@ import { cx } from "@/utils/cx";
  * ComposerEditable — the composer's contentEditable field and its event
  * wiring: IME composition gating (WKWebView fires `compositionend` BEFORE
  * the Enter keydown that commits the candidate, so Enter is gated on a sync
- * ref plus a 100ms "recently settled" window), mention-picker key
+ * ref plus the IME keyCode 229), mention-picker key
  * delegation, ghost-text Tab accept, ArrowUp/ArrowDown history recall, the
  * configured send gesture, and image/plain-text paste. All state lives in
  * the composer and arrives as props.
@@ -40,7 +40,6 @@ export function ComposerEditable({
   botMenuRef,
   promptMenuRef,
   isComposingRef,
-  lastCompositionEndTimeRef,
   setIsComposing,
   emitChange,
   syncTags,
@@ -71,7 +70,6 @@ export function ComposerEditable({
   botMenuRef: MutableRefObject<BotMenuHandle | null>;
   promptMenuRef: MutableRefObject<PromptMenuHandle | null>;
   isComposingRef: MutableRefObject<boolean>;
-  lastCompositionEndTimeRef: MutableRefObject<number>;
   setIsComposing: (composing: boolean) => void;
   emitChange: () => void;
   syncTags: () => void;
@@ -113,66 +111,41 @@ export function ComposerEditable({
       onCompositionEnd={() => {
         isComposingRef.current = false;
         setIsComposing(false);
-        lastCompositionEndTimeRef.current = Date.now();
         // Composition commits text without an input event in WKWebView.
         emitChange();
         syncTags();
         updateTriggers();
       }}
       onKeyDown={(event) => {
+        // Leave active composition to the IME. WebKit can report the final
+        // candidate-confirming Enter after compositionend; keyCode 229 still
+        // identifies it. Preserve IME default behavior and let the next
+        // independent Enter send immediately.
+        if (event.nativeEvent.isComposing || isComposingRef.current) return;
+        if (event.nativeEvent.keyCode === 229) return;
         // An open mention picker owns arrows/Enter/Tab/Escape (never
         // mid-IME: those keys belong to the candidate window).
-        if (
-          mentionOpen &&
-          !event.nativeEvent.isComposing &&
-          !isComposingRef.current &&
-          event.nativeEvent.keyCode !== 229 &&
-          mentionMenuRef.current?.handleKey(event.key)
-        ) {
+        if (mentionOpen && mentionMenuRef.current?.handleKey(event.key)) {
           event.preventDefault();
           return;
         }
         // An open `/` picker owns the same keys (same IME gating).
-        if (
-          slashOpen &&
-          !event.nativeEvent.isComposing &&
-          !isComposingRef.current &&
-          event.nativeEvent.keyCode !== 229 &&
-          slashMenuRef.current?.handleKey(event.key)
-        ) {
+        if (slashOpen && slashMenuRef.current?.handleKey(event.key)) {
           event.preventDefault();
           return;
         }
         // An open `#` bot picker owns the same keys (same IME gating).
-        if (
-          botOpen &&
-          !event.nativeEvent.isComposing &&
-          !isComposingRef.current &&
-          event.nativeEvent.keyCode !== 229 &&
-          botMenuRef.current?.handleKey(event.key)
-        ) {
+        if (botOpen && botMenuRef.current?.handleKey(event.key)) {
           event.preventDefault();
           return;
         }
         // An open `!` prompt picker owns the same keys (same IME gating).
-        if (
-          promptOpen &&
-          !event.nativeEvent.isComposing &&
-          !isComposingRef.current &&
-          event.nativeEvent.keyCode !== 229 &&
-          promptMenuRef.current?.handleKey(event.key)
-        ) {
+        if (promptOpen && promptMenuRef.current?.handleKey(event.key)) {
           event.preventDefault();
           return;
         }
         // Tab accepts the ghost-text history completion (never mid-IME).
-        if (
-          event.key === "Tab" &&
-          completionSuffix &&
-          !event.nativeEvent.isComposing &&
-          !isComposingRef.current &&
-          event.nativeEvent.keyCode !== 229
-        ) {
+        if (event.key === "Tab" && completionSuffix) {
           event.preventDefault();
           const full = acceptCompletion();
           if (full !== null) setEditableText(full);
@@ -180,15 +153,11 @@ export function ComposerEditable({
         }
         // ArrowUp/ArrowDown recall submitted prompts from history.
         if (handleHistoryKeyDown(event)) return;
-        if (event.key !== "Enter" || event.nativeEvent.isComposing) return;
+        if (event.key !== "Enter") return;
         // "cmdEnter": only ⌘/Ctrl+Enter sends; bare Enter falls through to
         // the contentEditable default and inserts a newline.
         const meta = event.metaKey || event.ctrlKey;
         if (sendShortcut === "cmdEnter" ? !meta : event.shiftKey) return;
-        if (isComposingRef.current) return;
-        if (event.nativeEvent.keyCode === 229) return;
-        // Swallow the Enter that only committed the IME candidate.
-        if (Date.now() - lastCompositionEndTimeRef.current < 100) return;
         event.preventDefault();
         // Fires while streaming too: the host queues the message behind the
         // active turn instead of dropping it.
