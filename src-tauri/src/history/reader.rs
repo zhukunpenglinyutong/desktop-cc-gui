@@ -1233,11 +1233,15 @@ pub struct Workspace {
     /// interprets it — consumers (spawn transport, plugin panels) own the shape.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub meta: Option<serde_json::Value>,
+    /// 工作区多目录的附加根:除主目录 `path` 之外登记的目录,不含 `path`。
+    /// 旧库升级后为空,单目录行为不变;主目录恒为 `path`。
+    #[serde(default)]
+    pub roots: Vec<String>,
 }
 
 #[tauri::command]
 pub fn list_workspaces(state: tauri::State<'_, crate::AppState>) -> Result<Vec<Workspace>, String> {
-    query_rows(
+    let mut out = query_rows(
         &state,
         "SELECT id, path, name, last_opened_at, sort_order, group_id, kind, parent_id, meta FROM workspaces
          ORDER BY sort_order IS NULL, sort_order, COALESCE(last_opened_at, 0) DESC",
@@ -1253,9 +1257,14 @@ pub fn list_workspaces(state: tauri::State<'_, crate::AppState>) -> Result<Vec<W
                 kind: r.get(6)?,
                 parent_id: r.get(7)?,
                 meta: meta_json.and_then(|s| serde_json::from_str(&s).ok()),
+                roots: Vec::new(),
             })
         },
-    )
+    )?;
+    for row in &mut out {
+        row.roots = state.db.workspace_extra_roots(&row.id)?;
+    }
+    Ok(out)
 }
 
 #[tauri::command]
@@ -1377,6 +1386,7 @@ pub(crate) fn add_workspace_inner(
         kind,
         parent_id,
         meta,
+        roots: Vec::new(),
     })
 }
 /// Assign a workspace to a sidebar group (None = ungrouped). The group must
@@ -1423,7 +1433,7 @@ pub fn reorder_workspaces(
 
 /// Sync body of `remove_workspace`. Split out so the identity reclamation
 /// below is reachable from a test without a Tauri `State`.
-fn remove_workspace_blocking(db: &crate::db::Db, id: &str) -> Result<(), String> {
+pub(crate) fn remove_workspace_blocking(db: &crate::db::Db, id: &str) -> Result<(), String> {
     let conn = db.0.lock();
     let path: Option<String> = conn
         .query_row(
@@ -1432,8 +1442,16 @@ fn remove_workspace_blocking(db: &crate::db::Db, id: &str) -> Result<(), String>
             |r| r.get(0),
         )
         .ok();
-    conn.execute("DELETE FROM workspaces WHERE id=?1", rusqlite::params![id])
+    let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
+    tx.execute("DELETE FROM workspaces WHERE id=?1", rusqlite::params![id])
         .map_err(|e| e.to_string())?;
+    // 附加根随工作区一并回收:留着的行既无归属,又会让 all_workspace_root_paths
+    // 再也列不出来(它以 workspaces 为驱动表),等于永久垃圾。
+    tx.execute(
+        "DELETE FROM workspace_roots WHERE workspace_id=?1",
+        rusqlite::params![id],
+    )
+    .map_err(|e| e.to_string())?;
     if let Some(path) = path {
         // Same cleanup as delete_session: these identities are scoped to
         // sessions that no longer exist. Remote sessions have no `sessions`
@@ -1455,6 +1473,7 @@ fn remove_workspace_blocking(db: &crate::db::Db, id: &str) -> Result<(), String>
         // 审批记录不声明 FK(sessions 行可能晚于计划到达),由清理路径级联。
         crate::engine::plan_review::delete_reviews_for_workspace(&conn, &path)?;
     }
+    tx.commit().map_err(|e| e.to_string())?;
     Ok(())
 }
 
@@ -1466,6 +1485,102 @@ pub fn remove_workspace(
     remove_workspace_blocking(&state.db, &id)?;
     state.sink.emit_sessions_changed();
     Ok(())
+}
+
+/// 读取某个工作区的最新完整 `Workspace`(含 roots),供增/删命令返回。
+fn workspace_by_id(state: &crate::AppState, id: &str) -> Result<Workspace, String> {
+    let mut workspace = {
+        let conn = state.db.0.lock();
+        conn.query_row(
+            "SELECT id, path, name, last_opened_at, sort_order, group_id, kind, parent_id, meta
+             FROM workspaces WHERE id=?1",
+            rusqlite::params![id],
+            |r| {
+                let meta_json: Option<String> = r.get(8)?;
+                Ok(Workspace {
+                    id: r.get(0)?,
+                    path: r.get(1)?,
+                    name: r.get(2)?,
+                    last_opened_at: r.get(3)?,
+                    sort_order: r.get(4)?,
+                    group_id: r.get(5)?,
+                    kind: r.get(6)?,
+                    parent_id: r.get(7)?,
+                    meta: meta_json.and_then(|s| serde_json::from_str(&s).ok()),
+                    roots: Vec::new(),
+                })
+            },
+        )
+        .map_err(|e| e.to_string())?
+    };
+    workspace.roots = state.db.workspace_extra_roots(&workspace.id)?;
+    Ok(workspace)
+}
+
+/// 为一个工作区登记附加根(工作区多目录)。`path` 必须是本机存在的目录;
+/// `workspace_id` 必须是已登记的工作区。重复登记幂等。返回该工作区最新状态。
+#[tauri::command]
+pub fn add_workspace_root(
+    state: tauri::State<'_, crate::AppState>,
+    workspace_id: String,
+    path: String,
+) -> Result<Workspace, String> {
+    let trimmed = path.trim();
+    if trimmed.is_empty() {
+        return Err("empty path".to_string());
+    }
+    // 存在性校验与 add_workspace_inner 一致:附加根是本机目录(非远程/WSL
+    // meta 路径),不落盘就不进文件系统边界。
+    if !std::path::Path::new(trimmed).is_dir() {
+        return Err(format!("not a directory: {trimmed}"));
+    }
+    if !workspace_exists(&state, &workspace_id)? {
+        return Err(format!("unknown workspace: {workspace_id}"));
+    }
+    state.db.add_workspace_root(&workspace_id, trimmed)?;
+    workspace_by_id(&state, &workspace_id)
+}
+
+/// 移除一个附加根(不动主目录)。返回该工作区最新状态。
+#[tauri::command]
+pub fn remove_workspace_root(
+    state: tauri::State<'_, crate::AppState>,
+    workspace_id: String,
+    path: String,
+) -> Result<Workspace, String> {
+    if !workspace_exists(&state, &workspace_id)? {
+        return Err(format!("unknown workspace: {workspace_id}"));
+    }
+    state
+        .db
+        .remove_workspace_root(&workspace_id, path.trim())?;
+    workspace_by_id(&state, &workspace_id)
+}
+
+/// 列出某工作区的附加根(与 `Workspace.roots` 同义:不含主目录 `path`)。
+#[tauri::command]
+pub fn list_workspace_roots(
+    state: tauri::State<'_, crate::AppState>,
+    workspace_id: String,
+) -> Result<Vec<String>, String> {
+    if !workspace_exists(&state, &workspace_id)? {
+        return Err(format!("unknown workspace: {workspace_id}"));
+    }
+    state.db.workspace_extra_roots(&workspace_id)
+}
+
+/// 工作区行是否存在。附加根命令的前置检查,避免给不存在的 id 留下孤儿行。
+fn workspace_exists(state: &crate::AppState, id: &str) -> Result<bool, String> {
+    let conn = state.db.0.lock();
+    Ok(conn
+        .query_row(
+            "SELECT 1 FROM workspaces WHERE id=?1",
+            rusqlite::params![id],
+            |_| Ok(()),
+        )
+        .optional()
+        .map_err(|e| e.to_string())?
+        .is_some())
 }
 
 #[cfg(test)]

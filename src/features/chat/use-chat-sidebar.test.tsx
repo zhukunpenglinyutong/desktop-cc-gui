@@ -12,14 +12,19 @@ import { usePluginHubStore } from "@/features/plugins/hub/store";
 import { usePluginTabsStore } from "@/features/plugins/runtime/center-tabs";
 import { useChatStore } from "./store";
 import { useChatSidebar } from "./use-chat-sidebar";
+import { ipc } from "@/lib/ipc";
+import { pickDirectory } from "@/lib/platform";
 
 vi.mock("@/lib/ipc", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/ipc")>()),
   ipc: {
     getAppSettings: vi.fn(async () => ({})),
     updateAppSettings: vi.fn(async () => {}),
+    addWorkspaceRoot: vi.fn(async () => WS),
+    removeWorkspaceRoot: vi.fn(async () => WS),
+    listWorkspaces: vi.fn(async () => []),
 
-  
+
   },
 }));
 vi.mock("@/lib/events", () => ({
@@ -28,6 +33,7 @@ vi.mock("@/lib/events", () => ({
   listenComputerUseEscape: vi.fn(async () => () => {}),
 }));
 vi.mock("@/lib/platform", () => ({
+  isWeb: false,
   pickDirectory: vi.fn(async () => null),
 }));
 // 聚焦助手自带 rAF 重试窗口，单测里只关心语义。
@@ -63,6 +69,7 @@ let container: HTMLDivElement;
 let root: Root;
 let captured: AiChatRepo[];
 let sidebar: ReturnType<typeof useChatSidebar>;
+let dialogCalls: unknown[];
 
 function Harness() {
   const streaming = useChatStore((s) => s.streamingByKey["codex/s-1"] === true);
@@ -73,7 +80,7 @@ function Harness() {
     threadRetrying: [retrying],
     collapseSidebarOnMobile: () => {},
     composerInputRef: { current: null },
-    setDialog: () => {},
+    setDialog: (dialog) => dialogCalls.push(dialog),
   });
   captured = sidebar.repos;
   return null;
@@ -81,6 +88,9 @@ function Harness() {
 
 describe("useChatSidebar repo mapping", () => {
   beforeEach(async () => {
+    dialogCalls = [];
+    vi.mocked(pickDirectory).mockClear();
+    vi.mocked(ipc.addWorkspaceRoot).mockClear();
     useChatStore.setState({
       workspaces: [WS],
       sessions: [SESSION],
@@ -114,6 +124,25 @@ describe("useChatSidebar repo mapping", () => {
     expect(captured[0]?.threads.map((t) => t.id)).toEqual(["codex/s-1"]);
   });
 
+  it("buildRepo 透传工作区多目录的附加根(单目录为空数组)", async () => {
+    const MULTI = {
+      ...WS,
+      id: "w2",
+      path: "/ws/multi",
+      name: "multi",
+      roots: ["/ws/multi-extra", "/ws/multi-more"],
+    } as Workspace;
+    await act(async () => {
+      useChatStore.setState({ workspaces: [WS, MULTI], sessions: [SESSION] });
+    });
+    expect(captured.find((r) => r.id === "w2")?.roots).toEqual([
+      "/ws/multi-extra",
+      "/ws/multi-more",
+    ]);
+    // 单目录工作区的 roots 是空数组,不是 undefined。
+    expect(captured.find((r) => r.id === "w1")?.roots).toEqual([]);
+  });
+
   it("pending 新对话出现在对应工作区线程列表顶部", async () => {
     await act(async () => {
       useChatStore.setState({
@@ -142,6 +171,7 @@ describe("useChatSidebar repo mapping", () => {
       groupId: null,
       kind: "worktree",
       parentId: "w1",
+      roots: [],
       meta: { worktree: { branch: "pr-1842-fix-crash", prNumber: 1842 } },
     } as Workspace;
     await act(async () => {
@@ -173,6 +203,7 @@ describe("useChatSidebar repo mapping", () => {
       groupId: null,
       kind: "worktree",
       parentId: "w1",
+      roots: [],
       meta: { worktree: { branch: "pr-1842-fix-crash" } },
     } as Workspace;
     await act(async () => {
@@ -209,6 +240,31 @@ describe("useChatSidebar repo mapping", () => {
       streaming: true,
       retrying: true,
     });
+  });
+
+  it("「添加目录…」选中的目录作为附加根发给 IPC", async () => {
+    vi.mocked(pickDirectory).mockResolvedValueOnce("/ws/extra");
+    await act(async () => {
+      sidebar.handleAddWorkspaceRoot("w1");
+    });
+    await act(async () => {});
+    expect(ipc.addWorkspaceRoot).toHaveBeenCalledWith("w1", "/ws/extra");
+  });
+
+  it("「添加目录…」取消(返回 null)时不发 IPC", async () => {
+    vi.mocked(pickDirectory).mockResolvedValueOnce(null);
+    await act(async () => {
+      sidebar.handleAddWorkspaceRoot("w1");
+    });
+    await act(async () => {});
+    expect(ipc.addWorkspaceRoot).not.toHaveBeenCalled();
+  });
+
+  it("「移除目录…」打开移除对话框(不带主目录)", async () => {
+    await act(async () => {
+      sidebar.handleRemoveWorkspaceRoot("w1");
+    });
+    expect(dialogCalls).toContainEqual({ kind: "removeWorkspaceRoot", workspaceId: "w1" });
   });
 });
 

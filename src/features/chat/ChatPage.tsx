@@ -161,6 +161,8 @@ export default function ChatPage() {
     sections,
     archivedRepos,
     handleAddWorkspace,
+    handleAddWorkspaceRoot,
+    handleRemoveWorkspaceRoot,
     handleThreadSelect,
     handleThreadAction,
     handleCopyThreadId,
@@ -251,6 +253,8 @@ export default function ChatPage() {
         onCreateGroup={handleCreateGroup}
         onNewWorktree={handleNewWorktree}
         onDeleteWorktree={handleDeleteWorktree}
+        onAddWorkspaceRoot={handleAddWorkspaceRoot}
+        onRemoveWorkspaceRoot={handleRemoveWorkspaceRoot}
       />
       <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-background-primary-default md:rounded-l-[14px] md:border-l md:border-separator-border">
         <SessionTabStrip
@@ -341,7 +345,12 @@ export default function ChatPage() {
             overlay={panelOverlay}
           />
         </div>
-        {active && <TerminalDock workspacePath={active.workspacePath} />}
+        {active && (
+          <TerminalDock
+            workspacePath={active.workspacePath}
+            roots={workspaces.find((w) => w.path === active.workspacePath)?.roots}
+          />
+        )}
         <AppStatusBar />
       </div>
 

@@ -32,6 +32,7 @@ const WORKSPACE: Workspace = {
   lastOpenedAt: null,
   sortOrder: null,
   groupId: null,
+  roots: [],
 };
 
 describe("creator chat entry", () => {

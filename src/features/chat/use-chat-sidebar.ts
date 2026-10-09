@@ -51,12 +51,13 @@ export function useChatSidebar({
     })),
   );
   // Store actions are stable references — one shallow subscription for all.
-  const { selectSession, startNewChat, addWorkspace, reorderWorkspaces, pinSession, archiveSession, setWorkspaceArchived, assignWorkspaceGroup, createWorkspaceGroup, focusTab, closeTab } =
+  const { selectSession, startNewChat, addWorkspace, addWorkspaceRoot, reorderWorkspaces, pinSession, archiveSession, setWorkspaceArchived, assignWorkspaceGroup, createWorkspaceGroup, focusTab, closeTab } =
     useChatStore(
       useShallow((s) => ({
         selectSession: s.selectSession,
         startNewChat: s.startNewChat,
         addWorkspace: s.addWorkspace,
+        addWorkspaceRoot: s.addWorkspaceRoot,
         reorderWorkspaces: s.reorderWorkspaces,
         pinSession: s.pinSession,
         archiveSession: s.archiveSession,
@@ -116,6 +117,8 @@ export function useChatSidebar({
       return {
         id: w.id,
         path: w.path,
+        // 工作区多目录:附加根(不含主目录 path)透传给侧栏/Git/终端。
+        roots: w.roots ?? [],
         // Worktree 子行的主名是分支名（mockup 场景 1），目录名进 tooltip。
         label: alias || (meta?.branch ?? w.name),
         originalLabel: alias || meta ? w.name : undefined,
@@ -197,6 +200,7 @@ export function useChatSidebar({
       const alias = workspaceAliases[w.id]?.trim();
       result.push({
         id: w.id,
+        roots: w.roots ?? [],
         label: alias || w.name,
         originalLabel: alias ? w.name : undefined,
         threads: [],
@@ -214,6 +218,30 @@ export function useChatSidebar({
       })
       .catch(() => {});
   }, [t, addWorkspace]);
+
+  // 工作区多目录:「添加目录…」——桌面目录选择器挑一个已存在的目录登记为
+  // 附加根。取消/空路径不改动;失败(如路径不存在)由 store 落进 actionError
+  // 横幅,这里不重复报错。
+  const handleAddWorkspaceRoot = useCallback(
+    (workspaceId: string) => {
+      if (isWeb) return;
+      void pickDirectory(t("chat.addWorkspaceRoot"))
+        .then((path) => {
+          if (path) void addWorkspaceRoot(workspaceId, path);
+        })
+        .catch(() => {});
+    },
+    [t, addWorkspaceRoot],
+  );
+
+  // 工作区多目录:「移除目录…」——选择器挑一个附加根移除;主目录恒不在可选
+  // 列表里(对话框只列附加根)。
+  const handleRemoveWorkspaceRoot = useCallback(
+    (workspaceId: string) => {
+      setDialog({ kind: "removeWorkspaceRoot", workspaceId });
+    },
+    [setDialog],
+  );
 
   const handleThreadSelect = useCallback(
     (id: string) => {
@@ -409,6 +437,8 @@ export function useChatSidebar({
     sections,
     archivedRepos,
     handleAddWorkspace,
+    handleAddWorkspaceRoot,
+    handleRemoveWorkspaceRoot,
     handleThreadSelect,
     handleThreadAction,
     handleCopyThreadId,

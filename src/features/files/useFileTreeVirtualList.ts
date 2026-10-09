@@ -9,7 +9,7 @@ import type { VisibleNode } from "./FileTreeRow";
  * hidden-panel scroll/measure safeguards.
  */
 export function useFileTreeVirtualList() {
-  const root = useFilesStore((s) => s.root);
+  const roots = useFilesStore((s) => s.roots);
   const children = useFilesStore((s) => s.children);
   const expanded = useFilesStore((s) => s.expanded);
   const loadingDirs = useFilesStore((s) => s.loadingDirs);
@@ -18,37 +18,18 @@ export function useFileTreeVirtualList() {
   const ensureDir = useFilesStore((s) => s.ensureDir);
   const toggleDir = useFilesStore((s) => s.toggleDir);
 
-  // Load the root level and keep the synthetic root row expanded: the tree
-  // roots at the workspace, so its children are always the first content.
+  // Load every root level and keep each synthetic root row expanded: all
+  // roots render side by side in one tree, so each root's children show inline.
   useEffect(() => {
-    if (root) {
+    for (const root of roots) {
       void ensureDir(root);
       if (!useFilesStore.getState().expanded[root]) void toggleDir(root);
     }
-  }, [root, ensureDir, toggleDir]);
+  }, [roots, ensureDir, toggleDir]);
 
 
   const visible = useMemo<VisibleNode[]>(() => {
     const out: VisibleNode[] = [];
-    // Synthetic root row: the workspace root itself is the first tree row
-    // with its repository badge (`open-reverselab main M1 ?12`); clicking
-    // it expands the tree below it.
-    if (root) {
-      out.push({
-        name: fileName(root),
-        isDir: true,
-        size: 0,
-        mtimeMs: 0,
-        path: root,
-        depth: 0,
-        expanded: !!expanded[root],
-        loading: !!loadingDirs[root],
-        repository: repositories[root],
-        // Repo-root rows are blue (the workspace repo root row here; nested
-        // repo dirs get theirs from the backend color pass).
-        color: repositories[root] ? "repository" : undefined,
-      });
-    }
     const walk = (dirPath: string, depth: number) => {
       const entries = children[dirPath];
       if (!entries) return;
@@ -63,7 +44,7 @@ export function useFileTreeVirtualList() {
           repository: e.isDir ? repositories[path] : undefined,
           // Plain folders never carry color; files take their git state;
           // nested repo dirs take their own repo's status color from the
-          // backend. Blue stays exclusive to the workspace root row.
+          // backend. Blue stays exclusive to the workspace root rows.
           color: fileColors[dirPath]?.[e.name],
         });
         // Only already-expanded levels are walked — the tree never loads
@@ -71,9 +52,28 @@ export function useFileTreeVirtualList() {
         if (e.isDir && expanded[path]) walk(path, depth + 1);
       }
     };
-    if (root && expanded[root]) walk(root, 1);
+    // Synthetic root rows: each workspace root is a depth-0 tree row with its
+    // repository badge (`open-reverselab main M1 ?12`); clicking it expands
+    // its subtree below it. Roots are listed主目录在前、附加根在后.
+    for (const root of roots) {
+      out.push({
+        name: fileName(root),
+        isDir: true,
+        size: 0,
+        mtimeMs: 0,
+        path: root,
+        depth: 0,
+        expanded: !!expanded[root],
+        loading: !!loadingDirs[root],
+        repository: repositories[root],
+        // Repo-root rows are blue (the workspace repo root row here; nested
+        // repo dirs get theirs from the backend color pass).
+        color: repositories[root] ? "repository" : undefined,
+      });
+      if (expanded[root]) walk(root, 1);
+    }
     return out;
-  }, [children, expanded, loadingDirs, repositories, fileColors, root]);
+  }, [children, expanded, loadingDirs, repositories, fileColors, roots]);
 
   const parentRef = useRef<HTMLDivElement>(null);
   const virtualizer = useVirtualizer({

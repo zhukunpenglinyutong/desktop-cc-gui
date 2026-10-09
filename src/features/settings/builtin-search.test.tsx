@@ -184,6 +184,7 @@ beforeEach(() => {
         lastOpenedAt: null,
         sortOrder: null,
         groupId: "g1",
+        roots: [],
       },
     ],
     workspaceGroups: [{ id: "g1", name: "组一", sortOrder: 0 }],

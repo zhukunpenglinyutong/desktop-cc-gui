@@ -117,6 +117,18 @@ export const en: Messages = {
     searchScopeContent: "Content",
     addWorkspace: "Add workspace",
     removeWorkspace: "Remove workspace",
+    addWorkspaceRoot: "Add folder…",
+    removeWorkspaceRoot: "Remove folder…",
+    removeWorkspaceRootTitle: "Remove extra folder",
+    removeWorkspaceRootEmpty: "This workspace has no extra folders to remove",
+    removeWorkspaceRootHint:
+      "The main folder is fixed and cannot be removed; only extra folders you added can.",
+    addWorkspaceRootFailed: "Failed to add folder: {{error}}",
+    removeWorkspaceRootFailed: "Failed to remove folder: {{error}}",
+    multiRootBadge: "{{count}} folders",
+    multiRootBadgeTooltip: "This workspace has {{count}} folders (main + extra)",
+    engineNoMultiRoot:
+      "The current engine ({{engine}}) only uses the main folder; extra folders are not readable in this session. Switch to the Claude engine to use every folder.",
     newGroup: "New group",
     inputPlaceholder: "Type a message. Enter to send, Shift+Enter for newline, or @ to reference, # for agents",
     inputPlaceholderCmdEnter: "Type a message. Cmd+Enter to send, or @ to reference, # for agents",
@@ -1331,6 +1343,8 @@ export const en: Messages = {
     viewAsList: "View as list",
     commitWithCount: "Commit ({{count}})",
     selectedCount: "{{count}} selected",
+    extraRoot: "Extra root",
+    activeRoot: "Current",
   },
   worktree: {
     // Sidebar
@@ -1475,6 +1489,7 @@ export const en: Messages = {
     tabTitle: "Terminal {{index}}",
     failed: "Failed to start terminal: {{message}}",
     copy: "Copy",
+    pickRoot: "Choose terminal directory",
   },
   time: {
     now: "now",

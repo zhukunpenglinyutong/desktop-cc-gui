@@ -410,6 +410,7 @@ describe("createPluginContext", () => {
           lastOpenedAt: 17,
           sortOrder: null,
           groupId: "g1",
+          roots: [],
           meta: { secret: "must-not-leak" },
         },
         {
@@ -421,6 +422,7 @@ describe("createPluginContext", () => {
           groupId: null,
           kind: "worktree",
           parentId: "w1",
+          roots: [],
           meta: { worktree: { branch: "pr-1" } },
         },
       ],

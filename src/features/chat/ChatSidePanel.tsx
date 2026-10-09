@@ -1,7 +1,9 @@
+import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { PluginBoundary } from "@/features/plugins/boundary/PluginBoundary";
 import { pluginIdFromRegistryKey } from "@ccgui/plugin-sdk";
 import { cx } from "@/utils/cx";
+import { useChatStore } from "./store";
 import { ChangesTab } from "./panel-tabs";
 import { resolveActivePanelTab, useSortedPanelTabs } from "./use-panel-tabs";
 import type { ActiveSession } from "./store";
@@ -27,6 +29,12 @@ export function ChatSidePanel({
 }) {
   const { t } = useTranslation();
   const panelTabs = useSortedPanelTabs();
+  // 工作区多目录：把当前工作区的附加根传给 Git 面板，使其按根分组列出各仓库。
+  const workspaces = useChatStore((s) => s.workspaces);
+  const workspaceRoots = useMemo(
+    () => workspaces.find((w) => w.path === active?.workspacePath)?.roots ?? [],
+    [workspaces, active?.workspacePath],
+  );
   // Persisted tab may point at an unloaded plugin tab; fall back to the
   // first tab so the sidebar never renders fully hidden (read-side only).
   const activeTab = active ? resolveActivePanelTab(panelTabs, panelTab) : undefined;
@@ -77,7 +85,11 @@ export function ChatSidePanel({
         {panelTabs.map((tab) => {
           const TabComponent = tab.component;
           const panel = tab.id === "changes" && TabComponent === ChangesTab ? (
-            <ChangesTab workspacePath={active.workspacePath} visible={!panelCollapsed && activeTab === tab.id} />
+            <ChangesTab
+              workspacePath={active.workspacePath}
+              roots={workspaceRoots}
+              visible={!panelCollapsed && activeTab === tab.id}
+            />
           ) : (
             <TabComponent workspacePath={active.workspacePath} />
           );

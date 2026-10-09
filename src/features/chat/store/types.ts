@@ -123,6 +123,11 @@ export interface ChatStore {
   refreshEngines: () => Promise<void>;
   refreshWorkspaces: () => Promise<void>;
   addWorkspace: (path: string, meta?: Record<string, unknown>) => Promise<void>;
+  /** 工作区多目录:登记一个附加根(不能是主目录);后端失败(如路径不存在)
+   *  原样进 actionError 横幅。 */
+  addWorkspaceRoot: (workspaceId: string, path: string) => Promise<void>;
+  /** 移除一个附加根;主目录(`Workspace.path`)不在可移除范围内。 */
+  removeWorkspaceRoot: (workspaceId: string, path: string) => Promise<void>;
   reorderWorkspaces: (ids: string[]) => Promise<void>;
   removeWorkspace: (id: string) => Promise<void>;
   selectSession: (

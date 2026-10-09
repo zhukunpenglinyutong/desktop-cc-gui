@@ -13,9 +13,24 @@ import { ChangesPanel } from "@/features/git/ChangesPanel";
  */
 
 /** ChangesPanel keeps its per-workspace remount (key) and full-width class
- *  exactly as it was inlined in ChatSidePanel. */
-export const ChangesTab = ({ workspacePath, visible = true }: { workspacePath: string; visible?: boolean }) => (
-  <ChangesPanel key={workspacePath} workspacePath={workspacePath} visible={visible} className="w-full" />
+ *  exactly as it was inlined in ChatSidePanel. 工作区多目录：附加根随
+ *  `roots` 透传，供 Git 面板按根分组。 */
+export const ChangesTab = ({
+  workspacePath,
+  roots,
+  visible = true,
+}: {
+  workspacePath: string;
+  roots?: readonly string[];
+  visible?: boolean;
+}) => (
+  <ChangesPanel
+    key={workspacePath}
+    workspacePath={workspacePath}
+    roots={roots}
+    visible={visible}
+    className="w-full"
+  />
 );
 
 panelTabRegistry.register({

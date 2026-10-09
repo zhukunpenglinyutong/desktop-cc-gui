@@ -1,5 +1,6 @@
 import { ipc, type WorkspaceGroup } from "@/lib/ipc";
 import { errorText } from "@/lib/errors";
+import i18n from "@/lib/i18n";
 import { newId } from "@/lib/id";
 import { pruneMentionIndex } from "@/components/application/ai-chat/mention-files";
 import { pruneSlashCommands } from "@/components/application/ai-chat/slash-commands";
@@ -26,6 +27,8 @@ export function createWorkspaceActions(
   ChatStore,
   | "refreshWorkspaces"
   | "addWorkspace"
+  | "addWorkspaceRoot"
+  | "removeWorkspaceRoot"
   | "reorderWorkspaces"
   | "removeWorkspace"
   | "createWorkspaceGroup"
@@ -51,6 +54,37 @@ export function createWorkspaceActions(
         set({ actionError: null });
       } catch (error) {
         set({ actionError: errorText(error) });
+      }
+    },
+
+    // 工作区多目录:登记/移除附加根。后端已校验「路径必须是已存在的本机目录」
+    // ——失败原样带进 actionError(可读横幅),不吞、不伪装成功。成功后整体
+    // 刷新 workspaces,让 `Workspace.roots` 的新值流进文件树/Git/终端/侧栏。
+    addWorkspaceRoot: async (workspaceId, path) => {
+      try {
+        await ipc.addWorkspaceRoot(workspaceId, path);
+        await get().refreshWorkspaces();
+        set({ actionError: null });
+      } catch (error) {
+        set({
+          actionError: i18n.t("chat.addWorkspaceRootFailed", { error: errorText(error) }),
+        });
+      }
+    },
+
+    removeWorkspaceRoot: async (workspaceId, path) => {
+      // 主目录恒为 `Workspace.path`、不可移除:即使调用方传错也在这里兜住,
+      // 绝不把主目录当附加根删掉。
+      const workspace = get().workspaces.find((w) => w.id === workspaceId);
+      if (workspace && workspace.path === path) return;
+      try {
+        await ipc.removeWorkspaceRoot(workspaceId, path);
+        await get().refreshWorkspaces();
+        set({ actionError: null });
+      } catch (error) {
+        set({
+          actionError: i18n.t("chat.removeWorkspaceRootFailed", { error: errorText(error) }),
+        });
       }
     },
 

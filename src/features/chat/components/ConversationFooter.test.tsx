@@ -40,7 +40,11 @@ vi.mock("@/lib/events", () => ({
 // The footer's heavy children are irrelevant here; only its compaction
 // orchestration is under test.
 vi.mock("@/components/application/ai-chat/ai-chat-composer", () => ({
-  Composer: () => null,
+  // 记录最近一次传入的 props,好断言多根提示不会顺手禁用输入框(不阻塞)。
+  Composer: (props: { disabled?: boolean }) => {
+    (globalThis as { __lastComposerProps?: unknown }).__lastComposerProps = props;
+    return null;
+  },
   StatusBar: () => null,
 }));
 vi.mock("@/components/application/ai-chat/message-queue", () => ({
@@ -172,5 +176,56 @@ describe("ConversationFooter 自动压缩续接", () => {
     expect(ipc.sendMessage).not.toHaveBeenCalledWith(
       expect.objectContaining({ prompt: i18n.t("chat.autoCompactResume") }),
     );
+  });
+});
+
+/** 工作区多目录:非 claude 引擎只用主目录的轻提示。仅当「激活工作区含附加根
+ *  且当前引擎非 claude」时出现;claude 或单目录都不显示。 */
+describe("ConversationFooter 非 claude 多根轻提示", () => {
+  const WS_MULTI = {
+    id: "w1",
+    path: WS,
+    name: "ws",
+    lastOpenedAt: null,
+    sortOrder: 0,
+    groupId: null,
+    roots: ["/tmp/extra"],
+  };
+
+  function setMultiRoot(engine: string) {
+    useChatStore.setState({
+      activeEngine: engine,
+      workspaces: [WS_MULTI as never],
+    });
+  }
+
+  it("非 claude + 有附加根 → 显示提示,且不阻塞 composer(提交按钮仍在)", async () => {
+    setMultiRoot("codex");
+    await act(async () => {
+      // 有草稿(可发送)时仍不被提示禁用——轻提示不阻塞输入/发送。
+      root.render(<ConversationFooter {...footerProps()} draft="hi" />);
+    });
+    expect(
+      document.body.textContent?.includes(
+        i18n.t("chat.engineNoMultiRoot", { engine: "Codex CLI" }),
+      ),
+    ).toBe(true);
+    // 轻提示:输入框不被提示禁用(不阻塞)。
+    expect(
+      (globalThis as { __lastComposerProps?: { disabled?: boolean } }).__lastComposerProps
+        ?.disabled,
+    ).not.toBe(true);
+  });
+
+  it("claude + 有附加根 → 不显示提示(claude 读写全部根)", async () => {
+    setMultiRoot("claude");
+    await act(async () => {
+      root.render(<ConversationFooter {...footerProps()} />);
+    });
+    expect(
+      document.body.textContent?.includes(
+        i18n.t("chat.engineNoMultiRoot", { engine: "Claude Code" }),
+      ),
+    ).toBe(false);
   });
 });

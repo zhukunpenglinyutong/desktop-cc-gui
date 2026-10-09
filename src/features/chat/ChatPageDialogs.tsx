@@ -1,11 +1,13 @@
 import { useTranslation } from "react-i18next";
 import { useShallow } from "zustand/react/shallow";
-import { ConfirmDialog, ConfirmPopover, PromptDialog } from "@/components/dialogs";
+import FolderMinus from "lucide-react/dist/esm/icons/folder-minus";
+import { ConfirmDialog, ConfirmPopover, ModalShell, PromptDialog } from "@/components/dialogs";
+import { Button } from "@/components/base/buttons/button";
 import { fileName, useFilesStore } from "@/features/files/store";
 import { WorktreeCreateDialog } from "@/features/worktree/WorktreeCreateDialog";
 import { DeleteWorktreeDialog } from "@/features/worktree/DeleteWorktreeDialog";
 import { useTerminalStore } from "@/features/terminal/store";
-import { worktreeMetaOf, type SessionMeta } from "@/lib/ipc";
+import { worktreeMetaOf, type SessionMeta, type Workspace } from "@/lib/ipc";
 import { useChatStore } from "./store";
 
 /** Modal dialogs owned by the chat page. */
@@ -17,6 +19,8 @@ export type ChatPageDialog =
   | { kind: "delete"; session: SessionMeta; anchor?: { x: number; y: number } }
   | { kind: "removeWorkspace"; workspaceId: string }
   | { kind: "workspaceAlias"; workspaceId: string }
+  /** 工作区多目录:移除一个附加根(主目录不在可选范围)。 */
+  | { kind: "removeWorkspaceRoot"; workspaceId: string }
   /** 新建 worktree（目标是该 id 对应的父仓库工作区）。 */
   | { kind: "createWorktree"; workspaceId: string }
   /** 删除 worktree 子工作区的分级确认。 */
@@ -35,12 +39,13 @@ export function ChatPageDialogs({
   onClose: () => void;
 }) {
   const { t } = useTranslation();
-  const { renameSession, removeWorkspace, setWorkspaceAlias, setWorkspaceArchived } = useChatStore(
+  const { renameSession, removeWorkspace, setWorkspaceAlias, setWorkspaceArchived, removeWorkspaceRoot } = useChatStore(
     useShallow((s) => ({
       renameSession: s.renameSession,
       removeWorkspace: s.removeWorkspace,
       setWorkspaceAlias: s.setWorkspaceAlias,
       setWorkspaceArchived: s.setWorkspaceArchived,
+      removeWorkspaceRoot: s.removeWorkspaceRoot,
     })),
   );
   const workspaces = useChatStore((s) => s.workspaces);
@@ -87,6 +92,13 @@ export function ChatPageDialogs({
             void setWorkspaceAlias(dialog.workspaceId, alias);
           }}
           onCancel={onClose}
+        />
+      )}
+      {dialog?.kind === "removeWorkspaceRoot" && (
+        <RemoveWorkspaceRootDialog
+          workspace={workspaces.find((w) => w.id === dialog.workspaceId)}
+          onRemove={(path) => removeWorkspaceRoot(dialog.workspaceId, path)}
+          onClose={onClose}
         />
       )}
       {dialog?.kind === "createWorktree" &&
@@ -205,5 +217,63 @@ function DeleteSessionConfirm({
     <ConfirmPopover anchor={dialog.anchor} {...props} />
   ) : (
     <ConfirmDialog {...props} />
+  );
+}
+
+/** 工作区多目录:移除附加根的对话框。只列 `Workspace.roots`(附加根),主目录
+ *  恒不出现,因此「移除主目录」在 UI 上不可能发生。无附加根时给出空态提示,
+ *  不发命令。 */
+function RemoveWorkspaceRootDialog({
+  workspace,
+  onRemove,
+  onClose,
+}: {
+  workspace: Workspace | undefined;
+  onRemove: (path: string) => Promise<void>;
+  onClose: () => void;
+}) {
+  const { t } = useTranslation();
+  const roots = workspace?.roots ?? [];
+  const handleRemove = (path: string) => {
+    onClose();
+    void onRemove(path).catch(() => {});
+  };
+  return (
+    <ModalShell label={t("chat.removeWorkspaceRootTitle")} onClose={onClose}>
+      <div className="flex flex-col gap-3">
+        <h3 className="text-title-3-semibold text-text-primary">
+          {t("chat.removeWorkspaceRootTitle")}
+        </h3>
+        {roots.length === 0 ? (
+          <p className="text-body-medium text-text-secondary">
+            {t("chat.removeWorkspaceRootEmpty")}
+          </p>
+        ) : (
+          <ul className="flex max-h-64 flex-col gap-0.5 overflow-y-auto">
+            {roots.map((root) => (
+              <li key={root}>
+                <button
+                  type="button"
+                  onClick={() => handleRemove(root)}
+                  title={root}
+                  className="flex w-full cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-left text-body-medium text-text-secondary transition-colors hover:bg-background-primary-hover"
+                >
+                  <FolderMinus aria-hidden className="size-4 shrink-0 text-foreground-icon-tertiary" />
+                  <span className="min-w-0 flex-1 truncate">{root}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+        <p className="text-caption-1-regular text-text-tertiary">
+          {t("chat.removeWorkspaceRootHint")}
+        </p>
+        <div className="flex justify-end">
+          <Button variant="secondary" size="small" onClick={onClose}>
+            {t("common.close")}
+          </Button>
+        </div>
+      </div>
+    </ModalShell>
   );
 }

@@ -52,7 +52,7 @@ export interface FileTreeOperations {
  */
 export function useFileTreeOperations(): FileTreeOperations {
   const { t } = useTranslation();
-  const root = useFilesStore((s) => s.root);
+  const roots = useFilesStore((s) => s.roots);
   const clipboard = useFilesStore((s) => s.clipboard);
   const toggleDir = useFilesStore((s) => s.toggleDir);
   const invalidateDir = useFilesStore((s) => s.invalidateDir);
@@ -87,13 +87,15 @@ export function useFileTreeOperations(): FileTreeOperations {
    *  select the operation result so the user sees what changed. */
   const revealInTree = useCallback(
     async (dir: string, target: string | null, isDir: boolean) => {
-      if (dir && dir !== root && !useFilesStore.getState().expanded[dir]) {
+      // 根行恒为展开状态(见 useFileTreeVirtualList),不需要/不应折叠它;
+      // 只展开根以下的目录。多根下用 roots 包含判断代替等值比较。
+      if (dir && !roots.includes(dir) && !useFilesStore.getState().expanded[dir]) {
         await toggleDir(dir);
       }
       await invalidateDir(dir);
       if (target) selectPath(target, isDir);
     },
-    [root, toggleDir, invalidateDir, selectPath],
+    [roots, toggleDir, invalidateDir, selectPath],
   );
 
   const closeMenu = useCallback(() => setMenu(null), []);

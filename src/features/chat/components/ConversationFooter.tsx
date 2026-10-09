@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
+import Info from "lucide-react/dist/esm/icons/info";
+import { CLI_DISPLAY_NAMES } from "@/components/foundations/icons/engine-brands";
 import {
   Composer,
   StatusBar,
@@ -136,6 +138,30 @@ function ActiveRunStatus({ active }: { active: ActiveSession | null }) {
         engine={active?.engine ?? ""}
         workspacePath={active?.workspacePath ?? ""}
       />
+    </div>
+  );
+}
+
+/** 工作区多目录:非 claude 引擎只用主目录的轻提示。仅在「激活工作区含附加根
+ *  且当前引擎非 claude(仅 claude 会把附加根注入为可读写目录)」时出现;纯提示,
+ *  不阻塞输入与发送(非 claude 仍照常只用主目录)。 */
+function MultiRootEngineNotice({ workspacePath }: { workspacePath: string }) {
+  const { t } = useTranslation();
+  const extraRoots = useChatStore(
+    (s) => s.workspaces.find((w) => w.path === workspacePath)?.roots?.length ?? 0,
+  );
+  const engine = useChatStore((s) => s.activeEngine);
+  if (extraRoots === 0 || engine === "claude") return null;
+  const engineName = CLI_DISPLAY_NAMES[engine] ?? engine;
+  return (
+    <div className="mx-auto w-full max-w-3xl">
+      <div
+        role="note"
+        className="flex items-start gap-2 rounded-lg bg-background-secondary-default px-2.5 py-1.5 text-caption-1-regular text-text-secondary"
+      >
+        <Info aria-hidden className="mt-0.5 size-3.5 shrink-0 text-foreground-icon-tertiary" />
+        <span>{t("chat.engineNoMultiRoot", { engine: engineName })}</span>
+      </div>
     </div>
   );
 }
@@ -553,6 +579,7 @@ export function ConversationFooter({
           onZoomImage={setZoomImage}
         />
         <ActiveRunStatus active={active} />
+        {active && <MultiRootEngineNotice workspacePath={active.workspacePath} />}
         {pendingPlan ? (
           <PlanReviewDock />
         ) : pendingQuestion ? (

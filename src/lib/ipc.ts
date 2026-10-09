@@ -141,6 +141,9 @@ export interface Workspace {
    *  (e.g. { wsl: { hostId, distro } } from the wsl plugin); absent for
    *  ordinary directories. */
   meta?: Record<string, unknown>;
+  /** 工作区多目录的附加根:除主目录 `path` 之外登记的目录,不含 `path`。
+   *  主目录恒为 `path`;旧库升级后为空数组,单目录行为不变。 */
+  roots: string[];
 }
 
 /** meta.worktree：worktree 子工作区的自描述（分支/来源 PR），由宿主在
@@ -1582,6 +1585,14 @@ export const ipc = {
   removeWorkspace: (id: string) => invoke<void>("remove_workspace", { id }),
   setWorkspaceGroup: (id: string, groupId: string | null) =>
     invoke<void>("set_workspace_group", { id, groupId }),
+  /** 工作区多目录:附加根(不含主目录)的增/删/列。增删返回更新后的
+   *  `Workspace`(含 `roots`);`path` 必须是已存在的本机目录。 */
+  addWorkspaceRoot: (workspaceId: string, path: string) =>
+    invoke<Workspace>("add_workspace_root", { workspaceId, path }),
+  removeWorkspaceRoot: (workspaceId: string, path: string) =>
+    invoke<Workspace>("remove_workspace_root", { workspaceId, path }),
+  listWorkspaceRoots: (workspaceId: string) =>
+    invoke<string[]>("list_workspace_roots", { workspaceId }),
   // terminal
   /** Idempotent: re-opening a live session id is a no-op on the backend. */
   terminalOpen: (args: { id: string; cwd: string; cols: number; rows: number }) =>

@@ -30,7 +30,7 @@ describe("file tree Git refresh", () => {
     mocks.gitTreeStatus.mockResolvedValue(emptyStatus());
     mocks.gitRepositorySummaries.mockResolvedValue([]);
     mocks.gitFileColors.mockResolvedValue({});
-    useFilesStore.setState({ root: "/repo", children: { "/repo": [], "/repo/sub": [] }, expanded: {}, loadingDirs: {}, dirErrors: {}, repositories: {}, fileColors: {}, refreshing: false });
+    useFilesStore.setState({ roots: ["/repo"], children: { "/repo": [], "/repo/sub": [] }, expanded: {}, loadingDirs: {}, dirErrors: {}, repositories: {}, fileColors: {}, refreshing: false });
   });
 
   it("batches all loaded levels instead of requesting a scan per directory", async () => {
@@ -96,8 +96,8 @@ describe("file tree Git refresh", () => {
     mocks.gitTreeStatus.mockReturnValueOnce(new Promise((resolve) => { finish = resolve; }));
     const refresh = useFilesStore.getState().refreshTree();
     await vi.waitFor(() => expect(mocks.gitTreeStatus).toHaveBeenCalledTimes(1));
-    useFilesStore.getState().setRoot("");
-    useFilesStore.getState().setRoot("/repo");
+    useFilesStore.getState().setRoots([]);
+    useFilesStore.getState().setRoots(["/repo"]);
     await vi.waitFor(() => expect(mocks.gitTreeStatus).toHaveBeenCalledTimes(2));
     finish({ repositories: [], fileColors: { "/repo": { "stale.txt": "modified" } } });
     await refresh;
@@ -111,7 +111,7 @@ describe("文件打开时的中心面互斥", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     useFilesStore.setState({
-      root: "/repo",
+      roots: ["/repo"],
       children: {},
       expanded: {},
       loadingDirs: {},

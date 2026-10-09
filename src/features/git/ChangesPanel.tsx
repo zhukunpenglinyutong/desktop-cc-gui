@@ -10,16 +10,19 @@ import { ConfirmDialog } from "@/components/dialogs";
 import { Checkbox } from "@/components/base/checkbox/checkbox";
 import { type GitFileEntry, type GitStatus } from "@/lib/ipc";
 import { errorText } from "@/lib/errors";
+import { workspaceRootList } from "@/lib/workspace-roots";
 import { cx } from "@/utils/cx";
+import { useChatStore } from "@/features/chat/store";
 import { useFilesStore } from "@/features/files/store";
-import { resolveWorkspaceRepository } from "@/features/files/repositorySelection";
-import { useGitStore } from "./store";
-import { ChangesPanelHeader } from "./ChangesPanelHeader";
-import { CommitFooter } from "./CommitFooter";
+import { resolveSelectedRoot, resolveWorkspaceRepository } from "@/features/files/repositorySelection";
+import { ChangesGroupBody } from "./ChangesGroupBody";
+import { useGitStore, resolveWorkspaceRepositoryGroups, type GitRepoGroup } from "./store";
 import { buildGitTree, flattenGitTree } from "./git-tree";
 import { DirectoryRow, FileRow } from "./GitTreeRow";
 
-function useVisibleGitValue<Value>(
+/** Selects a slice of the git store for a *visible* group. Hidden groups
+ *  detach every subscription so a background panel costs no re-renders. */
+export function useVisibleGitValue<Value>(
   visible: boolean,
   select: (state: ReturnType<typeof useGitStore.getState>) => Value,
 ) {
@@ -42,7 +45,7 @@ const VIEW_MODE_KEY = "ccgui-next.git.viewMode";
 
 /** Persisted flat/tree preference. The read lives in the lazy initializer, so
  *  a disabled localStorage only costs one fallback on first mount. */
-function useGitViewMode() {
+export function useGitViewMode() {
   const [viewMode, setViewMode] = useState<"flat" | "tree">(() => {
     try {
       return (localStorage.getItem(VIEW_MODE_KEY) as "flat" | "tree") || "tree";
@@ -68,7 +71,7 @@ function useGitViewMode() {
  *  start selected; a status refresh drops vanished paths and adopts files that
  *  became staged outside the panel (CLI, another window). The refresh adjust
  *  happens during render so a stale selection never reaches a committed frame. */
-function useChangesSelection(status: GitStatus | undefined) {
+export function useChangesSelection(status: GitStatus | undefined) {
   const stagedPaths = useMemo(() => status?.staged.map((f) => f.path) ?? [], [status]);
   const [selectedFiles, setSelectedFiles] = useState<Set<string>>(() => new Set(stagedPaths));
   const [previousStaged, setPreviousStaged] = useState<string[]>(stagedPaths);
@@ -134,11 +137,13 @@ function useChangesSelection(status: GitStatus | undefined) {
   return { selectedFiles, setSelectedFiles, toggleSelectFile, toggleSelectDir, toggleSelectGroup };
 }
 
+export type ChangesSelection = ReturnType<typeof useChangesSelection>;
+
 /** Mutations, their busy/error bookkeeping, and the commit-confirmation flow. */
-function useChangesActions(
+export function useChangesActions(
   gitWorkspacePath: string,
   status: GitStatus | undefined,
-  selection: ReturnType<typeof useChangesSelection>,
+  selection: ChangesSelection,
 ) {
   const { selectedFiles, setSelectedFiles } = selection;
   const [actionError, setActionError] = useState<string | null>(null);
@@ -301,13 +306,26 @@ function useChangesActions(
   };
 }
 
+export type ChangesActions = ReturnType<typeof useChangesActions>;
+
+/**
+ * 工作区多目录：Git 面板按根分组列出各仓库。
+ *
+ * 主目录恒为第一组且默认聚焦（不变量）；每个是 Git 仓库的根独立成一组，各自
+ * 拥有 header（分支/pull/push）、变更列表与提交框，可分别 stage/commit/push。
+ * 非仓库根不出变更列表，仅显示「非仓库」占位。单根时结果与旧的单仓库面板一致。
+ */
 export function ChangesPanel({
   workspacePath,
+  roots: rootsProp,
   repoPath,
   className,
   visible = true,
 }: {
   workspacePath: string;
+  /** 工作区多目录的附加根（由 ChatSidePanel 透传）。缺省时从 chat store
+   *  读取当前工作区的 roots，直接渲染（如测试）也能工作。 */
+  roots?: readonly string[];
   /** Pin the panel to this repository instead of following the file tree's
    *  selection — for callers that render the panel outside the files
    *  context, where a global selectedPath would silently steer it. */
@@ -315,28 +333,149 @@ export function ChangesPanel({
   className?: string;
   visible?: boolean;
 }) {
-  const { t } = useTranslation();
   const selectedPath = useFilesStore((s) => s.selectedPath);
   const repositories = useFilesStore((s) => s.repositories);
-  const gitWorkspacePath = useMemo(
+  const workspaces = useChatStore((s) => s.workspaces);
+  const roots = useMemo(
+    () =>
+      workspaceRootList(
+        workspacePath,
+        rootsProp ?? workspaces.find((w) => w.path === workspacePath)?.roots ?? [],
+      ),
+    [rootsProp, workspaces, workspacePath],
+  );
+
+  const repositoryRoots = useMemo(() => Object.keys(repositories), [repositories]);
+
+  const groups: GitRepoGroup[] = useMemo(
+    () =>
+      resolveWorkspaceRepositoryGroups({
+        primaryRoot: workspacePath,
+        roots,
+        repositoryRoots,
+      }),
+    [workspacePath, roots, repositoryRoots],
+  );
+
+  // 文件树选择（或显式 repoPath）决定聚焦哪个仓库；单根/无选择时恒为主目录。
+  const selectionRepo = useMemo(
     () =>
       repoPath ??
       resolveWorkspaceRepository({
         selectedPath,
-        repositoryRoots: Object.keys(repositories),
+        repositoryRoots,
         workspacePath,
+        roots,
       }),
-    [repositories, selectedPath, workspacePath, repoPath],
+    [repoPath, selectedPath, repositoryRoots, workspacePath, roots],
   );
-  const status = useVisibleGitValue(visible, (s) => s.statusByWorkspace[gitWorkspacePath]);
-  const notRepo = useVisibleGitValue(visible, (s) => s.notRepoByWorkspace[gitWorkspacePath]);
-  const refreshError = useVisibleGitValue(visible, (s) => s.errorByWorkspace[gitWorkspacePath]);
-  const branches = useVisibleGitValue(visible, (s) => s.branchesByWorkspace[gitWorkspacePath]);
-  const [scrollElement, setScrollElement] = useState<HTMLDivElement | null>(null);
-  const scrollOffset = useRef(0);
+  const selectionRoot = useMemo(
+    () => resolveSelectedRoot({ selectedPath, repositoryRoots, workspacePath, roots }),
+    [selectedPath, repositoryRoots, workspacePath, roots],
+  );
+  const [focusPath, setFocusPath] = useState<string | null>(null);
+  // 聚焦优先级：文件树选择/显式 repoPath（真正指向某个根时）> 用户点组标题的
+  // 手动聚焦 > 第一个仓库组 > 主目录（不变量：主目录默认在首组/默认根）。
+  // 无选择时 `selectionRepo` 会退回主目录，故只有存在活动选择/固定仓库时才让
+  // 它参与，手动点选才不会被主目录默认值盖掉。
+  const treeDriven = selectedPath !== null || repoPath !== undefined;
+  const resolvedFocus =
+    (treeDriven
+      ? groups.find((g) => g.path === selectionRoot && g.repoPath)?.repoPath ??
+        groups.find((g) => g.repoPath === selectionRepo)?.repoPath
+      : undefined) ??
+    groups.find((g) => g.path === focusPath && g.repoPath)?.repoPath ??
+    groups.find((g) => g.repoPath)?.repoPath ??
+    null;
 
-  const { viewMode, toggleViewMode } = useGitViewMode();
-  const selection = useChangesSelection(status);
+  // 每个是仓库的根在自己的组内刷新（见 ChangesGroupBody，按根多次调用既有
+  // 单 path 命令；隐藏时不发请求）。
+
+  // 附加根在文件树根层被发现是仓库后补成一组：刷新发现其确为仓库时迁移为
+  // 真组（原先的「非仓库」占位组随之消失）。仅针对新增的、尚未判定过的根，
+  // 因此不会重复请求；单根时该集合恒为空。
+  useEffect(() => {
+    if (!visible) return;
+    const git = useGitStore.getState();
+    for (const group of groups) {
+      if (group.repoPath !== null || group.extra === false) continue;
+      if (group.path in git.notRepoByWorkspace) continue;
+      void git.refresh(group.path, true).catch(() => undefined);
+    }
+  }, [visible, groups]);
+
+  return (
+    <aside
+      style={{ display: visible ? undefined : "none" }}
+      className={cx("flex h-full min-h-0 flex-col bg-background-primary-default", className)}
+    >
+      {groups.map((group) => {
+        const gitWorkspacePath = group.repoPath ?? group.path;
+        const isActive = group.repoPath !== null && group.repoPath === resolvedFocus;
+        return (
+          <div
+            key={group.path}
+            data-git-group
+            data-git-group-path={group.path}
+            data-git-group-active={isActive ? "true" : "false"}
+            data-git-group-repo={group.repoPath === null ? "false" : "true"}
+            className={cx(
+              "flex min-h-0 flex-col",
+              // 单根：占满整个面板（与旧行为一致）；多根：每组按内容分担高度，
+              // 组内各自滚动。单根时 groups.length===1 恒为 flex-1。
+              groups.length > 1 ? "flex-1" : "min-h-0 flex-1",
+              group.extra && "border-t border-separator-border",
+            )}
+          >
+            <ChangesGroupBody
+              path={group.path}
+              label={groupLabel(group.path)}
+              extra={group.extra}
+              gitWorkspacePath={gitWorkspacePath}
+              isRepo={group.repoPath !== null}
+              isActive={isActive}
+              visible={visible}
+              grouped={groups.length > 1}
+              onFocus={() => setFocusPath(group.path)}
+            />
+          </div>
+        );
+      })}
+    </aside>
+  );
+}
+
+/** Directory name of a root, for the group header label. */
+function groupLabel(path: string): string {
+  const trimmed = path.replace(/[/\\]+$/, "");
+  const idx = Math.max(trimmed.lastIndexOf("/"), trimmed.lastIndexOf("\\"));
+  return idx < 0 ? trimmed : trimmed.slice(idx + 1);
+}
+
+/* -------------------------------------------------------------------------- */
+
+/** Scrollable body for one group: loading / empty placeholder, or the three
+ *  file groups. Shared by every repository group in the panel. */
+export function GitChangesBody({
+  visible = true,
+  status,
+  viewMode,
+  scrollElement,
+  scrollOffset,
+  pending,
+  selection,
+  actions,
+}: {
+  visible?: boolean;
+  status: GitStatus | undefined;
+  viewMode: "flat" | "tree";
+  scrollElement: HTMLDivElement | null;
+  scrollOffset: RefObject<number>;
+  pending: Record<string, true>;
+  selection: ChangesSelection;
+  actions: ChangesActions;
+}) {
+  const { t } = useTranslation();
   const {
     selectedFiles,
     toggleSelectFile,
@@ -344,125 +483,93 @@ export function ChangesPanel({
     toggleSelectGroup,
   } = selection;
   const {
-    actionError,
-    pending,
-    commitMsg,
-    setCommitMsg,
+    pendingCommitPlan,
     discardTarget,
     setDiscardTarget,
-    pendingCommitPlan,
+    confirmDiscard,
+    confirmCommitPlan,
     setPendingCommitPlan,
-    run,
-    dismissError,
     stage,
     unstage,
     stageOne,
     unstageOne,
     discardRow,
-    confirmDiscard,
-    confirmCommitPlan,
-    handleCommitSelected,
     openStagedDiff,
     openUnstagedDiff,
-  } = useChangesActions(gitWorkspacePath, status, selection);
+  } = actions;
 
-  useLayoutEffect(() => {
-    if (visible && scrollElement) scrollElement.scrollTop = scrollOffset.current;
-  }, [visible, scrollElement]);
-
-  useEffect(() => {
-    if (!visible) return;
-    void useGitStore.getState().refresh(gitWorkspacePath);
-    void useGitStore.getState().loadBranches(gitWorkspacePath);
-  }, [gitWorkspacePath, visible]);
-
-  const header = visible ? (
-    <ChangesPanelHeader
-      workspacePath={gitWorkspacePath}
-      // Name the repository when the panel followed the file tree's
-      // selection into a nested repo — otherwise a commit there looks
-      // identical to one against the workspace root.
-      followedRepoPath={
-        repoPath === undefined && gitWorkspacePath !== workspacePath
-          ? gitWorkspacePath
-          : undefined
-      }
-      notRepo={notRepo ?? false}
-      branch={status?.branch}
-      ahead={status?.ahead}
-      behind={status?.behind}
-      branches={branches}
-      pending={pending}
-      error={actionError ?? refreshError ?? null}
-      run={run}
-      onDismissError={dismissError}
-      viewMode={viewMode}
-      onToggleViewMode={toggleViewMode}
-    />
-  ) : null;
-
-  if (notRepo) {
-    return (
-      <aside
-        style={{ display: visible ? undefined : "none" }}
-        className={cx("flex h-full flex-col bg-background-primary-default", className)}
-      >
-        {header}
-        <div className="flex flex-1 items-center justify-center p-4">
-          <p className="text-center text-body-medium text-text-tertiary">
-            {t("git.notARepo")}
-          </p>
-        </div>
-      </aside>
-    );
-  }
-
+  if (!status) return <ChangesPlaceholder text={t("common.loading")} />;
+  const total = status.staged.length + status.unstaged.length + status.untracked.length;
+  if (total === 0) return <ChangesPlaceholder text={t("git.noChanges")} />;
   return (
-    <aside
-      style={{ display: visible ? undefined : "none" }}
-      className={cx("flex h-full min-h-0 flex-col bg-background-primary-default", className)}
-    >
-      {header}
-      <div
-        ref={setScrollElement}
-        className="min-h-0 flex-1 overflow-y-auto overscroll-contain"
-        onScroll={(event) => {
-          if (visible) scrollOffset.current = event.currentTarget.scrollTop;
-        }}
-      >
-        <ChangesBody
-          status={status}
-          visible={visible}
-          scrollElement={scrollElement}
-          scrollOffset={scrollOffset}
-          pending={pending}
-          viewMode={viewMode}
-          selectedFiles={selectedFiles}
-          onToggleSelectFile={toggleSelectFile}
-          onToggleSelectDir={toggleSelectDir}
-          onToggleSelectGroup={toggleSelectGroup}
-          stage={stage}
-          unstage={unstage}
-          stageOne={stageOne}
-          unstageOne={unstageOne}
-          discardRow={discardRow}
-          setDiscardTarget={setDiscardTarget}
-          openStagedDiff={openStagedDiff}
-          openUnstagedDiff={openUnstagedDiff}
-        />
-      </div>
-      {visible && (
-        <CommitFooter
-          workspacePath={gitWorkspacePath}
-          stagedCount={status?.staged.length ?? 0}
-          selectedCount={selectedFiles.size}
-          onCommitSelected={handleCommitSelected}
-          busy={pending.commit === true}
-          commitMsg={commitMsg}
-          onCommitMsgChange={setCommitMsg}
-          run={run}
-        />
-      )}
+    <>
+      <ChangesSummary status={status} selectedCount={selectedFiles.size} />
+      <GroupSection
+        visible={visible}
+        scrollElement={scrollElement}
+        scrollOffset={scrollOffset}
+        title={t("git.staged")}
+        entries={status.staged}
+        viewMode={viewMode}
+        selectedFiles={selectedFiles}
+        onToggleSelectFile={toggleSelectFile}
+        onToggleSelectDir={toggleSelectDir}
+        onToggleSelectGroup={toggleSelectGroup}
+        groupActionLabel={t("git.unstageAll")}
+        onGroupAction={unstage}
+        rowActionLabel={t("git.unstage")}
+        rowActionKind="unstage"
+        onRowAction={unstageOne}
+        onOpen={openStagedDiff}
+        actionBusy={pending.unstage === true}
+      />
+      <GroupSection
+        visible={visible}
+        scrollElement={scrollElement}
+        scrollOffset={scrollOffset}
+        title={t("git.unstaged")}
+        entries={status.unstaged}
+        viewMode={viewMode}
+        selectedFiles={selectedFiles}
+        onToggleSelectFile={toggleSelectFile}
+        onToggleSelectDir={toggleSelectDir}
+        onToggleSelectGroup={toggleSelectGroup}
+        groupActionLabel={t("git.stageAll")}
+        onGroupAction={stage}
+        rowActionLabel={t("git.stage")}
+        rowActionKind="stage"
+        onRowAction={stageOne}
+        rowDiscardLabel={t("git.discard")}
+        onRowDiscard={discardRow}
+        groupDiscardLabel={t("git.discardAll")}
+        onGroupDiscard={setDiscardTarget}
+        onOpen={openUnstagedDiff}
+        actionBusy={pending.stage === true}
+      />
+      <GroupSection
+        visible={visible}
+        scrollElement={scrollElement}
+        scrollOffset={scrollOffset}
+        title={t("git.untracked")}
+        entries={status.untracked}
+        viewMode={viewMode}
+        selectedFiles={selectedFiles}
+        onToggleSelectFile={toggleSelectFile}
+        onToggleSelectDir={toggleSelectDir}
+        onToggleSelectGroup={toggleSelectGroup}
+        groupActionLabel={t("git.stageAll")}
+        onGroupAction={stage}
+        rowActionLabel={t("git.stage")}
+        rowActionKind="stage"
+        onRowAction={stageOne}
+        rowDiscardLabel={t("git.discard")}
+        onRowDiscard={discardRow}
+        groupDiscardLabel={t("git.discardAll")}
+        onGroupDiscard={setDiscardTarget}
+        onOpen={openUnstagedDiff}
+        actionBusy={pending.stage === true}
+        isNew
+      />
       <ChangesConfirmDialogs
         visible={visible}
         discardTarget={discardTarget}
@@ -472,13 +579,51 @@ export function ChangesPanel({
         onConfirmPlan={confirmCommitPlan}
         onCancelPlan={() => setPendingCommitPlan(null)}
       />
-    </aside>
+    </>
   );
 }
 
+/** Centered loading / no-changes placeholder. */
+function ChangesPlaceholder({ text }: { text: string }) {
+  return (
+    <div className="flex flex-1 items-center justify-center p-4">
+      <p className="text-body-medium text-text-tertiary">{text}</p>
+    </div>
+  );
+}
+
+const ChangesSummary = memo(function ChangesSummary({
+  status,
+  selectedCount,
+}: {
+  status: GitStatus;
+  selectedCount: number;
+}) {
+  const { t } = useTranslation();
+  const all = [...status.staged, ...status.unstaged, ...status.untracked];
+  const adds = all.reduce((n, f) => n + (f.additions ?? 0), 0);
+  const dels = all.reduce((n, f) => n + (f.deletions ?? 0), 0);
+  return (
+    <div className="sticky top-0 z-20 flex items-center justify-between border-b border-separator-border bg-background-primary-default px-3 py-2">
+      <div className="flex items-center gap-1.5">
+        <span className="text-body-medium text-text-primary">
+          {all.length} {t("git.uncommittedChanges")}
+        </span>
+        <span className="text-xs text-state-success-text">+{adds}</span>
+        <span className="text-xs text-text-error-primary">−{dels}</span>
+      </div>
+      {selectedCount > 0 && (
+        <span className="text-xs font-medium text-text-secondary">
+          {t("git.selectedCount", { count: selectedCount })}
+        </span>
+      )}
+    </div>
+  );
+});
+
 /** Discard and commit-plan confirmations: conditions stay together so the
- *  panel body's JSX does not grow another two conditional blocks. */
-function ChangesConfirmDialogs({
+ *  panel body's JSX does not grow another conditional block. */
+export function ChangesConfirmDialogs({
   visible,
   discardTarget,
   pendingCommitPlan,
@@ -523,163 +668,6 @@ function ChangesConfirmDialogs({
     </>
   );
 }
-
-/* -------------------------------------------------------------------------- */
-
-/** Scrollable body: loading / empty placeholder, or the three file groups. */
-function ChangesBody({
-  status,
-  visible,
-  scrollElement,
-  scrollOffset,
-  pending,
-  viewMode,
-  selectedFiles,
-  onToggleSelectFile,
-  onToggleSelectDir,
-  onToggleSelectGroup,
-  stage,
-  unstage,
-  stageOne,
-  unstageOne,
-  discardRow,
-  setDiscardTarget,
-  openStagedDiff,
-  openUnstagedDiff,
-}: {
-  status: GitStatus | undefined;
-  visible: boolean;
-  scrollElement: HTMLDivElement | null;
-  scrollOffset: RefObject<number>;
-  pending: Record<string, true>;
-  viewMode: "flat" | "tree";
-  selectedFiles: Set<string>;
-  onToggleSelectFile: (path: string) => void;
-  onToggleSelectDir: (paths: string[]) => void;
-  onToggleSelectGroup: (paths: string[]) => void;
-  stage: (files: string[]) => void;
-  unstage: (files: string[]) => void;
-  stageOne: (file: string) => void;
-  unstageOne: (file: string) => void;
-  discardRow: (file: string) => void;
-  setDiscardTarget: (target: string[] | null) => void;
-  openStagedDiff: (file: string) => void;
-  openUnstagedDiff: (file: string) => void;
-}) {
-  const { t } = useTranslation();
-  if (!status) return <ChangesPlaceholder text={t("common.loading")} />;
-  const total = status.staged.length + status.unstaged.length + status.untracked.length;
-  if (total === 0) return <ChangesPlaceholder text={t("git.noChanges")} />;
-  return (
-    <>
-      <ChangesSummary status={status} selectedCount={selectedFiles.size} />
-      <GroupSection
-        visible={visible}
-        scrollElement={scrollElement}
-        scrollOffset={scrollOffset}
-        title={t("git.staged")}
-        entries={status.staged}
-        viewMode={viewMode}
-        selectedFiles={selectedFiles}
-        onToggleSelectFile={onToggleSelectFile}
-        onToggleSelectDir={onToggleSelectDir}
-        onToggleSelectGroup={onToggleSelectGroup}
-        groupActionLabel={t("git.unstageAll")}
-        onGroupAction={unstage}
-        rowActionLabel={t("git.unstage")}
-        rowActionKind="unstage"
-        onRowAction={unstageOne}
-        onOpen={openStagedDiff}
-        actionBusy={pending.unstage === true}
-      />
-      <GroupSection
-        visible={visible}
-        scrollElement={scrollElement}
-        scrollOffset={scrollOffset}
-        title={t("git.unstaged")}
-        entries={status.unstaged}
-        viewMode={viewMode}
-        selectedFiles={selectedFiles}
-        onToggleSelectFile={onToggleSelectFile}
-        onToggleSelectDir={onToggleSelectDir}
-        onToggleSelectGroup={onToggleSelectGroup}
-        groupActionLabel={t("git.stageAll")}
-        onGroupAction={stage}
-        rowActionLabel={t("git.stage")}
-        rowActionKind="stage"
-        onRowAction={stageOne}
-        rowDiscardLabel={t("git.discard")}
-        onRowDiscard={discardRow}
-        groupDiscardLabel={t("git.discardAll")}
-        onGroupDiscard={setDiscardTarget}
-        onOpen={openUnstagedDiff}
-        actionBusy={pending.stage === true}
-      />
-      <GroupSection
-        visible={visible}
-        scrollElement={scrollElement}
-        scrollOffset={scrollOffset}
-        title={t("git.untracked")}
-        entries={status.untracked}
-        viewMode={viewMode}
-        selectedFiles={selectedFiles}
-        onToggleSelectFile={onToggleSelectFile}
-        onToggleSelectDir={onToggleSelectDir}
-        onToggleSelectGroup={onToggleSelectGroup}
-        groupActionLabel={t("git.stageAll")}
-        onGroupAction={stage}
-        rowActionLabel={t("git.stage")}
-        rowActionKind="stage"
-        onRowAction={stageOne}
-        rowDiscardLabel={t("git.discard")}
-        onRowDiscard={discardRow}
-        groupDiscardLabel={t("git.discardAll")}
-        onGroupDiscard={setDiscardTarget}
-        onOpen={openUnstagedDiff}
-        actionBusy={pending.stage === true}
-        isNew
-      />
-    </>
-  );
-}
-
-/** Centered loading / no-changes placeholder. */
-function ChangesPlaceholder({ text }: { text: string }) {
-  return (
-    <div className="flex h-full items-center justify-center p-4">
-      <p className="text-body-medium text-text-tertiary">{text}</p>
-    </div>
-  );
-}
-
-const ChangesSummary = memo(function ChangesSummary({
-  status,
-  selectedCount,
-}: {
-  status: GitStatus;
-  selectedCount: number;
-}) {
-  const { t } = useTranslation();
-  const all = [...status.staged, ...status.unstaged, ...status.untracked];
-  const adds = all.reduce((n, f) => n + (f.additions ?? 0), 0);
-  const dels = all.reduce((n, f) => n + (f.deletions ?? 0), 0);
-  return (
-    <div className="sticky top-0 z-20 flex items-center justify-between border-b border-separator-border bg-background-primary-default px-3 py-2">
-      <div className="flex items-center gap-1.5">
-        <span className="text-body-medium text-text-primary">
-          {all.length} {t("git.uncommittedChanges")}
-        </span>
-        <span className="text-xs text-state-success-text">+{adds}</span>
-        <span className="text-xs text-text-error-primary">−{dels}</span>
-      </div>
-      {selectedCount > 0 && (
-        <span className="text-xs font-medium text-text-secondary">
-          {t("git.selectedCount", { count: selectedCount })}
-        </span>
-      )}
-    </div>
-  );
-});
 
 interface GroupSectionProps {
   visible: boolean;

@@ -278,6 +278,9 @@ function RepoHeaderRow({
   const { t } = useTranslation();
   const Icon = expanded ? FolderOpen : FolderSymlink;
   const collapseLabel = expanded ? t("chat.collapseWorkspace") : t("chat.expandWorkspace");
+  // 工作区多目录:主目录 + 附加根。只有多于一个时才显示多根标识,单目录
+  // 行与旧行为一致(不多一个 chip)。
+  const rootCount = 1 + (repo.roots?.length ?? 0);
   return (
     <div
       onContextMenu={onContextMenu}
@@ -347,6 +350,14 @@ function RepoHeaderRow({
         {repo.labelSuffix && (
           <span className="ws-label-badge ml-1.5 shrink-0">
             {repo.labelSuffix}
+          </span>
+        )}
+        {rootCount > 1 && (
+          <span
+            className="ml-1.5 shrink-0 rounded-sm bg-background-tertiary-default px-1 py-px text-caption-2-medium text-text-tertiary"
+            title={t("chat.multiRootBadgeTooltip", { count: rootCount })}
+          >
+            {t("chat.multiRootBadge", { count: rootCount })}
           </span>
         )}
       </button>

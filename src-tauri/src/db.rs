@@ -149,6 +149,120 @@ impl Db {
             .map_err(|e| e.to_string())?;
         Ok(())
     }
+
+    /// 附加根(工作区多目录):某工作区除主目录之外的登记目录,sort_order
+    /// 升序(NULL 视为 0,与写入顺序一致)。不含主目录 `workspaces.path`。
+    pub fn workspace_extra_roots(&self, workspace_id: &str) -> Result<Vec<String>, String> {
+        let conn = self.0.lock();
+        let mut stmt = conn
+            .prepare(
+                "SELECT path FROM workspace_roots WHERE workspace_id=?1
+                 ORDER BY sort_order IS NULL, sort_order, path",
+            )
+            .map_err(|e| e.to_string())?;
+        let rows = stmt
+            .query_map(rusqlite::params![workspace_id], |r| r.get::<_, String>(0))
+            .map_err(|e| e.to_string())?;
+        let mut out = Vec::new();
+        for row in rows {
+            match row {
+                Ok(path) => out.push(path),
+                Err(e) => eprintln!("[db] skipping undecodable workspace_roots row: {e}"),
+            }
+        }
+        Ok(out)
+    }
+
+    /// 全部根路径:每个工作区的主目录 ∪ 其附加根,主目录在前、按登记顺序去重。
+    /// 文件系统硬边界与引擎目录注入用它,而会话归属仍只认主目录。
+    pub fn all_workspace_root_paths(&self) -> Result<Vec<String>, String> {
+        let conn = self.0.lock();
+        let mut out: Vec<String> = Vec::new();
+        let mut seen: HashSet<String> = HashSet::new();
+        {
+            let mut stmt = conn
+                .prepare(
+                    "SELECT w.path, r.path FROM workspaces w
+                     LEFT JOIN workspace_roots r ON r.workspace_id = w.id
+                     ORDER BY w.sort_order IS NULL, w.sort_order,
+                              r.sort_order IS NULL, r.sort_order, r.path",
+                )
+                .map_err(|e| e.to_string())?;
+            let rows = stmt
+                .query_map([], |r| {
+                    Ok((r.get::<_, String>(0)?, r.get::<_, Option<String>>(1)?))
+                })
+                .map_err(|e| e.to_string())?;
+            for row in rows {
+                let (main, extra) = match row {
+                    Ok(v) => v,
+                    Err(e) => {
+                        eprintln!("[db] skipping undecodable workspace root row: {e}");
+                        continue;
+                    }
+                };
+                if seen.insert(main.clone()) {
+                    out.push(main);
+                }
+                if let Some(extra) = extra {
+                    if seen.insert(extra.clone()) {
+                        out.push(extra);
+                    }
+                }
+            }
+        }
+        Ok(out)
+    }
+
+    /// 按工作区主目录路径取该工作区的附加根。发送路径只有 `workspace_path`,
+    /// 没有 workspace_id,这里按 `workspaces.path` 反查 id 再取附加根;路径未
+    /// 登记或查询失败都退化为空表(引擎注入因此仅剩 granted_roots),不因查询
+    /// 失败拒绝发送。含主目录之外的附加根,顺序同 `workspace_extra_roots`。
+    pub fn workspace_extra_roots_for_path(&self, path: &str) -> Result<Vec<String>, String> {
+        let conn = self.0.lock();
+        let id: Option<String> = conn
+            .query_row("SELECT id FROM workspaces WHERE path=?1", [path], |row| {
+                row.get(0)
+            })
+            .optional()
+            .map_err(|e| e.to_string())?;
+        drop(conn);
+        match id {
+            Some(id) => self.workspace_extra_roots(&id),
+            None => Ok(Vec::new()),
+        }
+    }
+
+    /// 登记一个附加根。重复登记幂等(主键冲突忽略)。返回 false 表示行已存在。
+    pub fn add_workspace_root(&self, workspace_id: &str, path: &str) -> Result<bool, String> {
+        let conn = self.0.lock();
+        let next: i64 = conn
+            .query_row(
+                "SELECT COALESCE(MAX(sort_order), -1) + 1 FROM workspace_roots WHERE workspace_id=?1",
+                rusqlite::params![workspace_id],
+                |r| r.get(0),
+            )
+            .map_err(|e| e.to_string())?;
+        let changed = conn
+            .execute(
+                "INSERT OR IGNORE INTO workspace_roots(workspace_id, path, sort_order)
+                 VALUES(?1, ?2, ?3)",
+                rusqlite::params![workspace_id, path, next],
+            )
+            .map_err(|e| e.to_string())?;
+        Ok(changed > 0)
+    }
+
+    /// 移除一个附加根;不存在时同样是幂等 no-op。
+    pub fn remove_workspace_root(&self, workspace_id: &str, path: &str) -> Result<(), String> {
+        let conn = self.0.lock();
+        conn.execute(
+            "DELETE FROM workspace_roots WHERE workspace_id=?1 AND path=?2",
+            rusqlite::params![workspace_id, path],
+        )
+        .map_err(|e| e.to_string())?;
+        Ok(())
+    }
     /// Per-plugin KV value (plugins::plugin_storage_get). Stored as JSON text;
     /// a corrupt row surfaces as an error instead of a silent `None` so the
     /// plugin host notices instead of losing state quietly.
@@ -792,6 +906,15 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
         CREATE TABLE IF NOT EXISTS granted_roots(
             path TEXT PRIMARY KEY,
             granted_at INTEGER NOT NULL
+        );
+        -- 附加根(工作区多目录):每个工作区除主目录(workspaces.path)之外
+        -- 用户显式登记并冻结进文件系统边界的目录。主目录恒为 workspaces.path,
+        -- 本表只承载「附加」的部分,不参与会话绑定与引擎 cwd 的单值语义。
+        CREATE TABLE IF NOT EXISTS workspace_roots(
+            workspace_id TEXT NOT NULL,
+            path TEXT NOT NULL,
+            sort_order INTEGER,
+            PRIMARY KEY(workspace_id, path)
         );
         CREATE TABLE IF NOT EXISTS web_devices(
             id TEXT PRIMARY KEY,
@@ -1604,5 +1727,127 @@ mod tests {
         assert!(plain.get("gitBranch").is_none());
         assert!(plain.get("gitHead").is_none());
         assert!(plain.get("dirty").is_none());
+    }
+
+    fn insert_workspace(db: &Db, id: &str, path: &str, sort_order: i64) {
+        db.0.lock()
+            .execute(
+                "INSERT INTO workspaces(id, path, name, sort_order) VALUES(?1, ?2, ?3, ?4)",
+                rusqlite::params![id, path, id, sort_order],
+            )
+            .unwrap();
+    }
+
+    #[test]
+    fn workspace_extra_roots_add_list_remove_round_trip() {
+        let scratch = Scratch::new();
+        let db = Db::open_at(&scratch.path("app.db")).unwrap();
+        insert_workspace(&db, "w1", "/ws/one", 0);
+
+        assert!(db.workspace_extra_roots("w1").unwrap().is_empty());
+        assert!(db.add_workspace_root("w1", "/ws/extra-a").unwrap());
+        assert!(db.add_workspace_root("w1", "/ws/extra-b").unwrap());
+        assert_eq!(
+            db.workspace_extra_roots("w1").unwrap(),
+            vec!["/ws/extra-a".to_string(), "/ws/extra-b".to_string()],
+            "registration order is preserved"
+        );
+
+        db.remove_workspace_root("w1", "/ws/extra-a").unwrap();
+        assert_eq!(
+            db.workspace_extra_roots("w1").unwrap(),
+            vec!["/ws/extra-b".to_string()]
+        );
+        // Removing an absent root is a no-op, not an error.
+        db.remove_workspace_root("w1", "/ws/never-added").unwrap();
+    }
+
+    #[test]
+    fn add_workspace_root_is_idempotent() {
+        let scratch = Scratch::new();
+        let db = Db::open_at(&scratch.path("app.db")).unwrap();
+        insert_workspace(&db, "w1", "/ws/one", 0);
+
+        assert!(db.add_workspace_root("w1", "/ws/extra").unwrap());
+        assert!(
+            !db.add_workspace_root("w1", "/ws/extra").unwrap(),
+            "a duplicate insert reports no change"
+        );
+        assert_eq!(db.workspace_extra_roots("w1").unwrap().len(), 1);
+    }
+
+    #[test]
+    fn all_workspace_root_paths_puts_main_first_and_dedupes() {
+        let scratch = Scratch::new();
+        let db = Db::open_at(&scratch.path("app.db")).unwrap();
+        // Ordering follows workspaces.sort_order, not insertion order.
+        insert_workspace(&db, "w2", "/ws/two", 1);
+        insert_workspace(&db, "w1", "/ws/one", 0);
+        db.add_workspace_root("w1", "/ws/one-extra").unwrap();
+        // A root that duplicates another workspace's main dir collapses.
+        db.add_workspace_root("w1", "/ws/two").unwrap();
+        db.add_workspace_root("w1", "/ws/one-extra").unwrap(); // idempotent
+
+        assert_eq!(
+            db.all_workspace_root_paths().unwrap(),
+            vec![
+                "/ws/one".to_string(),
+                "/ws/one-extra".to_string(),
+                "/ws/two".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn removing_workspace_cascades_roots_in_reader_blocking() {
+        let scratch = Scratch::new();
+        let db = Db::open_at(&scratch.path("app.db")).unwrap();
+        insert_workspace(&db, "w1", "/ws/one", 0);
+        insert_workspace(&db, "w2", "/ws/two", 1);
+        db.add_workspace_root("w1", "/ws/one-extra").unwrap();
+        db.add_workspace_root("w2", "/ws/two-extra").unwrap();
+
+        crate::history::reader::remove_workspace_blocking(&db, "w1").unwrap();
+
+        assert!(
+            db.workspace_extra_roots("w1").unwrap().is_empty(),
+            "removed workspace leaves no orphan root rows"
+        );
+        assert_eq!(
+            db.workspace_extra_roots("w2").unwrap(),
+            vec!["/ws/two-extra".to_string()],
+            "another workspace's roots are untouched"
+        );
+        assert_eq!(
+            db.all_workspace_root_paths().unwrap(),
+            vec!["/ws/two".to_string(), "/ws/two-extra".to_string()]
+        );
+    }
+
+    #[test]
+    fn workspace_extra_roots_for_path_resolves_id_and_degrades_safely() {
+        let scratch = Scratch::new();
+        let db = Db::open_at(&scratch.path("app.db")).unwrap();
+        insert_workspace(&db, "w1", "/ws/one", 0);
+        insert_workspace(&db, "w2", "/ws/two", 1);
+        db.add_workspace_root("w1", "/ws/one-extra").unwrap();
+        db.add_workspace_root("w2", "/ws/two-extra").unwrap();
+
+        // The send path only has a path; it must get that workspace's roots,
+        // not the union and not another workspace's.
+        assert_eq!(
+            db.workspace_extra_roots_for_path("/ws/one").unwrap(),
+            vec!["/ws/one-extra".to_string()]
+        );
+        assert_eq!(
+            db.workspace_extra_roots_for_path("/ws/two").unwrap(),
+            vec!["/ws/two-extra".to_string()]
+        );
+        // Unregistered path degrades to an empty list instead of erroring (the
+        // launch keeps granted_roots rather than refusing to send).
+        assert!(db
+            .workspace_extra_roots_for_path("/ws/never-registered")
+            .unwrap()
+            .is_empty());
     }
 }

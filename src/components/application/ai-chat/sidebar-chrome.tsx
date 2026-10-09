@@ -268,6 +268,8 @@ export function SidebarContextMenus({
   onSetWorkspaceArchived,
   onNewWorktree,
   onDeleteWorktree,
+  onAddWorkspaceRoot,
+  onRemoveWorkspaceRoot,
   onCreateGroup,
   onThreadAction,
   onCopyThreadId,
@@ -284,6 +286,9 @@ export function SidebarContextMenus({
   onNewWorktree?: (workspaceId: string) => void;
   /** worktree 子行菜单「删除 Worktree…」。 */
   onDeleteWorktree?: (workspaceId: string) => void;
+  /** 工作区多目录:附加根的「添加目录…」/「移除目录…」。 */
+  onAddWorkspaceRoot?: (workspaceId: string) => void;
+  onRemoveWorkspaceRoot?: (workspaceId: string) => void;
   onCreateGroup?: () => void;
   onThreadAction?: (id: string, action: ThreadAction) => void;
   onCopyThreadId?: (id: string) => void;
@@ -301,6 +306,8 @@ export function SidebarContextMenus({
           onSetArchived={onSetWorkspaceArchived}
           onNewWorktree={onNewWorktree}
           onDeleteWorktree={onDeleteWorktree}
+          onAddRoot={onAddWorkspaceRoot}
+          onRemoveRoot={onRemoveWorkspaceRoot}
         />
       )}
       {blankMenu && onCreateGroup && (

@@ -647,6 +647,17 @@ it("收起的 worktree 子行聚合显示运行中状态点，展开后让位给
   expect(threadDot?.classList.contains("sidebar-thread-status-processing")).toBe(true);
 });
 
+/** 工作区多目录:侧栏行的多根标识。单目录不显示,多目录显示「N 个目录」。 */
+it("多根工作区行显示多根标识,单根行不显示", async () => {
+  await render([
+    { id: "single", label: "single", threads: [], roots: [] },
+    { id: "multi", label: "multi", threads: [], roots: ["/ws/extra"] },
+  ]);
+  const multiRow = rowFor("multi");
+  expect(multiRow.textContent).toContain("chat.multiRootBadge");
+  expect(rowFor("single").textContent).not.toContain("chat.multiRootBadge");
+});
+
 /** The innermost disclosure region holding the worktree child rows. */
 function worktreeDisclosure(): HTMLElement {
   const regions = [...node.querySelectorAll<HTMLElement>('div[class*="grid-rows-"]')]

@@ -3,6 +3,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { workspaceMenuRegistry, type Disposer } from "@ccgui/plugin-sdk";
 import i18n from "@/lib/i18n";
+import { useChatStore } from "@/features/chat/store";
 import { WorkspaceContextMenu } from "./workspace-context-menu";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -157,5 +158,104 @@ describe("workspace menu plugin isolation", () => {
 
     expect(document.querySelector('[role="menu"]')).toBeNull();
     expect(closed).toBe(true);
+  });
+});
+
+/** 工作区多目录:右键菜单的「添加目录…」/「移除目录…」。移除入口只在确有
+ *  附加根时出现——主目录恒不可移除,不给用户留点了报错的空入口。 */
+describe("workspace menu multi-root entries", () => {
+  const menu = { x: 10, y: 10, workspaceId: "menu-workspace", archived: false };
+  let container: HTMLDivElement;
+  let root: Root;
+
+  beforeEach(() => {
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+  });
+
+  afterEach(() => {
+    act(() => root.unmount());
+    container.remove();
+    useChatStore.setState({ workspaces: [] });
+  });
+
+  function setWorkspace(roots: string[]) {
+    useChatStore.setState({
+      workspaces: [
+        {
+          id: "menu-workspace",
+          path: "/ws/main",
+          name: "main",
+          lastOpenedAt: null,
+          sortOrder: 0,
+          groupId: null,
+          roots,
+        } as never,
+      ],
+    });
+  }
+
+  function menuItems(): HTMLButtonElement[] {
+    return [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')];
+  }
+  function item(label: string) {
+    return menuItems().find((b) => b.textContent === label);
+  }
+
+  it("有附加根时同时提供「添加目录…」与「移除目录…」", () => {
+    setWorkspace(["/ws/extra"]);
+    const onAddRoot = vi.fn();
+    const onRemoveRoot = vi.fn();
+    act(() =>
+      root.render(
+        <WorkspaceContextMenu
+          menu={menu}
+          onClose={() => {}}
+          onAddRoot={onAddRoot}
+          onRemoveRoot={onRemoveRoot}
+        />,
+      ),
+    );
+    const add = item(i18n.t("chat.addWorkspaceRoot"));
+    const remove = item(i18n.t("chat.removeWorkspaceRoot"));
+    expect(add).toBeDefined();
+    expect(remove).toBeDefined();
+    act(() => add!.click());
+    expect(onAddRoot).toHaveBeenCalledWith("menu-workspace");
+    act(() => remove!.click());
+    expect(onRemoveRoot).toHaveBeenCalledWith("menu-workspace");
+  });
+
+  it("单目录工作区只有「添加目录…」,没有可移除项", () => {
+    setWorkspace([]);
+    act(() =>
+      root.render(
+        <WorkspaceContextMenu
+          menu={menu}
+          onClose={() => {}}
+          onAddRoot={() => {}}
+          onRemoveRoot={() => {}}
+        />,
+      ),
+    );
+    expect(item(i18n.t("chat.addWorkspaceRoot"))).toBeDefined();
+    expect(item(i18n.t("chat.removeWorkspaceRoot"))).toBeUndefined();
+  });
+
+  it("归档行不提供附加根增删入口(仅取消归档)", () => {
+    setWorkspace(["/ws/extra"]);
+    act(() =>
+      root.render(
+        <WorkspaceContextMenu
+          menu={{ ...menu, archived: true }}
+          onClose={() => {}}
+          onAddRoot={() => {}}
+          onRemoveRoot={() => {}}
+        />,
+      ),
+    );
+    expect(item(i18n.t("chat.addWorkspaceRoot"))).toBeUndefined();
+    expect(item(i18n.t("chat.removeWorkspaceRoot"))).toBeUndefined();
   });
 });

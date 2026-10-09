@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
 import Archive from "lucide-react/dist/esm/icons/archive";
 import ArchiveRestore from "lucide-react/dist/esm/icons/archive-restore";
+import FolderMinus from "lucide-react/dist/esm/icons/folder-minus";
 import FolderOpen from "lucide-react/dist/esm/icons/folder-open";
 import FolderPlus from "lucide-react/dist/esm/icons/folder-plus";
 import GitBranchPlus from "lucide-react/dist/esm/icons/git-branch-plus";
@@ -56,6 +57,10 @@ interface WorkspaceMenuEntriesOptions {
   onSetArchived?: (workspaceId: string, archived: boolean) => void;
   onNewWorktree?: (workspaceId: string) => void;
   onDeleteWorktree?: (workspaceId: string) => void;
+  /** 工作区多目录:「添加目录…」——打开目录选择器登记附加根。 */
+  onAddRoot?: (workspaceId: string) => void;
+  /** 工作区多目录:「移除目录…」——打开附加根选择对话框。 */
+  onRemoveRoot?: (workspaceId: string) => void;
 }
 
 /** Builds the row menu: worktree rows get reveal/delete, plain rows get the
@@ -70,8 +75,31 @@ function buildWorkspaceMenuEntries({
   onSetArchived,
   onNewWorktree,
   onDeleteWorktree,
+  onAddRoot,
+  onRemoveRoot,
 }: WorkspaceMenuEntriesOptions): (ContextMenuEntry | "separator")[] {
   const entries: (ContextMenuEntry | "separator")[] = [];
+  // 工作区多目录:附加根的增删入口。归档行(只用于取消归档)不提供;worktree
+  // 子行的目录由主仓库派生,也不在这里加根。移除入口仅在确有附加根时展示
+  // ——主目录恒不可移除,不给用户留一个点了报错的空入口。
+  if (workspace && !isWorktree && !menu.archived) {
+    if (onAddRoot) {
+      entries.push({
+        id: "add-root",
+        label: t("chat.addWorkspaceRoot"),
+        icon: <FolderPlus className="size-4" aria-hidden />,
+        onSelect: () => onAddRoot(menu.workspaceId),
+      });
+    }
+    if (onRemoveRoot && (workspace.roots ?? []).length > 0) {
+      entries.push({
+        id: "remove-root",
+        label: t("chat.removeWorkspaceRoot"),
+        icon: <FolderMinus className="size-4" aria-hidden />,
+        onSelect: () => onRemoveRoot(menu.workspaceId),
+      });
+    }
+  }
   if (onNewWorktree && workspace) {
     entries.push({
       id: "new-worktree",
@@ -206,6 +234,8 @@ export function WorkspaceContextMenu({
   onSetArchived,
   onNewWorktree,
   onDeleteWorktree,
+  onAddRoot,
+  onRemoveRoot,
 }: {
   menu: WorkspaceMenuState;
   onClose: () => void;
@@ -213,6 +243,10 @@ export function WorkspaceContextMenu({
   onSetArchived?: (workspaceId: string, archived: boolean) => void;
   onNewWorktree?: (workspaceId: string) => void;
   onDeleteWorktree?: (workspaceId: string) => void;
+  /** 工作区多目录:登记附加根(打开目录选择器)。 */
+  onAddRoot?: (workspaceId: string) => void;
+  /** 工作区多目录:移除附加根(打开选择对话框)。 */
+  onRemoveRoot?: (workspaceId: string) => void;
 }) {
   const { t } = useTranslation();
   // Worktree 子行与普通行共用此菜单：worktree 行多出「在访达中显示」
@@ -238,6 +272,8 @@ export function WorkspaceContextMenu({
     onSetArchived,
     onNewWorktree,
     onDeleteWorktree,
+    onAddRoot,
+    onRemoveRoot,
   });
   const extensions = buildExtensionEntries(extensionDefs, target);
   const entries: (ContextMenuEntry | "separator")[] =

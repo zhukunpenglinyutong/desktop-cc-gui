@@ -76,7 +76,7 @@ pub(crate) fn canonicalize_lenient(path: &Path) -> Result<PathBuf, String> {
 /// would otherwise be an arbitrary-filesystem primitive.
 fn allowed_roots(db: &crate::db::Db) -> Vec<PathBuf> {
     let mut roots: Vec<PathBuf> = db
-        .workspace_paths()
+        .all_workspace_root_paths()
         .unwrap_or_default()
         .iter()
         .chain(db.granted_roots().unwrap_or_default().iter())
@@ -682,5 +682,49 @@ mod tests {
         assert!(!filtered.iter().any(|e| e.rel == "release/app.exe"));
         let all = list_file_index_blocking(&db, &root, true).unwrap();
         assert!(all.iter().any(|e| e.rel == "release/app.exe"));
+    }
+
+    #[test]
+    fn extra_workspace_root_enters_the_hard_boundary_and_is_writable() {
+        let main = Scratch::new();
+        let extra = Scratch::new();
+        let db = crate::db::Db::open_at(&main.0.join("test.db")).unwrap();
+        let main_path = main.0.to_string_lossy().to_string();
+        let extra_path = extra.0.to_string_lossy().to_string();
+        // `state.workspaces.add` derives the id from a UUID; for the test a
+        // fixed id is enough so the send path's by-path lookup resolves.
+        db.0.lock()
+            .execute(
+                "INSERT INTO workspaces(id, path, name) VALUES('w1', ?1, 'main')",
+                [&main_path],
+            )
+            .unwrap();
+
+        // Before registration the extra root is outside the boundary.
+        let inside_extra = extra.0.join("notes.txt");
+        let err = ensure_allowed(&inside_extra.to_string_lossy(), &db).unwrap_err();
+        assert!(err.starts_with("path is outside the registered workspaces"));
+
+        // Registering it as an 附加根 widens the boundary (main ∪ extra),
+        // because allowed_roots now reads all_workspace_root_paths().
+        db.add_workspace_root("w1", &extra_path).unwrap();
+        let resolved = ensure_allowed(&inside_extra.to_string_lossy(), &db).unwrap();
+        assert!(resolved.starts_with(std::fs::canonicalize(&extra.0).unwrap()));
+
+        // 附加根与主目录读写对等: writing the file succeeds and round-trips.
+        std::fs::write(&resolved, b"hello").unwrap();
+        assert_eq!(std::fs::read(&resolved).unwrap(), b"hello");
+        // The main directory stays writable too (no read-only regression).
+        let inside_main = main.0.join("main.txt");
+        std::fs::write(
+            ensure_allowed(&inside_main.to_string_lossy(), &db).unwrap(),
+            b"m",
+        )
+        .unwrap();
+
+        // Removing the root restores confinement for the extra tree.
+        db.remove_workspace_root("w1", &extra_path).unwrap();
+        let err = ensure_allowed(&inside_extra.to_string_lossy(), &db).unwrap_err();
+        assert!(err.starts_with("path is outside the registered workspaces"));
     }
 }

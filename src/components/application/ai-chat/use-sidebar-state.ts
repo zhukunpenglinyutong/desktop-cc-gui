@@ -150,6 +150,8 @@ export function useExpandedWorkspaces(allRepos: AiChatRepo[], activeThreadId?: s
 export function useWorkspaceMenu(
   onWorkspaceAlias?: (id: string) => void,
   onSetWorkspaceArchived?: (id: string, archived: boolean) => void,
+  onAddRoot?: (id: string) => void,
+  onRemoveRoot?: (id: string) => void,
 ) {
   const [workspaceMenu, setWorkspaceMenu] = useState<WorkspaceMenuState | null>(null);
   // Registered extension entries can make the menu worth opening even when the
@@ -162,7 +164,7 @@ export function useWorkspaceMenu(
       // Foreign `visible` predicates can throw; a throwing entry counts as
       // hidden, matching what WorkspaceContextMenu ends up rendering.
       const hasEntries =
-        Boolean(onWorkspaceAlias || onSetWorkspaceArchived) ||
+        Boolean(onWorkspaceAlias || onSetWorkspaceArchived || onAddRoot || onRemoveRoot) ||
         extensionDefs.some((def) => {
           try {
             return def.visible?.(target) !== false;
@@ -174,7 +176,7 @@ export function useWorkspaceMenu(
       event.preventDefault();
       setWorkspaceMenu({ x: event.clientX, y: event.clientY, ...target });
     },
-    [extensionDefs, onWorkspaceAlias, onSetWorkspaceArchived],
+    [extensionDefs, onWorkspaceAlias, onSetWorkspaceArchived, onAddRoot, onRemoveRoot],
   );
   const openArchivedMenu = useCallback(
     (event: ReactMouseEvent<HTMLElement>, workspaceId: string) =>

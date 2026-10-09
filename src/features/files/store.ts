@@ -13,11 +13,34 @@ import {
   type RepositorySummary,
 } from "@/lib/ipc";
 import { errorText } from "@/lib/errors";
-import { writeStored } from "@/lib/storage";
+import { readStoredJson, writeStored } from "@/lib/storage";
 import { installFilesBridge, readRemoteAware } from "./remote-files";
 
+/** 旧版单根持久化键(仍读作迁移来源)。 */
 export const FILES_ROOT_KEY = "ccgui-next.filesRoot";
+/** 当前多根持久化键(JSON 字符串数组,主目录在前)。 */
+export const FILES_ROOTS_KEY = "ccgui-next.filesRoots";
 let treeGeneration = 0;
+
+/** 读回持久化的根列表:优先新键;旧单根键作为一次性迁移来源。 */
+function readStoredRoots(): string[] {
+  const stored = readStoredJson(FILES_ROOTS_KEY, (raw) =>
+    Array.isArray(raw) ? raw.filter((v): v is string => typeof v === "string") : null,
+  );
+  if (stored) return stored;
+  const legacy = localStorage.getItem(FILES_ROOT_KEY);
+  return legacy ? [legacy] : [];
+}
+
+function writeStoredRoots(roots: string[]) {
+  if (roots.length === 0) {
+    localStorage.removeItem(FILES_ROOTS_KEY);
+  } else {
+    writeStored(FILES_ROOTS_KEY, JSON.stringify(roots));
+  }
+  // 旧单根键不再是权威来源,避免下次启动又迁移出陈旧路径。
+  localStorage.removeItem(FILES_ROOT_KEY);
+}
 
 /** Join a directory path and a child name. Backend paths are POSIX-style on
  * macOS/Linux; Rust's fs APIs also accept "/" separators on Windows. */
@@ -52,8 +75,9 @@ export interface OpenFileState {
 }
 
 interface FilesStore {
-  /** Folder the tree is rooted at; "" = unset. Persisted to localStorage. */
-  root: string;
+  /** 工作区多目录:树的全部根,主目录在前、附加根在后。空数组 = 未设置。
+   *  单根时与旧的单 `root` 行为一致;每个根的子树并列渲染成同一棵树。 */
+  roots: string[];
   /** dirPath -> loaded children (dirs first; backend sorts). Missing = not fetched. */
   children: Record<string, DirEntry[]>;
   loadingDirs: Record<string, true>;
@@ -80,7 +104,9 @@ interface FilesStore {
   /** Folder the workspace file search is scoped to (absolute); null = closed. */
   searchRoot: string | null;
 
-  setRoot: (path: string) => void;
+  /** 设置树的全部根(主目录在前、附加根在后;去空、去重)。单根时等价于
+   *  旧 `setRoot(path)`。 */
+  setRoots: (paths: string[]) => void;
   ensureDir: (path: string) => Promise<void>;
   toggleDir: (path: string) => Promise<void>;
   /** Re-fetch a directory only if it has been loaded before. */
@@ -133,7 +159,7 @@ function dismissNonFileSurfaces() {
 }
 
 export const useFilesStore = create<FilesStore>((set, get) => ({
-  root: localStorage.getItem(FILES_ROOT_KEY) ?? "",
+  roots: readStoredRoots(),
   children: {},
   loadingDirs: {},
   dirErrors: {},
@@ -150,19 +176,24 @@ export const useFilesStore = create<FilesStore>((set, get) => ({
   clipboard: null,
   searchRoot: null,
 
-  setRoot: (path) => {
-    const root = path.trim();
-    if (root === get().root) return;
-    treeGeneration += 1;
-    if (root) {
-      writeStored(FILES_ROOT_KEY, root);
-    } else {
-      localStorage.removeItem(FILES_ROOT_KEY);
+  setRoots: (paths) => {
+    // 去空白、去重(保序:主目录在前、附加根在后)。
+    const seen = new Set<string>();
+    const roots: string[] = [];
+    for (const p of paths) {
+      const trimmed = p.trim();
+      if (!trimmed || seen.has(trimmed)) continue;
+      seen.add(trimmed);
+      roots.push(trimmed);
     }
+    const current = get().roots;
+    if (roots.length === current.length && roots.every((r, i) => r === current[i])) return;
+    treeGeneration += 1;
+    writeStoredRoots(roots);
     // Open file tabs survive root (workspace) switches — they are absolute
     // paths and stay editable regardless of which tree is shown.
     set({
-      root,
+      roots,
       refreshing: false,
       children: {},
       loadingDirs: {},
@@ -176,7 +207,8 @@ export const useFilesStore = create<FilesStore>((set, get) => ({
       // previous tree).
       searchRoot: null,
     });
-    if (root) void get().ensureDir(root);
+    // 每个根都预取顶层:所有根并列成一棵树,展开各自的下一层。
+    for (const root of roots) void get().ensureDir(root);
   },
 
   ensureDir: async (path) => {
@@ -265,11 +297,11 @@ export const useFilesStore = create<FilesStore>((set, get) => ({
   },
   refreshTree: async () => {
     const s = get();
-    if (!s.root || s.refreshing) return;
+    if (s.roots.length === 0 || s.refreshing) return;
     const generation = treeGeneration;
     set({ refreshing: true });
     try {
-      const dirs = new Set([s.root, ...Object.keys(s.children), ...Object.keys(s.expanded)]);
+      const dirs = new Set([...s.roots, ...Object.keys(s.children), ...Object.keys(s.expanded)]);
       const levels: Record<string, DirEntry[]> = {};
       await Promise.all(
         [...dirs].map(async (dir) => {

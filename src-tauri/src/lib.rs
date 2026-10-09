@@ -491,6 +491,10 @@ pub fn run() {
             history::reader::reorder_workspaces,
             history::reader::remove_workspace,
             history::reader::set_workspace_group,
+            // 工作区多目录的附加根(desktop-only,web 桥不派发)
+            history::reader::add_workspace_root,
+            history::reader::remove_workspace_root,
+            history::reader::list_workspace_roots,
             // files
             files::list_dir,
             files::read_file,

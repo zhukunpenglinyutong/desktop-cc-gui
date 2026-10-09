@@ -113,6 +113,17 @@ export const zh = {
     searchScopeContent: "内容",
     addWorkspace: "添加工作区",
     removeWorkspace: "移除工作区",
+    addWorkspaceRoot: "添加目录…",
+    removeWorkspaceRoot: "移除目录…",
+    removeWorkspaceRootTitle: "移除附加目录",
+    removeWorkspaceRootEmpty: "该工作区没有可移除的附加目录",
+    removeWorkspaceRootHint: "主目录固定不可移除，只能移除后添加的附加目录。",
+    addWorkspaceRootFailed: "添加目录失败：{{error}}",
+    removeWorkspaceRootFailed: "移除目录失败：{{error}}",
+    multiRootBadge: "{{count}} 个目录",
+    multiRootBadgeTooltip: "此工作区包含 {{count}} 个目录（主目录 + 附加目录）",
+    engineNoMultiRoot:
+      "当前引擎（{{engine}}）只使用主目录，附加目录在本会话不可读写。改用 Claude 引擎可用全部目录。",
     newGroup: "新建分组",
     inputPlaceholder: "输入消息，Enter 发送，Shift+Enter 换行，或 @引用、#智能体",
     inputPlaceholderCmdEnter: "输入消息，Cmd+Enter 发送，或 @引用、#智能体",
@@ -1275,6 +1286,8 @@ export const zh = {
     viewAsList: "切换为列表视图",
     commitWithCount: "提交 ({{count}})",
     selectedCount: "已选 {{count}} 项",
+    extraRoot: "附加根",
+    activeRoot: "当前",
   },
   worktree: {
     // 侧栏
@@ -1419,6 +1432,7 @@ export const zh = {
     tabTitle: "终端 {{index}}",
     failed: "终端启动失败：{{message}}",
     copy: "复制",
+    pickRoot: "选择终端目录",
   },
   time: {
     now: "刚刚",

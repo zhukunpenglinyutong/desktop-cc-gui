@@ -12,17 +12,25 @@ export const TERMINAL_DEFAULT_HEIGHT = 240;
 export interface TerminalTab {
   /** Globally unique; doubles as the backend PTY session key. */
   id: string;
+  /** 工作区多目录：该标签的根（主目录或附加根），决定 shell 的 cwd。单根时
+   *  恒等于工作区主目录，行为与旧的按工作区键控完全一致。 */
+  root: string;
 }
 
 interface TerminalState {
   open: boolean;
   height: number;
-  /** Tabs per workspace; each workspace's shells run in its own cwd. */
+  /**
+   * Tabs keyed by the **workspace path** (dock scope: which workspace's tabs
+   * the dock shows). 工作区多目录：单个 workspace 可含多个根，标签自身携带根
+   * `TerminalTab.root`，因而同一工作区内可按根开多个 shell。
+   */
   tabsByWorkspace: Record<string, TerminalTab[]>;
   activeByWorkspace: Record<string, string>;
   toggle: (workspacePath: string) => void;
   closePanel: () => void;
-  newTab: (workspacePath: string) => void;
+  /** 新建标签；`root` 缺省 = 主目录（首个根）。 */
+  newTab: (workspacePath: string, root?: string) => void;
   selectTab: (workspacePath: string, id: string) => void;
   closeTab: (workspacePath: string, id: string) => void;
   removeWorkspace: (workspacePath: string) => void;
@@ -65,12 +73,15 @@ export const useTerminalStore = create<TerminalState>((set, get) => ({
     set({ open: false });
   },
 
-  newTab: (workspacePath) => {
+  newTab: (workspacePath, root = workspacePath) => {
     const id = newId();
     set((s) => ({
       tabsByWorkspace: {
         ...s.tabsByWorkspace,
-        [workspacePath]: [...(s.tabsByWorkspace[workspacePath] ?? []), { id }],
+        [workspacePath]: [
+          ...(s.tabsByWorkspace[workspacePath] ?? []),
+          { id, root: root || workspacePath },
+        ],
       },
       activeByWorkspace: { ...s.activeByWorkspace, [workspacePath]: id },
     }));

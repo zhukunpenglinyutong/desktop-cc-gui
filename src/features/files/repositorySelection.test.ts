@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   isWithinDirectory,
   resolveSelectedRepository,
+  resolveSelectedRoot,
   resolveWorkspaceRepository,
 } from "./repositorySelection";
 
@@ -107,5 +108,73 @@ describe("isWithinDirectory", () => {
     expect(isWithinDirectory("S:/a/repo", "S:/a/repo/src")).toBe(true);
     expect(isWithinDirectory("S:/a/repo", "S:/a/repo-other")).toBe(false);
     expect(isWithinDirectory("S:/a/repo/", "S:/a/repo")).toBe(true);
+  });
+});
+
+describe("resolveSelectedRoot (多根)", () => {
+  const PRIMARY = "S:/ws";
+  const EXTRA = "S:/ws-extra";
+
+  it("缺省 roots 时等于单根边界（主目录内命中，外部为 null）", () => {
+    expect(resolveSelectedRoot({ selectedPath: `${PRIMARY}/src`, repositoryRoots: [], workspacePath: PRIMARY })).toBe(PRIMARY);
+    expect(resolveSelectedRoot({ selectedPath: `${EXTRA}/src`, repositoryRoots: [], workspacePath: PRIMARY })).toBeNull();
+  });
+
+  it("多根时返回包含选择的最深根", () => {
+    expect(
+      resolveSelectedRoot({
+        selectedPath: `${EXTRA}/src/main.ts`,
+        repositoryRoots: [],
+        workspacePath: PRIMARY,
+        roots: [PRIMARY, EXTRA],
+      }),
+    ).toBe(EXTRA);
+    expect(
+      resolveSelectedRoot({
+        selectedPath: PRIMARY,
+        repositoryRoots: [],
+        workspacePath: PRIMARY,
+        roots: [PRIMARY, EXTRA],
+      }),
+    ).toBe(PRIMARY);
+  });
+});
+
+describe("resolveSelectedRepository (多根)", () => {
+  const PRIMARY = "S:/ws";
+  const EXTRA = "S:/ws-extra";
+
+  it("附加根内的普通文件返回 null（由该根分组自身展示，不额外指向）", () => {
+    expect(
+      resolveSelectedRepository({
+        selectedPath: `${EXTRA}/src/main.rs`,
+        repositoryRoots: [EXTRA],
+        workspacePath: PRIMARY,
+        roots: [PRIMARY, EXTRA],
+      }),
+    ).toBeNull();
+  });
+
+  it("附加根自身被选中时返回 null（由该根分组自己展示）", () => {
+    expect(
+      resolveSelectedRepository({
+        selectedPath: EXTRA,
+        repositoryRoots: [EXTRA],
+        workspacePath: PRIMARY,
+        roots: [PRIMARY, EXTRA],
+      }),
+    ).toBeNull();
+  });
+
+  it("多根下的嵌套仓库仍解析到最深仓库", () => {
+    const nested = `${EXTRA}/nested`;
+    expect(
+      resolveSelectedRepository({
+        selectedPath: `${nested}/a.ts`,
+        repositoryRoots: [nested],
+        workspacePath: PRIMARY,
+        roots: [PRIMARY, EXTRA],
+      }),
+    ).toBe(nested);
   });
 });

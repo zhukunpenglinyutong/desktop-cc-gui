@@ -43,33 +43,58 @@ export interface RepositorySelectionInput {
   selectedPath: string | null;
   /** Repository root paths (file store `repositories` keys). */
   repositoryRoots: readonly string[];
-  /** Active workspace path — the outer boundary of the walk. */
+  /** Active workspace path — the primary root and the fallback Git path. */
   workspacePath: string;
+  /** 工作区全部根（主目录在前、附加根在后）。缺省 = 仅主目录 `workspacePath`，
+   *  与旧的单根行为完全一致。 */
+  roots?: readonly string[];
+}
+
+/** The roots that bound the upward walk; defaults to the single primary. */
+function boundaryRoots(input: RepositorySelectionInput): readonly string[] {
+  return input.roots && input.roots.length > 0 ? input.roots : [input.workspacePath];
+}
+
+/**
+ * The root (from `roots`, deepest first) that contains the selection, or null.
+ * Used to decide which root's Git group a file-tree selection belongs to when
+ * a workspace has multiple roots.
+ */
+export function resolveSelectedRoot(input: RepositorySelectionInput): string | null {
+  const { selectedPath } = input;
+  if (!selectedPath) return null;
+  let best: string | null = null;
+  for (const root of boundaryRoots(input)) {
+    if (!isWithinDirectory(root, selectedPath)) continue;
+    if (!best || normalize(root).length > normalize(best).length) best = root;
+  }
+  return best;
 }
 
 /**
  * Deepest repository root containing the selection, verbatim from
  * `repositoryRoots` (so it can be used as an IPC key). Null when nothing is
- * selected, the selection lies outside the workspace (stale tree state from
- * another workspace), or the deepest hit is the workspace root itself — the
- * workspace-root case is what the default workspace status already shows.
+ * selected, the selection lies outside every root (stale tree state from
+ * another workspace), or the deepest hit is a root itself — a root's own
+ * repository status is what that root's default Git group already shows.
  */
 export function resolveSelectedRepository(
   input: RepositorySelectionInput,
 ): string | null {
-  const { selectedPath, repositoryRoots, workspacePath } = input;
+  const { selectedPath, repositoryRoots } = input;
   if (!selectedPath) return null;
   // Guard against stale tree state: the files store keeps the previous
   // workspace's selection until its panel re-mounts.
-  if (!isWithinDirectory(workspacePath, selectedPath)) return null;
+  const boundary = resolveSelectedRoot(input);
+  if (boundary === null) return null;
   const roots: Record<string, string> = {};
   for (const p of repositoryRoots) roots[normalize(p)] = p;
   let candidate = selectedPath;
   let previous = "";
-  while (isWithinDirectory(workspacePath, candidate)) {
+  while (isWithinDirectory(boundary, candidate)) {
     if (candidate !== previous) {
       const hit = roots[normalize(candidate)];
-      if (hit && !isWithinDirectory(hit, workspacePath)) return hit;
+      if (hit && normalize(hit) !== normalize(boundary)) return hit;
       previous = candidate;
     }
     const next = parentDirectory(candidate);

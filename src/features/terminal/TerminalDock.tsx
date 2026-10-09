@@ -1,9 +1,16 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import ChevronDown from "lucide-react/dist/esm/icons/chevron-down";
 import Plus from "lucide-react/dist/esm/icons/plus";
 import X from "lucide-react/dist/esm/icons/x";
 import { cx } from "@/utils/cx";
+import {
+  Dropdown,
+  DropdownItem,
+  DropdownPopover,
+  DropdownTrigger,
+} from "@/components/base/dropdown/dropdown";
+import { workspaceRootList } from "@/lib/workspace-roots";
 import { TERMINAL_MAX_HEIGHT, TERMINAL_MIN_HEIGHT, useTerminalStore } from "./store";
 import { TerminalView } from "./TerminalView";
 
@@ -14,11 +21,19 @@ const HEADER_BUTTON_CLASSES = cx(
 );
 
 /**
- * Bottom dock: tab strip + one PTY-backed shell per tab, shells running in
- * the active workspace. Height drags commit through the store once per
- * animation frame; storage persistence is debounced inside the store.
+ * Bottom dock: tab strip + one PTY-backed shell per tab, shells running in the
+ * active workspace. 工作区多目录：新建标签可选择根（`roots`，默认主目录），
+ * 每个标签记下自己的根作为 shell 的 cwd。Height drags commit through the store
+ * once per animation frame; storage persistence is debounced inside the store.
  */
-export function TerminalDock({ workspacePath }: { workspacePath: string }) {
+export function TerminalDock({
+  workspacePath,
+  roots,
+}: {
+  workspacePath: string;
+  /** 工作区全部根（主目录在前、附加根在后）；缺省 = 仅主目录。 */
+  roots?: readonly string[];
+}) {
   const { t } = useTranslation();
   const open = useTerminalStore((s) => s.open);
   const height = useTerminalStore((s) => s.height);
@@ -29,6 +44,12 @@ export function TerminalDock({ workspacePath }: { workspacePath: string }) {
   const selectTab = useTerminalStore((s) => s.selectTab);
   const closeTab = useTerminalStore((s) => s.closeTab);
   const setHeight = useTerminalStore((s) => s.setHeight);
+
+  const rootList = useMemo(
+    () => workspaceRootList(workspacePath, roots),
+    [workspacePath, roots],
+  );
+  const [rootPickerOpen, setRootPickerOpen] = useState(false);
 
   const [dragging, setDragging] = useState(false);
   const dragStartY = useRef(0);
@@ -47,10 +68,11 @@ export function TerminalDock({ workspacePath }: { workspacePath: string }) {
     [height],
   );
   // Tabs live in memory only: if the panel is open for a workspace with no
-  // tabs yet (e.g. another workspace was just removed), create the shell.
+  // tabs yet (e.g. another workspace was just removed), create the shell in
+  // the default root (主目录，即首个根).
   useEffect(() => {
-    if (open && !tabs?.length) newTab(workspacePath);
-  }, [open, tabs?.length, workspacePath, newTab]);
+    if (open && !tabs?.length) newTab(workspacePath, rootList[0] ?? workspacePath);
+  }, [open, tabs?.length, workspacePath, newTab, rootList]);
 
   useEffect(() => {
     if (!dragging) return;
@@ -96,6 +118,8 @@ export function TerminalDock({ workspacePath }: { workspacePath: string }) {
   if (!open) return null;
 
   const tabList = tabs ?? [];
+  const activeTab = tabList.find((tab) => tab.id === activeId);
+  const activeRoot = activeTab?.root ?? rootList[0] ?? workspacePath;
 
   return (
     <section
@@ -165,6 +189,11 @@ export function TerminalDock({ workspacePath }: { workspacePath: string }) {
                   <span className="whitespace-nowrap">
                     {t("terminal.tabTitle", { index: index + 1 })}
                   </span>
+                  {rootList.length > 1 && (
+                    <span className="ml-1 max-w-24 shrink-0 truncate text-caption-2-regular text-text-tertiary">
+                      {rootBaseName(tab.root)}
+                    </span>
+                  )}
                 </div>
                 <button
                   type="button"
@@ -184,19 +213,53 @@ export function TerminalDock({ workspacePath }: { workspacePath: string }) {
               </div>
             );
           })}
-          <button
-            type="button"
-            title={t("terminal.newTerminal")}
-            aria-label={t("terminal.newTerminal")}
-            onClick={() => newTab(workspacePath)}
-            className={HEADER_BUTTON_CLASSES}
-          >
-            <Plus className="size-4" aria-hidden />
-          </button>
+          {rootList.length > 1 ? (
+            // 多根：新建标签先选根（主目录默认在首项）。单根保持一键新建。
+            <Dropdown isOpen={rootPickerOpen} onOpenChange={setRootPickerOpen}>
+              <DropdownTrigger
+                aria-label={t("terminal.newTerminal")}
+                className={HEADER_BUTTON_CLASSES}
+              >
+                <Plus className="size-4" aria-hidden />
+              </DropdownTrigger>
+              <DropdownPopover aria-label={t("terminal.pickRoot")} placement="top start">
+                {rootList.map((root) => (
+                  <DropdownItem
+                    key={root}
+                    onSelect={() => {
+                      setRootPickerOpen(false);
+                      newTab(workspacePath, root);
+                    }}
+                  >
+                    <span className="truncate text-body-medium text-text-primary">
+                      {rootBaseName(root)}
+                    </span>
+                  </DropdownItem>
+                ))}
+              </DropdownPopover>
+            </Dropdown>
+          ) : (
+            <button
+              type="button"
+              title={t("terminal.newTerminal")}
+              aria-label={t("terminal.newTerminal")}
+              onClick={() => newTab(workspacePath)}
+              className={HEADER_BUTTON_CLASSES}
+            >
+              <Plus className="size-4" aria-hidden />
+            </button>
+          )}
         </div>
       </div>
 
-      {activeId && <TerminalView key={activeId} id={activeId} cwd={workspacePath} />}
+      {activeId && <TerminalView key={activeId} id={activeId} cwd={activeRoot} />}
     </section>
   );
+}
+
+/** Last path segment of a root, for the tab chip / root picker label. */
+function rootBaseName(path: string): string {
+  const trimmed = path.replace(/[/\\]+$/, "");
+  const idx = Math.max(trimmed.lastIndexOf("/"), trimmed.lastIndexOf("\\"));
+  return idx < 0 ? trimmed : trimmed.slice(idx + 1);
 }

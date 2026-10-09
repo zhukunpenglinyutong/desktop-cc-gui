@@ -44,6 +44,7 @@ const WT: Workspace = {
   groupId: null,
   kind: "worktree",
   parentId: "p1",
+  roots: [],
   meta: { worktree: { branch: "pr-1842-fix", baseRef: "main" } },
 } as Workspace;
 

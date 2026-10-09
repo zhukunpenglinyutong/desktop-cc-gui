@@ -963,6 +963,23 @@ async fn send_message_inner_with_sink(
     }
     result
 }
+/// 合并本次发送要注入的额外目录:当前工作区的附加根在前、用户 granted 目录
+/// 在后,按 trim 后的字符串去重。仅绝对路径、去空与上限 32 的过滤仍在
+/// [`prepare_launch`] 内统一执行,这里只做合并与去重(顺序敏感:越靠前的目录
+/// 越先进入 argv)。附加根取不到时退化为空表,不阻塞发送。
+fn merge_additional_dirs(extra_roots: Vec<String>, granted_roots: Vec<String>) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    for dir in extra_roots.into_iter().chain(granted_roots) {
+        let trimmed = dir.trim().to_string();
+        if trimmed.is_empty() || !seen.insert(trimmed.clone()) {
+            continue;
+        }
+        out.push(trimmed);
+    }
+    out
+}
+
 /// Body of [`send_message_inner`] once the run id is reserved: the caller id
 /// is used as-is (never regenerated — the frontend pre-routes events by it),
 /// and the placeholder's killed/reader_abort handles carry into the real
@@ -1002,10 +1019,18 @@ async fn send_reserved(
         model,
         effort,
         permission,
-        // Every user-granted directory rides along as a launch argument, so
-        // a grant approved mid-conversation takes effect on the next send
-        // (each send is a fresh process).
-        state.db.granted_roots().unwrap_or_default(),
+        // Every extra directory rides along as a launch argument: the current
+        // workspace's 附加根 (工作区多目录) plus user-granted directories, so a
+        // grant or a newly added root takes effect on the next send (each send
+        // is a fresh process). Merged and de-duped here; the absolute-path /
+        // empty / 32-cap filter stays in prepare_launch.
+        merge_additional_dirs(
+            state
+                .db
+                .workspace_extra_roots_for_path(&workspace_path)
+                .unwrap_or_default(),
+            state.db.granted_roots().unwrap_or_default(),
+        ),
         provider_id,
         computer_use,
         memory_bot,
@@ -2501,6 +2526,53 @@ mod permission_tests {
         // Other engines have no equivalent flag: the field stays inert.
         let codex_args = argv(&codex::CodexEngine, &r);
         assert!(!codex_args.iter().any(|a| a == "--add-dir"));
+    }
+
+    #[test]
+    fn merge_additional_dirs_puts_extra_roots_first_and_dedupes() {
+        // 附加根在前、granted 在后;跨两组及组内重复都只保留首次出现。
+        let merged = merge_additional_dirs(
+            vec![
+                "/ws/extra".to_string(),
+                "/ws/shared".to_string(),
+                "   ".to_string(),
+                "/ws/extra".to_string(),
+            ],
+            vec![
+                "/ws/shared".to_string(),
+                "/granted".to_string(),
+                "/granted".to_string(),
+                "".to_string(),
+            ],
+        );
+        assert_eq!(
+            merged,
+            vec![
+                "/ws/extra".to_string(),
+                "/ws/shared".to_string(),
+                "/granted".to_string(),
+            ]
+        );
+
+        // Empty inputs stay empty (no extra roots registered, no grants).
+        assert!(merge_additional_dirs(Vec::new(), Vec::new()).is_empty());
+
+        // A granted root duplicating an extra root collapses to one entry, and
+        // the merged list still only carries the main dir once for claude.
+        let e = claude::ClaudeEngine::new();
+        let mut r = req(Some("auto"));
+        r.additional_dirs = merge_additional_dirs(
+            vec!["/tmp".to_string(), "/ws/extra".to_string()],
+            vec!["/ws/extra".to_string()],
+        );
+        let args = argv(&e, &r);
+        let dirs: Vec<String> = args
+            .windows(2)
+            .filter(|w| w[0] == "--add-dir")
+            .map(|w| w[1].clone())
+            .collect();
+        // `/tmp` is the workspace itself (req()) and is skipped by claude.rs.
+        assert_eq!(dirs, vec!["/ws/extra".to_string()]);
     }
 
     #[test]

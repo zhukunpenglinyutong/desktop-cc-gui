@@ -17,7 +17,7 @@ interface FileTreeBodyProps {
  */
 export function FileTreeBody({ virtualizer, visible, onContextMenu }: FileTreeBodyProps) {
   const { t } = useTranslation();
-  const root = useFilesStore((s) => s.root);
+  const roots = useFilesStore((s) => s.roots);
   const dirErrors = useFilesStore((s) => s.dirErrors);
   const loadingDirs = useFilesStore((s) => s.loadingDirs);
   const selectedPath = useFilesStore((s) => s.selectedPath);
@@ -33,13 +33,16 @@ export function FileTreeBody({ virtualizer, visible, onContextMenu }: FileTreeBo
     [],
   );
 
-  const rootError = root ? dirErrors[root] : undefined;
-  const rootLoading = root ? !!loadingDirs[root] : false;
+  const isRootPath = (path: string) => roots.includes(path);
+  const rootErrors = roots.filter((root) => dirErrors[root]);
+  const allLoading = roots.length > 0 && roots.every((root) => loadingDirs[root]);
 
-  if (rootError) {
+  // 单根时保持旧行为:根出错就整体显示可恢复的错误 + 刷新,不把它折成一行。
+  if (roots.length === 1 && dirErrors[roots[0]]) {
+    const root = roots[0];
     return (
       <div className="flex flex-col items-start gap-2 px-3 py-2">
-        <p className="text-caption-1-regular text-text-error-primary break-all">{rootError}</p>
+        <p className="text-caption-1-regular text-text-error-primary break-all">{dirErrors[root]}</p>
         <button
           type="button"
           onClick={() => void ensureDir(root)}
@@ -50,12 +53,34 @@ export function FileTreeBody({ virtualizer, visible, onContextMenu }: FileTreeBo
       </div>
     );
   }
-  if (rootLoading && visible.length === 0) {
-    return (
-      <p className="px-3 py-2 text-caption-1-regular text-text-tertiary">{t("common.loading")}</p>
-    );
-  }
+
   if (visible.length === 0) {
+    if (allLoading) {
+      return (
+        <p className="px-3 py-2 text-caption-1-regular text-text-tertiary">{t("common.loading")}</p>
+      );
+    }
+    // 全部根都失败(且无内容):每个根各给一个可恢复的错误块。
+    if (rootErrors.length > 0) {
+      return (
+        <div className="flex flex-col items-start gap-2 px-3 py-2">
+          {rootErrors.map((root) => (
+            <div key={root} className="flex flex-col items-start gap-1">
+              <p className="text-caption-1-regular text-text-error-primary break-all">
+                {dirErrors[root]}
+              </p>
+              <button
+                type="button"
+                onClick={() => void ensureDir(root)}
+                className="text-caption-1-medium text-text-secondary underline underline-offset-2 hover:text-text-primary"
+              >
+                {t("common.refresh")}
+              </button>
+            </div>
+          ))}
+        </div>
+      );
+    }
     return (
       <p className="px-3 py-2 text-caption-1-regular text-text-tertiary">{t("files.emptyTree")}</p>
     );
@@ -64,6 +89,7 @@ export function FileTreeBody({ virtualizer, visible, onContextMenu }: FileTreeBo
     <div style={{ height: virtualizer.getTotalSize(), position: "relative" }}>
       {virtualizer.getVirtualItems().map((vi) => {
         const node = visible[vi.index];
+        const rootError = isRootPath(node.path) ? dirErrors[node.path] : undefined;
         return (
           <div
             key={node.path}
@@ -81,7 +107,7 @@ export function FileTreeBody({ virtualizer, visible, onContextMenu }: FileTreeBo
             <TreeRow
               node={node}
               selected={selectedPath === node.path}
-              isRoot={node.path === root}
+              isRoot={isRootPath(node.path)}
               onToggleDir={toggleDir}
               onOpenFile={openFile}
               onSelectDir={selectPath}
@@ -89,6 +115,22 @@ export function FileTreeBody({ virtualizer, visible, onContextMenu }: FileTreeBo
               onMention={handleMention}
               mentionLabel={t("files.addToChat")}
             />
+            {/* 多根下一个根(最可能是附加根)在磁盘上不存在:该根行下方给出
+                可恢复的提示,其它根照常渲染,不崩溃。 */}
+            {rootError ? (
+              <div className="flex flex-col items-start gap-1 px-1 pb-1 pl-4">
+                <p className="text-caption-1-regular text-text-error-primary break-all">
+                  {rootError}
+                </p>
+                <button
+                  type="button"
+                  onClick={() => void ensureDir(node.path)}
+                  className="text-caption-1-medium text-text-secondary underline underline-offset-2 hover:text-text-primary"
+                >
+                  {t("common.refresh")}
+                </button>
+              </div>
+            ) : null}
           </div>
         );
       })}

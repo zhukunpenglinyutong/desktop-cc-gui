@@ -24,6 +24,10 @@ export interface AiChatRepo {
    *  child rows read dirty counts through this). */
   path?: string;
   label: string;
+  /** 工作区多目录的附加根(不含主目录 `path`);absent/空 = 单目录。仅用于
+   *  侧栏的多根标识与 Git/终端按根分组,不改变 `path` 的主目录语义。
+   *  `buildRepo` 恒填充;可选以让不关心多根的构造点(如测试夹具)省略。 */
+  roots?: string[];
   /** Original workspace folder name when `label` is a user-set alias
    *  (surfaced as the row tooltip). */
   originalLabel?: string;
