@@ -884,6 +884,84 @@ fn remote_config(repo: &Repository) -> Result<git2::Config, String> {
     Ok(config)
 }
 
+/// Return the canonical `.git`-suffixed form of an http(s) remote URL.
+///
+/// GitLab and Gitea serve a `.git`-less `<host>/<owner>/<repo>` http URL with a
+/// 301 to the `.git` path. The git CLI follows that transparently, but libgit2
+/// (1.9.x) does not: it re-requests the original URL until GIT_HTTP_REPLAY_MAX
+/// and then fails with "too many redirects or authentication replays" — before
+/// any credential callback runs. Spelled with `.git` there is no redirect and
+/// the request authenticates normally. Returns `None` for anything already
+/// canonical, non-http(s), or ambiguous (trailing slash, query, fragment).
+fn add_dot_git(url: &str) -> Option<String> {
+    let (scheme, rest) = url.split_once("://")?;
+    if !scheme.eq_ignore_ascii_case("http") && !scheme.eq_ignore_ascii_case("https") {
+        return None;
+    }
+    // Only a bare path is safe to rewrite; a query or fragment means this is
+    // not a plain repository URL.
+    if rest.contains('?') || rest.contains('#') {
+        return None;
+    }
+    // Split the authority from the path at the first '/'. The GitLab/Gitea
+    // repository path is `<owner>/<repo>` (nested groups add more segments),
+    // so the path must contain a slash; a bare `<host>/<repo>` is ambiguous.
+    let (authority, path) = rest.trim_end_matches('/').split_once('/')?;
+    if authority.is_empty() || !path.contains('/') || path.ends_with(".git") {
+        return None;
+    }
+    Some(format!("{scheme}://{authority}/{path}.git"))
+}
+
+/// Temporarily rewrites the `origin` remote's http(s) URL(s) to their canonical
+/// `.git` form for the duration of one network operation, restoring the
+/// originals on drop. See [`add_dot_git`] for why. Scoped to a single
+/// fetch/push so a pull or push that fails mid-way still leaves the user's
+/// config untouched.
+struct CanonicalRemoteUrl {
+    /// `<repo>/.git/config`, reopened on drop because `git2::Config` is not
+    /// `Clone` and the fetch path consumes its own config handle.
+    config_path: std::path::PathBuf,
+    /// `(key, original value)` pairs to put back verbatim.
+    saved: Vec<(String, String)>,
+}
+
+impl CanonicalRemoteUrl {
+    fn new(repo: &Repository) -> Result<Self, String> {
+        let mut config = repo.config().map_err(|e| e.to_string())?;
+        let mut saved = Vec::new();
+        for key in ["remote.origin.url", "remote.origin.pushurl"] {
+            let Ok(original) = config.get_string(key) else {
+                continue;
+            };
+            let Some(fixed) = add_dot_git(&original) else {
+                continue;
+            };
+            if config.set_str(key, &fixed).is_ok() {
+                saved.push((key.to_string(), original));
+            }
+        }
+        Ok(Self {
+            config_path: repo.path().join("config"),
+            saved,
+        })
+    }
+}
+
+impl Drop for CanonicalRemoteUrl {
+    fn drop(&mut self) {
+        if self.saved.is_empty() {
+            return;
+        }
+        let Ok(mut config) = git2::Config::open(&self.config_path) else {
+            return;
+        };
+        for (key, original) in &self.saved {
+            let _ = config.set_str(key, original);
+        }
+    }
+}
+
 fn push_options(config: git2::Config) -> git2::PushOptions<'static> {
     let mut opts = git2::PushOptions::new();
     opts.remote_callbacks(remote_callbacks(config));
@@ -901,6 +979,9 @@ pub async fn git_push(path: String) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || {
         let repo = open_repo(&path)?;
         let branch = current_branch_name(&repo)?;
+        // Rewrite a `.git`-less http remote to its canonical form before the
+        // remote handle caches the URL; the guard restores it on drop.
+        let _canonical = CanonicalRemoteUrl::new(&repo)?;
         let mut remote = repo
             .find_remote("origin")
             .map_err(|e| format!("no origin remote: {e}"))?;
@@ -963,6 +1044,9 @@ fn ff_conflicting_files(repo: &Repository, target: git2::Oid) -> Vec<String> {
 fn git_pull_blocking(path: &str) -> Result<(), String> {
     let repo = open_repo(path)?;
     let branch = current_branch_name(&repo)?;
+    // See git_push: normalize a `.git`-less http remote before find_remote
+    // caches the URL; the guard restores the original on drop.
+    let _canonical = CanonicalRemoteUrl::new(&repo)?;
     let mut remote = repo
         .find_remote("origin")
         .map_err(|e| format!("no origin remote: {e}"))?;
@@ -1208,6 +1292,51 @@ mod tests {
         fn drop(&mut self) {
             let _ = std::fs::remove_dir_all(&self.0);
         }
+    }
+
+    #[test]
+    fn add_dot_git_canonicalizes_bare_http_paths() {
+        assert_eq!(
+            add_dot_git("http://host:8000/owner/repo").as_deref(),
+            Some("http://host:8000/owner/repo.git")
+        );
+        assert_eq!(
+            add_dot_git("https://host/owner/repo/").as_deref(),
+            Some("https://host/owner/repo.git")
+        );
+    }
+
+    #[test]
+    fn add_dot_git_leaves_other_urls_untouched() {
+        // Already canonical, non-http, scp-like, or not a repo path.
+        for url in [
+            "http://host/owner/repo.git",
+            "git@host:owner/repo.git",
+            "ssh://host/owner/repo",
+            "http://host/repo",
+            "http://host/owner/repo?x=1",
+            "http://host/owner/repo#frag",
+        ] {
+            assert_eq!(add_dot_git(url), None, "should not rewrite {url}");
+        }
+    }
+
+    #[test]
+    fn canonical_remote_url_rewrites_and_restores() {
+        let scratch = Scratch::new();
+        let repo = Repository::init(&scratch.0).unwrap();
+        repo.remote("origin", "http://host:8000/owner/repo").unwrap();
+
+        {
+            let _guard = CanonicalRemoteUrl::new(&repo).unwrap();
+            // The handle must observe the canonicalized URL for the fetch/push.
+            let remote = repo.find_remote("origin").unwrap();
+            assert_eq!(remote.url(), Some("http://host:8000/owner/repo.git"));
+        } // guard drops here
+
+        // Drop restores the user's configured URL verbatim.
+        let remote = repo.find_remote("origin").unwrap();
+        assert_eq!(remote.url(), Some("http://host:8000/owner/repo"));
     }
 
     #[test]
