@@ -1,6 +1,6 @@
 [package]
 name = "ccgui-next"
-version = "1.1.3"
+version = "1.1.4"
 description = "CC GUI - multi-CLI AI chat desktop"
 edition = "2021"
 rust-version = "1.77.2"
