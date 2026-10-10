@@ -230,7 +230,7 @@ const DiffLine = memo(function DiffLine({ line }: { line: AnnotatedLine }) {
   return (
     <div
       className={cx(
-        "flex whitespace-pre-wrap break-all font-mono text-xs leading-5",
+        "code-typography flex whitespace-pre-wrap break-all font-mono leading-[1.6]",
         kind === "add" && "bg-green-500/10",
         kind === "del" && "bg-red-500/10",
       )}

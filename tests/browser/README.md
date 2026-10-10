@@ -1,5 +1,12 @@
 # Chat streaming regression
 
+Open `/tests/browser/interface-typography.html` for the real General settings
+controls with in-memory persistence. Expand Advanced and change the UI,
+content and code sizes independently using px inputs (blur or Enter to save).
+UI text preserves its hierarchy and weight options; chat prose and code have
+separate size controls, while terminal typography, icons and padding stay fixed.
+Reset restores all four typography fields. This does not change the running app.
+
 Open `/tests/browser/concurrent-status.html` for concurrent session indicators:
 the real `AiChatSidebar` and `SessionTab` each render 1, 6 (default), or 12
 synthetic sessions. Switch Processing / Retry / Complete, light / dark, and

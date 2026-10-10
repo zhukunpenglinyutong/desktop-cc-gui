@@ -33,6 +33,8 @@
 
 ## 2. 设计基础
 
+- **字体高级设置**：设置 → 通用 → 外观的「高级」区域默认收起，展开/收起复用 `Collapsible`（200ms）。提供 px 数值输入「界面字号 / 内容字体大小 / 代码字体大小」（10–32px，整数，默认 16 / 14 / 13px），以及「界面字重」（标准 / 稍粗 / 加粗，默认标准）。数值在失焦或 Enter 时应用并保存；空值、越界与非整数恢复当前值。「重置为默认设置」一次恢复这四项，不重置字体文件、主题或界面缩放。界面字号按比例调整文字与行高，保留层级，不改变图标或布局间距；内容字号独立作用于聊天正文，代码字号作用于代码块、编辑器与差异视图，终端保持独立。字重在原值上增加 0 / 100 / 200（最高 900），代码区域不跟随界面加粗。`uiFontSize` / `contentFontSize` / `codeFontSize` / `uiFontWeight` 持久化到 AppSettings，localStorage 镜像在首帧前应用；保存失败恢复原设置并提示错误。搜索这些设置自动展开「高级」。实现：`interface-typography.ts`、`typography.css`、`GeneralSection.tsx`。
+
 ### 2.1 Token 优先
 
 - 颜色、圆角、阴影、动效一律引用 `src/styles/theme.css` 的**语义 token**（`text-*`、`background-*`、`border-*`、`foreground-icon-*`、`notification-*`、`shadow-*`），不写死色值、不直接引用 `slate-*` 之类的原始色阶。

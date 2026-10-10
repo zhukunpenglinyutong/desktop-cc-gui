@@ -16,6 +16,17 @@ import {
 import { ipc, type AppSettings } from "@/lib/ipc";
 import { IS_WINDOWS, isWeb, pickFile } from "@/lib/platform";
 import { applyTheme } from "./theme";
+import ChevronDown from "lucide-react/dist/esm/icons/chevron-down";
+import { Collapsible } from "@/components/application/collapsible/collapsible";
+import {
+  applyInterfaceTypography,
+  normalizeFontSize,
+  normalizeUiFontWeight,
+  TYPOGRAPHY_DEFAULTS,
+  type FontSizeField,
+  type InterfaceTypographyPreferences,
+  UI_FONT_WEIGHTS,
+} from "./interface-typography";
 import {
   applyFontPreferences,
   CUSTOM_FONT_VALUE,
@@ -51,6 +62,10 @@ const FONT_FILE_EXTENSIONS = ["ttf", "otf", "ttc", "woff", "woff2"];
 function fontPreferencesOf(settings: AppSettings): FontPreferences {
   return {
     fontFamily: settings.fontFamily,
+    uiFontSize: settings.uiFontSize,
+    contentFontSize: settings.contentFontSize,
+    codeFontSize: settings.codeFontSize,
+    uiFontWeight: settings.uiFontWeight,
     codeFontFamily: settings.codeFontFamily,
     fontFile: settings.fontFile,
     codeFontFile: settings.codeFontFile,
@@ -66,6 +81,7 @@ function useGeneralSettingsState() {
   // Raw digits while editing the thread limit; null = show the saved value.
   const [limitText, setLimitText] = useState<string | null>(null);
   // 正在读取/注册上传字体的行；null = 空闲，用于禁用再次点选。
+  const [typographyBusy, setTypographyBusy] = useState(false);
   const [fontBusy, setFontBusy] = useState<FontField | null>(null);
   // 窗口当前是否有系统装饰（isDecorated）；null = 还没读回来。
   const [decorated, setDecorated] = useState<boolean | null>(null);
@@ -208,6 +224,20 @@ function useGeneralSettingsState() {
     }
   };
 
+  const onTypographyChange = async (patch: InterfaceTypographyPreferences) => {
+    if (!settings || typographyBusy) return;
+    const next = { ...settings, ...patch };
+    setTypographyBusy(true);
+    setSettings(next);
+    applyInterfaceTypography(next);
+    const saved = await save(patch);
+    if (!saved) {
+      setSettings(settings);
+      applyInterfaceTypography(settings);
+    }
+    setTypographyBusy(false);
+  };
+
   /** 上传字体：读取并注册成功后才落设置（失败保留原选择并报错）。 */
   const onFontFilePick = async (field: FontField): Promise<boolean> => {
     if (!settings) return false;
@@ -246,6 +276,8 @@ function useGeneralSettingsState() {
     onThreadLimitKeyDown,
     onSendShortcutChange,
     onThinkingAutoCollapseChange,
+    typographyBusy,
+    onTypographyChange,
     onFontModeChange,
     onFontFilePick,
   };
@@ -260,6 +292,8 @@ function AppearanceCard({
   onThemeChange,
   onTitlebarChange,
   onLanguageChange,
+  typographyBusy,
+  onTypographyChange,
   onFontModeChange,
   onFontFilePick,
   onThreadLimitChange,
@@ -273,6 +307,8 @@ function AppearanceCard({
   onThemeChange: (key: Key | null) => void;
   onTitlebarChange: (key: Key | null) => void;
   onLanguageChange: (key: Key | null) => void;
+  typographyBusy: boolean;
+  onTypographyChange: (patch: InterfaceTypographyPreferences) => Promise<void>;
   onFontModeChange: (field: FontField, value: string) => void;
   onFontFilePick: (field: FontField) => Promise<boolean>;
   onThreadLimitChange: (value: string) => void;
@@ -373,7 +409,145 @@ function AppearanceCard({
           />
         </SettingsRow>
       </SettingsCard>
+      <TypographyCard
+        settings={settings}
+        busy={typographyBusy}
+        onChange={onTypographyChange}
+      />
     </div>
+  );
+}
+
+function TypographyCard({
+  settings,
+  busy,
+  onChange,
+}: {
+  settings: AppSettings;
+  busy: boolean;
+  onChange: (patch: InterfaceTypographyPreferences) => Promise<void>;
+}) {
+  const { t } = useTranslation();
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="mt-4">
+      <div className="mb-2 flex items-center justify-between">
+        <button
+          type="button"
+          data-setting-anchor="typographyAdvanced"
+          aria-expanded={open}
+          aria-controls="typography-advanced-panel"
+          onClick={() => setOpen(!open)}
+          className="flex cursor-pointer items-center gap-1 text-body-medium text-text-secondary"
+        >
+          {t("settings.typographyAdvanced")}
+          <ChevronDown
+            className={`size-4 transition-transform duration-150 ${open ? "rotate-180" : ""}`}
+            aria-hidden
+          />
+        </button>
+        <Button
+          size="small"
+          variant="ghost"
+          disabled={busy}
+          onClick={() => void onChange(TYPOGRAPHY_DEFAULTS)}
+        >
+          {t("settings.typographyReset")}
+        </Button>
+      </div>
+      <Collapsible open={open} seconds={0.2}>
+        <div id="typography-advanced-panel">
+          <SettingsCard>
+            {(["uiFontSize", "contentFontSize", "codeFontSize"] as const).map((field) => (
+              <TypographySizeRow
+                key={field}
+                field={field}
+                value={settings[field]}
+                busy={busy}
+                onChange={onChange}
+              />
+            ))}
+            <SettingsRow
+              anchor="uiFontWeight"
+              label={t("settings.uiFontWeight")}
+              description={t("settings.uiFontWeightDesc")}
+            >
+              <Select
+                aria-label={t("settings.uiFontWeight")}
+                selectedKey={normalizeUiFontWeight(settings.uiFontWeight)}
+                isDisabled={busy}
+                onSelectionChange={(key) => {
+                  if (key != null) {
+                    void onChange({ uiFontWeight: normalizeUiFontWeight(String(key)) });
+                  }
+                }}
+                triggerClassName={SELECT_TRIGGER}
+              >
+                {UI_FONT_WEIGHTS.map((value) => (
+                  <SelectItem key={value} id={value}>
+                    {t(`settings.uiFontWeight_${value}`)}
+                  </SelectItem>
+                ))}
+              </Select>
+            </SettingsRow>
+          </SettingsCard>
+        </div>
+      </Collapsible>
+    </div>
+  );
+}
+
+function TypographySizeRow({
+  field,
+  value,
+  busy,
+  onChange,
+}: {
+  field: FontSizeField;
+  value: number;
+  busy: boolean;
+  onChange: (patch: InterfaceTypographyPreferences) => Promise<void>;
+}) {
+  const { t } = useTranslation();
+  const size = normalizeFontSize(field, value);
+  const [text, setText] = useState(String(size));
+  useEffect(() => setText(String(size)), [size]);
+  const commit = () => {
+    const next = Number(text);
+    if (!text.trim() || normalizeFontSize(field, next) !== next) {
+      setText(String(size));
+      return;
+    }
+    if (next !== size) void onChange({ [field]: next });
+  };
+  return (
+    <SettingsRow
+      anchor={field}
+      label={t(`settings.${field}`)}
+      description={t(`settings.${field}Desc`)}
+    >
+      <div className="flex shrink-0 items-center gap-2">
+        <Input
+          aria-label={t(`settings.${field}`)}
+          type="number"
+          size="small"
+          className="w-20"
+          value={text}
+          isDisabled={busy}
+          onChange={setText}
+          onBlur={commit}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") {
+              event.preventDefault();
+              (event.target as HTMLInputElement).blur();
+            } else if (event.key === "Escape") {
+              setText(String(size));
+            }
+          }}
+        />
+        <span className="text-body-regular text-text-secondary">px</span>
+      </div>
+    </SettingsRow>
   );
 }
 
@@ -561,6 +735,8 @@ export function GeneralSection() {
     onSendShortcutChange,
     onThinkingAutoCollapseChange,
     fontBusy,
+    typographyBusy,
+    onTypographyChange,
     onFontModeChange,
     onFontFilePick,
   } = useGeneralSettingsState();
@@ -584,6 +760,8 @@ export function GeneralSection() {
           onThemeChange={onThemeChange}
           onTitlebarChange={onTitlebarChange}
           onLanguageChange={onLanguageChange}
+          typographyBusy={typographyBusy}
+          onTypographyChange={onTypographyChange}
           onFontModeChange={onFontModeChange}
           onFontFilePick={onFontFilePick}
           onThreadLimitChange={onThreadLimitChange}

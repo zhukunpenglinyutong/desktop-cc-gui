@@ -1,4 +1,9 @@
 import { ipc } from "@/lib/ipc";
+import {
+  applyInterfaceTypography,
+  readCachedInterfaceTypography,
+  type InterfaceTypographyPreferences,
+} from "./interface-typography";
 import { writeStored } from "@/lib/storage";
 
 /** localStorage mirrors of the app-settings font preferences, read pre-paint
@@ -29,7 +34,7 @@ export type CustomFontRole = "ui" | "code";
 /** Settings fields carrying each row's mode / uploaded path. */
 export type FontField = "fontFamily" | "codeFontFamily";
 
-export interface FontPreferences {
+export interface FontPreferences extends InterfaceTypographyPreferences {
   fontFamily: string;
   codeFontFamily: string;
   fontFile: string;
@@ -77,6 +82,7 @@ function fontStack(pref: string, customFamily: string, fallback: string): string
  *  files are registered in the background — the stack above falls back until
  *  the face is ready, and an unreadable file never drops the setting. */
 export function applyFontPreferences(prefs: FontPreferences): void {
+  applyInterfaceTypography(prefs);
   const fontFamily = normalizeFontMode(prefs.fontFamily);
   const codeFontFamily = normalizeFontMode(prefs.codeFontFamily);
   const fontFile = normalizeFontFamily(prefs.fontFile);
@@ -103,6 +109,7 @@ export function applyFontPreferences(prefs: FontPreferences): void {
 
 export function readCachedFontPreferences(): FontPreferences {
   return {
+    ...readCachedInterfaceTypography(),
     fontFamily: normalizeFontMode(localStorage.getItem(FONT_FAMILY_STORAGE_KEY)),
     codeFontFamily: normalizeFontMode(localStorage.getItem(CODE_FONT_FAMILY_STORAGE_KEY)),
     fontFile: normalizeFontFamily(localStorage.getItem(FONT_FILE_STORAGE_KEY)),

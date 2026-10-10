@@ -472,6 +472,12 @@ export interface AppSettings {
   fontFamily: string;
   /** Absolute path of the uploaded UI font file (设置 → 外观). */
   fontFile: string;
+  /** Base UI font size in px; layout spacing stays unchanged. */
+  uiFontSize: number;
+  contentFontSize: number;
+  codeFontSize: number;
+  /** standard / medium / bold: relative to each text style. */
+  uiFontWeight: string;
   /** Code font for chat code blocks and the built-in terminal: "" = 系统默认,
    *  "custom" = the uploaded code font in `codeFontFile`. */
   codeFontFamily: string;
