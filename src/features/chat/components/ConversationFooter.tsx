@@ -18,6 +18,7 @@ import { QuestionDock, usePendingQuestion } from "./QuestionDock";
 import { PlanReviewDock, usePendingPlanReview } from "./PlanReviewDock";
 import { ErrorBanner } from "./ErrorBanner";
 import { sessionKey } from "../store";
+import { centerColumnClass } from "../chat-column";
 import { ComposerSlotExtras } from "@/features/plugins/boundary/composer-slot-extras";
 import { COMPOSER_DRAFT_TOPIC, pluginBus } from "@/features/plugins/runtime/events";
 import { USAGE_PART_LABEL_KEYS, usageBreakdown } from "./usage-breakdown";
@@ -109,9 +110,10 @@ function AttachmentChips({
   onRemoveImage: (path: string) => void;
   onZoomImage: (zoom: NonNullable<ZoomImage>) => void;
 }) {
+  const wide = useChatStore((s) => s.wideLayout);
   if (images.length === 0) return null;
   return (
-    <div className="mx-auto w-full max-w-3xl">
+    <div className={centerColumnClass(wide)}>
       <div className="flex flex-wrap gap-1.5">
         {images.map((path) => (
           <AttachmentChip
@@ -129,8 +131,9 @@ function AttachmentChips({
 
 /** Active session's run status; renders idle placeholders with no session. */
 function ActiveRunStatus({ active }: { active: ActiveSession | null }) {
+  const wide = useChatStore((s) => s.wideLayout);
   return (
-    <div className="mx-auto w-full max-w-3xl">
+    <div className={centerColumnClass(wide)}>
       <RunStatusStrip
         sessionKey={active ? sessionKey(active.engine, active.sessionId, active.workspacePath) : ""}
         engine={active?.engine ?? ""}
@@ -157,6 +160,7 @@ function FooterComposer({
   permissionMenu,
   supportsImages,
   onPasteImages,
+  onPastePaths,
 }: {
   active: ActiveSession | null;
   draft: string;
@@ -173,10 +177,12 @@ function FooterComposer({
   permissionMenu: ReactNode;
   supportsImages: boolean;
   onPasteImages: (files: File[]) => void;
+  onPastePaths?: (paths: string[]) => void;
 }) {
+  const wide = useChatStore((s) => s.wideLayout);
   return (
     <Composer
-      className="mx-auto max-w-3xl"
+      className={centerColumnClass(wide)}
       value={draft}
       onValueChange={onDraftChange}
       onSubmit={onSubmit}
@@ -189,6 +195,7 @@ function FooterComposer({
       cliMenu={<>{cliMenu}<ComposerSlotExtras slot="cliMenu" /></>}
       permissionMenu={<>{permissionMenu}<ComposerSlotExtras slot="permissionMenu" /></>}
       onPasteImages={supportsImages ? onPasteImages : undefined}
+      onPastePaths={onPastePaths}
       workspacePath={active?.workspacePath}
     />
   );
@@ -238,6 +245,7 @@ function FooterStatusBar({
   const archivedWorkspaces = useChatStore((s) => s.archivedWorkspaces);
   const compactContext = useChatStore((s) => s.compactContext);
   const refreshSessionUsage = useChatStore((s) => s.refreshSessionUsage);
+  const wide = useChatStore((s) => s.wideLayout);
   const [compacting, setCompacting] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -387,7 +395,7 @@ function FooterStatusBar({
   );
 
   return (
-    <div className="mx-auto w-full max-w-3xl">
+    <div className={centerColumnClass(wide)}>
       <StatusBar
         branch={branch}
         branches={branches}
@@ -455,6 +463,7 @@ export function ConversationFooter({
   permissionMenu,
   supportsImages,
   onPasteImages,
+  onPastePaths,
   onDropPaths,
   onDropFiles,
   sessionUsage,
@@ -492,6 +501,9 @@ export function ConversationFooter({
   permissionMenu: ReactNode;
   supportsImages: boolean;
   onPasteImages: (files: File[]) => void;
+  /** Files pasted from the OS clipboard, resolved to absolute paths by the
+   *  native clipboard read; absent = no active session, pasted files ignored. */
+  onPastePaths?: (paths: string[]) => void;
   /** OS files dropped on the composer (desktop: absolute paths). Absent =
    *  no active session: drops stay ignored. */
   onDropPaths?: (paths: string[]) => void;
@@ -507,6 +519,8 @@ export function ConversationFooter({
 }) {
   /** Composer attachment chip lightbox: preview URL + display name. */
   const [zoomImage, setZoomImage] = useState<ZoomImage>(null);
+  // 宽幕布: the queue follows the same track as the composer below it.
+  const wideLayout = useChatStore((s) => s.wideLayout);
   // While the CLI waits on an AskUserQuestion the panel takes the composer's
   // place — it covers the input box instead of floating beside it.
   const pendingQuestion = usePendingQuestion();
@@ -543,7 +557,7 @@ export function ConversationFooter({
             </span>
           </div>
         )}
-        <MessageQueue queue={queue} onRemove={onRemoveQueued} onMove={onMoveQueued} onSendNow={onSendQueuedNow} onClear={onClearQueued} className="mx-auto w-full max-w-3xl" />
+        <MessageQueue queue={queue} onRemove={onRemoveQueued} onMove={onMoveQueued} onSendNow={onSendQueuedNow} onClear={onClearQueued} className={centerColumnClass(wideLayout)} />
         <ErrorBanner message={imageError} onDismiss={onDismissImageError} />
         <ErrorBanner message={branchError} onDismiss={onDismissBranchError} />
         <AttachmentChips
@@ -574,6 +588,7 @@ export function ConversationFooter({
             permissionMenu={permissionMenu}
             supportsImages={supportsImages}
             onPasteImages={onPasteImages}
+            onPastePaths={onPastePaths}
           />
         )}
         <FooterStatusBar

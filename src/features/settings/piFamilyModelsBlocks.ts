@@ -336,6 +336,157 @@ export function replaceProviderBlock(
   return `${text.slice(0, block.start)}${editedText}${text.slice(block.end)}`;
 }
 
+/** Provider-level fields the inline row editor can rewrite in place. */
+export type EditableProviderField = "id" | "baseUrl";
+
+/** YAML scalar for `value`: plain when it round-trips unambiguously, else a
+ *  double-quoted JSON-style string (JSON escapes are valid YAML too). Plain
+ *  keeps URLs readable (`https://host/v1` stays unquoted); quoting kicks in
+ *  for the shapes that would otherwise re-parse differently — booleans/numbers,
+ *  leading indicators, `: `/` #` sequences, edge whitespace, quotes, newlines. */
+function yamlScalar(value: string): string {
+  const plain =
+    value.length > 0 &&
+    !/^\s|\s$/.test(value) &&
+    !/[\n\r\t"']/.test(value) &&
+    !/^(true|false|null|~|yes|no|on|off)$/i.test(value) &&
+    !/^[-+]?(\d+\.?\d*|\.\d+)([eE][-+]?\d+)?$/.test(value) &&
+    !/^(?:[-?:]\s|[{}\[\]&*!|>%@`])/.test(value) &&
+    !/[:#]\s|:$|\s#/.test(value);
+  return plain ? value : JSON.stringify(value);
+}
+
+/** Rename the provider key in a YAML block (`  <id>:` → `  <newId>:`), leaving
+ *  the body — comments, field order, nested model lists — untouched. */
+function renameYamlProvider(block: ProviderBlock, newId: string): string {
+  const keyLine = sourceLines(block.text)[0];
+  const indent = " ".repeat(indentation(keyLine.content));
+  return `${indent}${yamlScalar(newId)}:${block.text.slice(keyLine.start + keyLine.content.length)}`;
+}
+
+/** Set (or clear, when `value` is blank) one provider field inside its block,
+ *  leaving every other line — including comments and blank lines — untouched.
+ *  A missing field is appended right after the provider key / opening brace. */
+function setYamlProviderField(block: ProviderBlock, field: string, value: string): string {
+  const lines = sourceLines(block.text);
+  const childIndent = indentation(lines[0].content) + 2;
+  let fieldLine = -1;
+  for (let index = 1; index < lines.length; index += 1) {
+    const line = lines[index].content;
+    if (isBlankOrComment(line) || indentation(line) !== childIndent) {
+      continue;
+    }
+    if (yamlKey(line) === field) {
+      fieldLine = index;
+      break;
+    }
+  }
+
+  if (value === "") {
+    if (fieldLine < 0) {
+      return block.text;
+    }
+    const line = lines[fieldLine];
+    const end = line.end < block.text.length ? line.end + 1 : line.end;
+    return `${block.text.slice(0, line.start)}${block.text.slice(end)}`;
+  }
+
+  const rendered = `${" ".repeat(childIndent)}${field}: ${yamlScalar(value)}`;
+  if (fieldLine >= 0) {
+    const line = lines[fieldLine];
+    const contentEnd = line.start + line.content.length;
+    return `${block.text.slice(0, line.start)}${rendered}${block.text.slice(contentEnd)}`;
+  }
+  const keyLine = lines[0];
+  return `${block.text.slice(0, keyLine.end)}\n${rendered}${block.text.slice(keyLine.end)}`;
+}
+
+/** Drop one JSONC property, fixing the surrounding commas the same way
+ *  `removeProviderBlock` does for whole providers. */
+function removeJsonProperty(
+  text: string,
+  property: { keyStart: number; valueEnd: number },
+): string {
+  const nextSignificant = skipJsonTrivia(text, property.valueEnd);
+  if (text[nextSignificant] === ",") {
+    return `${text.slice(0, property.keyStart)}${text.slice(property.valueEnd, nextSignificant)}${text.slice(nextSignificant + 1)}`;
+  }
+  const before = text.slice(0, property.keyStart);
+  const previousSignificant = before.trimEnd().length - 1;
+  if (previousSignificant >= 0 && before[previousSignificant] === ",") {
+    return `${text.slice(0, previousSignificant)}${text.slice(previousSignificant + 1, property.keyStart)}${text.slice(property.valueEnd)}`;
+  }
+  return `${text.slice(0, property.keyStart)}${text.slice(property.valueEnd)}`;
+}
+
+function setJsonProviderField(block: ProviderBlock, field: string, value: string): string {
+  const key = readJsonString(block.text, 0);
+  if (!key) {
+    return block.text;
+  }
+  const colon = skipJsonTrivia(block.text, key.end);
+  if (block.text[colon] !== ":") {
+    return block.text;
+  }
+  const objectStart = skipJsonTrivia(block.text, colon + 1);
+  const property = findJsonObjectProperty(block.text, objectStart, field);
+
+  if (value === "") {
+    return property ? removeJsonProperty(block.text, property) : block.text;
+  }
+  const rendered = `${JSON.stringify(field)}: ${JSON.stringify(value)}`;
+  if (property) {
+    return `${block.text.slice(0, property.valueStart)}${JSON.stringify(value)}${block.text.slice(property.valueEnd)}`;
+  }
+  const afterBrace = skipJsonTrivia(block.text, objectStart + 1);
+  const separator = block.text[afterBrace] === "}" ? "" : ",";
+  return `${block.text.slice(0, objectStart + 1)}${rendered}${separator}${block.text.slice(objectStart + 1)}`;
+}
+
+/** Rename the provider key in a JSONC block (`"<id>": { … }` → `"<newId>": { … }`),
+ *  preserving the trivia between the key and the colon. */
+function renameJsonProvider(block: ProviderBlock, newId: string): string {
+  const key = readJsonString(block.text, 0);
+  if (!key) {
+    return block.text;
+  }
+  return `${JSON.stringify(newId)}${block.text.slice(key.end)}`;
+}
+
+/**
+ * Rewrite one provider field in the raw config text, preserving comments, key
+ * order and every sibling provider. `id` renames the provider key itself (the
+ * provider display name IS its key — omp has no provider-level `name` field),
+ * `baseUrl` sets or removes the endpoint. Returns the new text, or null when
+ * the provider cannot be located; a blank `baseUrl` removes the field.
+ */
+export function setProviderField(
+  text: string,
+  format: ModelsConfigFormat,
+  providerId: string,
+  field: EditableProviderField,
+  value: string,
+): string | null {
+  const block = extractProviderBlock(text, format, providerId);
+  if (!block) {
+    return null;
+  }
+  if (field === "id") {
+    return replaceProviderBlock(
+      text,
+      block,
+      format === "yaml"
+        ? renameYamlProvider(block, value)
+        : renameJsonProvider(block, value),
+    );
+  }
+  const next =
+    format === "yaml"
+      ? setYamlProviderField(block, field, value)
+      : setJsonProviderField(block, field, value);
+  return replaceProviderBlock(text, block, next);
+}
+
 export function removeProviderBlock(
   text: string,
   block: ProviderBlock,

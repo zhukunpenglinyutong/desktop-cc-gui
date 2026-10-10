@@ -3,6 +3,7 @@ import {
   extractProviderBlock,
   removeProviderBlock,
   replaceProviderBlock,
+  setProviderField,
 } from "./piFamilyModelsBlocks";
 
 const yamlConfig = `providers:
@@ -104,6 +105,116 @@ describe("replaceProviderBlock", () => {
     expect(next).toContain("https://first.example");
     expect(next).toContain("https://last.example");
     expect(next).toContain("/* target comment */");
+  });
+});
+describe("setProviderField", () => {
+  it("renames a YAML provider key and touches nothing else", () => {
+    const next = setProviderField(yamlConfig, "yaml", "target", "id", "中转站");
+
+    expect(next).not.toBeNull();
+    expect(next).toContain("  中转站:\n    baseUrl: https://target.example");
+    expect(next).not.toContain("  target:");
+    expect(next).toContain('X-Test: "{}"');
+    expect(next).toContain('name: "target // model"');
+    expect(next).toContain("# top-level comment");
+    expect(next).toContain("first.example");
+    expect(next).toContain("  last:");
+  });
+
+  it("quotes a renamed YAML key that would re-parse differently", () => {
+    const cases: Array<[string, string]> = [
+      ["42", '  "42":'],
+      ["no", '  "no":'],
+      ["a: b", '  "a: b":'],
+      ["plain-name", "  plain-name:"],
+      ["胖猫pangmao", "  胖猫pangmao:"],
+    ];
+    for (const [value, expected] of cases) {
+      const next = setProviderField(yamlConfig, "yaml", "target", "id", value);
+      expect(next).toContain(`${expected}\n    baseUrl: https://target.example`);
+    }
+  });
+
+  it("rewrites an existing YAML baseUrl and touches nothing else", () => {
+    const next = setProviderField(yamlConfig, "yaml", "target", "baseUrl", "https://next.example/v1");
+
+    expect(next).not.toBeNull();
+    expect(next).toContain("baseUrl: https://next.example/v1");
+    expect(next).not.toContain("https://target.example");
+    expect(next).toContain('X-Test: "{}"');
+    expect(next).toContain('name: "target // model"');
+    expect(next).toContain("# top-level comment");
+    expect(next).toContain("first.example");
+  });
+
+  it("adds a missing YAML field right after the provider key", () => {
+    const withoutUrl = `providers:
+  bare:
+    models:
+      - id: bare-model
+  other:
+    baseUrl: https://other.example
+`;
+    const next = setProviderField(withoutUrl, "yaml", "bare", "baseUrl", "https://added.example");
+
+    expect(next).toContain("  bare:\n    baseUrl: https://added.example\n    models:");
+    expect(next).toContain("  other:\n    baseUrl: https://other.example");
+  });
+
+  it("removes the YAML baseUrl when the value is blank", () => {
+    const next = setProviderField(yamlConfig, "yaml", "target", "baseUrl", "");
+
+    expect(next).not.toContain("https://target.example");
+    expect(next).toContain("  target:\n    headers:");
+    expect(next).toContain("models:");
+  });
+
+  it("renames a JSONC provider key without disturbing comments", () => {
+    const next = setProviderField(jsoncConfig, "json", "target", "id", "renamed");
+
+    expect(next).not.toBeNull();
+    expect(next).toContain('"renamed": {');
+    expect(next).not.toContain('"target": {');
+    expect(next).toContain("/* target comment */");
+    expect(next).toContain('"X-Test": "// not a comment"');
+    const jsonWithoutComments = next!
+      .replace(/^\s*\/\/.*$/gm, "")
+      .replace(/\/\*[\s\S]*?\*\//g, "");
+    expect(() => JSON.parse(jsonWithoutComments)).not.toThrow();
+  });
+
+  it("rewrites an existing JSONC baseUrl without disturbing comments", () => {
+    const next = setProviderField(jsoncConfig, "json", "target", "baseUrl", "https://next.example");
+
+    expect(next).not.toBeNull();
+    expect(next).toContain('"baseUrl": "https://next.example"');
+    expect(next).not.toContain("https://target.example");
+    expect(next).toContain("/* target comment */");
+    expect(next).toContain('"X-Test": "// not a comment"');
+  });
+
+  it("adds and removes a JSONC field across the first, middle and last provider", () => {
+    for (const providerId of ["first", "target", "last"] as const) {
+      const added = setProviderField(jsoncConfig, "json", providerId, "baseUrl", "https://added.example")!;
+      expect(added).toContain('"baseUrl": "https://added.example"');
+
+      const removed = setProviderField(added, "json", providerId, "baseUrl", "")!;
+      expect(removed).not.toContain('"baseUrl": "https://added.example"');
+      expect(removed).not.toContain('"baseUrl": "https://' + providerId + '.example"');
+      const jsonWithoutComments = removed
+        .replace(/^\s*\/\/.*$/gm, "")
+        .replace(/\/\*[\s\S]*?\*\//g, "");
+      expect(() => JSON.parse(jsonWithoutComments)).not.toThrow();
+      for (const other of ["first", "target", "last"]) {
+        if (other === providerId) continue;
+        expect(removed).toContain(`"baseUrl": "https://${other}.example"`);
+      }
+    }
+  });
+
+  it("returns null for a provider that is not present", () => {
+    expect(setProviderField(yamlConfig, "yaml", "missing", "id", "x")).toBeNull();
+    expect(setProviderField(jsoncConfig, "json", "missing", "baseUrl", "x")).toBeNull();
   });
 });
 describe("removeProviderBlock", () => {

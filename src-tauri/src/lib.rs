@@ -6,6 +6,7 @@ pub mod baidu_tongji;
 pub mod browser;
 pub mod cc_switch;
 pub mod cli_lifecycle;
+pub mod clipboard;
 pub mod computer_use;
 pub mod computer_use_ax;
 pub mod config;
@@ -243,10 +244,11 @@ pub fn run() {
                     }
                 });
             }
-            // Relay autostart: the outbound tunnel is what keeps the machine
-            // reachable with nobody at the desk, so it comes back on launch
-            // when the switch was left on. Failures are logged, never fatal;
-            // the running task retries the dial by itself from there.
+            // Relay 无人值守 autostart: the tunnel comes back on launch only
+            // when the user asked for it — the relay switch itself is
+            // session-only, so a plain relaunch starts with it off. Failures
+            // are logged, never fatal; the running task retries the dial by
+            // itself from there.
             {
                 let handle = app.handle().clone();
                 tauri::async_runtime::spawn(async move {
@@ -255,7 +257,7 @@ pub fn run() {
                         return;
                     };
                     if let Err(error) = relay::web_relay_start(handle, url, key).await {
-                        eprintln!("[relay] autostart failed: {error}");
+                        eprintln!("[relay] unattended autostart failed: {error}");
                     }
                 });
             }
@@ -455,6 +457,8 @@ pub fn run() {
             engine::pi_family_auth::pi_family_models_config_write,
             engine::images::save_pasted_image,
             engine::images::import_attachments,
+            // clipboard file lists (paste of Finder/Explorer copies)
+            clipboard::clipboard_file_paths,
             // computer use
             computer_use::computer_use_permission_status,
             computer_use::computer_use_open_permission_settings,
@@ -605,6 +609,7 @@ pub fn run() {
             web::remote_control_active,
             relay::web_relay_start,
             relay::web_relay_stop,
+            relay::web_relay_unattended_set,
             relay::web_relay_status,
             relay::relay_deploy_pack,
             relay::relay_deploy,

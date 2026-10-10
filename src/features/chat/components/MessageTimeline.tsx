@@ -7,6 +7,7 @@ import type { Message } from "@/lib/ipc";
 
 import type { SessionState } from "../store";
 import { useChatStore } from "../store";
+import { timelineColumnClass } from "../chat-column";
 import { parseUsage } from "../usage";
 import { formatTokens } from "@/utils/format-tokens";
 import { cx } from "@/utils/cx";
@@ -534,6 +535,7 @@ export const MessageTimeline = memo(function MessageTimeline({
 
   const { t } = useTranslation();
   const thinkingAutoCollapse = useChatStore((s) => s.thinkingAutoCollapse);
+  const wideLayout = useChatStore((s) => s.wideLayout);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const items = session.messages;
   const rows = useMemo(() => buildRows(items), [items]);
@@ -701,7 +703,7 @@ export const MessageTimeline = memo(function MessageTimeline({
         <div
           data-virtual-inner
           style={{ height: virtualizer.getTotalSize(), position: "relative" }}
-          className="mx-auto max-w-[750px]"
+          className={timelineColumnClass(wideLayout)}
         >
           {virtualizer.getVirtualItems().map((item) => {
             const isTail = item.index >= rows.length;

@@ -218,7 +218,7 @@ body {
 }
 
 .prose-chat :where(strong) {
-  font-weight: 600;
+  font-weight: min(900, calc(600 + var(--ui-font-weight-offset, 0)));
 }
 .prose-chat :where(em) {
   font-style: italic;
@@ -230,14 +230,14 @@ body {
 
 /* ---- Headings: chat-scaled doc hierarchy, h1/h2 get a hairline ---- */
 .prose-chat :where(h1, h2, h3, h4, h5, h6) {
-  font-weight: 600;
+  font-weight: min(900, calc(600 + var(--ui-font-weight-offset, 0)));
   letter-spacing: -0.02em;
   line-height: 1.2;
   color: var(--color-text-primary);
 }
 .prose-chat :where(h1) {
   font-size: 1.85em;
-  font-weight: 800;
+  font-weight: min(900, calc(800 + var(--ui-font-weight-offset, 0)));
   letter-spacing: -0.025em;
   line-height: 1.15;
   text-wrap: balance;
@@ -429,7 +429,7 @@ body {
   padding: 12px 16px 14px;
   overflow-x: auto;
   white-space: pre;
-  font-size: 13px;
+  font-size: var(--code-font-size, 13px);
   line-height: 1.7;
   color: var(--color-text-primary);
 }
@@ -470,7 +470,7 @@ body {
   background: var(--md-codeblock-bg);
   overflow-x: auto;
   white-space: pre;
-  font-size: 13px;
+  font-size: var(--code-font-size, 13px);
   line-height: 1.7;
   color: var(--color-text-primary);
 }

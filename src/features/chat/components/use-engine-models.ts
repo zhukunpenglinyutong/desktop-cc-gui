@@ -56,6 +56,17 @@ function configuredModel(
   return raw ? providerModel(engineId as EngineId, raw).trim() : "";
 }
 
+/** Catalog ids can be `provider/model` composites (DSH's session/modelCatalog
+ *  flattens to them) while the channel's configured model is stored bare —
+ *  the same model then listed twice: once raw, once catalogued. Resolve a
+ *  bare id to its unique composite catalog entry so the two collapse into
+ *  one row. */
+function resolveCompositeId(id: string, catalogIds: string[]): string {
+  if (!id || id.includes("/")) return id;
+  const matches = catalogIds.filter((cid) => cid.endsWith(`/${id}`));
+  return matches.length === 1 ? matches[0] : id;
+}
+
 export function useEngineModels(
   engines: EngineInfo[],
   models: Record<string, string>,
@@ -204,14 +215,18 @@ export function useEngineModels(
   const modelsByEngine = useMemo(() => {
     const result: Record<string, ModelOption[]> = {};
     for (const engine of engines) {
-      const configured = configuredModel(engine.id, cliConfig, providers[engine.id]);
+      const catalog = catalogs[engine.id]?.models ?? [];
+      const catalogIds = catalog.map((m) => m.id);
+      const configured = resolveCompositeId(
+        configuredModel(engine.id, cliConfig, providers[engine.id]),
+        catalogIds,
+      );
       const families = providerFamilyModels(
         engine.id,
         channelRaw(engine.id, cliConfig, providers[engine.id]),
       );
       const providerModels = configured ? [configured] : [];
-      const current = models[engine.id]?.trim();
-      const catalog = catalogs[engine.id]?.models ?? [];
+      const current = resolveCompositeId(models[engine.id]?.trim() ?? "", catalogIds);
       // Remote workspace (WSL distro): local channel/custom models cannot
       // run there — the distro CLI's own list is the entire menu.
       if (catalogs[engine.id]?.remote) {

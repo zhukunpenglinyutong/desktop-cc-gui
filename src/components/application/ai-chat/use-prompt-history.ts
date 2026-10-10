@@ -82,19 +82,19 @@ export function usePromptHistoryNav({
 }: {
   editableRef: RefObject<HTMLDivElement | null>;
   setText: (text: string) => void;
-}): { handleKeyDown: (event: HistoryKeyEvent) => boolean } {
+}): {
+  handleKeyDown: (event: HistoryKeyEvent) => boolean;
+  resetNavigation: () => void;
+} {
   const indexRef = useRef(-1);
   const draftRef = useRef("");
+  const resetNavigation = useCallback(() => {
+    indexRef.current = -1;
+    draftRef.current = "";
+  }, []);
 
   // A submit records a prompt and clears the field: drop the nav cursor.
-  useEffect(
-    () =>
-      subscribePromptHistory(() => {
-        indexRef.current = -1;
-        draftRef.current = "";
-      }),
-    [],
-  );
+  useEffect(() => subscribePromptHistory(resetNavigation), [resetNavigation]);
 
   const handleKeyDown = useCallback(
     (event: HistoryKeyEvent): boolean => {
@@ -103,8 +103,7 @@ export function usePromptHistoryNav({
       if (!isPromptHistoryEnabled()) return false;
 
       if (isNavigating && key !== "ArrowUp" && key !== "ArrowDown") {
-        indexRef.current = -1;
-        draftRef.current = "";
+        resetNavigation();
         return false;
       }
       if (key !== "ArrowUp" && key !== "ArrowDown") return false;
@@ -134,13 +133,12 @@ export function usePromptHistoryNav({
         setText(items[indexRef.current] ?? draftRef.current);
         return true;
       }
-      indexRef.current = -1;
       setText(draftRef.current);
-      draftRef.current = "";
+      resetNavigation();
       return true;
     },
-    [editableRef, setText],
+    [editableRef, setText, resetNavigation],
   );
 
-  return { handleKeyDown };
+  return { handleKeyDown, resetNavigation };
 }

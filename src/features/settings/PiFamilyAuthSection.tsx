@@ -36,8 +36,16 @@ import {
   type PiFamilyOauthProvider,
 } from "./piFamilyAuthCatalog";
 import { PiFamilyApiKeySection } from "./PiFamilyApiKeySection";
-import { PiFamilyCustomSection } from "./PiFamilyCustomSection";
-import { extractProviderBlock, removeProviderBlock, replaceProviderBlock } from "./piFamilyModelsBlocks";
+import {
+  PiFamilyCustomSection,
+  type CustomProviderField,
+} from "./PiFamilyCustomSection";
+import {
+  extractProviderBlock,
+  removeProviderBlock,
+  replaceProviderBlock,
+  setProviderField,
+} from "./piFamilyModelsBlocks";
 import { launchPiFamilyLogin } from "./piFamilyLogin";
 import { PiFamilyOauthSection } from "./PiFamilyOauthSection";
 import { notifyCliConfigChanged } from "./providers";
@@ -73,6 +81,12 @@ function usePiFamilyAuthState(
   const [customSaving, setCustomSaving] = useState(false);
   const [customError, setCustomError] = useState<string | null>(null);
   const [customDeleteTarget, setCustomDeleteTarget] = useState<PiFamilyCustomProviderSummary | null>(null);
+  const [customEditingField, setCustomEditingField] = useState<{
+    id: string;
+    field: CustomProviderField;
+  } | null>(null);
+  const [customFieldDraft, setCustomFieldDraft] = useState("");
+  const [customFieldError, setCustomFieldError] = useState<string | null>(null);
 
   const oauthProviders = PI_FAMILY_OAUTH_PROVIDERS[engine];
   const storePath = snapshot?.store.path ?? "";
@@ -211,15 +225,22 @@ function usePiFamilyAuthState(
     setCustomError(null);
   }, []);
 
+  const closeCustomFieldEditor = useCallback(() => {
+    setCustomEditingField(null);
+    setCustomFieldDraft("");
+    setCustomFieldError(null);
+  }, []);
+
   const showModelsEditor = useCallback(
     (error: string | null = null) => {
       closeCustomProviderEditor();
+      closeCustomFieldEditor();
       const existing = modelsConfig?.text ?? "";
       setModelsDraft(existing.trim() ? existing : (modelsConfig?.template ?? ""));
       setModelsError(error);
       setModelsEditorOpen(true);
     },
-    [closeCustomProviderEditor, modelsConfig],
+    [closeCustomFieldEditor, closeCustomProviderEditor, modelsConfig],
   );
 
   const openModelsEditor = useCallback(() => {
@@ -283,6 +304,84 @@ function usePiFamilyAuthState(
     }
   }, [closeCustomProviderEditor, customDraft, customEditingId, engine, modelsConfig, refresh, t]);
 
+  const openCustomFieldEditor = useCallback(
+    (id: string, field: CustomProviderField) => {
+      if (customEditingField?.id === id && customEditingField.field === field) {
+        closeCustomFieldEditor();
+        return;
+      }
+      const provider = modelsConfig?.providers.find((item) => item.id === id);
+      if (!provider) {
+        return;
+      }
+      closeCustomProviderEditor();
+      setCustomEditingField({ id, field });
+      setCustomFieldDraft(
+        field === "baseUrl" ? (provider.baseUrl ?? "") : provider.id,
+      );
+      setCustomFieldError(null);
+    },
+    [closeCustomFieldEditor, closeCustomProviderEditor, customEditingField, modelsConfig],
+  );
+
+  const handleCustomFieldSave = useCallback(async () => {
+    if (!customEditingField || !modelsConfig?.text) {
+      return;
+    }
+    const { id, field } = customEditingField;
+    const value = customFieldDraft.trim();
+    if (field === "baseUrl" && value === "") {
+      setCustomFieldError(t("settings.piAuthCustomFieldEmptyUrl"));
+      return;
+    }
+    if (field === "id" && value === "") {
+      setCustomFieldError(t("settings.piAuthCustomFieldEmptyId"));
+      return;
+    }
+    if (
+      field === "id" &&
+      modelsConfig.providers.some((item) => item.id !== id && item.id === value)
+    ) {
+      setCustomFieldError(t("settings.piAuthCustomFieldDuplicateId", { id: value }));
+      return;
+    }
+    setCustomSaving(true);
+    setCustomFieldError(null);
+    try {
+      const nextText = setProviderField(
+        modelsConfig.text,
+        modelsConfig.file.format,
+        id,
+        field,
+        value,
+      );
+      if (!nextText) {
+        setCustomFieldError(t("settings.piAuthCustomEditNotFound", { id }));
+        return;
+      }
+      if (nextText === modelsConfig.text) {
+        closeCustomFieldEditor();
+        return;
+      }
+      await ipc.piFamilyModelsConfigWrite(engine, nextText);
+      notifyCliConfigChanged();
+      closeCustomFieldEditor();
+      await refresh();
+    } catch (error) {
+      setCustomFieldError(String(error));
+    } finally {
+      setCustomSaving(false);
+    }
+  }, [
+    closeCustomFieldEditor,
+    customEditingField,
+    customFieldDraft,
+    engine,
+    modelsConfig,
+    refresh,
+    t,
+  ]);
+
   const handleCustomProviderDelete = useCallback(async () => {
     const target = customDeleteTarget;
     if (!target || !modelsConfig?.text) {
@@ -304,6 +403,9 @@ function usePiFamilyAuthState(
       if (customEditingId === target.id) {
         closeCustomProviderEditor();
       }
+      if (customEditingField?.id === target.id) {
+        closeCustomFieldEditor();
+      }
       await refresh();
     } catch (error) {
       setCustomDeleteTarget(null);
@@ -311,7 +413,7 @@ function usePiFamilyAuthState(
     } finally {
       setCustomSaving(false);
     }
-  }, [closeCustomProviderEditor, customDeleteTarget, customEditingId, engine, modelsConfig, refresh, t]);
+  }, [closeCustomFieldEditor, closeCustomProviderEditor, customDeleteTarget, customEditingField, customEditingId, engine, modelsConfig, refresh, t]);
 
   // The 官方配置 row's 编辑 entry bumps this signal to open the models
   // editor. Adjusting state during render (React's recommended pattern,
@@ -410,6 +512,13 @@ function usePiFamilyAuthState(
     customDeleteTarget,
     setCustomDeleteTarget,
     handleCustomProviderDelete,
+    customEditingField,
+    customFieldDraft,
+    setCustomFieldDraft,
+    customFieldError,
+    openCustomFieldEditor,
+    handleCustomFieldSave,
+    closeCustomFieldEditor,
   };
 }
 
@@ -471,6 +580,13 @@ export function PiFamilyAuthSection({
     customDeleteTarget,
     setCustomDeleteTarget,
     handleCustomProviderDelete,
+    customEditingField,
+    customFieldDraft,
+    setCustomFieldDraft,
+    customFieldError,
+    openCustomFieldEditor,
+    handleCustomFieldSave,
+    closeCustomFieldEditor,
   } = usePiFamilyAuthState(engine, openCustomEditorSignal);
 
   return (
@@ -535,6 +651,13 @@ export function PiFamilyAuthSection({
         onProviderSave={() => void handleCustomProviderSave()}
         onCloseProviderEditor={closeCustomProviderEditor}
         onDeleteProvider={setCustomDeleteTarget}
+        editingField={customEditingField}
+        fieldDraft={customFieldDraft}
+        fieldError={customFieldError}
+        onOpenFieldEditor={openCustomFieldEditor}
+        onFieldDraftChange={setCustomFieldDraft}
+        onFieldSave={() => void handleCustomFieldSave()}
+        onCloseFieldEditor={closeCustomFieldEditor}
       />
 
       {deleteTarget && (

@@ -215,12 +215,13 @@ fn urlencode(value: &str) -> String {
         .collect()
 }
 
-/// Relay url + key to dial at launch, when the switch was left on. The tunnel
-/// is what makes the machine reachable without anyone at the desk, so an app
-/// relaunch (update, crash, reboot) has to bring it back — losing it there
-/// would need a human to notice and click.
+/// Relay url + key to dial at launch, when 无人值守 was left on. The tunnel is
+/// what makes the machine reachable without anyone at the desk, so an app
+/// relaunch (update, crash, reboot) brings it back — but only for a user who
+/// asked for that: the plain relay switch is session-only, and this marker is
+/// the one piece of it that persists.
 pub fn autostart_target(settings: &crate::settings::AppSettings) -> Option<(String, String)> {
-    if settings.web_relay_on != Some(true) {
+    if settings.web_relay_unattended != Some(true) {
         return None;
     }
     let url = settings.web_relay_url.as_deref()?.trim();
@@ -231,37 +232,27 @@ pub fn autostart_target(settings: &crate::settings::AppSettings) -> Option<(Stri
     Some((url.to_string(), key.to_string()))
 }
 
-///
-/// Caller must hold `crate::settings::settings_write_lock()`: the read above
-/// and the persist below are one atomic read-modify-write, and start/stop
-/// linearize through that lock together with their state swap.
-fn persist_relay_state(
-    enabled: bool,
-    target: Option<(&str, &str)>,
-) -> Result<Option<String>, String> {
+/// Write the 无人值守 marker. Caller must hold
+/// `crate::settings::settings_write_lock()`.
+fn persist_relay_unattended(enabled: bool) -> Result<Option<String>, String> {
     let mut settings = crate::settings::read_settings()?;
-    if let Some((url, key)) = target {
-        settings.web_relay_url = Some(url.to_string());
-        settings.web_relay_key = Some(key.to_string());
-    }
-    settings.web_relay_on = Some(enabled);
+    settings.web_relay_unattended = Some(enabled);
     crate::settings::persist_settings_committed(&mut settings)
 }
 
-/// Stop half of the switch: persist first — the durable switch is
-/// authoritative, so if writing it fails the published relay and its agent
-/// task stay untouched and restart cannot silently disagree with the running
-/// state — then take the published relay down. Splitting it this way keeps
-/// the disk write outside the `relay.inner` critical section.
-fn stop_relay_after_persist(
-    persist: impl FnOnce() -> Result<Option<String>, String>,
-    take_running: impl FnOnce() -> Option<Running>,
-) -> Result<Option<String>, String> {
-    let warning = persist()?;
-    if let Some(running) = take_running() {
-        let _ = running.stop.send(true);
-    }
-    Ok(warning)
+/// Remember the relay address a start was pointed at, so the settings fields
+/// come back filled next time. The on/off position itself is *not* stored: the
+/// switch is session-only, and a relaunch starts with the tunnel off until the
+/// user turns it on again.
+///
+/// Caller must hold `crate::settings::settings_write_lock()`: the read and the
+/// persist are one atomic read-modify-write, and starts linearize through that
+/// lock together with their state swap.
+fn persist_relay_target(url: &str, key: &str) -> Result<Option<String>, String> {
+    let mut settings = crate::settings::read_settings()?;
+    settings.web_relay_url = Some(url.to_string());
+    settings.web_relay_key = Some(key.to_string());
+    crate::settings::persist_settings_committed(&mut settings)
 }
 
 #[tauri::command]
@@ -287,13 +278,13 @@ pub async fn web_relay_start(
     };
     let (stop_tx, stop_rx) = watch::channel(false);
     let generation = NEXT_GENERATION.fetch_add(1, Ordering::Relaxed);
-    // Persist and publish are one settings-lock section so start/stop
-    // linearize as a single state transition, while the disk write stays out
-    // of the relay.inner critical section. On failure an existing relay
-    // remains untouched.
+    // Remembering the address and publishing the relay are one settings-lock
+    // section, so two starts cannot interleave their state swaps, while the
+    // disk write stays out of the relay.inner critical section. On failure an
+    // existing relay remains untouched.
     let persisted = {
         let _settings_guard = crate::settings::settings_write_lock();
-        match persist_relay_state(true, Some((&url, &key))) {
+        match persist_relay_target(&url, &key) {
             Ok(warning) => {
                 let mut guard = state.relay.inner.lock();
                 if let Some(previous) = guard.take() {
@@ -329,25 +320,43 @@ pub async fn web_relay_start(
     Ok(info)
 }
 
+/// 无人值守 switch (设置 → 远程访问 → 外网访问). On writes the autostart marker —
+/// the card then dials the tunnel right away through `web_relay_start`, so this
+/// command stays a settings write. Off only clears the marker: dropping the
+/// current tunnel is the relay button's job, not this one's.
+#[tauri::command]
+pub fn web_relay_unattended_set(app: tauri::AppHandle, enabled: bool) -> Result<(), String> {
+    let warning = {
+        let _guard = crate::settings::settings_write_lock();
+        persist_relay_unattended(enabled)?
+    };
+    if let Some(warning) = warning {
+        eprintln!("[relay] settings committed with warning: {warning}");
+    }
+    crate::settings::announce_settings(&app);
+    Ok(())
+}
+
+/// Stop half of the switch. The switch position is session-only, so stopping is
+/// purely runtime — but 无人值守 is cleared first: the user asked for the tunnel
+/// to stop, and leaving the marker set would dial it again on the next launch
+/// (persisting first means a failed write keeps the tunnel running instead of
+/// half-applying). The address stays on file for the next start.
 #[tauri::command]
 pub fn web_relay_stop(app: tauri::AppHandle) -> Result<(), String> {
     let state = app.state::<crate::AppState>();
-    let persisted = {
-        let _settings_guard = crate::settings::settings_write_lock();
-        stop_relay_after_persist(
-            || persist_relay_state(false, None),
-            || state.relay.inner.lock().take(),
-        )
+    let warning = {
+        let _guard = crate::settings::settings_write_lock();
+        persist_relay_unattended(false)?
     };
-    broadcast_relay(&app);
-    match persisted {
-        Ok(Some(warning)) => {
-            eprintln!("[relay] settings committed with warning: {warning}");
-            Ok(())
-        }
-        Ok(None) => Ok(()),
-        Err(error) => Err(error),
+    if let Some(running) = state.relay.inner.lock().take() {
+        let _ = running.stop.send(true);
     }
+    if let Some(warning) = warning {
+        eprintln!("[relay] settings committed with warning: {warning}");
+    }
+    broadcast_relay(&app);
+    Ok(())
 }
 
 #[tauri::command]
@@ -864,8 +873,8 @@ where
 /// Keeps the agent socket up. A socket that lived and then died is redialed —
 /// a blip on the desktop's uplink should not cost the phone its link — and a
 /// dial that never comes up is retried on a capped backoff. Nothing but
-/// switching the relay off stops it: unattended machines are expected to be
-/// reachable when the Worker comes back, however long that takes.
+/// switching the relay off stops it: retries follow the running tunnel and are
+/// **not** gated on 无人值守, which only decides whether a launch dials at all.
 async fn run_agent(
     app: tauri::AppHandle,
     agent: String,
@@ -1501,63 +1510,31 @@ mod tests {
         );
     }
 
-    /// A relaunch restores the tunnel only when the user left it on: an address
-    /// on file is not a switch, and switching off has to stick.
+    /// 无人值守 is what makes a relaunch dial: an address on file is not
+    /// enough, and the marker needs both halves of the address to be usable.
     #[test]
-    fn autostart_follows_the_remembered_switch() {
+    fn autostart_follows_the_unattended_marker() {
         let mut settings = crate::settings::AppSettings::default();
-        assert!(
-            autostart_target(&settings).is_none(),
-            "off until switched on"
-        );
+        assert!(autostart_target(&settings).is_none(), "off until asked for");
         settings.web_relay_url = Some("https://relay.example".into());
         settings.web_relay_key = Some("KEY".into());
         assert!(
             autostart_target(&settings).is_none(),
-            "an address is not a switch"
+            "an address alone is not a request to reconnect"
         );
-        settings.web_relay_on = Some(true);
+        settings.web_relay_unattended = Some(true);
         assert_eq!(
             autostart_target(&settings),
             Some(("https://relay.example".to_string(), "KEY".to_string()))
         );
-        settings.web_relay_on = Some(false);
+        settings.web_relay_unattended = Some(false);
         assert!(autostart_target(&settings).is_none(), "off stays off");
-    }
 
-    #[test]
-    fn stop_persistence_failure_preserves_the_running_relay() {
-        let (stop, stop_rx) = watch::channel(false);
-        let mut slot = Some(Running {
-            info: RelayInfo {
-                url: "https://relay.example".into(),
-                agent_url: "wss://relay.example/agent?key=KEY".into(),
-                connected: true,
-                error: None,
-            },
-            stop,
-            generation: 1,
-        });
-
-        let error = stop_relay_after_persist(
-            || Err("settings disk is read-only".to_string()),
-            || slot.take(),
-        )
-        .unwrap_err();
-
-        assert_eq!(error, "settings disk is read-only");
-        assert!(slot.is_some(), "the live relay remains published");
-        assert!(!*stop_rx.borrow(), "the agent task was not stopped");
-
-        stop_relay_after_persist(
-            || Ok(Some("unrelated setting was rejected".to_string())),
-            || slot.take(),
-        )
-        .unwrap();
-        assert!(slot.is_none(), "a committed stop removes the relay");
+        settings.web_relay_unattended = Some(true);
+        settings.web_relay_key = Some("   ".into());
         assert!(
-            *stop_rx.borrow(),
-            "a committed warning still stops the agent"
+            autostart_target(&settings).is_none(),
+            "a blank key cannot dial"
         );
     }
 

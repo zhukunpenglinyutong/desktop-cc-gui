@@ -73,6 +73,10 @@ export function startApp() {
       applyTheme(settings.theme);
       applyFontPreferences({
         fontFamily: settings.fontFamily,
+        uiFontSize: settings.uiFontSize,
+        contentFontSize: settings.contentFontSize,
+        codeFontSize: settings.codeFontSize,
+        uiFontWeight: settings.uiFontWeight,
         codeFontFamily: settings.codeFontFamily,
         fontFile: settings.fontFile,
         codeFontFile: settings.codeFontFile,

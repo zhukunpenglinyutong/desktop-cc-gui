@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>OMP 自定义供应商 inline edit fixture</title>
+</head>
+<body style="margin:0;background:#0b0b0b">
+<div id="fixture"></div>
+<script>
+// Stands in for the Tauri IPC surface: pi_family_models_config_read returns the
+// real config text, pi_family_models_config_write stores what the section
+// hands back, so the harness can print the exact bytes that would land on disk.
+const MODELS_YML = `providers:
+  lanln:
+    baseUrl: https://ai.venlacy.com/v1
+    apiKey: sk-lanln
+    api: openai-responses
+    models:
+      - id: gpt-6.1-sol
+        name: gpt-6.1-sol
+
+  123nhh-gpt:
+    baseUrl: https://api.123nhh.com
+    apiKey: sk-123nhh
+    api: anthropic-messages
+    models:
+      - id: gpt-5.6-sol
+        name: gpt-5.6-sol
+
+  FB2api:
+    baseUrl: https://fb2api.yuzu.gv.uy/
+    apiKey: fb-IZjz
+    api: anthropic-messages
+    models:
+      - id: openai/gpt-6-luna
+        name: openai/gpt-6-luna
+`;
+
+function summarize(text) {
+  const providers = [];
+  const lines = text.split("\n");
+  let current = null;
+  for (const line of lines) {
+    const key = /^  ([^ #][^:]*):\s*$/.exec(line);
+    if (key) {
+      current = { id: key[1].replace(/^"(.*)"$/, "$1"), baseUrl: null, modelCount: 0 };
+      providers.push(current);
+      continue;
+    }
+    if (!current) continue;
+    const url = /^    baseUrl:\s*(.*)$/.exec(line);
+    if (url) current.baseUrl = url[1].replace(/^"(.*)"$/, "$1");
+    if (/^      - id:/.test(line)) current.modelCount += 1;
+  }
+  providers.sort((a, b) => (a.id < b.id ? -1 : 1));
+  return providers;
+}
+
+const state = { text: MODELS_YML, writes: [], listeners: new Map() };
+let nextId = 1;
+window.__TAURI_INTERNALS__ = {
+  transformCallback(cb) {
+    const id = nextId++;
+    state.listeners.set(id, cb);
+    return id;
+  },
+  unregisterCallback(id) {
+    state.listeners.delete(id);
+  },
+  convertFileSrc: (p) => p,
+  metadata: { currentWebview: { label: "main" }, currentWindow: { label: "main" } },
+  async invoke(cmd, args) {
+    switch (cmd) {
+      case "pi_family_models_config_read":
+        return {
+          file: { path: "C:/Users/Me/.omp/agent/models.yml", format: "yaml", exists: true },
+          text: state.text,
+          template: "",
+          providers: summarize(state.text),
+          parseError: null,
+        };
+      case "pi_family_models_config_write":
+        state.writes.push(args.text);
+        state.text = args.text;
+        return null;
+      case "pi_family_auth_list":
+        return {
+          store: { path: "C:/Users/Me/.omp/agent/agent.db", kind: "sqlite", exists: true },
+          providers: [],
+          oauthProviders: [],
+        };
+      case "plugin:event|listen":
+      case "plugin:event|unlisten":
+        return 1;
+      default:
+        return null;
+    }
+  },
+};
+window.__fixture = {
+  state,
+  reset() {
+    state.text = MODELS_YML;
+    state.writes = [];
+  },
+  text: () => state.text,
+  writes: () => state.writes,
+  /** The provider block whose key is `id` (falls back to the URL line, since a
+   *  rename changes the key the harness knows). */
+  lineOf(id, field) {
+    const lines = state.text.split("\n");
+    let start = lines.findIndex((line) => line === `  ${id}:` || line === `  "${id}":`);
+    if (start < 0) start = lines.findIndex((line) => line.includes(id));
+    if (start < 0) return null;
+    for (let index = start + 1; index < lines.length; index += 1) {
+      if (/^  \S/.test(lines[index])) break;
+      if (lines[index].startsWith(`    ${field}:`)) return lines[index];
+    }
+    return null;
+  },
+  /** The provider key on the line above `needle`. */
+  idOf(needle) {
+    const lines = state.text.split("\n");
+    const at = lines.findIndex((line) => line.includes(needle));
+    for (let index = at; index >= 0; index -= 1) {
+      if (/^  \S.*:\s*$/.test(lines[index])) return lines[index].trim().replace(/:$/, "");
+    }
+    return null;
+  },
+};
+</script>
+<script type="module" src="./omp-custom-provider-edit.tsx"></script>
+</body>
+</html>

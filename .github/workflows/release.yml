@@ -156,13 +156,73 @@ jobs:
           exit 1
 
       - name: Notarize and staple DMG
+        # `notarytool submit --wait` treats a single timed-out status poll
+        # (NSURLErrorDomain -1001, a 60s request to appstoreconnect) as fatal:
+        # that failed the x86_64 job while the same step was Accepted on
+        # arm64 minutes earlier. Submit without `--wait` and poll `info`
+        # ourselves, so one dropped request costs a retry rather than the
+        # whole release.
         run: |
           set -euo pipefail
           DMG=$(find src-tauri/target/release/bundle/dmg -maxdepth 1 -name '*.dmg' | head -n 1)
           test -n "$DMG"
-          xcrun notarytool submit "$DMG" \
-            --keychain-profile "$NOTARY_PROFILE_NAME" \
-            --wait
+
+          submission=$(xcrun notarytool submit "$DMG" \
+            --keychain-profile "$NOTARY_PROFILE_NAME")
+          printf '%s\n' "$submission"
+          id=$(printf '%s\n' "$submission" \
+            | grep -oE '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}' \
+            | head -n 1 || true)
+          if [ -z "$id" ]; then
+            echo "::error::no submission id in notarytool output"
+            exit 1
+          fi
+
+          accepted=0
+          for attempt in $(seq 1 60); do
+            # `info` can exit non-zero while still printing the status, so read
+            # the status from the output either way: only a poll that yields
+            # no status at all counts as lost.
+            if info=$(xcrun notarytool info "$id" \
+              --keychain-profile "$NOTARY_PROFILE_NAME" \
+              --output-format json 2>&1); then
+              poll_ok=1
+            else
+              poll_ok=0
+            fi
+            status=$(printf '%s' "$info" \
+              | python3 -c 'import json,sys; print(json.load(sys.stdin).get("status",""))' 2>/dev/null || true)
+            if [ -z "$status" ]; then
+              status=$(printf '%s' "$info" \
+                | grep -oE '"status"[[:space:]]*:[[:space:]]*"[^"]+"' \
+                | head -n 1 | sed -E 's/.*"([^"]+)"$/\1/' || true)
+            fi
+            if [ "$poll_ok" != 1 ] && [ -z "$status" ]; then
+              echo "::warning::notary status poll $attempt failed: $(printf '%s' "$info" | tail -n 1)"
+            fi
+            case "$status" in
+              Accepted)
+                echo "notary accepted submission $id"
+                accepted=1
+                break
+                ;;
+              Invalid)
+                echo "::error::notary rejected $DMG"
+                xcrun notarytool log "$id" --keychain-profile "$NOTARY_PROFILE_NAME" || true
+                exit 1
+                ;;
+              *)
+                echo "notary status: ${status:-unavailable} (poll $attempt/60)"
+                ;;
+            esac
+            sleep 20
+          done
+
+          if [ "$accepted" != 1 ]; then
+            echo "::error::notary did not accept the submission within 20 minutes"
+            exit 1
+          fi
+
           xcrun stapler staple "$DMG"
 
       - name: Package artifacts

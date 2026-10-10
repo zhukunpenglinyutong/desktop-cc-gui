@@ -472,6 +472,12 @@ export interface AppSettings {
   fontFamily: string;
   /** Absolute path of the uploaded UI font file (设置 → 外观). */
   fontFile: string;
+  /** Base UI font size in px; layout spacing stays unchanged. */
+  uiFontSize: number;
+  contentFontSize: number;
+  codeFontSize: number;
+  /** standard / medium / bold: relative to each text style. */
+  uiFontWeight: string;
   /** Code font for chat code blocks and the built-in terminal: "" = 系统默认,
    *  "custom" = the uploaded code font in `codeFontFile`. */
   codeFontFamily: string;
@@ -499,6 +505,9 @@ export interface AppSettings {
   /** Thinking-process row behavior once its thinking settles: true/absent =
    *  auto-fold (default), false = stay expanded until the user folds it. */
   thinkingAutoCollapse?: boolean | null;
+  /** 宽幕布 (设置 → 通用 → 外观): true = the chat content column fills its
+   *  pane instead of the default centered column (750px / `max-w-3xl`). */
+  chatWideLayout?: boolean | null;
   /** Beta entry points (设置 → 其他 → 内测功能): feature id -> enabled.
    *  Missing/false = the entry stays hidden (default off). */
   betaFeatures?: Record<string, boolean> | null;
@@ -531,6 +540,9 @@ export interface AppSettings {
   webRelayUrl?: string | null;
   /** Shared relay key; also the phone URL's path segment. */
   webRelayKey?: string | null;
+  /** 无人值守 (设置 → 远程访问 → 外网访问): dial the relay at launch and keep
+   *  redialing. Off/absent = the relay switch is session-only. */
+  webRelayUnattended?: boolean | null;
   /** LAN web access auto-start on app launch (设置 → 远程访问 → 内网访问: 随应用自动开启). */
   webAccessAutoStart?: boolean | null;
   /** LAN web access fixed port (null/0 = auto). */
@@ -1485,6 +1497,10 @@ export const ipc = {
    * new paths (same order). Picked paths live outside the sandbox, so the
    * engines' path-based image pipeline cannot read them in place. */
   importAttachments: (paths: string[]) => invoke<string[]>("import_attachments", { paths }),
+  /** Absolute paths of the files on the OS clipboard (Finder / Explorer
+   * copies expose no path to the webview). Empty when the clipboard holds no
+   * file; the web bridge has no OS pasteboard and always answers empty. */
+  clipboardFilePaths: () => invoke<string[]>("clipboard_file_paths"),
   listEngineModels: (engine: string, workspace?: string) =>
     withGrantRetry(() =>
       invoke<EngineCatalog>("list_engine_models", { engine, workspace: workspace ?? null }),
@@ -1910,6 +1926,10 @@ export const ipc = {
   webRelayStatus: () => invoke<RelayInfo | null>("web_relay_status"),
   webRelayStart: (url: string, key: string) => invoke<RelayInfo>("web_relay_start", { url, key }),
   webRelayStop: () => invoke<void>("web_relay_stop"),
+  /** 无人值守 marker: remembers the relay across launches. Turning it on also
+   *  needs a dial (`webRelayStart`) — the card does both. */
+  webRelayUnattended: (enabled: boolean) =>
+    invoke<void>("web_relay_unattended_set", { enabled }),
   /** Is a browser driving this machine through the relay right now? */
   remoteControlActive: () => invoke<boolean>("remote_control_active"),
   /** Replace the pairing key now instead of waiting for the automatic

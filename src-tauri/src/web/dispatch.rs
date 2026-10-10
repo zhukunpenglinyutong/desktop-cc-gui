@@ -13,6 +13,11 @@ struct RelayArgs {
 }
 
 #[derive(Deserialize)]
+struct RelayUnattendedArgs {
+    enabled: bool,
+}
+
+#[derive(Deserialize)]
 struct RelayDeployPackArgs {
     path: String,
     key: Option<String>,
@@ -755,6 +760,10 @@ pub(super) async fn dispatch(
             let a: PathsArgs = parse_args(&raw)?;
             ser(crate::engine::images::import_attachments(a.paths))
         }
+        // The web bridge has no OS pasteboard to read (and browsers expose no
+        // file path to page JavaScript): pasted files stay limited to the
+        // flavors the paste event itself carried.
+        "clipboard_file_paths" => ser(Ok::<Vec<String>, String>(Vec::new())),
         // history
         "list_sessions" => ser(crate::history::reader::list_sessions(app.state())),
         "list_archived_sessions" => {
@@ -1242,6 +1251,10 @@ pub(super) async fn dispatch(
             ser(crate::relay::web_relay_start(app.clone(), a.url, a.key).await)
         }
         "web_relay_stop" => ser(crate::relay::web_relay_stop(app.clone())),
+        "web_relay_unattended" => {
+            let a: RelayUnattendedArgs = parse_args(&raw)?;
+            ser(crate::relay::web_relay_unattended_set(app.clone(), a.enabled))
+        }
         "relay_deploy_pack" => {
             let a: RelayDeployPackArgs = parse_args(&raw)?;
             ser(crate::relay::relay_deploy_pack(a.path, a.key))

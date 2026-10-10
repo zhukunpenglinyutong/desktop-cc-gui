@@ -15,7 +15,7 @@ import type { StoreGet, StoreSet } from "./context";
 /**
  * Preference actions: composer permission, service tiers, per-engine
  * model/effort/provider picks, and the small settings-backed toggles
- * (thread limit, send shortcut, thinking auto-collapse).
+ * (thread limit, send shortcut, thinking auto-collapse, 宽幕布).
  */
 
 export interface PreferenceDeps {
@@ -38,6 +38,7 @@ export function createPreferenceActions(
   | "setThreadLimit"
   | "setSendShortcut"
   | "setThinkingAutoCollapse"
+  | "setWideLayout"
 > {
   const { set, get, stampActiveTab } = deps;
 
@@ -144,6 +145,9 @@ export function createPreferenceActions(
     },
     setThinkingAutoCollapse: (autoCollapse) => {
       set({ thinkingAutoCollapse: autoCollapse });
+    },
+    setWideLayout: (wide) => {
+      set({ wideLayout: wide });
     },
   };
 }

@@ -234,6 +234,7 @@ export function createSessionActions(
             archivedWorkspaces: settings.archivedWorkspaces ?? [],
             sendShortcut: settings.composerSendShortcut ?? "enter",
             thinkingAutoCollapse: settings.thinkingAutoCollapse ?? true,
+            wideLayout: settings.chatWideLayout ?? false,
           }),
         )
         .catch(() => {});

@@ -62,6 +62,48 @@ const generalEntries: SettingsSearchEntry[] = [
   },
   {
     page: "general",
+    anchor: "typographyAdvanced",
+    labelKey: "settings.typographyAdvanced",
+    sectionKey: "settings.appearance",
+  },
+  {
+    page: "general",
+    anchor: "uiFontSize",
+    labelKey: "settings.uiFontSize",
+    sectionKey: "settings.appearance",
+    activatorAnchor: "typographyAdvanced",
+  },
+  {
+    page: "general",
+    anchor: "contentFontSize",
+    labelKey: "settings.contentFontSize",
+    sectionKey: "settings.appearance",
+    activatorAnchor: "typographyAdvanced",
+  },
+  {
+    page: "general",
+    anchor: "codeFontSize",
+    labelKey: "settings.codeFontSize",
+    sectionKey: "settings.appearance",
+    activatorAnchor: "typographyAdvanced",
+  },
+  {
+    page: "general",
+    anchor: "uiFontWeight",
+    labelKey: "settings.uiFontWeight",
+    sectionKey: "settings.appearance",
+    activatorAnchor: "typographyAdvanced",
+  },
+  {
+    page: "general",
+    anchor: "chatWideLayout",
+    labelKey: "settings.chatWideLayout",
+    sectionKey: "settings.appearance",
+    // 「宽幕布」是自有叫法，搜索习惯里的宽度说法另外补。
+    keywords: ["wide", "width", "layout", "full width", "宽度", "全宽", "留白"],
+  },
+  {
+    page: "general",
     anchor: "fontFamily",
     labelKey: "settings.fontFamily",
     sectionKey: "settings.appearance",

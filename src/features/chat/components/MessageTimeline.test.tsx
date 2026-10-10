@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { formatDuration } from "./format-duration";
 import { MessageRow, MessageTimeline } from "./MessageTimeline";
 import { buildBotBlock } from "./agent-block";
+import { useChatStore } from "../store";
 import { useBotStore } from "@/features/bots/bot-store";
 import type { BotConfig, Message } from "@/lib/ipc";
 import { EMPTY_SESSION, type SessionState } from "../store/stream";
@@ -556,5 +557,57 @@ describe("host compaction rows", () => {
     await renderCompacting(messages, null, true);
     expect(curtains().length).toBe(0);
     expect(container.textContent).toContain(i18n.t("chat.thinking"));
+  });
+});
+
+describe("chat column width (宽幕布)", () => {
+  let container: HTMLDivElement;
+  let root: Root;
+
+  beforeEach(() => {
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+    useChatStore.setState({ wideLayout: false });
+  });
+
+  afterEach(async () => {
+    await act(async () => root.unmount());
+    container.remove();
+    useChatStore.setState({ wideLayout: false });
+  });
+
+  async function render(wide: boolean) {
+    useChatStore.setState({ wideLayout: wide });
+    await act(async () => {
+      root.render(
+        <MessageTimeline
+          session={{
+            ...EMPTY_SESSION,
+            messages: [{ seq: 1, role: "user", text: "hi", ts: null }],
+          }}
+          streaming={false}
+          onLoadEarlier={() => {}}
+          workspacePath="/ws"
+        />,
+      );
+    });
+    return container.querySelector<HTMLElement>("[data-virtual-inner]")!;
+  }
+
+  it("keeps the centered 750px column by default", async () => {
+    const inner = await render(false);
+    expect(inner.className).toContain("mx-auto");
+    expect(inner.className).toContain("max-w-[750px]");
+  });
+
+  it("drops the cap while 宽幕布 is on, and restores it when switched off", async () => {
+    const inner = await render(true);
+    expect(inner.className).toContain("w-full");
+    expect(inner.className).not.toContain("max-w-[750px]");
+
+    // Live toggle: the mounted timeline follows the store slice.
+    await act(async () => useChatStore.setState({ wideLayout: false }));
+    expect(inner.className).toContain("max-w-[750px]");
   });
 });

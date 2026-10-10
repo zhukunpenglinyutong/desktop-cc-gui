@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { Message, PlanReviewDecision } from "@/lib/ipc";
 import { useChatStore } from "../store";
+import { centerColumnClass } from "../chat-column";
 import { useScopedSession, useScopedSessionKey } from "../split/session-scope";
 import { isPlanActionable } from "../store/plan-review";
 import { memoizeMessageHistory } from "./memoize-message-history";
@@ -363,9 +364,10 @@ export function PlanReviewDock() {
     if (a.planId !== b.planId || a.revision !== b.revision) setHold(null);
   }, [pending, hold]);
   const message = pending ?? hold;
+  const wide = useChatStore((s) => s.wideLayout);
   if (!message?.planReview) return null;
   return (
-    <div className="mx-auto w-full max-w-3xl">
+    <div className={centerColumnClass(wide)}>
       <div className="rounded-xl border border-border-secondary bg-background-secondary-default px-3.5 py-3 shadow-lg">
         {pending ? (
           <PlanReviewDockBody message={pending} onHold={setHold} />

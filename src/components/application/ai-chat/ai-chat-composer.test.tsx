@@ -1,4 +1,4 @@
-import { act } from "react";
+import { act, useState } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { HashRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -7,6 +7,7 @@ import { Composer, StatusBar } from "./ai-chat-composer";
 import { getProxyQuickToggleAction } from "./proxy-toggle";
 import { ipc, type AppSettings } from "@/lib/ipc";
 import { extractText, getCaretOffset } from "./file-tags";
+import { clearPromptHistory, recordPrompt } from "@/features/chat/prompt-history";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT =
   true;
@@ -61,6 +62,144 @@ describe("Composer 草稿恢复", () => {
     const el = await render(PREFILL);
     expect(extractText(el)).toBe(PREFILL);
     expect(getCaretOffset(el)).toBe(PREFILL.length);
+  });
+});
+
+describe("Composer 中文编辑与历史召回", () => {
+  let container: HTMLDivElement;
+  let root: Root;
+  let editable: HTMLElement;
+  const onSubmit = vi.fn();
+
+  function ControlledComposer() {
+    const [value, setValue] = useState("");
+    return <Composer value={value} onValueChange={setValue} onSubmit={onSubmit} />;
+  }
+
+  beforeEach(async () => {
+    clearPromptHistory();
+    recordPrompt("历史提问");
+    onSubmit.mockClear();
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+    await act(async () => {
+      root.render(
+        <HashRouter>
+          <ControlledComposer />
+        </HashRouter>,
+      );
+    });
+    editable = container.querySelector<HTMLElement>(".composer-editable")!;
+  });
+
+  afterEach(async () => {
+    await act(async () => root.unmount());
+    container.remove();
+    clearPromptHistory();
+  });
+
+  async function key(key: string, options: KeyboardEventInit = {}) {
+    const event = new KeyboardEvent("keydown", {
+      bubbles: true,
+      cancelable: true,
+      key,
+      ...options,
+    });
+    await act(async () => {
+      editable.dispatchEvent(event);
+    });
+    return event;
+  }
+
+  it("历史召回后中文编辑结束，方向键不覆盖新草稿", async () => {
+    expect((await key("ArrowUp")).defaultPrevented).toBe(true);
+    expect(extractText(editable)).toBe("历史提问");
+    await act(async () => {
+      editable.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true }));
+    });
+    expect((await key("ArrowDown", { isComposing: true, keyCode: 229 })).defaultPrevented).toBe(false);
+    expect(extractText(editable)).toBe("历史提问");
+    await key("n", { isComposing: true, keyCode: 229 });
+    await act(async () => {
+      editable.textContent = "历史提问你好😀";
+      editable.dispatchEvent(new InputEvent("input", {
+        bubbles: true,
+        inputType: "insertCompositionText",
+        isComposing: true,
+        data: "你好😀",
+      }));
+      editable.dispatchEvent(new CompositionEvent("compositionend", {
+        bubbles: true,
+        data: "你好😀",
+      }));
+    });
+    const event = await key("ArrowDown");
+    expect(extractText(editable)).toBe("历史提问你好😀");
+    expect(event.defaultPrevented).toBe(false);
+  });
+
+  it("选字确认和立即发送在同一次 React 批处理中保留完整正文", async () => {
+    await act(async () => {
+      editable.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true }));
+      editable.textContent = "完整中文😀";
+      editable.dispatchEvent(new InputEvent("input", {
+        bubbles: true,
+        inputType: "insertCompositionText",
+        isComposing: true,
+        data: "完整中文😀",
+      }));
+      editable.dispatchEvent(new CompositionEvent("compositionend", {
+        bubbles: true,
+        data: "完整中文😀",
+      }));
+      editable.dispatchEvent(new KeyboardEvent("keydown", {
+        bubbles: true,
+        cancelable: true,
+        key: "Enter",
+        keyCode: 229,
+      }));
+      expect(onSubmit).not.toHaveBeenCalled();
+      editable.dispatchEvent(new KeyboardEvent("keydown", {
+        bubbles: true,
+        cancelable: true,
+        key: "Enter",
+        keyCode: 13,
+      }));
+    });
+    expect(onSubmit).toHaveBeenCalledExactlyOnceWith("完整中文😀");
+    expect(extractText(editable)).toBe("完整中文😀");
+  });
+
+  it("普通历史导航仍能回到原草稿", async () => {
+    await act(async () => recordPrompt("最近提问"));
+    await key("ArrowUp");
+    expect(extractText(editable)).toBe("最近提问");
+    await key("ArrowUp");
+    expect(extractText(editable)).toBe("历史提问");
+    await key("ArrowDown");
+    expect(extractText(editable)).toBe("最近提问");
+    await key("ArrowDown");
+    expect(extractText(editable)).toBe("");
+    expect(onSubmit).not.toHaveBeenCalled();
+  });
+
+  it("取消中文组合输入不发送，下一次选字后的回车仍能发送", async () => {
+    await act(async () => {
+      editable.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true }));
+      editable.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true, data: "" }));
+    });
+    expect(onSubmit).not.toHaveBeenCalled();
+    await act(async () => {
+      editable.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true }));
+      editable.textContent = "下一次输入";
+      editable.dispatchEvent(new CompositionEvent("compositionend", {
+        bubbles: true,
+        data: "下一次输入",
+      }));
+    });
+    await key("Enter", { keyCode: 13 });
+    expect(onSubmit).toHaveBeenCalledExactlyOnceWith("下一次输入");
   });
 });
 

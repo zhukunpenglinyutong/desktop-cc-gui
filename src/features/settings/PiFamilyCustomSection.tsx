@@ -11,7 +11,9 @@ import Webhook from "lucide-react/dist/esm/icons/webhook";
 import KeyRound from "lucide-react/dist/esm/icons/key-round";
 import Search from "lucide-react/dist/esm/icons/search";
 import Pencil from "lucide-react/dist/esm/icons/pencil";
+import Check from "lucide-react/dist/esm/icons/check";
 import Trash2 from "lucide-react/dist/esm/icons/trash-2";
+import { Input } from "@/components/base/input/input";
 import {
   SettingsCard,
   SettingsSectionLabel,
@@ -25,6 +27,79 @@ import { BrandIcon, ROW } from "./PiFamilyAuthShared";
 
 const ICON_BUTTON =
   "flex size-7 shrink-0 items-center justify-center rounded-lg text-foreground-icon-secondary hover:bg-background-secondary-hover hover:text-foreground-icon-primary disabled:opacity-40";
+
+/** Pencil beside the name / URL text. Glyph and padding are both in `em`, so
+ *  the button tracks the font of the text it belongs to (14px name, 11px URL)
+ *  and therefore the interface font / zoom, instead of a fixed pixel box. */
+const INLINE_EDIT_BUTTON =
+  "flex shrink-0 items-center justify-center rounded p-[0.25em] text-foreground-icon-tertiary hover:text-foreground-icon-primary disabled:opacity-40";
+
+/** The two provider fields the row can rewrite in place. `id` is the provider
+ *  key itself — that key is what omp lists and what the model selector shows,
+ *  so it doubles as the provider's display name (omp's models.yml has no
+ *  provider-level `name` field; an unknown key is ignored by the CLI). */
+export type CustomProviderField = "id" | "baseUrl";
+
+interface InlineFieldEditorProps {
+  value: string;
+  placeholder: string;
+  ariaLabel: string;
+  saving: boolean;
+  onDraftChange: (value: string) => void;
+  onSave: () => void;
+  onCancel: () => void;
+}
+
+/** One-line field editor: Enter commits, Escape or leaving the field cancels.
+ *  The confirm button prevents default on pointer-down so its click is not
+ *  pre-empted by the input's blur-cancel. */
+function InlineFieldEditor({
+  value,
+  placeholder,
+  ariaLabel,
+  saving,
+  onDraftChange,
+  onSave,
+  onCancel,
+}: InlineFieldEditorProps) {
+  const { t } = useTranslation();
+  return (
+    <span className="flex min-w-0 flex-1 items-center gap-1">
+      <Input
+        autoFocus
+        size="small"
+        className="min-w-0 flex-1"
+        aria-label={ariaLabel}
+        placeholder={placeholder}
+        value={value}
+        onChange={onDraftChange}
+        onKeyDown={(event) => {
+          // Enter/Escape during IME composition belong to the IME.
+          if (event.nativeEvent.isComposing) return;
+          if (event.key === "Enter") {
+            event.preventDefault();
+            onSave();
+          } else if (event.key === "Escape") {
+            event.preventDefault();
+            onCancel();
+          }
+        }}
+        onBlur={onCancel}
+      />
+      <button
+        type="button"
+        aria-label={t("settings.piAuthCustomFieldSave")}
+        title={t("settings.piAuthCustomFieldSave")}
+        disabled={saving}
+        onPointerDown={(event) => event.preventDefault()}
+        onClick={onSave}
+        className={ICON_BUTTON}
+      >
+        <Check className="size-4" aria-hidden />
+      </button>
+    </span>
+  );
+}
 
 function ProtocolIcon({ api }: { api: string }) {
   if (api.startsWith("anthropic-")) {
@@ -211,6 +286,13 @@ interface PiFamilyCustomSectionProps {
   onProviderSave: () => void;
   onCloseProviderEditor: () => void;
   onDeleteProvider: (provider: PiFamilyCustomProviderSummary) => void;
+  editingField: { id: string; field: CustomProviderField } | null;
+  fieldDraft: string;
+  fieldError: string | null;
+  onOpenFieldEditor: (id: string, field: CustomProviderField) => void;
+  onFieldDraftChange: (value: string) => void;
+  onFieldSave: () => void;
+  onCloseFieldEditor: () => void;
 }
 
 interface CustomProviderRowProps {
@@ -225,6 +307,13 @@ interface CustomProviderRowProps {
   onProviderSave: () => void;
   onCloseProviderEditor: () => void;
   onDeleteProvider: (provider: PiFamilyCustomProviderSummary) => void;
+  editingField: { id: string; field: CustomProviderField } | null;
+  fieldDraft: string;
+  fieldError: string | null;
+  onOpenFieldEditor: (id: string, field: CustomProviderField) => void;
+  onFieldDraftChange: (value: string) => void;
+  onFieldSave: () => void;
+  onCloseFieldEditor: () => void;
 }
 
 /** One provider row plus its inline raw-text editor. */
@@ -240,6 +329,13 @@ function CustomProviderRow({
   onProviderSave,
   onCloseProviderEditor,
   onDeleteProvider,
+  editingField,
+  fieldDraft,
+  fieldError,
+  onOpenFieldEditor,
+  onFieldDraftChange,
+  onFieldSave,
+  onCloseFieldEditor,
 }: CustomProviderRowProps) {
   const { t } = useTranslation();
   const keyLabel = t(
@@ -247,17 +343,71 @@ function CustomProviderRow({
       ? "settings.piAuthCustomHasKey"
       : "settings.piAuthCustomNoKey",
   );
+  const editingName = editingField?.id === provider.id && editingField.field === "id";
+  const editingUrl = editingField?.id === provider.id && editingField.field === "baseUrl";
+  // The row shows the provider key: that is what omp lists, what the model
+  // selector shows, and what the name pencil rewrites. A provider-level `name`
+  // (omp's schema has none — a stray one is ignored by the CLI) stays out of
+  // the display so the label and the pencil never disagree.
+  const editLabel = (field: CustomProviderField) =>
+    t(
+      field === "id"
+        ? "settings.piAuthCustomEditName"
+        : "settings.piAuthCustomEditUrl",
+      { name: provider.id },
+    );
+  const pencil = (field: CustomProviderField) => (
+    <button
+      type="button"
+      aria-label={editLabel(field)}
+      title={editLabel(field)}
+      disabled={providerSaving}
+      onClick={() => onOpenFieldEditor(provider.id, field)}
+      className={INLINE_EDIT_BUTTON}
+    >
+      <Pencil className="size-[1em]" aria-hidden />
+    </button>
+  );
+
   return (
     <div>
       <div className={cx(ROW, expanded && "border-b-0")}>
         <BrandIcon iconSrc={null} />
         <div className="flex min-w-0 flex-1 flex-col">
-          <p className="truncate text-body-regular text-text-primary">
-            {provider.name ?? provider.id}
-          </p>
-          <code className="w-fit truncate rounded border border-dashed border-border-button-default px-1 py-px text-[11px] text-text-tertiary">
-            {provider.baseUrl ?? provider.id}
-          </code>
+          {editingName ? (
+            <InlineFieldEditor
+              value={fieldDraft}
+              placeholder={provider.id}
+              ariaLabel={editLabel("id")}
+              saving={providerSaving}
+              onDraftChange={onFieldDraftChange}
+              onSave={onFieldSave}
+              onCancel={onCloseFieldEditor}
+            />
+          ) : (
+            <p className="flex min-w-0 items-center gap-1 text-body-regular text-text-primary">
+              <span className="truncate">{provider.id}</span>
+              {pencil("id")}
+            </p>
+          )}
+          {editingUrl ? (
+            <InlineFieldEditor
+              value={fieldDraft}
+              placeholder={t("settings.piAuthCustomUrlPlaceholder")}
+              ariaLabel={editLabel("baseUrl")}
+              saving={providerSaving}
+              onDraftChange={onFieldDraftChange}
+              onSave={onFieldSave}
+              onCancel={onCloseFieldEditor}
+            />
+          ) : (
+            <span className="flex min-w-0 items-center gap-1 text-[11px]">
+              <code className="w-fit truncate rounded border border-dashed border-border-button-default px-1 py-px text-[11px] text-text-tertiary">
+                {provider.baseUrl ?? provider.id}
+              </code>
+              {pencil("baseUrl")}
+            </span>
+          )}
         </div>
         <span
           className="flex shrink-0 items-center gap-1 text-body-2-regular text-text-tertiary"
@@ -316,6 +466,11 @@ function CustomProviderRow({
           <Trash2 className="size-4" aria-hidden />
         </button>
       </div>
+      {fieldError && (editingName || editingUrl) ? (
+        <p className={cx(ROW, "text-body-2-regular text-text-error-primary")} role="alert">
+          {fieldError}
+        </p>
+      ) : null}
       {expanded ? (
         <CustomProviderEditor
           modelsConfig={modelsConfig}
@@ -415,6 +570,13 @@ export function PiFamilyCustomSection({
   onProviderSave,
   onCloseProviderEditor,
   onDeleteProvider,
+  editingField,
+  fieldDraft,
+  fieldError,
+  onOpenFieldEditor,
+  onFieldDraftChange,
+  onFieldSave,
+  onCloseFieldEditor,
 }: PiFamilyCustomSectionProps) {
   const { t } = useTranslation();
   const totalCount = modelsConfig?.providers.length ?? 0;
@@ -453,6 +615,13 @@ export function PiFamilyCustomSection({
             onProviderSave={onProviderSave}
             onCloseProviderEditor={onCloseProviderEditor}
             onDeleteProvider={onDeleteProvider}
+            editingField={editingField}
+            fieldDraft={fieldDraft}
+            fieldError={fieldError}
+            onOpenFieldEditor={onOpenFieldEditor}
+            onFieldDraftChange={onFieldDraftChange}
+            onFieldSave={onFieldSave}
+            onCloseFieldEditor={onCloseFieldEditor}
           />
         ))}
         {modelsConfig && !modelsConfig.parseError && providers.length === 0 ? (
