@@ -336,6 +336,9 @@ export const en: Messages = {
     effortUltra: "ultra",
     effortFaster: "Faster",
     effortSmarter: "Smarter",
+    oneMContext: "1M",
+    oneMContextTip:
+      "1M context: when on, this send's model name carries the [1m] suffix and uses the 1M context window (only effective for models that support it).",
     proxyOn: "Proxy: on - click to turn off",
     proxyOff: "Proxy: off - click to turn on",
     proxyConfigure: "Network proxy is not configured; click to open Settings",

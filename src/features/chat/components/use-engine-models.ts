@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { ModelOption } from "@/components/application/ai-chat/cli-menu";
+import { bareOneM, hasOneM } from "@/components/application/ai-chat/one-m-context";
 import type { ChannelOption } from "@/components/application/ai-chat/engine-model-panel";
 import { ipc, type CliConfig, type EngineCatalog, type EngineInfo } from "@/lib/ipc";
 import {
@@ -239,16 +240,20 @@ export function useEngineModels(
         continue;
       }
       // Channel model leads (it is what the CLI would run unprompted), the
-      // backend catalog follows, then engine-level custom models, and the
-      // current-override append last so the selection never vanishes.
+      // backend catalog follows, then engine-level custom models. The session
+      // pick is appended last so it never vanishes — but a `[1m]` pick is the
+      // same model as its bare form, which the model panel marks 1M in place,
+      // so only the bare id is added here (never a duplicate "[1m]" row).
       const known = [
         ...new Set([
           ...providerModels,
           ...catalog.map((m) => m.id),
           ...(customModels[engine.id] ?? []),
-          ...(current ? [current] : []),
         ]),
       ];
+      if (current && !known.includes(bareOneM(current))) {
+        known.push(bareOneM(current));
+      }
       const byId = new Map(catalog.map((m) => [m.id, m]));
       result[engine.id] = known.map((m) => {
         const entry = byId.get(m);
@@ -270,7 +275,9 @@ export function useEngineModels(
             : entry?.description ?? undefined,
           // Channel/override ids keep the "provider/model" shape, so the
           // prefix stands in when the catalog doesn't name the provider.
-          provider: entry?.provider ?? (m.includes("/") ? m.slice(0, m.indexOf("/")) : undefined),
+          provider:
+            entry?.provider ??
+            (m.includes("/") ? m.slice(0, m.indexOf("/")) : undefined),
         };
       });
     }
@@ -339,11 +346,14 @@ export function useEngineModels(
         continue;
       }
       const catalog = catalogs[engine.id];
-      if (
-        catalog?.authoritative &&
-        catalog.models.length > 0 &&
-        !knownIdsByEngine[engine.id]?.has(stored)
-      ) {
+      const knownStored = knownIdsByEngine[engine.id];
+      // A `[1m]`-tagged pick is a known model plus the 1M switch, not a stale
+      // id: authorize it through its bare form, or a Claude tab that turned
+      // 1M on would be silently reset back to the untagged model.
+      const known =
+        knownStored?.has(stored) ||
+        (hasOneM(stored) && knownStored?.has(bareOneM(stored)));
+      if (catalog?.authoritative && catalog.models.length > 0 && !known) {
         updates[engine.id] = fallback;
       }
     }

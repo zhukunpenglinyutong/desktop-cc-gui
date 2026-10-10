@@ -133,6 +133,37 @@ describe("CliMenu flyout switching", () => {
     });
   };
 
+  it("会话模型带 [1m] 后缀时触发器仍显示模型名(不再消失)", async () => {
+    // 报告的问题:选中模型后切一下 1M,会话的模型变成 "xxx[1m]",而引擎目录
+    // 只有裸 id → 触发器 find 落空,模型名从选择器上消失,读作「被切掉了」。
+    await act(async () => {
+      root.render(
+        <CliMenu
+          options={OPTIONS}
+          value="claude"
+          onChange={() => {}}
+          modelsByEngine={{
+            claude: [{ id: "infcode/deepseek-v4-pro", label: "infcode/deepseek-v4-pro" }],
+          }}
+          models={{ claude: "infcode/deepseek-v4-pro[1m]" }}
+          onModelChange={() => {}}
+          efforts={{}}
+          onEffortChange={() => {}}
+          ompServiceTier={null}
+          onOmpServiceTierChange={async () => {}}
+          codexServiceTier={null}
+          onCodexServiceTierChange={async () => {}}
+        />,
+      );
+    });
+    const trigger = container.querySelector<HTMLButtonElement>("button")!;
+    const label = trigger.getAttribute("aria-label") ?? "";
+    expect(label).toContain("infcode/deepseek-v4-pro");
+    // The rows are tagged "… · 1M"; the trigger names the running model.
+    expect(label).toContain("1M");
+  });
+
+
   it("切换 Codex 渠道后保留面板并将焦点交回渠道按钮", async () => {
     render("codex");
     await openMenu();

@@ -18,6 +18,13 @@ import { OmpSpeedSection } from "./omp-speed-section";
 import { filterModels, groupModelsByProvider, type ModelGroup } from "./model-list";
 import { EFFORT_LABEL_KEYS, supportsEffort, type EffortLevel } from "./effort-levels";
 import { EffortSlider } from "./effort-slider";
+import { OneMToggle } from "./one-m-toggle";
+import {
+  hasOneM,
+  matchCatalogRow,
+  showsOneMContext,
+  withOneM,
+} from "./one-m-context";
 import type { MenuOption, ModelOption } from "./cli-menu";
 
 export interface ChannelOption {
@@ -366,6 +373,9 @@ function ModelGroupList({
   onPickModel: (engine: string, id: string) => void;
 }) {
   const { t } = useTranslation();
+  // `selectedModelId` may carry a `[1m]` suffix the catalog rows don't; the
+  // checkmark belongs on that row's bare form (the label already says 1M).
+  const selectedRowId = matchCatalogRow(groups.flatMap((group) => group.rows), selectedModelId).id;
   return (
     <div
       className="flex max-h-[240px] w-full flex-col overflow-y-auto"
@@ -383,7 +393,7 @@ function ModelGroupList({
             <ModelRow
               key={model.id || "__default__"}
               option={model}
-              selected={model.id === selectedModelId}
+              selected={model.id === selectedRowId}
               engineId={engineId}
               onPick={onPickModel}
             />
@@ -417,9 +427,23 @@ function useOrderedModelGroups(
   models: ModelOption[],
   query: string,
   selectedModelId: string,
+  /** Appended to the selected row's label when the session runs `[1m]`. */
+  oneMTag?: string,
 ): { groups: ModelGroup[]; empty: boolean } {
   return useMemo(() => {
-    const filtered = filterModels(models, query.trim().toLowerCase());
+    // The row that represents the selection: `dp[1m]` maps onto the `dp` row
+    // (marked 1M in place) rather than adding a second entry.
+    const match = matchCatalogRow(models, selectedModelId);
+    const isSelected = (id: string) => id === match.id;
+    let list = models;
+    if (match.tagged && oneMTag) {
+      list = models.map((model) =>
+        isSelected(model.id)
+          ? { ...model, label: `${model.label} · ${oneMTag}` }
+          : model,
+      );
+    }
+    const filtered = filterModels(list, query.trim().toLowerCase());
     const groups = groupModelsByProvider(filtered);
     // Sectioned whenever the grouping carried keys — a single provider
     // still gets its header (the group is keyless only when no provider is
@@ -428,17 +452,16 @@ function useOrderedModelGroups(
     if (layered) {
       const ordered = [...groups].sort(
         (a, b) =>
-          Number(b.rows.some((m) => m.id === selectedModelId)) -
-          Number(a.rows.some((m) => m.id === selectedModelId)),
+          Number(b.rows.some((m) => isSelected(m.id))) -
+          Number(a.rows.some((m) => isSelected(m.id))),
       );
       return { groups: ordered, empty: filtered.length === 0 };
     }
     const flat = [...filtered].sort(
-      (a, b) =>
-        Number(b.id === selectedModelId) - Number(a.id === selectedModelId),
+      (a, b) => Number(isSelected(b.id)) - Number(isSelected(a.id)),
     );
     return { groups: [{ key: "", rows: flat }], empty: flat.length === 0 };
-  }, [models, query, selectedModelId]);
+  }, [models, query, selectedModelId, oneMTag]);
 }
 
 /** The search field filtering the model list. */
@@ -467,14 +490,46 @@ function ModelSearchField({
   );
 }
 
+/** Claude's 1M-context switch row: the `1M` toggle on the left (mirroring the
+ *  Codex Fast bolt's seat), the effort label centered to line up with the
+ *  slider sections that use the same header row, and a placeholder on the
+ *  right that keeps the label centered like the bolt row's reset button. */
+function OneMEffortHeader({
+  enabled,
+  onToggle,
+  effort,
+}: {
+  enabled: boolean;
+  onToggle: (next: boolean) => void;
+  effort: EffortLevel;
+}) {
+  const { t } = useTranslation();
+  return (
+    <div className="flex w-full items-center justify-between gap-2 px-2 pb-1">
+      <OneMToggle
+        enabled={enabled}
+        onChange={onToggle}
+        label={t("chat.oneMContext")}
+        tip={t("chat.oneMContextTip")}
+      />
+      <span className="min-w-0 flex-1 truncate text-center text-body-medium text-text-primary">
+        {t("chat.effort")} {t(EFFORT_LABEL_KEYS[effort])}
+      </span>
+      <span aria-hidden className="size-8 shrink-0" />
+    </div>
+  );
+}
+
 /** Panel footer: full-bleed divider (like the reference submenu) over the
  *  effort section. For OMP models supporting Fast mode and for Codex the
- *  effort header additionally carries the speed-tier picker. */
+ *  effort header additionally carries the speed-tier picker; for a Claude
+ *  custom/channel model it carries the 1M-context switch instead. */
 function EffortFooter({
   engineId,
   selectedModelId,
   effort,
   onEffortChange,
+  onPickModel,
   ompServiceTier,
   onOmpServiceTierChange,
   codexServiceTier,
@@ -484,6 +539,7 @@ function EffortFooter({
   selectedModelId: string;
   effort: EffortLevel;
   onEffortChange: (engine: string, level: EffortLevel) => void;
+  onPickModel: (engine: string, id: string) => void;
   ompServiceTier: OmpServiceTier;
   onOmpServiceTierChange: (tier: OmpServiceTier) => Promise<void>;
   codexServiceTier: OmpServiceTier;
@@ -493,6 +549,9 @@ function EffortFooter({
   const ompFast = engineId === "omp" && supportsOmpFastMode(selectedModelId);
   const codexFast = engineId === "codex";
   const showFast = ompFast || codexFast;
+  // Claude custom/channel models only: toggling 1M rewrites the selected
+  // model id's `[1m]` suffix, which the backend already understands.
+  const showOneM = !showFast && showsOneMContext(engineId, selectedModelId);
   const fastTier = codexFast ? codexServiceTier : ompServiceTier;
   const onFastChange = codexFast ? onCodexServiceTierChange : onOmpServiceTierChange;
   const header = showFast ? (
@@ -504,10 +563,18 @@ function EffortFooter({
     >
       <span className="text-body-medium text-text-primary">{t(EFFORT_LABEL_KEYS[effort])}</span>
     </OmpSpeedSection>
+  ) : showOneM ? (
+    <OneMEffortHeader
+      enabled={hasOneM(selectedModelId)}
+      onToggle={(on) =>
+        onPickModel(engineId, withOneM(selectedModelId, on))
+      }
+      effort={effort}
+    />
   ) : undefined;
   return (
     <>
-      <div aria-hidden className={cx("-mx-1 mt-[7px] h-px bg-border-button-default", showFast ? "mb-1" : "mb-3")} />
+      <div aria-hidden className={cx("-mx-1 mt-[7px] h-px bg-border-button-default", showFast || showOneM ? "mb-1" : "mb-3")} />
       <FlyoutEffortSection
         header={header}
         effort={effort}
@@ -566,7 +633,16 @@ export function EngineModelPanel({
   loading?: boolean;
 }) {
   const { t } = useTranslation();
-  const { groups, empty } = useOrderedModelGroups(models, query, selectedModelId);
+  // The session may run a `[1m]`-tagged variant no engine catalog lists: mark
+  // its bare row 1M in place (same row, no extra entry) and check it there, so
+  // the selection never looks like it fell off the list.
+  const oneMTag = t("chat.oneMContext");
+  const { groups, empty } = useOrderedModelGroups(
+    models,
+    query,
+    selectedModelId,
+    oneMTag,
+  );
   // Header channel filter (empty = the full channel list). Engines without
   // channels (omp until one is added in settings) get no channel UI at all —
   // an empty-array channels prop is still truthy, and a filter box that
@@ -613,6 +689,7 @@ export function EngineModelPanel({
           selectedModelId={selectedModelId}
           effort={effort}
           onEffortChange={onEffortChange}
+          onPickModel={onPickModel}
           ompServiceTier={ompServiceTier}
           onOmpServiceTierChange={onOmpServiceTierChange}
           codexServiceTier={codexServiceTier}
