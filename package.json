@@ -1,7 +1,7 @@
 {
   "name": "ccgui-next",
   "private": true,
-  "version": "1.1.3",
+  "version": "1.1.4",
   "type": "module",
   "packageManager": "pnpm@10.29.3",
   "scripts": {
