@@ -321,6 +321,9 @@ export const zh = {
     effortUltra: "ultra",
     effortFaster: "更快",
     effortSmarter: "更深入",
+    oneMContext: "1M",
+    oneMContextTip:
+      "1M 上下文：开启后本次发送的模型名带 [1m] 后缀，使用 1M 上下文窗口（仅对支持该能力的模型有效）。",
     proxyOn: "网络代理：已开启，点击关闭",
     proxyOff: "网络代理：已关闭，点击开启",
     proxyConfigure: "网络代理未配置，点击打开设置",

@@ -19,6 +19,7 @@ import { MOBILE_MEDIA, useMediaQuery } from "@/hooks/use-media-query";
 import { cx } from "@/utils/cx";
 import { usePopoverState } from "@/utils/use-dismiss-on-outside-press";
 import { EFFORT_LEVELS, EFFORT_LABEL_KEYS, supportsEffort, type EffortLevel } from "./effort-levels";
+import { matchCatalogRow } from "./one-m-context";
 import { EngineFlyout, EngineModelPanel, type ChannelOption } from "./engine-model-panel";
 
 export type { EffortLevel } from "./effort-levels";
@@ -171,6 +172,7 @@ function CliMenuTrigger({
   engine,
   engineName,
   model,
+  modelLabel,
   effort,
   ompServiceTier,
   codexServiceTier,
@@ -183,6 +185,9 @@ function CliMenuTrigger({
   engineName: string;
   /** Selected model of the active engine, when it has a model list. */
   model: ModelOption | undefined;
+  /** What to render for the model: `model.label`, plus the 1M tag when the
+   *  running pick is a `[1m]` variant no list row carries. */
+  modelLabel?: string;
   effort: EffortLevel;
   ompServiceTier: OmpServiceTier;
   codexServiceTier: OmpServiceTier;
@@ -199,22 +204,23 @@ function CliMenuTrigger({
   // shrink the trigger mid-session and slide the popover.
   const lockedMinWidth = useLockedMinWidth(isOpen, triggerRef);
   const hasEffort = supportsEffort(engine);
+  const label = modelLabel ?? model?.label;
   return (
     <AriaButton
       ref={triggerRef}
-      aria-label={`${engineName}${model ? ` / ${model.label}` : ""}${hasEffort ? ` · ${t(EFFORT_LABEL_KEYS[effort])}` : ""}`}
+      aria-label={`${engineName}${label ? ` / ${label}` : ""}${hasEffort ? ` · ${t(EFFORT_LABEL_KEYS[effort])}` : ""}`}
       style={lockedMinWidth ? { minWidth: lockedMinWidth } : undefined}
       className="group flex min-w-0 cursor-pointer items-center gap-1.5 rounded-md px-1.5 py-1 outline-none focus-visible:ring-2 focus-visible:ring-border-focus-ring"
     >
       <EngineIcon engine={engine} size={16} className="shrink-0 text-foreground-icon-secondary" />
       <span className="flex min-w-0 items-center gap-1 text-body-2-medium whitespace-nowrap text-text-secondary transition-colors duration-150 ease group-hover:text-text-primary">
         <span className="shrink-0 max-md:hidden">{engineName}</span>
-        {model && (
+        {label && (
           <>
             <span aria-hidden className="shrink-0 text-text-tertiary max-md:hidden">
               /
             </span>
-            <span className="max-w-44 truncate max-md:max-w-28">{model.label}</span>
+            <span className="max-w-44 truncate max-md:max-w-28">{label}</span>
           </>
         )}
         {hasEffort && (
@@ -484,7 +490,15 @@ export function CliMenu({
   // "Claude Code / 默认 · 高" (CLI name / model / effort). The model part
   // only drops out when the engine has no model list at all.
   const selectedModelId = models[value] ?? "";
-  const selectedModel = (modelsByEngine[value] ?? []).find((m) => m.id === selectedModelId);
+  // The pick may carry a `[1m]` suffix no list row has: resolve it to that
+  // row's bare form and name the 1M tag so the trigger never goes blank.
+  const selectedRow = matchCatalogRow(modelsByEngine[value] ?? [], selectedModelId);
+  const selectedModel = (modelsByEngine[value] ?? []).find((m) => m.id === selectedRow.id);
+  const selectedLabel = selectedModel
+    ? selectedRow.tagged
+      ? `${selectedModel.label} · ${t("chat.oneMContext")}`
+      : selectedModel.label
+    : undefined;
   const engineName = CLI_DISPLAY_NAMES[value] ?? current?.label ?? value;
   const triggerEffort: EffortLevel = efforts[value] ?? "medium";
 
@@ -607,6 +621,7 @@ export function CliMenu({
         engine={value}
         engineName={engineName}
         model={selectedModel}
+        modelLabel={selectedLabel}
         effort={triggerEffort}
         ompServiceTier={ompServiceTier}
         codexServiceTier={codexServiceTier}

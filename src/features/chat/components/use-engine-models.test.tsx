@@ -188,6 +188,22 @@ describe("useEngineModels channel models", () => {
     expect(rows[0]?.label).toBe("DeepSeek-V4-Pro");
     expect(rows[0]?.description).toBe("Stronger agentic coding");
   });
+
+  it("带 [1m] 的选中值只落成裸行,不额外新增 [1m] 行", async () => {
+    vi.mocked(ipc.listEngineModels).mockResolvedValue({
+      models: [{ id: "deepseek-v4-pro", name: "DeepSeek V4 Pro" }],
+      authoritative: true,
+    } as unknown as EngineCatalog);
+
+    await show([engineInfo("claude", true)]);
+    // `models` 是引擎级全局记录;show 固定用空 models,这里再渲染带 [1m] 选中值
+    // 的状态。1M 标记由模型面板就地打(不在这里造行)。
+    await render({ models: { claude: "deepseek-v4-pro[1m]" }, pinModels: noopPin });
+    const ids = (latest.modelsByEngine.claude ?? []).map((m) => m.id);
+    // 只有裸行,没有重复的 "[1m]" 条目。
+    expect(ids.filter((id) => id === "deepseek-v4-pro")).toHaveLength(1);
+    expect(ids.some((id) => id.endsWith("[1m]"))).toBe(false);
+  });
 });
 
 describe("useEngineModels pin effect", () => {
@@ -212,6 +228,17 @@ describe("useEngineModels pin effect", () => {
     const pinModels = vi.fn(async () => {});
     await render({ models: { omp: "stale-id" }, pinModels });
     expect(pinModels).toHaveBeenCalledWith({ omp: "m1" });
+  });
+
+  it("[1m] 后缀的 stored pick 视为已知,不被 authoritative catalog 重置", async () => {
+    vi.mocked(ipc.listEngineModels).mockResolvedValue({
+      models: [{ id: "deepseek-v4-pro", name: "DeepSeek V4 Pro" }],
+      authoritative: true,
+    } as unknown as EngineCatalog);
+    await show([engineInfo("claude", true)]);
+    const pinModels = vi.fn(async () => {});
+    await render({ models: { claude: "deepseek-v4-pro[1m]" }, pinModels });
+    expect(pinModels).not.toHaveBeenCalled();
   });
 });
 
