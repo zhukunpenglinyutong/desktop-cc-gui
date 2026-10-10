@@ -1,6 +1,6 @@
 "use client";
 
-import type { ReactNode, Ref } from "react";
+import { forwardRef, type ReactNode } from "react";
 import { Switch as AriaSwitch } from "react-aria-components";
 import type { SwitchProps as AriaSwitchProps } from "react-aria-components";
 import { cx } from "@/utils/cx";
@@ -108,10 +108,20 @@ export interface SwitchProps extends Omit<AriaSwitchProps, "children"> {
   children?: ReactNode;
   size?: SwitchSize;
   shape?: SwitchShape;
-  ref?: Ref<HTMLLabelElement>;
 }
 
-export function Switch({ className, children, size = "md", shape = "pill", ref, ...props }: SwitchProps) {
+/**
+ * `forwardRef` is load-bearing: react-aria's tooltip/`Focusable` wrappers
+ * clone their trigger and need the ref to land on a DOM node. A plain function
+ * component that merely reads `ref` out of props does not get one under React
+ * 18 — React logs "Function components cannot be given refs", the trigger ref
+ * stays null, and the tooltip anchors to the viewport corner instead of the
+ * pill.
+ */
+export const Switch = forwardRef<HTMLLabelElement, SwitchProps>(function Switch(
+  { className, children, size = "md", shape = "pill", ...props },
+  ref,
+) {
   return (
     <AriaSwitch
       ref={ref}
@@ -134,4 +144,4 @@ export function Switch({ className, children, size = "md", shape = "pill", ref, 
       )}
     </AriaSwitch>
   );
-}
+});

@@ -99,6 +99,15 @@ const RAIL_ROW = "flex items-center gap-1.5 rounded-lg p-1.5 text-left";
  *  control right) instead of stretching them edge to edge. */
 const CONTENT_COLUMN = "mx-auto w-full max-w-[720px]";
 
+/** Wider reading column for pages whose body is a row of equal cards with a
+ *  label + control header each (远程访问 › 外网访问). At 720 the three cards get
+ *  234px and the widest header ("部署中转" / "Deploy relay" + its two buttons)
+ *  needs ~248 / ~284, so the label wrapped onto a second line. */
+const WIDE_CONTENT_COLUMN = "mx-auto w-full max-w-[880px]";
+
+/** Pages that read wider than the default column. */
+const WIDE_PAGES: Record<string, true> = { webAccess: true };
+
 /** Search-hit reveal: how long the target row keeps its ring once it is on
  *  screen, and how long the shell waits for a page to paint it — 通用 only
  *  renders its rows after its settings read lands, so a click usually reveals
@@ -737,7 +746,7 @@ function SettingsContent({
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
       {/* The title row doubles as a window drag region ("deep": blank spots
           drag, Tauri toggles maximize on double-click, buttons stay
-          clickable). Title and page body share CONTENT_COLUMN (same px,
+          clickable). Title and page body share the page's column (same px,
           same padding), so wide windows center both on one axis; the close
           button sits in the title's grid cell (justify-self) and never
           shifts that axis. */}
@@ -747,7 +756,7 @@ function SettingsContent({
       >
         <div
           className={cx(
-            CONTENT_COLUMN,
+            WIDE_PAGES[page] ? WIDE_CONTENT_COLUMN : CONTENT_COLUMN,
             "col-start-1 row-start-1 flex min-w-0 items-center gap-3 pr-8",
           )}
         >
@@ -775,7 +784,10 @@ function SettingsContent({
           className="h-full overflow-y-auto px-4 pb-4 md:px-8 md:pb-8"
           onScroll={(e) => onContentScrolled(e.currentTarget.scrollTop > 0)}
         >
-          <div className={CONTENT_COLUMN} ref={bodyRef}>
+          <div
+            className={WIDE_PAGES[page] ? WIDE_CONTENT_COLUMN : CONTENT_COLUMN}
+            ref={bodyRef}
+          >
             <SettingsAnchorFlashProvider anchor={flashOn ? anchorRequest?.anchor ?? null : null}>
               {renderPage(page)}
             </SettingsAnchorFlashProvider>

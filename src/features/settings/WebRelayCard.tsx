@@ -9,8 +9,9 @@ import {
   SettingsRow,
 } from "@/components/application/settings/settings-rows";
 import { ipc, type RelayInfo } from "@/lib/ipc";
-import { listenRelay } from "@/lib/events";
+import { listenRelay, listenSettingsChanged } from "@/lib/events";
 import { useTauriEvent } from "@/hooks/use-tauri-event";
+import { Switch } from "@/components/base/switch/switch";
 import { cx } from "@/utils/cx";
 
 /**
@@ -39,6 +40,27 @@ export function WebRelayCard({
   const [relay, setRelay] = useState<RelayInfo | null>(null);
   const [relayBusy, setRelayBusy] = useState(false);
   const [relayError, setRelayError] = useState<string | null>(null);
+  /** 无人值守: the one piece of the relay that is remembered across launches.
+   *  Re-read from settings, not derived from `relay` — 断开中转 clears it
+   *  backend-side, and the web build shares the same command. */
+  const [unattended, setUnattended] = useState(false);
+
+  const refreshUnattended = useCallback(
+    () =>
+      // De-cached read: 断开中转 clears the marker backend-side, and that write
+      // never passes through the frontend's cached copy.
+      ipc
+        .refreshAppSettings()
+        .then((s) => setUnattended(s.webRelayUnattended === true))
+        .catch(() => {}),
+    [],
+  );
+
+  useEffect(() => {
+    void refreshUnattended();
+  }, [refreshUnattended]);
+
+  useTauriEvent(() => listenSettingsChanged(refreshUnattended));
 
   const refreshRelay = useCallback(() => {
     void ipc
@@ -90,12 +112,36 @@ export function WebRelayCard({
     try {
       await ipc.webRelayStop();
       setRelay(null);
+      // 断开 also clears 无人值守 backend-side: one action says "stop it and
+      // do not come back by yourself".
+      setUnattended(false);
     } catch (e) {
       setRelayError(String(e));
     } finally {
       setRelayBusy(false);
     }
   }, []);
+
+  /** 无人值守: write the marker and, when switching it on, dial right away —
+   *  the point of the switch is a tunnel that is up, not one that waits for
+   *  the next launch. Switching it off only drops the marker; the running
+   *  tunnel is the button's business. */
+  const toggleUnattended = useCallback(
+    async (enabled: boolean) => {
+      setRelayError(null);
+      try {
+        await ipc.webRelayUnattended(enabled);
+        setUnattended(enabled);
+        if (enabled && !relay) await startRelay();
+      } catch (e) {
+        setRelayError(String(e));
+        // The marker may have committed before the dial failed: re-read
+        // instead of guessing which half landed.
+        void refreshUnattended();
+      }
+    },
+    [relay, startRelay, refreshUnattended],
+  );
 
   // Relay state dot: driven by the backend's own state, so a reconnect clears
   // it by itself. The failure reason rides on RelayInfo.error from the status
@@ -143,14 +189,40 @@ export function WebRelayCard({
           </Tooltip>
         }
       >
-        <Button
-          size="small"
-          variant={relay ? "secondary" : "primary"}
-          disabled={relayBusy || (!relay && (!relayUrl.trim() || !relayKey.trim()))}
-          onClick={() => void (relay ? stopRelay() : startRelay())}
-        >
-          {relay ? t("settings.webRelayStop") : t("settings.webRelayStart")}
-        </Button>
+        <div className="flex items-center gap-2">
+          {/* 无人值守 sits next to the button, not in the label: it is a
+              modifier of the relay, and the row has no space for a second
+              line of copy. The hint carries the whole meaning.
+              The Tooltip needs the Focusable wrapper: react-aria's
+              TooltipTrigger only wires triggers that consume its context, and
+              RAC's Switch does not. Focusable then refs the `<label>` RAC
+              renders, so react-aria logs a dev-only "child must be focusable"
+              warning (that label carries no tabindex — the input inside it is
+              the real focus target); production builds strip the check. */}
+          <Tooltip delay={150}>
+            <Focusable>
+              <Switch
+                aria-label={t("settings.webRelayUnattended")}
+                size="sm"
+                shape="pill"
+                isSelected={unattended}
+                isDisabled={relayBusy || (!relay && (!relayUrl.trim() || !relayKey.trim()))}
+                onChange={(enabled) => void toggleUnattended(enabled)}
+              />
+            </Focusable>
+            <TooltipContent className="max-w-[320px]">
+              {t("settings.webRelayUnattendedHint")}
+            </TooltipContent>
+          </Tooltip>
+          <Button
+            size="small"
+            variant={relay ? "secondary" : "primary"}
+            disabled={relayBusy || (!relay && (!relayUrl.trim() || !relayKey.trim()))}
+            onClick={() => void (relay ? stopRelay() : startRelay())}
+          >
+            {relay ? t("settings.webRelayStop") : t("settings.webRelayStart")}
+          </Button>
+        </div>
       </SettingsRow>
       <div className="flex w-full flex-col gap-2 pt-3 pr-3 pb-3">
         <Input

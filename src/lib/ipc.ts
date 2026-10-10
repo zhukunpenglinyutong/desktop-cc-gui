@@ -540,6 +540,9 @@ export interface AppSettings {
   webRelayUrl?: string | null;
   /** Shared relay key; also the phone URL's path segment. */
   webRelayKey?: string | null;
+  /** 无人值守 (设置 → 远程访问 → 外网访问): dial the relay at launch and keep
+   *  redialing. Off/absent = the relay switch is session-only. */
+  webRelayUnattended?: boolean | null;
   /** LAN web access auto-start on app launch (设置 → 远程访问 → 内网访问: 随应用自动开启). */
   webAccessAutoStart?: boolean | null;
   /** LAN web access fixed port (null/0 = auto). */
@@ -1923,6 +1926,10 @@ export const ipc = {
   webRelayStatus: () => invoke<RelayInfo | null>("web_relay_status"),
   webRelayStart: (url: string, key: string) => invoke<RelayInfo>("web_relay_start", { url, key }),
   webRelayStop: () => invoke<void>("web_relay_stop"),
+  /** 无人值守 marker: remembers the relay across launches. Turning it on also
+   *  needs a dial (`webRelayStart`) — the card does both. */
+  webRelayUnattended: (enabled: boolean) =>
+    invoke<void>("web_relay_unattended_set", { enabled }),
   /** Is a browser driving this machine through the relay right now? */
   remoteControlActive: () => invoke<boolean>("remote_control_active"),
   /** Replace the pairing key now instead of waiting for the automatic

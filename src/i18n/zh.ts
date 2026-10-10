@@ -885,6 +885,9 @@ export const zh = {
     webRelayStateIdle: "未连接",
     webRelayStateLive: "已连接",
     webRelayStop: "断开中转",
+    webRelayUnattended: "启用无人值守",
+    webRelayUnattendedHint:
+      "无人值守：重启 CC GUI 后自动连接中转，连上后断线会一直重试；关闭则每次启动都要手动连接（不影响当前连接）。",
     webRelayUrl: "中转地址",
     webRelayKey: "中转密钥",
     webRelayKeyHint: "与部署中转时设置的 RELAY_KEY 一致",

@@ -921,6 +921,9 @@ export const en: Messages = {
     webRelayStateIdle: "Not connected",
     webRelayStateLive: "Connected",
     webRelayStop: "Disconnect relay",
+    webRelayUnattended: "Unattended mode",
+    webRelayUnattendedHint:
+      "Unattended: reconnect the relay automatically when CC GUI restarts, and keep redialing while it is up; off means connecting by hand after every launch (this does not disconnect now).",
     webRelayUrl: "Relay address",
     webRelayKey: "Relay key",
     webRelayKeyHint: "Must match RELAY_KEY set when the relay was deployed",

@@ -13,6 +13,11 @@ struct RelayArgs {
 }
 
 #[derive(Deserialize)]
+struct RelayUnattendedArgs {
+    enabled: bool,
+}
+
+#[derive(Deserialize)]
 struct RelayDeployPackArgs {
     path: String,
     key: Option<String>,
@@ -1246,6 +1251,10 @@ pub(super) async fn dispatch(
             ser(crate::relay::web_relay_start(app.clone(), a.url, a.key).await)
         }
         "web_relay_stop" => ser(crate::relay::web_relay_stop(app.clone())),
+        "web_relay_unattended" => {
+            let a: RelayUnattendedArgs = parse_args(&raw)?;
+            ser(crate::relay::web_relay_unattended_set(app.clone(), a.enabled))
+        }
         "relay_deploy_pack" => {
             let a: RelayDeployPackArgs = parse_args(&raw)?;
             ser(crate::relay::relay_deploy_pack(a.path, a.key))
