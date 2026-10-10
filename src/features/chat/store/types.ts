@@ -79,6 +79,9 @@ export interface ChatStore {
    *  (default), false = stay expanded until the user folds it. Persisted in
    *  app settings. */
   thinkingAutoCollapse: boolean;
+  /** 宽幕布: true = the chat content column fills its pane instead of the
+   *  default centered 750px / `max-w-3xl` track. Persisted in app settings. */
+  wideLayout: boolean;
   bySession: Record<string, SessionState>;
   /** Flat sessionKey -> streaming map, written only when a flag flips. The
    * tab strip and sidebar select this instead of scanning bySession on every
@@ -189,6 +192,8 @@ export interface ChatStore {
   ) => Promise<void>;
   setSendShortcut: (shortcut: string) => void;
   setThinkingAutoCollapse: (autoCollapse: boolean) => void;
+  /** 宽幕布 (设置 → 通用 → 外观), persisted in app settings. */
+  setWideLayout: (wide: boolean) => void;
   setDraft: (key: string, text: string) => void;
   /** Ask the active composer to insert an @path mention at the caret. */
   requestMention: (path: string) => void;

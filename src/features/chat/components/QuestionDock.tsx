@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import { useChatStore } from "../store";
+import { centerColumnClass } from "../chat-column";
 import { useScopedSessionKey } from "../split/session-scope";
 import { QuestionCard } from "./QuestionCard";
 import { memoizeMessageHistory } from "./memoize-message-history";
@@ -28,9 +29,10 @@ export function usePendingQuestion() {
  */
 export function QuestionDock() {
   const pending = usePendingQuestion();
+  const wide = useChatStore((s) => s.wideLayout);
   if (!pending) return null;
   return (
-    <div className="mx-auto w-full max-w-3xl">
+    <div className={centerColumnClass(wide)}>
       <div className="rounded-xl border border-border-secondary bg-background-secondary-default px-3.5 py-3 shadow-lg">
         <QuestionCard message={pending} />
       </div>

@@ -109,6 +109,14 @@ pub struct AppSettings {
     /// `font_family == "custom"` (the frontend registers it as a FontFace).
     #[serde(default)]
     pub font_file: String,
+    #[serde(default = "default_ui_font_size")]
+    pub ui_font_size: u32,
+    #[serde(default = "default_content_font_size")]
+    pub content_font_size: u32,
+    #[serde(default = "default_code_font_size")]
+    pub code_font_size: u32,
+    #[serde(default = "default_ui_font_weight")]
+    pub ui_font_weight: String,
     /// Code font for chat code blocks and the built-in terminal: "" = 系统默认,
     /// "custom" = the uploaded file in `code_font_file`.
     #[serde(default)]
@@ -158,6 +166,11 @@ pub struct AppSettings {
     /// until the user folds it (设置 → 通用 → 行为 → 思考过程).
     #[serde(default)]
     pub thinking_auto_collapse: Option<bool>,
+    /// Chat content column width (设置 → 通用 → 外观 → 宽幕布): None/Some(false)
+    /// = the default centered column, Some(true) = the timeline, composer and
+    /// docks fill their pane (only the 16px gutter stays).
+    #[serde(default)]
+    pub chat_wide_layout: Option<bool>,
     /// Beta entry points (设置 → 其他 → 内测功能): feature id -> enabled.
     /// Empty/missing = the entry stays hidden; every id is off by default.
     #[serde(default)]
@@ -214,6 +227,22 @@ fn default_theme() -> String {
 fn default_titlebar() -> String {
     "native".to_string()
 }
+fn default_ui_font_size() -> u32 {
+    16
+}
+
+fn default_content_font_size() -> u32 {
+    14
+}
+
+fn default_code_font_size() -> u32 {
+    13
+}
+
+fn default_ui_font_weight() -> String {
+    "standard".to_string()
+}
+
 fn default_sidebar_thread_limit() -> u32 {
     5
 }
@@ -353,6 +382,10 @@ impl Default for AppSettings {
             sidebar_thread_limit: default_sidebar_thread_limit(),
             font_family: String::new(),
             font_file: String::new(),
+            ui_font_size: default_ui_font_size(),
+            content_font_size: default_content_font_size(),
+            code_font_size: default_code_font_size(),
+            ui_font_weight: default_ui_font_weight(),
             code_font_family: String::new(),
             code_font_file: String::new(),
             composer_send_shortcut: default_composer_send_shortcut(),
@@ -371,6 +404,7 @@ impl Default for AppSettings {
             decrease_ui_scale_shortcut: default_decrease_ui_scale_shortcut(),
             reset_ui_scale_shortcut: default_reset_ui_scale_shortcut(),
             thinking_auto_collapse: None,
+            chat_wide_layout: None,
             beta_features: HashMap::new(),
             terminal_shell_path: None,
             dsh_host: None,
@@ -1166,6 +1200,25 @@ mod tests {
             .unwrap()
             .contains("\"titlebar\":\"mac\""));
     }
+
+    /// 宽幕布（设置 → 通用 → 外观）：缺字段 / false 都是默认列宽，true 才会占满窗格，
+    /// 且 camelCase 键名要能往返（前端 `AppSettings.chatWideLayout` 直接读写）。
+    #[test]
+    fn chat_wide_layout_defaults_to_narrow_and_round_trips() {
+        assert_eq!(AppSettings::default().chat_wide_layout, None);
+        let parsed: AppSettings = serde_json::from_str("{}").unwrap();
+        assert_eq!(
+            parsed.chat_wide_layout, None,
+            "旧设置文件没有 chatWideLayout → 保持默认列宽，不能崩"
+        );
+        let wide: AppSettings = serde_json::from_str(r#"{"chatWideLayout":true}"#).unwrap();
+        assert_eq!(wide.chat_wide_layout, Some(true));
+        assert!(serde_json::to_string(&wide)
+            .unwrap()
+            .contains("\"chatWideLayout\":true"));
+        let narrow: AppSettings = serde_json::from_str(r#"{"chatWideLayout":false}"#).unwrap();
+        assert_eq!(narrow.chat_wide_layout, Some(false));
+    }
     #[test]
     fn font_fields_default_to_bundled_and_round_trip_camel_case() {
         let parsed: AppSettings = serde_json::from_str("{}").unwrap();
@@ -1174,16 +1227,26 @@ mod tests {
             "旧设置文件没有 fontFamily 字段 → 视为内置字体，不能崩"
         );
         assert_eq!(parsed.font_file, "");
+        assert_eq!(parsed.ui_font_size, 16);
+        assert_eq!(parsed.content_font_size, 14);
+        assert_eq!(parsed.code_font_size, 13);
+        assert_eq!(parsed.ui_font_weight, "standard");
         assert_eq!(parsed.code_font_family, "");
         assert_eq!(parsed.code_font_file, "");
         let custom: AppSettings = serde_json::from_str(
-            r#"{"fontFamily":"custom","fontFile":"/tmp/My Font.ttf","codeFontFamily":"system"}"#,
+            r#"{"fontFamily":"custom","fontFile":"/tmp/My Font.ttf","codeFontFamily":"system","uiFontSize":18,"contentFontSize":20,"codeFontSize":15,"uiFontWeight":"medium"}"#,
         )
         .unwrap();
         assert_eq!(custom.font_family, "custom");
+        assert_eq!(custom.ui_font_size, 18);
+        assert_eq!(custom.content_font_size, 20);
+        assert_eq!(custom.code_font_size, 15);
+        assert_eq!(custom.ui_font_weight, "medium");
         assert_eq!(custom.font_file, "/tmp/My Font.ttf");
         assert_eq!(custom.code_font_family, "system");
         let json = serde_json::to_string(&custom).unwrap();
+        assert!(json.contains("\"uiFontSize\":18"));
+        assert!(json.contains("\"uiFontWeight\":\"medium\""));
         assert!(json.contains("\"fontFamily\":\"custom\""));
         assert!(json.contains("\"fontFile\":\"/tmp/My Font.ttf\""));
         assert!(json.contains("\"codeFontFamily\":\"system\""));

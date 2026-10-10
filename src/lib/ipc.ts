@@ -472,6 +472,12 @@ export interface AppSettings {
   fontFamily: string;
   /** Absolute path of the uploaded UI font file (设置 → 外观). */
   fontFile: string;
+  /** Base UI font size in px; layout spacing stays unchanged. */
+  uiFontSize: number;
+  contentFontSize: number;
+  codeFontSize: number;
+  /** standard / medium / bold: relative to each text style. */
+  uiFontWeight: string;
   /** Code font for chat code blocks and the built-in terminal: "" = 系统默认,
    *  "custom" = the uploaded code font in `codeFontFile`. */
   codeFontFamily: string;
@@ -499,6 +505,9 @@ export interface AppSettings {
   /** Thinking-process row behavior once its thinking settles: true/absent =
    *  auto-fold (default), false = stay expanded until the user folds it. */
   thinkingAutoCollapse?: boolean | null;
+  /** 宽幕布 (设置 → 通用 → 外观): true = the chat content column fills its
+   *  pane instead of the default centered column (750px / `max-w-3xl`). */
+  chatWideLayout?: boolean | null;
   /** Beta entry points (设置 → 其他 → 内测功能): feature id -> enabled.
    *  Missing/false = the entry stays hidden (default off). */
   betaFeatures?: Record<string, boolean> | null;

@@ -46,6 +46,7 @@ import {
   uiFontStack,
 } from "./font";
 import { GeneralSection } from "./GeneralSection";
+import { useChatStore } from "@/features/chat/store";
 import { terminalFontFamily } from "@/features/terminal/appearance";
 import { changeZoom, onZoomChange, readZoomPct, ZOOM_KEY } from "@/lib/zoom";
 
@@ -88,6 +89,10 @@ const SETTINGS = {
   titlebar: "native",
   language: "zh",
   sidebarThreadLimit: 5,
+  uiFontSize: 16,
+  contentFontSize: 14,
+  codeFontSize: 13,
+  uiFontWeight: "standard",
   fontFamily: "",
   fontFile: "",
   codeFontFamily: "",
@@ -137,6 +142,17 @@ async function selectOption(anchor: string, optionText: string) {
   await press(option);
 }
 
+async function editSize(anchor: string, value: string) {
+  const input = row(anchor).querySelector("input")!;
+  await act(async () => {
+    input.focus();
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, value);
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await act(async () => input.blur());
+  await flush();
+}
+
 /** The file-picker button is the second control in a custom-mode font row. */
 function fileButton(anchor: string): HTMLElement {
   const button = row(anchor).querySelectorAll("button")[1];
@@ -179,6 +195,10 @@ describe("font preference stacks", () => {
         `"${CUSTOM_CODE_FONT_FAMILY}"`,
       );
       expect(readCachedFontPreferences()).toEqual({
+        uiFontSize: 16,
+        contentFontSize: 14,
+        codeFontSize: 13,
+        uiFontWeight: "standard",
         fontFamily: "custom",
         codeFontFamily: "custom",
         fontFile: "/tmp/My Font.ttf",
@@ -212,6 +232,10 @@ describe("font preference stacks", () => {
     expect(document.documentElement.style.getPropertyValue("--font-mono-source")).toBe("");
     // The remembered path survives so switching back to 自定义 re-applies it.
     expect(readCachedFontPreferences()).toEqual({
+      uiFontSize: 16,
+      contentFontSize: 14,
+      codeFontSize: 13,
+      uiFontWeight: "standard",
       fontFamily: "",
       codeFontFamily: "",
       fontFile: "/tmp/remembered.ttf",
@@ -271,7 +295,7 @@ describe("interface zoom", () => {
   });
 });
 
-describe("General section font rows", () => {
+describe("General section rows", () => {
   let container: HTMLDivElement;
   let root: Root;
 
@@ -300,6 +324,62 @@ describe("General section font rows", () => {
   afterEach(async () => {
     await act(async () => root.unmount());
     container.remove();
+  });
+
+  it("independent px sizes and weight persist and restore before paint", async () => {
+    await press(row("typographyAdvanced"));
+    await editSize("uiFontSize", "18");
+    expect(updateAppSettings).toHaveBeenLastCalledWith(expect.objectContaining({ uiFontSize: 18 }));
+    expect(document.documentElement.style.getPropertyValue("--ui-font-scale")).toBe("1.125");
+    getAppSettings.mockResolvedValue({ ...SETTINGS, uiFontSize: 18 });
+    await editSize("contentFontSize", "20");
+    expect(document.documentElement.style.getPropertyValue("--content-font-scale")).toBe(String(20 / 14));
+    getAppSettings.mockResolvedValue({ ...SETTINGS, uiFontSize: 18, contentFontSize: 20 });
+    await editSize("codeFontSize", "15");
+    expect(document.documentElement.style.getPropertyValue("--code-font-size")).toBe("15px");
+    getAppSettings.mockResolvedValue({ ...SETTINGS, uiFontSize: 18, contentFontSize: 20, codeFontSize: 15 });
+    await selectOption("uiFontWeight", i18n.t("settings.uiFontWeight_medium"));
+    expect(updateAppSettings).toHaveBeenLastCalledWith(expect.objectContaining({
+      uiFontSize: 18, contentFontSize: 20, codeFontSize: 15, uiFontWeight: "medium",
+    }));
+    const cached = readCachedFontPreferences();
+    document.documentElement.removeAttribute("style");
+    applyFontPreferences(cached);
+    expect(document.documentElement.style.getPropertyValue("--ui-font-scale")).toBe("1.125");
+    expect(document.documentElement.style.getPropertyValue("--content-font-scale")).toBe(String(20 / 14));
+    expect(document.documentElement.style.getPropertyValue("--code-font-size")).toBe("15px");
+    expect(document.documentElement.style.getPropertyValue("--ui-font-weight-offset")).toBe("100");
+    expect(terminalFontFamily()).toBe('Menlo, Monaco, "Courier New", monospace');
+  });
+
+  it("a failed typography save restores the applied preference and shows the error", async () => {
+    await press(row("typographyAdvanced"));
+    updateAppSettings.mockRejectedValueOnce(new Error("write failed"));
+    await editSize("uiFontSize", "20");
+    expect(document.documentElement.style.getPropertyValue("--ui-font-scale")).toBe("1");
+    expect(readCachedFontPreferences().uiFontSize).toBe(16);
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain("write failed");
+  });
+
+  it("invalid sizes keep the current value without saving", async () => {
+    await press(row("typographyAdvanced"));
+    for (const value of ["", "9", "33", "14.5"]) {
+      await editSize("contentFontSize", value);
+      expect(row("contentFontSize").querySelector("input")?.value).toBe("14");
+    }
+    expect(updateAppSettings).not.toHaveBeenCalled();
+  });
+
+  it("reset restores only typography preferences in one save", async () => {
+    const reset = [...container.querySelectorAll("button")].find(
+      (button) => button.textContent?.trim() === i18n.t("settings.typographyReset"),
+    )!;
+    await press(reset);
+    expect(updateAppSettings).toHaveBeenCalledTimes(1);
+    expect(updateAppSettings).toHaveBeenCalledWith(expect.objectContaining({
+      uiFontSize: 16, contentFontSize: 14, codeFontSize: 13, uiFontWeight: "standard",
+      theme: "light", fontFamily: "", codeFontFamily: "",
+    }));
   });
 
   it("自定义 shows a file picker; picking a font applies and persists it", async () => {
@@ -394,5 +474,23 @@ describe("General section font rows", () => {
   it("zoom select writes the shared zoom storage the status bar reads", async () => {
     await selectOption("uiZoom", "120%");
     expect(readZoomPct()).toBe(120);
+  });
+
+  it("宽幕布 switch drives the chat column and persists the app setting", async () => {
+    const toggle = row("chatWideLayout").querySelector<HTMLElement>('input[type="checkbox"]');
+    expect(toggle).not.toBeNull();
+    expect(useChatStore.getState().wideLayout).toBe(false);
+
+    await press(toggle!);
+    expect(useChatStore.getState().wideLayout).toBe(true);
+    expect(updateAppSettings).toHaveBeenCalledWith(
+      expect.objectContaining({ chatWideLayout: true }),
+    );
+
+    await press(toggle!);
+    expect(useChatStore.getState().wideLayout).toBe(false);
+    expect(updateAppSettings).toHaveBeenLastCalledWith(
+      expect.objectContaining({ chatWideLayout: false }),
+    );
   });
 });

@@ -191,6 +191,7 @@ export const useChatStore = create<ChatStore>((set, get) => {
     archivedWorkspaces: [],
     sendShortcut: "enter",
     thinkingAutoCollapse: true,
+    wideLayout: false,
     bySession: {},
     streamingByKey: {},
     retryingByKey: {},
