@@ -110,6 +110,9 @@ export interface ComposerProps {
   inputRef?: MutableRefObject<ComposerInputHandle | null>;
   /** Clipboard images pasted into the field; absent = paste stays text-only. */
   onPasteImages?: (files: File[]) => void;
+  /** Clipboard files resolved to paths (native clipboard read): routed like
+   *  a drop. Absent = pasted files stay ignored. */
+  onPastePaths?: (paths: string[]) => void;
   /** Active workspace root: enables the `@` file-mention picker. */
   workspacePath?: string;
 }
@@ -128,6 +131,7 @@ export function Composer({
   permissionMenu,
   inputRef,
   onPasteImages,
+  onPastePaths,
   workspacePath,
 }: ComposerProps = {}) {
   const editableRef = useRef<HTMLDivElement>(null);
@@ -319,6 +323,7 @@ export function Composer({
           disabled={disabled}
           onSubmit={onSubmit}
           onPasteImages={onPasteImages}
+          onPastePaths={onPastePaths}
           manualHeightPx={manualHeightPx}
         />
       )}

@@ -755,6 +755,10 @@ pub(super) async fn dispatch(
             let a: PathsArgs = parse_args(&raw)?;
             ser(crate::engine::images::import_attachments(a.paths))
         }
+        // The web bridge has no OS pasteboard to read (and browsers expose no
+        // file path to page JavaScript): pasted files stay limited to the
+        // flavors the paste event itself carried.
+        "clipboard_file_paths" => ser(Ok::<Vec<String>, String>(Vec::new())),
         // history
         "list_sessions" => ser(crate::history::reader::list_sessions(app.state())),
         "list_archived_sessions" => {

@@ -150,10 +150,10 @@ export function useComposerActions({
     [sessionKey, setDraft],
   );
 
-  // Shared partition for the file picker and OS drops: images flow through
-  // the sandboxed image pipeline (chips); every other file becomes an
-  // @mention at the caret — same as the file tree's "+" — so its content
-  // stays live instead of a frozen sandbox copy.
+  // Shared partition for the file picker, OS drops, and clipboard file
+  // pastes: images flow through the sandboxed image pipeline (chips); every
+  // other file becomes an @mention at the caret — same as the file tree's
+  // "+" — so its content stays live instead of a frozen sandbox copy.
   const routeIncomingPaths = useCallback(
     (paths: string[]) => {
       if (paths.length === 0) return;

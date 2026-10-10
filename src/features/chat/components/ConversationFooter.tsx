@@ -160,6 +160,7 @@ function FooterComposer({
   permissionMenu,
   supportsImages,
   onPasteImages,
+  onPastePaths,
 }: {
   active: ActiveSession | null;
   draft: string;
@@ -176,6 +177,7 @@ function FooterComposer({
   permissionMenu: ReactNode;
   supportsImages: boolean;
   onPasteImages: (files: File[]) => void;
+  onPastePaths?: (paths: string[]) => void;
 }) {
   const wide = useChatStore((s) => s.wideLayout);
   return (
@@ -193,6 +195,7 @@ function FooterComposer({
       cliMenu={<>{cliMenu}<ComposerSlotExtras slot="cliMenu" /></>}
       permissionMenu={<>{permissionMenu}<ComposerSlotExtras slot="permissionMenu" /></>}
       onPasteImages={supportsImages ? onPasteImages : undefined}
+      onPastePaths={onPastePaths}
       workspacePath={active?.workspacePath}
     />
   );
@@ -460,6 +463,7 @@ export function ConversationFooter({
   permissionMenu,
   supportsImages,
   onPasteImages,
+  onPastePaths,
   onDropPaths,
   onDropFiles,
   sessionUsage,
@@ -497,6 +501,9 @@ export function ConversationFooter({
   permissionMenu: ReactNode;
   supportsImages: boolean;
   onPasteImages: (files: File[]) => void;
+  /** Files pasted from the OS clipboard, resolved to absolute paths by the
+   *  native clipboard read; absent = no active session, pasted files ignored. */
+  onPastePaths?: (paths: string[]) => void;
   /** OS files dropped on the composer (desktop: absolute paths). Absent =
    *  no active session: drops stay ignored. */
   onDropPaths?: (paths: string[]) => void;
@@ -581,6 +588,7 @@ export function ConversationFooter({
             permissionMenu={permissionMenu}
             supportsImages={supportsImages}
             onPasteImages={onPasteImages}
+            onPastePaths={onPastePaths}
           />
         )}
         <FooterStatusBar

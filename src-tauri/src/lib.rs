@@ -6,6 +6,7 @@ pub mod baidu_tongji;
 pub mod browser;
 pub mod cc_switch;
 pub mod cli_lifecycle;
+pub mod clipboard;
 pub mod computer_use;
 pub mod computer_use_ax;
 pub mod config;
@@ -455,6 +456,8 @@ pub fn run() {
             engine::pi_family_auth::pi_family_models_config_write,
             engine::images::save_pasted_image,
             engine::images::import_attachments,
+            // clipboard file lists (paste of Finder/Explorer copies)
+            clipboard::clipboard_file_paths,
             // computer use
             computer_use::computer_use_permission_status,
             computer_use::computer_use_open_permission_settings,

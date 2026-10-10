@@ -545,6 +545,7 @@ export const ChatConversation = memo(function ChatConversation({
         permissionMenu={permissionMenu}
         supportsImages={supportsImages}
         onPasteImages={pasteImages}
+        onPastePaths={active ? handleDroppedPaths : undefined}
         onDropPaths={active ? handleDroppedPaths : undefined}
         onDropFiles={supportsImages ? pasteImages : undefined}
         sessionUsage={sessionUsage}

@@ -1494,6 +1494,10 @@ export const ipc = {
    * new paths (same order). Picked paths live outside the sandbox, so the
    * engines' path-based image pipeline cannot read them in place. */
   importAttachments: (paths: string[]) => invoke<string[]>("import_attachments", { paths }),
+  /** Absolute paths of the files on the OS clipboard (Finder / Explorer
+   * copies expose no path to the webview). Empty when the clipboard holds no
+   * file; the web bridge has no OS pasteboard and always answers empty. */
+  clipboardFilePaths: () => invoke<string[]>("clipboard_file_paths"),
   listEngineModels: (engine: string, workspace?: string) =>
     withGrantRetry(() =>
       invoke<EngineCatalog>("list_engine_models", { engine, workspace: workspace ?? null }),
