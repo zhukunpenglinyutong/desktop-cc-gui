@@ -478,6 +478,11 @@ export interface AppSettings {
   codeFontSize: number;
   /** standard / medium / bold: relative to each text style. */
   uiFontWeight: string;
+  /** standard / enhanced: contrast for readable auxiliary text. */
+  uiTextContrast: string;
+  /** Null follows the existing interface typography. */
+  sidebarFontSize: number | null;
+  sidebarFontWeight: number | null;
   /** Code font for chat code blocks and the built-in terminal: "" = 系统默认,
    *  "custom" = the uploaded code font in `codeFontFile`. */
   codeFontFamily: string;

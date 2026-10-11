@@ -3,9 +3,17 @@
 Open `/tests/browser/interface-typography.html` for the real General settings
 controls with in-memory persistence. Expand Advanced and change the UI,
 content and code sizes independently using px inputs (blur or Enter to save).
-UI text preserves its hierarchy and weight options; chat prose and code have
+UI text preserves its hierarchy with a continuous weight offset slider; chat prose and code have
 separate size controls, while terminal typography, icons and padding stay fixed.
-Reset restores all four typography fields. This does not change the running app.
+Weight and auxiliary text contrast preview while dragging and save on release,
+keyboard completion or blur. Contrast 0 preserves standard colors; 100 matches
+the previous enhanced setting. Old named values remain compatible.
+Reset restores global typography fields and clears sidebar overrides. This does not change the running app.
+Sidebar overrides default to Follow interface: compare the sidebar sample with
+its original Body 2 / Medium reference under different global size and weight
+settings. Custom sidebar px/weight must remain absolute when global settings
+change, while the reference and caption keep following the existing ramp.
+Restoring sidebar defaults clears only its overrides.
 
 Open `/tests/browser/concurrent-status.html` for concurrent session indicators:
 the real `AiChatSidebar` and `SessionTab` each render 1, 6 (default), or 12

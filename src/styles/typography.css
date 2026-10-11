@@ -318,3 +318,47 @@ pre, .cm-editor, .code-typography {
 @utility text-* {
   font-size: calc(--value([length]) * var(--ui-font-scale, 1));
 }
+
+/* Empty sidebar overrides preserve the original Body 2 / Medium ramp. */
+.sidebar-title {
+  font-size: var(--sidebar-title-font-size, calc(0.8125rem * var(--ui-font-scale, 1)));
+  line-height: var(--sidebar-title-line-height, var(--tw-leading, calc(1.125rem * var(--ui-font-scale, 1))));
+  letter-spacing: var(--tw-tracking, 0);
+  font-weight: var(--sidebar-title-font-weight, var(--tw-font-weight, min(900, calc(500 + var(--ui-font-weight-offset, 0)))));
+}
+
+/* Match the compact settings controls across WebKit, Chromium and Firefox. */
+.typography-slider {
+  appearance: none;
+  height: 4px;
+  border-radius: 999px;
+  background: linear-gradient(to right,
+    var(--color-accent-600) 0%, var(--color-accent-600) var(--slider-progress),
+    var(--color-separator-border) var(--slider-progress), var(--color-separator-border) 100%);
+  cursor: pointer;
+}
+.typography-slider::-webkit-slider-thumb {
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 2px solid var(--color-accent-600);
+  background: var(--color-background-primary-default);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 12%);
+}
+.typography-slider::-moz-range-thumb {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 2px solid var(--color-accent-600);
+  background: var(--color-background-primary-default);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 12%);
+}
+.typography-slider:focus-visible {
+  outline: 2px solid var(--color-accent-600);
+  outline-offset: 5px;
+}
+.typography-slider:disabled {
+  opacity: 0.5;
+  cursor: default;
+}

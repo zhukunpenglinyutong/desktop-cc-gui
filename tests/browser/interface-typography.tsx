@@ -44,7 +44,8 @@ createRoot(document.getElementById("fixture")!).render(
       <section className="rounded-xl border border-separator-border p-6">
         <h2 id="heading" className="text-title-3-semibold">标题与正文保留层级</h2>
         <p id="body" className="prose-chat my-4 text-body-regular">中文与 emoji：缓存策略开发完成 ✅</p>
-        <p id="sidebar" className="my-4 text-body-2-medium text-text-secondary">侧边栏：fx-data-server</p>
+        <p id="sidebar" className="my-4 sidebar-title text-text-secondary">侧边栏：fx-data-server</p>
+        <p id="sidebar-reference" className="my-4 text-body-2-medium text-text-secondary">原始侧边栏样式对照</p>
         <p id="caption" className="my-4 text-caption-1-regular text-text-tertiary">响应中 · 耗时 2m23s · high</p>
         <p id="legacy" className="my-4 text-[11px]">原有小字号标签</p>
         <div id="spacing" className="p-3">

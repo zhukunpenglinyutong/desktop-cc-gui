@@ -1,8 +1,10 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
 import { useTranslation } from "react-i18next";
 import type { Key, KeyboardEvent } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import Upload from "lucide-react/dist/esm/icons/upload";
+import Minus from "lucide-react/dist/esm/icons/minus";
+import Plus from "lucide-react/dist/esm/icons/plus";
 
 import { Select, SelectItem } from "@/components/base/select/select";
 import { Input } from "@/components/base/input/input";
@@ -22,10 +24,14 @@ import {
   applyInterfaceTypography,
   normalizeFontSize,
   normalizeUiFontWeight,
+  normalizeTextContrast,
+  normalizeSidebarFontSize,
+  normalizeSidebarFontWeight,
   TYPOGRAPHY_DEFAULTS,
   type FontSizeField,
   type InterfaceTypographyPreferences,
-  UI_FONT_WEIGHTS,
+  fontWeightOffset,
+  textContrastAmount,
 } from "./interface-typography";
 import {
   applyFontPreferences,
@@ -66,6 +72,9 @@ function fontPreferencesOf(settings: AppSettings): FontPreferences {
     contentFontSize: settings.contentFontSize,
     codeFontSize: settings.codeFontSize,
     uiFontWeight: settings.uiFontWeight,
+    uiTextContrast: settings.uiTextContrast,
+    sidebarFontSize: settings.sidebarFontSize,
+    sidebarFontWeight: settings.sidebarFontWeight,
     codeFontFamily: settings.codeFontFamily,
     fontFile: settings.fontFile,
     codeFontFile: settings.codeFontFile,
@@ -493,66 +502,166 @@ function TypographyCard({
               label={t("settings.uiFontWeight")}
               description={t("settings.uiFontWeightDesc")}
             >
-              <Select
-                aria-label={t("settings.uiFontWeight")}
-                selectedKey={normalizeUiFontWeight(settings.uiFontWeight)}
-                isDisabled={busy}
-                onSelectionChange={(key) => {
-                  if (key != null) {
-                    void onChange({ uiFontWeight: normalizeUiFontWeight(String(key)) });
-                  }
-                }}
-                triggerClassName={SELECT_TRIGGER}
-              >
-                {UI_FONT_WEIGHTS.map((value) => (
-                  <SelectItem key={value} id={value}>
-                    {t(`settings.uiFontWeight_${value}`)}
-                  </SelectItem>
-                ))}
-              </Select>
+              <TypographySlider
+                label={t("settings.uiFontWeight")}
+                value={fontWeightOffset(settings.uiFontWeight)}
+                max={200}
+                busy={busy}
+                format={(value) => `+${value}`}
+                onPreview={(value) => applyInterfaceTypography({ ...settings, uiFontWeight: normalizeUiFontWeight(String(value)) })}
+                onCommit={(value) => void onChange({ uiFontWeight: normalizeUiFontWeight(String(value)) })}
+              />
+            </SettingsRow>
+            <SettingsRow
+              anchor="uiTextContrast"
+              label={t("settings.uiTextContrast")}
+              description={t("settings.uiTextContrastDesc")}
+            >
+              <TypographySlider
+                label={t("settings.uiTextContrast")}
+                value={textContrastAmount(settings.uiTextContrast)}
+                max={100}
+                busy={busy}
+                format={(value) => String(value)}
+                onPreview={(value) => applyInterfaceTypography({ ...settings, uiTextContrast: normalizeTextContrast(String(value)) })}
+                onCommit={(value) => void onChange({ uiTextContrast: normalizeTextContrast(String(value)) })}
+              />
             </SettingsRow>
           </SettingsCard>
+          <SidebarTypographyCard settings={settings} busy={busy} onChange={onChange} />
         </div>
       </Collapsible>
     </div>
   );
 }
 
-function TypographySizeRow({
-  field,
-  value,
-  busy,
-  onChange,
-}: {
+function TypographySizeRow({ field, value, busy, onChange }: {
   field: FontSizeField;
   value: number;
   busy: boolean;
   onChange: (patch: InterfaceTypographyPreferences) => Promise<void>;
 }) {
   const { t } = useTranslation();
-  const size = normalizeFontSize(field, value);
+  return (
+    <SettingsRow anchor={field} label={t(`settings.${field}`)} description={t(`settings.${field}Desc`)}>
+      <FontSizeInput
+        label={t(`settings.${field}`)}
+        size={normalizeFontSize(field, value)}
+        busy={busy}
+        onCommit={(size) => void onChange({ [field]: size })}
+      />
+    </SettingsRow>
+  );
+}
+
+function TypographySlider({
+  label,
+  value,
+  max,
+  busy,
+  format,
+  onPreview,
+  onCommit,
+}: {
+  label: string;
+  value: number;
+  max: number;
+  busy: boolean;
+  format: (value: number) => string;
+  onPreview: (value: number) => void;
+  onCommit: (value: number) => void;
+}) {
+  const [draft, setDraft] = useState(value);
+  const committed = useRef(value);
+  useEffect(() => {
+    setDraft(value);
+    committed.current = value;
+  }, [value]);
+  const commit = () => {
+    if (draft === committed.current) return;
+    committed.current = draft;
+    onCommit(draft);
+  };
+  return (
+    <div className="flex w-48 shrink-0 items-center gap-3">
+      <input
+        type="range"
+        aria-label={label}
+        min={0}
+        max={max}
+        step={1}
+        value={draft}
+        disabled={busy}
+        className="typography-slider min-w-0 flex-1"
+        style={{ "--slider-progress": `${draft / max * 100}%` } as CSSProperties}
+        onChange={(event) => {
+          const next = Number(event.target.value);
+          setDraft(next);
+          onPreview(next);
+        }}
+        onPointerUp={commit}
+        onKeyUp={commit}
+        onBlur={commit}
+        onPointerCancel={() => {
+          setDraft(value);
+          onPreview(value);
+        }}
+      />
+      <output className="min-w-10 rounded-md bg-background-secondary-default px-2 py-1 text-center text-body-regular text-text-secondary tabular-nums">
+        {format(draft)}
+      </output>
+    </div>
+  );
+}
+
+function FontSizeInput({
+  label,
+  size,
+  busy,
+  onCommit,
+}: {
+  label: string;
+  size: number;
+  busy: boolean;
+  onCommit: (size: number) => void;
+}) {
+  const { t } = useTranslation();
   const [text, setText] = useState(String(size));
   useEffect(() => setText(String(size)), [size]);
   const commit = () => {
     const next = Number(text);
-    if (!text.trim() || normalizeFontSize(field, next) !== next) {
+    if (!text.trim() || normalizeSidebarFontSize(next) === null) {
       setText(String(size));
       return;
     }
-    if (next !== size) void onChange({ [field]: next });
+    if (next !== size) onCommit(next);
+  };
+  const step = (delta: number) => {
+    const current = normalizeSidebarFontSize(Number(text)) ?? size;
+    const next = Math.min(32, Math.max(10, current + delta));
+    setText(String(size));
+    if (next !== size) onCommit(next);
   };
   return (
-    <SettingsRow
-      anchor={field}
-      label={t(`settings.${field}`)}
-      description={t(`settings.${field}Desc`)}
-    >
-      <div className="flex shrink-0 items-center gap-2">
+    <div className="flex shrink-0 items-center gap-2">
+      <div className="flex h-8 items-center rounded-lg border border-separator-border bg-background-primary-default p-0.5 focus-within:ring-2 focus-within:ring-primary/20">
+        <button
+          type="button"
+          className="flex h-7 w-7 items-center justify-center rounded-md text-text-secondary hover:bg-background-secondary-default focus-visible:outline-2 focus-visible:outline-primary disabled:opacity-40"
+          aria-label={t("settings.decreaseFontSize", { label })}
+          disabled={busy || size <= 10}
+          onPointerDown={(event) => event.preventDefault()}
+          onClick={() => step(-1)}
+        >
+          <Minus className="size-4" aria-hidden="true" />
+        </button>
         <Input
-          aria-label={t(`settings.${field}`)}
+          aria-label={label}
           type="number"
           size="small"
-          className="w-20"
+          className="w-12"
+          fieldClassName="!border-0 !bg-transparent !px-0 !shadow-none !ring-0"
+          inputClassName="!pl-0 text-center [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
           value={text}
           isDisabled={busy}
           onChange={setText}
@@ -566,9 +675,102 @@ function TypographySizeRow({
             }
           }}
         />
-        <span className="text-body-regular text-text-secondary">px</span>
+        <button
+          type="button"
+          className="flex h-7 w-7 items-center justify-center rounded-md text-text-secondary hover:bg-background-secondary-default focus-visible:outline-2 focus-visible:outline-primary disabled:opacity-40"
+          aria-label={t("settings.increaseFontSize", { label })}
+          disabled={busy || size >= 32}
+          onPointerDown={(event) => event.preventDefault()}
+          onClick={() => step(1)}
+        >
+          <Plus className="size-4" aria-hidden="true" />
+        </button>
       </div>
-    </SettingsRow>
+      <span className="text-body-regular text-text-tertiary">px</span>
+    </div>
+  );
+}
+
+function SidebarTypographyCard({
+  settings,
+  busy,
+  onChange,
+}: {
+  settings: AppSettings;
+  busy: boolean;
+  onChange: (patch: InterfaceTypographyPreferences) => Promise<void>;
+}) {
+  const { t } = useTranslation();
+  const size = normalizeSidebarFontSize(settings.sidebarFontSize);
+  const weight = normalizeSidebarFontWeight(settings.sidebarFontWeight);
+  return (
+    <div className="mt-4">
+      <div className="mb-2 flex items-center justify-between">
+        <SettingsSectionLabel>{t("settings.sidebarTypography")}</SettingsSectionLabel>
+        <Button
+          size="small"
+          variant="ghost"
+          disabled={busy || (size === null && weight === null)}
+          onClick={() => void onChange({ sidebarFontSize: null, sidebarFontWeight: null })}
+        >
+          {t("settings.sidebarTypographyReset")}
+        </Button>
+      </div>
+      <SettingsCard>
+        <SettingsRow
+          anchor="sidebarFontSize"
+          label={t("settings.sidebarFontSize")}
+          description={t("settings.sidebarTypographyDesc")}
+        >
+          <div className="flex shrink-0 items-center gap-2">
+            <Select
+              aria-label={t("settings.sidebarFontSizeMode")}
+              selectedKey={size === null ? "inherit" : "custom"}
+              isDisabled={busy}
+              onSelectionChange={(key) => {
+                if (key != null) {
+                  void onChange({
+                    sidebarFontSize: key === "inherit"
+                      ? null
+                      : normalizeFontSize("uiFontSize", settings.uiFontSize),
+                  });
+                }
+              }}
+              triggerClassName={SELECT_TRIGGER}
+            >
+              <SelectItem id="inherit">{t("settings.sidebarTypographyInherit")}</SelectItem>
+              <SelectItem id="custom">{t("settings.fontCustom")}</SelectItem>
+            </Select>
+            {size !== null && (
+              <FontSizeInput
+                label={t("settings.sidebarFontSize")}
+                size={size}
+                busy={busy}
+                onCommit={(size) => void onChange({ sidebarFontSize: size })}
+              />
+            )}
+          </div>
+        </SettingsRow>
+        <SettingsRow anchor="sidebarFontWeight" label={t("settings.sidebarFontWeight")}>
+          <Select
+            aria-label={t("settings.sidebarFontWeight")}
+            selectedKey={weight === null ? "inherit" : String(weight)}
+            isDisabled={busy}
+            onSelectionChange={(key) => {
+              if (key != null) {
+                void onChange({ sidebarFontWeight: normalizeSidebarFontWeight(Number(key)) });
+              }
+            }}
+            triggerClassName={SELECT_TRIGGER}
+          >
+            <SelectItem id="inherit">{t("settings.sidebarTypographyInherit")}</SelectItem>
+            <SelectItem id="400">{t("settings.sidebarWeightRegular")}</SelectItem>
+            <SelectItem id="500">{t("settings.sidebarWeightMedium")}</SelectItem>
+            <SelectItem id="600">{t("settings.sidebarWeightBold")}</SelectItem>
+          </Select>
+        </SettingsRow>
+      </SettingsCard>
+    </div>
   );
 }
 

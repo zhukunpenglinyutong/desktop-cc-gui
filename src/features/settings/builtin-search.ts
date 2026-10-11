@@ -96,6 +96,27 @@ const generalEntries: SettingsSearchEntry[] = [
   },
   {
     page: "general",
+    anchor: "uiTextContrast",
+    labelKey: "settings.uiTextContrast",
+    sectionKey: "settings.appearance",
+    activatorAnchor: "typographyAdvanced",
+  },
+  {
+    page: "general",
+    anchor: "sidebarFontSize",
+    labelKey: "settings.sidebarFontSize",
+    sectionKey: "settings.sidebarTypography",
+    activatorAnchor: "typographyAdvanced",
+  },
+  {
+    page: "general",
+    anchor: "sidebarFontWeight",
+    labelKey: "settings.sidebarFontWeight",
+    sectionKey: "settings.sidebarTypography",
+    activatorAnchor: "typographyAdvanced",
+  },
+  {
+    page: "general",
     anchor: "chatWideLayout",
     labelKey: "settings.chatWideLayout",
     sectionKey: "settings.appearance",

@@ -182,7 +182,7 @@ function ThreadItem({
         {/* Native title tooltip: hover a moment to read the full title when
             the row truncates it (same pattern as the repo row below). */}
         <span
-          className="min-w-0 flex-1 truncate text-body-2-medium text-text-secondary"
+          className="min-w-0 flex-1 truncate sidebar-title text-text-secondary"
           title={label}
         >
           {pinned && (
@@ -340,7 +340,7 @@ function RepoHeaderRow({
       >
         <span
           title={repo.originalLabel}
-          className="truncate text-body-2-medium whitespace-nowrap text-text-secondary"
+          className="truncate sidebar-title whitespace-nowrap text-text-secondary"
         >
           {repo.label}
         </span>
@@ -450,7 +450,7 @@ function WorktreeChildRow({
         {!expanded && running && (
           <ThreadStatusDot streaming retrying={retrying} unseen={false} />
         )}
-        <span className="min-w-0 flex-1 truncate text-body-2-medium text-text-secondary">
+        <span className="min-w-0 flex-1 truncate sidebar-title text-text-secondary">
           {repo.label}
         </span>
         {repo.worktree?.prNumber != null && (

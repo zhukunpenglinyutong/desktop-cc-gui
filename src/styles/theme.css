@@ -788,3 +788,16 @@
     display: none;
   }
 }
+
+/* Readable auxiliary text; primary, disabled and status colors keep their semantics. */
+:root[data-text-contrast="enhanced"]:not(.dark) {
+  --color-text-secondary: color-mix(in srgb, var(--color-neutral-700) var(--ui-text-contrast, 100%), var(--color-neutral-500));
+  --color-text-tertiary: color-mix(in srgb, var(--color-neutral-600) var(--ui-text-contrast, 100%), var(--color-neutral-400));
+  --color-text-placeholder: color-mix(in srgb, var(--color-neutral-500) var(--ui-text-contrast, 100%), var(--color-neutral-400));
+}
+
+:root.dark[data-text-contrast="enhanced"] {
+  --color-text-secondary: color-mix(in srgb, var(--color-neutral-200) var(--ui-text-contrast, 100%), var(--color-neutral-300));
+  --color-text-tertiary: color-mix(in srgb, var(--color-neutral-300) var(--ui-text-contrast, 100%), var(--color-neutral-400));
+  --color-text-placeholder: color-mix(in srgb, var(--color-neutral-400) var(--ui-text-contrast, 100%), var(--color-neutral-500));
+}

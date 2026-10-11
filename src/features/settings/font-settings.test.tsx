@@ -93,6 +93,9 @@ const SETTINGS = {
   contentFontSize: 14,
   codeFontSize: 13,
   uiFontWeight: "standard",
+  uiTextContrast: "standard",
+  sidebarFontSize: null,
+  sidebarFontWeight: null,
   fontFamily: "",
   fontFile: "",
   codeFontFamily: "",
@@ -132,6 +135,15 @@ function row(anchor: string): HTMLElement {
 
 /** Open a row's Select and pick the option with the given text. */
 async function selectOption(anchor: string, optionText: string) {
+  const slider = row(anchor).querySelector<HTMLInputElement>('input[type="range"]');
+  if (slider) {
+    const value = anchor === "uiFontWeight"
+      ? optionText === i18n.t("settings.uiFontWeight_bold") ? "200"
+        : optionText === i18n.t("settings.uiFontWeight_medium") ? "100" : "0"
+      : optionText === i18n.t("settings.uiTextContrast_enhanced") ? "100" : "0";
+    await editSlider(anchor, value);
+    return;
+  }
   const trigger = row(anchor).querySelectorAll("button")[0];
   if (!trigger) throw new Error(`no select trigger in row ${anchor}`);
   await press(trigger);
@@ -140,6 +152,17 @@ async function selectOption(anchor: string, optionText: string) {
   );
   if (!option) throw new Error(`option not rendered: ${optionText}`);
   await press(option);
+}
+
+async function editSlider(anchor: string, value: string) {
+  const input = row(anchor).querySelector<HTMLInputElement>('input[type="range"]')!;
+  await act(async () => {
+    input.focus();
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, value);
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await act(async () => input.blur());
+  await flush();
 }
 
 async function editSize(anchor: string, value: string) {
@@ -199,6 +222,9 @@ describe("font preference stacks", () => {
         contentFontSize: 14,
         codeFontSize: 13,
         uiFontWeight: "standard",
+        uiTextContrast: "standard",
+        sidebarFontSize: null,
+        sidebarFontWeight: null,
         fontFamily: "custom",
         codeFontFamily: "custom",
         fontFile: "/tmp/My Font.ttf",
@@ -236,6 +262,9 @@ describe("font preference stacks", () => {
       contentFontSize: 14,
       codeFontSize: 13,
       uiFontWeight: "standard",
+      uiTextContrast: "standard",
+      sidebarFontSize: null,
+      sidebarFontWeight: null,
       fontFamily: "",
       codeFontFamily: "",
       fontFile: "/tmp/remembered.ttf",
@@ -326,6 +355,141 @@ describe("General section rows", () => {
     container.remove();
   });
 
+  it("sidebar follows existing rules by default and stores absolute overrides", async () => {
+    applyFontPreferences(SETTINGS);
+    await press(row("typographyAdvanced"));
+    expect(row("sidebarFontSize").querySelector("input")).toBeNull();
+    expect(document.documentElement.style.getPropertyValue("--sidebar-title-font-size")).toBe("");
+    await selectOption("sidebarFontSize", i18n.t("settings.fontCustom"));
+    expect(document.documentElement.style.getPropertyValue("--sidebar-title-font-size")).toBe("16px");
+    getAppSettings.mockResolvedValue({ ...SETTINGS, sidebarFontSize: 16 });
+    await editSize("sidebarFontSize", "18");
+    getAppSettings.mockResolvedValue({ ...SETTINGS, sidebarFontSize: 18 });
+    await selectOption("sidebarFontWeight", i18n.t("settings.sidebarWeightRegular"));
+    expect(updateAppSettings).toHaveBeenLastCalledWith(expect.objectContaining({
+      sidebarFontSize: 18, sidebarFontWeight: 400, uiFontSize: 16, uiFontWeight: "standard",
+    }));
+    const cached = readCachedFontPreferences();
+    applyFontPreferences({ ...cached, uiFontSize: 24, uiFontWeight: "bold" });
+    expect(document.documentElement.style.getPropertyValue("--sidebar-title-font-size")).toBe("18px");
+    expect(document.documentElement.style.getPropertyValue("--sidebar-title-font-weight")).toBe("400");
+    document.documentElement.style.removeProperty("--sidebar-title-font-size");
+    applyFontPreferences(cached);
+    expect(document.documentElement.style.getPropertyValue("--sidebar-title-font-size")).toBe("18px");
+  });
+
+  it("following interface and restoring sidebar clear only overrides", async () => {
+    applyFontPreferences({ ...SETTINGS, sidebarFontSize: 18, sidebarFontWeight: 400 });
+    await press(row("typographyAdvanced"));
+    await selectOption("sidebarFontSize", i18n.t("settings.fontCustom"));
+    getAppSettings.mockResolvedValue({ ...SETTINGS, sidebarFontSize: 16, sidebarFontWeight: 400 });
+    await selectOption("sidebarFontWeight", i18n.t("settings.sidebarWeightRegular"));
+    await selectOption("sidebarFontSize", i18n.t("settings.sidebarTypographyInherit"));
+    expect(document.documentElement.style.getPropertyValue("--sidebar-title-font-size")).toBe("");
+    expect(document.documentElement.style.getPropertyValue("--sidebar-title-font-weight")).toBe("400");
+    const reset = [...container.querySelectorAll("button")].find(
+      (button) => button.textContent?.trim() === i18n.t("settings.sidebarTypographyReset"),
+    )!;
+    await press(reset);
+    expect(updateAppSettings).toHaveBeenLastCalledWith(expect.objectContaining({
+      sidebarFontSize: null, sidebarFontWeight: null, uiFontSize: 16, uiTextContrast: "standard",
+    }));
+    expect(document.documentElement.style.getPropertyValue("--sidebar-title-font-weight")).toBe("");
+    expect(readCachedFontPreferences().sidebarFontSize).toBeNull();
+  });
+
+  it("a failed sidebar save preserves the inherited typography", async () => {
+    applyFontPreferences(SETTINGS);
+    await press(row("typographyAdvanced"));
+    updateAppSettings.mockRejectedValueOnce(new Error("sidebar save failed"));
+    await selectOption("sidebarFontSize", i18n.t("settings.fontCustom"));
+    expect(row("sidebarFontSize").querySelector("input")).toBeNull();
+    expect(document.documentElement.style.getPropertyValue("--sidebar-title-font-size")).toBe("");
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain("sidebar save failed");
+  });
+
+  it("contrast applies independently, persists and restores before paint", async () => {
+    await press(row("typographyAdvanced"));
+    await selectOption("uiFontWeight", i18n.t("settings.uiFontWeight_medium"));
+    getAppSettings.mockResolvedValue({ ...SETTINGS, uiFontWeight: "medium" });
+    await selectOption("uiTextContrast", i18n.t("settings.uiTextContrast_enhanced"));
+    expect(document.documentElement.dataset.textContrast).toBe("enhanced");
+    expect(document.documentElement.style.getPropertyValue("--ui-font-weight-offset")).toBe("100");
+    expect(updateAppSettings).toHaveBeenLastCalledWith(expect.objectContaining({
+      uiTextContrast: "enhanced", uiFontSize: 16, uiFontWeight: "medium",
+    }));
+    const cached = readCachedFontPreferences();
+    document.documentElement.dataset.textContrast = "standard";
+    applyFontPreferences(cached);
+    expect(document.documentElement.dataset.textContrast).toBe("enhanced");
+    await selectOption("uiTextContrast", i18n.t("settings.uiTextContrast_standard"));
+    expect(document.documentElement.dataset.textContrast).toBe("standard");
+  });
+
+  it("failed contrast save restores the previous contrast", async () => {
+    applyFontPreferences(SETTINGS);
+    await press(row("typographyAdvanced"));
+    updateAppSettings.mockRejectedValueOnce(new Error("contrast save failed"));
+    await selectOption("uiTextContrast", i18n.t("settings.uiTextContrast_enhanced"));
+    expect(document.documentElement.dataset.textContrast).toBe("standard");
+    expect(readCachedFontPreferences().uiTextContrast).toBe("standard");
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain("contrast save failed");
+  });
+
+  it("slider previews before release and persists once when keyboard adjustment ends", async () => {
+    await press(row("typographyAdvanced"));
+    const slider = row("uiTextContrast").querySelector<HTMLInputElement>('input[type="range"]')!;
+    await act(async () => {
+      slider.focus();
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(slider, "37");
+      slider.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    expect(document.documentElement.style.getPropertyValue("--ui-text-contrast")).toBe("37%");
+    expect(updateAppSettings).not.toHaveBeenCalled();
+    await act(async () => slider.dispatchEvent(new KeyboardEvent("keyup", { key: "ArrowRight", bubbles: true })));
+    await flush();
+    await act(async () => slider.blur());
+    expect(updateAppSettings).toHaveBeenCalledTimes(1);
+    expect(updateAppSettings).toHaveBeenLastCalledWith(expect.objectContaining({ uiTextContrast: "37" }));
+  });
+
+  it("continuous weight and contrast values persist and restore from the startup mirror", async () => {
+    await press(row("typographyAdvanced"));
+    await editSlider("uiFontWeight", "73");
+    expect(updateAppSettings).toHaveBeenLastCalledWith(expect.objectContaining({ uiFontWeight: "73" }));
+    expect(document.documentElement.style.getPropertyValue("--ui-font-weight-offset")).toBe("73");
+    getAppSettings.mockResolvedValue({ ...SETTINGS, uiFontWeight: "73" });
+    await editSlider("uiTextContrast", "42");
+    expect(updateAppSettings).toHaveBeenLastCalledWith(expect.objectContaining({ uiTextContrast: "42" }));
+    const cached = readCachedFontPreferences();
+    document.documentElement.removeAttribute("style");
+    applyFontPreferences(cached);
+    expect(document.documentElement.style.getPropertyValue("--ui-font-weight-offset")).toBe("73");
+    expect(document.documentElement.style.getPropertyValue("--ui-text-contrast")).toBe("42%");
+  });
+
+  it("font size buttons step by one, respect bounds, and restore after save failure", async () => {
+    await press(row("typographyAdvanced"));
+    const increase = () => row("uiFontSize").querySelector<HTMLButtonElement>('[aria-label="增大界面字号"]')!;
+    const decrease = () => row("uiFontSize").querySelector<HTMLButtonElement>('[aria-label="减小界面字号"]')!;
+    await press(increase());
+    expect(updateAppSettings).toHaveBeenLastCalledWith(expect.objectContaining({ uiFontSize: 17 }));
+    expect(row("uiFontSize").querySelector("input")?.value).toBe("17");
+    getAppSettings.mockResolvedValue({ ...SETTINGS, uiFontSize: 17 });
+    await press(decrease());
+    expect(updateAppSettings).toHaveBeenLastCalledWith(expect.objectContaining({ uiFontSize: 16 }));
+    getAppSettings.mockResolvedValue(SETTINGS);
+    updateAppSettings.mockRejectedValueOnce(new Error("step save failed"));
+    await press(increase());
+    expect(row("uiFontSize").querySelector("input")?.value).toBe("16");
+    await editSize("uiFontSize", "10");
+    expect(decrease().disabled).toBe(true);
+    expect(increase().disabled).toBe(false);
+    await editSize("uiFontSize", "32");
+    expect(increase().disabled).toBe(true);
+    expect(decrease().disabled).toBe(false);
+  });
+
   it("independent px sizes and weight persist and restore before paint", async () => {
     await press(row("typographyAdvanced"));
     await editSize("uiFontSize", "18");
@@ -377,7 +541,7 @@ describe("General section rows", () => {
     await press(reset);
     expect(updateAppSettings).toHaveBeenCalledTimes(1);
     expect(updateAppSettings).toHaveBeenCalledWith(expect.objectContaining({
-      uiFontSize: 16, contentFontSize: 14, codeFontSize: 13, uiFontWeight: "standard",
+      uiFontSize: 16, contentFontSize: 14, codeFontSize: 13, uiFontWeight: "standard", uiTextContrast: "standard",
       theme: "light", fontFamily: "", codeFontFamily: "",
     }));
   });

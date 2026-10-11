@@ -126,6 +126,12 @@ pub struct AppSettings {
     pub code_font_size: u32,
     #[serde(default = "default_ui_font_weight")]
     pub ui_font_weight: String,
+    #[serde(default = "default_ui_text_contrast")]
+    pub ui_text_contrast: String,
+    #[serde(default)]
+    pub sidebar_font_size: Option<u32>,
+    #[serde(default)]
+    pub sidebar_font_weight: Option<u32>,
     /// Code font for chat code blocks and the built-in terminal: "" = 系统默认,
     /// "custom" = the uploaded file in `code_font_file`.
     #[serde(default)]
@@ -246,6 +252,10 @@ fn default_content_font_size() -> u32 {
 
 fn default_code_font_size() -> u32 {
     13
+}
+
+fn default_ui_text_contrast() -> String {
+    "standard".to_string()
 }
 
 fn default_ui_font_weight() -> String {
@@ -395,6 +405,9 @@ impl Default for AppSettings {
             content_font_size: default_content_font_size(),
             code_font_size: default_code_font_size(),
             ui_font_weight: default_ui_font_weight(),
+            ui_text_contrast: default_ui_text_contrast(),
+            sidebar_font_size: None,
+            sidebar_font_weight: None,
             code_font_family: String::new(),
             code_font_file: String::new(),
             composer_send_shortcut: default_composer_send_shortcut(),
@@ -1274,10 +1287,13 @@ mod tests {
         assert_eq!(parsed.content_font_size, 14);
         assert_eq!(parsed.code_font_size, 13);
         assert_eq!(parsed.ui_font_weight, "standard");
+        assert_eq!(parsed.ui_text_contrast, "standard");
+        assert_eq!(parsed.sidebar_font_size, None);
+        assert_eq!(parsed.sidebar_font_weight, None);
         assert_eq!(parsed.code_font_family, "");
         assert_eq!(parsed.code_font_file, "");
         let custom: AppSettings = serde_json::from_str(
-            r#"{"fontFamily":"custom","fontFile":"/tmp/My Font.ttf","codeFontFamily":"system","uiFontSize":18,"contentFontSize":20,"codeFontSize":15,"uiFontWeight":"medium"}"#,
+            r#"{"fontFamily":"custom","fontFile":"/tmp/My Font.ttf","codeFontFamily":"system","uiFontSize":18,"contentFontSize":20,"codeFontSize":15,"uiFontWeight":"medium","uiTextContrast":"enhanced","sidebarFontSize":16,"sidebarFontWeight":400}"#,
         )
         .unwrap();
         assert_eq!(custom.font_family, "custom");
@@ -1285,11 +1301,17 @@ mod tests {
         assert_eq!(custom.content_font_size, 20);
         assert_eq!(custom.code_font_size, 15);
         assert_eq!(custom.ui_font_weight, "medium");
+        assert_eq!(custom.ui_text_contrast, "enhanced");
+        assert_eq!(custom.sidebar_font_size, Some(16));
+        assert_eq!(custom.sidebar_font_weight, Some(400));
         assert_eq!(custom.font_file, "/tmp/My Font.ttf");
         assert_eq!(custom.code_font_family, "system");
         let json = serde_json::to_string(&custom).unwrap();
         assert!(json.contains("\"uiFontSize\":18"));
         assert!(json.contains("\"uiFontWeight\":\"medium\""));
+        assert!(json.contains("\"uiTextContrast\":\"enhanced\""));
+        assert!(json.contains("\"sidebarFontSize\":16"));
+        assert!(json.contains("\"sidebarFontWeight\":400"));
         assert!(json.contains("\"fontFamily\":\"custom\""));
         assert!(json.contains("\"fontFile\":\"/tmp/My Font.ttf\""));
         assert!(json.contains("\"codeFontFamily\":\"system\""));
