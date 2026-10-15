@@ -556,6 +556,12 @@ export interface DirEntry {
   isDir: boolean;
   size: number;
   mtimeMs: number;
+  /** Symlink / junction entry; `isDir` reports the target's type. */
+  isLink?: boolean;
+  /** Link whose target cannot be resolved. */
+  linkBroken?: boolean;
+  /** Resolved target of a link (no `\\?\` prefix); null for non-links. */
+  linkTarget?: string | null;
 }
 
 export interface FileContent {

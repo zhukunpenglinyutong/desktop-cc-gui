@@ -64,6 +64,10 @@ export function FileTreeBody({ virtualizer, visible, onContextMenu }: FileTreeBo
     <div style={{ height: virtualizer.getTotalSize(), position: "relative" }}>
       {virtualizer.getVirtualItems().map((vi) => {
         const node = visible[vi.index];
+        // Sub-directory load error (§5 inline error): expanding a directory
+        // that `list_dir` rejects (EACCES / outside boundary) used to fail
+        // silently — the tree only rendered the root-level error.
+        const nodeError = node.isDir ? dirErrors[node.path] : undefined;
         return (
           <div
             key={node.path}
@@ -89,6 +93,24 @@ export function FileTreeBody({ virtualizer, visible, onContextMenu }: FileTreeBo
               onMention={handleMention}
               mentionLabel={t("files.addToChat")}
             />
+            {nodeError ? (
+              <div
+                role="alert"
+                className="flex flex-col items-start gap-1 py-1 pr-2"
+                style={{ paddingLeft: 14 + (node.depth + 1) * 14 }}
+              >
+                <p className="text-caption-1-regular text-text-error-primary break-all">
+                  {nodeError}
+                </p>
+                <button
+                  type="button"
+                  onClick={() => void ensureDir(node.path)}
+                  className="text-caption-1-medium text-text-secondary underline underline-offset-2 hover:text-text-primary"
+                >
+                  {t("common.refresh")}
+                </button>
+              </div>
+            ) : null}
           </div>
         );
       })}

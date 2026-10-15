@@ -1,5 +1,6 @@
 use base64::Engine as _;
 use serde::Serialize;
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -17,6 +18,17 @@ pub struct DirEntry {
     pub is_dir: bool,
     pub size: u64,
     pub mtime_ms: i64,
+    /// True when this entry is a symlink / junction (a reparse point).
+    /// `is_dir` reports the **target**'s type: Rust's `DirEntry::metadata`
+    /// does NOT follow links, so a junction to a directory would otherwise be
+    /// reported as a file — the tree renders it as a file, clicking it runs
+    /// `read_file`, and `File::open` on a directory fails with os error 5.
+    pub is_link: bool,
+    /// True when a link's target cannot be resolved (dangling link).
+    pub link_broken: bool,
+    /// Resolved target of a link (`\\?\` prefix stripped); `None` for
+    /// non-links and for broken links.
+    pub link_target: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -164,27 +176,67 @@ pub fn revoke_granted_root(
     db.remove_granted_root(path.trim())
 }
 
-#[tauri::command]
-pub fn list_dir(
-    db: tauri::State<'_, Arc<crate::db::Db>>,
-    path: String,
-) -> Result<Vec<DirEntry>, String> {
-    let dir = ensure_allowed(&path, &db)?;
+/// Link facts for one directory entry. `DirEntry::metadata` never follows a
+/// symlink, so the entry *type* must come from `fs::metadata` (which does),
+/// while "is this a link?" comes from `symlink_metadata` (which does not).
+fn link_info(path: &Path) -> (bool, bool, Option<String>) {
+    let is_link = std::fs::symlink_metadata(path)
+        .map(|m| m.file_type().is_symlink())
+        .unwrap_or(false);
+    if !is_link {
+        return (false, false, None);
+    }
+    match std::fs::canonicalize(path) {
+        Ok(target) => (
+            true,
+            false,
+            Some(strip_verbatim_prefix(target).to_string_lossy().into_owned()),
+        ),
+        Err(_) => (true, true, None),
+    }
+}
+
+/// Sync body of `list_dir`: split out so tests can call it without a Tauri
+/// `State`. Follows links for the entry type/size, reporting `is_link`
+/// separately so the frontend can badge them.
+fn list_dir_blocking(db: &crate::db::Db, path: &str) -> Result<Vec<DirEntry>, String> {
+    let dir = ensure_allowed(path, db)?;
     let entries = std::fs::read_dir(&dir).map_err(|e| format!("read {}: {e}", dir.display()))?;
     let mut out: Vec<DirEntry> = entries
         .flatten()
         .map(|entry| {
-            let meta = entry.metadata().ok();
+            let entry_path = entry.path();
+            let (is_link, link_broken, link_target) = link_info(&entry_path);
+            // `entry.metadata()` does NOT follow links (a junction reports
+            // `is_dir=false`), so for a link stat the target explicitly —
+            // `fs::metadata` follows. A broken link yields None here and is
+            // reported via `link_broken` instead of vanishing.
+            let meta = if is_link {
+                std::fs::metadata(&entry_path).ok()
+            } else {
+                entry.metadata().ok()
+            };
             DirEntry {
                 name: entry.file_name().to_string_lossy().to_string(),
                 is_dir: meta.as_ref().map(|m| m.is_dir()).unwrap_or(false),
                 size: meta.as_ref().map(|m| m.len()).unwrap_or(0),
                 mtime_ms: meta.as_ref().map(mtime_ms).unwrap_or(0),
+                is_link,
+                link_broken,
+                link_target,
             }
         })
         .collect();
     out.sort_by(|a, b| b.is_dir.cmp(&a.is_dir).then_with(|| a.name.cmp(&b.name)));
     Ok(out)
+}
+
+#[tauri::command]
+pub fn list_dir(
+    db: tauri::State<'_, Arc<crate::db::Db>>,
+    path: String,
+) -> Result<Vec<DirEntry>, String> {
+    list_dir_blocking(&db, &path)
 }
 
 fn is_image(path: &Path) -> bool {
@@ -351,21 +403,37 @@ fn copy_destination_name(source: &Path, is_dir: bool, counter: u32) -> Result<St
     })
 }
 
-fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<(), String> {
+/// Recursively copy `src` into `dst`, **following links** (copying the
+/// target's content) and guarding against cycles: a link that points back at
+/// an ancestor would otherwise recurse forever. `visited` holds the identity
+/// (canonical path) of every directory already copied on this branch.
+fn copy_dir_recursive(
+    src: &Path,
+    dst: &Path,
+    visited: &mut HashSet<PathBuf>,
+) -> Result<(), String> {
+    let identity = std::fs::canonicalize(src).unwrap_or_else(|_| src.to_path_buf());
+    if !visited.insert(identity) {
+        // Already inside this copy: a link cycle. Stop descending here.
+        return Ok(());
+    }
     std::fs::create_dir_all(dst).map_err(|e| format!("mkdir {}: {e}", dst.display()))?;
     let entries = std::fs::read_dir(src).map_err(|e| format!("read {}: {e}", src.display()))?;
     for entry in entries {
         let entry = entry.map_err(|e| format!("read entry in {}: {e}", src.display()))?;
         let src_path = entry.path();
         let dst_path = dst.join(entry.file_name());
-        let file_type = std::fs::symlink_metadata(&src_path)
+        let is_link = std::fs::symlink_metadata(&src_path)
             .map_err(|e| format!("stat {}: {e}", src_path.display()))?
-            .file_type();
-        if file_type.is_symlink() {
-            return Err(format!("cannot copy symlink {}", src_path.display()));
+            .file_type()
+            .is_symlink();
+        if is_link && !src_path.exists() {
+            return Err(format!("broken link {}", src_path.display()));
         }
+        // `is_dir()` follows links, so a directory link copies the target's
+        // content (the user chose "follow" semantics).
         if src_path.is_dir() {
-            copy_dir_recursive(&src_path, &dst_path)?;
+            copy_dir_recursive(&src_path, &dst_path, visited)?;
         } else {
             std::fs::copy(&src_path, &dst_path)
                 .map_err(|e| format!("copy {}: {e}", src_path.display()))?;
@@ -383,8 +451,14 @@ fn copy_item_into_dir(
     target_dir: &Path,
     prefer_original_name: bool,
 ) -> Result<PathBuf, String> {
-    if is_dir && target_dir.starts_with(source) {
-        return Err("cannot paste a folder into itself or its descendant".to_string());
+    // `starts_with` is lexical, so a symlinked source would dodge the
+    // self-paste guard; compare canonical paths to close that hole.
+    if is_dir {
+        let src_real = std::fs::canonicalize(source).unwrap_or_else(|_| source.to_path_buf());
+        let dst_real = std::fs::canonicalize(target_dir).unwrap_or_else(|_| target_dir.to_path_buf());
+        if dst_real.starts_with(&src_real) {
+            return Err("cannot paste a folder into itself or its descendant".to_string());
+        }
     }
     let source_name = source
         .file_name()
@@ -401,8 +475,10 @@ fn copy_item_into_dir(
             .ok_or_else(|| "too many copies exist".to_string())?;
     }
     if is_dir {
-        copy_dir_recursive(source, &destination)?;
+        let mut visited = HashSet::new();
+        copy_dir_recursive(source, &destination, &mut visited)?;
     } else {
+        // `fs::copy` follows links: a file link copies the target's content.
         std::fs::copy(source, &destination)
             .map_err(|e| format!("copy {}: {e}", source.display()))?;
     }
@@ -415,18 +491,23 @@ pub fn duplicate_item(
     path: String,
 ) -> Result<FileOpResult, String> {
     let source = ensure_allowed(&path, &db)?;
-    let meta = std::fs::symlink_metadata(&source)
-        .map_err(|e| format!("stat {}: {e}", source.display()))?;
-    if meta.file_type().is_symlink() {
-        return Err(format!("cannot copy symlink {}", source.display()));
+    if std::fs::symlink_metadata(&source)
+        .map(|m| m.file_type().is_symlink())
+        .unwrap_or(false)
+        && !source.exists()
+    {
+        return Err(format!("broken link {}", source.display()));
     }
+    // `is_dir()` follows links: duplicating a directory link copies the
+    // target's content.
+    let is_dir = source.is_dir();
     let parent = source
         .parent()
         .ok_or_else(|| format!("invalid path {}", source.display()))?;
-    let destination = copy_item_into_dir(&source, meta.is_dir(), parent, false)?;
+    let destination = copy_item_into_dir(&source, is_dir, parent, false)?;
     Ok(FileOpResult {
         path: destination.to_string_lossy().into_owned(),
-        is_dir: meta.is_dir(),
+        is_dir,
     })
 }
 
@@ -441,15 +522,18 @@ pub fn paste_item(
     if !dir.is_dir() {
         return Err(format!("{} is not a directory", dir.display()));
     }
-    let meta = std::fs::symlink_metadata(&source)
-        .map_err(|e| format!("stat {}: {e}", source.display()))?;
-    if meta.file_type().is_symlink() {
-        return Err(format!("cannot copy symlink {}", source.display()));
+    if std::fs::symlink_metadata(&source)
+        .map(|m| m.file_type().is_symlink())
+        .unwrap_or(false)
+        && !source.exists()
+    {
+        return Err(format!("broken link {}", source.display()));
     }
-    let destination = copy_item_into_dir(&source, meta.is_dir(), &dir, true)?;
+    let is_dir = source.is_dir();
+    let destination = copy_item_into_dir(&source, is_dir, &dir, true)?;
     Ok(FileOpResult {
         path: destination.to_string_lossy().into_owned(),
-        is_dir: meta.is_dir(),
+        is_dir,
     })
 }
 
@@ -481,6 +565,10 @@ fn search_text_blocking(
     }
     let needle_lower = needle.to_lowercase();
     let mut hits = Vec::new();
+    // Identity of every directory already visited, so a link cycle does not
+    // loop forever (links are followed by `read_dir`).
+    let mut visited: HashSet<PathBuf> = HashSet::new();
+    visited.insert(std::fs::canonicalize(&root).unwrap_or_else(|_| root.clone()));
     let mut stack = vec![root];
     while let Some(dir) = stack.pop() {
         if hits.len() >= MAX_SEARCH_RESULTS {
@@ -499,11 +587,24 @@ fn search_text_blocking(
             if name.starts_with('.') || name == "node_modules" || name == "target" {
                 continue;
             }
-            let Ok(meta) = entry.metadata() else {
+            // `entry.metadata()` does not follow links and *succeeds* for a
+            // junction (reporting `is_dir=false`), so an `.or_else` fallback
+            // never fires. For a link, stat the target explicitly so directory
+            // links are descended into; otherwise they are invisible to search.
+            let is_link = entry.file_type().map(|t| t.is_symlink()).unwrap_or(false);
+            let meta = if is_link {
+                std::fs::metadata(&p)
+            } else {
+                entry.metadata()
+            };
+            let Ok(meta) = meta else {
                 continue;
             };
             if meta.is_dir() {
-                stack.push(p);
+                let identity = std::fs::canonicalize(&p).unwrap_or_else(|_| p.clone());
+                if visited.insert(identity) {
+                    stack.push(p);
+                }
                 continue;
             }
             if meta.len() > MAX_READ_BYTES as u64 * 4 {
@@ -566,9 +667,11 @@ fn list_file_index_blocking(
         .git_global(!include_ignored)
         .git_exclude(!include_ignored)
         .require_git(false)
-        .follow_links(false)
+        // Follow links so linked directories/files are indexed; the walker
+        // detects cycles itself (an Err entry is skipped below).
+        .follow_links(true)
         .filter_entry(move |e| {
-            if !e.file_type().is_some_and(|t| t.is_dir()) {
+            if !e.path().is_dir() {
                 return true;
             }
             if e.file_name() == "node_modules" || e.file_name() == "target" {
@@ -590,7 +693,8 @@ fn list_file_index_blocking(
             .replace('\\', "/");
         out.push(FileIndexEntry {
             rel,
-            is_dir: entry.file_type().is_some_and(|t| t.is_dir()),
+            // Follow the link for the entry type, matching `list_dir`.
+            is_dir: p.is_dir(),
         });
         if out.len() >= MAX_INDEX_ENTRIES {
             break;
@@ -682,5 +786,128 @@ mod tests {
         assert!(!filtered.iter().any(|e| e.rel == "release/app.exe"));
         let all = list_file_index_blocking(&db, &root, true).unwrap();
         assert!(all.iter().any(|e| e.rel == "release/app.exe"));
+    }
+
+    /// Directory link (Windows junction / Unix symlink). Returns false when
+    /// the platform refuses (no symlink privilege) so the test can skip.
+    fn make_dir_link(target: &Path, link: &Path) -> bool {
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink(target, link).is_ok()
+        }
+        #[cfg(windows)]
+        {
+            // Junction: no admin / developer-mode needed, unlike symlink_dir.
+            // Args must be passed SEPARATELY: a single `mklink /J "a" "b"`
+            // string reaches cmd as one token and fails with
+            // "文件名、目录名或卷标语法不正确" (proven by probe).
+            std::process::Command::new("cmd")
+                .arg("/C")
+                .arg("mklink")
+                .arg("/J")
+                .arg(link)
+                .arg(target)
+                .output()
+                .map(|o| o.status.success())
+                .unwrap_or(false)
+        }
+    }
+
+    /// Create a directory link or fail loudly. A silent skip would let the
+    /// tests below pass without ever exercising the link path (false green).
+    fn require_dir_link(target: &Path, link: &Path, what: &str) {
+        assert!(
+            make_dir_link(target, link),
+            "cannot create a directory link for {what} on this platform; \
+             the link tests cannot run"
+        );
+    }
+
+    fn link_scratch() -> (Scratch, crate::db::Db, String) {
+        let scratch = Scratch::new();
+        let db = crate::db::Db::open_at(&scratch.0.join("test.db")).unwrap();
+        let root = scratch.0.to_string_lossy().to_string();
+        db.add_granted_root(&root).unwrap();
+        (scratch, db, root)
+    }
+
+    #[test]
+    fn list_dir_reports_directory_link_as_dir() {
+        let (scratch, db, root) = link_scratch();
+        let target = scratch.0.join("real");
+        std::fs::create_dir_all(&target).unwrap();
+        std::fs::write(target.join("f.txt"), b"hi").unwrap();
+        let link = scratch.0.join("linkdir");
+        require_dir_link(&target, &link, "list_dir_reports_directory_link_as_dir");
+
+        let entries = list_dir_blocking(&db, &root).unwrap();
+        let e = entries.iter().find(|e| e.name == "linkdir").unwrap();
+        // The bug: `entry.metadata()` reported this as a file.
+        assert!(e.is_dir, "directory link must report is_dir=true");
+        assert!(e.is_link, "directory link must report is_link=true");
+        assert!(!e.link_broken);
+        assert!(e.link_target.is_some(), "resolved target expected");
+
+        // A plain directory is not flagged as a link.
+        let real = entries.iter().find(|e| e.name == "real").unwrap();
+        assert!(real.is_dir && !real.is_link && !real.link_broken);
+    }
+
+    #[test]
+    fn list_dir_reports_broken_link() {
+        let (scratch, db, root) = link_scratch();
+        let target = scratch.0.join("gone");
+        std::fs::create_dir_all(&target).unwrap();
+        let link = scratch.0.join("dangling");
+        require_dir_link(&target, &link, "list_dir_reports_broken_link");
+        // Delete the target AFTER linking: guarantees a dangling link
+        // regardless of how the platform handles links to missing targets.
+        std::fs::remove_dir_all(&target).unwrap();
+
+        let entries = list_dir_blocking(&db, &root).unwrap();
+        let e = entries.iter().find(|e| e.name == "dangling").unwrap();
+        assert!(e.is_link && e.link_broken, "dangling link expected");
+        assert!(!e.is_dir && e.link_target.is_none());
+    }
+
+    #[test]
+    fn search_text_terminates_on_link_cycle() {
+        let (scratch, db, root) = link_scratch();
+        let dir = scratch.0.join("a");
+        std::fs::create_dir_all(&dir).unwrap();
+        // Many hits so that, without the visited guard, a self-cycle re-reads
+        // this file until it caps at MAX_SEARCH_RESULTS (200) — a cap stop,
+        // not a cycle stop. The guard must stop us at exactly one hit.
+        let body: String = std::iter::repeat("a needle here\n").take(8).collect();
+        std::fs::write(dir.join("needle.txt"), body.as_bytes()).unwrap();
+        // Self-cycle: a/loop -> a. Without the visited guard this descends
+        // a/loop/a/loop/… forever.
+        let cycle = dir.join("loop");
+        require_dir_link(&dir, &cycle, "search_text_terminates_on_link_cycle");
+
+        let hits = search_text_blocking(&db, &root, "needle").unwrap();
+        // Each physical file is read once: 8 lines. If the guard is removed,
+        // the loop re-reads it and this climbs toward the 200 cap. Assert well
+        // under the cap so the guard — not MAX_SEARCH_RESULTS — is load-bearing.
+        assert_eq!(
+            hits.len(),
+            8,
+            "the cycle must be stopped by the visited guard, not the result cap"
+        );
+    }
+
+    #[test]
+    fn copy_follows_directory_link_and_copies_target_content() {
+        let (scratch, _db, _root) = link_scratch();
+        let target = scratch.0.join("real");
+        std::fs::create_dir_all(&target).unwrap();
+        std::fs::write(target.join("f.txt"), b"content").unwrap();
+        let link = scratch.0.join("linkdir");
+        require_dir_link(&target, &link, "copy_follows_directory_link_and_copies_target_content");
+
+        // Duplicating a directory link copies the target's content.
+        let dest = copy_item_into_dir(&link, true, &scratch.0, false).unwrap();
+        assert!(dest.is_dir());
+        assert_eq!(std::fs::read(dest.join("f.txt")).unwrap(), b"content");
     }
 }

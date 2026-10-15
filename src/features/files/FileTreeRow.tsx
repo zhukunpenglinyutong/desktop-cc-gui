@@ -1,8 +1,10 @@
 import { memo, useCallback, useMemo, type MouseEvent } from "react";
 import { useTranslation } from "react-i18next";
 import Loader2 from "lucide-react/dist/esm/icons/loader-2";
+import Link2 from "lucide-react/dist/esm/icons/link-2";
 import Plus from "lucide-react/dist/esm/icons/plus";
 import RefreshCw from "lucide-react/dist/esm/icons/refresh-cw";
+import Unlink2 from "lucide-react/dist/esm/icons/unlink-2";
 import { ActionFeedbackIcon, useRunningFeedback } from "@/components/base/action-feedback";
 import { cx } from "@/utils/cx";
 import type { DirEntry, FileTreeColor, RepositorySummary } from "@/lib/ipc";
@@ -83,14 +85,18 @@ export const TreeRow = memo(function TreeRow({
   onMention,
   mentionLabel,
 }: TreeRowProps) {
+  const { t } = useTranslation();
   const handleClick = useCallback(() => {
+    // A dangling link has no target to open or expand — do nothing (the
+    // "target missing" badge already explains why).
+    if (node.linkBroken) return;
     if (node.isDir) {
       onSelectDir(node.path);
       onToggleDir(node.path);
     } else {
       onOpenFile(node.path);
     }
-  }, [node.isDir, node.path, onToggleDir, onOpenFile, onSelectDir]);
+  }, [node.isDir, node.linkBroken, node.path, onToggleDir, onOpenFile, onSelectDir]);
 
   // Icon SVGs are static string constants; selection is a map/set lookup.
   const iconSvg = useMemo(
@@ -146,6 +152,27 @@ export const TreeRow = memo(function TreeRow({
         >
           {node.name}
         </span>
+        {node.isLink ? (
+          // Minimal link badge: a link icon (tooltip = real target), or a
+          // struck-through icon with a "target missing" label for a dangling
+          // link. `isLink`/`linkBroken` come from `list_dir`.
+          <span
+            className={cx(
+              "ml-1.5 flex shrink-0 items-center gap-0.5 text-caption-1-medium",
+              node.linkBroken ? "text-text-warning-primary" : "text-foreground-icon-tertiary",
+            )}
+            title={node.linkBroken ? t("files.linkBroken") : node.linkTarget ?? t("files.linkBadge")}
+          >
+            {node.linkBroken ? (
+              <>
+                <Unlink2 className="size-3" aria-hidden />
+                <span>{t("files.linkBroken")}</span>
+              </>
+            ) : (
+              <Link2 className="size-3" aria-hidden />
+            )}
+          </span>
+        ) : null}
         {node.repository ? (
           <span
             className={cx(

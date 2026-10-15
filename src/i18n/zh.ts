@@ -1233,6 +1233,8 @@ export const zh = {
     fileNotFound: "文件不存在或已被移动",
     unsavedChanges: "未保存",
     emptyTree: "目录为空",
+    linkBadge: "链接",
+    linkBroken: "目标不存在",
     addToChat: "添加到对话",
     newFile: "新建文件",
     newFolder: "新建文件夹",

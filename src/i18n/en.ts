@@ -1288,6 +1288,8 @@ export const en: Messages = {
     fileNotFound: "File not found or moved",
     unsavedChanges: "Unsaved",
     emptyTree: "Empty folder",
+    linkBadge: "Link",
+    linkBroken: "Target missing",
     addToChat: "Add to chat",
     newFile: "New File",
     newFolder: "New Folder",

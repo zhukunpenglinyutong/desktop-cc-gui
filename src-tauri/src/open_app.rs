@@ -602,8 +602,9 @@ pub(crate) async fn reveal_in_file_manager(path: String) -> Result<(), String> {
     let expanded = expand_user_path(&path)?;
     // dunce: strip the \\?\ prefix std::fs::canonicalize adds on Windows;
     // `explorer /select` cannot parse UNC-prefixed paths.
-    let canonical = dunce::canonicalize(&expanded)
-        .map_err(|error| format!("Failed to resolve path `{path}`: {error}"))?;
+    // A dangling link has no canonical target; fall back to the (absolute)
+    // lexical path so "reveal" still selects the item instead of hard-failing.
+    let canonical = dunce::canonicalize(&expanded).unwrap_or(expanded);
 
     #[cfg(target_os = "macos")]
     {
