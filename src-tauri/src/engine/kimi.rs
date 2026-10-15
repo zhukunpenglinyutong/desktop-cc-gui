@@ -245,6 +245,7 @@ mod channel_tests {
             computer_use: None,
             memory_bot: None,
             allowed_tools: None,
+            auto_compact_threshold_tokens: None,
         };
         let built = KimiEngine.host_command(&req, "kimi").unwrap();
         let args: Vec<_> = built.command.as_std().get_args().collect();
@@ -270,6 +271,7 @@ mod channel_tests {
             computer_use: None,
             memory_bot: None,
             allowed_tools: None,
+            auto_compact_threshold_tokens: None,
         };
         let mut env = HashMap::from([
             ("KIMI_BASE_URL".into(), "https://selected.invalid/v1".into()),

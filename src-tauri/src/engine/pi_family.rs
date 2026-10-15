@@ -44,6 +44,8 @@ pub struct PiFamilyEngine {
     pub home_dir_name: &'static str, // ".pi" | ".omp"
     /// omp rpc-ui v2 大帧的重组缓冲:chunkId → 分片。pi 的 json 模式用不到。
     rpc_chunks: std::sync::Mutex<std::collections::HashMap<String, RpcChunkAcc>>,
+    /// One host maintenance request at a time; keep failure until its state reply.
+    live_compact_error: parking_lot::Mutex<Option<(String, String)>>,
 }
 
 /// v2 `rpc_chunk` 分片序列的重组中间态。
@@ -200,6 +202,7 @@ pub fn pi() -> PiFamilyEngine {
         id: "pi",
         home_dir_name: ".pi",
         rpc_chunks: std::sync::Mutex::new(std::collections::HashMap::new()),
+        live_compact_error: parking_lot::Mutex::new(None),
     }
 }
 
@@ -208,6 +211,7 @@ pub fn omp() -> PiFamilyEngine {
         id: "omp",
         home_dir_name: ".omp",
         rpc_chunks: std::sync::Mutex::new(std::collections::HashMap::new()),
+        live_compact_error: parking_lot::Mutex::new(None),
     }
 }
 
@@ -552,28 +556,60 @@ impl Engine for PiFamilyEngine {
         // 判断避免给每一行付出锁的代价。
         if line.contains("\"rpc_chunk\"") {
             if let Some(frame) = self.reassemble_chunk(line) {
-                parse_pi_family_line_for_engine(self.id, &frame, out);
+                parse_pi_family_line_for_engine(self, &frame, out);
             }
             return;
         }
-        parse_pi_family_line_for_engine(self.id, line, out);
+        parse_pi_family_line_for_engine(self, line, out);
     }
 }
 
-fn parse_pi_family_line_for_engine(id: &str, line: &str, out: &mut Vec<EngineEvent>) {
+/// Pin native continuation for local rpc-ui turns without rewriting user
+/// settings. OMP compact aborts the active model request and resumes it only
+/// when autoContinue is enabled. The launch owns and removes this overlay.
+pub(crate) fn enable_live_compact(built: &mut BuiltCommand) -> Result<(), String> {
+    use std::io::Write;
+    let path = std::env::temp_dir().join(format!("ccgui-omp-compact-{}.yml", uuid::Uuid::new_v4()));
+    let mut options = std::fs::OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    let mut file = options.open(&path).map_err(|e| format!("create OMP session overlay: {e}"))?;
+    built.cleanup_files.push(path.clone());
+    file.write_all(b"compaction:\n  autoContinue: true\n")
+        .map_err(|e| format!("write OMP session overlay: {e}"))?;
+    built.command.arg("--config").arg(path);
+    Ok(())
+}
+
+/// Request id prefix of a host-driven in-place compaction (see
+/// `engine::compact_active_run`). Its response arrives while the original
+/// turn is still running.
+const LIVE_COMPACT_ID_PREFIX: &str = "ccgui-live-compact:";
+/// Request id prefix of the `get_state` read that rides with it.
+const LIVE_STATE_ID_PREFIX: &str = "ccgui-live-state:";
+
+fn parse_pi_family_line_for_engine(engine: &PiFamilyEngine, line: &str, out: &mut Vec<EngineEvent>) {
+    let id = engine.id;
     // Avoid a second JSON parse for normal OMP stream frames; only compact
     // responses need the OMP-specific terminal mapping below.
     if id == "omp"
         && line.contains("\"command\"")
         && line.contains("\"compact\"")
-        && parse_omp_compact_response(line, out)
+        && parse_omp_compact_response(engine, line, out)
     {
+        return;
+    }
+    if id == "omp" && line.contains(LIVE_STATE_ID_PREFIX) && parse_omp_live_state(engine, line, out) {
         return;
     }
     parse_pi_family_line(line, out);
 }
 
-fn parse_omp_compact_response(line: &str, out: &mut Vec<EngineEvent>) -> bool {
+fn parse_omp_compact_response(engine: &PiFamilyEngine, line: &str, out: &mut Vec<EngineEvent>) -> bool {
     let Ok(value) = serde_json::from_str::<Value>(line) else {
         return false;
     };
@@ -583,7 +619,30 @@ fn parse_omp_compact_response(line: &str, out: &mut Vec<EngineEvent>) -> bool {
         return false;
     }
 
-    if value.get("success").and_then(Value::as_bool) == Some(true) {
+    let succeeded = value.get("success").and_then(Value::as_bool) == Some(true);
+    // Do not settle the chat run. On success keep progress until the serial
+    // get_state snapshot arrives, or stale pre-compaction usage could re-arm
+    // the host threshold before the smaller context has been observed.
+    if let Some(id) = value.get("id").and_then(Value::as_str)
+        .filter(|id| id.starts_with(LIVE_COMPACT_ID_PREFIX))
+    {
+        let mut failure = engine.live_compact_error.lock();
+        if !succeeded {
+            let error = value.get("error").and_then(Value::as_str).unwrap_or("未知错误");
+            let message = format!("omp 响应中压缩失败:{error}");
+            *failure = Some((id[LIVE_COMPACT_ID_PREFIX.len()..].to_string(), message.clone()));
+            out.push(EngineEvent::Warn(message));
+        } else {
+            *failure = None;
+        }
+        return true;
+    }
+
+    // Only the standalone command owns a terminal result.
+    if value.get("id").and_then(Value::as_str) != Some("ccgui-compact") {
+        return false;
+    }
+    if succeeded {
         out.push(EngineEvent::Done {
             session_id: None,
             usage: None,
@@ -594,6 +653,51 @@ fn parse_omp_compact_response(line: &str, out: &mut Vec<EngineEvent>) -> bool {
             .and_then(Value::as_str)
             .unwrap_or("未知错误");
         out.push(EngineEvent::Error(format!("omp 压缩失败:{error}")));
+    }
+    true
+}
+
+/// OMP reports {tokens, contextWindow, percent}, not billing usage. Publish
+/// occupancy before clearing progress, and never add it to reply totals.
+fn parse_omp_live_state(engine: &PiFamilyEngine, line: &str, out: &mut Vec<EngineEvent>) -> bool {
+    let Ok(value) = serde_json::from_str::<Value>(line) else { return false; };
+    let Some(nonce) = value.get("id").and_then(Value::as_str)
+        .and_then(|id| id.strip_prefix(LIVE_STATE_ID_PREFIX)) else { return false; };
+    if value.get("type").and_then(Value::as_str) != Some("response")
+        || value.get("command").and_then(Value::as_str) != Some("get_state")
+    {
+        return false;
+    }
+    if value.get("success").and_then(Value::as_bool) == Some(true) {
+        if let Some(tokens) = value.pointer("/data/contextUsage/tokens").and_then(Value::as_u64) {
+            let mut usage = serde_json::json!({
+                "input_tokens": tokens, "output_tokens": 0, "contextOnly": true,
+            });
+            if let Some(window) = value.pointer("/data/contextUsage/contextWindow")
+                .and_then(Value::as_u64).filter(|window| *window > 0)
+            {
+                usage["model_context_window"] = Value::from(window);
+            }
+            out.push(EngineEvent::Usage(usage));
+        } else {
+            out.push(EngineEvent::Warn("omp 未返回压缩后的上下文占用".into()));
+        }
+    } else {
+        let error = value.get("error").and_then(Value::as_str).unwrap_or("未知错误");
+        out.push(EngineEvent::Warn(format!("omp 读取压缩后上下文失败:{error}")));
+    }
+    out.push(EngineEvent::Compaction {
+        active: false,
+        reason: Some(format!("{LIVE_COMPACT_ID_PREFIX}{nonce}")),
+    });
+    let mut failure = engine.live_compact_error.lock();
+    if failure.as_ref().is_some_and(|(id, _)| id == nonce) {
+        let (_, error) = failure.take().unwrap();
+        // Ordinary summary failure aborts the turn without scheduling native
+        // continuation. A no-op can resume; trust isSettled, never a timer.
+        if value.pointer("/data/isSettled").and_then(Value::as_bool) == Some(true) {
+            out.push(EngineEvent::Error(error));
+        }
     }
     true
 }
@@ -708,6 +812,10 @@ fn parse_pi_family_line(line: &str, out: &mut Vec<EngineEvent>) {
     let Ok(envelope) = serde_json::from_str::<Envelope>(line) else {
         return;
     };
+    if envelope.kind == "agent_start" {
+        out.push(EngineEvent::AgentActivity { active: true });
+        return;
+    }
     if envelope.kind == "message_update" {
         if let Some(delta) = envelope.event {
             if let Some(text) = delta.delta.filter(|text| !text.is_empty()) {
@@ -748,7 +856,12 @@ fn parse_pi_family_line(line: &str, out: &mut Vec<EngineEvent>) {
     match event_type {
         // Response stream opens: reader.rs starts the genMs window here so
         // TTFT and tool-argument decoding are counted, not just text deltas.
-        "message_start" => out.push(EngineEvent::Generation { active: true }),
+        "message_start" => {
+            out.push(EngineEvent::Generation { active: true });
+            if value.pointer("/message/role").and_then(Value::as_str) == Some("assistant") {
+                out.push(EngineEvent::AssistantMessageStart);
+            }
+        }
         "session" => {
             push_session_id(&value, "id", out);
         }
@@ -886,6 +999,15 @@ fn parse_pi_family_line(line: &str, out: &mut Vec<EngineEvent>) {
             // (or process EOF) decides the run's outcome.
             if let Some(error) = nested_error_text(&value, &["message"]) {
                 out.push(EngineEvent::Warn(error));
+            } else if value.pointer("/message/role").and_then(Value::as_str) == Some("assistant")
+                && matches!(
+                    value.pointer("/message/stopReason").and_then(Value::as_str),
+                    Some("stop" | "length" | "toolUse")
+                )
+            {
+                // Aborted/error attempts remain replaceable by the next
+                // assistant start, including compact's missing message_end.
+                out.push(EngineEvent::AssistantMessageEnd);
             }
         }
         "auto_compaction_start" => {
@@ -964,6 +1086,9 @@ fn parse_pi_family_line(line: &str, out: &mut Vec<EngineEvent>) {
                 });
             } else {
                 out.push(EngineEvent::AttemptEnd { error });
+                if event_type == "agent_end" {
+                    out.push(EngineEvent::AgentActivity { active: false });
+                }
             }
         }
         _ => {}
@@ -1148,6 +1273,7 @@ mod tests {
             computer_use: None,
             memory_bot: None,
             allowed_tools: None,
+            auto_compact_threshold_tokens: None,
         }
     }
 
@@ -1404,13 +1530,110 @@ mod tests {
     }
 
     #[test]
-    fn message_start_opens_the_generation_window() {
+    fn assistant_message_start_preserves_generation_accounting() {
         let mut out = Vec::new();
         let line = r#"{"type":"message_start","message":{"role":"assistant","content":[]}}"#;
         parse_pi_family_line(line, &mut out);
-        match &out[..] {
-            [EngineEvent::Generation { active: true }] => {}
-            other => panic!("expected generation start, got {other:?}"),
+        assert!(matches!(
+            &out[..],
+            [EngineEvent::Generation { active: true }, EngineEvent::AssistantMessageStart]
+        ), "got {out:?}");
+    }
+
+    #[test]
+    fn consecutive_completed_assistant_messages_have_distinct_boundaries() {
+        for engine in [omp(), pi()] {
+            let mut out = Vec::new();
+            for stop_reason in ["stop", "toolUse", "length"] {
+                for line in [
+                    serde_json::json!({"type":"message_start","message":{"role":"assistant"}}),
+                    serde_json::json!({"type":"message_update","assistantMessageEvent":{"type":"thinking_delta","delta":"reason"}}),
+                    serde_json::json!({"type":"message_update","assistantMessageEvent":{"type":"text_delta","delta":"answer"}}),
+                    serde_json::json!({"type":"message_end","message":{"role":"assistant","stopReason":stop_reason,"content":[{"type":"text","text":"answer"}]}}),
+                ] {
+                    engine.parse_line(&line.to_string(), &mut out);
+                }
+            }
+            assert_eq!(out.len(), 15, "got {out:?}");
+            for message in out.chunks_exact(5) {
+                assert!(matches!(
+                    message,
+                    [EngineEvent::Generation { active: true },
+                     EngineEvent::AssistantMessageStart,
+                     EngineEvent::Thinking(thinking),
+                     EngineEvent::Delta(text),
+                     EngineEvent::AssistantMessageEnd]
+                        if thinking == "reason" && text == "answer"
+                ), "got {message:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn assistant_restart_without_message_end_starts_a_replacement() {
+        let mut out = Vec::new();
+        for line in [
+            r#"{"type":"message_start","message":{"role":"assistant"}}"#,
+            r#"{"type":"message_update","assistantMessageEvent":{"type":"text_delta","delta":"unfinished"}}"#,
+            r#"{"type":"auto_compaction_start","reason":"manual"}"#,
+            r#"{"type":"auto_compaction_end"}"#,
+            r#"{"type":"message_start","message":{"role":"assistant"}}"#,
+            r#"{"type":"message_update","assistantMessageEvent":{"type":"text_delta","delta":"restarted"}}"#,
+            r#"{"type":"message_end","message":{"role":"assistant","stopReason":"stop"}}"#,
+        ] {
+            parse_pi_family_line(line, &mut out);
+        }
+        assert!(matches!(
+            &out[..],
+            [EngineEvent::Generation { active: true },
+             EngineEvent::AssistantMessageStart,
+             EngineEvent::Delta(partial),
+             EngineEvent::Compaction { active: true, .. },
+             EngineEvent::Compaction { active: false, .. },
+             EngineEvent::Generation { active: true },
+             EngineEvent::AssistantMessageStart,
+             EngineEvent::Delta(restarted),
+             EngineEvent::AssistantMessageEnd]
+                if partial == "unfinished" && restarted == "restarted"
+        ), "got {out:?}");
+    }
+
+    #[test]
+    fn non_assistant_messages_do_not_emit_assistant_boundaries() {
+        for role in [Some("user"), Some("toolResult"), Some("tool"), None] {
+            let mut out = Vec::new();
+            for kind in ["message_start", "message_end"] {
+                parse_pi_family_line(
+                    &serde_json::json!({"type":kind,"message":{"role":role,"stopReason":"stop"}}).to_string(),
+                    &mut out,
+                );
+            }
+            assert!(matches!(&out[..], [EngineEvent::Generation { active: true }]),
+                "non-assistant role {role:?}: {out:?}");
+        }
+    }
+
+    #[test]
+    fn failed_or_aborted_assistant_messages_do_not_commit() {
+        for stop_reason in [Some("error"), Some("aborted"), None] {
+            let mut out = Vec::new();
+            parse_pi_family_line(
+                &serde_json::json!({
+                    "type":"message_end",
+                    "message":{
+                        "role":"assistant", "stopReason":stop_reason,
+                        "model":"reported-model", "thinking_effort":"high",
+                        "usage":{"input_tokens":10,"output_tokens":2}
+                    }
+                }).to_string(),
+                &mut out,
+            );
+            assert!(matches!(
+                &out[..],
+                [EngineEvent::Model(model), EngineEvent::Effort(effort),
+                 EngineEvent::Served { .. }, EngineEvent::Usage(_)]
+                    if model == "reported-model" && effort == "high"
+            ), "stop reason {stop_reason:?}: {out:?}");
         }
     }
 
@@ -1530,6 +1753,92 @@ mod tests {
             &mut out,
         );
         assert!(out.is_empty(), "got {out:?}");
+    }
+
+    /// Successful manual maintenance cannot settle the task or clear the
+    /// progress flag before its post-compaction usage read.
+    #[test]
+    fn live_compact_response_ends_progress_without_settling_the_turn() {
+        let mut out = Vec::new();
+        omp().parse_line(
+            &serde_json::json!({
+                "id": "ccgui-live-compact:7", "type": "response", "command": "compact",
+                "success": true, "data": { "tokensBefore": 100 },
+            })
+            .to_string(),
+            &mut out,
+        );
+        assert!(out.is_empty(), "success must wait for the state snapshot: {out:?}");
+
+        // A failed live compaction warns; the task still owns its turn.
+        let mut out = Vec::new();
+        omp().parse_line(
+            &serde_json::json!({
+                "id": "ccgui-live-compact:8", "type": "response", "command": "compact",
+                "success": false, "error": "busy",
+            })
+            .to_string(),
+            &mut out,
+        );
+        assert!(matches!(&out[..], [EngineEvent::Warn(_)]), "wait for the correlated state: {out:?}");
+    }
+
+    #[test]
+    fn failed_live_compaction_settles_only_when_native_continuation_is_absent() {
+        for settled in [false, true] {
+            let engine = omp();
+            let mut out = Vec::new();
+            engine.parse_line(&serde_json::json!({
+                "id":"ccgui-live-compact:9", "type":"response", "command":"compact",
+                "success":false, "error":"summary provider failed"
+            }).to_string(), &mut out);
+            engine.parse_line(&serde_json::json!({
+                "id":"ccgui-live-state:9", "type":"response", "command":"get_state",
+                "success":true, "data": {"isSettled":settled,
+                    "contextUsage":{"tokens":12000,"contextWindow":200000}}
+            }).to_string(), &mut out);
+            assert_eq!(out.iter().any(|event| matches!(event, EngineEvent::Error(error) if error.contains("summary provider failed"))), settled);
+            assert!(!out.iter().any(|event| matches!(event, EngineEvent::Done { .. })));
+        }
+    }
+
+    /// The `get_state` that rides with the compact frame is answered after
+    /// it, so its context usage is the post-compaction truth — the gauge must
+    /// use it instead of guessing from the summary's own billing.
+    #[test]
+    fn live_state_response_reports_post_compaction_usage() {
+        let mut out = Vec::new();
+        omp().parse_line(
+            &serde_json::json!({
+                "id": "ccgui-live-state:7", "type": "response", "command": "get_state",
+                "success": true,
+                "data": { "contextUsage": { "tokens": 12_000, "contextWindow": 200_000, "percent": 6 } },
+            })
+            .to_string(),
+            &mut out,
+        );
+        let [EngineEvent::Usage(usage), EngineEvent::Compaction { active: false, reason: Some(reason) }] = &out[..] else {
+            panic!("got {out:?}");
+        };
+        assert_eq!(usage["input_tokens"], serde_json::json!(12_000));
+        assert_eq!(usage["model_context_window"], serde_json::json!(200_000));
+        assert_eq!(usage["contextOnly"], serde_json::json!(true));
+        assert_eq!(reason, "ccgui-live-compact:7");
+
+        // A failed state read must not fake a drop: no usage event at all.
+        let mut out = Vec::new();
+        omp().parse_line(
+            &serde_json::json!({
+                "id": "ccgui-live-state:7", "type": "response", "command": "get_state",
+                "success": false, "error": "gone",
+            })
+            .to_string(),
+            &mut out,
+        );
+        assert!(
+            !out.iter().any(|event| matches!(event, EngineEvent::Usage(_))),
+            "got {out:?}"
+        );
     }
 
     #[test]
@@ -1951,17 +2260,17 @@ mod tests {
     #[test]
     fn message_end_extracts_nested_error_shapes_as_warn() {
         for line in [
-            serde_json::json!({"type":"message_end","message":{"errorMessage":"upstream 429"}}),
-            serde_json::json!({"type":"message_end","errorMessage":"top-level 429"}),
-            serde_json::json!({"type":"message_end","error":{"message":"nested 429"}}),
-            serde_json::json!({"type":"message_end","message":{"error":"message.error 429"}}),
+            serde_json::json!({"type":"message_end","message":{"role":"assistant","stopReason":"stop","errorMessage":"upstream 429"}}),
+            serde_json::json!({"type":"message_end","message":{"role":"assistant","stopReason":"stop"},"errorMessage":"top-level 429"}),
+            serde_json::json!({"type":"message_end","message":{"role":"assistant","stopReason":"stop"},"error":{"message":"nested 429"}}),
+            serde_json::json!({"type":"message_end","message":{"role":"assistant","stopReason":"stop","error":"message.error 429"}}),
         ] {
             let mut out = Vec::new();
             parse_pi_family_line(&line.to_string(), &mut out);
-            match out.last() {
-                Some(EngineEvent::Warn(text)) => assert!(text.contains("429"), "{line}"),
-                other => panic!("expected Warn for {line}, got {other:?}"),
-            }
+            assert!(matches!(
+                &out[..],
+                [EngineEvent::Warn(text)] if text.contains("429")
+            ), "expected only Warn for {line}, got {out:?}");
         }
     }
 
@@ -2116,6 +2425,7 @@ mod tests {
             computer_use: None,
             memory_bot: None,
             allowed_tools: None,
+            auto_compact_threshold_tokens: None,
         };
         let built = engine.build_command(&req, "omp").unwrap();
         let args: Vec<String> = built
@@ -2146,6 +2456,7 @@ mod tests {
             computer_use: None,
             memory_bot: None,
             allowed_tools: None,
+            auto_compact_threshold_tokens: None,
         };
         let built = engine.build_command(&req, "omp").unwrap();
         let payload = built.stdin_payload.expect("rpc stdin payload");
@@ -2203,6 +2514,7 @@ mod tests {
             computer_use: None,
             memory_bot: None,
             allowed_tools: None,
+            auto_compact_threshold_tokens: None,
         };
         let built = engine.build_command(&req, "omp").unwrap();
         let args: Vec<String> = built

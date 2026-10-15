@@ -80,6 +80,9 @@ export const CHANGELOG_DATA: ChangelogEntry[] = [
 - **中转开关被写进 settings.json 并在启动时自动重连**：与「中转开关是会话态」的设计不符。已删除 AppSettings.web_relay_on 与启动路径里无条件的自动重连；旧文件里的 webRelayOn 会落进 flatten 的附加字段表并被永久回写，因此持久化时显式丢弃该键（地址与密钥保留）。web_relay_stop 不再写盘，停止即纯运行时操作。
 - **dsh 模型列表同一模型出现两行**：dsh 的模型目录会摊平成 provider/model 组合 id，而渠道里配置的模型存的是裸 id，于是同一模型一行来自配置、一行来自目录。use-engine-models 新增 resolveCompositeId，把裸 id 解析到目录里唯一匹配的组合 id（0 个或多个匹配则保持原样，不猜），当前选中项与渠道配置项都走它，两行合并为一行。
 - **macOS 公证偶发整次发布失败**：notarytool submit --wait 把一次状态轮询超时（NSURLErrorDomain -1001）当成致命错误，同一提交 arm64 已 Accepted 而 x86_64 直接失败。现在 submit 不带 --wait，改为自行轮询 notarytool info（最多 60 次 × 20s = 20 分钟）：轮询非零退出但输出里仍有 status 就继续，完全读不到状态才算丢一次；Accepted 才 staple，Invalid 立即打印 notarytool log 并失败退出，超时按错误退出。
+- **响应中的上下文压缩**：手动压缩按钮在 OMP 回合响应期间可用，压缩在同一进程内原地完成，原任务继续跑，不再中断重发；自动压缩不再要求会话空闲，持续响应中实时占用越过阈值即在当前回合内压缩，压缩后由 OMP 原生续接，不补发「继续」。Codex / Claude 改为每次发送下发该会话阈值，由引擎在安全边界自行压缩；其余引擎保持空闲回合压缩。
+- **压缩续接后正文不再粘住半句**：OMP 原地压缩会先断开事件订阅再中断回合，被打断的那条消息收不到结束帧，宿主于是按原生消息起止（assistant_message_start / assistant_message_end）界定正文；新消息开始只替换尚未结束的那段，已完成的回复、工具行和其它会话都不动。
+- **显示取整不再误触发自动压缩**：阈值判定与重新布防改用未取整的真实占用，仪表显示仍取整，真正达到或越过阈值照常触发，重试间距保持整百分点。
 
 🧹 内部优化
 - ui-ux-spec 同步登记输入法发送语义、粘贴文件、宽幕布与字体字重配置
@@ -100,6 +103,9 @@ export const CHANGELOG_DATA: ChangelogEntry[] = [
 - **The relay switch was written to settings.json and reconnected on launch**: this contradicted the design that the relay switch is session-scoped. AppSettings.web_relay_on and the unconditional auto-reconnect on the startup path are removed; a webRelayOn left in an old file would land in the flattened extra-fields table and be written back for good, so persistence now explicitly drops that key (the address and secret are kept). web_relay_stop no longer writes to disk, so stopping is a pure runtime operation.
 - **The dsh model list showed the same model on two rows**: dsh's model catalog flattens to provider/model composite ids while the model configured on the channel is stored bare, so one model appeared once from the configuration and once from the catalog. use-engine-models gains resolveCompositeId, which resolves a bare id to the unique matching composite id in the catalog (zero or several matches leave it as is — no guessing); both the current selection and the channel's configured model go through it, and the two rows collapse into one.
 - **macOS notarization sometimes failed an entire release**: notarytool submit --wait treated a single status-poll timeout (NSURLErrorDomain -1001) as fatal, so the same submission could be Accepted on arm64 while x86_64 failed outright. Submit no longer passes --wait; it now polls notarytool info itself (up to 60 × 20s = 20 minutes): a poll that exits non-zero but still prints a status carries on, and only a poll that yields no status at all counts as a lost attempt; only Accepted proceeds to stapling, Invalid prints notarytool log and fails immediately, and a timeout fails as an error.
+- **Compaction during a response**: The manual compact button is available while an OMP turn is streaming; compaction runs in place inside the same process and the original task keeps going, with no interrupt-and-resend. Automatic compaction no longer waits for an idle session, and Codex / Claude receive the session threshold on every send.
+- **Resumed text no longer sticks to a half-finished sentence**: OMP message boundaries (`assistant_message_start` / `assistant_message_end`) delimit resumed text, so a new message replaces only the still-unfinished part and leaves completed replies and tool rows untouched.
+- **Rounded display no longer triggers automatic compaction**: threshold decisions and rearming use the actual unrounded occupancy while the gauge still shows a whole percentage; real crossings trigger and retries keep their whole-percent spacing.
 
 🧹 Internal
 - ui-ux-spec registers the IME send semantics, pasted files, the wide canvas and the font size / weight settings

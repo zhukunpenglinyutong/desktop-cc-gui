@@ -11,6 +11,12 @@ pub enum EngineEvent {
     Delta(String),
     /// Reasoning/thinking delta (append).
     Thinking(String),
+    /// A native assistant message opened. Replaces only an unfinished prior
+    /// assistant message in the same run; not a run/compaction boundary.
+    AssistantMessageStart,
+    /// A native assistant message committed successfully. Commits streamed
+    /// text/thinking without copying a snapshot or completing the run.
+    AssistantMessageEnd,
     /// A completed message block (role, text). `path` carries the target
     /// file of a tool call (read/edit/write/...) so the UI can render a
     /// file chip; None for everything else. `args` is the tool-call payload
@@ -49,6 +55,8 @@ pub enum EngineEvent {
     /// One model attempt ended, but the CLI may retry or compact next.
     /// Keep its outcome for EOF; unlike Error/Done, this never ends the run.
     AttemptEnd { error: Option<String> },
+    /// Native OMP loop readiness, distinct from asynchronous prompt admission.
+    AgentActivity { active: bool },
     /// The CLI is backing off before re-issuing a request (claude
     /// `system/api_retry`, omp `auto_retry_start`). Distinct from `Warn`
     /// because the UI shows it as live progress ("重试中 2/5") in the run

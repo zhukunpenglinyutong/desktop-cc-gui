@@ -33,7 +33,7 @@ import { useTabModelDisplay } from "./use-tab-model-display";
 import type { EngineInfo, Workspace } from "@/lib/ipc";
 import type { OmpServiceTier } from "@/lib/omp-service-tier";
 import { EmptyState } from "@/components/base/empty-state";
-import { parseUsage } from "../usage";
+import { reportedContextWindow } from "../usage";
 import { rememberContextWindow, resolveContextMax } from "../context-window-memory";
 import { useWorkspaceUIHooks, workspaceAllowedEngines } from "../workspace-ui-bridge";
 import { ConversationModePane, ConversationModePicker } from "@/features/plugins/conversation/ConversationModeHost";
@@ -407,7 +407,7 @@ export const ChatConversation = memo(function ChatConversation({
       (m) => m.id === displayModel,
     )?.contextWindow,
   });
-  const observedWindow = parseUsage(sessionUsage)?.contextWindow;
+  const observedWindow = reportedContextWindow(sessionUsage);
   useEffect(() => {
     if (observedWindow) {
       rememberContextWindow(activeEngine, displayModel, observedWindow);

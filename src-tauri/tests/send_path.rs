@@ -117,6 +117,7 @@ async fn send_message_streams_events_end_to_end() {
         None,
         None,
         None,
+        None,
     )
     .await
     .expect("send_message must succeed");
@@ -220,6 +221,7 @@ sleep 60
         None,
         "hi".to_string(),
         Vec::new(),
+        None,
         None,
         None,
         None,
@@ -402,6 +404,7 @@ echo '{"type":"agent_end"}'
             None,
             "hi".into(),
             Vec::new(),
+            None,
             None,
             None,
             None,

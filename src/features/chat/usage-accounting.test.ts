@@ -115,6 +115,26 @@ describe("usage accounting", () => {
     expect(parseUsage(settled.usage)).toMatchObject({ input: 500, output: 10 });
   });
 
+  it("keeps OMP context snapshots out of the reply totals and ledger", () => {
+    handleEngineEvents([event("usage", 1, { input_tokens: 1000, output_tokens: 40 }, "omp")], deps());
+    handleEngineEvents([event("usage", 2, { input_tokens: 5000, output_tokens: 0, model_context_window: 100_000, contextOnly: true }, "omp")], deps());
+    expect(parseUsage(session().usage)).toMatchObject({ input: 5000, contextWindow: 100_000 });
+    expect(parseUsage(session().turnUsage)).toMatchObject({ input: 1000, output: 40 });
+    expect(ipc.usageRecord).toHaveBeenCalledTimes(1);
+    handleEngineEvents([event("done", 3, { usage: null }, "omp")], deps());
+    expect(parseUsage(session().messages.at(-1)?.usage)).toMatchObject({ input: 1000, output: 40 });
+    expect(parseUsage(session().usage)?.input).toBe(5000);
+    expect(ipc.usageRecord).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not invent billing when the only report is a context snapshot", () => {
+    handleEngineEvents([event("usage", 1, { input_tokens: 5000, output_tokens: 0, model_context_window: 100_000, contextOnly: true }, "omp")], deps());
+    handleEngineEvents([event("done", 2, { usage: null }, "omp")], deps());
+    expect(parseUsage(session().usage)?.input).toBe(5000);
+    expect(session().messages.at(-1)?.usage).toBeUndefined();
+    expect(ipc.usageRecord).not.toHaveBeenCalled();
+  });
+
   it("records Claude's resolved custom model instead of the selected family alias", () => {
     const tab = { engine: "claude", sessionId: "s-1", workspacePath: "/tmp/ws", model: "haiku" };
     const key = sessionKey(tab.engine, tab.sessionId, tab.workspacePath);

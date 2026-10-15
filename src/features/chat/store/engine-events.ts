@@ -13,6 +13,7 @@ import { migrateAutoCompactSettings } from "../auto-compact-context";
 import {
   EMPTY_SESSION,
   appendToolMessages,
+  applyAssistantMessageBoundary,
   applyStreamParts,
   bufferStreamPart,
   drainPending,
@@ -711,6 +712,55 @@ function onServed(
  *  than reading `bySession` for every streamed token. */
 const retryingKeys = new Set<string>();
 
+function onAssistantMessageStart(
+  event: ChatEngineEvent,
+  key: string,
+  deps: EngineEventDeps,
+) {
+  // A restarted native message supersedes only its uncommitted predecessor.
+  // Keep the run's capture registration and already accepted frame identities.
+  drainPending(key);
+  const capture = captureBuffers.get(event.runId);
+  if (capture) capture.text = "";
+  deps.set((s) => {
+    const prev = s.bySession[key] ?? EMPTY_SESSION;
+    const messages = applyAssistantMessageBoundary(prev.messages, "start");
+    if (messages === prev.messages) return s;
+    return { bySession: { ...s.bySession, [key]: { ...prev, messages } } };
+  });
+}
+
+function onAssistantMessageEnd(
+  event: ChatEngineEvent,
+  key: string,
+  deps: EngineEventDeps,
+) {
+  // An incomplete internal frame is ordinary visible text at a committed
+  // message boundary; it cannot be joined to a later message's capture.
+  const buffered = flushInternalFrameDelta(event.runId);
+  if (buffered) {
+    bufferStreamPart(
+      key,
+      "delta",
+      buffered,
+      stampedModel(deps, event.engine, key),
+      stampedEffort(deps, event.engine, key),
+    );
+  }
+  const pending = drainPending(key);
+  deps.set((s) => {
+    const prev = s.bySession[key] ?? EMPTY_SESSION;
+    const messages = applyAssistantMessageBoundary(
+      pending
+        ? applyStreamParts(prev.messages, pending.parts, pending.model, pending.effort)
+        : prev.messages,
+      "end",
+    );
+    if (messages === prev.messages) return s;
+    return { bySession: { ...s.bySession, [key]: { ...prev, messages } } };
+  });
+}
+
 function onDelta(
   event: ChatEngineEvent,
   key: string,
@@ -1099,9 +1149,9 @@ export function settleOrphanedRuns(
       streamingByKey = setStreamingFlag(streamingByKey, key, false);
       retryingByKey = setRetryingFlag(retryingByKey, key, false);
       const cur = bySession[key];
-      if (cur?.streaming || cur?.retry) {
+      if (cur?.streaming || cur?.retry || cur?.compaction || cur?.liveCompactRunId) {
         if (bySession === s.bySession) bySession = { ...s.bySession };
-        bySession[key] = { ...cur, streaming: false, turnStartedAt: null, retry: null, compaction: null };
+        bySession[key] = { ...cur, streaming: false, turnStartedAt: null, retry: null, compaction: null, liveCompactRunId: null };
       }
     }
     return { bySession, streamingByKey, retryingByKey };
@@ -1114,7 +1164,8 @@ function onUsage(
   deps: EngineEventDeps,
 ) {
   const parsed = parseUsage(event.data);
-  const totals = parsed ? addTurnUsage(event.runId, parsed) : null;
+  const contextOnly = (event.data as { contextOnly?: unknown } | null)?.contextOnly === true;
+  const totals = parsed && !contextOnly ? addTurnUsage(event.runId, parsed) : null;
   // A compaction report carries only the new occupancy, so the window is
   // taken from the last snapshot that had one: the gauge must not drop to
   // the assumed 200k just because this report is narrower (see mergeUsage).
@@ -1123,7 +1174,7 @@ function onUsage(
     usage: mergeUsage(event.data, prev),
     ...(totals ? { turnUsage: usageSnapshot(totals) } : {}),
   });
-  if (parsed) recordUsageReport(deps, event, key, parsed);
+  if (parsed && !contextOnly) recordUsageReport(deps, event, key, parsed);
 }
 
 /** Fold one report into its run's running total. */
@@ -1214,7 +1265,7 @@ function onError(
   clearRetry(key, deps);
   // A round cannot outlive its turn: the CLI's question died with it.
   askLoops.delete(key);
-  if (deps.get().bySession[key]?.compaction) patchSession(deps.set, key, { compaction: null });
+  patchSession(deps.set, key, { compaction: null, liveCompactRunId: null });
   // Fold unflushed chunks into rows and settle them: the turn stops here,
   // and the scheduled flush must not write them in after the fact.
   const prev = deps.get().bySession[key] ?? EMPTY_SESSION;
@@ -1693,26 +1744,58 @@ function clearRetry(key: string, deps: EngineEventDeps) {
   }
 }
 
-/** Engine-reported compaction progress (omp rpc-ui `auto_compaction_*`):
- *  automatic mid-turn summarization, surfaced as the tail indicator's label
- *  swap. `active: false` clears only an automatic flag — a manual compact
- *  turn owns its flag until the turn settles. */
+/** Native maintenance and host live requests have separate owners. Only the
+ *  correlated live response may finish host progress; idle /compact waits
+ *  for its chat turn to settle. */
 function onCompaction(event: ChatEngineEvent, key: string, deps: EngineEventDeps) {
-  const data = (event.data ?? {}) as { active?: unknown };
+  const data = (event.data ?? {}) as { active?: unknown; reason?: unknown };
+  const compaction = deps.get().bySession[key]?.compaction;
   if (data.active === true) {
-    if (deps.get().bySession[key]?.compaction) return;
+    if (compaction) return;
     patchSession(deps.set, key, {
-      compaction: { automatic: true, startedAt: Date.now() },
+      compaction: { automatic: true, startedAt: Date.now(), runId: event.runId },
     });
-  } else if (deps.get().bySession[key]?.compaction?.automatic) {
-    patchSession(deps.set, key, { compaction: null });
+  } else if (data.active === false && compaction &&
+      (!compaction.runId || compaction.runId === event.runId)) {
+    const hostCompletion = typeof data.reason === "string" && data.reason.startsWith("ccgui-live-compact:");
+    if (compaction.automatic && !hostCompletion) {
+      patchSession(deps.set, key, { compaction: null });
+    } else if (!compaction.automatic && compaction.runId && hostCompletion) {
+      // The backend consumed this run's readiness to send the request
+      // (`compact_run` clears `ready`), so the capability is spent: the next
+      // `agent_start` re-grants it. Retiring it here keeps the button's
+      // enabled state equal to the backend's accept/reject answer.
+      const spent = deps.get().bySession[key]?.liveCompactRunId === event.runId;
+      patchSession(deps.set, key, {
+        compaction: null,
+        ...(spent ? { liveCompactRunId: null } : {}),
+      });
+    }
+  }
+}
+
+/** Native agent-loop readiness for an in-place compact. The send ACK only
+ *  proves transport support: OMP admits a prompt asynchronously, and
+ *  compacting before its loop starts would abort the task without a resume.
+ *  A stopped/settled session owns no capability, and `active: false` only
+ *  retires the run it names (a replacement keeps its own). */
+function onLiveCompactReady(event: ChatEngineEvent, key: string, deps: EngineEventDeps) {
+  const active = (event.data as { active?: unknown } | null)?.active === true;
+  const session = deps.get().bySession[key];
+  if (active) {
+    if (!session?.streaming || session.interrupted) return;
+    patchSession(deps.set, key, { liveCompactRunId: event.runId });
+    return;
+  }
+  if (session?.liveCompactRunId === event.runId) {
+    patchSession(deps.set, key, { liveCompactRunId: null });
   }
 }
 
 function onDone(event: ChatEngineEvent, key: string, deps: EngineEventDeps) {
   clearRetry(key, deps);
   askLoops.delete(key);
-  if (deps.get().bySession[key]?.compaction) patchSession(deps.set, key, { compaction: null });
+  patchSession(deps.set, key, { compaction: null, liveCompactRunId: null });
   const prev = deps.get().bySession[key] ?? EMPTY_SESSION;
   const data = event.data as { usage: unknown };
   const buffered = flushInternalFrameDelta(event.runId);
@@ -1728,7 +1811,8 @@ function onDone(event: ChatEngineEvent, key: string, deps: EngineEventDeps) {
   // Occupancy for the context meter: the newest single report (claude's one
   // payload already carries the turn's totals).
   const turnTotals = turnUsageTotals.get(event.runId);
-  let settledUsage = mergeUsage(turnTotals ? prev.usage : data.usage, prev.usage);
+  const contextOnly = (prev.usage as { contextOnly?: unknown } | null)?.contextOnly === true;
+  let settledUsage = mergeUsage(turnTotals || contextOnly ? prev.usage : data.usage, prev.usage);
   const finalWindow = reportedContextWindow(data.usage);
   if (finalWindow && settledUsage && typeof settledUsage === "object") {
     settledUsage = { ...settledUsage, model_context_window: finalWindow };
@@ -1738,7 +1822,7 @@ function onDone(event: ChatEngineEvent, key: string, deps: EngineEventDeps) {
   turnUsageTotals.delete(event.runId);
   const finalUsage = turnTotals
     ? mergeUsage(usageSnapshot(turnTotals), settledUsage)
-    : settledUsage;
+    : contextOnly ? (data.usage ? mergeUsage(data.usage, prev.usage) : null) : settledUsage;
   // Fold the turn's last unflushed chunks (the final sink batch can arrive
   // in the same frame as done), then settle every live row: the streamed
   // text the user watched arrive *is* the final message.
@@ -2017,11 +2101,20 @@ export function handleEngineEvents(
     // adopt any run still talking, let done/error settle it below. A denial
     // is excluded on purpose: the CLI has stopped to ask, and the grant
     // card's resend has to stay available while it waits.
-    if (!settled && event.kind !== "done" && event.kind !== "error" && event.kind !== "permission_denied") {
+    // `live_compact_ready` is a capability grant, not proof of a live turn:
+    // it must never adopt (or revive) a session this client already stopped.
+    if (!settled && event.kind !== "done" && event.kind !== "error" &&
+        event.kind !== "permission_denied" && event.kind !== "live_compact_ready") {
       adoptObservedRun(event, key, deps);
     }
 
     switch (event.kind) {
+      case "assistant_message_start":
+        onAssistantMessageStart(event, key, deps);
+        break;
+      case "assistant_message_end":
+        onAssistantMessageEnd(event, key, deps);
+        break;
       case "delta":
         onDelta(event, key, deps);
         break;
@@ -2055,6 +2148,9 @@ export function handleEngineEvents(
         break;
       case "compaction":
         onCompaction(event, key, deps);
+        break;
+      case "live_compact_ready":
+        onLiveCompactReady(event, key, deps);
         break;
       case "permission_denied":
         onPermissionDenied(event, key, deps);

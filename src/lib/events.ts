@@ -10,6 +10,8 @@ export interface EngineEventPayload {
   kind:
     | "delta"
     | "thinking"
+    | "assistant_message_start"
+    | "assistant_message_end"
     | "message"
     | "session"
     | "usage"
@@ -17,6 +19,7 @@ export interface EngineEventPayload {
     | "warn"
     | "retry"
     | "compaction"
+    | "live_compact_ready"
     | "permission_denied"
     | "question"
     | "question_settled"

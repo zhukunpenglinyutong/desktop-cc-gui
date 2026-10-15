@@ -55,6 +55,11 @@ describe("context window memory", () => {
     ).toBe(1_000_000);
   });
 
+  it("uses runtime metadata even before a token report arrives", () => {
+    rememberContextWindow("claude", "default", 200_000);
+    expect(resolveContextMax({ usage: { contextWindow: 1_000_000 }, engine: "claude", model: "default", catalogWindow: 500_000 })).toBe(1_000_000);
+  });
+
   it("prefers a live report, then memory, then the catalog, then the guess", () => {
     rememberContextWindow("claude", "default", 500_000);
 

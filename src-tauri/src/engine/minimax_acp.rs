@@ -1102,6 +1102,7 @@ mod tests {
                 stdin: None,
                 questions: Arc::new(Mutex::new(HashMap::new())),
                 plans: Arc::new(Mutex::new(HashMap::new())),
+                live_compact: None,
             },
         );
         let core = TurnCore {
