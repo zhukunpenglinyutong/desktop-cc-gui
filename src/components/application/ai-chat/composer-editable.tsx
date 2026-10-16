@@ -54,6 +54,7 @@ export function ComposerEditable({
   onPasteImages,
   onPastePaths,
   manualHeightPx,
+  placeholder,
 }: {
   editableRef: RefObject<HTMLDivElement>;
   sendShortcut: "enter" | "cmdEnter";
@@ -92,6 +93,9 @@ export function ComposerEditable({
   onPastePaths?: (paths: string[]) => void;
   /** Explicit editable-area height; null = auto-grow layout. */
   manualHeightPx: number | null;
+  /** 覆盖占位提示。发送被前置条件挡住时用它说明缺什么——默认文案写着
+   *  「Enter 发送」，而那种状态下 Enter 会被丢弃（见 onKeyDown 的守卫）。 */
+  placeholder?: string;
 }) {
   const { t } = useTranslation();
   /** Resolve pasted files to absolute paths and hand them over: the webview
@@ -122,9 +126,9 @@ export function ComposerEditable({
       role="textbox"
       aria-multiline="true"
       aria-label={t("chat.send")}
-      data-placeholder={sendShortcut === "cmdEnter"
+      data-placeholder={placeholder ?? (sendShortcut === "cmdEnter"
         ? t(isMac ? "chat.inputPlaceholderCmdEnter" : "chat.inputPlaceholderCmdEnterCtrl")
-        : t("chat.inputPlaceholder")}
+        : t("chat.inputPlaceholder"))}
       data-completion-suffix={mentionOpen || slashOpen || botOpen || promptOpen ? undefined : completionSuffix || undefined}
       onInput={() => {
         // insertTextAtCaret's editing command fires input mid-insert. Acting

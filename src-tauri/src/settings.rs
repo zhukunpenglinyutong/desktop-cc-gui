@@ -109,9 +109,8 @@ pub struct AppSettings {
     /// behind a "show more" row.
     #[serde(default = "default_sidebar_thread_limit")]
     pub sidebar_thread_limit: u32,
-    /// UI font (设置 → 外观): "" = 系统默认 (bundled stack + system fallback;
-    /// the legacy "system" value is normalized to it frontend-side),
-    /// "custom" = the uploaded file in `font_file`.
+    /// UI font: empty/system = bundled default, "custom" = uploaded font_file,
+    /// otherwise a CSS font-family list (resolved on the frontend).
     #[serde(default)]
     pub font_family: String,
     /// Absolute path of the uploaded UI font file; only read while
@@ -126,8 +125,7 @@ pub struct AppSettings {
     pub code_font_size: u32,
     #[serde(default = "default_ui_font_weight")]
     pub ui_font_weight: String,
-    /// Code font for chat code blocks and the built-in terminal: "" = 系统默认,
-    /// "custom" = the uploaded file in `code_font_file`.
+    /// Code font for chat, editors, diffs and terminal; same semantics as font_family.
     #[serde(default)]
     pub code_font_family: String,
     /// Absolute path of the uploaded code font file (same contract as

@@ -1,6 +1,7 @@
 import { writeStored } from "@/lib/storage";
 import {
   ENGINE_PREF_KEY,
+  UNBOUND_DRAFT_KEY,
   persistTabs,
   sameTab,
   sessionKey,
@@ -209,6 +210,7 @@ export function createTabActions(
           workspacePath,
         };
         const openTabs = existing ? s.openTabs : [...s.openTabs, tab];
+        const newKey = sessionKey(tab.engine, tab.sessionId, tab.workspacePath);
         const source = s.active;
         const pendingRuntimeSwitch =
           source &&
@@ -224,7 +226,20 @@ export function createTabActions(
               }
             : s.pendingRuntimeSwitch;
         persistTabs(openTabs, tab);
-        return { openTabs, active: tab, pendingRuntimeSwitch };
+        // 还没有任何标签页时敲的字（drafts[""]）属于用户接下来的这个会话：
+        // 搬过去并删掉空键，只搬一次——否则它会跟着之后新建的另一个工作区
+        // 一起泄漏。其他键变化本来就会迁移草稿（engine-events 的
+        // 待发→真实 id、setActiveEngine 的引擎切换），空键此前没人管。
+        // 没有可搬的草稿（空串等于没写）或目标键已有自己的草稿时不换 drafts
+        // 引用：startNewChat 也用于「聚焦已存在的待发页签」，白换引用会让
+        // 整个 drafts 对象的订阅者无谓重渲染。
+        const unbound = s.drafts[UNBOUND_DRAFT_KEY];
+        if (!unbound || s.drafts[newKey] !== undefined) {
+          return { openTabs, active: tab, pendingRuntimeSwitch };
+        }
+        const drafts = { ...s.drafts, [newKey]: unbound };
+        delete drafts[UNBOUND_DRAFT_KEY];
+        return { openTabs, active: tab, pendingRuntimeSwitch, drafts };
       });
     },
 

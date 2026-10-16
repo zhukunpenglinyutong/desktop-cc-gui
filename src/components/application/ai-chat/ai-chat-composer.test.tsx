@@ -2,7 +2,7 @@ import { act, useState } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { HashRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import "@/lib/i18n";
+import i18n from "@/lib/i18n";
 import { Composer, StatusBar } from "./ai-chat-composer";
 import { getProxyQuickToggleAction } from "./proxy-toggle";
 import { ipc, type AppSettings } from "@/lib/ipc";
@@ -255,5 +255,140 @@ describe("代理快捷开关文案", () => {
       container.querySelector('button[aria-label="网络代理：已关闭，点击开启"]'),
     ).not.toBeNull();
     expect(container.querySelector('button[aria-label="chat.proxyOff"]')).toBeNull();
+  });
+});
+
+// Regression: a blocked send control must say WHY it is blocked. The tooltip
+// only exists when `disabledReason` reaches ComposerToolbar, so a natively
+// disabled button (no hover, no focus) would keep the reason unreadable.
+describe("发送键的前置条件解释", () => {
+  let container: HTMLDivElement;
+  let root: Root;
+
+  beforeEach(() => {
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+  });
+
+  afterEach(async () => {
+    await act(async () => {
+      root.unmount();
+    });
+    container.remove();
+  });
+
+  it("有禁用原因时保持可 hover（aria-disabled + 守卫），而不是原生 disabled", async () => {
+    const onSubmit = vi.fn();
+    const reason = "先在侧栏新建一个会话，才能发送消息";
+    await act(async () => {
+      root.render(
+        <HashRouter>
+          <Composer value="hello" disabled disabledReason={reason} onSubmit={onSubmit} />
+        </HashRouter>,
+      );
+    });
+
+    // aria-label 走 i18n：查到的是真文案（「发送」），不是词条编号。
+    const send = container.querySelector<HTMLButtonElement>(
+      `button[aria-label="${i18n.t("chat.send")}"]`,
+    );
+    expect(send).not.toBeNull();
+    expect(send!.getAttribute("aria-disabled")).toBe("true");
+    expect(send!.disabled).toBe(false);
+
+    await act(async () => {
+      send!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    expect(onSubmit).not.toHaveBeenCalled();
+  });
+
+  it("没有原因时保持原来的原生 disabled 语义（不额外加 tooltip 包装）", async () => {
+    await act(async () => {
+      root.render(
+        <HashRouter>
+          <Composer value="hello" disabled onSubmit={vi.fn()} />
+        </HashRouter>,
+      );
+    });
+
+    // aria-label 走 i18n：查到的是真文案（「发送」），不是词条编号。
+    const send = container.querySelector<HTMLButtonElement>(
+      `button[aria-label="${i18n.t("chat.send")}"]`,
+    );
+    expect(send).not.toBeNull();
+    expect(send!.disabled).toBe(true);
+    expect(send!.hasAttribute("aria-disabled")).toBe(false);
+  });
+
+  it("有原因时原因能被读到（tooltip 真的挂在按钮上，而不是只传了个 prop）", async () => {
+    const reason = "先在侧栏新建一个会话，才能发送消息";
+    await act(async () => {
+      root.render(
+        <HashRouter>
+          <Composer value="hello" disabled disabledReason={reason} onSubmit={vi.fn()} />
+        </HashRouter>,
+      );
+    });
+
+    const send = container.querySelector<HTMLButtonElement>(
+      `button[aria-label="${i18n.t("chat.send")}"]`,
+    );
+    // 键盘可达正是这条分支的意义：聚焦就该把原因显示出来。
+    // （原生 disabled 收不到 focus，这条断言在旧实现下必然失败。）
+    await act(async () => {
+      send!.focus();
+    });
+    expect(document.body.textContent).toContain(reason);
+  });
+});
+
+/**
+ * 发送被前置条件挡住时，输入框不能再宣传「Enter 发送」——那种状态下 Enter 被
+ * onKeyDown 守卫直接丢弃。这里钉住「占位提示真的落到了 DOM 上」，否则把
+ * placeholder 传丢/传错 prop 都不会被任何用例发现。
+ */
+describe("输入框占位提示的前提改口", () => {
+  let container: HTMLDivElement;
+  let root: Root;
+
+  beforeEach(() => {
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+  });
+
+  afterEach(async () => {
+    await act(async () => {
+      root.unmount();
+    });
+    container.remove();
+  });
+
+  it("给了 placeholder 就顶掉默认文案", async () => {
+    const blocked = "先在侧栏新建一个会话，再在这里输入";
+    await act(async () => {
+      root.render(
+        <HashRouter>
+          <Composer value="hello" disabled disabledReason={blocked} placeholder={blocked} onSubmit={vi.fn()} />
+        </HashRouter>,
+      );
+    });
+
+    const box = container.querySelector('[data-placeholder]');
+    expect(box?.getAttribute("data-placeholder")).toBe(blocked);
+  });
+
+  it("没给 placeholder 时保持默认文案", async () => {
+    await act(async () => {
+      root.render(
+        <HashRouter>
+          <Composer value="hello" onSubmit={vi.fn()} />
+        </HashRouter>,
+      );
+    });
+
+    const box = container.querySelector('[data-placeholder]');
+    expect(box?.getAttribute("data-placeholder")).toBe(i18n.t("chat.inputPlaceholder"));
   });
 });

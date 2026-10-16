@@ -29,10 +29,10 @@ let root: Root;
 let engines: EngineInfo[] = ENGINES;
 let latest: EngineModelsState;
 
-const engineInfo = (id: string, available: boolean): EngineInfo => ({
+const engineInfo = (id: string, available: boolean, enabled = true): EngineInfo => ({
   id,
   available,
-  enabled: true,
+  enabled,
   supportsImages: false,
   permissions: [],
 });
@@ -256,6 +256,29 @@ describe("useEngineModels probe dispatch", () => {
     expect(ipc.listEngineModels).toHaveBeenCalledTimes(1);
     await show([engineInfo("dsh", true)]);
     expect(ipc.listEngineModels).toHaveBeenCalledTimes(2);
+  });
+
+  it("停用引擎不探测（其 CLI 不被拉起），重新启用后补探", async () => {
+    // 报告的问题:停用 opencode 后每次启动应用仍会跑一次 `opencode models`
+    // ——探针按引擎全集派发,没看 enable 开关。停用只该挡住发消息,不该还去
+    // 拉一个用户明确关掉的 CLI。
+    vi.mocked(ipc.listEngineModels).mockResolvedValue({
+      models: [{ id: "opencode/big-pickle", provider: "opencode" }],
+      authoritative: true,
+    });
+    await show([engineInfo("opencode", true, false)]);
+    expect(ipc.listEngineModels).not.toHaveBeenCalled();
+
+    // 手动刷新也只覆盖启用的引擎。
+    await act(async () => {
+      await latest.refresh();
+    });
+    expect(ipc.listEngineModels).not.toHaveBeenCalled();
+
+    // 重新启用后补探一次,并拿到目录。
+    await show([engineInfo("opencode", true)]);
+    expect(ipc.listEngineModels).toHaveBeenCalledTimes(1);
+    expect(latest.catalogs.opencode?.models[0]?.id).toBe("opencode/big-pickle");
   });
 
   it("探针记录按工作区隔离", async () => {

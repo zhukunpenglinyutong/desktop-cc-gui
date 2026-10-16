@@ -5,7 +5,8 @@ import type { AppSettings } from "@/lib/ipc";
 
 // GeneralSection reads settings on mount; updateAppSettings is the
 // persistence assertion point; readFontFile delivers the uploaded bytes.
-const { getAppSettings, updateAppSettings, readFontFile, pickFile } = vi.hoisted(() => ({
+const { getAppSettings, updateAppSettings, readFontFile, pickFile, platform } = vi.hoisted(() => ({
+  platform: { isWeb: false },
   getAppSettings: vi.fn(),
   updateAppSettings: vi.fn(async () => null),
   readFontFile: vi.fn(async () => btoa("\x00\x01\x00\x00fake-font-bytes")),
@@ -22,7 +23,7 @@ vi.mock("@/lib/ipc", () => ({
 }));
 vi.mock("@/lib/platform", () => ({
   IS_WINDOWS: false,
-  isWeb: false,
+  get isWeb() { return platform.isWeb; },
   pickFile,
   // zoom.ts funnels through the platform shim; a plain stub keeps the zoom row
   // testable without Tauri's webview API.
@@ -32,7 +33,7 @@ vi.mock("@/lib/platform", () => ({
 // bridge, which skips the zoom shortcut wiring).
 vi.mock("@/lib/transport", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/transport")>()),
-  isWeb: false,
+  get isWeb() { return platform.isWeb; },
 }));
 
 import i18n from "@/lib/i18n";
@@ -41,8 +42,12 @@ import {
   codeFontStack,
   CUSTOM_CODE_FONT_FAMILY,
   CUSTOM_UI_FONT_FAMILY,
+  DEFAULT_CODE_FONT_STACK,
+  ensureCustomFontLoaded,
   FONT_CHANGE_EVENT,
+  isValidFontFamily,
   readCachedFontPreferences,
+  UI_SYSTEM_STACK,
   uiFontStack,
 } from "./font";
 import { GeneralSection } from "./GeneralSection";
@@ -164,16 +169,39 @@ describe("font preference stacks", () => {
   it("maps 系统默认/custom values to CSS family stacks", () => {
     expect(uiFontStack("")).toBeNull();
     expect(uiFontStack("custom")).toBe(
-      `"${CUSTOM_UI_FONT_FAMILY}", ui-sans-serif, system-ui, sans-serif`,
+      `"${CUSTOM_UI_FONT_FAMILY}", ${UI_SYSTEM_STACK}`,
     );
     expect(codeFontStack("")).toBeNull();
     expect(codeFontStack("custom")).toContain(`"${CUSTOM_CODE_FONT_FAMILY}"`);
-    // Legacy values (the old "system" option, installed family names written
-    // before the upload picker) collapse to 系统默认: the root variable is
-    // left to theme.css instead of applying a half-supported family.
+    // The legacy system option remains a default alias; family names are now usable.
     expect(uiFontStack("system")).toBeNull();
     expect(codeFontStack("system")).toBeNull();
-    expect(uiFontStack("LXGW WenKai")).toBeNull();
+    expect(uiFontStack("LXGW WenKai")).toContain("LXGW WenKai");
+  });
+
+  it("rejects declarations, CSS variables and resets while allowing local font lists", () => {
+    for (const family of ['"Maple Mono", monospace', 'Microsoft YaHei', '"苹方", sans-serif', '"Family, With Commas"']) {
+      expect(isValidFontFamily(family)).toBe(true);
+    }
+    for (const family of ['font-family: monospace;', 'Foo; color: red', 'var(--font-sans)', 'inherit', 'unset', 'revert', 'Foo\nBar']) {
+      expect(isValidFontFamily(family)).toBe(false);
+    }
+  });
+
+  it("preserves typed CSS font-family lists without reading an uploaded file", () => {
+    readFontFile.mockClear();
+    const family = '"Maple Mono", "Microsoft YaHei", monospace';
+    applyFontPreferences({
+      fontFamily: '"Microsoft YaHei", sans-serif',
+      codeFontFamily: family,
+      fontFile: "/tmp/remembered-ui.ttf",
+      codeFontFile: "/tmp/remembered-code.ttf",
+    });
+    expect(document.documentElement.style.getPropertyValue("--font-inter")).toContain('"Microsoft YaHei"');
+    expect(document.documentElement.style.getPropertyValue("--font-mono-source")).toContain(family);
+    expect(readCachedFontPreferences().codeFontFamily).toBe(family);
+    expect(terminalFontFamily()).toContain(family);
+    expect(readFontFile).not.toHaveBeenCalled();
   });
 
   it("applies preferences to root variables, mirrors storage, and notifies", () => {
@@ -243,23 +271,35 @@ describe("font preference stacks", () => {
     });
   });
 
-  it("terminal font follows the code font preference, default keeps the legacy stack", () => {
+  it("older font loads cannot replace a newer registered face", async () => {
+    const olderSource = btoa("older-font");
+    const latestSource = btoa("latest-font");
+    let resolveOlder!: (value: string) => void;
+    readFontFile.mockImplementationOnce(() => new Promise<string>((resolve) => { resolveOlder = resolve; }));
+    readFontFile.mockResolvedValueOnce(latestSource);
+    const older = ensureCustomFontLoaded("ui", "/tmp/older-face.ttf", { force: true });
+    await ensureCustomFontLoaded("ui", "/tmp/latest-face.ttf", { force: true });
+    resolveOlder(olderSource);
+    await older;
+    const active = [...registeredFaces].find((face) => face.family === CUSTOM_UI_FONT_FAMILY) as FakeFontFace;
+    expect(new TextDecoder().decode(active.source as Uint8Array)).toBe("latest-font");
+  });
+
+  it("terminal font follows the shared code font stack", () => {
     applyFontPreferences({
       fontFamily: "",
       codeFontFamily: "",
       fontFile: "",
       codeFontFile: "",
     });
-    expect(terminalFontFamily()).toBe('Menlo, Monaco, "Courier New", monospace');
+    expect(terminalFontFamily()).toBe(DEFAULT_CODE_FONT_STACK);
     applyFontPreferences({
       fontFamily: "",
       codeFontFamily: "custom",
       fontFile: "",
       codeFontFile: "/tmp/MapleMono.ttf",
     });
-    expect(terminalFontFamily()).toBe(
-      `"${CUSTOM_CODE_FONT_FAMILY}", ui-monospace, "SFMono-Regular", Menlo, monospace`,
-    );
+    expect(terminalFontFamily()).toBe(codeFontStack("custom"));
     applyFontPreferences({
       fontFamily: "",
       codeFontFamily: "",
@@ -310,6 +350,7 @@ describe("General section rows", () => {
   }
 
   beforeEach(async () => {
+    platform.isWeb = false;
     localStorage.clear();
     registeredFaces.clear();
     document.documentElement.style.removeProperty("--font-inter");
@@ -349,7 +390,7 @@ describe("General section rows", () => {
     expect(document.documentElement.style.getPropertyValue("--content-font-scale")).toBe(String(20 / 14));
     expect(document.documentElement.style.getPropertyValue("--code-font-size")).toBe("15px");
     expect(document.documentElement.style.getPropertyValue("--ui-font-weight-offset")).toBe("100");
-    expect(terminalFontFamily()).toBe('Menlo, Monaco, "Courier New", monospace');
+    expect(terminalFontFamily()).toBe(DEFAULT_CODE_FONT_STACK);
   });
 
   it("a failed typography save restores the applied preference and shows the error", async () => {
@@ -380,6 +421,106 @@ describe("General section rows", () => {
       uiFontSize: 16, contentFontSize: 14, codeFontSize: 13, uiFontWeight: "standard",
       theme: "light", fontFamily: "", codeFontFamily: "",
     }));
+  });
+
+  it("web hides upload mode but keeps custom family input available", async () => {
+    await act(async () => root.unmount());
+    container.remove();
+    platform.isWeb = true;
+    await mount({ fontFamily: "custom", fontFile: "/tmp/desktop-only.ttf" });
+    const trigger = row("fontFamily").querySelector("button")!;
+    // Web 端读不到上传文件，但下拉框仍如实显示「自定义」（禁用态），不伪装成默认。
+    expect(trigger.textContent).toContain(i18n.t("settings.fontCustom"));
+    await press(trigger);
+    const options = [...document.querySelectorAll('[role="option"]')].map((el) => el.textContent?.trim());
+    expect(options).toContain(i18n.t("settings.fontCustomFamily"));
+    expect(options).toContain(i18n.t("settings.fontCustom"));
+    const uploadOption = [...document.querySelectorAll('[role="option"]')].find((el) => el.textContent?.trim() === i18n.t("settings.fontCustom"))!;
+    expect(uploadOption.getAttribute("aria-disabled")).toBe("true");
+    const familyOption = [...document.querySelectorAll('[role="option"]')].find((el) => el.textContent?.trim() === i18n.t("settings.fontCustomFamily"))!;
+    await press(familyOption);
+    await editSize("fontFamily", '"Microsoft YaHei", sans-serif');
+    expect(updateAppSettings).toHaveBeenLastCalledWith(expect.objectContaining({ fontFamily: '"Microsoft YaHei", sans-serif' }));
+    expect(readFontFile).not.toHaveBeenCalled();
+  });
+
+  it("returning to upload retries a remembered file and reports load failure", async () => {
+    await act(async () => root.unmount());
+    container.remove();
+    await mount({ fontFile: "/tmp/retry-remembered.ttf" });
+    readFontFile.mockRejectedValueOnce("font.err.read_failed");
+    await selectOption("fontFamily", i18n.t("settings.fontCustom"));
+    await flush();
+    expect(updateAppSettings).not.toHaveBeenCalled();
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain(i18n.t("settings.fontErrRead"));
+    await selectOption("fontFamily", i18n.t("settings.fontDefault"));
+    updateAppSettings.mockClear();
+    await selectOption("fontFamily", i18n.t("settings.fontCustom"));
+    await flush();
+    expect(readFontFile).toHaveBeenCalledTimes(2);
+    expect(updateAppSettings).toHaveBeenLastCalledWith(expect.objectContaining({ fontFamily: "custom" }));
+  });
+
+  it("typography reset preserves a stored font-family list and uploaded path", async () => {
+    await act(async () => root.unmount());
+    container.remove();
+    const saved = { ...SETTINGS, codeFontFamily: '"Consolas", monospace', codeFontFile: "/tmp/remembered.ttf", codeFontSize: 20 };
+    await mount(saved);
+    const reset = [...container.querySelectorAll("button")].find(
+      (button) => button.textContent?.trim() === i18n.t("settings.typographyReset"),
+    )!;
+    await press(reset);
+    expect(updateAppSettings).toHaveBeenLastCalledWith(expect.objectContaining({
+      codeFontFamily: saved.codeFontFamily, codeFontFile: saved.codeFontFile, codeFontSize: 13,
+    }));
+  });
+
+  it("自定义字体族 has a separate input and persists on blur without file reads", async () => {
+    await selectOption("fontFamily", i18n.t("settings.fontCustomFamily"));
+    const input = row("fontFamily").querySelector("input")!;
+    expect(input.disabled).toBe(false);
+    expect(fileButton("fontFamily").getAttribute("disabled")).not.toBeNull();
+    expect(row("fontFamily").textContent).not.toContain("填写本机字体");
+    await editSize("fontFamily", '"Microsoft YaHei", sans-serif');
+    expect(updateAppSettings).toHaveBeenLastCalledWith(expect.objectContaining({
+      fontFamily: '"Microsoft YaHei", sans-serif',
+    }));
+    expect(readFontFile).not.toHaveBeenCalled();
+    expect(pickFile).not.toHaveBeenCalled();
+    expect(document.documentElement.style.getPropertyValue("--font-inter")).toContain('"Microsoft YaHei"');
+    expect(row("fontFamily").textContent).toContain(i18n.t("settings.fontCustomFamily"));
+  });
+
+  it("invalid family input shows only an error and leaves settings intact", async () => {
+    await selectOption("codeFontFamily", i18n.t("settings.fontCustomFamily"));
+    await editSize("codeFontFamily", "font-family: Foo;");
+    expect(updateAppSettings).not.toHaveBeenCalled();
+    expect(row("codeFontFamily").textContent).toContain(i18n.t("settings.fontFamilyInvalid"));
+    expect(document.documentElement.style.getPropertyValue("--font-mono-source")).toBe("");
+  });
+
+  it("a failed font-family save restores the font and cache", async () => {
+    await selectOption("codeFontFamily", i18n.t("settings.fontCustomFamily"));
+    updateAppSettings.mockRejectedValueOnce(new Error("font save failed"));
+    await editSize("codeFontFamily", '"Maple Mono", monospace');
+    expect(readCachedFontPreferences().codeFontFamily).toBe("");
+    expect(document.documentElement.style.getPropertyValue("--font-mono-source")).toBe("");
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain("font save failed");
+  });
+
+  it("stored family lists open in the family category, not upload mode", async () => {
+    await act(async () => root.unmount());
+    container.remove();
+    await mount({ codeFontFamily: '"Consolas", monospace', codeFontFile: "/tmp/remembered.ttf" });
+    expect(row("codeFontFamily").textContent).toContain(i18n.t("settings.fontCustomFamily"));
+    expect(row("codeFontFamily").querySelector("input")?.value).toBe('"Consolas", monospace');
+    expect(fileButton("codeFontFamily").getAttribute("disabled")).not.toBeNull();
+    expect(readFontFile).not.toHaveBeenCalled();
+    await selectOption("codeFontFamily", i18n.t("settings.fontCustom"));
+    await flush();
+    expect(updateAppSettings).toHaveBeenLastCalledWith(expect.objectContaining({ codeFontFamily: "custom" }));
+    expect(readFontFile).toHaveBeenCalledWith("/tmp/remembered.ttf");
+    expect(row("codeFontFamily").querySelector("input")?.disabled).toBe(true);
   });
 
   it("自定义 shows a file picker; picking a font applies and persists it", async () => {

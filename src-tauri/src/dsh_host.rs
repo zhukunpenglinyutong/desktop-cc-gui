@@ -21,11 +21,13 @@
 //! termination, which only ever targets loopback addresses.
 
 use std::collections::BTreeMap;
-use std::path::PathBuf;
+use std::fs::{File, OpenOptions};
+use std::io::Write;
+use std::path::{Path, PathBuf};
 use std::process::Stdio;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, LazyLock, Mutex};
-use std::time::Duration;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
@@ -50,6 +52,17 @@ const SPAWN_READY_TIMEOUT: Duration = Duration::from_secs(45);
 const SPAWN_READY_TIMEOUT: Duration = Duration::from_secs(20);
 /// Bytes of spawned-host stdout+stderr kept for error reporting.
 const RING_CAP: usize = 8192;
+/// Per-process stdout+stderr log files of spawned hosts, under the app home:
+/// `~/.ccgui-next/dsh-host-logs/dsh-host-<epoch>.log`. The in-memory ring above
+/// dies with the process, and a host that is killed mid-turn (app exit tears
+/// down its kill-on-close job, `dsh_host_stop`, or an outside kill) leaves no
+/// other trace of why a turn was cut — which is exactly the case this file
+/// exists for.
+const LOG_DIR: &str = "dsh-host-logs";
+/// Rotate one log file at this size so a wedged or chatty host cannot grow it
+/// without bound. The rotated copy keeps the last window before rotation.
+const LOG_MAX_BYTES: u64 = 4 * 1024 * 1024;
+const LOG_KEEP_SUFFIX: &str = ".1";
 /// Launch-token exchange retries while the host finishes binding its
 /// listener: the token line can land before the HTTP server answers.
 const TOKEN_EXCHANGE_ATTEMPTS: usize = 6;
@@ -588,12 +601,129 @@ fn dsh_bin(settings: &AppSettings) -> String {
     resolve::resolve_launchable_cli_binary("dsh")
 }
 
+/// Persistent stdout+stderr sink for one spawned host process, one file per
+/// run so the last window before a host disappears survives the process. Writes
+/// are best-effort: a logging failure must never break host management, so an
+/// unopenable file only disables the sink.
+struct HostLog {
+    path: PathBuf,
+    file: Mutex<Option<File>>,
+    written: AtomicU64,
+}
+
+impl HostLog {
+    /// Log path for a run spawned at `now`, or `None` when the clock predates
+    /// the epoch (in which case the spawn path skips the sink entirely).
+    fn path_for(home: &Path, now: SystemTime) -> Option<PathBuf> {
+        let epoch = now.duration_since(UNIX_EPOCH).ok()?.as_secs();
+        Some(
+            home.join(LOG_DIR)
+                .join(format!("dsh-host-{epoch}.log")),
+        )
+    }
+
+    /// Open the sink at `path`, creating the directory on the way. Existing
+    /// files of the same name (same-second respawn) are appended to.
+    fn open(path: PathBuf) -> Arc<Self> {
+        let file = path
+            .parent()
+            .map(std::fs::create_dir_all)
+            .transpose()
+            .ok()
+            .flatten()
+            .and_then(|()| {
+                OpenOptions::new()
+                    .create(true)
+                    .append(true)
+                    .open(&path)
+                    .ok()
+            });
+        if file.is_none() {
+            eprintln!("[dsh] host log disabled (cannot open {})", path.display());
+        }
+        let written = file
+            .as_ref()
+            .and_then(|file| file.metadata().ok())
+            .map(|meta| meta.len())
+            .unwrap_or(0);
+        Arc::new(Self {
+            path,
+            file: Mutex::new(file),
+            written: AtomicU64::new(written),
+        })
+    }
+
+    /// Open the sink for a run spawned now, or `None` when it cannot be named.
+    fn for_new_run() -> Option<Arc<Self>> {
+        Self::path_for(&crate::paths::app_home(), SystemTime::now()).map(Self::open)
+    }
+
+    /// Append one drained line, rotating first when the file is over budget.
+    fn line(&self, line: &str) {
+        self.line_capped(line, LOG_MAX_BYTES);
+    }
+
+    /// `line` with an explicit rotation budget (tests drive a small one).
+    fn line_capped(&self, line: &str, max_bytes: u64) {
+        if self.written.load(Ordering::Relaxed) > max_bytes {
+            self.rotate();
+        }
+        let mut guard = self.file.lock().unwrap_or_else(|e| e.into_inner());
+        let Some(file) = guard.as_mut() else {
+            return;
+        };
+        if file.write_all(line.as_bytes()).is_err() || file.flush().is_err() {
+            // A full or removed volume disables the sink rather than retrying
+            // every line for the lifetime of the host.
+            eprintln!("[dsh] host log write failed; sink disabled");
+            *guard = None;
+            return;
+        }
+        self.written
+            .fetch_add(line.len() as u64, Ordering::Relaxed);
+    }
+
+    /// Move the current file aside as `<path>.1` (replacing the previous
+    /// rotation) and continue in a fresh one. Called from the drain task only.
+    fn rotate(&self) {
+        let mut guard = self.file.lock().unwrap_or_else(|e| e.into_inner());
+        *guard = None;
+        let rotated = self.path.with_extension(format!(
+            "{}{LOG_KEEP_SUFFIX}",
+            self.path
+                .extension()
+                .and_then(|ext| ext.to_str())
+                .unwrap_or("log")
+        ));
+        let _ = std::fs::rename(&self.path, &rotated);
+        *guard = OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&self.path)
+            .ok();
+        self.written.store(0, Ordering::Relaxed);
+    }
+}
+
+/// 一行 host 输出在落盘前是否要脱敏：启动令牌行换成固定标记。识别器复用
+/// `extract_launch_token`（同一份判据），不新增解析规则——令牌能换取 host 的
+/// auth cookie，而内存 ring 随进程消失，落盘会让凭据留在磁盘上。
+fn loggable_line(line: &str) -> &str {
+    if extract_launch_token(line).is_some() {
+        "=== [redacted] launch token line ===\n"
+    } else {
+        line
+    }
+}
+
 /// Drain a long-lived child's stream into the last-RING_CAP-bytes ring,
-/// feeding each line to the launch-token capture when one is attached.
+/// feeding each line to the launch-token capture when one is attached and to
+/// the per-run log file when one could be opened.
 fn spawn_ring_drain<R: AsyncRead + Unpin + Send + 'static>(
     pipe: R,
     buf: Arc<Mutex<String>>,
     capture: Option<Arc<TokenCapture>>,
+    log: Option<Arc<HostLog>>,
 ) {
     tokio::spawn(async move {
         let mut reader = BufReader::new(pipe);
@@ -603,6 +733,9 @@ fn spawn_ring_drain<R: AsyncRead + Unpin + Send + 'static>(
             match reader.read_line(&mut line).await {
                 Ok(0) | Err(_) => break,
                 Ok(_) => {
+                    if let Some(log) = &log {
+                        log.line(loggable_line(&line));
+                    }
                     {
                         let mut guard = lock(&buf);
                         guard.push_str(&line);
@@ -693,12 +826,35 @@ pub(crate) async fn ensure_host(
         token: Mutex::new(None),
         busy: AtomicBool::new(false),
     });
+    // One log file per spawned process: a host killed mid-turn leaves the
+    // in-memory ring empty, so the reason has to be on disk before it dies.
+    let log = HostLog::for_new_run();
+    if let Some(log) = &log {
+        log.line(&format!(
+            "=== dsh web spawn: origin={} bin={} pid={} ===\n",
+            cfg.origin,
+            bin,
+            child.id().unwrap_or(0)
+        ));
+    }
     if let Some(stdout) = child.stdout.take() {
-        spawn_ring_drain(stdout, Arc::clone(&output), Some(Arc::clone(&capture)));
+        spawn_ring_drain(
+            stdout,
+            Arc::clone(&output),
+            Some(Arc::clone(&capture)),
+            log.clone(),
+        );
     }
     if let Some(stderr) = child.stderr.take() {
-        spawn_ring_drain(stderr, Arc::clone(&output), Some(Arc::clone(&capture)));
+        spawn_ring_drain(
+            stderr,
+            Arc::clone(&output),
+            Some(Arc::clone(&capture)),
+            log.clone(),
+        );
     }
+    // Reported on spawn failure so the log can be found without guessing.
+    let log_path = log.as_ref().map(|log| log.path.clone());
 
     let deadline = Instant::now() + SPAWN_READY_TIMEOUT;
     let mut last_unauthorized = false;
@@ -732,11 +888,15 @@ pub(crate) async fn ensure_host(
                 }
                 let tail = ring_snapshot(&output);
                 return Err(format!(
-                    "dsh web 启动后立即退出（{status}）。{}",
+                    "dsh web 启动后立即退出（{status}）。{}{}",
                     if tail.is_empty() {
                         "无输出。".to_string()
                     } else {
                         format!("输出：{tail}")
+                    },
+                    match &log_path {
+                        Some(path) => format!("（完整输出见 {}）", path.display()),
+                        None => String::new(),
                     }
                 ));
             }
@@ -978,6 +1138,118 @@ async fn terminate_local_listener(_port: u16, _origin: &str) -> Result<(), Strin
 mod tests {
     use super::*;
     use serde_json::json;
+
+    /// The per-run log name must sort by spawn time and stay inside the app
+    /// home, so the surviving file of a killed host is findable by name.
+    #[test]
+    fn host_log_path_is_stamped_under_the_app_home() {
+        let home = Path::new("C:\\home\\.ccgui-next");
+        let path = HostLog::path_for(home, UNIX_EPOCH + Duration::from_secs(1_791_979_847))
+            .expect("a post-epoch clock names a log");
+        assert_eq!(
+            path,
+            home.join("dsh-host-logs").join("dsh-host-1791979847.log")
+        );
+        assert!(HostLog::path_for(home, UNIX_EPOCH - Duration::from_secs(1)).is_none());
+    }
+
+    /// Lines reach the file (flushed per line: a host killed right after
+    /// writing must not lose its last words), and the budget rotates instead
+    /// of growing without bound.
+    #[test]
+    fn host_log_appends_lines_and_rotates_over_budget() {
+        let home = std::env::temp_dir().join(format!(
+            "ccgui-next-host-log-test-{}",
+            uuid::Uuid::new_v4()
+        ));
+        // One instant for both the name and the assertion: two `now()` calls
+        // can straddle a second boundary and name different files.
+        let now = SystemTime::now();
+        let path = HostLog::path_for(&home, now).unwrap();
+        let log = HostLog::open(path.clone());
+        log.line_capped("first line\n", 32);
+        log.line_capped("second line\n", 32);
+        assert_eq!(
+            std::fs::read_to_string(&path).unwrap(),
+            "first line\nsecond line\n"
+        );
+        // Over budget: the current file moves to `.1` and a fresh one starts.
+        log.line_capped("third line that is long enough\n", 8);
+        assert_eq!(
+            std::fs::read_to_string(path.with_extension("log.1")).unwrap(),
+            "first line\nsecond line\n"
+        );
+        assert_eq!(
+            std::fs::read_to_string(&path).unwrap(),
+            "third line that is long enough\n"
+        );
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    /// 启动令牌能换取 host 的 auth cookie，因此**绝不能**进磁盘日志——这条是
+    /// 发货不变量，不是可选优化（AGENTS.md：日志不输出凭据）。host 打印的形状
+    /// 是 `dsh web: http://…/?token=<URL-safe>`。
+    #[test]
+    fn host_log_redacts_the_launch_token_line() {
+        let token_line = "dsh web: http://127.0.0.1:3080/?token=AbC-123_xyz\n";
+        assert_eq!(
+            loggable_line(token_line),
+            "=== [redacted] launch token line ===\n"
+        );
+        // 普通行原样保留，脱敏不能顺手吃掉诊断信息。
+        let plain = "ready on http://127.0.0.1:3080\n";
+        assert_eq!(loggable_line(plain), plain);
+        // 只是提到 token 字样（不是查询参数）不算令牌，不该被替换。
+        let mentions = "GET /?notoken=1&tokenish=2\n";
+        assert_eq!(loggable_line(mentions), mentions);
+    }
+
+    /// 真实 drain 路径的唯一端到端断言：ring 必须留下启动令牌（就绪循环要从内存
+    /// 里再取一次），而磁盘日志必须一个字节都拿不到它——宿主被中途杀掉时，日志
+    /// 是唯一幸存的产物，它得能直接交给别人看。
+    #[tokio::test]
+    async fn ring_drain_keeps_the_token_in_memory_and_out_of_the_log() {
+        use tokio::io::AsyncWriteExt;
+
+        let home = std::env::temp_dir().join(format!(
+            "ccgui-next-host-log-drain-{}",
+            uuid::Uuid::new_v4()
+        ));
+        let path = HostLog::path_for(&home, SystemTime::now()).unwrap();
+        let log = HostLog::open(path.clone());
+        let buf = Arc::new(Mutex::new(String::new()));
+
+        let (mut writer, reader) = tokio::io::duplex(4096);
+        spawn_ring_drain(reader, buf.clone(), None, Some(log));
+        writer
+            .write_all(b"dsh web: http://127.0.0.1:3080/?token=AbC-123_xyz\n")
+            .await
+            .unwrap();
+        writer
+            .write_all(b"ready on http://127.0.0.1:3080\n")
+            .await
+            .unwrap();
+        drop(writer); // EOF ends the drain loop.
+
+        // Wait for the drain task to see EOF and flush the second line.
+        let deadline = Instant::now() + Duration::from_secs(5);
+        let mut logged = String::new();
+        loop {
+            logged = std::fs::read_to_string(&path).unwrap_or_default();
+            if logged.contains("ready on") || Instant::now() > deadline {
+                break;
+            }
+            sleep(Duration::from_millis(10)).await;
+        }
+
+        let ring = ring_snapshot(&buf);
+        assert!(ring.contains("token=AbC-123_xyz"), "{ring}");
+        assert!(ring.contains("ready on"), "{ring}");
+        assert!(logged.contains("ready on"), "{logged}");
+        assert!(logged.contains("[redacted] launch token line"), "{logged}");
+        assert!(!logged.contains("AbC-123_xyz"), "{logged}");
+        let _ = std::fs::remove_dir_all(&home);
+    }
 
     #[test]
     fn origin_locality_is_detected_from_the_configured_origin() {

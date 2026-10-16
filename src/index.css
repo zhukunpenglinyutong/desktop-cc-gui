@@ -365,8 +365,8 @@ body {
 
 /* ---- Code ---- */
 .prose-chat code {
-  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
-  font-size: 0.875em;
+  font-family: var(--font-mono);
+  font-size: var(--code-font-size, 13px);
 }
 /* Inline code chip: muted rounded surface, body weight. Inside a file link
    the green comes from the anchor rule above. */
@@ -400,7 +400,7 @@ body {
   color: var(--color-text-secondary);
 }
 .md-codeblock-language {
-  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+  font-family: var(--font-mono);
   font-size: 12px;
   font-weight: 500;
   line-height: 1;

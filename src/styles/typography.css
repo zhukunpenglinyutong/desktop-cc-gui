@@ -305,7 +305,13 @@ pre, .cm-editor, .code-typography {
 }
 
 .cm-editor, .code-typography {
+  font-family: var(--font-mono);
   font-size: var(--code-font-size, 13px);
+}
+
+/* CodeMirror's base theme owns the scroller font instead of inheriting it. */
+.cm-editor .cm-scroller {
+  font-family: var(--font-mono);
 }
 
 .xterm {

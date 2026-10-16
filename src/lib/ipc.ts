@@ -467,8 +467,8 @@ export interface AppSettings {
   codexHome?: string | null;
   /** Max sessions listed per workspace in the sidebar (default 5). */
   sidebarThreadLimit: number;
-  /** UI font: "" = 系统默认 (bundled stack + system fallback), "custom" =
-   *  the uploaded font file in `fontFile`. */
+  /** UI font: empty/system = bundled default, custom = uploaded fontFile,
+   *  otherwise a CSS font-family list of locally available fonts. */
   fontFamily: string;
   /** Absolute path of the uploaded UI font file (设置 → 外观). */
   fontFile: string;
@@ -478,8 +478,7 @@ export interface AppSettings {
   codeFontSize: number;
   /** standard / medium / bold: relative to each text style. */
   uiFontWeight: string;
-  /** Code font for chat code blocks and the built-in terminal: "" = 系统默认,
-   *  "custom" = the uploaded code font in `codeFontFile`. */
+  /** Code font for chat, editors, diffs and terminal; same value semantics as fontFamily. */
   codeFontFamily: string;
   /** Absolute path of the uploaded code font file. */
   codeFontFile: string;

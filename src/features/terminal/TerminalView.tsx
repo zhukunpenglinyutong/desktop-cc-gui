@@ -5,8 +5,9 @@ import { useTranslation } from "react-i18next";
 import { isMacPlatform } from "@/features/shortcuts/shortcuts";
 import { ipc } from "@/lib/ipc";
 import { loadXterm, type XtermModules } from "./xterm-loader";
-import { terminalFontFamily, terminalTheme } from "./appearance";
+import { terminalFontFamily, terminalFontSize, terminalTheme } from "./appearance";
 import { FONT_CHANGE_EVENT } from "@/features/settings/font";
+import { TYPOGRAPHY_CHANGE_EVENT } from "@/features/settings/interface-typography";
 import { createPathLinkProvider } from "./links";
 import { TerminalContextMenu, type TerminalMenuState } from "./TerminalContextMenu";
 import {
@@ -17,6 +18,29 @@ import {
   setTerminalWriter,
   terminalBacklog,
 } from "./sessions";
+
+/** PTY cols/rows wait this long after the last size change: one IPC per frame
+ *  stalled the backend and made height drags feel sticky. Shared by the
+ *  container observer and font/size edits (which change cell metrics without
+ *  any container resize). */
+const PTY_RESIZE_DEBOUNCE_MS = 150;
+
+/** xterm measures glyphs when it opens or when font options change; a bundled
+ *  webfont that has not loaded yet would bake the fallback's cell metrics into
+ *  the canvas. `document.fonts.load` takes a CSS font shorthand. */
+function waitForFontLoad(family: string, size: number): Promise<void> {
+  const fonts = typeof document !== "undefined" ? document.fonts : undefined;
+  if (!fonts || typeof fonts.load !== "function") return Promise.resolve();
+  try {
+    return fonts.load(`${size}px ${family}`).then(
+      () => undefined,
+      () => undefined,
+    );
+  } catch {
+    // Unparseable shorthand: nothing to wait on; the caller re-measures anyway.
+    return Promise.resolve();
+  }
+}
 
 /**
  * One xterm instance for the active tab; remounts per tab (key = tab id).
@@ -62,6 +86,11 @@ export const TerminalView = memo(function TerminalView({ id, cwd }: { id: string
     let linkDisposable: IDisposable | null = null;
     let resizeObserver: ResizeObserver | null = null;
     let themeObserver: MutationObserver | null = null;
+    // The family currently assigned to xterm; OptionsService silently ignores
+    // an identical reassignment, so the code below needs to detect "same face,
+    // freshly loaded" to force a re-measure through a probe value.
+    let currentFontFamily = "";
+    let fontLoadVersion = 0;
     let disposed = false;
 
     const safeFit = () => {
@@ -72,19 +101,83 @@ export const TerminalView = memo(function TerminalView({ id, cwd }: { id: string
       }
     };
 
+    // Debounced PTY size sync. Fit every frame so the canvas tracks drags, but
+    // only push cols/rows once the change settles.
+    const schedulePtyResize = () => {
+      clearTimeout(resizeTimer);
+      resizeTimer = window.setTimeout(() => {
+        resizeTimer = undefined;
+        if (termRef && hasTerminalSession(id)) {
+          void ipc.terminalResize(id, termRef.cols, termRef.rows).catch(() => {});
+        }
+      }, PTY_RESIZE_DEBOUNCE_MS);
+    };
+
+    // OptionsService treats an identical fontFamily assignment as a no-op, so a
+    // face that finished loading after the previous measure would never be
+    // picked up. Bounce through a probe stack to push xterm down its public
+    // option path (re-measure char size + reset the texture atlas), then
+    // restore the real family. Never touches xterm private internals.
+    const remeasureFont = (family: string) => {
+      const term = termRef;
+      if (!term) return;
+      term.options.fontFamily = `${family}, monospace`;
+      term.options.fontFamily = family;
+    };
+
+    // Wait for the face to be usable, then re-measure. Late arrivals (unmount,
+    // or a newer font choice) must not touch the live view.
+    const refitAfterFontLoad = (family: string, size: number) => {
+      const version = ++fontLoadVersion;
+      void waitForFontLoad(family, size).then(() => {
+        if (disposed || !termRef || version !== fontLoadVersion) return;
+        remeasureFont(family);
+        safeFit();
+        schedulePtyResize();
+      });
+    };
+
     // Follow 设置 → 通用 → 外观 → 代码字体 changes live. Declared outside
-    // the try so the cleanup below removes the very same listener reference.
+    // the try so the cleanup below removes the very same listener references.
     const onFontChange = () => {
-      if (!termRef) return;
-      termRef.options.fontFamily = terminalFontFamily();
+      const term = termRef;
+      if (!term) return;
+      const family = terminalFontFamily();
+      const size = terminalFontSize();
+      term.options.fontSize = size;
+      if (family !== currentFontFamily) {
+        currentFontFamily = family;
+        // Assigning a new family already re-measures, but the face may not be
+        // loaded yet — refitAfterFontLoad re-runs the measure once it is.
+        term.options.fontFamily = family;
+      } else {
+        // Same family (an uploaded face finished loading): force the measure.
+        remeasureFont(family);
+      }
       safeFit();
+      schedulePtyResize();
+      refitAfterFontLoad(family, size);
+    };
+
+    const onTypographyChange = () => {
+      const term = termRef;
+      if (!term) return;
+      const size = terminalFontSize();
+      if (term.options.fontSize === size) return;
+      term.options.fontSize = size;
+      safeFit();
+      schedulePtyResize();
+      refitAfterFontLoad(currentFontFamily, size);
     };
 
     try {
       const { Terminal, FitAddon, WebglAddon } = xterm;
+      const initialFontFamily = terminalFontFamily();
+      const initialFontSize = terminalFontSize();
+      currentFontFamily = initialFontFamily;
       const term = new Terminal({
-        fontFamily: terminalFontFamily(),
-        fontSize: 12,
+        fontFamily: initialFontFamily,
+        fontSize: initialFontSize,
         cursorBlink: true,
         scrollback: 5000,
         theme: terminalTheme(),
@@ -124,6 +217,9 @@ export const TerminalView = memo(function TerminalView({ id, cwd }: { id: string
             // but don't mark or touch state for a dead view.
             if (disposed) return;
             markTerminalOpened(id);
+            // Font loading may have refitted while PTY spawn was pending.
+            // Replay the latest cell dimensions once the session can resize.
+            schedulePtyResize();
             setError(null);
           })
           .catch((e: unknown) => {
@@ -132,6 +228,9 @@ export const TerminalView = memo(function TerminalView({ id, cwd }: { id: string
 
       safeFit();
       void openSession();
+      // The default 代码 face is a bundled webfont; xterm measured at open,
+      // possibly against a fallback. Re-measure once the face is ready.
+      refitAfterFontLoad(initialFontFamily, initialFontSize);
 
       // Absolute paths in output become modifier-click-to-reveal links
       // (see links.ts).
@@ -163,15 +262,8 @@ export const TerminalView = memo(function TerminalView({ id, cwd }: { id: string
       resizeObserver = new ResizeObserver(() => {
         safeFit();
         // Fit every frame so the canvas tracks the drag; the PTY resize
-        // itself waits for the drag to settle (one IPC per frame stalled
-        // the backend and made resizing feel sticky).
-        clearTimeout(resizeTimer);
-        resizeTimer = window.setTimeout(() => {
-          resizeTimer = undefined;
-          if (hasTerminalSession(id)) {
-            void ipc.terminalResize(id, term.cols, term.rows).catch(() => {});
-          }
-        }, 150);
+        // itself waits for the drag to settle (see schedulePtyResize).
+        schedulePtyResize();
       });
       resizeObserver.observe(host);
 
@@ -183,8 +275,9 @@ export const TerminalView = memo(function TerminalView({ id, cwd }: { id: string
         attributes: true,
         attributeFilter: ["class"],
       });
-      // Follow 设置 → 通用 → 外观 → 代码字体 changes live.
+      // Follow 设置 → 通用 → 外观 → 代码字体 / 代码字号 changes live.
       window.addEventListener(FONT_CHANGE_EVENT, onFontChange);
+      window.addEventListener(TYPOGRAPHY_CHANGE_EVENT, onTypographyChange);
     } catch (e: unknown) {
       setError(String(e));
     }
@@ -197,6 +290,7 @@ export const TerminalView = memo(function TerminalView({ id, cwd }: { id: string
       resizeObserver?.disconnect();
       themeObserver?.disconnect();
       window.removeEventListener(FONT_CHANGE_EVENT, onFontChange);
+      window.removeEventListener(TYPOGRAPHY_CHANGE_EVENT, onTypographyChange);
       if (termRef) {
         setTerminalWriter(id, null);
         termRef.dispose();

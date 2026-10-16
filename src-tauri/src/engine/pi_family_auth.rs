@@ -205,8 +205,10 @@ fn home_dir_name(engine: &str) -> Result<&'static str, String> {
 }
 
 /// `<agent>` dir: `$PI_CODING_AGENT_DIR` when set (both CLIs honor it; omp kept
-/// it from the pi fork), else `~/.pi/agent` / `~/.omp/agent`.
-fn agent_dir(engine: &str) -> Result<PathBuf, String> {
+/// it from the pi fork), else `~/.pi/agent` / `~/.omp/agent`. Also the root of
+/// the CLI's blob store, which history resolves `blob:sha256:` image refs
+/// against (see `history::extract::pi_image_part`).
+pub(crate) fn agent_dir(engine: &str) -> Result<PathBuf, String> {
     if let Some(dir) = std::env::var_os("PI_CODING_AGENT_DIR").filter(|v| !v.is_empty()) {
         return Ok(PathBuf::from(dir));
     }

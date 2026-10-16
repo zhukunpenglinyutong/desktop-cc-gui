@@ -556,7 +556,11 @@ pub async fn plugin_model_catalog(
         refreshed_at,
     };
 
-    for engine in engines {
+    // 停用 engines are skipped instead of asked: `list_engine_models` refuses
+    // them now (it would run their CLI), and a refusal per engine here would
+    // just fill the plugin's `errors` with noise for engines it cannot launch
+    // anyway.
+    for engine in engines.into_iter().filter(|engine| engine.enabled) {
         let engine_id = engine.id.clone();
         let catalog = match crate::engine::models::list_engine_models(
             state.clone(),

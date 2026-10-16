@@ -205,14 +205,20 @@ export function useChatSidebar({
     return result;
   }, [workspaces, archivedIds, workspaceAliases]);
 
-  const handleAddWorkspace = useCallback(() => {
+  /** 「添加工作区」：选目录并登记。返回选中的路径（取消 / web 模式 / 登记
+   *  失败返回 null），调用方据此接下一步——「新建会话」在没有工作区时要接着
+   *  把会话开出来，否则用户点的是新会话，拿到的只有一次选目录。登记失败时
+   *  store 已经把错误放进错误条，这里只负责不继续往下走。 */
+  const handleAddWorkspace = useCallback(async (): Promise<string | null> => {
     // 移动端/网页访问模式没有目录选择器，侧栏也不渲染添加入口。
-    if (isWeb) return;
-    void pickDirectory(t("chat.addWorkspace"))
-      .then((path) => {
-        if (path) void addWorkspace(path);
-      })
-      .catch(() => {});
+    if (isWeb) return null;
+    try {
+      const path = await pickDirectory(t("chat.addWorkspace"));
+      if (!path) return null;
+      return (await addWorkspace(path)) ? path : null;
+    } catch {
+      return null;
+    }
   }, [t, addWorkspace]);
 
   const handleThreadSelect = useCallback(
@@ -314,16 +320,19 @@ export function useChatSidebar({
   // Sidebar 新建会话 nav entry: new chat in the active workspace (fallback:
   // first visible workspace; archived ones never pick up new chats, and no
   // workspace yet → add one first).
-  const handleNewSession = useCallback(() => {
+  const handleNewSession = useCallback(async () => {
     const workspace =
       workspaces.find((w) => w.path === active?.workspacePath && !archivedIds.has(w.id)) ??
       visibleWorkspaces[0];
-    if (!workspace) {
-      handleAddWorkspace();
-      return;
-    }
+    // 还没有任何工作区：先登记目录（「新建会话」的前置步骤），再照常把会话
+    // 开出来。用户点的是「新建会话」，只弹一次目录选择器会让他以为没生效——
+    // 输入框依旧是灰的，还得再点一次同一个按钮。登记失败/取消 → null，不建
+    // 任何标签页。范式与 worktree 创建完成后的做法一致
+    // （worktree/store.ts: refreshWorkspaces().then(startNewChat)）。
+    const targetPath = workspace?.path ?? (await handleAddWorkspace());
+    if (!targetPath) return;
     dismissCenterSurfaces();
-    startNewChat(workspace.path);
+    startNewChat(targetPath);
     // 中心面可能刚从别处（插件中心/浏览器）切回来，那时直接 focus() 会被
     // 浏览器忽略（隐藏元素），交给等可见的助手。
     focusComposerWhenVisible(composerInputRef);

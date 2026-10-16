@@ -890,8 +890,13 @@ function onSession(
   // flag still sit under the pending key then; migrate from there instead of
   // orphaning them on a key nothing renders.
   const pendingKey = sessionKey(event.engine, null, workspacePath);
+  // The live turn sits under the pending key only while the run is still
+  // routed there (the session event beat the send response). A stopped or
+  // failed pending chat in the same workspace belongs to a different run:
+  // folding it in would merge its rows into this session and clobber the
+  // draft the user is typing.
   const fromKey =
-    pendingKey !== newKey && deps.get().bySession[pendingKey]
+    pendingKey !== newKey && runRouting.get(event.runId) === pendingKey
       ? pendingKey
       : key;
 
@@ -972,8 +977,12 @@ function onSession(
     };
     if (fromKey !== newKey) delete bySession[fromKey];
     const drafts = { ...s.drafts };
-    if (fromKey in drafts) {
-      drafts[newKey] = drafts[fromKey];
+    // A same-key migration (a resumed engine re-announces its id every turn)
+    // must never touch the draft: the user is typing the next message while
+    // this event lands. When the keys differ, the pending draft follows the
+    // tab, but never over an already-typed native draft.
+    if (fromKey !== newKey && drafts[fromKey] !== undefined) {
+      if (drafts[newKey] === undefined) drafts[newKey] = drafts[fromKey];
       delete drafts[fromKey];
     }
     const streamingByKey = moveStreamingFlag(s.streamingByKey, fromKey, newKey);

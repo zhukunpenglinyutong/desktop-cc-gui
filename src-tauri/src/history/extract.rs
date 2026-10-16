@@ -1,4 +1,5 @@
 use super::{content_text, parse_ts_ms_str, Message};
+use base64::Engine as _;
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
@@ -453,7 +454,14 @@ fn claude_image_data_url(block: &Value) -> Option<String> {
 }
 
 /// pi/omp image content part (`{type:"image", data, mimeType}`) -> data URL.
-fn pi_image_part(part: &Value) -> Option<String> {
+///
+/// pi stores inline base64, but omp (its fork) writes a content-addressed
+/// reference instead — `blob:sha256:<hex>`, the shape every image this app
+/// sends over its rpc prompt lands in — and keeps the bytes in the CLI's own
+/// blob store. Resolving those is what lets a reopened session render the
+/// picture it sent; without it the reference became a `data:` URL with the
+/// reference as payload, i.e. a broken image.
+fn pi_image_part(part: &Value, engine: &str) -> Option<String> {
     if part.get("type").and_then(Value::as_str) != Some("image") {
         return None;
     }
@@ -465,7 +473,64 @@ fn pi_image_part(part: &Value) -> Option<String> {
         .get("mimeType")
         .and_then(Value::as_str)
         .unwrap_or("image/png");
-    Some(format!("data:{mime};base64,{data}"))
+    match data.strip_prefix(PI_BLOB_PREFIX) {
+        Some(hash) => Some(format!(
+            "data:{mime};base64,{}",
+            pi_blob_base64(engine, hash, mime)?
+        )),
+        None => Some(format!("data:{mime};base64,{data}")),
+    }
+}
+
+/// Content-addressed image references in omp transcripts.
+const PI_BLOB_PREFIX: &str = "blob:sha256:";
+
+/// Cap for inlining a resolved blob into a history page. The composer refuses
+/// attachments above this same 8 MiB, so every image a send can carry still
+/// resolves; an oversized blob yields no image instead of megabytes of base64
+/// in the page payload and the parse cache.
+const MAX_BLOB_IMAGE_BYTES: u64 = 8 * 1024 * 1024;
+
+/// The CLI's blob file for one reference: `<agent dir>/blobs/<hex>`, with the
+/// extension-suffixed sibling some writers keep as a fallback. `None` when the
+/// id is not a bare 64-char lowercase hex digest (any option suffix must never
+/// reach the filesystem) or no file exists.
+fn pi_blob_path(engine: &str, hash: &str, mime: &str) -> Option<PathBuf> {
+    if hash.len() != 64
+        || !hash
+            .bytes()
+            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+    {
+        return None;
+    }
+    let dir = crate::engine::pi_family_auth::agent_dir(engine)
+        .ok()?
+        .join("blobs");
+    let exact = dir.join(hash);
+    if exact.is_file() {
+        return Some(exact);
+    }
+    let ext = match mime {
+        "image/jpeg" => "jpg",
+        "image/gif" => "gif",
+        "image/webp" => "webp",
+        _ => "png",
+    };
+    let with_ext = dir.join(format!("{hash}.{ext}"));
+    with_ext.is_file().then_some(with_ext)
+}
+
+/// Base64 payload of one referenced blob, or `None` when it is unreadable or
+/// above the inline cap — the message keeps its text, and a reference that
+/// cannot be resolved locally (e.g. a remote session's transcript) degrades to
+/// a missing image rather than a broken one.
+fn pi_blob_base64(engine: &str, hash: &str, mime: &str) -> Option<String> {
+    let path = pi_blob_path(engine, hash, mime)?;
+    if std::fs::metadata(&path).ok()?.len() > MAX_BLOB_IMAGE_BYTES {
+        return None;
+    }
+    let bytes = std::fs::read(&path).ok()?;
+    Some(base64::engine::general_purpose::STANDARD.encode(bytes))
 }
 
 /// Codex token_count `info` → occupancy + the window the CLI actually used.
@@ -714,7 +779,7 @@ fn extract_line_messages(engine: &str, value: &Value, images: ImageMode) -> Line
         "kimi" => extract_kimi_line(value),
         "grok" => extract_grok_line(value),
         "codex" => extract_codex_line(value, images),
-        "pi" | "omp" => extract_pi_family_line(value, images),
+        "pi" | "omp" => extract_pi_family_line(engine, value, images),
         "qoder" | "qoder-cn" => extract_qoder_line(value, images),
         "minimax" => extract_minimax_line(value),
         _ => Vec::new(),
@@ -985,7 +1050,7 @@ fn pi_assistant_part(part: &Value, out: &mut LineRows, text: &mut String, ts: &O
 }
 
 /// pi/omp session lines: {type:"message", timestamp, message:{role, content, usage?}}
-fn extract_pi_family_line(value: &Value, images: ImageMode) -> LineRows {
+fn extract_pi_family_line(engine: &str, value: &Value, images: ImageMode) -> LineRows {
     if value.get("type").and_then(Value::as_str) != Some("message") {
         return Vec::new();
     }
@@ -1014,7 +1079,7 @@ fn extract_pi_family_line(value: &Value, images: ImageMode) -> LineRows {
             };
             let collected = match (images, content) {
                 (ImageMode::Collect, Some(Value::Array(parts))) => {
-                    parts.iter().filter_map(pi_image_part).collect()
+                    parts.iter().filter_map(|part| pi_image_part(part, engine)).collect()
                 }
                 _ => Vec::new(),
             };
@@ -1974,7 +2039,7 @@ mod tests {
                 ]
             }
         });
-        let rows = extract_pi_family_line(&line, ImageMode::Collect);
+        let rows = extract_pi_family_line("omp", &line, ImageMode::Collect);
         let roles: Vec<&str> = rows.iter().map(|r| r.role.as_str()).collect();
         assert_eq!(roles, ["thinking", "assistant", "tool", "assistant"]);
         assert_eq!(rows[0].text, "first thought");
@@ -2034,7 +2099,7 @@ mod tests {
             .collect::<Vec<_>>()
             .join("\n");
         let extractor: LineExtractor<'_> =
-            Box::new(|value: &Value| extract_pi_family_line(value, ImageMode::Collect));
+            Box::new(|value: &Value| extract_pi_family_line("omp", value, ImageMode::Collect));
         let parsed = collect_session(std::io::Cursor::new(input), &extractor, &HashSet::new());
 
         let (first, second) = (&parsed.messages[0], &parsed.messages[1]);
@@ -2078,7 +2143,7 @@ mod tests {
         });
         let input = format!("{}\n{}", call, result);
         let extractor: LineExtractor<'_> =
-            Box::new(|value: &Value| extract_pi_family_line(value, ImageMode::Collect));
+            Box::new(|value: &Value| extract_pi_family_line("omp", value, ImageMode::Collect));
         let parsed = collect_session(std::io::Cursor::new(input), &extractor, &HashSet::new());
         assert_eq!(parsed.messages.len(), 1);
         let todos = parsed.messages[0].todos.as_ref().expect("todos must be populated");
@@ -2122,7 +2187,7 @@ mod tests {
                 ]
             }
         });
-        let rows = extract_pi_family_line(&line, ImageMode::Collect);
+        let rows = extract_pi_family_line("omp", &line, ImageMode::Collect);
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].role, "tool");
         let todos = rows[0].todos.as_ref().expect("todos payload");
@@ -2390,10 +2455,159 @@ mod tests {
                 ]
             }
         });
-        let rows = extract_pi_family_line(&line, ImageMode::Collect);
+        let rows = extract_pi_family_line("pi", &line, ImageMode::Collect);
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].text, "look");
         assert_eq!(rows[0].images, ["data:image/webp;base64,aGk="]);
+    }
+
+    /// omp writes `blob:sha256:<hex>` where pi writes inline base64 (every
+    /// image the app sends over the rpc prompt lands there). The referenced
+    /// bytes must come back as a renderable data URL — the bug this guards was
+    /// the reference itself being wrapped as payload, so the reopened session
+    /// showed a broken image.
+    #[test]
+    fn omp_blob_image_ref_resolves_against_the_cli_blob_store() {
+        let agent = blob_scratch("resolve");
+        let _env = BlobDirGuard::set(&agent);
+        // A real 1x1 PNG: the assertion below compares bytes, so the fixture
+        // must be a decodable image rather than a header prefix.
+        let png = base64::engine::general_purpose::STANDARD
+            .decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=")
+            .unwrap();
+        let hash = "82ec3bc7b7179684ad63fdc690fc17a776f7a1cd208a58d0862c262859cfa562";
+        let blobs = agent.join("blobs");
+        std::fs::create_dir_all(&blobs).unwrap();
+        std::fs::write(blobs.join(hash), &png).unwrap();
+
+        let line: Value = serde_json::json!({
+            "type": "message",
+            "timestamp": "2026-10-16T08:42:05.620Z",
+            "message": {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": "关掉客户端再打开"},
+                    {"type": "image", "data": format!("blob:sha256:{hash}"), "mimeType": "image/png"}
+                ]
+            }
+        });
+        let rows = extract_pi_family_line("omp", &line, ImageMode::Collect);
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].text, "关掉客户端再打开");
+        let url = rows[0].images.first().expect("resolved image").clone();
+        let payload = url
+            .strip_prefix("data:image/png;base64,")
+            .expect("data URL payload");
+        assert_eq!(
+            base64::engine::general_purpose::STANDARD
+                .decode(payload)
+                .unwrap(),
+            png
+        );
+
+        // The extension-suffixed sibling a pruned store may keep still works.
+        std::fs::remove_file(blobs.join(hash)).unwrap();
+        std::fs::write(blobs.join(format!("{hash}.png")), png).unwrap();
+        let rows = extract_pi_family_line("omp", &line, ImageMode::Collect);
+        assert_eq!(rows.len(), 1);
+        assert!(rows[0].images[0].starts_with("data:image/png;base64,"));
+    }
+
+    /// A reference that cannot be resolved must yield no image at all: the
+    /// alternative (wrapping the reference as base64) is what rendered broken.
+    #[test]
+    fn unresolvable_blob_refs_yield_no_image_instead_of_a_broken_data_url() {
+        let agent = blob_scratch("missing");
+        let _env = BlobDirGuard::set(&agent);
+        let hash = "f".repeat(64);
+
+        for data in [
+            // Blob file absent (swept / GC'd store, remote session transcript).
+            format!("blob:sha256:{hash}"),
+            // Not a bare digest: a relative or suffixed id must never reach
+            // the filesystem.
+            "blob:sha256:../../../../etc/passwd".to_string(),
+            "blob:sha256:".to_string(),
+        ] {
+            let line: Value = serde_json::json!({
+                "type": "message",
+                "timestamp": "2026-10-16T08:42:05.620Z",
+                "message": {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": "text only"},
+                        {"type": "image", "data": data, "mimeType": "image/png"}
+                    ]
+                }
+            });
+            let rows = extract_pi_family_line("omp", &line, ImageMode::Collect);
+            assert_eq!(rows.len(), 1, "text still renders for {data}");
+            assert!(rows[0].images.is_empty(), "no image for {data}");
+        }
+    }
+
+    /// The scan path never builds image payloads, blob refs included: the
+    /// sidebar counts text, and a scan must not read image bytes at all.
+    #[test]
+    fn scan_mode_skips_blob_refs_entirely() {
+        let agent = blob_scratch("scan");
+        let _env = BlobDirGuard::set(&agent);
+        let hash = "82ec3bc7b7179684ad63fdc690fc17a776f7a1cd208a58d0862c262859cfa562";
+        let blobs = agent.join("blobs");
+        std::fs::create_dir_all(&blobs).unwrap();
+        std::fs::write(blobs.join(hash), [0u8; 8]).unwrap();
+
+        let line: Value = serde_json::json!({
+            "type": "message",
+            "timestamp": "2026-10-16T08:42:05.620Z",
+            "message": {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": "count me"},
+                    {"type": "image", "data": format!("blob:sha256:{hash}"), "mimeType": "image/png"}
+                ]
+            }
+        });
+        let rows = extract_pi_family_line("omp", &line, ImageMode::SkipDataUrls);
+        assert_eq!(rows.len(), 1);
+        assert!(rows[0].images.is_empty());
+    }
+
+    fn blob_scratch(tag: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!(
+            "ccgui-blob-{tag}-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    /// Steer `PI_CODING_AGENT_DIR` (what the CLI and `agent_dir` both read)
+    /// at a scratch agent dir for the duration of a test. Held under the
+    /// crate-wide env lock: HOME-steering tests elsewhere share it, since two
+    /// tests mutating engine-home env in parallel would clobber each other.
+    struct BlobDirGuard {
+        _lock: parking_lot::MutexGuard<'static, ()>,
+        prev: Option<std::ffi::OsString>,
+    }
+
+    impl BlobDirGuard {
+        fn set(agent: &Path) -> Self {
+            let lock = crate::paths::HOME_ENV_LOCK.lock();
+            let prev = std::env::var_os("PI_CODING_AGENT_DIR");
+            std::env::set_var("PI_CODING_AGENT_DIR", agent);
+            Self { _lock: lock, prev }
+        }
+    }
+
+    impl Drop for BlobDirGuard {
+        fn drop(&mut self) {
+            match &self.prev {
+                Some(value) => std::env::set_var("PI_CODING_AGENT_DIR", value),
+                None => std::env::remove_var("PI_CODING_AGENT_DIR"),
+            }
+        }
     }
 
     #[test]

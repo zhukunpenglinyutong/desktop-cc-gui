@@ -66,17 +66,26 @@ export function parseUsage(usage: unknown): ParsedUsage | null {
   const info = asRecord(raw.info) ?? raw;
   const nested = asRecord(info.last_token_usage);
   const u = nested ?? info;
-  const reportedInput = num(u, "input_tokens") || num(u, "input");
-  const output = num(u, "output_tokens") || num(u, "output");
+  // DSH 的 TokenUsage 是 camelCase（inputTokens/outputTokens/cacheReadTokens/
+  // cacheWriteTokens），语义与 claude 一样「互不重叠」：inputTokens 只算未命缓存
+  // 的输入，缓存另计。缺这几个别名时四桶全为 0——只剩 totalTokens 撑起一个总量，
+  // 于是弹层分桶退化成一行、每条消息的 token 读数不显示（formatUsage 全 0 时返回
+  // null），台账更会把整行丢掉（后端在四桶和为 0 时不写行）。
+  const reportedInput = num(u, "input_tokens") || num(u, "input") || num(u, "inputTokens");
+  const output = num(u, "output_tokens") || num(u, "output") || num(u, "outputTokens");
   // Codex names its cache fields differently (cached_input_tokens /
   // cache_write_input_tokens): without them a codex report's cache hits land
   // in the ledger as zero.
   const cacheRead =
-    num(u, "cache_read_input_tokens") || num(u, "cacheRead") || num(u, "cached_input_tokens");
+    num(u, "cache_read_input_tokens") ||
+    num(u, "cacheRead") ||
+    num(u, "cached_input_tokens") ||
+    num(u, "cacheReadTokens");
   const cacheWrite =
     num(u, "cache_creation_input_tokens") ||
     num(u, "cacheWrite") ||
-    num(u, "cache_write_input_tokens");
+    num(u, "cache_write_input_tokens") ||
+    num(u, "cacheWriteTokens");
   // Fold codex's cache counters out of its input so the four parts never
   // overlap. Adding them on top inflated every total by the whole cache
   // volume (a cache-heavy codex turn counted ~3x its real prompt).
@@ -102,7 +111,16 @@ export function mergeUsage(next: unknown, prev: unknown): unknown {
   const nextObj = asRecord(next);
   const prevObj = asRecord(prev);
   if (!nextObj || !prevObj) return next;
-  if (reportedContextWindow(nextObj)) return next;
+  const nextWindow = reportedContextWindow(nextObj);
+  if (nextWindow) {
+    // A window-only report (no token counters — e.g. a turn whose done payload
+    // carries just the host-announced window) refines the denominator, not the
+    // numerator: fold it into prev instead of dropping prev's tokens.
+    if (!parseUsage(nextObj) && parseUsage(prevObj)) {
+      return { ...prevObj, model_context_window: nextWindow };
+    }
+    return next;
+  }
   const window = reportedContextWindow(prevObj);
   if (!window) return next;
   return { ...nextObj, model_context_window: window };

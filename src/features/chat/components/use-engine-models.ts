@@ -200,9 +200,21 @@ export function useEngineModels(
     // the flag leaving the map re-ran this effect and refired the probe, so
     // a dead host got one `session/modelCatalog` call per render (~200/s).
     // Retrying is explicit (`refresh`) or follows an availability flip.
+    //
+    // 停用 (设置 → CLI 管理) means the engine must not be launched at all:
+    // every consumer of these catalogs (the picker, the plugin agent catalog)
+    // already hides disabled engines, and the probe itself runs the CLI
+    // (`opencode models`, `mcode acp`), so probing one would spawn a process
+    // the user turned off. Re-enabling flips `enabled` and the effect picks
+    // the engine up — it was never added to `probed`.
     const probed = (probedByWs.current[wsKey] ??= new Set<string>());
     engines
-      .filter((engine) => !(engine.id in catalogs) && !probed.has(probeKey(engine)))
+      .filter(
+        (engine) =>
+          engine.enabled &&
+          !(engine.id in catalogs) &&
+          !probed.has(probeKey(engine)),
+      )
       .forEach((engine) => {
         probed.add(probeKey(engine));
         probeCatalog(engine.id);
@@ -369,7 +381,10 @@ export function useEngineModels(
     // at once. (An await inside the building loops would serialize them.)
     const probes: Promise<void>[] = [];
     for (const ws of targets) {
-      for (const engine of engines) {
+      // 停用 engines stay out of the refresh too — same reason as the probe
+      // effect: the request spawns the CLI, and disabled engines are hidden
+      // from everything the flyout shows.
+      for (const engine of engines.filter((e) => e.enabled)) {
         markPending(ws, engine.id, true);
         probes.push(
           ipc

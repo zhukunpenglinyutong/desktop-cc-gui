@@ -6,10 +6,8 @@ import {
 } from "./interface-typography";
 import { writeStored } from "@/lib/storage";
 
-/** localStorage mirrors of the app-settings font preferences, read pre-paint
- *  by bootstrap.tsx (same pattern as THEME_STORAGE_KEY). Value semantics:
- *  "" = 系统默认 (bundled stack + system fallback), "custom" = the uploaded
- *  font file mirrored in the matching `*-file` key. */
+/** Empty/system keeps the bundled font; custom selects the uploaded file;
+ *  any other value is a literal CSS font-family list. */
 export const FONT_FAMILY_STORAGE_KEY = "ccgui-next.font-family:v1";
 export const CODE_FONT_FAMILY_STORAGE_KEY = "ccgui-next.code-font-family:v1";
 export const FONT_FILE_STORAGE_KEY = "ccgui-next.font-file:v1";
@@ -21,8 +19,10 @@ export const FONT_CHANGE_EVENT = "ccgui:font-change";
 /** Stored `fontFamily` / `codeFontFamily` value meaning "the uploaded file". */
 export const CUSTOM_FONT_VALUE = "custom";
 
-const UI_SYSTEM_STACK = "ui-sans-serif, system-ui, sans-serif";
-const CODE_SYSTEM_STACK = 'ui-monospace, "SFMono-Regular", Menlo, monospace';
+export const UI_SYSTEM_STACK = 'ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji"';
+export const CODE_SYSTEM_STACK = 'ui-monospace, "SFMono-Regular", Menlo, Consolas, "Liberation Mono", monospace';
+/** Keep in sync with theme.css; also used by canvas consumers without CSS. */
+export const DEFAULT_CODE_FONT_STACK = `"JetBrains Mono Variable", ${CODE_SYSTEM_STACK}`;
 
 /** Internal family names for uploaded files. Distinct per row so one file
  *  uploaded for both rows registers as two faces, and stable across launches
@@ -45,12 +45,22 @@ export function normalizeFontFamily(value: string | null | undefined): string {
   return (value ?? "").trim();
 }
 
-/** Font preference mode: "" = 系统默认, "custom" = the uploaded file. The
- *  界面字体/代码字体 select merged 默认 and 系统 into one option, so every
- *  legacy value ("system", an installed family name written by the pre-upload
- *  picker) collapses to the default and its root variable is dropped. */
+/** Accept family names/lists, but not declarations, CSS-wide resets or var()
+ *  (which could invalidate the host's root font tokens). The browser validates
+ *  font-family grammar; unavailable families are valid and use the fallbacks. */
+export function isValidFontFamily(value: string): boolean {
+  const family = normalizeFontFamily(value);
+  if (!family || family === "system" || family === CUSTOM_FONT_VALUE) return true;
+  if (/[;{}()\u0000-\u001f\u007f]/.test(family) || family.includes("/*")
+    || /^(inherit|initial|unset|revert|revert-layer)$/i.test(family)) return false;
+  const style = document.createElement("span").style;
+  style.fontFamily = family;
+  return style.fontFamily !== "";
+}
+
 export function normalizeFontMode(value: string | null | undefined): string {
-  return normalizeFontFamily(value) === CUSTOM_FONT_VALUE ? CUSTOM_FONT_VALUE : "";
+  const family = normalizeFontFamily(value);
+  return family === "system" || !isValidFontFamily(family) ? "" : family;
 }
 
 export function fontRole(field: FontField): CustomFontRole {
@@ -61,8 +71,8 @@ export function customFontFamily(role: CustomFontRole): string {
   return role === "ui" ? CUSTOM_UI_FONT_FAMILY : CUSTOM_CODE_FONT_FAMILY;
 }
 
-/** CSS family stack behind a preference value, or null for 系统默认 (root
- *  variable left untouched so theme.css keeps its own stack). */
+/** Resolved family stack for canvas consumers; CSS source tokens store only
+ *  the selected family and let theme.css append these same fallbacks. */
 export function uiFontStack(pref: string): string | null {
   return fontStack(pref, CUSTOM_UI_FONT_FAMILY, UI_SYSTEM_STACK);
 }
@@ -72,8 +82,9 @@ export function codeFontStack(pref: string): string | null {
 }
 
 function fontStack(pref: string, customFamily: string, fallback: string): string | null {
-  if (normalizeFontMode(pref) !== CUSTOM_FONT_VALUE) return null;
-  return `${JSON.stringify(customFamily)}, ${fallback}`;
+  const family = normalizeFontMode(pref);
+  if (!family) return null;
+  return `${family === CUSTOM_FONT_VALUE ? JSON.stringify(customFamily) : family}, ${fallback}`;
 }
 
 /** Apply preferences to the document root, mirror them into storage for the
@@ -91,9 +102,9 @@ export function applyFontPreferences(prefs: FontPreferences): void {
   const uiStack = uiFontStack(fontFamily);
   const codeStack = codeFontStack(codeFontFamily);
   if (uiStack === null) style.removeProperty("--font-inter");
-  else style.setProperty("--font-inter", uiStack);
+  else style.setProperty("--font-inter", fontFamily === CUSTOM_FONT_VALUE ? JSON.stringify(CUSTOM_UI_FONT_FAMILY) : fontFamily);
   if (codeStack === null) style.removeProperty("--font-mono-source");
-  else style.setProperty("--font-mono-source", codeStack);
+  else style.setProperty("--font-mono-source", codeFontFamily === CUSTOM_FONT_VALUE ? JSON.stringify(CUSTOM_CODE_FONT_FAMILY) : codeFontFamily);
   writeStored(FONT_FAMILY_STORAGE_KEY, fontFamily);
   writeStored(CODE_FONT_FAMILY_STORAGE_KEY, codeFontFamily);
   writeStored(FONT_FILE_STORAGE_KEY, fontFile);
@@ -123,6 +134,7 @@ const registeredFaces = new Map<CustomFontRole, FontFace>();
 /** In-flight/completed loads keyed by row, so re-applying the same path never
  *  re-reads the file. `force` is the explicit re-pick path. */
 const fontLoads = new Map<CustomFontRole, { path: string; promise: Promise<void> }>();
+const fontLoadVersions = new Map<CustomFontRole, number>();
 
 /**
  * Read, register and load the uploaded font file for one row. Resolves once
@@ -138,7 +150,9 @@ export function ensureCustomFontLoaded(
   if (!value) return Promise.resolve();
   const cached = fontLoads.get(role);
   if (!options?.force && cached?.path === value) return cached.promise;
-  const promise = loadCustomFont(role, value);
+  const version = (fontLoadVersions.get(role) ?? 0) + 1;
+  fontLoadVersions.set(role, version);
+  const promise = loadCustomFont(role, value, version);
   // A rejected load still belongs to its path (re-applying a stale value must
   // not re-read the disk every settings open); callers that need a retry pass
   // force. Park a no-op catch so the map's copy is never an unhandled
@@ -148,7 +162,7 @@ export function ensureCustomFontLoaded(
   return promise;
 }
 
-async function loadCustomFont(role: CustomFontRole, path: string): Promise<void> {
+async function loadCustomFont(role: CustomFontRole, path: string, version: number): Promise<void> {
   // Environments without the FontFace API (jsdom in tests) cannot register a
   // face; the preference still persists and applies where supported. Checked
   // before the read so the skip path does not touch the disk.
@@ -161,6 +175,7 @@ async function loadCustomFont(role: CustomFontRole, path: string): Promise<void>
   } catch {
     throw new Error("font.err.unsupported");
   }
+  if (fontLoadVersions.get(role) !== version) return;
   const previous = registeredFaces.get(role);
   if (previous) document.fonts.delete(previous);
   document.fonts.add(loaded);

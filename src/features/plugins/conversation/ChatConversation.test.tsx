@@ -156,3 +156,66 @@ describe("ChatConversation mode integration", () => {
     expect(modeProps.conversationId).toBe(firstIdentity);
   });
 });
+
+/**
+ * 空态的前提有两种，文案不能混：一条工作区都没有时，用户缺的不是「选一个
+ * 会话」而是「先有一个可归属的目录」——「新建会话」此刻会先弹目录选择器。
+ * 首启用户看到的正是这个状态，所以它必须说自己缺什么。
+ */
+describe("ChatConversation 空态前提", () => {
+  let container: HTMLDivElement;
+  let root: Root;
+  const composerRef = createRef<ComposerInputHandle>();
+
+  function EmptyHarness() {
+    const current = useChatStore((state) => state.active);
+    return (
+      <ChatConversation
+        active={current}
+        engines={[]}
+        workspaces={[]}
+        startNewChat={vi.fn()}
+        composerInputRef={composerRef}
+      />
+    );
+  }
+
+  beforeEach(() => {
+    container = document.createElement("div");
+    document.body.append(container);
+    root = createRoot(container);
+  });
+
+  afterEach(() => {
+    act(() => root.unmount());
+    container.remove();
+    useChatStore.setState({ active: null, openTabs: [], bySession: {}, drafts: {}, workspaces: [] });
+  });
+
+  it("零工作区时说「先添加工作区」，而不是「选择或新建一个会话」", () => {
+    act(() =>
+      useChatStore.setState({ active: null, openTabs: [], workspaces: [], bySession: {}, drafts: {} }),
+    );
+    act(() => root.render(<EmptyHarness />));
+    expect(container.textContent).toContain("还没有工作区，请先在侧栏添加");
+    expect(container.textContent).not.toContain("选择或新建一个会话开始");
+  });
+
+  it("已有工作区但没有会话时保留「选择或新建一个会话」", () => {
+    act(() =>
+      useChatStore.setState({
+        active: null,
+        openTabs: [],
+        workspaces: [
+          { id: "w1", path: "/ws/a", name: "a", sortOrder: 0, groupId: null, lastOpenedAt: null },
+        ],
+        bySession: {},
+        drafts: {},
+      }),
+    );
+    act(() => root.render(<EmptyHarness />));
+    expect(container.textContent).toContain("选择或新建一个会话开始");
+    // 提示行只属于「零工作区」分支；有工作区时不该再出现（提示里含「工作区」三字）。
+    expect(container.textContent).not.toContain("用侧栏「新建会话」");
+  });
+});

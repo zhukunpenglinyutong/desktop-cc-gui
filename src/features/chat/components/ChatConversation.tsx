@@ -88,8 +88,25 @@ function ConversationBody({
   onLoadEarlier: () => void;
 }) {
   const { t } = useTranslation();
+  // 空态的前提有两种，文案不能混：一条工作区都还没有时，「新建会话」会先
+  // 弹目录选择器（use-chat-sidebar 的 handleNewSession），所以这里缺的不是
+  // 「选一个会话」而是「先有一个可归属的目录」——先说来缺什么。
+  // Hook 必须在 early return 之前：这个组件在「没有会话」与「有会话」两种
+  // 形态间来回切换，把订阅放到 return 之后会让 Hook 数量随 props 变化。
+  const workspaceCount = useChatStore((s) => s.workspaces.length);
   if (!active || !hasSession) {
-    return <EmptyState className="text-body-medium">{t("chat.selectSession")}</EmptyState>;
+    return (
+      <EmptyState className="text-body-medium">
+        <div className="flex flex-col gap-1">
+          <span>{workspaceCount === 0 ? t("chat.noWorkspaceYet") : t("chat.selectSession")}</span>
+          {workspaceCount === 0 && (
+            <span className="text-caption-1-regular text-text-tertiary">
+              {t("chat.noWorkspaceHint")}
+            </span>
+          )}
+        </div>
+      </EmptyState>
+    );
   }
   return (
     <>

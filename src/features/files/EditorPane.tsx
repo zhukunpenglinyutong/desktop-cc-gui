@@ -17,6 +17,9 @@ import { HtmlPreview } from "./HtmlPreview";
 import { MarkdownPreview } from "./MarkdownPreview";
 import { isHtmlFile, isMarkdownFile, opensInPreview, type EditorViewMode } from "./editor-view-mode";
 import { registerShortcutHandler } from "@/features/shortcuts/runtime";
+import type { EditorView } from "@codemirror/view";
+import { FONT_CHANGE_EVENT } from "@/features/settings/font";
+import { TYPOGRAPHY_CHANGE_EVENT } from "@/features/settings/interface-typography";
 
 const CM_BASIC_SETUP = { foldGutter: false, highlightActiveLine: true };
 
@@ -72,6 +75,20 @@ function FileEditor({ path, content }: { path: string; content: FileContent }) {
   // answer Cmd/Ctrl+S, or every open file would save at once.
   const isActiveTab = useFilesStore((s) => s.activeFilePath === path);
   const dark = useIsDark();
+  const editorRef = useRef<EditorView | null>(null);
+  useEffect(() => {
+    const measure = () => {
+      const view = editorRef.current;
+      if (view?.dom.isConnected) view.requestMeasure();
+    };
+    window.addEventListener(FONT_CHANGE_EVENT, measure);
+    window.addEventListener(TYPOGRAPHY_CHANGE_EVENT, measure);
+    return () => {
+      window.removeEventListener(FONT_CHANGE_EVENT, measure);
+      window.removeEventListener(TYPOGRAPHY_CHANGE_EVENT, measure);
+      editorRef.current = null;
+    };
+  }, []);
 
   const name = fileName(path);
   const isMarkdown = isMarkdownFile(name);
@@ -225,6 +242,7 @@ function FileEditor({ path, content }: { path: string; content: FileContent }) {
           className="min-h-0 flex-1 overflow-hidden [&_.cm-editor]:h-full"
           height="100%"
           value={draft}
+          onCreateEditor={(view) => { editorRef.current = view; }}
           onChange={setDraft}
           extensions={langExt}
           theme={dark ? "dark" : "light"}

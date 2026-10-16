@@ -1,6 +1,7 @@
 import { writeStored } from "@/lib/storage";
 
 export const FONT_SIZE_LIMITS = { min: 10, max: 32 };
+export const TYPOGRAPHY_CHANGE_EVENT = "ccgui:typography-change";
 export const TYPOGRAPHY_DEFAULTS = {
   uiFontSize: 16,
   contentFontSize: 14,
@@ -47,6 +48,7 @@ export function applyInterfaceTypography(prefs: InterfaceTypographyPreferences):
   writeStored(storageKey("contentFontSize"), String(contentSize));
   writeStored(storageKey("codeFontSize"), String(codeSize));
   writeStored(storageKey("uiFontWeight"), weight);
+  window.dispatchEvent(new Event(TYPOGRAPHY_CHANGE_EVENT));
 }
 
 export function readCachedInterfaceTypography(): InterfaceTypographyPreferences {

@@ -3,7 +3,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import "@/lib/i18n";
 import type { AiChatRepo } from "@/components/application/ai-chat/ai-chat-sidebar";
-import type { SessionMeta, Workspace } from "@/lib/ipc";
+import { ipc, type SessionMeta, type Workspace } from "@/lib/ipc";
 import { useBrowserStore } from "@/features/browser/store";
 import { useFilesStore } from "@/features/files/store";
 import { useGitStore } from "@/features/git/store";
@@ -11,13 +11,19 @@ import { resetMissionStore, useMissionStore } from "@/features/mission/store";
 import { usePluginHubStore } from "@/features/plugins/hub/store";
 import { usePluginTabsStore } from "@/features/plugins/runtime/center-tabs";
 import { useChatStore } from "./store";
+import { UNBOUND_DRAFT_KEY } from "./store/persistence";
 import { useChatSidebar } from "./use-chat-sidebar";
+// 命名空间导入：vi.mocked 必须走属性访问，命名导入会抛错。
+import * as platform from "@/lib/platform";
 
 vi.mock("@/lib/ipc", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/ipc")>()),
   ipc: {
     getAppSettings: vi.fn(async () => ({})),
     updateAppSettings: vi.fn(async () => {}),
+    // 无工作区时 handleAddWorkspace 会走这条链路：登记目录 + 重读列表。
+    addWorkspace: vi.fn(async () => {}),
+    listWorkspaces: vi.fn(async () => []),
 
   
   },
@@ -27,7 +33,13 @@ vi.mock("@/lib/events", () => ({
   listenSessionsChanged: vi.fn(async () => () => {}),
   listenComputerUseEscape: vi.fn(async () => () => {}),
 }));
-vi.mock("@/lib/platform", () => ({
+// 展开真实模块再覆盖：`isWeb` 的真身在 transport、由 platform 再导出，
+// 整个 mock 掉会把它的其它导出（含 isWeb）一并抹掉——handleAddWorkspace
+// 第一行就读 isWeb，读不到会抛错并被它自己的 try/catch 吞掉，测试就会
+// 误判成「没调用 addWorkspace」。
+vi.mock("@/lib/platform", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/platform")>()),
+  isWeb: false,
   pickDirectory: vi.fn(async () => null),
 }));
 // 聚焦助手自带 rAF 重试窗口，单测里只关心语义。
@@ -305,5 +317,190 @@ describe("会话入口切回对话中心面", () => {
     expect(useFilesStore.getState().activeFilePath).toBeNull();
     expect(useGitStore.getState().diffView).toBeNull();
     expect(useBrowserStore.getState().activeId).not.toBeNull();
+  });
+});
+
+/**
+ * 首启（零工作区）的「新建会话」：用户点的是「新会话」，所以选完目录必须
+ * 接着把会话开出来——只登记目录会让输入框继续不可用，还看不出缺哪一步。
+ * 对齐 worktree 创建完成的既有范式（worktree/store.ts 的
+ * refreshWorkspaces().then(startNewChat)）。
+ */
+describe("首启无工作区时的新建会话", () => {
+  beforeEach(async () => {
+    useChatStore.setState({
+      activeEngine: "codex",
+      workspaces: [],
+      sessions: [],
+      openTabs: [],
+      active: null,
+      unseen: {},
+      actionError: null,
+    });
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+    await act(async () => {
+      root.render(<Harness />);
+    });
+  });
+
+  afterEach(async () => {
+    await act(async () => {
+      root.unmount();
+    });
+    container.remove();
+    vi.mocked(platform.pickDirectory).mockResolvedValue(null);
+    vi.restoreAllMocks();
+  });
+
+  it("选完目录后直接开出待发会话，而不是停在「已登记工作区」", async () => {
+    const picked = "/ws/picked";
+    vi.mocked(platform.pickDirectory).mockResolvedValue(picked);
+    // 断言落在 IPC 边界，而不是 spy store 的 addWorkspace：钩子在渲染时就把
+    // store 上的动作引用读进了闭包，事后再 vi.spyOn 替换属性，钩子用的仍是
+    // 旧引用（spy 永远 0 次）——测「真的登记了目录」要看它最终调用的 IPC。
+    vi.mocked(ipc.addWorkspace).mockClear();
+
+    await act(async () => {
+      sidebar.handleNewSession();
+      // 目录选择器是异步链路：等 addWorkspace 与随后的开会话落地。
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(platform.pickDirectory).toHaveBeenCalled();
+    expect(ipc.addWorkspace).toHaveBeenCalledWith(picked, undefined);
+    expect(useChatStore.getState().active).toEqual({
+      engine: "codex",
+      sessionId: null,
+      workspacePath: picked,
+    });
+    expect(useChatStore.getState().openTabs).toEqual([
+      { engine: "codex", sessionId: null, workspacePath: picked },
+    ]);
+  });
+
+  it("取消目录选择时不建会话（不留空标签页）", async () => {
+    vi.mocked(platform.pickDirectory).mockResolvedValue(null);
+
+    await act(async () => {
+      sidebar.handleNewSession();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(useChatStore.getState().active).toBeNull();
+    expect(useChatStore.getState().openTabs).toEqual([]);
+  });
+
+  it("登记失败时不建会话（不留下指向未登记目录的标签页）", async () => {
+    // store.addWorkspace 会吞掉异常只留 actionError；若「新建会话」据此仍往
+    // 下走，就会开出一个指向未登记目录的待发会话——正是要消灭的「输入框灰着」
+    // 形态，所以它必须把成功与否报回来（Promise<boolean>）。
+    vi.mocked(platform.pickDirectory).mockResolvedValue("/ws/denied");
+    vi.mocked(ipc.addWorkspace).mockRejectedValueOnce(new Error("拒绝访问"));
+
+    await act(async () => {
+      sidebar.handleNewSession();
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(ipc.addWorkspace).toHaveBeenCalledWith("/ws/denied", undefined);
+    expect(useChatStore.getState().active).toBeNull();
+    expect(useChatStore.getState().openTabs).toEqual([]);
+    // 失败原因仍要留给用户看（错误条由 store 负责）。
+    expect(useChatStore.getState().actionError).toBeTruthy();
+  });
+});
+
+/**
+ * 还没有任何标签页时输入框仍可输入，字落在 drafts[""]（sessionKey 在
+ * active === null 时返回空串）。这份草稿属于用户接下来的第一个会话，不能
+ * 随着会话建立而变成永远读不回来的孤儿——其他键变化本来就会迁移草稿
+ * （engine-events 的待发→真实 id、setActiveEngine 的引擎切换）。
+ */
+describe("首启草稿迁移", () => {
+  let container: HTMLDivElement;
+  let root: Root;
+
+  beforeEach(async () => {
+    useChatStore.setState({
+      activeEngine: "codex",
+      workspaces: [],
+      sessions: [],
+      openTabs: [],
+      active: null,
+      unseen: {},
+      drafts: {},
+    });
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+    await act(async () => {
+      root.render(<Harness />);
+    });
+  });
+
+  afterEach(async () => {
+    await act(async () => {
+      root.unmount();
+    });
+    container.remove();
+    useChatStore.setState({ drafts: {} });
+  });
+
+  it("开会话时把无归属草稿搬过去，并清掉空键", () => {
+    act(() => useChatStore.getState().setDraft(UNBOUND_DRAFT_KEY, "刚装好时敲的问题"));
+
+    act(() => useChatStore.getState().startNewChat("/ws/a"));
+
+    const drafts = useChatStore.getState().drafts;
+    expect(drafts["new:codex:/ws/a"]).toBe("刚装好时敲的问题");
+    expect(UNBOUND_DRAFT_KEY in drafts).toBe(false);
+  });
+
+  it("只搬一次：第二个工作区不会拿到同一份草稿", () => {
+    act(() => useChatStore.getState().setDraft(UNBOUND_DRAFT_KEY, "只属于第一个会话"));
+
+    act(() => useChatStore.getState().startNewChat("/ws/a"));
+    act(() => useChatStore.getState().startNewChat("/ws/b"));
+
+    const drafts = useChatStore.getState().drafts;
+    expect(drafts["new:codex:/ws/a"]).toBe("只属于第一个会话");
+    expect(drafts["new:codex:/ws/b"]).toBeUndefined();
+  });
+
+  it("目标键已有草稿时不覆盖它，无归属草稿仍留在空键上", () => {
+    act(() => {
+      useChatStore.getState().setDraft(UNBOUND_DRAFT_KEY, "无归属");
+      useChatStore.getState().setDraft("new:codex:/ws/a", "这个会话自己的草稿");
+    });
+
+    act(() => useChatStore.getState().startNewChat("/ws/a"));
+
+    const drafts = useChatStore.getState().drafts;
+    expect(drafts["new:codex:/ws/a"]).toBe("这个会话自己的草稿");
+    // 取舍 A：宁可不搬，也不静默丢弃用户已经敲下的字——草稿留在无归属键上，
+    // 等下一个「还没有草稿的会话」接手（下一条用例钉住这个去向）。
+    expect(drafts[UNBOUND_DRAFT_KEY]).toBe("无归属");
+  });
+
+  it("无归属草稿会被下一个还没有草稿的会话接手", () => {
+    act(() => {
+      useChatStore.getState().setDraft(UNBOUND_DRAFT_KEY, "无归属");
+      useChatStore.getState().setDraft("new:codex:/ws/a", "这个会话自己的草稿");
+    });
+
+    act(() => useChatStore.getState().startNewChat("/ws/a")); // 已有草稿 → 不接手
+    act(() => useChatStore.getState().startNewChat("/ws/b")); // 没有草稿 → 接手
+
+    const drafts = useChatStore.getState().drafts;
+    expect(drafts["new:codex:/ws/a"]).toBe("这个会话自己的草稿");
+    expect(drafts["new:codex:/ws/b"]).toBe("无归属");
+    expect(UNBOUND_DRAFT_KEY in drafts).toBe(false);
   });
 });

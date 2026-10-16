@@ -33,8 +33,11 @@ use tokio_tungstenite::tungstenite::Message;
 use super::{dsh_images, EngineEvent, SendRequest, TurnCore, TurnState, VirtualRunGuard};
 use crate::dsh_host::host_call;
 
-/// 提取并规范化上下文窗口字段
-fn attach_context_window(mut usage: Value) -> Value {
+/// 提取并规范化上下文窗口字段。DSH 的 `TokenUsage` 不带窗口，窗口只在
+/// `request/context` 事件里（`RequestContext.contextWindow`），所以调用方把
+/// 该事件缓存下来的值作为 `fallback` 传进来：usage 报告自带窗口时以它为准，
+/// 否则补上 host 声明的真实窗口——缺了它前端只剩 200k 假定值。
+fn attach_context_window(mut usage: Value, fallback: Option<i64>) -> Value {
     if usage.get("model_context_window").is_some() {
         return usage;
     }
@@ -48,7 +51,8 @@ fn attach_context_window(mut usage: Value) -> Value {
             Value::String(s) => s.parse().ok(),
             _ => None,
         })
-        .filter(|&w| w > 0);
+        .filter(|&w| w > 0)
+        .or(fallback.filter(|&w| w > 0));
 
     if let Some(w) = window {
         if let Some(obj) = usage.as_object_mut() {
@@ -57,6 +61,20 @@ fn attach_context_window(mut usage: Value) -> Value {
     }
 
     usage
+}
+
+/// `request/context` 的窗口通告（`RequestContext { provider, model,
+/// contextWindow? }`）：DSH 已发布事件里唯一的窗口来源。读出来缓存到 view，
+/// 供本轮的 usage 事件与 done 载荷补窗口。
+fn context_window_of(data: &Value) -> Option<i64> {
+    data.get("contextWindow")
+        .or_else(|| data.get("context_window"))
+        .and_then(|v| match v {
+            Value::Number(n) => n.as_i64(),
+            Value::String(s) => s.parse().ok(),
+            _ => None,
+        })
+        .filter(|&w| w > 0)
 }
 
 const STREAM_EVENTS: &str = "events";
@@ -83,6 +101,9 @@ struct TurnView {
     attempt_streamed_text: bool,
     last_usage: Option<Value>,
     turn_ended: bool,
+    /// `request/context` 通告的上下文窗口（本轮内有效）。usage 报告自带窗口时
+    /// 由它兜底，done 载荷也要带上，否则前端在回合结束时丢回 200k 假定值。
+    context_window: Option<i64>,
     /// `$events` clientId from the ready frame; required on every answer.
     events_client_id: Option<String>,
     /// callId → tool name from dispatched `tool/call` rows, so the matching
@@ -139,7 +160,12 @@ pub(crate) async fn run_host_turn(
         let usage = if killed.load(Ordering::SeqCst) {
             None
         } else {
-            view.last_usage.clone()
+            // 没有 usage 分片但 host 通告过窗口时，done 也要把窗口带上，
+            // 否则回合结束前端又掉回 200k 假定值。
+            view.last_usage
+                .clone()
+                .or_else(|| view.context_window.map(|window| json!({ "contextWindow": window })))
+                .map(|usage| attach_context_window(usage, view.context_window))
         };
         let session_id = state.native_session_id.clone();
         core.dispatch_event(&mut state, EngineEvent::Done { session_id, usage });
@@ -571,6 +597,15 @@ fn handle_session_event(
         // inactive 投影都是正常会话日志事件（PRD §5-DSH.6/7）——既不是
         // 审批退出路径（/plan off 不实现为退出捷径），也不是错误。
         "plan/mode" => {}
+        // 请求上下文：DSH 在这里通告本次请求的真实窗口（provider/model/
+        // contextWindow），是已发布事件里唯一的窗口来源——TokenUsage 与
+        // session/modelCatalog 都不带窗口。按请求配对：每个通告都覆盖缓存
+        // （不带窗口的通告清掉上一请求的值，窗口不会错配给下一个请求），
+        // 供本轮 usage/done 补窗口；丢掉它前端就只剩 200k 假定值（mify 的
+        // 1M 模型因此显示成 200k）。
+        "request/context" => {
+            view.context_window = context_window_of(data);
+        }
         _ => {} // user/message / step/* / system/message / title: UI noise here
     }
 }
@@ -604,11 +639,9 @@ fn handle_assistant_stream(
                 }
                 Some("usage") => {
                     if let Some(usage) = chunk.get("usage") {
-                        view.last_usage = Some(attach_context_window(usage.clone()));
-                        core.dispatch_event(
-                            state,
-                            EngineEvent::Usage(attach_context_window(usage.clone())),
-                        );
+                        let usage = attach_context_window(usage.clone(), view.context_window);
+                        view.last_usage = Some(usage.clone());
+                        core.dispatch_event(state, EngineEvent::Usage(usage));
                     }
                 }
                 _ => {} // block-start / block-end / tool-call-delta / finish
@@ -1846,6 +1879,114 @@ mod tests {
         assert_eq!(first_heading("#no-space"), None);
         assert_eq!(first_heading("# "), None);
         assert_eq!(first_heading("no heading at all"), None);
+    }
+
+    /// The host announces the request's real window on `request/context`
+    /// (`RequestContext { provider, model, contextWindow? }` — the only carrier
+    /// of a window in DSH's published session events; `session/modelCatalog`
+    /// entries and `TokenUsage` both carry none). Dropping it left the UI on
+    /// the 200k assumed fallback, so a 1M-capable provider (mify's
+    /// `tongyi/deepseek-v4.1-flash`, contextWindow: 1000000) read as 200k.
+    #[tokio::test]
+    async fn request_context_window_reaches_usage_events() {
+        let (core, _registry, emitter) = test_core();
+        let mut state = TurnState::new(None);
+        let mut view = TurnView::default();
+
+        // The host's window announcement, before the turn's usage chunk.
+        handle_session_event(
+            &core,
+            &mut state,
+            &mut view,
+            "request/context",
+            &json!({
+                "provider": "mify",
+                "model": "tongyi/deepseek-v4.1-flash",
+                "contextWindow": 1_000_000
+            }),
+        );
+        handle_assistant_stream(
+            &core,
+            &mut state,
+            &mut view,
+            &json!({
+                "type": "assistant-stream",
+                "frame": {
+                    "type": "chunk",
+                    "chunk": {
+                        "type": "usage",
+                        "usage": { "inputTokens": 900_000, "outputTokens": 50 }
+                    }
+                }
+            }),
+        );
+        core.sink.flush();
+
+        let events = emitter.0.lock().unwrap().clone();
+        let usage = collect_kinds(&events)
+            .into_iter()
+            .find(|(kind, _)| kind == "usage")
+            .map(|(_, data)| data)
+            .expect("a usage event must be emitted for the chunk");
+        assert_eq!(
+            usage.get("model_context_window").and_then(Value::as_i64),
+            Some(1_000_000),
+            "the window announced by request/context must reach the usage event: {usage}"
+        );
+    }
+
+    /// Windows pair per request: a `request/context` without a window clears
+    /// the previous announcement instead of lending it to the next request
+    /// (e.g. a subagent on a different model mid-turn).
+    #[tokio::test]
+    async fn request_context_without_window_clears_the_previous_one() {
+        let (core, _registry, emitter) = test_core();
+        let mut state = TurnState::new(None);
+        let mut view = TurnView::default();
+
+        handle_session_event(
+            &core,
+            &mut state,
+            &mut view,
+            "request/context",
+            &json!({ "provider": "mify", "model": "m", "contextWindow": 1_000_000 }),
+        );
+        // The next request announces no window: the cached 1M must not leak.
+        handle_session_event(
+            &core,
+            &mut state,
+            &mut view,
+            "request/context",
+            &json!({ "provider": "mify", "model": "m-small" }),
+        );
+        handle_assistant_stream(
+            &core,
+            &mut state,
+            &mut view,
+            &json!({
+                "type": "assistant-stream",
+                "frame": {
+                    "type": "chunk",
+                    "chunk": {
+                        "type": "usage",
+                        "usage": { "inputTokens": 100, "outputTokens": 5 }
+                    }
+                }
+            }),
+        );
+        core.sink.flush();
+
+        let events = emitter.0.lock().unwrap().clone();
+        let usage = collect_kinds(&events)
+            .into_iter()
+            .find(|(kind, _)| kind == "usage")
+            .map(|(_, data)| data)
+            .expect("a usage event must be emitted for the chunk");
+        assert_eq!(
+            usage.get("model_context_window"),
+            None,
+            "a window-less request/context must clear the cached window: {usage}"
+        );
     }
 
     /// Flatten the sink's batched flushes into (kind, data) pairs.

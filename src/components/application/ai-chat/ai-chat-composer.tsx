@@ -100,6 +100,11 @@ export interface ComposerProps {
   streaming?: boolean;
   /** Greys out send. */
   disabled?: boolean;
+  /** Why send is inert ("prerequisite not met"). Carried to the send control as
+   *  a tooltip + `aria-disabled` instead of a bare grey button: a native
+   *  `disabled` receives neither hover nor focus, so the reason could never be
+   *  read (same rule as the auto-compact switch in agent-limits-card). */
+  disabledReason?: string;
   /** Slot for the add-attachment menu (template AddMenu). */
   addMenu?: ReactNode;
   /** Slot for the CLI + model switcher (CliMenu). */
@@ -115,6 +120,10 @@ export interface ComposerProps {
   onPastePaths?: (paths: string[]) => void;
   /** Active workspace root: enables the `@` file-mention picker. */
   workspacePath?: string;
+  /** Overrides the input's placeholder. Set when the send gesture is blocked by
+   *  a missing prerequisite, so the field stops advertising an Enter that is
+   *  swallowed in that state. */
+  placeholder?: string;
 }
 
 export function Composer({
@@ -126,6 +135,7 @@ export function Composer({
   onStop,
   streaming = false,
   disabled = false,
+  disabledReason,
   addMenu,
   cliMenu,
   permissionMenu,
@@ -133,6 +143,7 @@ export function Composer({
   onPasteImages,
   onPastePaths,
   workspacePath,
+  placeholder,
 }: ComposerProps = {}) {
   const editableRef = useRef<HTMLDivElement>(null);
   // Track active IME composition synchronously; ComposerEditable also checks
@@ -325,6 +336,7 @@ export function Composer({
           onPasteImages={onPasteImages}
           onPastePaths={onPastePaths}
           manualHeightPx={manualHeightPx}
+          placeholder={placeholder}
         />
       )}
 
@@ -335,6 +347,7 @@ export function Composer({
           permissionMenu={permissionMenu}
           streaming={streaming}
           disabled={disabled}
+          disabledReason={disabledReason}
           onStop={onStop}
           onSend={() => onSubmit?.(value ?? "")}
         />

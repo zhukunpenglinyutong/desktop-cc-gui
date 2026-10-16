@@ -49,8 +49,13 @@ export function createWorkspaceActions(
         await ipc.addWorkspace(path, meta);
         await get().refreshWorkspaces();
         set({ actionError: null });
+        // 登记失败只 set actionError 会让调用方以为成功：「新建会话」据此接着
+        // 开出的待发会话会指向一个并未登记的目录，恰好复现输入框不可用的形态。
+        // 返回成功与否，让调用方决定要不要往下走（错误条仍由这里负责）。
+        return true;
       } catch (error) {
         set({ actionError: errorText(error) });
+        return false;
       }
     },
 

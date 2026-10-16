@@ -63,6 +63,42 @@ describe("parseUsage", () => {
     });
   });
 
+  it("reads DSH's camelCase counters as disjoint buckets", () => {
+    // DSH reports TokenUsage in camelCase, and its counts are disjoint:
+    // inputTokens is uncached input only, cache read/write are separate (billed
+    // input = the three summed). Without these aliases all four buckets read 0
+    // — only totalTokens survived — so the breakdown collapsed to a single
+    // total row, per-message readouts vanished, and the ledger dropped the row
+    // outright (usage_record skips a report whose four buckets sum to zero).
+    const parsed = parseUsage({
+      inputTokens: 1000,
+      outputTokens: 50,
+      cacheReadTokens: 200,
+      cacheWriteTokens: 10,
+      totalTokens: 1260,
+    });
+    expect(parsed).toMatchObject({
+      input: 1000,
+      output: 50,
+      cacheRead: 200,
+      cacheWrite: 10,
+      total: 1260,
+    });
+    // Disjoint like claude: the cache volume must stay outside input (the
+    // codex-only `cached_input_tokens` heuristic must not fire here).
+    expect(
+      parsed!.input + parsed!.output + parsed!.cacheRead + parsed!.cacheWrite,
+    ).toBe(parsed!.total);
+    // Every bucket survives the breakdown, so the stacked bar keeps its four
+    // segments instead of falling back to the single total row.
+    expect(
+      usageBreakdown(
+        { inputTokens: 1000, outputTokens: 50, cacheReadTokens: 200, cacheWriteTokens: 10, totalTokens: 1260 },
+        100_000,
+      )?.parts.map((p) => p.kind),
+    ).toEqual(["input", "output", "cacheRead", "cacheWrite"]);
+  });
+
   it("reads a flattened last-turn snapshot with the window copied on", () => {
     const parsed = parseUsage({
       input_tokens: 34_660,
@@ -87,6 +123,18 @@ describe("mergeUsage", () => {
       model_context_window: 475_000,
     });
 });
+
+  it("folds a window-only report into the previous tokens instead of replacing them", () => {
+    const merged = mergeUsage(
+      { contextWindow: 1_000_000, model_context_window: 1_000_000 },
+      { input_tokens: 900_000, output_tokens: 50, total_tokens: 900_050, model_context_window: 200_000 },
+    );
+    expect(merged).toMatchObject({
+      input_tokens: 900_000,
+      total_tokens: 900_050,
+      model_context_window: 1_000_000,
+    });
+  });
 
 describe("usageBreakdown", () => {
   /** 验证空用量安全返回 null */

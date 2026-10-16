@@ -173,8 +173,8 @@
   /* Font families — variable fonts loaded locally via @fontsource-variable
    * (imported at the top of src/index.css). Referenced by --font-sans and
    * --font-mono in @theme above. */
-  --font-inter: "Inter Variable", ui-sans-serif, system-ui, sans-serif;
-  --font-mono-source: "JetBrains Mono Variable", ui-monospace, monospace;
+  --font-inter: "Inter Variable";
+  --font-mono-source: "JetBrains Mono Variable";
   /* Re-assert the theme font stacks UNLAYERED (values must stay in sync with
    * the @theme block above). Plugin bundles are injected in `@layer
    * ccgui-plugins`, which outranks the `theme` layer, and a plugin built with

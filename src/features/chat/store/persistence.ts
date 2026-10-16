@@ -32,6 +32,11 @@ export function sessionKey(
     : `new:${engine}:${workspacePath}`;
 }
 
+/** 还没有任何标签页时的草稿归属（`sessionKey` 在 `active === null` 时返回的
+ *  空串）。输入框此时仍可输入，字就落在这个键上——它属于用户接下来的第一个
+ *  会话，`startNewChat` 会把这份草稿搬过去并删掉本键（见 store/tabs.ts）。 */
+export const UNBOUND_DRAFT_KEY = "";
+
 /** `sessionKey` 待发键的逆：插件轮次（ctx.sessions.startRun）不占标签页，
  *  会话事件里的工作区只能从路由键取（见 engine-events onSession）。非待发
  *  键返回 ""，调用方继续走原来的回落。 */

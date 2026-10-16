@@ -4,8 +4,11 @@ Open `/tests/browser/interface-typography.html` for the real General settings
 controls with in-memory persistence. Expand Advanced and change the UI,
 content and code sizes independently using px inputs (blur or Enter to save).
 UI text preserves its hierarchy and weight options; chat prose and code have
-separate size controls, while terminal typography, icons and padding stay fixed.
-Reset restores all four typography fields. This does not change the running app.
+separate size controls. Code fonts and sizes apply to inline/fenced code, real
+CodeMirror, diffs and a real xterm terminal; icons and padding stay fixed.
+Select Custom font family to enter a local CSS family list (placeholder only);
+Custom remains a separate desktop file-upload category. Reset restores only the
+four typography fields, not fonts. Persistence is fixture-only, not the running app.
 
 Open `/tests/browser/concurrent-status.html` for concurrent session indicators:
 the real `AiChatSidebar` and `SessionTab` each render 1, 6 (default), or 12

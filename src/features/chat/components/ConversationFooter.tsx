@@ -180,6 +180,18 @@ function FooterComposer({
   onPastePaths?: (paths: string[]) => void;
 }) {
   const wide = useChatStore((s) => s.wideLayout);
+  const { t } = useTranslation();
+  // 「前置条件未满足」的原因：发送键用它做 tooltip，输入框用它顶掉那句会
+  // 骗人的「Enter 发送」——那种状态下 Enter 会被 onKeyDown 的守卫直接丢弃。
+  // 别复用 chat.noEngineEnabled：那句带「点击前往设置」，是给旁边那颗真会跳
+  // 设置页的按钮用的；这里点击被守卫拦住，用它就成了空头承诺。
+  const blockedReason = !active
+    ? t("chat.sendBlockedNoSession")
+    : noEnabledEngines
+      ? t("chat.sendBlockedNoEngine")
+      : undefined;
+  // 占位提示用输入框口吻的那句「再在这里输入」；其余情形沿用发送键的原因。
+  const blockedPlaceholder = !active ? t("chat.inputBlockedNoSession") : blockedReason;
   return (
     <Composer
       className={centerColumnClass(wide)}
@@ -190,6 +202,8 @@ function FooterComposer({
       onStop={onStop}
       streaming={streaming}
       disabled={!active || noEnabledEngines || (!draft.trim() && images.length === 0)}
+      disabledReason={blockedReason}
+      placeholder={blockedPlaceholder}
       inputRef={composerInputRef}
       addMenu={<>{addMenu}<ComposerSlotExtras slot="addMenu" /></>}
       cliMenu={<>{cliMenu}<ComposerSlotExtras slot="cliMenu" /></>}

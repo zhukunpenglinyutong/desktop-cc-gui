@@ -125,7 +125,9 @@ export interface ChatStore {
    * history list, migrating the engine pref off a disabled CLI. */
   refreshEngines: () => Promise<void>;
   refreshWorkspaces: () => Promise<void>;
-  addWorkspace: (path: string, meta?: Record<string, unknown>) => Promise<void>;
+  /** 登记工作区。返回是否登记成功——失败时只留 actionError，「新建会话」
+   *  据此决定要不要接着开待发会话（见 use-chat-sidebar 的 handleAddWorkspace）。 */
+  addWorkspace: (path: string, meta?: Record<string, unknown>) => Promise<boolean>;
   reorderWorkspaces: (ids: string[]) => Promise<void>;
   removeWorkspace: (id: string) => Promise<void>;
   selectSession: (

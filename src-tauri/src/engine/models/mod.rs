@@ -156,6 +156,13 @@ pub async fn list_engine_models(
     engine: String,
     workspace: Option<String>,
 ) -> Result<EngineCatalog, String> {
+    // 停用 (设置 → CLI 管理) gates the catalog too: every branch below either
+    // runs the engine's CLI here or asks the distro to (`opencode models`,
+    // `mcode acp`, …), and a user who turned the engine off must not see it
+    // launched — the chat picker and the plugin agent catalog already hide
+    // disabled engines, so no consumer needs this answer. Same contract as the
+    // send path (config::ensure_engine_enabled).
+    crate::config::ensure_engine_enabled(&engine)?;
     // WSL 工作区:模型目录必须来自发行版内的 CLI(探针 bin),不是本机。
     if let Some(ws) = workspace.as_deref() {
         if let Some(transport) =

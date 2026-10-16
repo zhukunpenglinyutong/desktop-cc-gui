@@ -12,6 +12,7 @@ import {
   EMPTY_SESSION,
   applyStreamParts,
   drainPending,
+  moveRetryingFlag,
   moveStreamingFlag,
   patchSession,
   resolveSessionModel,
@@ -514,11 +515,21 @@ export function createMessagingActions(
             s.active.workspacePath === tab.workspacePath
               ? { ...s.active, sessionId: result.sessionId, effort: undefined }
               : s.active;
+          // The draft typed while the CLI was starting follows the tab to the
+          // native key: the composer reads the native key afterwards, so a
+          // draft left under `new:` would read back as "" and wipe the field.
+          const drafts = { ...s.drafts };
+          if (newKey !== key && drafts[key] !== undefined) {
+            if (drafts[newKey] === undefined) drafts[newKey] = drafts[key];
+            delete drafts[key];
+          }
           return {
             bySession,
             openTabs,
             active,
+            drafts,
             streamingByKey: moveStreamingFlag(s.streamingByKey, key, newKey),
+            retryingByKey: moveRetryingFlag(s.retryingByKey, key, newKey),
           };
         });
         persistTabs(get().openTabs, get().active);

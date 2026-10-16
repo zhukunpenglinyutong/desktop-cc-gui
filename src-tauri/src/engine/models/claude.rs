@@ -179,10 +179,18 @@ impl CliModelConfig {
     /// The CLI's effective default model id: env.ANTHROPIC_MODEL beats the
     /// `model` key (the CLI applies settings env as real environment
     /// variables); a bare family alias there resolves through its override.
+    /// A `[1m]` suffix on the raw default survives the override, the same
+    /// contract as the launch selector — otherwise the "default" route
+    /// would silently downgrade a 1M pick.
     fn resolved_default(&self) -> Option<String> {
         let raw = self.env_model.as_deref().or(self.model_key.as_deref())?;
         let family = raw.strip_suffix("[1m]").unwrap_or(raw);
-        Some(self.override_for(family).unwrap_or(raw).to_string())
+        let resolved = self.override_for(family).unwrap_or(raw);
+        Some(if family.len() != raw.len() && !resolved.ends_with("[1m]") {
+            format!("{resolved}[1m]")
+        } else {
+            resolved.to_string()
+        })
     }
 }
 
@@ -207,9 +215,20 @@ fn resolve_launch_model_from(config: &CliModelConfig, selector: &str) -> String 
             .resolved_default()
             .unwrap_or_else(|| selector.to_string());
     }
+    // 用户显式选了「1M 变体」（`<family>[1m]`）：后缀只用于查家族映射，命中
+    // 覆盖时把它接回映射值上——曾经这里返回不带后缀的覆盖值，官方配置下同一
+    // 个后缀被静默吞掉，1M 请求降级成普通窗口，而渠道侧（claude_channel）是
+    // 保留的。未命中覆盖时 `unwrap_or_else` 已原样返回选择器，不动。
+    let wants_1m = bare != selector;
     config
         .override_for(bare)
-        .map(str::to_string)
+        .map(|resolved| {
+            if wants_1m && !resolved.ends_with("[1m]") {
+                format!("{resolved}[1m]")
+            } else {
+                resolved.to_string()
+            }
+        })
         .unwrap_or_else(|| selector.to_string())
 }
 
@@ -274,6 +293,9 @@ fn comparison_model_from(
         selector.to_string()
     };
     let bare = selector.strip_suffix("[1m]").unwrap_or(&selector);
+    // 比对值是「具体模型名」，不是启动器：`[1m]` 属于选择器/启动侧约定，server
+    // 上报的模型名不带它——前端 compareModel 的 bareModel 也是先剥掉 `[1m]` 再比。
+    // 所以这里保持既有的「剥后缀」语义，只有启动值那条路需要把它接回去。
     let mapped = config.override_for(bare).unwrap_or(bare);
     if !CLI_ALIASES.iter().any(|(alias, _)| *alias == mapped) {
         return Some(mapped.to_string());
@@ -463,9 +485,12 @@ mod tests {
             resolve_launch_model_from(&config, "opus"),
             "gemini-3.8-flash"
         );
+        // `<family>[1m]` + 覆盖：用户点的是「1M 变体」，后缀必须跟到映射值上。
+        // 曾经这里返回不带后缀的覆盖值——同一个后缀在渠道侧（claude_channel）
+        // 会被保留、在官方配置侧被吞掉，1M 请求静默降级成普通窗口。
         assert_eq!(
             resolve_launch_model_from(&config, "opus[1m]"),
-            "gemini-3.8-flash"
+            "gemini-3.8-flash[1m]"
         );
         // "default" → the CLI's configured default, override applied.
         assert_eq!(
@@ -550,7 +575,19 @@ mod tests {
                 .into_iter()
                 .collect(),
         };
-        assert_eq!(config.resolved_default().as_deref(), Some("grok-4.5"));
+        // 默认模型写成 `<family>[1m]` 且命中覆盖：后缀跟到映射值上，
+        // 与 resolve_launch_model_from 的选择器路径同一条约定。
+        assert_eq!(config.resolved_default().as_deref(), Some("grok-4.5[1m]"));
+        // 覆盖值自带 `[1m]` 时不叠双后缀。
+        let config = CliModelConfig {
+            provider_flags: Default::default(),
+            env_model: None,
+            model_key: Some("opus[1m]".to_string()),
+            overrides: [("opus".to_string(), "grok-4.5[1m]".to_string())]
+                .into_iter()
+                .collect(),
+        };
+        assert_eq!(config.resolved_default().as_deref(), Some("grok-4.5[1m]"));
         // A raw id passes through untouched.
         let config = CliModelConfig {
             env_model: Some("k3".to_string()),
@@ -602,6 +639,12 @@ mod tests {
         );
         assert_eq!(
             comparison_model_from("opus", &config, Some(&registry)).as_deref(),
+            Some("custom-opus")
+        );
+        // 1M 变体的比对值同样是「具体模型名」：bareModel 会先剥掉 `[1m]` 再比，
+        // 徽标左侧已经显示用户选的 `opus[1m]`，右侧该给实际模型名。
+        assert_eq!(
+            comparison_model_from("opus[1m]", &config, Some(&registry)).as_deref(),
             Some("custom-opus")
         );
         assert_eq!(

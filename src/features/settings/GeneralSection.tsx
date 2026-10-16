@@ -33,6 +33,7 @@ import {
   ensureCustomFontLoaded,
   fontErrorMessage,
   fontRole,
+  isValidFontFamily,
   normalizeFontMode,
   type FontField,
   type FontPreferences,
@@ -212,26 +213,37 @@ function useGeneralSettingsState() {
     useChatStore.getState().setWideLayout(wide);
     void save({ chatWideLayout: wide });
   };
-  /** Font mode commits (默认 / 系统 / 自定义): apply to the document root at
-   *  once (bootstrap re-reads the mirror on the next launch) and persist.
-   *  Entering 自定义 with an uploaded file re-applies that file right away;
-   *  without one the row keeps the mode open until a file is picked. */
-  const onFontModeChange = (field: FontField, value: string) => {
-    if (!settings) return;
-    const next = { ...settings, [field]: value };
-    setSettings(next);
-    applyFontPreferences(fontPreferencesOf(next));
-    void save({ [field]: value });
-    const path = value === "custom" ? next[field === "fontFamily" ? "fontFile" : "codeFontFile"] : "";
-    if (path) {
-      void ensureCustomFontLoaded(fontRole(field), path).catch((e) =>
-        setError(fontErrorMessage(e, t)),
-      );
+  /** Font-family changes share one save path; a failed save restores the
+   *  applied font and cache instead of leaving a temporary choice active. */
+  const onFontModeChange = async (field: FontField, value: string): Promise<boolean> => {
+    if (!settings || fontBusy || typographyBusy) return false;
+    const normalized = normalizeFontMode(value);
+    const next = { ...settings, [field]: normalized };
+    setFontBusy(field);
+    try {
+      const path = next[field === "fontFamily" ? "fontFile" : "codeFontFile"];
+      if (normalized === CUSTOM_FONT_VALUE && path) {
+        // Explicitly returning to file mode retries a failed startup load.
+        await ensureCustomFontLoaded(fontRole(field), path, { force: true });
+      }
+      setSettings(next);
+      applyFontPreferences(fontPreferencesOf(next));
+      const saved = await save({ [field]: normalized });
+      if (!saved) {
+        setSettings(settings);
+        applyFontPreferences(fontPreferencesOf(settings));
+      }
+      return saved;
+    } catch (e) {
+      setError(fontErrorMessage(e, t));
+      return false;
+    } finally {
+      setFontBusy(null);
     }
   };
 
   const onTypographyChange = async (patch: InterfaceTypographyPreferences) => {
-    if (!settings || typographyBusy) return;
+    if (!settings || typographyBusy || fontBusy) return;
     const next = { ...settings, ...patch };
     setTypographyBusy(true);
     setSettings(next);
@@ -244,22 +256,26 @@ function useGeneralSettingsState() {
     setTypographyBusy(false);
   };
 
-  /** 上传字体：读取并注册成功后才落设置（失败保留原选择并报错）。 */
+  /** 上传字体：加载、保存成功后才替换设置；取消或失败保留原选择。 */
   const onFontFilePick = async (field: FontField): Promise<boolean> => {
-    if (!settings) return false;
-    const path = await pickFile(t("settings.fontPickTitle"), [
-      { name: t("settings.fontFileFilter"), extensions: FONT_FILE_EXTENSIONS },
-    ]);
-    if (!path) return false;
+    if (!settings || fontBusy || typographyBusy) return false;
     setFontBusy(field);
     try {
+      const path = await pickFile(t("settings.fontPickTitle"), [
+        { name: t("settings.fontFileFilter"), extensions: FONT_FILE_EXTENSIONS },
+      ]);
+      if (!path) return false;
       await ensureCustomFontLoaded(fontRole(field), path, { force: true });
       const fileField = field === "fontFamily" ? "fontFile" : "codeFontFile";
-      const next = { ...settings, [field]: "custom", [fileField]: path };
-      setSettings(next);
+      const next = { ...settings, [field]: CUSTOM_FONT_VALUE, [fileField]: path };
+      const saved = await save({ [field]: CUSTOM_FONT_VALUE, [fileField]: path });
+      if (!saved) {
+        if (settings[field] === CUSTOM_FONT_VALUE && settings[fileField]) {
+          await ensureCustomFontLoaded(fontRole(field), settings[fileField], { force: true });
+        }
+        return false;
+      }
       applyFontPreferences(fontPreferencesOf(next));
-      void save({ [field]: "custom", [fileField]: path });
-      setError(null);
       return true;
     } catch (e) {
       setError(fontErrorMessage(e, t));
@@ -317,7 +333,7 @@ function AppearanceCard({
   onLanguageChange: (key: Key | null) => void;
   typographyBusy: boolean;
   onTypographyChange: (patch: InterfaceTypographyPreferences) => Promise<void>;
-  onFontModeChange: (field: FontField, value: string) => void;
+  onFontModeChange: (field: FontField, value: string) => Promise<boolean>;
   onFontFilePick: (field: FontField) => Promise<boolean>;
   onThreadLimitChange: (value: string) => void;
   onThreadLimitCommit: () => void;
@@ -399,7 +415,7 @@ function AppearanceCard({
           label={t("settings.fontFamily")}
           value={settings.fontFamily ?? ""}
           filePath={settings.fontFile ?? ""}
-          busy={fontBusy === "fontFamily"}
+          busy={fontBusy !== null || typographyBusy}
           onModeChange={(mode) => onFontModeChange("fontFamily", mode)}
           onPickFile={() => onFontFilePick("fontFamily")}
         />
@@ -409,7 +425,7 @@ function AppearanceCard({
           description={t("settings.codeFontFamilyDesc")}
           value={settings.codeFontFamily ?? ""}
           filePath={settings.codeFontFile ?? ""}
-          busy={fontBusy === "codeFontFamily"}
+          busy={fontBusy !== null || typographyBusy}
           onModeChange={(mode) => onFontModeChange("codeFontFamily", mode)}
           onPickFile={() => onFontFilePick("codeFontFamily")}
         />
@@ -432,7 +448,7 @@ function AppearanceCard({
       </SettingsCard>
       <TypographyCard
         settings={settings}
-        busy={typographyBusy}
+        busy={typographyBusy || fontBusy !== null}
         onChange={onTypographyChange}
       />
     </div>
@@ -602,14 +618,8 @@ function ZoomRow() {
   );
 }
 
-/** One font row (界面字体 / 代码字体): 系统默认 / 自定义 select. 自定义 shows
- *  a file picker instead of a family list — the picked file is read through
- *  the backend, registered as this row's custom family (font.ts) and applied
- *  at once; the path stays in settings, so returning to 自定义 re-applies it
- *  without uploading again. `customActive` pins the mode select on 自定义
- *  while no file has been picked yet (the stored value is still the old
- *  mode). Web access has no native dialog (and no local file to read), so the
- *  custom option only exists on desktop. */
+/** Uploaded files and typed family lists are separate choices. Empty pending
+ *  choices stay local until a file or valid family has been saved. */
 function FontFamilyRow({
   anchor,
   label,
@@ -626,55 +636,113 @@ function FontFamilyRow({
   value: string;
   filePath: string;
   busy: boolean;
-  onModeChange: (value: string) => void;
+  onModeChange: (value: string) => Promise<boolean>;
   onPickFile: () => Promise<boolean>;
 }) {
   const { t } = useTranslation();
-  const [customActive, setCustomActive] = useState(false);
-  const canCustomize = !isWeb;
-  const isCustomValue = canCustomize && normalizeFontMode(value) === CUSTOM_FONT_VALUE;
-  const custom = customActive || isCustomValue;
-  const mode = custom ? "custom" : "default";
+  const normalized = normalizeFontMode(value);
+  const uploaded = normalized === CUSTOM_FONT_VALUE;
+  const savedText = uploaded ? "" : normalized;
+  const savedMode = uploaded ? "custom" : normalized ? "family" : "default";
+  const [pendingMode, setPendingMode] = useState<"custom" | "family" | null>(null);
+  const [text, setText] = useState(savedText);
+  const [invalid, setInvalid] = useState(false);
+  useEffect(() => {
+    setText(savedText);
+    setInvalid(false);
+    setPendingMode(null);
+  }, [savedText, uploaded]);
+  const mode = pendingMode ?? savedMode;
+  const commit = async () => {
+    if (mode !== "family" || text.trim() === savedText) return;
+    if (text.trim() === CUSTOM_FONT_VALUE || text.trim() === "system" || !isValidFontFamily(text)) {
+      setInvalid(true);
+      return;
+    }
+    const saved = await onModeChange(text.trim());
+    if (!saved) setText(savedText);
+    else setPendingMode(null);
+  };
 
   return (
     <SettingsRow anchor={anchor} label={label} description={description}>
-      <div className="flex items-center gap-2">
+      <div className="flex w-72 max-w-[60%] shrink-0 flex-col items-end">
         <Select
           aria-label={label}
           selectedKey={mode}
+          isDisabled={busy}
           onSelectionChange={(key) => {
             if (key == null) return;
-            const next = String(key);
-            if (next === "custom") {
-              setCustomActive(true);
-              // 已上传过文件：直接重新应用，不必再选一次。
-              if (filePath) onModeChange("custom");
-              return;
+            setInvalid(false);
+            if (key === "family") {
+              setPendingMode("family");
+            } else if (key === "custom") {
+              setPendingMode("custom");
+              if (filePath && !uploaded) {
+                void onModeChange(CUSTOM_FONT_VALUE).then((saved) => {
+                  // 保存失败时回退到实际生效的选项，与 default 分支行为一致。
+                  if (!saved) setPendingMode(null);
+                });
+              }
+            } else {
+              setPendingMode(null);
+              setText("");
+              void onModeChange("");
             }
-            setCustomActive(false);
-            onModeChange("");
           }}
           triggerClassName={SELECT_TRIGGER}
         >
           <SelectItem id="default">{t("settings.fontDefault")}</SelectItem>
-          {canCustomize && <SelectItem id="custom">{t("settings.fontCustom")}</SelectItem>}
+          {(!isWeb || uploaded) && (
+            <SelectItem id="custom" isDisabled={isWeb}>
+              {t("settings.fontCustom")}
+            </SelectItem>
+          )}
+          <SelectItem id="family">{t("settings.fontCustomFamily")}</SelectItem>
         </Select>
-        {custom && (
-          <Button
-            size="small"
-            variant="secondary"
-            leadingIcon={Upload}
-            disabled={busy}
-            onClick={() => {
-              void onPickFile().then((picked) => {
-                if (picked) setCustomActive(false);
-              });
-            }}
-          >
-            <span className="block max-w-56 truncate" title={filePath || undefined}>
-              {filePath ? fileName(filePath) : t("settings.fontChooseFile")}
-            </span>
-          </Button>
+        <Collapsible open={mode === "family"} seconds={0.2} className="w-full">
+          <div className="pt-2">
+            <Input
+              aria-label={`${label} font-family`}
+              size="small"
+              value={text}
+              placeholder={t("settings.fontFamilyPlaceholder")}
+              hint={invalid ? t("settings.fontFamilyInvalid") : undefined}
+              isInvalid={invalid}
+              isDisabled={busy || mode !== "family"}
+              onChange={(next) => {
+                setText(next);
+                setInvalid(false);
+              }}
+              onBlur={() => void commit()}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  (event.target as HTMLInputElement).blur();
+                } else if (event.key === "Escape") {
+                  setText(savedText);
+                  setInvalid(false);
+                }
+              }}
+            />
+          </div>
+        </Collapsible>
+        {!isWeb && (
+          <Collapsible open={mode === "custom"} seconds={0.2} className="max-w-full">
+            <div className="pt-2">
+              <Button
+                size="small"
+                variant="secondary"
+                leadingIcon={Upload}
+                disabled={busy || mode !== "custom"}
+                onClick={() => void onPickFile()}
+              >
+                <span className="block max-w-56 truncate" title={filePath || undefined}>
+                  {filePath ? fileName(filePath) : t("settings.fontChooseFile")}
+                </span>
+              </Button>
+            </div>
+          </Collapsible>
         )}
       </div>
     </SettingsRow>
