@@ -7,6 +7,7 @@ import ChevronRight from "lucide-react/dist/esm/icons/chevron-right";
 import { cx } from "@/utils/cx";
 import { StepRow, type TaskListChip } from "@/components/application/task-list/task-list";
 import { getFileTreeIconSvg } from "@/features/files/fileIcons";
+import { useOpenChatFilePath } from "@/features/chat/open-chat-file";
 import { markToolKeys, toolEntranceKey, type ProcessItem } from "./timeline-rows";
 import { ToolPayloadViewer } from "./ToolPayloadViewer";
 import { useLiveReveal } from "./use-live-reveal";
@@ -33,7 +34,10 @@ function toolTypeKey(text: string): string {
  * path-less calls get no chip — a pattern is not a file you can open, and a
  * URL's last segment (search targets like `artifact://0` → "0") would render
  * as a meaningless folder chip. */
-function fileChipFor(path: string | null | undefined): TaskListChip | null {
+function fileChipFor(
+  path: string | null | undefined,
+  onOpen?: ((path: string) => void) | null,
+): TaskListChip | null {
   if (!path || /[*?{}[\]]/.test(path) || path.includes("://")) return null;
   // Read selectors (`file.ts:301-591:raw`, `img.svg:img`) are read modifiers,
   // not part of the file name — strip trailing `:` segments that are line
@@ -46,7 +50,8 @@ function fileChipFor(path: string | null | undefined): TaskListChip | null {
       segments.pop();
     } else break;
   }
-  const name = segments.join(":").split(/[\\/]/).pop() ?? "";
+  const target = segments.join(":");
+  const name = target.split(/[\\/]/).pop() ?? "";
   if (!name || name === "." || name === "..") return null;
   // Same heuristic as the composer file tags: extension-less = folder.
   const isDir = !name.includes(".");
@@ -59,6 +64,16 @@ function fileChipFor(path: string | null | undefined): TaskListChip | null {
         dangerouslySetInnerHTML={{ __html: getFileTreeIconSvg(name, isDir) }}
       />
     ),
+    // Folders have no file to open; every other target opens in the center
+    // editor, which is also where image targets land (ImageFileView +
+    // lightbox), so clicking a screenshot's chip previews it.
+    ...(onOpen && !isDir
+      ? {
+          title: target,
+          selectLabel: name,
+          onSelect: () => onOpen(target),
+        }
+      : {}),
   };
 }
 
@@ -113,6 +128,7 @@ const FrozenStepRow = memo(function FrozenStepRow({
   first,
   last,
   index,
+  onOpenPath,
 }: {
   play: boolean;
   text: string;
@@ -122,12 +138,14 @@ const FrozenStepRow = memo(function FrozenStepRow({
   first: boolean;
   last: boolean;
   index: number;
+  /** Opens a tool call's target file; null disables the chip affordance. */
+  onOpenPath?: ((path: string) => void) | null;
 }) {
   const reduceRef = useRef(!play);
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const hasPayload = args != null || result != null;
-  const fileChip = fileChipFor(path);
+  const fileChip = fileChipFor(path, onOpenPath);
   const step = {
     label: text,
     chips: [
@@ -336,6 +354,7 @@ function ProcessDisclosureBody({
   processId,
   seenTools,
   searchTarget,
+  onOpenPath,
 }: {
   items: ProcessItem[];
   expanded: boolean;
@@ -344,6 +363,7 @@ function ProcessDisclosureBody({
   processId: number;
   seenTools: Set<string>;
   searchTarget?: ProcessSearchTarget;
+  onOpenPath?: ((path: string) => void) | null;
 }) {
   const { t } = useTranslation();
   const bodyRef = useRef<HTMLDivElement>(null);
@@ -412,6 +432,7 @@ function ProcessDisclosureBody({
                   result={call.result}
                   first={j === 0}
                   last={j === section.calls.length - 1}
+                  onOpenPath={onOpenPath}
                 />
               );
             })}
@@ -445,6 +466,7 @@ export const ProcessDisclosure = memo(function ProcessDisclosure({
   processId,
   seenTools,
   searchTarget,
+  workspacePath = "",
 }: {
   items: ProcessItem[];
   autoExpand?: boolean;
@@ -459,8 +481,12 @@ export const ProcessDisclosure = memo(function ProcessDisclosure({
   processId: number;
   seenTools: Set<string>;
   searchTarget?: ProcessSearchTarget;
+  /** Session workspace root, anchoring relative tool paths for the
+   *  click-to-open chips. Empty keeps the chips inert. */
+  workspacePath?: string;
 }) {
   const { t } = useTranslation();
+  const openFile = useOpenChatFilePath(workspacePath);
   const hasLiveThinking = items.some((item) => item.type === "thinking" && item.live);
   const { expanded, toggleExpanded } = useProcessExpansion(autoExpand, turnLive, hasLiveThinking, thinkingAutoCollapse, searchTarget?.requestKey);
   const reduceMotion = useReducedMotion() ?? false;
@@ -534,6 +560,7 @@ export const ProcessDisclosure = memo(function ProcessDisclosure({
               processId={processId}
               seenTools={seenTools}
               searchTarget={searchTarget}
+              onOpenPath={openFile}
             />
           ) : null}
         </div>

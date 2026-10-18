@@ -19,11 +19,10 @@ import { openExternal } from "@/lib/platform";
 import { useTranslation } from "react-i18next";
 import Copy from "lucide-react/dist/esm/icons/copy";
 import Check from "lucide-react/dist/esm/icons/check";
-import { useFilesStore } from "@/features/files/store";
-import { markdownRegistry, useRegistry } from "@ccgui/plugin-sdk";
 import { useCopied } from "@/hooks/use-copied";
+import { markdownRegistry, useRegistry } from "@ccgui/plugin-sdk";
 import { FileLinkContextMenu } from "./FileLinkContextMenu";
-import { resolveChatFileLink } from "@/features/chat/file-link-resolution";
+import { openChatFilePath } from "@/features/chat/open-chat-file";
 import {
   decodeFileLink,
   isFileLinkUrl,
@@ -38,17 +37,6 @@ const REMARK_PLUGINS = [remarkGfm, remarkMath, remarkDisplayMath, remarkGithubAl
 type PluginListProp = NonNullable<
   ComponentProps<typeof ReactMarkdown>["remarkPlugins"]
 >;
-
-function openFileFromChat(rawPath: string, workspacePath: string) {
-  // Async on purpose: a path that only exists nested below the workspace
-  // root (outer folder opened as workspace) is found through the index
-  // fallback instead of dead-ending in a not-found tab.
-  void resolveChatFileLink(rawPath, workspacePath).then((path) => {
-    if (!path) return;
-    // Opens as a center-area tab; visible at every window width.
-    void useFilesStore.getState().openFile(path);
-  });
-}
 
 function openExternalUrl(url: string) {
   openExternal(url);
@@ -77,7 +65,7 @@ function FileLink({
         onClick={(event) => {
           event.preventDefault();
           event.stopPropagation();
-          openFileFromChat(path, workspacePath);
+          openChatFilePath(path, workspacePath);
         }}
         onContextMenu={(event) => {
           event.preventDefault();

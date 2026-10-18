@@ -20,6 +20,14 @@ export interface TaskListChip {
   label: string;
   /** Optional leading glyph — a file-type or product mark. */
   icon?: ReactNode;
+  /** When set, the chip is a button that opens something (the tool call's
+   *  target file). Chips without it stay inert text, so a chip that names a
+   *  resource nobody can open never grows a dead affordance. */
+  onSelect?: () => void;
+  /** Native tooltip for the selectable chip (usually the full path). */
+  title?: string;
+  /** Accessible name; the visible label is a truncated file name. */
+  selectLabel?: string;
 }
 
 export interface TaskListStep {
@@ -32,25 +40,46 @@ export interface TaskListStep {
 /* ------------------------------------------------------------- internals */
 
 function Chip({ chip }: { chip: TaskListChip }) {
-  return (
-    <span
-      className={cx(
-        "mr-0.5 ml-[3px] inline-flex max-w-full -translate-y-px items-center gap-1 rounded-md border py-0.5 pr-1.5 align-middle",
-        // Quiet at rest so a row of chips does not out-shout the step text,
-        // then the border and surface firm up together under the cursor so the
-        // chip reads as something you can act on.
-        "border-border-button-default/50 bg-background-secondary-default",
-        "transition-colors duration-150 ease hover:border-border-button-hover hover:bg-background-tertiary-default",
-        chip.icon ? "pl-1" : "pl-1.5",
-      )}
-    >
+  const className = cx(
+    "mr-0.5 ml-[3px] inline-flex max-w-full -translate-y-px items-center gap-1 rounded-md border py-0.5 pr-1.5 align-middle",
+    // Quiet at rest so a row of chips does not out-shout the step text,
+    // then the border and surface firm up together under the cursor so the
+    // chip reads as something you can act on.
+    "border-border-button-default/50 bg-background-secondary-default",
+    "transition-colors duration-150 ease hover:border-border-button-hover hover:bg-background-tertiary-default",
+    chip.icon ? "pl-1" : "pl-1.5",
+    // Only a selectable chip is focusable; it gets the host's focus ring so
+    // keyboard users see the same affordance the pointer gets on hover.
+    chip.onSelect &&
+      "cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-focus-ring",
+  );
+  const content = (
+    <>
       {chip.icon ? (
         <span aria-hidden className="flex size-3.5 shrink-0 items-center justify-center">
           {chip.icon}
         </span>
       ) : null}
       <span className="truncate text-caption-2-medium text-text-primary">{chip.label}</span>
-    </span>
+    </>
+  );
+  if (!chip.onSelect) return <span className={className}>{content}</span>;
+  return (
+    <button
+      type="button"
+      className={className}
+      title={chip.title ?? chip.label}
+      aria-label={chip.selectLabel ?? chip.label}
+      onClick={(event) => {
+        // The chip sits inside the timeline body, whose ancestors own
+        // row-level clicks (search highlight jumps, selection); opening a
+        // file is a leaf action and must not also trigger those.
+        event.stopPropagation();
+        chip.onSelect?.();
+      }}
+    >
+      {content}
+    </button>
   );
 }
 
