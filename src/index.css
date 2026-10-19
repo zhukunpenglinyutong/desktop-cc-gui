@@ -228,6 +228,19 @@ body {
   display: none;
 }
 
+/* ---- Images: local workspace files and remote URLs share one frame ---- */
+.prose-chat :where(img.md-image) {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  border: 1px solid var(--md-border);
+  border-radius: 10px;
+}
+.prose-chat :where(.md-image-fallback) {
+  color: var(--color-text-secondary);
+  font-size: 0.9em;
+}
+
 /* ---- Headings: chat-scaled doc hierarchy, h1/h2 get a hairline ---- */
 .prose-chat :where(h1, h2, h3, h4, h5, h6) {
   font-weight: min(900, calc(600 + var(--ui-font-weight-offset, 0)));

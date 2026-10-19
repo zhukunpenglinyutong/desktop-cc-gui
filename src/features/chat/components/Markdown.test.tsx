@@ -6,6 +6,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import Markdown from "./Markdown";
 import { markdownRegistry } from "@ccgui/plugin-sdk";
 import type { Disposer } from "@ccgui/plugin-sdk";
+const imageIpc = vi.hoisted(() => ({
+  listDir: vi.fn(),
+  listFileIndex: vi.fn(),
+  readFile: vi.fn(),
+}));
+
+vi.mock("@/lib/ipc", () => ({ ipc: imageIpc }));
+
 
 // React's act() environment flag — a well-known global the runtime can't
 // validate, so a named cast with no narrowing is the right boundary.
@@ -20,6 +28,9 @@ let container: HTMLDivElement;
 let root: Root;
 
 beforeEach(() => {
+  imageIpc.listDir.mockReset();
+  imageIpc.listFileIndex.mockReset();
+  imageIpc.readFile.mockReset();
   container = document.createElement("div");
   document.body.appendChild(container);
   root = createRoot(container);
@@ -234,5 +245,56 @@ describe("GFM email autolinks (WKWebView lookbehind compatibility)", () => {
     const autolinkEntry = requireFromGfm.resolve("mdast-util-gfm-autolink-literal");
     const source = readFileSync(autolinkEntry, "utf8");
     expect(source).not.toMatch(/\(\?<[=!]/);
+  });
+});
+
+describe("Markdown images", () => {
+  const imagePath = "1live2d/references/claude-gpt-20261019/claude-candidates.jpg";
+
+  it("loads a workspace-relative image file through the file reader", async () => {
+    imageIpc.listDir.mockResolvedValueOnce([{ name: "claude-candidates.jpg" }]);
+    imageIpc.readFile.mockResolvedValueOnce({
+      kind: "image",
+      text: null,
+      dataUrl: "data:image/jpeg;base64,Y2FuZGlkYXRl",
+      truncated: false,
+    });
+
+    await renderMarkdown(`![Claude 候选](${imagePath})`);
+
+    await act(async () => {
+      await vi.waitFor(() =>
+        expect(imageIpc.readFile).toHaveBeenCalledWith(`/ws/${imagePath}`),
+      );
+    });
+
+    const image = container.querySelector<HTMLImageElement>("img");
+    expect(image?.getAttribute("src")).toBe("data:image/jpeg;base64,Y2FuZGlkYXRl");
+    expect(image?.alt).toBe("Claude 候选");
+    expect(imageIpc.readFile).toHaveBeenCalledWith(`/ws/${imagePath}`);
+  });
+
+  it("keeps remote images on their original URL without reading local files", async () => {
+    const url = "https://example.com/candidate.png";
+    await renderMarkdown(`![Remote candidate](${url})`);
+
+    expect(container.querySelector("img")?.getAttribute("src")).toBe(url);
+    expect(imageIpc.readFile).not.toHaveBeenCalled();
+  });
+
+
+  it("renders a raster data URL directly", async () => {
+    const url = "data:image/png;base64,cG5n";
+    await renderMarkdown(`![Generated image](${url})`);
+
+    expect(container.querySelector("img")?.getAttribute("src")).toBe(url);
+    expect(imageIpc.readFile).not.toHaveBeenCalled();
+  });
+  it("does not load an image path outside the workspace and shows its alt text", async () => {
+    await renderMarkdown("![Private image](D:/private/secret.png)");
+
+    expect(container.querySelector("img")).toBeNull();
+    expect(container.textContent).toContain("Private image");
+    expect(imageIpc.readFile).not.toHaveBeenCalled();
   });
 });

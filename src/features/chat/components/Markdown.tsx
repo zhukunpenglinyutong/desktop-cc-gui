@@ -1,4 +1,4 @@
-import { isValidElement, memo, useMemo, useState, type ComponentProps, type ReactNode } from "react";
+import { isValidElement, memo, useEffect, useMemo, useState, type ComponentProps, type ReactNode } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
@@ -23,7 +23,9 @@ import { useFilesStore } from "@/features/files/store";
 import { markdownRegistry, useRegistry } from "@ccgui/plugin-sdk";
 import { useCopied } from "@/hooks/use-copied";
 import { FileLinkContextMenu } from "./FileLinkContextMenu";
-import { resolveChatFileLink } from "@/features/chat/file-link-resolution";
+import { ipc } from "@/lib/ipc";
+import { readRemoteAware } from "@/features/files/remote-files";
+import { isPathUnder, resolveChatFileLink } from "@/features/chat/file-link-resolution";
 import {
   decodeFileLink,
   isFileLinkUrl,
@@ -52,6 +54,52 @@ function openFileFromChat(rawPath: string, workspacePath: string) {
 
 function openExternalUrl(url: string) {
   openExternal(url);
+}
+
+const SAFE_DATA_IMAGE_URL = /^data:image\/(?:apng|avif|bmp|gif|jpeg|png|webp|x-icon);base64,/i;
+
+function MarkdownImage({
+  src,
+  alt = "",
+  title,
+  workspacePath,
+}: {
+  src?: string;
+  alt?: string;
+  title?: string;
+  workspacePath: string;
+}) {
+  const imageSource = src ?? "";
+  const directImage = /^https?:/i.test(imageSource) || SAFE_DATA_IMAGE_URL.test(imageSource);
+  const [resolvedSource, setResolvedSource] = useState<string | null>();
+
+  useEffect(() => {
+    if (!imageSource || directImage) return;
+    let cancelled = false;
+    setResolvedSource(undefined);
+    void resolveChatFileLink(imageSource, workspacePath)
+      .then((path) => {
+        if (!path || !isPathUnder(path, workspacePath)) return null;
+        return readRemoteAware(path, (localPath) => ipc.readFile(localPath));
+      })
+      .then((content) => {
+        if (!cancelled) {
+          setResolvedSource(content?.kind === "image" ? content.dataUrl : null);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setResolvedSource(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [imageSource, workspacePath, directImage]);
+
+  const imageUrl = directImage ? imageSource : resolvedSource;
+  if (typeof imageUrl !== "string" || !imageUrl) {
+    return alt ? <span className="md-image-fallback">{alt}</span> : null;
+  }
+  return <img src={imageUrl} alt={alt} title={title} className="md-image" loading="lazy" />;
 }
 
 /** Green dotted-underline file link (parity with desktop-cc-gui). */
@@ -192,6 +240,9 @@ export default memo(function Markdown({
           ? <RevealText controller={controller} start={start}>{children}</RevealText>
           : <span className={className} {...rest}>{children}</span>;
       },
+      img: ({ src, alt, title }) => (
+        <MarkdownImage src={src} alt={alt} title={title} workspacePath={workspacePath} />
+      ),
       a: ({ href, children }) => {
         const url = href ?? "";
         if (isFileLinkUrl(url)) {
@@ -301,19 +352,17 @@ export default memo(function Markdown({
         remarkPlugins={remarkPlugins}
         rehypePlugins={rehypePlugins}
         components={components}
-        urlTransform={(url) =>
+        urlTransform={(url) => {
           // file: is deliberately excluded: model output must not smuggle in
-          // local-file URLs. Real file paths are handled via FileLink above.
-          isFileLinkUrl(url) ||
-          /^(https?|mailto):/i.test(url) ||
-          url.startsWith("#") ||
-          url.startsWith("/") ||
-          url.startsWith("./") ||
-          url.startsWith("../") ||
-          /^[A-Za-z]:[\\/]/.test(url)
-            ? url
-            : ""
-        }
+          // local-file URLs. Workspace image paths use MarkdownImage's scoped reader.
+          if (isFileLinkUrl(url) || SAFE_DATA_IMAGE_URL.test(url)) return url;
+          if (/^(https?|mailto):/i.test(url)) return url;
+          // Anything without a scheme is a relative reference ("#anchor",
+          // "/abs", "./rel" or a bare "dir/file.png"). Scheme-bearing URLs
+          // (file:, javascript:, vbscript:, …) stay blanked.
+          if (!/^[A-Za-z][A-Za-z0-9+.-]*:/.test(url)) return url;
+          return "";
+        }}
       >
         {mathText}
       </ReactMarkdown>
