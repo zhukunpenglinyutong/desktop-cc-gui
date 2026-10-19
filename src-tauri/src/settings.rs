@@ -173,6 +173,24 @@ pub struct AppSettings {
     /// until the user folds it (设置 → 通用 → 行为 → 思考过程).
     #[serde(default)]
     pub thinking_auto_collapse: Option<bool>,
+    /// Notifications master switch (设置 → 通用 → 行为 → 系统通知): None/Some(true) = enabled (default).
+    #[serde(default)]
+    pub notifications_enabled: Option<bool>,
+    /// Notify on conversation turn complete: None/Some(true) = enabled (default).
+    #[serde(default)]
+    pub notify_on_completion: Option<bool>,
+    /// Notify on interactive questions/permission/plan review: None/Some(true) = enabled (default).
+    #[serde(default)]
+    pub notify_on_question: Option<bool>,
+    /// Notify when conversation is interrupted: None/Some(true) = enabled (default).
+    #[serde(default)]
+    pub notify_on_interrupted: Option<bool>,
+    /// Notify when conversation encounters an error: None/Some(true) = enabled (default).
+    #[serde(default)]
+    pub notify_on_error: Option<bool>,
+    /// Only notify when the window/session is in background: None/Some(true) = enabled (default).
+    #[serde(default)]
+    pub notify_when_unfocused_only: Option<bool>,
     /// Chat content column width (设置 → 通用 → 外观 → 宽幕布): None/Some(false)
     /// = the default centered column, Some(true) = the timeline, composer and
     /// docks fill their pane (only the 16px gutter stays).
@@ -411,11 +429,17 @@ impl Default for AppSettings {
             decrease_ui_scale_shortcut: default_decrease_ui_scale_shortcut(),
             reset_ui_scale_shortcut: default_reset_ui_scale_shortcut(),
             thinking_auto_collapse: None,
+            notifications_enabled: None,
+            notify_on_completion: None,
+            notify_on_question: None,
+            notify_when_unfocused_only: None,
             chat_wide_layout: None,
             beta_features: HashMap::new(),
             terminal_shell_path: None,
             dsh_host: None,
             dsh_port: None,
+            notify_on_interrupted: None,
+            notify_on_error: None,
             dsh_auto_start: None,
             system_proxy_enabled: false,
             system_proxy_url: None,

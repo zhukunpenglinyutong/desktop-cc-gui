@@ -504,6 +504,18 @@ export interface AppSettings {
   /** Thinking-process row behavior once its thinking settles: true/absent =
    *  auto-fold (default), false = stay expanded until the user folds it. */
   thinkingAutoCollapse?: boolean | null;
+  /** System notifications master switch (设置 → 通用 → 行为 → 系统通知): true/absent = enabled (default). */
+  notificationsEnabled?: boolean | null;
+  /** Notify when conversation turn completes: true/absent = enabled (default). */
+  notifyOnCompletion?: boolean | null;
+  /** Notify on interactive questions/permission/plan review: true/absent = enabled (default). */
+  notifyOnQuestion?: boolean | null;
+  /** Notify when conversation turn is interrupted: true/absent = enabled (default). */
+  notifyOnInterrupted?: boolean | null;
+  /** Notify when conversation encounters an error: true/absent = enabled (default). */
+  notifyOnError?: boolean | null;
+  /** Only notify when app window/session is unfocused/background: true/absent = true (default). */
+  notifyWhenUnfocusedOnly?: boolean | null;
   /** 宽幕布 (设置 → 通用 → 外观): true = the chat content column fills its
    *  pane instead of the default centered column (750px / `max-w-3xl`). */
   chatWideLayout?: boolean | null;

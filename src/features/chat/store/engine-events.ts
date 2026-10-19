@@ -8,6 +8,14 @@ import {
 } from "./plan-review";
 import { errorText } from "@/lib/errors";
 import { pendingWorkspaceOfKey, dedupeTabs, persistTabs, sessionKey } from "./persistence";
+import {
+  notifyTurnComplete,
+  notifyInterrupted,
+  notifyTurnError,
+  notifyQuestion,
+  notifyPlanReview,
+  notifyPermissionRequest,
+} from "@/lib/notifications";
 import { migrateSessionContributions } from "./session-contributions";
 import { migrateAutoCompactSettings } from "../auto-compact-context";
 import {
@@ -1282,6 +1290,15 @@ function onError(
   deps.markUnseenIfBackground(key);
   dispatchNormalized(event);
   finishRunLifecycle(event.runId, "failed", typeof event.data === "string" ? event.data : undefined, event.sessionId);
+  if (!prev.interrupted) {
+    const errText = typeof event.data === "string" ? event.data : "";
+    const isInterruptedMsg = /中断|disconnect|abort|timeout/i.test(errText);
+    if (isInterruptedMsg) {
+      notifyInterrupted(key, errText);
+    } else {
+      notifyTurnError(key, errText);
+    }
+  }
   void deps.refreshSessionUsage?.(key).catch(() => {});
   // An error settles the turn exactly like done does — the messages typed
   // behind it are the user's next step, and parking them here left the queue
@@ -1422,6 +1439,9 @@ function onPermissionDenied(
       )
       .catch(() => {});
   }
+  if (rowSeq > 0) {
+    notifyPermissionRequest(key, path || "");
+  }
 }
 
 /** End a multi-select round through the CLI's free-form row: the only answer
@@ -1539,6 +1559,10 @@ function onQuestion(
   if (rowSeq > 0 && rpc && multi) {
     openAskLoop(key, { base: frame.base, seq: rowSeq, requestId, runId: event.runId });
   }
+  if (rowSeq > 0) {
+    const qText = spec?.question || questions[0]?.question || "";
+    notifyQuestion(key, qText);
+  }
 }
 
 /** Fold unflushed stream chunks into settled rows, then run a plan-card
@@ -1616,6 +1640,9 @@ function onPlanReview(event: ChatEngineEvent, key: string, deps: EngineEventDeps
   updatePlanMessages(deps, key, event, (messages) =>
     applyPlanReview(messages, record),
   );
+  if (record.status === "awaiting_review") {
+    notifyPlanReview(key, record.title);
+  }
 }
 
 function onPlanReviewSettled(
@@ -1826,6 +1853,11 @@ function onDone(event: ChatEngineEvent, key: string, deps: EngineEventDeps) {
   // An interrupted turn settles here too: keep the queue parked — the user
   // stopped the session, the next message is theirs to send.
   if (!prev.interrupted) {
+    const finalMessages = deps.get().bySession[key]?.messages;
+    const lastAssistant = finalMessages
+      ? [...finalMessages].reverse().find((m) => m.role === "assistant")
+      : undefined;
+    notifyTurnComplete(key, lastAssistant?.text ?? "");
     deps.drainQueue(key);
     // Claude's result line reports the turn's summed usage (every request of
     // the turn added up), not the occupancy the meter shows — so re-read the

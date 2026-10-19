@@ -10,6 +10,8 @@
     "core:window:allow-minimize",
     "core:window:allow-toggle-maximize",
     "core:window:allow-close",
+    "core:window:allow-set-focus",
+    "core:window:allow-unminimize",
     "core:webview:allow-set-webview-zoom",
     {
       "identifier": "opener:allow-open-url",
@@ -22,6 +24,7 @@
     },
     "dialog:default",
     "updater:default",
-    "process:default"
+    "process:default",
+    "notification:default"
   ]
 }
