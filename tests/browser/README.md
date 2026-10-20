@@ -349,3 +349,15 @@ an empty URL is refused, and that Escape cancels. Also measures the two pencils:
 both glyph and padding are in `em`, so the name pencil must track the 14px name
 line and the URL pencil the 11px code line (and the interface font / zoom with
 them), not a fixed pixel box. No app, no backend, no real config file.
+
+Open `/tests/browser/multi-repo-changes.html` to check the changes panel over a
+workspace folder that holds several independent projects — the case where the
+panel used to show only one of them. Three projects are seeded (api staged-only,
+web unstaged + untracked, docs clean) and the fixture asserts what a jsdom test
+cannot see: one section per project inside ONE scroller, each project's commit
+box living in its own section rather than one panel-wide footer, row actions
+scoped to the repository that owns the row (web's two stage actions report
+`/web`, never a sibling), the last project reachable by scrolling, and folding
+one project leaving the others untouched. It reports PASS with the section and
+scroller counts plus the recorded stage calls. Real `ChangesPanel`; only the
+store's IPC actions are stubbed. No app, no backend.
