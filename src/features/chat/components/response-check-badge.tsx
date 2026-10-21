@@ -19,8 +19,8 @@ import {
  * when it does not. Hovering opens the same rows as a card, mirroring how
  * a gateway reports "requested vs upstream".
  *
- * Renders nothing until a side was actually reported — an absent report is
- * unknown, never a pass.
+ * Renders nothing until the run reported a request side — an absent response
+ * side stays unknown ("未上报"), never a pass.
  */
 export function ResponseCheckBadge({
   check,
@@ -64,7 +64,10 @@ export function ResponseCheckBadge({
           <Icon className="size-3.5" aria-hidden />
         </button>
       </Focusable>
-      <TooltipPanel title={t("chat.checkTitle")}>
+      <TooltipPanel
+        title={t("chat.checkTitle")}
+        className="max-w-[min(380px,calc(100vw-32px))]"
+      >
         <CheckRow
           label={t("chat.checkRequestedModel")}
           value={requestedModel}
@@ -105,11 +108,11 @@ function CheckRow({
   const { t } = useTranslation();
   const unreported = value === null;
   return (
-    <div className="flex items-baseline justify-between gap-4">
-      <dt className="text-text-tertiary">{label}</dt>
+    <div className="grid grid-cols-[auto_minmax(0,1fr)] items-baseline gap-x-4">
+      <dt className="whitespace-nowrap text-text-tertiary">{label}</dt>
       <dd
         className={cx(
-          "m-0 tabular-nums",
+          "m-0 flex min-w-0 flex-wrap items-baseline justify-end gap-x-1 text-right tabular-nums",
           unreported
             ? "text-text-tertiary"
             : verdict === "mismatch"
@@ -117,9 +120,13 @@ function CheckRow({
               : "text-text-primary",
         )}
       >
-        {value ?? t("chat.checkUnreported")}
+        <span className="min-w-0 break-all">
+          {value ?? t("chat.checkUnreported")}
+        </span>
         {verdict === "mismatch" && (
-          <span className="ml-1 text-caption-1-regular">{mismatch}</span>
+          <span className="whitespace-nowrap text-caption-1-regular">
+            {mismatch}
+          </span>
         )}
       </dd>
     </div>

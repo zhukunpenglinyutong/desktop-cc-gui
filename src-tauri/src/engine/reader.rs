@@ -1113,6 +1113,10 @@ pub(crate) async fn run_reader(stdout: ChildStdout, ctx: RunContext) {
     for path in &ctx.cleanup_files {
         let _ = std::fs::remove_file(path);
     }
+    // The provider-model sidecar belongs to this run only.
+    let _ = std::fs::remove_file(crate::engine::pi_family::served_models_path(
+        &ctx.core.run_id,
+    ));
     // Pending questions die with the run: settle their cards so the UI never
     // leaves an answerable question pointing at a dead process.
     for key in [

@@ -63,17 +63,33 @@ const SCENARIOS: Record<string, Scenario> = {
     expected: { verdict: "mismatch", visible: true },
   },
   variant: {
-    label: "版本差异",
+    label: "日期版本",
     events: [
       { kind: "launch", data: { model: "claude-opus-4-5", effort: "high" } },
       { kind: "served", data: { model: "claude-opus-4-5-20251101", effort: "high" } },
     ],
-    expected: { verdict: "match", visible: true },
+    expected: { verdict: "mismatch", visible: true },
+  },
+  daily: {
+    label: "日构建版本",
+    events: [
+      { kind: "launch", data: { model: "ds4.1", effort: null } },
+      { kind: "served", data: { model: "deepseek/ds4.1-1017", effort: null } },
+    ],
+    expected: { verdict: "mismatch", visible: true },
+  },
+  gateway: {
+    label: "网关实际模型",
+    events: [
+      { kind: "launch", data: { model: "ds/deepseek-v4.1-flash", effort: "max" } },
+      { kind: "served", data: { model: "deepseek/deepseek-v4.1-flash-1017", effort: null } },
+    ],
+    expected: { verdict: "mismatch", visible: true },
   },
   unreported: {
     label: "未上报",
     events: [{ kind: "launch", data: { model: "claude-opus-5-5", effort: "xhigh" } }],
-    expected: { verdict: "unknown", visible: false },
+    expected: { verdict: "unknown", visible: true },
   },
   settled: {
     label: "已结算",

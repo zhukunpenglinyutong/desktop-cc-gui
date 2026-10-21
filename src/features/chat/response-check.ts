@@ -11,11 +11,11 @@
  *    reroute target.
  *
  * A side that never reported stays `null` and can never produce a verdict:
- * an unreported field is unknown, not a pass. Comparisons tolerate the
- * naming variants a gateway legitimately introduces (a provider prefix, a
- * `-latest`/date snapshot suffix, `xhigh` vs `extra-high`) — a snapshot
- * difference is a "variant", not a substitution — while a genuine
- * difference stays a mismatch.
+ * an unreported field is unknown, not a pass. Only the provider prefix and
+ * the picker's `[1m]` tag are ignored — the bare model name, including any
+ * date/build suffix, must match exactly (`deepseek-v4.1-flash` and
+ * `deepseek-v4.1-flash-1017` are different ids). Reasoning levels remain
+ * separator/case-insensitive (`xhigh` vs `extra-high`).
  */
 
 export interface SelectionSide {
@@ -31,7 +31,7 @@ export interface ResponseCheckState {
   served: SelectionSide;
 }
 
-export type SelectionVerdict = "match" | "variant" | "mismatch" | "unknown";
+export type SelectionVerdict = "match" | "mismatch" | "unknown";
 
 export interface ResponseCheckView {
   model: SelectionVerdict;
@@ -39,7 +39,7 @@ export interface ResponseCheckView {
   /** "mismatch" when a reported side disagrees; "unknown" when a request
    *  alias is unresolved or nothing is comparable; otherwise "match". */
   verdict: "match" | "mismatch" | "unknown";
-  /** Visible when evidence can be compared or an alias needs clarification. */
+  /** Visible when the run reported a request side or evidence can be compared. */
   visible: boolean;
 }
 
@@ -54,23 +54,12 @@ function bareModel(id: string): string {
   return bare.replace(/\[1m\]$/, "");
 }
 
-/** `-latest` and dated snapshots name the same family. */
-function snapshotFree(model: string): string {
-  return model
-    .replace(/-latest$/, "")
-    .replace(/-\d{8}$/, "")
-    .replace(/-\d{4}-\d{2}-\d{2}$/, "");
-}
-
 export function compareModel(
   requested: string | null,
   served: string | null,
 ): SelectionVerdict {
   if (!requested || !served) return "unknown";
-  const a = bareModel(requested);
-  const b = bareModel(served);
-  if (a === b) return "match";
-  return snapshotFree(a) === snapshotFree(b) ? "variant" : "mismatch";
+  return bareModel(requested) === bareModel(served) ? "match" : "mismatch";
 }
 
 /** Separator/case-insensitive; `extra-high` is the same level as `xhigh`. */
@@ -112,10 +101,15 @@ export function checkResponseSelection(
         : model !== "unknown" || effort !== "unknown"
           ? "match"
           : "unknown";
+  // A reported request with no response evidence still has something to say:
+  // the card shows the requested side and marks the missing side unreported.
+  // Hiding it made an engine that never reports a served id look verified.
+  const requestedReported =
+    requested.model !== null || requested.effort !== null;
   return {
     model,
     effort,
     verdict,
-    visible: verdict !== "unknown" || unresolvedAlias,
+    visible: requestedReported || verdict !== "unknown" || unresolvedAlias,
   };
 }

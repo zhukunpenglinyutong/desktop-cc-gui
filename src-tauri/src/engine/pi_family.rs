@@ -44,6 +44,36 @@ pub struct PiFamilyEngine {
     pub home_dir_name: &'static str, // ".pi" | ".omp"
     /// omp rpc-ui v2 大帧的重组缓冲:chunkId → 分片。pi 的 json 模式用不到。
     rpc_chunks: std::sync::Mutex<std::collections::HashMap<String, RpcChunkAcc>>,
+    /// Current run id, set before the reader starts. The injected extension
+    /// writes the provider-reported model to `served-models/<run_id>.tsv`;
+    /// `message_end` consults that sidecar when the runtime did not set
+    /// `upstreamModel` itself.
+    run_id: std::sync::Mutex<Option<String>>,
+}
+
+/// Sidecar path for one run's provider-reported served models.
+pub(crate) fn served_models_path(run_id: &str) -> std::path::PathBuf {
+    let dir = crate::paths::app_home().join("served-models");
+    let _ = std::fs::create_dir_all(&dir);
+    dir.join(format!("{run_id}.tsv"))
+}
+
+/// Last `responseId<TAB>model` row for `response_id`. The extension may append
+/// retries/subagent calls to the same file; the newest matching row wins.
+fn parse_served_model_sidecar(text: &str, response_id: &str) -> Option<String> {
+    text.lines().rev().find_map(|line| {
+        let (id, model) = line.split_once('\t')?;
+        (id == response_id && !model.trim().is_empty()).then(|| model.trim().to_string())
+    })
+}
+
+fn served_model_from_sidecar(
+    run_id: Option<&str>,
+    response_id: Option<&str>,
+) -> Option<String> {
+    let path = served_models_path(run_id?);
+    let text = std::fs::read_to_string(path).ok()?;
+    parse_served_model_sidecar(&text, response_id?)
 }
 
 /// v2 `rpc_chunk` 分片序列的重组中间态。
@@ -60,13 +90,113 @@ pub(crate) const CONFIRM_YES_LABEL: &str = "确认";
 /// 的 ask_user 工具,逐题调 ctx.ui.select/input —— rpc 模式下它们成为
 /// extension_ui_request 帧,由本应用渲染成问题卡并应答。选项语义对齐 omp
 /// 的 ask 降级链:单选一帧 select;多选是「选到 Done 为止」的循环;Other
-/// 哨兵转 input 收自由文本。运行时零导入(jiti 不需要解析任何依赖),
-/// parameters 直接给 JSON Schema(TypeBox schema 本就是 JSON Schema)。
+/// 哨兵转 input 收自由文本。运行时只导入 node:fs 写上游模型 sidecar,
+/// 其余零依赖;parameters 直接给 JSON Schema(TypeBox schema 本就是 JSON Schema)。
 const PI_ASK_BRIDGE: &str = r#"// CC GUI ask bridge — pi sessions get their ask_user tool from this
 // extension. One select/input dialog per question (pi's wire format has no
 // multi-select), mirroring omp's degraded ask chain so the host app renders
 // both engines with the same card.
+import { appendFileSync } from "node:fs";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+
+// The provider response names the model that actually served the turn in its
+// own `model` field (OpenAI Responses `response.created/completed`, Anthropic
+// `message_start`, OpenAI Completions first chunk). The runtime keeps only the
+// requested id on the assistant message, so observe the response here and
+// append `responseId<TAB>model` for the host's response-check bridge. The env
+// is set per run; unset means the host does not want the observation.
+const SERVED_MODEL_FILE = process.env.CCGUI_SERVED_MODEL_FILE;
+const SERVED_MODEL_MAX_BYTES = 256 * 1024;
+
+function recordServedModel(id: unknown, model: unknown): boolean {
+	if (!SERVED_MODEL_FILE || typeof id !== "string" || !id) return false;
+	if (typeof model !== "string" || !model.trim()) return false;
+	try {
+		appendFileSync(SERVED_MODEL_FILE, `${id}\t${model.trim()}\n`);
+		return true;
+	} catch {
+		return false;
+	}
+}
+
+async function observeSseBody(response: Response): Promise<void> {
+	const reader = response.body?.getReader();
+	if (!reader) return;
+	const decoder = new TextDecoder();
+	let buffer = "";
+	let bytes = 0;
+	try {
+		while (bytes < SERVED_MODEL_MAX_BYTES) {
+			const { done, value } = await reader.read();
+			if (done) break;
+			bytes += value.byteLength;
+			buffer += decoder.decode(value, { stream: true });
+			let newline = buffer.indexOf("\n");
+			while (newline >= 0) {
+				const line = buffer.slice(0, newline).trim();
+				buffer = buffer.slice(newline + 1);
+				newline = buffer.indexOf("\n");
+				if (!line.startsWith("data:")) continue;
+				const data = line.slice(5).trim();
+				if (!data || data === "[DONE]") continue;
+				try {
+					const parsed = JSON.parse(data) as Record<string, any>;
+					const id = parsed.response?.id ?? parsed.message?.id ?? parsed.id;
+					const model =
+						parsed.response?.model ?? parsed.message?.model ?? parsed.model;
+					if (recordServedModel(id, model)) {
+						void reader.cancel().catch(() => {});
+						return;
+					}
+				} catch {
+					// A partial/non-JSON data line is not an error.
+				}
+			}
+		}
+	} finally {
+		void reader.cancel().catch(() => {});
+	}
+}
+
+if (SERVED_MODEL_FILE) {
+	const originalFetch = globalThis.fetch;
+	globalThis.fetch = (async (...args: Parameters<typeof fetch>) => {
+		const response = await originalFetch(...args);
+		const input = args[0];
+		const url =
+			typeof input === "string"
+				? input
+				: input instanceof URL
+					? input.href
+					: (input as Request).url;
+		if (!/(?:\/responses|\/chat\/completions|\/messages|\/complete)(?:[?#]|$)/.test(url)) {
+			return response;
+		}
+		try {
+			const contentType = response.headers.get("content-type")?.toLowerCase() ?? "";
+			if (contentType.includes("text/event-stream")) {
+				void observeSseBody(response.clone()).catch(() => {});
+			} else if (contentType.includes("application/json")) {
+				const length = Number(response.headers.get("content-length") ?? "0");
+				if (Number.isFinite(length) && length > 0 && length <= SERVED_MODEL_MAX_BYTES) {
+					void response
+						.clone()
+						.json()
+						.then((parsed: any) => {
+							const id = parsed?.response?.id ?? parsed?.message?.id ?? parsed?.id;
+							const model =
+								parsed?.response?.model ?? parsed?.message?.model ?? parsed?.model;
+							recordServedModel(id, model);
+						})
+						.catch(() => {});
+				}
+			}
+		} catch {
+			// Observation must never break the provider request.
+		}
+		return response;
+	}) as typeof fetch;
+}
 
 const OTHER_OPTION = "Other (type your own)";
 const DONE_OPTION = "✓ Done selecting";
@@ -200,6 +330,7 @@ pub fn pi() -> PiFamilyEngine {
         id: "pi",
         home_dir_name: ".pi",
         rpc_chunks: std::sync::Mutex::new(std::collections::HashMap::new()),
+        run_id: std::sync::Mutex::new(None),
     }
 }
 
@@ -208,6 +339,7 @@ pub fn omp() -> PiFamilyEngine {
         id: "omp",
         home_dir_name: ".omp",
         rpc_chunks: std::sync::Mutex::new(std::collections::HashMap::new()),
+        run_id: std::sync::Mutex::new(None),
     }
 }
 
@@ -547,20 +679,36 @@ impl Engine for PiFamilyEngine {
         })
     }
 
+    fn set_run_id(&self, run_id: &str) {
+        if let Ok(mut slot) = self.run_id.lock() {
+            *slot = Some(run_id.to_string());
+        }
+    }
+
     fn parse_line(&self, line: &str, out: &mut Vec<EngineEvent>) {
+        let run_id = self
+            .run_id
+            .lock()
+            .ok()
+            .and_then(|slot| slot.as_ref().cloned());
         // v2 分片重组:完整帧递归走正常解析,分片中途不产生事件。廉价前置
         // 判断避免给每一行付出锁的代价。
         if line.contains("\"rpc_chunk\"") {
             if let Some(frame) = self.reassemble_chunk(line) {
-                parse_pi_family_line_for_engine(self.id, &frame, out);
+                parse_pi_family_line_for_engine(self.id, run_id.as_deref(), &frame, out);
             }
             return;
         }
-        parse_pi_family_line_for_engine(self.id, line, out);
+        parse_pi_family_line_for_engine(self.id, run_id.as_deref(), line, out);
     }
 }
 
-fn parse_pi_family_line_for_engine(id: &str, line: &str, out: &mut Vec<EngineEvent>) {
+fn parse_pi_family_line_for_engine(
+    id: &str,
+    run_id: Option<&str>,
+    line: &str,
+    out: &mut Vec<EngineEvent>,
+) {
     // Avoid a second JSON parse for normal OMP stream frames; only compact
     // responses need the OMP-specific terminal mapping below.
     if id == "omp"
@@ -570,7 +718,7 @@ fn parse_pi_family_line_for_engine(id: &str, line: &str, out: &mut Vec<EngineEve
     {
         return;
     }
-    parse_pi_family_line(line, out);
+    parse_pi_family_line_with_run(line, out, run_id);
 }
 
 fn parse_omp_compact_response(line: &str, out: &mut Vec<EngineEvent>) -> bool {
@@ -689,6 +837,14 @@ pub(crate) fn extension_ui_answer_frame(
 
 /// Shared NDJSON parser for pi and omp (`--mode json`).
 fn parse_pi_family_line(line: &str, out: &mut Vec<EngineEvent>) {
+    parse_pi_family_line_with_run(line, out, None);
+}
+
+fn parse_pi_family_line_with_run(
+    line: &str,
+    out: &mut Vec<EngineEvent>,
+    run_id: Option<&str>,
+) {
     // Stream updates can include the entire growing message twice (message
     // and assistantMessageEvent.partial). Skip those snapshots without
     // allocating a JSON object tree for every token.
@@ -857,10 +1013,16 @@ fn parse_pi_family_line(line: &str, out: &mut Vec<EngineEvent>) {
             }
             // What actually served the turn, when the runtime can tell:
             // `upstreamModel` is the id recovered from the response itself
-            // (thinking signature / router), while `model` is the runtime's
-            // record — which becomes the served id on a server-side fallback.
-            // Emitted as evidence; a runtime that knows nothing reports
-            // nothing rather than echoing the request.
+            // (thinking signature / router). When the runtime does not fill
+            // it, the injected extension has already observed the provider's
+            // own `model` field and appended it to this run's sidecar; match
+            // it by the response id. `message.model` itself is only the
+            // request record for OpenAI-compatible providers, so it is never
+            // used as served evidence here.
+            let response_id = value
+                .get("message")
+                .and_then(|m| m.get("responseId"))
+                .and_then(Value::as_str);
             let served_model = value
                 .get("message")
                 .and_then(|m| m.get("upstreamModel"))
@@ -868,7 +1030,7 @@ fn parse_pi_family_line(line: &str, out: &mut Vec<EngineEvent>) {
                 .map(str::trim)
                 .filter(|s| !s.is_empty())
                 .map(str::to_string)
-                .or_else(|| reported_model.clone());
+                .or_else(|| served_model_from_sidecar(run_id, response_id));
             if served_model.is_some() || reported_effort.is_some() {
                 out.push(EngineEvent::Served {
                     model: served_model,
@@ -1328,6 +1490,54 @@ mod tests {
     }
 
     #[test]
+    fn sidecar_returns_the_newest_matching_provider_model() {
+        let text = "gen-1\ta/model-old\ngen-2\tb/model\ngen-1\ta/model-new\n";
+        assert_eq!(
+            parse_served_model_sidecar(text, "gen-1").as_deref(),
+            Some("a/model-new")
+        );
+        assert_eq!(
+            parse_served_model_sidecar(text, "gen-2").as_deref(),
+            Some("b/model")
+        );
+        assert_eq!(parse_served_model_sidecar(text, "gen-3"), None);
+        assert_eq!(parse_served_model_sidecar("malformed-line\n", "x"), None);
+    }
+
+    #[test]
+    fn message_end_uses_the_run_sidecar_when_upstream_model_is_absent() {
+        let run_id = format!("test-sidecar-{}", std::process::id());
+        let path = served_models_path(&run_id);
+        std::fs::write(
+            &path,
+            "gen-sidecar\tdeepseek/deepseek-v4.1-flash-1017\n",
+        )
+        .unwrap();
+        let mut out = Vec::new();
+        parse_pi_family_line_with_run(
+            &serde_json::json!({
+                "type": "message_end",
+                "message": {
+                    "model": "deepseek-v4.1-flash",
+                    "responseId": "gen-sidecar"
+                }
+            })
+            .to_string(),
+            &mut out,
+            Some(run_id.as_str()),
+        );
+        let _ = std::fs::remove_file(&path);
+        assert!(
+            out.iter().any(|e| matches!(
+                e,
+                EngineEvent::Served { model: Some(model), effort: None }
+                    if model == "deepseek/deepseek-v4.1-flash-1017"
+            )),
+            "the provider-reported model must be used as served evidence: {out:?}"
+        );
+    }
+
+    #[test]
     fn message_end_reports_the_served_model() {
         // `upstreamModel` is the id recovered from the response itself
         // (thinking signature / router) and wins over the runtime's record.
@@ -1352,8 +1562,9 @@ mod tests {
             "got {out:?}"
         );
 
-        // No upstream id recovered: the runtime's record is the served model
-        // (it becomes the fallback target on a server-side fallback).
+        // No upstream id recovered: `message.model` is the runtime's request
+        // record, not evidence of what served the turn. Echoing it here made
+        // the response check report the request as its own response.
         let mut out = Vec::new();
         parse_pi_family_line(
             &serde_json::json!({
@@ -1364,9 +1575,25 @@ mod tests {
             &mut out,
         );
         assert!(
+            !out.iter()
+                .any(|e| matches!(e, EngineEvent::Served { model: Some(_), .. })),
+            "the requested id must not be reported as served: {out:?}"
+        );
+
+        // Effort is still independent evidence even when the model is unknown.
+        let mut out = Vec::new();
+        parse_pi_family_line(
+            &serde_json::json!({
+                "type": "message_end",
+                "message": { "model": "kimi-k2", "thinking_effort": "high" }
+            })
+            .to_string(),
+            &mut out,
+        );
+        assert!(
             out.iter().any(|e| matches!(
                 e,
-                EngineEvent::Served { model: Some(model), effort: None } if model == "kimi-k2"
+                EngineEvent::Served { model: None, effort: Some(level) } if level == "high"
             )),
             "got {out:?}"
         );

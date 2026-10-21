@@ -15,13 +15,18 @@ describe("compareModel", () => {
     );
   });
 
-  it("reads a dated snapshot as a variant of the requested family", () => {
+  it("treats a date or build suffix as a different model id", () => {
     expect(compareModel("claude-opus-4-5", "claude-opus-4-5-20251101")).toBe(
-      "variant",
+      "mismatch",
     );
     expect(compareModel("claude-opus-4-5-latest", "claude-opus-4-5")).toBe(
-      "variant",
+      "mismatch",
     );
+    // Only the provider prefix is ignored; the id itself must match exactly.
+    expect(
+      compareModel("ds/deepseek-v4.1-flash", "deepseek/deepseek-v4.1-flash-1017"),
+    ).toBe("mismatch");
+    expect(compareModel("ds4.1", "ds4.1-1017")).toBe("mismatch");
   });
 
   it("flags a different model", () => {
@@ -102,7 +107,7 @@ describe("checkResponseSelection", () => {
         requested,
         served: { model: null, effort: null },
       }).visible,
-    ).toBe(false);
+    ).toBe(true);
     expect(
       checkResponseSelection({
         requested,
@@ -135,14 +140,20 @@ describe("checkResponseSelection", () => {
     expect(view.visible).toBe(true);
   });
 
-  it("stays hidden when nothing was reported to compare", () => {
+  it("still shows the card when the response side never reported", () => {
+    const view = checkResponseSelection({
+      requested: { model: "claude-opus-5-5", effort: "xhigh" },
+      served: { model: null, effort: null },
+    });
+    expect(view.visible).toBe(true);
+    expect(view.verdict).toBe("unknown");
+    expect(checkResponseSelection(null).visible).toBe(false);
     expect(
       checkResponseSelection({
-        requested: { model: "claude-opus-5-5", effort: "xhigh" },
+        requested: { model: null, effort: null },
         served: { model: null, effort: null },
       }).visible,
     ).toBe(false);
-    expect(checkResponseSelection(null).visible).toBe(false);
   });
 
   it("never reads an unreported side as a match", () => {
