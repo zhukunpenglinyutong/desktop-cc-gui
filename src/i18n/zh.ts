@@ -69,7 +69,7 @@ export const zh = {
     newSession: "新建会话",
     newBrowser: "新建浏览器",
     closeAllTabs: "全部关闭",
-    closeInactiveTabs: "关闭非活跃窗口",
+    closeInactiveTabs: "关闭其他标签页",
     closeLeftTabs: "关闭左侧标签页",
     closeRightTabs: "关闭右侧标签页",
     collapseSidebar: "收起侧边栏",

@@ -65,7 +65,11 @@ export function TabStripContextMenu({
       label: t("chat.closeInactiveTabs"),
       icon: <CircleX className="size-4" aria-hidden />,
       disabled: tabs.length <= 1,
-      onSelect: () => onCloseInactive(targetTab.key),
+      onSelect: () => {
+        const latestIndex = tabs.findIndex((item) => item.key === targetTab.key);
+        if (latestIndex < 0) return;
+        onCloseInactive(targetTab.key);
+      },
     });
   }
   if (onCloseLeft) {
@@ -74,7 +78,11 @@ export function TabStripContextMenu({
       label: t("chat.closeLeftTabs"),
       icon: <ArrowLeftToLine className="size-4" aria-hidden />,
       disabled: targetIndex <= 0,
-      onSelect: () => onCloseLeft(targetTab.key),
+      onSelect: () => {
+        const latestIndex = tabs.findIndex((item) => item.key === targetTab.key);
+        if (latestIndex <= 0) return;
+        onCloseLeft(targetTab.key);
+      },
     });
   }
   if (onCloseRight) {
@@ -83,7 +91,11 @@ export function TabStripContextMenu({
       label: t("chat.closeRightTabs"),
       icon: <ArrowRightToLine className="size-4" aria-hidden />,
       disabled: targetIndex < 0 || targetIndex >= tabs.length - 1,
-      onSelect: () => onCloseRight(targetTab.key),
+      onSelect: () => {
+        const latestIndex = tabs.findIndex((item) => item.key === targetTab.key);
+        if (latestIndex < 0 || latestIndex >= tabs.length - 1) return;
+        onCloseRight(targetTab.key);
+      },
     });
   }
   if (onCloseAll) {

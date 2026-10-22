@@ -240,4 +240,21 @@ describe("batch tab close handlers", () => {
     });
     expect(useChatStore.getState().openTabs.map((t) => t.sessionId)).toEqual(["3"]);
   });
+  it("does not close tabs when the target tab is not found in openTabs", () => {
+    useChatStore.setState({
+      openTabs: [
+        { engine: "claude", sessionId: "1", workspacePath: "/w" },
+        { engine: "claude", sessionId: "2", workspacePath: "/w" },
+      ],
+      active: { engine: "claude", sessionId: "1", workspacePath: "/w" },
+    });
+
+    act(() => root.render(<HandlersProbe />));
+
+    act(() => {
+      handlersRef.current?.handleTabCloseInactive("claude/non-existent");
+    });
+    // Defensive guard: must not degrade to Close All
+    expect(useChatStore.getState().openTabs.map((t) => t.sessionId)).toEqual(["1", "2"]);
+  });
 });

@@ -754,6 +754,7 @@ function useChatTabHandlers({
   const handleTabCloseInactive = useCallback(
     (targetKey?: string) => {
       const preserve = targetKey ?? activeTabKey;
+      if (!preserve || !tabItems.some((t) => t.key === preserve)) return;
       closeKeys(tabItems.map((t) => t.key).filter((k) => k !== preserve));
     },
     [activeTabKey, closeKeys, tabItems],
