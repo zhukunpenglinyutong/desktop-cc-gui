@@ -14,6 +14,10 @@ import {
   installGlobalCrashHandlers,
   setCrashAppVersion,
 } from "./lib/crash";
+import {
+  initializeNotifications,
+  updateCachedNotificationPreferences,
+} from "./lib/notifications";
 import { AppCrashBoundary } from "./components/crash/AppCrashBoundary";
 
 /**
@@ -84,6 +88,8 @@ export function startApp() {
       if (settings.language && settings.language !== i18n.language) {
         void i18n.changeLanguage(settings.language);
       }
+      updateCachedNotificationPreferences(settings);
+      void initializeNotifications();
     })
     .catch(() => {});
 

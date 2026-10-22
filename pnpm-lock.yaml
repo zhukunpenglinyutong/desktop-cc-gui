@@ -64,6 +64,9 @@ importers:
       '@tauri-apps/plugin-dialog':
         specifier: ^2.7.3
         version: 2.7.3
+      '@tauri-apps/plugin-notification':
+        specifier: ^2.6.0
+        version: 2.6.0
       '@tauri-apps/plugin-process':
         specifier: ^2.3.1
         version: 2.3.1
@@ -1201,8 +1204,8 @@ packages:
     peerDependencies:
       preact: '>= 10.25.0 || >=11.0.0-0'
 
-  '@react-grab/cli@0.2.0':
-    resolution: {integrity: sha512-LVfA+j5cFT0Szd958WRD8W/B8ucCtz4ViiveDKWLqAwBkZFW9VRW1ZvwOUhp/M3SmVPtjDaRkW12GvAuTArP+Q==}
+  '@react-grab/cli@0.1.37':
+    resolution: {integrity: sha512-1ln28VkVHUbd5qy+ccXG68voWc0mgZMhBnwG0umxfD+wbkXUcvRzVrLjSqao7N8hCrDqp+Pt5j9Tsqef+9yQQQ==}
     hasBin: true
 
   '@react-types/shared@3.36.1':
@@ -1562,6 +1565,9 @@ packages:
   '@tauri-apps/api@2.11.1':
     resolution: {integrity: sha512-M2FPuYND2m+wh5hfW9ZpSdxMPdEJovPBWwoHJmwUpysTYNHaOkVFN419m/K0LIgjb/7KU2vBgsUepJWugQCvAA==}
 
+  '@tauri-apps/api@2.12.3':
+    resolution: {integrity: sha512-9s0PKw0p4r3kFq92jhpivYSp+cSht15o0gXpZxuQd0+dV9KCexEVkNaLELVoLdJWyoH4KlfQo5h3W2LIM8siJg==}
+
   '@tauri-apps/cli-darwin-arm64@2.11.4':
     resolution: {integrity: sha512-1ryOF3ZhpZ/nemHV5zVwBQBz9jDGKmKPvWPADOhc83ig0P4bMc2iER4NbC6r9sjeIZ6RVQ4g3RZIYvezhcl4TQ==}
     engines: {node: '>= 10'}
@@ -1640,6 +1646,9 @@ packages:
 
   '@tauri-apps/plugin-dialog@2.7.3':
     resolution: {integrity: sha512-CRgE+7TP4tvq9MjBU6f04NLTFIqVMLKHk3hAqlhil00ngK9ACTrXPH3oHpKMProxILodd3YjBoKbMwSI4IEcfA==}
+
+  '@tauri-apps/plugin-notification@2.6.0':
+    resolution: {integrity: sha512-QvpsQ6L6uSGT/7AmIrEUrfOiqjP1S8HtBU1ieaX6bvOFXGjnoxbNMR9V+8PVhLqRdOntqevpUJ3c52S+1afsIw==}
 
   '@tauri-apps/plugin-process@2.3.1':
     resolution: {integrity: sha512-nCa4fGVaDL/B9ai03VyPOjfAHRHSBz5v6F/ObsB73r/dA3MHHhZtldaDMIc0V/pnUw9ehzr2iEG+XkSEyC0JJA==}
@@ -1925,10 +1934,6 @@ packages:
 
   agent-install@0.0.5:
     resolution: {integrity: sha512-nHlms9BkP8ZiY79HrwCGiA2DcNaXrAaJrCM/BEqQ7MEsSKyCk+2A76xPGylIfASZSZE0SaU3T0bNSg4rBPIJAQ==}
-    hasBin: true
-
-  agent-install@0.0.6:
-    resolution: {integrity: sha512-7NRMZ/ZDz2vHevQTgJsocBFpakB1/Wx5ip19YSJuj4VOXpraWztTerViNtdSyARKZT9e2yVwUUB5JXXCE7mNrA==}
     hasBin: true
 
   ajv-formats@3.0.1:
@@ -3181,8 +3186,8 @@ packages:
   oxc-resolver@11.24.2:
     resolution: {integrity: sha512-FY91FiDBj7ls5MsFS9jN3tjz2o0/zsdSsymlakySaBwVJZorHhkWyICLZMKxlu1R9vYo+sd3z1jwb4J8x7bNDw==}
 
-  oxlint-plugin-react-doctor@0.9.14:
-    resolution: {integrity: sha512-YGdwFmQXGQulT63SnVD9JI1hV2EwGnZHrgSlUMQaOkvnhYA200QwDeb7DfVT8UBt34lBvbkjtz8VRFJugHjsRQ==}
+  oxlint-plugin-react-doctor@0.9.17:
+    resolution: {integrity: sha512-j6tdFoJbLztISYNlw7LMT+6naqhVsXTNn7drhoGRIqf0x2mCSD2Ur71hK0E/VrLens355finI6j+sMqHxHpEfA==}
     engines: {node: ^20.19.0 || >=22.13.0}
 
   oxlint@1.81.0:
@@ -3299,8 +3304,8 @@ packages:
       react: ^16.8.0 || ^17.0.0-rc.1 || ^18.0.0 || ^19.0.0-rc.1
       react-dom: ^16.8.0 || ^17.0.0-rc.1 || ^18.0.0 || ^19.0.0-rc.1
 
-  react-doctor@0.9.14:
-    resolution: {integrity: sha512-JzOwAY/hoSxHa4Siyqgfxr/KCNak0SB9pSTseFVStFHAnWS+XxR6RsWU6Q5Ho+J5Jmyb9LZRXc6ZK5jt3cfcQQ==}
+  react-doctor@0.9.17:
+    resolution: {integrity: sha512-YCsjYk6MocO/oBhVxCcKvPotFxEOf/WJep/oF7jrpyVUBVKDKdpt7jVwTxrJrFE8uALMmVTljzXNTIjoL3talg==}
     engines: {node: ^20.19.0 || >=22.13.0}
     hasBin: true
 
@@ -3309,8 +3314,8 @@ packages:
     peerDependencies:
       react: ^18.3.1
 
-  react-grab@0.2.0:
-    resolution: {integrity: sha512-ohhsfXD4qN0j6cMQd56aaVJBPDF3kUdviF/Od1Eak/rEIXQ3svQ4gjkwTfuTZwTBnxHRL16p9JqdlVQO5nUHqA==}
+  react-grab@0.1.37:
+    resolution: {integrity: sha512-XVAc/qPyxsDT8Putu9UnP7iVHmAORMzvaN/3GDTOfbuLIRXWdOt7vebPOzM9RVTVUjucXv0135JI++kSVPSfYg==}
     hasBin: true
     peerDependencies:
       react: '>=17.0.0'
@@ -3514,6 +3519,10 @@ packages:
 
   sisteransi@1.0.5:
     resolution: {integrity: sha512-bLGGlR1QxBcynn2d5YmDX4MGjlZvy2MRBDRNHLJ8VI6l6+9FUiyTFNJ0IveOSP0bcXgVDPRcfGqA0pjaqUpfVg==}
+
+  smol-toml@1.9.1:
+    resolution: {integrity: sha512-j7WyPdf0CJoutMzMoPLF/bVXHtKZIT9Rb4eGeEbWw8X2t5oirjPgpL+OpaENZrILYaXqYwnVH+qgUwVbl+pUJQ==}
+    engines: {node: '>= 18'}
 
   source-map-js@1.2.1:
     resolution: {integrity: sha512-UXWMKhLOwVKb728IUtQPXxfYU+usdybtUrK/8uGE8CQMvrhOpwvzDBwj0QhSL7MQc7vIsISBG8VQ8+IDQxpfQA==}
@@ -4919,15 +4928,16 @@ snapshots:
       '@preact/signals-core': 1.14.4
       preact: 10.29.8
 
-  '@react-grab/cli@0.2.0':
+  '@react-grab/cli@0.1.37':
     dependencies:
-      agent-install: 0.0.6
       commander: 14.0.3
       ignore: 7.0.9
+      jsonc-parser: 3.3.1
       ora: 9.4.1
       package-manager-detector: 1.8.0
       picocolors: 1.1.1
       prompts: 2.4.2
+      smol-toml: 1.9.1
       tinyexec: 1.3.1
 
   '@react-types/shared@3.36.1(react@18.3.1)':
@@ -5223,6 +5233,8 @@ snapshots:
 
   '@tauri-apps/api@2.11.1': {}
 
+  '@tauri-apps/api@2.12.3': {}
+
   '@tauri-apps/cli-darwin-arm64@2.11.4':
     optional: true
 
@@ -5273,6 +5285,10 @@ snapshots:
   '@tauri-apps/plugin-dialog@2.7.3':
     dependencies:
       '@tauri-apps/api': 2.11.1
+
+  '@tauri-apps/plugin-notification@2.6.0':
+    dependencies:
+      '@tauri-apps/api': 2.12.3
 
   '@tauri-apps/plugin-process@2.3.1':
     dependencies:
@@ -5616,15 +5632,6 @@ snapshots:
   agent-base@7.1.4: {}
 
   agent-install@0.0.5:
-    dependencies:
-      '@iarna/toml': 2.2.5
-      commander: 14.0.3
-      jsonc-parser: 3.3.1
-      picocolors: 1.1.1
-      prompts: 2.4.2
-      yaml: 2.9.1
-
-  agent-install@0.0.6:
     dependencies:
       '@iarna/toml': 2.2.5
       commander: 14.0.3
@@ -7221,7 +7228,7 @@ snapshots:
       '@oxc-resolver/binding-win32-arm64-msvc': 11.24.2
       '@oxc-resolver/binding-win32-x64-msvc': 11.24.2
 
-  oxlint-plugin-react-doctor@0.9.14:
+  oxlint-plugin-react-doctor@0.9.17:
     dependencies:
       '@shaderfrog/glsl-parser': 7.0.1
       '@typescript-eslint/types': 8.70.0
@@ -7352,7 +7359,7 @@ snapshots:
       react-stately: 3.50.0(react@18.3.1)
       use-sync-external-store: 1.6.0(react@18.3.1)
 
-  react-doctor@0.9.14(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1))(eslint@10.10.0(jiti@2.7.0))(react@18.3.1):
+  react-doctor@0.9.17(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1))(eslint@10.10.0(jiti@2.7.0))(react@18.3.1):
     dependencies:
       '@astrojs/compiler': 4.0.0
       '@sentry/node': 10.74.0(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1))
@@ -7367,7 +7374,7 @@ snapshots:
       oxc-parser: 0.148.0
       oxc-resolver: 11.24.2
       oxlint: 1.81.0
-      oxlint-plugin-react-doctor: 0.9.14
+      oxlint-plugin-react-doctor: 0.9.17
       playwright-core: 1.63.0
       prompts: 2.4.2
       typescript: 5.9.3
@@ -7388,10 +7395,10 @@ snapshots:
       react: 18.3.1
       scheduler: 0.23.2
 
-  react-grab@0.2.0(react@18.3.1):
+  react-grab@0.1.37(react@18.3.1):
     dependencies:
-      '@react-grab/cli': 0.2.0
-      bippy: 0.6.1(react@18.3.1)
+      '@react-grab/cli': 0.1.37
+      bippy: 0.5.43(react@18.3.1)
     optionalDependencies:
       react: 18.3.1
 
@@ -7451,9 +7458,9 @@ snapshots:
       preact: 10.29.8
       prompts: 2.4.2
       react: 18.3.1
-      react-doctor: 0.9.14(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1))(eslint@10.10.0(jiti@2.7.0))(react@18.3.1)
+      react-doctor: 0.9.17(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1))(eslint@10.10.0(jiti@2.7.0))(react@18.3.1)
       react-dom: 18.3.1(react@18.3.1)
-      react-grab: 0.2.0(react@18.3.1)
+      react-grab: 0.1.37(react@18.3.1)
     optionalDependencies:
       esbuild: 0.25.12
       unplugin: 3.3.0(esbuild@0.25.12)(rollup@4.63.1)(vite@6.4.3(@types/node@22.20.1)(jiti@2.7.0)(lightningcss@1.33.0)(yaml@2.9.1))
@@ -7696,6 +7703,8 @@ snapshots:
   signal-exit@4.1.0: {}
 
   sisteransi@1.0.5: {}
+
+  smol-toml@1.9.1: {}
 
   source-map-js@1.2.1: {}
 
