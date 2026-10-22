@@ -765,9 +765,9 @@ pub(super) async fn dispatch(
         // flavors the paste event itself carried.
         "clipboard_file_paths" => ser(Ok::<Vec<String>, String>(Vec::new())),
         // history
-        "list_sessions" => ser(crate::history::reader::list_sessions(app.state())),
+        "list_sessions" => ser(crate::history::reader::list_sessions(app.state()).await),
         "list_archived_sessions" => {
-            ser(crate::history::reader::list_archived_sessions(app.state()))
+            ser(crate::history::reader::list_archived_sessions(app.state()).await)
         }
         "archive_session" => {
             let a: ArchiveSessionArgs = parse_args(&raw)?;
@@ -792,7 +792,7 @@ pub(super) async fn dispatch(
                 app.state(),
                 a.days,
                 a.tz_offset_minutes,
-            ))
+            ).await)
         }
         "usage_record" => {
             let a: UsageRecordArgs = parse_args(&raw)?;
@@ -800,7 +800,7 @@ pub(super) async fn dispatch(
                 app.clone(),
                 app.state(),
                 a.entry,
-            ))
+            ).await)
         }
         "usage_clear" => ser(crate::usage::usage_clear(app.state())),
         "load_session_page" => {
@@ -919,7 +919,7 @@ pub(super) async fn dispatch(
             )
             .await)
         }
-        "list_workspaces" => ser(crate::history::reader::list_workspaces(app.state())),
+        "list_workspaces" => ser(crate::history::reader::list_workspaces(app.state()).await),
         "reorder_workspaces" => {
             let a: IdsArgs = parse_args(&raw)?;
             ser(crate::history::reader::reorder_workspaces(
@@ -942,7 +942,7 @@ pub(super) async fn dispatch(
         // files
         "list_dir" => {
             let a: PathArgs = parse_args(&raw)?;
-            ser(crate::files::list_dir(app.state(), a.path))
+            ser(crate::files::list_dir(app.state(), a.path).await)
         }
         "read_file" => {
             let a: PathArgs = parse_args(&raw)?;
@@ -1289,7 +1289,7 @@ pub(super) async fn dispatch(
         }
         "plugin_storage_get" => {
             let a: PluginStorageGetArgs = parse_args(&raw)?;
-            ser(crate::plugins::plugin_storage_get(app.state(), a.id, a.key))
+            ser(crate::plugins::plugin_storage_get(app.state(), a.id, a.key).await)
         }
         // Asset capabilities use the same authenticated bridge and the same
         // backend permission gates as desktop; they grant no general file

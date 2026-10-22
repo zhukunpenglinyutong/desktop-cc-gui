@@ -537,13 +537,29 @@ pub fn accepted_frame_set_signature(hashes: &HashSet<String>) -> String {
     }
     format!("{:x}", hasher.finalize())
 }
+/// Async + spawn_blocking: plugins call this at every turn start and end, and
+/// it takes the shared db lock (held for seconds by full-text index writes)
+/// plus a recursive git status — neither may run on the WebView2 UI thread.
 #[tauri::command]
-pub fn workspace_metadata(
+pub async fn workspace_metadata(
     db: tauri::State<'_, std::sync::Arc<Db>>,
     plugin_id: String,
     workspace_path: String,
 ) -> Result<WorkspaceMetadata, String> {
-    let (enabled, quarantined, permissions) = crate::plugins::plugin_access(&plugin_id)?;
+    let db = std::sync::Arc::clone(db.inner());
+    tauri::async_runtime::spawn_blocking(move || {
+        workspace_metadata_blocking(&db, &plugin_id, &workspace_path)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+fn workspace_metadata_blocking(
+    db: &Db,
+    plugin_id: &str,
+    workspace_path: &str,
+) -> Result<WorkspaceMetadata, String> {
+    let (enabled, quarantined, permissions) = crate::plugins::plugin_access(plugin_id)?;
     if !enabled {
         return Err(format!("{plugin_id}: plugin is disabled"));
     }
@@ -1080,6 +1096,23 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
         .any(|name| name == "parent_id");
     if !has_parent_id {
         conn.execute("ALTER TABLE workspaces ADD COLUMN parent_id TEXT", [])?;
+    }
+    // Additive migration: incremental full-text index checkpoint. NULL means
+    // "no checkpoint" — the next index pass rebuilds the session in full and
+    // records one, so existing databases need no INDEX_VERSION bump.
+    let fts_columns: Vec<String> = conn
+        .prepare("PRAGMA table_info(fts_state)")?
+        .query_map([], |row| row.get::<_, String>(1))?
+        .flatten()
+        .collect();
+    for (column, ddl) in [
+        ("last_seq", "ALTER TABLE fts_state ADD COLUMN last_seq INTEGER"),
+        ("prefix_hash", "ALTER TABLE fts_state ADD COLUMN prefix_hash TEXT"),
+        ("parsed_bytes", "ALTER TABLE fts_state ADD COLUMN parsed_bytes INTEGER"),
+    ] {
+        if !fts_columns.iter().any(|name| name == column) {
+            conn.execute(ddl, [])?;
+        }
     }
     Ok(())
 }

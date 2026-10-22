@@ -45,8 +45,12 @@ pub struct UsageRow {
 
 /// Append one finished turn. A turn with no tokens (interrupted before the
 /// engine reported) is not a ledger row — it would only add noise.
+///
+/// Async: recorded right as a turn ends, which is exactly when the full-text
+/// index pass starts holding the shared db lock for seconds; a sync command
+/// would wait out that write on the WebView2 UI thread.
 #[tauri::command]
-pub fn usage_record(
+pub async fn usage_record(
     app: tauri::AppHandle,
     state: tauri::State<'_, crate::AppState>,
     entry: UsageEntry,
@@ -54,8 +58,8 @@ pub fn usage_record(
     if entry.input + entry.output + entry.cache_read + entry.cache_write == 0 {
         return Ok(());
     }
-    {
-        let conn = state.db.0.lock();
+    crate::history::reader::off_ui_thread(&state.db, move |db| {
+        let conn = db.0.lock();
         conn.execute(
             "INSERT INTO usage_ledger
                (ts, engine, model, session_id, workspace_path,
@@ -75,8 +79,10 @@ pub fn usage_record(
                 entry.reports.max(1),
             ],
         )
-        .map_err(|e| e.to_string())?;
-    }
+        .map(|_| ())
+        .map_err(|e| e.to_string())
+    })
+    .await?;
     // The page re-reads on this; the ledger is the only writer.
     let _ = app.emit("usage://changed", ());
     Ok(())
@@ -87,13 +93,16 @@ pub fn usage_record(
 /// `days` calendar days. `tz_offset_minutes` is the caller's UTC offset so
 /// buckets match the calendar the user is looking at.
 #[tauri::command]
-pub fn usage_summary(
+pub async fn usage_summary(
     state: tauri::State<'_, crate::AppState>,
     days: u32,
     tz_offset_minutes: i32,
 ) -> Result<Vec<UsageRow>, String> {
-    let conn = state.db.0.lock();
-    summarize(&conn, days, tz_offset_minutes).map_err(|e| e.to_string())
+    crate::history::reader::off_ui_thread(&state.db, move |db| {
+        let conn = db.0.lock();
+        summarize(&conn, days, tz_offset_minutes).map_err(|e| e.to_string())
+    })
+    .await
 }
 
 /// The ledger read behind `usage_summary`, split out so the day-window logic

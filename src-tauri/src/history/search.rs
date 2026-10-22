@@ -21,7 +21,7 @@ use serde::Serialize;
 use std::path::Path;
 use std::sync::Arc;
 
-use super::{parse_session_file, parse_ts_ms_str};
+use super::{parse_for_index, parse_ts_ms_str, Checkpoint};
 
 /// Bump when index derivation changes (what text is indexed, tokenizer) so
 /// every session re-indexes exactly once on upgrade.
@@ -155,39 +155,71 @@ fn message_count(db: &crate::db::Db) -> Result<i64, String> {
         .map_err(|e| e.to_string())
 }
 
-/// Write the fts_state row shared by the success and failure paths.
+/// Write the fts_state row shared by the success and failure paths. A None
+/// checkpoint clears it, so the next pass rebuilds the session in full.
 fn upsert_stamp(
     conn: &rusqlite::Connection,
     row: &PendingSession,
     version: &str,
+    checkpoint: Option<&Checkpoint>,
 ) -> Result<(), String> {
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_millis() as i64)
         .unwrap_or(0);
     conn.execute(
-        "INSERT INTO fts_state(engine, session_id, file_size, file_mtime_ms, version, indexed_at)
-         VALUES(?1, ?2, ?3, ?4, ?5, ?6)
+        "INSERT INTO fts_state(engine, session_id, file_size, file_mtime_ms, version, indexed_at,
+                               last_seq, parsed_bytes, prefix_hash)
+         VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
          ON CONFLICT(engine, session_id) DO UPDATE SET
             file_size=excluded.file_size,
             file_mtime_ms=excluded.file_mtime_ms,
             version=excluded.version,
-            indexed_at=excluded.indexed_at",
+            indexed_at=excluded.indexed_at,
+            last_seq=excluded.last_seq,
+            parsed_bytes=excluded.parsed_bytes,
+            prefix_hash=excluded.prefix_hash",
         rusqlite::params![
             row.engine,
             row.session_id,
             row.file_size,
             row.file_mtime_ms,
             version,
-            now
+            now,
+            checkpoint.map(|c| c.last_seq),
+            checkpoint.map(|c| c.parsed_bytes as i64),
+            checkpoint.map(|c| c.prefix_hash.as_str()),
         ],
     )
     .map_err(|e| e.to_string())?;
     Ok(())
 }
 
-/// Sessions-row stat, re-checked under SCAN_LOCK before any stamp: a file
-/// rewritten mid-parse must not be stamped at the new stat.
+/// The stored checkpoint when it is current-version and the file has not
+/// shrunk below it. `parse_for_index` verifies it against the bytes it reads
+/// and falls back to a full parse on mismatch.
+fn stored_checkpoint(db: &crate::db::Db, row: &PendingSession) -> Option<Checkpoint> {
+    let stored: Option<(String, Option<i64>, Option<i64>, Option<String>)> = {
+        let conn = db.0.lock();
+        conn.query_row(
+            "SELECT version, last_seq, parsed_bytes, prefix_hash FROM fts_state
+             WHERE engine=?1 AND session_id=?2",
+            rusqlite::params![row.engine, row.session_id],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+        )
+        .optional()
+        .ok()
+        .flatten()
+    };
+    let (version, Some(last_seq), Some(parsed_bytes), Some(prefix_hash)) = stored? else {
+        return None;
+    };
+    let parsed_bytes = u64::try_from(parsed_bytes).ok()?;
+    (version == INDEX_VERSION && (row.file_size as u64) >= parsed_bytes)
+        .then_some(Checkpoint { last_seq, parsed_bytes, prefix_hash })
+}
+
+/// Sessions-row stat, re-checked under SCAN_LOCK before any stamp.
 fn stat_unchanged(conn: &rusqlite::Connection, row: &PendingSession) -> Result<bool, String> {
     let current: Option<(i64, i64)> = conn
         .query_row(
@@ -200,6 +232,13 @@ fn stat_unchanged(conn: &rusqlite::Connection, row: &PendingSession) -> Result<b
     Ok(current == Some((row.file_size, row.file_mtime_ms)))
 }
 
+/// A successful publish also requires the file to retain the stat used by the
+/// scanner. Failure stamps intentionally do not use this: a missing file is
+/// a stable parse failure and must stop retrying until its row changes.
+fn file_stat_unchanged(row: &PendingSession) -> bool {
+    super::stat_signature(Path::new(&row.file_path)) == Some((row.file_size, row.file_mtime_ms))
+}
+
 /// Mark an unparseable session as attempted at its current stat. Previously
 /// indexed messages stay (last-good content remains searchable); the stat
 /// and version checks in PENDING_FROM re-pend the session when the file
@@ -209,9 +248,17 @@ fn stamp_failure(db: &crate::db::Db, row: &PendingSession) -> Result<(), String>
     let _scan_guard = super::scanner::SCAN_LOCK.lock();
     let conn = db.0.lock();
     if stat_unchanged(&conn, row)? {
-        upsert_stamp(&conn, row, &failed_version())?;
+        upsert_stamp(&conn, row, &failed_version(), None)?;
     }
     Ok(())
+}
+
+/// How a parse is published. A rebuild replaces every row of the session; a
+/// resumed parse replaces only rows after the checkpoint seq it resumed at —
+/// the bytes before it were verified unchanged, so their rows still hold.
+enum Publish {
+    Rebuild,
+    After(i64),
 }
 
 /// (Re)index one session. Returns true when the index now reflects the
@@ -219,31 +266,53 @@ fn stamp_failure(db: &crate::db::Db, row: &PendingSession) -> Result<(), String>
 /// parse failure is failure-stamped so a permanently unparseable file
 /// (e.g. deleted transcript) neither retries nor counts as pending until
 /// its stat moves.
+///
+/// Incremental: a turn appends a few dozen messages to a transcript that may
+/// hold tens of thousands. Rewriting all of them under the db lock (plus the
+/// trigram triggers) held it for 5-20s per pass on large sessions, freezing
+/// every command waiting behind it. A valid checkpoint limits both the parse
+/// and the write to what was appended since the last pass.
 fn index_one(db: &crate::db::Db, row: &PendingSession) -> Result<bool, String> {
     // Index the same text the reader shows: parse with this session's accepted
     // internal frames, so hidden frames stay out of the index (an empty set
     // would re-reveal every frame the capture validator hid). The signature
     // rides along so `write_index` can prove, while holding the write lock,
-    // that no identity was recorded after this read.
+    // that no identity was recorded after this read. Recording one also
+    // deletes the stamp, so the next pass rebuilds rather than resumes.
     let (accepted_frames, accepted_signature) =
         db.accepted_internal_frames(&row.engine, &row.session_id)?;
-    let parsed = if row.message_count > 0 {
-        match parse_session_file(&row.engine, Path::new(&row.file_path), &accepted_frames) {
-            Ok(parsed) => parsed,
-            Err(error) => {
-                eprintln!(
-                    "[search] parse {} failed (stamped, retried on change): {error}",
-                    row.file_path
-                );
-                stamp_failure(db, row)?;
-                return Ok(false);
-            }
+    if row.message_count == 0 {
+        return write_index(db, row, &[], Publish::Rebuild, None, &accepted_signature);
+    }
+    let resume = stored_checkpoint(db, row);
+    let parsed = match parse_for_index(
+        &row.engine,
+        Path::new(&row.file_path),
+        &accepted_frames,
+        resume.as_ref(),
+    ) {
+        Ok(parsed) => parsed,
+        Err(error) => {
+            eprintln!(
+                "[search] parse {} failed (stamped, retried on change): {error}",
+                row.file_path
+            );
+            stamp_failure(db, row)?;
+            return Ok(false);
         }
-    } else {
-        super::ParsedSession { messages: vec![] }
     };
-
-    write_index(db, row, &parsed, &accepted_signature)
+    let publish = match (&resume, parsed.resumed) {
+        (Some(resumed), true) => Publish::After(resumed.last_seq),
+        _ => Publish::Rebuild,
+    };
+    write_index(
+        db,
+        row,
+        &parsed.messages,
+        publish,
+        parsed.checkpoint.as_ref(),
+        &accepted_signature,
+    )
 }
 
 /// Publish one parsed session. The identity-set re-check runs under the same
@@ -254,7 +323,9 @@ fn index_one(db: &crate::db::Db, row: &PendingSession) -> Result<bool, String> {
 fn write_index(
     db: &crate::db::Db,
     row: &PendingSession,
-    parsed: &super::ParsedSession,
+    messages: &[super::Message],
+    publish: Publish,
+    checkpoint: Option<&Checkpoint>,
     accepted_signature: &str,
 ) -> Result<bool, String> {
     // Deletion paths hold SCAN_LOCK, so under it the sessions row cannot
@@ -263,7 +334,7 @@ fn write_index(
     let _scan_guard = super::scanner::SCAN_LOCK.lock();
     let mut conn = db.0.lock();
     let tx = conn.transaction().map_err(|e| e.to_string())?;
-    if !stat_unchanged(&tx, row)? {
+    if !stat_unchanged(&tx, row)? || !file_stat_unchanged(row) {
         return Ok(false);
     }
     let (_, current_signature) =
@@ -271,9 +342,15 @@ fn write_index(
     if current_signature != accepted_signature {
         return Ok(false);
     }
+    // Rows after the cut are replaced: on a resume that is the previous
+    // pass's trailing partial line, re-read now that it may be complete.
+    let after = match publish {
+        Publish::Rebuild => i64::MIN,
+        Publish::After(seq) => seq,
+    };
     tx.execute(
-        "DELETE FROM session_messages WHERE engine=?1 AND session_id=?2",
-        rusqlite::params![row.engine, row.session_id],
+        "DELETE FROM session_messages WHERE engine=?1 AND session_id=?2 AND seq > ?3",
+        rusqlite::params![row.engine, row.session_id, after],
     )
     .map_err(|e| e.to_string())?;
     {
@@ -283,7 +360,9 @@ fn write_index(
                  VALUES(?1, ?2, ?3, ?4, ?5, ?6)",
             )
             .map_err(|e| e.to_string())?;
-        for message in &parsed.messages {
+        // Engines that cannot seek re-parse from the start; rows up to the
+        // verified checkpoint are already indexed.
+        for message in messages.iter().filter(|m| m.seq > after) {
             if message.text.trim().is_empty() {
                 continue;
             }
@@ -299,7 +378,7 @@ fn write_index(
             .map_err(|e| e.to_string())?;
         }
     }
-    upsert_stamp(&tx, row, INDEX_VERSION)?;
+    upsert_stamp(&tx, row, INDEX_VERSION, checkpoint)?;
     tx.commit().map_err(|e| e.to_string())?;
     Ok(true)
 }
@@ -964,7 +1043,7 @@ mod tests {
         let (accepted_frames, accepted_signature) =
             db.accepted_internal_frames("claude", "race").unwrap();
         assert!(accepted_frames.is_empty());
-        let parsed = parse_session_file("claude", &path, &accepted_frames).unwrap();
+        let parsed = parse_for_index("claude", &path, &accepted_frames, None).unwrap();
         // The frame is visible in this parse — exactly the content that must
         // not be published if an identity is recorded before the write.
         assert!(parsed
@@ -989,7 +1068,15 @@ mod tests {
             .unwrap());
 
         // The stale parse is refused: nothing is published, nothing is stamped.
-        assert!(!write_index(&db, &row, &parsed, &accepted_signature).unwrap());
+        assert!(!write_index(
+            &db,
+            &row,
+            &parsed.messages,
+            Publish::Rebuild,
+            None,
+            &accepted_signature
+        )
+        .unwrap());
         assert!(search(&db, "racehidden", None, None)
             .unwrap()
             .hits
@@ -1004,6 +1091,189 @@ mod tests {
             .hits
             .is_empty());
         assert_eq!(search(&db, "可见的回复", None, None).unwrap().hits.len(), 1);
+    }
+
+    fn omp_line(role: &str, text: &str) -> String {
+        serde_json::json!({
+            "type": "message",
+            "timestamp": "2026-10-18T10:00:00.000Z",
+            "message": {"role": role, "content": [{"type": "text", "text": text}]}
+        })
+        .to_string()
+    }
+
+    fn register_engine_session(db: &crate::db::Db, engine: &str, id: &str, path: &std::path::Path) {
+        let (size, mtime_ms) = super::super::stat_signature(path).unwrap();
+        db.0.lock()
+            .execute(
+                "INSERT INTO sessions(engine, session_id, workspace_path, file_path, file_size, file_mtime_ms, message_count)
+                 VALUES(?1, ?2, '/ws', ?3, ?4, ?5, 1)
+                 ON CONFLICT(engine, session_id) DO UPDATE SET
+                    file_size=excluded.file_size, file_mtime_ms=excluded.file_mtime_ms",
+                rusqlite::params![engine, id, path.to_string_lossy().as_ref(), size, mtime_ms],
+            )
+            .unwrap();
+    }
+
+    fn append(path: &std::path::Path, bytes: &str) {
+        use std::io::Write;
+        let mut file = std::fs::OpenOptions::new().append(true).open(path).unwrap();
+        file.write_all(bytes.as_bytes()).unwrap();
+    }
+
+    /// (seq, text) of every indexed row, plus the rowid of seq 1 — a rowid that
+    /// survives a pass proves the row was not deleted and re-inserted.
+    fn indexed(db: &crate::db::Db, engine: &str, id: &str) -> (Vec<(i64, String)>, i64) {
+        let conn = db.0.lock();
+        let mut stmt = conn
+            .prepare("SELECT seq, text FROM session_messages WHERE engine=?1 AND session_id=?2 ORDER BY seq")
+            .unwrap();
+        let rows = stmt
+            .query_map(rusqlite::params![engine, id], |r| Ok((r.get(0)?, r.get(1)?)))
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+        let first: i64 = conn
+            .query_row(
+                "SELECT id FROM session_messages WHERE engine=?1 AND session_id=?2 AND seq=1",
+                rusqlite::params![engine, id],
+                |r| r.get(0),
+            )
+            .unwrap();
+        (rows, first)
+    }
+
+    fn expected(rows: &[(i64, &str)]) -> Vec<(i64, String)> {
+        rows.iter().map(|(seq, text)| (*seq, text.to_string())).collect()
+    }
+
+    #[test]
+    fn appended_turns_index_without_rewriting_earlier_rows() {
+        for engine in ["omp", "claude"] {
+            let scratch = Scratch::new();
+            let db = crate::db::Db::open_at(&scratch.0.join("app.db")).unwrap();
+            let line = |role: &str, text: &str| match engine {
+                "omp" => omp_line(role, text),
+                _ if role == "user" => claude_user_line(text),
+                _ => claude_assistant_line(text),
+            };
+            let path = write_session_file(
+                &scratch,
+                "s.jsonl",
+                &[line("user", "第一轮提问"), line("assistant", "第一轮回答")],
+            );
+            register_engine_session(&db, engine, "s", &path);
+            assert_eq!(index_pending(&db).unwrap(), 1);
+            let (_, first_rowid) = indexed(&db, engine, "s");
+
+            append(&path, &(line("assistant", "第二轮回答") + "\n"));
+            register_engine_session(&db, engine, "s", &path);
+            assert_eq!(index_pending(&db).unwrap(), 1);
+            let (rows, rowid_after) = indexed(&db, engine, "s");
+            assert_eq!(rowid_after, first_rowid, "{engine}: earlier row was rewritten");
+            assert_eq!(
+                rows,
+                expected(&[(1, "第一轮提问"), (2, "第一轮回答"), (3, "第二轮回答")]),
+                "{engine}"
+            );
+
+            // The incremental result equals a from-scratch rebuild.
+            db.0.lock().execute("DELETE FROM fts_state", []).unwrap();
+            assert_eq!(index_pending(&db).unwrap(), 1);
+            assert_eq!(indexed(&db, engine, "s").0, rows, "{engine}: diverged from rebuild");
+        }
+    }
+
+    #[test]
+    fn a_rewritten_transcript_rebuilds_instead_of_resuming() {
+        let scratch = Scratch::new();
+        let db = crate::db::Db::open_at(&scratch.0.join("app.db")).unwrap();
+        let path = write_session_file(
+            &scratch,
+            "s.jsonl",
+            &[omp_line("user", "原始提问"), omp_line("assistant", "原始回答内容")],
+        );
+        register_engine_session(&db, "omp", "s", &path);
+        assert_eq!(index_pending(&db).unwrap(), 1);
+
+        // Compaction-style rewrite: same shape, different earlier bytes.
+        std::fs::write(
+            &path,
+            [omp_line("user", "原始提问"), omp_line("assistant", "改写后的回答内容")].join("\n") + "\n",
+        )
+        .unwrap();
+        register_engine_session(&db, "omp", "s", &path);
+        assert_eq!(index_pending(&db).unwrap(), 1);
+        assert_eq!(
+            indexed(&db, "omp", "s").0,
+            expected(&[(1, "原始提问"), (2, "改写后的回答内容")])
+        );
+        assert!(search(&db, "原始回答", None, None).unwrap().hits.is_empty());
+    }
+
+    #[test]
+    fn a_line_still_being_written_is_reread_once_complete() {
+        let scratch = Scratch::new();
+        let db = crate::db::Db::open_at(&scratch.0.join("app.db")).unwrap();
+        let path = scratch.0.join("s.jsonl");
+        // The writer has not reached the newline after the second line yet.
+        std::fs::write(
+            &path,
+            omp_line("user", "提问") + "\n" + &omp_line("assistant", "写到一半的回答"),
+        )
+        .unwrap();
+        register_engine_session(&db, "omp", "s", &path);
+        assert_eq!(index_pending(&db).unwrap(), 1);
+        assert_eq!(indexed(&db, "omp", "s").0.len(), 2, "unterminated row is searchable now");
+
+        append(&path, &format!("\n{}\n", omp_line("assistant", "下一条")));
+        register_engine_session(&db, "omp", "s", &path);
+        assert_eq!(index_pending(&db).unwrap(), 1);
+        assert_eq!(
+            indexed(&db, "omp", "s").0,
+            expected(&[(1, "提问"), (2, "写到一半的回答"), (3, "下一条")]),
+            "the completed line is indexed once, numbering unbroken"
+        );
+    }
+
+    #[test]
+    fn a_checkpoint_resumes_only_when_the_bytes_read_still_match_it() {
+        for engine in ["omp", "claude"] {
+            let scratch = Scratch::new();
+            let line = |role: &str, text: &str| match engine {
+                "omp" => omp_line(role, text),
+                _ if role == "user" => claude_user_line(text),
+                _ => claude_assistant_line(text),
+            };
+            let path = write_session_file(
+                &scratch,
+                "s.jsonl",
+                &[line("user", "提问"), line("assistant", "回答")],
+            );
+            let frames = std::collections::HashSet::new();
+            let first = parse_for_index(engine, &path, &frames, None).unwrap();
+            assert!(!first.resumed);
+            let checkpoint = first.checkpoint.unwrap();
+            append(&path, &(line("assistant", "追加") + "\n"));
+
+            let next = parse_for_index(engine, &path, &frames, Some(&checkpoint)).unwrap();
+            assert!(next.resumed, "{engine}: an append keeps the checkpoint valid");
+            let tail: Vec<(i64, String)> = next
+                .messages
+                .iter()
+                .filter(|m| m.seq > checkpoint.last_seq)
+                .map(|m| (m.seq, m.text.clone()))
+                .collect();
+            assert_eq!(tail, expected(&[(3, "追加")]), "{engine}");
+
+            // A checkpoint whose digest is not of the bytes this pass reads
+            // (the file was rewritten since) must not be resumed from.
+            let stale = Checkpoint { prefix_hash: "0:stale".to_string(), ..checkpoint };
+            let rebuilt = parse_for_index(engine, &path, &frames, Some(&stale)).unwrap();
+            assert!(!rebuilt.resumed, "{engine}");
+            let seqs: Vec<i64> = rebuilt.messages.iter().map(|m| m.seq).collect();
+            assert_eq!(seqs, [1, 2, 3], "{engine}: a full parse numbers from the start");
+        }
     }
 
     #[test]

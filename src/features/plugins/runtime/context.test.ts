@@ -516,6 +516,33 @@ describe("createPluginContext", () => {
     expect(await ctx.storage.get("k")).toBeNull();
   });
 
+  it("serializes plugin storage writes in invocation order", async () => {
+    const backend = fakeStorage();
+    const events: string[] = [];
+    const firstStarted = Promise.withResolvers<void>();
+    const finishFirst = Promise.withResolvers<void>();
+    backend.set = vi.fn(async (id, key, value) => {
+      const label = String(value);
+      events.push(`start:${label}`);
+      if (label === "first") {
+        firstStarted.resolve();
+        await finishFirst.promise;
+      }
+      backend.data.set(`${id}:${key}`, value);
+      events.push(`done:${label}`);
+    });
+    const { ctx } = createPluginContext(manifest(["storage"]), backend, { appVersion: "1.0.0" });
+
+    const first = ctx.storage.set("k", "first");
+    await firstStarted.promise;
+    const second = ctx.storage.set("k", "second");
+    finishFirst.resolve();
+    await Promise.all([first, second]);
+
+    expect(events).toEqual(["start:first", "done:first", "start:second", "done:second"]);
+    expect(backend.data.get("test-plugin:k")).toBe("second");
+  });
+
   it("theme.injectCss mounts a tagged <style> and its disposer removes it", () => {
     const { ctx } = createPluginContext(manifest(["theme"]), fakeStorage(), {
       appVersion: "1.0.0",

@@ -189,6 +189,24 @@ function tokenBlock(selector: string, tokens: Record<string, string> | undefined
   return lines.length ? `${selector} { ${lines.join(" ")} }` : "";
 }
 
+// Storage commands for one plugin rewrite the same persisted JSON document.
+// Preserve SDK invocation order even though each command runs off the UI thread.
+const pluginStorageWriteTails = new Map<string, Promise<void>>();
+
+function serializePluginStorageWrite(
+  pluginId: string,
+  write: () => Promise<void>,
+): Promise<void> {
+  const previous = pluginStorageWriteTails.get(pluginId) ?? Promise.resolve();
+  const current = previous.catch(() => undefined).then(write);
+  const tail = current.then(() => undefined, () => undefined);
+  pluginStorageWriteTails.set(pluginId, tail);
+  void tail.then(() => {
+    if (pluginStorageWriteTails.get(pluginId) === tail) pluginStorageWriteTails.delete(pluginId);
+  });
+  return current;
+}
+
 /**
  * Builds the host implementation of the SDK's PluginContext contract
  * (@ccgui/plugin-sdk). Every registration returns a Disposer and is also
@@ -196,6 +214,7 @@ function tokenBlock(selector: string, tokens: Record<string, string> | undefined
  * even when the plugin forgot to return its own cleanup. Capability groups
  * are trimmed by the manifest's declared permissions (门面裁剪).
  */
+
 export function createPluginContext(
   manifest: PluginManifest,
   backend: PluginContextBackend,
@@ -590,11 +609,15 @@ export function createPluginContext(
       },
       async set(key, value) {
         requirePermission("storage");
-        await withAuthorizedHostInvoke(() => backend.set(id, key, value));
+        await serializePluginStorageWrite(id, () =>
+          withAuthorizedHostInvoke(() => backend.set(id, key, value)),
+        );
       },
       async delete(key) {
         requirePermission("storage");
-        await withAuthorizedHostInvoke(() => backend.delete(id, key));
+        await serializePluginStorageWrite(id, () =>
+          withAuthorizedHostInvoke(() => backend.delete(id, key)),
+        );
       },
     },
     events: {

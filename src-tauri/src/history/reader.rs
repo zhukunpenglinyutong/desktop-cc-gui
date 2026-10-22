@@ -16,13 +16,26 @@ pub struct SessionPage {
     pub subagent_history: Vec<Message>,
 }
 
+/// Run a db-touching command body on the blocking pool. Sync commands run on
+/// the WebView2 UI thread, and the shared db lock can be held for seconds by
+/// a full-text index write — waiting there froze the whole window.
+pub(crate) async fn off_ui_thread<T: Send + 'static>(
+    db: &Arc<crate::db::Db>,
+    work: impl FnOnce(&crate::db::Db) -> Result<T, String> + Send + 'static,
+) -> Result<T, String> {
+    let db = Arc::clone(db);
+    tauri::async_runtime::spawn_blocking(move || work(&db))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
 /// Lock the db, run a parameterless query, and collect rows through `map_row`.
 fn query_rows<T>(
-    state: &crate::AppState,
+    db: &crate::db::Db,
     sql: &str,
     map_row: impl Fn(&rusqlite::Row<'_>) -> rusqlite::Result<T>,
 ) -> Result<Vec<T>, String> {
-    let conn = state.db.0.lock();
+    let conn = db.0.lock();
     let mut stmt = conn.prepare(sql).map_err(|e| e.to_string())?;
     let rows = stmt.query_map([], map_row).map_err(|e| e.to_string())?;
     let mut out = Vec::new();
@@ -48,10 +61,16 @@ fn mutate_sessions(
     Ok(())
 }
 
+/// Async: refreshed on every `sessions://changed`, which fires right before
+/// the full-text index pass starts holding the db lock.
 #[tauri::command]
-pub fn list_sessions(state: tauri::State<'_, crate::AppState>) -> Result<Vec<SessionMeta>, String> {
+pub async fn list_sessions(state: tauri::State<'_, crate::AppState>) -> Result<Vec<SessionMeta>, String> {
+    off_ui_thread(&state.db, list_sessions_from).await
+}
+
+fn list_sessions_from(db: &crate::db::Db) -> Result<Vec<SessionMeta>, String> {
     query_rows(
-        &state,
+        db,
         "SELECT s.engine, s.session_id, s.workspace_path, s.file_path, s.file_size, s.file_mtime_ms,
                 s.title, s.preview, s.created_at, s.updated_at, s.message_count, s.pinned, s.custom_title,
                 m.model, e.effort, p.provider_id
@@ -111,10 +130,10 @@ fn list_archived_sessions_from(db: &crate::db::Db) -> Result<Vec<SessionMeta>, S
 }
 
 #[tauri::command]
-pub fn list_archived_sessions(
+pub async fn list_archived_sessions(
     state: tauri::State<'_, crate::AppState>,
 ) -> Result<Vec<SessionMeta>, String> {
-    list_archived_sessions_from(&state.db)
+    off_ui_thread(&state.db, list_archived_sessions_from).await
 }
 
 fn archive_session_in(db: &crate::db::Db, session: &SessionMeta) -> Result<(), String> {
@@ -1236,9 +1255,13 @@ pub struct Workspace {
 }
 
 #[tauri::command]
-pub fn list_workspaces(state: tauri::State<'_, crate::AppState>) -> Result<Vec<Workspace>, String> {
+pub async fn list_workspaces(state: tauri::State<'_, crate::AppState>) -> Result<Vec<Workspace>, String> {
+    off_ui_thread(&state.db, list_workspaces_from).await
+}
+
+fn list_workspaces_from(db: &crate::db::Db) -> Result<Vec<Workspace>, String> {
     query_rows(
-        &state,
+        db,
         "SELECT id, path, name, last_opened_at, sort_order, group_id, kind, parent_id, meta FROM workspaces
          ORDER BY sort_order IS NULL, sort_order, COALESCE(last_opened_at, 0) DESC",
         |r| {

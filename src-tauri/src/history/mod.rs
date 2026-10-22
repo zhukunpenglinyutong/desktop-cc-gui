@@ -7,8 +7,8 @@ pub mod scanner;
 pub mod search;
 
 pub use extract::{
-    internal_frame_hash, parse_session_file, recordable_internal_frame_hash, scan_summary_file,
-    ParsedSession, ScanSummary,
+    internal_frame_hash, parse_for_index, parse_session_file, recordable_internal_frame_hash,
+    scan_summary_file, Checkpoint, IndexParse, ParsedSession, ScanSummary,
 };
 
 use crate::engine::TodosPayload;

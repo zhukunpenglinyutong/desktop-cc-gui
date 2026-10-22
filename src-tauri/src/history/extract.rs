@@ -32,6 +32,171 @@ pub fn parse_session_file(
     ))
 }
 
+/// Engines whose NDJSON extractor keeps no state across lines, so an index
+/// pass may resume at a byte offset. Claude tracks local-command windows
+/// across lines; dsh is zstd (no byte seek); agy/opencode are not one file.
+fn index_resumable(engine: &str) -> bool {
+    matches!(
+        engine,
+        "pi" | "omp" | "codex" | "kimi" | "grok" | "qoder" | "qoder-cn" | "minimax"
+    )
+}
+
+/// Where an index pass may resume: just past the last newline-terminated
+/// line it read, the last seq numbered from complete lines, and a digest of
+/// the bytes right before that offset. An append leaves those bytes alone; a
+/// rewrite or truncation (compaction, a resumed CLI rewriting its file)
+/// changes them, which forces a full rebuild.
+pub struct Checkpoint {
+    pub last_seq: i64,
+    pub parsed_bytes: u64,
+    pub prefix_hash: String,
+}
+
+const CHECKPOINT_WINDOW: usize = 4096;
+
+pub struct IndexParse {
+    pub messages: Vec<Message>,
+    /// None for formats without byte offsets.
+    pub checkpoint: Option<Checkpoint>,
+    /// The requested checkpoint matched the bytes this pass read, so rows up
+    /// to its last_seq are unchanged and only later rows need replacing.
+    /// False: `messages` is a full parse and replaces every row.
+    pub resumed: bool,
+}
+
+/// Trailing bytes this pass has read: enough to digest the window that ends
+/// at the current offset. Hashing what was read (not re-opening the file)
+/// keeps a rewrite between parse and stamp from validating stale rows.
+#[derive(Default)]
+struct Window(Vec<u8>);
+
+impl Window {
+    fn push(&mut self, bytes: &[u8]) {
+        self.0.extend_from_slice(&bytes[bytes.len().saturating_sub(CHECKPOINT_WINDOW)..]);
+        if self.0.len() > 2 * CHECKPOINT_WINDOW {
+            let excess = self.0.len() - CHECKPOINT_WINDOW;
+            self.0.drain(..excess);
+        }
+    }
+
+    fn digest(&self, end: u64) -> String {
+        let tail = &self.0[self.0.len().saturating_sub(CHECKPOINT_WINDOW)..];
+        format!("{end}:{:x}", Sha256::digest(tail))
+    }
+}
+
+/// For append-only NDJSON formats, indexing skips image data URLs and resumes
+/// at a verified checkpoint instead of re-reading the whole transcript. The
+/// other session formats use their existing parser and do not resume.
+///
+/// A trailing line without its newline is still a writer mid-append: its rows
+/// are returned (numbered after the checkpoint) but the checkpoint stops
+/// before it, so the next pass re-reads that line once it is complete.
+pub fn parse_for_index(
+    engine: &str,
+    path: &Path,
+    accepted_internal_frames: &HashSet<String>,
+    resume: Option<&Checkpoint>,
+) -> Result<IndexParse, String> {
+    use std::io::{Read, Seek, SeekFrom};
+    if engine == "agy" || engine == "opencode" || engine == "dsh" {
+        let parsed = parse_session_file(engine, path, accepted_internal_frames)?;
+        return Ok(IndexParse { messages: parsed.messages, checkpoint: None, resumed: false });
+    }
+    let io = |e: std::io::Error| format!("read {}: {e}", path.display());
+    let mut file =
+        std::fs::File::open(path).map_err(|e| format!("open {}: {e}", path.display()))?;
+    let mut window = Window::default();
+    let (mut offset, mut start_seq, mut resumed) = (0u64, 0i64, false);
+    let mut verify_at: Option<&Checkpoint> = None;
+    if let Some(c) = resume {
+        if index_resumable(engine) {
+            let start = c.parsed_bytes.saturating_sub(CHECKPOINT_WINDOW as u64);
+            let mut bytes = vec![0u8; (c.parsed_bytes - start) as usize];
+            file.seek(SeekFrom::Start(start)).map_err(io)?;
+            if file.read_exact(&mut bytes).is_ok() {
+                window.push(&bytes);
+                if window.digest(c.parsed_bytes) == c.prefix_hash {
+                    (offset, start_seq, resumed) = (c.parsed_bytes, c.last_seq, true);
+                }
+            }
+            if !resumed {
+                window = Window::default();
+                file.seek(SeekFrom::Start(0)).map_err(io)?;
+            }
+        } else {
+            verify_at = Some(c);
+        }
+    }
+    let matches_resume = |offset: u64, window: &Window| {
+        verify_at.is_some_and(|c| {
+            c.parsed_bytes == offset && window.digest(offset) == c.prefix_hash
+        })
+    };
+    resumed |= matches_resume(offset, &window);
+    let mut reader = std::io::BufReader::new(file);
+    let extract = extractor_for(engine, ImageMode::SkipDataUrls);
+    let (mut complete, mut partial) = (Vec::new(), Vec::new());
+    let mut line = Vec::new();
+    loop {
+        line.clear();
+        let read = reader.read_until(b'\n', &mut line).map_err(io)?;
+        if read == 0 {
+            break;
+        }
+        let terminated = line.last() == Some(&b'\n');
+        if terminated {
+            offset += read as u64;
+            window.push(&line);
+            resumed |= matches_resume(offset, &window);
+        }
+        // Same skip as `BufRead::lines` in walk_lines: invalid UTF-8 drops the line.
+        if let Ok(text) = std::str::from_utf8(&line) {
+            let target = if terminated { &mut complete } else { &mut partial };
+            line_rows(text, &extract, accepted_internal_frames, &mut |row| target.push(row));
+        }
+        // No newline = EOF at the moment of reading. A writer still appending
+        // may extend this line, and a later read would return only its tail
+        // as a "line" of its own; stop so the checkpoint stays on a boundary.
+        if !terminated {
+            break;
+        }
+    }
+    // A rewrite can race the initial checkpoint read and this pass. Recheck
+    // the prefix after parsing; if it changed, the resumed rows are no longer
+    // safe to publish, so parse the current file from the start.
+    if resumed {
+        if let Some(c) = resume {
+            let start = c.parsed_bytes.saturating_sub(CHECKPOINT_WINDOW as u64);
+            let mut bytes = vec![0u8; (c.parsed_bytes - start) as usize];
+            let file = reader.get_mut();
+            let prefix_matches = file
+                .seek(SeekFrom::Start(start))
+                .and_then(|_| file.read_exact(&mut bytes))
+                .is_ok()
+                && {
+                    let mut current_window = Window::default();
+                    current_window.push(&bytes);
+                    current_window.digest(c.parsed_bytes) == c.prefix_hash
+                };
+            if !prefix_matches {
+                return parse_for_index(engine, path, accepted_internal_frames, None);
+            }
+        }
+    }
+    let complete = fold_rows_from(complete, start_seq);
+    let last_seq = complete.messages.last().map_or(start_seq, |m| m.seq);
+    let mut messages = complete.messages;
+    messages.extend(fold_rows_from(partial, last_seq).messages);
+    let prefix_hash = window.digest(offset);
+    Ok(IndexParse {
+        messages,
+        checkpoint: Some(Checkpoint { last_seq, parsed_bytes: offset, prefix_hash }),
+        resumed,
+    })
+}
+
 /// Everything the sidebar needs from a scan: title/preview/timestamps/count.
 /// Derived in one streaming pass without materializing the message list or
 /// any image data URLs.
@@ -196,17 +361,27 @@ fn walk_lines(
 ) {
     for line in reader.lines() {
         let Ok(line) = line else { continue };
-        let trimmed = line.trim();
-        if trimmed.is_empty() || !trimmed.contains("\"type\"") {
-            continue;
-        }
-        let Ok(value) = serde_json::from_str::<Value>(trimmed) else {
-            continue;
-        };
-        for row in extract(&value) {
-            let Some(row) = normalize_extracted_row(row, accepted_internal_frames) else {
-                continue;
-            };
+        line_rows(&line, extract, accepted_internal_frames, &mut consume);
+    }
+}
+
+/// One NDJSON line through `extract` + normalization (shared by the line
+/// walker and the offset-tracking index walker so both skip identically).
+fn line_rows(
+    line: &str,
+    extract: &LineExtractor<'_>,
+    accepted_internal_frames: &HashSet<String>,
+    consume: &mut impl FnMut(LineRow),
+) {
+    let trimmed = line.trim();
+    if trimmed.is_empty() || !trimmed.contains("\"type\"") {
+        return;
+    }
+    let Ok(value) = serde_json::from_str::<Value>(trimmed) else {
+        return;
+    };
+    for row in extract(&value) {
+        if let Some(row) = normalize_extracted_row(row, accepted_internal_frames) {
             consume(row);
         }
     }
@@ -228,8 +403,15 @@ fn collect_session(
 /// durations, seq numbering) — opencode feeds it from its storage-tree walk
 /// instead of an NDJSON line reader.
 fn fold_rows(rows: Vec<LineRow>) -> ParsedSession {
+    fold_rows_from(rows, 0)
+}
+
+/// `fold_rows` numbering from `start_seq`. Skip decisions are row-local, so
+/// folding a file in consecutive pieces yields the same seqs as one fold —
+/// what lets an index pass resume mid-file.
+fn fold_rows_from(rows: Vec<LineRow>, start_seq: i64) -> ParsedSession {
     let mut messages = Vec::<Message>::new();
-    let mut seq = 0i64;
+    let mut seq = start_seq;
     let mut last_user_ts: Option<i64> = None;
     // tool call id -> index in `messages`. Results arrive in completion order,
     // so pairing them back up by the latest row still missing one mislabels

@@ -164,12 +164,22 @@ pub fn revoke_granted_root(
     db.remove_granted_root(path.trim())
 }
 
+/// Async + spawn_blocking: the allow-list check takes the shared db lock,
+/// which a full-text index write can hold for seconds. A sync command runs
+/// on the WebView2 UI thread, so waiting there froze the whole window.
 #[tauri::command]
-pub fn list_dir(
+pub async fn list_dir(
     db: tauri::State<'_, Arc<crate::db::Db>>,
     path: String,
 ) -> Result<Vec<DirEntry>, String> {
-    let dir = ensure_allowed(&path, &db)?;
+    let db = Arc::clone(db.inner());
+    tauri::async_runtime::spawn_blocking(move || list_dir_blocking(&db, &path))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+fn list_dir_blocking(db: &crate::db::Db, path: &str) -> Result<Vec<DirEntry>, String> {
+    let dir = ensure_allowed(path, db)?;
     let entries = std::fs::read_dir(&dir).map_err(|e| format!("read {}: {e}", dir.display()))?;
     let mut out: Vec<DirEntry> = entries
         .flatten()

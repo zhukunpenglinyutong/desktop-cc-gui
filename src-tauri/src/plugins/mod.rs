@@ -240,35 +240,53 @@ fn storage_write_guard(state_path: &Path, id: &str) -> Result<(), String> {
     Ok(())
 }
 
+// Async + spawn_blocking: plugins read and write here on every config or
+// position change, and the shared db lock can be held for seconds by a
+// full-text index write — a sync command would wait on the WebView2 UI thread.
 #[tauri::command]
-pub fn plugin_storage_get(
+pub async fn plugin_storage_get(
     db: tauri::State<'_, Arc<crate::db::Db>>,
     id: String,
     key: String,
 ) -> Result<Option<serde_json::Value>, String> {
-    storage_read_guard(&state::state_path(), &id)?;
-    db.plugin_kv_get(&id, &key)
+    let db = Arc::clone(db.inner());
+    tauri::async_runtime::spawn_blocking(move || {
+        storage_read_guard(&state::state_path(), &id)?;
+        db.plugin_kv_get(&id, &key)
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
-pub fn plugin_storage_set(
+pub async fn plugin_storage_set(
     db: tauri::State<'_, Arc<crate::db::Db>>,
     id: String,
     key: String,
     value: serde_json::Value,
 ) -> Result<(), String> {
-    storage_write_guard(&state::state_path(), &id)?;
-    db.plugin_kv_set(&id, &key, &value)
+    let db = Arc::clone(db.inner());
+    tauri::async_runtime::spawn_blocking(move || {
+        storage_write_guard(&state::state_path(), &id)?;
+        db.plugin_kv_set(&id, &key, &value)
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
-pub fn plugin_storage_delete(
+pub async fn plugin_storage_delete(
     db: tauri::State<'_, Arc<crate::db::Db>>,
     id: String,
     key: String,
 ) -> Result<(), String> {
-    storage_write_guard(&state::state_path(), &id)?;
-    db.plugin_kv_delete(&id, &key)
+    let db = Arc::clone(db.inner());
+    tauri::async_runtime::spawn_blocking(move || {
+        storage_write_guard(&state::state_path(), &id)?;
+        db.plugin_kv_delete(&id, &key)
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 #[cfg(test)]
