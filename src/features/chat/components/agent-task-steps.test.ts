@@ -79,6 +79,47 @@ describe("subagent counting", () => {
     ]);
   });
 
+  it("settles a job from the delivery the harness writes after the last poll", () => {
+    // omp reports a finished background job as an `async-result` notice; the
+    // model often never calls `hub` again, so the last snapshot keeps saying
+    // "running". Without that notice the row showed 运行中 forever.
+    const running = tool(3, "hub · Waiting for workers", { op: "wait" }, {
+      details: {
+        op: "wait",
+        jobs: [{ id: "CoreInvokeFilterParse", type: "task", status: "running" }],
+      },
+    });
+    const delivery: Message = {
+      seq: 4,
+      role: "__agent_status__",
+      text: "",
+      ts: "2026-10-19T06:34:32.530Z",
+      result: {
+        details: {
+          op: "async",
+          jobs: [{ id: "CoreInvokeFilterParse", type: "task", status: "completed" }],
+        },
+      },
+    };
+    const before = deriveAgentTaskSteps([DISPATCH, running], false, "omp");
+    expect(before.find((s) => s.label === "CoreInvokeFilterParse")?.state).toBe("active");
+
+    const after = deriveAgentTaskSteps([DISPATCH, running, delivery], false, "omp");
+    expect(after.find((s) => s.label === "CoreInvokeFilterParse")?.state).toBe("complete");
+    // Only the delivered job settles; the others keep their last harness word.
+    expect(after.find((s) => s.label === "IdolLiveDemosaic")?.state).toBe("active");
+  });
+
+  it("reads jobId as well as id from a delivery snapshot", () => {
+    const dispatch = tool(2, "task · Dispatching worker", {
+      tasks: [{ name: "Worker", task: "# Target\nOwn relay.rs." }],
+    });
+    const delivery = tool(3, "hub", undefined, {
+      details: { jobs: [{ jobId: "Worker", type: "task", status: "completed" }] },
+    });
+    expect(deriveAgentTaskSteps([dispatch, delivery], true, "omp")[0].state).toBe("complete");
+  });
+
   it("retains the complete delegated task as its clickable detail", () => {
     const dispatch = tool(2, "task · Dispatching worker", {
       tasks: [{

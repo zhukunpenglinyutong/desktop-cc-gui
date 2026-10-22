@@ -207,6 +207,9 @@ export interface ChatStore {
    *  computer-use command); the composer keeps the user's draft. */
   setSessionError: (key: string, message: string) => void;
   loadEarlier: (key?: string) => Promise<void>;
+  /** Re-read a session's background-job deliveries so the subagent panel
+   *  learns a job's terminal state the live stream never carried. */
+  refreshSubagentStatus: (key: string) => Promise<void>;
   /** 发送。`target` 不传时发给当前激活会话；分屏里每格带上自己的会话。 */
   send: (
     prompt: string,

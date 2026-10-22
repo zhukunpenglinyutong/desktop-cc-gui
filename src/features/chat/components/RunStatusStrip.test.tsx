@@ -6,7 +6,7 @@ import { useChatStore } from "../store";
 import { useGitStore } from "@/features/git/store";
 import { RunStatusStrip } from "./RunStatusStrip";
 import { deriveTodoList } from "./agent-task-steps";
-import { ipc } from "@/lib/ipc";
+import { ipc, AGENT_STATUS_ROLE } from "@/lib/ipc";
 import type { Message, TodosPayload } from "@/lib/ipc";
 
 // React's act() environment flag — a well-known global the runtime can't
@@ -102,6 +102,42 @@ describe("RunStatusStrip", () => {
     expect(readContent).toHaveBeenCalledTimes(reads);
     await act(async () => seed([tool, msg(2, "assistant", "more text still arriving")], true));
     expect(readContent).toHaveBeenCalledTimes(reads);
+  });
+
+  it("settles a subagent from a delivery the live stream never carried", async () => {
+    const messages: Message[] = [
+      msg(1, "user", "Review the relay"),
+      {
+        ...msg(2, "tool", "task · Dispatching"),
+        args: { tasks: [{ name: "LateJob", agent: "task", task: "# Target\nReview." }] },
+      },
+      {
+        ...msg(3, "tool", "hub · Waiting"),
+        args: { op: "wait" },
+        result: { details: { op: "wait", jobs: [{ id: "LateJob", status: "running" }] } },
+      },
+      msg(4, "assistant", "Waiting on the reviewer."),
+    ];
+    const delivery: Message = {
+      seq: 5,
+      role: AGENT_STATUS_ROLE,
+      text: "",
+      ts: "2026-10-19T06:34:32.530Z",
+      result: { details: { op: "async", jobs: [{ id: "LateJob", type: "task", status: "completed" }] } },
+    };
+    // The shape `refreshSubagentStatus` leaves behind: the delivery is the
+    // newest transcript row, after the "running" snapshot it supersedes.
+    useChatStore.setState({
+      bySession: {
+        [KEY]: { messages: [...messages, delivery], subagentHistory: [], streaming: false } as never,
+      },
+    });
+    await renderStrip();
+    expect(pill("子代理").textContent).toContain("1/1");
+    await click(pill("子代理"));
+    expect(
+      container.querySelector<HTMLElement>("[data-agent-step-key]")!.textContent,
+    ).toContain("已完成");
   });
 
   it("restores older subagents with their session after switching and reopening", async () => {

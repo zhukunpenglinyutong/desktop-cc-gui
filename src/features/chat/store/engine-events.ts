@@ -486,6 +486,10 @@ export interface EngineEventDeps {
   upsertSessionMeta: (meta: SessionMeta) => void;
   /** Re-fetch the latest token usage from session history for the given session key. */
   refreshSessionUsage?: (key: string) => Promise<void>;
+  /** Re-read background-job deliveries so the subagent panel settles jobs the
+   *  live stream never reports (the harness states them in an `async-result`
+   *  notice, which the ACP stream drops). */
+  refreshSubagentStatus?: (key: string) => Promise<void>;
   /** After a turn settles: feeds the background memory review's turn counter
    *  (features/bots/memory-review.ts). Optional so tests can drive the router
    *  without the memory feature. */
@@ -1283,6 +1287,7 @@ function onError(
   dispatchNormalized(event);
   finishRunLifecycle(event.runId, "failed", typeof event.data === "string" ? event.data : undefined, event.sessionId);
   void deps.refreshSessionUsage?.(key).catch(() => {});
+  void deps.refreshSubagentStatus?.(key).catch(() => {});
   // An error settles the turn exactly like done does — the messages typed
   // behind it are the user's next step, and parking them here left the queue
   // stuck until it was sent or cleared by hand. A stop is still the user's
@@ -1820,6 +1825,10 @@ function onDone(event: ChatEngineEvent, key: string, deps: EngineEventDeps) {
   // Native file changed; refresh list cache in background.
   void ipc.rescanSessions().catch(() => {});
   deps.markUnseenIfBackground(key);
+  // A background job's completion reaches the transcript only as an
+  // `async-result` delivery; the live stream never carries it, so the panel
+  // would keep the last `hub` snapshot ("running") unless the file is re-read.
+  void deps.refreshSubagentStatus?.(key).catch(() => {});
   // 一轮对话落定（正常完成或被用户中断）时计数；是否到节奏、用哪个 Bot
   // 复盘由记忆模块判断（features/bots/memory-review.ts）。
   deps.turnSettled?.(key);

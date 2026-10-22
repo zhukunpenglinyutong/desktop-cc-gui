@@ -277,7 +277,10 @@ fn fold_rows(rows: Vec<LineRow>) -> ParsedSession {
             }
             continue;
         }
-        if row.text.trim().is_empty() && row.images.is_empty() {
+        // Background-job deliveries carry no body of their own: they exist so
+        // the subagent panel can read the terminal state of a job the model
+        // never polled again.
+        if row.role != PI_AGENT_STATUS_ROLE && row.text.trim().is_empty() && row.images.is_empty() {
             continue;
         }
         let parsed_ts = row.ts.as_deref().and_then(super::parse_ts_ms_str);
@@ -1049,11 +1052,122 @@ fn pi_assistant_part(part: &Value, out: &mut LineRows, text: &mut String, ts: &O
     }
 }
 
-/// pi/omp session lines: {type:"message", timestamp, message:{role, content, usage?}}
+/// pi/omp session lines: message rows, plus the background-job deliveries that
+/// carry a subagent's terminal status.
 fn extract_pi_family_line(engine: &str, value: &Value, images: ImageMode) -> LineRows {
-    if value.get("type").and_then(Value::as_str) != Some("message") {
+    match value.get("type").and_then(Value::as_str) {
+        Some("message") => extract_pi_message_line(engine, value, images),
+        Some("custom_message") => pi_async_result_rows(value),
+        _ => Vec::new(),
+    }
+}
+
+/// Hidden row role for a background-job delivery. It never renders: the
+/// subagent fold keeps it so the panel's status derivation sees the terminal
+/// state, and the timeline skips it.
+pub(super) const PI_AGENT_STATUS_ROLE: &str = "__agent_status__";
+
+/// `custom_message` with `customType: "async-result"` is the harness's
+/// delivery of a finished background job, emitted while the parent turn may
+/// already be over. Its `details.jobs` omits `status` for task jobs; the
+/// notice body states it per result:
+/// `<task-result id="X" agent="task" status="completed" duration="8m35s">`.
+///
+/// Without this row a session whose last `hub` snapshot said "running" keeps
+/// claiming 运行中 forever, because nothing else in the transcript ever
+/// records the completion.
+fn pi_async_result_rows(value: &Value) -> LineRows {
+    if value.get("customType").and_then(Value::as_str) != Some("async-result") {
         return Vec::new();
     }
+    let mut jobs: Vec<Value> = Vec::new();
+    if let Some(entries) = value
+        .get("details")
+        .and_then(|details| details.get("jobs"))
+        .and_then(Value::as_array)
+    {
+        for entry in entries {
+            let id = entry
+                .get("id")
+                .or_else(|| entry.get("jobId"))
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .unwrap_or_default();
+            if id.is_empty() {
+                continue;
+            }
+            let mut job = serde_json::Map::new();
+            job.insert("id".to_string(), Value::String(id.to_string()));
+            if let Some(kind) = entry.get("type").and_then(Value::as_str) {
+                job.insert("type".to_string(), Value::String(kind.to_string()));
+            }
+            if let Some(status) = entry.get("status").and_then(Value::as_str) {
+                job.insert("status".to_string(), Value::String(status.to_string()));
+            }
+            jobs.push(Value::Object(job));
+        }
+    }
+    if let Some(text) = value.get("content").and_then(Value::as_str) {
+        for (id, kind, status) in pi_task_result_tags(text) {
+            if let Some(entry) = jobs
+                .iter_mut()
+                .find(|job| job.get("id").and_then(Value::as_str) == Some(id.as_str()))
+            {
+                if let Value::Object(object) = entry {
+                    object.insert("status".to_string(), Value::String(status));
+                    object
+                        .entry("type".to_string())
+                        .or_insert_with(|| Value::String(kind));
+                }
+                continue;
+            }
+            jobs.push(serde_json::json!({ "id": id, "type": kind, "status": status }));
+        }
+    }
+    if jobs.is_empty() {
+        return Vec::new();
+    }
+    vec![LineRow {
+        result: Some(serde_json::json!({ "details": { "op": "async", "jobs": jobs } })),
+        ..LineRow::new(
+            PI_AGENT_STATUS_ROLE,
+            String::new(),
+            ts_string(value, &["timestamp"]),
+        )
+    }]
+}
+
+/// `(id, agent, status)` for every `<task-result …>` tag in a delivery notice.
+fn pi_task_result_tags(text: &str) -> Vec<(String, String, String)> {
+    fn attr<'a>(tag: &'a str, name: &str) -> Option<&'a str> {
+        let needle = format!("{name}=\"");
+        let start = tag.find(&needle)? + needle.len();
+        let rest = &tag[start..];
+        Some(&rest[..rest.find('"')?])
+    }
+    let mut out = Vec::new();
+    let mut rest = text;
+    while let Some(start) = rest.find("<task-result") {
+        let tag_text = &rest[start..];
+        let Some(end) = tag_text.find('>') else { break };
+        let tag = &tag_text[..end];
+        if let (Some(id), Some(status)) = (attr(tag, "id"), attr(tag, "status")) {
+            let id = id.trim();
+            if !id.is_empty() {
+                out.push((
+                    id.to_string(),
+                    attr(tag, "agent").unwrap_or("").trim().to_string(),
+                    status.trim().to_string(),
+                ));
+            }
+        }
+        rest = &tag_text[end..];
+    }
+    out
+}
+
+/// pi/omp message rows: {type:"message", timestamp, message:{role, content, usage?}}
+fn extract_pi_message_line(engine: &str, value: &Value, images: ImageMode) -> LineRows {
     let ts = ts_string(value, &["timestamp"]);
     let Some(message) = value.get("message") else {
         return Vec::new();
@@ -2022,6 +2136,69 @@ mod tests {
                 .text,
             "<CCGUI_INTERNAL_n-1>{\"ok\":true}</CCGUI_INTERNAL_n-1>"
         );
+    }
+
+    /// omp states a finished background job only in an `async-result` notice;
+    /// the last `hub` snapshot may still say "running". The notice's task jobs
+    /// carry no `status` in `details`, only in the `<task-result …>` tag.
+    #[test]
+    fn pi_async_result_carries_the_finished_job_status() {
+        let line: Value = serde_json::json!({
+            "type": "custom_message",
+            "customType": "async-result",
+            "display": true,
+            "timestamp": "2026-10-19T06:34:32.530Z",
+            "details": {"jobs": [
+                {"jobId": "bg_2", "type": "bash", "status": "completed", "label": "mvn"},
+                {"jobId": "LateJob", "type": "task", "label": "LateJob"}
+            ]},
+            "content": "<system-notice>\n2 background jobs have completed.\n\
+                <task-result id=\"LateJob\" agent=\"reviewer\" status=\"completed\" duration=\"8m35s\">\n{}"
+        });
+        let rows = extract_pi_family_line("omp", &line, ImageMode::Collect);
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].role, PI_AGENT_STATUS_ROLE);
+        assert_eq!(rows[0].text, "");
+        assert_eq!(rows[0].ts.as_deref(), Some("2026-10-19T06:34:32.530Z"));
+        let jobs = rows[0].result.as_ref().unwrap()["details"]["jobs"]
+            .as_array()
+            .unwrap();
+        assert_eq!(jobs[0]["id"], "bg_2");
+        assert_eq!(jobs[0]["status"], "completed");
+        assert_eq!(jobs[1]["id"], "LateJob");
+        assert_eq!(jobs[1]["status"], "completed");
+        assert_eq!(jobs[1]["type"], "task");
+
+        // Only the delivery itself is interest: other custom messages (todo
+        // nudges, eval context) stay out of the transcript.
+        let nudge: Value = serde_json::json!({
+            "type": "custom_message",
+            "customType": "mid-run-todo-nudge",
+            "content": "7 todo items still open.",
+        });
+        assert!(extract_pi_family_line("omp", &nudge, ImageMode::Collect).is_empty());
+    }
+
+    /// The delivery has no body; the fold must keep it anyway — and still
+    /// drop ordinary empty rows, which are stray fragments.
+    #[test]
+    fn fold_keeps_background_job_deliveries_but_drops_stray_empty_rows() {
+        let session = fold_rows(vec![
+            LineRow::new("assistant", String::new(), None),
+            LineRow {
+                result: Some(serde_json::json!({
+                    "details": {"op": "async", "jobs": [{"id": "Worker", "status": "completed"}]}
+                })),
+                ..LineRow::new(
+                    PI_AGENT_STATUS_ROLE,
+                    String::new(),
+                    Some("2026-10-19T06:34:32.530Z".into()),
+                )
+            },
+        ]);
+        assert_eq!(session.messages.len(), 1);
+        assert_eq!(session.messages[0].role, PI_AGENT_STATUS_ROLE);
+        assert!(session.messages[0].text.is_empty());
     }
 
     #[test]

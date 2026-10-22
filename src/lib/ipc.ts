@@ -62,6 +62,11 @@ export interface QuestionSpec {
   options: { label: string; description?: string; preview?: string }[];
 }
 
+/** Transcript role of a background-job delivery (`async-result`): it carries
+ *  the terminal state of a job the model may never poll again, renders as
+ *  nothing, and is folded into `subagentHistory` — see `history::extract`. */
+export const AGENT_STATUS_ROLE = "__agent_status__";
+
 export interface Message {
   seq: number;
   role: string; // "user" | "assistant" | "tool" | "thinking"
