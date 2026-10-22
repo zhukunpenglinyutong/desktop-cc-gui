@@ -36,6 +36,7 @@ pub mod opencode_server;
 mod opencode_session;
 pub mod pi_family;
 pub mod pi_family_auth;
+mod pi_family_env;
 pub mod plan_review;
 pub mod qoder;
 mod qoder_session;
@@ -1078,6 +1079,11 @@ async fn send_reserved(
         allowed_tools,
         wsl_tp.is_some(),
     )?;
+    if wsl_tp.is_none() && matches!(engine.as_str(), "pi" | "omp") {
+        // GUI 进程看不到 shell profile。PI/OMP 配置里的 $VAR 向登录交互 shell 要，
+        // 只注入这次子进程；omp 再拉起的 PI 会继承。WSL 不带本机 env，跳过。
+        pi_family_env::apply(&mut launch.built.command).await;
+    }
     // Host-stream engines drive their own transport: no child process — the
     // registry entry only routes interrupts to the transport task. Their
     // drivers spawn locally, so a remote workspace either keeps the CLI
