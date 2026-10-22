@@ -138,7 +138,9 @@ fn parse_command_frontmatter(content: &str) -> (Option<String>, Option<String>, 
                         }
                     }
                     if !collected.is_empty() {
-                        description = Some(collected.join(" "));
+                        let is_literal = raw_val.starts_with('|');
+                        let separator = if is_literal { "\n" } else { " " };
+                        description = Some(collected.join(separator));
                     }
                     continue;
                 }
@@ -331,8 +333,8 @@ fn commands_dirs(workspace_root: &Path) -> Vec<(PathBuf, &'static str)> {
 /// Skill directories in priority order: workspace-relative candidate directories
 /// first (Claude, Codex, Open Agent standard, root skills, pi/omp, cursor, copilot),
 /// then the global homes of every CLI the picker can drive —
-/// Claude (`$CLAUDE_CONFIG_DIR/skills`), Codex (`$CODEX_HOME/skills` plus
-/// its built-in `.system` tree), the cross-agent `~/.agents/skills`, and
+/// Claude (`$CLAUDE_CONFIG_DIR/skills`), Codex (`$CODEX_HOME/skills` including
+/// its built-in `.system` tree discovered via bounded recursion), the cross-agent `~/.agents/skills`, and
 /// Codex plugin-bundled skills under `$CODEX_HOME/plugins/cache`. `is_dir`
 /// follows symlinks, so cc-switch-managed links inside these roots resolve.
 fn skills_dirs(workspace_root: &Path) -> Vec<(PathBuf, &'static str)> {
@@ -362,14 +364,12 @@ fn skills_dirs(workspace_root: &Path) -> Vec<(PathBuf, &'static str)> {
     }
     let codex_home = crate::engine::codex_home();
     let codex_skills = codex_home.join("skills");
-    // `.system` holds Codex's built-in skills one level deeper than the
-    // personal ones; both are global scope.
-    for dir in [codex_skills, codex_home.join("skills").join(".system")] {
-        if dir.is_dir() {
-            let canonical = dir.canonicalize().unwrap_or_else(|_| dir.clone());
-            if seen_paths.insert(canonical) {
-                dirs.push((dir, "global"));
-            }
+    // `.system` built-in skills are discovered via bounded recursion
+    // inside `codex_skills`, avoiding a duplicate explicit scan pass.
+    if codex_skills.is_dir() {
+        let canonical = codex_skills.canonicalize().unwrap_or_else(|_| codex_skills.clone());
+        if seen_paths.insert(canonical) {
+            dirs.push((codex_skills, "global"));
         }
     }
     let agents_dir = crate::engine::engine_home(None, ".agents").join("skills");
@@ -679,6 +679,35 @@ mod tests {
             Some("Fixes lint errors in codebase. Do not use for general review.")
         );
         assert_eq!(hint, None);
+    }
+
+    #[test]
+    fn parses_literal_block_scalar_description() {
+        let content = "---\nname: multi-step\ndescription: |\n  Step 1: analyze\n  Step 2: execute\n---\nbody\n";
+        let (name, description, hint) = parse_command_frontmatter(content);
+        assert_eq!(name.as_deref(), Some("multi-step"));
+        assert_eq!(
+            description.as_deref(),
+            Some("Step 1: analyze\nStep 2: execute")
+        );
+        assert_eq!(hint, None);
+    }
+
+    #[test]
+    fn discovers_system_skills_via_recursion_without_duplicate_io() {
+        let root = scratch_dir("codex-skills");
+        let sys_skill = root.join(".system").join("analytics-template");
+        fs::create_dir_all(&sys_skill).unwrap();
+        fs::write(
+            sys_skill.join("SKILL.md"),
+            "---\ndescription: \"System analytics skill\"\n---\n",
+        )
+        .unwrap();
+
+        let entries = discover_skills_in(&root, "global");
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].name, "analytics-template");
+        assert_eq!(entries[0].source, "global");
     }
 
     #[test]
