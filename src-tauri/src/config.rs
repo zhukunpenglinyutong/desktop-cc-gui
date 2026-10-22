@@ -8,7 +8,7 @@ pub const LOCAL_PROVIDER_ID: &str = "__local_settings_json__";
 /// config" semantics, different spelling.
 pub(crate) const LEGACY_LOCAL_CONFIG_TOML_ID: &str = "__local_config_toml__";
 pub const DISABLED_PROVIDER_ID: &str = "__disabled__";
-pub const ENGINES: [&str; 12] = [
+pub const ENGINES: [&str; 13] = [
     "claude",
     "kimi",
     "grok",
@@ -21,6 +21,7 @@ pub const ENGINES: [&str; 12] = [
     "qoder",
     "qoder-cn",
     "minimax",
+    "codebuddy",
 ];
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -80,6 +81,7 @@ engine_sections!(
     (qoder, "qoder"),
     (qoder_cn, "qoder-cn"),
     (minimax, "minimax"),
+    (codebuddy, "codebuddy"),
 );
 
 #[derive(Default)]

@@ -38,6 +38,7 @@
 
 mod agy;
 mod claude;
+mod codebuddy;
 mod codex;
 mod grok;
 mod kimi;
@@ -206,6 +207,11 @@ pub async fn list_engine_models(
             let settings = crate::settings::read_settings().unwrap_or_default();
             let bin = super::engine_bin(&settings, "minimax");
             Ok(minimax::minimax_catalog(&bin).await)
+        }
+        "codebuddy" => {
+            let settings = crate::settings::read_settings().unwrap_or_default();
+            let bin = super::engine_bin(&settings, "codebuddy");
+            Ok(codebuddy::codebuddy_catalog(&bin).await)
         }
         // Unknown engine: no CLI-sourced catalog — the frontend fills the
         // picker from the configured provider channels.

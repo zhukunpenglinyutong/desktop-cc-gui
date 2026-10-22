@@ -15,6 +15,7 @@ import geminiIcon from "@/assets/model-icons/gemini.svg";
 import mistralIcon from "@/assets/model-icons/mistral.svg";
 import cohereIcon from "@/assets/model-icons/cohere.svg";
 import perplexityIcon from "@/assets/model-icons/perplexity.svg";
+import codebuddyIcon from "@/assets/model-icons/codebuddy.svg";
 
 import { HERMES_ICON_PATHS } from "./hermes-glyph";
 
@@ -52,7 +53,8 @@ export type EngineIconId =
   | "opencode"
   | "qoder"
   | "qoder-cn"
-  | "hermes";
+  | "hermes"
+  | "codebuddy";
 
 interface EngineIconProps {
   engine: string;
@@ -182,6 +184,7 @@ const RASTER_ICONS: Partial<Record<EngineIconId, { src: string; alt: string }>> 
   perplexity: { src: perplexityIcon, alt: "Perplexity" },
   dsh: { src: deepseekIcon, alt: "DeepSeek Harness" },
   agy: { src: geminiIcon, alt: "Antigravity CLI" },
+  codebuddy: { src: codebuddyIcon, alt: "CodeBuddy CLI" },
 };
 
 /** Monochrome glyphs drawn from path data, following `currentColor`. */

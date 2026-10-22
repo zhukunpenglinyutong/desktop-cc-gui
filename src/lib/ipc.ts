@@ -407,6 +407,13 @@ export interface ProviderModelList {
   models: string[];
   endpoint: string;
 }
+export interface CodeBuddyAccountStatus {
+  loggedIn: boolean;
+  uid: string | null;
+  displayName: string | null;
+  enterpriseName: string | null;
+}
+
 
 export interface WorkspaceGroup {
   id: string;
@@ -429,6 +436,7 @@ export interface CliConfig {
   qoder: ProviderSection;
   "qoder-cn": ProviderSection;
   minimax: ProviderSection;
+  codebuddy: ProviderSection;
 }
 
 export interface AppSettings {
@@ -456,6 +464,7 @@ export interface AppSettings {
   qoderBin: string | null;
   qoderCnBin: string | null;
   minimaxBin: string | null;
+  codebuddyBin: string | null;
   defaultModels: Record<string, string>;
   /** Per-engine user-added custom model ids (设置 → CLI → 自定义模型). */
   customModels: Record<string, string[]>;
@@ -1350,6 +1359,9 @@ export const ipc = {
     invoke<PiFamilyModelsConfigReadResult>("pi_family_models_config_read", { engine }),
   piFamilyModelsConfigWrite: (engine: string, text: string) =>
     invoke<void>("pi_family_models_config_write", { engine, text }),
+  // codebuddy account status
+  codebuddyAccountStatus: () =>
+    invoke<CodeBuddyAccountStatus>("codebuddy_account_status"),
   // cc-switch interop
   checkCcSwitch: () => invoke<CcSwitchStatus>("check_cc_switch"),
   dismissCcSwitch: (hash: string) => invoke<void>("dismiss_cc_switch", { hash }),

@@ -31,7 +31,7 @@ describe("内置插件开发 skill", () => {
   );
 
   it("SKILL.md 带 CLI 可发现的 frontmatter（name + description）", () => {
-    const frontmatter = skillMd.match(/^---\n([\s\S]*?)\n---/);
+    const frontmatter = skillMd.match(/^---\r?\n([\s\S]*?)\r?\n---/);
     expect(frontmatter, "SKILL.md 缺少 frontmatter，CLI 不会注册该 skill").not.toBeNull();
     const meta = frontmatter![1]!;
     expect(meta).toMatch(/^name:\s*ccgui-plugin-creator\s*$/m);

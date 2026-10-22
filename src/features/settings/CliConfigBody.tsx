@@ -15,11 +15,10 @@ import { CliImportMenu } from "./CliImportMenu";
 import { CliSyncBanner } from "./CliSyncBanner";
 import { DshHostSection } from "./DshHostSection";
 import { PiFamilyAuthSection } from "./PiFamilyAuthSection";
+import { CodeBuddyAuthSection } from "./CodeBuddyAuthSection";
 import type { CliConfigState } from "./useCliConfig";
 
-/** Engines cc-switch manages — the import dropdown only shows on these tabs. */
 const CCS_IMPORT_ENGINES: readonly EngineId[] = ["claude", "codex", "grok"];
-
 /**
  * The loaded CLI config UI:
  *   cc-switch sync banner (when the store changed)
@@ -83,6 +82,7 @@ export function CliConfigBody({ cli }: { cli: CliConfigState }) {
         {(engine === "pi" || engine === "omp") && (
           <PiFamilyAuthSection engine={engine} openCustomEditorSignal={customEditorSignal} />
         )}
+        {engine === "codebuddy" && <CodeBuddyAuthSection />}
         {engine === "dsh" && <DshHostSection />}
 
         <div className="flex w-full flex-col gap-2">

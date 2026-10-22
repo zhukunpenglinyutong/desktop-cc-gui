@@ -270,6 +270,9 @@ function cliPageEntries(engine: EngineId): SettingsSearchEntry[] {
     rows.push({ anchor: "piAuthApiKey", labelKey: "settings.piAuthApiKeyTitle" });
     rows.push({ anchor: "piAuthCustom", labelKey: "settings.piAuthCustomTitle" });
   }
+  if (engine === "codebuddy") {
+    rows.push({ anchor: "codebuddyAuth", labelKey: "settings.codebuddyAccountTitle" });
+  }
   rows.push({ anchor: "cliChannels", labelKey: "settings.cliChannels" });
   return rows.map((row) => ({ page: `cli:${engine}`, ...row }));
 }

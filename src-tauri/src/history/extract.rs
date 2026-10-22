@@ -95,7 +95,7 @@ type LineExtractor<'a> = Box<dyn Fn(&Value) -> LineRows + 'a>;
 fn extractor_for(engine: &str, images: ImageMode) -> LineExtractor<'static> {
     if engine == "dsh" {
         Box::new(extract_dsh_line)
-    } else if engine == "claude" {
+    } else if engine == "claude" || engine == "codebuddy" {
         // Local slash commands span several user lines. `Fn` extractors can't
         // capture `&mut`, so the window lives in a Cell across calls.
         let local_command = std::cell::Cell::new(false);
@@ -775,7 +775,7 @@ fn normalize_extracted_row(
 /// Per-engine NDJSON line -> zero or more (role, text, ts, usage, model) tuples.
 fn extract_line_messages(engine: &str, value: &Value, images: ImageMode) -> LineRows {
     match engine {
-        "claude" => extract_claude_line(value, images),
+        "claude" | "codebuddy" => extract_claude_line(value, images),
         "kimi" => extract_kimi_line(value),
         "grok" => extract_grok_line(value),
         "codex" => extract_codex_line(value, images),

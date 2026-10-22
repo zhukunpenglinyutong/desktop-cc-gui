@@ -280,6 +280,7 @@ const feedback = useRunningFeedback(store.loading);
 | Git 任务管理「刷新」 | `ccgui-plugin/git-tasks/main.js` | `useRunningFeedback` 等价实现（0.6s 转圈 → 900ms 对号，失败复位） | 独立 ESM 插件（`exec:gh` / `exec:git`），不导入宿主 hook；重读当前预设下的议题 / PR 与预设计数。缺省不接入新的宿主依赖 |
 | Git 任务管理「重新读取工作区与仓库」 | 同上 | **不加反馈** | 弹层内的菜单项，点击即关闭入口（同「重新加载」成功后按钮消失一类）；加载态由选择器自身的分组转圈与计数表达。重读 `ctx.workspaces.list` + git remote 解析 + `gh repo list` |
 | 接力引擎列表 | `ccgui-plugin/ccgui-plugin-plan-execute-relay/main.js` | 异步动作期间禁用，失败行内告警 | 独立 ESM 插件的文本动作；不导入宿主私有反馈 hook。刷新仅重读可用引擎、渠道名和模型，不触发模型请求 |
+| CodeBuddy 账号状态刷新 | `src/features/settings/CodeBuddyAuthSection.tsx` | 按钮 disabled 态 | 重新检测本地 CodeBuddy 认证凭据与企业/用户信息 |
 
 注：Worktree **创建进度行不登记**在本清单——它不是「重新读取」入口，而是一次性任务的状态表达（进行中 → 成功/失败），用 §5 的进度语言（`Loader2` + 阶段文案），不存在「再刷一次」的语义；其失败行的「重试」是重新执行创建动作，同样不是刷新。
 
@@ -332,6 +333,7 @@ const feedback = useRunningFeedback(store.loading);
 | v0.54 | 2026-09-24 | 设置搜索可搜页面内部的行：左导航搜索分两条 lane（「命中行」按页面分组、行内显示「标签 + 所在卡片」，点选/回车打开页面并滚动到该行、1.2s 内侧 focus ring 高亮；「命中页面」仍是页标题子串过滤），行索引为声明式（`settings-search.ts` + 内置页清单 `builtin-search.ts`），通用页全量覆盖；§3 补充规则 |
 | v0.53 | 2026-09-24 | ⌘L 会话搜索面板新增检索统计行：内容 lane 存活时显示「正在检索… / 耗时 {{time}} · 共检索 {{total}} 条消息 / 检索失败」；后端 `search()` 返回 `elapsedUs` + `totalMessages`，耗时只计查询本身（看板计数在计时外）；§3 补充规则 |
 | v0.53 | 2026-09-25 | 新增 MiniMax Code CLI（命令 `mcode`）引擎：聊天引擎下拉与设置 CLI 管理按既有数据驱动形态自动出现，引擎图标采用随 app 分发的蓝色徽章（.icns 转 PNG），模型厂商推断沿用原扁平标志；权限问答走 ACP `session/request_permission` 问题卡（同 grok/kimi 形态）；MCP 页如实标注不支持（不伪造 native 空来源）；渠道/技能同步暂不接入 |
+| v0.54 | 2026-10-21 | 新增 CodeBuddy CLI（命令 `codebuddy`）引擎：聊天引擎下拉与设置 CLI 管理按既有数据驱动形态自动出现；支持账号登录（终端唤起 `/login` 扫码/SSO 认证，自动读取本地企业/用户凭证）与 API Key 渠道登录；历史会话索引 `~/.codebuddy/projects`；MCP 页如实标注 none |
 | v0.52 | 2026-09-24 | 设置「电脑操控」移除拖拽授权引导：删掉“重启生效 / 把图标拖进授权列表”提示与可拖拽 App 图标，macOS 授权只保留「打开系统设置」深链（`computer_use_open_permission_settings`）；同步删除 `computer_use_drag_source` 命令、`tauri-plugin-drag` 依赖与 `drag:default` 权限；§3 更新权限行规则 |
 | v0.51 | 2026-09-24 | AskUserQuestion 多题卡片：单选自动前进、多选逐题确认与单选/多选样式区分 |
 | v0.50 | 2026-09-23 | 桌面宠物（§4.3）：透明置顶宠物窗口的点击穿透/拖动/右键缩放交互、状态气泡动效时长、位置与尺寸记忆、多会话轮播；移除宠物改用 `ConfirmDialog`（danger），后端宠物错误码本地化 |

@@ -488,6 +488,11 @@ fn env_mapping(engine: &str) -> [(&'static str, &'static str); 3] {
             ("apiKey", "OPENAI_API_KEY"),
             ("model", ""),
         ],
+        "codebuddy" => [
+            ("baseUrl", "CODEBUDDY_BASE_URL"),
+            ("apiKey", "CODEBUDDY_API_KEY"),
+            ("model", "CODEBUDDY_MODEL"),
+        ],
         _ => [("baseUrl", ""), ("apiKey", ""), ("model", "")],
     }
 }

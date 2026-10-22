@@ -13,6 +13,7 @@ pub(crate) fn resolve_claude_channel_model(
     claude_channel::resolve_model(selected, Some(provider), env)
 }
 pub mod codex;
+pub mod codebuddy;
 mod codex_app;
 mod codex_provider_env;
 mod codex_read_only;
@@ -288,6 +289,7 @@ pub fn engine_by_id(id: &str) -> Option<Box<dyn Engine>> {
         "claude" => Some(Box::new(claude::ClaudeEngine::new())),
         "kimi" => Some(Box::new(kimi::KimiEngine)),
         "minimax" => Some(Box::new(minimax::MiniMaxEngine)),
+        "codebuddy" => Some(Box::new(codebuddy::CodeBuddyEngine::new())),
         "grok" => Some(Box::new(grok::GrokEngine)),
         "codex" => Some(Box::new(codex::CodexEngine)),
         "pi" => Some(Box::new(pi_family::pi())),

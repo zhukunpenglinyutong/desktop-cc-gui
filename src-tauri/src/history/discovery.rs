@@ -100,6 +100,36 @@ pub(super) fn discover_claude(workspace: &Path) -> Vec<SessionFile> {
     out
 }
 
+pub(super) fn discover_codebuddy(workspace: &Path) -> Vec<SessionFile> {
+    let base = crate::engine::engine_home(Some("CODEBUDDY_CONFIG_DIR"), ".codebuddy").join("projects");
+    let mut out = Vec::new();
+    let mut seen_sessions = std::collections::HashSet::new();
+    for dir in claude_project_dirs(&base, workspace) {
+        let Ok(entries) = std::fs::read_dir(&dir) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.extension().and_then(|e| e.to_str()) != Some("jsonl") {
+                continue;
+            }
+            let Some(stem) = path.file_stem().and_then(|s| s.to_str()) else {
+                continue;
+            };
+            if stem == "history" || !seen_sessions.insert(stem.to_string()) {
+                continue;
+            }
+            out.push(SessionFile {
+                engine: "codebuddy",
+                session_id: stem.to_string(),
+                workspace_path: workspace.to_string_lossy().to_string(),
+                file_path: path,
+            });
+        }
+    }
+    out
+}
+
 /// Strip the `\\?\` verbatim prefix Windows `canonicalize` adds — the CLI
 /// encodes the plain path, so the prefix would break the match.
 fn strip_verbatim_prefix(path: &str) -> &str {

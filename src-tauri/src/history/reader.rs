@@ -732,7 +732,7 @@ pub async fn load_remote_session_page(
 /// so a session cannot "delete then resurrect" on the next scan.
 fn delete_session_disk(engine: &str, path: &Path) -> Result<(), String> {
     match engine {
-        "claude" | "codex" | "pi" | "omp" | "agy" | "qoder" | "qoder-cn" => {
+        "claude" | "codex" | "pi" | "omp" | "agy" | "qoder" | "qoder-cn" | "codebuddy" => {
             match std::fs::remove_file(path) {
                 Ok(()) => Ok(()),
                 Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),

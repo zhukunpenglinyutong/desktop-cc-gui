@@ -448,7 +448,7 @@ pub(super) fn engine_support(id: &str) -> &'static str {
         "dsh" => "plugin",
         // mcode 自己的 MCP 配置在 ~/.minimax/config.yaml 里管理；本项目尚未
         // 接管其读写，先如实标 none，不要让它以 native 身份顶着空来源列表。
-        "minimax" => "none",
+        "minimax" | "codebuddy" => "none",
         _ => "native",
     }
 }

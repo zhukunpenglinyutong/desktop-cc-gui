@@ -359,7 +359,7 @@ impl Default for AppSettings {
         // 为所有引擎设置默认推理强度为 "medium"
         for engine in &[
             "claude", "pi", "omp", "agy", "codex", "grok", "opencode", "kimi", "dsh", "qoder",
-            "qoder-cn", "minimax",
+            "qoder-cn", "minimax", "codebuddy",
         ] {
             default_efforts.insert(engine.to_string(), "medium".to_string());
         }

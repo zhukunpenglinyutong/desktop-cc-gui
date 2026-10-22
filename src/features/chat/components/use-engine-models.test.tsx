@@ -112,6 +112,7 @@ describe("useEngineModels channel models", () => {
     qoder: EMPTY_SECTION,
     "qoder-cn": EMPTY_SECTION,
     minimax: EMPTY_SECTION,
+    codebuddy: EMPTY_SECTION,
   });
 
   it("切换渠道后别名行改指该渠道映射的模型", async () => {
@@ -152,6 +153,33 @@ describe("useEngineModels channel models", () => {
 
     await show(null, undefined, { claude: "c2" });
     expect(opusLabel()).toBe("two-opus");
+  });
+
+  it("CodeBuddy 动态返回真实模型且渠道配置模型置顶", async () => {
+    vi.mocked(ipc.getCliConfig).mockResolvedValue({
+      ...cliConfigWith(EMPTY_SECTION),
+      codebuddy: {
+        current: "cb1",
+        providers: {
+          cb1: {
+            name: "guomo",
+            model: "glm-5.3",
+          },
+        },
+      },
+    });
+    vi.mocked(ipc.listEngineModels).mockResolvedValue({
+      models: [
+        { id: "custom:kimi-k3", name: "Kimi K3" },
+        { id: "hy4-preview", name: "Hunyuan 4 Preview" },
+        { id: "deepseek-v4-pro", name: "DeepSeek V4 Pro" },
+      ],
+      authoritative: true,
+    } as unknown as EngineCatalog);
+
+    await show([engineInfo("codebuddy", true)], undefined, { codebuddy: "cb1" });
+    const ids = latest.modelsByEngine.codebuddy?.map((m) => m.id);
+    expect(ids).toEqual(["glm-5.3", "custom:kimi-k3", "hy4-preview", "deepseek-v4-pro"]);
   });
 
   it("DSH 渠道裸模型 id 与目录的 provider/model 复合 id 合并为一行", async () => {

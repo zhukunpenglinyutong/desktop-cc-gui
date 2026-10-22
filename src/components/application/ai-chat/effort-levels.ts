@@ -34,6 +34,7 @@ export const EFFORT_SUPPORTED_ENGINES: Record<string, true> = {
   kimi: true,
   dsh: true,
   minimax: true,
+  codebuddy: true,
 };
 
 export function supportsEffort(

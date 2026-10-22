@@ -50,6 +50,7 @@ const BIN_FIELDS = {
   qoder: "qoderBin",
   "qoder-cn": "qoderCnBin",
   minimax: "minimaxBin",
+  codebuddy: "codebuddyBin",
 } as const;
 type BinEngine = keyof typeof BIN_FIELDS;
 

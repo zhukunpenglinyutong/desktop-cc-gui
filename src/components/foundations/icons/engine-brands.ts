@@ -14,6 +14,7 @@ export const CLI_DISPLAY_NAMES: Record<string, string> = {
   qoder: "Qoder CLI",
   "qoder-cn": "Qoder CLI CN",
   minimax: "MiniMax Code",
+  codebuddy: "CodeBuddy CLI",
 };
 
 /**
@@ -41,6 +42,7 @@ export function inferModelEngine(name: string): EngineIconId | null {
   if (/\b(gpt|codex|openai)\b/.test(lower) || /\bo[134]\b/.test(lower)) return "codex";
   if (/\bgrok\b/.test(lower)) return "grok";
   if (/\b(kimi|moonshot)\b/.test(lower) || /\bk\d/.test(lower)) return "kimi";
+  if (/\b(codebuddy|cbc)\b/.test(lower)) return "codebuddy";
   if (/\bdeepseek\b/.test(lower)) return "dsh";
   return null;
 }

@@ -15,6 +15,7 @@ export const ENGINE_IDS = [
   "qoder",
   "qoder-cn",
   "minimax",
+  "codebuddy",
 ] as const;
 export type EngineId = (typeof ENGINE_IDS)[number];
 /** Official docs per engine — the CLI 管理 header "官方文档" link. */
@@ -31,6 +32,7 @@ export const ENGINE_DOCS_URLS: Record<EngineId, string> = {
   qoder: "https://docs.qoder.com/en/cli/using-cli",
   "qoder-cn": "https://docs.qoder.com/zh/cli/using-cli",
   minimax: "https://agent.minimax.cn/docs/cli/quick-start",
+  codebuddy: "https://copilot.tencent.com/",
 };
 
 export const PSEUDO_LOCAL = "__local_settings_json__";
@@ -93,6 +95,7 @@ const ENV_MODEL_KEY: Partial<Record<EngineId, string>> = {
   claude: "ANTHROPIC_MODEL",
   kimi: "KIMI_MODEL_NAME",
   grok: "GROK_MODEL",
+  codebuddy: "CODEBUDDY_MODEL",
 };
 
 /**
@@ -119,6 +122,7 @@ const ENV_CONVENTION_KEYS: Partial<Record<EngineId, string[]>> = {
   kimi: ["KIMI_BASE_URL", "KIMI_API_KEY", "KIMI_MODEL_NAME"],
   grok: ["GROK_BASE_URL", "GROK_API_KEY", "GROK_MODEL"],
   codex: ["OPENAI_BASE_URL", "OPENAI_API_KEY"],
+  codebuddy: ["CODEBUDDY_BASE_URL", "CODEBUDDY_API_KEY", "CODEBUDDY_MODEL"],
 };
 
 /** Copy `raw` with the convention env keys removed (empty maps/objects
