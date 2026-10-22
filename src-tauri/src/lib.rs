@@ -7,6 +7,7 @@ pub mod browser;
 pub mod cc_switch;
 pub mod cli_lifecycle;
 pub mod clipboard;
+pub mod commit_message;
 pub mod computer_use;
 pub mod computer_use_ax;
 pub mod config;
@@ -554,6 +555,8 @@ pub fn run() {
             git::git_unstage,
             git::git_discard,
             git::git_commit,
+            git::git_discover_repositories,
+            commit_message::git_generate_commit_message,
             git::git_push,
             git::git_pull,
             git::git_branches,

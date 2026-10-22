@@ -1811,6 +1811,15 @@ export const ipc = {
       suggestedBranch,
       worktreePath,
     }),
+  /** Repositories under a workspace root (the root itself is included when
+   *  it is a worktree), each with branch + change counts. */
+  gitDiscoverRepositories: (root: string) =>
+    invoke<RepositorySummary[]>("git_discover_repositories", { root }),
+  /** Draft a commit message from the staged diff (worktree diff when nothing
+   *  is staged) via the channel configured for `engine`, or the first engine
+   *  that has one. `locale` picks the message language. */
+  gitGenerateCommitMessage: (path: string, engine: string | null, locale: string) =>
+    invoke<string>("git_generate_commit_message", { path, engine, locale }),
   // open-app
   openWorkspaceIn: (path: string, options: { appName: string; args?: string[] }) =>
     invoke<void>("open_workspace_in", { path, app: options.appName, args: options.args ?? [] }),
