@@ -130,6 +130,7 @@ export interface Workspace {
   name: string;
   lastOpenedAt: number | null;
   sortOrder: number | null;
+  pinned?: boolean;
   /** Sidebar group id (工作区分组); null = ungrouped. */
   groupId: string | null;
   /** "worktree" = git worktree child under its parent workspace row;
@@ -1594,6 +1595,7 @@ export const ipc = {
   pluginAddWorkspace: (pluginId: string, path: string, meta?: Record<string, unknown>) =>
     invoke<Workspace>("plugin_add_workspace", { pluginId, path, meta: meta ?? null }),
   reorderWorkspaces: (ids: string[]) => invoke<void>("reorder_workspaces", { ids }),
+  setWorkspacePinned: (id: string, pinned: boolean) => invoke<void>("set_workspace_pinned", { id, pinned }),
   removeWorkspace: (id: string) => invoke<void>("remove_workspace", { id }),
   setWorkspaceGroup: (id: string, groupId: string | null) =>
     invoke<void>("set_workspace_group", { id, groupId }),

@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>工作区置顶预览</title>
+</head>
+<body>
+  <div id="fixture"></div>
+  <script>
+    window.__TAURI_INTERNALS__ = {
+      transformCallback() { return 1; },
+      unregisterCallback() {},
+      convertFileSrc: (path) => path,
+      metadata: { currentWebview: { label: "main" }, currentWindow: { label: "main" } },
+      async invoke() { return null; },
+    };
+    window.__TAURI_EVENT_PLUGIN_INTERNALS__ = { unregisterListener() {} };
+  </script>
+  <script type="module" src="./workspace-pin.tsx"></script>
+</body>
+</html>

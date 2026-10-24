@@ -27,6 +27,7 @@ export function createWorkspaceActions(
   | "refreshWorkspaces"
   | "addWorkspace"
   | "reorderWorkspaces"
+  | "setWorkspacePinned"
   | "removeWorkspace"
   | "createWorkspaceGroup"
   | "renameWorkspaceGroup"
@@ -74,6 +75,23 @@ export function createWorkspaceActions(
         await ipc.reorderWorkspaces(ids);
       } catch {
         await get().refreshWorkspaces();
+      }
+    },
+
+    setWorkspacePinned: async (id, pinned) => {
+      const previous = get().workspaces.find((w) => w.id === id)?.pinned ?? false;
+      set((s) => ({
+        workspaces: s.workspaces.map((w) => w.id === id ? { ...w, pinned } : w),
+      }));
+      try {
+        await ipc.setWorkspacePinned(id, pinned);
+        set({ actionError: null });
+      } catch (error) {
+        set((s) => ({
+          workspaces: s.workspaces.map((w) => w.id === id ? { ...w, pinned: previous } : w),
+        }));
+        await get().refreshWorkspaces();
+        set({ actionError: errorText(error) });
       }
     },
 

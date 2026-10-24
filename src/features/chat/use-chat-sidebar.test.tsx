@@ -24,6 +24,7 @@ vi.mock("@/lib/ipc", async (importOriginal) => ({
     // 无工作区时 handleAddWorkspace 会走这条链路：登记目录 + 重读列表。
     addWorkspace: vi.fn(async () => {}),
     listWorkspaces: vi.fn(async () => []),
+    setWorkspacePinned: vi.fn(async () => {}),
 
   
   },
@@ -124,6 +125,46 @@ describe("useChatSidebar repo mapping", () => {
     expect(captured).toHaveLength(1);
     expect(captured[0]?.threadLimit).toBe(7);
     expect(captured[0]?.threads.map((t) => t.id)).toEqual(["codex/s-1"]);
+  });
+
+  it("只在所属分组内把置顶工作区排在普通工作区前", async () => {
+    await act(async () => {
+      useChatStore.setState({
+        workspaces: [
+          { ...WS, id: "a", pinned: false, groupId: null },
+          { ...WS, id: "b", pinned: true, groupId: "g" },
+          { ...WS, id: "c", pinned: false, groupId: "g" },
+          { ...WS, id: "d", pinned: true, groupId: null },
+        ],
+        workspaceGroups: [{ id: "g", name: "分组", sortOrder: 0 }],
+      });
+    });
+    expect(sidebar.sections?.map((section) => section.repos.map((repo) => repo.id))).toEqual([
+      ["d", "a"],
+      ["b", "c"],
+    ]);
+    expect(sidebar.sections?.[0]?.repos[0]?.defaultOpen).toBe(true);
+    expect(sidebar.sections?.[1]?.repos[0]?.defaultOpen).toBe(false);
+  });
+
+  it("没有自定义分组时置顶项在工作区列表顶部", async () => {
+    await act(async () => {
+      useChatStore.setState({
+        workspaces: [{ ...WS, id: "a", pinned: false }, { ...WS, id: "b", pinned: true }],
+      });
+    });
+    expect(sidebar.sections).toBeUndefined();
+    expect(captured.map((repo) => repo.id)).toEqual(["b", "a"]);
+  });
+
+  it("置顶写入失败且刷新失败时恢复原状态并显示错误", async () => {
+    vi.mocked(ipc.setWorkspacePinned).mockRejectedValueOnce(new Error("写入失败"));
+    vi.mocked(ipc.listWorkspaces).mockRejectedValueOnce(new Error("刷新失败"));
+    await act(async () => {
+      await useChatStore.getState().setWorkspacePinned(WS.id, true);
+    });
+    expect(useChatStore.getState().workspaces[0]?.pinned).toBe(false);
+    expect(useChatStore.getState().actionError).toContain("写入失败");
   });
 
   it("pending 新对话出现在对应工作区线程列表顶部", async () => {

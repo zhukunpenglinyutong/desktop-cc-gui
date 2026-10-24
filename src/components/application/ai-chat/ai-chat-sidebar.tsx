@@ -55,6 +55,7 @@ export function AiChatSidebar({
   onRemoveWorkspace,
   onWorkspaceAlias,
   onSetWorkspaceArchived,
+  onSetWorkspacePinned,
   onNewWorktree,
   onDeleteWorktree,
   onDropWorkspaceToSection,
@@ -84,6 +85,7 @@ export function AiChatSidebar({
   onWorkspaceAlias?: (id: string) => void;
   /** Workspace context-menu action: move the row into / out of 已归档. */
   onSetWorkspaceArchived?: (id: string, archived: boolean) => void;
+  onSetWorkspacePinned?: (id: string, pinned: boolean) => void;
   /** Workspace context-menu / WORKTREES ＋: open the worktree create dialog. */
   onNewWorktree?: (id: string) => void;
   /** Worktree child-row menu「删除 Worktree…」: open the delete dialog. */
@@ -120,7 +122,7 @@ export function AiChatSidebar({
   }, [sections, repos]);
   const { isRepoExpanded, toggleRepoExpanded } = useExpandedWorkspaces(allRepos, activeThreadId);
   const { workspaceMenu, closeWorkspaceMenu, openWorkspaceMenu, openArchivedMenu } =
-    useWorkspaceMenu(onWorkspaceAlias, onSetWorkspaceArchived);
+    useWorkspaceMenu(onWorkspaceAlias, onSetWorkspaceArchived, onSetWorkspacePinned);
   const { blankMenu, openBlankMenu, closeBlankMenu } = useBlankMenu();
   // Blank-area menu「新建分组」: the inline composer lives at the end of the
   // workspace section until the name commits or the edit is cancelled.
@@ -234,6 +236,7 @@ export function AiChatSidebar({
         onCreateGroup={onCreateGroup ? () => setCreatingGroup(true) : undefined}
         onWorkspaceAlias={onWorkspaceAlias}
         onSetWorkspaceArchived={onSetWorkspaceArchived}
+        onSetWorkspacePinned={onSetWorkspacePinned}
         onNewWorktree={onNewWorktree}
         onDeleteWorktree={onDeleteWorktree}
         onThreadAction={onThreadAction}

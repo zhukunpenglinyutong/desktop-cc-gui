@@ -1219,6 +1219,7 @@ pub struct Workspace {
     pub name: String,
     pub last_opened_at: Option<i64>,
     pub sort_order: Option<i64>,
+    pub pinned: bool,
     /// Sidebar group (工作区分组) this workspace belongs to; None = ungrouped.
     pub group_id: Option<String>,
     /// "worktree" = git worktree child hanging under its parent workspace
@@ -1239,7 +1240,7 @@ pub struct Workspace {
 pub fn list_workspaces(state: tauri::State<'_, crate::AppState>) -> Result<Vec<Workspace>, String> {
     query_rows(
         &state,
-        "SELECT id, path, name, last_opened_at, sort_order, group_id, kind, parent_id, meta FROM workspaces
+        "SELECT id, path, name, last_opened_at, sort_order, group_id, kind, parent_id, meta, pinned FROM workspaces
          ORDER BY sort_order IS NULL, sort_order, COALESCE(last_opened_at, 0) DESC",
         |r| {
             let meta_json: Option<String> = r.get(8)?;
@@ -1249,6 +1250,7 @@ pub fn list_workspaces(state: tauri::State<'_, crate::AppState>) -> Result<Vec<W
                 name: r.get(2)?,
                 last_opened_at: r.get(3)?,
                 sort_order: r.get(4)?,
+                pinned: r.get::<_, i64>(9)? != 0,
                 group_id: r.get(5)?,
                 kind: r.get(6)?,
                 parent_id: r.get(7)?,
@@ -1373,6 +1375,7 @@ pub(crate) fn add_workspace_inner(
         name,
         last_opened_at: Some(now),
         sort_order: None,
+        pinned: false,
         group_id: None,
         kind,
         parent_id,
@@ -1417,6 +1420,25 @@ pub fn reorder_workspaces(
             rusqlite::params![id, index as i64],
         )
         .map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub fn set_workspace_pinned(
+    state: tauri::State<'_, crate::AppState>,
+    id: String,
+    pinned: bool,
+) -> Result<(), String> {
+    let conn = state.db.0.lock();
+    let changed = conn
+        .execute(
+            "UPDATE workspaces SET pinned=?2 WHERE id=?1 AND parent_id IS NULL",
+            rusqlite::params![id, pinned],
+        )
+        .map_err(|e| e.to_string())?;
+    if changed == 0 {
+        return Err("workspace not found or is a worktree child".into());
     }
     Ok(())
 }

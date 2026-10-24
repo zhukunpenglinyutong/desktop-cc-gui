@@ -379,6 +379,12 @@ struct IdsArgs {
 struct IdArgs {
     id: String,
 }
+
+#[derive(Deserialize)]
+struct SetWorkspacePinnedArgs {
+    id: String,
+    pinned: bool,
+}
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct BotCreateArgs {
@@ -933,6 +939,12 @@ pub(super) async fn dispatch(
             ser(crate::history::reader::reorder_workspaces(
                 app.state(),
                 a.ids,
+            ))
+        }
+        "set_workspace_pinned" => {
+            let a: SetWorkspacePinnedArgs = parse_args(&raw)?;
+            ser(crate::history::reader::set_workspace_pinned(
+                app.state(), a.id, a.pinned,
             ))
         }
         "remove_workspace" => {

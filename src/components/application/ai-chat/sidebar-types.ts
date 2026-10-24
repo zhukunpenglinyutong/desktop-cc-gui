@@ -20,6 +20,7 @@ export interface AiChatThread {
 
 export interface AiChatRepo {
   id?: string;
+  pinned?: boolean;
   /** Workspace path — the git store's status cache is keyed by it (worktree
    *  child rows read dirty counts through this). */
   path?: string;

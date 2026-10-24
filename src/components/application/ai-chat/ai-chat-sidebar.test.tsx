@@ -2,6 +2,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { sessionMenuRegistry, workspaceMenuRegistry } from "@ccgui/plugin-sdk";
+import { useChatStore } from "@/features/chat/store";
 import { AiChatSidebar } from "./ai-chat-sidebar";
 import type { AiChatRepo } from "./ai-chat-sidebar";
 
@@ -23,6 +24,7 @@ let root: Root;
 
 beforeEach(() => {
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+  useChatStore.setState({ workspaces: [] });
   localStorage.clear();
   node = document.createElement("div");
   document.body.append(node);
@@ -350,6 +352,36 @@ it("renders plugin workspace-menu items for the right-clicked workspace", async 
     // Disposal re-renders the still-mounted sidebar (useSyncExternalStore).
     await act(async () => dispose());
   }
+});
+
+it("只有置顶回调时仍可打开工作区右键菜单", async () => {
+  useChatStore.setState({ workspaces: [{ id: "a", path: "/ws/a", name: "a", lastOpenedAt: null, sortOrder: 0, groupId: null, pinned: false }] });
+  const onSetWorkspacePinned = vi.fn();
+  await act(async () => root.render(<AiChatSidebar repos={[repo("a")]} onSetWorkspacePinned={onSetWorkspacePinned} />));
+  await rightClick(rowFor("a"));
+  await act(async () => menuItem(openMenu(), "chat.pinWorkspace").click());
+  expect(onSetWorkspacePinned).toHaveBeenCalledWith("a", true);
+});
+
+it("分组内置顶与普通工作区分段排序且仅置顶行显示图钉", async () => {
+  await act(async () => root.render(
+    <AiChatSidebar
+      repos={[]}
+      sections={[{ id: "g", name: "分组", repos: [
+        { ...repo("p1"), pinned: true },
+        { ...repo("p2"), pinned: true },
+        repo("r1"),
+        repo("r2"),
+      ] }]}
+      onReorderWorkspaces={() => {}}
+    />,
+  ));
+  const lists = [...node.querySelectorAll<HTMLElement>('[data-workspace-reorder-list="true"]')];
+  expect(lists.map((list) => [...list.querySelectorAll<HTMLElement>("[data-workspace-id]")].map((row) => row.dataset.workspaceId))).toEqual([
+    ["p1", "p2"], ["r1", "r2"],
+  ]);
+  expect(rowFor("p1").querySelector(".lucide-pin")).not.toBeNull();
+  expect(rowFor("r1").querySelector(".lucide-pin")).toBeNull();
 });
 
 it("draft 新对话右键只提供删除,不暴露重命名/复制 ID/插件项", async () => {

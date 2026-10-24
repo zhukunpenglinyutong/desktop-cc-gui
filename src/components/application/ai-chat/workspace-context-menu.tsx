@@ -7,6 +7,8 @@ import FolderOpen from "lucide-react/dist/esm/icons/folder-open";
 import FolderPlus from "lucide-react/dist/esm/icons/folder-plus";
 import GitBranchPlus from "lucide-react/dist/esm/icons/git-branch-plus";
 import Pencil from "lucide-react/dist/esm/icons/pencil";
+import Pin from "lucide-react/dist/esm/icons/pin";
+import PinOff from "lucide-react/dist/esm/icons/pin-off";
 import Trash2 from "lucide-react/dist/esm/icons/trash-2";
 import Puzzle from "lucide-react/dist/esm/icons/puzzle";
 import { ContextMenu, type ContextMenuEntry } from "@/components/context-menu";
@@ -54,6 +56,7 @@ interface WorkspaceMenuEntriesOptions {
   t: TFunction;
   onSetAlias?: (workspaceId: string) => void;
   onSetArchived?: (workspaceId: string, archived: boolean) => void;
+  onSetPinned?: (workspaceId: string, pinned: boolean) => void;
   onNewWorktree?: (workspaceId: string) => void;
   onDeleteWorktree?: (workspaceId: string) => void;
 }
@@ -68,6 +71,7 @@ function buildWorkspaceMenuEntries({
   t,
   onSetAlias,
   onSetArchived,
+  onSetPinned,
   onNewWorktree,
   onDeleteWorktree,
 }: WorkspaceMenuEntriesOptions): (ContextMenuEntry | "separator")[] {
@@ -86,6 +90,14 @@ function buildWorkspaceMenuEntries({
       label: t("chat.setWorkspaceAlias"),
       icon: <Pencil className="size-4" aria-hidden />,
       onSelect: () => onSetAlias(menu.workspaceId),
+    });
+  }
+  if (onSetPinned && workspace && !isWorktree && !menu.archived) {
+    entries.push({
+      id: "toggle-pin",
+      label: t(workspace.pinned ? "chat.unpinWorkspace" : "chat.pinWorkspace"),
+      icon: workspace.pinned ? <PinOff className="size-4" aria-hidden /> : <Pin className="size-4" aria-hidden />,
+      onSelect: () => onSetPinned(menu.workspaceId, !workspace.pinned),
     });
   }
   if (isWorktree && workspace) {
@@ -204,6 +216,7 @@ export function WorkspaceContextMenu({
   onClose,
   onSetAlias,
   onSetArchived,
+  onSetPinned,
   onNewWorktree,
   onDeleteWorktree,
 }: {
@@ -211,6 +224,7 @@ export function WorkspaceContextMenu({
   onClose: () => void;
   onSetAlias?: (workspaceId: string) => void;
   onSetArchived?: (workspaceId: string, archived: boolean) => void;
+  onSetPinned?: (workspaceId: string, pinned: boolean) => void;
   onNewWorktree?: (workspaceId: string) => void;
   onDeleteWorktree?: (workspaceId: string) => void;
 }) {
@@ -236,6 +250,7 @@ export function WorkspaceContextMenu({
     t,
     onSetAlias,
     onSetArchived,
+    onSetPinned,
     onNewWorktree,
     onDeleteWorktree,
   });

@@ -129,6 +129,7 @@ export interface ChatStore {
    *  据此决定要不要接着开待发会话（见 use-chat-sidebar 的 handleAddWorkspace）。 */
   addWorkspace: (path: string, meta?: Record<string, unknown>) => Promise<boolean>;
   reorderWorkspaces: (ids: string[]) => Promise<void>;
+  setWorkspacePinned: (id: string, pinned: boolean) => Promise<void>;
   removeWorkspace: (id: string) => Promise<void>;
   selectSession: (
     engine: string,

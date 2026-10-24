@@ -493,6 +493,7 @@ pub fn run() {
             history::reader::list_workspaces,
             history::reader::add_workspace,
             history::reader::reorder_workspaces,
+            history::reader::set_workspace_pinned,
             history::reader::remove_workspace,
             history::reader::set_workspace_group,
             // files

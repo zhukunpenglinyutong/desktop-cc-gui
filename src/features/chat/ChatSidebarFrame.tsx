@@ -30,6 +30,7 @@ export function ChatSidebarFrame({
   onRemoveWorkspace,
   onWorkspaceAlias,
   onSetWorkspaceArchived,
+  onSetWorkspacePinned,
   onNewWorktree,
   onDeleteWorktree,
   onNewSessionInWorkspace,
@@ -60,6 +61,7 @@ export function ChatSidebarFrame({
   onRemoveWorkspace: (workspaceId: string) => void;
   onWorkspaceAlias: (workspaceId: string) => void;
   onSetWorkspaceArchived: (workspaceId: string, archived: boolean) => void;
+  onSetWorkspacePinned: (workspaceId: string, pinned: boolean) => void;
   /** 右键菜单/WORKTREES ＋：打开 worktree 创建对话框。 */
   onNewWorktree: (workspaceId: string) => void;
   /** worktree 子行右键菜单：打开删除确认。 */
@@ -109,6 +111,7 @@ export function ChatSidebarFrame({
         onRemoveWorkspace={onRemoveWorkspace}
         onWorkspaceAlias={onWorkspaceAlias}
         onSetWorkspaceArchived={onSetWorkspaceArchived}
+        onSetWorkspacePinned={onSetWorkspacePinned}
         onNewWorktree={onNewWorktree}
         onDeleteWorktree={onDeleteWorktree}
         archivedRepos={archivedRepos}

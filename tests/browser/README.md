@@ -1,5 +1,11 @@
 # Chat streaming regression
 
+Open `/tests/browser/workspace-pin.html` to try the real workspace sidebar with
+synthetic projects. Right-click a project to pin or unpin it; pinned projects
+stay in their own group and show a small pin icon. Drag the folder handle to
+reorder within pinned or regular projects. The fixture uses in-memory IPC and
+does not change registered workspaces; refresh restores its initial state.
+
 Open `/tests/browser/interface-typography.html` for the real General settings
 controls with in-memory persistence. Expand Advanced and change the UI,
 content and code sizes independently using px inputs (blur or Enter to save).

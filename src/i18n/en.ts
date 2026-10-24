@@ -277,6 +277,8 @@ export const en: Messages = {
       "Save with an empty value to clear the alias and show the original folder name.",
     archiveWorkspace: "Archive",
     unarchiveWorkspace: "Unarchive",
+    pinWorkspace: "Pin workspace",
+    unpinWorkspace: "Unpin workspace",
     archivedWorkspaces: "Archived ({{count}})",
     selectSession: "Select or start a session",
     thinking: "Responding",

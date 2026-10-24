@@ -1006,6 +1006,14 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
     if !has_sort_order {
         conn.execute("ALTER TABLE workspaces ADD COLUMN sort_order INTEGER", [])?;
     }
+    let has_pinned = conn
+        .prepare("PRAGMA table_info(workspaces)")?
+        .query_map([], |row| row.get::<_, String>(1))?
+        .flatten()
+        .any(|name| name == "pinned");
+    if !has_pinned {
+        conn.execute("ALTER TABLE workspaces ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0", [])?;
+    }
 
     // Additive migration: sidebar group assignment (工作区分组), matching the
     // legacy app's per-workspace `settings.groupId` in workspaces.json.
@@ -1087,6 +1095,28 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn workspace_pin_migration_defaults_to_unpinned() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE workspaces(id TEXT PRIMARY KEY, path TEXT UNIQUE NOT NULL, name TEXT NOT NULL, last_opened_at INTEGER);
+             INSERT INTO workspaces(id, path, name) VALUES('w1', '/ws', 'ws');",
+        )
+        .unwrap();
+        migrate(&conn).unwrap();
+        let pinned: i64 = conn
+            .query_row("SELECT pinned FROM workspaces WHERE id='w1'", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(pinned, 0);
+        conn.execute("UPDATE workspaces SET pinned=1 WHERE id='w1'", [])
+            .unwrap();
+        migrate(&conn).unwrap();
+        let pinned: i64 = conn
+            .query_row("SELECT pinned FROM workspaces WHERE id='w1'", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(pinned, 1);
+    }
 
     struct Scratch(std::path::PathBuf);
     impl Scratch {

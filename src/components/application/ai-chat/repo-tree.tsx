@@ -344,6 +344,7 @@ function RepoHeaderRow({
         >
           {repo.label}
         </span>
+        {repo.pinned && <Pin className="ml-1 size-3 shrink-0 text-foreground-icon-secondary" aria-hidden />}
         {repo.labelSuffix && (
           <span className="ws-label-badge ml-1.5 shrink-0">
             {repo.labelSuffix}
