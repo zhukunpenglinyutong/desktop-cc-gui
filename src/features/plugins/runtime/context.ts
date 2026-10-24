@@ -25,6 +25,7 @@ import {
 } from "@ccgui/plugin-sdk";
 import type {
   AssetDirectoryGrant,
+  AssetFileGrant,
   Disposer,
   PluginAgentCatalogEntry,
   PluginEngineCatalog,
@@ -92,6 +93,7 @@ export interface PluginContextBackend extends PluginStorageBackend {
   bridgeInvoke(command: string, args: Record<string, unknown>): Promise<unknown>;
   workspaceMetadata(id: string): Promise<WorkspaceMetadata>;
   pickDirectory(title?: string): Promise<string | null>;
+  pickFile(title: string, filters: { name: string; extensions: string[] }[]): Promise<string | null>;
   documentStorageGetLocation(id: string): Promise<DocumentStorageLocationResponse>;
   documentStorageSelectLocation(
     id: string,
@@ -331,6 +333,16 @@ export function createPluginContext(
         return withAuthorizedHostInvoke(() => backend.bridgeInvoke(
           "plugin_asset_grant_directory", { pluginId: id, path },
         )) as Promise<AssetDirectoryGrant>;
+      },
+      async grantFile(options) {
+        requirePermission("assets:directory");
+        const title = options?.title ?? i18n.t("plugins.assetFilePickTitle");
+        const filters = options?.filters ?? [];
+        const path = await withAuthorizedHostInvoke(() => backend.pickFile(title, filters));
+        if (path === null) return null;
+        return withAuthorizedHostInvoke(() => backend.bridgeInvoke(
+          "plugin_asset_grant_file", { pluginId: id, path },
+        )) as Promise<AssetFileGrant>;
       },
       async listDirectories() {
         requirePermission("assets:directory");

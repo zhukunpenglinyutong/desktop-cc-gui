@@ -1327,6 +1327,10 @@ pub(super) async fn dispatch(
             let a: PluginAssetPathArgs = parse_args(&raw)?;
             ser(crate::plugins::assets::plugin_asset_grant_directory(a.plugin_id, a.path).await)
         }
+        "plugin_asset_grant_file" => {
+            let a: PluginAssetPathArgs = parse_args(&raw)?;
+            ser(crate::plugins::assets::plugin_asset_grant_file(a.plugin_id, a.path).await)
+        }
         "plugin_asset_list_directories" => {
             let a: PluginAssetIdArgs = parse_args(&raw)?;
             ser(crate::plugins::assets::plugin_asset_list_directories(a.plugin_id))

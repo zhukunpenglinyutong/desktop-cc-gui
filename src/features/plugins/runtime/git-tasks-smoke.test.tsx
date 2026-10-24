@@ -187,6 +187,7 @@ function backend(opts: { engines?: unknown[]; mode?: "prs" | "issues"; report?: 
     // 插件上下文后端里这条用例用不到的宿主能力：给最小桩，保持类型完整。
     workspaceMetadata: async () => ({ id: "ws", path: "/repo" }) as never,
     pickDirectory: async () => null,
+    pickFile: async () => null,
     documentStorageGetLocation: async () => ({ kind: "data" as const, displayPath: "/data", writable: true }),
     documentStorageSelectLocation: async (_id, kind) => ({ kind, displayPath: "/data", writable: true }),
     documentStorageReadText: async () => null,

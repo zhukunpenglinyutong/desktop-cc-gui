@@ -1,7 +1,7 @@
 <!-- 由 src/features/plugins/skill/creator-skill-docs.ts 从源码生成，请勿手改。 -->
 <!-- 重新生成：pnpm plugin-skill:docs（测试 creator-skill-docs.test.ts 会断言本文件与源码一致）。 -->
 
-# CC GUI 插件 SDK 参考（SDK 0.3.20）
+# CC GUI 插件 SDK 参考（SDK 0.3.21）
 
 本文件由脚本从 `packages/plugin-sdk`（公共契约）与宿主运行时（权限门禁）派生，属于 `ccgui-plugin-creator` skill。
 字段、方法、权限以本文件为准：**文中没有的 API 一律视为不存在**，不要凭记忆猜测方法名或权限名。
@@ -50,6 +50,19 @@ export default function activate(ctx: PluginContext): void | (() => void) {
 | `ctx.hooks.registerTurnHooks` | `runtime.events.read`（`prompt.contribute.internal` 按需） | — |
 | `ctx.hooks.registerRuntimeSwitchHooks` | `runtime.switch.observe` | — |
 | `ctx.workspace.getMetadata` | `workspace.metadata.read` | Stable host-registered workspace identity for the active path. |
+| `ctx.documentStorage.getLocation` | `plugin.storage` | — |
+| `ctx.documentStorage.selectLocation` | `plugin.storage` | Selecting custom opens the host directory picker. |
+| `ctx.documentStorage.readText` | `plugin.storage` | — |
+| `ctx.documentStorage.writeTextAtomic` | `plugin.storage` | expectedVersion=null requires the document not to exist. |
+| `ctx.documentStorage.remove` | `plugin.storage` | Delete a document. Pass the opaque version from the last read to make the delete conditional (CAS); omit it (or pass null) to delete unconditionally. A stale version rejects with a conflict and leaves the newer document in place. |
+| `ctx.documentStorage.list` | `plugin.storage` | — |
+| `ctx.assets.bundleUrl` | `assets:bundle` | Bundled resource URL; requires assets:bundle. |
+| `ctx.assets.documentUrl` | `plugin.storage` | Resource under the current documentStorage root; requires plugin.storage. |
+| `ctx.assets.grantDirectory` | `assets:directory` | Call from a user action, never activation: opens the host directory chooser. Cancellation rejects. Requires assets:directory. |
+| `ctx.assets.grantFile` | `assets:directory` | Call from a user action, never activation: selects a file and grants its parent directory. Cancellation resolves null without granting access. Requires assets:directory. |
+| `ctx.assets.listDirectories` | `assets:directory` | — |
+| `ctx.assets.revokeDirectory` | `assets:directory` | — |
+| `ctx.assets.directoryUrl` | `assets:directory` | Resource in a directory granted to this plugin; requires assets:directory. Paths use forward slashes and are relative to the directory root. |
 | `ctx.ui.registerConversationMode` | `ui:conversation-mode` | — |
 | `ctx.ui.registerSettingsSection` | `ui:settings-section` | — |
 | `ctx.ui.registerAddMenuRow` | `ui:add-menu` | — |
@@ -119,6 +132,87 @@ hooks: {
 workspace: {
   /** 权限：workspace.metadata.read */
   getMetadata(): Promise<WorkspaceMetadata>;
+}
+```
+
+### ctx.documentStorage
+
+Isolated CAS text storage rooted under plugin-data/<plugin-id>.
+
+```ts
+export interface ResolvedDocumentStorageLocation {
+  kind: DocumentStorageLocationKind;
+  path: string;
+}
+
+export type DocumentStorageLocationKind = "data" | "program" | "custom";
+
+export interface DocumentReadResult {
+  content: string;
+  /** Opaque compare-and-swap token. */
+  version: string;
+}
+
+export interface DocumentWriteResult {
+  /** Opaque token to use as expectedVersion for the next write. */
+  version: string;
+}
+```
+
+```ts
+documentStorage: {
+  /** 权限：plugin.storage */
+  getLocation(): Promise<ResolvedDocumentStorageLocation>;
+  /** 权限：plugin.storage */
+  selectLocation(kind: DocumentStorageLocationKind): Promise<ResolvedDocumentStorageLocation>;
+  /** 权限：plugin.storage */
+  readText(relativePath: string): Promise<DocumentReadResult | null>;
+  /** 权限：plugin.storage */
+  writeTextAtomic(relativePath: string, content: string, expectedVersion: string | null): Promise<DocumentWriteResult>;
+  /** 权限：plugin.storage */
+  remove(relativePath: string, expectedVersion?: string | null): Promise<void>;
+  /** 权限：plugin.storage */
+  list(prefix?: string): Promise<string[]>;
+}
+```
+
+### ctx.assets
+
+```ts
+export interface AssetDirectoryGrant {
+  grantId: string;
+  /** Canonical host filesystem path, for display and revealPath. */
+  path: string;
+}
+
+export interface AssetFilePickerOptions {
+  title?: string;
+  filters?: { name: string; extensions: string[] }[];
+}
+
+export interface AssetFileGrant extends AssetDirectoryGrant {
+  /** Selected filename relative to the granted parent directory. */
+  relativePath: string;
+}
+```
+
+```ts
+assets: {
+  /** 权限：assets:bundle */
+  bundleUrl(relativePath: string): string;
+  /** 权限：plugin.storage */
+  documentUrl(relativePath: string): string;
+  remoteUrl(url: string): string;
+  /** 权限：assets:directory */
+  grantDirectory(): Promise<AssetDirectoryGrant>;
+  /** 权限：assets:directory */
+  grantFile(options?: AssetFilePickerOptions): Promise<AssetFileGrant | null>;
+  /** 权限：assets:directory */
+  listDirectories(): Promise<AssetDirectoryGrant[]>;
+  /** 权限：assets:directory */
+  revokeDirectory(grantId: string): Promise<void>;
+  /** 权限：assets:directory */
+  directoryUrl(grantId: string, relativePath: string): string;
 }
 ```
 
@@ -346,8 +440,6 @@ host: {
 ctx.pluginId: string;
 ctx.version: string;
 ctx.react: typeof React; // Shared host React instance: external bundles can't resolve bare imports, so they build host-tree components with `ctx.react.createElement`; 插件自己的子树用自带 React cre…
-ctx.documentStorage: DocumentStorage; // Isolated CAS text storage rooted under plugin-data/<plugin-id>.
-ctx.assets: PluginAssets;
 ```
 
 ## 权限目录
@@ -391,7 +483,7 @@ ctx.assets: PluginAssets;
 | `workspace.metadata.read` | `ctx.workspace.getMetadata` |
 | `plugin.storage` | `ctx.documentStorage.getLocation`、`ctx.documentStorage.selectLocation`、`ctx.documentStorage.readText`、`ctx.documentStorage.writeTextAtomic`、`ctx.documentStorage.remove`、`ctx.documentStorage.list`、`ctx.assets.documentUrl` |
 | `assets:bundle` | `ctx.assets.bundleUrl` |
-| `assets:directory` | `ctx.assets.grantDirectory`、`ctx.assets.listDirectories`、`ctx.assets.revokeDirectory`、`ctx.assets.directoryUrl` |
+| `assets:directory` | `ctx.assets.grantDirectory`、`ctx.assets.grantFile`、`ctx.assets.listDirectories`、`ctx.assets.revokeDirectory`、`ctx.assets.directoryUrl` |
 
 ### network: / exec: 授权形状
 

@@ -6,7 +6,7 @@
  * 插件仓用法（包未发布 npm 前的过渡方案）：复制本文件为插件仓的
  * `src/ccgui-plugin.d.ts`，首行版本戳必须与所用宿主 SDK 一致。
  *
- * @ccgui/plugin-sdk v0.3.20
+ * @ccgui/plugin-sdk v0.3.21
  */
 
 /** 宿主实现的 SDK 契约版本。 */
@@ -417,6 +417,14 @@ export interface AssetDirectoryGrant {
   /** Canonical host filesystem path. */
   path: string;
 }
+export interface AssetFileGrant extends AssetDirectoryGrant {
+  /** Selected filename relative to the granted parent directory. */
+  relativePath: string;
+}
+export interface AssetFilePickerOptions {
+  title?: string;
+  filters?: { name: string; extensions: string[] }[];
+}
 export interface PluginAssets {
   /** assets:bundle permission. */
   bundleUrl(relativePath: string): string;
@@ -426,6 +434,10 @@ export interface PluginAssets {
   remoteUrl(url: string): string;
   /** User action only; assets:directory permission. Cancellation rejects. */
   grantDirectory(): Promise<AssetDirectoryGrant>;
+  /** Call from a user action, never activation: selects a file and grants its
+   * parent directory. Cancellation resolves null without granting access.
+   * Requires assets:directory. */
+  grantFile(options?: AssetFilePickerOptions): Promise<AssetFileGrant | null>;
   listDirectories(): Promise<AssetDirectoryGrant[]>;
   revokeDirectory(grantId: string): Promise<void>;
   /** Forward-slash relative path inside a directory granted to this plugin. */

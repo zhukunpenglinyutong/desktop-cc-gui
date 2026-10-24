@@ -424,6 +424,7 @@ pub fn run() {
             plugins::storage::plugin_document_storage_remove,
             plugins::storage::plugin_document_storage_list,
             plugins::assets::plugin_asset_grant_directory,
+            plugins::assets::plugin_asset_grant_file,
             plugins::assets::plugin_asset_list_directories,
             plugins::assets::plugin_asset_revoke_directory,
             plugins::assets::plugin_reveal_path,

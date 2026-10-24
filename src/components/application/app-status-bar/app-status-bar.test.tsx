@@ -22,6 +22,7 @@ vi.mock("@/lib/platform", () => ({
   isWeb: true,
   getAppVersion: vi.fn(() => Promise.resolve(null)),
   setWebviewZoom: vi.fn(),
+  pickFile: vi.fn(async () => null),
 }));
 
 import { AppStatusBar } from "./app-status-bar";

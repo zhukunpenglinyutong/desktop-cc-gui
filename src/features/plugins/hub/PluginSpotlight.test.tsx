@@ -26,7 +26,7 @@ vi.mock("@/lib/ipc", () => ({
   },
 }));
 vi.mock("@/lib/events", () => ({ listenPluginInstallProgress: vi.fn(async () => () => {}) }));
-vi.mock("@/lib/platform", () => ({ isWeb: false, openExternal: vi.fn() }));
+vi.mock("@/lib/platform", () => ({ isWeb: false, openExternal: vi.fn(), pickFile: vi.fn(async () => null) }));
 
 const reduceMotion = { value: false };
 vi.mock("motion/react", () => ({ useReducedMotion: () => reduceMotion.value }));

@@ -2,6 +2,8 @@ import type * as Pub from "../plugin";
 import type {
   AfterTurnEvent,
   AssetDirectoryGrant,
+  AssetFileGrant,
+  AssetFilePickerOptions,
   AssistantCompletedEvent,
   BeforeTurnEvent,
   BeforeTurnResult,
@@ -144,6 +146,8 @@ export type _DocumentReadResult = Assert<Mutual<DocumentReadResult, Pub.Document
 export type _DocumentWriteResult = Assert<Mutual<DocumentWriteResult, Pub.DocumentWriteResult>>;
 export type _DocumentStorage = Assert<Mutual<DocumentStorage, Pub.DocumentStorage>>;
 export type _AssetDirectoryGrant = Assert<Mutual<AssetDirectoryGrant, Pub.AssetDirectoryGrant>>;
+export type _AssetFileGrant = Assert<Mutual<AssetFileGrant, Pub.AssetFileGrant>>;
+export type _AssetFilePickerOptions = Assert<Mutual<AssetFilePickerOptions, Pub.AssetFilePickerOptions>>;
 export type _PluginAssets = Assert<Mutual<PluginAssets, Pub.PluginAssets>>;
 
 // --- 可选成员漂移 -----------------------------------------------------------
@@ -158,6 +162,11 @@ export type _BeforeTurnResultKeys = Assert<KeyParity<BeforeTurnResult, Pub.Befor
 export type _TurnHooksKeys = Assert<KeyParity<TurnHooks, Pub.TurnHooks>>;
 export type _InternalMessageCaptureKeys = Assert<
   KeyParity<InternalMessageCapture, Pub.InternalMessageCapture>
+>;
+export type _AssetFileGrantKeys = Assert<KeyParity<AssetFileGrant, Pub.AssetFileGrant>>;
+export type _AssetFilePickerOptionsKeys = Assert<KeyParity<AssetFilePickerOptions, Pub.AssetFilePickerOptions>>;
+export type _PluginAssetsGrantFileParams = Assert<
+  Mutual<Params<PluginAssets["grantFile"]>, Params<Pub.PluginAssets["grantFile"]>>
 >;
 export type _DocumentStorageRemoveParams = Assert<
   Mutual<Params<DocumentStorage["remove"]>, Params<Pub.DocumentStorage["remove"]>>

@@ -168,6 +168,7 @@ interface ContextGroup {
   name: string;
   doc: string;
   members: ContextMember[];
+  supportingTypes?: string[];
 }
 
 function extractManifest(source: ts.SourceFile): ManifestField[] {
@@ -210,24 +211,56 @@ function extractActivateReturn(source: ts.SourceFile): string {
   return code;
 }
 
-/** PluginContext：类型字面量成员是能力组，其余（pluginId/react/host…）是标量属性。 */
+/** Expand same-file capability interfaces as well as inline groups. */
 function extractContextGroups(source: ts.SourceFile): { groups: ContextGroup[]; scalars: ContextMember[] } {
   const groups: ContextGroup[] = [];
   const scalars: ContextMember[] = [];
+  const declarations = new Map<string, ts.InterfaceDeclaration | ts.TypeAliasDeclaration>();
+  for (const node of source.statements) {
+    if (ts.isInterfaceDeclaration(node) || ts.isTypeAliasDeclaration(node)) {
+      declarations.set(node.name.text, node);
+    }
+  }
+  const supportingTypes = (root: ts.InterfaceDeclaration): string[] => {
+    const visited = new Set([root.name.text]);
+    const definitions: string[] = [];
+    const collect = (node: ts.Node): void => {
+      const name = ts.isTypeReferenceNode(node) && ts.isIdentifier(node.typeName)
+        ? node.typeName.text
+        : ts.isExpressionWithTypeArguments(node) && ts.isIdentifier(node.expression)
+          ? node.expression.text
+          : null;
+      const declaration = name ? declarations.get(name) : undefined;
+      if (declaration && !visited.has(declaration.name.text)) {
+        visited.add(declaration.name.text);
+        definitions.push(declaration.getText(source).replace(/\r\n?/g, "\n"));
+        ts.forEachChild(declaration, collect);
+      }
+      ts.forEachChild(node, collect);
+    };
+    ts.forEachChild(root, collect);
+    return definitions;
+  };
   const walk = (node: ts.Node) => {
     if (ts.isInterfaceDeclaration(node) && node.name.text === "PluginContext") {
       for (const member of node.members) {
         const name = literalName(member.name);
         if (!name || !ts.isPropertySignature(member)) continue;
         const type = member.type;
-        if (type && ts.isTypeLiteralNode(type)) {
+        const referenced = type && ts.isTypeReferenceNode(type) && ts.isIdentifier(type.typeName)
+          ? declarations.get(type.typeName.text)
+          : undefined;
+        const declaration = referenced && ts.isInterfaceDeclaration(referenced) ? referenced : undefined;
+        const groupMembers = type && ts.isTypeLiteralNode(type) ? type.members : declaration?.members;
+        if (groupMembers) {
           const members: ContextMember[] = [];
-          for (const inner of type.members) {
+          for (const inner of groupMembers) {
             const signature = compactMember(inner);
             if (!signature) continue;
             members.push({ name: signature.split(/[(?:]/)[0]!, signature, doc: jsDocLine(inner) });
           }
-          groups.push({ name, doc: jsDocLine(member), members });
+          groups.push({ name, doc: jsDocLine(member), members,
+            supportingTypes: declaration ? supportingTypes(declaration) : undefined });
           continue;
         }
         scalars.push({ name, signature: `${name}${member.questionToken ? "?" : ""}: ${compactType(type)}`, doc: jsDocLine(member) });
@@ -508,6 +541,7 @@ function renderGroups(
   for (const group of groups) {
     parts.push(`### ctx.${group.name}`, "");
     if (group.doc) parts.push(group.doc, "");
+    if (group.supportingTypes?.length) parts.push(fenced("ts", group.supportingTypes.join("\n\n")), "");
     const lines = [`${group.name}: {`];
     for (const member of group.members) {
       const gate = gates.get(`${group.name}.${member.name}`);

@@ -331,11 +331,17 @@ SDK 0.4.2 起，`RuntimeSwitchEvent` 包含必填 `switchId`，同一次启动�
 
 ```ts
 interface AssetDirectoryGrant { grantId: string; path: string }
+interface AssetFileGrant extends AssetDirectoryGrant { relativePath: string }
+interface AssetFilePickerOptions {
+  title?: string;
+  filters?: { name: string; extensions: string[] }[];
+}
 interface PluginAssets {
   bundleUrl(relativePath: string): string;
   documentUrl(relativePath: string): string;
   remoteUrl(url: string): string;
   grantDirectory(): Promise<AssetDirectoryGrant>;
+  grantFile(options?: AssetFilePickerOptions): Promise<AssetFileGrant | null>;
   listDirectories(): Promise<AssetDirectoryGrant[]>;
   revokeDirectory(grantId: string): Promise<void>;
   directoryUrl(grantId: string, relativePath: string): string;
@@ -346,6 +352,7 @@ interface PluginAssets {
 - `documentUrl`：权限 `plugin.storage`，始终解析到本插件当前选择的 documentStorage 根。写入仍走原有 CAS 文档接口。
 - `remoteUrl`：只接受无用户名/密码的 HTTP(S) URL；复用精确 `network:<host>[:port或范围]` 授权，子域不会自动获得权限。远程重定向的每个目标也必须已授权。没有运行时动态域名授权。
 - `grantDirectory` / `listDirectories` / `revokeDirectory` / `directoryUrl`：权限 `assets:directory`；选择器只能由明确用户操作触发，不能在插件激活期弹出。取消选择会 reject。每插件最多 16 个目录，重复选同一规范目录复用 grant；授权不会放开宿主的通用文件访问。路径用 `/` 分隔且相对于授权根，不能带绝对路径、`.` 或 `..` 段。IPC 边界复核与 documentStorage 同一份敏感目录黑名单（资产协议 deny 基线）；同上是纵深防护而非选择器结果的加密绑定，绕过 SDK 直接提交路径属审核违规。
+- `grantFile(options?)`（SDK ≥ 0.3.21）：权限 `assets:directory`，从用户操作打开文件选择器，成功后**授权整个父目录**并返回 `{ grantId, path, relativePath }`；`path` 是规范父目录，`relativePath` 是选中文件名，可直接传入 `directoryUrl`。取消返回 `null`、不授权；选择器和路径校验错误会 reject。`title` 可自定义，须说明父目录读取授权；`filters` 是文件类型筛选，不是内容校验或授权边界。默认标题明确父目录授权，未提供筛选时可选择任意普通文件。后端在探测前检查插件状态 / 权限，并拒绝不存在的文件、目录、敏感父目录以及符号链接 / reparse 路径；目录上限、去重与撤权与 `grantDirectory` 共用。Web 无宿主原生对话框，输入的是**宿主绝对文件路径**，不是浏览器本地上传。
 - `ctx.shell.revealPath(path)`：只在文件管理器中定位真实存在的本插件 documentStorage 路径或已授权目录内路径；分别要求 `plugin.storage` / `assets:directory`。不提供任意文件打开、进程启动或目录外探测能力。
 
 返回的 URL 可用于 `fetch`、图片、音频及描述文件的相对依赖加载；资源内容按字节传递，不经文本或 base64 转换。桌面使用 `pluginasset` 协议，Web 使用带鉴权路径前缀的宿主路由，因此相对资源请求仍携带凭据；这些 URL 是临时能力地址，不应记录到日志或分享给外部站点。

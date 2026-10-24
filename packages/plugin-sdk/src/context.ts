@@ -245,6 +245,16 @@ export interface AssetDirectoryGrant {
   path: string;
 }
 
+export interface AssetFileGrant extends AssetDirectoryGrant {
+  /** Selected filename relative to the granted parent directory. */
+  relativePath: string;
+}
+
+export interface AssetFilePickerOptions {
+  title?: string;
+  filters?: { name: string; extensions: string[] }[];
+}
+
 export interface PluginAssets {
   /** Bundled resource URL; requires assets:bundle. */
   bundleUrl(relativePath: string): string;
@@ -256,6 +266,10 @@ export interface PluginAssets {
   /** Call from a user action, never activation: opens the host directory
    * chooser. Cancellation rejects. Requires assets:directory. */
   grantDirectory(): Promise<AssetDirectoryGrant>;
+  /** Call from a user action, never activation: selects a file and grants its
+   * parent directory. Cancellation resolves null without granting access.
+   * Requires assets:directory. */
+  grantFile(options?: AssetFilePickerOptions): Promise<AssetFileGrant | null>;
   listDirectories(): Promise<AssetDirectoryGrant[]>;
   revokeDirectory(grantId: string): Promise<void>;
   /** Resource in a directory granted to this plugin; requires assets:directory.

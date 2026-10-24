@@ -50,6 +50,7 @@ function fakeStorage(): PluginContextBackend & {
   bridgeInvoke: Mock;
   workspaceMetadata: Mock;
   pickDirectory: Mock;
+  pickFile: Mock;
   documentStorageGetLocation: Mock;
   documentStorageSelectLocation: Mock;
   documentStorageReadText: Mock;
@@ -66,6 +67,7 @@ function fakeStorage(): PluginContextBackend & {
     delete: async (id, key) => void data.delete(`${id}:${key}`),
     workspaceMetadata: vi.fn(async () => ({ id: "workspace-id", path: "C:/work" })),
     pickDirectory: vi.fn(async () => "C:/chosen"),
+    pickFile: vi.fn(async () => "C:/chosen/model.model3.json"),
     documentStorageGetLocation: vi.fn(async () => ({
       kind: "data" as const,
       displayPath: "C:/data/plugin-data/test-plugin",
@@ -130,6 +132,45 @@ describe("createPluginContext", () => {
     backend.pickDirectory.mockResolvedValueOnce(null);
     await expect(ctx.assets.grantDirectory()).rejects.toThrow(/cancel/i);
     expect(backend.bridgeInvoke).not.toHaveBeenCalled();
+  });
+
+  it("denies file selection before opening the picker without directory permission", async () => {
+    const backend = fakeStorage();
+    const { ctx } = createPluginContext(manifest([]), backend, { appVersion: "1.0.0" });
+    await expect(ctx.assets.grantFile()).rejects.toThrow(/assets:directory/);
+    expect(backend.pickFile).not.toHaveBeenCalled();
+    expect(backend.bridgeInvoke).not.toHaveBeenCalled();
+  });
+
+  it("returns null without granting access when file selection is cancelled", async () => {
+    const backend = fakeStorage();
+    backend.pickFile.mockResolvedValueOnce(null);
+    const { ctx } = createPluginContext(manifest(["assets:directory"]), backend, {
+      appVersion: "1.0.0",
+    });
+    await expect(ctx.assets.grantFile()).resolves.toBeNull();
+    expect(backend.bridgeInvoke).not.toHaveBeenCalled();
+  });
+
+  it("rejects the native file picker error without attempting a grant", async () => {
+    const backend = fakeStorage();
+    const error = new Error("native file picker unavailable");
+    backend.pickFile.mockRejectedValueOnce(error);
+    const { ctx } = createPluginContext(manifest(["assets:directory"]), backend, {
+      appVersion: "1.0.0",
+    });
+    await expect(ctx.assets.grantFile()).rejects.toBe(error);
+    expect(backend.bridgeInvoke).not.toHaveBeenCalled();
+  });
+
+  it("rejects a failed parent-directory grant instead of reporting file selection success", async () => {
+    const backend = fakeStorage();
+    const error = new Error("selected parent directory is denied");
+    backend.bridgeInvoke.mockRejectedValueOnce(error);
+    const { ctx } = createPluginContext(manifest(["assets:directory"]), backend, {
+      appVersion: "1.0.0",
+    });
+    await expect(ctx.assets.grantFile()).rejects.toBe(error);
   });
 
   it("requires read permission for turn-start observers without granting prompt writes", () => {
@@ -1050,6 +1091,7 @@ describe("permissioned SDK calls from guarded plugin callbacks", () => {
           pluginId, relativePath, content, expectedVersion,
         }),
       pickDirectory: () => tauriInvoke("plugin:dialog|open"),
+      pickFile: () => tauriInvoke("plugin:dialog|open"),
       documentStorageSelectLocation: (pluginId, kind, customPath) =>
         tauriInvoke("plugin_document_storage_select_location", { pluginId, kind, customPath }),
       bridgeInvoke: (command, args) => tauriInvoke(command, args),
@@ -1125,6 +1167,55 @@ describe("permissioned SDK calls from guarded plugin callbacks", () => {
       { kind: "custom", path: "C:/chosen/plugin-data/test-plugin" },
       { code: 0, stdout: "ready", stderr: "" },
     ]);
+  });
+
+  it("authorizes file selection and its parent grant without leaking IPC access to plugin code", async () => {
+    const grantedDirectories = new Set<string>();
+    const blocked: Promise<unknown>[] = [];
+    nativeInvoke.mockImplementation(async (cmd, args) => {
+      if (cmd === "plugin:dialog|open") {
+        blocked.push(runAsPlugin(() => tauriInvoke("plugin_asset_grant_file", {
+          pluginId: "another-plugin", path: "C:/private/secret.txt",
+        })));
+        return "C:/models/model.model3.json";
+      }
+      if (cmd === "plugin_asset_grant_file") {
+        const input = args as { pluginId: string; path: string };
+        if (input.pluginId !== "test-plugin" || input.path !== "C:/models/model.model3.json") {
+          throw new Error("file grant does not belong to the selecting plugin");
+        }
+        blocked.push(runAsPlugin(() => tauriInvoke("plugin_asset_revoke_directory", {
+          pluginId: "another-plugin", grantId: "other",
+        })));
+        grantedDirectories.add("C:/models");
+        return { grantId: "model-parent", path: "C:/models", relativePath: "model.model3.json" };
+      }
+      throw new Error(`unexpected command ${cmd}`);
+    });
+    const { ctx } = createPluginContext(manifest(["assets:directory"]), ipcStorage(), {
+      appVersion: "1.0.0",
+    });
+    const selection = runAsPlugin(() => {
+      const selected = ctx.assets.grantFile({
+        get title() {
+          blocked.push(tauriInvoke("plugin_asset_revoke_directory", { grantId: "other" }));
+          return "Choose a model and allow this plugin to read its parent directory";
+        },
+        get filters() {
+          blocked.push(tauriInvoke("plugin_asset_grant_file", { path: "C:/private/secret.txt" }));
+          return [];
+        },
+      });
+      blocked.push(tauriInvoke("plugin_asset_grant_file", { path: "C:/private/secret.txt" }));
+      return selected;
+    });
+    const grant = await selection;
+    expect(grant).not.toBeNull();
+    expect(grantedDirectories).toEqual(new Set(["C:/models"]));
+    expect(new URL(ctx.assets.directoryUrl(grant!.grantId, grant!.relativePath), window.location.origin).pathname)
+      .toContain("/test-plugin/dir/model-parent/model.model3.json");
+    for (const attempt of blocked) await expect(attempt).rejects.toThrow(/blocked/);
+    expect(blocked).toHaveLength(5);
   });
 
   it("does not authorize undeclared SDK permissions or unknown bridge commands", async () => {

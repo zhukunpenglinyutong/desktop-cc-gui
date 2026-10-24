@@ -14,6 +14,7 @@ function fakeBackend(): PluginContextBackend {
     bridgeInvoke: async () => null,
     workspaceMetadata: async () => ({ id: "workspace", path: "/work" }),
     pickDirectory: async () => null,
+    pickFile: async () => null,
     documentStorageGetLocation: async () => ({ kind: "data", displayPath: "/data", writable: true }),
     documentStorageSelectLocation: async (_id, kind) => ({ kind, displayPath: "/data", writable: true }),
     documentStorageReadText: async () => null,

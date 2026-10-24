@@ -1,5 +1,5 @@
 import { ipc, type PluginInfo } from "@/lib/ipc";
-import { getAppVersion, pickDirectory } from "@/lib/platform";
+import { getAppVersion, pickDirectory, pickFile } from "@/lib/platform";
 import i18n from "@/lib/i18n";
 import { buildAgentCatalog } from "../conversation/agent-catalog";
 import { APP_VERSION } from "@/version/app-version";
@@ -88,6 +88,7 @@ export const ipcBackend: LoaderBackend = {
     return ipc.pluginWorkspaceMetadata(id, workspacePath);
   },
   pickDirectory: (title = "Select plugin document storage directory") => pickDirectory(title),
+  pickFile,
   documentStorageGetLocation: (id) => ipc.pluginDocumentStorageGetLocation(id),
   documentStorageSelectLocation: (id, kind, customPath) =>
     ipc.pluginDocumentStorageSelectLocation(id, kind, customPath),

@@ -37,6 +37,7 @@ function fakeBackend(files: Record<string, string> = {}) {
     bridgeInvoke: async () => null,
     workspaceMetadata: async () => ({ id: "workspace-id", path: "C:/work" }),
     pickDirectory: async () => null,
+    pickFile: async () => null,
     documentStorageGetLocation: async () => ({
       kind: "data",
       displayPath: "C:/data/plugin",

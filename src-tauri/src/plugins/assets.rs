@@ -43,6 +43,14 @@ pub struct AssetDirectoryGrant {
     pub path: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AssetFileGrant {
+    pub grant_id: String,
+    pub path: String,
+    pub relative_path: String,
+}
+
 #[derive(Debug, Clone)]
 pub(super) enum AssetSource {
     Bundle(String),
@@ -206,6 +214,35 @@ fn grant_directory_at(
     Ok(grant)
 }
 
+fn grant_file_at(
+    state_path: &Path,
+    id: &str,
+    path: &Path,
+) -> Result<AssetFileGrant, String> {
+    let initial = authorized_state(state_path, id)?;
+    require_permission(&initial, id, "assets:directory")?;
+    check_absolute_path(path)?;
+    storage::confine_to_root(path, path)?;
+    if !path.is_file() {
+        return Err("asset file must be an existing regular file".into());
+    }
+    let filename = path.file_name().and_then(|name| name.to_str()).ok_or("file name must be UTF-8")?;
+    storage::safe_relative_path(filename)?;
+    if filename.bytes().any(|byte| byte.is_ascii_control()) {
+        return Err("asset file name must not contain ASCII control characters".into());
+    }
+    let parent = path.parent().ok_or("asset file must have a parent directory")?;
+    // Validate the selected file before granting anything. Reuse directory
+    // grants for canonical roots, sensitive-directory refusal and the locked
+    // permission recheck, deduplication and cap.
+    let grant = grant_directory_at(state_path, id, parent)?;
+    Ok(AssetFileGrant {
+        grant_id: grant.grant_id,
+        path: grant.path,
+        relative_path: filename.into(),
+    })
+}
+
 fn list_directories_at(state_path: &Path, id: &str) -> Result<Vec<AssetDirectoryGrant>, String> {
     let state = authorized_state(state_path, id)?;
     require_permission(&state, id, "assets:directory")?;
@@ -235,6 +272,18 @@ pub async fn plugin_asset_grant_directory(
     })
     .await
     .map_err(|error| format!("asset directory validation failed: {error}"))?
+}
+
+#[tauri::command]
+pub async fn plugin_asset_grant_file(
+    plugin_id: String,
+    path: String,
+) -> Result<AssetFileGrant, String> {
+    tokio::task::spawn_blocking(move || {
+        grant_file_at(&state::state_path(), &plugin_id, Path::new(&path))
+    })
+    .await
+    .map_err(|error| format!("asset file validation failed: {error}"))?
 }
 
 #[tauri::command]
@@ -570,6 +619,222 @@ mod tests {
         }
         state::write_state(&path, &state).unwrap();
         path
+    }
+
+    #[test]
+    fn file_grants_return_parent_and_basename_and_allow_sibling_assets() {
+        let scratch = Scratch::new();
+        let state_path = fixture(&scratch);
+        let root = scratch.path("models");
+        fs::create_dir_all(root.join("textures")).unwrap();
+        fs::write(root.join("avatar.model3.json"), b"model").unwrap();
+        fs::write(root.join("other.model3.json"), b"other").unwrap();
+        fs::write(root.join("textures/atlas.png"), [0, 255, 128, 13, 10]).unwrap();
+
+        let grant = grant_file_at(&state_path, "vendor.one", &root.join("avatar.model3.json"))
+            .unwrap();
+        assert_eq!(Path::new(&grant.path), dunce::canonicalize(&root).unwrap());
+        assert_eq!(grant.relative_path, "avatar.model3.json");
+        let other = grant_file_at(&state_path, "vendor.one", &root.join("other.model3.json"))
+            .unwrap();
+        assert_eq!(other.grant_id, grant.grant_id);
+        assert_eq!(other.relative_path, "other.model3.json");
+        assert_eq!(
+            grant_directory_at(&state_path, "vendor.one", &root).unwrap().grant_id,
+            grant.grant_id
+        );
+        assert_eq!(list_directories_at(&state_path, "vendor.one").unwrap().len(), 1);
+        for (relative, expected) in [
+            (grant.relative_path.as_str(), b"model".as_slice()),
+            ("textures/atlas.png", [0, 255, 128, 13, 10].as_slice()),
+        ] {
+            let source = AssetSource::Directory {
+                grant_id: grant.grant_id.clone(),
+                relative: relative.into(),
+            };
+            assert_eq!(
+                read_local_at(
+                    &state_path,
+                    &scratch.path("plugins"),
+                    None,
+                    "vendor.one",
+                    &source
+                )
+                .unwrap()
+                .body,
+                expected
+            );
+        }
+    }
+
+    #[test]
+    fn file_grants_are_plugin_scoped_and_revocable() {
+        let scratch = Scratch::new();
+        let state_path = fixture(&scratch);
+        let file = scratch.path("avatar.model3.json");
+        fs::write(&file, b"model").unwrap();
+        let grant = grant_file_at(&state_path, "vendor.one", &file).unwrap();
+        let source = AssetSource::Directory {
+            grant_id: grant.grant_id.clone(),
+            relative: grant.relative_path,
+        };
+        assert_eq!(
+            read_local_at(&state_path, &scratch.path("plugins"), None, "vendor.two", &source)
+                .unwrap_err()
+                .status(),
+            StatusCode::FORBIDDEN
+        );
+        revoke_directory_at(&state_path, "vendor.two", &grant.grant_id).unwrap();
+        assert!(
+            read_local_at(&state_path, &scratch.path("plugins"), None, "vendor.one", &source)
+                .is_ok()
+        );
+        revoke_directory_at(&state_path, "vendor.one", &grant.grant_id).unwrap();
+        assert_eq!(
+            read_local_at(&state_path, &scratch.path("plugins"), None, "vendor.one", &source)
+                .unwrap_err()
+                .status(),
+            StatusCode::FORBIDDEN
+        );
+    }
+
+    #[test]
+    fn invalid_file_selections_never_add_directory_grants() {
+        let scratch = Scratch::new();
+        let state_path = fixture(&scratch);
+        let root = scratch.path("models");
+        fs::create_dir_all(&root).unwrap();
+        fs::write(root.join("avatar.model3.json"), b"model").unwrap();
+        for selected in [
+            root.join("missing.model3.json"),
+            root.clone(),
+            root.join("../models/avatar.model3.json"),
+            root.join("NUL.model3.json"),
+            root.join("avatar.model3.json."),
+            PathBuf::from("models/avatar.model3.json"),
+        ] {
+            assert!(grant_file_at(&state_path, "vendor.one", &selected).is_err());
+            assert!(state::read_state(&state_path).unwrap().asset_directories.is_empty());
+        }
+    }
+
+    #[test]
+    fn file_grants_reject_url_unsafe_control_names_before_authorizing() {
+        let scratch = Scratch::new();
+        let state_path = fixture(&scratch);
+        let selected = scratch.path("avatar\u{7f}.model3.json");
+        fs::write(&selected, b"model").unwrap();
+        assert!(grant_file_at(&state_path, "vendor.one", &selected).is_err());
+        assert!(state::read_state(&state_path).unwrap().asset_directories.is_empty());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn existing_unsafe_non_utf8_and_symlink_files_never_grant_the_parent() {
+        use std::os::unix::ffi::OsStrExt;
+        use std::os::unix::fs::symlink;
+
+        let scratch = Scratch::new();
+        let state_path = fixture(&scratch);
+        let target = scratch.path("avatar.model3.json");
+        fs::write(&target, b"model").unwrap();
+        let linked = scratch.path("linked.model3.json");
+        symlink(&target, &linked).unwrap();
+        assert!(grant_file_at(&state_path, "vendor.one", &linked).is_err());
+        for name in [
+            std::ffi::OsStr::new("NUL.model3.json"),
+            std::ffi::OsStr::new("unsafe:model3.json"),
+            std::ffi::OsStr::new("avatar.model3.json."),
+            std::ffi::OsStr::new("avatar\u{1f}.model3.json"),
+            std::ffi::OsStr::new("avatar\n.model3.json"),
+            std::ffi::OsStr::from_bytes(b"avatar-\xff.model3.json"),
+        ] {
+            let selected = scratch.0.join(name);
+            fs::write(&selected, b"model").unwrap();
+            assert!(grant_file_at(&state_path, "vendor.one", &selected).is_err());
+        }
+        assert!(state::read_state(&state_path).unwrap().asset_directories.is_empty());
+    }
+
+    #[test]
+    fn file_selections_reject_reparse_ancestors_even_when_they_point_inward() {
+        let scratch = Scratch::new();
+        let state_path = fixture(&scratch);
+        let root = scratch.path("models");
+        let outside = scratch.path("outside");
+        fs::create_dir_all(&root).unwrap();
+        fs::create_dir_all(&outside).unwrap();
+        fs::write(root.join("avatar.model3.json"), b"model").unwrap();
+        fs::write(outside.join("avatar.model3.json"), b"other").unwrap();
+        for (name, target) in [("inward", &root), ("outward", &outside)] {
+            let linked = root.join(name);
+            assert!(create_dir_link(&linked, target));
+            let result = grant_file_at(&state_path, "vendor.one", &linked.join("avatar.model3.json"));
+            fs::remove_dir(&linked).or_else(|_| fs::remove_file(&linked)).unwrap();
+            assert!(result.is_err());
+            assert!(state::read_state(&state_path).unwrap().asset_directories.is_empty());
+        }
+    }
+
+    #[test]
+    fn file_grants_reuse_the_directory_limit_without_leaking_a_new_grant() {
+        let scratch = Scratch::new();
+        let state_path = fixture(&scratch);
+        for n in 0..MAX_DIRECTORIES {
+            let root = scratch.path(&format!("models-{n}"));
+            fs::create_dir_all(&root).unwrap();
+            fs::write(root.join("avatar.model3.json"), b"model").unwrap();
+            grant_directory_at(&state_path, "vendor.one", &root).unwrap();
+        }
+        assert!(grant_file_at(
+            &state_path,
+            "vendor.one",
+            &scratch.path("models-0/avatar.model3.json")
+        )
+        .is_ok());
+        let extra = scratch.path("extra");
+        fs::create_dir_all(&extra).unwrap();
+        fs::write(extra.join("avatar.model3.json"), b"model").unwrap();
+        assert!(grant_file_at(&state_path, "vendor.one", &extra.join("avatar.model3.json")).is_err());
+        assert_eq!(list_directories_at(&state_path, "vendor.one").unwrap().len(), MAX_DIRECTORIES);
+    }
+
+    #[test]
+    fn file_grants_authorize_before_probing_and_recheck_existing_grants() {
+        let scratch = Scratch::new();
+        let state_path = fixture(&scratch);
+        let file = scratch.path("avatar.model3.json");
+        fs::write(&file, b"model").unwrap();
+        grant_file_at(&state_path, "vendor.one", &file).unwrap();
+        let baseline = state::read_state(&state_path).unwrap();
+        for restriction in ["permission", "disabled", "quarantined"] {
+            let mut state = baseline.clone();
+            let record = state.plugins.get_mut("vendor.one").unwrap();
+            let expected = match restriction {
+                "permission" => {
+                    record.permissions.retain(|permission| permission != "assets:directory");
+                    "missing assets:directory permission"
+                }
+                "disabled" => {
+                    record.enabled = false;
+                    "disabled or quarantined"
+                }
+                _ => {
+                    record.quarantined = true;
+                    "disabled or quarantined"
+                }
+            };
+            state::write_state(&state_path, &state).unwrap();
+            for selected in [&file, &scratch.path("missing/avatar.model3.json")] {
+                assert!(grant_file_at(&state_path, "vendor.one", selected)
+                    .unwrap_err()
+                    .contains(expected));
+            }
+            assert_eq!(
+                state::read_state(&state_path).unwrap().asset_directories["vendor.one"].len(),
+                1
+            );
+        }
     }
 
     #[test]
