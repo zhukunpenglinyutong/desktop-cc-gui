@@ -1,4 +1,4 @@
-import type { Message } from "@/lib/ipc";
+import { AGENT_STATUS_ROLE, type Message } from "@/lib/ipc";
 import { isCompactCommandRow, isResumeNudgeRow } from "../internal-rows";
 
 export type ProcessItem = {
@@ -109,6 +109,13 @@ export function buildRows(messages: Message[]): TimelineRow[] {
   while (i < messages.length) {
     const message = messages[i];
     if (isPlaceholderMessage(message)) {
+      i++;
+      continue;
+    }
+    // Background-job deliveries exist for the subagent panel's status fold
+    // (they carry a finished job's name and state); they have no transcript
+    // body of their own.
+    if (message.role === AGENT_STATUS_ROLE) {
       i++;
       continue;
     }

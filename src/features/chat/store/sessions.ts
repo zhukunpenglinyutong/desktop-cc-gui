@@ -1,7 +1,9 @@
 import { normalizeOmpServiceTier } from "@/lib/omp-service-tier";
 import {
   ipc,
+  AGENT_STATUS_ROLE,
   type EngineInfo,
+  type Message,
   type SessionMeta,
   type Workspace,
 } from "@/lib/ipc";
@@ -49,6 +51,39 @@ function omitKey(rec: Record<string, boolean>, key: string) {
   const next = { ...rec };
   delete next[key];
   return next;
+}
+
+/** Content key for a hidden background-job status row: the same delivery is
+ *  re-read from history on every reconcile. */
+function statusRowSignature(message: Message): string {
+  return `${message.ts ?? ""}|${JSON.stringify(message.result ?? null)}`;
+}
+
+/** Does this session carry delegation evidence at all? Only then is a status
+ *  reconcile worth an extra history read. */
+function hasDelegationEvidence(
+  state: NonNullable<ChatStore["bySession"][string]>,
+): boolean {
+  const readsStatus = (message: Message) => {
+    const result = message.result;
+    if (result && typeof result === "object" && "details" in result) {
+      const details = result.details;
+      if (
+        details &&
+        typeof details === "object" &&
+        ("jobs" in details || "peers" in details)
+      )
+        return true;
+    }
+    const args = message.args;
+    if (!args || typeof args !== "object") return false;
+    return "tasks" in args || "ids" in args;
+  };
+  return (
+    state.messages.some(readsStatus) ||
+    state.subagentHistory.some(readsStatus) ||
+    state.subagentHistory.some((m) => m.role === AGENT_STATUS_ROLE)
+  );
 }
 
 function archivedKeyMap(sessions: SessionMeta[]): Record<string, true> {
@@ -103,6 +138,7 @@ export function createSessionActions(
   | "refreshEngines"
   | "selectSession"
   | "loadEarlier"
+  | "refreshSubagentStatus"
   | "archiveSession"
   | "deleteSession"
   | "pinSession"
@@ -145,6 +181,7 @@ export function createSessionActions(
               markUnseenIfBackground,
               upsertSessionMeta: (meta) => upsertSessionMetaInto(set, meta),
               refreshSessionUsage: (k) => get().refreshSessionUsage(k),
+              refreshSubagentStatus: (k) => get().refreshSubagentStatus(k),
               turnSettled,
             }),
           ),
@@ -419,7 +456,12 @@ export function createSessionActions(
       }
       emitSessionActivated(engine, sessionId);
       const existing = get().bySession[key];
-      if (existing && existing.messages.length > 0) return;
+      if (existing && existing.messages.length > 0) {
+        // Reopening a cached session is the moment a background job's late
+        // delivery becomes visible; the store's copy predates it.
+        void get().refreshSubagentStatus(key);
+        return;
+      }
       patchSession(set, key, { loading: true });
       // 并行取计划审批历史:失败静默降级为无历史计划,绝不阻塞会话加载。
       const plansPromise = ipc
@@ -453,6 +495,61 @@ export function createSessionActions(
         }
       } catch (error) {
         patchSession(set, key, { loading: false, error: String(error) });
+      }
+    },
+
+    /** Fold background-job deliveries the live stream never carries into the
+     *  session. The harness reports a finished subagent as an `async-result`
+     *  notice, which the ACP stream drops; without this read a session whose
+     *  last `hub` snapshot said "running" keeps showing 运行中 long after the
+     *  job finished. One page read, only for sessions that dispatched agents,
+     *  and only rows the store does not hold yet. */
+    refreshSubagentStatus: async (key: string) => {
+      const before = get().bySession[key];
+      if (!before || !hasDelegationEvidence(before)) return;
+      const tab = get().openTabs.find(
+        (t) => sessionKey(t.engine, t.sessionId, t.workspacePath) === key,
+      );
+      if (!tab?.sessionId || key.startsWith("new:")) return;
+      try {
+        const page = await loadHistoryPage(
+          tab.engine,
+          tab.sessionId,
+          tab.workspacePath,
+          100,
+        );
+        const cur = get().bySession[key];
+        // A turn that started while this read was in flight already carries
+        // fresher evidence; patching its older list would undo that.
+        if (!cur || cur.messages !== before.messages) return;
+        const known = new Set(
+          [...cur.subagentHistory, ...cur.messages]
+            .filter((message) => message.role === AGENT_STATUS_ROLE)
+            .map(statusRowSignature),
+        );
+        const fresh = [...page.subagentHistory, ...page.messages].filter(
+          (message) =>
+            message.role === AGENT_STATUS_ROLE &&
+            !known.has(statusRowSignature(message)),
+        );
+        if (fresh.length === 0) return;
+        const maxSeq = [...cur.messages, ...cur.subagentHistory].reduce(
+          (max, message) => Math.max(max, message.seq),
+          0,
+        );
+        // The transcript tail, not `subagentHistory`: every snapshot the store
+        // holds predates the delivery, and the fold is read before `messages`,
+        // so a fold placement would let the older "running" row win. Hidden
+        // rows in `messages` are the normal history shape — `buildRows` drops
+        // them — and the fresh seq keeps them unique for the virtualizer.
+        patchSession(set, key, {
+          messages: [
+            ...cur.messages,
+            ...fresh.map((message, i) => ({ ...message, seq: maxSeq + i + 1 })),
+          ],
+        });
+      } catch {
+        // Keep the transcript as it was; the next open re-reads it anyway.
       }
     },
 

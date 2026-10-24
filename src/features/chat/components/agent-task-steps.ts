@@ -222,7 +222,12 @@ function jobStatesFromResult(result: unknown): Map<string, AgentTaskStepState> {
     for (const entry of bucket) {
       if (!entry || typeof entry !== "object") continue;
       const row = entry as Record<string, unknown>;
-      const id = typeof row.id === "string" ? row.id.trim() : "";
+      const id =
+        typeof row.id === "string"
+          ? row.id.trim()
+          : typeof row.jobId === "string"
+            ? row.jobId.trim()
+            : "";
       const state = agentState(row.status);
       if (id && state) states.set(id, state);
     }
@@ -336,6 +341,16 @@ export function deriveAgentTaskSteps(
   const runtimeIds = new Map<string, string>();
   for (let i = 0; i < messages.length; i++) {
     const message = messages[i];
+    // Status snapshots arrive on tool rows (`hub`/`wait`) and on background-job
+    // deliveries (hidden `__agent_status__` rows written when a job finishes
+    // after the model stopped polling) — both settle an agent the same way.
+    const snapshot = jobStatesFromResult(message.result);
+    if (isCompleteJobsRoster(message)) {
+      for (const [id, state] of states) {
+        if (state === "active" && !snapshot.has(id)) states.set(id, "complete");
+      }
+    }
+    for (const [id, state] of snapshot) states.set(id, state);
     if (message.role !== "tool") continue;
     const refs = subagentRefsFromArgs(message.args);
     if (refs.length > 0) {
@@ -358,13 +373,6 @@ export function deriveAgentTaskSteps(
       if (waitNamed.has(base)) continue;
       if (!runtimeIds.has(base)) runtimeIds.set(base, id);
     }
-    const snapshot = jobStatesFromResult(message.result);
-    if (isCompleteJobsRoster(message)) {
-      for (const [id, state] of states) {
-        if (state === "active" && !snapshot.has(id)) states.set(id, "complete");
-      }
-    }
-    for (const [id, state] of snapshot) states.set(id, state);
   }
 
   // Pass 2 — display order: one step per agent, first naming wins.

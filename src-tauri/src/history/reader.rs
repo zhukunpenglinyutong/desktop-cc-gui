@@ -421,7 +421,13 @@ fn subagent_fold(messages: &[Message]) -> SubagentFold {
             last_user = Some(message);
             continue;
         }
-        let delegation = message.role == "tool" && is_subagent_history_tool(message);
+        // A background-job delivery (`__agent_status__`) is evidence about a
+        // subagent rather than a transcript row of its own, and it has to
+        // survive paging like the dispatch it settles.
+        let delegation = matches!(
+            message.role.as_str(),
+            "tool" | super::extract::PI_AGENT_STATUS_ROLE
+        ) && is_subagent_history_tool(message);
         let boundary = needs_boundary && matches!(message.role.as_str(), "assistant" | "thinking");
         if !delegation && !boundary {
             continue;
@@ -2044,6 +2050,27 @@ mod tests {
         message.text = "task · worker".into();
         message.args = Some(json!({"tasks": []}));
         message
+    }
+
+    /// A background-job delivery has no transcript body, but it is the only
+    /// terminal word the panel gets when the model never polls again: it must
+    /// join the fold so it survives paging away from its dispatch.
+    #[test]
+    fn background_job_deliveries_join_the_subagent_fold() {
+        let mut delivery = plain(5, crate::history::extract::PI_AGENT_STATUS_ROLE);
+        delivery.result = Some(json!({
+            "details": {"op": "async", "jobs": [{"id": "Worker", "status": "completed"}]}
+        }));
+        let messages = vec![plain(1, "user"), delegation(2), delivery];
+        let fold: Vec<Message> = subagent_fold(&messages)
+            .into_iter()
+            .map(|(_, row)| row)
+            .collect();
+        let status = fold
+            .iter()
+            .find(|row| row.role == crate::history::extract::PI_AGENT_STATUS_ROLE)
+            .expect("delivery survives the fold");
+        assert_eq!(status.result.as_ref().unwrap()["details"]["jobs"][0]["id"], "Worker");
     }
 
     /// Cutting the cached full fold at a page start must reproduce a fresh

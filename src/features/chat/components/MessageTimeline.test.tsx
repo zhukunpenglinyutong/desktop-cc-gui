@@ -6,7 +6,7 @@ import { MessageRow, MessageTimeline } from "./MessageTimeline";
 import { buildBotBlock } from "./agent-block";
 import { useChatStore } from "../store";
 import { useBotStore } from "@/features/bots/bot-store";
-import type { BotConfig, Message } from "@/lib/ipc";
+import { AGENT_STATUS_ROLE, type BotConfig, type Message } from "@/lib/ipc";
 import { EMPTY_SESSION, type SessionState } from "../store/stream";
 import i18n from "@/lib/i18n";
 
@@ -86,6 +86,32 @@ describe("timeline search within bounded process history", () => {
       input.dispatchEvent(new Event("input", { bubbles: true }));
     });
   }
+
+  it("renders nothing for a background-job delivery row", async () => {
+    const messages: Message[] = [
+      { seq: 1, role: "user", text: "go", ts: null },
+      { seq: 2, role: "assistant", text: "reply", ts: null },
+      {
+        seq: 3,
+        role: AGENT_STATUS_ROLE,
+        text: "<system-notice>Background job LateJob has completed.</system-notice>",
+        ts: null,
+        result: { details: { op: "async", jobs: [{ id: "LateJob", status: "completed" }] } },
+      },
+    ];
+    await act(async () => {
+      root.render(
+        <MessageTimeline
+          session={{ ...EMPTY_SESSION, messages }}
+          streaming={false}
+          onLoadEarlier={() => {}}
+          workspacePath="/ws"
+        />,
+      );
+    });
+    expect(container.textContent).toContain("reply");
+    expect(container.textContent).not.toContain("LateJob");
+  });
 
   it("opens a manually collapsed group and navigates matches across its pages", async () => {
     await renderTimeline();
