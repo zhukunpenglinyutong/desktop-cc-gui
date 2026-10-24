@@ -1,11 +1,12 @@
 use super::{parse_session_file, Message, ParsedSession, SessionMeta};
 use base64::Engine as _;
+use parking_lot::Mutex;
 use rusqlite::OptionalExtension;
 use serde::Serialize;
 use std::collections::{HashMap, HashSet};
 use std::future::Future;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, LazyLock, Mutex};
+use std::sync::{Arc, LazyLock};
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -268,7 +269,7 @@ pub fn remember_session_provider(
     Ok(())
 }
 
-fn session_file_path(
+pub(crate) fn session_file_path(
     db: &crate::db::Db,
     engine: &str,
     session_id: &str,
@@ -300,12 +301,16 @@ fn find_session_file_path(
 struct CachedSession {
     parsed: ParsedSession,
     fold: SubagentFold,
+    /// Computed once on a miss, never by an ordinary paging cache hit.
+    footprint: usize,
 }
 
 /// Parsed sessions keyed by (path, size, mtime_ms, accepted-frame signature):
 /// paging re-slices a cached parse instead of re-reading the file. The
 /// signature belongs in the key because recording a newly accepted frame
 /// changes what the parse must hide while the file's stat key is unchanged.
+/// Explicit reload bypasses this key and replaces only the selected path;
+/// supplemental native files and SQLite WAL writes need not change its stat.
 /// Bounded two ways: 32 entries and a ~128MB byte budget (image data URLs
 /// make entries heavy).
 static PARSED_CACHE: LazyLock<Mutex<HashMap<(PathBuf, i64, i64, String), Arc<CachedSession>>>> =
@@ -365,12 +370,13 @@ fn cached_session(
     path: &Path,
     accepted_frames: &HashSet<String>,
     accepted_signature: &str,
+    force_reload: bool,
 ) -> Result<Arc<CachedSession>, String> {
     let Some((size, mtime_ms)) = super::stat_signature(path) else {
         // Unstattable file: let the parse produce the real error.
         let parsed = parse_session_file(engine, path, accepted_frames)?;
         let fold = subagent_fold(&parsed.messages);
-        return Ok(Arc::new(CachedSession { parsed, fold }));
+        return Ok(Arc::new(CachedSession { parsed, fold, footprint: 0 }));
     };
     let key = (
         path.to_path_buf(),
@@ -378,8 +384,10 @@ fn cached_session(
         mtime_ms,
         accepted_signature.to_string(),
     );
-    if let Some(hit) = PARSED_CACHE.lock().map_err(|e| e.to_string())?.get(&key) {
-        return Ok(Arc::clone(hit));
+    if !force_reload {
+        if let Some(hit) = PARSED_CACHE.lock().get(&key) {
+            return Ok(Arc::clone(hit));
+        }
     }
     let parsed = parse_session_file(engine, path, accepted_frames)?;
     let fold = subagent_fold(&parsed.messages);
@@ -389,14 +397,40 @@ fn cached_session(
             .iter()
             .map(|(_, row)| message_footprint(row))
             .sum::<usize>();
-    let cached = Arc::new(CachedSession { parsed, fold });
-    let mut cache = PARSED_CACHE.lock().map_err(|e| e.to_string())?;
-    let mut bytes = PARSED_CACHE_BYTES.lock().map_err(|e| e.to_string())?;
-    // Over budget or capacity: drop everything rather than evicting entries
-    // one by one (pages are re-parseable, and scans are cheap by stat key).
-    if cache.len() >= PARSED_CACHE_CAPACITY || *bytes + footprint > PARSED_CACHE_BUDGET_BYTES {
-        cache.clear();
-        *bytes = 0;
+    let cached = Arc::new(CachedSession { parsed, fold, footprint });
+    let mut cache = PARSED_CACHE.lock();
+    // An ordinary miss may finish after a forced same-stat reload. Keep the
+    // already-published parse rather than overwriting it with that older read.
+    if !force_reload {
+        if let Some(hit) = cache.get(&key) {
+            return Ok(Arc::clone(hit));
+        }
+    }
+    let mut bytes = PARSED_CACHE_BYTES.lock();
+    // Replace all previous stat/frame versions of this source, but never the
+    // other session addresses within a shared OpenCode SQLite database.
+    cache.retain(|(cached_path, ..), previous| {
+        if cached_path == path {
+            *bytes -= previous.footprint;
+            false
+        } else {
+            true
+        }
+    });
+    // Oversized parses can still supply the requested page without making the
+    // bounded cache oversized or clearing unrelated sessions to admit them.
+    if footprint > PARSED_CACHE_BUDGET_BYTES {
+        return Ok(cached);
+    }
+    while cache.len() >= PARSED_CACHE_CAPACITY
+        || *bytes + footprint > PARSED_CACHE_BUDGET_BYTES
+    {
+        let Some(victim) = cache.keys().next().cloned() else {
+            break;
+        };
+        if let Some(previous) = cache.remove(&victim) {
+            *bytes -= previous.footprint;
+        }
     }
     *bytes += footprint;
     cache.insert(key, Arc::clone(&cached));
@@ -585,10 +619,11 @@ fn load_session_page_blocking(
     session_id: &str,
     limit: Option<usize>,
     before_seq: Option<i64>,
+    force_reload: bool,
 ) -> Result<SessionPage, String> {
     let path = session_file_path(db, engine, session_id)?;
     let (accepted_frames, accepted_signature) = db.accepted_internal_frames(engine, session_id)?;
-    let cached = cached_session(engine, &path, &accepted_frames, &accepted_signature)?;
+    let cached = cached_session(engine, &path, &accepted_frames, &accepted_signature, force_reload)?;
     Ok(page_from_cached(&cached, limit, before_seq))
 }
 
@@ -606,9 +641,10 @@ fn remote_session_page_blocking(
     cache_path: &Path,
     limit: Option<usize>,
     before_seq: Option<i64>,
+    force_reload: bool,
 ) -> Result<SessionPage, String> {
     let (accepted_frames, accepted_signature) = db.accepted_internal_frames(engine, session_id)?;
-    let cached = cached_session(engine, cache_path, &accepted_frames, &accepted_signature)?;
+    let cached = cached_session(engine, cache_path, &accepted_frames, &accepted_signature, force_reload)?;
     Ok(page_from_cached(&cached, limit, before_seq))
 }
 
@@ -619,10 +655,11 @@ pub async fn load_session_page(
     session_id: String,
     limit: Option<usize>,
     before_seq: Option<i64>,
+    force_reload: Option<bool>,
 ) -> Result<SessionPage, String> {
     let db = Arc::clone(&state.db);
     tauri::async_runtime::spawn_blocking(move || {
-        load_session_page_blocking(&db, &engine, &session_id, limit, before_seq)
+        load_session_page_blocking(&db, &engine, &session_id, limit, before_seq, force_reload.unwrap_or(false))
     })
     .await
     .map_err(|e| e.to_string())?
@@ -632,7 +669,7 @@ pub async fn load_session_page(
 /// 引擎 home 内文件;远程会话没有 db 行(remotePath 由插件会话源上报),
 /// 用「绝对 .jsonl + 落在该引擎已知会话目录形态」收口,挡住借 IPC 读
 /// 发行版内任意 .jsonl 文件。
-fn is_plausible_remote_session_path(engine: &str, path: &str) -> bool {
+pub(crate) fn is_plausible_remote_session_path(engine: &str, path: &str) -> bool {
     // dsh 转录本是 zstd 压缩的 session*.jsonl.zstd;其余引擎均为 .jsonl。
     let suffix_ok = path.ends_with(".jsonl") || (engine == "dsh" && path.ends_with(".jsonl.zstd"));
     if !suffix_ok || !path.starts_with('/') {
@@ -660,7 +697,7 @@ const MAX_REMOTE_SESSION_BYTES: u64 = 64 * 1024 * 1024;
 /// 远程工作区会话的历史回放:插件会话源把远端 jsonl 绝对路径随 `remotePath`
 /// 上报;这里经引擎 spawn 同一套远程通道 `base64` 拉回转录本,落到本机缓存
 /// 文件后复用既有解析/分页/子代理折叠。缓存文件仅在内容有变化时重写(stat
-/// 签名不变 → 翻页命中解析缓存,不重析)。
+/// 签名不变 → 翻页命中解析缓存;显式强制刷新不依赖缓存文件的 stat)。
 #[tauri::command]
 pub async fn load_remote_session_page(
     state: tauri::State<'_, crate::AppState>,
@@ -670,6 +707,7 @@ pub async fn load_remote_session_page(
     remote_path: String,
     limit: Option<usize>,
     before_seq: Option<i64>,
+    force_reload: Option<bool>,
 ) -> Result<SessionPage, String> {
     use sha2::Digest as _;
     if !is_plausible_remote_session_path(&engine, &remote_path) {
@@ -718,6 +756,7 @@ pub async fn load_remote_session_page(
             &cache_path,
             limit,
             before_seq,
+            force_reload.unwrap_or(false),
         )
     })
     .await
@@ -1511,6 +1550,202 @@ mod tests {
         std::fs::write(path, format!("{body}\n")).unwrap();
     }
 
+    fn register_history_source(db: &crate::db::Db, engine: &str, id: &str, path: &Path) {
+        db.0.lock().execute(
+            "INSERT INTO sessions(engine,session_id,workspace_path,file_path,file_size,file_mtime_ms)
+             VALUES(?1,?2,'/ws',?3,1,1)",
+            rusqlite::params![engine, id, path.to_string_lossy()],
+        ).unwrap();
+    }
+
+    fn assistant_text(page: &SessionPage) -> &str {
+        &page.messages.iter().find(|row| row.role == "assistant").unwrap().text
+    }
+
+    fn restore_modified(path: &Path, modified: std::time::SystemTime) {
+        std::fs::OpenOptions::new().write(true).open(path).unwrap()
+            .set_times(std::fs::FileTimes::new().set_modified(modified)).unwrap();
+    }
+
+    #[test]
+    fn force_reload_same_stat_preserves_frames_and_unrelated_cache() {
+        let scratch = Scratch::new();
+        let file = scratch.0.join("edited.jsonl");
+        let other = scratch.0.join("other.jsonl");
+        let recorded = "<CCGUI_INTERNAL_abcdefgh>{\"pluginId\":\"bridge\"}</CCGUI_INTERNAL_abcdefgh>";
+        let unrecorded = "<CCGUI_INTERNAL_zzzzzzzz>{\"pluginId\":\"other\"}</CCGUI_INTERNAL_zzzzzzzz>";
+        write_session(&file, &scratch.0, &format!("before {recorded} tail {unrecorded}"));
+        write_session(&other, &scratch.0, "unrelated");
+        let db = crate::db::Db::open_at(&scratch.0.join("app.db")).unwrap();
+        register_history_source(&db, "omp", "edited", &file);
+        db.record_accepted_internal_frame_hash(
+            "omp", "edited", &super::super::internal_frame_hash(recorded), "/ws",
+        ).unwrap();
+        let unrelated = cached_session("omp", &other, &HashSet::new(), "", false).unwrap();
+        let first = load_session_page_blocking(&db, "omp", "edited", Some(1), None, false).unwrap();
+        assert_eq!(assistant_text(&first), format!("before  tail {unrecorded}"));
+        let original_stat = super::super::stat_signature(&file);
+        let modified = std::fs::metadata(&file).unwrap().modified().unwrap();
+        write_session(&file, &scratch.0, &format!("after! {recorded} tail {unrecorded}"));
+        restore_modified(&file, modified);
+        assert_eq!(super::super::stat_signature(&file), original_stat);
+        let stale = load_session_page_blocking(&db, "omp", "edited", Some(1), None, false).unwrap();
+        assert_eq!(assistant_text(&stale), assistant_text(&first));
+
+        let refreshed = load_session_page_blocking(&db, "omp", "edited", Some(1), None, true).unwrap();
+        assert_eq!(assistant_text(&refreshed), format!("after!  tail {unrecorded}"));
+        assert_eq!(refreshed.next_before, first.next_before);
+        assert_eq!(refreshed.messages.len(), 1);
+        let older = load_session_page_blocking(
+            &db, "omp", "edited", Some(1), refreshed.next_before, false,
+        ).unwrap();
+        assert_eq!(older.messages[0].text, "hello");
+        assert!(older.next_before.is_none());
+        assert_eq!(assistant_text(&load_session_page_blocking(
+            &db, "omp", "edited", Some(1), None, false,
+        ).unwrap()), format!("after!  tail {unrecorded}"));
+        assert!(Arc::ptr_eq(&unrelated, &cached_session(
+            "omp", &other, &HashSet::new(), "", false,
+        ).unwrap()));
+        let cache = PARSED_CACHE.lock();
+        assert_eq!(cache.keys().filter(|key| key.0 == file).count(), 1);
+        assert_eq!(*PARSED_CACHE_BYTES.lock(), cache.values().map(|value| value.footprint).sum::<usize>());
+    }
+
+    #[test]
+    fn force_reload_remote_same_stat_keeps_recorded_frames_hidden() {
+        let scratch = Scratch::new();
+        let cache = scratch.0.join("remote.jsonl");
+        let recorded = "<CCGUI_INTERNAL_abcdefgh>{\"pluginId\":\"bridge\"}</CCGUI_INTERNAL_abcdefgh>";
+        write_session(&cache, &scratch.0, &format!("before {recorded}"));
+        let db = crate::db::Db::open_at(&scratch.0.join("app.db")).unwrap();
+        db.record_accepted_internal_frame_hash(
+            "omp", "remote", &super::super::internal_frame_hash(recorded), "/ws",
+        ).unwrap();
+        let first = remote_session_page_blocking(&db, "omp", "remote", &cache, None, None, false).unwrap();
+        assert_eq!(assistant_text(&first), "before");
+        let original_stat = super::super::stat_signature(&cache);
+        let modified = std::fs::metadata(&cache).unwrap().modified().unwrap();
+        write_session(&cache, &scratch.0, &format!("after! {recorded}"));
+        restore_modified(&cache, modified);
+        assert_eq!(super::super::stat_signature(&cache), original_stat);
+        assert_eq!(assistant_text(&remote_session_page_blocking(
+            &db, "omp", "remote", &cache, None, None, false,
+        ).unwrap()), "before");
+        assert_eq!(assistant_text(&remote_session_page_blocking(
+            &db, "omp", "remote", &cache, None, None, true,
+        ).unwrap()), "after!");
+    }
+
+
+    #[test]
+    fn force_reload_opencode_part_change_replaces_metadata_stat_cache() {
+        let scratch = Scratch::new();
+        let storage = scratch.0.join("storage");
+        let file = storage.join("session/project/ses_edit.json");
+        let message = storage.join("message/ses_edit/msg_a.json");
+        let part = storage.join("part/msg_a/prt_a.json");
+        for path in [&file, &message, &part] {
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        }
+        std::fs::write(&file, json!({"id":"ses_edit"}).to_string()).unwrap();
+        std::fs::write(&message, json!({"id":"msg_a","role":"assistant","time":{"created":1}}).to_string()).unwrap();
+        std::fs::write(&part, json!({"type":"text","text":"before"}).to_string()).unwrap();
+        let db = crate::db::Db::open_at(&scratch.0.join("app.db")).unwrap();
+        register_history_source(&db, "opencode", "ses_edit", &file);
+        let original_stat = super::super::stat_signature(&file);
+        assert_eq!(assistant_text(&load_session_page_blocking(
+            &db, "opencode", "ses_edit", None, None, false,
+        ).unwrap()), "before");
+        std::fs::write(&part, json!({"type":"text","text":"after!"}).to_string()).unwrap();
+        assert_eq!(super::super::stat_signature(&file), original_stat);
+        assert_eq!(assistant_text(&load_session_page_blocking(
+            &db, "opencode", "ses_edit", None, None, false,
+        ).unwrap()), "before");
+        assert_eq!(assistant_text(&load_session_page_blocking(
+            &db, "opencode", "ses_edit", None, None, true,
+        ).unwrap()), "after!");
+    }
+
+    #[test]
+    fn force_reload_opencode_wal_preserves_other_session_cache() {
+        let scratch = Scratch::new();
+        let file = scratch.0.join("opencode.db");
+        let conn = rusqlite::Connection::open(&file).unwrap();
+        conn.execute_batch(
+            "PRAGMA journal_mode=WAL; PRAGMA wal_autocheckpoint=0;
+             CREATE TABLE message(id TEXT PRIMARY KEY, session_id TEXT NOT NULL,
+                 time_created INTEGER NOT NULL, data TEXT NOT NULL);
+             CREATE TABLE part(id TEXT PRIMARY KEY, message_id TEXT NOT NULL,
+                 time_created INTEGER NOT NULL, data TEXT NOT NULL);
+             INSERT INTO message VALUES('msg_a','ses_edit',1,'{\"role\":\"assistant\"}');
+             INSERT INTO message VALUES('msg_b','ses_keep',2,'{\"role\":\"assistant\"}');
+             INSERT INTO part VALUES('prt_a','msg_a',1,'{\"type\":\"text\",\"text\":\"before\"}');
+             INSERT INTO part VALUES('prt_b','msg_b',2,'{\"type\":\"text\",\"text\":\"unrelated\"}');
+             PRAGMA wal_checkpoint(TRUNCATE);",
+        ).unwrap();
+        let edited = super::super::opencode_db_session_path(&file, "ses_edit");
+        let other = super::super::opencode_db_session_path(&file, "ses_keep");
+        let db = crate::db::Db::open_at(&scratch.0.join("app.db")).unwrap();
+        register_history_source(&db, "opencode", "ses_edit", &edited);
+        let unrelated = cached_session("opencode", &other, &HashSet::new(), "", false).unwrap();
+        assert_eq!(assistant_text(&load_session_page_blocking(
+            &db, "opencode", "ses_edit", None, None, false,
+        ).unwrap()), "before");
+        let original_stat = super::super::stat_signature(&edited);
+        conn.execute("UPDATE part SET data=?1 WHERE id='prt_a'", [json!({"type":"text","text":"after!"}).to_string()]).unwrap();
+        assert_eq!(super::super::stat_signature(&edited), original_stat);
+        assert_eq!(assistant_text(&load_session_page_blocking(
+            &db, "opencode", "ses_edit", None, None, false,
+        ).unwrap()), "before");
+        assert_eq!(assistant_text(&load_session_page_blocking(
+            &db, "opencode", "ses_edit", None, None, true,
+        ).unwrap()), "after!");
+        assert!(Arc::ptr_eq(&unrelated, &cached_session(
+            "opencode", &other, &HashSet::new(), "", false,
+        ).unwrap()));
+        drop(conn);
+    }
+
+    #[test]
+    fn force_reload_agy_prompt_change_replaces_conversation_stat_cache() {
+        let scratch = Scratch::new();
+        let _home_lock = crate::paths::HOME_ENV_LOCK.lock();
+        struct RestoreAgyHome(Option<std::ffi::OsString>);
+        impl Drop for RestoreAgyHome {
+            fn drop(&mut self) {
+                match &self.0 {
+                    Some(value) => std::env::set_var("ANTIGRAVITY_HOME", value),
+                    None => std::env::remove_var("ANTIGRAVITY_HOME"),
+                }
+            }
+        }
+        let _restore = RestoreAgyHome(std::env::var_os("ANTIGRAVITY_HOME"));
+        std::env::set_var("ANTIGRAVITY_HOME", &scratch.0);
+        let file = scratch.0.join("conv_edit.db");
+        let conn = rusqlite::Connection::open(&file).unwrap();
+        conn.execute_batch("CREATE TABLE steps(idx INTEGER,step_type INTEGER,step_payload BLOB);
+            INSERT INTO steps VALUES(0,14,X'');").unwrap();
+        drop(conn);
+        let prompt = scratch.0.join("history.jsonl");
+        let write_prompt = |text: &str| std::fs::write(&prompt, json!({
+            "conversationId":"conv_edit", "timestamp":1,
+            "display":format!("{text}\n\n[CCGUI internal system-tail]\nprivate protocol"),
+        }).to_string()).unwrap();
+        write_prompt("before");
+        let db = crate::db::Db::open_at(&scratch.0.join("app.db")).unwrap();
+        register_history_source(&db, "agy", "conv_edit", &file);
+        let original_stat = super::super::stat_signature(&file);
+        let first = load_session_page_blocking(&db, "agy", "conv_edit", None, None, false).unwrap();
+        assert_eq!(first.messages[0].text, "before");
+        write_prompt("after!");
+        assert_eq!(super::super::stat_signature(&file), original_stat);
+        assert_eq!(load_session_page_blocking(&db, "agy", "conv_edit", None, None, false).unwrap().messages[0].text, "before");
+        let refreshed = load_session_page_blocking(&db, "agy", "conv_edit", None, None, true).unwrap();
+        assert_eq!(refreshed.messages[0].text, "after!");
+        assert_eq!(refreshed.messages[0].role, "user");
+    }
+
     /// The page a restored conversation renders hides exactly the frames a live
     /// capture validator accepted, and recording a new identity re-derives the
     /// page instead of serving the parse cached under the older identity set.
@@ -1539,7 +1774,7 @@ mod tests {
         }
 
         // Nothing recorded yet: both frames are ordinary model output.
-        let page = load_session_page_blocking(&db, "omp", "sid-1", None, None).unwrap();
+        let page = load_session_page_blocking(&db, "omp", "sid-1", None, None, false).unwrap();
         let assistant = |page: &SessionPage| {
             page.messages
                 .iter()
@@ -1563,7 +1798,7 @@ mod tests {
             &workspace.to_string_lossy(),
         )
         .unwrap();
-        let page = load_session_page_blocking(&db, "omp", "sid-1", None, None).unwrap();
+        let page = load_session_page_blocking(&db, "omp", "sid-1", None, None, false).unwrap();
         assert_eq!(assistant(&page), format!("answer  tail {unrecorded}"));
 
         drop(db);
@@ -1606,7 +1841,7 @@ mod tests {
         )
         .unwrap();
 
-        let page = remote_session_page_blocking(&db, "omp", "sid-1", &cache, None, None).unwrap();
+        let page = remote_session_page_blocking(&db, "omp", "sid-1", &cache, None, None, false).unwrap();
         assert_eq!(assistant(&page), format!("answer  tail {unrecorded}"));
 
         drop(db);
@@ -1998,13 +2233,15 @@ mod tests {
         }
         // Reopen the DB as a fresh process would, with no frontend roster cache.
         let db = crate::db::Db::open_at(&db_path).unwrap();
-        let page = load_session_page_blocking(&db, "omp", "saved", Some(100), None).unwrap();
+        let page = load_session_page_blocking(&db, "omp", "saved", Some(100), None, false).unwrap();
         assert_eq!(page.messages.len(), 100);
         assert!(page
             .messages
             .iter()
             .all(|message| message.text.starts_with("later")));
         let wire = serde_json::to_value(&page).unwrap();
+        let forced = load_session_page_blocking(&db, "omp", "saved", Some(100), None, true).unwrap();
+        assert_eq!(serde_json::to_value(&forced).unwrap(), wire);
         let history = wire["subagentHistory"]
             .as_array()
             .expect("session history is independent of pagination");
@@ -2017,7 +2254,7 @@ mod tests {
             "completed"
         );
         let older =
-            load_session_page_blocking(&db, "omp", "saved", Some(100), page.next_before).unwrap();
+            load_session_page_blocking(&db, "omp", "saved", Some(100), page.next_before, false).unwrap();
         assert!(older.messages.iter().any(|row| row.text == "task"));
     }
 

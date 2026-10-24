@@ -29,6 +29,30 @@ export function changelogEntryFor(version: string): ChangelogEntry | undefined {
 
 export const CHANGELOG_DATA: ChangelogEntry[] = [
   {
+    version: "1.1.7",
+    date: "2026-10-22",
+    content: {
+      zh: `新功能
+- **会话右键新增「编辑会话」「刷新渲染」**：两项依次放在「复制 ID」下方。「编辑会话」在现有编辑器中打开 CLI 的完整原生会话源，保留 OMP 等引擎的时间戳文件名；DSH 解压后编辑并压回原文件，OpenCode / Antigravity 以会话级原生记录视图编辑并回写实际 JSON / SQLite / protobuf 存储，不另存应用专用副本。保存后的原生快照同步回编辑器，重复打开不丢未保存内容；数据库新快照在提交前检查完整文档上限，AGY 共享提示文件的应用内保存互斥，文件替换保留访问权限并在失败时保全原件。超限、缺失、损坏、运行中或不支持的远端数据库源明确报错。
+- **超大会话可转到外部编辑器**：超过内置编辑器 64 MiB 上限时，明确提示使用外部软件编辑，不再误报「文件不存在」。桌面端的本地普通文本会话提供「用默认文本编辑器打开」，直接打开原文件，不截断、不另存副本；打开失败可重试，运行中会话拒绝打开。远端、压缩或数据库源说明所需环境 / 格式，不交给普通文本编辑器；外部保存后手动刷新对应幕布。
+- **文件编辑器增加自动换行开关**：按钮位于「保存」左侧，默认关闭，只切换长行显示；不修改文本、不丢光标和撤销历史，同页签刷新后保留开关状态。
+- **点击行号选中整行**：会话及普通文件编辑器左键点击行号即可选中完整逻辑行（含已有换行符），开启自动换行后也不遗漏行尾；删除只影响选中行，撤销可恢复。
+- **编辑后可单独刷新对应幕布**：「刷新渲染」强制重读目标会话的原生历史，保留已加载的分页范围与持久化计划卡片，更新消息、子代理历史和用量；其它会话、输入草稿、队列、模型、effort 与渠道保持不变。加载中保留旧幕布，失败显示原因；新回合、删除或归档发生后不应用迟到的旧快照。保存不会自动刷新幕布。
+
+修复
+- **顶部自定义编辑器打开会话为空白**：预设编辑器与自定义程序现在接收会话真实源路径，不再把虚拟页签键当成文件名；普通文件与文件管理器打开工作区的行为不变。`,
+      en: `Features
+- **Edit session and Refresh rendering in the session context menu**: both actions appear below Copy ID. Edit session opens the complete native CLI source in the existing editor, retaining timestamped filenames such as OMP transcripts. DSH edits are recompressed into the original file; OpenCode and Antigravity expose session-scoped native records with writeback to their actual JSON, SQLite and protobuf storage, not an application-only copy. The committed native snapshot is returned to the editor for repeated saves, and reopening keeps unsaved edits. Resulting database documents are checked before commit; in-app AGY saves serialize access to their shared prompt history, and file replacements preserve access permissions and retain originals on failure. Oversized, missing, corrupt, running or unsupported remote database sources report explicit errors.
+- **External editing for oversized sessions**: sessions over the built-in editor's 64 MiB limit show external-editing guidance instead of File not found. Local plain-text sessions on desktop can open their original file in the OS default text editor without truncation or a copied document. Failed launches can be retried, and running sessions reject launch. Remote, compressed and database sources explain the required environment or format instead of opening in a plain-text editor; refresh the conversation manually after external saves.
+- **Word wrap in the file editor**: an initially off toggle sits immediately before Save. It changes long-line presentation only, preserving the document, caret and undo history; the same tab retains the setting after a reload.
+- **Select complete lines from line numbers**: clicking a line number selects the entire logical line, including its existing line break, in session and ordinary file editors. Word wrap does not omit the tail; deletion affects only the selected line and undo restores it.
+- **Refresh just the edited conversation rendering**: Refresh rendering forces a fresh native history read, preserves the already-loaded history range and persisted plan cards, and updates messages, subagent history and usage. Other conversations, input drafts, queued prompts, model, effort and channel remain intact. The previous rendering stays visible while loading or after a failure; late snapshots cannot replace a new live turn or resurrect deleted or archived history. Saving does not automatically refresh the conversation.
+
+Fixes
+- **Blank session files opened from the custom editor button**: preset editors and custom programs now receive the real session source path instead of its virtual tab key. Ordinary files and workspace-folder opening in the file manager are unchanged.`,
+    },
+  },
+  {
     version: "1.1.5",
     date: "2026-10-16",
     content: {

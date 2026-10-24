@@ -3,6 +3,8 @@ import type { TFunction } from "i18next";
 import Archive from "lucide-react/dist/esm/icons/archive";
 import Columns2 from "lucide-react/dist/esm/icons/columns-2";
 import Copy from "lucide-react/dist/esm/icons/copy";
+import FilePenLine from "lucide-react/dist/esm/icons/file-pen-line";
+import RefreshCw from "lucide-react/dist/esm/icons/refresh-cw";
 import Pencil from "lucide-react/dist/esm/icons/pencil";
 import Rows2 from "lucide-react/dist/esm/icons/rows-2";
 import Trash2 from "lucide-react/dist/esm/icons/trash-2";
@@ -43,7 +45,7 @@ function parseThreadTarget(threadId: string): SessionMenuTarget | null {
     : null;
 }
 
-/** Host entries: rename/copy in one group, delete in its own (separated) group. */
+/** Host session actions in one group; destructive deletion stays separate. */
 function buildHostSections({
   threadId,
   isDraft,
@@ -75,6 +77,20 @@ function buildHostSections({
     });
   }
   if (onThreadAction && !isDraft) {
+    actions.push(
+      {
+        id: "edit-session",
+        label: t("chat.editSession"),
+        icon: <FilePenLine className="size-4" aria-hidden />,
+        onSelect: () => onThreadAction(threadId, "edit"),
+      },
+      {
+        id: "refresh-rendering",
+        label: t("chat.refreshSessionRendering"),
+        icon: <RefreshCw className="size-4" aria-hidden />,
+        onSelect: () => onThreadAction(threadId, "refresh"),
+      },
+    );
     actions.push({
       id: "archive",
       label: t("chat.archiveSession"),

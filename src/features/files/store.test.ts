@@ -1,9 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { DirEntry } from "@/lib/ipc";
+import type { DirEntry, SessionMeta } from "@/lib/ipc";
 
 const mocks = vi.hoisted(() => ({
   listDir: vi.fn(),
   readFile: vi.fn(async () => ({ kind: "text", text: "", dataUrl: null, truncated: false })),
+  readSessionFile: vi.fn(),
+  writeSessionFile: vi.fn(),
+  writeFile: vi.fn(),
   gitTreeStatus: vi.fn(),
   gitRepositorySummaries: vi.fn(),
   gitFileColors: vi.fn(),
@@ -169,5 +172,65 @@ describe("文件打开时的中心面互斥", () => {
     useFilesStore.getState().activateFile("/repo/a.ts");
     expectOnlyFileLeft();
     expect(useFilesStore.getState().activeFilePath).toBe("/repo/a.ts");
+  });
+});
+
+describe("native session editor tabs", () => {
+  const session: SessionMeta = {
+    engine: "omp", sessionId: "edited", workspacePath: "/repo",
+    filePath: "/home/me/.omp/agent/sessions/repo/timestamp_edited.jsonl",
+    fileSize: 2_000_000, fileMtimeMs: 1, title: "Edited", preview: "",
+    createdAt: 1, updatedAt: 1, messageCount: 2, pinned: false, customTitle: null,
+  };
+
+  beforeEach(() => {
+    vi.resetAllMocks();
+    mocks.writeSessionFile.mockImplementation(async (_engine: string, id: string, text: string) => ({ path: session.filePath, name: `${id}.json`, text }));
+    useFilesStore.setState({ openFiles: [], fileStates: {}, activeFilePath: null, dirtyPaths: {} });
+  });
+
+  it("opens a complete large source and keeps an unsaved draft when opened again", async () => {
+    const text = "x".repeat(1_100_000);
+    mocks.readSessionFile.mockResolvedValue({ path: session.filePath, name: "timestamp_edited.jsonl", text });
+    await useFilesStore.getState().openSessionFile(session);
+    const key = useFilesStore.getState().activeFilePath!;
+    const entry = useFilesStore.getState().fileStates[key];
+    expect(entry.content).toMatchObject({ text, truncated: false, kind: "text" });
+    expect(entry.sourcePath).toBe(session.filePath);
+    expect(entry.name).toBe("timestamp_edited.jsonl");
+    useFilesStore.getState().setFileDirty(key, true);
+    mocks.readSessionFile.mockResolvedValue({ path: session.filePath, name: "timestamp_edited.jsonl", text: "Externally changed" });
+    await useFilesStore.getState().openSessionFile(session);
+    expect(useFilesStore.getState().fileStates[key]).toBe(entry);
+    expect(useFilesStore.getState().dirtyPaths[key]).toBe(true);
+    expect(useFilesStore.getState().openFiles).toEqual([key]);
+  });
+
+  it("two OpenCode sessions sharing one database remain independently editable", async () => {
+    const one = { ...session, engine: "opencode", sessionId: "one", filePath: "/data/opencode.db\u001fone" };
+    const two = { ...one, sessionId: "two", filePath: "/data/opencode.db\u001ftwo" };
+    mocks.readSessionFile.mockImplementation(async (_engine: string, id: string) => ({ path: "/data/opencode.db", name: `${id}.json`, text: JSON.stringify({ sessionId: id }) }));
+    await useFilesStore.getState().openSessionFile(one);
+    const oneKey = useFilesStore.getState().activeFilePath!;
+    await useFilesStore.getState().openSessionFile(two);
+    const twoKey = useFilesStore.getState().activeFilePath!;
+    expect(oneKey).not.toBe(twoKey);
+    expect(useFilesStore.getState().fileStates[oneKey].content?.text).toBe('{"sessionId":"one"}');
+    expect(useFilesStore.getState().fileStates[twoKey].content?.text).toBe('{"sessionId":"two"}');
+    await useFilesStore.getState().saveFile(oneKey, '{"sessionId":"one","text":"Edited"}');
+    expect(useFilesStore.getState().fileStates[oneKey].content?.text).toBe('{"sessionId":"one","text":"Edited"}');
+    expect(useFilesStore.getState().fileStates[twoKey].content?.text).toBe('{"sessionId":"two"}');
+  });
+
+  it("does not recreate a session editor closed during its initial read", async () => {
+    const pending = Promise.withResolvers<any>();
+    mocks.readSessionFile.mockReturnValueOnce(pending.promise);
+    const opening = useFilesStore.getState().openSessionFile(session);
+    const key = useFilesStore.getState().activeFilePath!;
+    useFilesStore.getState().closeFile(key);
+    pending.resolve({ path: session.filePath, name: "timestamp_edited.jsonl", text: "Late source" });
+    await opening;
+    expect(useFilesStore.getState().fileStates[key]).toBeUndefined();
+    expect(useFilesStore.getState().activeFilePath).toBeNull();
   });
 });

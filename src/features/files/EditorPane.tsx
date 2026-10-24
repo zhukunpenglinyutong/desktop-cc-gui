@@ -1,27 +1,41 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import CodeMirror from "@uiw/react-codemirror";
 import type { Extension } from "@codemirror/state";
 import { LanguageDescription } from "@codemirror/language";
 import { languages } from "@codemirror/language-data";
+import ExternalLink from "lucide-react/dist/esm/icons/external-link";
 import { useTranslation } from "react-i18next";
-import { ipc, type FileContent } from "@/lib/ipc";
+import type { FileContent } from "@/lib/ipc";
 import { errorText } from "@/lib/errors";
 import { Button } from "@/components/base/buttons/button";
 import { useActionFeedback } from "@/components/base/action-feedback";
 import { CenteredSpinner, EmptyState } from "@/components/base/empty-state";
 import { isWeb } from "@/lib/platform";
 import { fileName, useFilesStore } from "./store";
+import type { OpenFileState } from "./store";
 import { BinaryFileView, ImageFileView } from "./EditorFallbackViews";
 import { FileEditorHeader } from "./FileEditorHeader";
 import { HtmlPreview } from "./HtmlPreview";
 import { MarkdownPreview } from "./MarkdownPreview";
 import { isHtmlFile, isMarkdownFile, opensInPreview, type EditorViewMode } from "./editor-view-mode";
 import { registerShortcutHandler } from "@/features/shortcuts/runtime";
-import type { EditorView } from "@codemirror/view";
+import { EditorView, lineNumbers } from "@codemirror/view";
 import { FONT_CHANGE_EVENT } from "@/features/settings/font";
 import { TYPOGRAPHY_CHANGE_EVENT } from "@/features/settings/interface-typography";
 
 const CM_BASIC_SETUP = { foldGutter: false, highlightActiveLine: true };
+const CM_LINE_SELECTION = lineNumbers({
+  domEventHandlers: {
+    mousedown(view, block, event) {
+      if ((event as MouseEvent).button !== 0) return false;
+      const line = view.state.doc.lineAt(block.from);
+      const end = line.to < view.state.doc.length ? line.to + 1 : line.to;
+      view.focus();
+      view.dispatch({ selection: { anchor: line.from, head: end }, userEvent: "select.pointer" });
+      return true;
+    },
+  },
+});
 
 /** Tracks the app theme class on <html> so CodeMirror follows light/dark. */
 function useIsDark(): boolean {
@@ -42,35 +56,112 @@ function useIsDark(): boolean {
 }
 
 export function EditorPane({ path }: { path: string }) {
-  const { t } = useTranslation();
   const entry = useFilesStore((s) => s.fileStates[path]);
-  const reloadFile = useFilesStore((s) => s.reloadFile);
+  const [wordWrap, setWordWrap] = useState(false);
 
   if (!entry || entry.loading) {
     return <CenteredSpinner />;
   }
   if (entry.error) {
-    return (
-      <EmptyState className="flex-col gap-3 p-6">
-        <p className="text-body-medium text-text-error-primary">{t("files.fileNotFound")}</p>
-        <p className="max-w-md break-all text-caption-1-regular text-text-tertiary">
-          {entry.error}
-        </p>
-        <Button variant="secondary" size="small" onClick={() => void reloadFile(path)}>
-          {t("common.refresh")}
-        </Button>
-      </EmptyState>
-    );
+    return <FileLoadError key={`${path}:${entry.error}`} path={path} entry={entry} />;
   }
   if (!entry.content) {
     return <CenteredSpinner />;
   }
   // key remounts the editor with a fresh draft whenever the file (re)loads.
-  return <FileEditor key={`${path}:${entry.loadNonce}`} path={path} content={entry.content} />;
+  return (
+    <FileEditor
+      key={`${path}:${entry.loadNonce}`}
+      path={path}
+      content={entry.content}
+      wordWrap={wordWrap}
+      onToggleWordWrap={() => setWordWrap((wrap) => !wrap)}
+    />
+  );
 }
 
-function FileEditor({ path, content }: { path: string; content: FileContent }) {
+function FileLoadError({ path, entry }: { path: string; entry: OpenFileState }) {
+  const { t } = useTranslation();
+  const reloadFile = useFilesStore((s) => s.reloadFile);
+  const openSessionFileExternally = useFilesStore((s) => s.openSessionFileExternally);
+  const launch = useFilesStore((s) => s.externalEditorLaunches[path]);
+  const opening = launch?.status === "opening";
+  const opened = launch?.status === "opened";
+  const openError = launch?.status === "error" ? launch.error : null;
+
+  // Native read commands return strings; all document-size guards name the
+  // same limit, including compressed, database and remote read paths.
+  const tooLarge = entry.session !== undefined && /\bexceeds\b[^\n]*\b64 MiB\b/.test(entry.error ?? "");
+  const unavailableReason = isWeb
+    ? "files.externalEditorDesktopOnly"
+    : entry.session?.remote || entry.session?.remotePath
+      ? "files.externalEditorRemote"
+      : ["dsh", "opencode", "agy"].includes(entry.session?.engine ?? "")
+        ? "files.externalEditorStructured"
+        : null;
+
+  const openExternalEditor = async () => {
+    if (opening || unavailableReason) return;
+    try {
+      await openSessionFileExternally(path);
+    } catch {
+      // The store retains the failure for this tab, including across reloads.
+    }
+  };
+
+  return (
+    <EmptyState className="flex-col gap-3 p-6">
+      <p className={tooLarge ? "text-body-medium text-text-primary" : "text-body-medium text-text-error-primary"}>
+        {t(tooLarge ? "files.sessionFileTooLargeTitle" : "files.fileNotFound")}
+      </p>
+      <p className="max-w-md break-all text-caption-1-regular text-text-tertiary">
+        {tooLarge ? t("files.sessionFileTooLarge") : entry.error}
+      </p>
+      {tooLarge && unavailableReason && (
+        <p className="max-w-md text-caption-1-regular text-text-tertiary">{t(unavailableReason)}</p>
+      )}
+      {tooLarge && entry.sourcePath && (
+        <p className="max-w-md break-all text-caption-1-regular text-text-tertiary">{entry.sourcePath}</p>
+      )}
+      <div className="flex flex-wrap justify-center gap-2">
+        {tooLarge && !unavailableReason && (
+          <Button
+            variant="secondary"
+            size="small"
+            leadingIcon={ExternalLink}
+            aria-label={t("files.openInDefaultEditor")}
+            aria-busy={opening}
+            disabled={opening}
+            onClick={() => void openExternalEditor()}
+          >
+            {t(opening ? "files.externalEditorOpening" : "files.openInDefaultEditor")}
+          </Button>
+        )}
+        <Button variant="secondary" size="small" onClick={() => void reloadFile(path)}>
+          {t("common.refresh")}
+        </Button>
+      </div>
+      {openError && (
+        <p role="alert" className="max-w-md break-all text-caption-1-regular text-text-error-primary">
+          {t("files.externalEditorFailed", { error: openError })}
+        </p>
+      )}
+      {opened && (
+        <p role="status" className="max-w-md text-caption-1-regular text-text-tertiary">{t("files.externalEditorOpened")}</p>
+      )}
+    </EmptyState>
+  );
+}
+
+function FileEditor({ path, content, wordWrap, onToggleWordWrap }: {
+  path: string;
+  content: FileContent;
+  wordWrap: boolean;
+  onToggleWordWrap: () => void;
+}) {
   const setFileDirty = useFilesStore((s) => s.setFileDirty);
+  const entry = useFilesStore((s) => s.fileStates[path]);
+  const saveFile = useFilesStore((s) => s.saveFile);
   // Inactive (invisible) editors stay mounted; only the visible tab may
   // answer Cmd/Ctrl+S, or every open file would save at once.
   const isActiveTab = useFilesStore((s) => s.activeFilePath === path);
@@ -90,7 +181,7 @@ function FileEditor({ path, content }: { path: string; content: FileContent }) {
     };
   }, []);
 
-  const name = fileName(path);
+  const name = entry?.name ?? fileName(path);
   const isMarkdown = isMarkdownFile(name);
   const isHtml = isHtmlFile(name);
   // HTML opens rendered too, but only where the asset protocol serves real
@@ -109,6 +200,10 @@ function FileEditor({ path, content }: { path: string; content: FileContent }) {
   // preview drops it so switching back to read mode starts clean.
   const [previewSearchOpen, setPreviewSearchOpen] = useState(false);
   const [langExt, setLangExt] = useState<Extension[]>([]);
+  const extensions = useMemo(
+    () => wordWrap ? [CM_LINE_SELECTION, ...langExt, EditorView.lineWrapping] : [CM_LINE_SELECTION, ...langExt],
+    [langExt, wordWrap],
+  );
   // Truncated files are partial (editing + saving would clobber the tail);
   // remote-readOnly files are complete but unwritable — both stay read-only.
   const readOnly = content.truncated || content.readOnly === true;
@@ -153,14 +248,15 @@ function FileEditor({ path, content }: { path: string; content: FileContent }) {
     setSaving(true);
     setSaveError(null);
     try {
-      await ipc.writeFile(path, draft);
-      setSavedText(draft);
+      const committed = await saveFile(path, draft);
+      setSavedText(committed);
+      setDraft((current) => current === draft ? committed : current);
     } catch (e) {
       setSaveError(errorText(e));
     } finally {
       setSaving(false);
     }
-  }, [path, draft]);
+  }, [path, draft, saveFile]);
 
   // Cmd/Ctrl+S saves from anywhere while this editor is mounted. The listener
   // subscribes once; refs keep it reading the latest save/dirty/saving so it
@@ -196,9 +292,9 @@ function FileEditor({ path, content }: { path: string; content: FileContent }) {
   }
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col">
       <FileEditorHeader
-        path={path}
+        path={entry?.sourcePath ?? path}
         name={name}
         dirty={dirty}
         readOnly={readOnly}
@@ -213,6 +309,8 @@ function FileEditor({ path, content }: { path: string; content: FileContent }) {
         onSave={save}
         searchOpen={previewSearchOpen}
         onToggleSearch={() => setPreviewSearchOpen((open) => !open)}
+        wordWrap={wordWrap}
+        onToggleWordWrap={onToggleWordWrap}
       />
       {saveError && (
         <p className="shrink-0 break-all border-b border-border-button-default px-3 py-1.5 text-caption-1-regular text-text-error-primary">
@@ -244,9 +342,9 @@ function FileEditor({ path, content }: { path: string; content: FileContent }) {
           value={draft}
           onCreateEditor={(view) => { editorRef.current = view; }}
           onChange={setDraft}
-          extensions={langExt}
+          extensions={extensions}
           theme={dark ? "dark" : "light"}
-          readOnly={readOnly}
+          readOnly={readOnly || (entry?.session !== undefined && saving)}
           basicSetup={CM_BASIC_SETUP}
         />
       )}

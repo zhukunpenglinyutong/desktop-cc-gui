@@ -51,6 +51,7 @@ function loadHistoryPage(
   limit?: number,
   beforeSeq?: number | null,
   meta?: SessionMeta,
+  forceReload?: boolean,
 ): Promise<SessionPage> {
   const m =
     meta ??
@@ -63,15 +64,10 @@ function loadHistoryPage(
           s.workspacePath === workspacePath,
       );
   if (m?.remote && m.remotePath) {
-    return ipc.loadRemoteSessionPage(
-      workspacePath,
-      engine,
-      sessionId,
-      m.remotePath,
-      limit,
-      beforeSeq,
-    );
+    if (forceReload) return ipc.loadRemoteSessionPage(workspacePath, engine, sessionId, m.remotePath, limit, beforeSeq, true);
+    return ipc.loadRemoteSessionPage(workspacePath, engine, sessionId, m.remotePath, limit, beforeSeq);
   }
+  if (forceReload) return ipc.loadSessionPage(engine, sessionId, limit, beforeSeq, true);
   return beforeSeq === undefined
     ? ipc.loadSessionPage(engine, sessionId, limit)
     : ipc.loadSessionPage(engine, sessionId, limit, beforeSeq);

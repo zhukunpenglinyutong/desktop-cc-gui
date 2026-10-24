@@ -135,6 +135,8 @@ export interface ChatStore {
     sessionId: string,
     workspacePath: string,
   ) => Promise<void>;
+  /** Re-read one native transcript without changing the active tab or composer. */
+  reloadSession: (session: SessionMeta) => Promise<void>;
   closeTab: (
     engine: string,
     sessionId: string | null,

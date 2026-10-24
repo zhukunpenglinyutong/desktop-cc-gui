@@ -256,6 +256,7 @@ struct LoadSessionPageArgs {
     session_id: String,
     limit: Option<usize>,
     before_seq: Option<i64>,
+    force_reload: Option<bool>,
 }
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -266,6 +267,24 @@ struct LoadRemoteSessionPageArgs {
     remote_path: String,
     limit: Option<usize>,
     before_seq: Option<i64>,
+    force_reload: Option<bool>,
+}
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SessionFileArgs {
+    engine: String,
+    session_id: String,
+    workspace_path: Option<String>,
+    remote_path: Option<String>,
+}
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct WriteSessionFileArgs {
+    engine: String,
+    session_id: String,
+    content: String,
+    workspace_path: Option<String>,
+    remote_path: Option<String>,
 }
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -819,6 +838,7 @@ pub(super) async fn dispatch(
                 a.session_id,
                 a.limit,
                 a.before_seq,
+                a.force_reload,
             )
             .await)
         }
@@ -832,8 +852,21 @@ pub(super) async fn dispatch(
                 a.remote_path,
                 a.limit,
                 a.before_seq,
+                a.force_reload,
             )
             .await)
+        }
+        "read_session_file" => {
+            let a: SessionFileArgs = parse_args(&raw)?;
+            ser(crate::history::edit::read_session_file(app.state(), a.engine, a.session_id, a.workspace_path, a.remote_path).await)
+        }
+        "write_session_file" => {
+            let a: WriteSessionFileArgs = parse_args(&raw)?;
+            ser(crate::history::edit::write_session_file(app.state(), a.engine, a.session_id, a.content, a.workspace_path, a.remote_path).await)
+        }
+        "open_session_file_in_default_editor" => {
+            let a: EngineSessionArgs = parse_args(&raw)?;
+            ser(crate::history::edit::open_session_file_in_default_editor(app.state(), a.engine, a.session_id).await)
         }
         "delete_session" => {
             let a: EngineSessionArgs = parse_args(&raw)?;

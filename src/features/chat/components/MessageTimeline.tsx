@@ -3,6 +3,7 @@ import { useVirtualizer, type Virtualizer } from "@tanstack/react-virtual";
 import { useTranslation } from "react-i18next";
 import Copy from "lucide-react/dist/esm/icons/copy";
 import Check from "lucide-react/dist/esm/icons/check";
+import RefreshCw from "lucide-react/dist/esm/icons/refresh-cw";
 import type { Message } from "@/lib/ipc";
 
 import type { SessionState } from "../store";
@@ -659,6 +660,12 @@ export const MessageTimeline = memo(function MessageTimeline({
 
   return (
     <div className="relative flex min-h-0 flex-1 flex-col">
+      {session.historyReloadId !== undefined && (
+        <div role="status" className="flex shrink-0 items-center justify-center gap-2 py-2 text-caption-1-regular text-text-tertiary">
+          <RefreshCw className="size-3.5 animate-refresh-spin motion-reduce:animate-none" aria-hidden />
+          {t("chat.sessionRefreshing")}
+        </div>
+      )}
       <MessageAnchorRail
         activeAnchorId={activeAnchorId}
         anchors={anchors}

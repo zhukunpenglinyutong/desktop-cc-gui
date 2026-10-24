@@ -28,6 +28,8 @@ export interface SessionState {
   subagentHistory: Message[];
   nextBefore: number | null;
   loading: boolean;
+  /** Ownership of an explicit history reload; live updates retain it until completion. */
+  historyReloadId?: number;
   streaming: boolean;
   /** Epoch ms when the current streaming turn began; drives the tail
    * indicator's elapsed timer so it survives the indicator's unmount/remount

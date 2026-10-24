@@ -4,6 +4,7 @@ import PencilLine from "lucide-react/dist/esm/icons/pencil-line";
 import RefreshCw from "lucide-react/dist/esm/icons/refresh-cw";
 import Save from "lucide-react/dist/esm/icons/save";
 import Search from "lucide-react/dist/esm/icons/search";
+import WrapText from "lucide-react/dist/esm/icons/wrap-text";
 import { ActionFeedbackIcon, type ActionFeedback } from "@/components/base/action-feedback";
 import { Button } from "@/components/base/buttons/button";
 import type { EditorViewMode } from "./editor-view-mode";
@@ -25,6 +26,8 @@ export function FileEditorHeader({
   onSave,
   searchOpen,
   onToggleSearch,
+  wordWrap,
+  onToggleWordWrap,
 }: {
   path: string;
   name: string;
@@ -46,6 +49,8 @@ export function FileEditorHeader({
   /** Markdown preview find bar visibility / toggle (⌘F). */
   searchOpen: boolean;
   onToggleSearch: () => void;
+  wordWrap: boolean;
+  onToggleWordWrap: () => void;
 }) {
   const { t } = useTranslation();
 
@@ -128,6 +133,19 @@ export function FileEditorHeader({
             {t("files.preview")}
           </button>
         </div>
+      )}
+      {viewMode === "edit" && (
+        <Button
+          variant="secondary"
+          size="xs"
+          iconOnly
+          leadingIcon={WrapText}
+          aria-label={t("files.wordWrap")}
+          title={t("files.wordWrap")}
+          aria-pressed={wordWrap}
+          className={wordWrap ? "bg-background-tertiary-default text-text-primary" : "text-text-tertiary"}
+          onClick={onToggleWordWrap}
+        />
       )}
       {!readOnly && (
         <Button

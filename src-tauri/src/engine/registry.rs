@@ -3,7 +3,7 @@
 
 use super::reader::READER_SETTLE_GRACE;
 use serde_json::Value;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 use tokio::io::AsyncWriteExt;
 use tokio::process::Child;
@@ -77,7 +77,20 @@ pub struct ProcessRegistry(
     /// native session id -> settled-but-parked run waiting for a background
     /// task's self-started follow-up turn.
     Mutex<HashMap<String, AwaitingFollowup>>,
+    /// Sessions being saved; leases never hold the live-process map across I/O.
+    Mutex<HashSet<String>>,
 );
+
+pub(crate) struct SessionEditGuard<'a> {
+    registry: &'a ProcessRegistry,
+    session_id: &'a str,
+}
+
+impl Drop for SessionEditGuard<'_> {
+    fn drop(&mut self) {
+        self.registry.3.lock().unwrap_or_else(|e| e.into_inner()).remove(self.session_id);
+    }
+}
 /// Count in-flight runs, not map entries: one run is keyed twice (run id +
 /// session alias), so `map.len()` would halve the real concurrency limit.
 /// Reservations (pid 0, pre-spawn) count too — a spawn storm must not slip
@@ -92,6 +105,29 @@ pub(crate) fn active_run_count(map: &HashMap<String, ChildEntry>) -> usize {
 /// Two concurrent runs of one session must never evict each other's entries:
 /// an evicted child leaks (no key routes an interrupt to it).
 impl ProcessRegistry {
+    /// Atomically exclude existing/launching turns and new sends to this session.
+    pub(crate) fn begin_session_edit<'a>(&'a self, session_id: &'a str) -> Result<SessionEditGuard<'a>, String> {
+        let map = self.0.lock().map_err(|_| "native session process registry is unavailable".to_string())?;
+        if map.contains_key(session_id) || map.values().any(|entry| entry.pid == 0) {
+            return Err("native session cannot be edited while a turn is running or launching".into());
+        }
+        let mut edits = self.3.lock().map_err(|_| "native session edit registry is unavailable".to_string())?;
+        if !edits.insert(session_id.to_string()) {
+            return Err("native session save is already in progress".into());
+        }
+        Ok(SessionEditGuard { registry: self, session_id })
+    }
+
+    /// Call under the launch map lock, before inserting the run reservation.
+    pub(crate) fn ensure_session_not_editing(&self, session_id: Option<&str>) -> Result<(), String> {
+        let Some(session_id) = session_id else { return Ok(()); };
+        let edits = self.3.lock().map_err(|_| "native session edit registry is unavailable".to_string())?;
+        if edits.contains(session_id) {
+            return Err("native session is being saved; wait for the save to finish".into());
+        }
+        Ok(())
+    }
+
     /// 注册答题命令需要等待的 JSON-RPC 回复，并按运行 id 隔离 app-server 连接。
     pub(crate) fn register_pending_rpc_reply(
         &self,
@@ -298,6 +334,9 @@ impl ProcessRegistry {
 
     pub(crate) fn insert(&self, key: String, entry: ChildEntry) {
         if let Ok(mut map) = self.0.lock() {
+            for reserved in map.values_mut().filter(|reserved| reserved.pid == 0 && reserved.run_id == entry.run_id) {
+                *reserved = entry.clone();
+            }
             map.insert(key, entry);
         }
     }
@@ -340,9 +379,8 @@ impl ProcessRegistry {
         }
     }
 
-    /// Drop a pre-spawn run-id reservation after a failed launch. Only the
-    /// placeholder (no child, pid 0) is removed — a registered run, real or
-    /// virtual, is never touched.
+    /// Drop a failed launch's reservation and its preassigned session aliases.
+    /// Registered real/virtual runs must remain interruptible.
     pub(crate) fn remove_reservation(&self, key: &str) {
         if let Ok(mut map) = self.0.lock() {
             let reserved = map
@@ -350,7 +388,7 @@ impl ProcessRegistry {
                 .map(|entry| entry.child.is_none() && entry.pid == 0)
                 .unwrap_or(false);
             if reserved {
-                map.remove(key);
+                map.retain(|_, entry| entry.run_id != key || entry.pid != 0 || entry.child.is_some());
             }
         }
     }
@@ -803,6 +841,49 @@ mod registry_tests {
             questions: Arc::new(Mutex::new(HashMap::new())),
             plans: Arc::new(Mutex::new(HashMap::new())),
         }
+    }
+
+    #[test]
+    fn session_edit_lease_blocks_only_its_session_until_dropped() {
+        let registry = ProcessRegistry::default();
+        registry.insert("other-run".into(), stub_entry("other-run", 101));
+        let edit = registry.begin_session_edit("edited").unwrap();
+        assert!(registry.ensure_session_not_editing(Some("edited")).is_err());
+        assert!(registry.begin_session_edit("edited").is_err());
+        registry.ensure_session_not_editing(Some("other")).unwrap();
+        registry.ensure_session_not_editing(None).unwrap();
+        assert!(registry.get("other-run").is_some());
+        assert!(registry.0.try_lock().is_ok(), "remote I/O must not hold the process map lock");
+        drop(edit);
+        registry.ensure_session_not_editing(Some("edited")).unwrap();
+        assert!(registry.begin_session_edit("edited").is_ok());
+    }
+
+    #[test]
+    fn session_edit_lease_rejects_live_and_launching_turns() {
+        let registry = ProcessRegistry::default();
+        registry.insert_alias("edited".into(), stub_entry("live-run", 101));
+        assert!(registry.begin_session_edit("edited").is_err());
+        registry.remove_run_if_pid("live-run", 101);
+        registry.insert("launching-run".into(), stub_entry("launching-run", 0));
+        assert!(registry.begin_session_edit("edited").is_err());
+        registry.remove_reservation("launching-run");
+        assert!(registry.begin_session_edit("edited").is_ok());
+    }
+
+    #[test]
+    fn launch_session_alias_upgrades_and_failed_launch_releases_its_edit_block() {
+        let registry = ProcessRegistry::default();
+        registry.insert("launch".into(), stub_entry("launch", 0));
+        registry.insert_alias("edited".into(), stub_entry("launch", 0));
+        registry.insert("launch".into(), stub_entry("launch", 101));
+        assert_eq!(registry.get("edited").unwrap().pid, 101);
+        registry.remove_run_if_pid("launch", 101);
+        registry.insert("failed".into(), stub_entry("failed", 0));
+        registry.insert_alias("edited".into(), stub_entry("failed", 0));
+        registry.remove_reservation("failed");
+        assert!(registry.get("edited").is_none());
+        assert!(registry.begin_session_edit("edited").is_ok());
     }
 
     /// The concurrency limit counts RUNS, not map entries: a run keyed

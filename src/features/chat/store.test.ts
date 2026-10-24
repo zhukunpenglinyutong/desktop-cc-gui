@@ -908,3 +908,104 @@ describe("setPluginSessionEffort (ctx.sessions.setEffort backend)", () => {
     );
   });
 });
+
+describe("reloadSession renders the edited native history", () => {
+  const target: SessionMeta = {
+    engine: "omp", sessionId: "edited", workspacePath: WS,
+    filePath: "/home/me/.omp/agent/sessions/ws/timestamp_edited.jsonl",
+    fileSize: 10, fileMtimeMs: 1, title: "Edited session", preview: "",
+    createdAt: 1, updatedAt: 1, messageCount: 2, pinned: false, customTitle: null,
+  };
+  const key = "omp/edited";
+  const row = (seq: number, text: string) => ({ seq, role: "assistant", text, ts: null });
+
+  beforeEach(() => {
+    resetStore();
+    vi.mocked(ipc.loadSessionPage).mockReset();
+    vi.mocked(ipc.listPlanReviews).mockResolvedValue([]);
+    useChatStore.setState({ sessions: [target], actionError: null });
+  });
+
+  it("replaces edited and deleted rows across all already-visible pages without disturbing another session", async () => {
+    const otherTab = { engine: "codex", sessionId: "other", workspacePath: WS };
+    const other = { ...EMPTY_SESSION, messages: [row(1, "Other conversation")] };
+    const oldMessages = Array.from({ length: 650 }, (_, index) => row(index + 1, "Stale reply"));
+    const queue = [{ id: "q", text: "Keep queued input", images: [], queuedAt: 1 }];
+    useChatStore.setState({
+      active: otherTab, openTabs: [otherTab], drafts: { [key]: "Keep my draft" },
+      bySession: {
+        [key]: { ...EMPTY_SESSION, messages: oldMessages, nextBefore: 1, activeModel: "provider/model", activeEffort: "high", activeProvider: "channel", queue },
+        "codex/other": other,
+      },
+    });
+    const native = Array.from({ length: 720 }, (_, index) => row(index + 1, `Edited reply ${index + 1}`));
+    vi.mocked(ipc.loadSessionPage).mockImplementation(async (_engine, _id, limit = 100, before) => {
+      const end = before == null ? native.length : native.findIndex((message) => message.seq >= before);
+      const start = Math.max(0, end - limit);
+      return { messages: native.slice(start, end), nextBefore: start > 0 ? native[start].seq : null, subagentHistory: [] };
+    });
+
+    await useChatStore.getState().reloadSession(target);
+
+    const state = useChatStore.getState();
+    expect(state.bySession[key].messages.map((message) => message.text)).toEqual(native.slice(70).map((message) => message.text));
+    expect(state.bySession[key].nextBefore).toBe(71);
+    expect(state.bySession[key]).toMatchObject({ loading: false, activeModel: "provider/model", activeEffort: "high", activeProvider: "channel" });
+    expect(state.bySession[key].queue).toBe(queue);
+    expect(state.bySession["codex/other"]).toBe(other);
+    expect(state.active).toBe(otherTab);
+    expect(state.openTabs).toEqual([otherTab]);
+    expect(state.drafts[key]).toBe("Keep my draft");
+  });
+
+  it("keeps the previous render intact while loading and after a read failure", async () => {
+    const messages = [row(1, "Existing answer")];
+    const usage = { input_tokens: 42 };
+    const pending = Promise.withResolvers<any>();
+    useChatStore.setState({ bySession: { [key]: { ...EMPTY_SESSION, messages, usage } } });
+    vi.mocked(ipc.loadSessionPage).mockReturnValueOnce(pending.promise);
+    const refresh = useChatStore.getState().reloadSession(target);
+    expect(useChatStore.getState().bySession[key].messages).toBe(messages);
+    expect(useChatStore.getState().bySession[key].loading).toBe(true);
+    pending.reject(new Error("Transcript was removed"));
+    await refresh;
+    expect(useChatStore.getState().bySession[key].messages).toBe(messages);
+    expect(useChatStore.getState().bySession[key].usage).toBe(usage);
+    expect(useChatStore.getState().bySession[key].loading).toBe(false);
+    expect(useChatStore.getState().actionError).toContain("Transcript was removed");
+  });
+
+  it("does not replace a live turn that starts while the file is being read", async () => {
+    const pending = Promise.withResolvers<any>();
+    useChatStore.setState({ bySession: { [key]: { ...EMPTY_SESSION, messages: [row(1, "Before refresh")] } } });
+    vi.mocked(ipc.loadSessionPage).mockReturnValueOnce(pending.promise);
+    const refresh = useChatStore.getState().reloadSession(target);
+    const current = useChatStore.getState().bySession[key];
+    const live = [row(1, "Before refresh"), { ...row(2, "New live answer"), live: true }];
+    useChatStore.setState({ bySession: { [key]: { ...current, messages: live, streaming: true } }, streamingByKey: { [key]: true } });
+    pending.resolve({ messages: [row(1, "Old disk snapshot")], nextBefore: null, subagentHistory: [] });
+    await refresh;
+    expect(useChatStore.getState().bySession[key].messages).toBe(live);
+    expect(useChatStore.getState().bySession[key].streaming).toBe(true);
+    expect(useChatStore.getState().bySession[key].loading).toBe(false);
+  });
+
+  it("does not resurrect a session removed while refresh is in flight", async () => {
+    const pending = Promise.withResolvers<any>();
+    useChatStore.setState({ bySession: { [key]: { ...EMPTY_SESSION, messages: [row(1, "Before deletion")] } } });
+    vi.mocked(ipc.loadSessionPage).mockReturnValueOnce(pending.promise);
+    const refresh = useChatStore.getState().reloadSession(target);
+    useChatStore.setState({ bySession: {}, sessions: [] });
+    pending.resolve({ messages: [row(1, "Deleted transcript")], nextBefore: null, subagentHistory: [] });
+    await refresh;
+    expect(useChatStore.getState().bySession[key]).toBeUndefined();
+    expect(useChatStore.getState().sessions).toEqual([]);
+  });
+
+  it("an empty edited transcript clears the old messages and token usage", async () => {
+    useChatStore.setState({ bySession: { [key]: { ...EMPTY_SESSION, messages: [row(1, "Removed answer")], usage: { input_tokens: 42 }, turnUsage: { output_tokens: 8 } } } });
+    vi.mocked(ipc.loadSessionPage).mockResolvedValueOnce({ messages: [], nextBefore: null, subagentHistory: [] });
+    await useChatStore.getState().reloadSession(target);
+    expect(useChatStore.getState().bySession[key]).toMatchObject({ messages: [], usage: null, turnUsage: null, nextBefore: null, loading: false });
+  });
+});

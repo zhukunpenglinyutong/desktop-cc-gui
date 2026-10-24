@@ -124,6 +124,13 @@ export interface SessionPage {
   subagentHistory: Message[];
 }
 
+/** Complete native source, or an editable native-record view for database CLIs. */
+export interface SessionFileDocument {
+  path: string;
+  name: string;
+  text: string;
+}
+
 export interface Workspace {
   id: string;
   path: string;
@@ -1511,12 +1518,19 @@ export const ipc = {
     invoke<void>("archive_session", { session }),
   restoreSession: (engine: string, sessionId: string) =>
     invoke<void>("restore_session", { engine, sessionId }),
+  readSessionFile: (engine: string, sessionId: string, workspacePath?: string, remotePath?: string) =>
+    invoke<SessionFileDocument>("read_session_file", { engine, sessionId, workspacePath, remotePath }),
+  writeSessionFile: (engine: string, sessionId: string, content: string, workspacePath?: string, remotePath?: string) =>
+    invoke<SessionFileDocument>("write_session_file", { engine, sessionId, content, workspacePath, remotePath }),
+  openSessionFileInDefaultEditor: (engine: string, sessionId: string) =>
+    invoke<void>("open_session_file_in_default_editor", { engine, sessionId }),
   loadSessionPage: (
     engine: string,
     sessionId: string,
     limit?: number,
     beforeSeq?: number | null,
-  ) => invoke<SessionPage>("load_session_page", { engine, sessionId, limit, beforeSeq }),
+    forceReload?: boolean,
+  ) => invoke<SessionPage>("load_session_page", { engine, sessionId, limit, beforeSeq, forceReload }),
   /** Full-text search over message bodies (⌘L palette). FTS5 trigram when
    *  every token is ≥3 chars, exact AND-substring LIKE otherwise. */
   searchMessages: (
@@ -1534,6 +1548,7 @@ export const ipc = {
     remotePath: string,
     limit?: number,
     beforeSeq?: number | null,
+    forceReload?: boolean,
   ) =>
     invoke<SessionPage>("load_remote_session_page", {
       workspacePath,
@@ -1542,6 +1557,7 @@ export const ipc = {
       remotePath,
       limit,
       beforeSeq,
+      forceReload,
     }),
   deleteSession: (engine: string, sessionId: string) =>
     invoke<void>("delete_session", { engine, sessionId }),

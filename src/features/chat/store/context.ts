@@ -26,6 +26,7 @@ export type LoadHistoryPage = (
   limit?: number,
   beforeSeq?: number | null,
   meta?: SessionMeta,
+  forceReload?: boolean,
 ) => Promise<SessionPage>;
 
 /** useChatStore.subscribe, injected so compactContext needs no store import. */

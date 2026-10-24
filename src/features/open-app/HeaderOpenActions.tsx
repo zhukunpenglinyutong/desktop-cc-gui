@@ -159,9 +159,11 @@ function AddProgramDialog({
 
 export function HeaderOpenActions({ workspacePath }: { workspacePath: string }) {
   const { t } = useTranslation();
-  // Editors open the file shown in the active editor tab; Finder always
-  // reveals the workspace folder.
-  const activeFilePath = useFilesStore((s) => s.activeFilePath);
+  // Session tab keys are identities; external editors need their native source.
+  // Finder still reveals the workspace folder.
+  const activeFilePath = useFilesStore((s) => s.activeFilePath
+    ? s.fileStates[s.activeFilePath]?.sourcePath ?? s.activeFilePath
+    : null);
   const terminalOpen = useTerminalStore((s) => s.open);
   const toggleTerminal = useTerminalStore((s) => s.toggle);
   const pinnedIds = useSyncExternalStore(subscribePinnedIds, readPinnedIds);
