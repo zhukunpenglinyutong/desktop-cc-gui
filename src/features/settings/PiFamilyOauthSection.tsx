@@ -1,8 +1,9 @@
-/** 订阅授权 group — read-only OAuth status rows plus a 登录 button that hands
- *  the interactive flow to the built-in terminal (extracted from
+/** 订阅授权 group — OAuth status rows plus CLI-owned login/logout actions in
+ *  the built-in terminal (extracted from
  *  PiFamilyAuthSection). */
 import { useTranslation } from "react-i18next";
 import LogIn from "lucide-react/dist/esm/icons/log-in";
+import LogOut from "lucide-react/dist/esm/icons/log-out";
 import {
   SettingsCard,
   SettingsSectionLabel,
@@ -16,11 +17,13 @@ export function PiFamilyOauthSection({
   providers,
   oauthActive,
   onLaunchLogin,
+  onLaunchLogout,
 }: {
   engine: "pi" | "omp";
   providers: readonly PiFamilyOauthProvider[];
   oauthActive: ReadonlySet<string>;
   onLaunchLogin: (provider: PiFamilyOauthProvider) => void;
+  onLaunchLogout: (provider: PiFamilyOauthProvider) => void;
 }) {
   const { t } = useTranslation();
   return (
@@ -65,6 +68,16 @@ export function PiFamilyOauthSection({
                 <LogIn className="size-3.5" aria-hidden />
                 {t("settings.piAuthLogin")}
               </button>
+              {subscribed && (
+                <button
+                  type="button"
+                  onClick={() => onLaunchLogout(provider)}
+                  className="flex shrink-0 items-center gap-1 rounded-lg border border-border-button-default px-2.5 py-1 text-body-2-medium text-text-primary hover:bg-background-secondary-hover"
+                >
+                  <LogOut className="size-3.5" aria-hidden />
+                  {t(engine === "pi" ? "settings.piAuthGoToLogout" : "settings.piAuthLogout")}
+                </button>
+              )}
             </div>
           );
         })}

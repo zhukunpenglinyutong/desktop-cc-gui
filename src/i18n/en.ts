@@ -1172,6 +1172,11 @@ export const en: Messages = {
     piAuthSubscribed: "Authorized · auto-refresh",
     piAuthNotSubscribed: "Not authorized",
     piAuthLogin: "Sign in",
+    piAuthLogout: "Sign out",
+    piAuthGoToLogout: "Go to sign out",
+    piAuthLogoutConfirm: "Sign out of {{name}} in the terminal? This may affect all authorized accounts for this provider.",
+    piAuthGoToLogoutConfirm: "Open Pi to sign out of {{name}}? Choose the account in the CLI.",
+    piAuthLogoutNoWorkspace: "Open a project first; sign-out runs in the built-in terminal",
     piAuthLoginNoWorkspace:
       "Open a project first — OAuth sign-in runs in the built-in terminal",
     piAuthOauthDescClaude: "Claude Pro / Max subscription",

@@ -1,5 +1,5 @@
 /**
- * OAuth login launch for pi/omp: the CLI owns the interactive flow, so the
+ * OAuth login/logout launch for pi/omp: the CLI owns the flow, so the
  * app drives its built-in terminal (same approach as the reference
  * desktop-cc-gui's `mossx:terminal-command-request`, minus the event bus):
  * open the dock on a fresh tab, wait for the PTY, then type the command.
@@ -66,4 +66,53 @@ export async function launchPiFamilyLogin(
     void ipc.terminalWrite(id, `/login ${loginArg}${ENTER}`).catch(() => {});
   }, 1500);
   return true;
+}
+
+/** Open a dedicated terminal for the CLI-owned OAuth logout flow. */
+export async function launchPiFamilyLogout(
+  engine: "pi" | "omp",
+  providerId: string,
+): Promise<boolean> {
+  const workspacePath = useChatStore.getState().active?.workspacePath;
+  if (!workspacePath) return false;
+
+  const term = useTerminalStore.getState();
+  if (!term.open) term.toggle(workspacePath);
+  useTerminalStore.getState().newTab(workspacePath);
+  const id = useTerminalStore.getState().activeByWorkspace[workspacePath];
+  if (!id) return false;
+
+  const settings = await ipc.getAppSettings().catch(() => null);
+  const customBin = (engine === "pi" ? settings?.piBin : settings?.ompBin)?.trim();
+  const bin = shellQuote(customBin || engine);
+  if (!(await waitForSession(id))) return false;
+
+  if (engine === "omp") {
+    await ipc.terminalWrite(id, `${bin} auth-broker logout ${providerId}${ENTER}`);
+    return true;
+  }
+  await ipc.terminalWrite(id, `${bin}${ENTER}`);
+  window.setTimeout(() => {
+    void ipc.terminalWrite(id, `/logout${ENTER}`).catch(() => {});
+  }, 1500);
+  return true;
+}
+
+/** A terminal write cannot report the shell command's exit status. Verify the
+ * credential store instead; a timeout never counts as a successful logout. */
+export async function waitForPiFamilyLogout(
+  engine: "pi" | "omp",
+  statusIds: readonly string[],
+): Promise<boolean> {
+  const deadline = Date.now() + 60_000;
+  while (Date.now() < deadline) {
+    await new Promise<void>((resolve) => setTimeout(resolve, 1000));
+    try {
+      const result = await ipc.piFamilyAuthList(engine);
+      if (statusIds.every((id) => !result.oauthProviders.includes(id))) return true;
+    } catch {
+      // The next read may succeed; a failed read cannot prove logout.
+    }
+  }
+  return false;
 }
