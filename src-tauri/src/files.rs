@@ -453,6 +453,70 @@ pub fn paste_item(
     })
 }
 
+/// Outcome of pasting the OS clipboard: items that landed, and the reason
+/// each rejected one stayed behind (one bad entry must not lose the rest).
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PasteClipboardResult {
+    pub created: Vec<FileOpResult>,
+    pub failed: Vec<String>,
+}
+
+/// Copy host-clipboard file references into `target_dir`.
+///
+/// The source paths are read from the OS clipboard **inside the host** and
+/// never travel through IPC: a renderer-supplied "paste from anywhere" would
+/// be an arbitrary-filesystem read once the copy lands inside a workspace
+/// (where `read_file` is allowed). The destination is still confined to the
+/// registered roots.
+fn copy_clipboard_items_into(sources: &[String], target_dir: &Path) -> PasteClipboardResult {
+    let mut created = Vec::new();
+    let mut failed = Vec::new();
+    for raw in sources {
+        let source = match canonicalize_lenient(Path::new(raw)) {
+            Ok(source) => source,
+            Err(e) => {
+                failed.push(e);
+                continue;
+            }
+        };
+        let meta = match std::fs::symlink_metadata(&source) {
+            Ok(meta) => meta,
+            Err(e) => {
+                failed.push(format!("stat {}: {e}", source.display()));
+                continue;
+            }
+        };
+        if meta.file_type().is_symlink() {
+            failed.push(format!("cannot copy symlink {}", source.display()));
+            continue;
+        }
+        match copy_item_into_dir(&source, meta.is_dir(), target_dir, true) {
+            Ok(destination) => created.push(FileOpResult {
+                path: destination.to_string_lossy().into_owned(),
+                is_dir: meta.is_dir(),
+            }),
+            Err(e) => failed.push(e),
+        }
+    }
+    PasteClipboardResult { created, failed }
+}
+
+/// Paste whatever file list the OS clipboard holds (a Finder / Explorer
+/// copy). Empty `created` + empty `failed` means the clipboard carried no
+/// file at all; the frontend then falls back to its own tree clipboard.
+#[tauri::command]
+pub fn paste_clipboard_items(
+    db: tauri::State<'_, Arc<crate::db::Db>>,
+    target_dir: String,
+) -> Result<PasteClipboardResult, String> {
+    let dir = ensure_allowed(&target_dir, &db)?;
+    if !dir.is_dir() {
+        return Err(format!("{} is not a directory", dir.display()));
+    }
+    Ok(copy_clipboard_items_into(&crate::clipboard::os_file_paths(), &dir))
+}
+
 /// Case-insensitive substring check. ASCII haystack+needle take an
 /// allocation-free fast path; Unicode input falls back to `to_lowercase`
 /// to preserve the old case-folding semantics exactly.
@@ -666,6 +730,40 @@ mod tests {
         let dir = grant_dir_for(&outside.0.to_string_lossy()).unwrap();
         let want = strip_verbatim_prefix(std::fs::canonicalize(&outside.0).unwrap());
         assert_eq!(dir, want);
+    }
+
+    #[test]
+    fn clipboard_paste_copies_what_it_can_and_names_the_rest() {
+        let source = Scratch::new();
+        let destination = Scratch::new();
+        let notes = source.0.join("notes.md");
+        std::fs::write(&notes, b"hi").unwrap();
+        std::fs::create_dir_all(source.0.join("assets")).unwrap();
+        std::fs::write(source.0.join("assets").join("a.txt"), b"a").unwrap();
+        let sources = vec![
+            notes.to_string_lossy().to_string(),
+            source.0.join("gone.md").to_string_lossy().to_string(),
+            source.0.join("assets").to_string_lossy().to_string(),
+        ];
+
+        let result = copy_clipboard_items_into(&sources, &destination.0);
+        assert_eq!(result.created.len(), 2);
+        assert_eq!(result.failed.len(), 1);
+        assert!(result.failed[0].contains("gone.md"));
+        assert_eq!(
+            std::fs::read(destination.0.join("notes.md")).unwrap(),
+            b"hi"
+        );
+        assert!(destination.0.join("assets").join("a.txt").is_file());
+
+        // Pasting the same item twice keeps the first copy intact.
+        let again = copy_clipboard_items_into(&sources[..1], &destination.0);
+        assert_eq!(again.created.len(), 1);
+        assert!(again.created[0].path.ends_with("notes copy.md"));
+        assert_eq!(
+            std::fs::read(destination.0.join("notes.md")).unwrap(),
+            b"hi"
+        );
     }
 
     #[test]

@@ -573,6 +573,13 @@ export interface FileOpResult {
   isDir: boolean;
 }
 
+/** Result of `paste_clipboard_items`: what the OS clipboard's file list
+ *  produced, plus the reason each rejected item stayed behind. */
+export interface PasteClipboardResult {
+  created: FileOpResult[];
+  failed: string[];
+}
+
 export interface SearchHit {
   path: string;
   line: number;
@@ -1500,6 +1507,11 @@ export const ipc = {
    * copies expose no path to the webview). Empty when the clipboard holds no
    * file; the web bridge has no OS pasteboard and always answers empty. */
   clipboardFilePaths: () => invoke<string[]>("clipboard_file_paths"),
+  /** Replace the OS clipboard with a file list, so Finder / Explorer paste
+   *  the actual items. Rejects when the host cannot write; the in-app tree
+   *  clipboard still carries the item (Linux has no native bridge). */
+  setClipboardFilePaths: (paths: string[]) =>
+    invoke<void>("clipboard_set_file_paths", { paths }),
   listEngineModels: (engine: string, workspace?: string) =>
     withGrantRetry(() =>
       invoke<EngineCatalog>("list_engine_models", { engine, workspace: workspace ?? null }),
@@ -1623,6 +1635,13 @@ export const ipc = {
     withGrantRetry(() => invoke<FileOpResult>("duplicate_item", { path })),
   pasteItem: (source: string, targetDir: string) =>
     withGrantRetry(() => invoke<FileOpResult>("paste_item", { source, targetDir })),
+  /** Copy whatever file list the OS clipboard holds into `targetDir`. The
+   *  host reads the clipboard itself — source paths never come over IPC —
+   *  and the web bridge answers with an empty list. */
+  pasteClipboardItems: (targetDir: string) =>
+    withGrantRetry(() =>
+      invoke<PasteClipboardResult>("paste_clipboard_items", { targetDir }),
+    ),
   searchText: (path: string, query: string) =>
     withGrantRetry(() => invoke<SearchHit[]>("search_text", { path, query })),
   /** Whole-tree file index for the composer @-mention picker (relative

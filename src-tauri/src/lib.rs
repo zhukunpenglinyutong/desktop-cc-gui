@@ -457,8 +457,10 @@ pub fn run() {
             engine::pi_family_auth::pi_family_models_config_write,
             engine::images::save_pasted_image,
             engine::images::import_attachments,
-            // clipboard file lists (paste of Finder/Explorer copies)
+            // clipboard file lists (paste of Finder/Explorer copies, and the
+            // file tree's Copy/Paste round trip)
             clipboard::clipboard_file_paths,
+            clipboard::clipboard_set_file_paths,
             // computer use
             computer_use::computer_use_permission_status,
             computer_use::computer_use_open_permission_settings,
@@ -504,6 +506,7 @@ pub fn run() {
             files::trash_item,
             files::duplicate_item,
             files::paste_item,
+            files::paste_clipboard_items,
             files::create_file,
             files::search_text,
             files::list_file_index,

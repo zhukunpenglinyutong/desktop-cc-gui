@@ -145,6 +145,8 @@
 
 - **内网访问自启、访问 IP 切换与端口/Token配置**：设置「远程访问 / 内网访问」（`WebAccessSection.tsx`）提供「随应用自动开启」滑动开关（`Switch`），开启时客户端启动即自动运行内网 Web 服务（后端持久化于 `AppSettings.web_access_auto_start`，前端启动时带兜底探测与自启保障）。运行态下提供「访问 IP / 网卡」下拉框（`Select`），通过平台原生接口（Windows `GetAdaptersAddresses` / Unix `getifaddrs`）动态枚举本机网络接口 IPv4 列表，优先置顶 Tailscale 虚拟网卡与 CGNAT IP（100.64.0.0/10），并列出物理网卡及 Localhost 回环地址；切换 IP 联动实时更新访问地址、复制内容与二维码，并在本地持久化所选偏好（`WEB_ACCESS_SELECTED_IP_KEY`）。支持自定义监听端口（`web_access_port`，留空为自动分配随机端口）与持久化鉴权 Token（`web_access_token`，支持一键「重新生成」）；服务运行中修改配置在卡片内展示重启提示与快捷「立即重启服务」动作，绑定失败时在界面显式展示端口冲突原因。回归：`WebAccessSection.test.tsx`、`web::tests::*`。
 
+- **文件树右键复制/粘贴就是系统剪贴板的复制/粘贴**：右键「复制」除了记下树内那一项，还把真实路径写进系统剪贴板的文件列表（macOS NSPasteboard 的 file URL、Windows `CF_HDROP`），Finder / 资源管理器按 Ctrl/Cmd+V 粘出的是文件本身而不是一串路径；写失败不打扰用户，树内那一项仍在，Linux 没有原生文件剪贴板写入也不影响树内复制粘贴。**「粘贴」每次都以系统剪贴板为准**：先读剪贴板里的文件列表（在别的程序里复制的文件、或比树内更晚的一次复制都要赢过树内旧状态），只有剪贴板里没有文件时才回退到树内记下的那一项，两者都没有才提示「没有可粘贴的项目」。粘贴是否可用由打开菜单时的一次探测决定（树内项或系统文件列表任一存在即可用），因为别的程序随时会改剪贴板，不能缓存上次结果。源路径只由宿主自己读剪贴板得到（`paste_clipboard_items` 只接收目标目录）：若允许渲染进程传入任意源路径，粘贴就变成「把工作区外的文件搬进工作区再用 `read_file` 读出来」的通道；目标目录仍受工作区/授权根约束。多选粘贴逐个复制，成功项照常展开定位，失败项汇总成一条错误提示，不因一项失败丢掉其余。回归：`useFileTreeOperations.test.tsx`、`files.rs::clipboard_paste_copies_what_it_can_and_names_the_rest`、`clipboard.rs` 的 macOS 写读往返用例。
+
 ### 3.1 自动压缩：阈值控件与幕布行
 
 - **压缩过程在时间线上只有一条灰线（幕布行），不是气泡**：宿主发出的 `/compact` 用户行（手动按钮或跨过阈值的自动压缩，`ConversationFooter.tsx` 的 `compactSession`）原位渲染为一行右对齐的灰色「‹ 正在压缩上下文 ›」（`MessageTimeline.tsx` 的 `CompactionCurtain`；`internal-rows.ts` 的 `isCompactCommandRow` 把该用户行转成 `curtain` 行）。它属于那条消息，压缩结束后继续留在历史里——用户要能回看「这里压缩过」；原先是用户气泡，已按同一提交移除。阈值触发压缩完成后 footer 自动补发的续接提示（`chat.autoCompactResume`）两语都按 `isResumeNudgeRow` 过滤，从不渲染，模型的回复才是可见部分。
@@ -297,6 +299,7 @@ const feedback = useRunningFeedback(store.loading);
 
 | 版本 | 时间 | 内容 |
 |---|---|---|
+| v0.87 | 2026-10-22 | 文件树右键复制/粘贴与系统剪贴板同步：复制同时写入系统文件列表（macOS NSPasteboard file URL / Windows `CF_HDROP`），Finder / 资源管理器可粘出真实文件；粘贴每次先读系统剪贴板，无文件才回退树内项，多选失败项汇总提示。新增 `clipboard_set_file_paths` / `paste_clipboard_items`，源路径由宿主读取、不经渲染进程，目标仍限工作区；Linux 与 Web 桥保持树内剪贴板；§3 补规则 |
 | v0.86 | 2026-10-21 | Claude 后台任务（`run_in_background`）不再丢失完成后的续答：第一轮结算后输入框即恢复，CLI 自启的第二轮经 `turn_resumed` 重新打开该 run 并接在后面显示；等待期间发新消息，若模型 / effort / 权限模式未变，会直接写进仍存活的旧进程（后台任务不被停止），设置已变更或旧进程不可写时回退 `--resume` 新进程，其「停止旧后台任务」产生的空结果不再被当成本轮结束；驻留登记只对聊天事件汇生效，插件与任务工作台轮次维持原行为；§3 新增对应规则 |
 | v0.85 | 2026-10-21 | 状态栏分支列表新增搜索过滤（复用 `git.searchBranches` 占位与 `git.noMatchingBranches` 空态，打开即聚焦、关闭清空过滤条件）与整行原生 `title` 全名提示；搜索框是弹层第一个元素、与滚动列表平级；焦点随打开进入弹层，Esc 从此可关闭该弹层；另修原生 `title` 气泡被 react-aria 弹层（默认 z-index 100000）盖住的问题——气泡与弹层重叠时提示完全不可见；§2.3、§3 更新 |
 | v0.84 | 2026-10-16 | 字体设置新增独立「自定义字体族」分类（仅占位示例），保留上传分类；统一聊天代码、编辑器、差异视图和终端的代码字体/字号，补齐字体加载后量度与 PTY 尺寸同步；§2、§3 更新 |

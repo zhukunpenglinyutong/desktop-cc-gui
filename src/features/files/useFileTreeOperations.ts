@@ -22,6 +22,9 @@ interface TrashTarget {
 
 export interface FileTreeOperations {
   clipboard: TreeClipboard | null;
+  /** Paste has a source: the in-app tree clipboard, or a file list the OS
+   *  clipboard currently holds (Finder / Explorer copy). */
+  canPaste: boolean;
   menu: FileTreeMenuState | null;
   prompt: PromptState | null;
   trashTarget: TrashTarget | null;
@@ -62,6 +65,10 @@ export function useFileTreeOperations(): FileTreeOperations {
   const [prompt, setPrompt] = useState<PromptState | null>(null);
   const [trashTarget, setTrashTarget] = useState<TrashTarget | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  /** File list the OS clipboard held when the menu opened; `null` until the
+   *  first probe resolves. Only gates Paste's enabled state — the paste
+   *  itself re-reads the clipboard, which can change while the menu is up. */
+  const [systemClipboard, setSystemClipboard] = useState<string[] | null>(null);
 
   useEffect(() => {
     if (!notice) return;
@@ -79,6 +86,12 @@ export function useFileTreeOperations(): FileTreeOperations {
       event.preventDefault();
       selectPath(node.path, node.isDir);
       setMenu({ x: event.clientX, y: event.clientY, path: node.path, isDir: node.isDir });
+      // Paste's enabled state depends on a clipboard other apps can change
+      // between menus, so every open asks the host again.
+      void ipc
+        .clipboardFilePaths()
+        .then(setSystemClipboard)
+        .catch(() => setSystemClipboard([]));
     },
     [selectPath],
   );
@@ -149,12 +162,30 @@ export function useFileTreeOperations(): FileTreeOperations {
 
   const handlePaste = useCallback(
     async (targetDir: string) => {
-      const item = useFilesStore.getState().clipboard;
-      if (!item) {
-        setNotice(t("files.pasteUnavailable"));
-        return;
-      }
       try {
+        // The OS clipboard is the truth: if the user copied something in
+        // Finder / Explorer (or copied a different item in another app)
+        // after our own Copy, a stale in-app item must not win.
+        const systemFiles = await ipc.clipboardFilePaths().catch(() => []);
+        if (systemFiles.length > 0) {
+          const { created, failed } = await ipc.pasteClipboardItems(targetDir);
+          if (created.length > 0) {
+            const last = created[created.length - 1];
+            await revealInTree(targetDir, last.path, last.isDir);
+          }
+          if (failed.length > 0) {
+            setNotice(t("files.opFailed", { message: failed.join("; ") }));
+          } else if (created.length === 0) {
+            // The clipboard was emptied between the probe and the host read.
+            setNotice(t("files.pasteUnavailable"));
+          }
+          return;
+        }
+        const item = useFilesStore.getState().clipboard;
+        if (!item) {
+          setNotice(t("files.pasteUnavailable"));
+          return;
+        }
         const result = await ipc.pasteItem(item.path, targetDir);
         await revealInTree(targetDir, result.path, result.isDir);
       } catch (e) {
@@ -177,6 +208,10 @@ export function useFileTreeOperations(): FileTreeOperations {
   const copyItem = useCallback(() => {
     if (!menu) return;
     useFilesStore.getState().setClipboard({ path: menu.path, isDir: menu.isDir });
+    // Mirror the staged item onto the OS clipboard so pasting in Finder /
+    // Explorer copies the real file. Best-effort: the in-app stage above is
+    // what Linux (no native file clipboard) and a refused write fall back to.
+    void ipc.setClipboardFilePaths([menu.path]).catch(() => {});
   }, [menu]);
 
   const copyPath = useCallback(() => {
@@ -198,6 +233,7 @@ export function useFileTreeOperations(): FileTreeOperations {
 
   return {
     clipboard,
+    canPaste: clipboard !== null || (systemClipboard?.length ?? 0) > 0,
     menu,
     prompt,
     trashTarget,
