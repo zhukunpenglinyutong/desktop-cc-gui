@@ -290,7 +290,8 @@ interface PluginContext {
 |---|---|---|
 | `usage://updated` | 完整 EngineEventPayload `{ runId, sessionId, engine, seq, kind: "usage", data, ts?, genMs? }`；`data` 为引擎原始 usage JSON（字段因引擎而异，如 claude 的 `cache_read_input_tokens`、codex 的 `cached_input_tokens`、pi/omp 的 `cacheRead`）；`ts` 为宿主发射时刻 Unix 毫秒（SDK 0.3.8 起）；`genMs` 为宿主实测的生成窗口毫秒（SDK 0.3.15 起，仅 `usage`/`done` 事件携带，工具执行与等待不计入） | `events` |
 | `usage://done`（SDK 0.3.8 起） | 同上形状，`kind: "done"`；`data.usage` 携带该轮最终用量——claude/grok 等不发独立 usage 事件的引擎只经此上报，其它引擎用作轮结束信号；`genMs` 为该轮生成窗口合计 | `events` |
-| `session://activated`（SDK 0.3.8 起） | `{ engine, sessionId }`；pending 标签 `sessionId` 为 null，无活动标签两者皆 null | `events` |
+| `session://activated`（SDK 0.3.8 起；`provider` / `model` 自 0.3.21 起） | `{ engine, sessionId, provider, model }`；`provider` 为会话所用渠道 id，引擎使用自身配置时为 null；`model` 为选择器（如 `deepseek/deepseek-flash`），CLI 默认时为 null；pending 标签 `sessionId` 为 null，无活动标签全为 null | `events` |
+| `session://selection-changed`（SDK 0.3.21 起） | 已激活会话切换渠道或模型；payload 同上，`session://activated` 的保留值同步更新 | `events` |
 | `composer://draft` | `{ text }`；草稿变化/清空/会话切换均发射 | `events` |
 
 SDK 0.4.2 起，`RuntimeSwitchEvent` 包含必填 `switchId`，同一次启动的 `beforeSwitch` 与 `afterSwitch` 共享此身份。插件应同时核对切换身份与原生命周期，不能让停用前的迟到完成覆盖重新启用后的切换状态。

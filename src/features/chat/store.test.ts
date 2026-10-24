@@ -163,7 +163,12 @@ describe("per-session composer selection", () => {
       useChatStore.getState().startNewChat(WS);
 
       useChatStore.getState().setActiveEngine("claude");
-      expect(seen.at(-1)).toEqual({ engine: "claude", sessionId: null });
+      expect(seen.at(-1)).toEqual({
+        engine: "claude",
+        sessionId: null,
+        provider: null,
+        model: null,
+      });
 
       // 已经是该引擎：不重复广播（避免插件被无意义的重复事件打扰）
       const afterRetarget = seen.length;

@@ -19,9 +19,25 @@ export const USAGE_UPDATED_TOPIC = "usage://updated";
  *  others. */
 export const USAGE_DONE_TOPIC = "usage://done";
 
-/** Active-session switches (SDK 0.3.8): `{ engine, sessionId }`; a pending
- *  tab reports sessionId null, clearing all tabs reports both null. */
+/** Active-session switches (SDK 0.3.8, selection since 0.3.21):
+ *  `{ engine, sessionId, provider, model }`; a pending tab reports sessionId
+ *  null, clearing all tabs reports everything null. `provider` is the channel
+ *  id the session runs with, or null when the engine uses its own settings;
+ *  `model` is the picker's selector (e.g. `deepseek/deepseek-flash`), or null
+ *  for the CLI default. */
 export const SESSION_ACTIVATED_TOPIC = "session://activated";
+
+/** Provider/model changed for the session that is already active (SDK 0.3.21).
+ *  Same payload as `session://activated`, so consumers can merge both: the
+ *  activation event is the baseline, this one keeps it current. */
+export const SESSION_SELECTION_CHANGED_TOPIC = "session://selection-changed";
+
+/** What the active session runs: the selected channel (null = the engine's
+ *  own settings) and the model selector the picker spells (null = CLI default). */
+export interface SessionSelection {
+  provider: string | null;
+  model: string | null;
+}
 
 /** Host→plugin topic carrying the composer's in-progress draft (plan §5.2). */
 export const COMPOSER_DRAFT_TOPIC = "composer://draft";
@@ -36,6 +52,9 @@ export const COMPOSER_DRAFT_TOPIC = "composer://draft";
  * otherwise never learn the active session/engine, and the SDK exposes no
  * getter to ask for it. Replay is idempotent for consumers (the same value
  * they would have received live); every other topic stays fire-and-forget.
+ * A `session://selection-changed` for the same session rewrites this retained
+ * payload, so a plugin that loads after a model/channel switch still replays
+ * the current selection rather than the activation-time one.
  */
 const RETAINED_TOPICS = new Set<string>([SESSION_ACTIVATED_TOPIC]);
 const retained = new Map<string, unknown>();
@@ -147,6 +166,38 @@ export function bridgeUsageEvents(): void {
  *  from activateTab/selectSession). Not part of bridgeUsageEvents: the source
  *  is the store, not the engine stream. Retained, so plugins that finish
  *  loading later still receive the latest value when they subscribe. */
-export function emitSessionActivated(engine: string | null, sessionId: string | null): void {
-  pluginBus.emit(SESSION_ACTIVATED_TOPIC, { engine, sessionId });
+export function emitSessionActivated(
+  engine: string | null,
+  sessionId: string | null,
+  selection: Partial<SessionSelection> = {},
+): void {
+  pluginBus.emit(SESSION_ACTIVATED_TOPIC, {
+    engine,
+    sessionId,
+    provider: selection.provider ?? null,
+    model: selection.model ?? null,
+  });
+}
+
+/** Emit a provider/model change for the already-active session. The retained
+ *  activation payload is kept in step, so a plugin that loads after the change
+ *  still replays the current selection instead of a stale one. */
+export function emitSessionSelectionChanged(
+  engine: string,
+  sessionId: string | null,
+  selection: SessionSelection,
+): void {
+  const payload = {
+    engine,
+    sessionId,
+    provider: selection.provider ?? null,
+    model: selection.model ?? null,
+  };
+  const current = retained.get(SESSION_ACTIVATED_TOPIC) as
+    | { engine?: unknown; sessionId?: unknown }
+    | undefined;
+  if (current?.engine === engine && current.sessionId === sessionId) {
+    retained.set(SESSION_ACTIVATED_TOPIC, payload);
+  }
+  pluginBus.emit(SESSION_SELECTION_CHANGED_TOPIC, payload);
 }

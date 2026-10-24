@@ -32,6 +32,7 @@ import {
   setSessionSourcesChangedCallback,
 } from "@/features/plugins/runtime/session-source";
 import { emitSessionActivated } from "@/features/plugins/runtime/events";
+import { sessionSelection } from "./selection";
 import {
   dispatchSessionClosed,
   dispatchSessionRestored,
@@ -417,7 +418,11 @@ export function createSessionActions(
         set((s) => ({ restoredSessionKeys: { ...s.restoredSessionKeys, [key]: true } }));
         dispatchSessionRestored({ ...sessionLifecycleBase(get, { engine, sessionId, workspacePath }), sessionId });
       }
-      emitSessionActivated(engine, sessionId);
+      emitSessionActivated(
+        engine,
+        sessionId,
+        sessionSelection(get(), engine, sessionId, workspacePath),
+      );
       const existing = get().bySession[key];
       if (existing && existing.messages.length > 0) return;
       patchSession(set, key, { loading: true });

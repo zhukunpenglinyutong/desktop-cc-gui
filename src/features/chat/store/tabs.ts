@@ -9,6 +9,7 @@ import {
 } from "./persistence";
 import { moveRetryingFlag, moveStreamingFlag } from "./stream";
 import { emitSessionActivated } from "@/features/plugins/runtime/events";
+import { sessionSelection } from "./selection";
 import { dispatchSessionClosed } from "@/features/plugins/runtime/hooks";
 import { clearScopedContributions, sessionLifecycleBase } from "./lifecycle";
 import { getConversationModeState } from "@/features/plugins/conversation/state";
@@ -87,7 +88,11 @@ export function createTabActions(
           : { active: tab },
       );
       persistTabs(get().openTabs, tab);
-      emitSessionActivated(tab.engine, null);
+      emitSessionActivated(
+        tab.engine,
+        null,
+        sessionSelection(get(), tab.engine, null, tab.workspacePath),
+      );
     }
   }
 
@@ -375,7 +380,19 @@ export function createTabActions(
           retryingByKey: moveRetryingFlag(s.retryingByKey, oldKey, newKey),
         };
       });
-      if (retargets) emitSessionActivated(engine, null);
+      if (retargets) {
+        const nextActive = get().active;
+        emitSessionActivated(
+          engine,
+          null,
+          sessionSelection(
+            get(),
+            engine,
+            null,
+            nextActive?.workspacePath ?? beforeActive.workspacePath,
+          ),
+        );
+      }
     },
   };
 }

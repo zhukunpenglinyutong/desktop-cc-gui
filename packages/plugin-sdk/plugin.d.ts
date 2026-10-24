@@ -6,7 +6,7 @@
  * 插件仓用法（包未发布 npm 前的过渡方案）：复制本文件为插件仓的
  * `src/ccgui-plugin.d.ts`，首行版本戳必须与所用宿主 SDK 一致。
  *
- * @ccgui/plugin-sdk v0.3.20
+ * @ccgui/plugin-sdk v0.3.21
  */
 
 /** 宿主实现的 SDK 契约版本。 */
@@ -620,8 +620,12 @@ export interface PluginContext {
      *  `usage://done`（0.3.8 起，引擎 done 事件透传，data.usage 携带
      *  该轮最终用量——claude/grok 等只经 Done 上报用量的引擎由此对插件
      *  可见）；`session://activated`（0.3.8 起，活动会话切换，payload
-     *  `{ engine, sessionId }`，pending 标签 sessionId 为 null，无活动
-     *  标签时两者皆 null）；`composer://draft`（payload { text }，草稿
+     *  `{ engine, sessionId, provider, model }`——provider/model 自 0.3.21 起：
+     *  provider 为会话所用渠道 id，引擎使用自身配置时为 null；model 为选择器
+     *  （如 `deepseek/deepseek-flash`），CLI 默认时为 null；pending 标签
+     *  sessionId 为 null，无活动标签时全为 null）；`session://selection-changed`
+     *  （0.3.21 起，已激活会话切换渠道或模型，payload 同上，activated 的
+     *  保留值同步更新）；`composer://draft`（payload { text }，草稿
      *  变化/清空/会话切换均发射）。
      *
      *  `genMs`（0.3.15 起，仅 `usage`/`done` 携带）：该报告对应的宿主实测

@@ -1,5 +1,11 @@
 # @ccgui/plugin-sdk changelog
 
+## 0.3.21 — 2026-10-22
+
+- `session://activated` 的 payload 增加 `provider` 与 `model`：`provider` 是会话实际使用的渠道 id，引擎使用自身配置（如 pi 的 `auth.json`）时为 `null`——宿主哨兵 `__local_settings_json__` 不会外泄；`model` 是选择器（如 `deepseek/deepseek-flash`），CLI 默认时为 `null`。纯增量字段，旧插件忽略即可。
+- 新增 `session://selection-changed`（权限 `events`）：已激活会话切换渠道或模型时发出，payload 与 `session://activated` 相同。`session://activated` 的保留值同步更新，迟加载插件重放到的仍是当前选择。
+- 余额 / 额度、模型切换与用量统计类插件可据此确定当前供应商与模型选择，不再需要读各引擎的本地配置文件猜测。
+
 ## 0.3.20 — 2026-10-06（共通兼容线：CCB + Live2D 通用能力，叠加上游 0.3.16–0.3.19）
 
 本条目把两批来源能力收敛为一份自洽的公共契约：CCB 通用层（截至 0.4.2 的会话/回合/切换 hooks、标准化运行时事件、内部提示贡献与 CAS 文档存储）与 Live2D 通用层（0.4.3 的常驻悬浮层、同源资源路由与目录授权）。两批能力叠加上游已发布的 `0.3.16`–`0.3.19`（`ctx.workspaces.list` / `worktrees.create|remove` / `ctx.window` / `ctx.models` / `sessions.startRun`）合并发布为 `0.3.20`：`0.3.17`–`0.3.19` 已被上游占用，本线不再复用；下方 0.4.0–0.4.3 条目是来源演进记录，不是本分支的版本号。CCB 与 Live2D 插件应以 `sdkVersion: ">=0.3.20"` 声明最低版本——`0.3.17`–`0.3.19` 的宿主没有这些能力，声明过低会让握手放行不存在的 API；允许更高版本宿主通过，不要求与宿主精确同版。
