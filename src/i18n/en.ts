@@ -1242,6 +1242,7 @@ export const en: Messages = {
 
     langZh: "中文",
     langEn: "English",
+    langKo: "한국어",
     grantedRoots: "Granted Directories",
     grantedRootsDesc:
       "Directories outside workspaces that you explicitly allowed",

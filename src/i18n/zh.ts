@@ -1188,6 +1188,7 @@ export const zh = {
 
     langZh: "中文",
     langEn: "English",
+    langKo: "한국어",
     grantedRoots: "已授权目录",
     grantedRootsDesc: "工作区之外、经你确认允许访问的目录",
     revokeAccess: "撤销授权",

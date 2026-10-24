@@ -395,6 +395,7 @@ function AppearanceCard({
           >
             <SelectItem id="zh">{t("settings.langZh")}</SelectItem>
             <SelectItem id="en">{t("settings.langEn")}</SelectItem>
+            <SelectItem id="ko">{t("settings.langKo")}</SelectItem>
           </Select>
         </SettingsRow>
         <ZoomRow />

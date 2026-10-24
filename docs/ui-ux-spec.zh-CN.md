@@ -50,7 +50,8 @@
 
 ### 2.3 文案与无障碍
 
-- 用户可见文案一律从 `src/i18n/zh.ts`、`src/i18n/en.ts` 取，两个语言文件同步新增 key，组件里不写死中文。
+- 用户可见文案一律从 `src/i18n/zh.ts`、`src/i18n/en.ts`、`src/i18n/ko.ts` 取，三个语言文件同步新增 key，组件里不写死中文。
+- **独立语言选项**：设置 → 通用的语言菜单保留「中文」「English」，第三项为「한국어」。切换即时应用并保存到后端设置与启动缓存；重启恢复所选语言，`html lang` 同步为 `zh-CN` / `en` / `ko`。韩语不能覆盖 English 资源或依赖翻译 overlay 插件。启动 watchdog 在主模块加载前按同一语言缓存更新占位文案、`html lang` 与失败恢复文案；独立经典脚本保留最小三语文案，以免主模块加载失败时无法恢复。存储不可用或缓存未知时回落中文。
 - 图标按钮必须同时有 `aria-label`（可访问名）和 `title`（指针悬停）。可访问名用**动作名**（"刷新"、"重新加载"），不用"点这里"。
 - 需要解释性文案、快捷键或多行说明时才用 `Tooltip`（`src/components/base/tooltip/tooltip.tsx`）：它基于 react-aria，trigger 必须是 react-aria 组件或包在 `Focusable` 里的元素；触屏上不可达，所以**关键信息不能只放在 tooltip 里**。
 - 原生 `title` 提示由 `NativeTitleTooltip`（`src/components/base/tooltip/native-title-tooltip.tsx`，挂在 `App.tsx`）全局接管：它监听 `document.body`（覆盖 portal 到 body 的右键菜单、对话框），把 `title` 文案搬进 `data-native-tooltip` 并置空原属性，改渲染与 `TooltipContent` 同一视觉的气泡（500ms 延迟、150ms 进入过渡、`z-[100001]`）。**气泡必须高于 react-aria 自己的弹层**：它给 Popover 的默认 `z-index` 是 100000（实测），原值 `z-[130]` 只考虑了对话框 z-110 / 右键菜单 z-120，于是弹层内部的 `title`（例如状态栏分支列表的行）悬停时气泡被弹层整个盖住，而弹层外的同类元素看起来完全正常——排查时先量两者的 `z-index` 与「气泡中心最上层元素」再改样式。它同时把文案复制为 `aria-description` 保住读屏描述。写控件时仍直接写 `title` 即可，不要手动操作 `data-native-tooltip`；Esc / 滚动 / 按下 / 目标卸载都会收起。
