@@ -243,7 +243,8 @@ const feedback = useRunningFeedback(store.loading);
 ## 5. 加载、空状态与错误
 
 - 整块区域加载：`CenteredSpinner`；有内容但空：`EmptyState`（都来自 `src/components/base/empty-state.tsx`）。列表局部加载用行内文字或 `Loader2`，不要动辄整屏转圈。
-- 行内错误：`role="alert"` 容器 + `text-text-error-primary` 文案 + 明确的下一步（重试 / 关闭）。
+- 行内错误：`role="alert"` 容器 + `text-text-error-primary` 文案 + 明确的下一步（重试 / 关闭）。文件树里**任何已展开目录**（含子目录）读取失败都按此在**该行下方**渲染（`FileTreeBody.tsx` 读 `dirErrors[dir]`，行内缩进对齐子级），不再只有根级报错可见。
+- **链接（junction / 符号链接）在文件树中的表达**：链接条目按**目标类型**显示（目录链接可展开、文件链接可打开），右侧附**最小链接角标**（链接图标，`title` 为解析后的真实目标路径）；**断链**（目标不存在）显示「目标不存在」角标（`Unlink2` 图标 + 文案，warning 色），该行不可展开/打开。链接判定与目标解析在后端 `list_dir` 完成（`DirEntry.isLink` / `linkBroken` / `linkTarget`）。
 - 警告与失败要区分：可恢复的失败给重试入口，不可恢复的（未安装、平台不支持）给说明或跳转，不给假按钮。
 - **远程桥刻意拒绝的命令不给假按钮**：被 `src-tauri/src/web/dispatch.rs` 明确排除的远程命令（如目录授权 `grant_root`，注释写明远端不得扩大文件系统授权范围），对应入口在 `isWeb` 下不渲染按钮、不显示“将授权…”预览，改为原因说明并只保留拒绝（`GrantCard.tsx`、`chat.grantWebUnavailable`）；桌面端保持完整动作。
 - 进度类反馈（安装、更新、同步）用 `Loader2` / 文字百分比表达过程，与 [§4.1](#41-刷新--重新加载转圈--对号) 的刷新反馈互不替代。

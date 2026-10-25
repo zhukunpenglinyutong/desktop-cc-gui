@@ -26,6 +26,27 @@ const childNode: VisibleNode = {
   depth: 1,
 };
 
+/** Directory link whose target resolves (junction / symlink). */
+const linkNode: VisibleNode = {
+  ...rootNode,
+  name: "coding-workflow",
+  path: "/ws/desktop-cc-gui/.claude/skills/coding-workflow",
+  depth: 2,
+  expanded: false,
+  isLink: true,
+  linkBroken: false,
+  linkTarget: "D:\\AI\\my-skills\\skills\\coding-workflow",
+};
+
+/** Dangling link: target gone, so it can neither be opened nor expanded. */
+const brokenLinkNode: VisibleNode = {
+  ...linkNode,
+  name: "dangling",
+  path: "/ws/desktop-cc-gui/.claude/skills/dangling",
+  linkBroken: true,
+  linkTarget: null,
+};
+
 describe("TreeRow tree refresh", () => {
   let container: HTMLDivElement;
   let root: Root;
@@ -37,6 +58,8 @@ describe("TreeRow tree refresh", () => {
     refreshTree.mockClear();
     onToggleDir.mockClear();
     onMention.mockClear();
+    onOpenFile.mockClear();
+    onSelectDir.mockClear();
     useFilesStore.setState({ refreshTree });
     container = document.createElement("div");
     document.body.appendChild(container);
@@ -48,6 +71,9 @@ describe("TreeRow tree refresh", () => {
     container.remove();
   });
 
+  const onOpenFile = vi.fn();
+  const onSelectDir = vi.fn();
+
   function render(node: VisibleNode, isRoot: boolean) {
     act(() => {
       root.render(
@@ -56,8 +82,8 @@ describe("TreeRow tree refresh", () => {
           selected={false}
           isRoot={isRoot}
           onToggleDir={onToggleDir}
-          onOpenFile={() => {}}
-          onSelectDir={() => {}}
+          onOpenFile={onOpenFile}
+          onSelectDir={onSelectDir}
           onContextMenu={() => {}}
           onMention={onMention}
           mentionLabel="添加到聊天"
@@ -90,5 +116,36 @@ describe("TreeRow tree refresh", () => {
     });
     expect(refreshTree).toHaveBeenCalledTimes(1);
     expect(onToggleDir).not.toHaveBeenCalled();
+  });
+
+  it("a directory link renders a badge whose title is the resolved target", () => {
+    render(linkNode, false);
+    // A backslash path cannot go through a CSS attribute selector (it would
+    // be read as an escape), so compare the title attribute directly.
+    const badge = [...container.querySelectorAll("[title]")].find(
+      (el) => el.getAttribute("title") === linkNode.linkTarget,
+    );
+    expect(badge).not.toBeNull();
+    // Resolved link: opens/expands normally, so it is still clickable.
+    act(() => {
+      container.querySelector<HTMLButtonElement>("button")?.dispatchEvent(
+        new MouseEvent("click", { bubbles: true }),
+      );
+    });
+    expect(onToggleDir).toHaveBeenCalledWith(linkNode.path);
+  });
+
+  it("a dangling link is inert: dead-target badge, click does nothing", () => {
+    render(brokenLinkNode, false);
+    // The badge explains why: "target missing" (zh) in warning color.
+    expect(container.textContent).toContain("目标不存在");
+    act(() => {
+      container.querySelector<HTMLButtonElement>("button")?.dispatchEvent(
+        new MouseEvent("click", { bubbles: true }),
+      );
+    });
+    expect(onToggleDir).not.toHaveBeenCalled();
+    expect(onOpenFile).not.toHaveBeenCalled();
+    expect(onSelectDir).not.toHaveBeenCalled();
   });
 });
