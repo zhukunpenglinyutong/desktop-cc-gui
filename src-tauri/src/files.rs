@@ -117,6 +117,43 @@ pub(crate) fn ensure_allowed(path: &str, db: &crate::db::Db) -> Result<PathBuf, 
     }
 }
 
+/// Like `ensure_allowed`, but returns the path **lexically** (as given)
+/// instead of the canonical target. The confinement check is identical —
+/// the canonicalized path must sit inside an allowed root — so a link to an
+/// outside target is still rejected. Duplicate/paste use this so a link's
+/// copy lands next to the link itself, under the name the user clicked,
+/// while the *content* still follows the link target.
+fn ensure_allowed_lexical(path: &str, db: &crate::db::Db) -> Result<PathBuf, String> {
+    let trimmed = path.trim();
+    if trimmed.is_empty() {
+        return Err("empty path".to_string());
+    }
+    let resolved = canonicalize_lenient(Path::new(trimmed))?;
+    let roots = allowed_roots(db);
+    if roots.iter().any(|root| resolved.starts_with(root)) {
+        Ok(PathBuf::from(trimmed))
+    } else {
+        Err(format!(
+            "path is outside the registered workspaces: {trimmed}"
+        ))
+    }
+}
+
+/// True when a link's canonical target stays inside the allowed roots.
+/// `ensure_allowed` guards the path received over IPC, but a link *inside*
+/// a root can point *outside* it (`docs -> ~/.ssh`); every site that
+/// follows a link (search descend/read, recursive copy, file index) must
+/// gate on this or it becomes an arbitrary-read/copy primitive. A link
+/// whose target cannot be canonicalized (dangling) is not allowed.
+fn link_target_allowed(path: &Path, roots: &[PathBuf]) -> bool {
+    // Compare in canonical form: `roots` come from `canonicalize_lenient`,
+    // which on Windows yields verbatim paths, so the target must NOT be
+    // prefix-stripped here.
+    std::fs::canonicalize(path)
+        .map(|target| roots.iter().any(|root| target.starts_with(root)))
+        .unwrap_or(false)
+}
+
 /// Windows `canonicalize` returns verbatim paths (`\\?\C:\...`); strip the
 /// prefix so granted roots are stored and displayed in normal form.
 /// Comparisons re-canonicalize both sides, so stripping is lossless here.
@@ -376,7 +413,7 @@ pub fn trash_item(db: tauri::State<'_, Arc<crate::db::Db>>, path: String) -> Res
     let target = ensure_allowed(&path, &db)?;
     trash::delete(&target).map_err(|e| format!("trash {}: {e}", target.display()))
 }
-#[derive(Serialize)]
+#[derive(Serialize, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct FileOpResult {
     pub path: String,
@@ -406,15 +443,21 @@ fn copy_destination_name(source: &Path, is_dir: bool, counter: u32) -> Result<St
 /// Recursively copy `src` into `dst`, **following links** (copying the
 /// target's content) and guarding against cycles: a link that points back at
 /// an ancestor would otherwise recurse forever. `visited` holds the identity
-/// (canonical path) of every directory already copied on this branch.
+/// (canonical path) of every directory on the current recursion **stack** —
+/// it is removed on the way out, so two sibling links to the same directory
+/// (a DAG, not a cycle) are both copied. Links whose canonical target
+/// escapes `allowed` are refused: copying them would smuggle outside-root
+/// content into the workspace.
 fn copy_dir_recursive(
     src: &Path,
     dst: &Path,
     visited: &mut HashSet<PathBuf>,
+    allowed: &[PathBuf],
 ) -> Result<(), String> {
     let identity = std::fs::canonicalize(src).unwrap_or_else(|_| src.to_path_buf());
-    if !visited.insert(identity) {
-        // Already inside this copy: a link cycle. Stop descending here.
+    if !visited.insert(identity.clone()) {
+        // An ancestor on this stack has the same identity: a link cycle.
+        // Stop descending here.
         return Ok(());
     }
     std::fs::create_dir_all(dst).map_err(|e| format!("mkdir {}: {e}", dst.display()))?;
@@ -430,15 +473,22 @@ fn copy_dir_recursive(
         if is_link && !src_path.exists() {
             return Err(format!("broken link {}", src_path.display()));
         }
+        if is_link && !link_target_allowed(&src_path, allowed) {
+            return Err(format!(
+                "link target is outside the registered workspaces: {}",
+                src_path.display()
+            ));
+        }
         // `is_dir()` follows links, so a directory link copies the target's
         // content (the user chose "follow" semantics).
         if src_path.is_dir() {
-            copy_dir_recursive(&src_path, &dst_path, visited)?;
+            copy_dir_recursive(&src_path, &dst_path, visited, allowed)?;
         } else {
             std::fs::copy(&src_path, &dst_path)
                 .map_err(|e| format!("copy {}: {e}", src_path.display()))?;
         }
     }
+    visited.remove(&identity);
     Ok(())
 }
 
@@ -450,6 +500,7 @@ fn copy_item_into_dir(
     is_dir: bool,
     target_dir: &Path,
     prefer_original_name: bool,
+    allowed: &[PathBuf],
 ) -> Result<PathBuf, String> {
     // `starts_with` is lexical, so a symlinked source would dodge the
     // self-paste guard; compare canonical paths to close that hole.
@@ -476,7 +527,7 @@ fn copy_item_into_dir(
     }
     if is_dir {
         let mut visited = HashSet::new();
-        copy_dir_recursive(source, &destination, &mut visited)?;
+        copy_dir_recursive(source, &destination, &mut visited, allowed)?;
     } else {
         // `fs::copy` follows links: a file link copies the target's content.
         std::fs::copy(source, &destination)
@@ -485,12 +536,12 @@ fn copy_item_into_dir(
     Ok(destination)
 }
 
-#[tauri::command]
-pub fn duplicate_item(
-    db: tauri::State<'_, Arc<crate::db::Db>>,
-    path: String,
-) -> Result<FileOpResult, String> {
-    let source = ensure_allowed(&path, &db)?;
+/// Sync body of `duplicate_item`, split out so tests can call it without a
+/// Tauri `State`. Uses the **lexical** path: the copy is created next to the
+/// link the user clicked and named after it (`link copy`, not
+/// `target copy`), while the content still follows the link target.
+fn duplicate_item_blocking(db: &crate::db::Db, path: &str) -> Result<FileOpResult, String> {
+    let source = ensure_allowed_lexical(path, db)?;
     if std::fs::symlink_metadata(&source)
         .map(|m| m.file_type().is_symlink())
         .unwrap_or(false)
@@ -504,7 +555,45 @@ pub fn duplicate_item(
     let parent = source
         .parent()
         .ok_or_else(|| format!("invalid path {}", source.display()))?;
-    let destination = copy_item_into_dir(&source, is_dir, parent, false)?;
+    let allowed = allowed_roots(db);
+    let destination = copy_item_into_dir(&source, is_dir, parent, false, &allowed)?;
+    Ok(FileOpResult {
+        path: destination.to_string_lossy().into_owned(),
+        is_dir,
+    })
+}
+
+#[tauri::command]
+pub fn duplicate_item(
+    db: tauri::State<'_, Arc<crate::db::Db>>,
+    path: String,
+) -> Result<FileOpResult, String> {
+    duplicate_item_blocking(&db, &path)
+}
+
+/// Sync body of `paste_item`. Both paths stay **lexical** so the copy lands
+/// exactly where the user pointed (and the tree reveal finds it), while
+/// link content still follows the target.
+fn paste_item_blocking(
+    db: &crate::db::Db,
+    source: &str,
+    target_dir: &str,
+) -> Result<FileOpResult, String> {
+    let source = ensure_allowed_lexical(source, db)?;
+    let dir = ensure_allowed_lexical(target_dir, db)?;
+    if !dir.is_dir() {
+        return Err(format!("{} is not a directory", dir.display()));
+    }
+    if std::fs::symlink_metadata(&source)
+        .map(|m| m.file_type().is_symlink())
+        .unwrap_or(false)
+        && !source.exists()
+    {
+        return Err(format!("broken link {}", source.display()));
+    }
+    let is_dir = source.is_dir();
+    let allowed = allowed_roots(db);
+    let destination = copy_item_into_dir(&source, is_dir, &dir, true, &allowed)?;
     Ok(FileOpResult {
         path: destination.to_string_lossy().into_owned(),
         is_dir,
@@ -517,24 +606,7 @@ pub fn paste_item(
     source: String,
     target_dir: String,
 ) -> Result<FileOpResult, String> {
-    let source = ensure_allowed(&source, &db)?;
-    let dir = ensure_allowed(&target_dir, &db)?;
-    if !dir.is_dir() {
-        return Err(format!("{} is not a directory", dir.display()));
-    }
-    if std::fs::symlink_metadata(&source)
-        .map(|m| m.file_type().is_symlink())
-        .unwrap_or(false)
-        && !source.exists()
-    {
-        return Err(format!("broken link {}", source.display()));
-    }
-    let is_dir = source.is_dir();
-    let destination = copy_item_into_dir(&source, is_dir, &dir, true)?;
-    Ok(FileOpResult {
-        path: destination.to_string_lossy().into_owned(),
-        is_dir,
-    })
+    paste_item_blocking(&db, &source, &target_dir)
 }
 
 /// Case-insensitive substring check. ASCII haystack+needle take an
@@ -565,6 +637,10 @@ fn search_text_blocking(
     }
     let needle_lower = needle.to_lowercase();
     let mut hits = Vec::new();
+    // Links are only followed when their canonical target stays inside the
+    // allowed roots — otherwise a `docs -> ~/.ssh` link would turn search
+    // into an arbitrary-read primitive.
+    let roots = allowed_roots(db);
     // Identity of every directory already visited, so a link cycle does not
     // loop forever (links are followed by `read_dir`).
     let mut visited: HashSet<PathBuf> = HashSet::new();
@@ -592,6 +668,9 @@ fn search_text_blocking(
             // never fires. For a link, stat the target explicitly so directory
             // links are descended into; otherwise they are invisible to search.
             let is_link = entry.file_type().map(|t| t.is_symlink()).unwrap_or(false);
+            if is_link && !link_target_allowed(&p, &roots) {
+                continue;
+            }
             let meta = if is_link {
                 std::fs::metadata(&p)
             } else {
@@ -660,6 +739,10 @@ fn list_file_index_blocking(
 ) -> Result<Vec<FileIndexEntry>, String> {
     let root = ensure_allowed(path, db)?;
     let mut out: Vec<FileIndexEntry> = Vec::new();
+    // Links are only followed when their canonical target stays inside the
+    // allowed roots; an escaping link is pruned before the walker descends
+    // into it, so outside names never reach the index.
+    let roots = allowed_roots(db);
     let walker = ignore::WalkBuilder::new(&root)
         .hidden(true)
         .ignore(!include_ignored)
@@ -671,6 +754,9 @@ fn list_file_index_blocking(
         // detects cycles itself (an Err entry is skipped below).
         .follow_links(true)
         .filter_entry(move |e| {
+            if e.path_is_symlink() && !link_target_allowed(e.path(), &roots) {
+                return false;
+            }
             if !e.path().is_dir() {
                 return true;
             }
@@ -898,7 +984,7 @@ mod tests {
 
     #[test]
     fn copy_follows_directory_link_and_copies_target_content() {
-        let (scratch, _db, _root) = link_scratch();
+        let (scratch, db, _root) = link_scratch();
         let target = scratch.0.join("real");
         std::fs::create_dir_all(&target).unwrap();
         std::fs::write(target.join("f.txt"), b"content").unwrap();
@@ -906,8 +992,181 @@ mod tests {
         require_dir_link(&target, &link, "copy_follows_directory_link_and_copies_target_content");
 
         // Duplicating a directory link copies the target's content.
-        let dest = copy_item_into_dir(&link, true, &scratch.0, false).unwrap();
+        let allowed = allowed_roots(&db);
+        let dest = copy_item_into_dir(&link, true, &scratch.0, false, &allowed).unwrap();
         assert!(dest.is_dir());
+        assert_eq!(std::fs::read(dest.join("f.txt")).unwrap(), b"content");
+    }
+
+    /// A scratch directory that is NOT registered as an allowed root: the
+    /// "outside" tree a malicious link would point at.
+    fn outside_scratch() -> Scratch {
+        Scratch::new()
+    }
+
+    #[test]
+    fn search_text_does_not_read_through_outside_root_link() {
+        let (scratch, db, root) = link_scratch();
+        let outside = outside_scratch();
+        std::fs::write(outside.0.join("secret.txt"), b"needle in the outside\n").unwrap();
+        let link = scratch.0.join("docs");
+        require_dir_link(&outside.0, &link, "search_text_does_not_read_through_outside_root_link");
+
+        let hits = search_text_blocking(&db, &root, "needle").unwrap();
+        assert!(
+            hits.is_empty(),
+            "a link to an outside-root tree must not be searched"
+        );
+    }
+
+    #[test]
+    fn list_file_index_does_not_list_outside_root_link() {
+        let (scratch, db, root) = link_scratch();
+        let outside = outside_scratch();
+        std::fs::write(outside.0.join("secret.txt"), b"x").unwrap();
+        let link = scratch.0.join("docs");
+        require_dir_link(&outside.0, &link, "list_file_index_does_not_list_outside_root_link");
+
+        let index = list_file_index_blocking(&db, &root, false).unwrap();
+        assert!(
+            !index.iter().any(|e| e.rel.starts_with("docs")),
+            "an outside-root link must be pruned from the index"
+        );
+    }
+
+    #[test]
+    fn duplicate_and_paste_reject_link_to_outside_root() {
+        let (scratch, db, _root) = link_scratch();
+        let outside = outside_scratch();
+        std::fs::write(outside.0.join("secret.txt"), b"secret").unwrap();
+        let dir_link = scratch.0.join("docs");
+        require_dir_link(&outside.0, &dir_link, "duplicate_and_paste_reject_link_to_outside_root");
+        // A file link pointing outside the roots is equally refused.
+        let file_link = scratch.0.join("evil.txt");
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(outside.0.join("secret.txt"), &file_link).unwrap();
+        #[cfg(windows)]
+        std::os::windows::fs::symlink_file(outside.0.join("secret.txt"), &file_link).unwrap();
+
+        for source in [&dir_link, &file_link] {
+            let src = source.to_string_lossy().to_string();
+            let err = duplicate_item_blocking(&db, &src).unwrap_err();
+            assert!(
+                err.starts_with("path is outside the registered workspaces"),
+                "duplicate of an outside-root link must be refused, got: {err}"
+            );
+            let target = scratch.0.to_string_lossy().to_string();
+            let err = paste_item_blocking(&db, &src, &target).unwrap_err();
+            assert!(
+                err.starts_with("path is outside the registered workspaces"),
+                "paste of an outside-root link must be refused, got: {err}"
+            );
+        }
+
+        // A directory that merely *contains* an outside-root link cannot be
+        // copied either: the recursive copy refuses the escaping entry.
+        let holder = scratch.0.join("holder");
+        std::fs::create_dir_all(&holder).unwrap();
+        let nested = holder.join("docs");
+        require_dir_link(&outside.0, &nested, "nested outside-root link");
+        let err = duplicate_item_blocking(&db, &holder.to_string_lossy()).unwrap_err();
+        assert!(
+            err.contains("outside the registered workspaces"),
+            "copying a tree with an escaping link must fail, got: {err}"
+        );
+    }
+
+    #[test]
+    fn duplicate_link_places_copy_next_to_link_with_link_name() {
+        let (scratch, db, root) = link_scratch();
+        let sub = scratch.0.join("sub");
+        std::fs::create_dir_all(&sub).unwrap();
+        let target = sub.join("real");
+        std::fs::create_dir_all(&target).unwrap();
+        std::fs::write(target.join("f.txt"), b"content").unwrap();
+        let dir_link = sub.join("linkdir");
+        require_dir_link(&target, &dir_link, "duplicate_link_places_copy_next_to_link_with_link_name");
+        // A file link keeps its own name/extension too.
+        let file_target = sub.join("target.txt");
+        std::fs::write(&file_target, b"file content").unwrap();
+        let file_link = sub.join("link.txt");
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(&file_target, &file_link).unwrap();
+        #[cfg(windows)]
+        std::os::windows::fs::symlink_file(&file_target, &file_link).unwrap();
+
+        // Duplicating the directory link: the copy must be a sibling of the
+        // LINK (named after it), not of the canonical target.
+        let result = duplicate_item_blocking(&db, &dir_link.to_string_lossy()).unwrap();
+        let dest = PathBuf::from(&result.path);
+        assert_eq!(dest.parent().unwrap(), sub, "copy must sit next to the link");
+        assert!(
+            dest.file_name().unwrap().to_string_lossy().starts_with("linkdir"),
+            "copy must be named after the link, not the target: {}",
+            dest.display()
+        );
+        assert_eq!(std::fs::read(dest.join("f.txt")).unwrap(), b"content");
+
+        // File link: `link copy.txt` next to the link, target's content.
+        let result = duplicate_item_blocking(&db, &file_link.to_string_lossy()).unwrap();
+        let dest = PathBuf::from(&result.path);
+        assert_eq!(dest.parent().unwrap(), sub);
+        assert!(
+            dest.file_name().unwrap().to_string_lossy().starts_with("link copy"),
+            "file copy must be named after the link: {}",
+            dest.display()
+        );
+        assert_eq!(std::fs::read(&dest).unwrap(), b"file content");
+
+        // Paste into the tree root: destination is reported lexically so the
+        // tree reveal can find it.
+        let result =
+            paste_item_blocking(&db, &dir_link.to_string_lossy(), &root).unwrap();
+        let dest = PathBuf::from(&result.path);
+        assert_eq!(dest.parent().unwrap(), Path::new(&root));
+        assert_eq!(std::fs::read(dest.join("f.txt")).unwrap(), b"content");
+    }
+
+    #[test]
+    fn copy_copies_sibling_links_to_the_same_directory() {
+        let (scratch, db, _root) = link_scratch();
+        let src = scratch.0.join("src");
+        let real = src.join("real");
+        std::fs::create_dir_all(&real).unwrap();
+        std::fs::write(real.join("f.txt"), b"content").unwrap();
+        // Two sibling links pointing at the same directory: a DAG, not a
+        // cycle. Both must be copied — a global visited set would silently
+        // drop the second one.
+        let l1 = src.join("l1");
+        let l2 = src.join("l2");
+        require_dir_link(&real, &l1, "copy_copies_sibling_links_to_the_same_directory (l1)");
+        require_dir_link(&real, &l2, "copy_copies_sibling_links_to_the_same_directory (l2)");
+
+        let allowed = allowed_roots(&db);
+        let dest = copy_item_into_dir(&src, true, &scratch.0, false, &allowed).unwrap();
+        for name in ["real", "l1", "l2"] {
+            let copied = dest.join(name);
+            assert!(copied.is_dir(), "{name} must be copied: {}", dest.display());
+            assert_eq!(
+                std::fs::read(copied.join("f.txt")).unwrap(),
+                b"content",
+                "{name} must contain the target's content"
+            );
+        }
+    }
+
+    #[test]
+    fn copy_still_stops_link_cycles() {
+        let (scratch, db, _root) = link_scratch();
+        let src = scratch.0.join("src");
+        std::fs::create_dir_all(&src).unwrap();
+        std::fs::write(src.join("f.txt"), b"content").unwrap();
+        // Self-cycle: src/loop -> src. Must terminate (Ok) and copy the file.
+        let cycle = src.join("loop");
+        require_dir_link(&src, &cycle, "copy_still_stops_link_cycles");
+
+        let allowed = allowed_roots(&db);
+        let dest = copy_item_into_dir(&src, true, &scratch.0, false, &allowed).unwrap();
         assert_eq!(std::fs::read(dest.join("f.txt")).unwrap(), b"content");
     }
 }
