@@ -381,6 +381,25 @@ export interface SendResult {
   sessionId: string | null;
 }
 
+/** 会话分叉：`fork_session` 的返回。命令返回时分叉会话**已经落盘**（前缀转录本
+ *  写好 + `sessions` 行登记完成），前端直接按 `targetSessionId` 打开即可。 */
+export interface ForkPlan {
+  sourceSessionId: string;
+  sourceEngine: string;
+  /** 为分支分配的新会话 id（UUIDv4）。 */
+  targetSessionId: string;
+  /** 分叉点是否在来源末尾（完整轮次边界）。 */
+  atTip: boolean;
+  /** 分支保留的源记录条数（`usize::MAX` = 保留整个文件）。 */
+  keepRecords?: number;
+  sourceTitle: string;
+  /** 来源会话所属工作区。分支的 `sessions` 行是**按这个**写的，所以页签也必须
+   *  用它打开：否则两者不一致时，分支首轮会以别的工作区为 cwd 启动，
+   *  而引擎按 cwd 解析转录本，`--resume` 可能找不到分支文件。
+   *  可选是为了兼容旧后端（缺省时回退到调用方工作区）。 */
+  workspacePath?: string;
+}
+
 export interface ProviderSection {
   providers: Record<string, unknown>;
   current: string | null;
@@ -1561,6 +1580,21 @@ export const ipc = {
     invoke<void>("pin_session", { engine, sessionId, pinned }),
   renameSession: (engine: string, sessionId: string, title: string) =>
     invoke<void>("rename_session", { engine, sessionId, title }),
+  /** 会话分叉：**点击即落盘**——后端在这一步就把裁剪后的前缀写成分支转录本并
+   *  登记 `sessions` 行，返回的 `ForkPlan` 带着新会话 id（见 `engine/fork.rs` 与
+   *  `docs/design/session-fork-conversation.zh-CN.md` §2.3）。
+   *  分支之后的每条消息都只是**普通续接**，发送路径上没有分叉字段。
+   *  `anchor` 省略即 tip 分叉（完整轮次末尾）。 */
+  forkSession: (
+    engine: string,
+    sessionId: string,
+    anchor?: { userTextSha256: string; seqHint?: number } | null,
+  ) =>
+    invoke<ForkPlan>("fork_session", {
+      engine,
+      sessionId,
+      at: anchor ?? null,
+    }),
   /** Remember the model id this session ran ("provider/model", as the picker
    * spells it) — the engine's own transcript keeps only the bare name, so
    * this is what survives a restart or another client. */

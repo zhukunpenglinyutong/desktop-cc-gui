@@ -195,6 +195,7 @@ export const useChatStore = create<ChatStore>((set, get) => {
     bySession: {},
     streamingByKey: {},
     retryingByKey: {},
+    forkingByKey: {},
     unseen: {},
     drafts: {},
     pendingMention: null,
