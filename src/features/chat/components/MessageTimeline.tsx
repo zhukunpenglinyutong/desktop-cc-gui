@@ -1,8 +1,9 @@
-import { lazy, memo, Suspense, useEffect, useMemo, useRef, useState, type MutableRefObject, type RefObject } from "react";
+import { lazy, memo, Suspense, useCallback, useEffect, useMemo, useRef, useState, type MutableRefObject, type RefObject } from "react";
 import { useVirtualizer, type Virtualizer } from "@tanstack/react-virtual";
 import { useTranslation } from "react-i18next";
 import Copy from "lucide-react/dist/esm/icons/copy";
 import Check from "lucide-react/dist/esm/icons/check";
+import GitFork from "lucide-react/dist/esm/icons/git-fork";
 import type { Message } from "@/lib/ipc";
 
 import type { SessionState } from "../store";
@@ -14,6 +15,9 @@ import { cx } from "@/utils/cx";
 import { AgentThinking } from "@/components/application/agent-thinking/agent-thinking";
 import { useLiveParseInterval, useThrottled } from "@/hooks/use-throttled";
 import { useCopied } from "@/hooks/use-copied";
+import { sha256Hex } from "@/lib/sha256";
+import { useScopedSession } from "../split/session-scope";
+import { sessionKey } from "../store/persistence";
 import { MessageImages } from "./MessageImages";
 import { GrantCard } from "./GrantCard";
 import { QuestionRecord } from "./QuestionCard";
@@ -21,6 +25,7 @@ import { PlanReviewCard } from "./PlanReviewCard";
 import { MESSAGE_ANCHOR_RAIL_BAND_CLASS, MessageAnchorRail } from "./MessageAnchorRail";
 import { createAnchorRowsBuilder } from "./timeline-anchors";
 import { buildRows, collectToolKeys, rowKey, type TimelineRow } from "./timeline-rows";
+import { forkUnavailableReason, type ForkUnavailable } from "../fork";
 import { formatDuration } from "./format-duration";
 import { modelDisplayName } from "@/features/settings/usage-model";
 import { ProcessDisclosure, type ProcessSearchTarget } from "./ProcessDisclosure";
@@ -46,6 +51,46 @@ import {
   searchHighlightSupported,
 } from "./timeline-search";
 
+/**
+ * 分叉点解算：以「该轮的用户消息」为定位键。
+ *
+ * 为什么不用被点击消息自身的文本：一条 assistant 记录在 `fold_rows` 里会被
+ * `claude_flush_text` 拆成多行（遇 thinking / tool_use 先把累积文本单独
+ * flush），前端存的那一段与后端那一行**不保证全等**。而用户轮没有这些块，
+ * 一条 `user` 记录严格对应一行、文本全等（design §3.3）。
+ *
+ * 返回 `text` 必须是 store 里的**原始** `message.text`：后端拿它去比对转录本
+ * 里的用户文本，显示层 strip 过的文本会对不上。
+ *
+ * 找不到前置用户消息（列表被裁剪到该轮之后）时返回 null——调用方据此不显示
+ * 分叉入口，绝不猜一个位置出来。
+ */
+export function resolveForkAnchor(
+  neighbors: readonly Message[],
+  message: Message,
+): { text: string; seq: number } | null {
+  const end = neighbors.indexOf(message);
+  // 用户行**包含它自己**：点用户提问这一轮，分叉点就该是"这一轮结束"，也就是
+  // 分支要**包含**用户点的那一轮（点「请教一个数学题」→ 分支里有这一轮 +
+  // 之前全部）。若从 `from - 1` 起扫，点用户气泡会退到上一轮结束，把用户刚点
+  // 的那一轮排除掉——与点同一轮的助手回复给出不同结果，是错的。
+  // `indexOf` 未命中时用 length（从末尾开始扫），后面按 `row === undefined`
+  // 收口——空列表与"消息不在集合里"都必须安全返回 null。
+  const from = end >= 0 ? end : neighbors.length;
+  for (let i = from; i >= 0; i -= 1) {
+    const row = neighbors[i];
+    if (!row) break;
+    // 卡片行（授权 / 问答 / 计划）不是对话轮次，跳过。
+    if (row.role !== "user") continue;
+    // 纯图片轮**照样算定位成功**，只是文本为空：锚点是拿文本摘要去转录本里比对的，
+    // 空文本没有可用的摘要（所有纯图片轮共享同一个 `""` 摘要，无法区分），所以这种
+    // 情况由调用方置灰并说明原因，而**不是**返回 null。返回 null 会让入口直接消失，
+    // 用户分不清"这条消息不支持"还是"功能坏了/记错了位置"。
+    return { text: row.text, seq: row.seq };
+  }
+  return null;
+}
+
 const TimelineRowView = memo(function TimelineRowView({
   row,
   workspacePath,
@@ -54,6 +99,9 @@ const TimelineRowView = memo(function TimelineRowView({
   thinkingAutoCollapse,
   seenTools,
   searchTarget,
+  neighbors,
+  sessionRemote,
+  forkPending,
 }: {
   row: TimelineRow;
   workspacePath: string;
@@ -66,6 +114,11 @@ const TimelineRowView = memo(function TimelineRowView({
   thinkingAutoCollapse: boolean;
   seenTools: Set<string>;
   searchTarget?: ProcessSearchTarget;
+  /** 完整消息列表（含被虚拟化裁掉的行）：分叉要回溯「该轮的用户消息」。 */
+  neighbors: readonly Message[];
+  /** 远程会话（不分叉）与该来源会话的分叉在飞标记，透传给消息行。 */
+  sessionRemote: boolean;
+  forkPending: boolean;
 }) {
   // Plugin-defined row kinds (plan §4.2 #5) dispatch to the registered
   // renderer before the builtin switch below; builtin kinds never hit this
@@ -105,6 +158,10 @@ const TimelineRowView = memo(function TimelineRowView({
       message={row.message}
       workspacePath={workspacePath}
       turnFinal={row.turnFinal && !turnLive}
+      turnLive={turnLive}
+      sessionRemote={sessionRemote}
+      forkPending={forkPending}
+      neighbors={neighbors}
     />
   );
 });
@@ -219,47 +276,40 @@ function MessageMeta({ message }: { message: Message }) {
   );
 }
 
-/** Assistant message hover actions (copy). */
-function MessageActions({ text }: { text: string }) {
-  const { t } = useTranslation();
-  const { copied, copy } = useCopied();
-  const iconBtn =
-    "flex size-6 cursor-pointer items-center justify-center rounded-md text-foreground-icon-secondary transition-colors hover:bg-background-tertiary-hover hover:text-foreground-icon-primary";
-  return (
-    <div className="flex items-center gap-0.5 opacity-0 transition-opacity duration-150 group-hover:opacity-100">
-      <button
-        type="button"
-        aria-label={t("chat.copy")}
-        onClick={() => copy(text)}
-        className={iconBtn}
-      >
-        {copied ? (
-          <Check className="size-3.5 text-lime-500" aria-hidden />
-        ) : (
-          <Copy className="size-3.5" aria-hidden />
-        )}
-      </button>
-    </div>
-  );
-}
+/** 消息操作按钮的共用外观。常驻可见（design §4.3.1）：复制与分支一直在，
+ *  元信息才走 hover。`focus-visible` 是可达性要求（ui-ux-spec §3：按钮类
+ *  控件的焦点环只走 focus-visible）——此前这两个按钮只靠 group-hover 显形，
+ *  键盘用户根本够不到，属既有违规，随本次常驻化一并修掉。
+ *  `aria-disabled` 的视觉与 `disabled` 同款：解释性禁用走前者（原生 disabled
+ *  收不到 hover / focus，挂在它上面的原因读不到）。 */
+const ICON_BTN =
+  "message-action-btn flex size-6 cursor-pointer items-center justify-center rounded-md text-foreground-icon-secondary transition-colors hover:bg-background-tertiary-hover hover:text-foreground-icon-primary focus-visible:ring-2 focus-visible:ring-border-focus-ring focus-visible:outline-none aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:hover:bg-transparent aria-disabled:hover:text-foreground-icon-secondary";
 
-/** Copy affordance for a user bubble: icon only, no chrome, in a footer row
- *  under the bubble's bottom-right corner. A side-slot button vertically
- *  centers against the bubble, so long messages push it far from the text
- *  it copies; a footer stays put regardless of bubble height. Mirrors the
- *  assistant row's hover-reveal so a settled conversation stays clean, and
- *  stays reachable by keyboard. */
-function UserMessageCopy({ text }: { text: string }) {
+/** 两种禁用分开表达（ui-ux-spec §3「两种禁用分开」）：等待态说"正在做"，
+ *  光标是 `wait`；其余（流式期间"还轮不到你"）用 `not-allowed` + 更低的强调。
+ *  分两个常量而不是叠加 class，是因为同族的 cursor 工具类会互相覆盖。 */
+const ICON_BTN_BUSY = "disabled:cursor-wait disabled:opacity-70";
+const ICON_BTN_FROZEN =
+  "disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent disabled:hover:text-foreground-icon-secondary";
+
+/** 复制按钮（两侧共用）。 */
+function CopyButton({
+  text,
+  className = "",
+}: {
+  text: string;
+  className?: string;
+}) {
   const { t } = useTranslation();
   const { copied, copy } = useCopied();
-  if (!text.trim()) return null;
   return (
     <button
       type="button"
-      aria-label={t("chat.copy")}
-      title={t("chat.copy")}
+      // ui-ux-spec §4.2：复制没有别的成功信号，可访问名一起改成「已复制」。
+      aria-label={copied ? t("chat.copied") : t("chat.copy")}
+      title={copied ? t("chat.copied") : t("chat.copy")}
       onClick={() => copy(text)}
-      className="flex size-6 cursor-pointer items-center justify-center rounded-md bg-transparent text-foreground-icon-secondary opacity-0 transition-opacity duration-150 group-hover:opacity-100 focus-visible:opacity-100 hover:bg-background-tertiary-hover hover:text-foreground-icon-primary"
+      className={`${ICON_BTN} message-copy-btn ${className}`}
     >
       {copied ? (
         <Check className="size-3.5 text-lime-500" aria-hidden />
@@ -267,6 +317,106 @@ function UserMessageCopy({ text }: { text: string }) {
         <Copy className="size-3.5" aria-hidden />
       )}
     </button>
+  );
+}
+
+/** 创建分支按钮（两侧共用）。可见性由调用方给（「这条消息能否当分叉锚点」），
+ *  不可用时**保留占位**：流式期间禁用而非隐藏，看得见但明确不可用比凭空消失
+ *  更诚实，也避免回复结束时多出一行的布局跳动（ui-ux-spec §3）。
+ *
+ *  禁用分两种，不能混（ui-ux-spec §3「两种禁用分开」）：
+ *  - **前提不满足**（远程会话 / 引擎不支持）：原因不写在按钮形状上，用户猜不
+ *    出来，所以给 `title` 说明缺什么；原生 `disabled` 收不到 hover / focus，
+ *    解释文案等于没写，故这类走 `aria-disabled` + 点击守卫。
+ *  - **进行中**（这次分叉还在飞，防双击重复分叉）：`disabled:cursor-wait`——
+ *    等待态不能用来表达"你还没准备好前提"。
+ *  流式期间属于前者之外的第三种：原因自明，原生 `disabled` 即可。 */
+function ForkButton({
+  unavailable,
+  onFork,
+  className = "",
+}: {
+  unavailable: ForkUnavailable | null;
+  onFork: () => void;
+  className?: string;
+}) {
+  const { t } = useTranslation();
+  const blockedReason =
+    unavailable === "remote"
+      ? t("chat.forkUnavailableRemote")
+      : unavailable === "engine"
+        ? t("chat.forkUnavailableEngine")
+        : unavailable === "image-only"
+          ? t("chat.forkUnavailableImageOnly")
+          : null;
+  return (
+    <button
+      type="button"
+      // 图标刻意不用 GitBranch：状态栏的 git 分支切换器已经占用那个形状，
+      // 两者在同一个应用里不该长得一样（design §4.3.1）。
+      aria-label={t("chat.forkConversation")}
+      title={blockedReason ?? t("chat.forkConversation")}
+      aria-disabled={blockedReason ? true : undefined}
+      disabled={unavailable !== null && !blockedReason}
+      onClick={() => {
+        if (unavailable !== null) return;
+        onFork();
+      }}
+      className={cx(
+        ICON_BTN,
+        "message-fork-btn",
+        unavailable === "busy" ? ICON_BTN_BUSY : ICON_BTN_FROZEN,
+        className,
+      )}
+    >
+      <GitFork className="size-3.5" aria-hidden />
+    </button>
+  );
+}
+
+/** Assistant message actions: copy + fork, both always visible. */
+function MessageActions({
+  text,
+  showFork,
+  forkUnavailable,
+  onFork,
+}: {
+  text: string;
+  /** 这条消息能当分叉锚点（入口常驻）；不能时只撤掉分支按钮，复制仍在。 */
+  showFork: boolean;
+  forkUnavailable: ForkUnavailable | null;
+  onFork: () => void;
+}) {
+  return (
+    <div className="flex items-center gap-0.5">
+      <CopyButton text={text} />
+      {showFork && <ForkButton unavailable={forkUnavailable} onFork={onFork} />}
+    </div>
+  );
+}
+
+/** Copy + fork affordance for a user bubble: icon only, no chrome, in a footer
+ *  row under the bubble's bottom-right corner. A side-slot button vertically
+ *  centers against the bubble, so long messages push it far from the text
+ *  it copies; a footer stays put regardless of bubble height. Always visible
+ *  (design §4.3.1) and keyboard reachable. */
+function UserMessageActions({
+  text,
+  showFork,
+  forkUnavailable,
+  onFork,
+}: {
+  text: string;
+  showFork: boolean;
+  forkUnavailable: ForkUnavailable | null;
+  onFork: () => void;
+}) {
+  if (!text.trim() && !showFork) return null;
+  return (
+    <div className="mt-0.5 flex items-center gap-0.5">
+      {text.trim() && <CopyButton text={text} />}
+      {showFork && <ForkButton unavailable={forkUnavailable} onFork={onFork} />}
+    </div>
   );
 }
 
@@ -308,7 +458,17 @@ function AgentBadge({
 /** User bubble. The agent block sendPrompt appended stays in history (the
  *  CLI transcript owns it), but the bubble strips it and carries the agent
  *  identity as a small badge above, mirroring the meta row's caption type. */
-function UserMessageRow({ message }: { message: Message }) {
+function UserMessageRow({
+  message,
+  showFork,
+  forkUnavailable,
+  onFork,
+}: {
+  message: Message;
+  showFork: boolean;
+  forkUnavailable: ForkUnavailable | null;
+  onFork: () => void;
+}) {
   const stripped = useMemo(() => stripAgentBlock(message.text), [message.text]);
   return (
     <div className="group -mr-1.5 ml-auto flex w-full min-w-0 flex-col items-end">
@@ -327,7 +487,14 @@ function UserMessageRow({ message }: { message: Message }) {
           {stripped.text}
         </CollapsibleMessage>
       </div>
-      <UserMessageCopy text={stripped.text} />
+      {/* 复制用 store 的原始文本，不是 strip 后的显示文本——两者在带 agent
+          区块时不同，而复制按钮一直复制的是显示文本，这里保持原样。 */}
+      <UserMessageActions
+        text={stripped.text}
+        showFork={showFork}
+        forkUnavailable={forkUnavailable}
+        onFork={onFork}
+      />
     </div>
   );
 }
@@ -336,10 +503,25 @@ export const MessageRow = memo(function MessageRow({
   message,
   workspacePath,
   turnFinal,
+  neighbors,
+  turnLive = false,
+  sessionRemote = false,
+  forkPending = false,
 }: {
   message: Message;
   workspacePath: string;
   turnFinal: boolean;
+  /** 这条消息所在的完整列表（含未挂载的行）；分叉要找「该轮的用户消息」，
+   *  而它可能在被虚拟化裁掉的窗口之外。缺省为空表示"没有邻域可回溯"——
+   *  此时不显示分叉入口，而不是猜一个位置。 */
+  neighbors?: readonly Message[];
+  /** 本轮还在流式：分叉入口保留占位但禁用。 */
+  turnLive?: boolean;
+  /** 会话目录里的远程标记（远程会话不分叉）；由时间线取一次往下传，避免每行
+   *  各自订阅会话目录、在每个流式 flush 里重扫一遍。 */
+  sessionRemote?: boolean;
+  /** 这个来源会话有一次分叉在飞（防重入）；同样由时间线取一次。 */
+  forkPending?: boolean;
 }) {
   // A live row's text grows per store flush; a full markdown reparse per
   // flush scales linearly with reply length (~30ms at 32KB) and starves the
@@ -348,6 +530,20 @@ export const MessageRow = memo(function MessageRow({
   // for the reveal more than they need an extra parse).
   const parseMs = useLiveParseInterval(message.live === true, message.text.length);
   const text = useThrottled(message.text, parseMs);
+  // Hooks must run before any early return below, or the hook count changes
+  // between a card row and a chat row.
+  const scoped = useScopedSession();
+  const forkSession = useChatStore((s) => s.forkSession);
+  const requestFork = useCallback(
+    (anchorText: string, seqHint: number) => {
+      if (!scoped?.sessionId) return;
+      void forkSession(scoped.engine, scoped.sessionId, scoped.workspacePath, {
+        userTextSha256: sha256Hex(anchorText),
+        seqHint,
+      });
+    },
+    [forkSession, scoped?.engine, scoped?.sessionId, scoped?.workspacePath],
+  );
   if (message.role === "grant") {
     // Permission-denial card: actionable directory grant, not a chat bubble.
     return <GrantCard message={message} />;
@@ -362,18 +558,53 @@ export const MessageRow = memo(function MessageRow({
     // decision actions live in the dock, settled rows stay as history.
     return <PlanReviewCard message={message} workspacePath={workspacePath} />;
   }
+  // 分叉入口的**可见性**只看「这条消息能否当锚点」：用户行包含它自己那一轮
+  // （resolve-fork-anchor 的契约），所以用户气泡与同轮助手回复给出同一个分叉
+  // 点。**绝不能拿 `turnFinal` 当闸门**——它只由 buildRows 打给助手行
+  // （timeline-rows.ts 的收尾扫描），用户行恒为 false，那样用户气泡的入口永远
+  // 渲染不出来，而"每条消息都有常驻操作行"是设计约定（design §4.3.1）。
+  const forkTarget = resolveForkAnchor(neighbors ?? [], message);
+  // 可见性只看"能否定位到这一轮"，**不**看这一轮有没有文本：纯图片轮定位得到但没有
+  // 可用的文本摘要，那是"不可用"（置灰 + 说明），不是"看不见"。
+  const showFork = forkTarget !== null;
+  // 可见 ≠ 可用：流式期间、远程 / 不支持的引擎、纯图片轮、以及这次分叉还在飞，都只
+  // 置灰（保留占位，见 ForkButton 的注释）。`scoped?.engine ?? ""` 不在白名单里，
+  // 所以"没有会话可归属"时也是禁用态，而不是一颗点了没反应的活按钮。
+  const forkUnavailable = showFork
+    ? forkUnavailableReason({
+        engine: scoped?.engine ?? "",
+        remote: sessionRemote,
+        imageOnly: !forkTarget.text.trim(),
+        live: turnLive || message.live === true,
+        pending: forkPending,
+      })
+    : null;
+  const onFork = () =>
+    forkTarget && forkTarget.text.trim() && requestFork(forkTarget.text, forkTarget.seq);
   if (message.role === "user") {
-    return <UserMessageRow message={message} />;
+    return (
+      <UserMessageRow
+        message={message}
+        showFork={showFork}
+        forkUnavailable={forkUnavailable}
+        onFork={onFork}
+      />
+    );
   }
   return (
     <div className="group flex flex-col text-left">
       <Markdown text={text} workspacePath={workspacePath} streaming={message.live} />
-      {turnFinal && (
-        <div className="mt-1 flex items-center gap-2">
-          <MessageActions text={message.text} />
-          <MessageMeta message={message} />
-        </div>
-      )}
+      {/* 常驻行（design §4.3.1）：复制/分支一直在，元信息才走 hover。
+          这一行不依赖 turnFinal——用户想分叉的那条回复未必是本轮最后一段。 */}
+      <div className="mt-1 flex items-center gap-2">
+        <MessageActions
+          text={message.text}
+          showFork={showFork}
+          forkUnavailable={forkUnavailable}
+          onFork={onFork}
+        />
+        {turnFinal && <MessageMeta message={message} />}
+      </div>
     </div>
   );
 });
@@ -536,6 +767,23 @@ export const MessageTimeline = memo(function MessageTimeline({
   const { t } = useTranslation();
   const thinkingAutoCollapse = useChatStore((s) => s.thinkingAutoCollapse);
   const wideLayout = useChatStore((s) => s.wideLayout);
+  // 分叉入口的可用性在这里取一次再往下传（而不是每行各订阅一次）：会话目录
+  // 是长列表，逐行订阅会在每个流式 flush 里重扫一遍。
+  const scoped = useScopedSession();
+  const sessionRemote = useChatStore((s) => {
+    const engine = scoped?.engine;
+    const sessionId = scoped?.sessionId;
+    if (!engine || !sessionId) return false;
+    return s.sessions.some(
+      (meta) =>
+        meta.engine === engine && meta.sessionId === sessionId && meta.remote === true,
+    );
+  });
+  const forkPending = useChatStore(
+    (s) =>
+      !!scoped &&
+      s.forkingByKey[sessionKey(scoped.engine, scoped.sessionId, scoped.workspacePath)] === true,
+  );
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const items = session.messages;
   const rows = useMemo(() => buildRows(items), [items]);
@@ -763,6 +1011,9 @@ export const MessageTimeline = memo(function MessageTimeline({
                     thinkingAutoCollapse={thinkingAutoCollapse}
                     seenTools={seenTools}
                     searchTarget={item.index === currentSearchRow ? processSearchTarget : undefined}
+                    neighbors={session.messages}
+                    sessionRemote={sessionRemote}
+                    forkPending={forkPending}
                   />
                 )}
               </div>

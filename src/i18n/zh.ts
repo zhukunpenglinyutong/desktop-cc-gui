@@ -165,6 +165,15 @@ export const zh = {
     renameSession: "重命名会话",
     copySessionId: "复制 ID",
     loadEarlier: "加载更早的消息",
+    /** 会话分叉：以某条消息为分叉点派生一个继承上下文的新会话。 */
+    forkConversation: "创建分支",
+    forkFailed: "创建分支失败：{{reason}}",
+    /** 入口保留但不可用时，`title` 说明缺什么（这类禁用走 aria-disabled +
+     *  点击守卫，文案才 hover / focus 得到）。 */
+    forkUnavailableRemote: "远程（WSL）会话暂不支持创建分支",
+    forkUnavailableEngine: "当前引擎暂不支持创建分支",
+    forkUnavailableImageOnly: "这一轮只有图片、没有文字，暂不支持创建分支",
+    copied: "已复制",
     searchPlaceholder: "搜索对话内容",
     searchNoResults: "无结果",
     searchPrevMatch: "上一个匹配",

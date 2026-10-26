@@ -169,6 +169,16 @@ export const en: Messages = {
     renameSession: "Rename session",
     copySessionId: "Copy ID",
     loadEarlier: "Load earlier messages",
+    /** Fork conversation: derive a new session that inherits the context up to
+     *  a chosen message. */
+    forkConversation: "Fork conversation",
+    forkFailed: "Could not fork the conversation: {{reason}}",
+    /** Why the entry is greyed out when it cannot be used (the disabled state
+     *  carries this as a `title` plus aria-disabled, so it stays reachable). */
+    forkUnavailableRemote: "Remote (WSL) sessions cannot be forked yet",
+    forkUnavailableEngine: "This engine cannot fork conversations yet",
+    forkUnavailableImageOnly: "This turn has images but no text, so it cannot be forked yet",
+    copied: "Copied",
     searchPlaceholder: "Search conversation",
     searchNoResults: "No results",
     searchPrevMatch: "Previous match",

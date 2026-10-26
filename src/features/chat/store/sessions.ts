@@ -102,6 +102,7 @@ export function createSessionActions(
   | "refreshSessions"
   | "refreshEngines"
   | "selectSession"
+  | "forkSession"
   | "loadEarlier"
   | "archiveSession"
   | "deleteSession"
@@ -453,6 +454,58 @@ export function createSessionActions(
         }
       } catch (error) {
         patchSession(set, key, { loading: false, error: String(error) });
+      }
+    },
+
+    forkSession: async (engine, sessionId, workspacePath, anchor) => {
+      const key = sessionKey(engine, sessionId, workspacePath);
+      // 防重入：分叉是一次"点击即落盘"的 IPC，双击（或两个窗口同时点）会让
+      // 两次调用各建一个分支——后端各自分配标题编号，用户拿到两条看起来一样的
+      // 会话。同一来源会话在飞期间，后续点击直接丢弃；入口据此置灰成"进行中"。
+      if (get().forkingByKey[key]) return;
+      set((s) => ({ forkingByKey: { ...s.forkingByKey, [key]: true } }));
+      try {
+        // 后端**点击即落盘**：算切点、写好继承过来的前缀转录本、登记 sessions
+        // 行，一次搞定。所以这里拿到 plan 时分支已经是一个真实会话——不需要
+        // 再发一条消息才"落地"（惰性落地会让分支窗口在点击后是空的）。
+        // 分支标题由**后端**生成（`<来源标题> (fork #N)`）：编号要与已有标题查重，
+        // 只有后端知道现有标题；后缀语言中立，所以不必经过 i18n。
+        const plan = await ipc.forkSession(engine, sessionId, anchor ?? null);
+        // 分支的 `sessions` 行是后端按**来源会话的工作区**写的，页签必须跟着它，
+        // 否则来源是从搜索/插件等入口打开、调用方工作区与它不一致时，分支首轮
+        // 会以别的 cwd 启动——而引擎按 cwd 解析转录本，`--resume` 可能找不到
+        // 刚写好的分支文件。旧后端不返回该字段时回退到调用方工作区。
+        const branchWorkspace = plan.workspacePath ?? workspacePath;
+        set((s) => {
+          const tab: ActiveSession = {
+            engine: plan.sourceEngine,
+            sessionId: plan.targetSessionId,
+            workspacePath: branchWorkspace,
+          };
+          // 已经开过这个分支就不重复插入（重复点击 / 双窗口）。
+          const openTabs = s.openTabs.some((t) =>
+            sameTab(t, tab.engine, tab.sessionId, branchWorkspace),
+          )
+            ? s.openTabs
+            : [...s.openTabs, tab];
+          persistTabs(openTabs, tab);
+          return { openTabs, active: tab, activeEngine: tab.engine };
+        });
+        // 立刻把继承过来的历史读进时间线：分支页签要**马上**显示分叉点之前的
+        // 对话，而不是等用户切走再切回来。会话激活广播由 selectSession 发出
+        // （tabs.ts 的 activateTab 也走同一条路径），这里不再补发第二次。
+        await get().selectSession(plan.sourceEngine, plan.targetSessionId, branchWorkspace);
+      } catch (error) {
+        // 说明**是哪件事**失败了：只丢一句原始错误，用户不知道这是分叉出错
+        // （可能是定位不到该轮、来源文件被外部改过等）。
+        set({ actionError: i18n.t("chat.forkFailed", { reason: errorText(error) }) });
+      } finally {
+        // 失败也要清，否则入口会永远停在"进行中"。
+        set((s) => {
+          const forkingByKey = { ...s.forkingByKey };
+          delete forkingByKey[key];
+          return { forkingByKey };
+        });
       }
     },
 

@@ -90,6 +90,10 @@ export interface ChatStore {
   /** Flat sessionKey -> retrying flag, written only on retry start/stop.
    * Keeps the sidebar out of the per-token bySession update path. */
   retryingByKey: Record<string, true>;
+  /** Flat sessionKey -> 分叉在飞标记（来源会话），只在分叉开始/结束时写。
+   *  分叉是点击即落盘的一次 IPC：双击（或两个窗口同时点）会让两次调用各建一个
+   *  分支，用户拿到两条看起来一样的会话。入口据此置灰成"进行中"。 */
+  forkingByKey: Record<string, true>;
   /** Sessions with activity the user has not opened yet (sidebar green dot),
    * keyed `${engine}/${sessionId}` like the sidebar thread id. In-memory only. */
   unseen: Record<string, boolean>;
@@ -134,6 +138,15 @@ export interface ChatStore {
     engine: string,
     sessionId: string,
     workspacePath: string,
+  ) => Promise<void>;
+  /** 会话分叉：以某条历史消息为分叉点，开一个继承上下文的新会话 tab。
+   *  后端**点击即落盘**（写好继承的前缀转录本并登记新会话），返回的新 tab
+   *  可以直接读历史。`anchor` 省略即从来源会话末尾（完整轮次边界）分叉。 */
+  forkSession: (
+    engine: string,
+    sessionId: string,
+    workspacePath: string,
+    anchor?: { userTextSha256: string; seqHint?: number } | null,
   ) => Promise<void>;
   closeTab: (
     engine: string,
