@@ -52,23 +52,31 @@ fn mtime_ms(meta: &std::fs::Metadata) -> i64 {
         .unwrap_or(0)
 }
 
-/// Canonicalize an existing path; for a not-yet-created file, canonicalize
-/// its parent and re-append the file name (one level covers write/rename
-/// targets, whose parent directories exist in practice).
+/// Canonicalize a path that may not exist yet: resolve its nearest existing
+/// ancestor and re-append the missing names (an agent's write target, and so
+/// its grant request, can sit under directories nobody has created yet).
+/// Only truly absent components are re-appended: a dangling symlink resolves
+/// nowhere, and its lexical tail would escape the root being checked.
 pub(crate) fn canonicalize_lenient(path: &Path) -> Result<PathBuf, String> {
-    if let Ok(resolved) = std::fs::canonicalize(path) {
-        return Ok(resolved);
+    match std::fs::canonicalize(path) {
+        Ok(resolved) => return Ok(resolved),
+        Err(e)
+            if e.kind() != std::io::ErrorKind::NotFound
+                || std::fs::symlink_metadata(path).is_ok() =>
+        {
+            return Err(format!("cannot resolve {}: {e}", path.display()));
+        }
+        Err(_) => {}
     }
+    let unresolved = || format!("cannot resolve {}", path.display());
+    // `file_name` is None for a trailing `..`, which cannot be resolved
+    // lexically once the directory before it is missing.
+    let name = path.file_name().ok_or_else(unresolved)?;
     let parent = path
         .parent()
         .filter(|p| !p.as_os_str().is_empty())
-        .ok_or_else(|| format!("cannot resolve {}", path.display()))?;
-    let base = std::fs::canonicalize(parent)
-        .map_err(|e| format!("cannot resolve {}: {e}", parent.display()))?;
-    let name = path
-        .file_name()
-        .ok_or_else(|| format!("cannot resolve {}", path.display()))?;
-    Ok(base.join(name))
+        .ok_or_else(unresolved)?;
+    Ok(canonicalize_lenient(parent)?.join(name))
 }
 
 /// Workspace roots, user-granted directories and the pasted-images sandbox
@@ -147,7 +155,16 @@ pub fn grant_scope(path: String) -> Result<String, String> {
 /// for this command.
 #[tauri::command]
 pub fn grant_root(db: tauri::State<'_, Arc<crate::db::Db>>, path: String) -> Result<(), String> {
-    let dir = grant_dir_for(&path)?;
+    grant_root_in(&db, &path)
+}
+
+fn grant_root_in(db: &crate::db::Db, path: &str) -> Result<(), String> {
+    let dir = grant_dir_for(path)?;
+    // A grant for a file the agent has yet to write can name a directory
+    // that does not exist. Engines skip missing extra roots and the agent
+    // cannot create one outside its allowed dirs, so create it here or the
+    // approved grant never takes effect.
+    std::fs::create_dir_all(&dir).map_err(|e| format!("mkdir {}: {e}", dir.display()))?;
     db.add_granted_root(&dir.to_string_lossy())
 }
 
@@ -666,6 +683,44 @@ mod tests {
         let dir = grant_dir_for(&outside.0.to_string_lossy()).unwrap();
         let want = strip_verbatim_prefix(std::fs::canonicalize(&outside.0).unwrap());
         assert_eq!(dir, want);
+    }
+
+    #[test]
+    fn grant_for_file_under_uncreated_dirs_creates_and_admits_them() {
+        let scratch = Scratch::new();
+        let db = crate::db::Db::open_at(&scratch.0.join("test.db")).unwrap();
+        let outside = Scratch::new();
+        let file = outside.0.join("investigate").join("deeper").join("dump.sql");
+        let file_str = file.to_string_lossy().to_string();
+
+        // Two levels are missing: the scope is still the file's directory.
+        let dir = grant_dir_for(&file_str).unwrap();
+        let base = strip_verbatim_prefix(std::fs::canonicalize(&outside.0).unwrap());
+        assert_eq!(dir, base.join("investigate").join("deeper"));
+
+        // Granting creates it, so the engine sees a real root on next launch.
+        grant_root_in(&db, &file_str).unwrap();
+        assert!(dir.is_dir());
+        assert!(ensure_allowed(&file_str, &db).is_ok());
+    }
+
+    #[test]
+    fn lenient_canonicalize_rejects_parent_hop_past_missing_dir() {
+        let outside = Scratch::new();
+        let hop = outside.0.join("missing").join("..").join("x.txt");
+        assert!(canonicalize_lenient(&hop).is_err());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn lenient_canonicalize_refuses_dangling_symlink() {
+        let workspace = Scratch::new();
+        let elsewhere = Scratch::new();
+        let link = workspace.0.join("link");
+        std::os::unix::fs::symlink(elsewhere.0.join("not-yet"), &link).unwrap();
+        // Lexically inside the workspace, but writes would follow the link out.
+        assert!(canonicalize_lenient(&link.join("f.txt")).is_err());
+        assert!(canonicalize_lenient(&link).is_err());
     }
 
     #[test]
