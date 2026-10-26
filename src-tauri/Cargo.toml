@@ -30,7 +30,11 @@ tokio = { version = "1", features = ["rt", "macros", "net", "process", "time", "
 sha2 = "0.10"
 dirs = "6"
 dunce = "1"
-git2 = "0.20"
+# vendored-libgit2 mirrors the openssl-sys treatment below: on a dev Mac with
+# Homebrew's libgit2 installed, pkg-config otherwise links libgit2.1.9.dylib from
+# /opt/homebrew, and the shipped .app aborts at launch (dyld library validation
+# rejects the dylib's different Team ID).
+git2 = { version = "0.20", features = ["vendored-libgit2"] }
 # Feature-unify openssl-sys to "vendored": git2 → libgit2-sys/libssh2-sys otherwise
 # dynamically links Homebrew's libssl/libcrypto (e.g. libssl.4.dylib), which crashes
 # the shipped .app at launch on any machine without that exact Homebrew install.
