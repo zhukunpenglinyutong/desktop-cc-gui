@@ -704,9 +704,25 @@ pub(super) mod tests {
     /// Point HOME at a scratch dir for the duration of a test.
     /// Serialized: two tests mutating HOME in parallel would clobber each other.
     pub(crate) use crate::paths::HOME_ENV_LOCK as HOME_LOCK;
+
+    /// 引擎自己的 home 变量：`engine_home()` **优先**读它们，读不到才回落到
+    /// HOME / USERPROFILE。
+    ///
+    /// 测试要的是"整个引擎都指向临时 home"，只改 HOME 做不到：机器上设过
+    /// `DSH_HOME` / `CLAUDE_CONFIG_DIR` 这类变量时，扫描仍会落到**真实**目录（`DSH_HOME`
+    /// 下真的能扫出会话），于是同一套测试随环境变红、且红在别人的机器上。所以这些
+    /// 变量在 `set` 时一并摘掉、`drop` 时按原样恢复。
+    const ENGINE_HOME_KEYS: [&str; 4] = [
+        "CLAUDE_CONFIG_DIR",
+        "KIMI_HOME",
+        "DSH_HOME",
+        "MINIMAX_DATA_DIR",
+    ];
+
     pub struct HomeGuard {
         _lock: parking_lot::MutexGuard<'static, ()>,
         prev: HomeEnvPair,
+        engine_homes: Vec<(&'static str, Option<std::ffi::OsString>)>,
     }
     impl HomeGuard {
         pub fn set(home: &Path) -> Self {
@@ -719,9 +735,19 @@ pub(super) mod tests {
             // typical Windows case).
             let prev_profile = std::env::var_os("USERPROFILE");
             std::env::set_var("USERPROFILE", home);
+            // 摘掉引擎级变量：它们排在 HOME / USERPROFILE 之前生效。
+            let engine_homes = ENGINE_HOME_KEYS
+                .into_iter()
+                .map(|key| {
+                    let previous = std::env::var_os(key);
+                    std::env::remove_var(key);
+                    (key, previous)
+                })
+                .collect();
             Self {
                 _lock: lock,
                 prev: HomeEnvPair(prev, prev_profile),
+                engine_homes,
             }
         }
     }
@@ -738,6 +764,13 @@ pub(super) mod tests {
             match profile {
                 Some(value) => std::env::set_var("USERPROFILE", value),
                 None => std::env::remove_var("USERPROFILE"),
+            }
+            // 引擎级变量按原样恢复：原本没设的保持"没设"。
+            for (key, value) in &self.engine_homes {
+                match value {
+                    Some(value) => std::env::set_var(key, value),
+                    None => std::env::remove_var(key),
+                }
             }
         }
     }
