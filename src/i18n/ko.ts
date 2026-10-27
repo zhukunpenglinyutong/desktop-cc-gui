@@ -319,6 +319,7 @@ export const ko: Messages = {
     "channelUnselected": "채널 없음",
     "channelFilterPlaceholder": "채널 필터링…",
     "noMatchingChannels": "일치하는 채널 없음",
+    "modelGroupEnterprise": "엔터프라이즈 모델",
     "customFamilyModel": "사용자 지정 {{family}} 모델",
     "effort": "추론 강도",
     "effortLow": "낮음",

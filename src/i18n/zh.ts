@@ -319,6 +319,7 @@ export const zh = {
     channelUnselected: "未选择渠道",
     channelFilterPlaceholder: "筛选渠道…",
     noMatchingChannels: "无匹配渠道",
+    modelGroupEnterprise: "企业模型",
     customFamilyModel: "自定义 {{family}} 模型",
     effort: "推理强度",
     effortLow: "low",

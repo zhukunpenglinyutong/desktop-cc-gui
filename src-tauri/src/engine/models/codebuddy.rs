@@ -8,22 +8,26 @@ pub(super) async fn codebuddy_catalog(bin: &str) -> EngineCatalog {
         let mut models = parse_help_models(&stdout);
         if !models.is_empty() {
             if let Some(def) = &default_model {
-                let def_key = canonical_model_key(def);
-                if let Some(pos) = models
-                    .iter()
-                    .position(|m| m.id == *def || canonical_model_key(&m.id) == def_key)
-                {
-                    let mut item = models.remove(pos);
-                    item.id = def.clone();
+                if let Some(pos) = models.iter().position(|m| m.id == *def) {
+                    let item = models.remove(pos);
                     models.insert(0, item);
                 } else {
+                    let is_custom = def.starts_with("custom:");
                     models.insert(
                         0,
                         EngineModel {
                             id: def.clone(),
                             name: Some(friendly_model_name(def)),
-                            provider: infer_provider(def).to_string(),
-                            description: None,
+                            provider: if is_custom {
+                                "enterprise".to_string()
+                            } else {
+                                infer_provider(def).to_string()
+                            },
+                            description: if is_custom {
+                                Some("企业模型".to_string())
+                            } else {
+                                None
+                            },
                             context_window: None,
                         },
                     );
@@ -75,12 +79,6 @@ fn read_configured_default_model() -> Option<String> {
     None
 }
 
-fn canonical_model_key(id: &str) -> String {
-    let bare = id.strip_prefix("custom:").unwrap_or(id);
-    let bare = bare.split('|').next().unwrap_or(bare).trim();
-    bare.to_lowercase()
-}
-
 pub fn parse_help_models(text: &str) -> Vec<EngineModel> {
     let Some(start) = text.find("Currently supported: (") else {
         return Vec::new();
@@ -92,25 +90,59 @@ pub fn parse_help_models(text: &str) -> Vec<EngineModel> {
     let list_str = &after[..end];
 
     let mut models = Vec::new();
-    let mut seen = std::collections::HashSet::new();
-    for raw in list_str.split(',') {
-        let trimmed = raw.trim();
-        if trimmed.is_empty() {
+    let mut seen_ids = std::collections::HashSet::new();
+
+    let raw_items: Vec<&str> = list_str
+        .split(',')
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .collect();
+
+    let mut has_custom = std::collections::HashSet::new();
+    let mut has_plain = std::collections::HashSet::new();
+
+    for raw in &raw_items {
+        let id = raw.split('|').next().unwrap_or(raw).trim();
+        if let Some(bare) = id.strip_prefix("custom:") {
+            let bare = bare.split('/').last().unwrap_or(bare).to_lowercase();
+            has_custom.insert(bare);
+        } else {
+            has_plain.insert(id.to_lowercase());
+        }
+    }
+
+    for raw in raw_items {
+        let id = raw.split('|').next().unwrap_or(raw).trim();
+        if !seen_ids.insert(id.to_string()) {
             continue;
         }
-        let id = trimmed.split('|').next().unwrap_or(trimmed).trim();
-        let key = canonical_model_key(id);
-        if !seen.insert(key) {
-            continue;
-        }
-        let provider = infer_provider(id);
+
+        let is_custom = id.starts_with("custom:");
+        let bare = id.strip_prefix("custom:").unwrap_or(id);
+        let bare_lower = bare.split('/').last().unwrap_or(bare).to_lowercase();
+        let is_coexisting = has_custom.contains(&bare_lower) && has_plain.contains(&bare_lower);
+
+        let provider = if is_custom {
+            "enterprise".to_string()
+        } else {
+            infer_provider(id).to_string()
+        };
+
+        let description = if is_custom {
+            Some("企业模型".to_string())
+        } else if is_coexisting {
+            Some("公共基础模型".to_string())
+        } else {
+            None
+        };
+
         let name = friendly_model_name(id);
 
         models.push(EngineModel {
             id: id.to_string(),
             name: Some(name),
-            description: None,
-            provider: provider.to_string(),
+            description,
+            provider,
             context_window: None,
         });
     }
@@ -203,13 +235,22 @@ fn fallback_catalog(default_model: Option<&str>) -> Vec<EngineModel> {
     ];
     if let Some(def) = default_model {
         if !models.iter().any(|m| m.id == def) {
+            let is_custom = def.starts_with("custom:");
             models.insert(
                 0,
                 EngineModel {
                     id: def.to_string(),
                     name: Some(friendly_model_name(def)),
-                    provider: infer_provider(def).to_string(),
-                    description: None,
+                    provider: if is_custom {
+                        "enterprise".to_string()
+                    } else {
+                        infer_provider(def).to_string()
+                    },
+                    description: if is_custom {
+                        Some("企业模型".to_string())
+                    } else {
+                        None
+                    },
                     context_window: None,
                 },
             );
@@ -241,19 +282,31 @@ mod tests {
     }
 
     #[test]
-    fn parse_help_models_deduplicates_custom_and_plain_entries() {
+    fn parse_help_models_separates_enterprise_and_public_models() {
         let help = r#"
   --model <model>  Model for the current session. Please provide the model ID. Currently supported: (custom:kimi-k3.1-pro, custom:glm-5.3, custom:deepseek-v4-pro|deepseek-v4-pro, hy4-preview, glm-5.3, kimi-k3.1-pro, deepseek-v4-pro)
 "#;
         let models = parse_help_models(help);
-        assert_eq!(models.len(), 4);
-        assert_eq!(models[0].id, "custom:kimi-k3.1-pro");
-        assert_eq!(models[0].name.as_deref(), Some("Kimi K3.1 Pro"));
-        assert_eq!(models[1].id, "custom:glm-5.3");
-        assert_eq!(models[1].name.as_deref(), Some("GLM 5.3"));
-        assert_eq!(models[2].id, "custom:deepseek-v4-pro");
-        assert_eq!(models[2].name.as_deref(), Some("DeepSeek V4 Pro"));
-        assert_eq!(models[3].id, "hy4-preview");
-        assert_eq!(models[3].name.as_deref(), Some("Hunyuan 4 Preview"));
+        assert_eq!(models.len(), 7);
+
+        let ent_glm = models.iter().find(|m| m.id == "custom:glm-5.3").unwrap();
+        assert_eq!(ent_glm.provider, "enterprise");
+        assert_eq!(ent_glm.name.as_deref(), Some("GLM 5.3"));
+        assert_eq!(ent_glm.description.as_deref(), Some("企业模型"));
+
+        let ent_kimi = models.iter().find(|m| m.id == "custom:kimi-k3.1-pro").unwrap();
+        assert_eq!(ent_kimi.provider, "enterprise");
+        assert_eq!(ent_kimi.name.as_deref(), Some("Kimi K3.1 Pro"));
+        assert_eq!(ent_kimi.description.as_deref(), Some("企业模型"));
+
+        let pub_glm = models.iter().find(|m| m.id == "glm-5.3").unwrap();
+        assert_eq!(pub_glm.provider, "chatglm");
+        assert_eq!(pub_glm.name.as_deref(), Some("GLM 5.3"));
+        assert_eq!(pub_glm.description.as_deref(), Some("公共基础模型"));
+
+        let pub_kimi = models.iter().find(|m| m.id == "kimi-k3.1-pro").unwrap();
+        assert_eq!(pub_kimi.provider, "kimi");
+        assert_eq!(pub_kimi.name.as_deref(), Some("Kimi K3.1 Pro"));
+        assert_eq!(pub_kimi.description.as_deref(), Some("公共基础模型"));
     }
 }

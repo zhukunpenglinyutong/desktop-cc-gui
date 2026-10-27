@@ -376,7 +376,9 @@ function ModelGroupList({
         <div key={group.key || "__flat__"} className="flex w-full flex-col">
           {group.key && (
             <span className="sticky top-0 z-10 bg-background-primary-default px-2 pt-1.5 pb-0.5 text-body-2-medium text-text-tertiary">
-              {group.key}
+              {group.key === "enterprise" || group.key === "custom"
+                ? t("chat.modelGroupEnterprise")
+                : group.key}
             </span>
           )}
           {group.rows.map((model) => (

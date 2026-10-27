@@ -334,6 +334,7 @@ export const en: Messages = {
     channelUnselected: "No channel",
     channelFilterPlaceholder: "Filter channels…",
     noMatchingChannels: "No matching channels",
+    modelGroupEnterprise: "Enterprise Models",
     customFamilyModel: "Custom {{family}} model",
     effort: "Effort",
     effortLow: "low",
