@@ -62,9 +62,17 @@ function configuredModel(
  *  bare id to its unique composite catalog entry so the two collapse into
  *  one row. */
 function resolveCompositeId(id: string, catalogIds: string[]): string {
-  if (!id || id.includes("/")) return id;
-  const matches = catalogIds.filter((cid) => cid.endsWith(`/${id}`));
-  return matches.length === 1 ? matches[0] : id;
+  if (!id) return id;
+  if (catalogIds.includes(id)) return id;
+  const customId = `custom:${id}`;
+  if (catalogIds.includes(customId)) return customId;
+  const bareId = id.replace(/^custom:/, "");
+  if (catalogIds.includes(bareId)) return bareId;
+  if (!id.includes("/")) {
+    const matches = catalogIds.filter((cid) => cid.endsWith(`/${id}`));
+    return matches.length === 1 ? matches[0] : id;
+  }
+  return id;
 }
 
 export function useEngineModels(

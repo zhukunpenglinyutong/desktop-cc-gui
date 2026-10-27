@@ -182,6 +182,32 @@ describe("useEngineModels channel models", () => {
     expect(ids).toEqual(["glm-5.3", "custom:kimi-k3", "hy4-preview", "deepseek-v4-pro"]);
   });
 
+  it("CodeBuddy 渠道裸模型 id 与目录的 custom: 复合 id 合并为一行避免重复", async () => {
+    vi.mocked(ipc.getCliConfig).mockResolvedValue({
+      ...cliConfigWith(EMPTY_SECTION),
+      codebuddy: {
+        current: "cb1",
+        providers: {
+          cb1: {
+            name: "guomo",
+            model: "glm-5.3",
+          },
+        },
+      },
+    });
+    vi.mocked(ipc.listEngineModels).mockResolvedValue({
+      models: [
+        { id: "custom:glm-5.3", name: "GLM 5.3" },
+        { id: "hy4-preview", name: "Hunyuan 4 Preview" },
+      ],
+      authoritative: true,
+    } as unknown as EngineCatalog);
+
+    await show([engineInfo("codebuddy", true)], undefined, { codebuddy: "cb1" });
+    const ids = latest.modelsByEngine.codebuddy?.map((m) => m.id);
+    expect(ids).toEqual(["custom:glm-5.3", "hy4-preview"]);
+  });
+
   it("DSH 渠道裸模型 id 与目录的 provider/model 复合 id 合并为一行", async () => {
     // 报告的问题:DSH 选择器里 deepseek-v4-pro(渠道配置的裸 id)与
     // DeepSeek-V4-Pro(catalog 的 deepseek-official/deepseek-v4-pro)重复出现。

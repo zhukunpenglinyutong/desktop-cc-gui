@@ -7,10 +7,14 @@ pub(super) async fn codebuddy_catalog(bin: &str) -> EngineCatalog {
     if let Ok(stdout) = run_probe(bin, &["--help"], "help").await {
         let mut models = parse_help_models(&stdout);
         if !models.is_empty() {
-            // Lead with the user's configured default model if present
             if let Some(def) = &default_model {
-                if let Some(pos) = models.iter().position(|m| m.id == *def) {
-                    let item = models.remove(pos);
+                let def_key = canonical_model_key(def);
+                if let Some(pos) = models
+                    .iter()
+                    .position(|m| m.id == *def || canonical_model_key(&m.id) == def_key)
+                {
+                    let mut item = models.remove(pos);
+                    item.id = def.clone();
                     models.insert(0, item);
                 } else {
                     models.insert(
@@ -71,6 +75,12 @@ fn read_configured_default_model() -> Option<String> {
     None
 }
 
+fn canonical_model_key(id: &str) -> String {
+    let bare = id.strip_prefix("custom:").unwrap_or(id);
+    let bare = bare.split('|').next().unwrap_or(bare).trim();
+    bare.to_lowercase()
+}
+
 pub fn parse_help_models(text: &str) -> Vec<EngineModel> {
     let Some(start) = text.find("Currently supported: (") else {
         return Vec::new();
@@ -82,12 +92,17 @@ pub fn parse_help_models(text: &str) -> Vec<EngineModel> {
     let list_str = &after[..end];
 
     let mut models = Vec::new();
+    let mut seen = std::collections::HashSet::new();
     for raw in list_str.split(',') {
         let trimmed = raw.trim();
         if trimmed.is_empty() {
             continue;
         }
         let id = trimmed.split('|').next().unwrap_or(trimmed).trim();
+        let key = canonical_model_key(id);
+        if !seen.insert(key) {
+            continue;
+        }
         let provider = infer_provider(id);
         let name = friendly_model_name(id);
 
@@ -124,6 +139,7 @@ fn infer_provider(id: &str) -> &'static str {
 fn friendly_model_name(id: &str) -> String {
     let bare = id.strip_prefix("custom:").unwrap_or(id);
     let bare = bare.split('/').last().unwrap_or(bare);
+    let bare = bare.split('|').next().unwrap_or(bare);
     match bare {
         "hy4-preview" => "Hunyuan 4 Preview".to_string(),
         "hy3" => "Hunyuan 3".to_string(),
@@ -143,6 +159,8 @@ fn friendly_model_name(id: &str) -> String {
         "minimax-m3-pay" => "MiniMax M3".to_string(),
         "minimax-m2.7" => "MiniMax M2.7".to_string(),
         "kimi-k3" => "Kimi K3".to_string(),
+        "kimi-k3.1-pro" => "Kimi K3.1 Pro".to_string(),
+        "kimi-k3.1-pro-highspeed" => "Kimi K3.1 Pro Highspeed".to_string(),
         "kimi-k3-2" => "Kimi K3.2".to_string(),
         "kimi-k2.8-preview" => "Kimi K2.8 Preview".to_string(),
         "kimi-k2.7" => "Kimi K2.7".to_string(),
@@ -220,5 +238,22 @@ mod tests {
         assert_eq!(models[2].id, "deepseek-v4-pro");
         assert_eq!(models[2].provider, "deepseek");
         assert_eq!(models[2].name.as_deref(), Some("DeepSeek V4 Pro"));
+    }
+
+    #[test]
+    fn parse_help_models_deduplicates_custom_and_plain_entries() {
+        let help = r#"
+  --model <model>  Model for the current session. Please provide the model ID. Currently supported: (custom:kimi-k3.1-pro, custom:glm-5.3, custom:deepseek-v4-pro|deepseek-v4-pro, hy4-preview, glm-5.3, kimi-k3.1-pro, deepseek-v4-pro)
+"#;
+        let models = parse_help_models(help);
+        assert_eq!(models.len(), 4);
+        assert_eq!(models[0].id, "custom:kimi-k3.1-pro");
+        assert_eq!(models[0].name.as_deref(), Some("Kimi K3.1 Pro"));
+        assert_eq!(models[1].id, "custom:glm-5.3");
+        assert_eq!(models[1].name.as_deref(), Some("GLM 5.3"));
+        assert_eq!(models[2].id, "custom:deepseek-v4-pro");
+        assert_eq!(models[2].name.as_deref(), Some("DeepSeek V4 Pro"));
+        assert_eq!(models[3].id, "hy4-preview");
+        assert_eq!(models[3].name.as_deref(), Some("Hunyuan 4 Preview"));
     }
 }

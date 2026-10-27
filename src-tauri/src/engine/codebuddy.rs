@@ -100,14 +100,82 @@ fn run_probe_command(mut cmd: std::process::Command) -> Option<std::process::Out
     }
 }
 
+fn auth_files_present() -> bool {
+    let mut dirs = Vec::new();
+
+    #[cfg(target_os = "windows")]
+    if let Ok(appdata) = std::env::var("LOCALAPPDATA") {
+        dirs.push(
+            std::path::PathBuf::from(appdata)
+                .join("CodeBuddyExtension")
+                .join("Data")
+                .join("Public")
+                .join("auth"),
+        );
+    }
+
+    if let Some(home) = dirs::home_dir() {
+        dirs.push(
+            home.join("Library")
+                .join("Application Support")
+                .join("CodeBuddyExtension")
+                .join("Data")
+                .join("Public")
+                .join("auth"),
+        );
+        dirs.push(
+            home.join(".local")
+                .join("share")
+                .join("CodeBuddyExtension")
+                .join("Data")
+                .join("Public")
+                .join("auth"),
+        );
+        dirs.push(home.join(".workbuddy").join("auth"));
+    }
+
+    let config_dir = super::engine_home(Some("CODEBUDDY_CONFIG_DIR"), ".codebuddy");
+    dirs.push(config_dir.clone());
+    dirs.push(config_dir.join("auth"));
+
+    for dir in dirs {
+        let Ok(entries) = std::fs::read_dir(dir) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if !path.is_file() {
+                continue;
+            }
+            let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+            if !name.ends_with(".info") && !name.ends_with(".json") {
+                continue;
+            }
+            let Ok(content) = std::fs::read_to_string(&path) else {
+                continue;
+            };
+            let Ok(val) = serde_json::from_str::<serde_json::Value>(&content) else {
+                continue;
+            };
+            if val.get("account").is_some()
+                || val.get("auth").is_some()
+                || val.get("accessToken").is_some()
+            {
+                return true;
+            }
+        }
+    }
+
+    false
+}
+
 pub fn check_codebuddy_account_status() -> CodeBuddyAccountStatus {
-    let logged_in = cli_credentials_present();
+    let logged_in = cli_credentials_present() || auth_files_present();
     CodeBuddyAccountStatus {
         logged_in,
         // The probed service names are guesses: a hit proves "logged in",
         // a miss only means "not found under the names we tried".
         detection: if logged_in { "found" } else { "unknown" },
-        ..Default::default()
     }
 }
 
@@ -910,5 +978,17 @@ mod tests {
         assert!(out
             .iter()
             .any(|e| matches!(e, EngineEvent::Model(model) if model == "custom:kimi-k3")));
+    }
+
+    #[test]
+    fn auth_files_detection_recognizes_account() {
+        let dir = std::env::temp_dir().join(format!("cb-auth-test-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("test.info");
+        std::fs::write(&file, r#"{"account":{"uid":"123"}}"#).unwrap();
+        let content = std::fs::read_to_string(&file).unwrap();
+        let val: serde_json::Value = serde_json::from_str(&content).unwrap();
+        assert!(val.get("account").is_some());
+        std::fs::remove_dir_all(dir).unwrap();
     }
 }
