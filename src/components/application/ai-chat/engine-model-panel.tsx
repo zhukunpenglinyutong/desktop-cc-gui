@@ -428,11 +428,17 @@ function useOrderedModelGroups(
     // known).
     const layered = groups.length > 0 && groups[0].key !== "";
     if (layered) {
-      const ordered = [...groups].sort(
-        (a, b) =>
+      const ordered = [...groups].sort((a, b) => {
+        const aIsEnterprise = a.key === "enterprise" || a.key === "custom";
+        const bIsEnterprise = b.key === "enterprise" || b.key === "custom";
+        if (aIsEnterprise !== bIsEnterprise) {
+          return aIsEnterprise ? 1 : -1;
+        }
+        return (
           Number(b.rows.some((m) => m.id === selectedModelId)) -
-          Number(a.rows.some((m) => m.id === selectedModelId)),
-      );
+          Number(a.rows.some((m) => m.id === selectedModelId))
+        );
+      });
       return { groups: ordered, empty: filtered.length === 0 };
     }
     const flat = [...filtered].sort(

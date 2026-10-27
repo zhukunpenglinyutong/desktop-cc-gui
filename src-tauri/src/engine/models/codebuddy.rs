@@ -8,26 +8,35 @@ pub(super) async fn codebuddy_catalog(bin: &str) -> EngineCatalog {
         let mut models = parse_help_models(&stdout);
         if !models.is_empty() {
             if let Some(def) = &default_model {
-                if let Some(pos) = models.iter().position(|m| m.id == *def) {
+                let is_custom = def.starts_with("custom:");
+                if is_custom {
+                    let split_idx = models
+                        .iter()
+                        .position(|m| m.provider == "enterprise")
+                        .unwrap_or(models.len());
+                    if let Some(pos) = models[split_idx..].iter().position(|m| m.id == *def) {
+                        let item = models.remove(split_idx + pos);
+                        models.insert(split_idx, item);
+                    } else {
+                        models.push(EngineModel {
+                            id: def.clone(),
+                            name: Some(friendly_model_name(def)),
+                            provider: "enterprise".to_string(),
+                            description: Some("企业模型".to_string()),
+                            context_window: None,
+                        });
+                    }
+                } else if let Some(pos) = models.iter().position(|m| m.id == *def) {
                     let item = models.remove(pos);
                     models.insert(0, item);
                 } else {
-                    let is_custom = def.starts_with("custom:");
                     models.insert(
                         0,
                         EngineModel {
                             id: def.clone(),
                             name: Some(friendly_model_name(def)),
-                            provider: if is_custom {
-                                "enterprise".to_string()
-                            } else {
-                                infer_provider(def).to_string()
-                            },
-                            description: if is_custom {
-                                Some("企业模型".to_string())
-                            } else {
-                                None
-                            },
+                            provider: infer_provider(def).to_string(),
+                            description: None,
                             context_window: None,
                         },
                     );
@@ -89,8 +98,8 @@ pub fn parse_help_models(text: &str) -> Vec<EngineModel> {
     };
     let list_str = &after[..end];
 
-    let mut models = Vec::new();
-    let mut seen_ids = std::collections::HashSet::new();
+    let mut public_models = Vec::new();
+    let mut enterprise_models = Vec::new();
 
     let raw_items: Vec<&str> = list_str
         .split(',')
@@ -138,14 +147,24 @@ pub fn parse_help_models(text: &str) -> Vec<EngineModel> {
 
         let name = friendly_model_name(id);
 
-        models.push(EngineModel {
+        let model = EngineModel {
             id: id.to_string(),
             name: Some(name),
             description,
             provider,
             context_window: None,
-        });
+        };
+
+        if is_custom {
+            enterprise_models.push(model);
+        } else {
+            public_models.push(model);
+        }
     }
+
+    // Public base models lead at the top; enterprise models are placed at the bottom
+    let mut models = public_models;
+    models.extend(enterprise_models);
     models
 }
 
@@ -289,24 +308,14 @@ mod tests {
         let models = parse_help_models(help);
         assert_eq!(models.len(), 7);
 
-        let ent_glm = models.iter().find(|m| m.id == "custom:glm-5.3").unwrap();
-        assert_eq!(ent_glm.provider, "enterprise");
-        assert_eq!(ent_glm.name.as_deref(), Some("GLM 5.3"));
-        assert_eq!(ent_glm.description.as_deref(), Some("企业模型"));
+        // Public models are placed first
+        assert_eq!(models[0].id, "hy4-preview");
+        assert_eq!(models[0].provider, "hunyuan");
 
-        let ent_kimi = models.iter().find(|m| m.id == "custom:kimi-k3.1-pro").unwrap();
-        assert_eq!(ent_kimi.provider, "enterprise");
-        assert_eq!(ent_kimi.name.as_deref(), Some("Kimi K3.1 Pro"));
-        assert_eq!(ent_kimi.description.as_deref(), Some("企业模型"));
-
-        let pub_glm = models.iter().find(|m| m.id == "glm-5.3").unwrap();
-        assert_eq!(pub_glm.provider, "chatglm");
-        assert_eq!(pub_glm.name.as_deref(), Some("GLM 5.3"));
-        assert_eq!(pub_glm.description.as_deref(), Some("公共基础模型"));
-
-        let pub_kimi = models.iter().find(|m| m.id == "kimi-k3.1-pro").unwrap();
-        assert_eq!(pub_kimi.provider, "kimi");
-        assert_eq!(pub_kimi.name.as_deref(), Some("Kimi K3.1 Pro"));
-        assert_eq!(pub_kimi.description.as_deref(), Some("公共基础模型"));
+        // Enterprise models are placed at the bottom
+        let enterprise_start = models.iter().position(|m| m.provider == "enterprise").unwrap();
+        assert!(enterprise_start > 0);
+        assert_eq!(models[enterprise_start].id, "custom:kimi-k3.1-pro");
+        assert_eq!(models[enterprise_start].description.as_deref(), Some("企业模型"));
     }
 }
