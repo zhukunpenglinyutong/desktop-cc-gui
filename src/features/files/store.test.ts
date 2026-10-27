@@ -17,7 +17,8 @@ import { useGitStore } from "@/features/git/store";
 import { resetMissionStore, useMissionStore } from "@/features/mission/store";
 import { usePluginHubStore } from "@/features/plugins/hub/store";
 import { usePluginTabsStore } from "@/features/plugins/runtime/center-tabs";
-import { useFilesStore } from "./store";
+import { FILE_TREE_FILTER_KEY, fileTreeWorkspaceKey, useFilesStore } from "./store";
+import { DEFAULT_FILE_TREE_FILTER } from "./file-tree-filter";
 
 const entry = (name: string, isDir = false): DirEntry => ({ name, isDir, size: 0, mtimeMs: 0 });
 const emptyStatus = () => ({ repositories: [], fileColors: {} });
@@ -102,6 +103,117 @@ describe("file tree Git refresh", () => {
     finish({ repositories: [], fileColors: { "/repo": { "stale.txt": "modified" } } });
     await refresh;
     expect(useFilesStore.getState().fileColors["/repo"]).toEqual({});
+  });
+});
+
+describe("已加载目录的批量展开与收起", () => {
+  beforeEach(() => {
+    vi.resetAllMocks();
+    useFilesStore.setState({
+      root: "/repo",
+      children: {
+        "/repo": [entry("a", true), entry("unloaded", true)],
+        "/repo/a": [entry("b", true)],
+        "/repo/a/b": [entry("file.txt")],
+      },
+      expanded: { "/repo": true },
+      loadingDirs: {},
+      filterConfig: DEFAULT_FILE_TREE_FILTER,
+    });
+  });
+
+  it("只展开已加载且仍在树中的目录，不读取磁盘", () => {
+    useFilesStore.getState().expandLoadedDirs();
+    expect(useFilesStore.getState().expanded).toEqual({
+      "/repo": true,
+      "/repo/a": true,
+      "/repo/a/b": true,
+    });
+    expect(mocks.listDir).not.toHaveBeenCalled();
+  });
+
+  it("不会展开被过滤的已加载目录", () => {
+    useFilesStore.setState({
+      children: {
+        "/repo": [entry("a", true), entry(".hidden", true), entry("dist", true)],
+        "/repo/a": [],
+        "/repo/.hidden": [],
+        "/repo/dist": [],
+      },
+    });
+    useFilesStore.getState().expandLoadedDirs();
+    expect(useFilesStore.getState().expanded).toEqual({ "/repo": true, "/repo/a": true });
+    expect(mocks.listDir).not.toHaveBeenCalled();
+  });
+
+  it("收起全部时保留工作区根目录展开", () => {
+    useFilesStore.getState().expandLoadedDirs();
+    useFilesStore.getState().collapseAllDirs();
+    expect(useFilesStore.getState().expanded).toEqual({ "/repo": true });
+  });
+
+  it("合并行展开最深层，再次点击收起整行", async () => {
+    mocks.listDir.mockResolvedValue([entry("file.txt")]);
+    mocks.gitTreeStatus.mockResolvedValue(emptyStatus());
+    await useFilesStore.getState().toggleCompactDir(["/repo/a", "/repo/a/b"]);
+    expect(useFilesStore.getState().expanded["/repo/a/b"]).toBe(true);
+    expect(mocks.listDir).not.toHaveBeenCalled();
+    await useFilesStore.getState().toggleCompactDir(["/repo/a", "/repo/a/b"]);
+    expect(useFilesStore.getState().expanded["/repo/a"]).toBeUndefined();
+  });
+});
+
+describe("文件树工作区记忆", () => {
+  beforeEach(() => {
+    vi.resetAllMocks();
+    mocks.listDir.mockResolvedValue([]);
+    mocks.gitTreeStatus.mockResolvedValue(emptyStatus());
+    localStorage.removeItem(fileTreeWorkspaceKey("/memory-a"));
+    localStorage.removeItem(fileTreeWorkspaceKey("/memory-b"));
+    localStorage.removeItem(FILE_TREE_FILTER_KEY);
+    useFilesStore.setState({ root: "", children: {}, expanded: {}, filterConfig: DEFAULT_FILE_TREE_FILTER });
+  });
+
+  it("分别恢复各工作区的展开路径和过滤规则", () => {
+    useFilesStore.getState().setRoot("/memory-a");
+    useFilesStore.setState({ expanded: { "/memory-a": true, "/memory-a/src": true } });
+    useFilesStore.getState().setFilterConfig({
+      ignorePatterns: ["*.log"], dotWhitelist: [".github"],
+    });
+    useFilesStore.getState().setRoot("/memory-b");
+    expect(useFilesStore.getState().expanded).toEqual({ "/memory-b": true });
+    expect(useFilesStore.getState().filterConfig).toEqual(DEFAULT_FILE_TREE_FILTER);
+    useFilesStore.getState().setFilterConfig({
+      ignorePatterns: ["temp/"], dotWhitelist: [".claude"],
+    });
+    useFilesStore.getState().setRoot("/memory-a");
+    expect(useFilesStore.getState().expanded).toEqual({
+      "/memory-a": true, "/memory-a/src": true,
+    });
+    expect(useFilesStore.getState().filterConfig.ignorePatterns).toEqual(["*.log"]);
+    expect(JSON.parse(localStorage.getItem(fileTreeWorkspaceKey("/memory-b"))!).filterConfig.ignorePatterns)
+      .toEqual(["temp/"]);
+  });
+
+  it("根目录手动收起后仍保持收起，并忽略损坏的存储内容", async () => {
+    useFilesStore.getState().setRoot("/memory-a");
+    await useFilesStore.getState().toggleDir("/memory-a");
+    useFilesStore.getState().setRoot("/memory-b");
+    useFilesStore.getState().setRoot("/memory-a");
+    expect(useFilesStore.getState().expanded["/memory-a"]).toBeUndefined();
+
+    localStorage.setItem(fileTreeWorkspaceKey("/memory-a"), "{bad json");
+    useFilesStore.getState().setRoot("/memory-b");
+    useFilesStore.getState().setRoot("/memory-a");
+    expect(useFilesStore.getState().expanded).toEqual({ "/memory-a": true });
+  });
+
+  it("将旧版全局过滤配置用于未建立状态的新工作区", () => {
+    localStorage.setItem(FILE_TREE_FILTER_KEY, JSON.stringify({
+      ignorePatterns: ["legacy/"], dotWhitelist: [".github"],
+    }));
+    useFilesStore.getState().setRoot("/memory-a");
+    expect(useFilesStore.getState().filterConfig.ignorePatterns).toEqual(["legacy/"]);
   });
 });
 

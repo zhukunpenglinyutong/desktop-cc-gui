@@ -1,7 +1,33 @@
 import { useEffect, useMemo, useRef } from "react";
 import { measureElement as defaultMeasureElement, useVirtualizer } from "@tanstack/react-virtual";
+import type { DirEntry, RepositorySummary } from "@/lib/ipc";
 import { fileName, joinPath, useFilesStore } from "./store";
+import { createFileTreeFilter } from "./file-tree-filter";
 import type { VisibleNode } from "./FileTreeRow";
+
+export function compactFolder(
+  dirPath: string,
+  entry: DirEntry,
+  children: Record<string, DirEntry[]>,
+  repositories: Record<string, RepositorySummary>,
+  loadingDirs: Record<string, true>,
+  dirErrors: Record<string, string>,
+  isVisible: (dirPath: string, entry: DirEntry) => boolean = () => true,
+) {
+  let path = joinPath(dirPath, entry.name);
+  let name = entry.name;
+  const paths = [path];
+  if (entry.isDir) {
+    while (!repositories[path] && !loadingDirs[path] && !dirErrors[path]) {
+      const soleChild = children[path]?.filter((child) => isVisible(path, child));
+      if (soleChild?.length !== 1 || !soleChild[0].isDir) break;
+      name += `/${soleChild[0].name}`;
+      path = joinPath(path, soleChild[0].name);
+      paths.push(path);
+    }
+  }
+  return { path, name, paths };
+}
 
 /**
  * Flattens the expanded store tree into the visible row list and owns the
@@ -13,19 +39,33 @@ export function useFileTreeVirtualList() {
   const children = useFilesStore((s) => s.children);
   const expanded = useFilesStore((s) => s.expanded);
   const loadingDirs = useFilesStore((s) => s.loadingDirs);
+  const dirErrors = useFilesStore((s) => s.dirErrors);
   const repositories = useFilesStore((s) => s.repositories);
   const fileColors = useFilesStore((s) => s.fileColors);
+  const filterConfig = useFilesStore((s) => s.filterConfig);
   const ensureDir = useFilesStore((s) => s.ensureDir);
-  const toggleDir = useFilesStore((s) => s.toggleDir);
+  const isVisible = useMemo(() => createFileTreeFilter(root, filterConfig), [root, filterConfig]);
 
-  // Load the root level and keep the synthetic root row expanded: the tree
-  // roots at the workspace, so its children are always the first content.
+  // The root is read even when the user left its row collapsed.
   useEffect(() => {
-    if (root) {
-      void ensureDir(root);
-      if (!useFilesStore.getState().expanded[root]) void toggleDir(root);
-    }
-  }, [root, ensureDir, toggleDir]);
+    if (root) void ensureDir(root);
+  }, [root, ensureDir]);
+
+  // Restore only previously expanded paths that are still reachable and
+  // visible. Each successful level lets this effect discover the next one.
+  useEffect(() => {
+    if (!root || !expanded[root]) return;
+    const visit = (dir: string) => {
+      for (const entry of children[dir] ?? []) {
+        if (!entry.isDir || !isVisible(dir, entry)) continue;
+        const path = joinPath(dir, entry.name);
+        if (!expanded[path]) continue;
+        if (children[path]) visit(path);
+        else if (!loadingDirs[path] && !dirErrors[path]) void ensureDir(path);
+      }
+    };
+    visit(root);
+  }, [root, expanded, children, loadingDirs, dirErrors, isVisible, ensureDir]);
 
 
   const visible = useMemo<VisibleNode[]>(() => {
@@ -53,12 +93,20 @@ export function useFileTreeVirtualList() {
       const entries = children[dirPath];
       if (!entries) return;
       for (const e of entries) {
-        const path = joinPath(dirPath, e.name);
+        if (!isVisible(dirPath, e)) continue;
+        // Only combine known single-child levels. A click loads the next
+        // level; no speculative walk of the filesystem is needed.
+        const { path, name, paths: compactPaths } = compactFolder(
+          dirPath, e, children, repositories, loadingDirs, dirErrors, isVisible,
+        );
+        const isExpanded = compactPaths.every((part) => !!expanded[part]);
         out.push({
           ...e,
+          name,
           path,
+          compactPaths: compactPaths.length > 1 ? compactPaths : undefined,
           depth,
-          expanded: e.isDir && !!expanded[path],
+          expanded: e.isDir && isExpanded,
           loading: e.isDir && !!loadingDirs[path],
           repository: e.isDir ? repositories[path] : undefined,
           // Plain folders never carry color; files take their git state;
@@ -68,12 +116,12 @@ export function useFileTreeVirtualList() {
         });
         // Only already-expanded levels are walked — the tree never loads
         // recursively; each expansion triggers exactly one listDir call.
-        if (e.isDir && expanded[path]) walk(path, depth + 1);
+        if (e.isDir && isExpanded) walk(path, depth + 1);
       }
     };
     if (root && expanded[root]) walk(root, 1);
     return out;
-  }, [children, expanded, loadingDirs, repositories, fileColors, root]);
+  }, [children, expanded, loadingDirs, dirErrors, repositories, fileColors, root, isVisible]);
 
   const parentRef = useRef<HTMLDivElement>(null);
   const virtualizer = useVirtualizer({

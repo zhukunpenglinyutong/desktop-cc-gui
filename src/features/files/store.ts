@@ -13,11 +13,48 @@ import {
   type RepositorySummary,
 } from "@/lib/ipc";
 import { errorText } from "@/lib/errors";
-import { writeStored } from "@/lib/storage";
+import { readStoredJson, writeStored } from "@/lib/storage";
 import { installFilesBridge, readRemoteAware } from "./remote-files";
+import {
+  createFileTreeFilter,
+  DEFAULT_FILE_TREE_FILTER,
+  type FileTreeFilterConfig,
+} from "./file-tree-filter";
 
 export const FILES_ROOT_KEY = "ccgui-next.filesRoot";
+/** Previous global filter preference, read as the initial value for unmigrated workspaces. */
+export const FILE_TREE_FILTER_KEY = "ccgui-next.fileTreeFilter";
+export const fileTreeWorkspaceKey = (root: string) =>
+  `ccgui-next.fileTreeWorkspace:${encodeURIComponent(root)}`;
 let treeGeneration = 0;
+
+function validFilter(value: unknown): FileTreeFilterConfig | null {
+  if (!value || typeof value !== "object") return null;
+  const config = value as Partial<FileTreeFilterConfig>;
+  if (!Array.isArray(config.ignorePatterns) || !config.ignorePatterns.every((rule) => typeof rule === "string")) return null;
+  if (!Array.isArray(config.dotWhitelist) || !config.dotWhitelist.every((rule) => typeof rule === "string")) return null;
+  return { ignorePatterns: config.ignorePatterns, dotWhitelist: config.dotWhitelist };
+}
+
+function readWorkspaceTreeState(root: string) {
+  const saved = root ? readStoredJson(fileTreeWorkspaceKey(root), (value) => {
+    if (!value || typeof value !== "object") return null;
+    const state = value as { expanded?: unknown; filterConfig?: unknown };
+    const filterConfig = validFilter(state.filterConfig);
+    if (!filterConfig || !Array.isArray(state.expanded)) return null;
+    const prefix = root.endsWith("/") || root.endsWith("\\") ? root : `${root}/`;
+    const expanded: Record<string, true> = {};
+    for (const path of state.expanded) {
+      if (typeof path !== "string") return null;
+      if (path === root || path.startsWith(prefix)) expanded[path] = true;
+    }
+    return { expanded, filterConfig };
+  }) : null;
+  return saved ?? {
+    expanded: root ? { [root]: true as const } : {},
+    filterConfig: readStoredJson(FILE_TREE_FILTER_KEY, validFilter) ?? DEFAULT_FILE_TREE_FILTER,
+  };
+}
 
 /** Join a directory path and a child name. Backend paths are POSIX-style on
  * macOS/Linux; Rust's fs APIs also accept "/" separators on Windows. */
@@ -59,6 +96,7 @@ interface FilesStore {
   loadingDirs: Record<string, true>;
   dirErrors: Record<string, string>;
   expanded: Record<string, true>;
+  filterConfig: FileTreeFilterConfig;
   /** Exact nested repository root -> compact Git status (branch + counts). */
   repositories: Record<string, RepositorySummary>;
   /** Loaded level -> per-file git color ("modified" / "untracked"). */
@@ -83,6 +121,10 @@ interface FilesStore {
   setRoot: (path: string) => void;
   ensureDir: (path: string) => Promise<void>;
   toggleDir: (path: string) => Promise<void>;
+  toggleCompactDir: (paths: string[]) => Promise<void>;
+  expandLoadedDirs: () => void;
+  collapseAllDirs: () => void;
+  setFilterConfig: (config: FileTreeFilterConfig) => void;
   /** Re-fetch a directory only if it has been loaded before. */
   invalidateDir: (path: string) => Promise<void>;
   /** Re-fetch every loaded/expanded directory (titlebar refresh button). */
@@ -132,12 +174,16 @@ function dismissNonFileSurfaces() {
   useReleaseNotesTabStore.getState().deactivate();
 }
 
+const initialRoot = localStorage.getItem(FILES_ROOT_KEY) ?? "";
+const initialTreeState = readWorkspaceTreeState(initialRoot);
+
 export const useFilesStore = create<FilesStore>((set, get) => ({
-  root: localStorage.getItem(FILES_ROOT_KEY) ?? "",
+  root: initialRoot,
   children: {},
   loadingDirs: {},
   dirErrors: {},
-  expanded: {},
+  expanded: initialTreeState.expanded,
+  filterConfig: initialTreeState.filterConfig,
   repositories: {},
   fileColors: {},
   selectedPath: null,
@@ -154,6 +200,7 @@ export const useFilesStore = create<FilesStore>((set, get) => ({
     const root = path.trim();
     if (root === get().root) return;
     treeGeneration += 1;
+    const treeState = readWorkspaceTreeState(root);
     if (root) {
       writeStored(FILES_ROOT_KEY, root);
     } else {
@@ -167,7 +214,8 @@ export const useFilesStore = create<FilesStore>((set, get) => ({
       children: {},
       loadingDirs: {},
       dirErrors: {},
-      expanded: {},
+      expanded: treeState.expanded,
+      filterConfig: treeState.filterConfig,
       repositories: {},
       fileColors: {},
       selectedPath: null,
@@ -249,6 +297,46 @@ export const useFilesStore = create<FilesStore>((set, get) => ({
     }
     set((s) => ({ expanded: { ...s.expanded, [path]: true } }));
     await get().ensureDir(path);
+  },
+
+  toggleCompactDir: async (paths) => {
+    if (paths.length === 0) return;
+    const expanded = { ...get().expanded };
+    if (paths.every((path) => expanded[path])) {
+      delete expanded[paths[0]];
+      set({ expanded });
+      return;
+    }
+    for (const path of paths) expanded[path] = true;
+    set({ expanded });
+    await get().ensureDir(paths[paths.length - 1]);
+  },
+
+  expandLoadedDirs: () => {
+    const { root, children, filterConfig } = get();
+    if (!root) return;
+    const isVisible = createFileTreeFilter(root, filterConfig);
+    const expanded = { ...get().expanded, [root]: true as const };
+    const visit = (dir: string) => {
+      for (const entry of children[dir] ?? []) {
+        if (!entry.isDir || !isVisible(dir, entry)) continue;
+        const path = joinPath(dir, entry.name);
+        if (!children[path]) continue;
+        expanded[path] = true;
+        visit(path);
+      }
+    };
+    visit(root);
+    set({ expanded });
+  },
+
+  collapseAllDirs: () => {
+    const root = get().root;
+    set({ expanded: root ? { [root]: true } : {} });
+  },
+
+  setFilterConfig: (config) => {
+    set({ filterConfig: config });
   },
 
   invalidateDir: async (path) => {
@@ -471,6 +559,14 @@ export const useFilesStore = create<FilesStore>((set, get) => ({
 
   closeSearch: () => set({ searchRoot: null }),
 }));
+
+useFilesStore.subscribe((state, previous) => {
+  if (!state.root || (state.expanded === previous.expanded && state.filterConfig === previous.filterConfig)) return;
+  writeStored(fileTreeWorkspaceKey(state.root), JSON.stringify({
+    expanded: Object.keys(state.expanded),
+    filterConfig: state.filterConfig,
+  }));
+});
 
 // WSL 插件(独立 bundle)经 window.__ccguiFiles 拿到中央编辑器的打开入口,
 // 并注册远程读取器 —— 见 remote-files.ts。

@@ -31,11 +31,13 @@ describe("TreeRow tree refresh", () => {
   let root: Root;
   const refreshTree = vi.fn(async () => {});
   const onToggleDir = vi.fn();
+  const onSelectDir = vi.fn();
   const onMention = vi.fn();
 
   beforeEach(() => {
     refreshTree.mockClear();
     onToggleDir.mockClear();
+    onSelectDir.mockClear();
     onMention.mockClear();
     useFilesStore.setState({ refreshTree });
     container = document.createElement("div");
@@ -57,7 +59,7 @@ describe("TreeRow tree refresh", () => {
           isRoot={isRoot}
           onToggleDir={onToggleDir}
           onOpenFile={() => {}}
-          onSelectDir={() => {}}
+          onSelectDir={onSelectDir}
           onContextMenu={() => {}}
           onMention={onMention}
           mentionLabel="添加到聊天"
@@ -90,5 +92,25 @@ describe("TreeRow tree refresh", () => {
     });
     expect(refreshTree).toHaveBeenCalledTimes(1);
     expect(onToggleDir).not.toHaveBeenCalled();
+  });
+
+  it("合并目录行展开整条路径，选择与路径操作指向末级目录", () => {
+    render({
+      ...childNode,
+      name: "src/features/files",
+      path: "/ws/desktop-cc-gui/src/features/files",
+      compactPaths: [
+        "/ws/desktop-cc-gui/src",
+        "/ws/desktop-cc-gui/src/features",
+        "/ws/desktop-cc-gui/src/features/files",
+      ],
+    }, false);
+    act(() => container.querySelector<HTMLButtonElement>("button")?.click());
+    expect(onSelectDir).toHaveBeenCalledWith("/ws/desktop-cc-gui/src/features/files");
+    expect(onToggleDir).toHaveBeenCalledWith([
+      "/ws/desktop-cc-gui/src",
+      "/ws/desktop-cc-gui/src/features",
+      "/ws/desktop-cc-gui/src/features/files",
+    ]);
   });
 });

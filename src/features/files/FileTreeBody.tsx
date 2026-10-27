@@ -22,7 +22,7 @@ export function FileTreeBody({ virtualizer, visible, onContextMenu }: FileTreeBo
   const loadingDirs = useFilesStore((s) => s.loadingDirs);
   const selectedPath = useFilesStore((s) => s.selectedPath);
   const ensureDir = useFilesStore((s) => s.ensureDir);
-  const toggleDir = useFilesStore((s) => s.toggleDir);
+  const toggleCompactDir = useFilesStore((s) => s.toggleCompactDir);
   const selectPath = useFilesStore((s) => s.selectPath);
   const openFile = useFilesStore((s) => s.openFile);
 
@@ -82,7 +82,7 @@ export function FileTreeBody({ virtualizer, visible, onContextMenu }: FileTreeBo
               node={node}
               selected={selectedPath === node.path}
               isRoot={node.path === root}
-              onToggleDir={toggleDir}
+              onToggleDir={toggleCompactDir}
               onOpenFile={openFile}
               onSelectDir={selectPath}
               onContextMenu={onContextMenu}

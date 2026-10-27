@@ -11,6 +11,8 @@ import { useFilesStore } from "./store";
 
 export interface VisibleNode extends DirEntry {
   path: string;
+  /** Absolute paths represented by a compact folder row, outermost first. */
+  compactPaths?: string[];
   depth: number;
   expanded: boolean;
   loading: boolean;
@@ -63,7 +65,7 @@ interface TreeRowProps {
   selected: boolean;
   /** Workspace-root row: carries the tree-wide refresh (hover-revealed). */
   isRoot: boolean;
-  onToggleDir: (path: string) => void;
+  onToggleDir: (paths: string[]) => void;
   onOpenFile: (path: string) => void;
   onSelectDir: (path: string) => void;
   onContextMenu: (event: MouseEvent<HTMLElement>, node: VisibleNode) => void;
@@ -86,11 +88,11 @@ export const TreeRow = memo(function TreeRow({
   const handleClick = useCallback(() => {
     if (node.isDir) {
       onSelectDir(node.path);
-      onToggleDir(node.path);
+      onToggleDir(node.compactPaths ?? [node.path]);
     } else {
       onOpenFile(node.path);
     }
-  }, [node.isDir, node.path, onToggleDir, onOpenFile, onSelectDir]);
+  }, [node.isDir, node.path, node.compactPaths, onToggleDir, onOpenFile, onSelectDir]);
 
   // Icon SVGs are static string constants; selection is a map/set lookup.
   const iconSvg = useMemo(
@@ -113,6 +115,7 @@ export const TreeRow = memo(function TreeRow({
       <button
         type="button"
         onClick={handleClick}
+        aria-expanded={node.isDir ? node.expanded : undefined}
         className="flex min-w-0 flex-1 items-center gap-1 text-left outline-none focus-visible:ring-2 focus-visible:ring-border-focus-ring"
         title={node.path}
       >
