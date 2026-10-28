@@ -81,7 +81,7 @@ MiniMax Code (command `mcode`) runs through its native ACP transport (`mcode acp
 ### One client, eleven AI engines
 
 - Registers runtime adapters for **Claude Code**, **Codex CLI**, **Kimi CLI**, **Grok CLI**, **Pi CLI**, **OMP CLI**, **DeepSeek Harness**, **Antigravity**, **OpenCode**, **Qoder** (global and CN distributions), and **MiniMax Code** — pick the engine per session from the composer.
-- **Provider channels** are written to each CLI's own native config files (no parallel credential store), with curated presets for GLM, Kimi, DeepSeek, MiniMax, MiMo, Bailian, LongCat, OpenCode Go, OpenRouter, Requesty, [API Route](https://www.api-route.com), and more. Claude / Codex / Grok channels can be imported from [CC Switch](https://github.com/farion1231/cc-switch).
+- **Provider channels** are written to each CLI's own native config files (no parallel credential store), with curated presets for GLM, Kimi, DeepSeek, MiniMax, MiMo, Bailian, LongCat, OpenCode Go, OpenRouter, Requesty, [API Route](https://www.api-route.com), [Runcrate](https://www.runcrate.ai), and more. Claude / Codex / Grok channels can be imported from [CC Switch](https://github.com/farion1231/cc-switch).
 
   To use API Route, create an API key in its dashboard and select the **API Route** preset in Settings for Claude or Codex. Claude uses the Anthropic-compatible root endpoint; Codex uses `/v1` with the Responses protocol. Adjust the preset's model names to models available to your key; see the [API Route setup guide](https://www.api-route.com/docs/quickstart).
 - Pi-family engines (Pi / OMP) support API-key and OAuth sign-in flows from inside Settings.

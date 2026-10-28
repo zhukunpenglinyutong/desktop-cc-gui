@@ -79,7 +79,7 @@ MiniMax Code（命令 `mcode`）走它的原生 ACP 传输（`mcode acp`）：�
 ### 一个客户端，装下十一个 AI 引擎
 
 - 注册了 **Claude Code**、**Codex CLI**、**Kimi CLI**、**Grok CLI**、**Pi CLI**、**OMP CLI**、**DeepSeek Harness**、**Antigravity**、**OpenCode**、**Qoder**（全球版与国内版）、**MiniMax Code** 的 runtime adapter——在输入框里按会话切换引擎。
-- **供应商渠道**直接写入各 CLI 自己的原生配置文件（不搞平行的凭证存储），内置 GLM、Kimi、DeepSeek、MiniMax、MiMo、百炼、LongCat、OpenCode Go、OpenRouter、Requesty、[API Route](https://www.api-route.com) 等精选预设；Claude / Codex / Grok 的渠道还能从 [CC Switch](https://github.com/farion1231/cc-switch) 一键导入。
+- **供应商渠道**直接写入各 CLI 自己的原生配置文件（不搞平行的凭证存储），内置 GLM、Kimi、DeepSeek、MiniMax、MiMo、百炼、LongCat、OpenCode Go、OpenRouter、Requesty、[API Route](https://www.api-route.com)、[Runcrate](https://www.runcrate.ai) 等精选预设；Claude / Codex / Grok 的渠道还能从 [CC Switch](https://github.com/farion1231/cc-switch) 一键导入。
 
   使用 API Route 时，在其控制台创建 API Key，然后在设置中的 Claude 或 Codex 渠道选择 **API Route** 预设。Claude 使用兼容 Anthropic 的根地址，Codex 使用 `/v1` 与 Responses 协议。模型名称可按密钥可用的模型调整，详见 [API Route 接入指南](https://www.api-route.com/zh/docs/quickstart)。
 - Pi 系引擎（Pi / OMP）支持在设置页内完成 API Key 与 OAuth 登录。

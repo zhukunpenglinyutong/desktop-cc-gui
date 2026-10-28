@@ -14,6 +14,7 @@ import xiaomimimoIcon from "@lobehub/icons-static-svg/icons/xiaomimimo.svg";
 import zhipuIcon from "@lobehub/icons-static-svg/icons/zhipu-color.svg";
 import requestyIcon from "@/assets/model-icons/requesty.svg";
 import apiRouteIcon from "@/assets/model-icons/api-route.png";
+import runcrateIcon from "@/assets/model-icons/runcrate.png";
 import type { EngineId } from "./providers";
 
 export interface ProviderPreset {
@@ -330,6 +331,18 @@ export const PRESETS: Partial<Record<EngineId, ProviderPreset[]>> = {
         ANTHROPIC_DEFAULT_OPUS_MODEL: "anthropic/claude-opus-4-5",
       },
     },
+    {
+      name: "Runcrate",
+      baseUrl: "https://api.runcrate.ai",
+      model: "deepseek-ai/DeepSeek-V4.1-Flash",
+      iconSrc: runcrateIcon,
+      env: {
+        ANTHROPIC_DEFAULT_FABLE_MODEL: "zai-org/GLM-5.3",
+        ANTHROPIC_DEFAULT_HAIKU_MODEL: "Qwen/Qwen3.8-Flash",
+        ANTHROPIC_DEFAULT_SONNET_MODEL: "deepseek-ai/DeepSeek-V4.1-Flash",
+        ANTHROPIC_DEFAULT_OPUS_MODEL: "zai-org/GLM-5.3",
+      },
+    },
   ],
   kimi: [
     { name: "Kimi Coding", baseUrl: "https://api.kimi.com/coding/v1", model: "kimi-for-coding", iconSrc: kimiIcon, iconClassName: DARK_MONO_ICON_CLASS },
@@ -349,6 +362,7 @@ export const PRESETS: Partial<Record<EngineId, ProviderPreset[]>> = {
     { name: "OpenCode Go", baseUrl: "https://opencode.ai/zen/go/v1", model: "glm-5.2", iconSrc: opencodeIcon, iconClassName: DARK_MONO_ICON_CLASS, wireApi: "chat" },
     { name: "OpenRouter", baseUrl: "https://openrouter.ai/api/v1", model: "", iconSrc: openrouterIcon, wireApi: "chat" },
     { name: "Requesty", baseUrl: "https://router.requesty.ai/v1", model: "", iconSrc: requestyIcon, wireApi: "chat" },
+    { name: "Runcrate", baseUrl: "https://api.runcrate.ai/v1", model: "deepseek-ai/DeepSeek-V4.1-Flash", iconSrc: runcrateIcon, wireApi: "responses" },
   ],
 };
 

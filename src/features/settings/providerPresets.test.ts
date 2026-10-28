@@ -32,3 +32,29 @@ describe("API Route preset configuration", () => {
     expect(findMatchedPreset(PRESETS.codex!, preset.baseUrl)).toBe(preset);
   });
 });
+
+describe("Runcrate preset configuration", () => {
+  it("writes Claude's root endpoint and maps every tier to a Runcrate model", () => {
+    const preset = PRESETS.claude!.find((p) => p.name === "Runcrate")!;
+    const settings = JSON.parse(claudeTemplateJson(preset.baseUrl, "test-key", preset.env));
+    expect(new URL("/v1/messages", settings.env.ANTHROPIC_BASE_URL).href).toBe(
+      "https://api.runcrate.ai/v1/messages",
+    );
+    expect(settings.env.ANTHROPIC_AUTH_TOKEN).toBe("test-key");
+    expect(settings.env.ANTHROPIC_DEFAULT_FABLE_MODEL).toBe("zai-org/GLM-5.3");
+    expect(settings.env.ANTHROPIC_DEFAULT_HAIKU_MODEL).toBe("Qwen/Qwen3.8-Flash");
+    expect(settings.env.ANTHROPIC_DEFAULT_SONNET_MODEL).toBe("deepseek-ai/DeepSeek-V4.1-Flash");
+    expect(settings.env.ANTHROPIC_DEFAULT_OPUS_MODEL).toBe("zai-org/GLM-5.3");
+    expect(findMatchedPreset(PRESETS.claude!, settings.env.ANTHROPIC_BASE_URL)).toBe(preset);
+  });
+
+  it("generates a Codex Responses configuration on the /v1 endpoint", () => {
+    const preset = PRESETS.codex!.find((p) => p.name === "Runcrate")!;
+    const config = buildCodexConfigToml(preset.name, preset.baseUrl, preset.model, preset.wireApi ?? "chat");
+    expect(config).toContain('base_url = "https://api.runcrate.ai/v1"');
+    expect(config).toContain('model = "deepseek-ai/DeepSeek-V4.1-Flash"');
+    expect(config).toContain('wire_api = "responses"');
+    expect(config).toContain("requires_openai_auth = true");
+    expect(findMatchedPreset(PRESETS.codex!, preset.baseUrl)).toBe(preset);
+  });
+});
