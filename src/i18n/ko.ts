@@ -53,6 +53,14 @@ export const ko: Messages = {
     confirmCloseApp: "CC GUI를 종료할까요? 실행 중인 모든 세션과 터미널이 종료됩니다."
   },
   chat: {
+    "copied": "복사됨",
+    "forkConversation": "대화 분기",
+    "forkFailed": "대화 분기에 실패했습니다: {{reason}}",
+    "forkUnavailableRemote": "원격(WSL) 세션은 아직 대화 분기를 지원하지 않습니다",
+    "forkUnavailableEngine": "현재 엔진은 아직 대화 분기를 지원하지 않습니다",
+    "forkUnavailableImageOnly": "이 턴에는 이미지만 있고 텍스트가 없어 대화 분기를 지원하지 않습니다",
+    "forkDegraded": "분기는 만들었지만 {{items}}을(를) 이어받지 못했습니다. 첫 턴은 엔진 기본값으로 실행됩니다.",
+    "forkDegradedItem": { "model": "모델", "effort": "추론 강도", "provider": "제공자" },
     processHistoryPages: "처리 기록 페이지",
     processPreviousPage: "이전 페이지",
     processNextPage: "다음 페이지",

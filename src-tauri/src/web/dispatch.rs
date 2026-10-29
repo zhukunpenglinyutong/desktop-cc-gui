@@ -308,6 +308,14 @@ struct DeleteRemoteSessionArgs {
     session_id: String,
     remote_path: String,
 }
+/// 会话分叉：`at` 省略即 tip 分叉（完整轮次末尾）。
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ForkSessionArgs {
+    engine: String,
+    session_id: String,
+    at: Option<crate::engine::fork::ForkAnchor>,
+}
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct EngineSessionArgs {
@@ -940,6 +948,16 @@ pub(super) async fn dispatch(
                 a.engine,
                 a.session_id,
                 a.title,
+            )
+            .await)
+        }
+        "fork_session" => {
+            let a: ForkSessionArgs = parse_args(&raw)?;
+            ser(crate::engine::fork::fork_session(
+                app.state(),
+                a.engine,
+                a.session_id,
+                a.at,
             )
             .await)
         }

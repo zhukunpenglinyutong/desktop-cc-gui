@@ -22,6 +22,8 @@ pub mod dsh;
 mod dsh_images;
 mod dsh_session;
 mod events;
+pub mod fork;
+mod fork_dsh;
 pub mod grok;
 mod grok_acp;
 pub mod images;
@@ -1354,6 +1356,7 @@ async fn send_reserved(
         session_id: launch.built.preassigned_session_id,
     })
 }
+
 /// Virtual run path for engines that drive their own transport
 /// ([`Engine::drives_own_transport`]): register a child-less entry whose
 /// `killed` flag and abort handle route interrupts into the transport task,

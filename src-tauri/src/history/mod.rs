@@ -12,6 +12,14 @@ pub use extract::{
     ParsedSession, ScanSummary,
 };
 
+// `user_row_lines` 只服务于分叉切点（`engine::fork`），不该出现在对外面上，
+// 所以按 crate 可见性单独再导出，而不是并进上面的 `pub use`。
+pub(crate) use extract::user_row_lines;
+
+// `open_line_reader` 同样只给 crate 内部用：分叉复制 dsh 转录本前缀时必须走
+// **同一条**解码路径（多帧 zstd），不能自己再包一层。
+pub(crate) use extract::open_line_reader;
+
 use crate::engine::TodosPayload;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;

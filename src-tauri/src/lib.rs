@@ -516,6 +516,8 @@ pub fn run() {
             history::reader::delete_remote_session,
             history::reader::pin_session,
             history::reader::rename_session,
+            // 会话分叉：解析分叉点、分配新 id，并**当场**写出继承过来的前缀转录本、登记 `sessions` 行（点击即落盘，不分两次做）
+            engine::fork::fork_session,
             history::reader::remember_session_model,
             history::reader::remember_session_effort,
             history::reader::remember_session_provider,
