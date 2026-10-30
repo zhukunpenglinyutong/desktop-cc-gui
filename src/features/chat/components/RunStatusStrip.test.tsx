@@ -6,8 +6,7 @@ import { useChatStore } from "../store";
 import { useGitStore } from "@/features/git/store";
 import { RunStatusStrip } from "./RunStatusStrip";
 import { deriveTodoList } from "./agent-task-steps";
-import { ipc } from "@/lib/ipc";
-import type { Message, TodosPayload } from "@/lib/ipc";
+import { AGENT_STATUS_ROLE, ipc, type Message, type TodosPayload } from "@/lib/ipc";
 
 // React's act() environment flag — a well-known global the runtime can't
 // validate, so a named cast with no narrowing is the right boundary.
@@ -287,6 +286,38 @@ describe("RunStatusStrip", () => {
     expect(container.querySelector("[data-testid='run-status-subagents']")?.textContent).not.toContain(
       "运行中",
     );
+  });
+
+  it("settles a running subagent pill from a hidden transcript status delivery", async () => {
+    const messages: Message[] = [
+      msg(1, "user", "run worker"),
+      {
+        ...msg(2, "tool", "task · Dispatching worker"),
+        args: { tasks: [{ name: "Worker", agent: "task", task: "Write tests" }] },
+      },
+    ];
+    const runningDelivery: Message = {
+      seq: 3,
+      role: AGENT_STATUS_ROLE,
+      text: "",
+      ts: null,
+      result: { details: { jobs: [{ jobId: "Worker", status: "running" }] } },
+    };
+    const completedDelivery: Message = {
+      ...runningDelivery,
+      seq: 4,
+      result: { details: { jobs: [{ jobId: "Worker", status: "completed" }] } },
+    };
+    seed([...messages, runningDelivery], true);
+    await renderStrip();
+    expect(pill("子代理").textContent).toContain("0/1");
+
+    await act(async () => seed([...messages, runningDelivery, completedDelivery], true));
+    expect(pill("子代理").textContent).toContain("1/1");
+    await click(pill("子代理"));
+    const panel = container.querySelector("[data-testid='run-status-subagents']")?.textContent;
+    expect(panel).toContain("已完成");
+    expect(panel).not.toContain("运行中");
   });
 
   it("renders nothing when the turn has no subagents or edits", async () => {

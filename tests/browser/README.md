@@ -88,6 +88,12 @@ appends, coalescing and unmount. It needs no model, account or saved conversatio
 The visible update count depends on browser scheduling; it is not a model-speed
 or frame-rate benchmark.
 
+Open `/tests/browser/run-status-strip.html` with the Vite dev server running to
+check the actual chat status strip against seeded chat/git stores. The fixture
+shows one settled and one active delegated task; `后台任务完成` appends a hidden
+transcript status row, so the pill must move from 1/2 to 2/2 and the detail row
+must read 已完成 while streaming remains active. No model, IPC or saved conversation.
+
 Run the deterministic timing, grapheme, Markdown and store regressions with:
 
 ```sh

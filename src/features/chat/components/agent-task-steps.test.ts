@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { Message } from "@/lib/ipc";
+import { AGENT_STATUS_ROLE, type Message } from "@/lib/ipc";
 import { deriveAgentTaskSteps, deriveTodoList, subagentRefsFromArgs } from "./agent-task-steps";
 
 function tool(seq: number, text: string, args?: unknown, result?: unknown): Message {
@@ -76,6 +76,93 @@ describe("subagent counting", () => {
       // complete jobs roster) should settle it.
       { label: "IdolLiveDemosaic", state: "active" },
       { label: "IdolLiveTranslate", state: "active" },
+    ]);
+  });
+
+  it.each(["jobs", "peers", "progress"])("applies hidden %s deliveries using jobId without creating agent steps", (bucket) => {
+    const delivery: Message = {
+      seq: 6,
+      role: AGENT_STATUS_ROLE,
+      text: "task · Worker completed",
+      ts: null,
+      args: { tasks: [{ name: "NotDispatched" }], ids: ["NotWaited"] },
+      result: {
+        details: { [bucket]: [{ jobId: " CoreInvokeFilterParse ", status: "completed" }] },
+      },
+    };
+
+    expect(deriveAgentTaskSteps([DISPATCH, delivery], false, "omp").map(({ label, state }) => ({ label, state }))).toEqual([
+      { label: "CoreInvokeFilterParse", state: "complete" },
+      { label: "IdolLiveDemosaic", state: "active" },
+      { label: "IdolLiveTranslate", state: "active" },
+    ]);
+    expect(deriveAgentTaskSteps([delivery], false, "omp")).toEqual([]);
+  });
+
+  it("prefers an explicit snapshot id and falls back to jobId for a blank id", () => {
+    const delivery: Message = {
+      seq: 6,
+      role: AGENT_STATUS_ROLE,
+      text: "",
+      ts: null,
+      result: {
+        details: {
+          jobs: [
+            { id: " ", jobId: "CoreInvokeFilterParse", status: "completed" },
+            { id: "IdolLiveDemosaic", jobId: "IdolLiveTranslate", status: "completed" },
+          ],
+        },
+      },
+    };
+
+    expect(deriveAgentTaskSteps([DISPATCH, delivery], true, "omp").map((step) => step.state)).toEqual([
+      "complete",
+      "complete",
+      "active",
+    ]);
+  });
+
+  it("does not treat hidden jobs deliveries as complete rosters", () => {
+    const delivery: Message = {
+      seq: 6,
+      role: AGENT_STATUS_ROLE,
+      text: "",
+      ts: null,
+      result: { details: { op: "jobs", jobs: [] } },
+    };
+
+    expect(deriveAgentTaskSteps([DISPATCH, delivery], false, "omp").map((step) => step.state)).toEqual([
+      "active",
+      "active",
+      "active",
+    ]);
+  });
+
+  it("applies tool and hidden status snapshots in transcript order", () => {
+    const completed = tool(6, "hub", { op: "wait" }, {
+      details: { jobs: [{ id: "CoreInvokeFilterParse", status: "completed" }] },
+    });
+    const running: Message = {
+      seq: 7,
+      role: AGENT_STATUS_ROLE,
+      text: "",
+      ts: null,
+      result: { details: { progress: [{ jobId: "CoreInvokeFilterParse", status: "running" }] } },
+    };
+
+    expect(deriveAgentTaskSteps([DISPATCH, completed, running], false, "omp")[0].state).toBe("active");
+    expect(deriveAgentTaskSteps([DISPATCH, running, completed], false, "omp")[0].state).toBe("complete");
+  });
+
+  it("accepts jobId entries in a real complete jobs roster", () => {
+    const roster = tool(6, "hub", { op: "jobs" }, {
+      details: { op: "jobs", jobs: [{ jobId: "CoreInvokeFilterParse", status: "running" }] },
+    });
+
+    expect(deriveAgentTaskSteps([DISPATCH, roster], false, "omp").map((step) => step.state)).toEqual([
+      "active",
+      "complete",
+      "complete",
     ]);
   });
 

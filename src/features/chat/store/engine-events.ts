@@ -497,6 +497,10 @@ export interface EngineEventDeps {
   upsertSessionMeta: (meta: SessionMeta) => void;
   /** Re-fetch the latest token usage from session history for the given session key. */
   refreshSessionUsage?: (key: string) => Promise<void>;
+  /** Re-read recent status deliveries after a turn settles. */
+  refreshSubagentStatus?: (key: string) => void;
+  /** Stop a pending status retry as soon as another run starts. */
+  cancelSubagentStatusRefresh?: (key: string) => void;
   /** After a turn settles: feeds the background memory review's turn counter
    *  (features/bots/memory-review.ts). Optional so tests can drive the router
    *  without the memory feature. */
@@ -1311,6 +1315,7 @@ function onError(
   // stuck until it was sent or cleared by hand. A stop is still the user's
   // own call: that queue stays parked.
   if (!prev.interrupted) deps.drainQueue(key);
+  deps.refreshSubagentStatus?.(key);
 }
 
 /**
@@ -1904,6 +1909,7 @@ function onDone(event: ChatEngineEvent, key: string, deps: EngineEventDeps) {
       }, 400);
     }
   }
+  deps.refreshSubagentStatus?.(key);
 }
 
 /** A CLI that kept running after `done` (a background task was pending) opened
@@ -1944,6 +1950,7 @@ function adoptObservedRun(
   key: string,
   deps: EngineEventDeps,
 ) {
+  deps.cancelSubagentStatusRefresh?.(key);
   if (!runRouting.has(event.runId)) {
     void reapOrphanedRuns(deps.set, routeRun(event.runId, key));
   }

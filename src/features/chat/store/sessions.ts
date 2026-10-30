@@ -1,7 +1,9 @@
 import { normalizeOmpServiceTier } from "@/lib/omp-service-tier";
 import {
+  AGENT_STATUS_ROLE,
   ipc,
   type EngineInfo,
+  type Message,
   type SessionMeta,
   type Workspace,
 } from "@/lib/ipc";
@@ -45,6 +47,7 @@ import {
 } from "./session-utils";
 import type { ChatStore } from "./types";
 import type { LoadHistoryPage, StoreGet, StoreSet } from "./context";
+import { deriveAgentTaskSteps, dispatchRefsFromArgs } from "../components/agent-task-steps";
 
 function omitKey(rec: Record<string, boolean>, key: string) {
   const next = { ...rec };
@@ -71,6 +74,163 @@ function withoutArchived(
   );
 }
 
+const SUBAGENT_STATUS_RETRY_DELAYS_MS = [2_000, 10_000, 30_000] as const;
+const SUBAGENT_STATUS_PAGE_SIZE = 100;
+const SUBAGENT_STATUS_BUCKETS = ["jobs", "peers", "progress"] as const;
+const SUBAGENT_STATUS_STATES: Record<string, true> = {
+  active: true, in_progress: true, pending: true, queued: true, running: true,
+  canceled: true, cancelled: true, complete: true, completed: true, failed: true,
+  idle: true, parked: true, stopped: true,
+};
+// Appending rows changes their local seq, not their transcript identity/order.
+const statusRowSources = new WeakMap<Message, { seq: number; signature: string | null }>();
+
+type StatusRefreshTask = {
+  retriesScheduled: number;
+  timer: number | null;
+  promise: Promise<void> | null;
+  cancelled: boolean;
+  refreshAfterCancel: boolean;
+};
+
+function recordValue(value: unknown): Record<string, unknown> | null {
+  return value !== null && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+function statusJobId(value: unknown): string | undefined {
+  const entry = recordValue(value);
+  if (typeof entry?.status !== "string" ||
+    SUBAGENT_STATUS_STATES[entry.status.trim().toLowerCase()] !== true) return undefined;
+  const id = typeof entry.id === "string" ? entry.id.trim() : "";
+  const jobId = typeof entry.jobId === "string" ? entry.jobId.trim() : "";
+  return id || jobId || undefined;
+}
+
+function statusJobIds(message: Message): string[] {
+  if (message.role !== "tool" && message.role !== AGENT_STATUS_ROLE) return [];
+  const details = recordValue(recordValue(message.result)?.details);
+  if (!details) return [];
+  const ids: string[] = [];
+  for (const bucket of SUBAGENT_STATUS_BUCKETS) {
+    const values = details[bucket];
+    if (!Array.isArray(values)) continue;
+    for (const value of values) {
+      const id = statusJobId(value);
+      if (id) ids.push(id);
+    }
+  }
+  return ids;
+}
+
+function isNewerTranscriptRow(message: Message, candidate: Message): boolean {
+  if (message === candidate) return false;
+  const timestamp = message.ts ? Date.parse(message.ts) : NaN;
+  const candidateTimestamp = candidate.ts ? Date.parse(candidate.ts) : NaN;
+  if (Number.isFinite(timestamp) && Number.isFinite(candidateTimestamp) && timestamp !== candidateTimestamp) {
+    return timestamp > candidateTimestamp;
+  }
+  return (statusRowSources.get(message)?.seq ?? message.seq) >
+    (statusRowSources.get(candidate)?.seq ?? candidate.seq);
+}
+
+function hasNewerJobEvidence(
+  candidate: Message,
+  jobId: string,
+  transcript: Message[],
+): boolean {
+  return transcript.some((message) => {
+    if (!isNewerTranscriptRow(message, candidate)) return false;
+    if (statusJobIds(message).includes(jobId)) return true;
+    return message.role === "tool" &&
+      dispatchRefsFromArgs(message.args).some((ref) => ref.id === jobId);
+  });
+}
+
+function withoutSupersededJobs(message: Message, transcript: Message[]): Message | null {
+  const result = recordValue(message.result);
+  const details = recordValue(result?.details);
+  if (!result || !details) return null;
+  let changed = false;
+  let remaining = 0;
+  const nextDetails = { ...details };
+  for (const bucket of SUBAGENT_STATUS_BUCKETS) {
+    const values = details[bucket];
+    if (!Array.isArray(values)) continue;
+    const filtered = values.filter((value) => {
+      const id = statusJobId(value);
+      if (!id) return true;
+      if (hasNewerJobEvidence(message, id, transcript)) return false;
+      remaining++;
+      return true;
+    });
+    if (filtered.length !== values.length) {
+      changed = true;
+      nextDetails[bucket] = filtered;
+    }
+  }
+  if (!remaining) return null;
+  return changed
+    ? { ...message, result: { ...result, details: nextDetails } }
+    : message;
+}
+
+function statusRowSignature(message: Message): string | null {
+  const source = statusRowSources.get(message);
+  if (source) return source.signature;
+  try {
+    return JSON.stringify([message.text, message.args ?? null, message.result ?? null]);
+  } catch {
+    return null;
+  }
+}
+
+function freshStatusRows(
+  current: Message[],
+  pageMessages: Message[],
+  firstSequence: number,
+): Message[] {
+  const transcript = [...current, ...pageMessages];
+  const timestamps = new Set(
+    current
+      .filter((message) => message.role === AGENT_STATUS_ROLE && message.ts)
+      .map((message) => message.ts as string),
+  );
+  const signatures = new Set(
+    current
+      .filter((message) => message.role === AGENT_STATUS_ROLE && !message.ts)
+      .map(statusRowSignature)
+      .filter((signature): signature is string => Boolean(signature)),
+  );
+  const rows = pageMessages
+    .filter((message) => message.role === AGENT_STATUS_ROLE)
+    .sort((left, right) => left.seq - right.seq);
+  const fresh: Message[] = [];
+  let seq = firstSequence;
+  for (const source of rows) {
+    const signature = statusRowSignature(source);
+    if (source.ts ? timestamps.has(source.ts) : signature && signatures.has(signature)) continue;
+    const message = withoutSupersededJobs(source, transcript);
+    if (!message) continue;
+    const appended = { ...message, seq: seq++ };
+    statusRowSources.set(appended, {
+      seq: statusRowSources.get(source)?.seq ?? source.seq,
+      signature,
+    });
+    fresh.push(appended);
+    if (source.ts) timestamps.add(source.ts);
+    else if (signature) signatures.add(signature);
+  }
+  return fresh;
+}
+
+
+function hasActiveSubagents(messages: Message[], engine: string): boolean {
+  return deriveAgentTaskSteps(messages, false, engine).some(
+    (step) => step.state === "active",
+  );
+}
 /**
  * Session lifecycle: init/refresh of the session/engine catalogs, history
  * paging, and sidebar session ops (archive/delete/pin/rename).
@@ -103,6 +263,8 @@ export function createSessionActions(
   | "refreshSessions"
   | "refreshEngines"
   | "selectSession"
+  | "refreshSubagentStatus"
+  | "cancelSubagentStatusRefresh"
   | "reloadSession"
   | "loadEarlier"
   | "archiveSession"
@@ -124,6 +286,190 @@ export function createSessionActions(
   } = deps;
   let historyReloadId = 0;
 
+  const statusRefreshes = new Map<string, StatusRefreshTask>();
+
+  const cancelStatusRefresh = (key: string) => {
+    const task = statusRefreshes.get(key);
+    if (!task) return;
+    if (task.timer !== null) {
+      window.clearTimeout(task.timer);
+      task.timer = null;
+    }
+    task.cancelled = true;
+    task.refreshAfterCancel = false;
+    if (!task.promise) statusRefreshes.delete(key);
+  };
+
+  const runStatusRefresh = (key: string, task: StatusRefreshTask): Promise<void> => {
+    if (statusRefreshes.get(key) !== task || task.cancelled) return Promise.resolve();
+    if (task.promise) return task.promise;
+
+    const request = (async () => {
+      const beforeStore = get();
+      const tab = beforeStore.openTabs.find(
+        (item) => sessionKey(item.engine, item.sessionId, item.workspacePath) === key,
+      );
+      const before = beforeStore.bySession[key];
+      if (
+        !tab?.sessionId ||
+        !before ||
+        before.streaming ||
+        beforeStore.streamingByKey[key] ||
+        deriveAgentTaskSteps([...before.subagentHistory, ...before.messages], false, tab.engine).length === 0
+      ) {
+        cancelStatusRefresh(key);
+        return;
+      }
+
+      try {
+        const page = await loadHistoryPage(
+          tab.engine,
+          tab.sessionId,
+          tab.workspacePath,
+          SUBAGENT_STATUS_PAGE_SIZE,
+        );
+        if (statusRefreshes.get(key) !== task || task.cancelled) return;
+        const latestStore = get();
+        const latest = latestStore.bySession[key];
+        if (latest?.streaming || latestStore.streamingByKey[key]) {
+          cancelStatusRefresh(key);
+          return;
+        }
+        const stillOpen = latestStore.openTabs.some(
+          (item) => sessionKey(item.engine, item.sessionId, item.workspacePath) === key,
+        );
+        if (
+          !stillOpen ||
+          !latest ||
+          latest.messages !== before.messages ||
+          latest.subagentHistory !== before.subagentHistory
+        ) {
+          if (latest && hasActiveSubagents([...latest.subagentHistory, ...latest.messages], tab.engine)) {
+            scheduleStatusRetry(key, task, tab.engine);
+          } else {
+            cancelStatusRefresh(key);
+          }
+          return;
+        }
+
+        const pageRows = [...page.subagentHistory, ...page.messages];
+        const firstSequence = Math.max(
+          0,
+          ...latest.messages.map((message) => message.seq),
+          ...pageRows.map((message) => message.seq),
+        ) + 1;
+        const rows = freshStatusRows(
+          [...latest.subagentHistory, ...latest.messages],
+          pageRows,
+          firstSequence,
+        );
+        if (rows.length > 0) {
+          patchSession(set, key, { messages: [...latest.messages, ...rows] });
+        }
+        const current = get().bySession[key];
+        if (
+          current &&
+          !current.streaming &&
+          !get().streamingByKey[key] &&
+          hasActiveSubagents([...current.subagentHistory, ...current.messages], tab.engine)
+        ) {
+          scheduleStatusRetry(key, task, tab.engine);
+        } else {
+          cancelStatusRefresh(key);
+        }
+      } catch {
+        if (statusRefreshes.get(key) !== task || task.cancelled) return;
+        const latestStore = get();
+        const latest = latestStore.bySession[key];
+        if (latest?.streaming || latestStore.streamingByKey[key]) {
+          cancelStatusRefresh(key);
+        } else if (
+          latest &&
+          hasActiveSubagents([...latest.subagentHistory, ...latest.messages], tab.engine)
+        ) {
+          scheduleStatusRetry(key, task, tab.engine);
+        } else {
+          cancelStatusRefresh(key);
+        }
+      }
+    })();
+    task.promise = request;
+    const clearRequest = () => {
+      if (statusRefreshes.get(key) !== task || task.promise !== request) return;
+      task.promise = null;
+      if (task.refreshAfterCancel) {
+        task.refreshAfterCancel = false;
+        task.cancelled = false;
+        task.retriesScheduled = 0;
+        void runStatusRefresh(key, task);
+      } else if (task.cancelled || task.timer === null) {
+        statusRefreshes.delete(key);
+      }
+    };
+    void request.then(clearRequest, clearRequest);
+    return request;
+  };
+
+  const scheduleStatusRetry = (
+    key: string,
+    task: StatusRefreshTask,
+    engine: string,
+  ) => {
+    if (statusRefreshes.get(key) !== task || task.timer !== null) return;
+    const latestStore = get();
+    const latest = latestStore.bySession[key];
+    if (
+      !latest ||
+      latest.streaming ||
+      latestStore.streamingByKey[key] ||
+      !latestStore.openTabs.some((tab) => sessionKey(tab.engine, tab.sessionId, tab.workspacePath) === key) ||
+      !hasActiveSubagents([...latest.subagentHistory, ...latest.messages], engine)
+    ) {
+      cancelStatusRefresh(key);
+      return;
+    }
+    // The transcript can settle after the engine's `done` event; keep polling
+    // at the capped interval while the delegated task still appears active.
+    const delayIndex = Math.min(
+      task.retriesScheduled,
+      SUBAGENT_STATUS_RETRY_DELAYS_MS.length - 1,
+    );
+    task.retriesScheduled = delayIndex + 1;
+    const delay = SUBAGENT_STATUS_RETRY_DELAYS_MS[delayIndex];
+    task.timer = window.setTimeout(() => {
+      task.timer = null;
+      void runStatusRefresh(key, task);
+    }, delay);
+  };
+
+  const refreshSubagentStatus = (key: string): Promise<void> => {
+    let task = statusRefreshes.get(key);
+    if (task?.promise) {
+      const activeTask = task;
+      const inFlight = task.promise;
+      if (!activeTask.cancelled) return inFlight;
+      activeTask.refreshAfterCancel = true;
+      return inFlight.then(() => {
+        if (statusRefreshes.get(key) === activeTask) return activeTask.promise ?? undefined;
+      });
+    }
+    if (task?.timer !== null && task?.timer !== undefined) {
+      window.clearTimeout(task.timer);
+      task.timer = null;
+    }
+    if (!task) {
+      task = {
+        retriesScheduled: 0,
+        timer: null,
+        promise: null,
+        cancelled: false,
+        refreshAfterCancel: false,
+      };
+      statusRefreshes.set(key, task);
+    }
+    return runStatusRefresh(key, task);
+  };
+
   /** Migrate the engine pref off a CLI that is gone or disabled in
    * settings. All CLIs disabled: leave the pref alone — the composer shows
    * the "no CLI enabled" placeholder instead of a misleading fallback. */
@@ -135,6 +481,9 @@ export function createSessionActions(
   }
 
   return {
+    refreshSubagentStatus,
+    cancelSubagentStatusRefresh: cancelStatusRefresh,
+
     init: async () => {
       if (get().initialized) return;
       set({ initialized: true });
@@ -148,6 +497,8 @@ export function createSessionActions(
               markUnseenIfBackground,
               upsertSessionMeta: (meta) => upsertSessionMetaInto(set, meta),
               refreshSessionUsage: (k) => get().refreshSessionUsage(k),
+              refreshSubagentStatus: (k) => void refreshSubagentStatus(k),
+              cancelSubagentStatusRefresh: cancelStatusRefresh,
               turnSettled,
             }),
           ),
@@ -434,7 +785,11 @@ export function createSessionActions(
         sessionSelection(get(), engine, sessionId, workspacePath),
       );
       const existing = get().bySession[key];
-      if (existing?.loading || (existing && existing.messages.length > 0)) return;
+      if (existing?.loading) return;
+      if (existing && existing.messages.length > 0) {
+        void refreshSubagentStatus(key);
+        return;
+      }
       patchSession(set, key, { loading: true });
       // 并行取计划审批历史:失败静默降级为无历史计划,绝不阻塞会话加载。
       const plansPromise = ipc
@@ -452,6 +807,7 @@ export function createSessionActions(
           usage:
             [...page.messages].reverse().find((m) => m.usage)?.usage ?? null,
         });
+        void refreshSubagentStatus(key);
         // 历史页应用后再并入计划卡片(按 planId+revision 去重;活跃等待点
         // 可否恢复由后端状态保证,前端只按 record.status 渲染)。
         const plans = await plansPromise;

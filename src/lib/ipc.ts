@@ -95,6 +95,8 @@ export interface QuestionSpec {
   options: { label: string; description?: string; preview?: string }[];
 }
 
+export const AGENT_STATUS_ROLE = "__agent_status__";
+
 export interface Message {
   seq: number;
   role: string; // "user" | "assistant" | "tool" | "thinking"

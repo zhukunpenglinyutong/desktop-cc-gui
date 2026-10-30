@@ -122,7 +122,7 @@ const argArray = (value: unknown): unknown[] => {
 /** The agents a `tasks[]` dispatch spells out. This is the only call shape
  *  that states an agent's kind and assignment, so it is also the source every
  *  later id-only reference inherits from. */
-function dispatchRefsFromArgs(args: unknown): SubagentRef[] {
+export function dispatchRefsFromArgs(args: unknown): SubagentRef[] {
   if (!args || typeof args !== "object") return [];
   const refs: SubagentRef[] = [];
   for (const entry of argArray((args as Record<string, unknown>).tasks)) {
@@ -206,9 +206,9 @@ function agentState(status: unknown): AgentTaskStepState | undefined {
   }
 }
 
-/** Job states a `hub` result reports about itself: `details.jobs` on a wait,
- *  `details.peers` on a roster, `details.progress` on a dispatch. Unknown
- *  states are ignored instead of being guessed terminal. */
+/** Job states from tool results and hidden status deliveries: `details.jobs`
+ *  on a wait, `details.peers` on a roster, `details.progress` on a dispatch.
+ *  Unknown states are ignored instead of being guessed terminal. */
 function jobStatesFromResult(result: unknown): Map<string, AgentTaskStepState> {
   const states = new Map<string, AgentTaskStepState>();
   if (!result || typeof result !== "object") return states;
@@ -222,7 +222,7 @@ function jobStatesFromResult(result: unknown): Map<string, AgentTaskStepState> {
     for (const entry of bucket) {
       if (!entry || typeof entry !== "object") continue;
       const row = entry as Record<string, unknown>;
-      const id = typeof row.id === "string" ? row.id.trim() : "";
+      const id = argText(row.id) ?? argText(row.jobId);
       const state = agentState(row.status);
       if (id && state) states.set(id, state);
     }
@@ -232,6 +232,7 @@ function jobStatesFromResult(result: unknown): Map<string, AgentTaskStepState> {
 
 /** An unfiltered `hub jobs` result is the complete process-local roster. */
 function isCompleteJobsRoster(message: Message): boolean {
+  if (message.role !== "tool") return false;
   if (!message.result || typeof message.result !== "object") return false;
   const details = (message.result as Record<string, unknown>).details;
   if (!details || typeof details !== "object") return false;
@@ -247,7 +248,7 @@ function isCompleteJobsRoster(message: Message): boolean {
     roster.jobs.every((entry) => {
       if (!entry || typeof entry !== "object") return false;
       const row = entry as Record<string, unknown>;
-      return typeof row.id === "string" && !!row.id.trim() && agentState(row.status) !== undefined;
+      return !!(argText(row.id) ?? argText(row.jobId)) && agentState(row.status) !== undefined;
     });
 }
 
@@ -336,6 +337,13 @@ export function deriveAgentTaskSteps(
   const runtimeIds = new Map<string, string>();
   for (let i = 0; i < messages.length; i++) {
     const message = messages[i];
+    const snapshot = jobStatesFromResult(message.result);
+    if (isCompleteJobsRoster(message)) {
+      for (const [id, state] of states) {
+        if (state === "active" && !snapshot.has(id)) states.set(id, "complete");
+      }
+    }
+    for (const [id, state] of snapshot) states.set(id, state);
     if (message.role !== "tool") continue;
     const refs = subagentRefsFromArgs(message.args);
     if (refs.length > 0) {
@@ -358,13 +366,6 @@ export function deriveAgentTaskSteps(
       if (waitNamed.has(base)) continue;
       if (!runtimeIds.has(base)) runtimeIds.set(base, id);
     }
-    const snapshot = jobStatesFromResult(message.result);
-    if (isCompleteJobsRoster(message)) {
-      for (const [id, state] of states) {
-        if (state === "active" && !snapshot.has(id)) states.set(id, "complete");
-      }
-    }
-    for (const [id, state] of snapshot) states.set(id, state);
   }
 
   // Pass 2 — display order: one step per agent, first naming wins.
