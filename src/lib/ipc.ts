@@ -1031,6 +1031,20 @@ export interface GitStatus {
   untracked: GitFileEntry[];
 }
 
+/** Result of AI commit-message generation: the message plus the channel it
+ *  came from, so the UI can name the engine/host the diff was sent to. */
+export interface GeneratedCommitMessage {
+  message: string;
+  engine: string;
+  baseUrl: string;
+}
+
+/** Channel the commit-message generator would use for one engine. */
+export interface CommitMessageChannel {
+  engine: string;
+  baseUrl: string;
+}
+
 /** Compact status for a directory that is itself a Git worktree root. */
 export interface RepositorySummary {
   path: string;
@@ -1935,6 +1949,31 @@ export const ipc = {
       suggestedBranch,
       worktreePath,
     }),
+  /** Repositories under a workspace root (the root itself is included when
+   *  it is a worktree), each with branch + change counts. */
+  gitDiscoverRepositories: (root: string) =>
+    invoke<RepositorySummary[]>("git_discover_repositories", { root }),
+  /** Draft a commit message via the channel configured for `engine`. `files`
+   *  pins the described set to the paths the commit button would commit;
+   *  `null` describes the index (worktree when nothing is staged). `locale`
+   *  picks the message language. The reply names the channel used, so the UI
+   *  can show where the diff was sent. */
+  gitGenerateCommitMessage: (
+    path: string,
+    engine: string | null,
+    locale: string,
+    files: string[] | null,
+  ) =>
+    invoke<GeneratedCommitMessage>("git_generate_commit_message", {
+      path,
+      engine,
+      locale,
+      files,
+    }),
+  /** Channel the commit-message generator would use for `engine`; feeds the
+   *  generate button's tooltip. Rejects when the engine has no usable one. */
+  gitCommitMessageChannel: (engine: string) =>
+    invoke<CommitMessageChannel>("git_commit_message_channel", { engine }),
   // open-app
   openWorkspaceIn: (path: string, options: { appName: string; args?: string[] }) =>
     invoke<void>("open_workspace_in", { path, app: options.appName, args: options.args ?? [] }),

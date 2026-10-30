@@ -501,7 +501,9 @@ fn error_excerpt(status: u16, body: &str) -> String {
     }
 }
 
-async fn call_channel(wire: &Wire, prompt: &str) -> Result<String, String> {
+/// 渠道到 HTTP 的唯一一份调用定义：提交信息生成（commit_message）也走这里，
+/// 协议分支（anthropic / openai / openai-responses）与鉴权头不另起第二套。
+pub(crate) async fn call_channel(wire: &Wire, prompt: &str) -> Result<String, String> {
     let client = reqwest::Client::builder()
         .connect_timeout(Duration::from_secs(10))
         .timeout(Duration::from_secs(60))
