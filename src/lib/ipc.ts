@@ -134,11 +134,14 @@ export interface Message {
   live?: boolean;
   /** Permission-denial card state (role "grant"): the CLI denied a tool call
    * targeting `path`; pending until the user answers the card. `dir` is the
-   * directory a grant would cover (grant_scope preview). Grant rows are
-   * ephemeral UI — they are not part of the CLI's session history. */
+   * directory a grant would cover (grant_scope preview). `toolUseId` is the
+   * denied call, which matches a denial's mid-turn and result-line copies.
+   * Grant rows are ephemeral UI — they are not part of the CLI's session
+   * history. */
   grant?: {
     status: "pending" | "granted" | "declined";
     dir?: string | null;
+    toolUseId?: string | null;
   };
   /** AskUserQuestion card state (role "question"): the CLI parked the ask on
    * the control protocol; `pending` until the user picks or skips. `runId`
@@ -161,6 +164,14 @@ export interface SessionPage {
   nextBefore: number | null;
   /** Delegation metadata before this page, restored from the session file. */
   subagentHistory: Message[];
+}
+
+/** Complete native source, or an editable native-record view for database CLIs. */
+export interface SessionFileDocument {
+  path: string;
+  name: string;
+  text: string;
+  version: string;
 }
 
 export interface Workspace {
@@ -554,6 +565,18 @@ export interface AppSettings {
   /** Thinking-process row behavior once its thinking settles: true/absent =
    *  auto-fold (default), false = stay expanded until the user folds it. */
   thinkingAutoCollapse?: boolean | null;
+  /** System notifications master switch (设置 → 通用 → 行为 → 系统通知): true/absent = enabled (default). */
+  notificationsEnabled?: boolean | null;
+  /** Notify when conversation turn completes: true/absent = enabled (default). */
+  notifyOnCompletion?: boolean | null;
+  /** Notify on interactive questions/permission/plan review: true/absent = enabled (default). */
+  notifyOnQuestion?: boolean | null;
+  /** Notify when conversation turn is interrupted: true/absent = enabled (default). */
+  notifyOnInterrupted?: boolean | null;
+  /** Notify when conversation encounters an error: true/absent = enabled (default). */
+  notifyOnError?: boolean | null;
+  /** Only notify when app window/session is unfocused/background: true/absent = true (default). */
+  notifyWhenUnfocusedOnly?: boolean | null;
   /** 宽幕布 (设置 → 通用 → 外观): true = the chat content column fills its
    *  pane instead of the default centered column (750px / `max-w-3xl`). */
   chatWideLayout?: boolean | null;
@@ -1502,6 +1525,9 @@ export const ipc = {
   }) => invoke<SendResult>("send_message", args),
   interruptSession: (sessionId: string) =>
     invoke<boolean>("interrupt_session", { sessionId }),
+  /** Which of these run ids the host still runs: the orphan sweep asks
+   *  before settling a run that has gone silent. */
+  liveRuns: (runIds: string[]) => invoke<string[]>("live_runs", { runIds }),
   // 电脑操控 (computer use)
   /** macOS TCC probe. `osPermissionsRequired` is false on Windows/Linux,
    *  where the driver needs no OS grant. */
@@ -1578,12 +1604,19 @@ export const ipc = {
     invoke<void>("archive_session", { session }),
   restoreSession: (engine: string, sessionId: string) =>
     invoke<void>("restore_session", { engine, sessionId }),
+  readSessionFile: (engine: string, sessionId: string, workspacePath?: string, remotePath?: string) =>
+    invoke<SessionFileDocument>("read_session_file", { engine, sessionId, workspacePath, remotePath }),
+  writeSessionFile: (engine: string, sessionId: string, content: string, expectedVersion: string, workspacePath?: string, remotePath?: string) =>
+    invoke<SessionFileDocument>("write_session_file", { engine, sessionId, content, expectedVersion, workspacePath, remotePath }),
+  openSessionFileInDefaultEditor: (engine: string, sessionId: string) =>
+    invoke<void>("open_session_file_in_default_editor", { engine, sessionId }),
   loadSessionPage: (
     engine: string,
     sessionId: string,
     limit?: number,
     beforeSeq?: number | null,
-  ) => invoke<SessionPage>("load_session_page", { engine, sessionId, limit, beforeSeq }),
+    forceReload?: boolean,
+  ) => invoke<SessionPage>("load_session_page", { engine, sessionId, limit, beforeSeq, forceReload }),
   /** Full-text search over message bodies (⌘L palette). FTS5 trigram when
    *  every token is ≥3 chars, exact AND-substring LIKE otherwise. */
   searchMessages: (
@@ -1601,6 +1634,7 @@ export const ipc = {
     remotePath: string,
     limit?: number,
     beforeSeq?: number | null,
+    forceReload?: boolean,
   ) =>
     invoke<SessionPage>("load_remote_session_page", {
       workspacePath,
@@ -1609,6 +1643,7 @@ export const ipc = {
       remotePath,
       limit,
       beforeSeq,
+      forceReload,
     }),
   deleteSession: (engine: string, sessionId: string) =>
     invoke<void>("delete_session", { engine, sessionId }),

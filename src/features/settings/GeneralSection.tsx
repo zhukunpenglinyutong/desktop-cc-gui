@@ -42,6 +42,10 @@ import { changeZoom, onZoomChange, readZoomPct, ZOOM_MAX, ZOOM_MIN, ZOOM_STEP } 
 import { PromptHistoryManager, PromptHistoryToggleRow } from "./PromptHistorySettings";
 import { FileTreeHideIgnoredRow } from "./FileTreeHideIgnoredRow";
 import { useChatStore } from "@/features/chat/store";
+import {
+  ensureNotificationPermission,
+  updateCachedNotificationPreferences,
+} from "@/lib/notifications";
 
 export const LANGUAGE_STORAGE_KEY = "ccgui-next.language";
 
@@ -214,6 +218,15 @@ function useGeneralSettingsState() {
     useChatStore.getState().setWideLayout(wide);
     void save({ chatWideLayout: wide });
   };
+  const onNotificationPrefChange = (patch: Partial<AppSettings>) => {
+    if (!settings) return;
+    setSettings({ ...settings, ...patch });
+    updateCachedNotificationPreferences(patch);
+    if (patch.notificationsEnabled) {
+      void ensureNotificationPermission();
+    }
+    void save(patch);
+  };
   /** Font-family changes share one save path; a failed save restores the
    *  applied font and cache instead of leaving a temporary choice active. */
   const onFontModeChange = async (field: FontField, value: string): Promise<boolean> => {
@@ -304,6 +317,7 @@ function useGeneralSettingsState() {
     onWideLayoutChange,
     onFontModeChange,
     onFontFilePick,
+    onNotificationPrefChange,
   };
 }
 
@@ -762,10 +776,12 @@ function BehaviorCard({
   settings,
   onSendShortcutChange,
   onThinkingAutoCollapseChange,
+  onNotificationPrefChange,
 }: {
   settings: AppSettings;
   onSendShortcutChange: (key: Key | null) => void;
   onThinkingAutoCollapseChange: (autoCollapse: boolean) => void;
+  onNotificationPrefChange: (patch: Partial<AppSettings>) => void;
 }) {
   const { t } = useTranslation();
   return (
@@ -802,6 +818,82 @@ function BehaviorCard({
             onChange={onThinkingAutoCollapseChange}
           />
         </SettingsRow>
+        <SettingsRow
+          anchor="notifications"
+          label={t("settings.notificationsEnabled")}
+          description={t("settings.notificationsEnabledDesc")}
+        >
+          <Switch
+            size="sm"
+            aria-label={t("settings.notificationsEnabled")}
+            isSelected={settings.notificationsEnabled ?? true}
+            onChange={(enabled) => onNotificationPrefChange({ notificationsEnabled: enabled })}
+          />
+        </SettingsRow>
+        {(settings.notificationsEnabled ?? true) && (
+          <>
+            <SettingsRow
+              anchor="notifyOnCompletion"
+              label={t("settings.notifyOnCompletion")}
+              description={t("settings.notifyOnCompletionDesc")}
+            >
+              <Switch
+                size="sm"
+                aria-label={t("settings.notifyOnCompletion")}
+                isSelected={settings.notifyOnCompletion ?? true}
+                onChange={(onCompletion) => onNotificationPrefChange({ notifyOnCompletion: onCompletion })}
+              />
+            </SettingsRow>
+            <SettingsRow
+              anchor="notifyOnQuestion"
+              label={t("settings.notifyOnQuestion")}
+              description={t("settings.notifyOnQuestionDesc")}
+            >
+              <Switch
+                size="sm"
+                aria-label={t("settings.notifyOnQuestion")}
+                isSelected={settings.notifyOnQuestion ?? true}
+                onChange={(onQuestion) => onNotificationPrefChange({ notifyOnQuestion: onQuestion })}
+              />
+            </SettingsRow>
+            <SettingsRow
+              anchor="notifyOnInterrupted"
+              label={t("settings.notifyOnInterrupted")}
+              description={t("settings.notifyOnInterruptedDesc")}
+            >
+              <Switch
+                size="sm"
+                aria-label={t("settings.notifyOnInterrupted")}
+                isSelected={settings.notifyOnInterrupted ?? true}
+                onChange={(onInterrupted) => onNotificationPrefChange({ notifyOnInterrupted: onInterrupted })}
+              />
+            </SettingsRow>
+            <SettingsRow
+              anchor="notifyOnError"
+              label={t("settings.notifyOnError")}
+              description={t("settings.notifyOnErrorDesc")}
+            >
+              <Switch
+                size="sm"
+                aria-label={t("settings.notifyOnError")}
+                isSelected={settings.notifyOnError ?? true}
+                onChange={(onError) => onNotificationPrefChange({ notifyOnError: onError })}
+              />
+            </SettingsRow>
+            <SettingsRow
+              anchor="notifyWhenUnfocusedOnly"
+              label={t("settings.notifyWhenUnfocusedOnly")}
+              description={t("settings.notifyWhenUnfocusedOnlyDesc")}
+            >
+              <Switch
+                size="sm"
+                aria-label={t("settings.notifyWhenUnfocusedOnly")}
+                isSelected={settings.notifyWhenUnfocusedOnly ?? true}
+                onChange={(unfocusedOnly) => onNotificationPrefChange({ notifyWhenUnfocusedOnly: unfocusedOnly })}
+              />
+            </SettingsRow>
+          </>
+        )}
         <PromptHistoryToggleRow />
         <FileTreeHideIgnoredRow />
       </SettingsCard>
@@ -832,8 +924,8 @@ export function GeneralSection() {
     onTypographyChange,
     onFontModeChange,
     onFontFilePick,
+    onNotificationPrefChange,
   } = useGeneralSettingsState();
-
   return (
     <div className="flex w-full flex-col gap-6">
       {error && (
@@ -868,6 +960,7 @@ export function GeneralSection() {
           settings={settings}
           onSendShortcutChange={onSendShortcutChange}
           onThinkingAutoCollapseChange={onThinkingAutoCollapseChange}
+          onNotificationPrefChange={onNotificationPrefChange}
         />
       )}
       {settings && <PromptHistoryManager />}

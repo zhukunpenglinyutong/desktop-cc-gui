@@ -475,6 +475,14 @@ describe("PluginHub", () => {
     expect(document.body.textContent).not.toContain(DOWNLOADS.toLocaleString());
   });
 
+  it("abbreviates install counts once they round to 1K", async () => {
+    pluginFetchIndex.mockImplementation(async () => [{ ...MARKET_ENTRY, downloads: 1280 }]);
+    await render();
+
+    expect(document.body.textContent).toContain("1.3K");
+    expect(document.body.textContent).not.toContain("1,280");
+  });
+
   it("opens the full-page detail: carousel, README, rail and repo link", async () => {
     await render();
     await act(async () => {

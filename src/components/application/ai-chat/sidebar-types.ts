@@ -1,4 +1,4 @@
-export type ThreadAction = "pin" | "rename" | "archive" | "delete";
+export type ThreadAction = "pin" | "rename" | "edit" | "refresh" | "archive" | "delete";
 
 export interface AiChatThread {
   id?: string;
@@ -14,7 +14,7 @@ export interface AiChatThread {
   /** Provider backoff is active; keep the running dot visible but static. */
   retrying?: boolean;
   unseen?: boolean;
-  /** Pending tab: first message not sent, so pin/rename/copy-id do not apply. */
+  /** Pending tab: no native file exists yet, so only split/delete apply. */
   isDraft?: boolean;
 }
 

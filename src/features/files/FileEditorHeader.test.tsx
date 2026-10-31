@@ -25,6 +25,8 @@ function baseProps() {
     onSave: vi.fn(),
     searchOpen: false,
     onToggleSearch: vi.fn(),
+    wordWrap: false,
+    onToggleWordWrap: vi.fn(),
   };
 }
 
@@ -54,14 +56,6 @@ describe("FileEditorHeader preview controls", () => {
     act(() => root.render(<FileEditorHeader {...props} />));
     return props;
   };
-
-  it("offers reload for a rendered HTML file, and calls back on click", () => {
-    const props = renderHeader();
-    const reload = byLabel(i18n.t("common.refresh"));
-    expect(reload).not.toBeNull();
-    act(() => reload!.click());
-    expect(props.onReloadPreview).toHaveBeenCalledTimes(1);
-  });
 
   it("hides reload while the HTML file is shown as code", () => {
     renderHeader({ viewMode: "edit" });

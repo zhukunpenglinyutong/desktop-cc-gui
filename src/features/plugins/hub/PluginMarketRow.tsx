@@ -2,6 +2,7 @@ import { useTranslation } from "react-i18next";
 import { githubAvatarUrl } from "@/lib/github-avatar";
 import type { MarketPlugin } from "@/lib/ipc";
 import { githubLoginFor, isOfficialPlugin } from "./catalog";
+import { formatInstallCount } from "./install-count";
 import { MarketActionButton } from "./MarketActionButton";
 import { PluginAvatar } from "./PluginAvatar";
 
@@ -92,7 +93,7 @@ export function PluginMarketRow({
 
       {showDownloads && (
         <td className={NUM_CELL}>
-          {entry.downloads != null ? entry.downloads.toLocaleString() : "—"}
+          {entry.downloads != null ? formatInstallCount(entry.downloads) : "—"}
         </td>
       )}
 

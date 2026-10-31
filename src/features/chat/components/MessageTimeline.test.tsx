@@ -10,7 +10,21 @@ import type { BotConfig, Message } from "@/lib/ipc";
 import { EMPTY_SESSION, type SessionState } from "../store/stream";
 import i18n from "@/lib/i18n";
 
-const searchHarness = vi.hoisted(() => ({ handlers: new Map<string, () => void>(), scrollToIndex: vi.fn() }));
+const searchHarness = vi.hoisted(() => ({
+  handlers: new Map<string, () => void>(),
+  scrollToIndex: vi.fn(),
+  scrollMatchIntoView: vi.fn(),
+}));
+
+// Word-level scrolling is a no-op in jsdom (no layout); count the calls.
+vi.mock("./timeline-search", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./timeline-search")>();
+  return {
+    ...actual,
+    scrollMatchIntoView: (...args: Parameters<typeof actual.scrollMatchIntoView>) =>
+      searchHarness.scrollMatchIntoView(...args),
+  };
+});
 
 vi.mock("@/features/shortcuts/runtime", () => ({
   registerShortcutHandler: (name: string, handler: () => void) => {
@@ -79,8 +93,8 @@ describe("timeline search within bounded process history", () => {
   }
 
   async function search(query: string) {
-    if (!container.querySelector("search input")) await act(async () => searchHarness.handlers.get("chatSearch")!());
-    const input = container.querySelector<HTMLInputElement>("search input")!;
+    if (!container.querySelector('[role="search"] input')) await act(async () => searchHarness.handlers.get("chatSearch")!());
+    const input = container.querySelector<HTMLInputElement>('[role="search"] input')!;
     await act(async () => {
       Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, query);
       input.dispatchEvent(new Event("input", { bubbles: true }));
@@ -95,12 +109,12 @@ describe("timeline search within bounded process history", () => {
     expect(container.textContent).toContain("工具 0 目标🙂");
     expect(container.textContent).toContain("1/3");
     expect(container.querySelectorAll("li").length).toBeLessThanOrEqual(40);
-    await click(i18n.t("chat.searchNextMatch"));
+    await click(i18n.t("files.editorSearch.nextMatch"));
     expect(container.textContent).toContain("工具 80 目标🙂");
     expect(container.textContent).toContain("2/3");
-    await click(i18n.t("chat.searchNextMatch"));
+    await click(i18n.t("files.editorSearch.nextMatch"));
     expect(container.textContent).toContain("工具 499 目标🙂");
-    await click(i18n.t("chat.searchPrevMatch"));
+    await click(i18n.t("files.editorSearch.previousMatch"));
     expect(container.textContent).toContain("工具 80 目标🙂");
     expect(container.querySelectorAll("li").length).toBeLessThanOrEqual(40);
   });
@@ -110,30 +124,113 @@ describe("timeline search within bounded process history", () => {
     await search("工具 80 目标🙂");
     expect(container.textContent).toContain("工具 80 目标🙂");
     await click("工具调用 500 次");
-    await click(i18n.t("chat.searchNextMatch"));
+    await click(i18n.t("files.editorSearch.nextMatch"));
     expect(container.querySelector("button[aria-expanded]")!.getAttribute("aria-expanded")).toBe("true");
     expect(container.textContent).toContain("工具 80 目标🙂");
     await search("工具 0 目标🙂");
     expect(container.textContent).toContain("工具 0 目标🙂");
-    await click(i18n.t("chat.searchClose"));
+    await click(i18n.t("files.editorSearch.close"));
     await search("工具 499 目标🙂");
     expect(container.textContent).toContain("工具 499 目标🙂");
+  });
+
+  it("closes the find panel on Escape even when focus is outside it", async () => {
+    await renderTimeline();
+    await search("目标🙂");
+    expect(container.querySelector('[role="search"]')).not.toBeNull();
+    await act(async () => {
+      window.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }),
+      );
+    });
+    expect(container.querySelector('[role="search"]')).toBeNull();
   });
 
   it("maps occurrences rather than item counts after matches in an earlier row", async () => {
     await renderTimeline(true);
     await search("目标🙂");
     expect(container.textContent).toContain("1/5");
-    await click(i18n.t("chat.searchNextMatch"));
+    await click(i18n.t("files.editorSearch.nextMatch"));
     expect(container.textContent).toContain("2/5");
     expect(container.textContent).toContain("工具 0 目标🙂 目标🙂");
-    await click(i18n.t("chat.searchNextMatch"));
+    await click(i18n.t("files.editorSearch.nextMatch"));
     expect(container.textContent).toContain("3/5");
     expect(container.textContent).toContain("工具 0 目标🙂 目标🙂");
-    await click(i18n.t("chat.searchNextMatch"));
+    await click(i18n.t("files.editorSearch.nextMatch"));
     expect(container.textContent).toContain("4/5");
     expect(container.textContent).toContain("工具 80 目标🙂");
     expect(container.querySelectorAll("li").length).toBeLessThanOrEqual(40);
+  });
+});
+
+describe("timeline search word scrolling", () => {
+  let container: HTMLDivElement;
+  let root: Root;
+
+  beforeEach(async () => {
+    await i18n.changeLanguage("zh");
+    searchHarness.scrollMatchIntoView.mockClear();
+    class FakeHighlight {
+      priority = 0;
+      ranges: Range[];
+      constructor(...ranges: Range[]) {
+        this.ranges = ranges;
+      }
+    }
+    vi.stubGlobal("CSS", { highlights: new Map() });
+    vi.stubGlobal("Highlight", FakeHighlight);
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+  });
+
+  afterEach(async () => {
+    await act(async () => root.unmount());
+    container.remove();
+    vi.unstubAllGlobals();
+    vi.stubGlobal("ResizeObserver", ResizeObserverStub);
+    vi.stubGlobal("IntersectionObserver", ResizeObserverStub);
+  });
+
+  const nextFrames = () => act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 60));
+  });
+
+  async function click(label: string) {
+    const button = container.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`);
+    expect(button, label).toBeTruthy();
+    await act(async () => button!.click());
+    await nextFrames();
+  }
+
+  it("scrolls back to an earlier word after a row it could only locate by row", async () => {
+    const messages: Message[] = [
+      { seq: 1, role: "user", text: "foo first", ts: null },
+      // The link URL holds a "foo" the rendered bubble does not show, so this
+      // row's DOM count (1) disagrees with the data count (2).
+      { seq: 2, role: "assistant", text: "See [docs](https://x.dev/foo) then foo", ts: null },
+    ];
+    await act(async () => {
+      root.render(<MessageTimeline session={{ ...EMPTY_SESSION, messages }} streaming={false} onLoadEarlier={() => {}} workspacePath="/ws" />);
+    });
+    await act(async () => searchHarness.handlers.get("chatSearch")!());
+    const input = container.querySelector<HTMLInputElement>('[role="search"] input')!;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, "foo");
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await nextFrames();
+    expect(container.textContent).toContain("1/3");
+    expect(searchHarness.scrollMatchIntoView).toHaveBeenCalledTimes(1);
+
+    await click(i18n.t("files.editorSearch.nextMatch"));
+    expect(container.textContent).toContain("2/3");
+    // Row-level only: no word is guessed in the mismatched row.
+    expect(searchHarness.scrollMatchIntoView).toHaveBeenCalledTimes(1);
+
+    await click(i18n.t("files.editorSearch.previousMatch"));
+    expect(container.textContent).toContain("1/3");
+    expect(searchHarness.scrollMatchIntoView).toHaveBeenCalledTimes(2);
   });
 });
 

@@ -26,6 +26,7 @@ import {
 import { EMPTY_SESSION, patchSession } from "./stream";
 import { handleEngineEvents, upsertSessionMetaInto } from "./engine-events";
 import { mergePlanReviewHistory } from "./plan-review";
+import { withoutComposerAttachments } from "./attachments";
 import i18n from "@/lib/i18n";
 import {
   listExternalSessionMetas,
@@ -103,6 +104,7 @@ export function createSessionActions(
   | "refreshSessions"
   | "refreshEngines"
   | "selectSession"
+  | "reloadSession"
   | "loadEarlier"
   | "archiveSession"
   | "deleteSession"
@@ -121,6 +123,7 @@ export function createSessionActions(
     markUnseenIfBackground,
     turnSettled,
   } = deps;
+  let historyReloadId = 0;
 
   /** Migrate the engine pref off a CLI that is gone or disabled in
    * settings. All CLIs disabled: leave the pref alone — the composer shows
@@ -292,6 +295,13 @@ export function createSessionActions(
           delete streamingByKey[key];
           delete retryingByKey[key];
         }
+        // Composer attachments die with their session, same as the draft
+        // above: a hidden conversation must not keep a picture (and its
+        // sandbox file reference) alive.
+        const composerAttachments = withoutComposerAttachments(
+          s.composerAttachments,
+          Object.keys(archivedSessionKeys),
+        );
         for (const meta of merged) {
           const key = sessionKey(meta.engine, meta.sessionId, meta.workspacePath);
           const current = bySession[key];
@@ -327,6 +337,7 @@ export function createSessionActions(
           unseen,
           streamingByKey,
           retryingByKey,
+          composerAttachments,
           openTabs,
           active,
         };
@@ -432,7 +443,7 @@ export function createSessionActions(
         sessionSelection(get(), engine, sessionId, workspacePath),
       );
       const existing = get().bySession[key];
-      if (existing && existing.messages.length > 0) return;
+      if (existing?.loading || (existing && existing.messages.length > 0)) return;
       patchSession(set, key, { loading: true });
       // 并行取计划审批历史:失败静默降级为无历史计划,绝不阻塞会话加载。
       const plansPromise = ipc
@@ -466,6 +477,62 @@ export function createSessionActions(
         }
       } catch (error) {
         patchSession(set, key, { loading: false, error: String(error) });
+      }
+    },
+
+    reloadSession: async (session) => {
+      const { engine, sessionId, workspacePath } = session;
+      const key = sessionKey(engine, sessionId, workspacePath);
+      const existing = get().bySession[key];
+      if (get().streamingByKey[key] || existing?.streaming) {
+        set({ actionError: i18n.t("chat.sessionRefreshRunning") });
+        return;
+      }
+      if (existing?.loading || get().archivedSessionKeys[key]) return;
+      patchSession(set, key, { loading: true, error: null, historyReloadId: ++historyReloadId });
+      set({ actionError: null });
+      const snapshot = get().bySession[key];
+      const plansPromise = ipc.listPlanReviews(engine, sessionId).catch(() => null);
+      const unchanged = () => {
+        const current = get().bySession[key];
+        return current && current.historyReloadId === snapshot.historyReloadId && !get().archivedSessionKeys[key] &&
+          !get().streamingByKey[key] && !current.streaming &&
+          current.messages === snapshot.messages &&
+          current.settledRunIds === snapshot.settledRunIds;
+      };
+      try {
+        // Keep the already-visible history window, including more than one native page.
+        let remaining = Math.max(100, snapshot.messages.length);
+        let before: number | null = null;
+        let subagentHistory = snapshot.subagentHistory;
+        const pages = [];
+        do {
+          const page = await loadHistoryPage(engine, sessionId, workspacePath, Math.min(500, remaining), before, session, pages.length === 0);
+          if (!unchanged()) return;
+          pages.push(page.messages);
+          remaining -= page.messages.length;
+          before = page.nextBefore;
+          subagentHistory = page.subagentHistory;
+          if (page.messages.length === 0) break;
+        } while (remaining > 0 && before !== null);
+        let messages = pages.reverse().flat();
+        const plans = await plansPromise;
+        if (!unchanged()) return;
+        const reviews = plans ?? snapshot.messages.flatMap((message) => message.planReview ? [message.planReview] : []);
+        messages = mergePlanReviewHistory(messages, reviews) ?? messages;
+        let usage: unknown = null;
+        for (let index = messages.length - 1; index >= 0; index--) {
+          if (messages[index].usage) {
+            usage = messages[index].usage;
+            break;
+          }
+        }
+        patchSession(set, key, { messages, subagentHistory, nextBefore: before, usage, turnUsage: null, loading: false });
+      } catch (error) {
+        if (unchanged()) set({ actionError: i18n.t("chat.sessionRefreshFailed", { error: errorText(error) }) });
+      } finally {
+        // Deleted/archived entries must not be recreated by a late completion.
+        if (get().bySession[key]?.historyReloadId === snapshot.historyReloadId) patchSession(set, key, { loading: false, historyReloadId: undefined });
       }
     },
 
@@ -532,6 +599,7 @@ export function createSessionActions(
           archivedSessionKeys: { ...s.archivedSessionKeys, [key]: true },
           bySession,
           drafts,
+          composerAttachments: withoutComposerAttachments(s.composerAttachments, [key]),
           unseen: omitKey(s.unseen, key),
           actionError: null,
         };
@@ -586,6 +654,7 @@ export function createSessionActions(
           ),
           bySession,
           drafts,
+          composerAttachments: withoutComposerAttachments(s.composerAttachments, [key]),
           streamingByKey,
           retryingByKey,
           unseen: omitKey(s.unseen, key),

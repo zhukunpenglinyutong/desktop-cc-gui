@@ -1,9 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { DirEntry } from "@/lib/ipc";
+import type { DirEntry, SessionFileDocument, SessionMeta } from "@/lib/ipc";
 
 const mocks = vi.hoisted(() => ({
   listDir: vi.fn(),
   readFile: vi.fn(async () => ({ kind: "text", text: "", dataUrl: null, truncated: false })),
+  readSessionFile: vi.fn(),
+  writeSessionFile: vi.fn(),
+  writeFile: vi.fn(),
   gitTreeStatus: vi.fn(),
   gitRepositorySummaries: vi.fn(),
   gitFileColors: vi.fn(),
@@ -13,6 +16,7 @@ vi.mock("@/lib/ipc", () => ({ ipc: mocks }));
 vi.mock("@/features/browser/store", () => ({
   useBrowserStore: { getState: () => browserMock },
 }));
+import { useChatStore, type SessionState } from "@/features/chat/store";
 import { useGitStore } from "@/features/git/store";
 import { resetMissionStore, useMissionStore } from "@/features/mission/store";
 import { usePluginHubStore } from "@/features/plugins/hub/store";
@@ -453,5 +457,204 @@ describe("文件打开时的中心面互斥", () => {
     useFilesStore.getState().activateFile("/repo/a.ts");
     expectOnlyFileLeft();
     expect(useFilesStore.getState().activeFilePath).toBe("/repo/a.ts");
+  });
+});
+
+describe("native session editor tabs", () => {
+  const session: SessionMeta = {
+    engine: "omp", sessionId: "edited", workspacePath: "/repo",
+    filePath: "/home/me/.omp/agent/sessions/repo/timestamp_edited.jsonl",
+    fileSize: 2_000_000, fileMtimeMs: 1, title: "Edited", preview: "",
+    createdAt: 1, updatedAt: 1, messageCount: 2, pinned: false, customTitle: null,
+  };
+
+  beforeEach(() => {
+    vi.resetAllMocks();
+    mocks.writeSessionFile.mockImplementation(async (_engine: string, id: string, text: string) => ({ path: session.filePath, name: `${id}.json`, text, version: "saved" }));
+    useFilesStore.setState({ openFiles: [], fileStates: {}, activeFilePath: null, dirtyPaths: {} });
+  });
+
+  it("opens a complete large source and keeps an unsaved draft when opened again", async () => {
+    const text = "x".repeat(1_100_000);
+    mocks.readSessionFile.mockResolvedValue({ path: session.filePath, name: "timestamp_edited.jsonl", text, version: "A" });
+    await useFilesStore.getState().openSessionFile(session);
+    const key = useFilesStore.getState().activeFilePath!;
+    const entry = useFilesStore.getState().fileStates[key];
+    expect(entry.content).toMatchObject({ text, truncated: false, kind: "text" });
+    expect(entry.sourcePath).toBe(session.filePath);
+    expect(entry.name).toBe("timestamp_edited.jsonl");
+    useFilesStore.getState().setFileDirty(key, true);
+    mocks.readSessionFile.mockResolvedValue({ path: session.filePath, name: "timestamp_edited.jsonl", text: "Externally changed", version: "B" });
+    await useFilesStore.getState().openSessionFile(session);
+    expect(useFilesStore.getState().fileStates[key]).toBe(entry);
+    expect(useFilesStore.getState().dirtyPaths[key]).toBe(true);
+    expect(useFilesStore.getState().openFiles).toEqual([key]);
+  });
+
+  it("two OpenCode sessions sharing one database remain independently editable", async () => {
+    const one = { ...session, engine: "opencode", sessionId: "one", filePath: "/data/opencode.db\u001fone" };
+    const two = { ...one, sessionId: "two", filePath: "/data/opencode.db\u001ftwo" };
+    mocks.readSessionFile.mockImplementation(async (_engine: string, id: string) => ({ path: "/data/opencode.db", name: `${id}.json`, text: JSON.stringify({ sessionId: id }), version: id }));
+    await useFilesStore.getState().openSessionFile(one);
+    const oneKey = useFilesStore.getState().activeFilePath!;
+    await useFilesStore.getState().openSessionFile(two);
+    const twoKey = useFilesStore.getState().activeFilePath!;
+    expect(oneKey).not.toBe(twoKey);
+    expect(useFilesStore.getState().fileStates[oneKey].content?.text).toBe('{"sessionId":"one"}');
+    expect(useFilesStore.getState().fileStates[twoKey].content?.text).toBe('{"sessionId":"two"}');
+    await useFilesStore.getState().saveFile(oneKey, '{"sessionId":"one","text":"Edited"}');
+    expect(useFilesStore.getState().fileStates[oneKey].content?.text).toBe('{"sessionId":"one","text":"Edited"}');
+    expect(useFilesStore.getState().fileStates[twoKey].content?.text).toBe('{"sessionId":"two"}');
+  });
+
+  it("does not recreate a session editor closed during its initial read", async () => {
+    const pending = Promise.withResolvers<any>();
+    mocks.readSessionFile.mockReturnValueOnce(pending.promise);
+    const opening = useFilesStore.getState().openSessionFile(session);
+    const key = useFilesStore.getState().activeFilePath!;
+    useFilesStore.getState().closeFile(key);
+    pending.resolve({ path: session.filePath, name: "timestamp_edited.jsonl", text: "Late source", version: "late" });
+    await opening;
+    expect(useFilesStore.getState().fileStates[key]).toBeUndefined();
+    expect(useFilesStore.getState().activeFilePath).toBeNull();
+  });
+
+  const document = (text: string, version = text) => ({ path: session.filePath, name: "edited.jsonl", text, version });
+
+  it("reopens a clean tab with the appended turn and its current version", async () => {
+    mocks.readSessionFile.mockResolvedValueOnce(document("A")).mockResolvedValueOnce(document("A+B"));
+    await useFilesStore.getState().openSessionFile(session);
+    const key = useFilesStore.getState().activeFilePath!;
+    await useFilesStore.getState().openSessionFile(session);
+    expect(useFilesStore.getState().fileStates[key]).toMatchObject({ content: { text: "A+B" }, version: "A+B", loadNonce: 2 });
+    await useFilesStore.getState().saveFile(key, "A+B edited");
+    expect(mocks.writeSessionFile).toHaveBeenLastCalledWith("omp", "edited", "A+B edited", "A+B", undefined, undefined);
+  });
+
+  it("retains the dirty version on conflict and advances it after each successful save", async () => {
+    mocks.readSessionFile.mockResolvedValue(document("A"));
+    await useFilesStore.getState().openSessionFile(session);
+    const key = useFilesStore.getState().activeFilePath!;
+    useFilesStore.getState().setFileDirty(key, true);
+    mocks.writeSessionFile.mockRejectedValueOnce(new Error("SESSION_EDIT_CONFLICT"));
+    await expect(useFilesStore.getState().saveFile(key, "draft")).rejects.toThrow();
+    expect(useFilesStore.getState().fileStates[key]).toMatchObject({ content: { text: "A" }, version: "A" });
+    expect(useFilesStore.getState().dirtyPaths[key]).toBe(true);
+    await useFilesStore.getState().openSessionFile(session);
+    expect(mocks.readSessionFile).toHaveBeenCalledTimes(1);
+    await useFilesStore.getState().saveFile(key, "first");
+    await useFilesStore.getState().saveFile(key, "second");
+    expect(mocks.writeSessionFile).toHaveBeenLastCalledWith("omp", "edited", "second", "saved", undefined, undefined);
+  });
+
+  it("ignores an older read that resolves after the newest reopen", async () => {
+    const old = Promise.withResolvers<SessionFileDocument>();
+    mocks.readSessionFile.mockReturnValueOnce(old.promise).mockResolvedValueOnce(document("A+B"));
+    const opening = useFilesStore.getState().openSessionFile(session);
+    const key = useFilesStore.getState().activeFilePath!;
+    await useFilesStore.getState().openSessionFile(session);
+    old.resolve(document("A"));
+    await opening;
+    expect(useFilesStore.getState().fileStates[key]).toMatchObject({ content: { text: "A+B" }, version: "A+B" });
+  });
+
+  it("does not apply a late save to a closed and reopened session", async () => {
+    mocks.readSessionFile.mockResolvedValueOnce(document("A")).mockResolvedValueOnce(document("A+B"));
+    await useFilesStore.getState().openSessionFile(session);
+    const key = useFilesStore.getState().activeFilePath!;
+    const pending = Promise.withResolvers<SessionFileDocument>();
+    mocks.writeSessionFile.mockReturnValueOnce(pending.promise);
+    const saving = useFilesStore.getState().saveFile(key, "edited A");
+    useFilesStore.getState().closeFile(key);
+    await useFilesStore.getState().openSessionFile(session);
+    pending.resolve(document("edited A"));
+    await expect(saving).rejects.toThrow();
+    expect(useFilesStore.getState().fileStates[key]).toMatchObject({ content: { text: "A+B" }, version: "A+B" });
+  });
+
+  it("blocks overlapping saves and reloads until the saved token is available", async () => {
+    mocks.readSessionFile.mockResolvedValue(document("A"));
+    await useFilesStore.getState().openSessionFile(session);
+    const key = useFilesStore.getState().activeFilePath!;
+    const pending = Promise.withResolvers<SessionFileDocument>();
+    mocks.writeSessionFile.mockReturnValueOnce(pending.promise);
+    const saving = useFilesStore.getState().saveFile(key, "edited");
+    await useFilesStore.getState().openSessionFile(session);
+    await expect(useFilesStore.getState().saveFile(key, "second")).rejects.toThrow();
+    expect(mocks.readSessionFile).toHaveBeenCalledTimes(1);
+    expect(mocks.writeSessionFile).toHaveBeenCalledTimes(1);
+    pending.resolve(document("edited", "new-version"));
+    await saving;
+    await useFilesStore.getState().saveFile(key, "second");
+    expect(mocks.writeSessionFile).toHaveBeenLastCalledWith("omp", "edited", "second", "new-version", undefined, undefined);
+  });
+
+  it("re-reads a conversation the chat already shows after a save, without switching to it", async () => {
+    const original = useChatStore.getState();
+    const reloadSession = vi.fn(async () => {});
+    try {
+      useChatStore.setState({ reloadSession, sessions: [session], bySession: {} });
+      mocks.readSessionFile.mockResolvedValue(document("A"));
+      await useFilesStore.getState().openSessionFile(session);
+      const key = useFilesStore.getState().activeFilePath!;
+      await useFilesStore.getState().saveFile(key, "not loaded in chat");
+      expect(reloadSession).not.toHaveBeenCalled();
+
+      useChatStore.setState({ bySession: { "omp/edited": {} as SessionState } });
+      mocks.writeSessionFile.mockRejectedValueOnce(new Error("SESSION_EDIT_CONFLICT"));
+      await expect(useFilesStore.getState().saveFile(key, "conflict")).rejects.toThrow();
+      expect(reloadSession).not.toHaveBeenCalled();
+
+      await useFilesStore.getState().saveFile(key, "saved and shown");
+      expect(reloadSession).toHaveBeenCalledTimes(1);
+      expect(reloadSession).toHaveBeenCalledWith(session);
+      expect(useFilesStore.getState().activeFilePath).toBe(key);
+
+      // A history load already running may have read the pre-save source:
+      // re-read once after it settles, not during it.
+      useChatStore.setState({ bySession: { "omp/edited": { loading: true } as SessionState } });
+      await useFilesStore.getState().saveFile(key, "saved during a load");
+      expect(reloadSession).toHaveBeenCalledTimes(1);
+      useChatStore.setState({ bySession: { "omp/edited": { loading: false } as SessionState } });
+      expect(reloadSession).toHaveBeenCalledTimes(2);
+      useChatStore.setState({ bySession: { "omp/edited": { loading: false } as SessionState } });
+      expect(reloadSession).toHaveBeenCalledTimes(2);
+    } finally {
+      useChatStore.setState(original, true);
+    }
+  });
+
+  it("rejects edits without a source version", async () => {
+    mocks.readSessionFile.mockResolvedValue({ path: session.filePath, name: "edited.jsonl", text: "A" });
+    await useFilesStore.getState().openSessionFile(session);
+    await expect(useFilesStore.getState().saveFile(useFilesStore.getState().activeFilePath!, "draft")).rejects.toThrow();
+    expect(mocks.writeSessionFile).not.toHaveBeenCalled();
+  });
+
+  it("does not open an agy editor", async () => {
+    await useFilesStore.getState().openSessionFile({ ...session, engine: "agy" });
+    expect(mocks.readSessionFile).not.toHaveBeenCalled();
+    expect(useFilesStore.getState().openFiles).toEqual([]);
+  });
+
+  it("rejects an agy save even if a caller supplies an editor entry", async () => {
+    const key = "session:agy/edited";
+    useFilesStore.setState({ fileStates: { [key]: {
+      path: key, session: { ...session, engine: "agy" }, version: "old",
+      content: { kind: "text", text: "old", dataUrl: null, truncated: false }, loading: false, error: null, loadNonce: 1,
+    } } });
+    await expect(useFilesStore.getState().saveFile(key, "new")).rejects.toThrow();
+    expect(mocks.writeSessionFile).not.toHaveBeenCalled();
+  });
+
+  it("keeps ordinary file saves on the unversioned file API", async () => {
+    const path = "/repo/notes.txt";
+    useFilesStore.setState({ fileStates: { [path]: {
+      path, content: { kind: "text", text: "old", dataUrl: null, truncated: false }, loading: false, error: null, loadNonce: 1,
+    } } });
+    await useFilesStore.getState().saveFile(path, "new");
+    expect(mocks.writeFile).toHaveBeenCalledWith(path, "new");
+    expect(mocks.writeSessionFile).not.toHaveBeenCalled();
+    expect(useFilesStore.getState().fileStates[path].content?.text).toBe("new");
   });
 });

@@ -44,6 +44,28 @@ describe("findMarkdownMatches", () => {
     expect(findMarkdownMatches(root, "   ")).toEqual([]);
     expect(findMarkdownMatches(root, "")).toEqual([]);
   });
+
+  it("honours case sensitivity", () => {
+    const root = makeRoot("<p>Bug bug BUG</p>");
+    expect(findMarkdownMatches(root, "bug")).toHaveLength(3);
+    expect(findMarkdownMatches(root, "bug", { caseSensitive: true })).toHaveLength(1);
+  });
+
+  it("honours whole-word matching", () => {
+    const root = makeRoot("<p>cat concatenate cat</p>");
+    expect(findMarkdownMatches(root, "cat")).toHaveLength(3);
+    expect(
+      findMarkdownMatches(root, "cat", { wholeWord: true }).map((range) => range.toString()),
+    ).toEqual(["cat", "cat"]);
+  });
+
+  it("supports regular expressions and ignores invalid ones", () => {
+    const root = makeRoot("<p>bug 123 BUG 456</p>");
+    expect(findMarkdownMatches(root, "\\d+", { regexp: true })).toHaveLength(2);
+    expect(findMarkdownMatches(root, "BUG", { regexp: true })).toHaveLength(2);
+    expect(findMarkdownMatches(root, "BUG", { regexp: true, caseSensitive: true })).toHaveLength(1);
+    expect(findMarkdownMatches(root, "(", { regexp: true })).toEqual([]);
+  });
 });
 
 describe("scrollRangeIntoView", () => {

@@ -46,6 +46,7 @@ export function ChatPageDialogs({
   const workspaces = useChatStore((s) => s.workspaces);
   const workspaceAliases = useChatStore((s) => s.workspaceAliases);
   const closeFile = useFilesStore((s) => s.closeFile);
+  const dirtyFileName = useFilesStore((s) => dialog?.kind === "closeFile" ? s.fileStates[dialog.path]?.name ?? fileName(dialog.path) : "");
   const removeTerminalWorkspace = useTerminalStore((s) => s.removeWorkspace);
 
   return (
@@ -67,7 +68,7 @@ export function ChatPageDialogs({
       {dialog?.kind === "closeFile" && (
         <ConfirmDialog
           danger
-          message={t("files.confirmCloseDirty", { name: fileName(dialog.path) })}
+          message={t("files.confirmCloseDirty", { name: dirtyFileName })}
           onConfirm={() => {
             closeFile(dialog.path);
             onClose();

@@ -2,7 +2,8 @@ use super::discovery::{
     codebuddy_transcripts, codex_candidates, discover_agy, discover_claude, discover_codebuddy_in,
     discover_grok, discover_kimi, discover_minimax, discover_opencode, discover_qoder,
     dsh_candidates, identify_head, is_codex_subagent_file, is_dsh_subagent_file,
-    opencode_db_visible_sessions, path_is_under, pi_family_candidates,
+    opencode_db_updated_times, opencode_db_visible_sessions, opencode_tree_file_superseded,
+    opencode_tree_root, path_is_under, pi_family_candidates,
 };
 use super::{same_or_child, scan_summary_file, split_opencode_db_path, stat_signature, ScanSummary};
 use serde::Serialize;
@@ -468,10 +469,32 @@ fn prune_opencode_hidden_sessions(db: &crate::db::Db) -> Result<bool, String> {
             .map_err(|e| e.to_string())?;
         let mut grouped: std::collections::HashMap<PathBuf, Vec<String>> =
             std::collections::HashMap::new();
+        let mut trees: std::collections::HashMap<PathBuf, Vec<(String, PathBuf)>> =
+            std::collections::HashMap::new();
         for row in rows.flatten() {
             let (session_id, path) = row;
-            if let Some((db_path, _)) = split_opencode_db_path(Path::new(&path)) {
+            let path = PathBuf::from(path);
+            if let Some((db_path, _)) = split_opencode_db_path(&path) {
                 grouped.entry(db_path).or_default().push(session_id);
+            } else if let Some(root) = opencode_tree_root(&path).map(Path::to_path_buf) {
+                trees.entry(root).or_default().push((session_id, path));
+            }
+        }
+        drop(stmt);
+        drop(conn);
+        // A tree row indexed before its session moved into opencode.db is
+        // judged by the database row, as discovery now resolves it: a visible
+        // one is re-pointed by the upsert, a hidden one (archived) is dropped.
+        for (root, rows) in trees {
+            let in_database = opencode_db_updated_times(&root);
+            if in_database.is_empty() {
+                continue;
+            }
+            let db_path = root.join("opencode.db");
+            for (session_id, file) in rows {
+                if opencode_tree_file_superseded(&in_database, &session_id, &file) {
+                    grouped.entry(db_path.clone()).or_default().push(session_id);
+                }
             }
         }
         grouped
@@ -1827,6 +1850,89 @@ pub(super) mod tests {
                 .map_err(|e| e.to_string())?
         };
         assert_eq!(ids, vec!["ses_visible".to_string()]);
+        drop(db);
+        std::fs::remove_dir_all(&home).ok();
+        Ok(())
+    }
+
+    /// Rows indexed from the JSON tree before OpenCode 1.2+ migrated it into
+    /// opencode.db follow the database copy: a visible one is re-pointed to
+    /// its database row, one the database hides (archived) leaves the sidebar
+    /// instead of lingering on the frozen file, and a tree newer than the
+    /// database (a 1.1 binary still in use) keeps its tree row.
+    #[test]
+    fn scan_resolves_tree_rows_superseded_by_the_database() -> Result<(), String> {
+        let home = scratch_dir("scan-opencode-migrated");
+        let workspace = home.join("ws");
+        std::fs::create_dir_all(&workspace).map_err(|e| e.to_string())?;
+        let ws = workspace.to_string_lossy().to_string();
+        let data_root = home.join(".local/share/opencode");
+        let project = data_root.join("storage/session/b8119e41");
+        std::fs::create_dir_all(&project).map_err(|e| e.to_string())?;
+        for (id, updated) in [("ses_live", 2), ("ses_archived", 1), ("ses_downgraded", 50)] {
+            std::fs::write(
+                project.join(format!("{id}.json")),
+                serde_json::json!({"id": id, "projectID": "b8119e41", "directory": ws, "time": {"updated": updated}})
+                    .to_string(),
+            )
+            .map_err(|e| e.to_string())?;
+        }
+        let opencode_db = data_root.join("opencode.db");
+        {
+            let conn = rusqlite::Connection::open(&opencode_db).map_err(|e| e.to_string())?;
+            conn.execute_batch(
+                "CREATE TABLE session(id TEXT PRIMARY KEY, directory TEXT NOT NULL,
+                    parent_id TEXT, time_archived INTEGER, time_updated INTEGER NOT NULL);
+                 CREATE TABLE message(id TEXT PRIMARY KEY, session_id TEXT NOT NULL);",
+            )
+            .map_err(|e| e.to_string())?;
+            for (id, archived, updated) in [("ses_live", None, 2), ("ses_archived", Some(9), 5), ("ses_downgraded", None, 10)] {
+                conn.execute(
+                    "INSERT INTO session VALUES(?1,?2,NULL,?3,?4)",
+                    rusqlite::params![id, ws, archived, updated],
+                )
+                .map_err(|e| e.to_string())?;
+                conn.execute("INSERT INTO message VALUES(?1,?1)", [id])
+                    .map_err(|e| e.to_string())?;
+            }
+        }
+        let _guard = HomeGuard::set(&home);
+        let db = crate::db::Db::open_at(&home.join("app.db")).map_err(|e| e.to_string())?;
+        {
+            let conn = db.0.lock();
+            conn.execute(
+                "INSERT INTO workspaces(id, path, name) VALUES('w1', ?1, 'ws')",
+                [&ws],
+            )
+            .map_err(|e| e.to_string())?;
+            for id in ["ses_live", "ses_archived", "ses_downgraded"] {
+                conn.execute(
+                    "INSERT INTO sessions(engine, session_id, workspace_path, file_path, file_size, file_mtime_ms, title) VALUES('opencode', ?1, ?2, ?3, 1, 1, '')",
+                    rusqlite::params![id, ws, project.join(format!("{id}.json")).to_string_lossy().to_string()],
+                )
+                .map_err(|e| e.to_string())?;
+            }
+        }
+        scan_with(&db, || {})?;
+        let rows: Vec<(String, String)> = {
+            let conn = db.0.lock();
+            let mut stmt = conn
+                .prepare("SELECT session_id, file_path FROM sessions WHERE engine='opencode' ORDER BY session_id")
+                .map_err(|e| e.to_string())?;
+            let rows = stmt
+                .query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))
+                .map_err(|e| e.to_string())?;
+            rows.collect::<Result<Vec<_>, _>>()
+                .map_err(|e| e.to_string())?
+        };
+        let live = super::super::opencode_db_session_path(&opencode_db, "ses_live");
+        assert_eq!(
+            rows,
+            vec![
+                ("ses_downgraded".to_string(), project.join("ses_downgraded.json").to_string_lossy().to_string()),
+                ("ses_live".to_string(), live.to_string_lossy().to_string()),
+            ]
+        );
         drop(db);
         std::fs::remove_dir_all(&home).ok();
         Ok(())

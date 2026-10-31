@@ -29,6 +29,14 @@ export function changelogEntryFor(version: string): ChangelogEntry | undefined {
 
 export const CHANGELOG_DATA: ChangelogEntry[] = [
   {
+    version: "1.2.0",
+    date: "2026-10-29",
+    content: {
+      zh: `- **会话原文件编辑与定向刷新**（#1416）：会话右键可打开内置编辑器，保存回 CLI 原生存储；「刷新渲染」只重读目标会话并保留输入草稿、分页窗口及其他会话。保存必须携带读取时的版本，源已变化则拒绝并保留草稿；干净页签再次打开时重读，脏页签不丢修改。普通 / 压缩文件及 OpenCode 树 / SQLite 保存前保留上一版本，聚合备份仅当前用户可访问，恢复说明见界面规范；远端成功响应的文本与版本来自同一次稳定读取。agy 暂不提供编辑，压缩 / 数据库 / 远端源不交给本机文本编辑器；过大或损坏的本地普通文本提供外部修复入口。内置编辑器保存成功后，聊天中已打开的该会话自动重读；OpenCode 树备份为隐藏文件，不影响 OpenCode 1.1 及更早版本列出会话；已迁移进 opencode.db 的会话以数据库为准；删除会话时一并删除其编辑备份。编辑器新增自动换行，点击行号选中完整逻辑行，删除与撤销不影响其他行。`,
+      en: `- **Edit native sessions and refresh one conversation** (#1416): the session context menu opens the built-in editor and saves to the CLI's native storage; Refresh rendering reloads only that conversation while retaining its input draft, history window and other sessions. Saves require the version returned at read time, reject changed sources and retain unsaved drafts; reopening a clean tab reloads it, while a dirty tab keeps its edits. Plain/compressed files and OpenCode tree/SQLite saves retain the previous version, with aggregates restricted to the editing user and recovery steps in the UI specification; remote save responses pair text and version from one stable snapshot. agy editing is temporarily disabled, and compressed/database/remote sources are not sent to a local text editor; oversized or malformed local plain-text sources offer external repair. A successful built-in save re-reads that conversation if the chat already shows it; OpenCode tree backups are hidden files so OpenCode 1.1 and earlier still list sessions, sessions migrated into opencode.db resolve to the database, and deleting a session also deletes its editor backups. Word wrap changes display only, and clicking a line number selects the whole logical line for deletion and undo.`,
+    },
+  },
+  {
     version: "1.1.9",
     date: "2026-10-28",
     content: {
