@@ -195,6 +195,28 @@ fn opencode_toggle_writes_enabled_and_round_trips() {
 }
 
 #[test]
+fn omp_toggle_writes_the_enabled_field_and_round_trips() {
+    // OMP 原生 mcp.json：`enabled: false` 就是 `/mcp disable` 写的停用字段。
+    let scratch = Scratch::new("omp-write");
+    let path = scratch.path().join("mcp.json");
+    let original = "{\n  \"mcpServers\": {\n    \"rea\": {\n      \"command\": \"cmd.exe\",\n      \"args\": [\"/c\", \"rea\"]\n    }\n  }\n}\n";
+    std::fs::write(&path, original).unwrap();
+    assert!(source("omp_user").writable);
+    assert!(source("omp_project").writable);
+    set_json_enabled(source("omp_user"), &path, "rea", false, &file_hash(original.as_bytes())).unwrap();
+    let raw = std::fs::read_to_string(&path).unwrap();
+    let entries = read_json_source(source("omp_user"), &path).unwrap();
+    assert!(!entries[0].enabled);
+    let written: serde_json::Value = serde_json::from_str(&raw).unwrap();
+    assert_eq!(written["mcpServers"]["rea"]["enabled"], serde_json::json!(false));
+    // 其余字段原样保留。
+    assert_eq!(written["mcpServers"]["rea"]["command"], "cmd.exe");
+    set_json_enabled(source("omp_user"), &path, "rea", true, &file_hash(raw.as_bytes())).unwrap();
+    let entries = read_json_source(source("omp_user"), &path).unwrap();
+    assert!(entries[0].enabled);
+}
+
+#[test]
 fn grok_disabled_list_and_enabled_field_combine_for_both_scopes() {
     let scratch = Scratch::new("grok");
     let home = scratch.path().join("home");

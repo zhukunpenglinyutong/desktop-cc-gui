@@ -9,7 +9,7 @@ export function engineLabel(id: string): string {
   return CLI_DISPLAY_NAMES[id] ?? id;
 }
 
-type Translate = (
+export type Translate = (
   key: string,
   options?: { defaultValue?: string },
 ) => string;

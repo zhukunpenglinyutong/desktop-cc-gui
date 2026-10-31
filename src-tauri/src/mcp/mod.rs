@@ -18,6 +18,8 @@ use serde_json::Value;
 use std::sync::Arc;
 
 mod config;
+pub mod launch;
+pub(crate) mod lazy;
 pub(crate) mod probe;
 mod runtime;
 mod sources;
@@ -116,6 +118,10 @@ pub(crate) struct McpConfigEntry {
     pub(crate) readonly_reason_code: Option<String>,
     /// 读取时的文件内容哈希；写入时回读比对，不一致即冲突。
     pub(crate) version: String,
+    /// 启动方式（launch.rs）：`eager` 随会话启动 / `onDemand` 首次调用时启动。
+    pub(crate) launch_mode: String,
+    /// 不能按需启动的原因码（engine | transport | workspace_file）；None = 可选。
+    pub(crate) launch_mode_unsupported: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -197,6 +203,16 @@ pub(crate) struct McpSetEnabledRequest {
     pub(crate) workspace: Option<String>,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct McpSetLaunchModeRequest {
+    pub(crate) entry_id: String,
+    /// `eager` | `onDemand`
+    pub(crate) mode: String,
+    #[serde(default)]
+    pub(crate) workspace: Option<String>,
+}
+
 /// 配置清单：每个引擎都有独立分区；运行时可查询的引擎给快照，其余显式
 /// 标注「当前构建无法查询」，不假装没有服务。
 #[tauri::command]
@@ -219,6 +235,7 @@ pub(crate) async fn mcp_inventory(
     // 其余引擎的声明式来源（Kimi / Grok / OMP / OpenCode / Antigravity /
     // Qoder / dsh）追加到同一份清单，按 engine 过滤后分给各自的 tab。
     sources::append_entries(&mut config, workspace.as_deref());
+    launch::annotate(&mut config, workspace.as_deref());
     let collected_at = now_ms();
 
     let by_engine = |engine: &str, runtime: McpRuntimeSection| {
@@ -297,6 +314,32 @@ pub(crate) async fn mcp_set_enabled(
         &request.version,
         workspace.as_deref(),
     )
+}
+
+/// 切换一个条目的启动方式（只写 ccgui 自己的设置，不碰 CLI 配置）。
+#[tauri::command]
+pub(crate) async fn mcp_set_launch_mode(
+    app: tauri::AppHandle,
+    db: tauri::State<'_, Arc<crate::db::Db>>,
+    request: McpSetLaunchModeRequest,
+) -> Result<McpConfigEntry, McpError> {
+    let workspace = validate_workspace(request.workspace.as_deref(), &db)?;
+    let mut section = read_config_entries(workspace.as_deref());
+    sources::append_entries(&mut section, workspace.as_deref());
+    let entry = section
+        .entries
+        .iter()
+        .find(|entry| entry.id == request.entry_id)
+        .cloned()
+        .ok_or_else(|| McpError::not_found("MCP entry not found"))?;
+    launch::write_mode(&entry, &request.mode, workspace.as_deref())?;
+    crate::settings::announce_settings(&app);
+    launch::annotate(&mut section, workspace.as_deref());
+    section
+        .entries
+        .into_iter()
+        .find(|entry| entry.id == request.entry_id)
+        .ok_or_else(|| McpError::not_found("MCP entry not found"))
 }
 
 pub(crate) fn now_ms() -> i64 {

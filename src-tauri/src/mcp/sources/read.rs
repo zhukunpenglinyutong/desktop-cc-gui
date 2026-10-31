@@ -168,6 +168,8 @@ pub(super) fn build_entry(
         readonly_reason: spec.readonly_reason.map(str::to_string),
         readonly_reason_code,
         version: version.to_string(),
+        launch_mode: crate::mcp::launch::EAGER.to_string(),
+        launch_mode_unsupported: None,
     }
 }
 
@@ -325,6 +327,8 @@ pub(super) fn read_toml_source(source: &Source, path: &Path) -> Result<Vec<McpCo
             readonly_reason: spec.readonly_reason.map(str::to_string),
             readonly_reason_code: spec.readonly_reason_code.map(str::to_string),
             version: version.clone(),
+            launch_mode: crate::mcp::launch::EAGER.to_string(),
+            launch_mode_unsupported: None,
         });
     }
     Ok(entries)
@@ -483,6 +487,8 @@ pub(super) fn read_dsh_profile(path: &Path) -> Result<Vec<McpConfigEntry>, McpEr
             readonly_reason: spec.readonly_reason.map(str::to_string),
             readonly_reason_code: spec.readonly_reason_code.map(str::to_string),
             version: version.clone(),
+            launch_mode: crate::mcp::launch::EAGER.to_string(),
+            launch_mode_unsupported: None,
         });
     }
     Ok(entries)

@@ -2309,6 +2309,25 @@ export const en: Messages = {
   mcp: {
     searchPlaceholder: "Search server names",
     toggle: "Enable {{name}}",
+    enableHint: {
+      on: "{{name}}: enabled in config. Click to disable",
+      off: "{{name}}: disabled in config. Click to enable",
+    },
+    launch: {
+      title: "Start on demand",
+      toggle: "Start {{name}} on demand",
+      onDemandHint: "{{name}}: starts on demand (on first call). Click to start it with the session",
+      eagerHint: "{{name}}: starts with the session. Click to start it on demand (on first call)",
+      description:
+        "When on, sessions this app launches no longer start this server up front: the model still gets its tool list (cached from the last run), and the server starts on the first real call. Only affects this app; the CLI config is unchanged.",
+      disabledEntry: "The entry is disabled: enable it to choose how it starts",
+      unsupported: {
+        engine: "This engine has no per-launch MCP override channel yet",
+        transport: "Only stdio servers can start on demand: remote servers have no local process",
+        workspace_file:
+          "The entry lives in the workspace .omp/mcp.json and cannot be overridden per launch; move it to the user-level mcp.json",
+      },
+    },
     enabled: "Enabled in config",
     disabled: "Disabled in config",
     builtin: "Built-in",
@@ -2324,6 +2343,8 @@ export const en: Messages = {
         "dsh serves MCP through plugins (one dsh-mcp-client instance per server); add or remove them in the profile's cordis config",
       jsonc_readonly:
         "This file is JSONC (it carries comments): writing would drop them, so it is read-only here — edit it in your editor",
+      needs_workspace:
+        "Claude records enable/disable per workspace (that workspace's disabledMcpServers in ~/.claude.json): open a workspace to switch it here",
     },
     support: {
       none: "{{name}} does not ship MCP: no source is invented for it. Its extension mechanism can still add MCP.",

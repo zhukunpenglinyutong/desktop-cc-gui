@@ -2248,6 +2248,24 @@ export const zh = {
   mcp: {
     searchPlaceholder: "搜索服务名",
     toggle: "启用 {{name}}",
+    enableHint: {
+      on: "{{name}}：配置已启用，点击停用",
+      off: "{{name}}：配置已停用，点击启用",
+    },
+    launch: {
+      title: "按需启动",
+      toggle: "{{name}} 按需启动",
+      onDemandHint: "{{name}}：按需启动（首次调用时才启动），点击改为随会话启动",
+      eagerHint: "{{name}}：随会话启动，点击改为按需启动（首次调用时才启动）",
+      description:
+        "开启后，本应用拉起的会话不再随会话启动这个服务：工具清单照常给模型（来自上次运行的缓存），第一次真正调用时才启动。只影响本应用，不改 CLI 配置。",
+      disabledEntry: "条目已停用：启用后才能选择启动方式",
+      unsupported: {
+        engine: "此引擎暂不支持按需启动（没有逐次覆盖 MCP 的通道）",
+        transport: "只有 stdio 服务能按需启动：远程服务没有本地进程",
+        workspace_file: "条目写在工作区 .omp/mcp.json 里，无法逐次覆盖；移到用户级 mcp.json 后可用",
+      },
+    },
     enabled: "配置已启用",
     disabled: "配置已停用",
     builtin: "内置",
@@ -2263,6 +2281,8 @@ export const zh = {
         "dsh 的 MCP 由插件提供（每台服务一个 dsh-mcp-client 实例），请在 profile 的 cordis 配置里增删",
       jsonc_readonly:
         "该文件是 JSONC（带注释）：写入会丢掉注释，这里只读；请在编辑器里改",
+      needs_workspace:
+        "Claude 的启停按工作区记录（~/.claude.json 里该工作区的 disabledMcpServers）：先打开一个工作区，才能在这里切换",
     },
     support: {
       none: "{{name}} 未内置 MCP：这里不伪造来源。它仍可通过扩展机制接入 MCP。",

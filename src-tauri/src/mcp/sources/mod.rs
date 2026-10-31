@@ -203,14 +203,16 @@ const SOURCES: &[Source] = &[
         writable: false,
         readonly_reason_code: REASON_GROK_PROJECT,
     },
+    // OMP 自己的 mcp.json：`enabled: false` 即停用（与 `/mcp disable` 写的同一字段，
+    // 文档 mcp-config「Server fields」），可以就地启停。
     json_source!(
         "omp_user",
         "omp",
         "user",
         Some(Toggle::Enabled),
         false,
-        false,
-        REASON_UNVERIFIED_WRITE
+        true,
+        ""
     ),
     json_source!(
         "omp_project",
@@ -218,8 +220,8 @@ const SOURCES: &[Source] = &[
         "project",
         Some(Toggle::Enabled),
         false,
-        false,
-        REASON_UNVERIFIED_WRITE
+        true,
+        ""
     ),
     Source {
         id: "opencode_user",

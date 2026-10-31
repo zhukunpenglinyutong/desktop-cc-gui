@@ -1,4 +1,4 @@
-//! 启停写入：只对在本机真实 CLI 上验证过语义的来源开放（grok / opencode）。
+//! 启停写入：只对在本机真实 CLI 上验证过语义的来源开放（grok / opencode / omp）。
 //!
 //! 三个不变量：写入前比对文件哈希（外部改动即拒绝）、只改目标条目那一个
 //! 字段、原子替换后回读文件作为返回状态。
@@ -37,7 +37,7 @@ pub(crate) fn write_enabled(
     let _guard = WRITE_LOCK.lock();
     match source_id {
         "grok_user" => set_grok_user_enabled(&path, name, enabled, expected_version)?,
-        "opencode_user" | "opencode_project" => {
+        "opencode_user" | "opencode_project" | "omp_user" | "omp_project" => {
             set_json_enabled(source, &path, name, enabled, expected_version)?
         }
         _ => {

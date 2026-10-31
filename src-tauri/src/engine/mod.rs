@@ -263,6 +263,17 @@ pub trait Engine: Send + Sync {
     fn supports_memory(&self) -> bool {
         false
     }
+    /// Mount the user's「按需启动」MCP entries for this launch: re-point each
+    /// winning definition at `--mcp-lazy` through the engine's own per-launch
+    /// channel (see mcp/launch.rs). Default: no channel, nothing to do.
+    fn mount_on_demand(
+        &self,
+        _built: &mut BuiltCommand,
+        _servers: &[crate::mcp::launch::OnDemandServer],
+        _workspace: &std::path::Path,
+    ) -> Result<(), String> {
+        Ok(())
+    }
     /// Whether this engine supports reasoning effort configuration.
     fn supports_effort(&self) -> bool {
         false
@@ -654,6 +665,17 @@ fn prepare_launch(
     } else {
         engine_impl.build_command(&req, &bin)?
     };
+    // 按需启动的 MCP 条目：只对本机工作区、无工具白名单的普通发送生效
+    // （远端 CLI 读不到本机 exe；只读/计划隔离要求零 MCP）。失败就保持
+    // 随会话启动，不拦发送。
+    if !wsl && req.allowed_tools.is_none() && !codex_read_only::requested(&req) {
+        let servers = crate::mcp::launch::on_demand_servers(engine, &req.workspace);
+        if !servers.is_empty() {
+            if let Err(error) = engine_impl.mount_on_demand(&mut built, &servers, &req.workspace) {
+                eprintln!("[mcp-lazy] {engine}: on-demand mount skipped: {error}");
+            }
+        }
+    }
     for (key, value) in &channel_env {
         built.command.env(key, value);
     }

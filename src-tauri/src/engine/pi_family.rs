@@ -488,6 +488,30 @@ impl Engine for PiFamilyEngine {
     fn supports_memory(&self) -> bool {
         self.id == "omp"
     }
+    /// omp：按需条目以同名写进工作区 `.omp/mcp.json`（项目级优先于用户级，
+    /// 见 omp mcp-config「Discovery and precedence」），回合结束随计算机/
+    /// 记忆注入一起按引用计数恢复；崩溃残留由启动清扫兜底。
+    fn mount_on_demand(
+        &self,
+        built: &mut BuiltCommand,
+        servers: &[crate::mcp::launch::OnDemandServer],
+        workspace: &std::path::Path,
+    ) -> Result<(), String> {
+        if self.id != "omp" {
+            return Ok(());
+        }
+        let specs = servers
+            .iter()
+            .map(crate::mcp::launch::OnDemandServer::omp_spec)
+            .collect::<Result<Vec<_>, _>>()?;
+        if let Some(restore) = crate::computer_use::inject_workspace_mcp(workspace, &specs)? {
+            match built.mcp_restore.as_mut() {
+                Some(existing) => existing.absorb(restore),
+                None => built.mcp_restore = Some(restore),
+            }
+        }
+        Ok(())
+    }
     /// omp exposes real approval switches (`--approval-mode`,
     /// `--auto-approve`); pi 0.85 has none of them, so it keeps the trait
     /// default. "plan" 由 OMP 原生 ACP 计划流程承接（plan_approval 的

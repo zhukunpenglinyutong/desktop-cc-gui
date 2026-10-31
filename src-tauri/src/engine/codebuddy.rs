@@ -285,6 +285,20 @@ impl Engine for CodeBuddyEngine {
         true
     }
 
+    /// 同 Claude：私有文件经 `--mcp-config` 交给 CLI（提示词走 stdin，追加在
+    /// 末尾不会被当成位置参数）。
+    fn mount_on_demand(
+        &self,
+        built: &mut BuiltCommand,
+        servers: &[crate::mcp::launch::OnDemandServer],
+        _workspace: &std::path::Path,
+    ) -> Result<(), String> {
+        let path = crate::mcp::launch::stage_claude_config(servers, "codebuddy-staging")?;
+        built.cleanup_files.push(path.clone());
+        built.command.arg("--mcp-config").arg(path);
+        Ok(())
+    }
+
     fn supported_permissions(&self) -> &'static [&'static str] {
         // No "manual": CodeBuddy headless does not support
         // --permission-prompt-tool, so a mode that promises "ask every time"

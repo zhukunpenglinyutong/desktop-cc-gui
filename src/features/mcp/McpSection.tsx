@@ -12,13 +12,11 @@
  */
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import Lock from "lucide-react/dist/esm/icons/lock";
 import Activity from "lucide-react/dist/esm/icons/activity";
 import RefreshCw from "lucide-react/dist/esm/icons/refresh-cw";
 import Search from "lucide-react/dist/esm/icons/search";
 import { Button } from "@/components/base/buttons/button";
 import { Input } from "@/components/base/input/input";
-import { Switch } from "@/components/base/switch/switch";
 import { CenteredSpinner, EmptyState } from "@/components/base/empty-state";
 import { Chip } from "@/components/base/chips/chip";
 import { EngineIcon } from "@/components/foundations/icons/engine-icon";
@@ -28,6 +26,7 @@ import { useChatStore } from "@/features/chat/store";
 import { isWeb } from "@/lib/transport";
 import { cx } from "@/utils/cx";
 import { McpDetailDialog } from "./McpDetailDialog";
+import { EnableToggle, LaunchModeToggle } from "./launch-ui";
 import { ProbeActionButton, ProbeStatusChip } from "./probe-ui";
 import {
   latestCheckedAt,
@@ -35,13 +34,14 @@ import {
   useAutoProbe,
   useMcpProbeStore,
 } from "./probe-store";
-import { engineIdFromHash, engineLabel, readonlyReasonText } from "./labels";
+import { engineIdFromHash, engineLabel } from "./labels";
 import type {
   McpConfigEntry,
   McpEngineId,
   McpEngineInventory,
   McpRuntimeEntry,
   McpRuntimeSection,
+  McpLaunchMode,
   McpSourceInfo,
 } from "./types";
 import { useMcpInventory } from "./useMcpInventory";
@@ -59,6 +59,7 @@ function ConfigRow({
   workspacePath,
   onOpen,
   onToggle,
+  onLaunchMode,
 }: {
   entry: McpConfigEntry;
   pending: boolean;
@@ -66,12 +67,12 @@ function ConfigRow({
   workspacePath: string | null;
   onOpen: () => void;
   onToggle: (enabled: boolean) => void;
+  onLaunchMode: (mode: McpLaunchMode) => void;
 }) {
   const { t } = useTranslation();
   const meta = entry.command
     ? `${entry.command}${entry.argsCount > 0 ? ` +${entry.argsCount}` : ""}`
     : (entry.url ?? t("mcp.transportUnknown"));
-  const readonlyReason = readonlyReasonText(t, entry);
   return (
     <li
       className={cx(
@@ -84,54 +85,40 @@ function ConfigRow({
         type="button"
         onClick={onOpen}
         aria-label={t("mcp.row.open", { name: entry.name })}
-        className="flex min-w-0 flex-1 flex-col items-start gap-0.5 text-left outline-none focus-visible:ring-2 focus-visible:ring-border-focus-ring"
+        className="flex min-w-0 flex-1 items-center gap-2 text-left outline-none focus-visible:ring-2 focus-visible:ring-border-focus-ring"
       >
-        <span className="flex w-full items-center gap-2">
-          <span className="truncate text-body-regular text-text-primary" title={entry.name}>
-            {entry.name}
-          </span>
-          <span className="shrink-0 rounded-full bg-background-tertiary-default px-1.5 py-0.5 text-[10px] text-text-secondary">
-            {t(`mcp.source.${entry.source}`)}
-          </span>
-          {!entry.enabled ? (
-            <span className="shrink-0 rounded-full bg-background-tertiary-default px-1.5 py-0.5 text-[10px] text-text-tertiary">
-              {t("mcp.disabled")}
+        <span className="flex min-w-0 flex-1 flex-col items-start gap-0.5">
+          <span className="flex w-full items-center gap-2">
+            <span className="truncate text-body-regular text-text-primary" title={entry.name}>
+              {entry.name}
             </span>
-          ) : null}
-        </span>
-        <span
-          className="flex w-full items-center gap-2 text-caption-1-regular text-text-secondary"
-          title={meta}
-        >
-          <span className="min-w-0 truncate">
+            <span className="shrink-0 rounded-full bg-background-tertiary-default px-1.5 py-0.5 text-[10px] text-text-secondary">
+              {t(`mcp.source.${entry.source}`)}
+            </span>
+            {!entry.enabled ? (
+              <span className="shrink-0 rounded-full bg-background-tertiary-default px-1.5 py-0.5 text-[10px] text-text-tertiary">
+                {t("mcp.disabled")}
+              </span>
+            ) : null}
+          </span>
+          <span
+            className="w-full truncate text-caption-1-regular text-text-secondary"
+            title={meta}
+          >
             {entry.transport ? `${entry.transport} · ` : ""}
             {meta}
           </span>
-          <span className="ml-auto">
-            <ProbeStatusChip entry={entry} />
-          </span>
         </span>
+        {/* 徽标与两行文字整体垂直居中，和右侧图标在同一水平线；仍在按钮里，点它照样打开详情。 */}
+        <ProbeStatusChip entry={entry} />
       </button>
+      {/* 检测 · 启动方式 · 启用：都直接放在行里，与状态区共用行的 gap-2，间距一致；
+          启用开关常驻最右（只读来源置灰），与原来的开关同列。 */}
       {probeable(entry) ? (
         <ProbeActionButton entry={entry} workspacePath={workspacePath} />
       ) : null}
-      {entry.writable ? (
-        <Switch
-          size="sm"
-          aria-label={t("mcp.toggle", { name: entry.name })}
-          isSelected={entry.enabled}
-          isDisabled={pending}
-          onChange={onToggle}
-        />
-      ) : (
-        <span
-          className="flex size-6 items-center justify-center text-text-tertiary"
-          title={readonlyReason}
-        >
-          <Lock className="size-4" aria-hidden />
-          <span className="sr-only">{readonlyReason}</span>
-        </span>
-      )}
+      <LaunchModeToggle entry={entry} pending={pending} onChange={onLaunchMode} />
+      <EnableToggle entry={entry} pending={pending} onChange={onToggle} />
     </li>
   );
 }
@@ -145,6 +132,7 @@ export function McpConfigList({
   workspacePath,
   onOpen,
   onToggle,
+  onLaunchMode,
 }: {
   entries: McpConfigEntry[];
   pendingId: string | null;
@@ -152,6 +140,7 @@ export function McpConfigList({
   workspacePath: string | null;
   onOpen: (entry: McpConfigEntry) => void;
   onToggle: (entry: McpConfigEntry, enabled: boolean) => void;
+  onLaunchMode: (entry: McpConfigEntry, mode: McpLaunchMode) => void;
 }) {
   return (
     <ul className="flex flex-col gap-1">
@@ -164,6 +153,7 @@ export function McpConfigList({
           workspacePath={workspacePath}
           onOpen={() => onOpen(entry)}
           onToggle={(enabled) => onToggle(entry, enabled)}
+          onLaunchMode={(mode) => onLaunchMode(entry, mode)}
         />
       ))}
     </ul>
@@ -556,6 +546,7 @@ function ConfigSection({
   noEntries,
   onOpen,
   onToggle,
+  onLaunchMode,
 }: {
   engine: McpEngineInventory;
   entries: McpConfigEntry[];
@@ -566,6 +557,7 @@ function ConfigSection({
   noEntries: boolean;
   onOpen: (entry: McpConfigEntry) => void;
   onToggle: (entry: McpConfigEntry, enabled: boolean) => void;
+  onLaunchMode: (entry: McpConfigEntry, mode: McpLaunchMode) => void;
 }) {
   const { t } = useTranslation();
   return (
@@ -586,6 +578,7 @@ function ConfigSection({
           workspacePath={workspacePath}
           onOpen={onOpen}
           onToggle={onToggle}
+          onLaunchMode={onLaunchMode}
         />
       )}
     </section>
@@ -601,7 +594,7 @@ export function McpSection() {
   );
   const [query, setQuery] = useState("");
   const [kind, setKind] = useState<KindFilter>("all");
-  const [selected, setSelected] = useState<McpConfigEntry | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   const refreshAction = useActionFeedback({ spin: true });
   const [toggleError, setToggleError] = useState<string | null>(null);
   const probeAll = useMcpProbeStore((state) => state.probeAll);
@@ -616,6 +609,11 @@ export function McpSection() {
   const engine = useMemo(
     () => engines.find((item) => item.id === engineId) ?? engines[0] ?? null,
     [engines, engineId],
+  );
+  // 弹窗跟随回读后的清单，切换开关后显示的是文件里的真实状态。
+  const selected = useMemo(
+    () => engine?.config.entries.find((entry) => entry.id === selectedId) ?? null,
+    [engine, selectedId],
   );
   // 打开页面即检测（复用新鲜缓存；配置一变指纹就变，只补没结果的）。
   useAutoProbe(engine?.config.entries, activeWorkspace, !isWeb);
@@ -646,6 +644,12 @@ export function McpSection() {
       setToggleError(error instanceof Error ? error.message : String(error));
     });
   };
+  const handleLaunchMode = (entry: McpConfigEntry, mode: McpLaunchMode) => {
+    setToggleError(null);
+    void store.setLaunchMode(entry, mode).catch((error: unknown) => {
+      setToggleError(error instanceof Error ? error.message : String(error));
+    });
+  };
 
   const handleRefresh = () => {
     if (refreshAction.feedback === "running") return;
@@ -664,7 +668,7 @@ export function McpSection() {
         activeId={engine?.id ?? null}
         onSelect={(id) => {
           setEngineId(id);
-          setSelected(null);
+          setSelectedId(null);
         }}
       />
       <McpToolbar
@@ -703,8 +707,9 @@ export function McpSection() {
           workspacePath={activeWorkspace}
           searching={searching}
           noEntries={noEntries}
-          onOpen={setSelected}
+          onOpen={(entry) => setSelectedId(entry.id)}
           onToggle={handleToggle}
+          onLaunchMode={handleLaunchMode}
         />
       ) : null}
       {engine && engine.support !== "none" ? (
@@ -716,7 +721,8 @@ export function McpSection() {
           pending={store.pendingId === selected.id}
           workspacePath={activeWorkspace}
           onToggle={(enabled) => handleToggle(selected, enabled)}
-          onClose={() => setSelected(null)}
+          onLaunchMode={(mode) => handleLaunchMode(selected, mode)}
+          onClose={() => setSelectedId(null)}
         />
       ) : null}
     </div>
