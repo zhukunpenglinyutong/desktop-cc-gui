@@ -263,6 +263,21 @@ it("keeps hover actions to pin / rename / delete (archive is context-menu only)"
   expect(onThreadAction).toHaveBeenCalledWith("claude/hover-1", "archive");
 });
 
+it("hides agy editing but keeps Refresh rendering actionable", async () => {
+  const onThreadAction = vi.fn();
+  await act(async () => root.render(
+    <AiChatSidebar
+      repos={[{ id: "a", label: "a", defaultOpen: true, threads: [{ id: "agy/one", label: "agy session", time: "1m" }] }]}
+      onThreadAction={onThreadAction}
+    />,
+  ));
+  await rightClick(threadRow("agy session"));
+  const menu = openMenu();
+  expect(menu.textContent).not.toContain("chat.editSession");
+  await act(async () => menuItem(menu, "chat.refreshSessionRendering").click());
+  expect(onThreadAction).toHaveBeenCalledWith("agy/one", "refresh");
+});
+
 it("opens the thread context menu on right-click and dispatches its entries", async () => {
   const onThreadAction = vi.fn();
   const onCopyThreadId = vi.fn();
@@ -744,6 +759,55 @@ it("收起的 worktree 子行聚合显示运行中状态点，展开后让位给
   expect(runRow.querySelector(".sidebar-thread-status")).toBeNull();
   const threadDot = threadRow("运行中会话").querySelector(".sidebar-thread-status");
   expect(threadDot?.classList.contains("sidebar-thread-status-processing")).toBe(true);
+});
+
+it("工作区头行透传名下所有会话的运行状态（worktree 子级也计入）", async () => {
+  // 会话行自己的点只在展开/可见时看得到；工作区行的聚合点让收起与展开
+  // 两种形态都能一眼看出这个项目还有东西在跑。
+  await render([
+    {
+      id: "ws-run",
+      label: "ws-run",
+      defaultOpen: true,
+      threads: [
+        { id: "t-run", label: "运行中会话", time: "", streaming: true },
+        { id: "t-done", label: "已完成会话", time: "" },
+      ],
+    },
+    {
+      id: "ws-wt",
+      label: "ws-wt",
+      threads: [],
+      worktrees: [
+        {
+          id: "ws-wt::child",
+          label: "child",
+          threads: [
+            { id: "t-child-retry", label: "退避会话", time: "", streaming: true, retrying: true },
+          ],
+          worktree: { branch: "child" },
+        },
+      ],
+    },
+    {
+      id: "ws-idle",
+      label: "ws-idle",
+      threads: [{ id: "t-idle", label: "空闲会话", time: "" }],
+    },
+  ]);
+
+  // 展开的工作区照样带聚合点，与会话行自己的点并存。
+  const runDot = rowFor("ws-run").querySelector(".sidebar-thread-status");
+  expect(runDot?.classList.contains("sidebar-thread-status-processing")).toBe(true);
+  expect(runDot?.classList.contains("sidebar-thread-status-retrying")).toBe(false);
+
+  // worktree 子工作区里的会话也算：全部退避重试时降为静态点。
+  const wtDot = rowFor("ws-wt").querySelector(".sidebar-thread-status");
+  expect(wtDot?.classList.contains("sidebar-thread-status-processing")).toBe(true);
+  expect(wtDot?.classList.contains("sidebar-thread-status-retrying")).toBe(true);
+
+  // 名下没有运行中会话的工作区不渲染点。
+  expect(rowFor("ws-idle").querySelector(".sidebar-thread-status")).toBeNull();
 });
 
 /** The innermost disclosure region holding the worktree child rows. */

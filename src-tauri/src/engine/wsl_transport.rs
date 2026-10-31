@@ -296,39 +296,53 @@ fn build_script(
     script
 }
 
-/// 把脚本经 ssh stdin 直写发行版 `tee`(脚本内容全程不进命令串,零转义
-/// 需求;命令串只有固定词)。任何失败返回 Err(spawn 前失败,turn 直接报错)。
+fn private_script_upload_command(transport: &WslTransport, remote_path: &str) -> Result<String, String> {
+    // Only internally generated filenames cross the Windows default-shell
+    // layer. Do not put POSIX variables or nested double quotes in its argv.
+    let id = remote_path.strip_prefix("/tmp/ccgui-wsl-")
+        .and_then(|name| name.strip_suffix(".sh"))
+        .ok_or_else(|| "invalid private remote script path".to_string())?;
+    if id.len() != 32 || !id.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        return Err("invalid private remote script path".into());
+    }
+    let body = format!("umask 077; set -C; cat > {}", sh_quote(remote_path));
+    Ok(wsl_command_string(transport, &["bash", "-c", &body]))
+}
+
+/// Upload through stdin into an owner-only, exclusively created script. Native
+/// session edits can contain the full transcript, so the remote umask cannot leak it.
 async fn upload_script(
     transport: &WslTransport,
     script_body: &str,
     remote_path: &str,
 ) -> Result<(), String> {
     let mut command = base_ssh_command(transport);
-    command.arg(wsl_command_string(transport, &["tee", remote_path]));
+    command.arg(private_script_upload_command(transport, remote_path)?);
     // stderr 直接丢弃:从不读取却 piped 会在远端写满管缓冲时与 wait 互等
     // 死锁;错误细节本就不进报错文案(下面是固定提示)。
     command
         .stdin(Stdio::piped())
         .stdout(Stdio::null())
-        .stderr(Stdio::null());
+        .stderr(Stdio::null())
+        .kill_on_drop(true);
     let mut child = command
         .spawn()
         .map_err(|e| format!("ssh 脚本上传失败: {e}"))?;
-    let wrote = if let Some(mut stdin) = child.stdin.take() {
+    // Bound pipe write, shutdown, and process completion together. A blocked
+    // remote reader otherwise fills stdin before the wait-only deadline starts.
+    let upload = async {
+        let mut stdin = child.stdin.take()
+            .ok_or_else(|| "ssh 脚本上传未提供 stdin".to_string())?;
         use tokio::io::AsyncWriteExt;
-        let result = stdin.write_all(script_body.as_bytes()).await;
-        stdin.shutdown().await.ok();
+        stdin.write_all(script_body.as_bytes()).await
+            .map_err(|e| format!("ssh 脚本写入失败: {e}"))?;
+        stdin.shutdown().await
+            .map_err(|e| format!("ssh 脚本上传关闭失败: {e}"))?;
         drop(stdin);
-        result
-    } else {
-        Ok(())
+        child.wait().await.map_err(|e| format!("ssh 脚本上传等待失败: {e}"))
     };
-    wrote.map_err(|e| format!("ssh 脚本写入失败: {e}"))?;
-    // 全局 deadline:远端挂起时管道写满会让 wait 与 write 互等,没有超时
-    // 这个 future 永不 resolve(调用链上UI 无取消路径)。超时即 kill,
-    // 不留半写的远端脚本与孤儿 ssh。
-    let status = match tokio::time::timeout(REMOTE_CALL_TIMEOUT, child.wait()).await {
-        Ok(result) => result.map_err(|e| format!("ssh 脚本上传等待失败: {e}"))?,
+    let status = match tokio::time::timeout(REMOTE_CALL_TIMEOUT, upload).await {
+        Ok(result) => result?,
         Err(_) => {
             let _ = child.start_kill();
             return Err(format!(
@@ -463,6 +477,13 @@ pub fn transport_for_workspace(db: &crate::db::Db, workspace_path: &str) -> Opti
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn private_script_upload_rejects_non_generated_paths() {
+        for path in ["/tmp/other.sh", "/tmp/ccgui-wsl-$(id).sh", "/tmp/ccgui-wsl-00.sh", "/tmp/ccgui-wsl-0123456789abcdef0123456789abcdef.sh;echo injected"] {
+            assert!(private_script_upload_command(&tp(), path).is_err());
+        }
+    }
 
     fn tp() -> WslTransport {
         WslTransport {

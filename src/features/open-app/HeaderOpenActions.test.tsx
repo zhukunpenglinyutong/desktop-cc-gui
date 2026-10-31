@@ -1,3 +1,6 @@
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -22,6 +25,7 @@ vi.mock("@/lib/platform", () => ({
   pickFile: vi.fn().mockResolvedValue(null),
 }));
 
+import { useFilesStore } from "@/features/files/store";
 import "@/lib/i18n";
 import { onLaunchScriptEditorRequest } from "@/features/launch-script/launch-script";
 import { HeaderOpenActions } from "./HeaderOpenActions";
@@ -121,6 +125,62 @@ describe("HeaderOpenActions add-program", () => {
         .click();
     });
     expect(document.querySelector('[role="alert"]')).toBeNull();
+  });
+
+  it("opens the real native session content in a custom editor", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "ccgui-session-editor-"));
+    const sourcePath = join(directory, "timestamp_edited.jsonl");
+    const text = `${JSON.stringify({ text: "会话原文🦀" })}\n`;
+    const previous = useFilesStore.getState();
+    let openedText: string | undefined;
+    writeFileSync(sourcePath, text);
+    mocks.openCustomProgram.mockImplementationOnce(async (_executable: string, path: string) => {
+      openedText = readFileSync(path, "utf8");
+    });
+    try {
+      const key = "session:omp/edited";
+      useFilesStore.setState({
+        activeFilePath: key,
+        openFiles: [key],
+        fileStates: { [key]: { path: key, sourcePath, name: "timestamp_edited.jsonl", content: { kind: "text", text, dataUrl: null, truncated: false }, loading: false, error: null, loadNonce: 1, session: { engine: "omp", sessionId: "edited", workspacePath: directory } } },
+      });
+      writeCustomApps([{ id: "custom:sublime", label: "Sublime Text", path: "/program/sublime.exe", icon: null }]);
+      writePinnedIds(["custom:sublime"]);
+      await act(async () => root.render(<HeaderOpenActions workspacePath={directory} />));
+      await act(async () => document.querySelector<HTMLButtonElement>('[aria-label="在 Sublime Text 中打开"]')!.click());
+      expect(openedText).toBe(text);
+      expect(document.querySelector('[role="alert"]')).toBeNull();
+    } finally {
+      await act(async () => useFilesStore.setState(previous));
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
+  it.each([
+    { engine: "omp", remote: true, sourcePath: "/remote/session.jsonl" },
+    { engine: "omp", remotePath: "/remote/session.jsonl", sourcePath: "/remote/session.jsonl" },
+    { engine: "dsh", sourcePath: "/data/session.jsonl.zstd" },
+    { engine: "opencode", sourcePath: "/data/opencode.db" },
+    { engine: "agy", sourcePath: "/data/session.db" },
+    { engine: "omp", sourcePath: undefined },
+  ])("opens the workspace instead of the $engine remote/structured/unknown native source", async ({ sourcePath, ...target }) => {
+    const previous = useFilesStore.getState();
+    try {
+      const key = `session:${target.engine}/edited`;
+      useFilesStore.setState({ activeFilePath: key, fileStates: { [key]: {
+        path: key, sourcePath, session: { ...target, sessionId: "edited", workspacePath: "/workspace" },
+        content: null, loading: false, error: null, loadNonce: 0,
+      } } });
+      writeCustomApps([{ id: "custom:editor", label: "Editor", path: "/program/editor.exe" }]);
+      writePinnedIds(["custom:editor", "vscode"]);
+      await act(async () => root.render(<HeaderOpenActions workspacePath="/workspace" />));
+      await act(async () => document.querySelector<HTMLButtonElement>('[aria-label="在 Editor 中打开"]')!.click());
+      expect(mocks.openCustomProgram).toHaveBeenLastCalledWith("/program/editor.exe", "/workspace");
+      await act(async () => document.querySelector<HTMLButtonElement>('[aria-label="在 VS Code 中打开"]')!.click());
+      expect(mocks.openWorkspaceIn).toHaveBeenLastCalledWith("/workspace", expect.any(Object));
+    } finally {
+      await act(async () => useFilesStore.setState(previous));
+    }
   });
 
   it("adds a custom program: menu row appears, is pinned to the header, persisted", async () => {

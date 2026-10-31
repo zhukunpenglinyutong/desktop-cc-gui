@@ -3,7 +3,7 @@ name = "ccgui-next"
 version = "1.2.0"
 description = "CC GUI - multi-CLI AI chat desktop"
 edition = "2021"
-rust-version = "1.77.2"
+rust-version = "1.90"
 
 [lib]
 name = "ccgui_next_lib"
@@ -20,6 +20,11 @@ tauri-plugin-opener = "2"
 tauri-plugin-dialog = "2"
 tauri-plugin-updater = "2"
 tauri-plugin-process = "2"
+# Desktop click reporting (onAction) needs 2.6+, which requires tauri 2.12.
+# `tauri build` refuses a crate and npm package on different major.minor, so
+# keep this on the same minor as @tauri-apps/plugin-notification (package.json),
+# and tauri on the same minor as @tauri-apps/api.
+tauri-plugin-notification = "~2.7"
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order", "raw_value"] }
 regex = "1"
@@ -91,10 +96,13 @@ windows = { version = "0.61", features = [
     "Win32_NetworkManagement_IpHelper",
     "Win32_Networking_WinSock",
     "Win32_Security",
+    "Win32_Security_Authorization",
+    "Win32_System_Com",
     "Win32_System_DataExchange",
     "Win32_System_JobObjects",
     "Win32_System_Memory",
     "Win32_System_Ole",
+    "Win32_System_Registry",
     "Win32_System_Threading",
     "Win32_UI_Shell",
     "Win32_UI_WindowsAndMessaging",

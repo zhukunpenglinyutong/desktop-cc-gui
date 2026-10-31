@@ -64,11 +64,15 @@ pub enum EngineEvent {
     /// A tool call was denied by the CLI's permission system (headless mode
     /// cannot prompt). `path` is the denied absolute path when the denial
     /// text or tool input carries one — the UI offers a directory grant for
-    /// it; `tool` is the denied tool name when known.
+    /// it; `tool` is the denied tool name when known. `tool_use_id` names
+    /// the denied call: Claude reports a denial mid-turn (tool_result) and
+    /// again on the final result line, and the two copies can disagree on
+    /// path and text, so the frontend matches them by this id.
     PermissionDenied {
         tool: Option<String>,
         path: Option<String>,
         message: String,
+        tool_use_id: Option<String>,
     },
     /// The CLI is asking the user to choose (control protocol: `can_use_tool`
     /// for AskUserQuestion). `input` is the full tool input; the answer
@@ -121,6 +125,22 @@ pub enum EngineEvent {
     ControlPermissionDeny {
         request_id: String,
         tool_name: String,
+    },
+    /// An MCP `elicitation` control_request (the MCP server asked the user
+    /// for form input or a confirmation). This client has no elicitation
+    /// form, so the runner declines in place — the MCP tool call settles
+    /// with a declined result instead of parking the turn forever.
+    ElicitationDecline {
+        request_id: String,
+    },
+    /// A control_request whose subtype this client does not implement.
+    /// Every request must get exactly one response or the CLI parks on it
+    /// forever (e.g. an MCP elicitation once hung the whole turn); the
+    /// error reply mirrors the official SDK's fallback for unknown
+    /// subtypes and lets the CLI surface the failure to its caller.
+    ControlRequestError {
+        request_id: String,
+        subtype: String,
     },
     /// Turn finished successfully.
     Done {

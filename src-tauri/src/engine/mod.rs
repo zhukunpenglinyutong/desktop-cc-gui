@@ -37,12 +37,14 @@ pub mod opencode_server;
 mod opencode_session;
 pub mod pi_family;
 pub mod pi_family_auth;
+mod pi_family_env;
 pub mod plan_review;
 pub mod qoder;
 mod qoder_session;
 mod reader;
 mod registry;
 pub mod resolve;
+mod shell_env;
 pub mod wsl_transport;
 
 pub(crate) use resolve::command_for_binary;
@@ -964,6 +966,7 @@ async fn send_message_inner_with_sink(
     let reader_abort = Arc::new(std::sync::OnceLock::new());
     {
         let mut map = state.processes.0.lock().map_err(|e| e.to_string())?;
+        state.processes.ensure_session_not_editing(session_id.as_deref())?;
         if map.contains_key(&run_id) {
             return Err("run id already active".into());
         }
@@ -972,19 +975,20 @@ async fn send_message_inner_with_sink(
                 "too many concurrent runs ({MAX_CONCURRENT_RUNS}); wait for one to finish"
             ));
         }
-        map.insert(
-            run_id.clone(),
-            ChildEntry {
-                child: None,
-                pid: 0,
-                run_id: run_id.clone(),
-                killed: Arc::clone(&killed),
-                reader_abort: Arc::clone(&reader_abort),
-                stdin: None,
-                questions: Arc::new(Mutex::new(HashMap::new())),
-                plans: Arc::new(Mutex::new(HashMap::new())),
-            },
-        );
+        let entry = ChildEntry {
+            child: None,
+            pid: 0,
+            run_id: run_id.clone(),
+            killed: Arc::clone(&killed),
+            reader_abort: Arc::clone(&reader_abort),
+            stdin: None,
+            questions: Arc::new(Mutex::new(HashMap::new())),
+            plans: Arc::new(Mutex::new(HashMap::new())),
+        };
+        if let Some(session_id) = session_id.as_ref() {
+            map.entry(session_id.clone()).or_insert_with(|| entry.clone());
+        }
+        map.insert(run_id.clone(), entry);
     }
     let reserved = run_id.clone();
     let result = send_reserved(
@@ -1097,6 +1101,11 @@ async fn send_reserved(
         allowed_tools,
         wsl_tp.is_some(),
     )?;
+    if wsl_tp.is_none() && matches!(engine.as_str(), "pi" | "omp") {
+        // 只向登录 shell 查询当前引擎配置中的变量：PI 用 $VAR，OMP 用裸名字。
+        // 只注入这次子进程；WSL 不带本机 env，跳过。
+        pi_family_env::apply(&mut launch.built.command, &engine).await;
+    }
     // pi/omp: the injected extension observes the provider response's own
     // `model` field and appends it to a per-run sidecar. The reader consults
     // that file when `message_end` has no `upstreamModel`. Remote workspaces
@@ -1453,6 +1462,16 @@ pub async fn interrupt_session(
     tauri::async_runtime::spawn_blocking(move || registry.kill(&session_id))
         .await
         .map_err(|e| e.to_string())
+}
+/// Which of `run_ids` the host still runs. The frontend's orphan sweep asks
+/// before settling a run that went silent: a long command or a question
+/// waiting on the user emits nothing, and silence alone is not a dead run.
+#[tauri::command]
+pub async fn live_runs(
+    state: tauri::State<'_, crate::AppState>,
+    run_ids: Vec<String>,
+) -> Result<Vec<String>, String> {
+    Ok(state.processes.live_run_ids(&run_ids))
 }
 /// Answer a pending question card. Multiple transports share this command:
 /// - claude (control protocol): the answers merge into the parked tool input
