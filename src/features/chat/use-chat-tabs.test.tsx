@@ -50,6 +50,7 @@ function Probe() {
   return (
     <div>
       <span data-testid="keys">{tabItems.map((item) => item.key).join(",")}</span>
+      <span data-testid="labels">{tabItems.map((item) => item.label).join("|")}</span>
       <span data-testid="active">{activeTabKey ?? ""}</span>
       <span data-testid="browser-count">{String(browserTabs.length)}</span>
       <span data-testid="browser-active">{activeBrowserId ?? ""}</span>
@@ -184,6 +185,7 @@ describe("useChatTabs beta entry gate", () => {
     expect(text("keys")).toBe("");
   });
 });
+
 describe("batch tab close handlers", () => {
   let handlersRef: { current: UseChatTabsResult | null } = { current: null };
 
@@ -256,5 +258,40 @@ describe("batch tab close handlers", () => {
     });
     // Defensive guard: must not degrade to Close All
     expect(useChatStore.getState().openTabs.map((t) => t.sessionId)).toEqual(["1", "2"]);
+  });
+});
+
+/** 分支页签的标题。
+ *
+ *  分叉是**点击即落盘**的：后端在 `fork_session` 里就写好继承过来的转录本并
+ *  登记 `sessions` 行，所以分支页签从出现的第一刻起就有 meta，标题走
+ *  `customTitle`（后端存下的「<来源标题> (fork #N)」——编号要去重，后缀语言
+ *  中立，故由后端拼；早先前端拼「· 分支」的做法已废弃）。 */
+describe("useChatTabs branch tab label", () => {
+  const BRANCH = {
+    engine: "claude",
+    sessionId: "8a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d",
+    workspacePath: "/ws",
+  };
+
+  it("uses the branch title the backend stored, not 新对话", () => {
+    useChatStore.setState({
+      openTabs: [BRANCH],
+      sessions: [
+        {
+          engine: "claude",
+          sessionId: BRANCH.sessionId,
+          workspacePath: "/ws",
+          title: "数学",
+          // 后端按 `<来源标题> (fork #N)` 生成并写进 custom_title。
+          customTitle: "数学 (fork #1)",
+        } as never,
+      ],
+    });
+    render();
+
+    // customTitle 优先于 title（否则会显示来源会话的名字，看不出这是分支）。
+    expect(text("labels")).toBe("数学 (fork #1)");
+    expect(text("labels")).not.toBe(i18n.t("chat.newChat"));
   });
 });
