@@ -609,3 +609,22 @@ body {
   height: auto;
   border-radius: 8px;
 }
+
+/* Chat content column width (features/chat/chat-column.ts).
+ *
+ * The two legacy caps live on Tailwind classes: the timeline's
+ * `max-w-[750px]` and the composer track's `max-w-3xl`. Selecting on the class
+ * presence — rather than on the element alone — keeps 「宽幕布」 meaning "fill
+ * the pane": that setting removes the classes, so these rules stop applying
+ * instead of re-capping the column at the stored preset.
+ *
+ * Unlayered on purpose: Tailwind emits both classes into the `utilities`
+ * layer, and an unlayered rule outranks every layer.
+ */
+[data-virtual-inner][class*="max-w-[750px]"] {
+  max-width: var(--chat-column-max-width, 750px);
+}
+
+.max-w-3xl {
+  max-width: var(--chat-column-max-width, 48rem);
+}

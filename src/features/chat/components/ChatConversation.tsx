@@ -20,6 +20,7 @@ import {
   type QueueMoveDirection,
 } from "../store";
 
+import { useApplyChatColumnWidth } from "../chat-column";
 import { MessageTimeline } from "./MessageTimeline";
 import { ConversationFooter } from "./ConversationFooter";
 import { useComposerActions } from "./use-composer-actions";
@@ -298,6 +299,9 @@ export const ChatConversation = memo(function ChatConversation({
   composerInputRef: React.RefObject<ComposerInputHandle | null>;
 }) {
   const { t, i18n } = useTranslation();
+  // 对话栏宽度：「宽幕布」+ 档位解析成同一个 CSS 变量（--chat-column-max-width），
+  // 时间线、输入框、状态条、附件行、排队消息与 dock 全部跟随，见 chat-column.ts。
+  useApplyChatColumnWidth(useChatStore((s) => s.wideLayout));
   const conversationMode = useConversationMode(active);
   // 互斥:计划等待中且 run 活跃时不得切入插件会话模式(会搁置原生等待点);
   // 插件模式激活时整个普通会话区(含计划 dock)本就不挂载。

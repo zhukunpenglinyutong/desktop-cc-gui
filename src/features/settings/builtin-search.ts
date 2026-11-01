@@ -104,6 +104,13 @@ const generalEntries: SettingsSearchEntry[] = [
   },
   {
     page: "general",
+    anchor: "chatColumnWidth",
+    labelKey: "settings.chatColumnWidth",
+    sectionKey: "settings.appearance",
+    keywords: ["column", "width", "reading", "留白", "宽度", "行宽", "750", "960", "1200"],
+  },
+  {
+    page: "general",
     anchor: "fontFamily",
     labelKey: "settings.fontFamily",
     sectionKey: "settings.appearance",

@@ -722,6 +722,13 @@ export const ko: Messages = {
     uiFontWeight_bold: "굵게",
     chatWideLayout: "넓은 캔버스",
     chatWideLayoutDesc: "채팅 콘텐츠를 중앙 열 대신 창 너비에 맞게 펼칩니다. 끄면 현재 기본 너비를 유지합니다",
+    chatColumnWidth: "채팅 열 너비",
+    chatColumnWidthDesc:
+      "타임라인·입력창·상태 표시줄·독이 공유하는 중앙 열의 너비입니다. '넓은 캔버스'가 켜져 있으면 적용되지 않습니다",
+    chatColumnWidth750: "좁게 · 750px(기본)",
+    chatColumnWidth960: "보통 · 960px",
+    chatColumnWidth1200: "넓게 · 1200px",
+    chatColumnWidthFull: "전체 너비 · 여백 없음",
     fontFamily: "인터페이스 글꼴",
     codeFontFamily: "코드 글꼴",
     codeFontFamilyDesc: "채팅 코드, 코드 편집기, 변경 비교, 내장 터미널",

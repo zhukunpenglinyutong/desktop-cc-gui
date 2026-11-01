@@ -766,6 +766,13 @@ export const en: Messages = {
     chatWideLayout: "Wide canvas",
     chatWideLayoutDesc:
       "Let chat content fill the window width instead of the centered column; off keeps the current default width",
+    chatColumnWidth: "Chat column width",
+    chatColumnWidthDesc:
+      "Width of the centered track shared by the timeline, composer, status bar and docks; ignored while Wide canvas is on",
+    chatColumnWidth750: "Narrow · 750px (default)",
+    chatColumnWidth960: "Medium · 960px",
+    chatColumnWidth1200: "Wide · 1200px",
+    chatColumnWidthFull: "Full width · no gutter",
     fontFamily: "Interface font",
     codeFontFamily: "Code font",
     codeFontFamilyDesc: "Chat code, code editors, diffs and the built-in terminal",

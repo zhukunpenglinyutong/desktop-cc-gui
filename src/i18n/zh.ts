@@ -740,6 +740,13 @@ export const zh = {
     uiFontWeight_bold: "加粗",
     chatWideLayout: "宽幕布",
     chatWideLayoutDesc: "聊天内容占满窗口宽度，不再居中留白；关闭保持当前默认宽度",
+    chatColumnWidth: "对话栏宽度",
+    chatColumnWidthDesc:
+      "时间线、输入框、状态条与各类 dock 共用的居中轨道宽度；「宽幕布」打开时此项不生效",
+    chatColumnWidth750: "窄 · 750px（默认）",
+    chatColumnWidth960: "中 · 960px",
+    chatColumnWidth1200: "宽 · 1200px",
+    chatColumnWidthFull: "满宽 · 不留边",
     fontFamily: "界面字体",
     codeFontFamily: "代码字体",
     codeFontFamilyDesc: "聊天代码、代码编辑器、差异视图与内置终端",
