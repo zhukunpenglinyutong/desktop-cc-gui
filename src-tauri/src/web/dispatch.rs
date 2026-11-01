@@ -199,6 +199,11 @@ struct SessionIdArgs {
 }
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
+struct RunIdsArgs {
+    run_ids: Vec<String>,
+}
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct AnswerQuestionArgs {
     session_id: String,
     request_id: String,
@@ -307,6 +312,14 @@ struct DeleteRemoteSessionArgs {
     engine: String,
     session_id: String,
     remote_path: String,
+}
+/// 会话分叉：`at` 省略即 tip 分叉（完整轮次末尾）。
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ForkSessionArgs {
+    engine: String,
+    session_id: String,
+    at: Option<crate::engine::fork::ForkAnchor>,
 }
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -750,6 +763,12 @@ pub(super) async fn dispatch(
             let a: SessionIdArgs = parse_args(&raw)?;
             ser(crate::engine::interrupt_session(app.state(), a.session_id).await)
         }
+        // The remote UI runs the same orphan sweep over the runs it observes;
+        // without this case every silent run there would stay "running".
+        "live_runs" => {
+            let a: RunIdsArgs = parse_args(&raw)?;
+            ser(crate::engine::live_runs(app.state(), a.run_ids).await)
+        }
         // The remote UI renders the same AskUserQuestion card as the desktop
         // (events already reach it); without this case its 提交/忽略 buttons
         // failed with `unknown command: answer_question`.
@@ -940,6 +959,16 @@ pub(super) async fn dispatch(
                 a.engine,
                 a.session_id,
                 a.title,
+            )
+            .await)
+        }
+        "fork_session" => {
+            let a: ForkSessionArgs = parse_args(&raw)?;
+            ser(crate::engine::fork::fork_session(
+                app.state(),
+                a.engine,
+                a.session_id,
+                a.at,
             )
             .await)
         }

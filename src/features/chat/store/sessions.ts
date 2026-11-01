@@ -5,6 +5,7 @@ import {
   type EngineInfo,
   type Message,
   type SessionMeta,
+  type SessionPage,
   type Workspace,
 } from "@/lib/ipc";
 import type { EffortLevel } from "@/components/application/ai-chat/cli-menu";
@@ -28,6 +29,7 @@ import {
 import { EMPTY_SESSION, patchSession } from "./stream";
 import { handleEngineEvents, upsertSessionMetaInto } from "./engine-events";
 import { mergePlanReviewHistory } from "./plan-review";
+import { withoutComposerAttachments } from "./attachments";
 import i18n from "@/lib/i18n";
 import {
   listExternalSessionMetas,
@@ -47,7 +49,7 @@ import {
 } from "./session-utils";
 import type { ChatStore } from "./types";
 import type { LoadHistoryPage, StoreGet, StoreSet } from "./context";
-import { deriveAgentTaskSteps, dispatchRefsFromArgs } from "../components/agent-task-steps";
+import { agentState, deriveAgentTaskSteps, dispatchRefsFromArgs } from "../components/agent-task-steps";
 
 function omitKey(rec: Record<string, boolean>, key: string) {
   const next = { ...rec };
@@ -76,21 +78,59 @@ function withoutArchived(
 
 const SUBAGENT_STATUS_RETRY_DELAYS_MS = [2_000, 10_000, 30_000] as const;
 const SUBAGENT_STATUS_PAGE_SIZE = 100;
+/** After the backoff, keep polling at the capped interval for roughly ten
+ *  minutes: a job whose completion never reaches the transcript (killed
+ *  task, crashed engine) must not keep this tab reading forever. */
+const SUBAGENT_STATUS_MAX_RETRIES = 20;
+/** Only the pi-family extractor turns async completions into status rows. */
+const SUBAGENT_STATUS_ENGINES: Record<string, true> = { pi: true, omp: true };
+/** A hung read (remote / WSL page fetch) would otherwise hold `task.promise`
+ *  forever and freeze every later refresh for this session. */
+const SUBAGENT_STATUS_READ_TIMEOUT_MS = 60_000;
 const SUBAGENT_STATUS_BUCKETS = ["jobs", "peers", "progress"] as const;
-const SUBAGENT_STATUS_STATES: Record<string, true> = {
-  active: true, in_progress: true, pending: true, queued: true, running: true,
-  canceled: true, cancelled: true, complete: true, completed: true, failed: true,
-  idle: true, parked: true, stopped: true,
-};
+
+function withStatusReadTimeout<T>(read: Promise<T>, ms: number): Promise<T> {
+  const { promise, resolve, reject } = Promise.withResolvers<T>();
+  const timer = window.setTimeout(
+    () => reject(new Error("subagent status read timed out")),
+    ms,
+  );
+  read.then(
+    (value) => {
+      window.clearTimeout(timer);
+      resolve(value);
+    },
+    (error) => {
+      window.clearTimeout(timer);
+      reject(error);
+    },
+  );
+  return promise;
+}
 // Appending rows changes their local seq, not their transcript identity/order.
 const statusRowSources = new WeakMap<Message, { seq: number; signature: string | null }>();
+// Rows parsed from a transcript carry the engine host's clock; rows appended
+// from the live event stream carry this machine's. The two clocks are not
+// comparable (a WSL / remote host can run minutes behind after a suspend), so
+// supersede checks only trust timestamps from transcript rows.
+const transcriptRows = new WeakSet<Message>();
+
+function markTranscriptRows(rows: Message[]): void {
+  for (const row of rows) transcriptRows.add(row);
+}
 
 type StatusRefreshTask = {
   retriesScheduled: number;
+  /** Retry attempts since the last `done` / `error` / tab revisit; unlike
+   *  `retriesScheduled` this is not capped by the delay table. */
+  retriesTotal: number;
   timer: number | null;
   promise: Promise<void> | null;
   cancelled: boolean;
   refreshAfterCancel: boolean;
+  /** An arm that arrived while a cancelled read still held the slot; the
+   *  backoff is re-scheduled once that read settles. */
+  pendingArm: boolean;
 };
 
 function recordValue(value: unknown): Record<string, unknown> | null {
@@ -101,8 +141,7 @@ function recordValue(value: unknown): Record<string, unknown> | null {
 
 function statusJobId(value: unknown): string | undefined {
   const entry = recordValue(value);
-  if (typeof entry?.status !== "string" ||
-    SUBAGENT_STATUS_STATES[entry.status.trim().toLowerCase()] !== true) return undefined;
+  if (!entry || agentState(entry.status) === undefined) return undefined;
   const id = typeof entry.id === "string" ? entry.id.trim() : "";
   const jobId = typeof entry.jobId === "string" ? entry.jobId.trim() : "";
   return id || jobId || undefined;
@@ -126,6 +165,11 @@ function statusJobIds(message: Message): string[] {
 
 function isNewerTranscriptRow(message: Message, candidate: Message): boolean {
   if (message === candidate) return false;
+  // Both sides sort in the transcript's sequence space: history rows keep the
+  // file's seq and appended status rows carry the source seq recorded in
+  // `statusRowSources`. Timestamps win when both sides have one; a live row's
+  // clock is not comparable with the engine host's, and the caller gates that
+  // case before trusting a time comparison.
   const timestamp = message.ts ? Date.parse(message.ts) : NaN;
   const candidateTimestamp = candidate.ts ? Date.parse(candidate.ts) : NaN;
   if (Number.isFinite(timestamp) && Number.isFinite(candidateTimestamp) && timestamp !== candidateTimestamp) {
@@ -139,33 +183,56 @@ function hasNewerJobEvidence(
   candidate: Message,
   jobId: string,
   transcript: Message[],
+  sameClock: (message: Message) => boolean,
 ): boolean {
   return transcript.some((message) => {
     if (!isNewerTranscriptRow(message, candidate)) return false;
+    // A live row's timestamp comes from this machine, the delivery's from the
+    // engine host. When the host clock runs behind, the delivery looks older
+    // than the last live "running" snapshot even though it happened after;
+    // only rows from the same transcript clock may supersede it by time.
+    if (message.ts && candidate.ts && !sameClock(message)) return false;
     if (statusJobIds(message).includes(jobId)) return true;
     return message.role === "tool" &&
       dispatchRefsFromArgs(message.args).some((ref) => ref.id === jobId);
   });
 }
 
-function withoutSupersededJobs(message: Message, transcript: Message[]): Message | null {
+function withoutSupersededJobs(
+  message: Message,
+  transcript: Message[],
+  sameClock: (message: Message) => boolean,
+): Message | null {
   const result = recordValue(message.result);
   const details = recordValue(result?.details);
   if (!result || !details) return null;
   let changed = false;
   let remaining = 0;
   const nextDetails = { ...details };
+  const keepProgressIdentity = message.role === "tool" && Boolean(message.toolCallId) &&
+    dispatchRefsFromArgs(message.args).length > 0;
   for (const bucket of SUBAGENT_STATUS_BUCKETS) {
     const values = details[bucket];
     if (!Array.isArray(values)) continue;
-    const filtered = values.filter((value) => {
+    const filtered: unknown[] = [];
+    let bucketChanged = false;
+    for (const value of values) {
       const id = statusJobId(value);
-      if (!id) return true;
-      if (hasNewerJobEvidence(message, id, transcript)) return false;
-      remaining++;
-      return true;
-    });
-    if (filtered.length !== values.length) {
+      if (id && hasNewerJobEvidence(message, id, transcript, sameClock)) {
+        bucketChanged = true;
+        // Completion supersedes the running state, not the dispatch's
+        // authoritative index -> runtime id association.
+        const entry = recordValue(value);
+        if (bucket === "progress" && keepProgressIdentity && typeof entry?.id === "string") {
+          filtered.push({ id: entry.id, index: entry.index });
+          remaining++;
+        }
+      } else {
+        filtered.push(value);
+        if (id) remaining++;
+      }
+    }
+    if (bucketChanged) {
       changed = true;
       nextDetails[bucket] = filtered;
     }
@@ -192,11 +259,31 @@ function freshStatusRows(
   firstSequence: number,
 ): Message[] {
   const transcript = [...current, ...pageMessages];
-  const timestamps = new Set(
-    current
-      .filter((message) => message.role === AGENT_STATUS_ROLE && message.ts)
-      .map((message) => message.ts as string),
-  );
+  // The page and previously appended transcript rows share the engine's
+  // clock; everything else in `current` is live.
+  const pageRows = new WeakSet(pageMessages);
+  const sameClock = (message: Message) =>
+    pageRows.has(message) || transcriptRows.has(message);
+  // A tool snapshot can supersede a delivery only if its state is retained
+  // too. Keep it hidden rather than adding a second visible hub/task row.
+  const sourceKey = (message: Message) => JSON.stringify([
+    statusRowSources.get(message)?.seq ?? message.seq,
+    message.ts,
+    statusRowSignature(message),
+  ]);
+  const currentSources = new Set(current
+    .filter((message) => statusRowSources.has(message) || statusJobIds(message).length > 0)
+    .map(sourceKey));
+  // A delivery is identified by its timestamp, but two deliveries can land in
+  // the same millisecond; only treat a same-ts row as a duplicate when every
+  // job it reports is already covered by that timestamp.
+  const timestampJobs = new Map<string, Set<string>>();
+  for (const message of current) {
+    if (message.role !== AGENT_STATUS_ROLE || !message.ts) continue;
+    const known = timestampJobs.get(message.ts) ?? new Set<string>();
+    for (const id of statusJobIds(message)) known.add(id);
+    timestampJobs.set(message.ts, known);
+  }
   const signatures = new Set(
     current
       .filter((message) => message.role === AGENT_STATUS_ROLE && !message.ts)
@@ -204,23 +291,40 @@ function freshStatusRows(
       .filter((signature): signature is string => Boolean(signature)),
   );
   const rows = pageMessages
-    .filter((message) => message.role === AGENT_STATUS_ROLE)
+    .filter((message) => message.role === AGENT_STATUS_ROLE || statusJobIds(message).length > 0)
     .sort((left, right) => left.seq - right.seq);
   const fresh: Message[] = [];
   let seq = firstSequence;
   for (const source of rows) {
     const signature = statusRowSignature(source);
-    if (source.ts ? timestamps.has(source.ts) : signature && signatures.has(signature)) continue;
-    const message = withoutSupersededJobs(source, transcript);
+    const key = sourceKey(source);
+    if (source.role === "tool" && currentSources.has(key)) continue;
+    const jobs = source.ts ? statusJobIds(source) : [];
+    if (source.role === AGENT_STATUS_ROLE) {
+      if (source.ts) {
+        const known = timestampJobs.get(source.ts);
+        if (known && jobs.every((id) => known.has(id))) continue;
+      } else if (signature && signatures.has(signature)) {
+        continue;
+      }
+    }
+    const message = withoutSupersededJobs(source, transcript, sameClock);
     if (!message) continue;
-    const appended = { ...message, seq: seq++ };
+    const appended = { ...message, seq: seq++, role: AGENT_STATUS_ROLE, text: "" };
+    transcriptRows.add(appended);
     statusRowSources.set(appended, {
       seq: statusRowSources.get(source)?.seq ?? source.seq,
       signature,
     });
     fresh.push(appended);
-    if (source.ts) timestamps.add(source.ts);
-    else if (signature) signatures.add(signature);
+    currentSources.add(key);
+    if (source.ts) {
+      const known = timestampJobs.get(source.ts) ?? new Set<string>();
+      for (const id of jobs) known.add(id);
+      timestampJobs.set(source.ts, known);
+    } else if (signature) {
+      signatures.add(signature);
+    }
   }
   return fresh;
 }
@@ -266,6 +370,7 @@ export function createSessionActions(
   | "refreshSubagentStatus"
   | "cancelSubagentStatusRefresh"
   | "reloadSession"
+  | "forkSession"
   | "loadEarlier"
   | "archiveSession"
   | "deleteSession"
@@ -297,6 +402,7 @@ export function createSessionActions(
     }
     task.cancelled = true;
     task.refreshAfterCancel = false;
+    task.pendingArm = false;
     if (!task.promise) statusRefreshes.delete(key);
   };
 
@@ -313,58 +419,80 @@ export function createSessionActions(
       if (
         !tab?.sessionId ||
         !before ||
+        !SUBAGENT_STATUS_ENGINES[tab.engine] ||
         before.streaming ||
         beforeStore.streamingByKey[key] ||
-        deriveAgentTaskSteps([...before.subagentHistory, ...before.messages], false, tab.engine).length === 0
+        !hasActiveSubagents([...before.subagentHistory, ...before.messages], tab.engine)
       ) {
         cancelStatusRefresh(key);
         return;
       }
 
-      try {
-        const page = await loadHistoryPage(
-          tab.engine,
-          tab.sessionId,
-          tab.workspacePath,
-          SUBAGENT_STATUS_PAGE_SIZE,
+      const sessionId = tab.sessionId;
+      const readPage = (beforeSeq: number | null) =>
+        withStatusReadTimeout(
+          loadHistoryPage(
+            tab.engine,
+            sessionId,
+            tab.workspacePath,
+            SUBAGENT_STATUS_PAGE_SIZE,
+            beforeSeq,
+          ),
+          SUBAGENT_STATUS_READ_TIMEOUT_MS,
         );
-        if (statusRefreshes.get(key) !== task || task.cancelled) return;
-        const latestStore = get();
-        const latest = latestStore.bySession[key];
-        if (latest?.streaming || latestStore.streamingByKey[key]) {
+      // The read in flight may finish after the window moved (a stream, a
+      // reload, another history page); only fold it over the exact window it
+      // was requested for. A cancelled task is left untouched: `clearRequest`
+      // owns its restart (or the pending arm), so clearing its flag here would
+      // drop the refresh that was queued for it.
+      const stillFresh = (): boolean => {
+        if (statusRefreshes.get(key) !== task) return false;
+        if (task.cancelled) return false;
+        const store = get();
+        const current = store.bySession[key];
+        if (!current || current.streaming || store.streamingByKey[key]) {
           cancelStatusRefresh(key);
-          return;
+          return false;
         }
-        const stillOpen = latestStore.openTabs.some(
-          (item) => sessionKey(item.engine, item.sessionId, item.workspacePath) === key,
-        );
         if (
-          !stillOpen ||
-          !latest ||
-          latest.messages !== before.messages ||
-          latest.subagentHistory !== before.subagentHistory
+          !store.openTabs.some(
+            (item) => sessionKey(item.engine, item.sessionId, item.workspacePath) === key,
+          )
         ) {
-          if (latest && hasActiveSubagents([...latest.subagentHistory, ...latest.messages], tab.engine)) {
+          cancelStatusRefresh(key);
+          return false;
+        }
+        if (current.messages !== before.messages || current.subagentHistory !== before.subagentHistory) {
+          if (hasActiveSubagents([...current.subagentHistory, ...current.messages], tab.engine)) {
             scheduleStatusRetry(key, task, tab.engine);
           } else {
             cancelStatusRefresh(key);
           }
-          return;
+          return false;
         }
+        return true;
+      };
+      const collectFresh = (pages: SessionPage[]): Message[] => {
+        const pageRows = pages.flatMap((entry) => [...entry.subagentHistory, ...entry.messages]);
+        const currentRows = [...before.subagentHistory, ...before.messages];
+        // Appended rows must sort after every transcript row on screen — the
+        // folded history uses the same sequence space as `messages`.
+        let firstSequence = 1;
+        for (const message of [...currentRows, ...pageRows]) {
+          if (message.seq >= firstSequence) firstSequence = message.seq + 1;
+        }
+        return freshStatusRows(currentRows, pageRows, firstSequence);
+      };
 
-        const pageRows = [...page.subagentHistory, ...page.messages];
-        const firstSequence = Math.max(
-          0,
-          ...latest.messages.map((message) => message.seq),
-          ...pageRows.map((message) => message.seq),
-        ) + 1;
-        const rows = freshStatusRows(
-          [...latest.subagentHistory, ...latest.messages],
-          pageRows,
-          firstSequence,
-        );
+      try {
+        // `page.messages` carries the deliveries inside the newest window and
+        // `page.subagentHistory` every one before it, so this single page is
+        // the whole transcript's status. Paging older never adds a delivery.
+        const page = await readPage(null);
+        if (!stillFresh()) return;
+        const rows = collectFresh([page]);
         if (rows.length > 0) {
-          patchSession(set, key, { messages: [...latest.messages, ...rows] });
+          patchSession(set, key, { messages: [...before.messages, ...rows] });
         }
         const current = get().bySession[key];
         if (
@@ -401,7 +529,20 @@ export function createSessionActions(
         task.refreshAfterCancel = false;
         task.cancelled = false;
         task.retriesScheduled = 0;
+        task.retriesTotal = 0;
         void runStatusRefresh(key, task);
+      } else if (task.pendingArm) {
+        // Manual reload finished while this read was in flight: restart the
+        // backoff on the reloaded window instead of leaving the poll dead.
+        task.pendingArm = false;
+        task.cancelled = false;
+        task.retriesScheduled = 0;
+        task.retriesTotal = 0;
+        const engine = get().openTabs.find(
+          (item) => sessionKey(item.engine, item.sessionId, item.workspacePath) === key,
+        )?.engine;
+        if (engine) scheduleStatusRetry(key, task, engine);
+        else statusRefreshes.delete(key);
       } else if (task.cancelled || task.timer === null) {
         statusRefreshes.delete(key);
       }
@@ -430,6 +571,11 @@ export function createSessionActions(
     }
     // The transcript can settle after the engine's `done` event; keep polling
     // at the capped interval while the delegated task still appears active.
+    if (task.retriesTotal >= SUBAGENT_STATUS_MAX_RETRIES) {
+      cancelStatusRefresh(key);
+      return;
+    }
+    task.retriesTotal += 1;
     const delayIndex = Math.min(
       task.retriesScheduled,
       SUBAGENT_STATUS_RETRY_DELAYS_MS.length - 1,
@@ -447,7 +593,13 @@ export function createSessionActions(
     if (task?.promise) {
       const activeTask = task;
       const inFlight = task.promise;
-      if (!activeTask.cancelled) return inFlight;
+      if (!activeTask.cancelled) {
+        // The turn just settled / failed: the read in flight still belongs to
+        // the new signal, so restart the retry budget from here.
+        activeTask.retriesScheduled = 0;
+        activeTask.retriesTotal = 0;
+        return inFlight;
+      }
       activeTask.refreshAfterCancel = true;
       return inFlight.then(() => {
         if (statusRefreshes.get(key) === activeTask) return activeTask.promise ?? undefined;
@@ -460,14 +612,66 @@ export function createSessionActions(
     if (!task) {
       task = {
         retriesScheduled: 0,
+        retriesTotal: 0,
         timer: null,
         promise: null,
         cancelled: false,
         refreshAfterCancel: false,
+        pendingArm: false,
       };
       statusRefreshes.set(key, task);
     }
+    task.cancelled = false;
+    // A fresh signal (turn settled, failure, tab revisit) re-arms the budget.
+    task.retriesScheduled = 0;
+    task.retriesTotal = 0;
     return runStatusRefresh(key, task);
+  };
+
+  /** The page just loaded is already the newest page, so reading it again
+   *  right away can only return the same rows. When it still shows a running
+   *  subagent, wait out the first backoff instead. */
+  const armStatusRetry = (key: string): void => {
+    const store = get();
+    const tab = store.openTabs.find(
+      (item) => sessionKey(item.engine, item.sessionId, item.workspacePath) === key,
+    );
+    const session = store.bySession[key];
+    if (
+      !tab ||
+      !session ||
+      !SUBAGENT_STATUS_ENGINES[tab.engine] ||
+      session.streaming ||
+      store.streamingByKey[key] ||
+      !hasActiveSubagents([...session.subagentHistory, ...session.messages], tab.engine)
+    ) {
+      return;
+    }
+    let task = statusRefreshes.get(key);
+    if (task?.timer !== null && task?.timer !== undefined) return;
+    if (task?.promise) {
+      // A cancelled read (manual reload took over) still holds the slot; arm
+      // once it settles instead of dropping the backoff for good.
+      if (task.cancelled) task.pendingArm = true;
+      return;
+    }
+    if (!task) {
+      task = {
+        retriesScheduled: 0,
+        retriesTotal: 0,
+        timer: null,
+        promise: null,
+        cancelled: false,
+        refreshAfterCancel: false,
+        pendingArm: false,
+      };
+      statusRefreshes.set(key, task);
+    }
+    task.cancelled = false;
+    task.refreshAfterCancel = false;
+    task.retriesScheduled = 0;
+    task.retriesTotal = 0;
+    scheduleStatusRetry(key, task, tab.engine);
   };
 
   /** Migrate the engine pref off a CLI that is gone or disabled in
@@ -645,6 +849,13 @@ export function createSessionActions(
           delete streamingByKey[key];
           delete retryingByKey[key];
         }
+        // Composer attachments die with their session, same as the draft
+        // above: a hidden conversation must not keep a picture (and its
+        // sandbox file reference) alive.
+        const composerAttachments = withoutComposerAttachments(
+          s.composerAttachments,
+          Object.keys(archivedSessionKeys),
+        );
         for (const meta of merged) {
           const key = sessionKey(meta.engine, meta.sessionId, meta.workspacePath);
           const current = bySession[key];
@@ -680,6 +891,7 @@ export function createSessionActions(
           unseen,
           streamingByKey,
           retryingByKey,
+          composerAttachments,
           openTabs,
           active,
         };
@@ -797,6 +1009,8 @@ export function createSessionActions(
         .catch(() => null);
       try {
         const page = await loadHistoryPage(engine, sessionId, workspacePath, 100);
+        markTranscriptRows(page.messages);
+        markTranscriptRows(page.subagentHistory);
         patchSession(set, key, {
           messages: page.messages,
           subagentHistory: page.subagentHistory,
@@ -807,7 +1021,7 @@ export function createSessionActions(
           usage:
             [...page.messages].reverse().find((m) => m.usage)?.usage ?? null,
         });
-        void refreshSubagentStatus(key);
+        armStatusRetry(key);
         // 历史页应用后再并入计划卡片(按 planId+revision 去重;活跃等待点
         // 可否恢复由后端状态保证,前端只按 record.status 渲染)。
         const plans = await plansPromise;
@@ -836,6 +1050,9 @@ export function createSessionActions(
         return;
       }
       if (existing?.loading || get().archivedSessionKeys[key]) return;
+      // A status append replaces `messages`, which would make every `unchanged`
+      // check below fail and drop this refresh without any feedback.
+      cancelStatusRefresh(key);
       patchSession(set, key, { loading: true, error: null, historyReloadId: ++historyReloadId });
       set({ actionError: null });
       const snapshot = get().bySession[key];
@@ -856,6 +1073,8 @@ export function createSessionActions(
         do {
           const page = await loadHistoryPage(engine, sessionId, workspacePath, Math.min(500, remaining), before, session, pages.length === 0);
           if (!unchanged()) return;
+          markTranscriptRows(page.messages);
+          markTranscriptRows(page.subagentHistory);
           pages.push(page.messages);
           remaining -= page.messages.length;
           before = page.nextBefore;
@@ -879,7 +1098,96 @@ export function createSessionActions(
         if (unchanged()) set({ actionError: i18n.t("chat.sessionRefreshFailed", { error: errorText(error) }) });
       } finally {
         // Deleted/archived entries must not be recreated by a late completion.
-        if (get().bySession[key]?.historyReloadId === snapshot.historyReloadId) patchSession(set, key, { loading: false, historyReloadId: undefined });
+        if (get().bySession[key]?.historyReloadId === snapshot.historyReloadId) {
+          patchSession(set, key, { loading: false, historyReloadId: undefined });
+          // A failed reload keeps the previous window, which can still have
+          // running agents just like a successfully refreshed window.
+          armStatusRetry(key);
+        }
+      }
+    },
+
+    forkSession: async (engine, sessionId, workspacePath, anchor) => {
+      const key = sessionKey(engine, sessionId, workspacePath);
+      // 防重入：分叉是一次"点击即落盘"的 IPC，连点两次会让后端各建一个分支——
+      // 各自分配标题编号，用户拿到两条看起来一样的会话。同一来源会话在飞期间，
+      // 后续点击直接丢弃；入口据此置灰成"进行中"。
+      //
+      // 注意范围：`forkingByKey` 是**本窗口**的 store 状态，只挡同一个渲染进程里的
+      // 重复点击。局域网网页客户端与桌面端同时分叉时驱动的是同一个进程，由后端把
+      // 分叉逐个执行（`fork_session_blocking` 的进程内锁），编号不会撞。仍挡不住的
+      // 只有同一个数据目录跑起两个进程（应用没有单实例锁）：编号是「读标题快照 →
+      // 之后才写」两步，两个进程之间没有原子性，可能取到同一个 `#N`。
+      if (get().forkingByKey[key]) return;
+      set((s) => ({ forkingByKey: { ...s.forkingByKey, [key]: true } }));
+      try {
+        // 后端**点击即落盘**：算切点、写好继承过来的前缀转录本、登记 sessions
+        // 行，一次搞定。所以这里拿到 plan 时分支已经是一个真实会话——不需要
+        // 再发一条消息才"落地"（惰性落地会让分支窗口在点击后是空的）。
+        // 分支标题由**后端**生成（`<来源标题> (fork #N)`）：编号要与已有标题查重，
+        // 只有后端知道现有标题；后缀语言中立，所以不必经过 i18n。
+        //
+        // ⚠️ 这一步单独 try：**只有分叉本身失败**才说"创建分支失败"。下面插页签、
+        // 读历史失败时分支其实已经建好了，再套那句话会让用户以为白点了一次。
+        let plan;
+        try {
+          plan = await ipc.forkSession(engine, sessionId, anchor ?? null);
+        } catch (error) {
+          // 说明**是哪件事**失败了：只丢一句原始错误，用户不知道这是分叉出错
+          // （可能是定位不到该轮、来源文件被外部改过等）。
+          set({ actionError: i18n.t("chat.forkFailed", { reason: errorText(error) }) });
+          return;
+        }
+        // 分支的 `sessions` 行是后端按**来源会话的工作区**写的，页签必须跟着它，
+        // 否则来源是从搜索/插件等入口打开、调用方工作区与它不一致时，分支首轮
+        // 会以别的 cwd 启动——而引擎按 cwd 解析转录本，`--resume` 可能找不到
+        // 刚写好的分支文件。旧后端不返回该字段时回退到调用方工作区。
+        const branchWorkspace = plan.workspacePath ?? workspacePath;
+        // 降级要**说出来**：分支已经建好，但链路最后一步（继承原会话的模型 / 思考
+        // 档位 / 供应商）有失败项时，分支首轮会用引擎默认值。后端只打日志，打包后
+        // 的 GUI 没有控制台，不说用户就永远不知道——他只会觉得"分支怎么换了模型"。
+        if (plan.degraded && plan.degraded.length > 0) {
+          set({
+            actionError: i18n.t("chat.forkDegraded", {
+              items: plan.degraded.map((item) => i18n.t(`chat.forkDegradedItem.${item}`)).join("、"),
+            }),
+          });
+        }
+        set((s) => {
+          const tab: ActiveSession = {
+            engine: plan.sourceEngine,
+            sessionId: plan.targetSessionId,
+            workspacePath: branchWorkspace,
+          };
+          // 已经开过这个分支就不重复插入（重复点击）。
+          const openTabs = s.openTabs.some((t) =>
+            sameTab(t, tab.engine, tab.sessionId, branchWorkspace),
+          )
+            ? s.openTabs
+            : [...s.openTabs, tab];
+          persistTabs(openTabs, tab);
+          return { openTabs, active: tab, activeEngine: tab.engine };
+        });
+        // 立刻把继承过来的历史读进时间线：分支页签要**马上**显示分叉点之前的
+        // 对话，而不是等用户切走再切回来。会话激活广播由 selectSession 发出
+        // （tabs.ts 的 activateTab 也走同一条路径），这里不再补发第二次。
+        //
+        // 这一步失败时分支已经建好、页签也已插入，所以**不**报"创建分支失败"：
+        // 让 `selectSession` 自己的错误通道处理（它会把 error 挂到会话上、界面
+        // 显示读取失败并给重试）。这里只留一条日志，便于区分"分叉没成功"和
+        // "分叉成功但历史没读进来"。
+        try {
+          await get().selectSession(plan.sourceEngine, plan.targetSessionId, branchWorkspace);
+        } catch (error) {
+          console.error("[fork] 分支已创建，但读取历史失败", error);
+        }
+      } finally {
+        // 失败也要清，否则入口会永远停在"进行中"。
+        set((s) => {
+          const forkingByKey = { ...s.forkingByKey };
+          delete forkingByKey[key];
+          return { forkingByKey };
+        });
       }
     },
 
@@ -907,6 +1215,8 @@ export function createSessionActions(
           100,
           state.nextBefore,
         );
+        markTranscriptRows(page.messages);
+        markTranscriptRows(page.subagentHistory);
         patchSession(set, targetKey, {
           messages: [
             ...page.messages,
@@ -946,6 +1256,7 @@ export function createSessionActions(
           archivedSessionKeys: { ...s.archivedSessionKeys, [key]: true },
           bySession,
           drafts,
+          composerAttachments: withoutComposerAttachments(s.composerAttachments, [key]),
           unseen: omitKey(s.unseen, key),
           actionError: null,
         };
@@ -1000,6 +1311,7 @@ export function createSessionActions(
           ),
           bySession,
           drafts,
+          composerAttachments: withoutComposerAttachments(s.composerAttachments, [key]),
           streamingByKey,
           retryingByKey,
           unseen: omitKey(s.unseen, key),

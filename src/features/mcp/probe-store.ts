@@ -129,7 +129,8 @@ export const useMcpProbeStore = create<McpProbeStore>((set, get) => ({
 /**
  * 打开（或切到某个引擎）时自动检测：指纹由「启用且可检测条目的 id + 配置
  * 哈希」组成，指纹没变就不再跑（重复打开只吃缓存），变了的条目里只补那些
- * 没有新鲜结果的。
+ * 没有新鲜结果的。按需启动的条目不自动检测：检测会真的拉起 server，打开
+ * 页面就启动一遍正是按需启动要避免的；手动「检测」仍可用。
  */
 export function useAutoProbe(
   entries: McpConfigEntry[] | undefined,
@@ -138,21 +139,24 @@ export function useAutoProbe(
 ): void {
   const probeAll = useMcpProbeStore((state) => state.probeAll);
   const runningAll = useMcpProbeStore((state) => state.runningAll);
-  const fingerprint = useMemo(
+  const eligible = useMemo(
     () =>
-      (entries ?? [])
-        .filter((entry) => entry.enabled && probeable(entry))
-        .map((entry) => `${entry.id}@${entry.version}`)
-        .join("|"),
+      (entries ?? []).filter(
+        (entry) => entry.enabled && probeable(entry) && entry.launchMode !== "onDemand",
+      ),
     [entries],
+  );
+  const fingerprint = useMemo(
+    () => eligible.map((entry) => `${entry.id}@${entry.version}`).join("|"),
+    [eligible],
   );
   const probed = useRef<string | null>(null);
   useEffect(() => {
     if (!enabled || runningAll) return;
     if (probed.current === fingerprint) return;
     probed.current = fingerprint;
-    void probeAll(entries ?? [], workspacePath);
-  }, [enabled, fingerprint, runningAll, entries, probeAll, workspacePath]);
+    void probeAll(eligible, workspacePath);
+  }, [enabled, fingerprint, runningAll, eligible, probeAll, workspacePath]);
 }
 
 /** 当前可见条目里最新一次检测的时间（用于「状态更新于 …」）。 */

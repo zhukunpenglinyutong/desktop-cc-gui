@@ -903,12 +903,13 @@ pub(super) mod tests {
     /// `DSH_HOME` / `CODEX_HOME` 这类变量时，扫描会落到 scratch 之外的目录，看不到
     /// 测试布置的会话文件，于是同一套测试随环境变红、且只红在设过变量的机器上。
     /// 所以这些变量在 `set` 时一并摘掉、`drop` 时按原样恢复。
-    const ENGINE_HOME_KEYS: [&str; 5] = [
+    const ENGINE_HOME_KEYS: [&str; 6] = [
         "CLAUDE_CONFIG_DIR",
         "CODEX_HOME",
         "KIMI_HOME",
         "DSH_HOME",
         "MINIMAX_DATA_DIR",
+        "OPENCODE_HOME",
     ];
 
     pub struct HomeGuard {
@@ -1866,8 +1867,12 @@ pub(super) mod tests {
         let workspace = home.join("ws");
         std::fs::create_dir_all(&workspace).map_err(|e| e.to_string())?;
         let ws = workspace.to_string_lossy().to_string();
-        let data_root = home.join(".local/share/opencode");
-        let project = data_root.join("storage/session/b8119e41");
+        // Build every component with `join`, exactly as `opencode_data_roots`
+        // does: the row stores discovery's path text verbatim, so a literal
+        // `.local/share/opencode` would differ on Windows (`\` vs `/`) even
+        // though it names the same directory.
+        let data_root = home.join(".local").join("share").join("opencode");
+        let project = data_root.join("storage").join("session").join("b8119e41");
         std::fs::create_dir_all(&project).map_err(|e| e.to_string())?;
         for (id, updated) in [("ses_live", 2), ("ses_archived", 1), ("ses_downgraded", 50)] {
             std::fs::write(

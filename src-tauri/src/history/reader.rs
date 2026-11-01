@@ -100,6 +100,52 @@ pub async fn list_sessions(
         .map_err(|e| e.to_string())?
 }
 
+/// 单个会话的元信息（与 `list_sessions` 同一套 JOIN 与行映射，只是按
+/// `(engine, session_id)` 收口）。会话分叉需要它来拿源会话的 `file_path`
+/// 与标题，而不必把整个目录列出来。
+pub(crate) fn session_meta_by_id(
+    db: &crate::db::Db,
+    engine: &str,
+    session_id: &str,
+) -> Result<Option<SessionMeta>, String> {
+    let conn = db.read();
+    conn.query_row(
+        "SELECT s.engine, s.session_id, s.workspace_path, s.file_path, s.file_size, s.file_mtime_ms,
+                s.title, s.preview, s.created_at, s.updated_at, s.message_count, s.pinned, s.custom_title,
+                m.model, e.effort, p.provider_id
+         FROM sessions s
+         LEFT JOIN session_models m ON m.engine = s.engine AND m.session_id = s.session_id
+         LEFT JOIN session_efforts e ON e.engine = s.engine AND e.session_id = s.session_id
+         LEFT JOIN session_providers p ON p.engine = s.engine AND p.session_id = s.session_id
+         WHERE s.engine = ?1 AND s.session_id = ?2",
+        rusqlite::params![engine, session_id],
+        |r| {
+            Ok(SessionMeta {
+                engine: r.get(0)?,
+                session_id: r.get(1)?,
+                workspace_path: r.get(2)?,
+                file_path: r.get(3)?,
+                file_size: r.get(4)?,
+                file_mtime_ms: r.get(5)?,
+                title: r.get(6)?,
+                preview: r.get(7)?,
+                created_at: r.get(8)?,
+                updated_at: r.get(9)?,
+                message_count: r.get(10)?,
+                pinned: r.get::<_, i64>(11)? != 0,
+                custom_title: r.get(12)?,
+                model: r.get(13)?,
+                effort: r.get(14)?,
+                provider: r.get(15)?,
+                remote: None,
+                remote_path: None,
+            })
+        },
+    )
+    .optional()
+    .map_err(|e| format!("lookup session {engine}/{session_id}: {e}"))
+}
+
 fn list_archived_sessions_from(db: &crate::db::Db) -> Result<Vec<SessionMeta>, String> {
     let conn = db.read();
     let mut stmt = conn
@@ -1268,12 +1314,14 @@ pub fn rescan_sessions(state: tauri::State<'_, crate::AppState>) {
 /// every turn; this bounds what one session contributes to the table. The
 /// earliest identities are the ones kept — evicting one would unhide a frame
 /// the user has already stopped seeing.
-const MAX_RECORDED_FRAMES_PER_SESSION: i64 = 5_000;
+/// `pub(crate)` because the fork copy (`engine::fork::copy_accepted_frames`)
+/// writes the same table and must not exceed what a live session may record.
+pub(crate) const MAX_RECORDED_FRAMES_PER_SESSION: i64 = 5_000;
 
 /// Ceiling across every session. The per-session cap alone bounds nothing
 /// globally, because the scope is chosen by the caller; every scan reads and
 /// hashes this whole table, so unbounded growth is a permanent tax.
-const MAX_RECORDED_FRAMES_TOTAL: i64 = 100_000;
+pub(crate) const MAX_RECORDED_FRAMES_TOTAL: i64 = 100_000;
 
 /// Longest native session id an identity is scoped to. Native ids are short
 /// (uuid-like), so this only rejects abuse.
@@ -2761,7 +2809,7 @@ mod tests {
         let mut messages = vec![plain(0, "user"), delegation(1), plain(2, "assistant"), status];
         messages.extend((4..124).map(|seq| plain(seq, "assistant")));
         let fold = subagent_fold(&messages);
-        let cached = CachedSession { parsed: ParsedSession { messages }, fold };
+        let cached = CachedSession { parsed: ParsedSession { messages }, fold, footprint: 0 };
         let page = page_from_cached(&cached, Some(100), None);
         assert_eq!(page.messages.len(), 100);
         assert!(page.messages.iter().all(|message| message.role == "assistant"));

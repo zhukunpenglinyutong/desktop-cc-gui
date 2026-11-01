@@ -279,11 +279,7 @@ fn read_claude_json(
 /// 项目键可能是规范化路径（Claude Code 用 realpath 作键）：先按原样查，
 /// 再试 canonicalize，避免符号链接路径读不到 local 配置。
 fn project_entry<'a>(projects: &'a Map<String, Value>, workspace: &str) -> Option<&'a Value> {
-    if let Some(entry) = projects.get(workspace) {
-        return Some(entry);
-    }
-    let canonical = std::fs::canonicalize(workspace).ok()?;
-    projects.get(canonical.to_string_lossy().as_ref())
+    workspace_key(projects, workspace).and_then(|key| projects.get(&key))
 }
 
 fn disabled_names(value: Option<&Value>) -> Vec<String> {
@@ -441,6 +437,8 @@ fn build_entry(
         readonly_reason: spec.readonly_reason.map(str::to_string),
         readonly_reason_code: spec.readonly_reason_code.map(str::to_string),
         version: version.to_string(),
+        launch_mode: super::launch::EAGER.to_string(),
+        launch_mode_unsupported: None,
     }
 }
 
@@ -526,6 +524,8 @@ fn read_codex_toml(path: &Path, source: &str) -> Result<Vec<McpConfigEntry>, Mcp
             readonly_reason: spec.readonly_reason.map(str::to_string),
             readonly_reason_code: spec.readonly_reason_code.map(str::to_string),
             version: version.clone(),
+            launch_mode: super::launch::EAGER.to_string(),
+            launch_mode_unsupported: None,
         };
         entry.env_keys.sort();
         entries.push(entry);
@@ -636,6 +636,18 @@ pub(super) fn write_enabled(
         return Err(McpError::invalid("MCP server name must not be empty"));
     }
 
+    // 新引擎来源由 sources::write_enabled 自己拿 WRITE_LOCK；这把锁不可重入，
+    // 先拿再转交会让 grok / opencode / omp 的开关永远卡住。
+    if !matches!(
+        source,
+        SOURCE_CODEX_USER
+            | SOURCE_CODEX_PROJECT
+            | SOURCE_CLAUDE_PROJECT
+            | SOURCE_CLAUDE_USER
+            | SOURCE_CLAUDE_LOCAL
+    ) {
+        return super::sources::write_enabled(source, name, enabled, expected_version, workspace);
+    }
     let _guard = WRITE_LOCK.lock();
     match source {
         SOURCE_CODEX_USER => {
@@ -668,7 +680,7 @@ pub(super) fn write_enabled(
             set_claude_disabled_in(&path, workspace, name, enabled, expected_version)?;
             reread_entry(&path, source, name, Some(Path::new(workspace)))
         }
-        _ => super::sources::write_enabled(source, name, enabled, expected_version, workspace),
+        _ => unreachable!("new-engine sources returned above"),
     }
 }
 
@@ -865,14 +877,39 @@ fn set_claude_disabled_in(
     crate::settings::atomic_write(path, &text).map_err(McpError::internal)
 }
 
-/// 项目键可能是规范化路径（Claude Code 用 realpath 作键）。
+/// 找出 `projects` 里对应 `workspace` 的那个键（返回文件里的原样键，写回时不改名）。
+/// 两边写法不同：Claude Code 在 Windows 上存 `S:/a/b`，本应用传来的工作区经
+/// `ensure_allowed` 规范化后是 `\\?\S:\a\b`。比较前统一去掉 `\\?\` 前缀、分隔符
+/// 换成 `/`、去尾部分隔符，Windows 上再忽略大小写；仍对不上时用 canonicalize
+/// 兜底（符号链接）。
 fn workspace_key(projects: &Map<String, Value>, workspace: &str) -> Option<String> {
     if projects.contains_key(workspace) {
         return Some(workspace.to_string());
     }
-    let canonical = std::fs::canonicalize(workspace).ok()?;
-    let key = canonical.to_string_lossy().into_owned();
-    projects.contains_key(&key).then_some(key)
+    let find = |target: &str| {
+        let wanted = comparable_path(target);
+        projects.keys().find(|key| comparable_path(key) == wanted).cloned()
+    };
+    find(workspace).or_else(|| {
+        let canonical = std::fs::canonicalize(workspace).ok()?;
+        find(&canonical.to_string_lossy())
+    })
+}
+
+/// 只用于比较的路径形式：不落盘、不回写。
+fn comparable_path(path: &str) -> String {
+    let path = path
+        .strip_prefix(r"\\?\UNC\")
+        .map(|rest| format!(r"\\{rest}"))
+        .unwrap_or_else(|| path.strip_prefix(r"\\?\").unwrap_or(path).to_string());
+    let unified = path.replace('\\', "/");
+    let trimmed = unified.trim_end_matches('/');
+    let trimmed = if trimmed.is_empty() { unified.as_str() } else { trimmed };
+    if cfg!(windows) {
+        trimmed.to_lowercase()
+    } else {
+        trimmed.to_string()
+    }
 }
 
 /// Claude 项目级：服务定义留在 `.mcp.json`，启停写入
@@ -1248,6 +1285,35 @@ mod tests {
     }
 
     #[test]
+    fn claude_project_keys_match_across_windows_path_spellings() {
+        // Claude Code 在 Windows 上存 `S:/a/b`；本应用的工作区经 ensure_allowed
+        // 后是 `\\?\S:\a\b`。两者必须指向同一个项目键，否则启停永远报「没有这个
+        // 项目的记录」。返回的是文件里的原样键，写回时不改名。
+        let projects: Map<String, Value> = serde_json::from_str(
+            r#"{ "S:/AIWorker/Proj": {}, "/home/u/ws": {} }"#,
+        )
+        .unwrap();
+        assert_eq!(
+            workspace_key(&projects, r"\\?\S:\AIWorker\Proj").as_deref(),
+            Some("S:/AIWorker/Proj")
+        );
+        assert_eq!(
+            workspace_key(&projects, r"S:\AIWorker\Proj\").as_deref(),
+            Some("S:/AIWorker/Proj")
+        );
+        assert_eq!(workspace_key(&projects, "/home/u/ws/").as_deref(), Some("/home/u/ws"));
+        assert!(workspace_key(&projects, r"S:\AIWorker\Other").is_none());
+        assert!(project_entry(&projects, r"\\?\S:\AIWorker\Proj").is_some());
+        if cfg!(windows) {
+            // Windows 路径不分大小写。
+            assert_eq!(
+                workspace_key(&projects, r"\\?\s:\aiworker\proj").as_deref(),
+                Some("S:/AIWorker/Proj")
+            );
+        }
+    }
+
+    #[test]
     fn claude_user_toggle_needs_a_workspace_and_a_known_server() {
         let _guard = crate::paths::HOME_ENV_LOCK.lock();
         let dir = TempDir::new("claude-toggle-guard");
@@ -1304,5 +1370,29 @@ mod tests {
         assert_eq!(error.code, "invalid_input");
         let error = write_enabled("codex_project:alpha", true, "", None).unwrap_err();
         assert_eq!(error.code, "invalid_input");
+    }
+
+    #[test]
+    fn new_engine_toggle_through_the_command_path_does_not_deadlock() {
+        // mcp_set_enabled → config::write_enabled → sources::write_enabled：外层
+        // 若先拿 WRITE_LOCK，内层再拿就死锁。放到线程里限时，卡住时测试报错而不是挂起。
+        let _guard = crate::paths::HOME_ENV_LOCK.lock();
+        let dir = TempDir::new("omp-toggle-command-path");
+        let path = dir.path().join("mcp.json");
+        let original = "{\n  \"mcpServers\": {\n    \"alpha\": { \"command\": \"npx\" }\n  }\n}\n";
+        std::fs::write(&path, original).unwrap();
+        std::env::set_var("OMP_CODING_AGENT_DIR", dir.path());
+        let version = file_hash(original.as_bytes());
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let _ = tx.send(write_enabled("omp_user:alpha", false, &version, None));
+        });
+        let result = rx
+            .recv_timeout(std::time::Duration::from_secs(10))
+            .expect("toggle deadlocked on WRITE_LOCK");
+        std::env::remove_var("OMP_CODING_AGENT_DIR");
+        assert!(!result.unwrap().enabled);
+        let written: Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        assert_eq!(written["mcpServers"]["alpha"]["enabled"], serde_json::json!(false));
     }
 }

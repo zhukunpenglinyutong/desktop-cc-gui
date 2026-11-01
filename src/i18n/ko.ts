@@ -53,6 +53,14 @@ export const ko: Messages = {
     confirmCloseApp: "CC GUI를 종료할까요? 실행 중인 모든 세션과 터미널이 종료됩니다."
   },
   chat: {
+    "copied": "복사됨",
+    "forkConversation": "대화 분기",
+    "forkFailed": "대화 분기에 실패했습니다: {{reason}}",
+    "forkUnavailableRemote": "원격(WSL) 세션은 아직 대화 분기를 지원하지 않습니다",
+    "forkUnavailableEngine": "현재 엔진은 아직 대화 분기를 지원하지 않습니다",
+    "forkUnavailableImageOnly": "이 턴에는 이미지만 있고 텍스트가 없어 대화 분기를 지원하지 않습니다",
+    "forkDegraded": "분기는 만들었지만 {{items}}을(를) 이어받지 못했습니다. 첫 턴은 엔진 기본값으로 실행됩니다.",
+    "forkDegradedItem": { "model": "모델", "effort": "추론 강도", "provider": "제공자" },
     processHistoryPages: "처리 기록 페이지",
     processPreviousPage: "이전 페이지",
     processNextPage: "다음 페이지",
@@ -173,10 +181,6 @@ export const ko: Messages = {
     sessionRefreshFailed: "세션 렌더링 새로고침 실패: {{error}}",
     loadEarlier: "이전 메시지 불러오기",
     searchPlaceholder: "대화 검색",
-    searchNoResults: "결과 없음",
-    searchPrevMatch: "이전 일치 항목",
-    searchNextMatch: "다음 일치 항목",
-    searchClose: "검색 닫기",
     grantTitle: "디렉터리 접근 권한 필요",
     grantScopeNote: "권한을 부여할 디렉터리: {{dir}} (저장되며 설정에서 취소 가능)",
     grantAllow: "접근 허용",
@@ -1228,6 +1232,23 @@ export const ko: Messages = {
     preview: "미리보기",
     editMode: "편집",
     wordWrap: "자동 줄 바꿈",
+    editorSearch: {
+      panelLabel: "찾기 및 바꾸기",
+      find: "찾기",
+      replace: "바꾸기",
+      replaceAll: "모두 바꾸기",
+      caseSensitive: "대소문자 구분",
+      wholeWord: "단어 단위",
+      regex: "정규식",
+      noResults: "결과 없음",
+      previousMatch: "이전 항목 (Shift+Enter)",
+      nextMatch: "다음 항목 (Enter)",
+      close: "닫기 (Esc)",
+      expandReplace: "바꾸기 표시",
+      collapseReplace: "바꾸기 숨기기",
+      selectAllMatches: "일치 항목 모두 선택",
+      selectionLimitSummary: "{{limit}}개 선택됨 (상한 도달)",
+    },
     markdown: {
       close: "닫기",
       copied: "복사됨",
@@ -1248,11 +1269,7 @@ export const ko: Messages = {
       exitFullscreen: "전체 화면 종료",
       imageNotAvailable: "이미지를 사용할 수 없습니다",
       resetView: "보기 초기화",
-      searchClose: "검색 닫기",
-      searchNextMatch: "다음 검색 결과",
-      searchNoResults: "검색 결과 없음",
       searchPlaceholder: "문서 검색",
-      searchPrevMatch: "이전 검색 결과",
       searchToggle: "문서 검색",
       viewFullscreen: "전체 화면으로 보기",
       zoomIn: "확대",
@@ -2164,6 +2181,31 @@ export const ko: Messages = {
   mcp: {
     searchPlaceholder: "서버 이름 검색",
     toggle: "{{name}} 활성화",
+    enableHint: {
+      on: "{{name}}: 설정에서 활성화됨. 클릭하면 비활성화",
+      off: "{{name}}: 설정에서 비활성화됨. 클릭하면 활성화",
+    },
+    launch: {
+      title: "필요할 때 시작",
+      toggle: "{{name}} 필요할 때 시작",
+      onDemandHint: "{{name}}: 필요할 때 시작 (첫 호출 시). 클릭하면 세션과 함께 시작",
+      eagerHint: "{{name}}: 세션과 함께 시작. 클릭하면 필요할 때 시작 (첫 호출 시)",
+      description:
+        "켜면 이 앱이 띄우는 세션은 이 서버를 미리 시작하지 않습니다. 도구 목록은 지난 실행의 캐시로 그대로 모델에 전달되고, 첫 실제 호출 때 서버가 시작됩니다. 이 앱에만 적용되며 CLI 설정은 바꾸지 않습니다.",
+      disabledEntry: "항목이 비활성화되어 있습니다. 활성화해야 시작 방식을 고를 수 있습니다",
+      unsupported: {
+        engine: "이 엔진에는 아직 실행별 MCP 재정의 경로가 없습니다",
+        transport: "stdio 서버만 필요할 때 시작할 수 있습니다. 원격 서버에는 로컬 프로세스가 없습니다",
+        workspace_file:
+          "항목이 작업 공간 .omp/mcp.json에 있어 실행별로 재정의할 수 없습니다. 사용자 수준 mcp.json으로 옮기면 사용할 수 있습니다",
+        workspace_env:
+          "OMP는 필요할 때 시작하는 항목을 작업 공간 .omp/mcp.json으로만 받으므로, 환경 변수(토큰이 많음)가 있는 항목은 프로젝트 파일에 복사되어 지원하지 않습니다. env를 제거하면 사용할 수 있습니다",
+        project_trust:
+          "Codex는 신뢰하는 프로젝트에서만 .codex/config.toml을 읽으며, 필요할 때 시작용 명령줄 재정의는 이 검사를 우회하므로 프로젝트 수준 항목은 지원하지 않습니다. 사용자 수준 config.toml로 옮기면 사용할 수 있습니다",
+        name: "이름에 Codex 명령줄 재정의로 표현할 수 없는 점이나 따옴표 같은 문자가 있어 세션과 함께 시작합니다",
+        shadowed: "더 높은 우선순위 범위에 같은 이름의 항목이 있어 엔진은 그 항목만 시작합니다. 그 항목에서 설정하세요",
+      },
+    },
     enabled: "설정에서 활성화됨",
     disabled: "설정에서 비활성화됨",
     builtin: "내장",
@@ -2173,7 +2215,10 @@ export const ko: Messages = {
       shared_project_file: "공유 프로젝트 .mcp.json: CLI마다 자체 규칙을 적용하므로 읽기 전용입니다(이 페이지에는 파일 자체의 필드를 표시합니다)",
       grok_project_toggle: "Grok의 프로젝트 토글은 사용자 수준의 disabled_mcp_servers 목록도 다시 씁니다. 일부만 수정되는 일을 막기 위해 읽기 전용입니다",
       dsh_plugin: "dsh는 플러그인으로 MCP를 제공합니다(서버마다 dsh-mcp-client 인스턴스 하나). 프로필의 cordis 설정에서 추가하거나 제거하세요",
-      jsonc_readonly: "이 파일은 주석이 있는 JSONC입니다. 쓰면 주석이 사라지므로 여기서는 읽기 전용입니다. 편집기에서 수정하세요"
+      jsonc_readonly: "이 파일은 주석이 있는 JSONC입니다. 쓰면 주석이 사라지므로 여기서는 읽기 전용입니다. 편집기에서 수정하세요",
+      needs_workspace: "Claude는 활성화 여부를 작업 공간별로 기록합니다(~/.claude.json에서 해당 작업 공간의 disabledMcpServers). 여기서 전환하려면 먼저 작업 공간을 여세요",
+      omp_server_list:
+        "이 이름은 OMP 사용자 수준 mcp.json의 disabledServers / enabledServers 목록에 있어 실제 활성화 여부는 목록이 결정합니다. 항목만 바꿔서는 효과가 없으니 OMP에서 /mcp enable 또는 /mcp disable을 사용하세요"
     },
     support: {
       none: "{{name}}에는 MCP가 포함되어 있지 않아 임의의 소스를 만들지 않습니다. 확장 기능으로 MCP를 추가할 수는 있습니다.",

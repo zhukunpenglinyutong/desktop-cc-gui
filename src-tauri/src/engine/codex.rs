@@ -332,6 +332,25 @@ impl Engine for CodexEngine {
     fn supports_memory(&self) -> bool {
         true
     }
+    /// 按需条目：`-c mcp_servers.<name>.command/args` 按键合并到用户定义上，
+    /// env/cwd/timeout 等继续继承。`-c` 写在 app-server 之后也生效（同上面
+    /// 的 service_tier）。
+    fn mount_on_demand(
+        &self,
+        built: &mut BuiltCommand,
+        servers: &[crate::mcp::launch::OnDemandServer],
+        _workspace: &std::path::Path,
+    ) -> Result<(), String> {
+        for server in servers {
+            let Some(overrides) = server.codex_overrides(toml_string) else {
+                continue;
+            };
+            for value in overrides {
+                built.command.arg("-c").arg(value);
+            }
+        }
+        Ok(())
+    }
     fn supports_effort(&self) -> bool {
         true
     }

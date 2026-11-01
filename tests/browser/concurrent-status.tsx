@@ -40,7 +40,9 @@ function forceMotion(motion: Motion) {
 function inspect(root: HTMLElement, count: number, status: Status, motion: Motion, matchedRules: number) {
   const failures: string[] = [];
   const dots = [...root.querySelectorAll<HTMLElement>(".sidebar-thread-status")];
-  const expected = count * 2; // One sidebar dot and one tab dot per session.
+  // One sidebar dot and one tab dot per session; running/retrying states add
+  // the workspace header's aggregate dot, completed sessions do not.
+  const expected = count * 2 + (status === "complete" ? 0 : 1);
   if (dots.length !== expected) failures.push(`Expected ${expected} status dots, received ${dots.length}`);
   if (matchedRules === 0) failures.push("Production reduced-motion rule was not found");
   const shouldAnimate = status === "processing" && motion === "normal";

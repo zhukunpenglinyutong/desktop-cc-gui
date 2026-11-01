@@ -80,6 +80,16 @@ pub struct AppState {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     paths::ensure_dirs().expect("failed to create app home");
+    // MCP proxy mode: `--mcp-lazy -- <server command…>` starts the real
+    // server on first use (mcp/lazy.rs). Checked first and only at argv[1]:
+    // the wrapped command may itself carry `--memory-mcp` and friends.
+    if std::env::args().nth(1).as_deref() == Some(mcp::lazy::FLAG) {
+        if let Err(error) = mcp::lazy::serve(std::env::args().skip(2).collect()) {
+            eprintln!("[mcp-lazy] {error}");
+            std::process::exit(1);
+        }
+        return;
+    }
     // MCP server mode: engine CLIs spawn this binary as a computer-use MCP
     // child process (`--mcp-config`). stdout is the protocol channel, so no
     // Tauri runtime — and nothing that prints to stdout — may start here.
@@ -471,6 +481,7 @@ pub fn run() {
             // engine
             engine::send_message,
             engine::interrupt_session,
+            engine::live_runs,
             engine::answer_question,
             engine::respond_plan_review,
             engine::list_plan_reviews,
@@ -497,6 +508,7 @@ pub fn run() {
             // web bridge intentionally does not dispatch these.
             mcp::mcp_inventory,
             mcp::mcp_set_enabled,
+            mcp::mcp_set_launch_mode,
             mcp::probe::mcp_probe,
             // skills hub (设置 → 能力扩展 → Skills)
             skills_hub::skills_hub_query,
@@ -516,6 +528,8 @@ pub fn run() {
             history::reader::delete_remote_session,
             history::reader::pin_session,
             history::reader::rename_session,
+            // 会话分叉：解析分叉点、分配新 id，并**当场**写出继承过来的前缀转录本、登记 `sessions` 行（点击即落盘，不分两次做）
+            engine::fork::fork_session,
             history::reader::remember_session_model,
             history::reader::remember_session_effort,
             history::reader::remember_session_provider,

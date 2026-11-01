@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import CodeMirror from "@uiw/react-codemirror";
-import type { Extension } from "@codemirror/state";
+import { EditorSelection, type Extension } from "@codemirror/state";
+import { closeSearchPanel, openSearchPanel } from "@codemirror/search";
 import { LanguageDescription } from "@codemirror/language";
 import { languages } from "@codemirror/language-data";
 import ExternalLink from "lucide-react/dist/esm/icons/external-link";
@@ -10,10 +11,20 @@ import { errorText } from "@/lib/errors";
 import { Button } from "@/components/base/buttons/button";
 import { useActionFeedback } from "@/components/base/action-feedback";
 import { CenteredSpinner, EmptyState } from "@/components/base/empty-state";
-import { isWeb } from "@/lib/platform";
+import { IS_MAC, isWeb } from "@/lib/platform";
 import { fileName, useFilesStore } from "./store";
 import type { OpenFileState } from "./store";
 import { BinaryFileView, ImageFileView } from "./EditorFallbackViews";
+import {
+  EditorSearchPanel,
+  type EditorSearchDirection,
+  type EditorSearchFocusRequest,
+} from "./EditorSearchPanel";
+import {
+  clearEditorSearchQuery,
+  createEditorSearchExtensions,
+  type EditorSearchKeymapActions,
+} from "./editor-search";
 import { FileEditorHeader } from "./FileEditorHeader";
 import { HtmlPreview } from "./HtmlPreview";
 import { MarkdownPreview } from "./MarkdownPreview";
@@ -202,13 +213,128 @@ function FileEditor({ path, content, wordWrap, onToggleWordWrap }: {
   // preview drops it so switching back to read mode starts clean.
   const [previewSearchOpen, setPreviewSearchOpen] = useState(false);
   const [langExt, setLangExt] = useState<Extension[]>([]);
-  const extensions = useMemo(
-    () => wordWrap ? [CM_LINE_SELECTION, ...langExt, EditorView.lineWrapping] : [CM_LINE_SELECTION, ...langExt],
-    [langExt, wordWrap],
-  );
   // Truncated files are partial (editing + saving would clobber the tail);
   // remote-readOnly files are complete but unwritable — both stay read-only.
   const readOnly = content.truncated || content.readOnly === true;
+
+  // Editor find/replace: React owns the visible card, CodeMirror owns the
+  // search state, match highlighting and navigation commands. The native
+  // panel is replaced by a hidden element (see editor-search.ts).
+  const [editorView, setEditorView] = useState<EditorView | null>(null);
+  const [editorSearchOpen, setEditorSearchOpen] = useState(false);
+  const [editorSearchReplace, setEditorSearchReplace] = useState(false);
+  const [editorSearchFocus, setEditorSearchFocus] = useState<EditorSearchFocusRequest>({
+    target: "find",
+    token: 0,
+  });
+  const editorSearchOpenRef = useRef(false);
+  const editorSearchNavigateRef = useRef<((direction: EditorSearchDirection) => void) | null>(null);
+  const readOnlyRef = useRef(readOnly);
+  useEffect(() => {
+    readOnlyRef.current = readOnly;
+  });
+
+  const openEditorSearch = useCallback((view: EditorView, replace: boolean) => {
+    if (replace && readOnlyRef.current) return;
+    // Opening the CodeMirror panel state also enables cm-searchMatch
+    // highlighting; the panel element itself is the hidden span.
+    openSearchPanel(view);
+    editorSearchOpenRef.current = true;
+    setEditorSearchOpen(true);
+    setEditorSearchReplace(replace);
+    setEditorSearchFocus((current) => ({
+      target: replace ? "replace" : "find",
+      token: current.token + 1,
+    }));
+  }, []);
+
+  const closeEditorSearchInternal = useCallback((focusEditor: boolean) => {
+    if (!editorSearchOpenRef.current) return false;
+    editorSearchOpenRef.current = false;
+    setEditorSearchOpen(false);
+    setEditorSearchReplace(false);
+    const view = editorRef.current;
+    if (view?.dom.isConnected) {
+      closeSearchPanel(view);
+      // Clear the query and collapse a single selection to its head like dbx
+      // does, so the match highlight does not outlive the dismissed search.
+      // Cursors from "select all matches" are kept: closing the card first
+      // and then typing is how they get edited.
+      clearEditorSearchQuery(view);
+      const { selection } = view.state;
+      if (selection.ranges.length === 1) {
+        view.dispatch({ selection: EditorSelection.single(selection.main.head) });
+      }
+      // Switching tabs must not pull focus into the now-hidden editor.
+      if (focusEditor) view.focus();
+    }
+    return true;
+  }, []);
+  const closeEditorSearch = useCallback(
+    () => closeEditorSearchInternal(true),
+    [closeEditorSearchInternal],
+  );
+  const dismissEditorSearch = useCallback(
+    () => closeEditorSearchInternal(false),
+    [closeEditorSearchInternal],
+  );
+
+  // The find card belongs to the active editor. Close it when another tab
+  // becomes active, before the old SurfaceItem turns invisible: its expanded
+  // replace row is a Collapsible, and content kept mounted there used to stay
+  // painted over the newly active file.
+  useLayoutEffect(() => {
+    if (isActiveTab) return;
+    dismissEditorSearch();
+    // The preview find bar belongs to this tab too; do not bring it back
+    // when the tab is activated again.
+    setPreviewSearchOpen(false);
+  }, [isActiveTab, dismissEditorSearch]);
+
+  // F3 / Mod-G: step through the card (keeps its counter current), or open it
+  // when it is closed.
+  const stepEditorSearch = useCallback(
+    (view: EditorView, direction: EditorSearchDirection) => {
+      if (!editorSearchOpenRef.current) {
+        openEditorSearch(view, false);
+        return true;
+      }
+      editorSearchNavigateRef.current?.(direction);
+      return true;
+    },
+    [openEditorSearch],
+  );
+
+  // Stable source for the CodeMirror keymap, which is built once but must
+  // always call the latest callbacks.
+  const searchActionsRef = useRef<EditorSearchKeymapActions>({
+    openFind: (view) => {
+      openEditorSearch(view, false);
+      return true;
+    },
+    openReplace: (view) => {
+      // Consume the shortcut in read-only files without offering mutation.
+      if (readOnlyRef.current) return true;
+      openEditorSearch(view, true);
+      return true;
+    },
+    findNext: (view) => stepEditorSearch(view, "next"),
+    findPrevious: (view) => stepEditorSearch(view, "prev"),
+    close: () => closeEditorSearch(),
+  });
+  const searchExtensions = useMemo(
+    () => createEditorSearchExtensions(searchActionsRef, IS_MAC),
+    [],
+  );
+  const extensions = useMemo(
+    () => [
+      CM_LINE_SELECTION,
+      ...langExt,
+      ...searchExtensions,
+      ...(wordWrap ? [EditorView.lineWrapping] : []),
+    ],
+    [langExt, wordWrap, searchExtensions],
+  );
   const dirty = !readOnly && draft !== savedText;
 
   // Publish dirty state so the tab strip can dot the tab and confirm closes.
@@ -219,8 +345,11 @@ function FileEditor({ path, content, wordWrap, onToggleWordWrap }: {
 
   const handleViewModeChange = useCallback((mode: EditorViewMode) => {
     setPreviewSearchOpen(false);
+    // Close before the CodeMirror view unmounts, otherwise the open-panel
+    // state and match highlights would be dropped without a teardown.
+    closeEditorSearch();
     setViewMode(mode);
-  }, []);
+  }, [closeEditorSearch]);
 
   // 刷新走 §4.1 转圈 → 对号：iframe 重挂载没有可等待的完成事件，对号 = 重新
   // 加载指令已下发（与内置浏览器的刷新语义一致）。
@@ -338,17 +467,34 @@ function FileEditor({ path, content, wordWrap, onToggleWordWrap }: {
           />
         )
       ) : (
-        <CodeMirror
-          className="min-h-0 flex-1 overflow-hidden [&_.cm-editor]:h-full"
-          height="100%"
-          value={draft}
-          onCreateEditor={(view) => { editorRef.current = view; }}
-          onChange={setDraft}
-          extensions={extensions}
-          theme={dark ? "dark" : "light"}
-          readOnly={readOnly || (entry?.session !== undefined && saving)}
-          basicSetup={CM_BASIC_SETUP}
-        />
+        <div className="relative flex min-h-0 min-w-0 flex-1">
+          <CodeMirror
+            className="min-h-0 flex-1 overflow-hidden [&_.cm-editor]:h-full"
+            height="100%"
+            value={draft}
+            onCreateEditor={(view) => {
+              editorRef.current = view;
+              setEditorView(view);
+            }}
+            onChange={setDraft}
+            extensions={extensions}
+            theme={dark ? "dark" : "light"}
+            readOnly={readOnly || (entry?.session !== undefined && saving)}
+            basicSetup={CM_BASIC_SETUP}
+          />
+          <EditorSearchPanel
+            view={editorView}
+            open={editorSearchOpen}
+            showReplace={editorSearchReplace}
+            readOnly={readOnly}
+            isMac={IS_MAC}
+            focusRequest={editorSearchFocus}
+            documentText={draft}
+            onShowReplaceChange={setEditorSearchReplace}
+            onClose={closeEditorSearch}
+            navigateRef={editorSearchNavigateRef}
+          />
+        </div>
       )}
     </div>
   );

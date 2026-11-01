@@ -62,6 +62,24 @@ function ThreadStatusDot({
   return null;
 }
 
+/** Aggregate run state of every session a workspace owns, worktree
+ *  descendants included: breathing when any turn streams, static when every
+ *  streaming turn is in provider backoff. */
+function aggregateRunState(repo: AiChatRepo): { running: boolean; retrying: boolean } {
+  let running = false;
+  let allRetrying = true;
+  const visit = (node: AiChatRepo) => {
+    for (const thread of node.threads) {
+      if (!thread.streaming) continue;
+      running = true;
+      if (!thread.retrying) allRetrying = false;
+    }
+    node.worktrees?.forEach(visit);
+  };
+  visit(repo);
+  return { running, retrying: running && allRetrying };
+}
+
 /** Row-hover actions (pin / rename / delete). Drafts only offer delete. */
 function ThreadHoverActions({
   id,
@@ -280,6 +298,9 @@ function RepoHeaderRow({
   const { t } = useTranslation();
   const Icon = expanded ? FolderOpen : FolderSymlink;
   const collapseLabel = expanded ? t("chat.collapseWorkspace") : t("chat.expandWorkspace");
+  // 工作区行透传名下所有会话（含 worktree 子工作区）的运行状态：任意线程
+  // 流式中即在前方显示同一个呼吸点；全部在退避重试时降为静态点。
+  const { running, retrying } = aggregateRunState(repo);
   return (
     <div
       onContextMenu={onContextMenu}
@@ -344,9 +365,13 @@ function RepoHeaderRow({
         onClick={onToggleOpen}
         className="flex min-w-0 flex-1 cursor-pointer items-center text-left"
       >
+        <ThreadStatusDot streaming={running} retrying={retrying} unseen={false} />
         <span
           title={repo.originalLabel}
-          className="truncate text-body-2-medium whitespace-nowrap text-text-secondary"
+          className={cx(
+            "truncate text-body-2-medium whitespace-nowrap text-text-secondary",
+            running && "ml-1.5",
+          )}
         >
           {repo.label}
         </span>
@@ -434,9 +459,9 @@ function WorktreeChildRow({
   );
   // 收起时把线程运行状态聚合到本行（展开时各线程行自己带状态点）：任一
   // 线程流式中即显示呼吸点；全部流式线程都在退避重试时降为静态点，与会
-  // 话行 / 页签同一套 `sidebar-thread-status` 视觉语言。
-  const running = repo.threads.some((th) => th.streaming);
-  const retrying = running && repo.threads.every((th) => !th.streaming || th.retrying);
+  // 话行 / 页签同一套 `sidebar-thread-status` 视觉语言。更深的 worktree
+  // 子级会话一并计入。
+  const { running, retrying } = aggregateRunState(repo);
   return (
     <div
       onContextMenu={onContextMenu}

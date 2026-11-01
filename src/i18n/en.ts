@@ -188,11 +188,23 @@ export const en: Messages = {
     sessionRefreshRunning: "Stop the running session before refreshing its rendering.",
     sessionRefreshFailed: "Failed to refresh conversation rendering: {{error}}",
     loadEarlier: "Load earlier messages",
+    /** Fork conversation: derive a new session that inherits the context up to
+     *  a chosen message. */
+    forkConversation: "Fork conversation",
+    forkFailed: "Could not fork the conversation: {{reason}}",
+    forkDegraded: "Branch created, but {{items}} could not be inherited; its first turn will use engine defaults.",
+    forkDegradedItem: {
+      model: "the model",
+      effort: "the reasoning effort",
+      provider: "the provider",
+    },
+    /** Why the entry is greyed out when it cannot be used (the disabled state
+     *  carries this as a `title` plus aria-disabled, so it stays reachable). */
+    forkUnavailableRemote: "Remote (WSL) sessions cannot be forked yet",
+    forkUnavailableEngine: "This engine cannot fork conversations yet",
+    forkUnavailableImageOnly: "This turn has images but no text, so it cannot be forked yet",
+    copied: "Copied",
     searchPlaceholder: "Search conversation",
-    searchNoResults: "No results",
-    searchPrevMatch: "Previous match",
-    searchNextMatch: "Next match",
-    searchClose: "Close search",
     grantTitle: "Directory access required",
     grantScopeNote:
       "Grants directory: {{dir}} (persisted; revocable in Settings)",
@@ -1331,6 +1343,23 @@ export const en: Messages = {
     preview: "Preview",
     editMode: "Edit",
     wordWrap: "Word wrap",
+    editorSearch: {
+      panelLabel: "Find and replace",
+      find: "Find",
+      replace: "Replace",
+      replaceAll: "Replace all",
+      caseSensitive: "Match case",
+      wholeWord: "Whole word",
+      regex: "Regular expression",
+      noResults: "No results",
+      previousMatch: "Previous match (Shift+Enter)",
+      nextMatch: "Next match (Enter)",
+      close: "Close (Esc)",
+      expandReplace: "Show replace",
+      collapseReplace: "Hide replace",
+      selectAllMatches: "Select all matches",
+      selectionLimitSummary: "Selected {{limit}} matches (limit reached)",
+    },
     markdown: {
       close: "Close",
       copied: "Copied",
@@ -1351,11 +1380,7 @@ export const en: Messages = {
       exitFullscreen: "Exit fullscreen",
       imageNotAvailable: "Image not available",
       resetView: "Reset view",
-      searchClose: "Close search",
-      searchNextMatch: "Next match",
-      searchNoResults: "No results",
       searchPlaceholder: "Search document",
-      searchPrevMatch: "Previous match",
       searchToggle: "Search document",
       viewFullscreen: "View fullscreen",
       zoomIn: "Zoom in",
@@ -2300,6 +2325,31 @@ export const en: Messages = {
   mcp: {
     searchPlaceholder: "Search server names",
     toggle: "Enable {{name}}",
+    enableHint: {
+      on: "{{name}}: enabled in config. Click to disable",
+      off: "{{name}}: disabled in config. Click to enable",
+    },
+    launch: {
+      title: "Start on demand",
+      toggle: "Start {{name}} on demand",
+      onDemandHint: "{{name}}: starts on demand (on first call). Click to start it with the session",
+      eagerHint: "{{name}}: starts with the session. Click to start it on demand (on first call)",
+      description:
+        "When on, sessions this app launches no longer start this server up front: the model still gets its tool list (cached from the last run), and the server starts on the first real call. Only affects this app; the CLI config is unchanged.",
+      disabledEntry: "The entry is disabled: enable it to choose how it starts",
+      unsupported: {
+        engine: "This engine has no per-launch MCP override channel yet",
+        transport: "Only stdio servers can start on demand: remote servers have no local process",
+        workspace_file:
+          "The entry lives in the workspace .omp/mcp.json and cannot be overridden per launch; move it to the user-level mcp.json",
+        workspace_env:
+          "OMP can only take on-demand entries through the workspace .omp/mcp.json, so an entry with environment variables (often tokens) would be copied into a project file; remove its env to use this",
+        project_trust:
+          "Codex reads .codex/config.toml only in trusted projects, and the on-demand command-line override would bypass that check, so project-level entries are not supported; move it to the user-level config.toml",
+        name: "The name contains a dot, quote or similar character that Codex command-line overrides cannot express, so it keeps starting with the session",
+        shadowed: "An entry with the same name in a higher-precedence scope is the one the engine starts: set it on that entry instead",
+      },
+    },
     enabled: "Enabled in config",
     disabled: "Disabled in config",
     builtin: "Built-in",
@@ -2315,6 +2365,10 @@ export const en: Messages = {
         "dsh serves MCP through plugins (one dsh-mcp-client instance per server); add or remove them in the profile's cordis config",
       jsonc_readonly:
         "This file is JSONC (it carries comments): writing would drop them, so it is read-only here — edit it in your editor",
+      needs_workspace:
+        "Claude records enable/disable per workspace (that workspace's disabledMcpServers in ~/.claude.json): open a workspace to switch it here",
+      omp_server_list:
+        "This name is in the disabledServers / enabledServers list of OMP's user-level mcp.json, which decides whether it runs; changing the entry itself would have no effect, so use /mcp enable or /mcp disable in OMP",
     },
     support: {
       none: "{{name}} does not ship MCP: no source is invented for it. Its extension mechanism can still add MCP.",

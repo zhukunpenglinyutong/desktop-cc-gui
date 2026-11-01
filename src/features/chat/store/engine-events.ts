@@ -18,6 +18,7 @@ import {
 } from "@/lib/notifications";
 import { planRevisionStatus, turnAwaitsUser, turnReplyText } from "./turn-notice";
 import { migrateSessionContributions } from "./session-contributions";
+import { moveComposerState } from "./attachments";
 import { migrateAutoCompactSettings } from "../auto-compact-context";
 import {
   EMPTY_SESSION,
@@ -25,6 +26,7 @@ import {
   applyStreamParts,
   bufferStreamPart,
   drainPending,
+  dropOrphanRun,
   migratePendingStream,
   moveRetryingFlag,
   moveStreamingFlag,
@@ -957,7 +959,7 @@ function onSession(
       ?.catch(() => {});
   }
 
-  settleOrphanedRuns(deps.set, routeRun(event.runId, newKey));
+  void reapOrphanedRuns(deps.set, routeRun(event.runId, newKey));
   // Unflushed stream chunks sit under the pre-migration key; move them too.
   migratePendingStream(fromKey, newKey);
   // A delta-only engine reports no native id from the send, so a remembered
@@ -1014,6 +1016,11 @@ function onSession(
       if (drafts[newKey] === undefined) drafts[newKey] = drafts[fromKey];
       delete drafts[fromKey];
     }
+    // Pending attachments follow their tab the same way the draft does: the
+    // composer reads the native key afterwards, so chips left under `new:`
+    // would vanish from the very conversation that sent them. The recorded
+    // move also redirects a picture that is still being saved.
+    const attachments = moveComposerState(s, fromKey, newKey);
     const streamingByKey = moveStreamingFlag(s.streamingByKey, fromKey, newKey);
     const retryingByKey = moveRetryingFlag(s.retryingByKey, fromKey, newKey);
     const activeNext =
@@ -1023,7 +1030,14 @@ function onSession(
       s.active.workspacePath === workspacePath
         ? { ...s.active, sessionId: nativeId, effort: undefined, provider: undefined }
         : s.active;
-    return { bySession, drafts, streamingByKey, retryingByKey, active: activeNext };
+    return {
+      bySession,
+      drafts,
+      ...attachments,
+      streamingByKey,
+      retryingByKey,
+      active: activeNext,
+    };
   });
   // The pending tab owning this run adopts the native id. Stamp only the
   // first match: blanketing every pending tab of this engine+workspace
@@ -1107,6 +1121,37 @@ const turnUsageTotals = new Map<string, ParsedUsage>();
 /** Drop a run's usage bookkeeping (settled, interrupted, or swept). */
 export function dropRunUsage(runId: string) {
   turnUsageTotals.delete(runId);
+}
+
+/** Settle the stale runs routeRun reported, but only those the host no
+ * longer runs. Silence is not death: a long command or a question left
+ * waiting emits nothing, and settling it would stop the spinner (and fire a
+ * failed afterTurn) under a live turn. A live run is re-stamped, so it is
+ * asked about again only after another silent TTL; a failed check keeps
+ * every candidate routed for the next sweep to retry. */
+export async function reapOrphanedRuns(
+  set: (fn: (s: ChatStore) => Partial<ChatStore>) => void,
+  candidates: Array<[string, string]>,
+) {
+  if (candidates.length === 0) return;
+  let live: string[];
+  try {
+    live = await ipc.liveRuns(candidates.map(([runId]) => runId));
+  } catch (error) {
+    console.warn("Orphan sweep could not check live runs:", errorText(error));
+    return;
+  }
+  const alive = new Set(live);
+  const orphaned: Array<[string, string]> = [];
+  for (const [runId] of candidates) {
+    if (alive.has(runId)) {
+      touchRun(runId);
+      continue;
+    }
+    const key = dropOrphanRun(runId);
+    if (key !== undefined) orphaned.push([runId, key]);
+  }
+  settleOrphanedRuns(set, orphaned);
 }
 
 /** Drop every trace of runs the orphan sweep reaped: their usage maps here
@@ -1920,7 +1965,7 @@ function adoptObservedRun(
 ) {
   deps.cancelSubagentStatusRefresh?.(key);
   if (!runRouting.has(event.runId)) {
-    settleOrphanedRuns(deps.set, routeRun(event.runId, key));
+    void reapOrphanedRuns(deps.set, routeRun(event.runId, key));
   }
   const cur = deps.get().bySession[key];
   if (!cur?.streaming) {
@@ -2006,7 +2051,7 @@ export function handleEngineEvents(
     if (bindUnboundRun(event)) {
       const lifecycle = runLifecycles.get(event.runId);
       if (lifecycle) {
-        settleOrphanedRuns(
+        void reapOrphanedRuns(
           deps.set,
           routeRun(
             event.runId,

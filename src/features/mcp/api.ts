@@ -8,6 +8,7 @@ import type {
   McpConfigEntry,
   McpErrorCode,
   McpInventory,
+  McpLaunchMode,
   McpProbeResult,
 } from "./types";
 
@@ -53,6 +54,20 @@ export const mcpApi = {
           version: entry.version,
           workspace,
         },
+      });
+    } catch (error) {
+      throw normalize(error);
+    }
+  },
+  /** 启动方式只写 ccgui 设置（settings.json），不碰 CLI 配置文件。 */
+  setLaunchMode: async (
+    entry: McpConfigEntry,
+    mode: McpLaunchMode,
+    workspace: string | null,
+  ): Promise<McpConfigEntry> => {
+    try {
+      return await invoke<McpConfigEntry>("mcp_set_launch_mode", {
+        request: { entryId: entry.id, mode, workspace },
       });
     } catch (error) {
       throw normalize(error);

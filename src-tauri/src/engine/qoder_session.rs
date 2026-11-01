@@ -67,7 +67,12 @@ pub(crate) const RPC_HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(15);
 pub(crate) const SESSION_NEW_TIMEOUT: Duration = Duration::from_secs(90);
 /// session/resume re-attaches without the workspace scan.
 pub(crate) const SESSION_RESUME_TIMEOUT: Duration = Duration::from_secs(30);
-pub(crate) const PROMPT_TIMEOUT: Duration = Duration::from_secs(60 * 30);
+/// A prompt turn has no wall-clock cap: it ends on its own response, the
+/// CLI's EOF, or the user's stop. Long agentic tasks outrun any fixed cap (a
+/// 30-minute one cut them off mid-run as "timed out"), and a hung CLI is
+/// still one Stop away. Shared by every ACP driver's session/prompt and the
+/// codex turn (its turn/start ack and turn pump).
+pub(crate) const PROMPT_TIMEOUT: Option<Duration> = None;
 /// qodercli interleaves the prompt response into the session/update stream:
 /// keep reading after it until the stream goes idle, else the tail is lost.
 const PROMPT_TRAILING_IDLE: Duration = Duration::from_millis(400);
@@ -695,7 +700,7 @@ impl AcpProcess {
         &mut self,
         method: &str,
         params: Value,
-        timeout_dur: Duration,
+        timeout_dur: impl Into<Option<Duration>>,
         killed: &AtomicBool,
         cancel_session_id: Option<&str>,
         on_update: &mut (dyn FnMut(&Value) + Send),
@@ -730,12 +735,13 @@ impl AcpProcess {
     /// The read wait is capped at KILL_POLL so an interrupt lands even
     /// mid-handshake: with a `cancel_session_id` (prompt phase) the loop
     /// first sends session/cancel and grants the CLI CANCEL_SETTLE_TIMEOUT to
-    /// answer typed; without one the call aborts immediately.
+    /// answer typed; without one the call aborts immediately. A `None`
+    /// timeout waits as long as the CLI keeps the request open.
     pub(crate) async fn routed(
         &mut self,
         method: &str,
         params: Value,
-        timeout_dur: Duration,
+        timeout_dur: impl Into<Option<Duration>>,
         killed: &AtomicBool,
         cancel_session_id: Option<&str>,
         router: &mut LineRouter<'_>,
@@ -745,7 +751,7 @@ impl AcpProcess {
         let expected_key = id.to_string();
         self.write_line(&jsonrpc_request(id, method, params))
             .await?;
-        let deadline = Instant::now() + timeout_dur;
+        let deadline = timeout_dur.into().map(|limit| Instant::now() + limit);
         let drain_trailing = method == "session/prompt";
         let mut settled: Option<Value> = None;
         let mut drain_deadline: Option<Instant> = None;
@@ -775,11 +781,12 @@ impl AcpProcess {
                 }
                 PROMPT_TRAILING_IDLE.min(cap_remaining)
             } else {
-                let remaining = deadline.saturating_duration_since(Instant::now());
-                if remaining.is_zero() {
+                let remaining =
+                    deadline.map(|until| until.saturating_duration_since(Instant::now()));
+                if remaining == Some(Duration::ZERO) {
                     return Err(format!("{method} timed out"));
                 }
-                remaining.min(KILL_POLL)
+                remaining.map_or(KILL_POLL, |remaining| remaining.min(KILL_POLL))
             };
 
             let read = timeout(
@@ -813,7 +820,7 @@ impl AcpProcess {
                     }
                     // An idle read tick: re-check the deadline and the
                     // killed flag on the next loop pass.
-                    if deadline.saturating_duration_since(Instant::now()).is_zero() {
+                    if deadline.is_some_and(|until| until <= Instant::now()) {
                         return Err(format!("{method} timed out"));
                     }
                     continue;
@@ -1549,5 +1556,121 @@ mod tests {
             ACP_LAUNCH_ARGS,
             ["--acp", "--permission-mode", "bypass_permissions"]
         );
+    }
+
+    /// session/prompt carries PROMPT_TIMEOUT for every ACP driver (qoder,
+    /// grok/kimi, minimax, omp): a prompt silent past 30 minutes must still
+    /// end on its own response, not "session/prompt timed out". The paused
+    /// clock races the read loop's idle ticks forward; the 31 minutes start
+    /// once the CLI has the request, because the loop's clock starts only
+    /// after the write.
+    #[cfg(unix)]
+    #[tokio::test(start_paused = true)]
+    async fn a_prompt_silent_past_thirty_minutes_runs_to_its_own_response() {
+        let directory =
+            std::env::temp_dir().join(format!("ccgui-acp-long-prompt-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&directory).unwrap();
+        let received = directory.join("received");
+        let release = directory.join("release");
+        let response = json!({ "jsonrpc": "2.0", "id": 1, "result": { "stopReason": "end_turn" } });
+        let mut command = Command::new("sh");
+        command.args([
+            "-c",
+            &format!(
+                "read request; : > '{}'; while [ ! -e '{}' ]; do sleep 0.05; done; echo '{response}'; exec sleep 30",
+                received.display(),
+                release.display(),
+            ),
+        ]);
+        let mut spawned = spawn_piped_acp(&mut command, "sh", &directory).unwrap();
+        let killed = AtomicBool::new(false);
+        let mut on_update = |_: &Value| {};
+        let (result, silent_for) = tokio::join!(
+            spawned.acp.request(
+                "session/prompt",
+                json!({ "sessionId": "s-1", "prompt": [] }),
+                PROMPT_TIMEOUT,
+                &killed,
+                Some("s-1"),
+                &mut on_update,
+            ),
+            async {
+                while !received.exists() {
+                    tokio::time::sleep(Duration::from_millis(10)).await;
+                }
+                let quiet_since = Instant::now();
+                tokio::time::sleep(Duration::from_secs(31 * 60)).await;
+                std::fs::write(&release, b"").unwrap();
+                quiet_since.elapsed()
+            },
+        );
+        teardown(&mut spawned.child).await;
+        let _ = std::fs::remove_dir_all(&directory);
+        assert_eq!(result.unwrap(), json!({ "stopReason": "end_turn" }));
+        assert!(silent_for >= Duration::from_secs(31 * 60), "{silent_for:?}");
+    }
+
+    /// Without a wall-clock cap, Stop is what ends a hung prompt: the loop
+    /// sends session/cancel and, when the CLI never answers, still gives up
+    /// after the settle window instead of waiting forever.
+    #[cfg(unix)]
+    #[tokio::test(start_paused = true)]
+    async fn stopping_a_hung_prompt_gives_up_after_the_settle_window() {
+        let directory =
+            std::env::temp_dir().join(format!("ccgui-acp-hung-prompt-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&directory).unwrap();
+        let received = directory.join("received");
+        let mut command = Command::new("sh");
+        // The shell keeps stdout open (a hung CLI, not an exited one) while
+        // cat records what the driver sends.
+        command.args(["-c", &format!("cat > '{}'; exec sleep 30", received.display())]);
+        let mut spawned = spawn_piped_acp(&mut command, "sh", &directory).unwrap();
+        let killed = AtomicBool::new(false);
+        let mut on_update = |_: &Value| {};
+        // A broken settle window would spin forever; the outer bound turns
+        // that into a failure (it costs nothing on the paused clock).
+        let (result, stopped_at) = timeout(Duration::from_secs(40 * 60), async {
+            tokio::join!(
+                spawned.acp.request(
+                    "session/prompt",
+                    json!({ "sessionId": "s-1", "prompt": [] }),
+                    PROMPT_TIMEOUT,
+                    &killed,
+                    Some("s-1"),
+                    &mut on_update,
+                ),
+                async {
+                    tokio::time::sleep(Duration::from_secs(31 * 60)).await;
+                    killed.store(true, Ordering::SeqCst);
+                    Instant::now()
+                },
+            )
+        })
+        .await
+        .expect("Stop must end a hung prompt");
+        let settled_in = stopped_at.elapsed();
+        let sent = recorded(&received, "\"session/cancel\"");
+        teardown(&mut spawned.child).await;
+        let _ = std::fs::remove_dir_all(&directory);
+        assert_eq!(result.unwrap_err(), CANCELLED);
+        assert!(
+            settled_in <= CANCEL_SETTLE_TIMEOUT + KILL_POLL * 2,
+            "{settled_in:?}"
+        );
+        assert!(sent.contains("\"session/cancel\""), "{sent}");
+    }
+
+    /// Paused time races past the child process, so wait on the wall clock
+    /// for `cat` to record what the driver sent before tearing it down.
+    #[cfg(unix)]
+    fn recorded(path: &Path, needle: &str) -> String {
+        for _ in 0..300 {
+            let sent = std::fs::read_to_string(path).unwrap_or_default();
+            if sent.contains(needle) {
+                return sent;
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        std::fs::read_to_string(path).unwrap_or_default()
     }
 }

@@ -730,6 +730,50 @@ impl TurnCore {
                     let _ = registry.write_line(&run_id, line).await;
                 });
             }
+            EngineEvent::ElicitationDecline { request_id } => {
+                // No elicitation form in this client: decline in place so the
+                // MCP tool call settles with a declined result instead of
+                // parking the turn forever (issue #1432). The reply is an MCP
+                // elicitation result (`action`), not a permission decision
+                // (`behavior`). Best effort, same as the deny above.
+                let registry = Arc::clone(&self.registry);
+                let run_id = self.run_id.clone();
+                let line = serde_json::json!({
+                    "type": "control_response",
+                    "response": {
+                        "subtype": "success",
+                        "request_id": request_id,
+                        "response": { "action": "decline" },
+                    },
+                })
+                .to_string();
+                tokio::spawn(async move {
+                    let _ = registry.write_line(&run_id, line).await;
+                });
+            }
+            EngineEvent::ControlRequestError {
+                request_id,
+                subtype,
+            } => {
+                // Unknown control_request subtype: reply with an error so the
+                // CLI is not left parked on a response that never comes (the
+                // official SDK's fallback for unsupported subtypes). Best
+                // effort, same as the deny above.
+                let registry = Arc::clone(&self.registry);
+                let run_id = self.run_id.clone();
+                let line = serde_json::json!({
+                    "type": "control_response",
+                    "response": {
+                        "subtype": "error",
+                        "request_id": request_id,
+                        "error": format!("unsupported control request subtype: {subtype}"),
+                    },
+                })
+                .to_string();
+                tokio::spawn(async move {
+                    let _ = registry.write_line(&run_id, line).await;
+                });
+            }
             EngineEvent::Model(model) => {
                 state.push(
                     &self.sink,

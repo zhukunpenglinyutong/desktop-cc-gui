@@ -1,7 +1,7 @@
 {
   "name": "ccgui-next",
   "private": true,
-  "version": "1.2.0",
+  "version": "1.2.1",
   "type": "module",
   "packageManager": "pnpm@10.29.3",
   "scripts": {
@@ -18,6 +18,7 @@
     "@ccgui/plugin-sdk": "workspace:*",
     "@codemirror/language": "^6.12.3",
     "@codemirror/language-data": "^6.5.2",
+    "@codemirror/search": "^6.7.2",
     "@codemirror/state": "^6.7.2",
     "@codemirror/view": "^6.43.10",
     "@dagrejs/dagre": "^3.1.1",

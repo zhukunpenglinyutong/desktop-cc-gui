@@ -1,6 +1,6 @@
 [package]
 name = "ccgui-next"
-version = "1.2.0"
+version = "1.2.1"
 description = "CC GUI - multi-CLI AI chat desktop"
 edition = "2021"
 rust-version = "1.90"
@@ -52,6 +52,9 @@ parking_lot = "0.12"
 fs2 = "0.4.3"
 base64 = "0.22"
 zstd = "0.13"
+# Local wall-clock time for Codex fork rollout names (engine/fork/landing.rs);
+# already in the tree via schemars, so this adds no new crate.
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
 which = "7"
 # PTY for the integrated terminal panel.
 portable-pty = "0.8"
