@@ -49,6 +49,7 @@ import i18n from "@/lib/i18n";
 import { BotsPane } from "./agents-prompts/BotsPane";
 import { PromptsPane } from "./agents-prompts/PromptsPane";
 import { BetaFeaturesSection } from "./BetaFeaturesSection";
+import { StatusBarDisplaySection } from "./StatusBarDisplaySection";
 import { builtinSearchEntries } from "./builtin-search";
 import { CliConfigBody } from "./CliConfigBody";
 import { GeneralSection } from "./GeneralSection";
@@ -141,6 +142,7 @@ const PAGES: PageSpec[] = [
   { page: "shortcuts", render: () => <ShortcutsSection /> },
   { page: "update", render: () => <UpdateSection /> },
   { page: "betaFeatures", render: () => <BetaFeaturesSection /> },
+  { page: "statusBarDisplay", render: () => <StatusBarDisplaySection /> },
   { page: "diagnostics", render: () => <PerformanceDiagnosticsSection /> },
   { page: "agents", render: () => <BotsPane /> },
   { page: "prompts", render: () => <PromptsPane /> },

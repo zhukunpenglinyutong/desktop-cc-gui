@@ -15,6 +15,7 @@ import FileText from "lucide-react/dist/esm/icons/file-text";
 import Smartphone from "lucide-react/dist/esm/icons/smartphone";
 import Sparkles from "lucide-react/dist/esm/icons/sparkles";
 import Plug from "lucide-react/dist/esm/icons/plug";
+import PanelBottom from "lucide-react/dist/esm/icons/panel-bottom";
 // 电脑操控入口：暂时隐藏，恢复时取消注释。
 // import MousePointer2 from "lucide-react/dist/esm/icons/mouse-pointer-2";
 import i18n from "@/lib/i18n";
@@ -24,6 +25,7 @@ import { CLI_DISPLAY_NAMES } from "@/components/foundations/icons/engine-brands"
 import { settingsRegistry } from "@ccgui/plugin-sdk";
 import { cx } from "@/utils/cx";
 import { GeneralSection } from "./GeneralSection";
+import { StatusBarDisplaySection } from "./StatusBarDisplaySection";
 import { PetSection } from "./PetSection";
 import { ProxySection } from "./ProxySection";
 import { WorkspacesSection } from "./WorkspacesSection";
@@ -199,6 +201,20 @@ settingsRegistry.register({
   group: "capabilities",
   order: 1,
   component: LazyMcpSection,
+});
+/**
+ * 状态栏显示：插件组的第一页（order 0；插件自己注册的页面固定 order 1000）。
+ * 放在插件组而不是「通用 → 外观」，是因为它管的东西一半来自插件——用户
+ * 想去掉某个插件的格子时，会先想到插件区，不会想到外观。
+ */
+settingsRegistry.register({
+  id: "statusBarDisplay",
+  key: "statusBarDisplay",
+  label: () => i18n.t("settings.statusBarDisplay"),
+  icon: PanelBottom,
+  group: "plugins",
+  order: 0,
+  component: StatusBarDisplaySection,
 });
 // 电脑操控入口：暂时隐藏，恢复时取消注释。
 // settingsRegistry.register({
