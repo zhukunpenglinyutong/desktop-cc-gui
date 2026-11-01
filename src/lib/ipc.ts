@@ -600,7 +600,7 @@ export interface AppSettings {
   /** Only notify when app window/session is unfocused/background: true/absent = true (default). */
   notifyWhenUnfocusedOnly?: boolean | null;
   /** 宽幕布 (设置 → 通用 → 外观): true = the chat content column fills its
-   *  pane instead of the default centered column (750px / `max-w-3xl`). */
+   *  pane instead of the centered column (750px / 48rem by default). */
   chatWideLayout?: boolean | null;
   /** File tree entries Git ignores (设置 → 通用 → 行为): absent/false = listed
    *  and drawn faded, true = hidden from the tree. */

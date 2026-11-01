@@ -42,6 +42,7 @@ import { changeZoom, onZoomChange, readZoomPct, ZOOM_MAX, ZOOM_MIN, ZOOM_STEP } 
 import { PromptHistoryManager, PromptHistoryToggleRow } from "./PromptHistorySettings";
 import { FileTreeHideIgnoredRow } from "./FileTreeHideIgnoredRow";
 import { useChatStore } from "@/features/chat/store";
+import { applyChatColumnWidth, useChatColumnWidth } from "@/features/chat/chat-column";
 import {
   ensureNotificationPermission,
   updateCachedNotificationPreferences,
@@ -356,6 +357,12 @@ function AppearanceCard({
   onWideLayoutChange: (wide: boolean) => void;
 }) {
   const { t } = useTranslation();
+  // 对话栏宽度档位存在 localStorage（与界面缩放同一范式），不进 AppSettings：
+  // 它只影响前端 CSS 变量，切换即时生效，不需要往返 Rust。
+  const chatColumnWidth = useChatColumnWidth();
+  const onChatColumnWidthChange = (next: number) => {
+    applyChatColumnWidth(next);
+  };
   return (
     <div className="flex w-full flex-col gap-2">
       <SettingsSectionLabel>{t("settings.appearance")}</SettingsSectionLabel>
@@ -425,6 +432,24 @@ function AppearanceCard({
             isSelected={settings.chatWideLayout === true}
             onChange={onWideLayoutChange}
           />
+        </SettingsRow>
+        <SettingsRow
+          anchor="chatColumnWidth"
+          label={t("settings.chatColumnWidth")}
+          description={t("settings.chatColumnWidthDesc")}
+        >
+          <Select
+            aria-label={t("settings.chatColumnWidth")}
+            selectedKey={String(chatColumnWidth)}
+            onSelectionChange={(key) => onChatColumnWidthChange(Number(key))}
+            triggerClassName={SELECT_TRIGGER}
+            isDisabled={settings.chatWideLayout === true}
+          >
+            <SelectItem id="750">{t("settings.chatColumnWidth750")}</SelectItem>
+            <SelectItem id="960">{t("settings.chatColumnWidth960")}</SelectItem>
+            <SelectItem id="1200">{t("settings.chatColumnWidth1200")}</SelectItem>
+            <SelectItem id="0">{t("settings.chatColumnWidthFull")}</SelectItem>
+          </Select>
         </SettingsRow>
         <FontFamilyRow
           anchor="fontFamily"
