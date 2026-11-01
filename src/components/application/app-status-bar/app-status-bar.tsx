@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useState } from "react";
+import { Fragment, useCallback, useEffect, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { getAppVersion, isWeb } from "@/lib/platform";
 import Activity from "lucide-react/dist/esm/icons/activity";
@@ -16,6 +16,7 @@ import { dismissCenterSurfaces } from "@/features/chat/center-surfaces";
 import { useReleaseNotesTabStore } from "@/features/update/notes-tab";
 import { registerShortcutHandler } from "@/features/shortcuts/runtime";
 import { PerformanceDiagnosticsDialog } from "@/features/settings/PerformanceDiagnostics";
+import { STATUS_BAR_BUILTIN_IDS, useStatusBarHidden } from "@/lib/status-bar-visibility";
 
 import { applyZoom, changeZoom, onZoomChange, readZoomPct, ZOOM_STEP } from "@/lib/zoom";
 
@@ -25,8 +26,16 @@ function formatMb(bytes: number): number {
   return Math.round(bytes / (1024 * 1024));
 }
 
+/** One slot in the right-hand cluster: a stable id (what the visibility
+ *  preference keys on) plus the node it renders. */
+interface StatusBarSlot {
+  id: string;
+  node: ReactNode;
+}
+
 /**
- * App-wide bottom chrome: performance, zoom, history-sync status, version.
+ * App-wide bottom chrome: performance, zoom, history-sync status, plugin chips,
+ * version.
  *
  * The builtin items stay hand-wired here and are intentionally NOT migrated
  * into statusBarRegistry: they are deeply coupled to ipc/listen hooks, so
@@ -34,6 +43,13 @@ function formatMb(bytes: number): number {
  * (plan §4.2 #8): entries registered via ctx.ui.registerStatusBarItem render
  * after the sync status, before the version, each inside a PluginBoundary.
  * zone:"start" entries (SDK 0.3.8) render left-aligned ahead of the cluster.
+ *
+ * Visibility (设置 → 插件 → 状态栏显示): every right-cluster slot carries a
+ * stable id — builtins use `builtin:*`, plugin chips keep their registry id —
+ * and the user can hide any of them. Hidden means *not rendered*: the plugin
+ * keeps running (timers and IPC calls untouched), only the chip disappears.
+ * Separators are joined from the surviving slots, so hiding a middle item
+ * never leaves a dangling `·`.
  */
 export function AppStatusBar() {
   const { t } = useTranslation();
@@ -43,10 +59,11 @@ export function AppStatusBar() {
   const [version, setVersion] = useState<string | null>(null);
   const [showDiagnostics, setShowDiagnostics] = useState(false);
   const pluginItems = useRegistry(statusBarRegistry);
+  const hidden = useStatusBarHidden();
   // zone (SDK 0.3.8): "start" chips render left-aligned ahead of the
   // builtin cluster; everything else keeps the legacy right-side slot.
-  const startItems = pluginItems.filter((def) => def.zone === "start");
-  const endItems = pluginItems.filter((def) => def.zone !== "start");
+  const startItems = pluginItems.filter((def) => def.zone === "start" && !hidden.has(def.id));
+  const endItems = pluginItems.filter((def) => def.zone !== "start" && !hidden.has(def.id));
 
   // Re-apply the persisted zoom on startup; Tauri does not restore it.
   useEffect(() => applyZoom(readZoomPct()), []);
@@ -112,27 +129,15 @@ export function AppStatusBar() {
   const iconButton =
     "flex size-5 cursor-pointer items-center justify-center rounded text-foreground-icon-tertiary transition-colors hover:bg-background-tertiary-hover hover:text-foreground-icon-secondary";
 
-  return (
-    <div
-      className="flex h-7 shrink-0 items-center justify-end border-t border-separator-border bg-background-primary-default px-3 text-caption-1-medium text-text-tertiary select-none max-md:hidden"
-    >
-      {startItems.length > 0 && (
-        <div className="me-auto flex min-w-0 items-center gap-3">
-          {[...startItems].sort(compareByOrder).map((def, i) => {
-            const pluginId = pluginIdFromRegistryKey(def.id);
-            const Chip = def.component;
-            return (
-              <Fragment key={def.id}>
-                {i > 0 && <span className="text-text-disabled">·</span>}
-                <PluginBoundary pluginId={pluginId}>
-                  <Chip />
-                </PluginBoundary>
-              </Fragment>
-            );
-          })}
-        </div>
-      )}
-      <div className="flex min-w-0 items-center gap-3">
+  // Assemble the right cluster in its original visual order. Everything runs
+  // through one slot list so the separators can be derived from what actually
+  // renders.
+  const slots: StatusBarSlot[] = [];
+
+  if (!hidden.has(STATUS_BAR_BUILTIN_IDS.performance)) {
+    slots.push({
+      id: STATUS_BAR_BUILTIN_IDS.performance,
+      node: (
         <button
           type="button"
           onClick={() => setShowDiagnostics(true)}
@@ -153,11 +158,15 @@ export function AppStatusBar() {
             {metrics ? ` ${formatMb(metrics.memoryBytes)} MB` : ""}
           </span>
         </button>
+      ),
+    });
+  }
 
-        <span className="text-text-disabled">·</span>
-
-        {/* Zoom drives the native webview; browsers zoom natively. */}
-        {!isWeb && (
+  // Zoom drives the native webview; browsers zoom natively.
+  if (!isWeb && !hidden.has(STATUS_BAR_BUILTIN_IDS.zoom)) {
+    slots.push({
+      id: STATUS_BAR_BUILTIN_IDS.zoom,
+      node: (
         <span className="flex items-center gap-1">
           <button
             type="button"
@@ -187,29 +196,33 @@ export function AppStatusBar() {
             <Plus className="size-3.5" aria-hidden />
           </button>
         </span>
-        )}
+      ),
+    });
+  }
 
-        <span className="text-text-disabled">·</span>
-
-        <button
-          type="button"
-          aria-label={t("statusbar.syncNow")}
-          title={t("statusbar.syncNow")}
-          disabled={syncing}
-          className={cx(iconButton, syncing && "cursor-default opacity-60")}
-          onClick={triggerSync}
-        >
-          <ActionFeedbackIcon
-            icon={RefreshCw}
-            feedback={syncFeedback}
-            spin
-            iconClassName="size-3.5"
-          />
-        </button>
-
-        {sync && (
-          <>
-            <span className="text-text-disabled">·</span>
+  if (!hidden.has(STATUS_BAR_BUILTIN_IDS.sync)) {
+    slots.push({
+      id: STATUS_BAR_BUILTIN_IDS.sync,
+      // Button and progress label are one unit: the bar never puts a
+      // separator between them, and hiding the entry hides both.
+      node: (
+        <>
+          <button
+            type="button"
+            aria-label={t("statusbar.syncNow")}
+            title={t("statusbar.syncNow")}
+            disabled={syncing}
+            className={cx(iconButton, syncing && "cursor-default opacity-60")}
+            onClick={triggerSync}
+          >
+            <ActionFeedbackIcon
+              icon={RefreshCw}
+              feedback={syncFeedback}
+              spin
+              iconClassName="size-3.5"
+            />
+          </button>
+          {sync && (
             <span
               className={cx(
                 "whitespace-nowrap",
@@ -220,52 +233,90 @@ export function AppStatusBar() {
                 ? t("statusbar.synced")
                 : t("statusbar.syncing", { pct: syncPct, done: sync.done, total: sync.total })}
             </span>
-          </>
-        )}
-        {/* Plugin status-bar chips (plan §4.2 #8), placed right-aligned after
-         *  the sync status and before the version. Each chip renders in its
-         *  own PluginBoundary so a render crash unmounts only that chip; the
-         *  plugin owns the chip's look — the host provides placement and the
-         *  row gap only. */}
-        {[...endItems]
-          // compareByOrder: undefined order sorts last, ties break by id.
-          .sort(compareByOrder)
-          .map((def) => {
-            // Non-plugin ids (host/test registrations) pass through as their
-            // own boundary id.
+          )}
+        </>
+      ),
+    });
+  }
+
+  // Plugin status-bar chips (plan §4.2 #8), placed after the sync status and
+  // before the version. Each chip renders in its own PluginBoundary so a
+  // render crash unmounts only that chip; the plugin owns the chip's look —
+  // the host provides placement and the row gap only.
+  for (const def of [...endItems].sort(compareByOrder)) {
+    // Non-plugin ids (host/test registrations) pass through as their own
+    // boundary id.
+    const pluginId = pluginIdFromRegistryKey(def.id);
+    const Chip = def.component;
+    slots.push({
+      id: def.id,
+      node: (
+        <PluginBoundary pluginId={pluginId}>
+          <Chip />
+        </PluginBoundary>
+      ),
+    });
+  }
+
+  if (version && !hidden.has(STATUS_BAR_BUILTIN_IDS.version)) {
+    slots.push({
+      id: STATUS_BAR_BUILTIN_IDS.version,
+      node: (
+        <button
+          type="button"
+          aria-label={t("changelog.title")}
+          title={t("commands.openReleaseNotes")}
+          className="shrink-0 cursor-pointer rounded px-1 transition-colors hover:bg-background-tertiary-hover hover:text-text-secondary"
+          // 版本号打开版本更新页签：先清掉其他中心面（同插件入口），再打开/
+          // 聚焦更新说明页签（版本历史翻页入口已随弹窗下线，见
+          // ReleaseNotesPane）。
+          onClick={() => {
+            dismissCenterSurfaces();
+            useReleaseNotesTabStore.getState().openTab();
+          }}
+        >
+          v{version}
+        </button>
+      ),
+    });
+  }
+
+  // Everything hidden (builtins, chips and version): drop the strip entirely
+  // instead of leaving a 28px empty band with a top border.
+  if (slots.length === 0 && startItems.length === 0) return null;
+
+  return (
+    <div
+      // Stable anchor for plugins and automation that need to reach the bar
+      // without depending on Tailwind class strings.
+      data-ccgui-status-bar=""
+      className="flex h-7 shrink-0 items-center justify-end border-t border-separator-border bg-background-primary-default px-3 text-caption-1-medium text-text-tertiary select-none max-md:hidden"
+    >
+      {startItems.length > 0 && (
+        <div className="me-auto flex min-w-0 items-center gap-3">
+          {[...startItems].sort(compareByOrder).map((def, i) => {
             const pluginId = pluginIdFromRegistryKey(def.id);
             const Chip = def.component;
             return (
               <Fragment key={def.id}>
-                <span className="text-text-disabled">·</span>
+                {i > 0 && <span className="text-text-disabled">·</span>}
                 <PluginBoundary pluginId={pluginId}>
                   <Chip />
                 </PluginBoundary>
               </Fragment>
             );
           })}
-        {version && (
-          <>
-            <span className="text-text-disabled">·</span>
-            <button
-              type="button"
-              aria-label={t("changelog.title")}
-              title={t("commands.openReleaseNotes")}
-              className="shrink-0 cursor-pointer rounded px-1 transition-colors hover:bg-background-tertiary-hover hover:text-text-secondary"
-              // 版本号打开版本更新页签：先清掉其他中心面（同插件入口），再打开/
-              // 聚焦更新说明页签（版本历史翻页入口已随弹窗下线，见
-              // ReleaseNotesPane）。
-              onClick={() => {
-                dismissCenterSurfaces();
-                useReleaseNotesTabStore.getState().openTab();
-              }}
-            >
-              v{version}
-            </button>
-          </>
-        )}
-        {showDiagnostics && <PerformanceDiagnosticsDialog onClose={() => setShowDiagnostics(false)} />}
+        </div>
+      )}
+      <div className="flex min-w-0 items-center gap-3">
+        {slots.map((slot, i) => (
+          <Fragment key={slot.id}>
+            {i > 0 && <span className="text-text-disabled">·</span>}
+            {slot.node}
+          </Fragment>
+        ))}
       </div>
+      {showDiagnostics && <PerformanceDiagnosticsDialog onClose={() => setShowDiagnostics(false)} />}
     </div>
   );
 }

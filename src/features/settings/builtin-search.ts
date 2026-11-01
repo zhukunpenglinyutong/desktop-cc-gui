@@ -1,5 +1,6 @@
 import { IS_WINDOWS, isWeb } from "@/lib/platform";
 import { shortcutActions } from "@/features/shortcuts/actions";
+import { STATUS_BAR_BUILTIN_CATALOG } from "@/lib/status-bar-visibility";
 import { BETA_FEATURES } from "./beta-features";
 import { ENGINE_IDS, type EngineId } from "./providers";
 import type { SettingsSearchEntry } from "./settings-search";
@@ -242,6 +243,18 @@ const betaFeatureEntries: SettingsSearchEntry[] = BETA_FEATURES.map(
   }),
 );
 
+/** 状态栏显示 (`StatusBarDisplaySection.tsx`): the four builtin rows, mapped
+ *  from the same catalog the page renders. Plugin rows are not indexed — that
+ *  list is whatever the user has installed, so it cannot be declared here. */
+const statusBarEntries: SettingsSearchEntry[] = STATUS_BAR_BUILTIN_CATALOG.map(
+  (item) => ({
+    page: "statusBarDisplay",
+    anchor: item.anchor,
+    labelKey: item.labelKey,
+    keywords: ["status bar", "状态栏", "底栏"],
+  }),
+);
+
 /** Web 访问 (`WebAccessSection.tsx`): the two panes plus the cards that live in
  *  公网访问, which only render while that pane is open — they carry the pane
  *  tab as their activator, so a hit opens the pane first. */
@@ -383,6 +396,9 @@ const workspaceEntries: SettingsSearchEntry[] = [
 
 export const builtinSearchEntries: SettingsSearchEntry[] = [
   ...generalEntries,
+
+  // 状态栏显示（插件组的第一页）
+  ...statusBarEntries,
 
   // 桌面宠物（其他）
   ...petEntries,
