@@ -63,7 +63,18 @@ struct Envelope<'a> {
     params: Option<&'a RawValue>,
     #[serde(borrow, default)]
     result: Option<&'a RawValue>,
+    #[serde(default)]
+    error: Option<ErrorBody>,
 }
+
+#[derive(Deserialize)]
+struct ErrorBody {
+    #[serde(default)]
+    code: Option<i64>,
+}
+
+/// JSON-RPC「Method not found」。
+const METHOD_NOT_FOUND: i64 = -32601;
 
 enum Phase {
     Dormant,
@@ -156,8 +167,13 @@ impl<S: CacheStore> Proxy<S> {
             (None, Some("notifications/initialized")) => Vec::new(),
             (Some(id), Some(method)) => self.request(id, method, envelope.params, line),
             (Some(_), None) => match self.phase {
-                // A reply to a server request is only meaningful to a live server.
-                Phase::Ready { .. } => vec![Action::ToChild(line.to_string())],
+                // A reply to a server request is only meaningful to a live
+                // server. While starting it is live too: servers ask
+                // `roots/list` right after `initialized`, before the lists
+                // the proxy is still waiting on come back.
+                Phase::Ready { .. } | Phase::Starting { .. } => {
+                    vec![Action::ToChild(line.to_string())]
+                }
                 _ => Vec::new(),
             },
             (None, Some(_)) => match self.phase {
@@ -271,9 +287,10 @@ impl<S: CacheStore> Proxy<S> {
         let result = envelope
             .result
             .and_then(|raw| serde_json::from_str::<Value>(raw.get()).ok());
+        let not_found = envelope.error.as_ref().and_then(|error| error.code) == Some(METHOD_NOT_FOUND);
         if let (Some(Value::String(internal)), None) = (&id, &envelope.method) {
             if internal.starts_with(INTERNAL_PREFIX) {
-                return self.internal_response(internal.clone(), result);
+                return self.internal_response(internal.clone(), result, not_found);
             }
         }
         match (id, envelope.method.as_deref()) {
@@ -296,7 +313,7 @@ impl<S: CacheStore> Proxy<S> {
         }
     }
 
-    fn internal_response(&mut self, id: String, result: Option<Value>) -> Vec<Action> {
+    fn internal_response(&mut self, id: String, result: Option<Value>, not_found: bool) -> Vec<Action> {
         if let Some(method) = self.refresh.remove(&id) {
             if let (Some(result), Some(cache)) = (result, self.cache.as_mut()) {
                 cache.lists.insert(method, result);
@@ -342,6 +359,12 @@ impl<S: CacheStore> Proxy<S> {
         match result {
             Some(result) => {
                 fetch.results.insert(method, result);
+            }
+            // 声明了能力却没实现这一项（常见：resources/templates/list）：按空清单
+            // 缓存。否则缓存永远不完整，每次会话都会在握手时启动真实 server。
+            None if not_found => {
+                let empty = empty_list(&method);
+                fetch.results.insert(method, empty);
             }
             None => fetch.complete = false,
         }
@@ -455,6 +478,19 @@ fn list_methods(initialize: &Value) -> Vec<&'static str> {
         methods.push("prompts/list");
     }
     methods
+}
+
+/// 清单方法的空结果（字段名按 MCP 规范）。
+fn empty_list(method: &str) -> Value {
+    let field = match method {
+        "tools/list" => "tools",
+        "resources/list" => "resources",
+        "resources/templates/list" => "resourceTemplates",
+        _ => "prompts",
+    };
+    let mut result = serde_json::Map::new();
+    result.insert(field.to_string(), Value::Array(Vec::new()));
+    Value::Object(result)
 }
 
 fn changed_notices(old: &Cache, fresh: &Cache) -> Vec<&'static str> {
@@ -651,7 +687,7 @@ mod runner {
                 match action {
                     Action::ToClient(line) => {
                         if write_line(&mut stdout, &line).await.is_err() {
-                            kill(&mut live).await;
+                            close_gracefully(&mut live).await;
                             return Ok(());
                         }
                     }
@@ -686,7 +722,7 @@ mod runner {
                 }
             }
         }
-        kill(&mut live).await;
+        close_gracefully(&mut live).await;
         Ok(())
     }
 
@@ -766,6 +802,29 @@ mod runner {
             }
         }
         tokio::process::Command::new(program)
+    }
+
+    /// 会话结束：按 MCP stdio 的关闭顺序先关 stdin、等 server 自己收尾退出，
+    /// Unix 上再给一次 SIGTERM，仍不退才强制结束（[`kill`]）。启动失败 /
+    /// 超时那种 server 不需要收尾，直接 [`kill`]。
+    async fn close_gracefully(live: &mut Option<Live>) {
+        if let Some(current) = live.as_mut() {
+            current.stdin = None;
+            let exited = tokio::time::timeout(EOF_GRACE, current.child.wait()).await.is_ok();
+            #[cfg(unix)]
+            if !exited {
+                // wait() 未返回 = 进程还没被回收，pid 仍属于它。
+                if let Some(pid) = current.child.id() {
+                    unsafe {
+                        libc::kill(pid as libc::pid_t, libc::SIGTERM);
+                    }
+                    let _ = tokio::time::timeout(Duration::from_secs(1), current.child.wait()).await;
+                }
+            }
+            #[cfg(not(unix))]
+            let _ = exited;
+        }
+        kill(live).await;
     }
 
     async fn kill(live: &mut Option<Live>) {

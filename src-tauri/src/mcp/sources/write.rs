@@ -4,7 +4,10 @@
 //! 字段、原子替换后回读文件作为返回状态。
 
 use super::read::{is_jsonc, read_dsh_profile, read_json_source, read_toml_source, string_array};
-use super::{candidate_paths, first_existing, source_spec, Source, Toggle, SOURCES};
+use super::{
+    candidate_paths, first_existing, omp_server_lists, source_spec, Source, Toggle,
+    REASON_OMP_SERVER_LIST, SOURCES,
+};
 use crate::mcp::config::{file_hash, read_text};
 use crate::mcp::{parse_json, McpConfigEntry, McpError, WRITE_LOCK};
 use serde_json::Value;
@@ -34,6 +37,20 @@ pub(crate) fn write_enabled(
     let path = first_existing(candidate_paths(source_id, workspace)).ok_or_else(|| {
         McpError::not_found("配置文件不存在，未做修改".to_string())
     })?;
+    // 与清单同一规则（apply_omp_server_lists）：名单里的名字只改 `enabled` 改不动。
+    if source.engine == "omp" {
+        if let Some(user_path) = first_existing(candidate_paths("omp_user", workspace)) {
+            let (disabled, enabled_list) = omp_server_lists(&user_path);
+            if disabled.iter().chain(&enabled_list).any(|listed| listed == name) {
+                return Err(McpError::new(
+                    "readonly",
+                    format!(
+                        "{REASON_OMP_SERVER_LIST}: \"{name}\" is on OMP's disabledServers/enabledServers list; use /mcp enable or /mcp disable in OMP"
+                    ),
+                ));
+            }
+        }
+    }
     let _guard = WRITE_LOCK.lock();
     match source_id {
         "grok_user" => set_grok_user_enabled(&path, name, enabled, expected_version)?,

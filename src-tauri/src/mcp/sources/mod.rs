@@ -8,8 +8,9 @@
 //! `disabled_mcp_servers`；opencode：`enabled`），其余来源返回 `writable=false`
 //! 与原因码，由 UI 本地化展示，不提供会写坏别人配置的假开关。
 
-use super::{McpConfigSection, McpSourceError, McpSourceInfo};
-use std::path::PathBuf;
+use super::{parse_json, McpConfigEntry, McpConfigSection, McpSourceError, McpSourceInfo};
+use serde_json::Value;
+use std::path::{Path, PathBuf};
 
 mod read;
 mod write;
@@ -37,6 +38,9 @@ pub(super) const REASON_DSH_PLUGIN: &str = "dsh_plugin";
 pub(super) const REASON_JSONC_READONLY: &str = "jsonc_readonly";
 /// 启停写按项目存（Claude 用户/local），没有活动工作区就没有写入位置。
 pub(super) const REASON_NEEDS_WORKSPACE: &str = "needs_workspace";
+/// OMP 用户级 mcp.json 的 `disabledServers` / `enabledServers` 名单里有这个名字：
+/// 实际启停以名单为准，只改条目的 `enabled` 字段不一定生效。
+pub(super) const REASON_OMP_SERVER_LIST: &str = "omp_server_list";
 
 /// 一个配置来源：条目标识前缀、引擎、作用域与写入能力。
 pub(super) struct SourceSpec {
@@ -607,5 +611,46 @@ pub(super) fn append_entries(section: &mut McpConfigSection, workspace: Option<&
             }),
         }
     }
+    if let Some(path) = first_existing(candidate_paths("omp_user", workspace)) {
+        apply_omp_server_lists(&mut section.entries, &path);
+    }
+}
+
+/// OMP 判断停用不只看条目的 `enabled`（omp 18.12 `mcp/config.ts` 的 suppress
+/// 规则，对用户级与工作区条目都生效）：用户级 mcp.json 的 `disabledServers`
+/// 名单直接停用；`enabled: false` 的条目在 `enabledServers` 名单里时仍启用。
+/// 名单里出现的名字按这条规则显示真实状态，并改成只读：只改 `enabled` 字段
+/// 改不动名单，开关会看起来没反应。读不到 / 解析失败时不动（错误已由来源本身上报）。
+pub(super) fn apply_omp_server_lists(entries: &mut [McpConfigEntry], user_path: &Path) {
+    let (disabled, enabled) = omp_server_lists(user_path);
+    if disabled.is_empty() && enabled.is_empty() {
+        return;
+    }
+    for entry in entries.iter_mut().filter(|entry| entry.engine == "omp") {
+        let in_disabled = disabled.contains(&entry.name);
+        let in_enabled = enabled.contains(&entry.name);
+        if !in_disabled && !in_enabled {
+            continue;
+        }
+        entry.enabled = !in_disabled && (entry.enabled || in_enabled);
+        entry.writable = false;
+        entry.readonly_reason = None;
+        entry.readonly_reason_code = Some(REASON_OMP_SERVER_LIST.to_string());
+    }
+}
+
+/// OMP 用户级 mcp.json 的 `(disabledServers, enabledServers)`；读不到即两张空表。
+pub(super) fn omp_server_lists(user_path: &Path) -> (Vec<String>, Vec<String>) {
+    let root = std::fs::read_to_string(user_path)
+        .ok()
+        .and_then(|raw| parse_json(&raw, &user_path.to_string_lossy()).ok());
+    let names = |key: &str| -> Vec<String> {
+        root.as_ref()
+            .and_then(|root| root.get(key))
+            .and_then(Value::as_array)
+            .map(|items| items.iter().filter_map(Value::as_str).map(str::to_string).collect())
+            .unwrap_or_default()
+    };
+    (names("disabledServers"), names("enabledServers"))
 }
 

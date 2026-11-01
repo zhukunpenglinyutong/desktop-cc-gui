@@ -387,3 +387,49 @@ fn candidate_paths_follow_cli_homes() {
     assert_eq!(project[0], Path::new("/ws/.kimi-code/mcp.json"));
     assert!(candidate_paths("kimi_local", None).is_empty());
 }
+
+#[test]
+fn omp_server_lists_decide_the_state_and_make_the_entry_readonly() {
+    // omp 18.12 suppress 规则：用户级 disabledServers 直接停用；enabled:false 的
+    // 条目在 enabledServers 里仍启用。名单里的名字只改 enabled 字段改不动。
+    let scratch = Scratch::new("omp-lists");
+    let path = scratch.path().join("mcp.json");
+    let text = r#"{
+      "mcpServers": {
+        "listed_off": { "command": "a" },
+        "listed_on": { "command": "b", "enabled": false },
+        "plain": { "command": "c", "enabled": false }
+      },
+      "disabledServers": ["listed_off"],
+      "enabledServers": ["listed_on"]
+    }"#;
+    std::fs::write(&path, text).unwrap();
+    let mut entries = read_json_source(source("omp_user"), &path).unwrap();
+    entries.push(McpConfigEntry {
+        engine: "kimi".to_string(),
+        name: "listed_off".to_string(),
+        ..entries[0].clone()
+    });
+    apply_omp_server_lists(&mut entries, &path);
+    let find = |name: &str, engine: &str| {
+        entries.iter().find(|e| e.name == name && e.engine == engine).unwrap().clone()
+    };
+    let off = find("listed_off", "omp");
+    assert!(!off.enabled && !off.writable);
+    assert_eq!(off.readonly_reason_code.as_deref(), Some(REASON_OMP_SERVER_LIST));
+    let on = find("listed_on", "omp");
+    assert!(on.enabled && !on.writable);
+    let plain = find("plain", "omp");
+    assert!(!plain.enabled && plain.writable, "unlisted entries keep the enabled field");
+    assert!(find("listed_off", "kimi").writable, "only OMP follows OMP's lists");
+
+    // 后端写入同样拒绝（不只靠界面置灰）；名单外的条目照常可写。
+    let _guard = crate::paths::HOME_ENV_LOCK.lock();
+    std::env::set_var("OMP_CODING_AGENT_DIR", scratch.path());
+    let version = file_hash(text.as_bytes());
+    let refused = write_enabled("omp_user", "listed_off", true, &version, None).unwrap_err();
+    let plain_written = write_enabled("omp_user", "plain", true, &version, None);
+    std::env::remove_var("OMP_CODING_AGENT_DIR");
+    assert_eq!(refused.code, "readonly");
+    assert!(plain_written.unwrap().enabled);
+}

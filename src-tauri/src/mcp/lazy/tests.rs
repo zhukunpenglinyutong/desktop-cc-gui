@@ -175,3 +175,66 @@ fn paginated_list_requests_bypass_the_cache() {
     let out = proxy.on_client(r#"{"jsonrpc":"2.0","id":4,"method":"tools/list","params":{"cursor":"p2"}}"#);
     assert_eq!(out[0], Action::Spawn(1));
 }
+
+#[test]
+fn a_reply_to_a_server_request_during_start_reaches_the_server() {
+    // Servers ask `roots/list` right after `initialized`; the client answers
+    // while the proxy is still waiting on the lists. Dropping that answer left
+    // the server waiting (and a server that lists tools only after roots
+    // timed out the whole start).
+    let mut proxy = Proxy::new(warm_store());
+    proxy.on_client(INIT);
+    let start = proxy.on_client(r#"{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"alpha"}}"#);
+    let init_id = to_child(&start)[0]["id"].clone();
+    proxy.on_child(1, &json!({"jsonrpc":"2.0","id":init_id,"result":init_result()}).to_string());
+    let ask = r#"{"jsonrpc":"2.0","id":"srv-1","method":"roots/list"}"#;
+    assert_eq!(to_client(&proxy.on_child(1, ask)), vec![parse(ask)]);
+    let answer = r#"{"jsonrpc":"2.0","id":"srv-1","result":{"roots":[]}}"#;
+    assert_eq!(proxy.on_client(answer), vec![Action::ToChild(answer.to_string())]);
+}
+
+#[test]
+fn method_not_found_on_an_optional_list_is_cached_as_empty() {
+    // Declaring `resources` without implementing `resources/templates/list`
+    // must not leave the cache incomplete, or every session starts the
+    // server on `initialize` again.
+    let store = MemoryStore::default();
+    let mut proxy = Proxy::new(store.clone());
+    let start = proxy.on_client(INIT);
+    let init_id = to_child(&start)[0]["id"].clone();
+    let result = json!({"protocolVersion":"2025-06-18","capabilities":{"tools":{},"resources":{}},"serverInfo":{"name":"real","version":"1"}});
+    let sent = to_child(&proxy.on_child(1, &json!({"jsonrpc":"2.0","id":init_id,"result":result}).to_string()));
+    for request in sent.iter().filter(|message| message.get("id").is_some()) {
+        let reply = match request["method"].as_str().unwrap() {
+            "tools/list" => json!({"jsonrpc":"2.0","id":request["id"],"result":tools(&["alpha"])}),
+            "resources/list" => json!({"jsonrpc":"2.0","id":request["id"],"result":{"resources":[]}}),
+            _ => json!({"jsonrpc":"2.0","id":request["id"],"error":{"code":-32601,"message":"Method not found"}}),
+        };
+        proxy.on_child(1, &reply.to_string());
+    }
+    let cache = store.load("2025-06-18").expect("cache written");
+    assert_eq!(cache.lists["resources/templates/list"], json!({"resourceTemplates": []}));
+
+    // The next session answers everything from the cache.
+    let mut next = Proxy::new(store);
+    let actions = [
+        next.on_client(INIT),
+        next.on_client(r#"{"jsonrpc":"2.0","id":1,"method":"resources/templates/list"}"#),
+    ]
+    .concat();
+    assert!(!actions.iter().any(|action| matches!(action, Action::Spawn(_))));
+    assert_eq!(to_client(&actions)[1]["result"], json!({"resourceTemplates": []}));
+}
+
+#[test]
+fn other_list_errors_still_keep_the_cache_unwritten() {
+    // A transient failure is not a definitive "none": do not cache it.
+    let store = MemoryStore::default();
+    let mut proxy = Proxy::new(store.clone());
+    let start = proxy.on_client(INIT);
+    let init_id = to_child(&start)[0]["id"].clone();
+    let sent = to_child(&proxy.on_child(1, &json!({"jsonrpc":"2.0","id":init_id,"result":init_result()}).to_string()));
+    let list_id = sent[1]["id"].clone();
+    proxy.on_child(1, &json!({"jsonrpc":"2.0","id":list_id,"error":{"code":-32603,"message":"boom"}}).to_string());
+    assert!(store.load("2025-06-18").is_none());
+}

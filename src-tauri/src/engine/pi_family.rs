@@ -500,10 +500,16 @@ impl Engine for PiFamilyEngine {
         if self.id != "omp" {
             return Ok(());
         }
+        // 单条不能注入就让它随会话启动，不连累其余按需条目。
         let specs = servers
             .iter()
-            .map(crate::mcp::launch::OnDemandServer::omp_spec)
-            .collect::<Result<Vec<_>, _>>()?;
+            .filter_map(|server| {
+                server
+                    .omp_spec()
+                    .map_err(|error| eprintln!("[mcp-lazy] omp: stays eager: {error}"))
+                    .ok()
+            })
+            .collect::<Vec<_>>();
         if let Some(restore) = crate::computer_use::inject_workspace_mcp(workspace, &specs)? {
             match built.mcp_restore.as_mut() {
                 Some(existing) => existing.absorb(restore),

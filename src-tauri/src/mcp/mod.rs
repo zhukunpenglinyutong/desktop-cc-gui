@@ -120,7 +120,8 @@ pub(crate) struct McpConfigEntry {
     pub(crate) version: String,
     /// 启动方式（launch.rs）：`eager` 随会话启动 / `onDemand` 首次调用时启动。
     pub(crate) launch_mode: String,
-    /// 不能按需启动的原因码（engine | transport | workspace_file）；None = 可选。
+    /// 不能按需启动的原因码（engine | transport | workspace_file | workspace_env |
+    /// project_trust | name | shadowed）；None = 可选。
     pub(crate) launch_mode_unsupported: Option<String>,
 }
 
@@ -332,7 +333,7 @@ pub(crate) async fn mcp_set_launch_mode(
         .find(|entry| entry.id == request.entry_id)
         .cloned()
         .ok_or_else(|| McpError::not_found("MCP entry not found"))?;
-    launch::write_mode(&entry, &request.mode, workspace.as_deref())?;
+    launch::write_mode(&entry, &section.entries, &request.mode, workspace.as_deref())?;
     crate::settings::announce_settings(&app);
     launch::annotate(&mut section, workspace.as_deref());
     section
