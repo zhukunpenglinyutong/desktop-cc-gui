@@ -394,6 +394,12 @@ fn load_workspace_doc(path: &Path) -> Result<serde_json::Value, String> {
 }
 
 impl McpRestore {
+    /// Fold another injection of the same run into this handle, so one
+    /// restore at run end releases both (按需 MCP 与计算机/记忆共用一次恢复).
+    pub fn absorb(&mut self, other: McpRestore) {
+        self.refs.extend(other.refs);
+    }
+
     /// Release this run's references; the last holder of an entry removes it
     /// from the workspace file (deleting the file when we created it and
     /// nothing but the skeleton remains).

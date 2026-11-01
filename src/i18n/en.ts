@@ -2309,6 +2309,31 @@ export const en: Messages = {
   mcp: {
     searchPlaceholder: "Search server names",
     toggle: "Enable {{name}}",
+    enableHint: {
+      on: "{{name}}: enabled in config. Click to disable",
+      off: "{{name}}: disabled in config. Click to enable",
+    },
+    launch: {
+      title: "Start on demand",
+      toggle: "Start {{name}} on demand",
+      onDemandHint: "{{name}}: starts on demand (on first call). Click to start it with the session",
+      eagerHint: "{{name}}: starts with the session. Click to start it on demand (on first call)",
+      description:
+        "When on, sessions this app launches no longer start this server up front: the model still gets its tool list (cached from the last run), and the server starts on the first real call. Only affects this app; the CLI config is unchanged.",
+      disabledEntry: "The entry is disabled: enable it to choose how it starts",
+      unsupported: {
+        engine: "This engine has no per-launch MCP override channel yet",
+        transport: "Only stdio servers can start on demand: remote servers have no local process",
+        workspace_file:
+          "The entry lives in the workspace .omp/mcp.json and cannot be overridden per launch; move it to the user-level mcp.json",
+        workspace_env:
+          "OMP can only take on-demand entries through the workspace .omp/mcp.json, so an entry with environment variables (often tokens) would be copied into a project file; remove its env to use this",
+        project_trust:
+          "Codex reads .codex/config.toml only in trusted projects, and the on-demand command-line override would bypass that check, so project-level entries are not supported; move it to the user-level config.toml",
+        name: "The name contains a dot, quote or similar character that Codex command-line overrides cannot express, so it keeps starting with the session",
+        shadowed: "An entry with the same name in a higher-precedence scope is the one the engine starts: set it on that entry instead",
+      },
+    },
     enabled: "Enabled in config",
     disabled: "Disabled in config",
     builtin: "Built-in",
@@ -2324,6 +2349,10 @@ export const en: Messages = {
         "dsh serves MCP through plugins (one dsh-mcp-client instance per server); add or remove them in the profile's cordis config",
       jsonc_readonly:
         "This file is JSONC (it carries comments): writing would drop them, so it is read-only here — edit it in your editor",
+      needs_workspace:
+        "Claude records enable/disable per workspace (that workspace's disabledMcpServers in ~/.claude.json): open a workspace to switch it here",
+      omp_server_list:
+        "This name is in the disabledServers / enabledServers list of OMP's user-level mcp.json, which decides whether it runs; changing the entry itself would have no effect, so use /mcp enable or /mcp disable in OMP",
     },
     support: {
       none: "{{name}} does not ship MCP: no source is invented for it. Its extension mechanism can still add MCP.",

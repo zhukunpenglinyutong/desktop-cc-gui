@@ -2173,6 +2173,31 @@ export const ko: Messages = {
   mcp: {
     searchPlaceholder: "서버 이름 검색",
     toggle: "{{name}} 활성화",
+    enableHint: {
+      on: "{{name}}: 설정에서 활성화됨. 클릭하면 비활성화",
+      off: "{{name}}: 설정에서 비활성화됨. 클릭하면 활성화",
+    },
+    launch: {
+      title: "필요할 때 시작",
+      toggle: "{{name}} 필요할 때 시작",
+      onDemandHint: "{{name}}: 필요할 때 시작 (첫 호출 시). 클릭하면 세션과 함께 시작",
+      eagerHint: "{{name}}: 세션과 함께 시작. 클릭하면 필요할 때 시작 (첫 호출 시)",
+      description:
+        "켜면 이 앱이 띄우는 세션은 이 서버를 미리 시작하지 않습니다. 도구 목록은 지난 실행의 캐시로 그대로 모델에 전달되고, 첫 실제 호출 때 서버가 시작됩니다. 이 앱에만 적용되며 CLI 설정은 바꾸지 않습니다.",
+      disabledEntry: "항목이 비활성화되어 있습니다. 활성화해야 시작 방식을 고를 수 있습니다",
+      unsupported: {
+        engine: "이 엔진에는 아직 실행별 MCP 재정의 경로가 없습니다",
+        transport: "stdio 서버만 필요할 때 시작할 수 있습니다. 원격 서버에는 로컬 프로세스가 없습니다",
+        workspace_file:
+          "항목이 작업 공간 .omp/mcp.json에 있어 실행별로 재정의할 수 없습니다. 사용자 수준 mcp.json으로 옮기면 사용할 수 있습니다",
+        workspace_env:
+          "OMP는 필요할 때 시작하는 항목을 작업 공간 .omp/mcp.json으로만 받으므로, 환경 변수(토큰이 많음)가 있는 항목은 프로젝트 파일에 복사되어 지원하지 않습니다. env를 제거하면 사용할 수 있습니다",
+        project_trust:
+          "Codex는 신뢰하는 프로젝트에서만 .codex/config.toml을 읽으며, 필요할 때 시작용 명령줄 재정의는 이 검사를 우회하므로 프로젝트 수준 항목은 지원하지 않습니다. 사용자 수준 config.toml로 옮기면 사용할 수 있습니다",
+        name: "이름에 Codex 명령줄 재정의로 표현할 수 없는 점이나 따옴표 같은 문자가 있어 세션과 함께 시작합니다",
+        shadowed: "더 높은 우선순위 범위에 같은 이름의 항목이 있어 엔진은 그 항목만 시작합니다. 그 항목에서 설정하세요",
+      },
+    },
     enabled: "설정에서 활성화됨",
     disabled: "설정에서 비활성화됨",
     builtin: "내장",
@@ -2182,7 +2207,10 @@ export const ko: Messages = {
       shared_project_file: "공유 프로젝트 .mcp.json: CLI마다 자체 규칙을 적용하므로 읽기 전용입니다(이 페이지에는 파일 자체의 필드를 표시합니다)",
       grok_project_toggle: "Grok의 프로젝트 토글은 사용자 수준의 disabled_mcp_servers 목록도 다시 씁니다. 일부만 수정되는 일을 막기 위해 읽기 전용입니다",
       dsh_plugin: "dsh는 플러그인으로 MCP를 제공합니다(서버마다 dsh-mcp-client 인스턴스 하나). 프로필의 cordis 설정에서 추가하거나 제거하세요",
-      jsonc_readonly: "이 파일은 주석이 있는 JSONC입니다. 쓰면 주석이 사라지므로 여기서는 읽기 전용입니다. 편집기에서 수정하세요"
+      jsonc_readonly: "이 파일은 주석이 있는 JSONC입니다. 쓰면 주석이 사라지므로 여기서는 읽기 전용입니다. 편집기에서 수정하세요",
+      needs_workspace: "Claude는 활성화 여부를 작업 공간별로 기록합니다(~/.claude.json에서 해당 작업 공간의 disabledMcpServers). 여기서 전환하려면 먼저 작업 공간을 여세요",
+      omp_server_list:
+        "이 이름은 OMP 사용자 수준 mcp.json의 disabledServers / enabledServers 목록에 있어 실제 활성화 여부는 목록이 결정합니다. 항목만 바꿔서는 효과가 없으니 OMP에서 /mcp enable 또는 /mcp disable을 사용하세요"
     },
     support: {
       none: "{{name}}에는 MCP가 포함되어 있지 않아 임의의 소스를 만들지 않습니다. 확장 기능으로 MCP를 추가할 수는 있습니다.",

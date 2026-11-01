@@ -29,6 +29,14 @@ export function changelogEntryFor(version: string): ChangelogEntry | undefined {
 
 export const CHANGELOG_DATA: ChangelogEntry[] = [
   {
+    version: "1.2.1",
+    date: "2026-10-31",
+    content: {
+      zh: `- **MCP 按需启动**（#1466）：stdio 条目可以选择「随会话启动」或「按需启动」，设置只保存在本应用，不改 CLI 配置。按需条目由引擎经透明代理拉起：握手与工具清单用上次运行的缓存应答，第一次真正调用工具时才启动真实服务，每次发送不再先等全部 MCP 启动；工具名、参数与权限规则不变。支持 Claude / CodeBuddy / Codex / OMP；其他引擎、非 stdio 条目、带环境变量的 OMP 条目（OMP 只能经项目里的 .omp/mcp.json 注入，避免令牌落进项目文件）、Codex 项目级条目（避免绕过 Codex 的项目信任检查）以及被同名高优先级条目遮住的条目会说明不可用原因；打开页面时的自动检测跳过按需条目。列表行改为检测、启动方式、启用三个图标，启用开关常驻，只读来源置灰并在悬停时说明原因；详情弹窗限高并在框内滚动。OMP 自己 mcp.json 里的条目可以直接启停，名字在 OMP 停用 / 启用名单里的按名单显示并只读。修复 Windows 上 Claude 用户 / local 条目启停总报「配置文件中没有这个项目的记录」，以及 Grok / OpenCode 启停开关点下去后一直卡住、之后所有 MCP 开关都不再响应。`,
+      en: `- **Start MCP servers on demand** (#1466): each stdio entry can start with the session or on demand; the choice is stored in this app only and leaves the CLI config unchanged. On-demand entries are launched through a transparent proxy that answers the handshake and tool lists from the last run's cache and starts the real server on the first actual call, so a send no longer waits for every MCP server to start; tool names, parameters and permission rules stay the same. Supported for Claude, CodeBuddy, Codex and OMP. Other engines, non-stdio entries, OMP entries with environment variables (OMP only accepts them through the workspace .omp/mcp.json, which would put tokens into a project file), Codex project-level entries (which would bypass Codex's project trust check) and entries hidden by a same-name entry of higher precedence explain why the option is unavailable; the automatic check on page open skips on-demand entries. Each row now shows three icons (check, start mode, enable); the enable toggle is always shown, and read-only sources are greyed out with the reason on hover. The details dialog has a height limit and scrolls inside. Entries in OMP's own mcp.json files can be enabled and disabled directly; names on OMP's disabled/enabled server lists follow those lists and are read-only. Fixes enabling or disabling Claude user/local entries on Windows, which always failed because the project record was not found, and the Grok/OpenCode enable toggles hanging after a click and leaving every later MCP toggle unresponsive.`,
+    },
+  },
+  {
     version: "1.2.0",
     date: "2026-10-31",
     content: {
