@@ -31,6 +31,10 @@ pub struct ForkAnchor {
     /// 无关，因此不受两边 seq 数值漂移影响。而且前端的消息窗口**总是转录本的尾部**
     /// （历史分页是往前插页，`load-earlier` 只会 prepend），所以「之后还有几条」
     /// 在两侧一致——即使只加载了最近若干页也成立。
+    ///
+    /// 前提是界面已经反映了磁盘上的最新内容：同一会话若在界面刷新之前被别的客户端
+    /// （终端里的 CLI、另一个窗口）追加了**同文本**的消息，后端会多数出几条，选到
+    /// 更新的那一条，分支随之多带几轮。这是已知限制，不在这里猜测性地兜底。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tail_occurrence: Option<u32>,
 }
@@ -76,7 +80,7 @@ pub(super) fn anchor_hit_index(parsed: &[crate::history::Message], anchor: &Fork
             // **首选**：从尾部数的同文本序号（0 = 最后一条）。只依赖"同文本出现顺序"，
             // 与两侧的 seq 编号无关，因此不受前端 seq 漂移影响——连发多个「继续」
             // 时，点中间那条不会再被判成最后一条。前端窗口总是转录本尾部（历史分页
-            // 是往前插页），所以这个序号两边一致。
+            // 是往前插页），所以这个序号两边一致（前提与限制见字段注释）。
             let by_tail = anchor
                 .tail_occurrence
                 .map(|tail| tail as usize)

@@ -187,8 +187,8 @@ fn line_type(value: &serde_json::Value) -> Option<&str> {
 /// 多带了内容）。
 ///
 /// 所以这里分两步：先用 `anchor_turn` 拿到"锚点是第几条可见 user 消息"（**只此一份**
-/// 命中判据），再在文件里用**提取器同一个判据**（`dsh_user_message_text`）数可见
-/// user 消息，找到那条消息所在的轮，切在它的 `turn/end` 上。
+/// 命中判据），再用 `user_row_lines`（与解析器同一条提取器 + 规范化流水线）拿到
+/// 那条消息的源行号，从那一行往后找它所在轮的 `turn/end`，切在它上面。
 pub(crate) fn keep_count(
     path: &Path,
     anchor: &ForkAnchor,

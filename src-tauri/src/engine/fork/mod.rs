@@ -116,11 +116,13 @@ pub(crate) fn parse_json_line(line: &str) -> Option<serde_json::Value> {
 ///   标记），Codex 必须切在锚点轮的结束标记（`task_complete` 或 `turn_aborted`）之后。锚点没命中时的不对称
 ///   也是故意的：Claude 的末轮返回整份文件，Codex 的未完成轮返回 `None`（明确
 ///   报错），不是"失败就取尾巴"。
-/// - 身份改写：Claude 逐行改 `sessionId`，Codex 只改第一行的 `session_meta.payload.id`
-///   且刻意不碰 `cwd`。做成"可配置的字段列表"，就把"少改一个字段就少一个出错面"
-///   这个结论换成了猜谜。
-/// - 落盘命名：Claude `<新id>.jsonl`、Codex `rollout-<ts>-<新id>.jsonl`
-///   （`discovery.rs` 的 `codex_candidates()` 只收 `rollout-` 前缀）。不是路径模板。
+/// - 身份改写：Claude 逐行改 `sessionId`，Codex 只改第一条 `session_meta`（`id` /
+///   `session_id` 换新、补 `forked_from_id`，与 Codex 原生分叉同形）且刻意不碰 `cwd`。
+///   做成"可配置的字段列表"，就把"少改一个字段就少一个出错面"这个结论换成了猜谜。
+/// - 落盘位置与命名：Claude 与源文件同目录 `<新id>.jsonl`；Codex 落在同一个 Codex
+///   home 的 `sessions/<本地日期>/rollout-<本地时间>-<新id>.jsonl`（`discovery.rs` 的
+///   `codex_candidates()` 只收 `rollout-` 前缀；归档目录里的会话 Codex 拒绝续接）。
+///   不是路径模板。
 pub(crate) struct ForkSupport {
     /// 引擎 id：与 `sessions.engine`、`Engine::id()` 同值，表按它查。
     pub engine: &'static str,
@@ -318,59 +320,82 @@ pub async fn fork_session(
     // 但一次就能顶住几百毫秒到数秒。
     let db = std::sync::Arc::clone(&state.db);
     let plan = tauri::async_runtime::spawn_blocking(move || {
-        // 白名单**最先**查：能力表不认的引擎，连"会话是否存在"都不该答（否则用户拿到
-        // `session not found`，而会话明明就在侧栏里），更不该先去做体积检查。
-        ensure_fork_supported(&engine)?;
-        // 体积护栏必须**先于任何解析**：`resolve_fork_plan` 会为了定位分叉点把源
-        // 转录本整份解析一遍，`materialize_trimmed_fork` 里再查就晚了——几百 MB 的
-        // 文件已经被读进来解析过了。放在最前面，超限直接拒绝，一个字节都不读。
-        ensure_fork_source_within_limit(&db, &engine, &session_id)?;
-        let mut plan = resolve_fork_plan(&db, &engine, &session_id, at.as_ref())?;
-        // 标题先算（它不需要分支文件）：算不出来就别写文件，避免留下孤儿文件。
-        // 标题由后端按 `<源会话当前名> (fork #N)` 生成：编号要查现有的同级分支名，
-        // 只有后端知道它们；而后缀是语言中立的，不需要翻译。
-        let branch_title = next_fork_title(&db, &engine, &plan.source_title)?;
-        let keep = plan.keep_records.unwrap_or(usize::MAX);
-        let written = materialize_trimmed_fork(
-            &db,
-            &engine,
-            &plan.source_session_id,
-            &plan.target_session_id,
-            keep,
-        )?;
-        // panic 守卫：文件已经写出来了，之后（解析刚写出的分支文件、stat、事务里
-        // 的意外）如果 **panic**，`register_fork_or_rollback` 的回滚分支根本走不到——
-        // 那会留下"有文件、没行"的孤儿：重试会再生成一个新 uuid，随后一次扫描给它
-        // 补一行没有分支标题的记录。正常返回与 `Err` 仍由登记函数自己回滚，
-        // 这个守卫**只在 unwinding 时**兜底，所以不会与它重复删除。
-        let _written_guard = WrittenGuard::new(&engine, &written);
-        // 登记进应用自己的表：侧栏要能看到这条分支，`load_session_page` 也要求
-        // 先有 `sessions` 行，否则分支页签打开时会报 "session not found"。
-        //
-        // ⚠️ 登记失败**必须把刚写的文件删掉**（设计稿 §4.1 的失败语义：不留半成品）。
-        // 否则会留下一个最糟的中间态：磁盘上有一个能用的分支文件，但表里没有对应行
-        // ——随后的扫描会**补一行没有标题的记录**，于是分支看起来"能用"、却没有
-        // 分支标题，用户与开发者都看不出这里曾经失败过。
-        //
-        // 点名真实路径：`written` 就在手上，没有理由让登记去"猜"。
-        // 传 `None` 时推不出落盘路径的引擎（`ForkSupport::derive_landing` 为 `None`，
-        // 如 Codex）行里会留下空的 `file_path` —— 分支页签随后 `open("")` 失败，且
-        // 自定义 `codex_home` 下还会被扫描判为"在家目录之外"而**删掉整行**。
-        register_fork_or_rollback(
-            &db,
-            &engine,
-            &plan.source_session_id,
-            &plan.target_session_id,
-            &written,
-            &branch_title,
-            &mut plan.degraded,
-        )?;
-        Ok::<ForkPlan, String>(plan)
+        fork_session_blocking(&db, &engine, &session_id, at.as_ref())
     })
     .await
     .map_err(|e| format!("会话分叉任务异常结束: {e}"))??;
     // 广播留在 async 侧：它只是一次事件通知，不需要占用阻塞线程池。
     state.sink.emit_sessions_changed();
+    Ok(plan)
+}
+
+/// 同一进程里的分叉**逐个执行**。
+///
+/// 分支编号是「读现有标题 → 写文件 → 登记」三步，中间没有原子性：两次分叉同时跑，
+/// 会读到同一份标题快照、拿到同一个 `#N`。桌面窗口与局域网网页端驱动的是**同一个
+/// 进程**，前端的 `forkingByKey` 只挡同一个窗口里的连点，挡不住这种并发。分叉很少、
+/// 单次有界（体积护栏 64 MiB），串行化的代价可以忽略。两个应用进程共用一个数据目录
+/// 时仍可能撞号，那需要跨进程锁，不在这里处理。
+static FORK_SERIAL: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+/// `fork_session` 的阻塞主体（接收 db 而不是 Tauri state，便于测试直接驱动）。
+pub(crate) fn fork_session_blocking(
+    db: &crate::db::Db,
+    engine: &str,
+    session_id: &str,
+    at: Option<&ForkAnchor>,
+) -> Result<ForkPlan, String> {
+    // 某次分叉 panic 只会让锁"中毒"，锁保护的是空元组、没有可损坏的状态，照常取用。
+    let _serial = FORK_SERIAL
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    // 白名单**最先**查：能力表不认的引擎，连"会话是否存在"都不该答（否则用户拿到
+    // `session not found`，而会话明明就在侧栏里），更不该先去做体积检查。
+    ensure_fork_supported(engine)?;
+    // 体积护栏必须**先于任何解析**：`resolve_fork_plan` 会为了定位分叉点把源
+    // 转录本整份解析一遍，`materialize_trimmed_fork` 里再查就晚了——几百 MB 的
+    // 文件已经被读进来解析过了。放在最前面，超限直接拒绝，一个字节都不读。
+    ensure_fork_source_within_limit(db, engine, session_id)?;
+    let mut plan = resolve_fork_plan(db, engine, session_id, at)?;
+    // 标题先算（它不需要分支文件）：算不出来就别写文件，避免留下孤儿文件。
+    // 标题由后端按 `<源会话当前名> (fork #N)` 生成：编号要查现有的同级分支名，
+    // 只有后端知道它们；而后缀是语言中立的，不需要翻译。
+    let branch_title = next_fork_title(db, engine, &plan.source_title)?;
+    let keep = plan.keep_records.unwrap_or(usize::MAX);
+    let written = materialize_trimmed_fork(
+        db,
+        engine,
+        &plan.source_session_id,
+        &plan.target_session_id,
+        keep,
+    )?;
+    // panic 守卫：文件已经写出来了，之后（解析刚写出的分支文件、stat、事务里
+    // 的意外）如果 **panic**，`register_fork_or_rollback` 的回滚分支根本走不到——
+    // 那会留下"有文件、没行"的孤儿：重试会再生成一个新 uuid，随后一次扫描给它
+    // 补一行没有分支标题的记录。正常返回与 `Err` 仍由登记函数自己回滚，
+    // 这个守卫**只在 unwinding 时**兜底，所以不会与它重复删除。
+    let _written_guard = WrittenGuard::new(engine, &written);
+    // 登记进应用自己的表：侧栏要能看到这条分支，`load_session_page` 也要求
+    // 先有 `sessions` 行，否则分支页签打开时会报 "session not found"。
+    //
+    // ⚠️ 登记失败**必须把刚写的文件删掉**（设计稿 §4.1 的失败语义：不留半成品）。
+    // 否则会留下一个最糟的中间态：磁盘上有一个能用的分支文件，但表里没有对应行
+    // ——随后的扫描会**补一行没有标题的记录**，于是分支看起来"能用"、却没有
+    // 分支标题，用户与开发者都看不出这里曾经失败过。
+    //
+    // 点名真实路径：`written` 就在手上，没有理由让登记去"猜"。
+    // 传 `None` 时推不出落盘路径的引擎（`ForkSupport::derive_landing` 为 `None`，
+    // 如 Codex）行里会留下空的 `file_path` —— 分支页签随后 `open("")` 失败，且
+    // 自定义 `codex_home` 下还会被扫描判为"在家目录之外"而**删掉整行**。
+    register_fork_or_rollback(
+        db,
+        engine,
+        &plan.source_session_id,
+        &plan.target_session_id,
+        &written,
+        &branch_title,
+        &mut plan.degraded,
+    )?;
     Ok(plan)
 }
 
@@ -405,8 +430,9 @@ pub(crate) fn resolve_fork_plan(
             return Err("分叉点锚点不是合法的 SHA-256".into());
         }
     }
-    // 源会话必须真实登记过：它的 file_path 决定分叉落地的目录（能力表里的落盘
-    // 实现都直接写"源文件所在目录"，从根上绕开路径编码假设）。
+    // 源会话必须真实登记过：它的 file_path 决定分叉落地的位置（Claude 写在源文件
+    // 所在目录、dsh 写在它的兄弟目录、Codex 写回同一个 Codex home 的 `sessions/`，
+    // 都从源文件推导，从根上绕开路径编码假设）。
     let source = crate::history::reader::session_meta_by_id(db, engine, session_id)?
         .ok_or_else(|| format!("session not found: {engine}/{session_id}"))?;
     // 这里**没有** remote 护栏，是刻意的：`session_meta_by_id` 给 `remote` 恒填

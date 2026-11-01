@@ -29,7 +29,7 @@
 1. **Claude tip 分叉端到端**（v4–v6 曾计划"惰性落地 + 首条消息落地"，**已被 v7 的点击即落盘取代**，此条仅存档）：`fork_session` 命令 → 人工验收（能分叉、能继承、原会话不变）。
 2. **操作区 UI**（§4.3.1）：常驻复制/分支 + 元信息 hover + 流式禁用 + `focus-visible`。可与第 1 步并行。
 3. **Claude 中间分叉**：前缀复制 + 记录级切点（连续前缀天然祖先闭合，无需补齐）。
-4. **Codex**：与 Claude **共用同一条前缀裁剪路径**（改写 `session_meta.payload.id` 后普通续接）。**不用** `thread/rollback`（追加式，§2.4）、也**不再用** `thread/fork`（已随 v7 一并删除）。手写 rollout 可 resume 已实测确认（§5.3）。
+4. **Codex**：与 Claude **共用同一条前缀裁剪路径**（改写第一条 `session_meta` 的身份后普通续接，见 §5.3 的 0.164 补充）。**不用** `thread/rollback`（追加式，§2.4）、也**不再用** `thread/fork`（已随 v7 一并删除）。手写 rollout 可 resume 已实测确认（§5.3）。
 5. **收尾**：`web/dispatch.rs` 注册、`ui-ux-spec.zh-CN.md` 同提交更新、`changelog.ts` 按需。
 
 ---
@@ -177,9 +177,10 @@ claude --resume <源id> --fork-session --session-id <新id> -p <用户的第一�
 
 1. 生成 `新id = UUIDv4`。
 2. 逐行读源文件，**复制到分叉点**（见 §3.3/§3.4 的记录级切点）。
-3. 改写身份字段后写成 `<源目录>/<新id>.jsonl`（**直接写目标文件，不留中间文件**）：
+3. 改写身份字段后直接写目标文件（**不留中间文件**；Claude 是 `<源目录>/<新id>.jsonl`，Codex 的位置见下）：
    - Claude：每行 `sessionId` → 新 id（`uuid`/`parentUuid` **原样保留**，实测 #5）。
-   - Codex：第一行 `session_meta.payload.id` → 新 id、`payload.cwd` → 源工作区。
+   - Codex：只改第一条 `session_meta`：`id` / `session_id` → 新 id，`forked_from_id` 缺失时补成源 id（已有则保留），`cwd` 不动；
+     落在同一个 Codex home 的 `sessions/<本地日期>/rollout-<本地时间>-<新id>.jsonl`（见 §5.3）。
 4. 首条消息走普通续接：Claude `--resume <新id>`、Codex `thread/resume <新id>`
    （**都不加 fork 标志**，实测 #3）。
 
@@ -212,9 +213,9 @@ claude --resume <源id> --fork-session --session-id <新id> -p <用户的第一�
 | | 权威来源 | 硬约束 |
 |---|---|---|
 | **Claude** | **文件名 stem** | stem 必须是**合法 UUIDv4**（实测 #8）；行内 `sessionId` 也要等于它，否则"应用认它、CLI 不认它" |
-| **Codex** | **文件内 `session_meta.payload.id`** | 文件名需同步改名以保持一致；日期目录不重要 |
+| **Codex** | **文件内 `session_meta.payload.id`** | 文件名需同步改名以保持一致；必须落在 `sessions/` 下（归档目录里的会话 Codex 拒绝续接） |
 
-**统一规则：新 UUIDv4 同时写进文件名与全部内部身份字段。**
+**统一规则：新 UUIDv4 同时写进文件名与本会话的全部身份字段。**（Codex 只认第一条 `session_meta`；较早版本原生分叉回放进来的父会话 `session_meta` 描述的是父会话，原样保留。）
 
 ### 2.6 机制 (B) 的前缀复制现在是主干（原"后备"定位已作废）
 
@@ -589,6 +590,19 @@ Codex 的分支落地曾经是**唯一没有真机验证**的环节：我们手�
 **顺带修正**：复制时**不再改写 `cwd`**。分支必然与源会话同工作区，rollout 里记的就是正确路径；
 改写它等于引入第二个"工作区"来源（DB 的 `workspace_path` vs rollout 的 `cwd`），两者拼写若不同
 就会把分支悄悄跑到别处。**只改身份、少改字段**。
+
+**Codex 0.164 补充（合并前实测，`codex exec` + 本地 mock Responses API）**：
+
+| 实验 | 结果 |
+|---|---|
+| 三轮会话从第 2 轮分叉后续接 | 模型拿到的上下文正好是前两轮 + 新问题，新一轮写进分支文件，源文件不变 |
+| 原生分叉 `codex exec fork` 的第一行 | `id` 与 `session_id` 都是新 id，另有 `forked_from_id`（源）、`history_base`（不复制历史，按引用继承） |
+| 分支只改 `id`、`session_id` 留源 id | 能续接，但 Codex 把源 id 当会话号显示、当提示缓存键；也没有 `forked_from_id`，用量统计会把复制过来的旧用量（0.151 之前的 `token_count`）再算一遍 |
+| `id` / `session_id` 换新并补 `forked_from_id` | 续接正常，上下文无重复；源会话本身是原生分叉时保留它原有的 `forked_from_id` / `history_base`，祖先的历史照常继承 |
+| 分支文件放进 `archived_sessions/` | 续接被拒：`session … is archived` |
+
+所以 Codex 分支按原生分叉的身份形状写，并且一律落回同一个 Codex home 的 `sessions/<本地日期>/`
+（文件名时间同样取本地时间，与 Codex 自己的命名一致）。
 
 > 另外：`thread/fork`（Codex 原生 tip 分叉）已随"发送时落地"整条链路一起删除（§2.3 v7）。
 > 现在两个引擎**共用同一条前缀复制路径**，而这条路径现在两边都实测过了。

@@ -96,8 +96,9 @@ export interface ChatStore {
    * Keeps the sidebar out of the per-token bySession update path. */
   retryingByKey: Record<string, true>;
   /** Flat sessionKey -> 分叉在飞标记（来源会话），只在分叉开始/结束时写。
-   *  分叉是点击即落盘的一次 IPC：双击（或两个窗口同时点）会让两次调用各建一个
-   *  分支，用户拿到两条看起来一样的会话。入口据此置灰成"进行中"。 */
+   *  分叉是点击即落盘的一次 IPC：双击会让两次调用各建一个分支，用户拿到两条
+   *  看起来一样的会话。入口据此置灰成"进行中"。只管本窗口；跨客户端的并发由
+   *  后端串行化（`fork_session_blocking`）。 */
   forkingByKey: Record<string, true>;
   /** Sessions with activity the user has not opened yet (sidebar green dot),
    * keyed `${engine}/${sessionId}` like the sidebar thread id. In-memory only. */

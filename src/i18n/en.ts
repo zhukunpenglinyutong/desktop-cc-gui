@@ -192,12 +192,13 @@ export const en: Messages = {
      *  a chosen message. */
     forkConversation: "Fork conversation",
     forkFailed: "Could not fork the conversation: {{reason}}",
-  forkDegraded: "Branch created, but {{items}} could not be inherited; its first turn will use engine defaults.",
-  forkDegradedItem: {
-    model: "the model",
-    effort: "the reasoning effort",
-    provider: "the provider",
-  },    /** Why the entry is greyed out when it cannot be used (the disabled state
+    forkDegraded: "Branch created, but {{items}} could not be inherited; its first turn will use engine defaults.",
+    forkDegradedItem: {
+      model: "the model",
+      effort: "the reasoning effort",
+      provider: "the provider",
+    },
+    /** Why the entry is greyed out when it cannot be used (the disabled state
      *  carries this as a `title` plus aria-disabled, so it stays reachable). */
     forkUnavailableRemote: "Remote (WSL) sessions cannot be forked yet",
     forkUnavailableEngine: "This engine cannot fork conversations yet",

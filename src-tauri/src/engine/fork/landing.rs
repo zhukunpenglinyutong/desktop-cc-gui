@@ -124,36 +124,44 @@ mod artifact_tests {
 }
 
 
-/// Codex rollout 文件名里的时间戳段：`rollout-<YYYY-MM-DDTHH-MM-SS>-<id>.jsonl`，
-/// 与 `codex` 自己以及 `scanner.rs` 测试里的既有命名同形。
+/// Codex 分支的落盘路径：`<codex home>/sessions/YYYY/MM/DD/rollout-YYYY-MM-DDTHH-MM-SS-<id>.jsonl`，
+/// 日期与时间都取**本地时间**——与 Codex 自己写 rollout 的规则一致（它的文件名与日期
+/// 目录都按本地时间），分支混在 Codex 自己的文件里时排序不会错位。
 ///
-/// 只用于**命名**、不参与身份判定，所以直接按 UTC 手算，不引入日期库。
-pub(super) fn timestamp_slug() -> String {
-    let secs = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_secs() as i64)
-        .unwrap_or(0);
-    timestamp_slug_from_unix(secs)
-}
-
-
-/// 纯函数（便于测试）：Unix 秒 → `YYYY-MM-DDTHH-MM-SS`（UTC，前推格里历）。
-/// 算法是 Howard Hinnant 的 `civil_from_days`，避免为一行格式化引入依赖。
-pub(super) fn timestamp_slug_from_unix(secs: i64) -> String {
-    let days = secs.div_euclid(86_400);
-    let rem = secs.rem_euclid(86_400);
-    let (hour, minute, second) = (rem / 3_600, (rem % 3_600) / 60, rem % 60);
-    let z = days + 719_468;
-    let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
-    let doe = z - era * 146_097;
-    let yoe = (doe - doe / 1_460 + doe / 36_524 - doe / 146_096) / 365;
-    let y = yoe + era * 400;
-    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
-    let mp = (5 * doy + 2) / 153;
-    let day = doy - (153 * mp + 2) / 5 + 1;
-    let month = if mp < 10 { mp + 3 } else { mp - 9 };
-    let year = if month <= 2 { y + 1 } else { y };
-    format!("{year:04}-{month:02}-{day:02}T{hour:02}-{minute:02}-{second:02}")
+/// codex home 从源文件往上找：最近的 `sessions` / `archived_sessions` 目录的父目录。
+/// 必须落回 `sessions/`：源会话若已归档（`archived_sessions/rollout-*.jsonl`），分支
+/// 跟着落进归档目录，Codex 续接时直接拒绝（"session … is archived"，0.164 实测）。
+/// 找不到这样的祖先（非标准布局、测试临时目录）时退回源文件所在目录。
+///
+/// 时刻由调用方给（生产传 `chrono::Local::now()`）：按 `now` 自带的时区格式化，
+/// 绝不先折成 UTC。
+pub(super) fn codex_branch_path<Tz: chrono::TimeZone>(
+    source_path: &Path,
+    target_session_id: &str,
+    now: chrono::DateTime<Tz>,
+) -> Result<PathBuf, String>
+where
+    Tz::Offset: std::fmt::Display,
+{
+    let name = format!(
+        "rollout-{}-{target_session_id}.jsonl",
+        now.format("%Y-%m-%dT%H-%M-%S")
+    );
+    let home = source_path.ancestors().skip(1).find_map(|dir| {
+        match dir.file_name().and_then(|n| n.to_str()) {
+            Some("sessions" | "archived_sessions") => dir.parent(),
+            _ => None,
+        }
+    });
+    let dir = match home {
+        Some(home) => home
+            .join("sessions")
+            .join(now.format("%Y").to_string())
+            .join(now.format("%m").to_string())
+            .join(now.format("%d").to_string()),
+        None => source_dir(source_path)?.to_path_buf(),
+    };
+    Ok(dir.join(name))
 }
 
 
@@ -196,8 +204,8 @@ pub(crate) fn materialize_trimmed_fork(
 }
 
 
-/// 源转录本所在目录就是分支的落盘目录：同目录才能沿用引擎自己的发现规则（也绕开
-/// workspace 路径编码的所有拼写假设）。
+/// 源转录本所在目录：Claude 分支的落盘目录（同目录才能沿用引擎自己的发现规则，也
+/// 绕开 workspace 路径编码的所有拼写假设），也是 Codex 找不到 `sessions` 祖先时的退路。
 pub(super) fn source_dir(source_path: &Path) -> Result<&Path, String> {
     source_path
         .parent()
@@ -215,8 +223,8 @@ pub(super) fn source_dir(source_path: &Path) -> Result<&Path, String> {
 /// - 目标用 `create_new`：目标是新 uuid 文件，不可能覆盖已有文件；失败即清理。
 ///
 /// 身份改写由调用方以 `rewrite_identity` 注入（返回"这行改过没有"）：**改写规则
-/// 逐引擎不同，故意不统一**——Claude 逐行改 `sessionId`，Codex 只改第一行的
-/// `session_meta.payload.id`（见两个 `*_rewrite_identity` 的注释）。
+/// 逐引擎不同，故意不统一**——Claude 逐行改 `sessionId`，Codex 只改第一条
+/// `session_meta`（见两个 `*_rewrite_identity` 的注释）。
 pub(super) fn copy_plain_jsonl_prefix(
     source_path: &Path,
     dest: &Path,
@@ -348,36 +356,52 @@ pub(super) fn claude_copy_prefix(
 }
 
 
-/// Codex 的前缀复制：明文 JSONL 按行搬，身份只改第一行的 `session_meta`
-/// （见 `codex_rewrite_identity`）。落盘形状是 `rollout-<ts>-<新id>.jsonl`，
-/// 与源文件同目录。
+/// Codex 的前缀复制：明文 JSONL 按行搬，身份只改**第一条** `session_meta`
+/// （见 `codex_rewrite_identity`）。落盘位置与命名见 `codex_branch_path`。
 ///
 /// `discovery.rs` 的 `codex_candidates()` 只收 `rollout-*.jsonl`（按
 /// `starts_with("rollout-")` 判断），写成 `<新id>.jsonl` 会被自己的扫描器永久忽略——
-/// 登记时也就拿不到路径、分支页签读不到历史。注意：CLI 自己 resume 时**不看**
-/// 文件名（§5.3），但应用侧看，两边要求不同。
+/// 登记时也就拿不到路径、分支页签读不到历史。
 ///
 /// 这里也是 Codex 的 `derive_landing` 为 `None` 的原因：名字里的时间戳是**落盘
 /// 那一刻**取的，事后推不出同名文件。
+///
+/// 只改第一条：较早版本 Codex 的原生分叉会把父会话的 `session_meta` 一并回放进
+/// 子文件，那一行描述的是父会话，原样保留（用量统计等读者也只认第一条）。
 pub(super) fn codex_copy_prefix(
     source_path: &Path,
     target_session_id: &str,
     keep_records: usize,
 ) -> Result<PathBuf, String> {
-    let dest = source_dir(source_path)?.join(format!(
-        "rollout-{}-{target_session_id}.jsonl",
-        timestamp_slug()
-    ));
+    let dest = codex_branch_path(source_path, target_session_id, chrono::Local::now())?;
+    // 日期目录按需新建；回滚只删文件、**故意**留下可能空着的日期目录：Codex 自己也会
+    // 建同样的目录，这里删它可能与 Codex 正要在其中写新 rollout 的那一刻撞上。
+    if let Some(dir) = dest.parent() {
+        std::fs::create_dir_all(dir).map_err(|e| format!("创建分支会话目录失败: {e}"))?;
+    }
+    let rewritten = std::cell::Cell::new(false);
     copy_plain_jsonl_prefix(source_path, &dest, keep_records, |value| {
-        codex_rewrite_identity(value, target_session_id)
+        if rewritten.get() || !codex_rewrite_identity(value, target_session_id) {
+            return false;
+        }
+        rewritten.set(true);
+        true
     })
 }
 
 
-/// Codex 的身份改写：线程身份在**第一行**的 `session_meta.payload.id`。
-/// CLI 按**内容里的这个 id** 发现会话（§5.3），文件名不参与定位
-/// ——`rollout-<ts>-<id>.jsonl` 与 `<id>.jsonl` 两种命名都能 resume，所以这里不必
-/// 迁就文件名约定。
+/// Codex 的身份改写：线程身份在 `session_meta.payload`，按 Codex 原生分叉的形状改
+/// （0.164 实测 `codex exec fork` 的写法）：
+/// - `id` → 新 id：Codex 按它（与文件名里的 id）找到这条线程；
+/// - `session_id`（0.16x 起才有）→ 新 id：Codex 把它当会话号显示、当提示缓存键；
+///   留着源会话的值，分支在 Codex 眼里就和源会话"同一户"；
+/// - `forked_from_id` → 源 id，**已有则保留**：它是血缘标记，用量统计按它把分支里
+///   复制过来的旧记录归到同一条血缘、不重复计数（`usage_stats::parsers::codex`）。
+///   源会话本身是原生分叉时，它的 `forked_from_id` 与 `history_base` 一起指向祖先，
+///   覆盖掉会让两者互相矛盾。
+///
+/// 这一行里的其余字段（含 `history_base`）原样保留。实测 0.164 续接以上形状的
+/// 分支：模型拿到的上下文与源会话该轮之前完全一致，没有重复。
 ///
 /// **不动 `cwd`**：分支必然与源会话同工作区，rollout 里记的就是正确路径；改写它
 /// 等于引入一个可能不一致的来源（DB 的 workspace_path vs rollout 的 cwd），只会
@@ -395,10 +419,25 @@ pub(super) fn codex_rewrite_identity(value: &mut serde_json::Value, target_sessi
     else {
         return false;
     };
-    payload.insert(
-        "id".to_string(),
-        serde_json::Value::String(target_session_id.to_string()),
-    );
+    let target = serde_json::Value::String(target_session_id.to_string());
+    let source_id = payload
+        .insert("id".to_string(), target.clone())
+        .and_then(|old| old.as_str().map(str::to_string))
+        .filter(|old| !old.trim().is_empty() && old != target_session_id);
+    if payload.contains_key("session_id") {
+        payload.insert("session_id".to_string(), target);
+    }
+    // 已有的非空血缘原样保留；缺失、`null` 或空串才补上源 id。
+    let has_lineage = payload
+        .get("forked_from_id")
+        .and_then(serde_json::Value::as_str)
+        .is_some_and(|parent| !parent.trim().is_empty());
+    if let (false, Some(source_id)) = (has_lineage, source_id) {
+        payload.insert(
+            "forked_from_id".to_string(),
+            serde_json::Value::String(source_id),
+        );
+    }
     true
 }
 
@@ -496,49 +535,90 @@ pub(crate) fn register_fork_landing_with_path(
 ) -> Result<bool, String> {
     let source = crate::history::reader::session_meta_by_id(db, engine, source_session_id)?
         .ok_or_else(|| format!("fork source vanished: {source_session_id}"))?;
-    let source_path = Path::new(&source.file_path);
-
-    // 与 §2.5 的身份规则一致：能推导落盘路径的引擎（Claude 按**文件名 stem**
-    // 定位，位置就是源文件所在目录——直接复用，绕开 workspace 路径编码的所有
-    // 拼写假设）走 `ForkSupport::derive_landing`；推不出来的引擎（Codex 的
-    // rollout 名由 `materialize_trimmed_fork` 按 `rollout-<ts>-<id>.jsonl` 自己
-    // 起名、并由调用方**点名**报上来）宁可留空 `file_path` 交给扫描器补，也不猜
-    // 一个可能不对的路径。
-    let target = match explicit_path {
-        // 调用方点名了落盘路径：直接用它。
-        Some(path) if !path.trim().is_empty() => Some(PathBuf::from(path)),
-        _ => match fork_support(engine).and_then(|support| support.derive_landing) {
-            Some(derive_landing) => Some(derive_landing(source_path, target_session_id)?),
-            // 既没报路径、又推不出来：不猜文件名，先登记一行让分支在侧栏出现，
-            // `file_path` 留空交给扫描器补。
-            None => None,
-        },
-    };
-    if let Some(target) = target.as_ref() {
-        if !target.is_file() {
-            // 文件不在就拒绝登记（`Ok(false)`），绝不写一行指向不存在文件的记录。
-            // 调用方**必须**把它当失败（见 `register_fork_or_rollback`）：没有
-            // "下一次发送再试"这条路，命令报成功而表里没有行就是半状态。
-            return Ok(false);
-        }
+    let target = landing_target(engine, &source, target_session_id, explicit_path)?;
+    if target.as_ref().is_some_and(|target| !target.is_file()) {
+        // 文件不在就拒绝登记（`Ok(false)`），绝不写一行指向不存在文件的记录。
+        // 调用方**必须**把它当失败（见 `register_fork_or_rollback`）：没有
+        // "下一次发送再试"这条路，命令报成功而表里没有行就是半状态。
+        return Ok(false);
     }
-    let path_for_row = target
-        .as_ref()
-        .map(|p| p.to_string_lossy().into_owned())
-        .unwrap_or_default();
-
     // 帧身份：复制源会话的记录集（设计稿 §4.1 步骤 7）。不复制的话，分支里被
     // 隐藏的 CCGUI 内部帧会重新显示出来——新 id 的记录集为空，等于"从未接受过
     // 任何帧"。分支摘要也要按这套身份算（决定哪些帧该被隐藏），所以先取出来。
     let (frames, _) = db.accepted_internal_frames(engine, source_session_id)?;
-    let source_frame_count = frames.len();
+    let row = branch_row(engine, target.as_deref(), &frames, &source, title)?;
+    insert_branch_rows(
+        db,
+        engine,
+        source_session_id,
+        target_session_id,
+        &source.workspace_path,
+        frames.len(),
+        &row,
+    )?;
+    inherit_session_memory(db, engine, target_session_id, &source, degraded);
+    Ok(true)
+}
 
-    // 摘要来自真实文件，不臆测（标题/预览/时间/条数都由解析得出）。
-    // 路径未知（调用方没点名、能力表也推不出来，见上面的 `derive_landing`）时留空
-    // 统计值，扫描器随后补齐。
-    let (summary, size, mtime_ms) = match target.as_ref() {
+
+/// 分支转录本的落盘路径；`None` = 这个引擎推不出来、调用方也没点名。
+///
+/// 与 §2.5 的身份规则一致：能推导落盘路径的引擎（Claude 按**文件名 stem**
+/// 定位，位置就是源文件所在目录——直接复用，绕开 workspace 路径编码的所有
+/// 拼写假设）走 `ForkSupport::derive_landing`；推不出来的引擎（Codex 的
+/// rollout 名由 `materialize_trimmed_fork` 按 `rollout-<ts>-<id>.jsonl` 自己
+/// 起名、并由调用方**点名**报上来）宁可留空 `file_path` 交给扫描器补，也不猜
+/// 一个可能不对的路径。
+fn landing_target(
+    engine: &str,
+    source: &crate::history::SessionMeta,
+    target_session_id: &str,
+    explicit_path: Option<&str>,
+) -> Result<Option<PathBuf>, String> {
+    match explicit_path {
+        // 调用方点名了落盘路径：直接用它。
+        Some(path) if !path.trim().is_empty() => Ok(Some(PathBuf::from(path))),
+        _ => match fork_support(engine).and_then(|support| support.derive_landing) {
+            Some(derive_landing) => {
+                derive_landing(Path::new(&source.file_path), target_session_id).map(Some)
+            }
+            // 既没报路径、又推不出来：不猜文件名，先登记一行让分支在侧栏出现，
+            // `file_path` 留空交给扫描器补。
+            None => Ok(None),
+        },
+    }
+}
+
+
+/// 分支在 `sessions` 表里那一行的取值。
+struct BranchRow {
+    file_path: String,
+    file_size: i64,
+    file_mtime_ms: i64,
+    /// 转录本推导标题（`title` 列）——**不是**分支标题，见 `branch_row`。
+    title: String,
+    preview: String,
+    created_at: Option<i64>,
+    updated_at: Option<i64>,
+    message_count: i64,
+    /// 分支标题（`custom_title` 列），分支编号的唯一来源。
+    custom_title: String,
+}
+
+
+/// 从真实文件读出分支行的取值（标题/预览/时间/条数都由解析得出，不臆测）。
+/// 路径未知（调用方没点名、能力表也推不出来，见 `landing_target`）时留空统计值，
+/// 扫描器随后补齐。
+fn branch_row(
+    engine: &str,
+    target: Option<&Path>,
+    frames: &std::collections::HashSet<String>,
+    source: &crate::history::SessionMeta,
+    title: Option<&str>,
+) -> Result<BranchRow, String> {
+    let (summary, file_size, file_mtime_ms) = match target {
         Some(path) => {
-            let summary = crate::history::scan_summary_file(engine, path, &frames)?;
+            let summary = crate::history::scan_summary_file(engine, path, frames)?;
             let (size, mtime_ms) = crate::history::stat_signature(path)
                 .ok_or_else(|| format!("无法读取分支转录本: {}", path.display()))?;
             (summary, size, mtime_ms)
@@ -555,28 +635,6 @@ pub(crate) fn register_fork_landing_with_path(
             0,
         ),
     };
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_millis() as i64)
-        .unwrap_or(0);
-    let created_at = summary.first_ts.or(Some(mtime_ms));
-    let updated_at = summary.last_ts.or(Some(mtime_ms));
-    // `custom_title`（侧栏标签）用**调用方给的分支标题**：`fork_session` 已经用
-    // `next_fork_title` 拼好 `<源会话当前名> (fork #N)`（后缀语言中立，不需要前端
-    // 造句）。调用方没给就退回来源的当前名本身——**不加后缀**：宁可少一个标记，
-    // 也不在这里写死一种语言的后缀。
-    let custom_title = title
-        .map(str::trim)
-        .filter(|t| !t.is_empty())
-        .map(str::to_string)
-        .unwrap_or_else(|| {
-            source
-                .custom_title
-                .clone()
-                .filter(|t| !t.trim().is_empty())
-                .unwrap_or_else(|| source.title.clone())
-        });
-    let custom_title = custom_title.trim().to_string();
     // ⚠️ `title` 列必须写**扫描推导出来的标题**（`summary.title`），不能写分支标
     // 题。两列共用同一个值会同时坏两件事：
     //
@@ -590,97 +648,152 @@ pub(crate) fn register_fork_landing_with_path(
     //      发生重扫而拿到不同编号**。
     //
     // 结论：分支编号只由 `custom_title` 决定；`title` 只做转录本的忠实投影。
-    let title = summary.title.trim().to_string();
-    // 内部帧身份 + `sessions` 行 + `custom_title` 写在**同一个事务**里（形状照
-    // scanner.rs 的既有写法：`db.0.lock()` → `conn.transaction()`）：三条写入要么
-    // 全成、要么全不成。INSERT 成功而 UPDATE 失败会留下一条没有标题的孤儿行；
-    // 帧身份写进去而 `sessions` 行没写成，会留下一个没有会话的记录集——扫描和
-    // `remove_workspace` 都再也认不出它，而调用方只删得掉文件。
-    {
-        let mut conn = db.0.lock();
-        let tx = conn
-            .transaction()
-            .map_err(|e| format!("开始登记事务失败: {e}"))?;
-        copy_accepted_frames(
-            &tx,
-            engine,
-            source_session_id,
-            target_session_id,
-            &source.workspace_path,
-            source_frame_count,
-        )?;
-        // 写进 sessions 行的是**复制后**的记录集签名，所以在同一个事务里按目标
-        // 会话重新派生：省略该列会得到 ''（该列 NOT NULL DEFAULT ''），与
-        // accepted_internal_frames 派生出来的值不一致——扫描器据此判断"这一行有
-        // 哪些帧被隐藏"，签名不对就会重新显示或漏隐藏。
-        let (_, signature) =
-            crate::db::accepted_internal_frames_from(&tx, engine, target_session_id)?;
-        tx.execute(
-            "INSERT INTO sessions(engine, session_id, workspace_path, file_path, file_size,
-                                  file_mtime_ms, title, preview, created_at, updated_at,
-                                  message_count, accepted_frames_signature)
-             VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12)
-             ON CONFLICT(engine, session_id) DO UPDATE SET
-                workspace_path=excluded.workspace_path,
-                file_path=excluded.file_path,
-                file_size=excluded.file_size,
-                file_mtime_ms=excluded.file_mtime_ms,
-                title=excluded.title,
-                preview=excluded.preview,
-                updated_at=excluded.updated_at,
-                message_count=excluded.message_count,
-                accepted_frames_signature=excluded.accepted_frames_signature",
-            rusqlite::params![
-                engine,
-                target_session_id,
-                source.workspace_path,
-                path_for_row,
-                size,
-                mtime_ms,
-                title,
-                summary.preview,
-                created_at,
-                updated_at,
-                summary.message_count,
-                signature,
-            ],
-        )
-        .map_err(|e| format!("登记分支会话失败: {e}"))?;
-        // upsert_rows 不碰 custom_title；分叉要显式设它，否则侧栏会退回
-        // 从转录本推导的原标题，看不出这是分支。分支编号的唯一来源就是这一列。
-        tx.execute(
-            "UPDATE sessions SET custom_title=?3 WHERE engine=?1 AND session_id=?2",
-            rusqlite::params![engine, target_session_id, custom_title],
-        )
-        .map_err(|e| format!("设置分支标题失败: {e}"))?;
-        tx.commit()
-            .map_err(|e| format!("登记分支会话失败: {e}"))?;
-    }
-    // 会话记忆三行：复用现成 helper，不手写 SQL（设计稿 §4.1 步骤 9）。
-    //
-    // 写失败**不回滚**分支——文件和 `sessions` 行此刻都已成立，为三行"记住上次用的
-    // 模型"把整个分支删掉是本末倒置。但也**不能静默**：静默的后果是分支悄悄用引擎默认
-    // 模型跑，用户以为是原会话那一套。所以逐项记日志、如实报告降级，不留 `let _ =`。
+    Ok(BranchRow {
+        file_path: target
+            .map(|path| path.to_string_lossy().into_owned())
+            .unwrap_or_default(),
+        file_size,
+        file_mtime_ms,
+        title: summary.title.trim().to_string(),
+        preview: summary.preview,
+        created_at: summary.first_ts.or(Some(file_mtime_ms)),
+        updated_at: summary.last_ts.or(Some(file_mtime_ms)),
+        message_count: summary.message_count,
+        custom_title: branch_custom_title(title, source),
+    })
+}
 
-    if let Some(model) = source.model.as_deref().filter(|m| !m.trim().is_empty()) {
-        if let Err(e) = db.remember_session_model(engine, target_session_id, model, now) {
+
+/// `custom_title`（侧栏标签）用**调用方给的分支标题**：`fork_session` 已经用
+/// `next_fork_title` 拼好 `<源会话当前名> (fork #N)`（后缀语言中立，不需要前端
+/// 造句）。调用方没给就退回来源的当前名本身——**不加后缀**：宁可少一个标记，
+/// 也不在这里写死一种语言的后缀。
+fn branch_custom_title(title: Option<&str>, source: &crate::history::SessionMeta) -> String {
+    title
+        .map(str::trim)
+        .filter(|t| !t.is_empty())
+        .map(str::to_string)
+        .unwrap_or_else(|| {
+            source
+                .custom_title
+                .clone()
+                .filter(|t| !t.trim().is_empty())
+                .unwrap_or_else(|| source.title.clone())
+        })
+        .trim()
+        .to_string()
+}
+
+
+/// 内部帧身份 + `sessions` 行 + `custom_title` 写在**同一个事务**里（形状照
+/// scanner.rs 的既有写法：`db.0.lock()` → `conn.transaction()`）：三条写入要么
+/// 全成、要么全不成。INSERT 成功而 UPDATE 失败会留下一条没有标题的孤儿行；
+/// 帧身份写进去而 `sessions` 行没写成，会留下一个没有会话的记录集——扫描和
+/// `remove_workspace` 都再也认不出它，而调用方只删得掉文件。
+fn insert_branch_rows(
+    db: &crate::db::Db,
+    engine: &str,
+    source_session_id: &str,
+    target_session_id: &str,
+    workspace_path: &str,
+    source_frame_count: usize,
+    row: &BranchRow,
+) -> Result<(), String> {
+    let mut conn = db.0.lock();
+    let tx = conn
+        .transaction()
+        .map_err(|e| format!("开始登记事务失败: {e}"))?;
+    copy_accepted_frames(
+        &tx,
+        engine,
+        source_session_id,
+        target_session_id,
+        workspace_path,
+        source_frame_count,
+    )?;
+    // 写进 sessions 行的是**复制后**的记录集签名，所以在同一个事务里按目标
+    // 会话重新派生：省略该列会得到 ''（该列 NOT NULL DEFAULT ''），与
+    // accepted_internal_frames 派生出来的值不一致——扫描器据此判断"这一行有
+    // 哪些帧被隐藏"，签名不对就会重新显示或漏隐藏。
+    let (_, signature) =
+        crate::db::accepted_internal_frames_from(&tx, engine, target_session_id)?;
+    tx.execute(
+        "INSERT INTO sessions(engine, session_id, workspace_path, file_path, file_size,
+                              file_mtime_ms, title, preview, created_at, updated_at,
+                              message_count, accepted_frames_signature)
+         VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12)
+         ON CONFLICT(engine, session_id) DO UPDATE SET
+            workspace_path=excluded.workspace_path,
+            file_path=excluded.file_path,
+            file_size=excluded.file_size,
+            file_mtime_ms=excluded.file_mtime_ms,
+            title=excluded.title,
+            preview=excluded.preview,
+            updated_at=excluded.updated_at,
+            message_count=excluded.message_count,
+            accepted_frames_signature=excluded.accepted_frames_signature",
+        rusqlite::params![
+            engine,
+            target_session_id,
+            workspace_path,
+            row.file_path,
+            row.file_size,
+            row.file_mtime_ms,
+            row.title,
+            row.preview,
+            row.created_at,
+            row.updated_at,
+            row.message_count,
+            signature,
+        ],
+    )
+    .map_err(|e| format!("登记分支会话失败: {e}"))?;
+    // upsert_rows 不碰 custom_title；分叉要显式设它，否则侧栏会退回
+    // 从转录本推导的原标题，看不出这是分支。分支编号的唯一来源就是这一列。
+    tx.execute(
+        "UPDATE sessions SET custom_title=?3 WHERE engine=?1 AND session_id=?2",
+        rusqlite::params![engine, target_session_id, row.custom_title],
+    )
+    .map_err(|e| format!("设置分支标题失败: {e}"))?;
+    tx.commit()
+        .map_err(|e| format!("登记分支会话失败: {e}"))
+}
+
+
+/// 会话记忆三行：复用现成 helper，不手写 SQL（设计稿 §4.1 步骤 9）。
+///
+/// 写失败**不回滚**分支——文件和 `sessions` 行此刻都已成立，为三行"记住上次用的
+/// 模型"把整个分支删掉是本末倒置。但也**不能静默**：静默的后果是分支悄悄用引擎默认
+/// 模型跑，用户以为是原会话那一套。所以逐项记日志、如实报告降级，不留 `let _ =`。
+fn inherit_session_memory(
+    db: &crate::db::Db,
+    engine: &str,
+    target_session_id: &str,
+    source: &crate::history::SessionMeta,
+    degraded: &mut Vec<String>,
+) {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0);
+    let present = |value: &Option<String>| value.clone().filter(|v| !v.trim().is_empty());
+    if let Some(model) = present(&source.model) {
+        if let Err(e) = db.remember_session_model(engine, target_session_id, &model, now) {
             degraded.push("model".into());
             eprintln!("[fork] 分支 {target_session_id} 未能继承模型（{e}）");
         }
     }
-    if let Some(effort) = source.effort.as_deref().filter(|e| !e.trim().is_empty()) {
-        if let Err(e) = db.remember_session_effort(engine, target_session_id, effort, now) {
+    if let Some(effort) = present(&source.effort) {
+        if let Err(e) = db.remember_session_effort(engine, target_session_id, &effort, now) {
             degraded.push("effort".into());
             eprintln!("[fork] 分支 {target_session_id} 未能继承思考档位（{e}）");
         }
     }
-    if let Some(provider) = source.provider.as_deref().filter(|p| !p.trim().is_empty()) {
-        if let Err(e) = db.remember_session_provider(engine, target_session_id, provider, now) {
+    if let Some(provider) = present(&source.provider) {
+        if let Err(e) = db.remember_session_provider(engine, target_session_id, &provider, now) {
             degraded.push("provider".into());
             eprintln!("[fork] 分支 {target_session_id} 未能继承供应商（{e}）");
         }
     }
-
-    Ok(true)
 }
 

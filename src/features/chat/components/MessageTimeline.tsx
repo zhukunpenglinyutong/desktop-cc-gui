@@ -111,7 +111,8 @@ export type ForkAnchorTarget = { text: string; seq: number; tail: number };
  * 用户点的是哪一条——前端的 seq 是本地累加的（卡片行也占号），与后端重新编号的 seq
  * 不同源，漂移一两格就会把「中间那条」判成最后一条（真机复现过）。`tail` 只数
  * "这条之后还有几条同样文本"，与编号无关；而前端窗口**总是转录本的尾部**（历史是
- * 往前插页），所以两边数出来一致。
+ * 往前插页），所以两边数出来一致——前提是界面已反映磁盘上的最新内容（限制见后端
+ * `ForkAnchor::tail_occurrence` 的注释）。
  *
  * 复杂度：O(n)（倒序数 tail 一趟 + 正序分发一趟）。
  */
@@ -1038,7 +1039,8 @@ export const MessageTimeline = memo(function MessageTimeline({
       if (items[i].role === "user") return items[i].seq;
     }
     return null;
-  }, [items, streaming]);  // The tail item is the turn-status indicator (or the grey compaction line).
+  }, [items, streaming]);
+  // The tail item is the turn-status indicator (or the grey compaction line).
   // A compaction keeps it mounted even between sends, so the line does not
   // blink out in the gap between the compact turn and the resume turn.
   const count = rows.length + (streaming || session.compaction ? 1 : 0);

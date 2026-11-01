@@ -218,7 +218,6 @@ fn walk_lines(
             let Some(row) = normalize_extracted_row(row, accepted_internal_frames) else {
                 continue;
             };
-
             consume(line, row);
         }
     }
@@ -327,7 +326,9 @@ fn fold_rows(rows: Vec<LineRow>) -> ParsedSession {
             }
             continue;
         }
-        if row.text.trim().is_empty() && row.images.is_empty() {
+        // Same predicate as the fork cut's `user_row_lines`: a row dropped here
+        // must be dropped there, or "the n-th user message" drifts by a turn.
+        if !user_row_is_visible(&row.text, !row.images.is_empty()) {
             continue;
         }
         let parsed_ts = row.ts.as_deref().and_then(super::parse_ts_ms_str);
@@ -684,7 +685,6 @@ impl LineRow {
     /// A plain row without usage/model metadata.
     fn new(role: &str, text: String, ts: Option<String>) -> Self {
         Self {
-
             role: role.to_string(),
             text,
             ts,

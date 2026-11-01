@@ -684,6 +684,7 @@ version = "1.2.0"
 dependencies = [
  "axum",
  "base64 0.22.1",
+ "chrono",
  "dirs 6.0.0",
  "dunce",
  "enigo",

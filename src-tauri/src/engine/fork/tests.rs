@@ -1735,3 +1735,215 @@ fn tail_occurrence_pins_the_exact_duplicate_regardless_of_seq_drift() {
     // 老前端不传 tail 时行为不变（就近）。
     assert_eq!(anchor_hit_index(&parsed, &anchor(None, Some(14))), Some(1));
 }
+
+/// 在 `<root>/<rel>` 写一份 Codex rollout（目录按需建好），返回它的路径。
+fn write_codex_rollout(root: &Path, rel: &str, lines: &[serde_json::Value]) -> PathBuf {
+    let path = root.join(rel);
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    let body: String = lines.iter().map(|line| format!("{line}\n")).collect();
+    std::fs::write(&path, body).unwrap();
+    path
+}
+
+fn read_json_lines(path: &Path) -> Vec<serde_json::Value> {
+    std::fs::read_to_string(path)
+        .unwrap()
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect()
+}
+
+/// 分支第一条 `session_meta` 与 Codex 原生分叉同形（0.164 `codex exec fork` 实测）：
+/// `id` / `session_id` 换新、`forked_from_id` 指向源；`cwd` 不动。没有
+/// `forked_from_id` 时，用量统计按"新血缘"把复制过来的旧用量再算一遍。回放进来的
+/// 父会话 `session_meta`（较早版本原生分叉的产物）描述的是父会话，原样保留。
+#[test]
+fn codex_branch_identity_matches_the_native_fork_shape() {
+    let root = std::env::temp_dir().join(format!("ccgui-codex-id-{}", uuid::Uuid::new_v4()));
+    let src_id = "01a191b1-7741-71b1-b55b-74b820b5210f";
+    let meta = serde_json::json!({"type": "session_meta", "payload": {
+        "id": src_id, "session_id": src_id, "cwd": "/w", "history_mode": "paginated"}});
+    let replayed = serde_json::json!({"type": "session_meta", "payload": {"id": "parent", "cwd": "/w"}});
+    let user = serde_json::json!({"type": "response_item", "payload": {"type": "message", "role": "user",
+        "content": [{"type": "input_text", "text": "Q1"}]}});
+    let source = write_codex_rollout(
+        &root,
+        &format!("home/sessions/2025/01/02/rollout-2025-01-02T03-04-05-{src_id}.jsonl"),
+        &[meta, replayed.clone(), user.clone()],
+    );
+
+    let target = "8a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d";
+    let written = codex_copy_prefix(&source, target, usize::MAX).unwrap();
+    let lines = read_json_lines(&written);
+    let head = &lines[0]["payload"];
+    assert_eq!(head["id"], target);
+    assert_eq!(head["session_id"], target, "session_id 留着源 id，Codex 会把分支当成源会话");
+    assert_eq!(head["forked_from_id"], src_id, "血缘缺失时用量统计会重复计数");
+    assert_eq!(head["cwd"], "/w");
+    assert_eq!(head["history_mode"], "paginated", "其余字段原样保留");
+    assert_eq!(lines[1], replayed, "只改第一条 session_meta");
+    assert_eq!(lines[2], user);
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+/// 源会话本身是原生分叉时，它的 `forked_from_id` 与 `history_base` 一起指向祖先
+/// （0.164 的原生分叉不复制历史，靠 `history_base` 引用）。分支必须保留这条血缘：
+/// 覆盖 `forked_from_id` 会让它与 `history_base` 互相矛盾。没有 `session_id` 的
+/// 旧格式也不能凭空补一个出来。
+#[test]
+fn codex_branch_keeps_an_existing_lineage() {
+    let root = std::env::temp_dir().join(format!("ccgui-codex-lineage-{}", uuid::Uuid::new_v4()));
+    let src_id = "01a19503-a5fe-7ca0-86cc-ce6a35a6b6a9";
+    let base = serde_json::json!({"thread_id": "grand", "end_ordinal_exclusive": 36});
+    let meta = serde_json::json!({"type": "session_meta", "payload": {
+        "id": src_id, "forked_from_id": "grand", "history_base": base.clone(), "cwd": "/w"}});
+    let source = write_codex_rollout(&root, &format!("home/sessions/rollout-{src_id}.jsonl"), &[meta]);
+
+    let target = "9b2c3d4e-5f60-4b7c-8d9e-0f1a2b3c4d5e";
+    let written = codex_copy_prefix(&source, target, usize::MAX).unwrap();
+    let head = &read_json_lines(&written)[0]["payload"];
+    assert_eq!(head["id"], target);
+    assert_eq!(head["forked_from_id"], "grand");
+    assert_eq!(head["history_base"], base);
+    assert!(head.get("session_id").is_none(), "旧格式没有 session_id，不能凭空补");
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+/// 源会话第一行里的 `forked_from_id` 是 `null` 或空串时视为没有血缘，补成源 id：
+/// 留着它，用量统计就会把分支当成一条新血缘，复制过来的旧用量再算一遍。
+#[test]
+fn codex_branch_fills_a_null_or_empty_lineage() {
+    for empty in [serde_json::Value::Null, serde_json::json!(""), serde_json::json!("  ")] {
+        let root = std::env::temp_dir().join(format!("ccgui-codex-null-{}", uuid::Uuid::new_v4()));
+        let src_id = "01a191b1-7741-71b1-b55b-74b820b5210f";
+        let meta = serde_json::json!({"type": "session_meta", "payload": {
+            "id": src_id, "forked_from_id": empty.clone(), "cwd": "/w"}});
+        let source =
+            write_codex_rollout(&root, &format!("home/sessions/rollout-{src_id}.jsonl"), &[meta]);
+        let written =
+            codex_copy_prefix(&source, "8a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d", usize::MAX).unwrap();
+        assert_eq!(
+            read_json_lines(&written)[0]["payload"]["forked_from_id"],
+            src_id,
+            "forked_from_id = {empty}"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+}
+
+/// 源会话已归档（`archived_sessions/`）时，分支必须落回同一个 Codex home 的
+/// `sessions/<今天>/`：放在归档目录里，Codex 续接时直接拒绝
+/// （"session … is archived"，0.164 实测）。
+#[test]
+fn codex_branch_of_an_archived_session_lands_in_active_sessions() {
+    let root = std::env::temp_dir().join(format!("ccgui-codex-arch-{}", uuid::Uuid::new_v4()));
+    let src_id = "01a191b1-7741-71b1-b55b-74b820b5210f";
+    let meta = serde_json::json!({"type": "session_meta", "payload": {"id": src_id, "cwd": "/w"}});
+    let source = write_codex_rollout(
+        &root,
+        &format!("home/archived_sessions/rollout-2025-01-02T03-04-05-{src_id}.jsonl"),
+        &[meta],
+    );
+
+    let before = chrono::Local::now();
+    let written = codex_copy_prefix(&source, "8a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d", usize::MAX).unwrap();
+    let after = chrono::Local::now();
+    let day_dir = |now: chrono::DateTime<chrono::Local>| {
+        root.join("home/sessions").join(now.format("%Y/%m/%d").to_string())
+    };
+    let parent = written.parent().unwrap();
+    assert!(
+        parent == day_dir(before) || parent == day_dir(after),
+        "分支应落在 sessions/<今天>/，实际 {}",
+        written.display()
+    );
+    assert!(source.is_file(), "源文件不动");
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+/// 文件名按**本地时间**（Codex 自己的规则），日期目录同；找不到 `sessions` /
+/// `archived_sessions` 祖先时退回源文件所在目录。
+///
+/// 用一个非零时区钉住"按给定时区格式化"：UTC 2026-10-30 23:05:07 在 UTC+10 是
+/// 10-31 09:05:07。若实现先折成 UTC，日期目录与文件名都会落在 10-30，这里会红；
+/// 只用 `Local` 测的话，在时区为 UTC 的机器上看不出差别。
+#[test]
+fn codex_branch_path_uses_local_time_and_falls_back_to_the_source_dir() {
+    use chrono::TimeZone;
+    let now = chrono::FixedOffset::east_opt(10 * 3600)
+        .unwrap()
+        .from_utc_datetime(
+            &chrono::NaiveDate::from_ymd_opt(2026, 10, 30)
+                .unwrap()
+                .and_hms_opt(23, 5, 7)
+                .unwrap(),
+        );
+    let id = "8a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d";
+
+    let nested = Path::new("/x/.codex/sessions/2025/01/02/rollout-a.jsonl");
+    assert_eq!(
+        codex_branch_path(nested, id, now).unwrap(),
+        Path::new("/x/.codex/sessions/2026/10/31").join(format!("rollout-2026-10-31T09-05-07-{id}.jsonl"))
+    );
+    let loose = Path::new("/tmp/elsewhere/rollout-a.jsonl");
+    assert_eq!(
+        codex_branch_path(loose, id, now).unwrap(),
+        Path::new("/tmp/elsewhere").join(format!("rollout-2026-10-31T09-05-07-{id}.jsonl"))
+    );
+}
+
+/// 同一来源并发分叉：编号是「读标题快照 → 写文件 → 登记」三步，不串行就会读到
+/// 同一份快照、拿到同一个 `#N`。桌面端与局域网网页端驱动的是同一个进程，所以
+/// 由 `fork_session_blocking` 在进程内逐个执行。
+#[test]
+fn concurrent_forks_of_one_source_get_distinct_numbers() {
+    let dir = std::env::temp_dir().join(format!("ccgui-fork-race-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let db = std::sync::Arc::new(crate::db::Db::open_at(&dir.join("app.db")).unwrap());
+    let src_id = "11111111-1111-4111-8111-111111111111";
+    let src_path = dir.join(format!("{src_id}.jsonl"));
+    let body = [
+        claude_user_line(src_id, "并发分叉", false, "2026-10-22T11:00:00.000Z"),
+        claude_assistant_line(src_id, "好的", "2026-10-22T11:00:05.000Z"),
+    ]
+    .join("\n");
+    std::fs::write(&src_path, body + "\n").unwrap();
+    db.0.lock()
+        .execute(
+            "INSERT INTO sessions(engine, session_id, workspace_path, file_path,
+                 file_size, file_mtime_ms, title, preview, message_count)
+             VALUES('claude', ?1, ?2, ?3, 0, 0, '并发分叉', '', 2)",
+            rusqlite::params![src_id, dir.to_string_lossy(), src_path.to_string_lossy()],
+        )
+        .unwrap();
+
+    const FORKS: usize = 6;
+    let barrier = std::sync::Arc::new(std::sync::Barrier::new(FORKS));
+    let handles: Vec<_> = (0..FORKS)
+        .map(|_| {
+            let (db, barrier) = (db.clone(), barrier.clone());
+            std::thread::spawn(move || {
+                barrier.wait();
+                fork_session_blocking(&db, "claude", src_id, None).unwrap().target_session_id
+            })
+        })
+        .collect();
+    let targets: Vec<String> = handles.into_iter().map(|h| h.join().unwrap()).collect();
+
+    let mut titles: Vec<String> = targets
+        .iter()
+        .map(|target| {
+            db.0.lock()
+                .query_row(
+                    "SELECT custom_title FROM sessions WHERE engine='claude' AND session_id=?1",
+                    [target],
+                    |r| r.get(0),
+                )
+                .unwrap()
+        })
+        .collect();
+    titles.sort();
+    let expected: Vec<String> = (1..=FORKS).map(|n| format!("并发分叉 (fork #{n})")).collect();
+    assert_eq!(titles, expected, "并发分叉不能撞号");
+    let _ = std::fs::remove_dir_all(&dir);
+}
