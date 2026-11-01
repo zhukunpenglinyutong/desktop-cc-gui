@@ -558,6 +558,10 @@ fn subagent_fold(messages: &[Message]) -> SubagentFold {
     let mut last_user = None;
     let mut needs_boundary = false;
     for (index, message) in messages.iter().enumerate() {
+        if message.role == "__agent_status__" {
+            rows.push((index, subagent_history_row(message, true)));
+            continue;
+        }
         if message.role == "user" {
             last_user = Some(message);
             continue;
@@ -609,12 +613,13 @@ fn subagent_history_until(messages: &[Message], fold: &SubagentFold, start: usiz
     let Some(user_index) = messages[..start].iter().rposition(|m| m.role == "user") else {
         return rows;
     };
-    // The pending user was already spent if a delegation or boundary closed
-    // its turn inside the prefix; as the last user before the cut, any row
-    // triggered between it and the cut closed its turn.
+    // Only a delegation or boundary spends the pending user. Async status
+    // snapshots retain their own position without closing a conversational turn.
     let closed = fold
         .iter()
-        .any(|(trigger, _)| user_index < *trigger && *trigger < start);
+        .any(|(trigger, row)| {
+            user_index < *trigger && *trigger < start && row.role != "__agent_status__"
+        });
     if !closed {
         rows.push(subagent_history_row(&messages[user_index], false));
     }
@@ -655,7 +660,7 @@ fn subagent_history_row(message: &Message, delegation: bool) -> Message {
         } else {
             String::new()
         },
-        ts: None,
+        ts: message.ts.clone(),
         path: None,
         args: if delegation {
             message.args.clone()
@@ -2753,6 +2758,70 @@ mod tests {
         message.text = "task · worker".into();
         message.args = Some(json!({"tasks": []}));
         message
+    }
+
+    #[test]
+    fn async_status_fold_preserves_timestamps_without_closing_pending_turns() {
+        let status = |seq| {
+            let mut message = plain(seq, "__agent_status__");
+            message.ts = Some(format!("2026-10-28T10:00:{seq:02}Z"));
+            message.result = Some(json!({"details": {"jobs": [
+                {"id": "Reviewer", "status": "completed"}
+            ]}}));
+            message
+        };
+        let mut task = delegation(1);
+        task.ts = Some("2026-10-28T10:00:01Z".into());
+        let messages = vec![
+            plain(0, "user"),
+            task,
+            status(2),
+            plain(3, "assistant"), // status must not consume the delegation's boundary
+            plain(4, "user"),
+            status(5),            // does not spend pending user 4
+            plain(6, "assistant"), // no new delegation: not another boundary
+            plain(7, "user"),      // replaces user 4 in the full fold
+            status(8),
+        ];
+        let fold = subagent_fold(&messages);
+        let seqs: Vec<_> = fold.iter().map(|(_, row)| row.seq).collect();
+        assert_eq!(seqs, [0, 1, 2, 3, 5, 8, 7]);
+        let task = &fold.iter().find(|(_, row)| row.seq == 1).unwrap().1;
+        assert_eq!(task.ts.as_deref(), Some("2026-10-28T10:00:01Z"));
+        let status = &fold.iter().find(|(_, row)| row.seq == 5).unwrap().1;
+        assert_eq!(status.role, "__agent_status__");
+        assert_eq!(status.ts.as_deref(), Some("2026-10-28T10:00:05Z"));
+        assert_eq!(status.result.as_ref().unwrap()["details"]["jobs"][0]["status"], "completed");
+        for start in 0..=messages.len() {
+            let cut = serde_json::to_value(subagent_history_until(&messages, &fold, start)).unwrap();
+            let fresh = serde_json::to_value(subagent_history(&messages[..start])).unwrap();
+            assert_eq!(cut, fresh, "start={start}");
+        }
+    }
+
+    #[test]
+    fn session_page_keeps_older_async_status_and_timestamp_in_subagent_history() {
+        let mut status = plain(3, "__agent_status__");
+        status.ts = Some("2026-10-28T10:00:03Z".into());
+        status.result = Some(json!({"details": {"jobs": [
+            {"id": "Reviewer", "jobId": "Reviewer", "type": "task", "status": "failed"}
+        ]}}));
+        let mut messages = vec![plain(0, "user"), delegation(1), plain(2, "assistant"), status];
+        messages.extend((4..124).map(|seq| plain(seq, "assistant")));
+        let fold = subagent_fold(&messages);
+        let cached = CachedSession { parsed: ParsedSession { messages }, fold, footprint: 0 };
+        let page = page_from_cached(&cached, Some(100), None);
+        assert_eq!(page.messages.len(), 100);
+        assert!(page.messages.iter().all(|message| message.role == "assistant"));
+        let wire = serde_json::to_value(&page).unwrap();
+        let status = wire["subagentHistory"].as_array().unwrap().iter()
+            .find(|row| row["role"] == "__agent_status__").unwrap();
+        assert_eq!(status["ts"], "2026-10-28T10:00:03Z");
+        assert_eq!(status["result"]["details"]["jobs"][0]["status"], "failed");
+        assert_eq!(status["text"], "");
+        let older = page_from_cached(&cached, Some(100), page.next_before);
+        assert!(older.subagent_history.is_empty());
+        assert!(older.messages.iter().any(|row| row.role == "__agent_status__"));
     }
 
     /// Cutting the cached full fold at a page start must reproduce a fresh

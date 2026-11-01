@@ -8,7 +8,7 @@ import "../../src/lib/i18n";
 import { useChatStore } from "../../src/features/chat/store";
 import { useGitStore } from "../../src/features/git/store";
 import { RunStatusStrip } from "../../src/features/chat/components/RunStatusStrip";
-import type { Message, TodosPayload } from "../../src/lib/ipc";
+import { AGENT_STATUS_ROLE, type Message, type TodosPayload } from "../../src/lib/ipc";
 
 const KEY = "run-status-fixture";
 const WS = "/ws";
@@ -34,16 +34,40 @@ const TURN: Message[] = [
       { content: "更新快照", status: "blocked" },
     ],
   }),
-  msg(2, "tool", "task · Fix auth token refresh tests"),
+  {
+    ...msg(2, "tool", "task · Fix auth token refresh tests"),
+    args: {
+      tasks: [{ name: "AuthFix", description: "Fix auth token refresh tests", agent: "task", task: "Fix auth token refresh tests" }],
+    },
+  },
   msg(3, "tool", "edit_file", "/ws/src/features/auth/auth.ts"),
   msg(4, "assistant", "第一个子代理已回传，继续等待其余结果。"),
-  msg(5, "tool", "task · Dispatching 10 parallel fix agents"),
+  {
+    ...msg(5, "tool", "task · Dispatching 10 parallel fix agents"),
+    args: {
+      tasks: [{ name: "RateLimiter", description: "Fix rate limiter", agent: "task", task: "Fix rate limiter" }],
+    },
+  },
   msg(6, "tool", "edit_file", "/ws/src/lib/rate-limiter.ts"),
 ];
 
-function seed(streaming: boolean) {
+const ASYNC_COMPLETION: Message = {
+  seq: 8,
+  role: AGENT_STATUS_ROLE,
+  text: "",
+  ts: null,
+  result: { details: { jobs: [{ jobId: "RateLimiter", status: "completed" }] } },
+};
+
+
+function seed(streaming: boolean, includeCompletion = false) {
   useChatStore.setState({
-    bySession: { [KEY]: { messages: TURN, streaming } as never },
+    bySession: {
+      [KEY]: {
+        messages: includeCompletion ? [...TURN, ASYNC_COMPLETION] : TURN,
+        streaming,
+      } as never,
+    },
   });
 }
 
@@ -72,6 +96,7 @@ function Fixture() {
       <div style={{ marginBottom: 16, display: "flex", gap: 8 }}>
         <button onClick={() => { seed(true); setStreaming(true); }}>▶ 进行中</button>
         <button onClick={() => { seed(false); setStreaming(false); }}>✓ 回合结束</button>
+        <button onClick={() => { seed(true, true); setStreaming(true); }}>✓ 后台任务完成</button>
         <span style={{ color: "#a1a1aa", fontSize: 12, alignSelf: "center" }}>
           点击 pill 展开面板；Esc 收起；右侧方块收起整条（localStorage 持久化）
         </span>
