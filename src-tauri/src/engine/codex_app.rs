@@ -182,12 +182,13 @@ impl AppServer {
     /// the turn pump ends on `turn/completed` rather than on any reply. Lines
     /// are classified locally (method+id is a server→client request, method
     /// alone a notification, id alone a reply) because codex speaks plain
-    /// JSON-RPC, unlike the ACP framing the sibling drivers parse.
+    /// JSON-RPC, unlike the ACP framing the sibling drivers parse. A `None`
+    /// deadline reads on until the expectation, the CLI's EOF, or a kill.
     async fn pump(
         &mut self,
         label: &str,
         expect: Expect<'_>,
-        deadline: Instant,
+        deadline: impl Into<Option<Instant>>,
         killed: &AtomicBool,
         interrupt: Option<(&str, &str)>,
         // `Send` is required: the driver runs inside a spawned task, and a
@@ -195,7 +196,7 @@ impl AppServer {
         on_message: &mut (dyn FnMut(&Value) -> Handled + Send),
     ) -> Result<Option<Value>, String> {
         let mut interrupted = false;
-        let mut deadline = deadline;
+        let mut deadline: Option<Instant> = deadline.into();
         loop {
             if killed.load(Ordering::SeqCst) {
                 match interrupt {
@@ -209,7 +210,8 @@ impl AppServer {
                     // completion, not on the acknowledgement.
                     Some((thread_id, turn_id)) if !interrupted => {
                         interrupted = true;
-                        deadline = deadline.min(Instant::now() + INTERRUPT_SETTLE_TIMEOUT);
+                        let settle_by = Instant::now() + INTERRUPT_SETTLE_TIMEOUT;
+                        deadline = Some(deadline.map_or(settle_by, |until| until.min(settle_by)));
                         self.request(
                             "turn/interrupt",
                             json!({ "threadId": thread_id, "turnId": turn_id }),
@@ -226,8 +228,8 @@ impl AppServer {
             }
             // Poll in short slices instead of blocking on the socket, so a kill
             // is honored within KILL_POLL rather than at the next line.
-            let remaining = deadline.saturating_duration_since(Instant::now());
-            if remaining.is_zero() {
+            let remaining = deadline.map(|until| until.saturating_duration_since(Instant::now()));
+            if remaining == Some(Duration::ZERO) {
                 return Err(if interrupted {
                     CANCELLED.to_string()
                 } else {
@@ -235,7 +237,7 @@ impl AppServer {
                 });
             }
             let line = match timeout(
-                remaining.min(KILL_POLL),
+                remaining.map_or(KILL_POLL, |remaining| remaining.min(KILL_POLL)),
                 read_line_capped(&mut self.stdout, &mut self.line_buf),
             )
             .await
@@ -1571,7 +1573,7 @@ async fn handshake_and_start(
     req: &SendRequest,
     killed: &Arc<AtomicBool>,
     decision: Option<&DecisionCheck>,
-    ack_timeout: Duration,
+    ack_timeout: Option<Duration>,
 ) -> Result<Option<TurnStarted>, String> {
     let deadline = Instant::now() + RPC_HANDSHAKE_TIMEOUT;
     // collaborationMode and the plan items are EXPERIMENTAL in the 0.154.0
@@ -1783,7 +1785,7 @@ async fn handshake_and_start(
         .pump(
             "turn/start",
             Expect::Reply(&key),
-            Instant::now() + ack_timeout,
+            ack_timeout.map(|limit| Instant::now() + limit),
             killed,
             None,
             &mut |value| route(core, state, view, value),
@@ -1835,7 +1837,7 @@ async fn pump_turn_to_end(
         .pump(
             "turn",
             Expect::Turn,
-            Instant::now() + PROMPT_TIMEOUT,
+            PROMPT_TIMEOUT.map(|limit| Instant::now() + limit),
             killed,
             interrupt
                 .as_ref()
@@ -2100,7 +2102,7 @@ async fn start_decision_turn(
         req,
         killed,
         Some(check),
-        RESUME_TIMEOUT,
+        Some(RESUME_TIMEOUT),
     )
     .await;
     let started = match started {
@@ -2733,7 +2735,7 @@ require('node:readline').createInterface({input: process.stdin}).on('line', line
                 &req,
                 &Arc::new(AtomicBool::new(false)),
                 decision.as_ref(),
-                Duration::from_secs(5),
+                Some(Duration::from_secs(5)),
             )
             .await;
             let status = timeout(Duration::from_secs(5), child.wait())
@@ -3494,5 +3496,130 @@ require('node:readline').createInterface({input: process.stdin}).on('line', line
         assert_eq!(events[0].0, "warn");
         assert_eq!(events[0].1, json!("upstream 502"));
         assert!(!state.saw_error, "a retry must not settle the run");
+    }
+
+    /// A turn has no wall-clock cap: one silent past 30 minutes (a long build,
+    /// a user away from a question card) still ends on its own completion
+    /// instead of being cut off as "turn timed out". The paused clock races
+    /// the pump's idle ticks forward, so 31 minutes pass in milliseconds.
+    #[cfg(unix)]
+    #[tokio::test(start_paused = true)]
+    async fn a_turn_silent_past_thirty_minutes_runs_to_its_own_completion() {
+        let (core, _registry, emitter) = test_core();
+        let mut state = TurnState::new(None);
+        let mut view = TurnView::default();
+        let directory =
+            std::env::temp_dir().join(format!("ccgui-codex-long-turn-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&directory).unwrap();
+        let release = directory.join("release");
+        let completed = json!({
+            "method": "turn/completed",
+            "params": { "threadId": "t1", "turn": { "id": "turn-1", "status": "completed" } },
+        });
+        let mut command = Command::new("sh");
+        command.args([
+            "-c",
+            &format!(
+                "while [ ! -e '{}' ]; do sleep 0.05; done; echo '{completed}'; exec sleep 30",
+                release.display(),
+            ),
+        ]);
+        let mut spawned = spawn_app_server(&mut command, &directory).unwrap();
+        let killed = Arc::new(AtomicBool::new(false));
+        let started = TurnStarted {
+            thread_id: "t1".into(),
+            turn_id: Some("turn-1".into()),
+        };
+        let begun = Instant::now();
+        let (result, ()) = tokio::join!(
+            pump_turn_to_end(
+                &mut spawned.server,
+                &core,
+                &mut state,
+                &mut view,
+                &started,
+                &killed,
+            ),
+            async {
+                tokio::time::sleep(Duration::from_secs(31 * 60)).await;
+                std::fs::write(&release, b"").unwrap();
+            },
+        );
+        let elapsed = begun.elapsed();
+        teardown(&mut spawned.child).await;
+        let _ = std::fs::remove_dir_all(&directory);
+        result.unwrap();
+        assert!(elapsed >= Duration::from_secs(31 * 60), "{elapsed:?}");
+        assert!(flushed(&core, &emitter).is_empty());
+    }
+
+    /// Without a wall-clock cap, Stop is what ends a hung turn: the pump asks
+    /// the CLI to interrupt and, when it never answers, still gives up after
+    /// the settle window instead of waiting forever.
+    #[cfg(unix)]
+    #[tokio::test(start_paused = true)]
+    async fn stopping_a_hung_turn_gives_up_after_the_settle_window() {
+        let (core, _registry, _emitter) = test_core();
+        let mut state = TurnState::new(None);
+        let mut view = TurnView::default();
+        let directory =
+            std::env::temp_dir().join(format!("ccgui-codex-hung-turn-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&directory).unwrap();
+        let received = directory.join("received");
+        let mut command = Command::new("sh");
+        // The shell keeps stdout open (a hung CLI, not an exited one) while
+        // cat records what the driver sends.
+        command.args(["-c", &format!("cat > '{}'; exec sleep 30", received.display())]);
+        let mut spawned = spawn_app_server(&mut command, &directory).unwrap();
+        let killed = Arc::new(AtomicBool::new(false));
+        let started = TurnStarted {
+            thread_id: "t1".into(),
+            turn_id: Some("turn-1".into()),
+        };
+        // A broken settle window would spin forever; the outer bound turns
+        // that into a failure (it costs nothing on the paused clock).
+        let (result, stopped_at) = timeout(Duration::from_secs(40 * 60), async {
+            tokio::join!(
+                pump_turn_to_end(
+                    &mut spawned.server,
+                    &core,
+                    &mut state,
+                    &mut view,
+                    &started,
+                    &killed,
+                ),
+                async {
+                    tokio::time::sleep(Duration::from_secs(31 * 60)).await;
+                    killed.store(true, Ordering::SeqCst);
+                    Instant::now()
+                },
+            )
+        })
+        .await
+        .expect("Stop must end a hung turn");
+        let settled_in = stopped_at.elapsed();
+        let sent = recorded(&received, "\"turn/interrupt\"");
+        teardown(&mut spawned.child).await;
+        let _ = std::fs::remove_dir_all(&directory);
+        assert_eq!(result.unwrap_err(), CANCELLED);
+        assert!(
+            settled_in <= INTERRUPT_SETTLE_TIMEOUT + KILL_POLL * 2,
+            "{settled_in:?}"
+        );
+        assert!(sent.contains("\"turn/interrupt\""), "{sent}");
+    }
+
+    /// Paused time races past the child process, so wait on the wall clock
+    /// for `cat` to record what the driver sent before tearing it down.
+    #[cfg(unix)]
+    fn recorded(path: &Path, needle: &str) -> String {
+        for _ in 0..300 {
+            let sent = std::fs::read_to_string(path).unwrap_or_default();
+            if sent.contains(needle) {
+                return sent;
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        std::fs::read_to_string(path).unwrap_or_default()
     }
 }

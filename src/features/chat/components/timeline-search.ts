@@ -1,4 +1,9 @@
-import { findTextMatches, highlightSupported } from "@/lib/dom-text-search";
+import {
+  findStringMatches,
+  findTextMatches,
+  highlightSupported,
+  type TextSearchOptions,
+} from "@/lib/dom-text-search";
 import type { TimelineRow } from "./timeline-rows";
 
 /**
@@ -17,25 +22,23 @@ export function rowSearchText(row: TimelineRow): string {
 
 export interface TimelineMatch {
   rowIndex: number;
+  /** Offsets into `rowSearchText(row)`, used to find the process item. */
+  start: number;
+  end: number;
 }
 
-/** 大小写不敏感地找出所有命中，按文档顺序每处出现一条（与浏览器查找的
- *  “3/12” 计数一致）。空查询返回空数组。 */
+/** 找出所有命中，按文档顺序每处出现一条（与浏览器查找的 “3/12” 计数
+ *  一致）。默认大小写不敏感；预览式查找可传 case/wholeWord/regexp。
+ *  空查询返回空数组。 */
 export function findTimelineMatches(
   rows: TimelineRow[],
   query: string,
+  options?: TextSearchOptions,
 ): TimelineMatch[] {
-  const needle = query.trim().toLowerCase();
-  if (!needle) return [];
   const matches: TimelineMatch[] = [];
   for (let rowIndex = 0; rowIndex < rows.length; rowIndex++) {
-    const hay = rowSearchText(rows[rowIndex]).toLowerCase();
-    let from = 0;
-    for (;;) {
-      const at = hay.indexOf(needle, from);
-      if (at === -1) break;
-      matches.push({ rowIndex });
-      from = at + needle.length;
+    for (const range of findStringMatches(rowSearchText(rows[rowIndex]), query, options)) {
+      matches.push({ rowIndex, start: range.start, end: range.end });
     }
   }
   return matches;
@@ -55,33 +58,87 @@ export function clearSearchHighlights(): void {
   CSS.highlights.delete(HIGHLIGHT_CURRENT);
 }
 
-/** 给滚动容器内已挂载行的文本命中建 Range 并注册高亮。当前命中行内的
- *  Range 进 CURRENT 组（更高优先级，盖过普通底色），其余进 ALL 组。
- *  时间线是虚拟列表，未挂载的行没有 DOM——调用方在虚拟器挂载/流式变更
- *  （MutationObserver）后重绘。 */
+/**
+ * 给滚动容器内已挂载行的文本命中建 Range 并注册高亮。当前行里选中的那
+ * 一处进 CURRENT 组（更高优先级，盖过普通底色），其余命中进 ALL 组。
+ * 返回当前命中对应的 Range，调用方据此把单词本身滚进视口——只按行滚会
+ * 在同一条长消息有多个命中时停在行首。
+ *
+ * 时间线是虚拟列表，未挂载的行没有 DOM——调用方在虚拟器挂载/流式变更
+ * （MutationObserver）后重绘。`currentOccurrence` 是当前行内的第几个命中
+ * （0 基）；不传 `currentRowTotal` 时，该页尚未挂载就回落到当前行的第一个
+ * 可见命中。
+ *
+ * `currentRowTotal` 是数据层在当前行数到的命中数。计数按原文（Markdown
+ * 源码、折叠的过程条目）算，高亮按渲染出的 DOM 算：链接网址、未展开的
+ * 条目会让两边对不上，这时按序号挑 Range 会挑错词（“下一个”往回跳）。
+ * 对不上就整行标为当前、不返回 Range，只保留按行定位。
+ */
 export function paintSearchHighlights(
   root: HTMLElement,
   query: string,
   currentRowIndex: number | null,
-): void {
+  options?: TextSearchOptions,
+  currentOccurrence = 0,
+  currentRowTotal?: number,
+): Range | null {
   clearSearchHighlights();
-  if (!query.trim() || !searchHighlightSupported()) return;
+  if (!query.trim() || !searchHighlightSupported()) return null;
   const all: Range[] = [];
-  const current: Range[] = [];
-  for (const match of findTextMatches(root, query)) {
+  const currentRowRanges: Range[] = [];
+  for (const match of findTextMatches(root, query, options)) {
     const rowIndex = Number(
       match.node.parentElement?.closest("[data-index]")?.getAttribute("data-index"),
     );
     const range = new Range();
     range.setStart(match.node, match.start);
     range.setEnd(match.node, match.end);
-    (rowIndex === currentRowIndex ? current : all).push(range);
+    if (rowIndex === currentRowIndex) currentRowRanges.push(range);
+    else all.push(range);
+  }
+  const countsAgree =
+    currentRowTotal === undefined || currentRowRanges.length === currentRowTotal;
+  if (!countsAgree) {
+    if (all.length > 0) CSS.highlights.set(HIGHLIGHT_ALL, new Highlight(...all));
+    if (currentRowRanges.length > 0) {
+      const highlight = new Highlight(...currentRowRanges);
+      highlight.priority = 1;
+      CSS.highlights.set(HIGHLIGHT_CURRENT, highlight);
+    }
+    return null;
+  }
+  const active = currentRowRanges[currentOccurrence] ?? currentRowRanges[0] ?? null;
+  if (active) {
+    for (const range of currentRowRanges) {
+      if (range !== active) all.push(range);
+    }
+  } else {
+    all.push(...currentRowRanges);
   }
   if (all.length > 0) CSS.highlights.set(HIGHLIGHT_ALL, new Highlight(...all));
-  if (current.length > 0) {
-    const highlight = new Highlight(...current);
+  if (active) {
+    const highlight = new Highlight(active);
     // 同一段文本同时命中两组时，当前组必须画在上层。
     highlight.priority = 1;
     CSS.highlights.set(HIGHLIGHT_CURRENT, highlight);
+  }
+  return active;
+}
+
+/** 命中滚入视口时上下各留的白（px）；已在视口内则不动。 */
+const SCROLL_MARGIN = 24;
+
+/** 只把命中滚到可见为止，与浏览器查找一致；不改变滚动容器的其他祖先。 */
+export function scrollMatchIntoView(
+  scrollEl: HTMLElement | null,
+  range: Range | null,
+): void {
+  if (!scrollEl || !range) return;
+  const rect = range.getBoundingClientRect();
+  const box = scrollEl.getBoundingClientRect();
+  if (rect.top < box.top + SCROLL_MARGIN) {
+    scrollEl.scrollTop += rect.top - box.top - SCROLL_MARGIN;
+  } else if (rect.bottom > box.bottom - SCROLL_MARGIN) {
+    scrollEl.scrollTop += rect.bottom - box.bottom + SCROLL_MARGIN;
   }
 }

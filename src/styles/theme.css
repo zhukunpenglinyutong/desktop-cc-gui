@@ -140,6 +140,14 @@
     from { transform: scaleX(0); }
     to { transform: scaleX(1); }
   }
+
+  /* 编辑器查找/替换浮层入场：淡入 + 轻微下滑。规则见
+   * docs/ui-ux-spec.zh-CN.md §3 的「代码编辑器查找/替换」条目。 */
+  --animate-editor-search-in: editor-search-in 150ms ease-out;
+  @keyframes editor-search-in {
+    from { opacity: 0; transform: translateY(-4px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
 }
 
 /* ---------------------------------------------------------------------------

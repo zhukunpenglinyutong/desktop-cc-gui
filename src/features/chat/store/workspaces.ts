@@ -6,6 +6,7 @@ import { pruneMentionIndex } from "@/components/application/ai-chat/mention-file
 import { pruneSlashCommands } from "@/components/application/ai-chat/slash-commands";
 import { persistTabs, sessionKey, type ActiveSession } from "./persistence";
 import { persistSettings } from "./settings-persist";
+import { withoutComposerAttachments } from "./attachments";
 import type { ChatStore } from "./types";
 import type { StoreGet, StoreSet } from "./context";
 
@@ -131,6 +132,8 @@ export function createWorkspaceActions(
           ...Object.keys(current.bySession),
           ...Object.keys(current.drafts),
           ...Object.keys(current.unseen),
+          // A pending chat may hold only pictures: no draft, no session yet.
+          ...Object.keys(current.composerAttachments),
         ]) {
           if (key.startsWith("new:") && key.endsWith(`:${removedPath}`)) {
             dead.add(key);
@@ -147,7 +150,15 @@ export function createWorkspaceActions(
               delete drafts[key];
               delete unseen[key];
             }
-            return { bySession, drafts, unseen };
+            return {
+              bySession,
+              drafts,
+              unseen,
+              composerAttachments: withoutComposerAttachments(
+                s.composerAttachments,
+                dead,
+              ),
+            };
           });
         }
         const openTabs = get().openTabs.filter(

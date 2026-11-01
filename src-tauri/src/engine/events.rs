@@ -126,6 +126,22 @@ pub enum EngineEvent {
         request_id: String,
         tool_name: String,
     },
+    /// An MCP `elicitation` control_request (the MCP server asked the user
+    /// for form input or a confirmation). This client has no elicitation
+    /// form, so the runner declines in place — the MCP tool call settles
+    /// with a declined result instead of parking the turn forever.
+    ElicitationDecline {
+        request_id: String,
+    },
+    /// A control_request whose subtype this client does not implement.
+    /// Every request must get exactly one response or the CLI parks on it
+    /// forever (e.g. an MCP elicitation once hung the whole turn); the
+    /// error reply mirrors the official SDK's fallback for unknown
+    /// subtypes and lets the CLI surface the failure to its caller.
+    ControlRequestError {
+        request_id: String,
+        subtype: String,
+    },
     /// Turn finished successfully.
     Done {
         session_id: Option<String>,

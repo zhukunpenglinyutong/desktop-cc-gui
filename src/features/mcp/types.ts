@@ -81,7 +81,14 @@ export interface McpConfigEntry {
   readonlyReasonCode?: string | null;
   /** Content hash at read time; a mismatch on write means an external edit. */
   version: string;
+  /** 启动方式：随会话启动（默认）/ 首次调用时才启动（`--mcp-lazy` 代理）。
+   *  只存 ccgui 自己的设置，不写 CLI 配置。 */
+  launchMode?: McpLaunchMode;
+  /** 不能按需启动的原因码（`mcp.launch.unsupported.<code>`）；null = 可选。 */
+  launchModeUnsupported?: string | null;
 }
+
+export type McpLaunchMode = "eager" | "onDemand";
 
 export interface McpSourceError {
   source: string;
@@ -141,6 +148,7 @@ export type McpErrorCode =
   | "format"
   | "permission"
   | "invalid_input"
+  | "unsupported"
   | "internal";
 
 /** 「本应用检测」的连接结果：与 CLI 会话上报的运行时状态分开表达。 */

@@ -199,10 +199,6 @@ export const zh = {
     forkUnavailableImageOnly: "这一轮只有图片、没有文字，暂不支持创建分支",
     copied: "已复制",
     searchPlaceholder: "搜索对话内容",
-    searchNoResults: "无结果",
-    searchPrevMatch: "上一个匹配",
-    searchNextMatch: "下一个匹配",
-    searchClose: "关闭搜索",
     grantTitle: "需要目录访问权限",
     grantScopeNote: "将授权目录：{{dir}}（保存后长期生效，可在设置中撤销）",
     grantAllow: "允许访问",
@@ -1287,6 +1283,23 @@ export const zh = {
     preview: "预览",
     editMode: "编辑",
     wordWrap: "自动换行",
+    editorSearch: {
+      panelLabel: "查找与替换",
+      find: "查找",
+      replace: "替换",
+      replaceAll: "全部替换",
+      caseSensitive: "区分大小写",
+      wholeWord: "全词匹配",
+      regex: "正则表达式",
+      noResults: "无结果",
+      previousMatch: "上一个（Shift+Enter）",
+      nextMatch: "下一个（Enter）",
+      close: "关闭（Esc）",
+      expandReplace: "展开替换",
+      collapseReplace: "收起替换",
+      selectAllMatches: "全选匹配项",
+      selectionLimitSummary: "已选 {{limit}} 项（达到上限）",
+    },
     markdown: {
       close: "关闭",
       copied: "已复制",
@@ -1307,11 +1320,7 @@ export const zh = {
       exitFullscreen: "退出全屏",
       imageNotAvailable: "图片不可用",
       resetView: "重置视图",
-      searchClose: "关闭搜索",
-      searchNextMatch: "下一个匹配",
-      searchNoResults: "无结果",
       searchPlaceholder: "搜索文档内容",
-      searchPrevMatch: "上一个匹配",
       searchToggle: "搜索文档",
       viewFullscreen: "全屏查看",
       zoomIn: "放大",
@@ -2253,6 +2262,30 @@ export const zh = {
   mcp: {
     searchPlaceholder: "搜索服务名",
     toggle: "启用 {{name}}",
+    enableHint: {
+      on: "{{name}}：配置已启用，点击停用",
+      off: "{{name}}：配置已停用，点击启用",
+    },
+    launch: {
+      title: "按需启动",
+      toggle: "{{name}} 按需启动",
+      onDemandHint: "{{name}}：按需启动（首次调用时才启动），点击改为随会话启动",
+      eagerHint: "{{name}}：随会话启动，点击改为按需启动（首次调用时才启动）",
+      description:
+        "开启后，本应用拉起的会话不再随会话启动这个服务：工具清单照常给模型（来自上次运行的缓存），第一次真正调用时才启动。只影响本应用，不改 CLI 配置。",
+      disabledEntry: "条目已停用：启用后才能选择启动方式",
+      unsupported: {
+        engine: "此引擎暂不支持按需启动（没有逐次覆盖 MCP 的通道）",
+        transport: "只有 stdio 服务能按需启动：远程服务没有本地进程",
+        workspace_file: "条目写在工作区 .omp/mcp.json 里，无法逐次覆盖；移到用户级 mcp.json 后可用",
+        workspace_env:
+          "OMP 只能把按需条目写进工作区 .omp/mcp.json，带环境变量（常含令牌）的条目会被抄进项目文件，所以不支持；去掉 env 后可用",
+        project_trust:
+          "Codex 只在受信任的项目里读取 .codex/config.toml，按需启动的命令行覆盖会绕过这一检查，所以项目级条目不支持；移到用户级 config.toml 后可用",
+        name: "名字里有 . 或引号等字符，Codex 的命令行覆盖无法表示，保持随会话启动",
+        shadowed: "同名条目在更高优先级的作用域里也有定义，引擎只启动那一条：请在生效的那条上设置",
+      },
+    },
     enabled: "配置已启用",
     disabled: "配置已停用",
     builtin: "内置",
@@ -2268,6 +2301,10 @@ export const zh = {
         "dsh 的 MCP 由插件提供（每台服务一个 dsh-mcp-client 实例），请在 profile 的 cordis 配置里增删",
       jsonc_readonly:
         "该文件是 JSONC（带注释）：写入会丢掉注释，这里只读；请在编辑器里改",
+      needs_workspace:
+        "Claude 的启停按工作区记录（~/.claude.json 里该工作区的 disabledMcpServers）：先打开一个工作区，才能在这里切换",
+      omp_server_list:
+        "这个名字在 OMP 用户级 mcp.json 的 disabledServers / enabledServers 名单里，实际启停以名单为准，只改条目字段改不动；请在 OMP 里用 /mcp enable 或 /mcp disable 切换",
     },
     support: {
       none: "{{name}} 未内置 MCP：这里不伪造来源。它仍可通过扩展机制接入 MCP。",

@@ -199,6 +199,11 @@ struct SessionIdArgs {
 }
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
+struct RunIdsArgs {
+    run_ids: Vec<String>,
+}
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct AnswerQuestionArgs {
     session_id: String,
     request_id: String,
@@ -757,6 +762,12 @@ pub(super) async fn dispatch(
         "interrupt_session" => {
             let a: SessionIdArgs = parse_args(&raw)?;
             ser(crate::engine::interrupt_session(app.state(), a.session_id).await)
+        }
+        // The remote UI runs the same orphan sweep over the runs it observes;
+        // without this case every silent run there would stay "running".
+        "live_runs" => {
+            let a: RunIdsArgs = parse_args(&raw)?;
+            ser(crate::engine::live_runs(app.state(), a.run_ids).await)
         }
         // The remote UI renders the same AskUserQuestion card as the desktop
         // (events already reach it); without this case its 提交/忽略 buttons

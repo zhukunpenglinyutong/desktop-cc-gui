@@ -1547,6 +1547,9 @@ export const ipc = {
   }) => invoke<SendResult>("send_message", args),
   interruptSession: (sessionId: string) =>
     invoke<boolean>("interrupt_session", { sessionId }),
+  /** Which of these run ids the host still runs: the orphan sweep asks
+   *  before settling a run that has gone silent. */
+  liveRuns: (runIds: string[]) => invoke<string[]>("live_runs", { runIds }),
   // 电脑操控 (computer use)
   /** macOS TCC probe. `osPermissionsRequired` is false on Windows/Linux,
    *  where the driver needs no OS grant. */

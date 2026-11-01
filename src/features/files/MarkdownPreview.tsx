@@ -14,8 +14,8 @@ import { math } from "@streamdown/math";
 import { mermaid } from "@streamdown/mermaid";
 import { cjk } from "@streamdown/cjk";
 import "katex/dist/katex.min.css";
-import { ContentSearchBar } from "@/components/base/content-search-bar";
 import { registerShortcutHandler } from "@/features/shortcuts/runtime";
+import { FindOnlyPanel } from "@/components/base/find-panel/find-only-panel";
 import { useFilesStore } from "@/features/files/store";
 import { fileUrl, openExternal } from "@/lib/platform";
 import {
@@ -183,6 +183,9 @@ export function MarkdownPreview({
   const [query, setQuery] = useState("");
   const [cursor, setCursor] = useState(0);
   const [matchCount, setMatchCount] = useState(0);
+  const [caseSensitive, setCaseSensitive] = useState(false);
+  const [wholeWord, setWholeWord] = useState(false);
+  const [useRegex, setUseRegex] = useState(false);
   const rangesRef = useRef<Range[]>([]);
   // Highlights live in a global registry: only clear them when this preview
   // actually painted, so a hidden/new preview can't wipe a sibling's search.
@@ -319,7 +322,11 @@ export function MarkdownPreview({
     const refresh = () => {
       cancelAnimationFrame(raf);
       raf = requestAnimationFrame(() => {
-        const ranges = findMarkdownMatches(root, query);
+        const ranges = findMarkdownMatches(root, query, {
+          caseSensitive,
+          wholeWord,
+          regexp: useRegex,
+        });
         rangesRef.current = ranges;
         setMatchCount(ranges.length);
         const index = ranges.length > 0 ? Math.min(cursor, ranges.length - 1) : 0;
@@ -335,7 +342,7 @@ export function MarkdownPreview({
       cancelAnimationFrame(raf);
       observer.disconnect();
     };
-  }, [searchOpen, active, query, cursor, deferredDraft]);
+  }, [searchOpen, active, query, cursor, caseSensitive, wholeWord, useRegex, deferredDraft]);
   // Drop this preview's highlights on unmount.
   useEffect(
     () => () => {
@@ -351,6 +358,18 @@ export function MarkdownPreview({
     setQuery(value);
     setCursor(0);
   };
+  const handleCaseSensitiveChange = (value: boolean) => {
+    setCaseSensitive(value);
+    setCursor(0);
+  };
+  const handleWholeWordChange = (value: boolean) => {
+    setWholeWord(value);
+    setCursor(0);
+  };
+  const handleRegexChange = (value: boolean) => {
+    setUseRegex(value);
+    setCursor(0);
+  };
   const gotoNextMatch = () => {
     if (matchCount > 0) setCursor((safeCursor + 1) % matchCount);
   };
@@ -361,20 +380,22 @@ export function MarkdownPreview({
   return (
     <div className="relative flex min-h-0 flex-1 flex-col">
       {searchOpen && (
-        <ContentSearchBar
+        <FindOnlyPanel
+          inputRef={searchInputRef}
+          placeholder={t("files.markdown.searchPlaceholder")}
           query={query}
           onQueryChange={handleQueryChange}
-          current={safeCursor}
+          caseSensitive={caseSensitive}
+          onCaseSensitiveChange={handleCaseSensitiveChange}
+          wholeWord={wholeWord}
+          onWholeWordChange={handleWholeWordChange}
+          useRegex={useRegex}
+          onUseRegexChange={handleRegexChange}
+          current={matchCount > 0 ? safeCursor + 1 : 0}
           total={matchCount}
           onPrev={gotoPrevMatch}
           onNext={gotoNextMatch}
           onClose={() => onSearchOpenChange?.(false)}
-          inputRef={searchInputRef}
-          placeholder={t("files.markdown.searchPlaceholder")}
-          noResultsLabel={t("files.markdown.searchNoResults")}
-          previousLabel={t("files.markdown.searchPrevMatch")}
-          nextLabel={t("files.markdown.searchNextMatch")}
-          closeLabel={t("files.markdown.searchClose")}
         />
       )}
       <div

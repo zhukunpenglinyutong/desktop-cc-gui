@@ -27,6 +27,7 @@ import {
   untrackRun,
 } from "./stream";
 import { mergeUsage, parseUsage } from "../usage";
+import { moveComposerState } from "./attachments";
 import {
   bindRunLifecycle,
   finishRunLifecycle,
@@ -39,8 +40,8 @@ import {
   rememberModelForRun,
   rememberEffortForRun,
   patchQuestionByRequestId,
+  reapOrphanedRuns,
   rememberProviderForRun,
-  settleOrphanedRuns,
   upsertSessionMetaInto,
 } from "./engine-events";
 import { ASK_OTHER_OPTION, askLoops, beginAskSubmit, revertAskSubmit } from "./ask-loop";
@@ -384,7 +385,7 @@ export function createMessagingActions(
     void get().refreshSessionUsage(key);
     // Stop and early events must address the same lifecycle registered above.
     const requestedRunId = hookRunId;
-    settleOrphanedRuns(set, routeRun(requestedRunId, key));
+    void reapOrphanedRuns(set, routeRun(requestedRunId, key));
     if (agentResolveError) {
       patchSession(set, key, { error: agentResolveError });
     }
@@ -484,7 +485,7 @@ export function createMessagingActions(
             .rememberSessionProvider?.(engine, result.sessionId, provider)
             ?.catch(() => {});
         }
-        settleOrphanedRuns(set, routeRun(result.runId, newKey));
+        void reapOrphanedRuns(set, routeRun(result.runId, newKey));
         // Whether this set is the one that hands the active tab its native
         // id: when the session event beat this response, onSession already
         // adopted it and announced the activation.
@@ -533,11 +534,22 @@ export function createMessagingActions(
             if (drafts[newKey] === undefined) drafts[newKey] = drafts[key];
             delete drafts[key];
           }
+          // Un-sent attachments ride along too (see the draft note above):
+          // a picture attached before the CLI assigned the session id is
+          // still waiting in the composer of THIS conversation — or still
+          // being saved, which the recorded move redirects. Only when this
+          // set is the migration: if the session event beat this response,
+          // onSession already moved them, and recording the move again would
+          // pull a picture pasted since into the next new chat (same key)
+          // over to this session.
+          const attachments =
+            s.bySession[key] !== undefined ? moveComposerState(s, key, newKey) : {};
           return {
             bySession,
             openTabs,
             active,
             drafts,
+            ...attachments,
             streamingByKey: moveStreamingFlag(s.streamingByKey, key, newKey),
             retryingByKey: moveRetryingFlag(s.retryingByKey, key, newKey),
           };
@@ -587,7 +599,7 @@ export function createMessagingActions(
         // there while the tab renders the native key. If the pending state
         // is already gone the turn migrated (and possibly settled): routing
         // the id back would resurrect a dead pending key on the next event.
-        settleOrphanedRuns(set, routeRun(result.runId, key));
+        void reapOrphanedRuns(set, routeRun(result.runId, key));
       }
       replayBufferedEngineEvents(result.runId, {
         set,

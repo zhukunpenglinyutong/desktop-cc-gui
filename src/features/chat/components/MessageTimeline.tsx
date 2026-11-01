@@ -43,12 +43,12 @@ import { BotAvatarView } from "@/features/bots/bot-avatar";
 import { avatarFromLegacyIcon } from "@/features/bots/bot-avatar-model";
 import { useBotStore } from "@/features/bots/bot-store";
 import { registerShortcutHandler } from "@/features/shortcuts/runtime";
-import { TimelineSearchBar } from "./TimelineSearchBar";
+import { FindOnlyPanel } from "@/components/base/find-panel/find-only-panel";
 import {
   clearSearchHighlights,
   findTimelineMatches,
   paintSearchHighlights,
-  rowSearchText,
+  scrollMatchIntoView,
   searchHighlightSupported,
 } from "./timeline-search";
 
@@ -708,6 +708,9 @@ function useTimelineSearch({
   const [searchQuery, setSearchQuery] = useState("");
   const [searchCursor, setSearchCursor] = useState(0);
   const [searchRevision, setSearchRevision] = useState(0);
+  const [searchCaseSensitive, setSearchCaseSensitive] = useState(false);
+  const [searchWholeWord, setSearchWholeWord] = useState(false);
+  const [searchUseRegex, setSearchUseRegex] = useState(false);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   // 快捷键是开关：再按一次关闭（而不是浏览器式的重新聚焦）。Ref written
   // in an effect so render stays pure; the shortcut only fires post-commit.
@@ -735,8 +738,15 @@ function useTimelineSearch({
     [scrollRef],
   );
   const searchMatches = useMemo(
-    () => (searchOpen ? findTimelineMatches(rows, searchQuery) : []),
-    [searchOpen, rows, searchQuery],
+    () =>
+      searchOpen
+        ? findTimelineMatches(rows, searchQuery, {
+            caseSensitive: searchCaseSensitive,
+            wholeWord: searchWholeWord,
+            regexp: searchUseRegex,
+          })
+        : [],
+    [searchOpen, rows, searchQuery, searchCaseSensitive, searchWholeWord, searchUseRegex],
   );
   // 流式追加可能让命中总数变化；光标只钳位不重置，保留用户的浏览位置。
   const safeCursor =
@@ -745,22 +755,30 @@ function useTimelineSearch({
       : 0;
   const currentSearchRow =
     searchMatches.length > 0 ? searchMatches[safeCursor].rowIndex : null;
+  // 当前命中是所在行内的第几处：同一行有多个命中时，行号不变，必须靠它
+  // 找到要滚动到的那个 Range。行内总数用来核对 DOM 上画出的命中是否一一
+  // 对应（见 paintSearchHighlights）。
+  const { occurrence: currentRowOccurrence, total: currentRowTotal } = useMemo(() => {
+    if (currentSearchRow === null) return { occurrence: 0, total: 0 };
+    const first = searchMatches.findIndex((match) => match.rowIndex === currentSearchRow);
+    if (first < 0) return { occurrence: 0, total: 0 };
+    let end = first;
+    while (end < searchMatches.length && searchMatches[end].rowIndex === currentSearchRow) end++;
+    return { occurrence: safeCursor - first, total: end - first };
+  }, [currentSearchRow, searchMatches, safeCursor]);
   const currentSearchItem = useMemo(() => {
     if (currentSearchRow === null) return undefined;
     const row = rows[currentSearchRow];
     if (row.kind !== "process") return undefined;
-    const occurrence = safeCursor - searchMatches.findIndex((match) => match.rowIndex === currentSearchRow);
-    const needle = searchQuery.trim().toLowerCase();
-    const text = rowSearchText(row).toLowerCase();
-    let offset = -needle.length;
-    for (let index = 0; index <= occurrence; index++) offset = text.indexOf(needle, offset + needle.length);
+    const match = searchMatches[safeCursor];
+    if (!match) return undefined;
     let itemEnd = 0;
     for (let index = 0; index < row.items.length; index++) {
-      itemEnd += row.items[index].text.toLowerCase().length + 1;
-      if (offset < itemEnd) return index;
+      itemEnd += row.items[index].text.length + 1;
+      if (match.start < itemEnd) return index;
     }
     return undefined;
-  }, [currentSearchRow, rows, safeCursor, searchMatches, searchQuery]);
+  }, [currentSearchRow, rows, safeCursor, searchMatches]);
   const processSearchTarget = useMemo<ProcessSearchTarget | undefined>(
     () => currentSearchItem === undefined ? undefined : {
       itemIndex: currentSearchItem,
@@ -768,10 +786,25 @@ function useTimelineSearch({
     },
     [currentSearchRow, currentSearchItem, searchQuery, safeCursor, searchRevision],
   );
-  const handleSearchQuery = (value: string) => {
-    setSearchQuery(value);
+  const resetSearchCursor = () => {
     setSearchCursor(0);
     setSearchRevision((value) => value + 1);
+  };
+  const handleSearchQuery = (value: string) => {
+    setSearchQuery(value);
+    resetSearchCursor();
+  };
+  const handleSearchCaseSensitive = (value: boolean) => {
+    setSearchCaseSensitive(value);
+    resetSearchCursor();
+  };
+  const handleSearchWholeWord = (value: boolean) => {
+    setSearchWholeWord(value);
+    resetSearchCursor();
+  };
+  const handleSearchRegex = (value: boolean) => {
+    setSearchUseRegex(value);
+    resetSearchCursor();
   };
   const gotoNextMatch = () => {
     setSearchRevision((value) => value + 1);
@@ -794,15 +827,55 @@ function useTimelineSearch({
     virtualizer.scrollToIndex(currentSearchRow, { align: "auto" });
   }, [currentSearchRow, processSearchTarget, virtualizer, userPausedRef, atBottomRef]);
   // 命中底色：虚拟列表挂载/卸载与流式增改都会触发重绘；rAF 合帧。
+  // 仅在“跳到另一处命中”时滚动一次：流式重绘不能反复把视口拽回命中。
+  const lastScrolledSearchKeyRef = useRef<string | null>(null);
   useEffect(() => {
     const el = scrollRef.current;
-    if (!searchOpen || !el || !searchHighlightSupported()) return;
+    if (!searchOpen || !el || !searchHighlightSupported()) {
+      lastScrolledSearchKeyRef.current = null;
+      return;
+    }
+    // searchRevision bumps on every query change and next/prev, so returning
+    // to an earlier match (or stepping a single match) scrolls again.
+    const searchKey = [
+      searchRevision,
+      searchQuery,
+      safeCursor,
+      searchCaseSensitive,
+      searchWholeWord,
+      searchUseRegex,
+    ].join("\u0000");
     let raf = 0;
     const paint = () => {
       cancelAnimationFrame(raf);
-      raf = requestAnimationFrame(() =>
-        paintSearchHighlights(el, searchQuery, currentSearchRow),
-      );
+      raf = requestAnimationFrame(() => {
+        const active = paintSearchHighlights(
+          el,
+          searchQuery,
+          currentSearchRow,
+          {
+            caseSensitive: searchCaseSensitive,
+            wholeWord: searchWholeWord,
+            regexp: searchUseRegex,
+          },
+          currentRowOccurrence,
+          currentRowTotal,
+        );
+        // 行刚被虚拟器挂载时 Range 还不存在；MutationObserver 会再画一次。
+        if (lastScrolledSearchKeyRef.current !== searchKey) {
+          if (active) {
+            lastScrolledSearchKeyRef.current = searchKey;
+            scrollMatchIntoView(el, active);
+          } else if (
+            currentSearchRow !== null &&
+            el.querySelector(`[data-index="${currentSearchRow}"]`)
+          ) {
+            // 行已挂载却定位不到具体词（DOM 与数据计数对不上）：这一跳只按行
+            // 定位，也记为已处理，之后流式重绘让计数对上时不再晚到地抢视口。
+            lastScrolledSearchKeyRef.current = searchKey;
+          }
+        }
+      });
     };
     paint();
     const observer = new MutationObserver(paint);
@@ -816,12 +889,43 @@ function useTimelineSearch({
       observer.disconnect();
       clearSearchHighlights();
     };
-  }, [searchOpen, searchQuery, currentSearchRow, scrollRef]);
+  }, [
+    searchOpen,
+    searchQuery,
+    currentSearchRow,
+    currentRowOccurrence,
+    currentRowTotal,
+    safeCursor,
+    searchRevision,
+    searchCaseSensitive,
+    searchWholeWord,
+    searchUseRegex,
+    scrollRef,
+  ]);
+  // Esc 关闭不能依赖焦点：点过时间线/按钮后焦点可能已经离开查找框。只在
+  // 对话面可见时监听，并让已经处理过 Esc 的弹层（defaultPrevented）优先。
+  useEffect(() => {
+    if (!searchOpen) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || event.defaultPrevented || event.isComposing) return;
+      const el = scrollRef.current;
+      if (!el || getComputedStyle(el).visibility === "hidden") return;
+      setSearchOpen(false);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [searchOpen, scrollRef]);
   return {
     searchOpen,
     setSearchOpen,
     searchQuery,
     handleSearchQuery,
+    searchCaseSensitive,
+    handleSearchCaseSensitive,
+    searchWholeWord,
+    handleSearchWholeWord,
+    searchUseRegex,
+    handleSearchRegex,
     safeCursor,
     matchCount: searchMatches.length,
     currentSearchRow,
@@ -954,6 +1058,12 @@ export const MessageTimeline = memo(function MessageTimeline({
     setSearchOpen,
     searchQuery,
     handleSearchQuery,
+    searchCaseSensitive,
+    handleSearchCaseSensitive,
+    searchWholeWord,
+    handleSearchWholeWord,
+    searchUseRegex,
+    handleSearchRegex,
     safeCursor,
     matchCount,
     currentSearchRow,
@@ -1037,15 +1147,22 @@ export const MessageTimeline = memo(function MessageTimeline({
       />
       <ScrollControl scrollRef={scrollRef} onJump={scrollToEdge} />
       {searchOpen && (
-        <TimelineSearchBar
+        <FindOnlyPanel
+          inputRef={searchInputRef}
+          placeholder={t("chat.searchPlaceholder")}
           query={searchQuery}
           onQueryChange={handleSearchQuery}
-          current={safeCursor}
+          caseSensitive={searchCaseSensitive}
+          onCaseSensitiveChange={handleSearchCaseSensitive}
+          wholeWord={searchWholeWord}
+          onWholeWordChange={handleSearchWholeWord}
+          useRegex={searchUseRegex}
+          onUseRegexChange={handleSearchRegex}
+          current={matchCount > 0 ? safeCursor + 1 : 0}
           total={matchCount}
           onPrev={gotoPrevMatch}
           onNext={gotoNextMatch}
           onClose={() => setSearchOpen(false)}
-          inputRef={searchInputRef}
         />
       )}
       {/* The rail is absolutely positioned, so its band must be reserved here or

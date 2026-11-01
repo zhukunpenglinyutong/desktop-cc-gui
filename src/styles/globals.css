@@ -466,17 +466,20 @@ input[type="password"]::-ms-clear {
   display: none;
 }
 
-/* Search palettes (⌘K commands / ⌘L sessions / ⌘P files): the field is
- * borderless and focus is the caret plus the keyboard-highlighted row, so it
- * never paints a focus box of its own. Tailwind's `outline-none` alone is not
- * enough everywhere: Windows WebView2 was seen drawing a ring over the field
- * (solid edge + tinted inner band) where macOS WKWebView draws none, and any
- * stylesheet that lands after the host's — a plugin's `ctx.theme.injectCss` is
- * unlayered by design and outranks every layer — wins a normal declaration
- * here. The important flags keep the field flat; nothing else on these three
- * inputs paints an outline or a shadow. See docs/ui-ux-spec.zh-CN.md. */
+/* Search palettes (⌘K commands / ⌘L sessions / ⌘P files) and the editor
+ * find/replace fields: the field is borderless and the focus ring belongs to
+ * the surrounding group, so the input itself never paints a focus box.
+ * Tailwind's `outline-none` alone is not enough everywhere: Windows WebView2
+ * was seen drawing a ring over the field (solid edge + tinted inner band)
+ * where macOS WKWebView draws none, and any stylesheet that lands after the
+ * host's — a plugin's `ctx.theme.injectCss` is unlayered by design and
+ * outranks every layer — wins a normal declaration here. The important flags
+ * keep the field flat; nothing else on these inputs paints an outline or a
+ * shadow. See docs/ui-ux-spec.zh-CN.md. */
 .palette-search-field:focus,
-.palette-search-field:focus-visible {
+.palette-search-field:focus-visible,
+.editor-search-input:focus,
+.editor-search-input:focus-visible {
   outline: none !important;
   box-shadow: none !important;
 }

@@ -204,6 +204,10 @@ pub struct AppSettings {
     /// Empty/missing = the entry stays hidden; every id is off by default.
     #[serde(default)]
     pub beta_features: HashMap<String, bool>,
+    /// MCP 条目的启动方式（mcp/launch.rs）：键 = 条目 id（项目作用域再加
+    /// `<工作区>|` 前缀），值 = `"onDemand"`。缺省即随会话启动。
+    #[serde(default)]
+    pub mcp_launch_modes: HashMap<String, String>,
     /// Terminal shell override; None/empty = auto-detect from $SHELL/COMSPEC.
     /// Validated with the same spawn-target rules as bin overrides.
     #[serde(default)]
@@ -442,6 +446,7 @@ impl Default for AppSettings {
             chat_wide_layout: None,
             file_tree_hide_ignored: None,
             beta_features: HashMap::new(),
+            mcp_launch_modes: HashMap::new(),
             terminal_shell_path: None,
             dsh_host: None,
             dsh_port: None,

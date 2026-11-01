@@ -209,6 +209,37 @@ impl ProcessRegistry {
         }
     }
 
+    /// The subset of `run_ids` still mid-turn. Matched on the entry's run
+    /// id, not the map key: after a rekey a run may be keyed only by its
+    /// session id, while the frontend still routes it by run id. A run parked
+    /// for a background follow-up keeps its process but already sent done,
+    /// so it is not live; its follow-up arrives as `turn_resumed`.
+    pub fn live_run_ids(&self, run_ids: &[String]) -> Vec<String> {
+        // One lock at a time: the parked set is read and released before the
+        // process map, so no lock order is introduced between the two.
+        let parked: HashSet<String> = self
+            .2
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .values()
+            .map(|waiting| waiting.run_id.clone())
+            .collect();
+        let map = self
+            .0
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let live: HashSet<&str> = map
+            .values()
+            .map(|entry| entry.run_id.as_str())
+            .filter(|run_id| !parked.contains(*run_id))
+            .collect();
+        run_ids
+            .iter()
+            .filter(|run_id| live.contains(run_id.as_str()))
+            .cloned()
+            .collect()
+    }
+
     /// Write one NDJSON control line to a live run's interactive stdin.
     /// Err when the run is unknown, its stdin is already closed, or the
     /// pipe refuses the write — a swallowed failure would leave the CLI
@@ -841,6 +872,33 @@ mod registry_tests {
             questions: Arc::new(Mutex::new(HashMap::new())),
             plans: Arc::new(Mutex::new(HashMap::new())),
         }
+    }
+
+    #[test]
+    fn live_run_ids_answers_by_run_id_under_either_key() {
+        let registry = ProcessRegistry::default();
+        registry.insert("run-a".into(), stub_entry("run-a", 101));
+        // After a rekey only the session alias remains; it still carries the
+        // run id the frontend routes by.
+        registry.insert_alias("session-b".into(), stub_entry("run-b", 102));
+        let asked = ["run-a", "run-b", "run-gone"].map(String::from);
+        assert_eq!(registry.live_run_ids(&asked), ["run-a", "run-b"]);
+        registry.remove_run_if_pid("run-a", 101);
+        assert_eq!(registry.live_run_ids(&asked), ["run-b"]);
+        // Parked for a background follow-up: the process lives on, but its
+        // turn already sent done — an observer that missed it must recover.
+        let prefs = FollowupPrefs {
+            model: None,
+            effort: None,
+            permission: None,
+            provider_id: None,
+            memory_bot: None,
+            allowed_tools: None,
+        };
+        registry.set_awaiting_followup("session-b", "run-b", prefs);
+        assert!(registry.live_run_ids(&asked).is_empty());
+        registry.clear_awaiting_followup("run-b");
+        assert_eq!(registry.live_run_ids(&asked), ["run-b"]);
     }
 
     #[test]

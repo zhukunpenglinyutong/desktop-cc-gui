@@ -26,6 +26,7 @@ import {
 import { EMPTY_SESSION, patchSession } from "./stream";
 import { handleEngineEvents, upsertSessionMetaInto } from "./engine-events";
 import { mergePlanReviewHistory } from "./plan-review";
+import { withoutComposerAttachments } from "./attachments";
 import i18n from "@/lib/i18n";
 import {
   listExternalSessionMetas,
@@ -295,6 +296,13 @@ export function createSessionActions(
           delete streamingByKey[key];
           delete retryingByKey[key];
         }
+        // Composer attachments die with their session, same as the draft
+        // above: a hidden conversation must not keep a picture (and its
+        // sandbox file reference) alive.
+        const composerAttachments = withoutComposerAttachments(
+          s.composerAttachments,
+          Object.keys(archivedSessionKeys),
+        );
         for (const meta of merged) {
           const key = sessionKey(meta.engine, meta.sessionId, meta.workspacePath);
           const current = bySession[key];
@@ -330,6 +338,7 @@ export function createSessionActions(
           unseen,
           streamingByKey,
           retryingByKey,
+          composerAttachments,
           openTabs,
           active,
         };
@@ -675,6 +684,7 @@ export function createSessionActions(
           archivedSessionKeys: { ...s.archivedSessionKeys, [key]: true },
           bySession,
           drafts,
+          composerAttachments: withoutComposerAttachments(s.composerAttachments, [key]),
           unseen: omitKey(s.unseen, key),
           actionError: null,
         };
@@ -729,6 +739,7 @@ export function createSessionActions(
           ),
           bySession,
           drafts,
+          composerAttachments: withoutComposerAttachments(s.composerAttachments, [key]),
           streamingByKey,
           retryingByKey,
           unseen: omitKey(s.unseen, key),

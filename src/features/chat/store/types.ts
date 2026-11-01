@@ -10,6 +10,11 @@ import type {
 import type { EffortLevel } from "@/components/application/ai-chat/cli-menu";
 import type { ComposerPermission } from "@/components/application/ai-chat/permission-menu";
 import type { ActiveSession } from "./persistence";
+import type {
+  ComposerAttachmentMoves,
+  ComposerAttachments,
+  ComposerAttachmentsByKey,
+} from "./attachments";
 import type { SessionContributions } from "./session-contributions";
 import type { QueueMoveDirection, SessionState } from "./stream";
 
@@ -98,6 +103,15 @@ export interface ChatStore {
    * keyed `${engine}/${sessionId}` like the sidebar thread id. In-memory only. */
   unseen: Record<string, boolean>;
   drafts: Record<string, string>;
+  /** Pending image attachments per session key. Keyed like `drafts` because a
+   * single ChatConversation instance serves every session the tab strip and
+   * the split panes show: attachments belong to the conversation, not to the
+   * component. In-memory only (pasted-image files are swept at startup). */
+  composerAttachments: ComposerAttachmentsByKey;
+  /** Recent key changes of conversations (pending → native id, engine
+   * retarget, no-tab composer → first chat): a picture still being saved
+   * when its tab changed key lands on the new key, not the old one. */
+  composerAttachmentMoves: ComposerAttachmentMoves;
   /** File-tree "+" click asking the active composer to insert an @path
    * mention; nonce re-fires for the same path. */
   pendingMention: { path: string; nonce: number } | null;
@@ -215,6 +229,11 @@ export interface ChatStore {
   /** 宽幕布 (设置 → 通用 → 外观), persisted in app settings. */
   setWideLayout: (wide: boolean) => void;
   setDraft: (key: string, text: string) => void;
+  /** Replace one session's pending image attachments (null = clear). */
+  setComposerAttachments: (
+    key: string,
+    next: ComposerAttachments | null,
+  ) => void;
   /** Ask the active composer to insert an @path mention at the caret. */
   requestMention: (path: string) => void;
   clearPendingMention: () => void;
