@@ -433,3 +433,36 @@ fn omp_server_lists_decide_the_state_and_make_the_entry_readonly() {
     assert_eq!(refused.code, "readonly");
     assert!(plain_written.unwrap().enabled);
 }
+
+/// A source is "in the workspace" exactly when its config file lives under
+/// the workspace directory — i.e. a cloned repo can ship it. That decides
+/// auto-probing, the confirmation and `${ENV}` expansion, so it must follow
+/// the real file locations, not a hand-kept list.
+#[test]
+fn workspace_sources_are_exactly_the_files_inside_the_workspace() {
+    let workspace = Path::new("/ws-probe-classification");
+    for source in SOURCES {
+        let in_workspace = candidate_paths(source.id, workspace.to_str())
+            .iter()
+            .any(|path| path.starts_with(workspace));
+        assert_eq!(
+            crate::mcp::source_in_workspace(source.id),
+            in_workspace,
+            "{}",
+            source.id
+        );
+    }
+    // Claude / Codex live in config.rs: `.mcp.json` and `.codex/config.toml`
+    // are repo files; `claude_local` is per-project but in ~/.claude.json.
+    for (source, expected) in [
+        (SOURCE_CLAUDE_PROJECT, true),
+        (SOURCE_CODEX_PROJECT, true),
+        (SOURCE_CLAUDE_USER, false),
+        (SOURCE_CLAUDE_LOCAL, false),
+        (SOURCE_CODEX_USER, false),
+    ] {
+        assert_eq!(crate::mcp::source_in_workspace(source), expected, "{source}");
+    }
+    // Unknown sources are treated as untrusted.
+    assert!(crate::mcp::source_in_workspace("someone_else"));
+}

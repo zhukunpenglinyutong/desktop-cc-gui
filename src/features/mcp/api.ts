@@ -9,6 +9,7 @@ import type {
   McpErrorCode,
   McpInventory,
   McpLaunchMode,
+  McpProbePlan,
   McpProbeResult,
 } from "./types";
 
@@ -73,14 +74,28 @@ export const mcpApi = {
       throw normalize(error);
     }
   },
+  /** 检测前的确认信息：完整命令 / 地址，env 与请求头只给键名；不执行任何东西。 */
+  probePlan: async (
+    entry: McpConfigEntry,
+    workspace: string | null,
+  ): Promise<McpProbePlan> => {
+    try {
+      return await invoke<McpProbePlan>("mcp_probe_plan", {
+        request: { entryId: entry.id, workspace },
+      });
+    } catch (error) {
+      throw normalize(error);
+    }
+  },
   /** 显式连接检测：后端按配置里的真实命令/地址启动或连接一次并握手。 */
   probe: async (
     entry: McpConfigEntry,
     workspace: string | null,
+    planFingerprint?: string,
   ): Promise<McpProbeResult> => {
     try {
       return await invoke<McpProbeResult>("mcp_probe", {
-        request: { entryId: entry.id, workspace },
+        request: { entryId: entry.id, workspace, planFingerprint },
       });
     } catch (error) {
       throw normalize(error);

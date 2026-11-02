@@ -1,35 +1,44 @@
 import { describe, expect, it, vi } from "vitest";
-import { previewFileUrl } from "./preview-url";
 
-describe("previewFileUrl", () => {
-  it("keeps the directory structure so siblings resolve", () => {
-    expect(previewFileUrl("/Users/a/index.html")).toBe(
-      "ccgui-preview://localhost/Users/a/index.html",
-    );
-    expect(previewFileUrl("/Users/a/design/draft.css")).toBe(
-      "ccgui-preview://localhost/Users/a/design/draft.css",
-    );
-  });
+const transport = vi.hoisted(() => ({ invoke: vi.fn() }));
+vi.mock("./transport", () => ({ invoke: transport.invoke }));
 
-  it("encodes per segment instead of per path", () => {
-    expect(previewFileUrl("/Users/a b/中文 稿/index.html")).toBe(
-      "ccgui-preview://localhost/Users/a%20b/%E4%B8%AD%E6%96%87%20%E7%A8%BF/index.html",
+import { openFilePreview, previewUrl } from "./preview-url";
+
+const TOKEN = "0123456789abcdef0123456789abcdef";
+
+describe("previewUrl", () => {
+  it("serves the file under its preview root token, never its absolute path", () => {
+    expect(previewUrl({ token: TOKEN, name: "index.html" })).toBe(
+      `ccgui-preview://localhost/${TOKEN}/index.html`,
     );
   });
 
-  it("ignores a query-looking suffix in the name like any other segment", () => {
-    expect(previewFileUrl("/Users/a/index.v2.html")).toBe(
-      "ccgui-preview://localhost/Users/a/index.v2.html",
+  it("encodes the file name like a URL segment", () => {
+    expect(previewUrl({ token: TOKEN, name: "中文 稿.html" })).toBe(
+      `ccgui-preview://localhost/${TOKEN}/%E4%B8%AD%E6%96%87%20%E7%A8%BF.html`,
     );
   });
 
-  it("uses the http-over-localhost form on Windows and normalizes backslashes", async () => {
+  it("uses the http-over-localhost form on Windows", async () => {
     vi.resetModules();
     vi.doMock("@/lib/platform", () => ({ IS_WINDOWS: true }));
     const windowsUrl = await import("./preview-url");
-    expect(windowsUrl.previewFileUrl("C:\\x\\y\\index.html")).toBe(
-      "http://ccgui-preview.localhost/C%3A/x/y/index.html",
+    expect(windowsUrl.previewUrl({ token: TOKEN, name: "index.html" })).toBe(
+      `http://ccgui-preview.localhost/${TOKEN}/index.html`,
     );
     vi.doUnmock("@/lib/platform");
+  });
+});
+
+describe("openFilePreview", () => {
+  it("asks the backend to scope the preview to the file's directory", async () => {
+    transport.invoke.mockResolvedValueOnce({ token: TOKEN, name: "index.html" });
+    await expect(openFilePreview("/ws/draft/index.html")).resolves.toBe(
+      `ccgui-preview://localhost/${TOKEN}/index.html`,
+    );
+    expect(transport.invoke).toHaveBeenCalledWith("preview_open", {
+      path: "/ws/draft/index.html",
+    });
   });
 });

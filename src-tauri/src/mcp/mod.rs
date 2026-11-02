@@ -28,6 +28,20 @@ use config::*;
 use sources::{engine_of_source, engine_support};
 
 
+/// 配置文件放在工作区目录里的来源：`.mcp.json`、`.codex/config.toml`、
+/// `.omp/mcp.json` 以及各引擎的 project / local 文件，内容可以随仓库下载。
+/// 这些条目的命令与地址不可信：打开页面不自动检测，手动检测前先让用户确认
+/// 完整命令，检测时也不把 `${ENV}` 展开进 URL 与请求头（否则仓库能借一次
+/// 检测把环境变量里的密钥发到任意地址）。
+/// `claude_local` 虽是项目作用域，但写在用户自己的 `~/.claude.json` 里，不
+/// 属于仓库内容。未知来源按工作区来源处理：判断不了就收紧。
+pub(crate) fn source_in_workspace(source: &str) -> bool {
+    if source == sources::SOURCE_CLAUDE_LOCAL {
+        return false;
+    }
+    sources::source_spec(source).map_or(true, |spec| spec.scope == "project")
+}
+
 /// 连接检测的目标解析：条目 id → 真实命令/地址（未脱敏，仅供探针使用）。
 pub(crate) fn probe_target(
     entry_id: &str,
@@ -40,7 +54,9 @@ pub(crate) fn probe_target(
     if name.is_empty() {
         return Err(McpError::invalid("MCP server name must not be empty"));
     }
-    config::probe_target(source, name, workspace)
+    let mut target = config::probe_target(source, name, workspace)?;
+    target.from_workspace = source_in_workspace(source);
+    Ok(target)
 }
 
 /// 写入同一路径的串行化锁：写入前回读 + 原子替换，配合这把锁避免本应用
@@ -101,6 +117,9 @@ pub(crate) struct McpConfigEntry {
     pub(crate) source: String,
     /// user | project
     pub(crate) scope: String,
+    /// 配置文件在工作区目录里（`source_in_workspace`）：内容来自仓库，不自动
+    /// 检测、检测前须确认。前端以此为准，不按 `scope` 猜。
+    pub(crate) workspace_file: bool,
     /// 展示用文件路径（项目级显示 workspace 相对路径）。
     pub(crate) path: String,
     pub(crate) format: String,

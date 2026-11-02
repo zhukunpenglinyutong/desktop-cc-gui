@@ -28,7 +28,13 @@ import {
 import { FileEditorHeader } from "./FileEditorHeader";
 import { HtmlPreview } from "./HtmlPreview";
 import { MarkdownPreview } from "./MarkdownPreview";
-import { isHtmlFile, isMarkdownFile, opensInPreview, type EditorViewMode } from "./editor-view-mode";
+import {
+  canPreviewFile,
+  isHtmlFile,
+  isMarkdownFile,
+  opensInPreview,
+  type EditorViewMode,
+} from "./editor-view-mode";
 import { registerShortcutHandler } from "@/features/shortcuts/runtime";
 import { EditorView, lineNumbers } from "@codemirror/view";
 import { FONT_CHANGE_EVENT } from "@/features/settings/font";
@@ -197,15 +203,18 @@ function FileEditor({ path, content, wordWrap, onToggleWordWrap }: {
   const name = entry?.name ?? fileName(path);
   const isMarkdown = isMarkdownFile(name);
   const isHtml = isHtmlFile(name);
-  // HTML opens rendered too, but only where the asset protocol serves real
-  // paths — web-access mode keeps the code view (see editor-view-mode.ts).
-  const canPreview = opensInPreview(name, !isWeb);
+  // HTML gets the preview toggle only where the preview protocol exists
+  // (desktop), and opens as code: rendering runs the page's scripts, so it
+  // waits for an explicit click (see editor-view-mode.ts).
+  const canPreview = canPreviewFile(name, !isWeb);
 
   const [draft, setDraft] = useState(content.text ?? "");
   const [savedText, setSavedText] = useState(content.text ?? "");
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
-  const [viewMode, setViewMode] = useState<EditorViewMode>(canPreview ? "preview" : "edit");
+  const [viewMode, setViewMode] = useState<EditorViewMode>(
+    canPreview && opensInPreview(name) ? "preview" : "edit",
+  );
   // HTML preview reload: bumped to remount the iframe (the frame reads the
   // saved file itself, so there is nothing else to refresh).
   const [previewReloadKey, setPreviewReloadKey] = useState(0);

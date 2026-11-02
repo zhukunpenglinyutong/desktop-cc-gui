@@ -508,6 +508,7 @@ pub fn run() {
             mcp::mcp_set_enabled,
             mcp::mcp_set_launch_mode,
             mcp::probe::mcp_probe,
+            mcp::probe::mcp_probe_plan,
             // skills hub (设置 → 能力扩展 → Skills)
             skills_hub::skills_hub_query,
             skills_hub::skills_hub_mutate,
@@ -541,6 +542,8 @@ pub fn run() {
             // files
             files::list_dir,
             files::read_file,
+            // HTML preview roots (desktop only; same boundary as read_file)
+            preview_protocol::preview_open,
             files::write_file,
             files::create_dir,
             files::rename_item,
