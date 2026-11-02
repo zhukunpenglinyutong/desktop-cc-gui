@@ -1185,6 +1185,9 @@ export interface CliUpdatePlan {
   command: string[];
   /** Copy-paste fallback for a manual run. */
   manualCommand: string;
+  /** Official installer scripts run in the built-in terminal: the exact line
+   *  to type there (completion marker included). Null for in-app npm runs. */
+  terminalCommand: string | null;
   canRun: boolean;
   blockers: string[];
   platform: string;

@@ -3,6 +3,11 @@
 //! install/update. Generalizes the retired dsh-only dsh_cli_version /
 //! dsh_cli_update pair to every engine.
 //!
+//! npm installs run inside the app with streamed output. Official installer
+//! scripts (claude / codex native channel) are never run as a hidden child:
+//! the plan carries the exact line the dialog types into the built-in
+//! terminal, where the user watches it and can interrupt it.
+//!
 //! Probes run on explicit request only (settings page open, refresh button)
 //! — never on a timer: `npm view` is a network call and every probe spawns
 //! processes, so polling would keep the machine awake for nothing.
@@ -83,6 +88,10 @@ pub struct CliUpdatePlan {
     pub kind: &'static str,
     pub command: Vec<String>,
     pub manual_command: String,
+    /// Set when the run happens in the built-in terminal (official installer
+    /// scripts): the exact line the app types there, completion marker
+    /// included. npm runs stay in the app (`cli_update`) and leave this null.
+    pub terminal_command: Option<String>,
     pub can_run: bool,
     pub blockers: Vec<String>,
     pub platform: &'static str,
@@ -100,27 +109,60 @@ fn platform_name() -> &'static str {
     }
 }
 
-/// Claude Code is distributed both as an npm package and as a native
-/// installer build; pushing an npm global install onto a native install
-/// would shadow it with a second binary. The npm copy lives inside a
-/// node_modules tree, so the resolved binary path decides the channel.
-/// Not installed → "native" (the official installer is the default path).
-fn claude_update_kind(bin: &str) -> &'static str {
+/// Claude Code / Codex ship both as npm packages and as native installer
+/// builds; pushing an npm global install onto a native install would shadow
+/// it with a second binary. The npm copy is either inside a node_modules tree
+/// (unix: the bin symlink resolves into it) or an npm global shim sitting next
+/// to one (Windows: `%APPDATA%\npm\<cli>.cmd` beside
+/// `%APPDATA%\npm\node_modules\<package>`). Not installed → "native" (the
+/// official installer is the default path).
+fn native_or_npm_kind(engine: &str, bin: &str) -> &'static str {
     let resolved = std::fs::canonicalize(bin)
         .map(|p| p.to_string_lossy().into_owned())
         .unwrap_or_else(|_| bin.to_string());
-    if resolved.contains("node_modules") {
+    if resolved.contains("node_modules") || beside_npm_package(engine, bin) {
         "npm"
     } else {
         "native"
     }
 }
 
+/// `bin` is an npm global shim: its directory holds `node_modules/<package>`.
+fn beside_npm_package(engine: &str, bin: &str) -> bool {
+    let Some(package) = npm_package(engine) else {
+        return false;
+    };
+    // Only an absolute shim path has a real install directory; a bare name
+    // would resolve `node_modules` against the app's working directory.
+    let path = std::path::Path::new(bin);
+    path.is_absolute()
+        && path
+            .parent()
+            .is_some_and(|dir| dir.join("node_modules").join(package).is_dir())
+}
+
 fn update_kind(engine: &str, bin: &str) -> Option<&'static str> {
     if engine == "claude" || engine == "codex" {
-        return Some(claude_update_kind(bin));
+        return Some(native_or_npm_kind(engine, bin));
     }
     npm_package(engine).map(|_| "npm")
+}
+
+/// Where a planned install runs: npm installs stream inside the app's
+/// dialog; the official installer scripts are typed into the built-in
+/// terminal, where the user sees the command and its output and can Ctrl+C.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RunLocation {
+    App,
+    Terminal,
+}
+
+fn run_location(kind: &str) -> Option<RunLocation> {
+    match kind {
+        "npm" => Some(RunLocation::App),
+        "native" => Some(RunLocation::Terminal),
+        _ => None,
+    }
 }
 
 pub(crate) struct CliProbe {
@@ -218,29 +260,38 @@ pub async fn cli_update_plan(engine: String) -> Result<CliUpdatePlan, String> {
     let bin = crate::engine::engine_bin(&settings, &engine);
     let installed = probe_local_version(&bin).await.installed;
     let kind = update_kind(&engine, &bin);
-    let (command, blockers) = match kind {
+    let (command, manual_command, terminal_command, blockers) = match kind {
         Some("npm") => {
             let package = npm_package(&engine).expect("npm kind implies package");
             let (program, args) = npm_install_argv(package);
-            (std::iter::once(program).chain(args).collect(), Vec::new())
+            let command: Vec<String> = std::iter::once(program).chain(args).collect();
+            let manual = command.join(" ");
+            (command, manual, None, Vec::new())
         }
         Some("native") => {
-            let (program, args) = native_install_argv(&engine);
+            let shell = shell_kind(&crate::terminal::resolve_shell_path());
+            let line = native_terminal_line(&engine, shell, cfg!(windows));
             (
-                std::iter::once(program.to_string())
-                    .chain(args.iter().map(|a| a.to_string()))
-                    .collect(),
+                vec![line.clone()],
+                native_manual_command(&engine, cfg!(windows)),
+                Some(line),
                 Vec::new(),
             )
         }
-        _ => (Vec::new(), vec![format!("{engine} 不支持一键安装/更新。")]),
+        _ => (
+            Vec::new(),
+            String::new(),
+            None,
+            vec![format!("{engine} 不支持一键安装/更新。")],
+        ),
     };
     Ok(CliUpdatePlan {
         action: if installed { "update" } else { "install" },
         kind: kind.unwrap_or("none"),
         can_run: blockers.is_empty(),
-        manual_command: command.join(" "),
+        manual_command,
         command,
+        terminal_command,
         blockers,
         engine,
         platform: platform_name(),
@@ -257,13 +308,20 @@ pub async fn cli_update(
     let settings = crate::settings::read_settings().unwrap_or_default();
     let bin = crate::engine::engine_bin(&settings, &engine);
     let reporter = ProgressReporter::new(state.emitters.clone(), run_id, engine.clone());
-    match update_kind(&engine, &bin) {
-        Some("npm") => {
+    let kind = update_kind(&engine, &bin).unwrap_or("none");
+    match run_location(kind) {
+        Some(RunLocation::App) => {
             let package = npm_package(&engine).expect("npm kind implies package");
             run_npm_install(package, &reporter).await?;
         }
-        Some("native") => run_native_install(&engine, &reporter).await?,
-        _ => return Err(format!("{engine} 不支持一键安装/更新。")),
+        // Never run the official installer as a hidden child of the app:
+        // the dialog types its terminal_command into the built-in terminal.
+        Some(RunLocation::Terminal) => {
+            return Err(format!(
+                "{engine} 的官方安装脚本会在内置终端中运行，请在安装对话框里点「在终端中运行」。"
+            ))
+        }
+        None => return Err(format!("{engine} 不支持一键安装/更新。")),
     }
     // Fresh local version after the install.
     let probe = probe_local_version(&bin).await;
@@ -289,59 +347,112 @@ fn npm_install_argv(package: &str) -> (String, Vec<String>) {
     (npm, args)
 }
 
-/// Official installer argv for a native-channel engine (claude / codex).
-fn native_install_argv(engine: &str) -> (&'static str, Vec<&'static str>) {
+/// Printed after a terminal install finishes, followed by its exit code
+/// (`0` = success). Mirrored in src/features/settings/cliInstallTerminal.ts;
+/// the typed line itself never contains this marker followed by a digit, so
+/// the echo of the command cannot be mistaken for completion.
+const CLI_DONE_MARKER: &str = "__CCGUI_CLI_DONE__";
+
+/// The shell that owns the built-in terminal, for typing a line it accepts.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ShellKind {
+    Posix,
+    Fish,
+    PowerShell,
+    Cmd,
+    Other,
+}
+
+fn shell_kind(shell_path: &str) -> ShellKind {
+    let name = shell_path
+        .rsplit(['/', '\\'])
+        .next()
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    match name.strip_suffix(".exe").unwrap_or(&name) {
+        "sh" | "bash" | "zsh" | "ksh" | "dash" | "ash" => ShellKind::Posix,
+        "fish" => ShellKind::Fish,
+        "pwsh" | "powershell" => ShellKind::PowerShell,
+        "cmd" => ShellKind::Cmd,
+        _ => ShellKind::Other,
+    }
+}
+
+/// Official installer script URLs: (POSIX `.sh`, Windows `.ps1`). Both
+/// handle fresh installs and in-place updates; Codex's updates
+/// `~/.local/bin/codex` (or `$CODEX_INSTALL_DIR`) instead of an npm copy.
+fn installer_urls(engine: &str) -> (&'static str, &'static str) {
     if engine == "codex" {
-        codex_native_argv()
+        (
+            "https://chatgpt.com/codex/install.sh",
+            "https://chatgpt.com/codex/install.ps1",
+        )
     } else {
-        claude_native_argv()
+        ("https://claude.ai/install.sh", "https://claude.ai/install.ps1")
     }
 }
 
-/// Claude native-channel argv (official install script; handles both fresh
-/// installs and in-place updates).
-fn claude_native_argv() -> (&'static str, Vec<&'static str>) {
-    if cfg!(target_os = "windows") {
-        (
-            "powershell",
-            vec![
-                "-NoProfile",
-                "-ExecutionPolicy",
-                "Bypass",
-                "-Command",
-                "irm https://claude.ai/install.ps1 | iex",
-            ],
-        )
+/// The official one-liner for copy-paste (no completion marker).
+fn native_manual_command(engine: &str, windows: bool) -> String {
+    let (sh, ps1) = installer_urls(engine);
+    if windows {
+        format!("irm {ps1} | iex")
     } else {
-        (
-            "bash",
-            vec!["-lc", "curl -fsSL https://claude.ai/install.sh | bash"],
-        )
+        format!("curl -fsSL {sh} | bash")
     }
 }
 
-/// Codex standalone installer: updates `~/.local/bin/codex` (or
-/// `$CODEX_INSTALL_DIR`) in place instead of forcing an npm global copy.
-fn codex_native_argv() -> (&'static str, Vec<&'static str>) {
-    if cfg!(target_os = "windows") {
-        (
-            "powershell",
-            vec![
-                "-NoProfile",
-                "-ExecutionPolicy",
-                "Bypass",
-                "-Command",
-                "irm https://chatgpt.com/codex/install.ps1 | iex",
-            ],
-        )
+/// `%SystemRoot%\\System32\\WindowsPowerShell\\v1.0\\powershell.exe`, resolved
+/// here so the typed line never depends on command lookup.
+fn windows_powershell_path() -> String {
+    let root = std::env::var("SystemRoot")
+        .ok()
+        .filter(|root| !root.trim().is_empty())
+        .unwrap_or_else(|| "C:\\Windows".to_string());
+    format!("{}\\System32\\WindowsPowerShell\\v1.0\\powershell.exe", root.trim_end_matches('\\'))
+}
+
+/// The exact line typed into the built-in terminal: the official installer
+/// for this platform, in the terminal shell's syntax, followed by a marker
+/// carrying the exit code. Visible and interruptible on purpose — the old
+/// hidden `powershell -ExecutionPolicy Bypass -Command "irm … | iex"` child
+/// of the GUI is a download-and-execute pattern endpoint security flags.
+fn native_terminal_line(engine: &str, shell: ShellKind, windows: bool) -> String {
+    let (sh, ps1) = installer_urls(engine);
+    let marker = CLI_DONE_MARKER;
+    let ps_status = format!("\"{marker}$(if ($?) {{ 0 }} else {{ 1 }})\"");
+    if windows {
+        // The terminal opens in the workspace, and cmd resolves a bare name
+        // from the current directory before PATH: `powershell` could run a
+        // repo-planted powershell.bat. Always spell out the system binary.
+        let exe = windows_powershell_path();
+        let args = format!("-NoProfile -Command \"irm {ps1} | iex\"");
+        let quoted_backslash = format!("\"{exe}\" {args}");
+        let quoted_slash = format!("'{}' {args}", exe.replace('\\', "/"));
+        // cmd expands %errorlevel% before the line runs, so branch on the
+        // result instead; `^_` keeps the typed text from matching the marker.
+        let cmd_marker = &marker[..marker.len() - 1];
+        match shell {
+            ShellKind::PowerShell => format!("irm {ps1} | iex; {ps_status}"),
+            ShellKind::Cmd => format!(
+                "{quoted_backslash} && echo {cmd_marker}^_0 || echo {cmd_marker}^_1"
+            ),
+            ShellKind::Posix => format!("{quoted_slash}; echo \"{marker}$?\""),
+            ShellKind::Fish => format!("{quoted_slash}; echo \"{marker}$status\""),
+            ShellKind::Other => quoted_backslash,
+        }
     } else {
-        (
-            "bash",
-            vec![
-                "-lc",
-                "curl -fsSL https://chatgpt.com/codex/install.sh | bash",
-            ],
-        )
+        let official = format!("curl -fsSL {sh} | bash");
+        // pipefail in an explicit bash: a failed download must not read as
+        // success (a pipe reports its last command), and the user's own
+        // interactive shell options stay untouched.
+        let checked = format!("bash -c 'set -o pipefail; {official}'");
+        match shell {
+            ShellKind::Posix => format!("{checked}; echo \"{marker}$?\""),
+            ShellKind::Fish => format!("{checked}; echo \"{marker}$status\""),
+            ShellKind::PowerShell => format!("{checked}; {ps_status}"),
+            ShellKind::Cmd | ShellKind::Other => official,
+        }
     }
 }
 
@@ -360,33 +471,6 @@ async fn run_npm_install(package: &str, reporter: &ProgressReporter) -> Result<(
         let tail = tail(&combined, ERROR_TAIL_CAP);
         return Err(format!(
             "npm 安装失败。{}",
-            if tail.is_empty() {
-                "无输出。".to_string()
-            } else {
-                format!("输出末尾：{tail}")
-            }
-        ));
-    }
-    Ok(())
-}
-
-/// Native channel: the official install script handles both fresh
-/// installs and in-place updates.
-async fn run_native_install(engine: &str, reporter: &ProgressReporter) -> Result<(), String> {
-    let (program, args) = native_install_argv(engine);
-    let mut command = Command::new(program);
-    command.args(args);
-    let output = run_streaming(&mut command, INSTALL_TIMEOUT, reporter)
-        .await
-        .map_err(|e| format!("无法运行官方安装脚本：{e}"))?;
-    if output.timed_out {
-        return Err("安装脚本超时（420 秒），请检查网络后重试。".to_string());
-    }
-    if !output.status.map(|s| s.success()).unwrap_or(false) {
-        let combined = format!("{}\n{}", output.stdout, output.stderr);
-        let tail = tail(&combined, ERROR_TAIL_CAP);
-        return Err(format!(
-            "官方安装脚本执行失败。{}",
             if tail.is_empty() {
                 "无输出。".to_string()
             } else {
@@ -725,6 +809,131 @@ mod tests {
             lines,
             vec![("stdout", "out1"), ("stdout", "out2"), ("stderr", "err1")]
         );
+    }
+
+    /// Windows npm globals are `%APPDATA%\npm\<cli>.cmd` shims next to a
+    /// `node_modules` tree; the shim path itself has no `node_modules` in it,
+    /// so the old check pushed npm users onto the official-installer channel.
+    #[test]
+    fn npm_global_shims_are_the_npm_channel() {
+        let root = std::env::temp_dir().join(format!("ccgui-npm-shim-{}", uuid::Uuid::new_v4()));
+        let prefix = root.join("npm");
+        std::fs::create_dir_all(prefix.join("node_modules/@anthropic-ai/claude-code")).unwrap();
+        std::fs::create_dir_all(prefix.join("node_modules/@openai/codex")).unwrap();
+        std::fs::write(prefix.join("claude.cmd"), "@echo off\r\n").unwrap();
+        std::fs::write(prefix.join("codex.cmd"), "@echo off\r\n").unwrap();
+        let standalone = root.join("bin");
+        std::fs::create_dir_all(&standalone).unwrap();
+        std::fs::write(standalone.join("claude.exe"), "").unwrap();
+
+        let shim = |name: &str| prefix.join(name).to_string_lossy().into_owned();
+        assert_eq!(update_kind("claude", &shim("claude.cmd")), Some("npm"));
+        assert_eq!(update_kind("codex", &shim("codex.cmd")), Some("npm"));
+        let exe = standalone.join("claude.exe").to_string_lossy().into_owned();
+        assert_eq!(update_kind("claude", &exe), Some("native"));
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn terminal_shell_kinds_follow_the_shell_binary() {
+        for (path, kind) in [
+            ("/bin/zsh", ShellKind::Posix),
+            ("/usr/local/bin/bash", ShellKind::Posix),
+            ("C:\\Program Files\\Git\\bin\\bash.exe", ShellKind::Posix),
+            ("/opt/homebrew/bin/fish", ShellKind::Fish),
+            ("C:\\Windows\\System32\\cmd.exe", ShellKind::Cmd),
+            ("C:\\Program Files\\PowerShell\\7\\pwsh.exe", ShellKind::PowerShell),
+            ("C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe", ShellKind::PowerShell),
+            ("/usr/bin/nu", ShellKind::Other),
+        ] {
+            assert_eq!(shell_kind(path), kind, "{path}");
+        }
+    }
+
+    /// The official installers now run where the user can see them — typed
+    /// into the built-in terminal — never as a hidden `-ExecutionPolicy
+    /// Bypass` PowerShell child of the GUI (a download-and-execute pattern
+    /// endpoint security flags).
+    #[test]
+    fn native_installs_are_typed_into_the_terminal_without_bypass() {
+        let done = regex::Regex::new(r"__CCGUI_CLI_DONE__\d").unwrap();
+        for engine in ["claude", "codex"] {
+            for (kind, windows) in [
+                (ShellKind::Posix, false),
+                (ShellKind::Fish, false),
+                (ShellKind::PowerShell, false),
+                (ShellKind::Cmd, true),
+                (ShellKind::PowerShell, true),
+                (ShellKind::Posix, true),
+                (ShellKind::Other, false),
+            ] {
+                let line = native_terminal_line(engine, kind, windows);
+                assert!(!line.contains("Bypass"), "{line}");
+                assert!(!line.contains("ExecutionPolicy"), "{line}");
+                assert!(!line.contains('\n') && !line.contains('\r'), "{line}");
+                // The typed line itself must never look like a finished run.
+                assert!(!done.is_match(&line), "{line}");
+                let host = if engine == "codex" { "chatgpt.com/codex" } else { "claude.ai" };
+                assert!(line.contains(host), "{line}");
+            }
+        }
+        // pipefail inside an explicit bash: a failed download must not read
+        // as success (the pipe's status is the last command's), and the
+        // user's own interactive shell options stay untouched.
+        assert_eq!(
+            native_terminal_line("claude", ShellKind::Posix, false),
+            "bash -c 'set -o pipefail; curl -fsSL https://claude.ai/install.sh | bash'; echo \"__CCGUI_CLI_DONE__$?\""
+        );
+        // The terminal opens in the workspace and cmd resolves commands from
+        // the current directory first: a bare `powershell` would run a
+        // repo-planted powershell.bat. Always the absolute system path.
+        // SystemRoot varies in case (C:\\WINDOWS on many machines).
+        let exe = windows_powershell_path();
+        assert!(exe.ends_with("\\System32\\WindowsPowerShell\\v1.0\\powershell.exe"), "{exe}");
+        assert_eq!(
+            native_terminal_line("claude", ShellKind::Cmd, true),
+            format!("\"{exe}\" -NoProfile -Command \"irm https://claude.ai/install.ps1 | iex\" && echo __CCGUI_CLI_DONE_^_0 || echo __CCGUI_CLI_DONE_^_1")
+        );
+        assert_eq!(
+            native_terminal_line("claude", ShellKind::Posix, true),
+            format!("'{}' -NoProfile -Command \"irm https://claude.ai/install.ps1 | iex\"; echo \"__CCGUI_CLI_DONE__$?\"", exe.replace('\\', "/"))
+        );
+        for kind in [ShellKind::Cmd, ShellKind::Posix, ShellKind::Fish, ShellKind::Other] {
+            let line = native_terminal_line("codex", kind, true);
+            assert!(!line.starts_with("powershell"), "{line}");
+        }
+        assert_eq!(
+            native_terminal_line("codex", ShellKind::PowerShell, true),
+            "irm https://chatgpt.com/codex/install.ps1 | iex; \"__CCGUI_CLI_DONE__$(if ($?) { 0 } else { 1 })\""
+        );
+        // Unknown shells get the bare official command: no marker syntax to
+        // get wrong, completion is then picked up when the tab closes.
+        assert_eq!(
+            native_terminal_line("claude", ShellKind::Other, false),
+            "curl -fsSL https://claude.ai/install.sh | bash"
+        );
+    }
+
+    /// A bare command name has no install directory: resolving
+    /// `node_modules` against the app's working directory would let any
+    /// folder named that way decide the channel.
+    #[test]
+    fn npm_shim_detection_ignores_relative_paths() {
+        let base = std::path::PathBuf::from("target")
+            .join(format!("npm-shim-{}", uuid::Uuid::new_v4().simple()));
+        std::fs::create_dir_all(base.join("node_modules").join("@anthropic-ai/claude-code")).unwrap();
+        let relative = base.join("claude");
+        assert!(!beside_npm_package("claude", &relative.to_string_lossy()));
+        let absolute = std::fs::canonicalize(&base).unwrap().join("claude");
+        assert!(beside_npm_package("claude", &absolute.to_string_lossy()));
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn only_npm_runs_inside_the_app() {
+        assert_eq!(run_location("npm"), Some(RunLocation::App));
+        assert_eq!(run_location("native"), Some(RunLocation::Terminal));
+        assert_eq!(run_location("none"), None);
     }
 
     #[test]

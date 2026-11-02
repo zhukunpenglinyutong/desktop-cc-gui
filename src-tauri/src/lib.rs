@@ -242,13 +242,15 @@ pub fn run() {
             // 只记日志）——skill 只有落在 CLI 自己的根里才会被引擎加载，
             // 见 creator_skill.rs 模块注释。
             creator_skill::install_at_startup(app.handle());
-            // DSH host autostart: adopt-or-spawn in the background when
-            // enabled; failures are logged, never fatal to startup.
+            // DSH host autostart: adopt-or-spawn in the background only when
+            // the switch is on, the engine is enabled and `dsh` is installed
+            // (dsh_host::autostart_allowed) — otherwise port 3080 is not even
+            // probed. Failures are logged, never fatal to startup.
             {
                 let handle = app.handle().clone();
                 tauri::async_runtime::spawn(async move {
                     let settings = settings::read_settings().unwrap_or_default();
-                    if settings.dsh_auto_start == Some(false) {
+                    if !dsh_host::autostart_allowed(&settings) {
                         return;
                     }
                     let state = handle.state::<AppState>();

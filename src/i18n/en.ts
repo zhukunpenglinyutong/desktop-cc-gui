@@ -1127,6 +1127,18 @@ export const en: Messages = {
     cliUpdateConfirm: "Confirm & Run",
     cliUpdateRunning: "Running…",
     cliUpdateSucceeded: "Install finished",
+    cliUpdateTerminalCommand: "Will run in the built-in terminal",
+    cliUpdateTerminalHint:
+      "The official installer runs in this workspace's built-in terminal, where you can see all of its output and press Ctrl+C to cancel.",
+    cliUpdateRunInTerminal: "Run in Terminal",
+    cliUpdateInTerminal:
+      "Started in the built-in terminal. The version refreshes automatically when it finishes.",
+    cliUpdateGoToTerminal: "Go to Terminal",
+    cliUpdateNoWorkspace:
+      "Open a project first: the official installer runs in that workspace's built-in terminal",
+    cliUpdateTerminalUnavailable:
+      "Could not open the built-in terminal; copy the manual command below and run it yourself",
+    cliUpdateTerminalFailed: "The installer failed; see its output in the built-in terminal",
     cliUpdateRetry: "Retry",
     cliUpdateClose: "Close",
     cliChannels: "Provider Channels",
