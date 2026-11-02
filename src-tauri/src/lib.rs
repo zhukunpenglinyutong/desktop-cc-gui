@@ -238,10 +238,6 @@ pub fn run() {
             }
             // Initial history scan, non-blocking.
             history::scanner::spawn_scan(scan_db, scan_sink);
-            // 内置「插件开发」skill：同步进已存在引擎的 skills 根（幂等，失败
-            // 只记日志）——skill 只有落在 CLI 自己的根里才会被引擎加载，
-            // 见 creator_skill.rs 模块注释。
-            creator_skill::install_at_startup(app.handle());
             // DSH host autostart: adopt-or-spawn in the background only when
             // the switch is on, the engine is enabled and `dsh` is installed
             // (dsh_host::autostart_allowed) — otherwise port 3080 is not even
