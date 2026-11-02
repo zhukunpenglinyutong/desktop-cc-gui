@@ -14,6 +14,7 @@
 
 mod claude;
 mod codex;
+pub(crate) mod consent;
 mod credentials;
 mod store;
 #[cfg(test)]
@@ -161,6 +162,8 @@ static STORE: LazyLock<Store> =
 /// backoff.
 pub async fn get(providers: Option<Vec<String>>, refresh: bool) -> Result<LimitsResponse, String> {
     let ids = resolve_ids(providers)?;
+    // Nothing below may touch a credential store before the user agreed.
+    consent::require()?;
     let http = ReqwestHttp::new();
     let env = Env {
         http: &http,

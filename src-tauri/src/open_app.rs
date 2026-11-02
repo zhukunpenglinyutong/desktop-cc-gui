@@ -10,6 +10,7 @@ use std::path::PathBuf;
 use std::process::Stdio;
 
 pub(crate) mod browser;
+mod program_icon;
 
 #[cfg(target_os = "macos")]
 use base64::Engine as _;
@@ -485,43 +486,13 @@ pub(crate) async fn get_program_icon(executable_path: String) -> Result<Option<S
 
 #[cfg(windows)]
 fn program_icon_sync(path: &str) -> Option<String> {
+    use base64::Engine as _;
     let path_buf = PathBuf::from(path);
     if !path_buf.is_file() {
         return None;
     }
-    // PowerShell single-quoted literal: a quote is escaped by doubling it.
-    let escaped = path.replace('\'', "''");
-    let script = format!(
-        r#"
-Add-Type -AssemblyName System.Drawing
-$path = '{escaped}'
-if (-not (Test-Path -LiteralPath $path)) {{ exit 1 }}
-$icon = [System.Drawing.Icon]::ExtractAssociatedIcon($path)
-if ($null -eq $icon) {{ exit 2 }}
-$bmp = $icon.ToBitmap()
-$ms = New-Object System.IO.MemoryStream
-$bmp.Save($ms, [System.Drawing.Imaging.ImageFormat]::Png)
-[Convert]::ToBase64String($ms.ToArray())
-"#
-    );
-    let mut cmd = std::process::Command::new("powershell");
-    cmd.args(["-NoProfile", "-NonInteractive", "-Command", &script]);
-    {
-        use std::os::windows::process::CommandExt;
-        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-        cmd.creation_flags(CREATE_NO_WINDOW);
-    }
-    cmd.stdin(Stdio::null());
-    cmd.stdout(Stdio::piped());
-    cmd.stderr(Stdio::null());
-    let output = cmd.output().ok()?;
-    if !output.status.success() {
-        return None;
-    }
-    let encoded = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    if encoded.is_empty() {
-        return None;
-    }
+    let png = program_icon::program_icon_png(&path_buf)?;
+    let encoded = base64::engine::general_purpose::STANDARD.encode(png);
     Some(format!("data:image/png;base64,{encoded}"))
 }
 

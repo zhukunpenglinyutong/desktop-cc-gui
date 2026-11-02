@@ -1231,18 +1231,10 @@ export const en: Messages = {
     codebuddyAccountTitle: "Account Login",
     codebuddyAccountHint:
       "Authenticate with Tencent Cloud / WeCom / WeChat account (/login)",
-    codebuddyAccountRefresh: "Refresh Status",
-    codebuddyAccountChecking: "Checking…",
-    codebuddyAccountCheckingDesc: "Reading the OS credential store",
-    codebuddyAccountError: "Status Check Failed",
-    codebuddyAccountErrorDesc: "Could not read the login status; try Refresh Status",
-    codebuddyAccountLoggedIn: "Logged In",
-    codebuddyAccountUnknown: "Status Unknown",
-    codebuddyAccountUnknownDesc:
-      "Could not confirm login state in the OS credential store; if you already ran /login in a terminal, it works as-is",
-    codebuddyAccountReady: "Credentials ready for chat",
+    codebuddyAccountCliOwned: "Login state is managed by the CodeBuddy CLI",
+    codebuddyAccountCliOwnedDesc:
+      "CC GUI does not read the OS credential store, so it shows no login state; if you already ran /login in a terminal, you can chat right away",
     codebuddyAccountLogin: "Terminal Login",
-    codebuddyAccountRelogin: "Switch Account",
     codebuddyLoginNoWorkspace:
       "Open a project first: the login runs in a workspace terminal",
     codebuddyLoginFailed: "Could not open the login terminal",
@@ -1637,6 +1629,18 @@ export const en: Messages = {
     days: "{{count}}d",
   },
   plugins: {
+    credentialConsent: {
+      message: "Allow CC GUI to read your local CLI logins to look up subscription limits?",
+      detail: "An enabled plugin asked for subscription limits. CC GUI reads only the logins below, on this machine, and sends each one only to the official API listed with it; the plugin never sees them, and they are never modified or refreshed. If you decline, you will not be asked again until restart; you can allow or revoke this any time on the plugin's detail page.",
+      keychain: "macOS Keychain item \"{{location}}\"",
+      sentTo: "sent only to {{host}}",
+      allow: "Allow Reading",
+      granted: "CC GUI may read your local CLI logins (shared by all plugins)",
+      notGranted: "Reading local CLI logins is not allowed, so limit lookups fail",
+      revoke: "Revoke",
+      grant: "Allow",
+      failed: "That did not work; try again",
+    },
     conversationMode: {
       recoveryRequired: "This conversation has an unfinished plugin task. Re-enable its plugin to recover or stop the task before returning to normal chat or closing this tab.",
       busy: "Finish the current turn and queued messages before switching conversation mode",
@@ -1760,7 +1764,7 @@ export const en: Messages = {
         hostWindow: "Read and position the main window; sample WeChat bounds",
         hostModels: "Read the host engine and model catalog (explicit provider refresh uses the network)",
         usageRead: "Read local usage statistics (computed by CC GUI from CLI session logs, never uploaded; updating prices downloads a public file)",
-        limitsRead: "Read subscription limits (CC GUI queries the official APIs read-only with your local CLI login; the plugin never sees credentials)",
+        limitsRead: "Read subscription limits (CC GUI queries the official APIs read-only with your local CLI login; the plugin never sees credentials, and CC GUI lists what it reads and asks first)",
         networkNone: "No network access",
         uiSettingsSection: "Add a settings page",
         uiAddMenu: "Add an “+ menu” entry",

@@ -18,6 +18,21 @@
 - 用户可见文本沿用 `src/i18n` 的国际化方式。日志保留必要错误上下文，不输出凭据、完整用户对话或其他敏感数据；清理临时调试输出。
 - 工具版本和命令以当前 `package.json`、锁文件与实际配置为准。当前使用 pnpm workspace，`pnpm dev` 启动 Tauri，`pnpm build` 执行类型检查与前端构建；不要照搬过时 README 中的启动命令。
 
+## 安全敏感行为（终端安全 / EDR）
+
+v1.2.0 曾被企业安全审查提示有问题，起因是隐藏窗口反复执行 `cmdkey /list`。根因与修复见 `docs/security-incidents/2026-11-v1.2.0-edr-alert.zh-CN.md`，全仓自查清单与处理进度见 `docs/security-incidents/2026-11-security-audit.zh-CN.md`。实现功能时，除了确认功能正确，还要判断这个行为在安全软件看来像什么：
+
+- **不枚举、不探测系统凭据库**来显示登录状态，包括 `cmdkey`、`CredEnumerateW` / `CredReadW`、`security find-generic-password`、`secret-tool`，以及钥匙串 / 凭据管理器 API。第三方 CLI 的登录状态以 CLI 自己为准，宁可显示中性说明。
+- **读取其他程序的凭据或令牌**（如 `~/.claude/.credentials.json`、`~/.codex/auth.json`、钥匙串条目）之前，必须先通过后端同意检查 `usage_limits::consent::require`，并弹出列明实际读取位置的桌面确认框。Web 访问端不提供授权入口。新增读取点复用这一检查，不另开旁路。
+- **原生 API 能完成的事，不用隐藏窗口的脚本或系统工具去做。**不新增带 `CREATE_NO_WINDOW` 的 PowerShell / cmd / 系统工具调用来处理图标、文件、注册表这类进程内就能完成的工作。确实需要外部进程时写明理由，并且不得与凭据读取、网络上传或编码输出组合。
+- **截屏、输入注入、全局钩子只能放在独立的 `ccgui-computer-use` 程序里**（`src-tauri/src/bin/ccgui-computer-use/`），并且只在用户主动发起的电脑操控回合中运行。主程序不得引用 `xcap` / `enigo`，守卫测试是 `main_app_sources_never_reference_driver_crates`。跨进程访问（`OpenProcess`、用 `EnumWindows` 定位其他应用等）只能由用户操作触发，并写明理由。
+- **敏感操作不得在组件挂载、窗口获得焦点或定时轮询时自动执行。**功能被禁用时，不挂载会产生副作用的组件：遮罩只是视觉效果，禁用必须同时阻断副作用。
+- **工作区里的内容一律视为不可信。**仓库自带的 MCP 配置、CLI 设置（hooks、`permissions`）、HTML/SVG 文件，在用户明确确认前不得执行、自动检测或带脚本渲染。预览类内容不得与能调用 IPC 或读取家目录的源同源。
+- **能调用 IPC 的上下文里不加载、不执行远程代码**，包括统计脚本和 CDN 资源，后端也不得 `eval` 下载下来的内容。插件 IPC 守卫在 Tauri 2.11+ 上不生效，在实现真正的插件隔离之前，不能把它当作安全边界。
+- **只管自己的进程。**不结束非本应用启动的进程；不对系统全部进程做枚举或打开句柄，采样只限本应用的后代进程。
+- **审查和合并时**（包括外部 PR 和 AI 的「按审查建议修复」），对新增的子进程、凭据读取、隐藏窗口、跨进程访问和系统级输入输出能力单独检查一遍。发版前运行一次事故文档第 8 节的自查命令。
+- **Windows 发布必须带 Authenticode 签名。**`release.yml` 已接入 `scripts/windows-sign.ps1`，构建后会校验签名。未配置证书时构建只告警、照常放行；不要把未签名当成常态。
+
 ## 设计与修复
 
 - 先明确成功、失败和取消时的预期行为。缺陷优先构造能够揭示旧行为错误的复现或回归用例，再证明修复有效。

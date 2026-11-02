@@ -842,6 +842,9 @@ pub(super) async fn dispatch(
             let a: PluginLimitsArgs = parse_args(&raw)?;
             ser(crate::plugin_usage::plugin_limits_get(a.plugin_id, a.providers, a.refresh).await)
         }
+        // NB: cli_credential_consent_* / cli_credential_sources are
+        // intentionally absent — only the desktop user may allow reading
+        // local CLI logins (src-tauri/src/usage_limits/consent.rs).
         "save_pasted_image" => {
             let a: SavePastedImageArgs = parse_args(&raw)?;
             ser(crate::engine::images::save_pasted_image(

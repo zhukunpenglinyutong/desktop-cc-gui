@@ -481,13 +481,6 @@ export interface ProviderModelList {
   models: string[];
   endpoint: string;
 }
-export interface CodeBuddyAccountStatus {
-  loggedIn: boolean;
-  /** "found" = credential store probe hit; "unknown" = the guessed service
-   *  names missed, which is not proof of being logged out. */
-  detection: "found" | "unknown";
-}
-
 
 export interface WorkspaceGroup {
   id: string;
@@ -1450,9 +1443,6 @@ export const ipc = {
     invoke<PiFamilyModelsConfigReadResult>("pi_family_models_config_read", { engine }),
   piFamilyModelsConfigWrite: (engine: string, text: string) =>
     invoke<void>("pi_family_models_config_write", { engine, text }),
-  // codebuddy account status
-  codebuddyAccountStatus: (force = false) =>
-    invoke<CodeBuddyAccountStatus>("codebuddy_account_status", { force }),
   // cc-switch interop
   checkCcSwitch: () => invoke<CcSwitchStatus>("check_cc_switch"),
   dismissCcSwitch: (hash: string) => invoke<void>("dismiss_cc_switch", { hash }),

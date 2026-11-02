@@ -2298,8 +2298,14 @@ mod permission_tests {
         let config: Value =
             serde_json::from_str(&args[at + 1]).expect("mcp config must be inline JSON");
         let server = &config["mcpServers"]["ccgui-computer"];
-        assert_eq!(server["args"], serde_json::json!(["--computer-use-mcp"]));
-        assert!(!server["command"].as_str().unwrap_or_default().is_empty());
+        assert_eq!(server["args"], serde_json::json!([]));
+        // The driver is the separate helper binary, never this executable.
+        assert_eq!(
+            std::path::Path::new(server["command"].as_str().unwrap_or_default())
+                .file_stem()
+                .and_then(|s| s.to_str()),
+            Some(crate::computer_use::HELPER_BIN)
+        );
         // Pre-approved: a click-per-approval loop would be unusable.
         let tools_at = args
             .iter()

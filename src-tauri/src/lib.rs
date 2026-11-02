@@ -8,7 +8,6 @@ pub mod cc_switch;
 pub mod cli_lifecycle;
 pub mod clipboard;
 pub mod computer_use;
-pub mod computer_use_ax;
 pub mod config;
 pub mod creator_skill;
 pub mod cu_overlay;
@@ -90,15 +89,12 @@ pub fn run() {
         }
         return;
     }
-    // MCP server mode: engine CLIs spawn this binary as a computer-use MCP
-    // child process (`--mcp-config`). stdout is the protocol channel, so no
-    // Tauri runtime — and nothing that prints to stdout — may start here.
-    if std::env::args().any(|arg| arg == "--computer-use-mcp") {
-        if let Err(error) = computer_use::mcp::serve_stdio() {
-            eprintln!("[computer-use] MCP server exited: {error}");
-            std::process::exit(1);
-        }
-        return;
+    // Legacy computer-use MCP mode: the driver is the separate
+    // `ccgui-computer-use` binary now; an engine config written before the
+    // split is forwarded to it. stdout is the protocol channel, so no Tauri
+    // runtime — and nothing that prints to stdout — may start here.
+    if std::env::args().any(|arg| arg == computer_use::LEGACY_MCP_FLAG) {
+        std::process::exit(computer_use::forward_to_helper());
     }
     // MCP server mode: engine CLIs spawn this binary as the per-bot memory
     // tool (`--memory-mcp --bot-id <id>`, see engine/*). Same stdout rule.
@@ -219,7 +215,7 @@ pub fn run() {
             // before manage()".
             app.manage(config::ConfigStore::default());
             // Virtual cursor overlay + its loopback control channel: the
-            // --computer-use-mcp child posts action targets here so the
+            // ccgui-computer-use helper posts action targets here so the
             // blue pointer can follow the agent.
             if let Err(error) = cu_overlay::init(app.handle()) {
                 eprintln!("[cu-overlay] init failed (overlay disabled): {error}");
@@ -472,6 +468,9 @@ pub fn run() {
             plugin_usage::plugin_usage_prices,
             plugin_usage::plugin_usage_update_prices,
             plugin_usage::plugin_limits_get,
+            usage_limits::consent::cli_credential_consent_get,
+            usage_limits::consent::cli_credential_consent_set,
+            usage_limits::consent::cli_credential_sources,
             // plugin marketplace (Phase 3, plan §6)
             plugins::market::plugin_fetch_index,
             plugins::market::plugin_fetch_featured,
@@ -487,7 +486,6 @@ pub fn run() {
             engine::list_plan_reviews,
             engine::list_engines,
             engine::models::list_engine_models,
-            engine::codebuddy::codebuddy_account_status,
             engine::pi_family_auth::pi_family_auth_list,
             engine::pi_family_auth::pi_family_auth_set_api_key,
             engine::pi_family_auth::pi_family_auth_delete_credential,

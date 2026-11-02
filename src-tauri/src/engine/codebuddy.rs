@@ -2,145 +2,6 @@ use super::{
     claude::ClaudeEngine, command_for_binary, images, BuiltCommand, Engine, EngineEvent,
     SendRequest,
 };
-use serde::Serialize;
-
-#[derive(Debug, Clone, Serialize, Default)]
-#[serde(rename_all = "camelCase")]
-pub struct CodeBuddyAccountStatus {
-    pub logged_in: bool,
-    /// The probed credential service names are guesses (the CLI's exact
-    /// Keychain/Credential Manager/keyring names are not publicly
-    /// documented), so a negative probe is "unknown", not "logged out".
-    /// Only a positive probe is conclusive.
-    pub detection: &'static str,
-}
-
-/// CodeBuddy stores CLI credentials in the OS credential manager per its
-/// official IAM docs (macOS Keychain, Windows Credential Manager, Linux
-/// keyring) — not in plain files under `~/.codebuddy`. Probing guessed
-/// filenames there misreported both directions: a successful terminal
-/// `/login` still showed "not logged in", while a stale/IDE-side file showed
-/// "logged in". Probe the real stores read-only, existence only, and never
-/// read secret values; the result is a bare boolean.
-fn cli_credentials_present() -> bool {
-    #[cfg(target_os = "macos")]
-    {
-        // `security find-generic-password` without `-w` reports existence
-        // only and never prints the secret. The exact service name is not
-        // publicly documented, so probe the plausible candidates.
-        ["codebuddy", "CodeBuddy", "com.tencent.codebuddy"]
-            .iter()
-            .any(|service| {
-                let mut cmd = std::process::Command::new("security");
-                cmd.args(["find-generic-password", "-s", service]);
-                run_probe_command(cmd)
-                    .map(|out| out.status.success())
-                    .unwrap_or(false)
-            })
-    }
-    #[cfg(target_os = "windows")]
-    {
-        // `cmdkey /list` prints target names of stored credentials, never
-        // secrets.
-        let mut cmd = std::process::Command::new("cmdkey");
-        cmd.arg("/list");
-        run_probe_command(cmd)
-            .map(|out| {
-                String::from_utf8_lossy(&out.stdout)
-                    .to_lowercase()
-                    .contains("codebuddy")
-            })
-            .unwrap_or(false)
-    }
-    #[cfg(all(unix, not(target_os = "macos")))]
-    {
-        // `secret-tool search` exits non-zero when nothing matches; without
-        // `--unlock` it prints item attributes only, never the secret.
-        let mut cmd = std::process::Command::new("secret-tool");
-        cmd.args(["search", "service", "codebuddy"]);
-        run_probe_command(cmd)
-            .map(|out| out.status.success())
-            .unwrap_or(false)
-    }
-}
-
-/// Credential-store tools can block indefinitely (locked keyring, missing
-/// session D-Bus, unlock prompt), and the settings page re-probes on every
-/// window focus. Every probe therefore runs under a hard deadline: poll the
-/// child and kill it once the budget is spent, so the IPC call always settles
-/// and blocked probes cannot pile up.
-const ACCOUNT_PROBE_TIMEOUT: std::time::Duration = std::time::Duration::from_millis(1500);
-
-fn run_probe_command(mut cmd: std::process::Command) -> Option<std::process::Output> {
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-        // cmdkey is console-subsystem: without this flag every focus-triggered
-        // probe flashes a console window (same fix as engine::hide_console).
-        cmd.creation_flags(CREATE_NO_WINDOW);
-    }
-    cmd.stdin(std::process::Stdio::null())
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::null());
-    let mut child = cmd.spawn().ok()?;
-    let deadline = std::time::Instant::now() + ACCOUNT_PROBE_TIMEOUT;
-    loop {
-        match child.try_wait() {
-            Ok(Some(_)) => return child.wait_with_output().ok(),
-            Ok(None) if std::time::Instant::now() < deadline => {
-                std::thread::sleep(std::time::Duration::from_millis(25));
-            }
-            _ => {
-                let _ = child.kill();
-                let _ = child.wait();
-                return None;
-            }
-        }
-    }
-}
-
-pub fn check_codebuddy_account_status() -> CodeBuddyAccountStatus {
-    let logged_in = cli_credentials_present();
-    CodeBuddyAccountStatus {
-        logged_in,
-        // The probed service names are guesses: a hit proves "logged in",
-        // a miss only means "not found under the names we tried".
-        detection: if logged_in { "found" } else { "unknown" },
-        ..Default::default()
-    }
-}
-
-/// The settings page re-probes on every window focus, and each probe spawns
-/// up to three credential-store processes. Cache the result briefly: login
-/// state changes on a minutes scale, not a focus-Event scale. An explicit
-/// refresh passes `force`, because the one action that must re-probe (right
-/// after `/login`) would otherwise receive the pre-login cached answer.
-const ACCOUNT_STATUS_CACHE_TTL: std::time::Duration = std::time::Duration::from_secs(30);
-
-#[tauri::command]
-pub async fn codebuddy_account_status(
-    force: Option<bool>,
-) -> Result<CodeBuddyAccountStatus, String> {
-    static CACHE: tokio::sync::Mutex<Option<(std::time::Instant, CodeBuddyAccountStatus)>> =
-        tokio::sync::Mutex::const_new(None);
-    // Held across the probe so concurrent focus events share one probe set
-    // (single flight) instead of each spawning the full set after a miss.
-    let mut cache = CACHE.lock().await;
-    if !force.unwrap_or(false) {
-        if let Some((at, status)) = cache.as_ref() {
-            if at.elapsed() < ACCOUNT_STATUS_CACHE_TTL {
-                return Ok(status.clone());
-            }
-        }
-    }
-    // The probes spawn child processes; keep them off the async runtime.
-    let status = tokio::task::spawn_blocking(check_codebuddy_account_status)
-        .await
-        .map_err(|e| format!("codebuddy account probe: {e}"))?;
-    *cache = Some((std::time::Instant::now(), status.clone()));
-    Ok(status)
-}
 
 /// Provider-selection env keys a codebuddy channel owns outright once a
 /// channel drives the launch. Like the claude adapter (claude_channel.rs),
@@ -534,6 +395,19 @@ mod tests {
             computer_use: None,
             memory_bot: None,
             allowed_tools: None,
+        }
+    }
+
+    /// Endpoint security treats a GUI app enumerating the OS credential store
+    /// as credential discovery (v1.2.0 was flagged for a hidden `cmdkey /list`).
+    /// CodeBuddy's login state stays CLI-owned: this engine never shells out
+    /// to a credential-store tool.
+    #[test]
+    fn never_spawns_credential_store_tools() {
+        let source = include_str!("codebuddy.rs");
+        for tool in ["cmdkey", "security", "/usr/bin/security", "secret-tool"] {
+            let spawn = format!("Command::new(\"{tool}\")");
+            assert!(!source.contains(&spawn), "codebuddy.rs spawns {tool}");
         }
     }
 
