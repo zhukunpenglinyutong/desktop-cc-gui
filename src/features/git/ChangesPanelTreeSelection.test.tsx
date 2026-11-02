@@ -8,7 +8,7 @@ vi.mock("@/features/files/FilesPanel", () => ({ FilesPanel: () => <div>files</di
 
 vi.mock("react-i18next", async (importOriginal) => ({
   ...(await importOriginal<typeof import("react-i18next")>()),
-  useTranslation: () => ({ t: (key: string, opts?: any) => key.replace("{{count}}", opts?.count ?? "") }),
+  useTranslation: () => ({ t: (key: string, opts?: any) => key.replace("{{count}}", opts?.count ?? ""), i18n: { language: "zh-CN" } }),
 }));
 
 vi.mock("react-aria-components", async (importOriginal) => {

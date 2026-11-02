@@ -113,6 +113,7 @@
   - 回归：`fork/tests.rs` 的 `next_fork_title_uses_the_source_row_current_name`、`fork_numbers_use_max_plus_one_and_never_reuse_a_gap`、`registration_writes_the_numbered_branch_title`、`use-chat-tabs.test.tsx`（页签标题走后端 `customTitle`）。
   - 回归：`MessageTimeline.test.tsx`（常驻可见、`focus-visible`、流式期间保留占位 + 禁用、远程 / 不支持引擎置灰并说明、分叉在飞时按"进行中"禁用、窗口无前置用户消息时不显示分支入口）、`resolve-fork-anchor.test.ts`、`fork.test.ts`（引擎白名单与禁用原因的优先级）、`store.test.ts`（点分支后新增页签并保留原页签、双击只建一个分支、会话激活只广播一次）、`use-chat-tabs.test.tsx`（标题走后端 `customTitle`）。
 - **异步动作进行中不可重入**：进行中禁用按钮（或首行拦截 `if (running) return`），避免重复请求。
+- **Git 多仓库面板保留编辑与操作状态**：干净仓库首次展开时才加载详情；展开过的仓库收起后保持挂载，用 `Collapsible`（200ms）收起并设为 `inert` / `aria-hidden`，保留提交草稿、勾选和进行中的操作。扫描摘要与详情按成功请求的发起顺序判定新旧，失败不更新数据新鲜度；新扫描不能被旧的「干净」详情遮住，展开的详情按需补刷。AI 提交信息只使用字面匹配的勾选路径；生成期间编辑草稿、切换仓库 / 引擎 / 语言 / 勾选或开始提交后，旧请求的结果和错误均不再写回。回归：`CommitFooter.test.tsx`、`ChangesPanel.multi-repo.test.tsx`、`RepoSection.test.tsx`、`store.test.ts`、Rust `commit_message::tests`。
 - **反馈不改变布局**：图标在默认态与反馈态之间切换时，外层容器尺寸固定（`ActionFeedbackIcon` 用 `iconClassName` 同时约束容器和图标），按钮不能因为换图标而抖动。
 - **动效可降级**：过渡类一律带 `motion-reduce:transition-none`；关键帧动画的降级见 [§8](#8-待收敛)。
 - **同一状态只表达一次**：列表行里「已安装 / 可更新」只给一个信号——市场表的右侧按钮就是该行的状态（`安装` → `更新至 vX` → `已安装`），行内不再重复挂徽标；安装中按钮原地换成进度（`plugins.installingPct`）且保持占位不變（`PluginMarketRow.tsx`）。

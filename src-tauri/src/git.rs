@@ -134,6 +134,129 @@ pub async fn git_repository_summaries(paths: Vec<String>) -> Vec<RepositorySumma
         .unwrap_or_default()
 }
 
+/// Directory names never descended into while discovering repositories:
+/// build output and dependency trees hold vendored copies of themselves
+/// (`node_modules/...`, `target/...`) that would otherwise turn a shallow
+/// scan into a full-disk walk.
+const DISCOVERY_SKIP_DIRS: [&str; 11] = [
+    ".git",
+    "node_modules",
+    ".venv",
+    "venv",
+    "target",
+    "build",
+    "dist",
+    ".idea",
+    ".gradle",
+    ".next",
+    "vendor",
+];
+/// Depth limit for the workspace-root walk. Real layouts nest at most a few
+/// directories deep; deeper hits are build output, not projects.
+const DISCOVERY_MAX_DEPTH: usize = 6;
+/// Repository cap: the frontend renders one section per repo, so a huge
+/// monorepo tree must degrade into "some repos" rather than an unbounded walk.
+const DISCOVERY_MAX_REPOS: usize = 64;
+
+/// Recursive descent collecting worktree roots. Depth and count are enforced
+/// here rather than by the caller so both the command and the tests share one
+/// implementation. Symlinks are skipped: a linked worktree/mirror subtree
+/// would loop or duplicate the whole scan.
+fn collect_repository_candidates(
+    dir: &Path,
+    depth: usize,
+    max_depth: usize,
+    max_repos: usize,
+    out: &mut Vec<std::path::PathBuf>,
+) {
+    if depth > max_depth || out.len() >= max_repos {
+        return;
+    }
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        if out.len() >= max_repos {
+            return;
+        }
+        let path = entry.path();
+        let Ok(metadata) = std::fs::symlink_metadata(&path) else {
+            continue;
+        };
+        if metadata.file_type().is_symlink() || !metadata.is_dir() {
+            continue;
+        }
+        let name = entry.file_name();
+        if DISCOVERY_SKIP_DIRS.contains(&name.to_string_lossy().as_ref()) {
+            continue;
+        }
+        if open_exact_repo(&path).is_some() {
+            out.push(path.clone());
+        }
+        collect_repository_candidates(&path, depth + 1, max_depth, max_repos, out);
+    }
+}
+
+/// Every repository root under `root`, `root` itself included when it is one.
+/// Sorted by path so the frontend's sections stay stable across refreshes.
+fn discover_repository_roots(
+    root: &Path,
+    max_depth: usize,
+    max_repos: usize,
+) -> Vec<std::path::PathBuf> {
+    let mut out = Vec::new();
+    if open_exact_repo(root).is_some() {
+        out.push(root.to_path_buf());
+    } else if let Some(ancestor) = containing_repository_root(root) {
+        // The workspace may be one project inside a larger repository (the
+        // common \"open a subfolder of a monorepo\" case). `open_exact_repo`
+        // deliberately does not walk up, so discover the containing worktree
+        // here and keep its absolute root.
+        out.push(ancestor);
+    }
+    collect_repository_candidates(root, 1, max_depth, max_repos, &mut out);
+    out.sort();
+    out.dedup();
+    out
+}
+
+/// Nearest repository whose worktree contains `root`, when `root` is not
+/// itself that worktree. Used only for the ancestor case above.
+fn containing_repository_root(root: &Path) -> Option<std::path::PathBuf> {
+    let repo = Repository::discover(root).ok()?;
+    let workdir = repo.workdir()?;
+    let actual = std::fs::canonicalize(workdir).ok()?;
+    let expected = std::fs::canonicalize(root).ok()?;
+    (actual != expected).then_some(workdir.to_path_buf())
+}
+
+/// Summaries for discovered roots, sharing one `TreeSnapshots` batch: the
+/// status walk per repo is the expensive part, and a multi-project workspace
+/// repeats it for every project.
+fn repository_summaries_for_roots(roots: &[std::path::PathBuf]) -> Vec<RepositorySummary> {
+    let mut snapshots = TreeSnapshots::new(true);
+    roots
+        .iter()
+        .filter_map(|path| repository_summary_cached(path, &mut snapshots))
+        .collect()
+}
+
+/// Sync body of `git_discover_repositories`: directory walk plus one status
+/// walk per repo, both far too heavy for the IPC main thread.
+fn discover_repositories_blocking(root: String) -> Vec<RepositorySummary> {
+    let roots = discover_repository_roots(Path::new(&root), DISCOVERY_MAX_DEPTH, DISCOVERY_MAX_REPOS);
+    repository_summaries_for_roots(&roots)
+}
+
+/// All repositories under a workspace root, so the changes panel can list
+/// every project instead of only the one the file tree happens to have
+/// selected.
+#[tauri::command]
+pub async fn git_discover_repositories(root: String) -> Vec<RepositorySummary> {
+    tauri::async_runtime::spawn_blocking(move || discover_repositories_blocking(root))
+        .await
+        .unwrap_or_default()
+}
 /// Sidebar row icon source: the GitHub account behind a workspace's `origin`
 /// remote. Only github.com remotes resolve — a local-only repo, a GitLab /
 /// Gitee remote, or a missing origin is omitted so the row keeps its folder
@@ -386,6 +509,8 @@ pub async fn git_tree_status(levels: Vec<GitTreeLevel>) -> Result<GitTreeStatus,
     .map_err(|error| error.to_string())
 }
 
+/// Crate-visible so sibling modules (commit-message generation) resolve
+/// "any path inside a repository" through the same entry as the commands.
 pub(crate) fn open_repo(path: &str) -> Result<Repository, String> {
     Repository::discover(path).map_err(map_open_repo_error)
 }
@@ -1911,6 +2036,184 @@ mod tests {
             "output bounded: {} bytes",
             text.len()
         );
+    }
+
+    #[test]
+    fn discovery_includes_the_root_repository_itself() {
+        let scratch = Scratch::new();
+        let repo = Repository::init(&scratch.0).unwrap();
+        commit_file(&repo, "a.txt", "a\n");
+        let roots = discover_repository_roots(&scratch.0, DISCOVERY_MAX_DEPTH, DISCOVERY_MAX_REPOS);
+        assert_eq!(roots, vec![scratch.0.clone()]);
+    }
+
+    #[test]
+    fn discovery_includes_the_containing_repository_of_a_workspace_subfolder() {
+        let scratch = Scratch::new();
+        let repo = Repository::init(&scratch.0).unwrap();
+        commit_file(&repo, "root.txt", "root\n");
+        let workspace = scratch.0.join("apps/web");
+        let nested = workspace.join("lib");
+        std::fs::create_dir_all(&nested).unwrap();
+        Repository::init(&nested).unwrap();
+
+        let roots = discover_repository_roots(&workspace, DISCOVERY_MAX_DEPTH, DISCOVERY_MAX_REPOS);
+        assert_eq!(roots, vec![scratch.0.clone(), nested]);
+    }
+
+    #[test]
+    fn discovery_finds_nested_projects_under_a_plain_root() {
+        let scratch = Scratch::new();
+        let alpha = scratch.0.join("alpha");
+        let beta = scratch.0.join("group/beta");
+        let plain = scratch.0.join("plain");
+        std::fs::create_dir_all(&alpha).unwrap();
+        std::fs::create_dir_all(&beta).unwrap();
+        std::fs::create_dir_all(&plain).unwrap();
+        Repository::init(&alpha).unwrap();
+        Repository::init(&beta).unwrap();
+
+        let roots = discover_repository_roots(&scratch.0, DISCOVERY_MAX_DEPTH, DISCOVERY_MAX_REPOS);
+        // Sorted ascending, non-repo directories excluded.
+        assert_eq!(roots, vec![alpha, beta]);
+    }
+
+    #[test]
+    fn discovery_skips_build_and_dependency_directories() {
+        let scratch = Scratch::new();
+        let real = scratch.0.join("real");
+        let vendored = scratch.0.join("node_modules/dep");
+        let output = scratch.0.join("target/pkg");
+        std::fs::create_dir_all(&real).unwrap();
+        std::fs::create_dir_all(&vendored).unwrap();
+        std::fs::create_dir_all(&output).unwrap();
+        Repository::init(&real).unwrap();
+        Repository::init(&vendored).unwrap();
+        Repository::init(&output).unwrap();
+
+        let roots = discover_repository_roots(&scratch.0, DISCOVERY_MAX_DEPTH, DISCOVERY_MAX_REPOS);
+        assert_eq!(roots, vec![real]);
+    }
+
+    #[test]
+    fn discovery_stops_at_the_depth_limit() {
+        let scratch = Scratch::new();
+        let shallow = scratch.0.join("a/b");
+        let deep = scratch.0.join("a/b/c/d/e");
+        std::fs::create_dir_all(&shallow).unwrap();
+        std::fs::create_dir_all(&deep).unwrap();
+        Repository::init(&shallow).unwrap();
+        Repository::init(&deep).unwrap();
+
+        // `shallow` sits at depth 2 (root -> a -> b); `deep` at depth 5.
+        let roots = discover_repository_roots(&scratch.0, 2, DISCOVERY_MAX_REPOS);
+        assert_eq!(roots, vec![shallow.clone()]);
+        let roots = discover_repository_roots(&scratch.0, DISCOVERY_MAX_DEPTH, DISCOVERY_MAX_REPOS);
+        assert_eq!(roots, vec![shallow, deep]);
+    }
+
+    #[test]
+    fn discovery_caps_the_number_of_repositories() {
+        let scratch = Scratch::new();
+        for i in 0..6 {
+            let dir = scratch.0.join(format!("p{i}"));
+            std::fs::create_dir_all(&dir).unwrap();
+            Repository::init(&dir).unwrap();
+        }
+        let roots = discover_repository_roots(&scratch.0, DISCOVERY_MAX_DEPTH, 3);
+        assert_eq!(roots.len(), 3);
+    }
+
+    #[test]
+    fn discovery_summaries_report_per_repo_changes() {
+        let scratch = Scratch::new();
+        let dirty = scratch.0.join("dirty");
+        let clean = scratch.0.join("clean");
+        std::fs::create_dir_all(&dirty).unwrap();
+        std::fs::create_dir_all(&clean).unwrap();
+        let repo = Repository::init(&dirty).unwrap();
+        commit_file(&repo, "a.txt", "a\n");
+        let clean_repo = Repository::init(&clean).unwrap();
+        commit_file(&clean_repo, "b.txt", "b\n");
+        std::fs::write(dirty.join("a.txt"), "changed\n").unwrap();
+        std::fs::write(dirty.join("fresh.txt"), "new\n").unwrap();
+
+        let roots = discover_repository_roots(&scratch.0, DISCOVERY_MAX_DEPTH, DISCOVERY_MAX_REPOS);
+        let summaries = repository_summaries_for_roots(&roots);
+        assert_eq!(summaries.len(), 2);
+        let dirty_summary = summaries
+            .iter()
+            .find(|summary| summary.path == dirty.to_string_lossy())
+            .unwrap();
+        assert_eq!(dirty_summary.changed, 1);
+        assert_eq!(dirty_summary.untracked, 1);
+        let clean_summary = summaries
+            .iter()
+            .find(|summary| summary.path == clean.to_string_lossy())
+            .unwrap();
+        assert_eq!(clean_summary.changed, 0);
+        assert_eq!(clean_summary.untracked, 0);
+    }
+
+    #[test]
+    fn discovery_summaries_match_a_real_three_project_workspace() {
+        // Reproduces the reported scenario end to end: a plain folder that is
+        // not itself a repository, holding three independent projects, one of
+        // them clean. A hand-built scratch cannot catch a path-shape mistake
+        // in the status read, which is exactly what the panel consumes.
+        let scratch = Scratch::new();
+        for name in ["api", "web", "docs"] {
+            let repo = Repository::init(scratch.0.join(name)).unwrap();
+            commit_file(&repo, &format!("{name}.txt"), "hello\n");
+        }
+        // api: staged change only.
+        std::fs::write(scratch.0.join("api/api.txt"), "staged\n").unwrap();
+        let api = Repository::open(scratch.0.join("api")).unwrap();
+        let mut index = api.index().unwrap();
+        index.add_path(Path::new("api.txt")).unwrap();
+        index.write().unwrap();
+        // web: unstaged change plus an untracked file. docs stays clean.
+        std::fs::write(scratch.0.join("web/web.txt"), "unstaged\n").unwrap();
+        std::fs::write(scratch.0.join("web/new.txt"), "brand new\n").unwrap();
+
+        let summaries = discover_repositories_blocking(scratch.0.to_string_lossy().into_owned());
+
+        // The workspace root is not a repository, so it gets no summary of
+        // its own - only the three nested projects.
+        assert_eq!(
+            summaries.iter().map(|s| s.path.as_str()).collect::<Vec<_>>(),
+            vec![
+                scratch.0.join("api").to_string_lossy().into_owned(),
+                scratch.0.join("docs").to_string_lossy().into_owned(),
+                scratch.0.join("web").to_string_lossy().into_owned(),
+            ],
+            "every project is listed, ordered by path"
+        );
+
+        let by_name = |name: &str| {
+            let hit = summaries
+                .iter()
+                .find(|s| s.path.ends_with(name))
+                .unwrap_or_else(|| panic!("missing summary for {name}"));
+            (hit.changed, hit.untracked)
+        };
+        // A staged file counts toward `changed`; an untracked one counts
+        // toward `untracked` and not toward `changed`.
+        assert_eq!(by_name("api"), (1, 0), "api is staged-only");
+        assert_eq!(by_name("web"), (1, 1), "web is unstaged + untracked");
+        assert_eq!(by_name("docs"), (0, 0), "docs is clean");
+        // The section header shows the branch before live status lands, so
+        // every summary must carry one. Not compared to a literal: the
+        // default branch name follows the machine's git config.
+        for s in &summaries {
+            assert!(!s.branch.is_empty(), "{} reports a branch", s.path);
+        }
+    }
+
+    #[test]
+    fn discover_blocking_returns_nothing_for_a_missing_root() {
+        let missing = std::env::temp_dir().join(format!("ccgui-missing-{}", uuid::Uuid::new_v4()));
+        assert!(discover_repositories_blocking(missing.to_string_lossy().into_owned()).is_empty());
     }
 
     fn commit_file(repo: &Repository, relative: &str, content: &str) {
