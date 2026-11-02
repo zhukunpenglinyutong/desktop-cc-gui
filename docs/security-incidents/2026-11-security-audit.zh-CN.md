@@ -10,6 +10,48 @@
 - 但还有不少问题，严重程度不亚于这次的 `cmdkey`：有的可以被直接利用（S1、S2、S3、S8、S9），有的很可能再次触发企业告警（S5、S6、S10）。
 - 最大的结构性问题是**插件隔离实际不存在**：IPC 守卫从未生效，安装和更新时也不征求权限同意。
 
+## 处理进度
+
+第一批（2026-11-02，已在工作区完成并通过本地验证，待提交）：
+
+| 编号 | 处理 | 回归保护 |
+|---|---|---|
+| S1 | `.html` 默认显示源码；预览协议改为按随机令牌只服务被预览文件所在目录（`preview_open` 走 `ensure_allowed`）；iframe 去掉 `allow-same-origin`，响应去掉 `ACAO: null`，加禁止外联的 CSP、`nosniff`；未知扩展名不再按 HTML 返回 | `preview_protocol::tests`、`HtmlPreview.test.tsx`、`editor-view-mode.test.ts` |
+| S3 | 只自动检测用户级 MCP 配置；工作区条目手动检测前弹窗列出完整命令；检测工作区条目时不展开 `${ENV}` | `probe-store.test.ts`、`probe-confirm.test.ts`、`mcp::probe::tests` |
+| S4 | 按你的决定**保留统计**：改由后端发 hm.gif，前端和 Linux 都不再执行 `hm.js`，CSP 移除百度域名；新增「设置 → 关于 → 使用统计」开关（默认开启） | `baidu_tongji::tests`（含请求里没有令牌和页面地址、CSP 不放行远程脚本） |
+| S5 | Windows 用 Toolhelp 快照找本应用的后代进程，不打开其他进程的句柄；只刷新选中的进程 | `metrics` 守卫测试（`ProcessesToUpdate::All` 只允许出现在非 Windows 读表函数里） |
+| S6 | 只在开关开启、引擎已启用、已安装时自动启动；删除按端口结束进程的实现，端口被占用只提示；cookie 只发给自己拉起的进程 | `dsh_host::tests` |
+| S7 | Web 端强制关闭电脑操控；中继启停、无人值守、部署、设备批准只能在桌面端操作；远端保存设置时保留安全相关字段；Web 端令牌移出地址栏 | `web::dispatch` 测试、`computer-use-web.test.ts`、`transport-token.test.ts` |
+| S10 | 官方安装脚本改在可见的内置终端运行，去掉 Bypass 和隐藏窗口；修正 Windows npm 渠道识别 | `cli_lifecycle::tests`、`cliInstallTerminal.test.ts`、`useCliVersionStatus.test.tsx` |
+| M1 | `atomic_write` 保留原权限、新文件 0600、写穿符号链接、临时文件名唯一；启动时把 app home 收紧为 0700 | `settings::tests::atomic_write_*`、`paths` 测试 |
+| M4 | 引擎禁用时不挂载认证区；Pi/OMP 去掉焦点刷新 | `CliConfigBody.test.tsx`、`PiFamilyAuthSection.test.tsx` |
+| M5 | 启动时不再写其他 CLI 的 skills 目录，只在点「创建插件」时安装 | 删除了 `install_at_startup` |
+| M6 | 回收站统一走 `files::move_to_trash`，macOS 用 NsFileManager | `files::tests::trash_calls_go_through_move_to_trash` |
+
+第一批合并后，又请独立审查查了一遍，补修以下问题：
+
+| 问题 | 处理 | 回归保护 |
+|---|---|---|
+| CLI 安装命令里写的是裸名 `powershell`；终端在工作区目录打开，cmd 会先在当前目录找程序，仓库里的 `powershell.bat` 会被执行（high，本批新引入） | Windows 下改用 PowerShell 的绝对路径；非 Windows 改用 `bash -c 'set -o pipefail; …'`，curl 失败不再被判为成功 | `cli_lifecycle::tests`（`SystemRoot` 大小写不同也能通过） |
+| 电脑操控回合启动的 Claude 进程可以挂起等待后续回合，之后的普通消息（包括远端发来的）会被写进这个已经挂载并预批准了操控驱动的进程 | `FollowupPrefs` 增加 `computer_use`，不一致时结束挂起进程、重新启动 | `plain_send_never_reuses_a_parked_computer_use_process` |
+| 工作区 MCP 的确认绑定的是前端缓存的版本，后端执行前不再核对，文件被改后会直接执行新命令 | 确认改为绑定计划指纹（完整目标的哈希），后端不一致就拒绝 | `workspace_probe_requires_the_confirmed_plan_fingerprint`、`probe-confirm.test.ts` |
+| 「在终端中运行」在约 7 秒内可以连点，会开出两个终端；中途关闭的对话框会被结果弹回来 | 新增 `launching` 状态和防重入；用代次判断丢弃已关闭对话框的结果 | `useCliUpdateFlow.test.tsx` |
+| DSH 的「打开」链接会把 launch token 拼给端口上的任意程序 | 只给本次运行自己拉起的进程生成链接 | `web_url_with_the_launch_token_is_only_offered_for_our_own_host` |
+| 写设置时先读后锁，和其他写入并发时会用旧值覆盖新值 | 读、合并、写同在一把写锁内完成，远端路径也走同一函数 | 现有 settings/web 测试 |
+| `atomic_write` 会把已被旧版本放宽成 0644 的凭据文件继续保持 0644 | 一律写成 0600（原有的执行位保留） | `atomic_write_keeps_files_owner_only` |
+| 只有裸命令名时，npm 渠道识别会去应用的工作目录找 `node_modules` | 只对绝对路径做这项判断 | `npm_shim_detection_ignores_relative_paths` |
+
+记入后续，本批不处理：
+- OMP 的电脑操控注入写在工作区共享的 `.omp/mcp.json` 里，同一工作区并发启动的其他 OMP 回合也能读到。需要和 M13 一起处理：给辅助程序加令牌门禁，只有发起操控的进程拿得到令牌。
+- 终端 shell 退出时后端不通知前端，「更新中…」最长可能停留 30 分钟。需要新增终端退出事件。
+- Windows 进程号复用可能让外部进程被误认成本应用的后代。需要按进程创建时间过滤。
+- macOS/Linux 的性能诊断会采样未归属的 WebKit 进程。WKWebView 的子进程不在本应用的进程树里，所以这是目前的例外：只读 CPU 和内存统计，不读进程内存内容。
+- 写穿符号链接时，如果目标在只读位置（如 `/nix/store`）会直接报错，以前是把链接替换成普通文件。这是有意的行为变化。
+
+不处理（你的决定）：Windows 未配置签名时仍然照常发布，只给警告（见 S11 末项）。
+
+尚未处理：S2（插件隔离）、S8（`.cmd` 参数转义）、S9（工作区信任）、S11 的 CI 加固，以及其余中低危项。第一批里还没有在 Windows 真机上验证的：Toolhelp 采样、cmd 和 PowerShell 下的安装完成标记、预览 CSP 在 WebView2 下的表现。百度后台能否照常计数，需要上线后观察。
+
 ## P0：高危，建议在下个版本前处理
 
 | 编号 | 问题 | 类别 | 触发 | 状态 |

@@ -23,7 +23,7 @@
 v1.2.0 曾被企业安全审查提示有问题，起因是隐藏窗口反复执行 `cmdkey /list`。根因与修复见 `docs/security-incidents/2026-11-v1.2.0-edr-alert.zh-CN.md`，全仓自查清单与处理进度见 `docs/security-incidents/2026-11-security-audit.zh-CN.md`。实现功能时，除了确认功能正确，还要判断这个行为在安全软件看来像什么：
 
 - **不枚举、不探测系统凭据库**来显示登录状态，包括 `cmdkey`、`CredEnumerateW` / `CredReadW`、`security find-generic-password`、`secret-tool`，以及钥匙串 / 凭据管理器 API。第三方 CLI 的登录状态以 CLI 自己为准，宁可显示中性说明。
-- **读取其他程序的凭据或令牌**（如 `~/.claude/.credentials.json`、`~/.codex/auth.json`、钥匙串条目）之前，必须先通过后端同意检查 `usage_limits::consent::require`，并弹出列明实际读取位置的桌面确认框。Web 访问端不提供授权入口。新增读取点复用这一检查，不另开旁路。
+- **读取其他程序的凭据或令牌**（如 `~/.claude/.credentials.json`、`~/.codex/auth.json`、钥匙串条目）之前，必须先通过后端同意检查 `usage_limits::consent::require`，并弹出列明实际读取位置的桌面确认框。Web 访问端不提供授权入口。新增读取点复用这一检查，不另开旁路。唯一例外是专门管理某个 CLI 自身登录的设置区（如 Pi / OMP 认证区）：只在用户打开该页面、且引擎已启用时读取，不在窗口获得焦点或轮询时读，不向前端返回密钥原文。
 - **原生 API 能完成的事，不用隐藏窗口的脚本或系统工具去做。**不新增带 `CREATE_NO_WINDOW` 的 PowerShell / cmd / 系统工具调用来处理图标、文件、注册表这类进程内就能完成的工作。确实需要外部进程时写明理由，并且不得与凭据读取、网络上传或编码输出组合。
 - **截屏、输入注入、全局钩子只能放在独立的 `ccgui-computer-use` 程序里**（`src-tauri/src/bin/ccgui-computer-use/`），并且只在用户主动发起的电脑操控回合中运行。主程序不得引用 `xcap` / `enigo`，守卫测试是 `main_app_sources_never_reference_driver_crates`。跨进程访问（`OpenProcess`、用 `EnumWindows` 定位其他应用等）只能由用户操作触发，并写明理由。
 - **敏感操作不得在组件挂载、窗口获得焦点或定时轮询时自动执行。**功能被禁用时，不挂载会产生副作用的组件：遮罩只是视觉效果，禁用必须同时阻断副作用。
