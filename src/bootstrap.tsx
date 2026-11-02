@@ -107,17 +107,6 @@ export function startApp() {
       </AppCrashBoundary>
     </React.StrictMode>,
   );
-  // Analytics stays off the cold-start critical path: install after first paint
-  // via dynamic import. setTimeout (not requestIdleCallback) because older
-  // WebKitGTK lacks it. The install itself no-ops outside production.
-  window.setTimeout(() => {
-    void import("./lib/analytics")
-      .then(({ installBaiduTongji }) => installBaiduTongji())
-      .catch((error) => {
-        console.warn(
-          "[analytics] deferred Baidu Tongji install failed",
-          error instanceof Error ? error.message : String(error),
-        );
-      });
-  }, 3000);
+  // Analytics (Baidu Tongji) is a backend-only page-view beacon now
+  // (src-tauri/src/baidu_tongji.rs): no remote script runs in any webview.
 }

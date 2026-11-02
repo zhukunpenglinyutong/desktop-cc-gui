@@ -220,8 +220,10 @@ pub fn run() {
             if let Err(error) = cu_overlay::init(app.handle()) {
                 eprintln!("[cu-overlay] init failed (overlay disabled): {error}");
             }
+            // One Baidu Tongji page view per launch, built and sent by the
+            // backend; no remote script ever runs in a webview.
+            baidu_tongji::spawn_startup_pageview(app.handle());
             app.manage(metrics::MetricsState::load().map_err(std::io::Error::other)?);
-            app.manage(baidu_tongji::BaiduTongjiState::load());
             // Keep the pairing key from lingering: while the switch is on, a
             // fresh code is minted every ten minutes and broadcast.
             {
@@ -618,6 +620,8 @@ pub fn run() {
             open_app::open_workspace_in,
             open_app::open_custom_program,
             open_app::get_program_icon,
+            baidu_tongji::analytics_enabled_get,
+            baidu_tongji::analytics_enabled_set,
             open_app::reveal_in_file_manager,
             open_app::browser::open_in_browser,
             // terminal
@@ -672,8 +676,6 @@ pub fn run() {
             cli_lifecycle::cli_update_plan,
             cli_lifecycle::cli_update,
             // baidu tongji (Linux-native transport; rejected elsewhere)
-            baidu_tongji::load_baidu_tongji_script,
-            baidu_tongji::send_baidu_tongji_beacon,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

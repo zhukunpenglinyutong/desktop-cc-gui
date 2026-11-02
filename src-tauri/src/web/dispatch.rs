@@ -2,36 +2,9 @@ use serde::Deserialize;
 use serde_json::Value;
 use tauri::Manager;
 
-use super::{web_access_status, web_device_approve, web_device_revoke, web_devices};
+use super::{web_access_status, web_device_revoke, web_devices};
 
 // ==================== Command dispatch ====================
-
-#[derive(Deserialize)]
-struct RelayArgs {
-    url: String,
-    key: String,
-}
-
-#[derive(Deserialize)]
-struct RelayUnattendedArgs {
-    enabled: bool,
-}
-
-#[derive(Deserialize)]
-struct RelayDeployPackArgs {
-    path: String,
-    key: Option<String>,
-}
-
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct RelayDeployArgs {
-    token: String,
-    /// Absent for user tokens, which can list their accounts; required in
-    /// practice for account-owned ones (`cfat_…`).
-    #[serde(default)]
-    account_id: Option<String>,
-}
 
 #[derive(Deserialize)]
 struct DeviceIdArgs {
@@ -638,6 +611,55 @@ struct TerminalResizeArgs {
     rows: u16,
 }
 
+/// Error prefix of commands the bridge refuses (the frontend shows them as a
+/// desktop-only notice).
+const DESKTOP_ONLY_PREFIX: &str = "desktop-only: ";
+
+/// Changing how this desktop is reached (relay target, on/off, unattended
+/// autostart, worker deploy) or who may reach it (device approval) needs
+/// someone at the desktop. A leaked LAN token or an approved phone must not be
+/// able to turn one visit into a standing backdoor. Revoking stays remote: it
+/// only ever narrows access.
+fn desktop_only_refusal(cmd: &str) -> Option<String> {
+    matches!(
+        cmd,
+        "web_relay_start"
+            | "web_relay_stop"
+            | "web_relay_unattended"
+            | "web_relay_unattended_set"
+            | "relay_deploy_pack"
+            | "relay_deploy"
+            | "web_device_approve"
+    )
+    .then(|| format!("{DESKTOP_ONLY_PREFIX}{cmd} is only available on the desktop"))
+}
+
+/// Remote sends never mount the computer-use driver: screen capture and input
+/// injection need someone at the machine, and the global Esc stop only arms
+/// for sends made on the desktop.
+fn remote_computer_use(_requested: Option<bool>) -> Option<bool> {
+    None
+}
+
+/// A remote settings write keeps everything that decides who can reach the
+/// desktop — and the analytics switch, which is desktop-only too — at the
+/// desktop's current values. Ordinary preferences still follow the client.
+fn keep_desktop_owned_settings(
+    mut incoming: crate::settings::AppSettings,
+    current: &crate::settings::AppSettings,
+) -> crate::settings::AppSettings {
+    incoming.web_auth_enabled = current.web_auth_enabled;
+    incoming.web_auth_key = current.web_auth_key.clone();
+    incoming.web_relay_url = current.web_relay_url.clone();
+    incoming.web_relay_key = current.web_relay_key.clone();
+    incoming.web_relay_unattended = current.web_relay_unattended;
+    incoming.web_access_auto_start = current.web_access_auto_start;
+    incoming.web_access_port = current.web_access_port;
+    incoming.web_access_token = current.web_access_token.clone();
+    incoming.analytics_enabled = current.analytics_enabled;
+    incoming
+}
+
 /// Routes a bridge invoke to the same command functions the Tauri handler
 /// uses. Sync commands run inline: the heaviest (git diff, config writes) are
 /// milliseconds-scale, and the per-invoke tokio task keeps the read loop
@@ -648,6 +670,9 @@ pub(super) async fn dispatch(
     cmd: &str,
     raw: Value,
 ) -> Result<Value, String> {
+    if let Some(refusal) = desktop_only_refusal(cmd) {
+        return Err(refusal);
+    }
     match cmd {
         // config
         "get_cli_config" => ser(crate::config::get_cli_config()),
@@ -732,9 +757,10 @@ pub(super) async fn dispatch(
         "get_app_settings" => ser(crate::settings::get_app_settings()),
         "update_app_settings" => {
             let a: UpdateSettingsArgs = parse_args(&raw)?;
-            ser(crate::settings::update_app_settings(
+            ser(crate::settings::update_app_settings_merged(
                 app.clone(),
                 a.settings,
+                Some(keep_desktop_owned_settings),
             ))
         }
         // engine
@@ -754,7 +780,7 @@ pub(super) async fn dispatch(
                 a.permission,
                 a.provider_id,
                 a.run_id,
-                a.computer_use,
+                remote_computer_use(a.computer_use),
                 a.memory_bot,
             )
             .await)
@@ -1388,36 +1414,13 @@ pub(super) async fn dispatch(
                 app.state(),
             ))
         }
-        // web access: phones may read status; start/stop stay desktop-only.
+        // web access: phones may read status. Starting, stopping and pointing
+        // the bridge or relay, unattended autostart, worker deploys and device
+        // approval are refused before this match (desktop_only_refusal).
         "web_access_status" => ser(Ok(web_access_status(app.clone()))),
-        // The relay has no bootstrap problem (unlike the bridge, which cannot
-        // start itself over itself), so an approved device may manage it too.
         "web_relay_status" => ser(Ok(crate::relay::web_relay_status(app.clone()))),
-        "web_relay_start" => {
-            let a: RelayArgs = parse_args(&raw)?;
-            ser(crate::relay::web_relay_start(app.clone(), a.url, a.key).await)
-        }
-        "web_relay_stop" => ser(crate::relay::web_relay_stop(app.clone())),
-        "web_relay_unattended" => {
-            let a: RelayUnattendedArgs = parse_args(&raw)?;
-            ser(crate::relay::web_relay_unattended_set(app.clone(), a.enabled))
-        }
-        "relay_deploy_pack" => {
-            let a: RelayDeployPackArgs = parse_args(&raw)?;
-            ser(crate::relay::relay_deploy_pack(a.path, a.key))
-        }
-        "relay_deploy" => {
-            let a: RelayDeployArgs = parse_args(&raw)?;
-            ser(crate::relay::relay_deploy(a.token, a.account_id).await)
-        }
-        // Device approval is the one management action a phone may take: it
-        // is already device-scoped, and the desktop page would otherwise be
-        // the only way to approve a browser the user is holding.
         "web_devices" => ser(web_devices(app.clone())),
-        "web_device_approve" => {
-            let a: DeviceIdArgs = parse_args(&raw)?;
-            ser(web_device_approve(app.clone(), a.id).await)
-        }
+        // Revoking only narrows access, so a phone may still do it.
         "web_device_revoke" => {
             let a: DeviceIdArgs = parse_args(&raw)?;
             ser(web_device_revoke(app.clone(), a.id).await)
@@ -1494,5 +1497,74 @@ pub(super) async fn dispatch(
         }
         "plugin_check_updates" => ser(crate::plugins::market::plugin_check_updates().await),
         _ => Err(format!("unknown command: {cmd}")),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn remote_access_management_is_refused_with_a_desktop_only_error() {
+        for cmd in [
+            "web_relay_start",
+            "web_relay_stop",
+            "web_relay_unattended",
+            "web_relay_unattended_set",
+            "relay_deploy_pack",
+            "relay_deploy",
+            "web_device_approve",
+        ] {
+            let error = desktop_only_refusal(cmd).unwrap_or_else(|| panic!("{cmd} must be refused"));
+            assert!(error.starts_with(DESKTOP_ONLY_PREFIX), "{error}");
+        }
+        // Reading status and revoking a device stay available to phones.
+        for cmd in ["web_relay_status", "web_devices", "web_device_revoke", "send_message"] {
+            assert!(desktop_only_refusal(cmd).is_none(), "{cmd}");
+        }
+    }
+
+    #[test]
+    fn remote_settings_updates_keep_the_desktop_owned_fields() {
+        let mut current = crate::settings::AppSettings::default();
+        current.web_auth_enabled = true;
+        current.web_auth_key = Some("desktop-key".into());
+        current.web_relay_url = Some("https://relay.example".into());
+        current.web_relay_key = Some("relay-secret".into());
+        current.web_relay_unattended = Some(false);
+        current.web_access_auto_start = Some(false);
+        current.web_access_port = Some(8765);
+        current.web_access_token = Some("lan-token".into());
+        current.analytics_enabled = Some(false);
+
+        let mut incoming = crate::settings::AppSettings::default();
+        incoming.language = "en".into();
+        incoming.web_auth_enabled = false;
+        incoming.web_auth_key = None;
+        incoming.web_relay_url = Some("https://attacker.example".into());
+        incoming.web_relay_key = Some("attacker".into());
+        incoming.web_relay_unattended = Some(true);
+        incoming.web_access_auto_start = Some(true);
+        incoming.web_access_port = Some(1);
+        incoming.web_access_token = Some("attacker".into());
+        incoming.analytics_enabled = Some(true);
+
+        let merged = keep_desktop_owned_settings(incoming, &current);
+        assert_eq!(merged.language, "en", "ordinary fields still follow the client");
+        assert!(merged.web_auth_enabled);
+        assert_eq!(merged.web_auth_key.as_deref(), Some("desktop-key"));
+        assert_eq!(merged.web_relay_url.as_deref(), Some("https://relay.example"));
+        assert_eq!(merged.web_relay_key.as_deref(), Some("relay-secret"));
+        assert_eq!(merged.web_relay_unattended, Some(false));
+        assert_eq!(merged.web_access_auto_start, Some(false));
+        assert_eq!(merged.web_access_port, Some(8765));
+        assert_eq!(merged.web_access_token.as_deref(), Some("lan-token"));
+        assert_eq!(merged.analytics_enabled, Some(false));
+    }
+
+    #[test]
+    fn remote_sends_never_mount_the_computer_use_driver() {
+        assert_eq!(remote_computer_use(Some(true)), None);
+        assert_eq!(remote_computer_use(None), None);
     }
 }

@@ -639,6 +639,9 @@ export interface AppSettings {
   webAccessPort?: number | null;
   /** LAN web access fixed auth token (null = auto generate & persist). */
   webAccessToken?: string | null;
+  /** 设置 → 关于 → 使用统计 (null = on). Written only by
+   *  `analyticsEnabledSet`; a full-object update leaving it unset keeps it. */
+  analyticsEnabled?: boolean | null;
 }
 
 export interface DirEntry {
@@ -2070,6 +2073,9 @@ export const ipc = {
    *  Codex / ~/.agents）。插件中心的「创建插件」在开新会话前调一次，这样
    *  `/ccgui-plugin-creator` 在引擎侧确实存在、可被解析。 */
   creatorSkillInstall: () => invoke<CreatorSkillReport>("creator_skill_install"),
+  // usage analytics: the backend sends one page view per launch (desktop-only switch)
+  analyticsEnabledGet: () => invoke<boolean>("analytics_enabled_get"),
+  analyticsEnabledSet: (enabled: boolean) => invoke<void>("analytics_enabled_set", { enabled }),
   // web access (start/stop are desktop-only; the bridge answers status too)
   webDevices: () => invoke<WebDevice[]>("web_devices"),
   webDeviceApprove: (id: string) => invoke<boolean>("web_device_approve", { id }),

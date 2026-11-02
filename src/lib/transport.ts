@@ -9,10 +9,37 @@ import { listen as tauriListen, type UnlistenFn } from "@tauri-apps/api/event";
 export const isWeb =
   typeof window !== "undefined" && !("__TAURI_INTERNALS__" in window);
 
-/** Token issued by the desktop on web-access start, carried in the URL. */
-export const webToken: string | null = isWeb
-  ? new URLSearchParams(window.location.search).get("token")
-  : null;
+const WEB_TOKEN_STORAGE_KEY = "ccgui-next.webToken";
+
+/**
+ * Token issued by the desktop on web-access start. It arrives in the URL
+ * (`?token=`), then moves to this tab's sessionStorage and leaves the address
+ * bar: a token left in `location.href` ends up in history, screenshots, and
+ * anything that reports the page URL. A reload of the cleaned URL reads the
+ * session copy; a fresh link with a token always wins.
+ */
+function takeWebToken(): string | null {
+  if (!isWeb) return null;
+  const url = new URL(window.location.href);
+  const fromUrl = url.searchParams.get("token");
+  if (fromUrl) {
+    try {
+      sessionStorage.setItem(WEB_TOKEN_STORAGE_KEY, fromUrl);
+    } catch {
+      // Storage disabled: the token still works for this page load.
+    }
+    url.searchParams.delete("token");
+    window.history.replaceState(window.history.state, "", url.pathname + url.search + url.hash);
+    return fromUrl;
+  }
+  try {
+    return sessionStorage.getItem(WEB_TOKEN_STORAGE_KEY);
+  } catch {
+    return null;
+  }
+}
+
+export const webToken: string | null = takeWebToken();
 
 type Listener = (payload: unknown) => void;
 

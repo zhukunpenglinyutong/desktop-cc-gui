@@ -954,6 +954,8 @@ async fn send_message_inner_with_sink(
             provider_id: provider_id.clone(),
             memory_bot: memory_bot.clone(),
             allowed_tools: allowed_tools.clone(),
+            // Only non-computer-use sends reach this branch.
+            computer_use: false,
         };
         if let Some(live_run) = deliver_to_idle_followup(
             &state.processes,
@@ -1350,6 +1352,7 @@ async fn send_reserved(
                     provider_id: launch.req.provider_id.clone(),
                     memory_bot: launch.req.memory_bot.clone(),
                     allowed_tools: launch.req.allowed_tools.clone(),
+                    computer_use: launch.req.computer_use == Some(true),
                 }
             }),
         },
@@ -2836,6 +2839,7 @@ mod retry_lifecycle_tests {
             provider_id: None,
             memory_bot: None,
             allowed_tools: None,
+            computer_use: false,
         }
     }
 
@@ -3214,6 +3218,15 @@ mod retry_lifecycle_tests {
         run_id: &str,
         session_id: &str,
     ) -> tokio::process::Child {
+        idle_followup_child_with(registry, run_id, session_id, test_followup_prefs()).await
+    }
+
+    async fn idle_followup_child_with(
+        registry: &Arc<ProcessRegistry>,
+        run_id: &str,
+        session_id: &str,
+        prefs: registry::FollowupPrefs,
+    ) -> tokio::process::Child {
         let mut command = if cfg!(windows) {
             tokio::process::Command::new("sort")
         } else {
@@ -3239,7 +3252,7 @@ mod retry_lifecycle_tests {
                 plans: Arc::new(Mutex::new(HashMap::new())),
             },
         );
-        registry.set_awaiting_followup(session_id, run_id, test_followup_prefs());
+        registry.set_awaiting_followup(session_id, run_id, prefs);
         child
     }
 
@@ -3346,6 +3359,39 @@ mod retry_lifecycle_tests {
             tokio::time::sleep(std::time::Duration::from_millis(50)).await;
         }
         panic!("idle run was not killed after settings drift");
+    }
+
+    /// A run launched for computer use has the driver mounted and
+    /// pre-approved. A later ordinary send (desktop or remote) must never be
+    /// written into it: computer use is opted into per send.
+    #[tokio::test]
+    async fn plain_send_never_reuses_a_parked_computer_use_process() {
+        let registry = Arc::new(ProcessRegistry::default());
+        let mut child = idle_followup_child_with(
+            &registry,
+            "cu-run",
+            "s-cu",
+            registry::FollowupPrefs {
+                computer_use: true,
+                ..test_followup_prefs()
+            },
+        )
+        .await;
+        let delivered = deliver_to_idle_followup(&registry, Some("s-cu"), &test_followup_prefs(), || {
+            panic!("the prompt must not reach the computer-use process")
+        })
+        .await
+        .unwrap();
+        assert_eq!(delivered, None);
+        let killed = registry.get("cu-run").unwrap().killed;
+        for _ in 0..100 {
+            if killed.load(std::sync::atomic::Ordering::SeqCst) {
+                let _ = child.kill().await;
+                return;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        }
+        panic!("parked computer-use run was not killed");
     }
 
     /// The first turn settles at its own result even with a task pending, so

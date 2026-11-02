@@ -406,6 +406,8 @@ export const en: Messages = {
     slashAppMcp: "Show this CLI's MCP servers",
     slashAppCua:
       "Computer use: let the agent see the screen and drive apps (/ccgui-cua <task>)",
+    cuaDesktopOnly:
+      "Computer use can only be started on the desktop: remote access cannot capture or drive this computer's screen, keyboard and mouse.",
     cuaUnsupportedEngine:
       "This engine cannot do computer use (it cannot mount the driver). Switch to an engine that supports it, or see Settings → Computer use for per-engine support.",
     refreshUsage: "Refresh",
@@ -972,6 +974,13 @@ export const en: Messages = {
       "No devices yet. A browser shows up here once it submits the pairing key — approve it to let it in.",
     webDeviceAnonymous: "Unknown browser",
     webDevicePending: "Waiting for approval",
+    analyticsTitle: "Usage Statistics",
+    analyticsToggle: "Send anonymous usage statistics",
+    analyticsDesc:
+      "On each launch the app's backend sends one visit record to Baidu Tongji: version, OS, UI language, screen size and a random visitor id. It contains no conversations, files, paths or account details, and no third-party script runs in the app.",
+    analyticsSaveFailed: "Could not save; try again",
+    webWanDesktopOnly:
+      "Relay connection, unattended mode, deployment and device approval for internet access can only be set on the desktop.",
     webDeviceApproved: "Approved",
     webDeviceApprove: "Authorize",
     webDeviceRename: "Rename",

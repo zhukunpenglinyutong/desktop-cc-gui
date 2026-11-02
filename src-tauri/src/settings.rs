@@ -105,6 +105,11 @@ pub struct AppSettings {
     /// If None, a token is generated at first start and persisted.
     #[serde(default)]
     pub web_access_token: Option<String>,
+    /// 设置 → 关于 → 使用统计: the launch page-view beacon (baidu_tongji.rs).
+    /// None = on. Written only by `analytics_enabled_set`; a full-object
+    /// update that leaves it unset keeps the stored choice.
+    #[serde(default)]
+    pub analytics_enabled: Option<bool>,
     /// Max sessions shown per workspace in the sidebar before collapsing
     /// behind a "show more" row.
     #[serde(default = "default_sidebar_thread_limit")]
@@ -405,6 +410,7 @@ impl Default for AppSettings {
             web_access_auto_start: None,
             web_access_port: None,
             web_access_token: None,
+            analytics_enabled: None,
             language: default_language(),
             default_models: HashMap::new(),
             custom_models: HashMap::new(),
@@ -794,13 +800,54 @@ pub fn get_app_settings() -> Result<AppSettings, String> {
     read_settings()
 }
 
+/// Fields owned by a dedicated command keep their stored value when a
+/// full-object write leaves them unset: `update_app_settings` replaces the
+/// whole file, and a surface that never loaded the field must not silently
+/// reset the user's choice (an "off" analytics switch turning back on).
+pub(crate) fn keep_unset_dedicated_fields(incoming: &mut AppSettings, current: &AppSettings) {
+    if incoming.analytics_enabled.is_none() {
+        incoming.analytics_enabled = current.analytics_enabled;
+    }
+}
+
 #[tauri::command]
 pub fn update_app_settings<R: tauri::Runtime>(
     app: tauri::AppHandle<R>,
-    mut settings: AppSettings,
+    settings: AppSettings,
 ) -> Result<(), String> {
-    let prev_home = read_settings().ok().and_then(|s| s.codex_home);
-    let result = persist_settings(&mut settings);
+    update_app_settings_merged(app, settings, None)
+}
+
+/// Full-object settings write. Reading the stored copy, merging fields the
+/// incoming object must not reset, and persisting all happen under the one
+/// settings write lock: read-then-lock let a concurrent dedicated write
+/// (`analytics_enabled_set`, the web-access toggles) be overwritten by the
+/// stale copy. `remote_merge` (web bridge) keeps desktop-owned fields and
+/// fails closed when the stored copy cannot be read.
+pub(crate) fn update_app_settings_merged<R: tauri::Runtime>(
+    app: tauri::AppHandle<R>,
+    mut settings: AppSettings,
+    remote_merge: Option<fn(AppSettings, &AppSettings) -> AppSettings>,
+) -> Result<(), String> {
+    let (prev_home, result) = {
+        let _guard = settings_write_lock();
+        let current = read_settings();
+        if let Some(merge) = remote_merge {
+            let current = current.as_ref().map_err(|e| format!("read settings: {e}"))?;
+            settings = merge(settings, current);
+        }
+        let current = current.ok();
+        let prev_home = current.as_ref().and_then(|s| s.codex_home.clone());
+        if let Some(current) = current.as_ref() {
+            keep_unset_dedicated_fields(&mut settings, current);
+        }
+        let result = match persist_settings_committed(&mut settings) {
+            Ok(Some(warning)) => Err(warning),
+            Ok(None) => Ok(()),
+            Err(error) => Err(error),
+        };
+        (prev_home, result)
+    };
     // Other surfaces (the composer's proxy toggle) follow along without
     // re-reading settings.json.
     let _ = app.emit("settings://changed", ());
@@ -1017,6 +1064,21 @@ pub(crate) fn announce_settings(app: &tauri::AppHandle) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn full_update_without_the_analytics_choice_keeps_the_stored_one() {
+        let mut stored = AppSettings::default();
+        stored.analytics_enabled = Some(false);
+        // A full-object write from a surface that never saw the field.
+        let mut incoming = AppSettings::default();
+        keep_unset_dedicated_fields(&mut incoming, &stored);
+        assert_eq!(incoming.analytics_enabled, Some(false));
+
+        // An explicit value is never overridden.
+        let mut explicit = AppSettings::default();
+        explicit.analytics_enabled = Some(true);
+        keep_unset_dedicated_fields(&mut explicit, &stored);
+        assert_eq!(explicit.analytics_enabled, Some(true));
+    }
 
     #[test]
     fn bin_override_key_camel_cases_hyphenated_engine_ids() {
