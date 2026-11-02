@@ -6,6 +6,7 @@ import { useCopied } from "@/hooks/use-copied";
 import { SettingsSectionLabel } from "@/components/application/settings/settings-rows";
 import { openExternal } from "@/lib/platform";
 import { GITHUB_REPO_URL } from "@/version/changelog";
+import { AnalyticsSetting } from "./AnalyticsSetting";
 import wxqImage from "@/assets/images/wxq.png";
 import douyinImage from "@/assets/images/douyin.png";
 
@@ -147,6 +148,7 @@ export function AboutSection() {
         </div>
       </div>
 
+      <AnalyticsSetting />
     </div>
   );
 }

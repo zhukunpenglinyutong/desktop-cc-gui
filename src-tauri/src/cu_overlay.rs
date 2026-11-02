@@ -2,7 +2,7 @@
 //! a blue pointer while a computer-use run drives the machine, so the user
 //! can see where the agent is about to act.
 //!
-//! The driver lives in the `--computer-use-mcp` child process (spawned by
+//! The driver lives in the `ccgui-computer-use` helper process (spawned by
 //! the engine CLI), so action targets arrive here over a loopback control
 //! channel: 127.0.0.1 only, per-launch bearer token, and the port/token are
 //! handed to the child through the MCP server entry's env.

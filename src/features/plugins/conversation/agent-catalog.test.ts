@@ -11,7 +11,7 @@ const backend = () => ({
   getCliConfig: vi.fn(async () => config),
   listEngineModels: vi.fn(async () => ({ models: [{ id: "model", name: "Model", provider: "hidden", description: "SECRET" }], authoritative: true })),
   cliVersionStatus: vi.fn(async () => ({ engine: "codex", installed: true, localVersion: "codex-cli 0.154.0" as string | null, latestVersion: "99.0.0", updateAvailable: true, updateKind: "npm" as const })),
-  cliUpdatePlan: vi.fn(async () => ({ engine: "codex", action: "update" as const, kind: "npm", command: ["SECRET"], manualCommand: "SECRET", canRun: true, blockers: [], platform: "linux" })),
+  cliUpdatePlan: vi.fn(async () => ({ engine: "codex", action: "update" as const, kind: "npm", command: ["SECRET"], manualCommand: "SECRET", terminalCommand: null, canRun: true, blockers: [], platform: "linux" })),
 });
 
 describe("agent catalog", () => {

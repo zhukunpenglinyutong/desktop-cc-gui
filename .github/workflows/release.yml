@@ -439,6 +439,47 @@ jobs:
       - name: Rust tests
         run: cargo test --manifest-path src-tauri/Cargo.toml --lib
 
+      # Authenticode. An unsigned installer is what endpoint security scores
+      # as untrusted, so with a provider configured (Azure Trusted Signing or
+      # a certificate — see scripts/windows-sign.ps1 for the secrets/vars)
+      # tauri signs the exe, every extra binary, the installer and the
+      # uninstaller through that script. With none configured the installer
+      # still builds, unsigned, and the run says so.
+      - name: Configure Windows code signing
+        id: winsign
+        shell: pwsh
+        env:
+          AZURE_SIGNING_ENDPOINT: ${{ vars.AZURE_SIGNING_ENDPOINT || secrets.AZURE_SIGNING_ENDPOINT }}
+          WINDOWS_CERTIFICATE_PFX_B64: ${{ secrets.WINDOWS_CERTIFICATE_PFX_B64 }}
+          WINDOWS_CERTIFICATE_THUMBPRINT: ${{ vars.WINDOWS_CERTIFICATE_THUMBPRINT || secrets.WINDOWS_CERTIFICATE_THUMBPRINT }}
+        run: |
+          $mode = 'none'
+          if ($env:WINDOWS_CERTIFICATE_THUMBPRINT) { $mode = 'thumbprint' }
+          if ($env:WINDOWS_CERTIFICATE_PFX_B64) { $mode = 'pfx' }
+          if ($env:AZURE_SIGNING_ENDPOINT) { $mode = 'azure' }
+          "mode=$mode" >> $env:GITHUB_OUTPUT
+          if ($mode -eq 'none') {
+            Write-Output "::warning::Windows installer is UNSIGNED: no Authenticode provider configured (see scripts/windows-sign.ps1)"
+            exit 0
+          }
+          if ($mode -eq 'pfx') {
+            $pfx = Join-Path $env:RUNNER_TEMP 'codesign.pfx'
+            [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:WINDOWS_CERTIFICATE_PFX_B64))
+            "WINDOWS_CERTIFICATE_PFX=$pfx" >> $env:GITHUB_ENV
+          }
+          if ($mode -eq 'azure') {
+            cargo install trusted-signing-cli --locked
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
+          $script = Join-Path $env:GITHUB_WORKSPACE 'scripts/windows-sign.ps1'
+          $config = @{ bundle = @{ windows = @{ signCommand = @{
+            cmd = 'pwsh'
+            args = @('-NoProfile', '-NonInteractive', '-File', $script, '%1')
+          } } } } | ConvertTo-Json -Depth 8 -Compress
+          $path = Join-Path $env:RUNNER_TEMP 'tauri.windows-sign.conf.json'
+          Set-Content -LiteralPath $path -Value $config -Encoding utf8NoBOM
+          "config=$path" >> $env:GITHUB_OUTPUT
+
       # tauri.windows.conf.json merges in the embedded WebView2 bootstrapper,
       # matching what 0.9.x installers shipped. The NSIS upgrade code derives
       # from the bundle identifier, which is unchanged — installed 0.9.x
@@ -449,7 +490,49 @@ jobs:
           NODE_OPTIONS: "--max-old-space-size=8192"
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_B64 }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-        run: pnpm exec tauri build --config src-tauri/tauri.windows.conf.json --bundles nsis
+          SIGN_CONFIG: ${{ steps.winsign.outputs.config }}
+          AZURE_SIGNING_ENDPOINT: ${{ vars.AZURE_SIGNING_ENDPOINT || secrets.AZURE_SIGNING_ENDPOINT }}
+          AZURE_SIGNING_ACCOUNT: ${{ vars.AZURE_SIGNING_ACCOUNT || secrets.AZURE_SIGNING_ACCOUNT }}
+          AZURE_SIGNING_PROFILE: ${{ vars.AZURE_SIGNING_PROFILE || secrets.AZURE_SIGNING_PROFILE }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+          WINDOWS_CERTIFICATE_THUMBPRINT: ${{ vars.WINDOWS_CERTIFICATE_THUMBPRINT || secrets.WINDOWS_CERTIFICATE_THUMBPRINT }}
+          WINDOWS_TIMESTAMP_URL: ${{ vars.WINDOWS_TIMESTAMP_URL || secrets.WINDOWS_TIMESTAMP_URL }}
+        run: |
+          $signConfig = @()
+          if ($env:SIGN_CONFIG) { $signConfig = @('--config', $env:SIGN_CONFIG) }
+          pnpm exec tauri build --config src-tauri/tauri.windows.conf.json @signConfig --bundles nsis
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      # Check what ships, not target/release: the bundler restores the
+      # unpatched (unsigned) main binary there after packaging. Unpack the
+      # installer with 7-Zip (preinstalled, reads NSIS) and require a valid
+      # signature on the installer and on every exe inside it — which also
+      # proves the computer-use helper made it into the package.
+      - name: Verify Authenticode signatures
+        if: steps.winsign.outputs.mode != 'none'
+        shell: pwsh
+        run: |
+          $installers = @(Get-ChildItem src-tauri/target/release/bundle/nsis/*.exe)
+          if ($installers.Count -eq 0) { Write-Output "::error::no NSIS installer was built"; exit 1 }
+          $files = @($installers)
+          foreach ($installer in $installers) {
+            $out = Join-Path $env:RUNNER_TEMP ("unpacked-" + $installer.BaseName)
+            7z x -y "-o$out" $installer.FullName | Out-Null
+            if ($LASTEXITCODE -ne 0) { Write-Output "::error::7-Zip could not unpack $($installer.Name)"; exit 1 }
+            $inner = @(Get-ChildItem -LiteralPath $out -Recurse -Filter *.exe)
+            if (-not ($inner | Where-Object Name -eq 'ccgui-computer-use.exe')) {
+              Write-Output "::error::$($installer.Name) does not contain ccgui-computer-use.exe"
+              exit 1
+            }
+            $files += $inner
+          }
+          $unsigned = @($files | Where-Object { (Get-AuthenticodeSignature -LiteralPath $_.FullName).Status -ne 'Valid' })
+          foreach ($file in $unsigned) { Write-Output "::error::not validly signed: $($file.FullName)" }
+          if ($unsigned.Count -gt 0) { exit 1 }
+          $files | ForEach-Object { Write-Output "signed: $($_.Name)" }
 
       - name: Upload Windows installer
         uses: actions/upload-artifact@v4

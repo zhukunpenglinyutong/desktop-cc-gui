@@ -9,9 +9,13 @@
 //! crates. Everything is a no-op error on other platforms — the MCP tools
 //! stay registered everywhere and report the platform limit honestly.
 
+// Everything but the error stubs is macOS FFI.
+#[cfg(target_os = "macos")]
 use std::ffi::{c_void, CString};
+#[cfg(target_os = "macos")]
 use std::sync::atomic::{AtomicU64, Ordering};
 
+#[cfg(target_os = "macos")]
 use parking_lot::Mutex;
 
 // ==================== CF / AX FFI ====================
@@ -448,7 +452,7 @@ mod imp {
                 "AXPress failed (error {status}); fall back to a pixel click"
             ));
         }
-        crate::computer_use::notify_cursor(cx as i32, cy as i32);
+        crate::driver::notify_cursor(cx as i32, cy as i32);
         Ok(format!(
             "Pressed element [{ref_id}] (center {cx:.0},{cy:.0})."
         ))

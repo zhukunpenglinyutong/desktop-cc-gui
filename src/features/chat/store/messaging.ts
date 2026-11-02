@@ -45,7 +45,7 @@ import {
   upsertSessionMetaInto,
 } from "./engine-events";
 import { ASK_OTHER_OPTION, askLoops, beginAskSubmit, revertAskSubmit } from "./ask-loop";
-import { engineSupportsComputerUse } from "../computer-use";
+import { computerUseRefusalKey } from "../computer-use";
 import type { SendOptions } from "./types";
 import { patchPlanReview } from "./plan-review";
 import { effectivePermission } from "./permissions";
@@ -230,11 +230,15 @@ export function createMessagingActions(
     }
     const engine = tab.engine;
     const key = sessionKey(engine, tab.sessionId, tab.workspacePath);
-    // Computer use asks for the driver; engines without an MCP-mount path
-    // would run the prompt text-only while the user believes the machine is
-    // under agent control. Refuse loudly instead of downgrading silently.
-    if (options?.computerUse && !engineSupportsComputerUse(get().engines, engine)) {
-      patchSession(set, key, { error: i18n.t("chat.cuaUnsupportedEngine") });
+    // Computer use asks for the driver; a web-access client or an engine
+    // without an MCP-mount path would run the prompt text-only while the user
+    // believes the machine is under agent control. Refuse loudly instead of
+    // downgrading silently.
+    const cuaRefusal = options?.computerUse
+      ? computerUseRefusalKey(get().engines, engine)
+      : null;
+    if (cuaRefusal) {
+      patchSession(set, key, { error: i18n.t(cuaRefusal) });
       return;
     }
     // Resolve BEFORE the optimistic rows land: the patch below writes

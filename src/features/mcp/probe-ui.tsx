@@ -28,6 +28,10 @@ const TONE = {
     "bg-background-tertiary-default text-text-tertiary ring-separator-border",
 };
 
+/** 行内纯图标按钮（检测 / 启用 / 启动方式）共用的尺寸与交互态。 */
+export const ROW_ICON_BUTTON =
+  "flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-md text-text-secondary transition-colors hover:bg-background-tertiary-default focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-focus-ring disabled:cursor-not-allowed disabled:hover:bg-transparent";
+
 /** 一行里的连接状态；没有结果时不占位。 */
 export function ProbeStatusChip({ entry }: { entry: McpConfigEntry }) {
   const { t } = useTranslation();
@@ -88,7 +92,7 @@ export function ProbeActionButton({
       title={t("mcp.probe.hint")}
       disabled={pending}
       onClick={() => void probe(entry, workspacePath)}
-      className="flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-md text-text-secondary transition-colors hover:bg-background-tertiary-default focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-focus-ring disabled:cursor-not-allowed disabled:hover:bg-transparent"
+      className={ROW_ICON_BUTTON}
     >
       {pending ? (
         <Loader2 className="size-3.5 animate-spin" aria-hidden />
@@ -161,7 +165,9 @@ export function ProbeDetail({
             </p>
           ) : null}
           {state.result.tools.length > 0 ? (
-            <p className="break-all font-mono text-caption-1-regular text-text-tertiary">
+            // 工具名可能上百个：清单自己限高滚动，不把弹窗撑出视口；按逗号后的
+            // 空格换行，不在工具名中间断开。
+            <p className="max-h-40 overflow-y-auto break-words pr-1 font-mono text-caption-1-regular text-text-tertiary">
               {state.result.toolCount > state.result.tools.length
                 ? t("mcp.probe.toolListTruncated", {
                     total: state.result.toolCount,

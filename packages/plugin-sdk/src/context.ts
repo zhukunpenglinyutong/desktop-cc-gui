@@ -964,7 +964,10 @@ export interface PluginContext {
   };
   /** 订阅限额（权限 `limits.read`，0.3.25 起）。缺省查询全部平台；宿主缓存
    *  60 秒，refresh 跳过缓存但 20 秒内重复刷新仍复用上次结果，并遵守 429
-   *  退避。 */
+   *  退避。宿主读取本机 CLI 登录前先向桌面用户列出读取位置并征求同意（仅
+   *  询问一次，可在插件详情页撤销）；未同意时 get 以
+   *  `CredentialConsentRequired: ` 开头的错误拒绝，插件应提示用户而不是
+   *  重试轰炸。 */
   limits: {
     get(options?: {
       providers?: UsageLimitProviderId[];

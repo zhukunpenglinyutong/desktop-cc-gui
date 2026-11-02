@@ -605,11 +605,89 @@ impl CpuTracker {
     }
 }
 
+/// Pids refreshed for memory/CPU: this round's selection plus last round's,
+/// sorted and deduplicated. A pid that left the selection (exited, or pushed
+/// out by the limit) rides along once so sysinfo's `remove_dead_processes`
+/// drops it — `ProcessesToUpdate::Some` only ever prunes listed pids.
+fn refresh_targets(selected: &[u32], previous: &HashSet<u32>) -> Vec<u32> {
+    let mut targets: Vec<u32> = selected.iter().chain(previous).copied().collect();
+    targets.sort_unstable();
+    targets.dedup();
+    targets
+}
+
+/// Process table rows (pid, parent, name) used only to work out which
+/// processes are ours.
+///
+/// Windows: a Toolhelp snapshot lists pid / parent / exe name without
+/// opening any process. sysinfo's `ProcessesToUpdate::All` instead calls
+/// `OpenProcess(QUERY_INFORMATION | VM_READ)` on every new process on the
+/// machine — lsass included — every sample, which endpoint security reads
+/// as credential-theft / injection staging. Handles are opened only for the
+/// selected (own) pids in the second, `ProcessesToUpdate::Some` refresh.
+#[cfg(windows)]
+fn process_table(_system: &mut System) -> Option<Vec<ProcessIdentity>> {
+    use windows::Win32::Foundation::CloseHandle;
+    use windows::Win32::System::Diagnostics::ToolHelp::{
+        CreateToolhelp32Snapshot, Process32FirstW, Process32NextW, PROCESSENTRY32W,
+        TH32CS_SNAPPROCESS,
+    };
+
+    let snapshot = unsafe { CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0) }.ok()?;
+    let mut entry = PROCESSENTRY32W {
+        dwSize: std::mem::size_of::<PROCESSENTRY32W>() as u32,
+        ..Default::default()
+    };
+    let mut rows = Vec::new();
+    let mut more = unsafe { Process32FirstW(snapshot, &mut entry) }.is_ok();
+    while more {
+        let len = entry
+            .szExeFile
+            .iter()
+            .position(|&unit| unit == 0)
+            .unwrap_or(entry.szExeFile.len());
+        rows.push(ProcessIdentity {
+            pid: entry.th32ProcessID,
+            parent: (entry.th32ParentProcessID != 0).then_some(entry.th32ParentProcessID),
+            name: String::from_utf16_lossy(&entry.szExeFile[..len]),
+        });
+        more = unsafe { Process32NextW(snapshot, &mut entry) }.is_ok();
+    }
+    let _ = unsafe { CloseHandle(snapshot) };
+    (!rows.is_empty()).then_some(rows)
+}
+
+/// macOS / Linux: sysinfo with `ProcessRefreshKind::nothing()` reads only
+/// list-level metadata (libproc process info / `/proc/<pid>/stat`) — no task
+/// port, memory contents or environment of other processes. Memory and CPU
+/// are read afterwards for the selected pids only.
+#[cfg(not(windows))]
+fn process_table(system: &mut System) -> Option<Vec<ProcessIdentity>> {
+    let updated = system.refresh_processes_specifics(
+        ProcessesToUpdate::All,
+        true,
+        ProcessRefreshKind::nothing().without_tasks(),
+    );
+    (updated > 0).then(|| {
+        system
+            .processes()
+            .values()
+            .map(|process| ProcessIdentity {
+                pid: process.pid().as_u32(),
+                parent: process.parent().map(|pid| pid.as_u32()),
+                name: process.name().to_string_lossy().into_owned(),
+            })
+            .collect()
+    })
+}
+
 struct Collector {
     system: System,
     cpu: CpuTracker,
     previous_system_sample: Option<Instant>,
     main_pid: u32,
+    /// Pids measured last round (see [`refresh_targets`]).
+    sampled: HashSet<u32>,
 }
 
 impl Collector {
@@ -619,6 +697,7 @@ impl Collector {
             cpu: CpuTracker::default(),
             previous_system_sample: None,
             main_pid: std::process::id(),
+            sampled: HashSet::new(),
         }
     }
 
@@ -658,31 +737,19 @@ impl Collector {
         } else {
             self.previous_system_sample = None;
         }
-        let updated = self.system.refresh_processes_specifics(
-            ProcessesToUpdate::All,
-            true,
-            ProcessRefreshKind::nothing().without_tasks(),
-        );
-        if updated == 0 || self.system.process(Pid::from_u32(self.main_pid)).is_none() {
+        let Some(rows) = process_table(&mut self.system)
+            .filter(|rows| rows.iter().any(|row| row.pid == self.main_pid))
+        else {
             self.cpu.previous.clear();
             return sample;
-        }
-        let rows: Vec<_> = self
-            .system
-            .processes()
-            .values()
-            .map(|process| ProcessIdentity {
-                pid: process.pid().as_u32(),
-                parent: process.parent().map(|pid| pid.as_u32()),
-                name: process.name().to_string_lossy().into_owned(),
-            })
-            .collect();
+        };
         let selection = select_processes(&rows, self.main_pid);
-        let pids: Vec<_> = selection
-            .processes
-            .iter()
-            .map(|process| Pid::from_u32(process.pid))
+        let selected: Vec<u32> = selection.processes.iter().map(|process| process.pid).collect();
+        let pids: Vec<_> = refresh_targets(&selected, &self.sampled)
+            .into_iter()
+            .map(Pid::from_u32)
             .collect();
+        self.sampled = selected.into_iter().collect();
         let updated = self.system.refresh_processes_specifics(
             ProcessesToUpdate::Some(&pids),
             true,
@@ -1088,6 +1155,42 @@ mod tests {
         assert_eq!(restarted.enabled().unwrap(), expected);
         drop(restarted);
         std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn refresh_targets_carry_previous_samples_so_exited_pids_drop_out() {
+        let targets = refresh_targets(&[1, 5, 3], &HashSet::from([3, 7]));
+        assert_eq!(targets, vec![1, 3, 5, 7]);
+        assert!(refresh_targets(&[], &HashSet::new()).is_empty());
+    }
+
+    /// Endpoint security reads "OpenProcess(VM_READ) on every new process,
+    /// lsass included, every 5 s" as credential-theft / injection staging,
+    /// and sysinfo does exactly that on Windows for `ProcessesToUpdate::All`.
+    /// The full-table refresh may only live in the non-Windows table reader.
+    #[test]
+    fn whole_system_refresh_never_reaches_the_windows_build() {
+        let source = include_str!("metrics.rs");
+        // Code only: doc comments may name the API they warn about.
+        let production: String = source
+            .split("#[cfg(test)]")
+            .next()
+            .unwrap()
+            .lines()
+            .filter(|line| !line.trim_start().starts_with("//"))
+            .map(|line| format!("{line}\n"))
+            .collect();
+        let needle = ["ProcessesToUpdate", "::All"].concat();
+        let uses: Vec<_> = production.match_indices(&needle).collect();
+        assert_eq!(uses.len(), 1, "full refresh must appear exactly once");
+        let reader = production
+            .find("#[cfg(not(windows))]\nfn process_table(")
+            .expect("non-Windows process_table");
+        let reader_end = reader + production[reader..].find("\n}\n").unwrap();
+        assert!(
+            (reader..reader_end).contains(&uses[0].0),
+            "ProcessesToUpdate::All outside the non-Windows table reader"
+        );
     }
 
     #[test]

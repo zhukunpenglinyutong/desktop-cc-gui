@@ -64,7 +64,7 @@ pub fn scan_summary_file(
         reader,
         &extractor_for(engine, ImageMode::SkipDataUrls),
         accepted_internal_frames,
-        |row| {
+        |_, row| {
             acc.accept(row);
         },
     );
@@ -72,7 +72,12 @@ pub fn scan_summary_file(
 }
 
 /// dsh session files are zstd-compressed NDJSON; everything else is plain.
-fn open_line_reader(engine: &str, path: &Path) -> Result<Box<dyn BufRead>, String> {
+///
+/// dsh 的压缩不是可选项：`Decoder` 默认**跨帧拼接到 EOF**（`single_frame()` 才是
+/// 只读第一帧），而真实转录本的第 1 帧通常只有 header 一行（实测：7.4 MB / 3 887
+/// 帧 / 首帧 216 B）。分叉也要按行读这个文件（`engine::fork_dsh`），所以按 crate
+/// 可见性暴露出去——两处各包一层 zstd 解码必然漂移。
+pub(crate) fn open_line_reader(engine: &str, path: &Path) -> Result<Box<dyn BufRead>, String> {
     let file = std::fs::File::open(path).map_err(|e| format!("open {}: {e}", path.display()))?;
     if engine == "dsh" {
         let decoder = zstd::stream::read::Decoder::new(std::io::BufReader::new(file))
@@ -85,7 +90,7 @@ fn open_line_reader(engine: &str, path: &Path) -> Result<Box<dyn BufRead>, Strin
 
 /// Image payloads: the reader renders them, the scanner must not build them.
 #[derive(Clone, Copy, PartialEq)]
-enum ImageMode {
+pub(super) enum ImageMode {
     Collect,
     SkipDataUrls,
 }
@@ -190,15 +195,19 @@ fn claude_drop_local_command(value: &Value, open: &mut bool) -> bool {
 
 /// Line-loop skeleton shared by the full parse and the scan summary: decode
 /// one NDJSON line, extract rows, normalize, hand each to `consume`.
+///
+/// `line` 是该行在文件里的行号（0 起），随每条 row 一起交给 `consume`：会话
+/// 分叉要按"锚点轮结束在第几行"复制前缀，行号只有在这一层拿得到（row 一旦
+/// 折进 `Message` 就与源码位置脱钩了）。
 fn walk_lines(
     reader: impl BufRead,
     extract: &LineExtractor<'_>,
     accepted_internal_frames: &HashSet<String>,
-    mut consume: impl FnMut(LineRow),
+    mut consume: impl FnMut(usize, LineRow),
 ) {
-    for line in reader.lines() {
-        let Ok(line) = line else { continue };
-        let trimmed = line.trim();
+    for (line, text) in reader.lines().enumerate() {
+        let Ok(text) = text else { continue };
+        let trimmed = text.trim();
         if trimmed.is_empty() || !trimmed.contains("\"type\"") {
             continue;
         }
@@ -209,9 +218,47 @@ fn walk_lines(
             let Some(row) = normalize_extracted_row(row, accepted_internal_frames) else {
                 continue;
             };
-            consume(row);
+            consume(line, row);
         }
     }
+}
+
+/// 分叉切点用的**用户消息源行号**，按出现顺序排列；最后一个元素是 `usize::MAX`
+/// （文件末尾从不是某条消息的起点）。
+///
+/// 存在的理由：切点只能从**解析器同一条**流水线上推导。另写一份"这条原始记录
+/// 算不算用户消息"的判据必然与提取器分家，于是"第 n 条 user 记录"整体错位，分叉
+/// 静默地少复制 N 轮、甚至只剩 CLI chrome。行号由提取器自己产出，两个口径就不可能
+/// 再分开。
+///
+/// `engine` 是三个引擎共用的同一个入口：凡是走同一份提取器 + `normalize_extracted_row`
+/// 的引擎，计数口径就与 `parse_session_file` 天然一致。**不要**再为某个引擎另写一份
+/// "原始行是否算 user 消息"的判据——Codex 曾经这么做过（直接用 `codex_line_is_visible_user`
+/// 数原始行），结果 `# AGENTS.md instructions` / `<environment_context>` / `<skill>`
+/// 这类会被规范化丢弃的注入行仍被计数，序号比锚点大，切点提前一轮，分支静默丢掉
+/// 用户点的那一轮。
+pub(crate) fn user_row_lines(
+    engine: &str,
+    reader: impl BufRead,
+    accepted_internal_frames: &HashSet<String>,
+) -> Vec<usize> {
+    let mut lines = Vec::new();
+    walk_lines(
+        reader,
+        &extractor_for(engine, ImageMode::Collect),
+        accepted_internal_frames,
+        |line, row| {
+            // 丢弃条件走 `user_row_is_visible`（与 `fold_rows` 同一个函数）：少算或多算
+            // 几条 user 行，"第 n 条 user 记录"就整体错位，分叉会静默切早或切晚一轮。
+            // 两个集合必须由构造保证相同，不能靠"实际数据里不会出现空文本行"。
+            if row.role == "user" && user_row_is_visible(&row.text, !row.images.is_empty()) {
+                lines.push(line);
+            }
+        },
+    );
+    // 末尾哨兵：锚点轮是最后一轮时，切点取它（= 整份文件），分支仍**包含**该轮。
+    lines.push(usize::MAX);
+    lines
 }
 
 fn collect_session(
@@ -220,7 +267,7 @@ fn collect_session(
     accepted_internal_frames: &HashSet<String>,
 ) -> ParsedSession {
     let mut rows = Vec::new();
-    walk_lines(reader, extract, accepted_internal_frames, |row| {
+    walk_lines(reader, extract, accepted_internal_frames, |_, row| {
         rows.push(row)
     });
     fold_rows(rows)
@@ -279,7 +326,9 @@ fn fold_rows(rows: Vec<LineRow>) -> ParsedSession {
             }
             continue;
         }
-        if row.text.trim().is_empty() && row.images.is_empty() {
+        // Same predicate as the fork cut's `user_row_lines`: a row dropped here
+        // must be dropped there, or "the n-th user message" drifts by a turn.
+        if !user_row_is_visible(&row.text, !row.images.is_empty()) {
             continue;
         }
         let parsed_ts = row.ts.as_deref().and_then(super::parse_ts_ms_str);
@@ -381,6 +430,43 @@ impl ScanAcc {
     }
 }
 
+/// 一条 user 行是否**可见**（会被折叠成 `Message`）：空文本且无图片的行不算。
+///
+/// 这是"可见 user 行"的**唯一一份**定义，三个消费者共用：
+/// 1. `fold_rows`——决定产不产出 `Message`；
+/// 2. `user_row_lines`（Claude 切点）——决定哪些行进"第 n 条 user 记录"的表；
+/// 3. `fork_dsh::keep_count` / `fork_keep_count_codex`——把"锚点是第几条可见 user
+///    消息"映射回"它在哪一轮"。
+///
+/// 前两个必须逐字一致：行表比 `parsed.messages` 多算几条，切点就整体错位。第三个则
+/// 关系到"一轮里不止一条 user 消息"时锚点落到哪一轮——分开写会静默切早或切晚。
+pub(crate) fn user_row_is_visible(text: &str, has_images: bool) -> bool {
+    !(text.trim().is_empty() && !has_images)
+}
+
+/// dsh 的 `user/message` 里**用户真正输入**的文本；注入的运行时上下文与空文本返回
+/// `None`（那一行不算可见 user 消息）。
+///
+/// 这个判据**必须只有一份定义**：提取器（`extract_dsh_line`）用它决定哪一行产出可见
+/// user 消息。分叉切点**不再**单独调用它——切点走 `user_row_lines("dsh", …)`，与解析器
+/// 共用同一条流水线，这样"第几条可见 user 消息"与"第几轮"的口径天然一致（dsh 的一轮里
+/// 可以有多条可见 user 消息，两者本就**不是一回事**）。
+pub(crate) fn dsh_user_message_text(value: &Value) -> Option<String> {
+    if type_str(value) != "user/message" {
+        return None;
+    }
+    let text = content_text(value.get("data").and_then(|d| d.get("content")));
+    // Skip injected runtime context / system reminders — not user text.
+    let trimmed = text.trim();
+    if trimmed.starts_with("<system-reminder>") || trimmed.starts_with("Current runtime context") {
+        return None;
+    }
+    if trimmed.is_empty() {
+        return None;
+    }
+    Some(text)
+}
+
 fn extract_dsh_line(value: &Value) -> LineRows {
     let line_type = type_str(value);
     let ts = value
@@ -388,21 +474,10 @@ fn extract_dsh_line(value: &Value) -> LineRows {
         .and_then(Value::as_i64)
         .map(|ms| ms.to_string());
     match line_type {
-        "user/message" => {
-            let text = content_text(value.get("data").and_then(|d| d.get("content")));
-            // Skip injected runtime context / system reminders — not user text.
-            let trimmed = text.trim();
-            if trimmed.starts_with("<system-reminder>")
-                || trimmed.starts_with("Current runtime context")
-            {
-                return Vec::new();
-            }
-            if trimmed.is_empty() {
-                Vec::new()
-            } else {
-                vec![LineRow::new("user", text, ts)]
-            }
-        }
+        "user/message" => match dsh_user_message_text(value) {
+            None => Vec::new(),
+            Some(text) => vec![LineRow::new("user", text, ts)],
+        },
         "assistant/message" => {
             let content = value
                 .get("data")
@@ -980,7 +1055,7 @@ fn extract_codex_line(value: &Value, images: ImageMode) -> LineRows {
                 }
                 _ => Vec::new(),
             };
-            if text.trim().is_empty() && collected.is_empty() {
+            if !user_row_is_visible(&text, !collected.is_empty()) {
                 Vec::new()
             } else {
                 vec![LineRow {
@@ -2558,7 +2633,7 @@ mod tests {
             std::io::Cursor::new(input),
             &extractor_for("claude", ImageMode::SkipDataUrls),
             &HashSet::new(),
-            |row| acc.accept(row),
+            |_, row| acc.accept(row),
         );
         assert_eq!(acc.finish().title, "review下本地代码");
     }
@@ -2569,6 +2644,80 @@ mod tests {
         assert_eq!(
             claude_texts(&[claude_user(text, false)]),
             ["/aimax:code-review 审查1772"]
+        );
+    }
+
+    /// 分叉切点用的「可见 user 行号」必须与提取器同源：列出的行号就是
+    /// `parse_session_file` 里那些 user 消息所在的原始行，末尾再加一个"文件
+    /// 末尾"哨兵。会话分叉整条链路都压在这上面（切点 = 第 n+1 条可见 user 行），
+    /// 所以把每种形状钉在确切行号上：CLI chrome（caveat / 窗内信封 / stdout）、
+    /// 工具结果轮、`isMeta` 展开都不占行号；真实提问、窗外的 skill 信封、纯图片轮
+    /// 各占一行。行号一旦与解析口径分家，分叉就会静默少复制若干轮。
+    #[test]
+    fn claude_user_row_lines_match_the_visible_rows() {
+        let caveat = "<local-command-caveat>Caveat: local command.</local-command-caveat>";
+        let model = "<command-name>/model</command-name>\n<command-message>model</command-message>\n<command-args></command-args>";
+        let skill = "<command-message>aimax:code-review</command-message>\n<command-name>/aimax:code-review</command-name>\n<command-args>审查1772</command-args>";
+        let image = serde_json::json!({
+            "type": "user",
+            "message": {
+                "role": "user",
+                "content": [
+                    {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": "aGk="}}
+                ]
+            }
+        });
+        let tool_result = serde_json::json!({
+            "type": "user",
+            "message": {"role": "user", "content": [{"type": "tool_result", "content": "输出"}]}
+        });
+        let lines = vec![
+            claude_user(caveat, true),  // 0 CLI chrome：开窗
+            claude_user(model, false),  // 1 CLI chrome：窗内信封
+            claude_user(
+                "<local-command-stdout>Set model to Opus</local-command-stdout>",
+                false,
+            ), // 2 CLI chrome：stdout
+            claude_user("先看一眼仓库结构", false), // 3 可见（同时关掉上面的窗口）
+            tool_result,                // 4 工具结果轮：不占行号
+            claude_user(skill, false),  // 5 可见：窗口已关，信封按 `命令 参数` 显示
+            claude_user("被展开的命令", true), // 6 isMeta 展开：不占行号
+            image,                      // 7 可见：纯图片轮（文本为空）
+            claude_user("你能干啥", false), // 8 可见
+        ];
+        let input = lines
+            .iter()
+            .map(Value::to_string)
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        let cursor = || std::io::Cursor::new(input.clone());
+        assert_eq!(
+            user_row_lines("claude", cursor(), &HashSet::new()),
+            [3, 5, 7, 8, usize::MAX],
+            "可见 user 行的行号（0 起）+ 末尾哨兵"
+        );
+        // 与解析同源：去掉哨兵后的条数必须等于解析出的 user 消息数。
+        let parsed = collect_session(
+            cursor(),
+            &extractor_for("claude", ImageMode::Collect),
+            &HashSet::new(),
+        );
+        let texts: Vec<String> = parsed
+            .messages
+            .iter()
+            .filter(|m| m.role == "user")
+            .map(|m| m.text.clone())
+            .collect();
+        assert_eq!(
+            texts,
+            [
+                "先看一眼仓库结构",
+                "/aimax:code-review 审查1772",
+                "",
+                "你能干啥"
+            ],
+            "行号表与解析结果必须是同一批 user 轮"
         );
     }
 

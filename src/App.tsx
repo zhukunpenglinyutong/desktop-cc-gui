@@ -9,7 +9,8 @@ import { bindSystemThemeSync, bindThemeChangePersistence } from "@/features/sett
 import { UpdateToast } from "@/features/update/UpdateToast";
 import { useUpdateStore } from "@/features/update/store";
 import { announceReleaseAfterUpgrade } from "@/features/update/upgrade-announcement";
-import { GrantAccessDialogHost } from "@/components/dialogs";
+import { CredentialConsentDialogHost, GrantAccessDialogHost } from "@/components/dialogs";
+import { McpProbeConfirmHost } from "@/features/mcp/McpProbeConfirmHost";
 import { startPluginSystem } from "@/features/plugins";
 import { CloseConfirmDialogHost } from "@/components/dialogs";
 import { installCloseConfirm } from "@/lib/close-confirm";
@@ -134,6 +135,8 @@ function MainApp() {
       </HashRouter>
       <UpdateToast />
       <GrantAccessDialogHost />
+      <CredentialConsentDialogHost />
+      <McpProbeConfirmHost />
       <CloseConfirmDialogHost />
       <ShortcutsGuideModal />
       <PetRuntime />

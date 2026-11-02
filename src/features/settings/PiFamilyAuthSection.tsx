@@ -12,8 +12,10 @@
  * - 自定义供应商 group (PiFamilyCustomSection): raw-text editor over
  *   models.json (pi) / models.yml (omp) with loose backend validation.
  *
- * State is component-local: refresh on mount, after writes, and on window
- * focus (the OAuth flow completes in the terminal, outside this component).
+ * State is component-local: refresh on mount and after writes. No focus
+ * refresh: the read touches the CLI's credential store, so it only happens
+ * when the user opens this page (a terminal OAuth login navigates away, and
+ * coming back remounts). Not mounted while the engine is disabled.
  * After every write `notifyCliConfigChanged()` re-probes the chat model
  * catalogs — the CLIs filter available models by stored credentials.
  */
@@ -105,16 +107,12 @@ function usePiFamilyAuthState(
     }
   }, [engine]);
 
+  // Reads the CLI's credential store: only on mount (the user opened this
+  // page) and after this section's own writes — never on window focus. A
+  // terminal OAuth login navigates away first, so returning to the page
+  // remounts and re-reads.
   useEffect(() => {
     void refresh();
-  }, [refresh]);
-
-  // OAuth completes in the terminal, so the credential store changes behind
-  // this component's back: refresh on window focus (event-driven, no polling).
-  useEffect(() => {
-    const onFocus = () => void refresh();
-    window.addEventListener("focus", onFocus);
-    return () => window.removeEventListener("focus", onFocus);
   }, [refresh]);
 
   const byId = useMemo(() => {

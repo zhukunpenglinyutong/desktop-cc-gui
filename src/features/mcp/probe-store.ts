@@ -4,8 +4,11 @@
  * 与 `useMcpInventory` 的运行时分区是两回事：运行时是某个 CLI 会话自己上报
  * 的连接状态，这里是**本应用发起**的一次检测。三条策略：
  *
- * - **打开即检测**：面板/页签出现时自动跑一次，但只针对「启用 + 可检测 + 没有
- *   新鲜结果」的条目（`useAutoProbe`），所以重复打开只是复用缓存；
+ * - **打开即检测**：面板/页签出现时自动跑一次，但只针对用户自己配置里「启用 +
+ *   可检测 + 没有新鲜结果」的条目（`useAutoProbe` / `autoProbeEligible`），所以
+ *   重复打开只是复用缓存；
+ * - **工作区配置先确认**：配置文件在工作区里的条目（`workspaceFile`，可能随仓库
+ *   下载）从不自动检测；手动检测前经 `probe-confirm.ts` 把完整命令给用户确认；
  * - **缓存**：结果按「条目 id + 配置哈希」存放，配置一变旧结果立即失效；新鲜度
  *   窗口 `PROBE_TTL_MS` 内的结果自动检测直接复用，手动点「检测全部」才强制重跑；
  * - **有限并行**：同时最多 `PROBE_CONCURRENCY` 个检测在飞（stdio 启动是 I/O 等待，
@@ -14,6 +17,11 @@
 import { useEffect, useMemo, useRef } from "react";
 import { create } from "zustand";
 import { mcpApi } from "./api";
+import {
+  confirmWorkspaceProbe,
+  confirmedFingerprint,
+  forgetProbeConfirm,
+} from "./probe-confirm";
 import type { McpConfigEntry, McpProbeState } from "./types";
 
 /** 自动检测复用结果的窗口：超过则视为需要重新检测。 */
@@ -64,17 +72,17 @@ export function needsProbe(
   return now - state.checkedAt > PROBE_TTL_MS;
 }
 
-export const useMcpProbeStore = create<McpProbeStore>((set, get) => ({
-  results: {},
-  pending: {},
-  runningAll: false,
-  error: null,
-
-  probe: async (entry, workspace) => {
-    if (!probeable(entry)) return;
+export const useMcpProbeStore = create<McpProbeStore>((set, get) => {
+  /** One probe, no confirmation: callers have already cleared workspace
+   *  entries through `confirmWorkspaceProbe`. */
+  const run = async (entry: McpConfigEntry, workspace: string | null): Promise<void> => {
     set((state) => ({ pending: { ...state.pending, [entry.id]: true }, error: null }));
     try {
-      const result = await mcpApi.probe(entry, workspace);
+      // Workspace servers carry the fingerprint of the plan the user
+      // confirmed; the backend refuses anything else.
+      const result = entry.workspaceFile
+        ? await mcpApi.probe(entry, workspace, confirmedFingerprint(entry, workspace))
+        : await mcpApi.probe(entry, workspace);
       // 边界校验：缺字段的响应不能当成「已连接」写进状态，否则一条坏响应
       // 就会把整个列表画崩（数量展示依赖 `toolCount`，缺了会显示成 NaN）。
       if (!result || typeof result.status !== "string" || typeof result.toolCount !== "number") {
@@ -87,6 +95,11 @@ export const useMcpProbeStore = create<McpProbeStore>((set, get) => ({
         },
       }));
     } catch (probeError) {
+      // The file changed after it was confirmed: forget that answer so the
+      // next click shows the new command.
+      if (entry.workspaceFile && (probeError as { code?: unknown })?.code === "conflict") {
+        forgetProbeConfirm(entry, workspace);
+      }
       set({
         error: probeError instanceof Error ? probeError.message : String(probeError),
       });
@@ -97,39 +110,74 @@ export const useMcpProbeStore = create<McpProbeStore>((set, get) => ({
         return { pending };
       });
     }
-  },
+  };
 
-  probeAll: async (entries, workspace, options) => {
-    const force = options?.force ?? false;
-    const targets = entries.filter((entry) =>
-      force ? entry.enabled && probeable(entry) : needsProbe(entry, get().results),
-    );
-    if (targets.length === 0 || get().runningAll) return;
-    set({ runningAll: true, error: null });
-    try {
-      // 有限并行：逐个 shift 取任务，谁先空谁退出。
-      const queue = [...targets];
-      const worker = async (): Promise<void> => {
-        const next = queue.shift();
-        if (!next) return;
-        await get().probe(next, workspace);
-        await worker();
-      };
-      await Promise.all(
-        Array.from({ length: Math.min(PROBE_CONCURRENCY, queue.length) }, worker),
+  return {
+    results: {},
+    pending: {},
+    runningAll: false,
+    error: null,
+
+    probe: async (entry, workspace) => {
+      if (!probeable(entry)) return;
+      if (entry.workspaceFile && !(await confirmWorkspaceProbe([entry], workspace))) return;
+      await run(entry, workspace);
+    },
+
+    probeAll: async (entries, workspace, options) => {
+      const force = options?.force ?? false;
+      let targets = entries.filter((entry) =>
+        force ? entry.enabled && probeable(entry) : needsProbe(entry, get().results),
       );
-    } finally {
-      set({ runningAll: false });
-    }
-  },
+      if (targets.length === 0 || get().runningAll) return;
+      set({ runningAll: true, error: null });
+      try {
+        // Workspace servers: one confirmation for all of them; declining
+        // still checks the user's own servers.
+        const fromWorkspace = targets.filter((entry) => entry.workspaceFile);
+        if (fromWorkspace.length > 0 && !(await confirmWorkspaceProbe(fromWorkspace, workspace))) {
+          targets = targets.filter((entry) => !entry.workspaceFile);
+        }
+        // 有限并行：逐个 shift 取任务，谁先空谁退出。
+        const queue = [...targets];
+        const worker = async (): Promise<void> => {
+          const next = queue.shift();
+          if (!next) return;
+          await run(next, workspace);
+          await worker();
+        };
+        await Promise.all(
+          Array.from({ length: Math.min(PROBE_CONCURRENCY, queue.length) }, worker),
+        );
+      } finally {
+        set({ runningAll: false });
+      }
+    },
 
-  clear: () => set({ results: {}, error: null }),
-}));
+    clear: () => set({ results: {}, error: null }),
+  };
+});
 
 /**
- * 打开（或切到某个引擎）时自动检测：指纹由「启用且可检测条目的 id + 配置
- * 哈希」组成，指纹没变就不再跑（重复打开只吃缓存），变了的条目里只补那些
- * 没有新鲜结果的。
+ * 打开页面时可以自动检测的条目：启用、可检测、随会话启动，且配置是用户自己
+ * 的文件。工作区里的配置（`workspaceFile`）可能随仓库下载，检测会真的执行
+ * 其中的命令，所以绝不自动跑；按需启动的条目也不自动跑（打开页面就启动一遍
+ * 正是按需启动要避免的）。两者手动「检测」仍可用。
+ */
+export function autoProbeEligible(entries: McpConfigEntry[]): McpConfigEntry[] {
+  return entries.filter(
+    (entry) =>
+      entry.enabled &&
+      probeable(entry) &&
+      entry.launchMode !== "onDemand" &&
+      !entry.workspaceFile,
+  );
+}
+
+/**
+ * 打开（或切到某个引擎）时自动检测 `autoProbeEligible` 的条目：指纹由这些
+ * 条目的「id + 配置哈希」组成，指纹没变就不再跑（重复打开只吃缓存），变了的
+ * 条目里只补那些没有新鲜结果的。
  */
 export function useAutoProbe(
   entries: McpConfigEntry[] | undefined,
@@ -138,21 +186,18 @@ export function useAutoProbe(
 ): void {
   const probeAll = useMcpProbeStore((state) => state.probeAll);
   const runningAll = useMcpProbeStore((state) => state.runningAll);
+  const eligible = useMemo(() => autoProbeEligible(entries ?? []), [entries]);
   const fingerprint = useMemo(
-    () =>
-      (entries ?? [])
-        .filter((entry) => entry.enabled && probeable(entry))
-        .map((entry) => `${entry.id}@${entry.version}`)
-        .join("|"),
-    [entries],
+    () => eligible.map((entry) => `${entry.id}@${entry.version}`).join("|"),
+    [eligible],
   );
   const probed = useRef<string | null>(null);
   useEffect(() => {
     if (!enabled || runningAll) return;
     if (probed.current === fingerprint) return;
     probed.current = fingerprint;
-    void probeAll(entries ?? [], workspacePath);
-  }, [enabled, fingerprint, runningAll, entries, probeAll, workspacePath]);
+    void probeAll(eligible, workspacePath);
+  }, [enabled, fingerprint, runningAll, eligible, probeAll, workspacePath]);
 }
 
 /** 当前可见条目里最新一次检测的时间（用于「状态更新于 …」）。 */

@@ -155,6 +155,7 @@ pub(super) fn build_entry(
         name: name.to_string(),
         source: source.id.to_string(),
         scope: source.scope.to_string(),
+        workspace_file: crate::mcp::source_in_workspace(source.id),
         path: path.to_string_lossy().into_owned(),
         format: source.format.to_string(),
         enabled: entry_enabled(source, spec_object),
@@ -168,6 +169,8 @@ pub(super) fn build_entry(
         readonly_reason: spec.readonly_reason.map(str::to_string),
         readonly_reason_code,
         version: version.to_string(),
+        launch_mode: crate::mcp::launch::EAGER.to_string(),
+        launch_mode_unsupported: None,
     }
 }
 
@@ -312,6 +315,7 @@ pub(super) fn read_toml_source(source: &Source, path: &Path) -> Result<Vec<McpCo
             name: name.to_string(),
             source: source.id.to_string(),
             scope: source.scope.to_string(),
+            workspace_file: crate::mcp::source_in_workspace(source.id),
             path: path.to_string_lossy().into_owned(),
             format: "toml".to_string(),
             enabled,
@@ -325,6 +329,8 @@ pub(super) fn read_toml_source(source: &Source, path: &Path) -> Result<Vec<McpCo
             readonly_reason: spec.readonly_reason.map(str::to_string),
             readonly_reason_code: spec.readonly_reason_code.map(str::to_string),
             version: version.clone(),
+            launch_mode: crate::mcp::launch::EAGER.to_string(),
+            launch_mode_unsupported: None,
         });
     }
     Ok(entries)
@@ -449,6 +455,8 @@ fn dsh_probe_target(entry: &DshPluginEntry) -> ProbeTarget {
         url: dsh_text(config, "url"),
         headers: dsh_string_map(config, "headers"),
         transport: dsh_text(config, "transport"),
+        // Set by `mcp::probe_target` from the source id.
+        from_workspace: false,
     }
 }
 
@@ -470,6 +478,7 @@ pub(super) fn read_dsh_profile(path: &Path) -> Result<Vec<McpConfigEntry>, McpEr
             name: plugin.name,
             source: "dsh_profile".to_string(),
             scope: "user".to_string(),
+            workspace_file: false,
             path: path.to_string_lossy().into_owned(),
             format: "yaml".to_string(),
             enabled: !plugin.disabled,
@@ -483,6 +492,8 @@ pub(super) fn read_dsh_profile(path: &Path) -> Result<Vec<McpConfigEntry>, McpEr
             readonly_reason: spec.readonly_reason.map(str::to_string),
             readonly_reason_code: spec.readonly_reason_code.map(str::to_string),
             version: version.clone(),
+            launch_mode: crate::mcp::launch::EAGER.to_string(),
+            launch_mode_unsupported: None,
         });
     }
     Ok(entries)
@@ -520,6 +531,8 @@ pub(crate) fn probe_target_from_json(
         headers: string_map(object.get(fields.headers)),
         transport: string_field(object, fields.transport)
             .or_else(|| string_field(object, fields.transport_alt)),
+        // Set by `mcp::probe_target` from the source id.
+        from_workspace: false,
     }
 }
 
@@ -573,6 +586,8 @@ pub(crate) fn probe_target_from_toml(
         url: toml_string(fields.url).or_else(|| toml_string(fields.url_alt)),
         headers: toml_map(fields.headers),
         transport: toml_string(fields.transport).or_else(|| toml_string(fields.transport_alt)),
+        // Set by `mcp::probe_target` from the source id.
+        from_workspace: false,
     }
 }
 

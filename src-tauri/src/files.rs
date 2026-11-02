@@ -421,6 +421,23 @@ pub async fn rename_item(
     .map_err(|e| e.to_string())?
 }
 
+/// Move `path` to the OS trash in-process. On macOS the trash crate defaults
+/// to asking Finder through `osascript`: an Automation permission prompt, and
+/// an osascript → Finder process chain that endpoint security associates
+/// with macOS stealers. NSFileManager's `trashItemAtURL` needs neither. The
+/// trade-off: Finder's "Put Back" may be missing for these items; dragging
+/// them out of the Trash still restores them.
+pub(crate) fn move_to_trash(path: &Path) -> Result<(), trash::Error> {
+    #[cfg_attr(not(target_os = "macos"), allow(unused_mut))]
+    let mut context = trash::TrashContext::default();
+    #[cfg(target_os = "macos")]
+    {
+        use trash::macos::{DeleteMethod, TrashContextExtMacos};
+        context.set_delete_method(DeleteMethod::NsFileManager);
+    }
+    context.delete(path)
+}
+
 #[tauri::command]
 pub async fn trash_item(
     db: tauri::State<'_, Arc<crate::db::Db>>,
@@ -429,7 +446,7 @@ pub async fn trash_item(
     let db = Arc::clone(db.inner());
     tauri::async_runtime::spawn_blocking(move || {
         let target = ensure_allowed(&path, &db)?;
-        trash::delete(&target).map_err(|e| format!("trash {}: {e}", target.display()))
+        move_to_trash(&target).map_err(|e| format!("trash {}: {e}", target.display()))
     })
     .await
     .map_err(|e| e.to_string())?
@@ -1101,6 +1118,28 @@ pub async fn list_file_index(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Every trash goes through `move_to_trash`: the trash crate's own
+    /// `delete` defaults to an osascript → Finder chain on macOS.
+    #[test]
+    fn trash_calls_go_through_move_to_trash() {
+        let needle = ["trash", "::delete("].concat();
+        let mut offenders = Vec::new();
+        let mut stack = vec![PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src")];
+        while let Some(dir) = stack.pop() {
+            for entry in std::fs::read_dir(&dir).unwrap().flatten() {
+                let path = entry.path();
+                if path.is_dir() {
+                    stack.push(path);
+                } else if path.extension().is_some_and(|ext| ext == "rs")
+                    && std::fs::read_to_string(&path).unwrap().contains(&needle)
+                {
+                    offenders.push(path.display().to_string());
+                }
+            }
+        }
+        assert!(offenders.is_empty(), "direct trash deletes: {offenders:?}");
+    }
 
     struct Scratch(PathBuf);
     impl Scratch {

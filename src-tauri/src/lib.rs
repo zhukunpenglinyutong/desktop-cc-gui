@@ -8,7 +8,6 @@ pub mod cc_switch;
 pub mod cli_lifecycle;
 pub mod clipboard;
 pub mod computer_use;
-pub mod computer_use_ax;
 pub mod config;
 pub mod creator_skill;
 pub mod cu_overlay;
@@ -80,15 +79,22 @@ pub struct AppState {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     paths::ensure_dirs().expect("failed to create app home");
-    // MCP server mode: engine CLIs spawn this binary as a computer-use MCP
-    // child process (`--mcp-config`). stdout is the protocol channel, so no
-    // Tauri runtime — and nothing that prints to stdout — may start here.
-    if std::env::args().any(|arg| arg == "--computer-use-mcp") {
-        if let Err(error) = computer_use::mcp::serve_stdio() {
-            eprintln!("[computer-use] MCP server exited: {error}");
+    // MCP proxy mode: `--mcp-lazy -- <server command…>` starts the real
+    // server on first use (mcp/lazy.rs). Checked first and only at argv[1]:
+    // the wrapped command may itself carry `--memory-mcp` and friends.
+    if std::env::args().nth(1).as_deref() == Some(mcp::lazy::FLAG) {
+        if let Err(error) = mcp::lazy::serve(std::env::args().skip(2).collect()) {
+            eprintln!("[mcp-lazy] {error}");
             std::process::exit(1);
         }
         return;
+    }
+    // Legacy computer-use MCP mode: the driver is the separate
+    // `ccgui-computer-use` binary now; an engine config written before the
+    // split is forwarded to it. stdout is the protocol channel, so no Tauri
+    // runtime — and nothing that prints to stdout — may start here.
+    if std::env::args().any(|arg| arg == computer_use::LEGACY_MCP_FLAG) {
+        std::process::exit(computer_use::forward_to_helper());
     }
     // MCP server mode: engine CLIs spawn this binary as the per-bot memory
     // tool (`--memory-mcp --bot-id <id>`, see engine/*). Same stdout rule.
@@ -209,13 +215,15 @@ pub fn run() {
             // before manage()".
             app.manage(config::ConfigStore::default());
             // Virtual cursor overlay + its loopback control channel: the
-            // --computer-use-mcp child posts action targets here so the
+            // ccgui-computer-use helper posts action targets here so the
             // blue pointer can follow the agent.
             if let Err(error) = cu_overlay::init(app.handle()) {
                 eprintln!("[cu-overlay] init failed (overlay disabled): {error}");
             }
+            // One Baidu Tongji page view per launch, built and sent by the
+            // backend; no remote script ever runs in a webview.
+            baidu_tongji::spawn_startup_pageview(app.handle());
             app.manage(metrics::MetricsState::load().map_err(std::io::Error::other)?);
-            app.manage(baidu_tongji::BaiduTongjiState::load());
             // Keep the pairing key from lingering: while the switch is on, a
             // fresh code is minted every ten minutes and broadcast.
             {
@@ -230,17 +238,15 @@ pub fn run() {
             }
             // Initial history scan, non-blocking.
             history::scanner::spawn_scan(scan_db, scan_sink);
-            // 内置「插件开发」skill：同步进已存在引擎的 skills 根（幂等，失败
-            // 只记日志）——skill 只有落在 CLI 自己的根里才会被引擎加载，
-            // 见 creator_skill.rs 模块注释。
-            creator_skill::install_at_startup(app.handle());
-            // DSH host autostart: adopt-or-spawn in the background when
-            // enabled; failures are logged, never fatal to startup.
+            // DSH host autostart: adopt-or-spawn in the background only when
+            // the switch is on, the engine is enabled and `dsh` is installed
+            // (dsh_host::autostart_allowed) — otherwise port 3080 is not even
+            // probed. Failures are logged, never fatal to startup.
             {
                 let handle = app.handle().clone();
                 tauri::async_runtime::spawn(async move {
                     let settings = settings::read_settings().unwrap_or_default();
-                    if settings.dsh_auto_start == Some(false) {
+                    if !dsh_host::autostart_allowed(&settings) {
                         return;
                     }
                     let state = handle.state::<AppState>();
@@ -462,6 +468,9 @@ pub fn run() {
             plugin_usage::plugin_usage_prices,
             plugin_usage::plugin_usage_update_prices,
             plugin_usage::plugin_limits_get,
+            usage_limits::consent::cli_credential_consent_get,
+            usage_limits::consent::cli_credential_consent_set,
+            usage_limits::consent::cli_credential_sources,
             // plugin marketplace (Phase 3, plan §6)
             plugins::market::plugin_fetch_index,
             plugins::market::plugin_fetch_featured,
@@ -477,7 +486,6 @@ pub fn run() {
             engine::list_plan_reviews,
             engine::list_engines,
             engine::models::list_engine_models,
-            engine::codebuddy::codebuddy_account_status,
             engine::pi_family_auth::pi_family_auth_list,
             engine::pi_family_auth::pi_family_auth_set_api_key,
             engine::pi_family_auth::pi_family_auth_delete_credential,
@@ -498,7 +506,9 @@ pub fn run() {
             // web bridge intentionally does not dispatch these.
             mcp::mcp_inventory,
             mcp::mcp_set_enabled,
+            mcp::mcp_set_launch_mode,
             mcp::probe::mcp_probe,
+            mcp::probe::mcp_probe_plan,
             // skills hub (设置 → 能力扩展 → Skills)
             skills_hub::skills_hub_query,
             skills_hub::skills_hub_mutate,
@@ -517,6 +527,8 @@ pub fn run() {
             history::reader::delete_remote_session,
             history::reader::pin_session,
             history::reader::rename_session,
+            // 会话分叉：解析分叉点、分配新 id，并**当场**写出继承过来的前缀转录本、登记 `sessions` 行（点击即落盘，不分两次做）
+            engine::fork::fork_session,
             history::reader::remember_session_model,
             history::reader::remember_session_effort,
             history::reader::remember_session_provider,
@@ -530,6 +542,8 @@ pub fn run() {
             // files
             files::list_dir,
             files::read_file,
+            // HTML preview roots (desktop only; same boundary as read_file)
+            preview_protocol::preview_open,
             files::write_file,
             files::create_dir,
             files::rename_item,
@@ -604,6 +618,8 @@ pub fn run() {
             open_app::open_workspace_in,
             open_app::open_custom_program,
             open_app::get_program_icon,
+            baidu_tongji::analytics_enabled_get,
+            baidu_tongji::analytics_enabled_set,
             open_app::reveal_in_file_manager,
             open_app::browser::open_in_browser,
             // terminal
@@ -658,8 +674,6 @@ pub fn run() {
             cli_lifecycle::cli_update_plan,
             cli_lifecycle::cli_update,
             // baidu tongji (Linux-native transport; rejected elsewhere)
-            baidu_tongji::load_baidu_tongji_script,
-            baidu_tongji::send_baidu_tongji_beacon,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

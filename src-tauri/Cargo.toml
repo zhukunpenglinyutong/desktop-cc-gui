@@ -4,6 +4,9 @@ version = "1.2.1"
 description = "CC GUI - multi-CLI AI chat desktop"
 edition = "2021"
 rust-version = "1.90"
+# Two bin targets: this app and the computer-use helper
+# (src/bin/ccgui-computer-use). `cargo run` / `tauri dev` start the app.
+default-run = "ccgui-next"
 
 [lib]
 name = "ccgui_next_lib"
@@ -52,15 +55,21 @@ parking_lot = "0.12"
 fs2 = "0.4.3"
 base64 = "0.22"
 zstd = "0.13"
+# Local wall-clock time for Codex fork rollout names (engine/fork/landing.rs);
+# already in the tree via schemars, so this adds no new crate.
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
 which = "7"
 # PTY for the integrated terminal panel.
 portable-pty = "0.8"
-# Computer use (src/computer_use.rs): xcap captures the screen, enigo injects
-# mouse/keyboard input; rmcp serves both as an stdio MCP server
-# (`--computer-use-mcp`) that engine CLIs spawn as a child process.
+# Computer use driver: xcap captures the screen, enigo injects mouse/keyboard
+# input. Used ONLY by the separate `ccgui-computer-use` binary
+# (src/bin/ccgui-computer-use), which engine CLIs spawn as a stdio MCP child
+# for an explicit computer-use send; the main app must never reference them
+# (guarded by computer_use::tests::main_app_sources_never_reference_driver_crates).
 xcap = "0.9"
 enigo = "0.6"
 image = "0.25"
+# MCP servers: the computer-use helper above and the per-bot memory tool.
 rmcp = { version = "3.4", features = ["server", "macros", "transport-io"] }
 # Global Esc-to-stop while a computer-use run is active; registered only for
 # the run's lifetime so Esc is never stolen outside a session.
@@ -90,8 +99,11 @@ winreg = "0.55"
 # which is exactly what an orphan no longer has.
 # DataExchange/Ole/Shell/Memory: CF_HDROP clipboard reads and writes in
 # clipboard.rs (the write path also needs GlobalAlloc for the DROPFILES block).
+# Graphics_Gdi: program icons (open_app/program_icon.rs) via SHGetFileInfo +
+# GetDIBits instead of a hidden PowerShell spawn.
 windows = { version = "0.61", features = [
     "Win32_Foundation",
+    "Win32_Graphics_Gdi",
     "Win32_Storage_FileSystem",
     "Win32_NetworkManagement_IpHelper",
     "Win32_Networking_WinSock",
@@ -99,6 +111,7 @@ windows = { version = "0.61", features = [
     "Win32_Security_Authorization",
     "Win32_System_Com",
     "Win32_System_DataExchange",
+    "Win32_System_Diagnostics_ToolHelp",
     "Win32_System_JobObjects",
     "Win32_System_Memory",
     "Win32_System_Ole",
@@ -111,9 +124,10 @@ windows = { version = "0.61", features = [
 [target.'cfg(target_os = "macos")'.dependencies]
 # NSPasteboard file-URL reads in clipboard.rs (Finder copies expose no path to
 # the webview). Already in the lock file via enigo/xcap. NSWorkspace resolves
-# the default browser for open_app/browser.rs.
+# the default browser for open_app/browser.rs. NSEvent::mouseLocation is the
+# pet overlay's cursor read (pet_overlay.rs).
 objc2 = "0.6"
-objc2-app-kit = { version = "0.3", features = ["NSPasteboard", "NSWorkspace"] }
+objc2-app-kit = { version = "0.3", features = ["NSEvent", "NSPasteboard", "NSWorkspace"] }
 objc2-foundation = { version = "0.3", features = ["NSEnumerator", "NSURL", "NSString"] }
 
 [dev-dependencies]
