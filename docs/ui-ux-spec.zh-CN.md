@@ -69,6 +69,8 @@
 
 ## 3. 状态与可用性
 
+- **源码编辑器按字节检测 UTF-8 / GBK 并按原格式保存**：桌面文件读取先识别 UTF-8 BOM，再严格尝试 UTF-8；不是有效 UTF-8 时按 GBK 解码。编辑器头部显示编码选择器，手动切换会从磁盘按选中编码重读，文件有未保存修改、远端只读或文件被截断时禁用切换。解码仍有错误时显示只读原因，允许切换编码重读，不允许把替换字符写回文件。保存沿用读取时的编码、UTF-8 BOM 与检测到的主换行格式；GBK 无法表示的字符必须报错，不可静默替换。实现：`src-tauri/src/files.rs`（`decode_text` / `encode_text`）、`src/features/files/FileEditorHeader.tsx`、`EditorPane.tsx`。回归：`files.rs` 编解码用例、`FileEditorHeader.test.tsx`。
+
 - **插件会话模式**：获得 `ui:conversation-mode` 授权后，在 CLI 选择器旁提供入口，不伪装成 CLI 或权限选项；普通轮次或发送队列未结束时禁止切入。模式替换当前聊天内容区与输入框，保留原普通对话。运行、取消待确认及恢复待核对期间禁止通过宿主「返回普通对话」绕过插件的退出锁。
 - **接力首版**：规划与执行分别配置引擎 / 渠道 / 模型，配置浮层限高滚动且动作区保持可见。允许多轮讨论和手工编辑，每份完整计划保存为新版本；只有最新、已保存、无未解问题且无未发送草稿的计划可点击「确认此版并执行」。普通发送、AI 回复结束和保存编辑均不授权执行。确认冻结交接包，执行新建原生会话；历史版本只读。
 - **接力停止与恢复**：停止是请求取消，不是回滚；等待进程终态才结束忙碌状态，失败不自动重试写入。重新打开已保存接力记录先核对上次进程及工作区，不自动续跑。明确披露记录独立于普通聊天、其他会话与外部编辑器不受接力单任务锁保护。
@@ -296,6 +298,7 @@ const feedback = useRunningFeedback(store.loading);
 | 模型目录 | `src/components/application/ai-chat/engine-model-panel.tsx` | `useActionFeedback` | — |
 | 浏览器刷新 | `src/features/browser/BrowserPane.tsx` | `useActionFeedback` | webview 无加载完成事件，对号 = 指令已下发 |
 | HTML 预览刷新 | `src/features/files/FileEditorHeader.tsx` | `useActionFeedback({ spin: true })` | 重挂载 iframe 重新读盘；iframe 同样没有可等待的加载完成事件，对号 = 指令已下发 |
+| 文件编码切换并重读 | `src/features/files/FileEditorHeader.tsx`、`EditorPane.tsx` | 编辑器内容区加载态 | 从磁盘原始字节按选择的 UTF-8 / GBK 重读；有未保存改动时禁用 |
 | 状态栏「立即同步」 | `src/components/application/app-status-bar/app-status-bar.tsx` | `useRunningFeedback(syncing)` | 进度由 `scan://progress` 事件驱动 |
 | Skills 刷新 | `src/features/skills/InstalledPane.tsx` | `useActionFeedback({ spin: true })` | 一次动作同时重读已安装列表与更新信号；失败走行内 `role="alert"` |
 | Bot「刷新上下文」 | `src/features/settings/agents-prompts/bot-prompt-preview.tsx` | **不加反馈**（就地换成一行说明） | 丢弃已冻结的提示词区块，下次发送重新拼装；语义是「放弃这次会话的快照」而非重读数据，所以不进转圈→对号那套，点击后按钮旁写明「已刷新，下次发送重新拼装」与「会让前缀缓存失效」 |

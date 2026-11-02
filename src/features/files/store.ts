@@ -193,7 +193,7 @@ interface FilesStore {
   /** Return the center area to the chat (a chat tab was selected). */
   clearActiveFile: () => void;
   /** Re-read a file from disk, resetting its editor draft. */
-  reloadFile: (path: string) => Promise<void>;
+  reloadFile: (path: string, encoding?: "utf-8" | "gbk") => Promise<void>;
   closeFile: (path: string) => void;
   /** Move an open file tab to a new position (drag-reorder in the tab strip). */
   moveOpenFile: (path: string, toIndex: number) => void;
@@ -533,7 +533,7 @@ export const useFilesStore = create<FilesStore>((set, get) => ({
 
   clearActiveFile: () => set({ activeFilePath: null }),
 
-  reloadFile: async (path) => {
+  reloadFile: async (path, encoding) => {
     set((s) => {
       const st = s.fileStates[path];
       if (!st) return s;
@@ -542,7 +542,7 @@ export const useFilesStore = create<FilesStore>((set, get) => ({
       };
     });
     try {
-      const content = await readRemoteAware(path, (p) => ipc.readFile(p));
+      const content = await readRemoteAware(path, (p) => ipc.readFile(p, encoding));
       set((s) => {
         const st = s.fileStates[path];
         if (!st) return s; // tab closed mid-load

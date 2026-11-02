@@ -70,7 +70,9 @@ export function EditorPane({ path }: { path: string }) {
 }
 
 function FileEditor({ path, content }: { path: string; content: FileContent }) {
+  const { t } = useTranslation();
   const setFileDirty = useFilesStore((s) => s.setFileDirty);
+  const reloadFile = useFilesStore((s) => s.reloadFile);
   // Inactive (invisible) editors stay mounted; only the visible tab may
   // answer Cmd/Ctrl+S, or every open file would save at once.
   const isActiveTab = useFilesStore((s) => s.activeFilePath === path);
@@ -109,9 +111,9 @@ function FileEditor({ path, content }: { path: string; content: FileContent }) {
   // preview drops it so switching back to read mode starts clean.
   const [previewSearchOpen, setPreviewSearchOpen] = useState(false);
   const [langExt, setLangExt] = useState<Extension[]>([]);
-  // Truncated files are partial (editing + saving would clobber the tail);
-  // remote-readOnly files are complete but unwritable — both stay read-only.
-  const readOnly = content.truncated || content.readOnly === true;
+  // Truncated files are partial; remote files are unwritable; decode failures
+  // show replacement characters and must never be saved over the source bytes.
+  const readOnly = content.truncated || content.readOnly === true || content.decodeError === true;
   const dirty = !readOnly && draft !== savedText;
 
   // Publish dirty state so the tab strip can dot the tab and confirm closes.
@@ -153,14 +155,25 @@ function FileEditor({ path, content }: { path: string; content: FileContent }) {
     setSaving(true);
     setSaveError(null);
     try {
-      await ipc.writeFile(path, draft);
+      await ipc.writeFile(
+        path,
+        draft,
+        content.encoding ?? "utf-8",
+        content.bom ?? false,
+        content.lineEnding ?? "lf",
+      );
       setSavedText(draft);
     } catch (e) {
-      setSaveError(errorText(e));
+      const message = errorText(e);
+      setSaveError(
+        message.includes("file_encoding_unrepresentable")
+          ? t("files.encodingCannotRepresent")
+          : message,
+      );
     } finally {
       setSaving(false);
     }
-  }, [path, draft]);
+  }, [path, draft, content.encoding, content.bom, content.lineEnding, t]);
 
   // Cmd/Ctrl+S saves from anywhere while this editor is mounted. The listener
   // subscribes once; refs keep it reading the latest save/dirty/saving so it
@@ -200,6 +213,10 @@ function FileEditor({ path, content }: { path: string; content: FileContent }) {
       <FileEditorHeader
         path={path}
         name={name}
+        encoding={content.encoding ?? "utf-8"}
+        decodeError={content.decodeError === true}
+        encodingChangeDisabled={dirty || content.readOnly === true || content.truncated}
+        onEncodingChange={(encoding) => void reloadFile(path, encoding)}
         dirty={dirty}
         readOnly={readOnly}
         canPreview={canPreview}

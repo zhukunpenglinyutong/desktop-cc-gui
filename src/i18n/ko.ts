@@ -1195,6 +1195,9 @@ export const ko: Messages = {
   files: {
     tab: "파일",
     saveFile: "저장",
+    encoding: "파일 인코딩",
+    encodingDecodeError: "디코딩 불완전 · 읽기 전용",
+    encodingCannotRepresent: "GBK로 표현할 수 없는 문자가 있어 파일을 저장하지 않았습니다.",
     preview: "미리보기",
     editMode: "편집",
     markdown: {

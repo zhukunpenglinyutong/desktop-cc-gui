@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { DirEntry } from "@/lib/ipc";
+import type { DirEntry, FileContent } from "@/lib/ipc";
 
 const mocks = vi.hoisted(() => ({
   listDir: vi.fn(),
-  readFile: vi.fn(async () => ({ kind: "text", text: "", dataUrl: null, truncated: false })),
+  readFile: vi.fn(async (): Promise<FileContent> => ({ kind: "text", text: "", dataUrl: null, truncated: false })),
   gitTreeStatus: vi.fn(),
   gitRepositorySummaries: vi.fn(),
   gitFileColors: vi.fn(),
@@ -453,5 +453,37 @@ describe("文件打开时的中心面互斥", () => {
     useFilesStore.getState().activateFile("/repo/a.ts");
     expectOnlyFileLeft();
     expect(useFilesStore.getState().activeFilePath).toBe("/repo/a.ts");
+  });
+});
+
+describe("文件编码重读", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.readFile.mockResolvedValue({
+      kind: "text",
+      text: "中文",
+      dataUrl: null,
+      truncated: false,
+      encoding: "gbk",
+      bom: false,
+      decodeError: false,
+    });
+    useFilesStore.setState({
+      fileStates: {
+        "/repo/legacy.txt": {
+          path: "/repo/legacy.txt",
+          content: { kind: "text", text: "", dataUrl: null, truncated: false },
+          loading: false,
+          error: null,
+          loadNonce: 0,
+        },
+      },
+    });
+  });
+
+  it("passes a manually selected encoding to the file reader", async () => {
+    await useFilesStore.getState().reloadFile("/repo/legacy.txt", "gbk");
+    expect(mocks.readFile).toHaveBeenCalledWith("/repo/legacy.txt", "gbk");
+    expect(useFilesStore.getState().fileStates["/repo/legacy.txt"].content?.encoding).toBe("gbk");
   });
 });
