@@ -393,6 +393,7 @@ impl Engine for ClaudeEngine {
                         tool,
                         path,
                         message: text,
+                        tool_use_id: id,
                     });
                 }
                 // Tool result output emitted in response to tool_use. The
@@ -464,11 +465,18 @@ impl Engine for ClaudeEngine {
                             .filter(|t| !t.is_empty())
                             .map(str::to_string);
                         let path = denial.get("tool_input").and_then(super::tool_path_arg);
+                        let tool_use_id = denial
+                            .get("tool_use_id")
+                            .and_then(Value::as_str)
+                            .map(str::trim)
+                            .filter(|id| !id.is_empty())
+                            .map(str::to_string);
                         if tool.is_some() || path.is_some() {
                             out.push(EngineEvent::PermissionDenied {
                                 tool,
                                 path,
                                 message: String::new(),
+                                tool_use_id,
                             });
                         }
                     }
@@ -507,8 +515,10 @@ impl Engine for ClaudeEngine {
             }
             "control_request" => {
                 // SDK control protocol asks. AskUserQuestion surfaces to the
-                // UI; every other ask is denied in place (this client has no
-                // approval card), preserving the old headless behavior.
+                // UI; every other ask is answered in place (deny for tool
+                // permissions, decline for MCP elicitation, error for
+                // anything unrecognized) — every request must get exactly
+                // one response or the CLI parks on it forever.
                 let request = value.get("request");
                 let subtype = request
                     .and_then(|r| r.get("subtype"))
@@ -545,6 +555,18 @@ impl Engine for ClaudeEngine {
                             tool_name,
                         });
                     }
+                } else if subtype == "elicitation" {
+                    // MCP elicitation (form input / confirmation from an MCP
+                    // server). No form UI here: decline so the MCP tool call
+                    // settles instead of hanging the turn (issue #1432).
+                    out.push(EngineEvent::ElicitationDecline {
+                        request_id: request_id.to_string(),
+                    });
+                } else {
+                    out.push(EngineEvent::ControlRequestError {
+                        request_id: request_id.to_string(),
+                        subtype: subtype.to_string(),
+                    });
                 }
             }
             "control_cancel_request" => {
@@ -1160,6 +1182,60 @@ mod tests {
     }
 
     #[test]
+    fn mcp_elicitation_control_request_declines_in_place() {
+        let line = serde_json::json!({
+            "type": "control_request",
+            "request_id": "req-elicit-1",
+            "request": {
+                "subtype": "elicitation",
+                "mcp_server_name": "elicit-demo",
+                "message": "Continue?",
+                "requested_schema": { "type": "object", "properties": { "ok": { "type": "boolean" } } }
+            }
+        })
+        .to_string();
+        let mut out = Vec::new();
+        ClaudeEngine::new().parse_line(&line, &mut out);
+        match &out[..] {
+            [EngineEvent::ElicitationDecline { request_id }] => {
+                assert_eq!(request_id, "req-elicit-1");
+            }
+            other => panic!("expected elicitation decline event, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn unknown_control_request_subtypes_error_in_place() {
+        let line = serde_json::json!({
+            "type": "control_request",
+            "request_id": "req-unknown-1",
+            "request": { "subtype": "future_ask", "payload": {} }
+        })
+        .to_string();
+        let mut out = Vec::new();
+        ClaudeEngine::new().parse_line(&line, &mut out);
+        match &out[..] {
+            [EngineEvent::ControlRequestError { request_id, subtype }] => {
+                assert_eq!(request_id, "req-unknown-1");
+                assert_eq!(subtype, "future_ask");
+            }
+            other => panic!("expected control error event, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn control_request_without_id_is_ignored() {
+        let line = serde_json::json!({
+            "type": "control_request",
+            "request": { "subtype": "elicitation", "message": "Continue?" }
+        })
+        .to_string();
+        let mut out = Vec::new();
+        ClaudeEngine::new().parse_line(&line, &mut out);
+        assert!(out.is_empty(), "no request_id, nothing to answer: {out:?}");
+    }
+
+    #[test]
     fn stream_message_boundaries_open_and_close_the_generation_window() {
         let engine = ClaudeEngine::new();
         let start = serde_json::json!({
@@ -1478,6 +1554,7 @@ mod tests {
                 tool,
                 path,
                 message,
+                ..
             } => {
                 assert_eq!(*tool, None);
                 assert_eq!(path.as_deref(), Some(r"C:\dev\frontend"));
@@ -1536,9 +1613,15 @@ mod tests {
             .find(|e| matches!(e, EngineEvent::PermissionDenied { .. }))
             .expect("expected permission denial");
         match denial {
-            EngineEvent::PermissionDenied { tool, path, .. } => {
+            EngineEvent::PermissionDenied {
+                tool,
+                path,
+                tool_use_id,
+                ..
+            } => {
                 assert_eq!(tool.as_deref(), Some("Read"));
                 assert_eq!(path.as_deref(), Some("/etc/hosts"));
+                assert_eq!(tool_use_id.as_deref(), Some("toolu_9"));
             }
             _ => unreachable!(),
         }
@@ -1590,9 +1673,17 @@ mod tests {
         ClaudeEngine::new().parse_line(&line, &mut out);
         assert_eq!(out.len(), 2);
         match &out[0] {
-            EngineEvent::PermissionDenied { tool, path, .. } => {
+            // The same call's mid-turn copy carries this id too: the
+            // frontend matches the two by it.
+            EngineEvent::PermissionDenied {
+                tool,
+                path,
+                tool_use_id,
+                ..
+            } => {
                 assert_eq!(tool.as_deref(), Some("Read"));
                 assert_eq!(path.as_deref(), Some("/Users/x/secrets/key.pem"));
+                assert_eq!(tool_use_id.as_deref(), Some("toolu_1"));
             }
             _ => panic!("expected permission denial"),
         }

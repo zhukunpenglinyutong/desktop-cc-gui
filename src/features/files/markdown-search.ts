@@ -1,4 +1,8 @@
-import { findTextMatches, highlightSupported } from "@/lib/dom-text-search";
+import {
+  findTextMatches,
+  highlightSupported,
+  type TextSearchOptions,
+} from "@/lib/dom-text-search";
 
 /**
  * 文件 Markdown 预览内查找（⌘F）：命中范围用 CSS Custom Highlight API
@@ -20,9 +24,13 @@ export function clearMarkdownSearchHighlights(): void {
 
 /** 预览容器内的全部命中，按文档顺序返回 Range（无高亮支持时也返回，
  *  调用方仍可计数与滚动）。 */
-export function findMarkdownMatches(root: HTMLElement, query: string): Range[] {
+export function findMarkdownMatches(
+  root: HTMLElement,
+  query: string,
+  options?: TextSearchOptions,
+): Range[] {
   const doc = root.ownerDocument;
-  return findTextMatches(root, query).map(({ node, start, end }) => {
+  return findTextMatches(root, query, options).map(({ node, start, end }) => {
     const range = doc.createRange();
     range.setStart(node, start);
     range.setEnd(node, end);

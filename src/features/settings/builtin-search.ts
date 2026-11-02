@@ -153,6 +153,48 @@ const generalEntries: SettingsSearchEntry[] = [
     labelKey: "settings.promptHistoryManageTitle",
     sectionKey: "settings.promptHistoryManage",
   },
+  {
+    page: "general",
+    anchor: "notifications",
+    labelKey: "settings.notificationsEnabled",
+    sectionKey: "settings.behavior",
+    keywords: ["系统通知", "通知提醒", "消息提醒", "notification", "notify"],
+  },
+  {
+    page: "general",
+    anchor: "notifyOnCompletion",
+    labelKey: "settings.notifyOnCompletion",
+    sectionKey: "settings.behavior",
+    keywords: ["对话完成提醒", "完成通知", "completion notification"],
+  },
+  {
+    page: "general",
+    anchor: "notifyOnQuestion",
+    labelKey: "settings.notifyOnQuestion",
+    sectionKey: "settings.behavior",
+    keywords: ["提问提醒", "交互提醒", "审批提醒", "question notification"],
+  },
+  {
+    page: "general",
+    anchor: "notifyOnInterrupted",
+    labelKey: "settings.notifyOnInterrupted",
+    sectionKey: "settings.behavior",
+    keywords: ["中断提醒", "API中断提醒", "连接断开提醒", "interrupted notification"],
+  },
+  {
+    page: "general",
+    anchor: "notifyOnError",
+    labelKey: "settings.notifyOnError",
+    sectionKey: "settings.behavior",
+    keywords: ["异常提醒", "错误提醒", "失败提醒", "error notification"],
+  },
+  {
+    page: "general",
+    anchor: "notifyWhenUnfocusedOnly",
+    labelKey: "settings.notifyWhenUnfocusedOnly",
+    sectionKey: "settings.behavior",
+    keywords: ["后台提醒", "仅未激活提醒", "unfocused"],
+  },
 ];
 
 /** 桌面宠物 (`PetSection.tsx`): row labels are 显示桌面宠物 / 角色 / 宠物大小;

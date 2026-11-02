@@ -22,6 +22,7 @@ import { createSessionActions } from "./store/sessions";
 import { createWorkspaceActions } from "./store/workspaces";
 import { createPreferenceActions } from "./store/preferences";
 import { createComposerActions } from "./store/composer";
+import { NO_ATTACHMENT_MOVES, NO_COMPOSER_ATTACHMENTS } from "./store/attachments";
 import { watchSessionSelection } from "./store/selection";
 import type { ChatStore } from "./store/types";
 
@@ -52,6 +53,7 @@ function loadHistoryPage(
   limit?: number,
   beforeSeq?: number | null,
   meta?: SessionMeta,
+  forceReload?: boolean,
 ): Promise<SessionPage> {
   const m =
     meta ??
@@ -64,15 +66,10 @@ function loadHistoryPage(
           s.workspacePath === workspacePath,
       );
   if (m?.remote && m.remotePath) {
-    return ipc.loadRemoteSessionPage(
-      workspacePath,
-      engine,
-      sessionId,
-      m.remotePath,
-      limit,
-      beforeSeq,
-    );
+    if (forceReload) return ipc.loadRemoteSessionPage(workspacePath, engine, sessionId, m.remotePath, limit, beforeSeq, true);
+    return ipc.loadRemoteSessionPage(workspacePath, engine, sessionId, m.remotePath, limit, beforeSeq);
   }
+  if (forceReload) return ipc.loadSessionPage(engine, sessionId, limit, beforeSeq, true);
   return beforeSeq === undefined
     ? ipc.loadSessionPage(engine, sessionId, limit)
     : ipc.loadSessionPage(engine, sessionId, limit, beforeSeq);
@@ -198,6 +195,8 @@ export const useChatStore = create<ChatStore>((set, get) => {
     retryingByKey: {},
     unseen: {},
     drafts: {},
+    composerAttachments: NO_COMPOSER_ATTACHMENTS,
+    composerAttachmentMoves: NO_ATTACHMENT_MOVES,
     pendingMention: null,
     actionError: null,
     initialized: false,

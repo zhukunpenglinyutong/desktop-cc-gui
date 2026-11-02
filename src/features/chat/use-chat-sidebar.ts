@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { useShallow } from "zustand/react/shallow";
 import type { ComposerInputHandle } from "@/components/application/ai-chat/ai-chat-composer";
 import { useBrowserStore } from "@/features/browser/store";
+import { useFilesStore } from "@/features/files/store";
 import { useMissionStore } from "@/features/mission/store";
 import { usePluginHubStore } from "@/features/plugins/hub/store";
 import type { AiChatRepo, AiChatRepoSection, ThreadAction } from "@/components/application/ai-chat/ai-chat-sidebar";
@@ -51,10 +52,11 @@ export function useChatSidebar({
     })),
   );
   // Store actions are stable references — one shallow subscription for all.
-  const { selectSession, startNewChat, addWorkspaces, reorderWorkspaces, setWorkspacePinned, pinSession, archiveSession, setWorkspaceArchived, assignWorkspaceGroup, createWorkspaceGroup, focusTab, closeTab } =
+  const { selectSession, reloadSession, startNewChat, addWorkspaces, reorderWorkspaces, setWorkspacePinned, pinSession, archiveSession, setWorkspaceArchived, assignWorkspaceGroup, createWorkspaceGroup, focusTab, closeTab } =
     useChatStore(
       useShallow((s) => ({
         selectSession: s.selectSession,
+        reloadSession: s.reloadSession,
         startNewChat: s.startNewChat,
         addWorkspaces: s.addWorkspaces,
         reorderWorkspaces: s.reorderWorkspaces,
@@ -262,6 +264,25 @@ export function useChatSidebar({
           void pinSession(session.engine, session.sessionId, !session.pinned);
         } else if (action === "rename") {
           setDialog({ kind: "rename", session });
+        } else if (action === "edit") {
+          if (session.engine === "agy") return;
+          const key = sessionKey(session.engine, session.sessionId, session.workspacePath);
+          const state = useChatStore.getState();
+          if (state.streamingByKey[key] || state.bySession[key]?.streaming) {
+            useChatStore.setState({ actionError: t("chat.sessionEditRunning") });
+            return;
+          }
+          void useFilesStore.getState().openSessionFile(session);
+        } else if (action === "refresh") {
+          const key = sessionKey(session.engine, session.sessionId, session.workspacePath);
+          const state = useChatStore.getState();
+          if (state.streamingByKey[key] || state.bySession[key]?.streaming) {
+            useChatStore.setState({ actionError: t("chat.sessionRefreshRunning") });
+            return;
+          }
+          dismissCenterSurfaces();
+          void reloadSession(session);
+          void selectSession(session.engine, session.sessionId, session.workspacePath);
         } else if (action === "archive") {
           void archiveSession(session);
         } else if (action === "delete") {
@@ -274,7 +295,7 @@ export function useChatSidebar({
         closeTab(draft.engine, null, draft.workspacePath);
       }
     },
-    [sessionById, pinSession, archiveSession, setDialog, closeTab],
+    [sessionById, pinSession, archiveSession, reloadSession, selectSession, setDialog, closeTab, t],
   );
   // 右键菜单「复制 ID」:写入原生会话 uuid(CLI --resume 可用的那个),与
   // 文件树「复制路径」一致——静默写剪贴板,失败不打扰。

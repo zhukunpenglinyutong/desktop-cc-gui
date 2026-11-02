@@ -695,7 +695,12 @@ pub(super) fn opencode_db_visible_sessions(
         rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
     )
     .ok()?;
-    let filter = opencode_visible_filter(&conn);
+    let mut filter = opencode_visible_filter(&conn);
+    // Discovery lists only unarchived rows; an archived one indexed earlier
+    // must leave the sidebar too.
+    if sqlite_has(&conn, "SELECT 1 FROM pragma_table_info('session') WHERE name='time_archived'") {
+        filter.insert_str(0, " AND time_archived IS NULL");
+    }
     let mut visible = std::collections::HashSet::new();
     // Chunk to stay well under SQLite's bound-variable limit.
     for chunk in session_ids.chunks(200) {
@@ -725,10 +730,76 @@ pub(super) fn discover_opencode(workspace: &Path) -> Vec<SessionFile> {
     let mut out = Vec::new();
     let mut seen_sessions = std::collections::HashSet::new();
     for root in opencode_data_roots(workspace) {
-        discover_opencode_tree(&root, workspace, &mut seen_sessions, &mut out);
+        let in_database = opencode_db_updated_times(&root);
+        discover_opencode_tree(&root, workspace, &in_database, &mut seen_sessions, &mut out);
         discover_opencode_db(&root, workspace, &mut seen_sessions, &mut out);
     }
     out
+}
+
+/// `time_updated` of every session row, hidden (archived / subagent) rows
+/// included. Empty when the database is missing, unreadable or predates the
+/// column: its sessions are not discovered either, so the tree stays in use.
+pub(super) fn opencode_db_updated_times(root: &Path) -> std::collections::HashMap<String, i64> {
+    let db = root.join("opencode.db");
+    if !db.is_file() {
+        return Default::default();
+    }
+    let Ok(conn) = rusqlite::Connection::open_with_flags(
+        &db,
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+    ) else {
+        return Default::default();
+    };
+    let Ok(mut stmt) = conn.prepare("SELECT id, time_updated FROM session") else {
+        return Default::default();
+    };
+    let Ok(rows) = stmt.query_map([], |r| {
+        Ok((r.get::<_, String>(0)?, r.get::<_, Option<i64>>(1)?.unwrap_or(0)))
+    }) else {
+        return Default::default();
+    };
+    // All or nothing: a partial set would flip a session between its copies
+    // from one scan to the next.
+    rows.collect::<Result<_, _>>().unwrap_or_default()
+}
+
+/// OpenCode 1.2+ copies the JSON tree into `opencode.db` once, never reads the
+/// tree again and leaves it on disk. The database copy wins unless the tree
+/// was updated later (a 1.1 binary still writing it after trying 1.2).
+fn opencode_tree_superseded(
+    in_database: &std::collections::HashMap<String, i64>,
+    session_id: &str,
+    meta: &serde_json::Value,
+) -> bool {
+    let tree_updated = meta
+        .get("time")
+        .and_then(|time| time.get("updated"))
+        .and_then(serde_json::Value::as_i64)
+        .unwrap_or(0);
+    in_database
+        .get(session_id)
+        .is_some_and(|db_updated| *db_updated >= tree_updated)
+}
+
+/// `<root>` of a tree session file `<root>/storage/session/<project>/<id>.json`.
+pub(super) fn opencode_tree_root(file: &Path) -> Option<&Path> {
+    let session_dir = file.parent()?.parent()?;
+    let storage = session_dir.parent()?;
+    (session_dir.file_name()? == "session" && storage.file_name()? == "storage")
+        .then(|| storage.parent())
+        .flatten()
+}
+
+/// Whether an indexed tree session file is superseded by its root's database
+/// (see [`opencode_tree_superseded`]); unreadable metadata never is.
+pub(super) fn opencode_tree_file_superseded(
+    in_database: &std::collections::HashMap<String, i64>,
+    session_id: &str,
+    file: &Path,
+) -> bool {
+    read_small_json(file, MAX_OPENCODE_META_BYTES)
+        .is_some_and(|meta| opencode_tree_superseded(in_database, session_id, &meta))
 }
 
 /// Legacy JSON storage tree: `storage/session/<projectId>/<sessionId>.json`
@@ -736,6 +807,7 @@ pub(super) fn discover_opencode(workspace: &Path) -> Vec<SessionFile> {
 fn discover_opencode_tree(
     root: &Path,
     workspace: &Path,
+    in_database: &std::collections::HashMap<String, i64>,
     seen_sessions: &mut std::collections::HashSet<String>,
     out: &mut Vec<SessionFile>,
 ) {
@@ -775,7 +847,10 @@ fn discover_opencode_tree(
                 .map(str::to_string)
                 .or_else(|| path.file_stem().and_then(|s| s.to_str()).map(str::to_string))
                 .unwrap_or_default();
-            if session_id.is_empty() || !seen_sessions.insert(session_id.clone()) {
+            if session_id.is_empty()
+                || opencode_tree_superseded(in_database, &session_id, &meta)
+                || !seen_sessions.insert(session_id.clone())
+            {
                 continue;
             }
             out.push(SessionFile {
@@ -1982,6 +2057,59 @@ mod tests {
         let found = discover_opencode(&workspace);
         let ids: Vec<&str> = found.iter().map(|f| f.session_id.as_str()).collect();
         assert_eq!(ids, ["ses_top"]);
+
+        std::fs::remove_dir_all(&home).ok();
+    }
+
+    /// OpenCode 1.2+ migrates the JSON tree into opencode.db and leaves the
+    /// tree behind, frozen. A migrated session must resolve to its database
+    /// row (history and editing), and a row the database hides (archived) must
+    /// not resurface from the stale tree. Tree-only sessions stay visible, and
+    /// a tree a 1.1 binary kept updating after a 1.2 trial stays authoritative.
+    #[test]
+    fn discover_opencode_prefers_database_rows_over_frozen_tree_copies() {
+        let home = scratch_dir("discover-opencode-migrated");
+        let workspace = home.join("ws");
+        std::fs::create_dir_all(&workspace).unwrap();
+        let ws = workspace.to_string_lossy().to_string();
+        let data_root = home.join(".local/share/opencode");
+        let project = data_root.join("storage/session/b8119e41");
+        std::fs::create_dir_all(&project).unwrap();
+        for (id, updated) in [("ses_migrated", 2), ("ses_archived", 1), ("ses_tree_only", 1), ("ses_downgraded", 50)] {
+            std::fs::write(
+                project.join(format!("{id}.json")),
+                serde_json::json!({"id": id, "projectID": "b8119e41", "directory": ws, "time": {"updated": updated}}).to_string(),
+            )
+            .unwrap();
+        }
+        let db = data_root.join("opencode.db");
+        let conn = rusqlite::Connection::open(&db).unwrap();
+        conn.execute_batch(
+            "CREATE TABLE session(id TEXT PRIMARY KEY, directory TEXT NOT NULL,
+                time_archived INTEGER, time_updated INTEGER NOT NULL);",
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO session VALUES('ses_migrated',?1,NULL,2),('ses_archived',?1,9,1),('ses_downgraded',?1,NULL,10)",
+            [&ws],
+        )
+        .unwrap();
+        drop(conn);
+
+        let _guard = HomeGuard::set(&home);
+        let found = discover_opencode(&workspace);
+        let mut ids: Vec<&str> = found.iter().map(|f| f.session_id.as_str()).collect();
+        ids.sort();
+        assert_eq!(ids, ["ses_downgraded", "ses_migrated", "ses_tree_only"]);
+        let migrated = found.iter().find(|f| f.session_id == "ses_migrated").unwrap();
+        assert_eq!(
+            super::super::split_opencode_db_path(&migrated.file_path),
+            Some((db.clone(), "ses_migrated".to_string()))
+        );
+        for id in ["ses_tree_only", "ses_downgraded"] {
+            let tree = found.iter().find(|f| f.session_id == id).unwrap();
+            assert_eq!(tree.file_path, project.join(format!("{id}.json")));
+        }
 
         std::fs::remove_dir_all(&home).ok();
     }

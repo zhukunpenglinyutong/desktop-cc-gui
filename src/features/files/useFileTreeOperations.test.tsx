@@ -1,6 +1,7 @@
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type * as ReactI18next from "react-i18next";
 import type { VisibleNode } from "./FileTreeRow";
 
 const mocks = vi.hoisted(() => ({
@@ -23,7 +24,8 @@ vi.mock("@/features/browser/store", () => ({
 vi.mock("@/features/chat/store", () => ({
   useChatStore: { getState: () => ({ requestMention: mocks.requestMention }) },
 }));
-vi.mock("react-i18next", () => ({
+vi.mock("react-i18next", async (importOriginal) => ({
+  ...await importOriginal<typeof ReactI18next>(),
   useTranslation: () => ({
     t: (key: string, opts?: { message?: string }) =>
       opts?.message ? `${key}: ${opts.message}` : key,

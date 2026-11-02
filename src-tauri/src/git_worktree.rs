@@ -731,7 +731,14 @@ pub async fn git_worktree_remove(
     delete_branch: bool,
 ) -> Result<WorktreeRemoveResult, String> {
     let repo = PathBuf::from(&repo_path);
-    crate::git::open_repo(&repo_path)?;
+    // git resolves a relative path against `-C repo`, the fallbacks below
+    // against the process CWD: refuse the ambiguity outright.
+    if !Path::new(&worktree_path).is_absolute() {
+        return Err(format!("worktree path must be absolute: {worktree_path}"));
+    }
+    // Only the common dir is kept: git2::Repository is not Send, so the
+    // handle must not live across the awaits below.
+    let common_dir = crate::git::open_repo(&repo_path)?.commondir().to_path_buf();
 
     let mut orphan_directory = false;
     let (out, _) = run_git(
@@ -742,16 +749,27 @@ pub async fn git_worktree_remove(
     .await?;
     if !out.status.success() {
         // Orphan: git lost the registration (manually pruned, moved). Drop
-        // the directory ourselves and reconcile the registry.
-        if Path::new(&worktree_path).is_dir() {
+        // the directory ourselves and reconcile the registry — but only when
+        // it provably was a linked worktree of THIS repo. Anything else
+        // (locked tree, main checkout, an arbitrary directory a caller passed
+        // in) keeps git's refusal instead of a recursive delete.
+        let dir = Path::new(&worktree_path);
+        if is_orphan_worktree_dir(&repo, &common_dir, dir).await {
             tokio::fs::remove_dir_all(&worktree_path)
                 .await
                 .map_err(|e| format!("remove {}: {e}", worktree_path))?;
-            let _ = run_git(&repo, &["worktree", "prune"], None).await;
-            orphan_directory = true;
+        } else if is_plain_dir(dir) && !dir.join(".git").exists() {
+            // --force already dropped the .git file and the registration but
+            // could not remove a busy root (Windows: a terminal's cwd). On
+            // retry only an EMPTY leftover goes — remove_dir is not recursive.
+            tokio::fs::remove_dir(dir)
+                .await
+                .map_err(|_| summarize_stderr(&out.stderr))?;
         } else {
             return Err(summarize_stderr(&out.stderr));
         }
+        let _ = run_git(&repo, &["worktree", "prune"], None).await;
+        orphan_directory = true;
     }
 
     let mut branch_deleted = false;
@@ -786,6 +804,121 @@ pub async fn git_worktree_remove(
         branch_deleted,
         branch_kept_reason,
     })
+}
+
+/// Canonical form of a path that may not exist (a pruned worktree's gitdir):
+/// canonicalize the deepest existing ancestor, re-append the rest. Keeps
+/// /var vs /private/var style symlinks from defeating prefix checks.
+fn canonical_lossy(path: &Path) -> PathBuf {
+    let mut existing = path.to_path_buf();
+    let mut rest: Vec<std::ffi::OsString> = Vec::new();
+    loop {
+        if let Ok(real) = std::fs::canonicalize(&existing) {
+            return rest.iter().rev().fold(real, |acc, part| acc.join(part));
+        }
+        match (
+            existing.file_name().map(|n| n.to_os_string()),
+            existing.parent(),
+        ) {
+            (Some(name), Some(parent)) => {
+                rest.push(name);
+                existing = parent.to_path_buf();
+            }
+            _ => return path.to_path_buf(),
+        }
+    }
+}
+
+/// Lexically drop `.` / `..` so a gitdir like `<common>/worktrees/../..`
+/// cannot climb out of the worktrees directory.
+fn normalize_lexically(path: &Path) -> PathBuf {
+    let mut out = PathBuf::new();
+    for part in path.components() {
+        match part {
+            std::path::Component::CurDir => {}
+            std::path::Component::ParentDir => {
+                out.pop();
+            }
+            other => out.push(other.as_os_str()),
+        }
+    }
+    out
+}
+
+/// The `gitdir:` target of a linked worktree's `.git` FILE (the main
+/// checkout has a `.git` directory, which never qualifies).
+fn worktree_gitdir(dir: &Path) -> Option<PathBuf> {
+    let dot_git = dir.join(".git");
+    if !std::fs::symlink_metadata(&dot_git).ok()?.is_file() {
+        return None;
+    }
+    let text = std::fs::read_to_string(&dot_git).ok()?;
+    let target = text.lines().next()?.strip_prefix("gitdir:")?.trim();
+    if target.is_empty() {
+        return None;
+    }
+    let target = Path::new(target);
+    Some(if target.is_absolute() {
+        target.to_path_buf()
+    } else {
+        dir.join(target)
+    })
+}
+
+/// A real directory, not a symlink to one.
+fn is_plain_dir(dir: &Path) -> bool {
+    std::fs::symlink_metadata(dir)
+        .map(|m| m.is_dir())
+        .unwrap_or(false)
+}
+
+/// Recursive-delete gate for git_worktree_remove's orphan fallback. True only
+/// when `dir` is a directory that git no longer lists for this repo, is not
+/// the repo itself or one of its ancestors, and whose `.git` file points to
+/// exactly `<common_dir>/worktrees/<name>` while that admin directory is gone
+/// — i.e. a linked worktree of this repo whose registration was lost.
+async fn is_orphan_worktree_dir(repo: &Path, common_dir: &Path, dir: &Path) -> bool {
+    if !is_plain_dir(dir) {
+        return false;
+    }
+    let dir_real = canonical_lossy(dir);
+    if canonical_lossy(repo).starts_with(&dir_real)
+        || canonical_lossy(common_dir).starts_with(&dir_real)
+    {
+        return false;
+    }
+    // Still registered (locked, main, or a real git failure): not an orphan.
+    match list_worktrees_cli(repo).await {
+        Ok(list)
+            if list
+                .iter()
+                .any(|w| same_path(&w.path, &dir.to_string_lossy())) =>
+        {
+            return false
+        }
+        Ok(_) => {}
+        Err(_) => return false,
+    }
+    let Some(gitdir) = worktree_gitdir(dir) else {
+        return false;
+    };
+    let worktrees = canonical_lossy(&common_dir.join("worktrees"));
+    let gitdir = normalize_lexically(&canonical_lossy(&gitdir));
+    // Exactly one level below worktrees/: deeper paths are submodule gitdirs
+    // (<common>/worktrees/<wt>/modules/<sub>) of a possibly locked worktree.
+    let Ok(rel) = gitdir.strip_prefix(&worktrees) else {
+        return false;
+    };
+    let mut parts = rel.components();
+    if !matches!(
+        (parts.next(), parts.next()),
+        (Some(std::path::Component::Normal(_)), None)
+    ) {
+        return false;
+    }
+    // An admin dir that still exists means git still tracks this tree under
+    // another path (moved / remounted, maybe locked): not lost, not ours.
+    !gitdir.exists()
 }
 
 /// Whether `branch`'s tip is an ancestor of `base` (i.e. fully merged).
@@ -1291,5 +1424,200 @@ mod tests {
         assert!(result.orphan_directory);
         assert!(!result.branch_deleted);
         assert!(!target.exists());
+    }
+
+    async fn remove_path(repo_dir: &Path, target: &Path) -> Result<WorktreeRemoveResult, String> {
+        git_worktree_remove(
+            repo_dir.to_string_lossy().into_owned(),
+            target.to_string_lossy().into_owned(),
+            None,
+            false,
+        )
+        .await
+    }
+
+    #[tokio::test]
+    async fn locked_worktree_is_never_deleted() {
+        let scratch = Scratch::new();
+        let repo_dir = scratch.join("repo");
+        std::fs::create_dir_all(&repo_dir).unwrap();
+        init_repo(&repo_dir);
+        let target = scratch.join("wt-locked");
+        run_create(
+            None,
+            None,
+            "t12",
+            &create_args(&repo_dir, "locked-branch", &target),
+            &cancel_handle(),
+        )
+        .await
+        .unwrap();
+        std::fs::write(target.join("work.txt"), "unsaved\n").unwrap();
+        let (out, _) = run_git(
+            &repo_dir,
+            &["worktree", "lock", &target.to_string_lossy()],
+            None,
+        )
+        .await
+        .unwrap();
+        assert!(out.status.success());
+
+        assert!(remove_path(&repo_dir, &target).await.is_err());
+        assert!(
+            target.join("work.txt").is_file(),
+            "locked worktree must survive"
+        );
+    }
+
+    #[tokio::test]
+    async fn main_worktree_is_never_deleted() {
+        let scratch = Scratch::new();
+        let repo_dir = scratch.join("repo");
+        std::fs::create_dir_all(&repo_dir).unwrap();
+        init_repo(&repo_dir);
+
+        assert!(remove_path(&repo_dir, &repo_dir).await.is_err());
+        assert!(repo_dir.join("init.txt").is_file());
+        assert!(repo_dir.join(".git").is_dir());
+    }
+
+    #[tokio::test]
+    async fn unrelated_directory_is_never_deleted() {
+        let scratch = Scratch::new();
+        let repo_dir = scratch.join("repo");
+        std::fs::create_dir_all(&repo_dir).unwrap();
+        init_repo(&repo_dir);
+        let precious = scratch.join("precious");
+        std::fs::create_dir_all(&precious).unwrap();
+        std::fs::write(precious.join("notes.md"), "keep me\n").unwrap();
+
+        assert!(remove_path(&repo_dir, &precious).await.is_err());
+        assert!(precious.join("notes.md").is_file());
+    }
+
+    #[tokio::test]
+    async fn forged_git_file_pointing_elsewhere_is_never_deleted() {
+        let scratch = Scratch::new();
+        let repo_dir = scratch.join("repo");
+        std::fs::create_dir_all(&repo_dir).unwrap();
+        init_repo(&repo_dir);
+        let other_dir = scratch.join("other");
+        std::fs::create_dir_all(&other_dir).unwrap();
+        init_repo(&other_dir);
+        let precious = scratch.join("precious");
+        std::fs::create_dir_all(&precious).unwrap();
+        std::fs::write(precious.join("notes.md"), "keep me\n").unwrap();
+        // .git 文件指向另一个仓库的 worktrees/：不是本仓库的孤儿 worktree。
+        let forged = format!(
+            "gitdir: {}\n",
+            other_dir.join(".git/worktrees/x").to_string_lossy()
+        );
+        std::fs::write(precious.join(".git"), forged).unwrap();
+
+        assert!(remove_path(&repo_dir, &precious).await.is_err());
+        assert!(precious.join("notes.md").is_file());
+
+        // 指向本仓库 .git 目录本身（而不是 worktrees/ 下）也不算。
+        let at_root = format!("gitdir: {}\n", repo_dir.join(".git").to_string_lossy());
+        std::fs::write(precious.join(".git"), at_root).unwrap();
+        assert!(remove_path(&repo_dir, &precious).await.is_err());
+        assert!(precious.join("notes.md").is_file());
+    }
+
+    #[tokio::test]
+    async fn submodule_gitdir_inside_a_worktree_is_never_deleted() {
+        let scratch = Scratch::new();
+        let repo_dir = scratch.join("repo");
+        std::fs::create_dir_all(&repo_dir).unwrap();
+        init_repo(&repo_dir);
+        let target = scratch.join("wt-sub");
+        run_create(
+            None,
+            None,
+            "t13",
+            &create_args(&repo_dir, "sub-branch", &target),
+            &cancel_handle(),
+        )
+        .await
+        .unwrap();
+        // 子模块的 gitdir 在 <common>/worktrees/<wt>/modules/<sub>：比孤儿 worktree 深一层。
+        let sub = target.join("sub");
+        std::fs::create_dir_all(&sub).unwrap();
+        std::fs::write(sub.join("work.txt"), "unsaved\n").unwrap();
+        let admin = repo_dir.join(".git/worktrees/wt-sub/modules/sub");
+        std::fs::write(
+            sub.join(".git"),
+            format!("gitdir: {}\n", admin.to_string_lossy()),
+        )
+        .unwrap();
+
+        assert!(remove_path(&repo_dir, &sub).await.is_err());
+        assert!(sub.join("work.txt").is_file());
+    }
+
+    #[tokio::test]
+    async fn moved_locked_worktree_is_never_deleted() {
+        let scratch = Scratch::new();
+        let repo_dir = scratch.join("repo");
+        std::fs::create_dir_all(&repo_dir).unwrap();
+        init_repo(&repo_dir);
+        let target = scratch.join("wt-usb");
+        run_create(
+            None,
+            None,
+            "t14",
+            &create_args(&repo_dir, "usb-branch", &target),
+            &cancel_handle(),
+        )
+        .await
+        .unwrap();
+        let (out, _) = run_git(
+            &repo_dir,
+            &["worktree", "lock", &target.to_string_lossy()],
+            None,
+        )
+        .await
+        .unwrap();
+        assert!(out.status.success());
+        // 移动硬盘换了挂载点：git 仍登记旧路径，新路径不在列表里。
+        let moved = scratch.join("wt-usb-mounted-elsewhere");
+        std::fs::rename(&target, &moved).unwrap();
+        std::fs::write(moved.join("work.txt"), "unsaved\n").unwrap();
+
+        assert!(remove_path(&repo_dir, &moved).await.is_err());
+        assert!(moved.join("work.txt").is_file());
+    }
+
+    #[tokio::test]
+    async fn leftover_empty_directory_without_git_is_cleaned_up() {
+        // Windows：--force 已删掉 .git 与登记，但根目录被终端占用没删掉；重试时目录是空的。
+        let scratch = Scratch::new();
+        let repo_dir = scratch.join("repo");
+        std::fs::create_dir_all(&repo_dir).unwrap();
+        init_repo(&repo_dir);
+        let leftover = scratch.join("wt-leftover");
+        std::fs::create_dir_all(&leftover).unwrap();
+
+        let result = remove_path(&repo_dir, &leftover).await.unwrap();
+        assert!(result.orphan_directory);
+        assert!(!leftover.exists());
+    }
+
+    #[tokio::test]
+    async fn relative_worktree_path_is_rejected() {
+        let scratch = Scratch::new();
+        let repo_dir = scratch.join("repo");
+        std::fs::create_dir_all(&repo_dir).unwrap();
+        init_repo(&repo_dir);
+
+        let err = git_worktree_remove(
+            repo_dir.to_string_lossy().into_owned(),
+            "some/relative/dir".to_string(),
+            None,
+            false,
+        )
+        .await
+        .unwrap_err();
+        assert!(err.contains("absolute"), "{err}");
     }
 }

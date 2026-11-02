@@ -28,6 +28,7 @@ import {
   isOfficialPlugin,
   OFFICIAL_PLUGIN_LOGIN,
 } from "./catalog";
+import { formatInstallCount } from "./install-count";
 import { PluginAvatar } from "./PluginAvatar";
 import { usePluginArtwork } from "./artwork";
 import { PluginReadme } from "./PluginReadme";
@@ -436,7 +437,7 @@ function PluginDetailHeader({
           {installed && <span className={BADGE_OK}>{t("plugins.hub.installed")}</span>}
           {model.downloads != null && (
             <span className={BADGE}>
-              {t("plugins.hub.downloadsShort", { n: model.downloads.toLocaleString() })}
+              {t("plugins.hub.downloadsShort", { n: formatInstallCount(model.downloads) })}
             </span>
           )}
         </div>
@@ -594,7 +595,7 @@ function PluginDetailRail({
       {model.downloads != null && (
         <RailRow label={t("plugins.hub.downloadsLabel")}>
           <span className={RAIL_VALUE}>
-            {t("plugins.hub.downloadsShort", { n: model.downloads.toLocaleString() })}
+            {t("plugins.hub.downloadsShort", { n: formatInstallCount(model.downloads) })}
           </span>
         </RailRow>
       )}

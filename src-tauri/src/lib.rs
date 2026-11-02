@@ -122,6 +122,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_process::init())
         .plugin(
             tauri_plugin_global_shortcut::Builder::new()
@@ -470,6 +471,7 @@ pub fn run() {
             // engine
             engine::send_message,
             engine::interrupt_session,
+            engine::live_runs,
             engine::answer_question,
             engine::respond_plan_review,
             engine::list_plan_reviews,
@@ -507,6 +509,9 @@ pub fn run() {
             history::reader::restore_session,
             history::reader::load_session_page,
             history::reader::load_remote_session_page,
+            history::edit::read_session_file,
+            history::edit::write_session_file,
+            history::edit::open_session_file_in_default_editor,
             history::search::search_messages,
             history::reader::delete_session,
             history::reader::delete_remote_session,
