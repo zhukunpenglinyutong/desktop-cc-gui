@@ -1,8 +1,9 @@
-import { useRef, useState, type RefObject } from "react";
+import { useEffect, useRef, useState, type RefObject } from "react";
 import { useTranslation } from "react-i18next";
 import Check from "lucide-react/dist/esm/icons/check";
 import ChevronLeft from "lucide-react/dist/esm/icons/chevron-left";
 import ChevronRight from "lucide-react/dist/esm/icons/chevron-right";
+import { CodexApprovalDetails, approvalTitle, approvalChoice } from "./CodexApprovalDetails";
 import type { Message, QuestionSpec } from "@/lib/ipc";
 import { useChatStore } from "../store";
 import { useScopedSessionKey } from "../split/session-scope";
@@ -85,7 +86,10 @@ function useQuestionAnswers(questions: QuestionSpec[], seq: number) {
   const respondToQuestion = useChatStore((s) => s.respondToQuestion);
   // 会话 key 取自所属栏位：分屏时各格管各格的问答卡。
   const key = useScopedSessionKey();
-  const [picked, setPicked] = useState<AnswerMap>({});
+  const [picked, setPicked] = useState<AnswerMap>(() => Object.fromEntries(
+    questions.filter((q) => q.approval && q.options.length > 0)
+      .map((q) => [q.question, q.options[0].label]),
+  ));
   const [other, setOther] = useState<TextMap>({});
   const [page, setPage] = useState(0);
 
@@ -97,7 +101,8 @@ function useQuestionAnswers(questions: QuestionSpec[], seq: number) {
   const complete = openQuestions === 0;
 
   const pick = (text: string, label: string, multi: boolean) => {
-    const nextPicked = { ...picked, [text]: togglePick(picked[text], label, multi) };
+    const approval = questions.some((q) => q.question === text && q.approval);
+    const nextPicked = { ...picked, [text]: approval ? label : togglePick(picked[text], label, multi) };
     // An option pick replaces any typed answer for that question.
     const nextOther = { ...other, [text]: "" };
     setOther(nextOther);
@@ -271,6 +276,7 @@ function QuestionOptions({
   onEnter: () => void;
 }) {
   const { t } = useTranslation();
+  const approval = question.approval;
   const multi = Boolean(question.multiSelect);
   const selectedLabels = Array.isArray(pickedValue) ? new Set(pickedValue) : null;
   return (
@@ -282,7 +288,8 @@ function QuestionOptions({
         return (
           <QuestionOptionRow
             key={opt.label}
-            option={opt}
+            option={approval && approvalChoice(approval, opt.label)
+              ? { ...opt, label: t(approvalChoice(approval, opt.label)!) } : opt}
             selected={selected}
             multi={multi}
             onPick={() => onPick(opt.label)}
@@ -290,7 +297,7 @@ function QuestionOptions({
           />
         );
       })}
-      {!multi && question.allowOther !== false && (
+      {!approval && !multi && question.allowOther !== false && (
         <input
           data-q-row
           value={typed}
@@ -334,6 +341,10 @@ export function QuestionCard({ message }: { message: Message }) {
     answer,
     skip,
   } = useQuestionAnswers(question?.questions ?? EMPTY_QUESTIONS, message.seq);
+  const approval = current && current.approval;
+  useEffect(() => {
+    if (approval) rootRef.current?.querySelector<HTMLElement>("[data-q-row]")?.focus();
+  }, [Boolean(approval), message.seq, question?.runId]);
   if (!question || !current) return null;
   const { questions } = question;
 
@@ -342,13 +353,35 @@ export function QuestionCard({ message }: { message: Message }) {
   const walkToNext = () => setPage(nextUnansweredIndex(questions, picked, other, page));
 
   return (
-    <div ref={rootRef} className="flex w-full flex-col gap-2.5 text-left">
+    <div ref={rootRef} className="flex w-full flex-col gap-2.5 text-left"
+      onKeyDownCapture={(e) => {
+        if (!approval || e.nativeEvent.isComposing || e.ctrlKey || e.metaKey || e.altKey) return;
+        if (e.key === "Tab" || e.key === "ArrowDown" || e.key === "ArrowUp") {
+          e.preventDefault();
+          e.stopPropagation();
+          const at = current.options.findIndex((opt) => opt.label === picked[current.question]);
+          const delta = e.key === "ArrowUp" || (e.key === "Tab" && e.shiftKey) ? -1 : 1;
+          const next = (at + delta + current.options.length) % current.options.length;
+          const option = current.options[next];
+          if (option) {
+            pick(current.question, option.label, false);
+            rootRef.current?.querySelectorAll<HTMLElement>("[data-q-row]")[next]?.focus();
+          }
+        } else if (e.key === "Escape" || (e.key === "Enter" && (e.target as HTMLElement).closest("[data-q-row]"))) {
+          e.preventDefault();
+          e.stopPropagation();
+          if (e.repeat) return;
+          if (e.key === "Escape") skip();
+          else answer();
+        }
+      }}
+    >
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
         <span className="rounded-md bg-background-tertiary-default px-1.5 py-0.5 text-caption-1-regular text-text-secondary">
-          {current.header}
+          {approval ? t("chat.codexApproval.header") : current.header}
         </span>
         <span className="text-caption-1-medium text-text-primary">
-          {current.question}
+          {approval ? t(approvalTitle(approval)) : current.question}
         </span>
         {current.multiSelect && (
           <span className="text-caption-1-regular text-text-tertiary">
@@ -364,6 +397,7 @@ export function QuestionCard({ message }: { message: Message }) {
           />
         )}
       </div>
+      {approval && <CodexApprovalDetails approval={approval} />}
       <QuestionOptions
         question={current}
         rootRef={rootRef}
@@ -378,7 +412,7 @@ export function QuestionCard({ message }: { message: Message }) {
       />
       <div className="flex flex-wrap items-center gap-2">
         <span className="text-caption-1-regular text-text-tertiary">
-          {complete
+          {approval ? t("chat.codexApproval.keyboardHint") : complete
             ? t("chat.questionKeyboardHint")
             : t("chat.questionRemaining", { count: openQuestions })}
         </span>
@@ -388,7 +422,7 @@ export function QuestionCard({ message }: { message: Message }) {
             onClick={skip}
             className={`${btn} border border-border-secondary bg-background-secondary-default text-text-secondary hover:bg-background-tertiary-hover`}
           >
-            {t("chat.questionSkip")}
+            {t(approval ? "chat.codexApproval.reject" : "chat.questionSkip")}
           </button>
           {current.multiSelect && !complete && hasAnswer(current.question, picked, other) && (
             <button
@@ -425,17 +459,19 @@ export function QuestionRecord({ message }: { message: Message }) {
   const question = message.question;
   if (!question) return null;
   const { status, questions } = question;
+  const approval = questions[0] && questions[0].approval;
   return (
     <div className="flex max-w-[85%] flex-col gap-1 rounded-xl border border-border-secondary bg-background-secondary-default px-3.5 py-2.5 text-left">
       <div className="flex items-center gap-1.5 text-caption-1-medium text-text-secondary">
         <Check className="size-3.5 shrink-0 text-foreground-icon-secondary" aria-hidden />
-        {t("chat.questionTitle")}
+        {t(approval ? "chat.codexApproval.header" : "chat.questionTitle")}
       </div>
       {status === "pending" && (
         <>
           <div className="text-caption-1-regular text-text-primary">
-            {questions[0]?.question ?? ""}
+            {approval ? t(approvalTitle(approval)) : questions[0]?.question ?? ""}
           </div>
+          {approval && <CodexApprovalDetails approval={approval} />}
           <div className="text-caption-1-regular text-text-tertiary">
             {t("chat.questionWaiting")}
           </div>
@@ -445,10 +481,12 @@ export function QuestionRecord({ message }: { message: Message }) {
         <div className="flex flex-col gap-0.5 text-caption-1-regular text-text-secondary">
           {questions.map((q, qi) => {
             const value = question.answers?.[q.question];
+            const approval = q.approval;
             const shown = Array.isArray(value) ? value.join(", ") : value ?? "";
+            const choice = approval && approvalChoice(approval, shown);
             return (
               <div key={qi} className="break-words">
-                {q.question} → {shown}
+                {approval ? t(approvalTitle(approval)) : q.question} → {choice ? t(choice) : shown}
               </div>
             );
           })}
@@ -456,7 +494,7 @@ export function QuestionRecord({ message }: { message: Message }) {
       )}
       {status === "dismissed" && (
         <div className="text-caption-1-regular text-text-tertiary">
-          {t("chat.questionSkipped")}
+          {t(approval ? "chat.codexApproval.rejected" : "chat.questionSkipped")}
         </div>
       )}
       {status === "cancelled" && (

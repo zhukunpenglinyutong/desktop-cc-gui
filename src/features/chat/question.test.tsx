@@ -3,7 +3,8 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import i18n from "@/lib/i18n";
 import { ipc, type Message } from "@/lib/ipc";
-import { QuestionCard } from "./components/QuestionCard";
+import { QuestionDock } from "./components/QuestionDock";
+import { QuestionCard, QuestionRecord } from "./components/QuestionCard";
 import { useChatStore } from "./store";
 import { handleEngineEvents, type EngineEventDeps } from "./store/engine-events";
 import { sessionKey } from "./store/persistence";
@@ -102,6 +103,77 @@ describe("ask-user-question flow", () => {
 
   afterEach(() => {
     vi.clearAllMocks();
+  });
+
+  it.each(["Allow once", "Reject", null])("Codex approval forwards only the user's choice: %s", async (choice) => {
+    const key = sessionKey("codex", "s-1", "/tmp/ws");
+    useChatStore.setState({ bySession: { [key]: { ...EMPTY_SESSION, messages: [] } } });
+    const event = questionEvent();
+    event.engine = "codex";
+    event.runId = `codex-approval-${choice}`;
+    event.data.input.questions[0] = {
+      question: "Codex: allow command execution?\ngit commit",
+      header: "Codex approval",
+      options: [{ label: "Allow once", description: "" }, { label: "Reject", description: "" }],
+    };
+    handleEngineEvents([event], deps());
+    const row = useChatStore.getState().bySession[key].messages.find((message) => message.role === "question")!;
+    expect(ipc.answerQuestion).not.toHaveBeenCalled();
+    expect(row.question?.status).toBe("pending");
+    const answers = choice ? { [event.data.input.questions[0].question]: choice } : null;
+    await useChatStore.getState().respondToQuestion(key, row.seq, answers);
+    expect(ipc.answerQuestion).toHaveBeenCalledExactlyOnceWith(event.runId, "req-1", answers);
+  });
+
+  it.each(["Allow once", "Reject", null])("opens a fresh Codex approval after %s when a later run reuses its RPC id", async (choice) => {
+    const key = sessionKey("codex", "s-1", "/tmp/ws");
+    useChatStore.setState({ bySession: { [key]: { ...EMPTY_SESSION, messages: [] } } });
+    const first = questionEvent("0");
+    first.engine = "codex";
+    first.runId = "approval-first-run";
+    const title = "Codex: allow command execution?";
+    first.data.input.questions[0] = {
+      question: title,
+      header: "Codex approval",
+      options: [{ label: "Allow once", description: "" }, { label: "Reject", description: "" }],
+    };
+    Object.assign(first.data.input.questions[0], {
+      approval: { kind: "command", details: { command: "git add .", cwd: "/tmp/ws" } },
+    });
+    handleEngineEvents([first], deps());
+    const old = useChatStore.getState().bySession[key].messages[0];
+    await useChatStore.getState().respondToQuestion(key, old.seq, choice ? { [title]: choice } : null);
+    const second = { ...first, runId: "approval-second-run" };
+    handleEngineEvents([second, second], deps());
+    const rows = useChatStore.getState().bySession[key].messages.filter((m) => m.role === "question");
+    expect(rows).toHaveLength(2);
+    expect(rows[0].question?.status).toBe(choice ? "answered" : "dismissed");
+    expect(rows[1].question?.status).toBe("pending");
+    expect(rows[1].question?.runId).toBe(second.runId);
+    handleEngineEvents([{ ...settledEvent("0"), engine: "codex", runId: first.runId }], deps());
+    expect(useChatStore.getState().bySession[key].messages[1].question?.status).toBe("pending");
+    await useChatStore.getState().respondToQuestion(key, rows[1].seq, { [title]: "Reject" });
+    expect(ipc.answerQuestion).toHaveBeenLastCalledWith(second.runId, "0", { [title]: "Reject" });
+    expect(useChatStore.getState().bySession[key].messages[0].question?.answers).toEqual(choice ? { [title]: choice } : undefined);
+  });
+
+  it("keeps a new approval pending when an older answer finishes late", async () => {
+    const key = sessionKey("codex", "s-1", "/tmp/ws");
+    useChatStore.setState({ bySession: { [key]: { ...EMPTY_SESSION, messages: [] } } });
+    const first = { ...questionEvent("0"), engine: "codex", runId: "old-approval" };
+    handleEngineEvents([first], deps());
+    const old = useChatStore.getState().bySession[key].messages[0];
+    let finish!: () => void;
+    vi.mocked(ipc.answerQuestion).mockImplementationOnce(() => new Promise<void>((resolve) => { finish = resolve; }));
+    const responding = useChatStore.getState().respondToQuestion(key, old.seq, { [QUESTION_TEXT]: "A" });
+    handleEngineEvents([{ ...first, runId: "new-approval" }], deps());
+    finish();
+    await responding;
+    const rows = useChatStore.getState().bySession[key].messages;
+    expect(rows).toHaveLength(2);
+    expect(rows[0].question?.status).toBe("answered");
+    expect(rows[1].question?.status).toBe("pending");
+    expect(rows[1].question?.answers).toBeUndefined();
   });
 
   it("a question event appends one pending card", () => {
@@ -360,6 +432,140 @@ describe("QuestionCard free-form Other", () => {
   afterEach(() => {
     act(() => root.unmount());
     container.remove();
+  });
+
+  it("resets the default choice when the next approval replaces the dock", async () => {
+    const first = cardMessage();
+    Object.assign(first.question.questions[0], {
+      approval: { kind: "command", details: { command: "git add ." } },
+    });
+    useChatStore.setState({ bySession: { [KEY]: { ...EMPTY_SESSION, messages: [first] } } });
+    await act(async () => root.render(<QuestionDock />));
+    await act(async () => buttonByText("B")!.click());
+    expect(buttonByText(i18n.t("chat.questionSubmit"))?.disabled).toBe(false);
+    const second = { ...first, seq: first.seq + 1, question: { ...first.question, requestId: "req-next" } };
+    await act(async () => useChatStore.setState({
+      bySession: { [KEY]: { ...EMPTY_SESSION, messages: [second] } },
+    }));
+    expect(container.querySelector('[role="radio"][aria-checked="true"]')).toBe(container.querySelector('[role="radio"]'));
+    expect(ipc.answerQuestion).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    [[], "Allow once"],
+    [[{ key: "Tab" }], "Reject"],
+    [[{ key: "Tab", shiftKey: true }], "Reject"],
+    [[{ key: "ArrowDown" }], "Reject"],
+    [[{ key: "ArrowUp" }], "Reject"],
+    [[{ key: "Tab" }, { key: "Tab" }], "Allow once"],
+    [[{ key: "ArrowDown" }, { key: "ArrowUp" }], "Allow once"],
+  ] as const)("approval keyboard navigation %j confirms %s directly", async (steps, expected) => {
+    const message = cardMessage();
+    const spec = message.question.questions[0];
+    spec.options = [{ label: "Allow once" }, { label: "Reject" }];
+    Object.assign(spec, { approval: { kind: "command", details: { command: "git add ." } } });
+    useChatStore.setState({ bySession: { [KEY]: { ...EMPTY_SESSION, messages: [message] } } });
+    await act(async () => root.render(<QuestionDock />));
+    const options = () => [...container.querySelectorAll<HTMLElement>('[role="radio"]')];
+    expect(options()[0].getAttribute("aria-checked")).toBe("true");
+    expect(document.activeElement).toBe(options()[0]);
+    expect(ipc.answerQuestion).not.toHaveBeenCalled();
+    for (const step of steps) {
+      await act(async () => document.activeElement!.dispatchEvent(new KeyboardEvent("keydown", { ...step, bubbles: true, cancelable: true })));
+    }
+    expect(options().find((row) => row.getAttribute("aria-checked") === "true")?.textContent).toContain(expected === "Reject" ? "拒绝" : "仅允许本次");
+    expect(ipc.answerQuestion).not.toHaveBeenCalled();
+    await act(async () => document.activeElement!.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true })));
+    expect(ipc.answerQuestion).toHaveBeenCalledExactlyOnceWith("run-9", "req-9", { [spec.question]: expected });
+  });
+
+  it("defaults to rejection when it is the only offered option and ignores IME/repeat Enter", async () => {
+    const message = cardMessage();
+    const spec = message.question.questions[0];
+    spec.options = [{ label: "Reject" }];
+    Object.assign(spec, { approval: { kind: "command", details: {} } });
+    useChatStore.setState({ bySession: { [KEY]: { ...EMPTY_SESSION, messages: [message] } } });
+    await act(async () => root.render(<QuestionDock />));
+    const option = container.querySelector<HTMLButtonElement>('[role="radio"]')!;
+    await act(async () => option.click());
+    expect(option.getAttribute("aria-checked")).toBe("true");
+    for (const extra of [{ isComposing: true }, { repeat: true }]) {
+      await act(async () => option.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true, ...extra })));
+    }
+    expect(ipc.answerQuestion).not.toHaveBeenCalled();
+    await act(async () => option.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true })));
+    expect(ipc.answerQuestion).toHaveBeenCalledExactlyOnceWith("run-9", "req-9", { [spec.question]: "Reject" });
+  });
+
+  it("Escape rejects an approval without accepting its default choice", async () => {
+    const message = cardMessage();
+    Object.assign(message.question.questions[0], { approval: { kind: "command", details: {} } });
+    useChatStore.setState({ bySession: { [KEY]: { ...EMPTY_SESSION, messages: [message] } } });
+    await act(async () => root.render(<QuestionDock />));
+    await act(async () => document.activeElement!.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true })));
+    expect(ipc.answerQuestion).toHaveBeenCalledExactlyOnceWith("run-9", "req-9", null);
+    expect(container.querySelector('[role="radio"]')).toBeNull();
+  });
+
+  it.each([
+    ["zh", "是否允许执行命令？", "仅允许本次", "拒绝", "工作目录"],
+    ["en", "Allow command execution?", "Allow once", "Reject", "Working directory"],
+    ["ko", "명령 실행을 허용할까요?", "이번만 허용", "거부", "작업 디렉터리"],
+  ])("renders Codex approvals in %s and sends stable protocol choices", async (language, title, allow, reject, cwd) => {
+    await i18n.changeLanguage(language);
+    const message = cardMessage();
+    const spec = message.question.questions[0];
+    spec.question = "Codex: allow command execution?";
+    spec.header = "Codex approval";
+    spec.options = [{ label: "Allow once" }, { label: "Reject" }];
+    Object.assign(spec, { approval: { kind: "command", details: { command: "git add .", cwd: "/project", reason: "Stage changes" } } });
+    useChatStore.setState({ bySession: { [KEY]: { ...EMPTY_SESSION, messages: [message] } } });
+    await act(async () => root.render(<QuestionCard message={message} />));
+    expect(container.textContent).toContain(title);
+    expect(container.textContent).toContain(cwd);
+    expect(container.textContent).toContain("git add .");
+    expect(container.textContent).not.toContain('"command"');
+    expect(container.textContent).not.toContain("Codex: allow command execution?");
+    expect(container.querySelector("input")).toBeNull();
+    expect(buttonByText(reject)).toBeTruthy();
+    await act(async () => buttonByText(allow)!.click());
+    await act(async () => buttonByText(i18n.t("chat.questionSubmit"))!.click());
+    expect(ipc.answerQuestion).toHaveBeenLastCalledWith(message.question.runId, message.question.requestId, { [spec.question]: "Allow once" });
+    message.question.status = "answered";
+    message.question.answers = { [spec.question]: "Allow once" };
+    await act(async () => root.render(<QuestionRecord message={message} />));
+    expect(container.textContent).toContain(title);
+    expect(container.textContent).toContain(allow);
+    expect(container.textContent).not.toContain('"command"');
+  });
+
+  it("shows permission scopes as labeled fields with an explicit turn lifetime", async () => {
+    const message = cardMessage();
+    const spec = message.question.questions[0];
+    spec.options = [{ label: "Allow once" }, { label: "Reject" }];
+    Object.assign(spec, { approval: { kind: "permissions", details: { permissions: { network: { enabled: true }, fileSystem: { write: ["/outside/<test>"] } } } } });
+    await act(async () => root.render(<QuestionCard message={message} />));
+    expect(container.textContent).toContain("是否授予额外权限？");
+    expect(container.textContent).toContain("请求权限 / 文件系统 / 写入");
+    expect(container.textContent).toContain("/outside/<test>");
+    expect(container.querySelector("test")).toBeNull();
+    expect(container.textContent).toContain("所选权限仅在当前轮次有效");
+    expect(buttonByText("允许本轮")).toBeTruthy();
+    expect(container.textContent).not.toContain("{");
+  });
+
+  it("updates an open approval card when language changes", async () => {
+    const message = cardMessage();
+    const spec = message.question.questions[0];
+    spec.question = "Codex: allow command execution?";
+    spec.header = "Codex approval";
+    spec.options = [{ label: "Allow once" }, { label: "Reject" }];
+    Object.assign(spec, { approval: { kind: "command", details: { command: "git add .", cwd: "/project" } } });
+    await act(async () => root.render(<QuestionCard message={message} />));
+    expect(container.textContent).toContain("是否允许执行命令？");
+    await act(async () => i18n.changeLanguage("en"));
+    expect(container.textContent).toContain("Allow command execution?");
+    expect(container.textContent).not.toContain('"cwd"');
   });
 
   it("a single-select question offers the free-form input; a multi-select one does not", () => {
