@@ -525,7 +525,10 @@ fn channel_env_maps(
 
 /// One convention field (baseUrl/apiKey/model): the flat field wins, then
 /// the engine's env key inside the raw env maps.
-fn channel_field(engine: &str, provider: &Value, field: &str) -> Option<String> {
+///
+/// `pub(crate)`: the commit-message generator resolves the same channel for an
+/// engine, so both paths must agree on one definition of "the channel".
+pub(crate) fn channel_field(engine: &str, provider: &Value, field: &str) -> Option<String> {
     if let Some(v) = non_empty_str(provider.get(field)) {
         return Some(v);
     }

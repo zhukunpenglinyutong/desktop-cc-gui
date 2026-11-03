@@ -1,6 +1,11 @@
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import Sparkles from "lucide-react/dist/esm/icons/sparkles";
 import { Button } from "@/components/base/buttons/button";
 import { cx } from "@/utils/cx";
+import { ipc, type CommitMessageChannel } from "@/lib/ipc";
+import { errorText } from "@/lib/errors";
+import { useChatStore } from "@/features/chat/store";
 import { useGitStore } from "./store";
 
 interface CommitFooterProps {
@@ -13,6 +18,9 @@ interface CommitFooterProps {
   run: (key: string, action: () => Promise<unknown>) => void;
   /** Total files currently selected for commit */
   selectedCount?: number;
+  /** The checked paths the commit button would commit; the AI draft describes
+   *  exactly this set so the title cannot lie about the commit's content. */
+  selectedFiles?: ReadonlySet<string>;
   /** Custom handler when committing selected files (auto-stages selected before commit) */
   onCommitSelected?: () => Promise<void>;
 }
@@ -26,14 +34,55 @@ export function CommitFooter({
   onCommitMsgChange,
   run,
   selectedCount,
+  selectedFiles,
   onCommitSelected,
 }: CommitFooterProps) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  const [drafting, setDrafting] = useState(false);
+  const [draftError, setDraftError] = useState<string | null>(null);
+  // Generation goes through the current chat engine's channel — never a
+  // silently picked third party. The tooltip names the engine and the
+  // channel host, so the user sees where the repo diff would be sent.
+  const activeEngine = useChatStore((s) => s.activeEngine);
+  const generation = useRef(0);
+  const selectionKey = JSON.stringify(selectedFiles ? [...selectedFiles].sort() : null);
+  const invalidateDraft = useCallback(() => {
+    generation.current += 1;
+    setDrafting(false);
+    setDraftError(null);
+  }, []);
+  // Invalidate on the committed UI change, before any pending promise can
+  // write into a different repository, selection or user-edited draft.
+  useLayoutEffect(() => {
+    invalidateDraft();
+    return () => { generation.current += 1; };
+  }, [workspacePath, activeEngine, i18n.language, selectionKey, commitMsg, busy, invalidateDraft]);
+  const [channel, setChannel] = useState<CommitMessageChannel | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    ipc
+      .gitCommitMessageChannel(activeEngine)
+      .then((info) => {
+        if (!cancelled) setChannel(info);
+      })
+      .catch(() => {
+        if (!cancelled) setChannel(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [activeEngine]);
+  // The commit button commits the checked set; the draft must describe the
+  // same set, so generation follows the selection, not the raw index.
+  const committableCount = selectedCount ?? stagedCount;
   return (
     <div className="flex flex-col gap-2 border-t border-separator-border p-3">
       <textarea
         value={commitMsg}
-        onChange={(e) => onCommitMsgChange(e.target.value)}
+        onChange={(e) => {
+          invalidateDraft();
+          onCommitMsgChange(e.target.value);
+        }}
         placeholder={t("git.commitMessage")}
         rows={2}
         className={cx(
@@ -42,29 +91,77 @@ export function CommitFooter({
           "outline-none focus:border-border-focus-ring",
         )}
       />
-      <Button
-        className="self-stretch"
-        disabled={
-          (selectedCount !== undefined ? selectedCount === 0 : stagedCount === 0) ||
-          commitMsg.trim().length === 0 ||
-          busy
-        }
-        onClick={() => {
-          if (onCommitSelected) {
-            void onCommitSelected();
-          } else {
-            const message = commitMsg.trim();
-            run("commit", async () => {
-              await useGitStore.getState().commit(workspacePath, message);
-              onCommitMsgChange("");
-            });
+      {draftError && (
+        <p role="alert" className="break-words text-xs text-text-error-primary">
+          {draftError}
+        </p>
+      )}
+      <div className="flex items-center gap-2">
+        <Button
+          variant="secondary"
+          size="small"
+          className="shrink-0"
+          title={
+            channel
+              ? t("git.generateCommitMessageHint", {
+                  engine: channel.engine,
+                  host: channel.baseUrl,
+                })
+              : t("git.generateCommitMessageNoChannel", { engine: activeEngine })
           }
-        }}
-      >
-        {selectedCount !== undefined && selectedCount > 0
-          ? t("git.commitWithCount", { count: selectedCount })
-          : t("git.commit")}
-      </Button>
+          disabled={committableCount === 0 || busy || drafting}
+          onClick={() => {
+            const request = ++generation.current;
+            setDrafting(true);
+            setDraftError(null);
+            void ipc
+              .gitGenerateCommitMessage(
+                workspacePath,
+                activeEngine,
+                i18n.language,
+                selectedFiles ? Array.from(selectedFiles) : null,
+              )
+              .then(({ message }) => {
+                if (request === generation.current && message.trim()) {
+                  onCommitMsgChange(message.trim());
+                }
+              })
+              .catch((err: unknown) => {
+                if (request === generation.current) setDraftError(errorText(err));
+              })
+              .finally(() => {
+                if (request === generation.current) setDrafting(false);
+              });
+          }}
+        >
+          <Sparkles aria-hidden className="size-4" />
+          {drafting ? t("git.generatingCommitMessage") : t("git.generateCommitMessage")}
+        </Button>
+        <Button
+          className="flex-1"
+          disabled={
+            (selectedCount !== undefined ? selectedCount === 0 : stagedCount === 0) ||
+            commitMsg.trim().length === 0 ||
+            busy
+          }
+          onClick={() => {
+            invalidateDraft();
+            if (onCommitSelected) {
+              void onCommitSelected();
+            } else {
+              const message = commitMsg.trim();
+              run("commit", async () => {
+                await useGitStore.getState().commit(workspacePath, message);
+                onCommitMsgChange("");
+              });
+            }
+          }}
+        >
+          {selectedCount !== undefined && selectedCount > 0
+            ? t("git.commitWithCount", { count: selectedCount })
+            : t("git.commit")}
+        </Button>
+      </div>
     </div>
   );
 }

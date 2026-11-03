@@ -24,6 +24,7 @@ import {
 } from "./ChangesFileContextMenu";
 import { DirectoryRow, FileRow } from "./GitTreeRow";
 import { NotRepoState } from "./NotRepoState";
+import { RepoSection } from "./RepoSection";
 import { StatusErrorState } from "./StatusErrorState";
 
 function useVisibleGitValue<Value>(
@@ -310,11 +311,109 @@ function useChangesActions(
   };
 }
 
+/**
+ * Workspace-scoped entry point. When the workspace holds more than one
+ * repository — a plain folder holding several projects — every repository
+ * gets its own section, IDEA-style: all projects' changes at a glance, each
+ * one staged and committed against its own repository. A single-repository
+ * workspace renders the previous single-repository panel unchanged, so the
+ * common case looks exactly as before.
+ */
 export function ChangesPanel({
   workspacePath,
   repoPath,
   className,
   visible = true,
+}: {
+  workspacePath: string;
+  /** Pin the panel to this repository instead of discovering the workspace's
+   *  repositories — for callers that render the panel outside the files
+   *  context, where discovery and selection would silently steer it. */
+  repoPath?: string;
+  className?: string;
+  visible?: boolean;
+}) {
+  const repositories = useGitStore((s) =>
+    repoPath === undefined ? s.reposByWorkspace[workspacePath] : undefined,
+  );
+  const discoveryRevision = useGitStore((s) =>
+    repoPath === undefined ? s.reposRevisionByWorkspace[workspacePath] ?? 0 : 0,
+  );
+  // Discovery already reports the workspace root when the root is itself a
+  // repository, so the summaries are the whole list of projects. More than
+  // one project is the only case that needs sections: a workspace holding a
+  // single repository keeps the exact panel it has always shown.
+  const repos = useMemo(
+    () => repositories?.map((repo) => repo.path) ?? [],
+    [repositories],
+  );
+  const multi = repoPath === undefined && repos.length > 1;
+  // Discovery can return exactly one repository that is not the workspace
+  // root (a workspace subfolder inside a repo, or a single nested project).
+  // Pin the panel to it rather than letting the file-tree selection decide.
+  const pinnedRepoPath = repoPath ?? (repos.length === 1 ? repos[0] : undefined);
+  useEffect(() => {
+    if (!visible || repoPath !== undefined) return;
+    void useGitStore.getState().discoverRepos(workspacePath);
+  }, [workspacePath, visible, repoPath]);
+  // Sections share one scroller so that a single scrollbar walks every
+  // project, the way IDEA walks its whole change list.
+  const [scroller, setScroller] = useState<HTMLDivElement | null>(null);
+  if (!multi) {
+    return (
+      <RepoChangesPanel
+        workspacePath={workspacePath}
+        repoPath={pinnedRepoPath}
+        discoveryRevision={discoveryRevision}
+        className={className}
+        visible={visible}
+      />
+    );
+  }
+  return (
+    <aside
+      style={{ display: visible ? undefined : "none" }}
+      className={cx("flex h-full min-h-0 flex-col bg-background-primary-default", className)}
+    >
+      {/* One scroller for every project: a single scrollbar walks the whole
+          workspace, and each section's group headers stick to it. */}
+      <div ref={setScroller} className="min-h-0 flex-1 overflow-y-auto">
+        {repos.map((path) => (
+          // Clean sections start folded: every mounted panel refreshes its
+          // repository over IPC, so a workspace holding dozens of projects
+          // must not fire a status walk per project on first open. A dirty
+          // section still opens itself, and expanding a folded one mounts
+          // the panel, which loads that repository on demand. After first
+          // expansion it stays mounted so folding cannot drop pending work.
+          <RepoSection key={path} workspacePath={workspacePath} repoPath={path} defaultOpen={false}>
+            <RepoChangesPanel
+              workspacePath={workspacePath}
+              repoPath={path}
+              discoveryRevision={discoveryRevision}
+              visible={visible}
+              embedded
+              sharedScrollElement={scroller}
+            />
+          </RepoSection>
+        ))}
+      </div>
+    </aside>
+  );
+}
+
+/**
+ * One repository's changes: header (branch, pull/push, errors), the staged /
+ * unstaged / untracked groups, and the commit box. `repoPath` pins the
+ * repository; without it the panel follows the file tree's selection.
+ */
+function RepoChangesPanel({
+  workspacePath,
+  repoPath,
+  className,
+  visible = true,
+  embedded = false,
+  sharedScrollElement,
+  discoveryRevision = 0,
 }: {
   workspacePath: string;
   /** Pin the panel to this repository instead of following the file tree's
@@ -323,6 +422,13 @@ export function ChangesPanel({
   repoPath?: string;
   className?: string;
   visible?: boolean;
+  /** Inside a repository section: the surrounding panel owns the scroller
+   *  and the height, so this renders as a plain column. */
+  embedded?: boolean;
+  /** Shared scroller for embedded sections (their group headers stick to
+   *  it); a standalone panel passes nothing and owns its scroller. */
+  sharedScrollElement?: HTMLDivElement | null;
+  discoveryRevision?: number;
 }) {
   const selectedPath = useFilesStore((s) => s.selectedPath);
   const repositories = useFilesStore((s) => s.repositories);
@@ -343,7 +449,8 @@ export function ChangesPanel({
   // rather than a header line over an endless "loading".
   const statusError = status ? null : (refreshError ?? null);
   const branches = useVisibleGitValue(visible, (s) => s.branchesByWorkspace[gitWorkspacePath]);
-  const [scrollElement, setScrollElement] = useState<HTMLDivElement | null>(null);
+  const [ownScrollElement, setOwnScrollElement] = useState<HTMLDivElement | null>(null);
+  const scrollElement = embedded ? (sharedScrollElement ?? null) : ownScrollElement;
   const scrollOffset = useRef(0);
 
   const { viewMode, toggleViewMode } = useGitViewMode();
@@ -379,14 +486,16 @@ export function ChangesPanel({
   const fileMenu = useChangesFileMenu(gitWorkspacePath, visible);
 
   useLayoutEffect(() => {
-    if (visible && scrollElement) scrollElement.scrollTop = scrollOffset.current;
-  }, [visible, scrollElement]);
+    if (!embedded && visible && scrollElement) {
+      scrollElement.scrollTop = scrollOffset.current;
+    }
+  }, [visible, scrollElement, embedded]);
 
   useEffect(() => {
     if (!visible) return;
     void useGitStore.getState().refresh(gitWorkspacePath);
     void useGitStore.getState().loadBranches(gitWorkspacePath);
-  }, [gitWorkspacePath, visible]);
+  }, [gitWorkspacePath, visible, discoveryRevision]);
 
   const header = visible ? (
     <ChangesPanelHeader
@@ -413,6 +522,19 @@ export function ChangesPanel({
     />
   ) : null;
 
+  // Only the list and the commit box give way to a status-read failure;
+  // open confirmations and the row menu stay put instead of vanishing and
+  // resurfacing with stale paths once the status is back.
+  const statusErrorState = statusError ? (
+    <StatusErrorState
+      message={statusError}
+      busy={pending.retryStatus === true}
+      onRetry={() =>
+        run("retryStatus", () => useGitStore.getState().refresh(gitWorkspacePath, true))
+      }
+    />
+  ) : null;
+
   if (notRepo) {
     return (
       <aside
@@ -428,27 +550,74 @@ export function ChangesPanel({
     );
   }
 
+  if (embedded) {
+    return (
+      <>
+        {header}
+        {statusErrorState ?? (
+          <>
+            <ChangesBody
+              status={status}
+              visible={visible}
+              scrollElement={scrollElement}
+              scrollOffset={scrollOffset}
+              pending={pending}
+              viewMode={viewMode}
+              selectedFiles={selectedFiles}
+              onToggleSelectFile={toggleSelectFile}
+              onToggleSelectDir={toggleSelectDir}
+              onToggleSelectGroup={toggleSelectGroup}
+              stage={stage}
+              unstage={unstage}
+              stageOne={stageOne}
+              unstageOne={unstageOne}
+              discardRow={discardRow}
+              setDiscardTarget={setDiscardTarget}
+              openStagedDiff={openStagedDiff}
+              openUnstagedDiff={openUnstagedDiff}
+              onRowContextMenu={fileMenu.openMenu}
+            />
+            {visible && (
+              <CommitFooter
+                workspacePath={gitWorkspacePath}
+                stagedCount={status?.staged.length ?? 0}
+                selectedCount={selectedFiles.size}
+                selectedFiles={selectedFiles}
+                onCommitSelected={handleCommitSelected}
+                busy={pending.commit === true}
+                commitMsg={commitMsg}
+                onCommitMsgChange={setCommitMsg}
+                run={run}
+              />
+            )}
+          </>
+        )}
+        <ChangesConfirmDialogs
+          visible={visible}
+          discardTarget={discardTarget}
+          pendingCommitPlan={pendingCommitPlan}
+          onConfirmDiscard={confirmDiscard}
+          onCancelDiscard={() => setDiscardTarget(null)}
+          onConfirmPlan={confirmCommitPlan}
+          onCancelPlan={() => setPendingCommitPlan(null)}
+        />
+        {visible && fileMenu.menu && (
+          <ChangesFileContextMenu menu={fileMenu.menu} run={run} onClose={fileMenu.closeMenu} />
+        )}
+      </>
+    );
+  }
+
   return (
     <aside
       style={{ display: visible ? undefined : "none" }}
       className={cx("flex h-full min-h-0 flex-col bg-background-primary-default", className)}
     >
       {header}
-      {/* Only the list and the commit box give way to a status-read failure;
-          open confirmations and the row menu stay put instead of vanishing
-          and resurfacing with stale paths once the status is back. */}
-      {statusError ? (
-        <StatusErrorState
-          message={statusError}
-          busy={pending.retryStatus === true}
-          onRetry={() =>
-            run("retryStatus", () => useGitStore.getState().refresh(gitWorkspacePath, true))
-          }
-        />
-      ) : (
+      {statusErrorState ?? (
         <>
           <div
-            ref={setScrollElement}
+            ref={setOwnScrollElement}
             className="min-h-0 flex-1 overflow-y-auto overscroll-contain"
             onScroll={(event) => {
               if (visible) scrollOffset.current = event.currentTarget.scrollTop;
@@ -481,6 +650,7 @@ export function ChangesPanel({
               workspacePath={gitWorkspacePath}
               stagedCount={status?.staged.length ?? 0}
               selectedCount={selectedFiles.size}
+              selectedFiles={selectedFiles}
               onCommitSelected={handleCommitSelected}
               busy={pending.commit === true}
               commitMsg={commitMsg}

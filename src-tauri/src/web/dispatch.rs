@@ -559,6 +559,18 @@ struct GitCommitArgs {
     message: String,
 }
 #[derive(Deserialize)]
+struct GitDiscoverArgs {
+    root: String,
+}
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct GitGenerateCommitMessageArgs {
+    engine: Option<String>,
+    path: String,
+    locale: String,
+    files: Option<Vec<String>>,
+}
+#[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct GitCheckoutArgs {
     path: String,
@@ -1306,6 +1318,23 @@ pub(super) async fn dispatch(
         "git_repository_summaries" => {
             let a: PathsArgs = parse_args(&raw)?;
             ser(Ok(crate::git::git_repository_summaries(a.paths).await))
+        }
+        "git_discover_repositories" => {
+            let a: GitDiscoverArgs = parse_args(&raw)?;
+            ser(Ok(crate::git::git_discover_repositories(a.root).await))
+        }
+        "git_commit_message_channel" => {
+            let a: EngineArgs = parse_args(&raw)?;
+            ser(crate::commit_message::git_commit_message_channel(a.engine))
+        }
+        "git_generate_commit_message" => {
+            let a: GitGenerateCommitMessageArgs = parse_args(&raw)?;
+            ser(
+                crate::commit_message::git_generate_commit_message(
+                    a.engine, a.path, a.locale, a.files,
+                )
+                .await,
+            )
         }
         "git_workspace_owners" => {
             let a: PathsArgs = parse_args(&raw)?;
