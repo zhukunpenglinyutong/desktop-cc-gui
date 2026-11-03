@@ -547,9 +547,15 @@ fn qoder_project_dirs(base: &Path, workspace: &Path) -> Vec<PathBuf> {
         base: &Path,
         spelling: &str,
     ) {
-        let slug = qoder_encode_project_slug(spelling);
-        if !slug.is_empty() && seen.insert(slug.clone()) {
-            out.push(base.join(slug));
+        // Qoder also uses ASCII-sanitized project names (notably for Chinese
+        // and spaces). Prefer that spelling while retaining legacy dirs.
+        for slug in [
+            super::claude_encode_project_path(spelling.trim_end_matches(['/', '\\'])),
+            qoder_encode_project_slug(spelling),
+        ] {
+            if !slug.is_empty() && seen.insert(slug.clone()) {
+                out.push(base.join(slug));
+            }
         }
     }
     let mut out = Vec::new();
@@ -1929,6 +1935,61 @@ mod tests {
         );
 
         std::fs::remove_dir_all(&home).ok();
+    }
+
+    #[test]
+    fn qoder_project_dirs_include_reported_chinese_windows_slug() {
+        let base = Path::new("projects");
+        let dirs = qoder_project_dirs(
+            base,
+            Path::new(r"E:\公司\深圳睿服科技\04Project\RFKJ\261015RuiFuOperationsBusiPlat"),
+        );
+        assert!(dirs.contains(&base.join(
+            "E------------04Project-RFKJ-261015RuiFuOperationsBusiPlat"
+        )));
+    }
+
+    #[test]
+    fn discover_qoder_accepts_sanitized_and_legacy_dirs_without_duplicates() {
+        let home = scratch_dir("qoder-unicode");
+        let workspace = home.join("中文 工作区");
+        std::fs::create_dir_all(&workspace).unwrap();
+        let spelling = workspace.to_string_lossy();
+        let sanitized = super::super::claude_encode_project_path(&spelling);
+        let legacy = qoder_encode_project_slug(&spelling);
+        assert_ne!(sanitized, legacy);
+        let _guard = HomeGuard::set(&home);
+        for (distribution, config) in [
+            (crate::engine::qoder::QoderDistribution::Global, ".qoder"),
+            (crate::engine::qoder::QoderDistribution::Cn, ".qoder-cn"),
+        ] {
+            let base = home.join(config).join("projects");
+            for (slug, id) in [
+                (&sanitized, "shared"),
+                (&legacy, "shared"),
+                (&legacy, "legacy-only"),
+            ] {
+                let dir = base.join(slug);
+                std::fs::create_dir_all(&dir).unwrap();
+                std::fs::write(dir.join(format!("{id}.jsonl")), "{}\n").unwrap();
+            }
+            let found = discover_qoder(&workspace, distribution);
+            let mut ids: Vec<_> = found.iter().map(|file| file.session_id.as_str()).collect();
+            ids.sort();
+            assert_eq!(ids, ["legacy-only", "shared"]);
+            assert!(found
+                .iter()
+                .all(|file| file.engine == distribution.engine_id()));
+            assert_eq!(
+                found
+                    .iter()
+                    .find(|file| file.session_id == "shared")
+                    .unwrap()
+                    .file_path,
+                base.join(&sanitized).join("shared.jsonl")
+            );
+        }
+        std::fs::remove_dir_all(&home).unwrap();
     }
 
     /// OpenCode session metadata jsons are matched to the workspace by their
