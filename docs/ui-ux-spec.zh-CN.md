@@ -60,6 +60,8 @@
 - 需要解释性文案、快捷键或多行说明时才用 `Tooltip`（`src/components/base/tooltip/tooltip.tsx`）：它基于 react-aria，trigger 必须是 react-aria 组件或包在 `Focusable` 里的元素；触屏上不可达，所以**关键信息不能只放在 tooltip 里**。
 - 原生 `title` 提示由 `NativeTitleTooltip`（`src/components/base/tooltip/native-title-tooltip.tsx`，挂在 `App.tsx`）全局接管：它监听 `document.body`（覆盖 portal 到 body 的右键菜单、对话框），把 `title` 文案搬进 `data-native-tooltip` 并置空原属性，改渲染与 `TooltipContent` 同一视觉的气泡（500ms 延迟、150ms 进入过渡、`z-[100001]`）。**气泡必须高于 react-aria 自己的弹层**：它给 Popover 的默认 `z-index` 是 100000（实测），原值 `z-[130]` 只考虑了对话框 z-110 / 右键菜单 z-120，于是弹层内部的 `title`（例如状态栏分支列表的行）悬停时气泡被弹层整个盖住，而弹层外的同类元素看起来完全正常——排查时先量两者的 `z-index` 与「气泡中心最上层元素」再改样式。它同时把文案复制为 `aria-description` 保住读屏描述。写控件时仍直接写 `title` 即可，不要手动操作 `data-native-tooltip`；Esc / 滚动 / 按下 / 目标卸载都会收起。
 
+- **聊天模型长名称可核对**：CLI 模型浮层按内容扩宽（上限 480px），根据左右可用空间选择展开方向，距视口边缘保留 16px；窗口缩放或模型切换导致入口变宽、外层弹层平移时重新计算边界；模型名称与说明允许换行，连续长字符串也可折行，桌面与触屏列表均不以省略号隐藏名称。底部入口保留紧凑布局，复用 `Tooltip` 展示引擎、完整模型名称、与名称不同的模型 ID 及推理档位，菜单打开时停用提示。
+
 ### 2.4 展开 / 收起动效
 
 - **把下面内容推开的展开/收起一律做高度过渡，不允许条件渲染直接闪现**（`{open && …}` 少了过渡就是瞬间抽走 / 塞回）。实现统一用 CSS `grid-template-rows: 1fr ⇄ 0fr`，让浏览器插值轨道高度、兄弟行被平滑推开；不用 `max-height` 猜高度，也不用 JS 逐帧量高。现成实现两处，不要另起：侧栏树/列表用 `src/components/application/ai-chat/repo-tree.tsx` 的 `SidebarDisclosure`（`WorktreeGroup` 分组与线程列表共用：`300ms` + `ease-in-out` + `motion-reduce:transition-none`）；消息/面板级折叠用 `src/components/application/collapsible/collapsible.tsx` 的 `Collapsible`（额外 `opacity` + `visibility` 收尾，时长由调用点给）。**展开时不要强制 `visibility: visible`**：让内容继承祖先的 visibility，否则藏在隐藏页签/幕布（`visibility: hidden`）里的折叠内容仍会绘制——编辑器查找的替换行曾因此在切到下一个文件页签后残留。两者都只转箭头方向（`transition-transform duration-150` + 展开时 `rotate-90`）并同步 `aria-expanded`。
@@ -383,6 +385,7 @@ const feedback = useRunningFeedback(store.loading);
 
 | 版本 | 时间 | 内容 |
 |---|---|---|
+| v1.28 | 2026-11-03 | 修复 #1477：聊天模型浮层按内容与视口扩宽、左右择边，模型名称和说明可换行；底部入口提供完整选择信息提示。§2.3 补规则 |
 | v1.27 | 2026-11-02 | 分叉入口降噪：一轮只挂一处（该轮最后一个助手分段），同一轮各分段本解析到同一个锚点；入口改为 hover / `focus-visible` 显形，复制仍常驻；流式期间仍在回合末尾保留禁用占位。§3 改写助手操作区规则 |
 | v1.26 | 2026-11-02 | 安全自查第一批（`docs/security-incidents/2026-11-security-audit.zh-CN.md`）：HTML 文件默认显示源码、预览只服务所在目录并禁止外联（重写 §3 HTML 预览规则）；MCP 工作区配置不自动检测、手动检测先确认（§7 MCP 检测改为仅用户级）；使用统计改为后端发送并新增开关；Web 端不能发起电脑操控或改外网访问设置、令牌移出地址栏；CLI 官方安装脚本改在可见终端运行；DSH 只在启用且已安装时自动启动、不结束他人进程；引擎禁用时不挂载认证区、Pi / OMP 去掉焦点刷新；§3 补规则 |
 | v1.25 | 2026-11-01 | 安全收敛（1.2.0 被终端安全软件告警的跟进）：设置 → CLI 管理 → CodeBuddy 账号区去掉登录状态与「刷新状态」，不再探测系统凭据存储，改为中性说明 + 「终端登录」；§7 删除「CodeBuddy 账号状态刷新」入口。新增读取本机 CLI 登录凭据前的同意确认框（列出读取位置与发送目标，拒绝后本次运行不再询问）与插件详情页 `limits.read` 下的允许 / 撤销控件；§3 补规则 |

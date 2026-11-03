@@ -366,3 +366,13 @@ an empty URL is refused, and that Escape cancels. Also measures the two pencils:
 both glyph and padding are in `em`, so the name pencil must track the 14px name
 line and the URL pencil the 11px code line (and the interface font / zoom with
 them), not a fixed pixel box. No app, no backend, no real config file.
+
+## CLI 模型长名称
+
+打开 `/tests/browser/cli-model-names.html`，使用真实 `CliMenu` 与合成模型目录验证 #1477。
+默认选择超长中文、emoji 和连续英文名称，名称和说明应换行，模型列表可滚动；
+选择 `deepseek-v4-pro` / `deepseek-v4.1-flash` 后，页面输出应为对应的完整 ID。
+切换入口位置检查浮层向左右展开，桌面宽度上限 480px，窗口缩放后不越界。
+底部入口悬停或键盘聚焦应显示完整名称与 ID，打开菜单后提示消失。
+390px 窄屏点击引擎行进入模型对话框，长名称不得横向溢出，发送按钮仍可见。
+此页面不读取真实配置，不调用 CLI，不代表原生 WebView 验证。

@@ -133,6 +133,28 @@ describe("CliMenu flyout switching", () => {
     });
   };
 
+  it("底部入口提示保留完整模型名称和不同的模型 ID", async () => {
+    act(() => root.render(
+      <CliMenu
+        options={OPTIONS} value="claude" onChange={() => {}}
+        modelsByEngine={{ claude: [{ id: "relay/deepseek-v4.1-flash", label: "deepseek-v4.1-flash" }] }}
+        models={{ claude: "relay/deepseek-v4.1-flash" }} onModelChange={() => {}}
+        efforts={{}} onEffortChange={() => {}}
+        ompServiceTier={null} onOmpServiceTierChange={async () => {}}
+        codexServiceTier={null} onCodexServiceTierChange={async () => {}}
+      />,
+    ));
+    const chip = container.querySelector("button")!;
+    await act(async () => {
+      document.dispatchEvent(new KeyboardEvent("keydown", { key: "Tab", bubbles: true }));
+      chip.focus();
+    });
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 600)); });
+    const tooltip = document.querySelector('[role="tooltip"]');
+    expect(tooltip?.textContent).toContain("Claude Code / deepseek-v4.1-flash");
+    expect(tooltip?.textContent).toContain("relay/deepseek-v4.1-flash");
+  });
+
   it("切换 Codex 渠道后保留面板并将焦点交回渠道按钮", async () => {
     render("codex");
     await openMenu();

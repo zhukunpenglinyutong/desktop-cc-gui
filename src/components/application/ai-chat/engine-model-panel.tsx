@@ -1,7 +1,7 @@
 "use client";
 
-import { useMemo, useId, useRef, useState } from "react";
-import type { ReactNode } from "react";
+import { useMemo, useId, useLayoutEffect, useRef, useState } from "react";
+import type { CSSProperties, ReactNode } from "react";
 import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
 import Check from "lucide-react/dist/esm/icons/check";
@@ -32,11 +32,9 @@ export interface ChannelOption {
   label: string;
 }
 
-/** Per-engine model flyout: pops to the right of the CLI popover, bottom-
- *  aligned with the engine list so the taller panel never clips below the
- *  composer-anchored popover. */
+/** Bottom-aligned model flyout; its available side determines the width. */
 const FLYOUT_CLASSES = cx(
-  "absolute left-full bottom-0 z-10 ml-2 w-80 max-w-[calc(100vw-32px)]",
+  "absolute bottom-0 z-10 w-max min-w-[min(320px,var(--flyout-max-width))] max-w-[var(--flyout-max-width)]",
   "rounded-lg border border-border-button-default bg-background-primary-default p-1 shadow-dropdown",
 );
 
@@ -233,14 +231,14 @@ function ModelRow({
         size={18}
         className="shrink-0 text-foreground-icon-primary"
       />
-      <span className="flex min-w-0 flex-col">
-        <span className="truncate text-body-medium whitespace-nowrap text-text-primary">
+      <span className="flex min-w-0 flex-col [overflow-wrap:anywhere]">
+        <span className="text-body-medium whitespace-normal text-text-primary">
           {option.label}
         </span>
         {/* CLI /model-menu style subtitle ("Custom Opus model"); absent
             for plain catalog rows. */}
         {option.description && (
-          <span className="truncate text-body-2-regular whitespace-nowrap text-text-secondary">
+          <span className="text-body-2-regular whitespace-normal text-text-secondary">
             {option.description}
           </span>
         )}
@@ -643,15 +641,50 @@ export function EngineModelPanel({
   );
 }
 
-/** Desktop-only wrapper: the model panel as a flyout popping to the right of
+/** Desktop-only wrapper: the model panel flies out on the roomier side of
  *  the CLI popover. On mobile CliMenu renders the same panel in a modal
  *  dialog instead (hover flyouts don't work on touch). */
 export function EngineFlyout(props: Parameters<typeof EngineModelPanel>[0]) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [layout, setLayout] = useState({ left: false, maxWidth: 480 });
+  useLayoutEffect(() => {
+    const panel = ref.current;
+    const anchor = panel?.parentElement;
+    if (!panel || !anchor) return;
+    const update = () => {
+      const bounds = anchor.getBoundingClientRect();
+      const rightSpace = window.innerWidth - bounds.right - 24;
+      const leftSpace = bounds.left - 24;
+      const left = rightSpace < Math.min(480, leftSpace);
+      const maxWidth = Math.max(0, Math.min(480, left ? leftSpace : rightSpace));
+      setLayout((current) => current.left === left && current.maxWidth === maxWidth
+        ? current : { left, maxWidth });
+    };
+    update();
+    const observer = typeof ResizeObserver === "undefined" ? undefined : new ResizeObserver(update);
+    observer?.observe(anchor);
+    observer?.observe(panel);
+    // 入口变宽时外层弹层会平移，浮层自身尺寸可能不变。
+    const popover = anchor.closest('[role="dialog"]')?.parentElement;
+    const positionObserver = new MutationObserver(update);
+    if (popover) positionObserver.observe(popover, { attributes: true, attributeFilter: ["style"] });
+    window.addEventListener("resize", update);
+    return () => {
+      observer?.disconnect();
+      positionObserver.disconnect();
+      window.removeEventListener("resize", update);
+    };
+  }, []);
   // data-engine-flyout: CliMenu's hover-intent guard checks focus against
   // this marker so hovering a row never swaps the panel while the user is
   // typing in its search / channel filter.
   return (
-    <div data-engine-flyout className={FLYOUT_CLASSES}>
+    <div
+      ref={ref}
+      data-engine-flyout
+      className={cx(FLYOUT_CLASSES, layout.left ? "right-full mr-2" : "left-full ml-2")}
+      style={{ "--flyout-max-width": `${layout.maxWidth}px` } as CSSProperties}
+    >
       <EngineModelPanel {...props} />
     </div>
   );

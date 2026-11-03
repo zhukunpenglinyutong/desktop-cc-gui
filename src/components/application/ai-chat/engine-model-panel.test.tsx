@@ -3,7 +3,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from "vitest";
 import "@/lib/i18n";
 import i18n from "@/lib/i18n";
-import { EngineModelPanel } from "./engine-model-panel";
+import { EngineFlyout, EngineModelPanel } from "./engine-model-panel";
 import type { ModelOption } from "./cli-menu";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT =
@@ -269,5 +269,87 @@ describe("EngineModelPanel model sections", () => {
     );
     // No pick to lead with: catalog order stands, nothing sinks or renames.
     expect(headers()).toEqual(["enterprise", "openai"]);
+  });
+});
+
+describe("长模型名称", () => {
+  it("保留完整名称和描述，并按完整 ID 选择同前缀模型", () => {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    const onPickModel = vi.fn();
+    const models = [
+      { id: "relay/deepseek-v4-pro", label: "deepseek-v4-pro", description: "自定义渠道上的完整模型说明" },
+      { id: "relay/deepseek-v4.1-flash", label: "deepseek-v4.1-flash" },
+    ];
+    try {
+      act(() => root.render(
+        <EngineFlyout
+          option={{ id: "pi", label: "PI" }}
+          models={models}
+          selectedModelId={models[0].id}
+          query=""
+          onQueryChange={() => {}}
+          effort="medium"
+          onPickModel={onPickModel}
+          onEffortChange={() => {}}
+          ompServiceTier={null}
+          onOmpServiceTierChange={async () => {}}
+          codexServiceTier={null}
+          onCodexServiceTierChange={async () => {}}
+        />,
+      ));
+      const rows = [...container.querySelectorAll<HTMLButtonElement>('button[role="radio"]')];
+      expect(rows[0].textContent).toContain(models[0].label);
+      expect(rows[0].textContent).toContain(models[0].description);
+      expect(rows[1].textContent).toContain(models[1].label);
+      act(() => rows[1].click());
+      expect(onPickModel).toHaveBeenCalledWith("pi", models[1].id);
+    } finally {
+      act(() => root.unmount());
+      container.remove();
+    }
+  });
+
+  it("窗口缩放及外层弹层平移后重新计算可用方向和宽度", async () => {
+    const container = document.createElement("div");
+    const popover = document.createElement("div");
+    const dialog = document.createElement("div");
+    dialog.setAttribute("role", "dialog");
+    dialog.appendChild(container);
+    popover.appendChild(dialog);
+    document.body.appendChild(popover);
+    const root = createRoot(container);
+    const bounds = vi.spyOn(container, "getBoundingClientRect").mockReturnValue({ left: 650, right: 906 } as DOMRect);
+    const originalWidth = window.innerWidth;
+    window.innerWidth = 1000;
+    try {
+      act(() => root.render(
+        <EngineFlyout
+          option={{ id: "pi", label: "PI" }} models={[]} selectedModelId=""
+          query="" onQueryChange={() => {}} effort="medium"
+          onPickModel={() => {}} onEffortChange={() => {}}
+          ompServiceTier={null} onOmpServiceTierChange={async () => {}}
+          codexServiceTier={null} onCodexServiceTierChange={async () => {}}
+        />,
+      ));
+      const panel = container.querySelector<HTMLElement>("[data-engine-flyout]")!;
+      expect(panel.classList.contains("right-full")).toBe(true);
+      expect(panel.style.getPropertyValue("--flyout-max-width")).toBe("480px");
+      bounds.mockReturnValue({ left: 16, right: 272 } as DOMRect);
+      window.innerWidth = 768;
+      act(() => window.dispatchEvent(new Event("resize")));
+      expect(panel.classList.contains("left-full")).toBe(true);
+      expect(panel.style.getPropertyValue("--flyout-max-width")).toBe("472px");
+      // 外层只改变位置，没有 resize；模拟入口从短模型切到长模型。
+      bounds.mockReturnValue({ left: 120, right: 376 } as DOMRect);
+      await act(async () => { popover.style.left = "120px"; });
+      expect(panel.style.getPropertyValue("--flyout-max-width")).toBe("368px");
+    } finally {
+      act(() => root.unmount());
+      popover.remove();
+      bounds.mockRestore();
+      window.innerWidth = originalWidth;
+    }
   });
 });
