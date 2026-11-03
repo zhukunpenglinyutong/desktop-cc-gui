@@ -47,6 +47,7 @@ function entry(overrides: Partial<McpConfigEntry>): McpConfigEntry {
     name: "alpha",
     source: "claude_user",
     scope: "user",
+    workspaceFile: false,
     path: "/home/u/.claude.json",
     format: "json",
     enabled: true,

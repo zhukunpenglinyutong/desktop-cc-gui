@@ -939,6 +939,8 @@ describe("host compaction rows", () => {
 });
 
 describe("chat column width (宽幕布)", () => {
+  // The 750px cap reads the column width preset, falling back to 750px.
+  const NARROW = "max-w-[var(--chat-column-max-width,750px)]";
   let container: HTMLDivElement;
   let root: Root;
 
@@ -976,17 +978,17 @@ describe("chat column width (宽幕布)", () => {
   it("keeps the centered 750px column by default", async () => {
     const inner = await render(false);
     expect(inner.className).toContain("mx-auto");
-    expect(inner.className).toContain("max-w-[750px]");
+    expect(inner.className).toContain(NARROW);
   });
 
   it("drops the cap while 宽幕布 is on, and restores it when switched off", async () => {
     const inner = await render(true);
     expect(inner.className).toContain("w-full");
-    expect(inner.className).not.toContain("max-w-[750px]");
+    expect(inner.className).not.toContain(NARROW);
 
     // Live toggle: the mounted timeline follows the store slice.
     await act(async () => useChatStore.setState({ wideLayout: false }));
-    expect(inner.className).toContain("max-w-[750px]");
+    expect(inner.className).toContain(NARROW);
   });
 });
 

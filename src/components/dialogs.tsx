@@ -12,6 +12,11 @@ import {
   subscribeGrantDialog,
 } from "@/lib/grant";
 import {
+  answerCredentialConsent,
+  currentCredentialConsent,
+  subscribeCredentialConsent,
+} from "@/lib/credential-consent";
+import {
   cancelAppClose,
   closeConfirmPending,
   confirmAppClose,
@@ -153,9 +158,21 @@ interface ConfirmDialogProps {
   onCancel: () => void;
   /** Extra body content (e.g. the file list of the switch confirmation). */
   children?: ReactNode;
+  /** "confirm" (default): Enter confirms. "none": no button takes focus, for
+   *  prompts that can open while the user is typing elsewhere (a stray Enter
+   *  must not answer them). */
+  initialFocus?: "confirm" | "none";
 }
 
-export function ConfirmDialog({ message, danger = false, confirmLabel, onConfirm, onCancel, children }: ConfirmDialogProps) {
+export function ConfirmDialog({
+  message,
+  danger = false,
+  confirmLabel,
+  onConfirm,
+  onCancel,
+  children,
+  initialFocus = "confirm",
+}: ConfirmDialogProps) {
   const { t } = useTranslation();
   return (
     <ModalShell onClose={onCancel}>
@@ -167,7 +184,12 @@ export function ConfirmDialog({ message, danger = false, confirmLabel, onConfirm
         </Button>
         {/* The confirm button takes the dialog's initial focus so Enter
          *  confirms instead of cancelling. */}
-        <Button variant={danger ? "danger" : "primary"} size="small" autoFocus onClick={onConfirm}>
+        <Button
+          variant={danger ? "danger" : "primary"}
+          size="small"
+          autoFocus={initialFocus === "confirm"}
+          onClick={onConfirm}
+        >
           {confirmLabel ?? t("common.confirm")}
         </Button>
       </div>
@@ -268,6 +290,50 @@ export function GrantAccessDialogHost() {
       onConfirm={() => answerGrantRequest(true)}
       onCancel={() => answerGrantRequest(false)}
     />
+  );
+}
+
+/** Renders the CLI-login consent prompt driven by lib/credential-consent.ts.
+ *  Mounted once at the app root (App.tsx); shown the first time a plugin's
+ *  limits lookup needs a local CLI login, listing every store read and the
+ *  only host each credential goes to. */
+export function CredentialConsentDialogHost() {
+  const { t } = useTranslation();
+  const request = useSyncExternalStore(subscribeCredentialConsent, currentCredentialConsent);
+  if (!request) return null;
+  return (
+    <ConfirmDialog
+      message={t("plugins.credentialConsent.message")}
+      confirmLabel={t("plugins.credentialConsent.allow")}
+      // Opens on a plugin's background lookup, possibly mid-typing.
+      initialFocus="none"
+      onConfirm={() => answerCredentialConsent(true)}
+      onCancel={() => answerCredentialConsent(false)}
+    >
+      <p className="mt-2 text-body-2-regular text-text-secondary">
+        {t("plugins.credentialConsent.detail")}
+      </p>
+      <ul className="mt-3 flex flex-col gap-2">
+        {request.sources.map((source) => (
+          <li
+            key={`${source.provider}:${source.kind}:${source.location}`}
+            className="rounded-lg bg-background-secondary-default px-3 py-2 text-body-2-regular"
+          >
+            <span className="font-medium text-text-primary">
+              {source.provider === "claude" ? "Claude Code" : "Codex"}
+            </span>
+            <span className="ml-2 break-all font-mono text-text-secondary">
+              {source.kind === "keychain"
+                ? t("plugins.credentialConsent.keychain", { location: source.location })
+                : source.location}
+            </span>
+            <span className="block text-text-tertiary">
+              {t("plugins.credentialConsent.sentTo", { host: source.host })}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </ConfirmDialog>
   );
 }
 

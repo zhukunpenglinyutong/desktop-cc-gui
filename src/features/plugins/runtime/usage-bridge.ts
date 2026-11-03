@@ -11,6 +11,7 @@ import type {
   UsageStatsResult,
 } from "@ccgui/plugin-sdk";
 import { invoke, listen } from "@/lib/transport";
+import { withCredentialConsent } from "@/lib/credential-consent";
 import { runAsPlugin, withAuthorizedHostInvoke } from "./hardening";
 
 /**
@@ -196,6 +197,11 @@ export const ipcUsageBackend: Required<UsageBackend> = {
   usagePrices: (pluginId) => invoke("plugin_usage_prices", { pluginId }),
   usageUpdatePrices: (pluginId) => invoke("plugin_usage_update_prices", { pluginId }),
   usageSubscribe: subscribeUsageTopic,
+  // The host asks the desktop user once before it reads any CLI login
+  // (lib/credential-consent.ts); the first invoke stays synchronous so the
+  // bridge's single authorized IPC hop still covers it.
   limitsGet: (pluginId, options) =>
-    invoke("plugin_limits_get", { pluginId, providers: options.providers, refresh: options.refresh }),
+    withCredentialConsent(() =>
+      invoke("plugin_limits_get", { pluginId, providers: options.providers, refresh: options.refresh }),
+    ),
 };

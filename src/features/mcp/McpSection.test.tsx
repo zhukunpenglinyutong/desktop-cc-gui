@@ -57,6 +57,7 @@ function claudeUser(): McpConfigEntry {
     name: "alpha",
     source: "claude_user",
     scope: "user",
+    workspaceFile: false,
     path: "/home/u/.claude.json",
     format: "json",
     enabled: true,
@@ -79,6 +80,7 @@ function claudeProject(): McpConfigEntry {
     name: "beta",
     source: "claude_project",
     scope: "project",
+    workspaceFile: true,
     path: "/ws/.mcp.json",
     format: "json",
     enabled: false,
@@ -657,7 +659,10 @@ describe("McpSection", () => {
         engines: [
           engine("claude", {
             config: {
-              entries: [{ ...claudeProject(), enabled: true }, { ...claudeUser(), enabled: false }],
+              entries: [
+                { ...claudeUser(), id: "claude_user:beta", name: "beta", enabled: true },
+                { ...claudeUser(), enabled: false },
+              ],
               errors: [],
             },
           }),
@@ -684,6 +689,30 @@ describe("McpSection", () => {
     });
     // 停用的 alpha 不启动，只检测启用的 beta。
     expect(api.probe.mock.calls.map((call) => call[0].name)).toEqual(["beta"]);
+  });
+
+  it("never auto-probes a server whose config came with the workspace", async () => {
+    api.inventory.mockResolvedValue(
+      payload({
+        engines: [
+          engine("claude", {
+            config: {
+              entries: [{ ...claudeProject(), enabled: true }, claudeUser()],
+              errors: [],
+            },
+          }),
+          payload().engines[1],
+        ],
+      }),
+    );
+    api.probe.mockResolvedValue(connectedProbe());
+    await renderSection();
+    await vi.waitFor(() => {
+      expect(api.probe).toHaveBeenCalled();
+    });
+    // Opening the page runs only the user's own server; the repo's `.mcp.json`
+    // entry waits for an explicit, confirmed check.
+    expect(api.probe.mock.calls.map((call) => call[0].name)).toEqual(["alpha"]);
   });
 
   it("surfaces a probe transport failure next to the row", async () => {

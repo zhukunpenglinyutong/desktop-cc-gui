@@ -105,6 +105,11 @@ pub struct AppSettings {
     /// If None, a token is generated at first start and persisted.
     #[serde(default)]
     pub web_access_token: Option<String>,
+    /// 设置 → 关于 → 使用统计: the launch page-view beacon (baidu_tongji.rs).
+    /// None = on. Written only by `analytics_enabled_set`; a full-object
+    /// update that leaves it unset keeps the stored choice.
+    #[serde(default)]
+    pub analytics_enabled: Option<bool>,
     /// Max sessions shown per workspace in the sidebar before collapsing
     /// behind a "show more" row.
     #[serde(default = "default_sidebar_thread_limit")]
@@ -405,6 +410,7 @@ impl Default for AppSettings {
             web_access_auto_start: None,
             web_access_port: None,
             web_access_token: None,
+            analytics_enabled: None,
             language: default_language(),
             default_models: HashMap::new(),
             custom_models: HashMap::new(),
@@ -587,10 +593,76 @@ pub fn read_settings() -> Result<AppSettings, String> {
 
 /// Write-then-rename so a crash mid-write never leaves a truncated file that
 /// the next read would reject as corrupt.
+///
+/// Callers rewrite other CLIs' credential files (`~/.codex/auth.json`,
+/// `~/.claude.json`) and our own secret-bearing files, so the result is
+/// always owner-only (0600; an owner execute bit is kept) — never the umask
+/// default, and a file an older build widened to 0644 is narrowed back. Every
+/// caller writes user-private config or state; none is meant to be shared.
+/// A symlink (dotfile managers) is written through instead of replaced with
+/// a plain file, and staging uses a unique name so neither a real
+/// `<stem>.tmp` sibling nor a concurrent writer is clobbered.
 pub(crate) fn atomic_write(path: &std::path::Path, content: &str) -> Result<(), String> {
-    let tmp = path.with_extension("tmp");
-    std::fs::write(&tmp, content).map_err(|e| format!("write {}: {e}", tmp.display()))?;
-    std::fs::rename(&tmp, path).map_err(|e| format!("rename {}: {e}", path.display()))
+    let target = write_target(path)?;
+    let dir = target
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .unwrap_or(std::path::Path::new("."));
+    let name = target
+        .file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let tmp = dir.join(format!(".{name}.{}.tmp", uuid::Uuid::new_v4().simple()));
+    let result = write_staged(&tmp, &target, content).and_then(|()| {
+        std::fs::rename(&tmp, &target).map_err(|e| format!("rename {}: {e}", target.display()))
+    });
+    if result.is_err() {
+        let _ = std::fs::remove_file(&tmp);
+    }
+    result
+}
+
+/// The file a write to `path` should land in: the symlink's target when
+/// `path` is a link (even a dangling one), else `path` itself.
+fn write_target(path: &std::path::Path) -> Result<std::path::PathBuf, String> {
+    let is_link = std::fs::symlink_metadata(path)
+        .map(|meta| meta.file_type().is_symlink())
+        .unwrap_or(false);
+    if !is_link {
+        return Ok(path.to_path_buf());
+    }
+    if let Ok(resolved) = std::fs::canonicalize(path) {
+        return Ok(resolved);
+    }
+    let link = std::fs::read_link(path).map_err(|e| format!("read link {}: {e}", path.display()))?;
+    Ok(match path.parent() {
+        Some(parent) if link.is_relative() => parent.join(link),
+        _ => link,
+    })
+}
+
+fn write_staged(tmp: &std::path::Path, target: &std::path::Path, content: &str) -> Result<(), String> {
+    use std::io::Write;
+    let mut file = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(tmp)
+        .map_err(|e| format!("write {}: {e}", tmp.display()))?;
+    #[cfg(unix)]
+    {
+        // Set explicitly: a mode passed to open() is narrowed by the umask.
+        use std::os::unix::fs::PermissionsExt;
+        let owner_exec = std::fs::metadata(target)
+            .map(|meta| meta.permissions().mode() & 0o100)
+            .unwrap_or(0);
+        let mode = 0o600 | owner_exec;
+        file.set_permissions(std::fs::Permissions::from_mode(mode))
+            .map_err(|e| format!("chmod {}: {e}", tmp.display()))?;
+    }
+    #[cfg(not(unix))]
+    let _ = target;
+    file.write_all(content.as_bytes())
+        .map_err(|e| format!("write {}: {e}", tmp.display()))
 }
 
 /// One-time import of the legacy app's sidebar groups. Group definitions
@@ -794,13 +866,54 @@ pub fn get_app_settings() -> Result<AppSettings, String> {
     read_settings()
 }
 
+/// Fields owned by a dedicated command keep their stored value when a
+/// full-object write leaves them unset: `update_app_settings` replaces the
+/// whole file, and a surface that never loaded the field must not silently
+/// reset the user's choice (an "off" analytics switch turning back on).
+pub(crate) fn keep_unset_dedicated_fields(incoming: &mut AppSettings, current: &AppSettings) {
+    if incoming.analytics_enabled.is_none() {
+        incoming.analytics_enabled = current.analytics_enabled;
+    }
+}
+
 #[tauri::command]
 pub fn update_app_settings<R: tauri::Runtime>(
     app: tauri::AppHandle<R>,
-    mut settings: AppSettings,
+    settings: AppSettings,
 ) -> Result<(), String> {
-    let prev_home = read_settings().ok().and_then(|s| s.codex_home);
-    let result = persist_settings(&mut settings);
+    update_app_settings_merged(app, settings, None)
+}
+
+/// Full-object settings write. Reading the stored copy, merging fields the
+/// incoming object must not reset, and persisting all happen under the one
+/// settings write lock: read-then-lock let a concurrent dedicated write
+/// (`analytics_enabled_set`, the web-access toggles) be overwritten by the
+/// stale copy. `remote_merge` (web bridge) keeps desktop-owned fields and
+/// fails closed when the stored copy cannot be read.
+pub(crate) fn update_app_settings_merged<R: tauri::Runtime>(
+    app: tauri::AppHandle<R>,
+    mut settings: AppSettings,
+    remote_merge: Option<fn(AppSettings, &AppSettings) -> AppSettings>,
+) -> Result<(), String> {
+    let (prev_home, result) = {
+        let _guard = settings_write_lock();
+        let current = read_settings();
+        if let Some(merge) = remote_merge {
+            let current = current.as_ref().map_err(|e| format!("read settings: {e}"))?;
+            settings = merge(settings, current);
+        }
+        let current = current.ok();
+        let prev_home = current.as_ref().and_then(|s| s.codex_home.clone());
+        if let Some(current) = current.as_ref() {
+            keep_unset_dedicated_fields(&mut settings, current);
+        }
+        let result = match persist_settings_committed(&mut settings) {
+            Ok(Some(warning)) => Err(warning),
+            Ok(None) => Ok(()),
+            Err(error) => Err(error),
+        };
+        (prev_home, result)
+    };
     // Other surfaces (the composer's proxy toggle) follow along without
     // re-reading settings.json.
     let _ = app.emit("settings://changed", ());
@@ -1017,6 +1130,98 @@ pub(crate) fn announce_settings(app: &tauri::AppHandle) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn write_scratch() -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!("ccgui-atomic-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[cfg(unix)]
+    fn mode_of(path: &std::path::Path) -> u32 {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::metadata(path).unwrap().permissions().mode() & 0o777
+    }
+
+    /// Rewriting another CLI's credential file (auth.json, ~/.claude.json)
+    /// must never widen it, and a file an older build already widened to
+    /// 0644 is narrowed back to owner-only on the next write.
+    #[cfg(unix)]
+    #[test]
+    fn atomic_write_keeps_files_owner_only() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = write_scratch();
+        for (name, before) in [("auth.json", 0o600), ("widened.json", 0o644), ("group.json", 0o640)] {
+            let path = dir.join(name);
+            std::fs::write(&path, "{}").unwrap();
+            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(before)).unwrap();
+            atomic_write(&path, r#"{"token":"x"}"#).unwrap();
+            assert_eq!(std::fs::read_to_string(&path).unwrap(), r#"{"token":"x"}"#);
+            assert_eq!(mode_of(&path), 0o600, "{name}");
+        }
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn atomic_write_creates_new_files_owner_only() {
+        let dir = write_scratch();
+        let path = dir.join("config.json");
+        atomic_write(&path, "{}").unwrap();
+        assert_eq!(mode_of(&path), 0o600);
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    /// Dotfile managers (stow, chezmoi) keep configs as symlinks: write
+    /// through to the target instead of replacing the link with a file.
+    #[cfg(unix)]
+    #[test]
+    fn atomic_write_writes_through_a_symlink() {
+        let dir = write_scratch();
+        let real = dir.join("real.json");
+        let link = dir.join("link.json");
+        std::fs::write(&real, "old").unwrap();
+        std::os::unix::fs::symlink(&real, &link).unwrap();
+        atomic_write(&link, "new").unwrap();
+        assert!(std::fs::symlink_metadata(&link).unwrap().file_type().is_symlink());
+        assert_eq!(std::fs::read_to_string(&real).unwrap(), "new");
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    /// The staging file must not collide with a real sibling: the old fixed
+    /// `<stem>.tmp` name clobbered e.g. `auth.tmp` and raced concurrent writers.
+    #[test]
+    fn atomic_write_leaves_siblings_and_no_staging_file() {
+        let dir = write_scratch();
+        let path = dir.join("auth.json");
+        let sibling = dir.join("auth.tmp");
+        std::fs::write(&sibling, "keep").unwrap();
+        atomic_write(&path, "{}").unwrap();
+        assert_eq!(std::fs::read_to_string(&sibling).unwrap(), "keep");
+        let mut names: Vec<_> = std::fs::read_dir(&dir)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        names.sort();
+        assert_eq!(names, vec!["auth.json".to_string(), "auth.tmp".to_string()]);
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn full_update_without_the_analytics_choice_keeps_the_stored_one() {
+        let mut stored = AppSettings::default();
+        stored.analytics_enabled = Some(false);
+        // A full-object write from a surface that never saw the field.
+        let mut incoming = AppSettings::default();
+        keep_unset_dedicated_fields(&mut incoming, &stored);
+        assert_eq!(incoming.analytics_enabled, Some(false));
+
+        // An explicit value is never overridden.
+        let mut explicit = AppSettings::default();
+        explicit.analytics_enabled = Some(true);
+        keep_unset_dedicated_fields(&mut explicit, &stored);
+        assert_eq!(explicit.analytics_enabled, Some(true));
+    }
 
     #[test]
     fn bin_override_key_camel_cases_hyphenated_engine_ids() {

@@ -88,8 +88,7 @@ impl CredentialSource for SystemCredentials {
 
     fn codex(&self) -> BoxFuture<'_, CredRead<CodexAuth>> {
         Box::pin(async {
-            let path = crate::engine::codex_home().join(CODEX_AUTH_FILE);
-            match read_optional_file(&path) {
+            match read_optional_file(&codex_auth_path()) {
                 CredRead::Found(raw) => parse_codex_auth(&raw),
                 CredRead::Missing => CredRead::Missing,
                 CredRead::Unreadable => CredRead::Unreadable,
@@ -117,13 +116,23 @@ async fn read_claude_system() -> CredRead<ClaudeOauth> {
 
 #[cfg(target_os = "macos")]
 async fn read_claude_keychain_default() -> CredRead<ClaudeOauth> {
-    let service = claude_keychain_service(
-        std::env::var("CLAUDE_SECURESTORAGE_CONFIG_DIR")
-            .ok()
-            .as_deref(),
-        std::env::var("CLAUDE_CONFIG_DIR").ok().as_deref(),
-    );
+    let Some(service) = claude_keychain_service_default() else {
+        return CredRead::Missing;
+    };
     read_claude_keychain(&service).await
+}
+
+/// The Keychain service the Claude lookup reads; None off macOS, where
+/// Claude Code keeps its login only in `.credentials.json`.
+pub(super) fn claude_keychain_service_default() -> Option<String> {
+    cfg!(target_os = "macos").then(|| {
+        claude_keychain_service(
+            std::env::var("CLAUDE_SECURESTORAGE_CONFIG_DIR")
+                .ok()
+                .as_deref(),
+            std::env::var("CLAUDE_CONFIG_DIR").ok().as_deref(),
+        )
+    })
 }
 
 #[cfg(not(target_os = "macos"))]
@@ -131,7 +140,11 @@ async fn read_claude_keychain_default() -> CredRead<ClaudeOauth> {
     CredRead::Missing
 }
 
-fn claude_credentials_path() -> PathBuf {
+pub(super) fn codex_auth_path() -> PathBuf {
+    crate::engine::codex_home().join(CODEX_AUTH_FILE)
+}
+
+pub(super) fn claude_credentials_path() -> PathBuf {
     crate::engine::engine_home(Some("CLAUDE_CONFIG_DIR"), ".claude").join(CLAUDE_CREDENTIALS_FILE)
 }
 

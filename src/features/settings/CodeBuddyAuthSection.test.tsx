@@ -2,16 +2,25 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import i18n from "@/lib/i18n";
-import type { CodeBuddyAccountStatus } from "@/lib/ipc";
 
 const mocks = vi.hoisted(() => ({
-  codebuddyAccountStatus: vi.fn(),
+  ipcAccess: vi.fn(),
   launchCodeBuddyLogin: vi.fn(),
   navigate: vi.fn(),
 }));
 
+// Any IPC touched by the section is recorded: the section must not probe the
+// OS credential store (cmdkey / security / secret-tool) on mount or focus.
 vi.mock("@/lib/ipc", () => ({
-  ipc: { codebuddyAccountStatus: mocks.codebuddyAccountStatus },
+  ipc: new Proxy(
+    {},
+    {
+      get: (_target, key) => {
+        mocks.ipcAccess(String(key));
+        return vi.fn().mockResolvedValue(undefined);
+      },
+    },
+  ),
 }));
 vi.mock("./codebuddyLogin", () => ({
   launchCodeBuddyLogin: mocks.launchCodeBuddyLogin,
@@ -33,13 +42,16 @@ async function render() {
   await act(async () => root!.render(<CodeBuddyAuthSection />));
 }
 
+function loginButton(): HTMLButtonElement {
+  return [...container.querySelectorAll("button")].find((button) =>
+    button.textContent?.includes(i18n.t("settings.codebuddyAccountLogin")),
+  )!;
+}
+
 beforeEach(() => {
   container = document.createElement("div");
   document.body.appendChild(container);
-  mocks.codebuddyAccountStatus.mockReset().mockResolvedValue({
-    loggedIn: false,
-    detection: "unknown",
-  });
+  mocks.ipcAccess.mockReset();
   mocks.launchCodeBuddyLogin.mockReset().mockResolvedValue({ ok: true });
   mocks.navigate.mockReset();
 });
@@ -50,38 +62,40 @@ afterEach(async () => {
   container.remove();
 });
 
-describe("CodeBuddy account status", () => {
-  it("keeps a pending probe distinct from a failed IPC request", async () => {
-    const pending = Promise.withResolvers<CodeBuddyAccountStatus>();
-    mocks.codebuddyAccountStatus.mockReturnValueOnce(pending.promise);
+describe("CodeBuddy account section", () => {
+  it("never probes the credential store on mount or window focus", async () => {
     await render();
-    expect(container.textContent).toContain(i18n.t("settings.codebuddyAccountChecking"));
-    expect(container.textContent).not.toContain(i18n.t("settings.codebuddyAccountError"));
-
-    mocks.codebuddyAccountStatus.mockRejectedValueOnce(new Error("IPC unavailable"));
-    const refresh = [...container.querySelectorAll("button")].find((button) =>
-      button.textContent?.includes(i18n.t("settings.codebuddyAccountRefresh")),
-    )!;
-    await act(async () => pending.resolve({ loggedIn: false, detection: "unknown" }));
-    await act(async () => refresh.click());
-    expect(container.textContent).toContain(i18n.t("settings.codebuddyAccountError"));
-    expect(container.textContent).not.toContain(i18n.t("settings.codebuddyAccountChecking"));
+    await act(async () => window.dispatchEvent(new Event("focus")));
+    expect(mocks.ipcAccess).not.toHaveBeenCalled();
   });
 
-  it("forces the first probe after login navigation unmounts the section", async () => {
+  it("shows a neutral hint instead of a probed login state", async () => {
     await render();
-    const login = [...container.querySelectorAll("button")].find((button) =>
-      button.textContent?.includes(i18n.t("settings.codebuddyAccountLogin")),
-    )!;
-    await act(async () => login.click());
+    expect(container.textContent).toContain(i18n.t("settings.codebuddyAccountCliOwned"));
+    expect(container.textContent).toContain(i18n.t("settings.codebuddyAccountCliOwnedDesc"));
+    expect(loginButton()).toBeTruthy();
+  });
+
+  it("closes settings once the login terminal is up", async () => {
+    await render();
+    await act(async () => loginButton().click());
+    expect(mocks.launchCodeBuddyLogin).toHaveBeenCalledTimes(1);
     expect(mocks.navigate).toHaveBeenCalledWith("/");
+  });
 
-    await act(async () => root!.unmount());
-    root = null;
+  it("explains a missing workspace and stays on the page", async () => {
+    mocks.launchCodeBuddyLogin.mockResolvedValueOnce({ ok: false, reason: "no-workspace" });
     await render();
-    expect(mocks.codebuddyAccountStatus.mock.calls.at(-1)).toEqual([true]);
+    await act(async () => loginButton().click());
+    expect(container.textContent).toContain(i18n.t("settings.codebuddyLoginNoWorkspace"));
+    expect(mocks.navigate).not.toHaveBeenCalled();
+  });
 
-    await act(async () => window.dispatchEvent(new Event("focus")));
-    expect(mocks.codebuddyAccountStatus.mock.calls.at(-1)).toEqual([false]);
+  it("reports a terminal failure, including a thrown launch", async () => {
+    mocks.launchCodeBuddyLogin.mockRejectedValueOnce(new Error("pty gone"));
+    await render();
+    await act(async () => loginButton().click());
+    expect(container.textContent).toContain(i18n.t("settings.codebuddyLoginFailed"));
+    expect(mocks.navigate).not.toHaveBeenCalled();
   });
 });

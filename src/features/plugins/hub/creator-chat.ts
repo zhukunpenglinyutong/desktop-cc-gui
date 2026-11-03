@@ -6,10 +6,10 @@ import { sessionKey, useChatStore, type ActiveSession } from "@/features/chat/st
  * 插件中心「创建插件」的入口动作：开一个新会话，把内置插件开发 skill 的调用
  * 预填进输入框，让用户补一句需求就能发。
  *
- * skill 本体随应用分发，启动时已同步进各引擎的 skills 根（src-tauri/src/
- * creator_skill.rs）；这里再 best-effort 同步一次，覆盖「用户删掉了它」或
- * 「引擎是本应用启动之后才装的」这两种情况。装不上也不静默：失败写日志，
- * 界面照常开新会话（引擎找不到该 skill 时用户会看到引擎自己的报错）。
+ * skill 本体随应用分发，只在这里（用户点「创建插件」）同步进各引擎的 skills
+ * 根（src-tauri/src/creator_skill.rs）；应用启动时不再写其他 CLI 的目录。
+ * 装不上也不静默：失败写日志，界面照常开新会话（引擎找不到该 skill 时用户
+ * 会看到引擎自己的报错）。
  */
 
 /** `/` 选择器插入的 token（与 slash-command-menu 的 `/${name} ` 一致）。 */

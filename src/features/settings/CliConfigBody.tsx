@@ -26,7 +26,8 @@ const CCS_IMPORT_ENGINES: readonly EngineId[] = ["claude", "codex", "grok"];
  *   cc-switch sync banner (when the store changed)
  *   → 引擎设置 card (enable switch)
  *   → everything below the switch lives in one overlay wrapper so a disabled
- *     engine masks all of it:
+ *     engine masks all of it (auth sections are not mounted at all while
+ *     disabled — they read credential stores):
  *       官方配置 fallback row
  *       → Pi-family auth section (pi/omp only)
  *       → DSH local host section (dsh only)
@@ -81,10 +82,12 @@ export function CliConfigBody({ cli }: { cli: CliConfigState }) {
           }}
         />
 
-        {(engine === "pi" || engine === "omp") && (
+        {/* Auth sections read the CLI's own credential store: a disabled
+         *  engine must not mount them (the overlay below is visual only). */}
+        {enabled && (engine === "pi" || engine === "omp") && (
           <PiFamilyAuthSection engine={engine} openCustomEditorSignal={customEditorSignal} />
         )}
-        {engine === "codebuddy" && <CodeBuddyAuthSection />}
+        {enabled && engine === "codebuddy" && <CodeBuddyAuthSection />}
         {engine === "dsh" && <DshHostSection />}
 
         <div className="flex w-full flex-col gap-2">

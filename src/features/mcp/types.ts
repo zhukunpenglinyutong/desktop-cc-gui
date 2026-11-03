@@ -64,6 +64,11 @@ export interface McpConfigEntry {
   name: string;
   source: McpConfigSource;
   scope: "user" | "project";
+  /** The config file lives inside the workspace directory, so a cloned repo
+   *  can ship it: never auto-probed, and a manual probe asks first
+   *  (probe-confirm.ts). `claude_local` is project-scoped but sits in the
+   *  user's own ~/.claude.json, so it is false there. */
+  workspaceFile: boolean;
   path: string;
   format: "json" | "toml" | "yaml";
   enabled: boolean;
@@ -153,6 +158,22 @@ export type McpErrorCode =
 
 /** 「本应用检测」的连接结果：与 CLI 会话上报的运行时状态分开表达。 */
 export type McpProbeStatus = "connected" | "needs_auth" | "failed" | "unsupported";
+
+/** What a probe would run (`mcp_probe_plan`), shown before probing a
+ *  workspace server. Env / header values are never included, only keys; the
+ *  URL is redacted and `${ENV}` is left unexpanded. */
+export interface McpProbePlan {
+  kind: "stdio" | "http" | "unknown";
+  command: string | null;
+  args: string[];
+  cwd: string | null;
+  envKeys: string[];
+  url: string | null;
+  headerKeys: string[];
+  /** Hash of the full target; the backend runs a workspace server only
+   *  when the probe carries the fingerprint of the plan the user saw. */
+  fingerprint: string;
+}
 
 export interface McpProbeResult {
   status: McpProbeStatus;

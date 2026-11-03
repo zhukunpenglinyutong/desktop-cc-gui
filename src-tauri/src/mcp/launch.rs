@@ -313,6 +313,7 @@ mod tests {
             name: name.to_string(),
             source: source.to_string(),
             scope: if source.ends_with("_user") { "user" } else { "project" }.to_string(),
+            workspace_file: crate::mcp::source_in_workspace(source),
             path: String::new(),
             format: "json".to_string(),
             enabled: true,

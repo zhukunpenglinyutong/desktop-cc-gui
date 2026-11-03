@@ -85,7 +85,7 @@ export interface ChatStore {
    *  app settings. */
   thinkingAutoCollapse: boolean;
   /** 宽幕布: true = the chat content column fills its pane instead of the
-   *  default centered 750px / `max-w-3xl` track. Persisted in app settings. */
+   *  centered track (750px / 48rem by default). Persisted in app settings. */
   wideLayout: boolean;
   bySession: Record<string, SessionState>;
   /** Flat sessionKey -> streaming map, written only when a flag flips. The

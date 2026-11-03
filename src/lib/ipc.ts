@@ -483,13 +483,6 @@ export interface ProviderModelList {
   models: string[];
   endpoint: string;
 }
-export interface CodeBuddyAccountStatus {
-  loggedIn: boolean;
-  /** "found" = credential store probe hit; "unknown" = the guessed service
-   *  names missed, which is not proof of being logged out. */
-  detection: "found" | "unknown";
-}
-
 
 export interface WorkspaceGroup {
   id: string;
@@ -602,7 +595,7 @@ export interface AppSettings {
   /** Only notify when app window/session is unfocused/background: true/absent = true (default). */
   notifyWhenUnfocusedOnly?: boolean | null;
   /** 宽幕布 (设置 → 通用 → 外观): true = the chat content column fills its
-   *  pane instead of the default centered column (750px / `max-w-3xl`). */
+   *  pane instead of the centered column (750px / 48rem by default). */
   chatWideLayout?: boolean | null;
   /** File tree entries Git ignores (设置 → 通用 → 行为): absent/false = listed
    *  and drawn faded, true = hidden from the tree. */
@@ -648,6 +641,9 @@ export interface AppSettings {
   webAccessPort?: number | null;
   /** LAN web access fixed auth token (null = auto generate & persist). */
   webAccessToken?: string | null;
+  /** 设置 → 关于 → 使用统计 (null = on). Written only by
+   *  `analyticsEnabledSet`; a full-object update leaving it unset keeps it. */
+  analyticsEnabled?: boolean | null;
 }
 
 export interface DirEntry {
@@ -1191,6 +1187,9 @@ export interface CliUpdatePlan {
   command: string[];
   /** Copy-paste fallback for a manual run. */
   manualCommand: string;
+  /** Official installer scripts run in the built-in terminal: the exact line
+   *  to type there (completion marker included). Null for in-app npm runs. */
+  terminalCommand: string | null;
   canRun: boolean;
   blockers: string[];
   platform: string;
@@ -1452,9 +1451,6 @@ export const ipc = {
     invoke<PiFamilyModelsConfigReadResult>("pi_family_models_config_read", { engine }),
   piFamilyModelsConfigWrite: (engine: string, text: string) =>
     invoke<void>("pi_family_models_config_write", { engine, text }),
-  // codebuddy account status
-  codebuddyAccountStatus: (force = false) =>
-    invoke<CodeBuddyAccountStatus>("codebuddy_account_status", { force }),
   // cc-switch interop
   checkCcSwitch: () => invoke<CcSwitchStatus>("check_cc_switch"),
   dismissCcSwitch: (hash: string) => invoke<void>("dismiss_cc_switch", { hash }),
@@ -2082,6 +2078,9 @@ export const ipc = {
    *  Codex / ~/.agents）。插件中心的「创建插件」在开新会话前调一次，这样
    *  `/ccgui-plugin-creator` 在引擎侧确实存在、可被解析。 */
   creatorSkillInstall: () => invoke<CreatorSkillReport>("creator_skill_install"),
+  // usage analytics: the backend sends one page view per launch (desktop-only switch)
+  analyticsEnabledGet: () => invoke<boolean>("analytics_enabled_get"),
+  analyticsEnabledSet: (enabled: boolean) => invoke<void>("analytics_enabled_set", { enabled }),
   // web access (start/stop are desktop-only; the bridge answers status too)
   webDevices: () => invoke<WebDevice[]>("web_devices"),
   webDeviceApprove: (id: string) => invoke<boolean>("web_device_approve", { id }),
