@@ -525,7 +525,8 @@ describe("createPluginContext", () => {
     const bridge = await import("./session-run-bridge");
     const backend = fakeStorage();
     const { ctx } = createPluginContext(manifest(["host:session"]), backend, { appVersion: "1" });
-    const def = { engine: "pi", prompt: "review", workspacePath: "/w" };
+    expect(ctx.sessions.supportsResume).toBe(true);
+    const def = { engine: "pi", prompt: "review", workspacePath: "/w", sessionId: "existing" };
     await expect(ctx.sessions.startRun(def)).resolves.toEqual({ runId: "run-1", sessionId: "sess-1" });
     expect(bridge.startPluginChatRun).toHaveBeenCalledWith("test-plugin", def);
     await expect(
@@ -541,7 +542,7 @@ describe("createPluginContext", () => {
   it("sessions.startRun throws without host:session", () => {
     const backend = fakeStorage();
     const { ctx } = createPluginContext(manifest(["agent"]), backend, { appVersion: "1" });
-    expect(() => ctx.sessions.startRun({ engine: "pi", prompt: "p", workspacePath: "/w" })).toThrow(
+    expect(() => ctx.sessions.startRun({ engine: "pi", prompt: "p", workspacePath: "/w", sessionId: "existing" })).toThrow(
       /host:session/,
     );
     expect(() => ctx.sessions.interruptRun({ engine: "pi", workspacePath: "/w" })).toThrow(

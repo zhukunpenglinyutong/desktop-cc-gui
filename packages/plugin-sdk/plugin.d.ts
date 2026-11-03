@@ -6,7 +6,7 @@
  * 插件仓用法（包未发布 npm 前的过渡方案）：复制本文件为插件仓的
  * `src/ccgui-plugin.d.ts`，首行版本戳必须与所用宿主 SDK 一致。
  *
- * @ccgui/plugin-sdk v0.3.25
+ * @ccgui/plugin-sdk v0.3.26
  */
 
 /** 宿主实现的 SDK 契约版本。 */
@@ -922,6 +922,8 @@ export interface PluginContext {
    *  engine/sessionId/workspacePath 的外部行被丢弃。返回 Disposer,插件
    *  卸载时自动注销。 */
   sessions: {
+    /** 是否支持续接已有原生会话（0.3.26 起）；旧宿主不提供此标记。 */
+    readonly supportsResume: boolean;
     selectSession(engine: string, sessionId: string, workspacePath: string): Promise<void>;
     /** 请求宿主立即刷新会话目录（侧栏/标签页），0.3.7 起。
      *  插件绕过宿主直写会话数据（如 sqlite custom_title、转录 title 行）后
@@ -945,6 +947,10 @@ export interface PluginContext {
      *  { runId, sessionId, engine, workspacePath, kind: "done" | "error", error }。
      *  被用户/插件中断的轮次同样以 done 收尾。 */
     startRun(def: {
+      /** 0.3.26 起：续接已有原生会话；省略或 null 时创建新会话。
+       * 引擎与工作区必须匹配；正在运行或加载、目标不存在、历史读取失败时拒绝，
+       * 不创建替代会话。宿主切回聊天并恢复历史后发送，沿用会话的渠道与推理强度。 */
+      sessionId?: string | null;
       engine: string;
       prompt: string;
       /** 会话所属工作区路径(如某个 worktree)。 */

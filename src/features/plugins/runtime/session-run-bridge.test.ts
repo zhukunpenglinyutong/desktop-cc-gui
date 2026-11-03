@@ -1,11 +1,19 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { EngineEventPayload } from "@/lib/events";
 
+vi.mock("@/features/chat/center-surfaces", () => ({ dismissCenterSurfaces: vi.fn() }));
+
 const sendMock = vi.fn();
 const interruptMock = vi.fn();
+const selectMock = vi.fn();
+const chatState = {
+  sessions: [] as { engine: string; sessionId: string; workspacePath: string }[],
+  streamingByKey: {} as Record<string, boolean>,
+  bySession: {} as Record<string, { error?: string; messages: unknown[] }>,
+};
 vi.mock("@/features/chat/store", () => ({
   useChatStore: {
-    getState: () => ({ send: sendMock, interrupt: interruptMock }),
+    getState: () => ({ ...chatState, send: sendMock, interrupt: interruptMock, selectSession: selectMock }),
   },
 }));
 
@@ -27,6 +35,11 @@ function engineEvent(runId: string, kind: EngineEventPayload["kind"], extra: Par
 describe("plugin session-run bridge", () => {
   beforeEach(() => {
     sendMock.mockReset();
+    selectMock.mockReset();
+    selectMock.mockResolvedValue(undefined);
+    chatState.sessions = [];
+    chatState.streamingByKey = {};
+    chatState.bySession = {};
     interruptMock.mockReset();
     interruptMock.mockResolvedValue(undefined);
   });
@@ -137,5 +150,60 @@ describe("plugin session-run bridge", () => {
     );
     // Settle the owned run so its record cannot leak into later tests.
     emitEngineEvents?.([engineEvent("run-owned", "done", { sessionId: "sess-owned" })]);
+  });
+  it("恢复原生历史后续接会话，且只有属主插件可停止", async () => {
+    chatState.sessions = [{ engine: "claude", sessionId: "existing", workspacePath: "/repo" }];
+    chatState.bySession["claude/existing"] = { messages: [{ text: "original history" }] };
+    sendMock.mockImplementation(async (_prompt, _images, options, target) => {
+      expect(selectMock).toHaveBeenCalledWith("claude", "existing", "/repo");
+      expect(target.sessionId).toBe("existing");
+      expect(chatState.bySession["claude/existing"].messages).toHaveLength(1);
+      options.onStarted({ runId: "resume-run", sessionId: "existing" });
+    });
+    await expect(startPluginChatRun("personal-board", { engine: "claude", sessionId: "existing", workspacePath: "/repo", prompt: "fix column" })).resolves.toEqual({ runId: "resume-run", sessionId: "existing" });
+    await expect(interruptPluginChatRun("other-plugin", { engine: "claude", workspacePath: "/repo", sessionId: "existing" })).rejects.toThrow(/may only stop/);
+    await interruptPluginChatRun("personal-board", { engine: "claude", workspacePath: "/repo", sessionId: "existing" });
+    expect(interruptMock).toHaveBeenCalledWith({ engine: "claude", workspacePath: "/repo", sessionId: "existing" });
+    emitEngineEvents?.([engineEvent("resume-run", "done", { engine: "claude", sessionId: "existing" })]);
+  });
+
+  it("拒绝不存在、不匹配或忙碌的会话，不创建替代轮次", async () => {
+    chatState.sessions = [{ engine: "claude", sessionId: "existing", workspacePath: "/repo" }];
+    const def = { engine: "claude", sessionId: "existing", workspacePath: "/wrong", prompt: "fix" };
+    await expect(startPluginChatRun("p", def)).rejects.toThrow(/session_not_found/);
+    await expect(startPluginChatRun("p", { ...def, workspacePath: "/repo", engine: "pi" })).rejects.toThrow(/session_not_found/);
+    chatState.streamingByKey["claude/existing"] = true;
+    await expect(startPluginChatRun("p", { ...def, workspacePath: "/repo" })).rejects.toThrow(/session_busy/);
+    expect(sendMock).not.toHaveBeenCalled();
+  });
+
+  it("恢复历史后再次检查忙碌状态，失败时释放续接锁以便重试", async () => {
+    chatState.sessions = [{ engine: "claude", sessionId: "existing", workspacePath: "/repo" }];
+    const def = { engine: "claude", sessionId: "existing", workspacePath: "/repo", prompt: "fix" };
+    selectMock.mockImplementationOnce(async () => { chatState.streamingByKey["claude/existing"] = true; });
+    await expect(startPluginChatRun("p", def)).rejects.toThrow(/session_busy/);
+    chatState.streamingByKey = {};
+    chatState.bySession["claude/existing"] = { error: "read failed", messages: [] };
+    await expect(startPluginChatRun("p", def)).rejects.toThrow(/session_load_failed/);
+    chatState.bySession = {};
+    sendMock.mockRejectedValueOnce(Error("engine missing"));
+    await expect(startPluginChatRun("p", def)).rejects.toThrow(/engine missing/);
+    sendMock.mockImplementationOnce(async (_prompt, _images, options) => options.onStarted({ runId: "retry-resume", sessionId: "existing" }));
+    await expect(startPluginChatRun("p", def)).resolves.toEqual({ runId: "retry-resume", sessionId: "existing" });
+    emitEngineEvents?.([engineEvent("retry-resume", "done", { engine: "claude", sessionId: "existing" })]);
+  });
+
+  it("同一会话加载历史时阻止两个插件并发发送", async () => {
+    chatState.sessions = [{ engine: "claude", sessionId: "existing", workspacePath: "/repo" }];
+    let release!: () => void;
+    selectMock.mockImplementationOnce(() => new Promise<void>((resolve) => { release = resolve; }));
+    const def = { engine: "claude", sessionId: "existing", workspacePath: "/repo", prompt: "fix" };
+    const first = startPluginChatRun("p", def);
+    await vi.waitFor(() => expect(selectMock).toHaveBeenCalled());
+    await expect(startPluginChatRun("q", def)).rejects.toThrow(/session_busy/);
+    sendMock.mockImplementationOnce(async (_prompt, _images, options) => options.onStarted({ runId: "race-resume", sessionId: "existing" }));
+    release();
+    await first;
+    emitEngineEvents?.([engineEvent("race-resume", "done", { engine: "claude", sessionId: "existing" })]);
   });
 });

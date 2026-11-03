@@ -696,6 +696,7 @@ export function createPluginContext(
       },
     },
     sessions: {
+      supportsResume: true,
       selectSession(engine, sessionId, workspacePath) {
         requirePermission("host:session");
         // 契约返回 Promise:校验失败走 rejection 而不是同步抛,与
