@@ -570,6 +570,9 @@ describe("refreshSubagentStatus", () => {
     expect(loadHistoryPage).toHaveBeenCalledTimes(4);
     await vi.advanceTimersByTimeAsync(1);
     expect(loadHistoryPage).toHaveBeenCalledTimes(5);
+    // The page read settles a microtask after the retry timer fires; the
+    // read-timeout guard clears only then. Flush that turn before counting.
+    await vi.advanceTimersByTimeAsync(0);
     expect(vi.getTimerCount()).toBe(1);
 
     loadHistoryPage.mockResolvedValueOnce(page([
