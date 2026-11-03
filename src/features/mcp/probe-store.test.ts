@@ -3,10 +3,17 @@ import type { McpConfigEntry, McpProbeResult } from "./types";
 
 const api = vi.hoisted(() => ({ probe: vi.fn() }));
 vi.mock("./api", () => ({ mcpApi: api }));
+const confirm = vi.hoisted(() => ({
+  confirmWorkspaceProbe: vi.fn(),
+  confirmedFingerprint: vi.fn(),
+  forgetProbeConfirm: vi.fn(),
+}));
+vi.mock("./probe-confirm", () => confirm);
 
 import {
   PROBE_CONCURRENCY,
   PROBE_TTL_MS,
+  autoProbeEligible,
   needsProbe,
   probeable,
   probeStateFor,
@@ -20,6 +27,7 @@ function entry(overrides: Partial<McpConfigEntry> = {}): McpConfigEntry {
     name: "alpha",
     source: "claude_user",
     scope: "user",
+    workspaceFile: false,
     path: "/home/u/.claude.json",
     format: "json",
     enabled: true,
@@ -51,6 +59,9 @@ function connected(tools: string[] = []): McpProbeResult {
 describe("probe store", () => {
   beforeEach(() => {
     api.probe.mockReset();
+    confirm.confirmWorkspaceProbe.mockReset().mockResolvedValue(true);
+    confirm.confirmedFingerprint.mockReset();
+    confirm.forgetProbeConfirm.mockReset();
     useMcpProbeStore.setState({
       results: {},
       pending: {},
@@ -150,6 +161,71 @@ describe("probe store", () => {
     expect(api.probe).toHaveBeenCalledTimes(6);
     expect(useMcpProbeStore.getState().pending).toEqual({});
     expect(useMcpProbeStore.getState().runningAll).toBe(false);
+  });
+
+  it("never auto-probes a server whose config came with the workspace", () => {
+    const user = entry();
+    const repo = entry({
+      id: "claude_project:evil",
+      name: "evil",
+      source: "claude_project",
+      scope: "project",
+      workspaceFile: true,
+      command: "powershell",
+    });
+    expect(autoProbeEligible([user, repo])).toEqual([user]);
+    // Disabled and on-demand entries stay out as before.
+    expect(autoProbeEligible([entry({ enabled: false })])).toEqual([]);
+    expect(autoProbeEligible([entry({ launchMode: "onDemand" })])).toEqual([]);
+  });
+
+  it("asks before probing a workspace server and does nothing when declined", async () => {
+    const repo = entry({ id: "omp_project:x", name: "x", workspaceFile: true });
+    api.probe.mockResolvedValue(connected());
+
+    confirm.confirmWorkspaceProbe.mockResolvedValueOnce(false);
+    await useMcpProbeStore.getState().probe(repo, "/ws");
+    expect(confirm.confirmWorkspaceProbe).toHaveBeenCalledWith([repo], "/ws");
+    expect(api.probe).not.toHaveBeenCalled();
+    expect(useMcpProbeStore.getState().pending).toEqual({});
+
+    confirm.confirmedFingerprint.mockReturnValueOnce("fp-1");
+    await useMcpProbeStore.getState().probe(repo, "/ws");
+    // The confirmed plan's fingerprint travels with the probe.
+    expect(api.probe).toHaveBeenCalledWith(repo, "/ws", "fp-1");
+
+    // User-level servers run without a prompt.
+    confirm.confirmWorkspaceProbe.mockClear();
+    await useMcpProbeStore.getState().probe(entry(), "/ws");
+    expect(confirm.confirmWorkspaceProbe).not.toHaveBeenCalled();
+  });
+
+  it("drops a confirmation the backend rejected as stale, so the next click asks again", async () => {
+    const repo = entry({ id: "omp_project:x", name: "x", workspaceFile: true });
+    confirm.confirmWorkspaceProbe.mockResolvedValue(true);
+    confirm.confirmedFingerprint.mockReturnValue("fp-old");
+    api.probe.mockRejectedValueOnce(Object.assign(new Error("changed"), { code: "conflict" }));
+    await useMcpProbeStore.getState().probe(repo, "/ws");
+    expect(confirm.forgetProbeConfirm).toHaveBeenCalledWith(repo, "/ws");
+  });
+
+  it("check-all asks once for the workspace servers and skips them when declined", async () => {
+    const user = entry();
+    const repoA = entry({ id: "claude_project:a", name: "a", workspaceFile: true });
+    const repoB = entry({ id: "codex_project:b", name: "b", workspaceFile: true });
+    api.probe.mockResolvedValue(connected());
+
+    confirm.confirmWorkspaceProbe.mockResolvedValueOnce(false);
+    await useMcpProbeStore.getState().probeAll([user, repoA, repoB], "/ws", { force: true });
+    expect(confirm.confirmWorkspaceProbe).toHaveBeenCalledTimes(1);
+    expect(confirm.confirmWorkspaceProbe).toHaveBeenCalledWith([repoA, repoB], "/ws");
+    expect(api.probe.mock.calls.map(([probed]) => probed.id)).toEqual([user.id]);
+
+    api.probe.mockClear();
+    await useMcpProbeStore.getState().probeAll([user, repoA, repoB], "/ws", { force: true });
+    expect(api.probe.mock.calls.map(([probed]) => probed.id).sort()).toEqual(
+      [user.id, repoA.id, repoB.id].sort(),
+    );
   });
 
   it("needsProbe skips disabled, unprobeable and still-fresh entries", () => {

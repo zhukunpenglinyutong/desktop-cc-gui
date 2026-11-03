@@ -22,6 +22,7 @@ import { createSessionActions } from "./store/sessions";
 import { createWorkspaceActions } from "./store/workspaces";
 import { createPreferenceActions } from "./store/preferences";
 import { createComposerActions } from "./store/composer";
+import { NO_ATTACHMENT_MOVES, NO_COMPOSER_ATTACHMENTS } from "./store/attachments";
 import { watchSessionSelection } from "./store/selection";
 import type { ChatStore } from "./store/types";
 
@@ -192,8 +193,11 @@ export const useChatStore = create<ChatStore>((set, get) => {
     bySession: {},
     streamingByKey: {},
     retryingByKey: {},
+    forkingByKey: {},
     unseen: {},
     drafts: {},
+    composerAttachments: NO_COMPOSER_ATTACHMENTS,
+    composerAttachmentMoves: NO_ATTACHMENT_MOVES,
     pendingMention: null,
     actionError: null,
     initialized: false,

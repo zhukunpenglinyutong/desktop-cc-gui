@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
+import { useNavigate } from "react-router-dom";
 import X from "lucide-react/dist/esm/icons/x";
 import { Button } from "@/components/base/buttons/button";
 import { ModalShell } from "@/components/dialogs";
@@ -16,6 +17,10 @@ import type { CliUpdateFlow, CliUpdateFlowState } from "./useCliUpdateFlow";
  * While a run is active the dialog can't be dismissed (no X, Escape and
  * outside-press are swallowed by flow.close) — closing mid-run would
  * suggest the install stopped when it didn't.
+ *
+ * Official installer scripts (`plan.terminalCommand`) are not run by the
+ * app: confirming types the line into the built-in terminal, after which the
+ * dialog can close freely — the installer keeps running, visibly, in its tab.
  */
 export function CliUpdateDialog({ engine, flow }: { engine: EngineId; flow: CliUpdateFlow }) {
   const { t } = useTranslation();
@@ -96,11 +101,23 @@ function PlanSummary({ engine, plan }: { engine: EngineId; plan: CliUpdatePlan }
         </div>
       )}
 
-      {plan.command.length > 0 && (
-        <PlanCommand
-          label={t("settings.cliUpdatePlanCommand")}
-          command={plan.command.join(" ")}
-        />
+      {plan.terminalCommand ? (
+        <>
+          <p className="text-body-2-regular text-text-secondary">
+            {t("settings.cliUpdateTerminalHint")}
+          </p>
+          <PlanCommand
+            label={t("settings.cliUpdateTerminalCommand")}
+            command={plan.terminalCommand}
+          />
+        </>
+      ) : (
+        plan.command.length > 0 && (
+          <PlanCommand
+            label={t("settings.cliUpdatePlanCommand")}
+            command={plan.command.join(" ")}
+          />
+        )
       )}
       {plan.manualCommand && (
         <PlanCommand
@@ -123,10 +140,12 @@ function LiveLog({ state }: { state: CliUpdateFlowState }) {
     if (el) el.scrollTop = el.scrollHeight;
   }, [state.logs]);
 
+  // Terminal installs print in their terminal tab, not here.
   const showLog =
-    state.status === "running" ||
-    state.status === "done" ||
-    (state.status === "error" && state.plan);
+    !state.plan?.terminalCommand &&
+    (state.status === "running" ||
+      state.status === "done" ||
+      (state.status === "error" && state.plan));
   if (!showLog) return null;
 
   return (
@@ -153,6 +172,24 @@ function StatusNotice({ state }: { state: CliUpdateFlowState }) {
     return (
       <p className="text-body-2-medium text-state-success-text">
         {t("settings.cliUpdateSucceeded")}
+      </p>
+    );
+  }
+  if (state.status === "terminal") {
+    return (
+      <p role="status" className="text-body-2-medium text-text-primary">
+        {t("settings.cliUpdateInTerminal")}
+      </p>
+    );
+  }
+  if (state.status === "error" && state.notice) {
+    return (
+      <p role="alert" className="text-body-2-regular text-text-error-primary">
+        {t(
+          state.notice === "no-workspace"
+            ? "settings.cliUpdateNoWorkspace"
+            : "settings.cliUpdateTerminalUnavailable",
+        )}
       </p>
     );
   }
@@ -183,6 +220,16 @@ function DialogFooter({ state, flow }: { state: CliUpdateFlowState; flow: CliUpd
         <Button size="small" autoFocus onClick={flow.close}>
           {t("settings.cliUpdateClose")}
         </Button>
+      </div>
+    );
+  }
+  if (state.status === "terminal") {
+    return (
+      <div className="mt-5 flex justify-end gap-2">
+        <Button variant="secondary" size="small" onClick={flow.close}>
+          {t("settings.cliUpdateClose")}
+        </Button>
+        <GoToTerminalButton onDone={flow.close} />
       </div>
     );
   }
@@ -224,7 +271,29 @@ function FooterPrimaryButton({
       disabled={state.status !== "ready" || !plan?.canRun}
       onClick={() => void flow.confirm()}
     >
-      {t("settings.cliUpdateConfirm")}
+      {plan?.terminalCommand
+        ? t("settings.cliUpdateRunInTerminal")
+        : t("settings.cliUpdateConfirm")}
+    </Button>
+  );
+}
+
+/** Leave Settings for the chat view, where the terminal dock running the
+ * installer is visible. Its own component so the router hook is only used
+ * once a terminal run exists. */
+function GoToTerminalButton({ onDone }: { onDone: () => void }) {
+  const { t } = useTranslation();
+  const navigate = useNavigate();
+  return (
+    <Button
+      size="small"
+      autoFocus
+      onClick={() => {
+        onDone();
+        navigate("/");
+      }}
+    >
+      {t("settings.cliUpdateGoToTerminal")}
     </Button>
   );
 }

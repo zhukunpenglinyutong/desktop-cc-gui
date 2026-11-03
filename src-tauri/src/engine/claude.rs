@@ -66,6 +66,20 @@ impl Engine for ClaudeEngine {
     fn supports_memory(&self) -> bool {
         true
     }
+    /// 按需条目经私有文件交给 `--mcp-config`：同名时它覆盖用户/项目/本地
+    /// 作用域的定义（整条替换），只对这一次进程生效。`--mcp-config` 是可
+    /// 重复的列表参数，追加在末尾不会吞掉别的参数。
+    fn mount_on_demand(
+        &self,
+        built: &mut BuiltCommand,
+        servers: &[crate::mcp::launch::OnDemandServer],
+        _workspace: &std::path::Path,
+    ) -> Result<(), String> {
+        let path = crate::mcp::launch::stage_claude_config(servers, "claude-staging")?;
+        built.cleanup_files.push(path.clone());
+        built.command.arg("--mcp-config").arg(path);
+        Ok(())
+    }
     fn supports_effort(&self) -> bool {
         true
     }
@@ -515,8 +529,10 @@ impl Engine for ClaudeEngine {
             }
             "control_request" => {
                 // SDK control protocol asks. AskUserQuestion surfaces to the
-                // UI; every other ask is denied in place (this client has no
-                // approval card), preserving the old headless behavior.
+                // UI; every other ask is answered in place (deny for tool
+                // permissions, decline for MCP elicitation, error for
+                // anything unrecognized) — every request must get exactly
+                // one response or the CLI parks on it forever.
                 let request = value.get("request");
                 let subtype = request
                     .and_then(|r| r.get("subtype"))
@@ -553,6 +569,18 @@ impl Engine for ClaudeEngine {
                             tool_name,
                         });
                     }
+                } else if subtype == "elicitation" {
+                    // MCP elicitation (form input / confirmation from an MCP
+                    // server). No form UI here: decline so the MCP tool call
+                    // settles instead of hanging the turn (issue #1432).
+                    out.push(EngineEvent::ElicitationDecline {
+                        request_id: request_id.to_string(),
+                    });
+                } else {
+                    out.push(EngineEvent::ControlRequestError {
+                        request_id: request_id.to_string(),
+                        subtype: subtype.to_string(),
+                    });
                 }
             }
             "control_cancel_request" => {
@@ -1165,6 +1193,60 @@ mod tests {
             [EngineEvent::QuestionSettled { request_id }] => assert_eq!(request_id, "req-3"),
             other => panic!("expected settled event, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn mcp_elicitation_control_request_declines_in_place() {
+        let line = serde_json::json!({
+            "type": "control_request",
+            "request_id": "req-elicit-1",
+            "request": {
+                "subtype": "elicitation",
+                "mcp_server_name": "elicit-demo",
+                "message": "Continue?",
+                "requested_schema": { "type": "object", "properties": { "ok": { "type": "boolean" } } }
+            }
+        })
+        .to_string();
+        let mut out = Vec::new();
+        ClaudeEngine::new().parse_line(&line, &mut out);
+        match &out[..] {
+            [EngineEvent::ElicitationDecline { request_id }] => {
+                assert_eq!(request_id, "req-elicit-1");
+            }
+            other => panic!("expected elicitation decline event, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn unknown_control_request_subtypes_error_in_place() {
+        let line = serde_json::json!({
+            "type": "control_request",
+            "request_id": "req-unknown-1",
+            "request": { "subtype": "future_ask", "payload": {} }
+        })
+        .to_string();
+        let mut out = Vec::new();
+        ClaudeEngine::new().parse_line(&line, &mut out);
+        match &out[..] {
+            [EngineEvent::ControlRequestError { request_id, subtype }] => {
+                assert_eq!(request_id, "req-unknown-1");
+                assert_eq!(subtype, "future_ask");
+            }
+            other => panic!("expected control error event, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn control_request_without_id_is_ignored() {
+        let line = serde_json::json!({
+            "type": "control_request",
+            "request": { "subtype": "elicitation", "message": "Continue?" }
+        })
+        .to_string();
+        let mut out = Vec::new();
+        ClaudeEngine::new().parse_line(&line, &mut out);
+        assert!(out.is_empty(), "no request_id, nothing to answer: {out:?}");
     }
 
     #[test]

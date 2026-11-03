@@ -22,6 +22,8 @@ pub mod dsh;
 mod dsh_images;
 mod dsh_session;
 mod events;
+pub mod fork;
+mod fork_dsh;
 pub mod grok;
 mod grok_acp;
 pub mod images;
@@ -262,6 +264,17 @@ pub trait Engine: Send + Sync {
     /// prompt block still carries MEMORY/USER but no tool claims to write.
     fn supports_memory(&self) -> bool {
         false
+    }
+    /// Mount the user's「按需启动」MCP entries for this launch: re-point each
+    /// winning definition at `--mcp-lazy` through the engine's own per-launch
+    /// channel (see mcp/launch.rs). Default: no channel, nothing to do.
+    fn mount_on_demand(
+        &self,
+        _built: &mut BuiltCommand,
+        _servers: &[crate::mcp::launch::OnDemandServer],
+        _workspace: &std::path::Path,
+    ) -> Result<(), String> {
+        Ok(())
     }
     /// Whether this engine supports reasoning effort configuration.
     fn supports_effort(&self) -> bool {
@@ -654,6 +667,17 @@ fn prepare_launch(
     } else {
         engine_impl.build_command(&req, &bin)?
     };
+    // 按需启动的 MCP 条目：只对本机工作区、无工具白名单的普通发送生效
+    // （远端 CLI 读不到本机 exe；只读/计划隔离要求零 MCP）。失败就保持
+    // 随会话启动，不拦发送。
+    if !wsl && req.allowed_tools.is_none() && !codex_read_only::requested(&req) {
+        let servers = crate::mcp::launch::on_demand_servers(engine, &req.workspace);
+        if !servers.is_empty() {
+            if let Err(error) = engine_impl.mount_on_demand(&mut built, &servers, &req.workspace) {
+                eprintln!("[mcp-lazy] {engine}: on-demand mount skipped: {error}");
+            }
+        }
+    }
     for (key, value) in &channel_env {
         built.command.env(key, value);
     }
@@ -930,6 +954,8 @@ async fn send_message_inner_with_sink(
             provider_id: provider_id.clone(),
             memory_bot: memory_bot.clone(),
             allowed_tools: allowed_tools.clone(),
+            // Only non-computer-use sends reach this branch.
+            computer_use: false,
         };
         if let Some(live_run) = deliver_to_idle_followup(
             &state.processes,
@@ -1326,6 +1352,7 @@ async fn send_reserved(
                     provider_id: launch.req.provider_id.clone(),
                     memory_bot: launch.req.memory_bot.clone(),
                     allowed_tools: launch.req.allowed_tools.clone(),
+                    computer_use: launch.req.computer_use == Some(true),
                 }
             }),
         },
@@ -1354,6 +1381,7 @@ async fn send_reserved(
         session_id: launch.built.preassigned_session_id,
     })
 }
+
 /// Virtual run path for engines that drive their own transport
 /// ([`Engine::drives_own_transport`]): register a child-less entry whose
 /// `killed` flag and abort handle route interrupts into the transport task,
@@ -1462,6 +1490,16 @@ pub async fn interrupt_session(
     tauri::async_runtime::spawn_blocking(move || registry.kill(&session_id))
         .await
         .map_err(|e| e.to_string())
+}
+/// Which of `run_ids` the host still runs. The frontend's orphan sweep asks
+/// before settling a run that went silent: a long command or a question
+/// waiting on the user emits nothing, and silence alone is not a dead run.
+#[tauri::command]
+pub async fn live_runs(
+    state: tauri::State<'_, crate::AppState>,
+    run_ids: Vec<String>,
+) -> Result<Vec<String>, String> {
+    Ok(state.processes.live_run_ids(&run_ids))
 }
 /// Answer a pending question card. Multiple transports share this command:
 /// - claude (control protocol): the answers merge into the parked tool input
@@ -2263,8 +2301,14 @@ mod permission_tests {
         let config: Value =
             serde_json::from_str(&args[at + 1]).expect("mcp config must be inline JSON");
         let server = &config["mcpServers"]["ccgui-computer"];
-        assert_eq!(server["args"], serde_json::json!(["--computer-use-mcp"]));
-        assert!(!server["command"].as_str().unwrap_or_default().is_empty());
+        assert_eq!(server["args"], serde_json::json!([]));
+        // The driver is the separate helper binary, never this executable.
+        assert_eq!(
+            std::path::Path::new(server["command"].as_str().unwrap_or_default())
+                .file_stem()
+                .and_then(|s| s.to_str()),
+            Some(crate::computer_use::HELPER_BIN)
+        );
         // Pre-approved: a click-per-approval loop would be unusable.
         let tools_at = args
             .iter()
@@ -2795,6 +2839,7 @@ mod retry_lifecycle_tests {
             provider_id: None,
             memory_bot: None,
             allowed_tools: None,
+            computer_use: false,
         }
     }
 
@@ -3173,6 +3218,15 @@ mod retry_lifecycle_tests {
         run_id: &str,
         session_id: &str,
     ) -> tokio::process::Child {
+        idle_followup_child_with(registry, run_id, session_id, test_followup_prefs()).await
+    }
+
+    async fn idle_followup_child_with(
+        registry: &Arc<ProcessRegistry>,
+        run_id: &str,
+        session_id: &str,
+        prefs: registry::FollowupPrefs,
+    ) -> tokio::process::Child {
         let mut command = if cfg!(windows) {
             tokio::process::Command::new("sort")
         } else {
@@ -3198,7 +3252,7 @@ mod retry_lifecycle_tests {
                 plans: Arc::new(Mutex::new(HashMap::new())),
             },
         );
-        registry.set_awaiting_followup(session_id, run_id, test_followup_prefs());
+        registry.set_awaiting_followup(session_id, run_id, prefs);
         child
     }
 
@@ -3305,6 +3359,39 @@ mod retry_lifecycle_tests {
             tokio::time::sleep(std::time::Duration::from_millis(50)).await;
         }
         panic!("idle run was not killed after settings drift");
+    }
+
+    /// A run launched for computer use has the driver mounted and
+    /// pre-approved. A later ordinary send (desktop or remote) must never be
+    /// written into it: computer use is opted into per send.
+    #[tokio::test]
+    async fn plain_send_never_reuses_a_parked_computer_use_process() {
+        let registry = Arc::new(ProcessRegistry::default());
+        let mut child = idle_followup_child_with(
+            &registry,
+            "cu-run",
+            "s-cu",
+            registry::FollowupPrefs {
+                computer_use: true,
+                ..test_followup_prefs()
+            },
+        )
+        .await;
+        let delivered = deliver_to_idle_followup(&registry, Some("s-cu"), &test_followup_prefs(), || {
+            panic!("the prompt must not reach the computer-use process")
+        })
+        .await
+        .unwrap();
+        assert_eq!(delivered, None);
+        let killed = registry.get("cu-run").unwrap().killed;
+        for _ in 0..100 {
+            if killed.load(std::sync::atomic::Ordering::SeqCst) {
+                let _ = child.kill().await;
+                return;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        }
+        panic!("parked computer-use run was not killed");
     }
 
     /// The first turn settles at its own result even with a task pending, so

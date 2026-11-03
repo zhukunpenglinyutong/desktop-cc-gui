@@ -8,9 +8,18 @@ const mocks = vi.hoisted(() => ({
   cliUpdate: vi.fn(),
   listenCliUpdateProgress: vi.fn(),
 }));
+const terminalMocks = vi.hoisted(() => ({ launchCliInstallInTerminal: vi.fn() }));
 vi.mock("@/lib/ipc", () => ({ ipc: mocks }));
 vi.mock("@/lib/events", () => ({
   listenCliUpdateProgress: mocks.listenCliUpdateProgress,
+}));
+vi.mock("./cliInstallTerminal", () => ({
+  launchCliInstallInTerminal: terminalMocks.launchCliInstallInTerminal,
+}));
+// The launched installer keeps its tab open for the whole test.
+vi.mock("@/features/terminal/sessions", () => ({
+  terminalBacklog: () => "",
+  hasTerminalSession: () => true,
 }));
 
 import type { CliUpdatePlan, CliVersionStatus } from "@/lib/ipc";
@@ -43,6 +52,7 @@ function plan(engine: EngineId): CliUpdatePlan {
     kind: "npm",
     command: ["npm", "install", "-g", "pkg@latest"],
     manualCommand: "npm install -g pkg@latest",
+    terminalCommand: null,
     canRun: true,
     blockers: [],
     platform: "macos",
@@ -199,5 +209,97 @@ describe("useCliUpdateFlow", () => {
       latest.close();
     });
     expect(latest.state.status).toBe("idle");
+  });
+
+  it("an official installer is typed into the terminal, never run by the app", async () => {
+    const line = 'curl -fsSL https://claude.ai/install.sh | bash; echo "__CCGUI_CLI_DONE__$?"';
+    mocks.cliUpdatePlan.mockResolvedValue({ ...plan("codex"), kind: "native", command: [line], terminalCommand: line });
+    terminalMocks.launchCliInstallInTerminal.mockReset().mockResolvedValue({ ok: true, terminalId: "tab-1" });
+    await render("codex");
+    await act(async () => {
+      await latest.begin();
+    });
+
+    await act(async () => {
+      await latest.confirm();
+    });
+    expect(terminalMocks.launchCliInstallInTerminal).toHaveBeenCalledWith(line);
+    expect(mocks.cliUpdate).not.toHaveBeenCalled();
+    expect(mocks.listenCliUpdateProgress).not.toHaveBeenCalled();
+    expect(latest.state.status).toBe("terminal");
+    // The dialog may close while the installer keeps running in its tab.
+    await act(async () => {
+      latest.close();
+    });
+    expect(latest.state.status).toBe("idle");
+  });
+
+  it("a second click while the terminal opens does not start a second install", async () => {
+    const line = 'curl -fsSL https://x/install.sh | bash; echo "__CCGUI_CLI_DONE__$?"';
+    mocks.cliUpdatePlan.mockResolvedValue({ ...plan("omp"), kind: "native", command: [line], terminalCommand: line });
+    const opening = Promise.withResolvers<{ ok: true; terminalId: string }>();
+    terminalMocks.launchCliInstallInTerminal.mockReset().mockReturnValue(opening.promise);
+    await render("omp");
+    await act(async () => {
+      await latest.begin();
+    });
+
+    await act(async () => {
+      void latest.confirm();
+    });
+    expect(latest.state.status).toBe("launching");
+    await act(async () => {
+      void latest.confirm();
+    });
+    expect(terminalMocks.launchCliInstallInTerminal).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      opening.resolve({ ok: true, terminalId: "tab-omp" });
+    });
+    expect(latest.state.status).toBe("terminal");
+  });
+
+  it("closing while the terminal opens does not bring the dialog back", async () => {
+    const line = 'curl -fsSL https://x/install.sh | bash; echo "__CCGUI_CLI_DONE__$?"';
+    mocks.cliUpdatePlan.mockResolvedValue({ ...plan("opencode"), kind: "native", command: [line], terminalCommand: line });
+    const opening = Promise.withResolvers<{ ok: false; reason: "terminal-unavailable" }>();
+    terminalMocks.launchCliInstallInTerminal.mockReset().mockReturnValue(opening.promise);
+    await render("opencode");
+    await act(async () => {
+      await latest.begin();
+    });
+    await act(async () => {
+      void latest.confirm();
+    });
+    await act(async () => {
+      latest.close();
+    });
+    expect(latest.state.status).toBe("idle");
+
+    await act(async () => {
+      opening.resolve({ ok: false, reason: "terminal-unavailable" });
+    });
+    expect(latest.state.status).toBe("idle");
+  });
+
+  it("explains a missing workspace instead of running anything", async () => {
+    const line = "irm https://claude.ai/install.ps1 | iex";
+    mocks.cliUpdatePlan.mockResolvedValue({ ...plan("claude"), kind: "native", command: [line], terminalCommand: line });
+    terminalMocks.launchCliInstallInTerminal
+      .mockReset()
+      .mockResolvedValue({ ok: false, reason: "no-workspace" });
+    await render("claude");
+    await act(async () => {
+      await latest.begin();
+    });
+
+    await act(async () => {
+      await latest.confirm();
+    });
+    expect(latest.state.status).toBe("error");
+    expect(latest.state.notice).toBe("no-workspace");
+    expect(mocks.cliUpdate).not.toHaveBeenCalled();
+    // The plan stays so the user can retry after opening a project.
+    expect(latest.state.plan?.terminalCommand).toBe(line);
   });
 });

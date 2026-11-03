@@ -8,6 +8,7 @@ import { IconButton } from "@/components/base/buttons/icon-button";
 import type { FeaturedPlugin, MarketPlugin } from "@/lib/ipc";
 import { cx } from "@/utils/cx";
 import { githubLoginFor, isOfficialPlugin, pluginAvatarGradient } from "./catalog";
+import { formatInstallCount } from "./install-count";
 import { PluginAvatar } from "./PluginAvatar";
 import { MarketActionButton } from "./MarketActionButton";
 import { useMarketplaceStore } from "../marketplace/store";
@@ -164,7 +165,7 @@ function Slide({
             <>
               <span aria-hidden className="size-0.5 shrink-0 rounded-full bg-white/50" />
               <span className="shrink-0 tabular-nums">
-                {t("plugins.hub.downloadsShort", { n: entry.downloads })}
+                {t("plugins.hub.downloadsShort", { n: formatInstallCount(entry.downloads) })}
               </span>
             </>
           )}

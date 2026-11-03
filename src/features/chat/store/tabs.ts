@@ -8,6 +8,7 @@ import {
   type ActiveSession,
 } from "./persistence";
 import { moveRetryingFlag, moveStreamingFlag } from "./stream";
+import { isEmptyAttachments, moveComposerState } from "./attachments";
 import { emitSessionActivated } from "@/features/plugins/runtime/events";
 import { sessionSelection } from "./selection";
 import { dispatchSessionClosed } from "@/features/plugins/runtime/hooks";
@@ -232,6 +233,15 @@ export function createTabActions(
               }
             : s.pendingRuntimeSwitch;
         persistTabs(openTabs, tab);
+        // 没有标签页时贴的图（composerAttachments[""]）同样交给这个会话。
+        // 图片能合并去重、不会丢，所以总是搬（不像草稿要让位给已有文字）。
+        // 无标签页输入框正显示着时（!s.active），即使图还没保存完也记一笔
+        // 迁移，保存途中的那张图落地时跟到这个会话；有标签页时空键为空就
+        // 不记，免得每次 ⌘N 都白记一条。
+        const attachments =
+          !s.active || !isEmptyAttachments(s.composerAttachments[UNBOUND_DRAFT_KEY])
+            ? moveComposerState(s, UNBOUND_DRAFT_KEY, newKey)
+            : {};
         // 还没有任何标签页时敲的字（drafts[""]）属于用户接下来的这个会话：
         // 搬过去并删掉空键，只搬一次——否则它会跟着之后新建的另一个工作区
         // 一起泄漏。其他键变化本来就会迁移草稿（engine-events 的
@@ -241,11 +251,11 @@ export function createTabActions(
         // 整个 drafts 对象的订阅者无谓重渲染。
         const unbound = s.drafts[UNBOUND_DRAFT_KEY];
         if (!unbound || s.drafts[newKey] !== undefined) {
-          return { openTabs, active: tab, pendingRuntimeSwitch };
+          return { openTabs, active: tab, pendingRuntimeSwitch, ...attachments };
         }
         const drafts = { ...s.drafts, [newKey]: unbound };
         delete drafts[UNBOUND_DRAFT_KEY];
-        return { openTabs, active: tab, pendingRuntimeSwitch, drafts };
+        return { openTabs, active: tab, pendingRuntimeSwitch, drafts, ...attachments };
       });
       // New-chat entry points (sidebar, ⌘N, workspace plus) skip activateTab,
       // so announce the switch here — otherwise plugins keep the previous
@@ -353,6 +363,9 @@ export function createTabActions(
           if (!drafts[newKey]) drafts[newKey] = drafts[oldKey];
           delete drafts[oldKey];
         }
+        // Un-sent attachments belong to the tab being retargeted, exactly like
+        // its draft: the pending tab keeps its pictures across the switch.
+        const attachments = moveComposerState(s, oldKey, newKey);
         let openTabs: ActiveSession[];
         let nextActive: ActiveSession;
         if (existing) {
@@ -391,6 +404,7 @@ export function createTabActions(
           active: nextActive,
           bySession,
           drafts,
+          ...attachments,
           streamingByKey: moveStreamingFlag(s.streamingByKey, oldKey, newKey),
           pendingRuntimeSwitch: {
             sourceEngine: active.engine,

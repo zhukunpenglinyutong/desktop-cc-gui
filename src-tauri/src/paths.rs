@@ -138,6 +138,43 @@ pub fn program_dir() -> Result<PathBuf, String> {
 }
 
 pub fn ensure_dirs() -> std::io::Result<()> {
-    std::fs::create_dir_all(app_home())?;
+    let home = app_home();
+    std::fs::create_dir_all(&home)?;
+    restrict_to_owner(&home);
     Ok(())
+}
+
+/// The app home holds API keys (config.json), access tokens (settings.json)
+/// and session data. Older builds created it 0755 and wrote files 0644, so
+/// any local user could read them; an owner-only directory closes that for
+/// files written before atomic_write kept modes. Best effort: a directory we
+/// do not own (or a filesystem without modes) is left as is.
+fn restrict_to_owner(dir: &std::path::Path) {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        if let Ok(meta) = std::fs::metadata(dir) {
+            if meta.permissions().mode() & 0o077 != 0 {
+                let _ = std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700));
+            }
+        }
+    }
+    #[cfg(not(unix))]
+    let _ = dir;
+}
+
+#[cfg(all(test, unix))]
+mod owner_only_tests {
+    use std::os::unix::fs::PermissionsExt;
+
+    #[test]
+    fn app_home_is_narrowed_to_its_owner() {
+        let dir = std::env::temp_dir().join(format!("ccgui-home-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o755)).unwrap();
+        super::restrict_to_owner(&dir);
+        let mode = std::fs::metadata(&dir).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, 0o700);
+        let _ = std::fs::remove_dir_all(dir);
+    }
 }

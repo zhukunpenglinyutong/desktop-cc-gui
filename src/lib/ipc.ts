@@ -433,6 +433,28 @@ export interface SendResult {
   sessionId: string | null;
 }
 
+/** 会话分叉：`fork_session` 的返回。命令返回时分叉会话**已经落盘**（前缀转录本
+ *  写好 + `sessions` 行登记完成），前端直接按 `targetSessionId` 打开即可。 */
+export interface ForkPlan {
+  sourceSessionId: string;
+  sourceEngine: string;
+  /** 为分支分配的新会话 id（UUIDv4）。 */
+  targetSessionId: string;
+  /** 分叉点是否在来源末尾（完整轮次边界）。 */
+  atTip: boolean;
+  /** 分支保留的源记录条数（`usize::MAX` = 保留整个文件）。 */
+  keepRecords?: number;
+  sourceTitle: string;
+  /** 来源会话所属工作区。分支的 `sessions` 行是**按这个**写的，所以页签也必须
+   *  用它打开：否则两者不一致时，分支首轮会以别的工作区为 cwd 启动，
+   *  而引擎按 cwd 解析转录本，`--resume` 可能找不到分支文件。
+   *  可选是为了兼容旧后端（缺省时回退到调用方工作区）。 */
+  workspacePath?: string;
+  /** 已降级、但分支仍算成功的项：`model` / `effort` / `provider`。
+   *  缺省或空数组表示全部继承成功。后端返回的是**稳定代码**，文案由前端 i18n 拼。 */
+  degraded?: string[];
+}
+
 export interface ProviderSection {
   providers: Record<string, unknown>;
   current: string | null;
@@ -459,13 +481,6 @@ export interface ProviderModelList {
   models: string[];
   endpoint: string;
 }
-export interface CodeBuddyAccountStatus {
-  loggedIn: boolean;
-  /** "found" = credential store probe hit; "unknown" = the guessed service
-   *  names missed, which is not proof of being logged out. */
-  detection: "found" | "unknown";
-}
-
 
 export interface WorkspaceGroup {
   id: string;
@@ -578,7 +593,7 @@ export interface AppSettings {
   /** Only notify when app window/session is unfocused/background: true/absent = true (default). */
   notifyWhenUnfocusedOnly?: boolean | null;
   /** 宽幕布 (设置 → 通用 → 外观): true = the chat content column fills its
-   *  pane instead of the default centered column (750px / `max-w-3xl`). */
+   *  pane instead of the centered column (750px / 48rem by default). */
   chatWideLayout?: boolean | null;
   /** File tree entries Git ignores (设置 → 通用 → 行为): absent/false = listed
    *  and drawn faded, true = hidden from the tree. */
@@ -624,6 +639,9 @@ export interface AppSettings {
   webAccessPort?: number | null;
   /** LAN web access fixed auth token (null = auto generate & persist). */
   webAccessToken?: string | null;
+  /** 设置 → 关于 → 使用统计 (null = on). Written only by
+   *  `analyticsEnabledSet`; a full-object update leaving it unset keeps it. */
+  analyticsEnabled?: boolean | null;
 }
 
 export interface DirEntry {
@@ -1181,6 +1199,9 @@ export interface CliUpdatePlan {
   command: string[];
   /** Copy-paste fallback for a manual run. */
   manualCommand: string;
+  /** Official installer scripts run in the built-in terminal: the exact line
+   *  to type there (completion marker included). Null for in-app npm runs. */
+  terminalCommand: string | null;
   canRun: boolean;
   blockers: string[];
   platform: string;
@@ -1442,9 +1463,6 @@ export const ipc = {
     invoke<PiFamilyModelsConfigReadResult>("pi_family_models_config_read", { engine }),
   piFamilyModelsConfigWrite: (engine: string, text: string) =>
     invoke<void>("pi_family_models_config_write", { engine, text }),
-  // codebuddy account status
-  codebuddyAccountStatus: (force = false) =>
-    invoke<CodeBuddyAccountStatus>("codebuddy_account_status", { force }),
   // cc-switch interop
   checkCcSwitch: () => invoke<CcSwitchStatus>("check_cc_switch"),
   dismissCcSwitch: (hash: string) => invoke<void>("dismiss_cc_switch", { hash }),
@@ -1539,6 +1557,9 @@ export const ipc = {
   }) => invoke<SendResult>("send_message", args),
   interruptSession: (sessionId: string) =>
     invoke<boolean>("interrupt_session", { sessionId }),
+  /** Which of these run ids the host still runs: the orphan sweep asks
+   *  before settling a run that has gone silent. */
+  liveRuns: (runIds: string[]) => invoke<string[]>("live_runs", { runIds }),
   // 电脑操控 (computer use)
   /** macOS TCC probe. `osPermissionsRequired` is false on Windows/Linux,
    *  where the driver needs no OS grant. */
@@ -1674,6 +1695,21 @@ export const ipc = {
     invoke<void>("pin_session", { engine, sessionId, pinned }),
   renameSession: (engine: string, sessionId: string, title: string) =>
     invoke<void>("rename_session", { engine, sessionId, title }),
+  /** 会话分叉：**点击即落盘**——后端在这一步就把裁剪后的前缀写成分支转录本并
+   *  登记 `sessions` 行，返回的 `ForkPlan` 带着新会话 id（见 `engine/fork/mod.rs` 与
+   *  `docs/design/session-fork-conversation.zh-CN.md` §2.3）。
+   *  分支之后的每条消息都只是**普通续接**，发送路径上没有分叉字段。
+   *  `anchor` 省略即 tip 分叉（完整轮次末尾）。 */
+  forkSession: (
+    engine: string,
+    sessionId: string,
+    anchor?: { userTextSha256: string; seqHint?: number; tailOccurrence?: number } | null,
+  ) =>
+    invoke<ForkPlan>("fork_session", {
+      engine,
+      sessionId,
+      at: anchor ?? null,
+    }),
   /** Remember the model id this session ran ("provider/model", as the picker
    * spells it) — the engine's own transcript keeps only the bare name, so
    * this is what survives a restart or another client. */
@@ -2079,6 +2115,9 @@ export const ipc = {
    *  Codex / ~/.agents）。插件中心的「创建插件」在开新会话前调一次，这样
    *  `/ccgui-plugin-creator` 在引擎侧确实存在、可被解析。 */
   creatorSkillInstall: () => invoke<CreatorSkillReport>("creator_skill_install"),
+  // usage analytics: the backend sends one page view per launch (desktop-only switch)
+  analyticsEnabledGet: () => invoke<boolean>("analytics_enabled_get"),
+  analyticsEnabledSet: (enabled: boolean) => invoke<void>("analytics_enabled_set", { enabled }),
   // web access (start/stop are desktop-only; the bridge answers status too)
   webDevices: () => invoke<WebDevice[]>("web_devices"),
   webDeviceApprove: (id: string) => invoke<boolean>("web_device_approve", { id }),

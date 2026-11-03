@@ -1,6 +1,8 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
+import { EditorSelection } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
+import { SearchQuery, replaceNext, searchPanelOpen, setSearchQuery } from "@codemirror/search";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { FileContent, SessionFileDocument, SessionMeta } from "@/lib/ipc";
 import type * as Platform from "@/lib/platform";
@@ -255,6 +257,160 @@ describe("session editor recovery and wrapping", () => {
     expect(view.state.doc.toString()).toBe(edited);
     await act(async () => {
       view.contentDOM.dispatchEvent(new KeyboardEvent("keydown", { key: "z", code: "KeyZ", ctrlKey: true, bubbles: true, cancelable: true }));
+    });
+    expect(view.state.doc.toString()).toBe(original);
+    expect(useFilesStore.getState().dirtyPaths[path]).toBeUndefined();
+  });
+
+  it.each(["LICENSE", "main.ts", "data.json"])(
+    "uses the new find card instead of CodeMirror's native panel for %s",
+    async (name) => {
+      const path = `/repo/${name}`;
+      const content: FileContent = { kind: "text", text: "needle\nneedle\n", dataUrl: null, truncated: false };
+      useFilesStore.setState({
+        openFiles: [path],
+        activeFilePath: path,
+        fileStates: { [path]: { path, content, loading: false, error: null, loadNonce: 1, name } },
+      });
+      await act(async () => root.render(<EditorPane path={path} />));
+      const view = EditorView.findFromDOM(container.querySelector<HTMLElement>(".cm-editor")!)!;
+
+      await act(async () => {
+        view.contentDOM.dispatchEvent(
+          new KeyboardEvent("keydown", { key: "f", code: "KeyF", ctrlKey: true, bubbles: true, cancelable: true }),
+        );
+      });
+
+      expect(container.querySelector(".cm-panel.cm-search")).toBeNull();
+      const panel = container.querySelector<HTMLElement>('[role="search"]');
+      expect(panel).not.toBeNull();
+      expect(panel!.classList.contains("hidden")).toBe(false);
+    },
+  );
+
+  it("closes the find card when another file tab becomes active", async () => {
+    const path = "/repo/data.json";
+    const nextPath = "/repo/note.md";
+    const content: FileContent = { kind: "text", text: '{"a": 1}', dataUrl: null, truncated: false };
+    useFilesStore.setState({
+      openFiles: [path, nextPath],
+      activeFilePath: path,
+      fileStates: {
+        [path]: { path, content, loading: false, error: null, loadNonce: 1, name: "data.json" },
+        [nextPath]: { path: nextPath, content, loading: false, error: null, loadNonce: 1, name: "note.md" },
+      },
+    });
+    await act(async () => root.render(<EditorPane path={path} />));
+    const view = EditorView.findFromDOM(container.querySelector<HTMLElement>(".cm-editor")!)!;
+
+    await act(async () => {
+      view.contentDOM.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "f", code: "KeyF", ctrlKey: true, bubbles: true, cancelable: true }),
+      );
+    });
+    const panel = container.querySelector<HTMLElement>('[role="search"]');
+    expect(panel).not.toBeNull();
+    expect(panel!.classList.contains("hidden")).toBe(false);
+    expect(searchPanelOpen(view.state)).toBe(true);
+
+    const expand = container.querySelector<HTMLButtonElement>(
+      `button[aria-label="${i18n.t("files.editorSearch.expandReplace")}"]`,
+    );
+    await act(async () => expand!.click());
+    expect(
+      container.querySelector(`input[placeholder="${i18n.t("files.editorSearch.replace")}"]`),
+    ).not.toBeNull();
+
+    // The hidden tab keeps its FileEditor mounted; its expanded replace row
+    // must not stay painted over the newly active file.
+    await act(async () => useFilesStore.setState({ activeFilePath: nextPath }));
+    expect(panel!.classList.contains("hidden")).toBe(true);
+    expect(searchPanelOpen(view.state)).toBe(false);
+  });
+
+  it("opens the find card with F3 instead of a search behind the hidden panel", async () => {
+    const path = "/repo/f3.ts";
+    const content: FileContent = { kind: "text", text: "alpha foo beta foo\n", dataUrl: null, truncated: false };
+    useFilesStore.setState({
+      openFiles: [path],
+      activeFilePath: path,
+      fileStates: { [path]: { path, content, loading: false, error: null, loadNonce: 1, name: "f3.ts" } },
+    });
+    await act(async () => root.render(<EditorPane path={path} />));
+    const view = EditorView.findFromDOM(container.querySelector<HTMLElement>(".cm-editor")!)!;
+    await act(async () => view.dispatch({ selection: { anchor: 6, head: 9 } }));
+
+    await act(async () => {
+      view.contentDOM.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "F3", code: "F3", bubbles: true, cancelable: true }),
+      );
+    });
+
+    const panel = container.querySelector<HTMLElement>('[role="search"]');
+    expect(panel!.classList.contains("hidden")).toBe(false);
+    expect(
+      container.querySelector<HTMLInputElement>(`input[placeholder="${i18n.t("files.editorSearch.find")}"]`)!.value,
+    ).toBe("foo");
+  });
+
+  it("keeps the cursors from select-all-matches when the card closes", async () => {
+    const path = "/repo/multi.ts";
+    const content: FileContent = { kind: "text", text: "one two one\n", dataUrl: null, truncated: false };
+    useFilesStore.setState({
+      openFiles: [path],
+      activeFilePath: path,
+      fileStates: { [path]: { path, content, loading: false, error: null, loadNonce: 1, name: "multi.ts" } },
+    });
+    await act(async () => root.render(<EditorPane path={path} />));
+    const view = EditorView.findFromDOM(container.querySelector<HTMLElement>(".cm-editor")!)!;
+    const pressInEditor = (init: KeyboardEventInit) =>
+      act(async () => {
+        view.contentDOM.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, cancelable: true, ...init }));
+      });
+
+    await pressInEditor({ key: "f", code: "KeyF", ctrlKey: true });
+    // What "select all matches" leaves behind: one cursor per match.
+    await act(async () => view.dispatch({ selection: EditorSelection.create([
+      EditorSelection.range(0, 3),
+      EditorSelection.range(8, 11),
+    ]) }));
+    await pressInEditor({ key: "Escape", code: "Escape" });
+
+    expect(container.querySelector<HTMLElement>('[role="search"]')!.classList.contains("hidden")).toBe(true);
+    expect(view.state.selection.ranges.map((range) => [range.from, range.to])).toEqual([[0, 3], [8, 11]]);
+
+    // A single match selection still collapses, as before.
+    await pressInEditor({ key: "f", code: "KeyF", ctrlKey: true });
+    await act(async () => view.dispatch({ selection: { anchor: 8, head: 11 } }));
+    await pressInEditor({ key: "Escape", code: "Escape" });
+    expect(view.state.selection.ranges.map((range) => [range.from, range.to])).toEqual([[11, 11]]);
+  });
+
+  it("clears the unsaved state after undoing a find/replace edit", async () => {
+    const path = "/repo/replace.ts";
+    const original = "const test = 1;\nconst other = test;\n";
+    const content: FileContent = { kind: "text", text: original, dataUrl: null, truncated: false };
+    useFilesStore.setState({
+      openFiles: [path],
+      activeFilePath: path,
+      fileStates: { [path]: { path, content, loading: false, error: null, loadNonce: 1, name: "replace.ts" } },
+    });
+    await act(async () => root.render(<EditorPane path={path} />));
+    const view = EditorView.findFromDOM(container.querySelector<HTMLElement>(".cm-editor")!)!;
+
+    await act(async () => {
+      view.dispatch({ selection: { anchor: 6, head: 10 } });
+      view.dispatch({
+        effects: setSearchQuery.of(new SearchQuery({ search: "test", replace: "TEST" })),
+      });
+    });
+    expect(replaceNext(view)).toBe(true);
+    expect(view.state.doc.toString()).toBe("const TEST = 1;\nconst other = test;\n");
+
+    await act(async () => {
+      view.contentDOM.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "z", code: "KeyZ", ctrlKey: true, bubbles: true, cancelable: true }),
+      );
     });
     expect(view.state.doc.toString()).toBe(original);
     expect(useFilesStore.getState().dirtyPaths[path]).toBeUndefined();

@@ -1,4 +1,5 @@
 import type { EngineInfo } from "@/lib/ipc";
+import { isWeb } from "@/lib/platform";
 
 /**
  * Computer use (电脑操控): frontend helpers shared by the composer's
@@ -31,4 +32,17 @@ export function engineSupportsComputerUse(
   engine: string,
 ): boolean {
   return engines.find((entry) => entry.id === engine)?.supportsComputerUse === true;
+}
+
+/**
+ * Why a computer-use send cannot happen here (an i18n key), or null when it
+ * can. Desktop-only comes first: screen capture and input injection need
+ * someone at the machine, and the web bridge drops the flag
+ * (web/dispatch.rs `remote_computer_use`) — sending anyway would quietly run
+ * a text-only turn.
+ */
+export function computerUseRefusalKey(engines: EngineInfo[], engine: string): string | null {
+  if (isWeb) return "chat.cuaDesktopOnly";
+  if (!engineSupportsComputerUse(engines, engine)) return "chat.cuaUnsupportedEngine";
+  return null;
 }

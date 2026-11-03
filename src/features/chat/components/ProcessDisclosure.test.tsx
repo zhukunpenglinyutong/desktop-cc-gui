@@ -148,7 +148,9 @@ describe("ProcessDisclosure bounded history", () => {
     const items = tools(120);
     await render(items);
     expect(findTimelineMatches([{ kind: "process", firstSeq: 1, items }], "中文")).toHaveLength(120);
-    expect(findTimelineMatches([{ kind: "process", firstSeq: 1, items }], items[0].text)).toEqual([{ rowIndex: 0 }]);
+    const toolMatches = findTimelineMatches([{ kind: "process", firstSeq: 1, items }], items[0].text);
+    expect(toolMatches).toHaveLength(1);
+    expect(toolMatches[0].rowIndex).toBe(0);
     expect(container.textContent).not.toContain(items[0].text);
     await clickButton(i18n.t("chat.processPreviousPage"));
     await clickButton(i18n.t("chat.processPreviousPage"));

@@ -59,13 +59,20 @@ const DEFAULT_EXEC_TIMEOUT_MS: u64 = 30_000;
 const MAX_EXEC_TIMEOUT_MS: u64 = 300_000;
 /// One shared client for plugin_http_request: building one per call wasted
 /// a connection pool per request.
+/// Redirects are NOT followed by reqwest: the network grant is only checked
+/// for the URL the plugin passed, so an auto-followed 307/308 could carry the
+/// request body to any host. plugin_http_request follows them itself and
+/// re-checks the grant on every hop (same contract as plugins::assets).
 static HTTP_CLIENT: LazyLock<reqwest::Client> = LazyLock::new(|| {
     reqwest::Client::builder()
         .connect_timeout(HTTP_CONNECT_TIMEOUT)
         .timeout(HTTP_REQUEST_TIMEOUT)
+        .redirect(reqwest::redirect::Policy::none())
         .build()
         .expect("HTTP client builds from static config")
 });
+/// Same bound reqwest's default policy uses.
+const MAX_HTTP_REDIRECTS: usize = 10;
 
 // ── grant parsing / matching ────────────────────────────────────────────────
 
@@ -521,9 +528,88 @@ pub(crate) async fn plugin_http_request(
     body: Option<String>,
 ) -> Result<PluginHttpResponse, String> {
     let grants = load_grants(&plugin_id)?;
-    let method = parse_http_method(&method)?;
-    let url = reqwest::Url::parse(url.trim())
-        .map_err(|error| format!("{plugin_id}: invalid url: {error}"))?;
+    let call = HttpCall {
+        method: parse_http_method(&method)?,
+        url: reqwest::Url::parse(url.trim())
+            .map_err(|error| format!("{plugin_id}: invalid url: {error}"))?,
+        headers: header_map(headers),
+        body,
+    };
+    // One budget for the whole redirect chain, as reqwest's own timeout was.
+    tokio::time::timeout(
+        HTTP_REQUEST_TIMEOUT,
+        follow_redirects(&HTTP_CLIENT, &grants, &plugin_id, call),
+    )
+    .await
+    .map_err(|_| format!("{plugin_id}: request timed out"))?
+}
+
+struct HttpCall {
+    method: reqwest::Method,
+    url: reqwest::Url,
+    headers: reqwest::header::HeaderMap,
+    body: Option<String>,
+}
+
+/// Sends `call`, following up to MAX_HTTP_REDIRECTS redirects itself so every
+/// hop passes the scheme / userinfo / network-grant gate before any byte is
+/// sent there. Errors never echo URLs (they may carry tokens).
+async fn follow_redirects(
+    client: &reqwest::Client,
+    grants: &[String],
+    plugin_id: &str,
+    call: HttpCall,
+) -> Result<PluginHttpResponse, String> {
+    let HttpCall {
+        mut method,
+        mut url,
+        mut headers,
+        mut body,
+    } = call;
+    authorize_http_url(grants, plugin_id, &url)?;
+    for hop in 0..=MAX_HTTP_REDIRECTS {
+        if hop > 0 {
+            authorize_redirect(grants, plugin_id, &url)?;
+        }
+        let mut request = client
+            .request(method.clone(), url.clone())
+            .headers(headers.clone());
+        if let Some(body) = body.clone() {
+            request = request.body(body);
+        }
+        let response = request
+            .send()
+            .await
+            .map_err(|error| format!("{plugin_id}: request failed: {}", error.without_url()))?;
+        let status = response.status().as_u16();
+        let location = response
+            .headers()
+            .get(reqwest::header::LOCATION)
+            .and_then(|value| std::str::from_utf8(value.as_bytes()).ok());
+        let Some(next) = redirect_hop(status, location, &url, &method) else {
+            let body = read_body_capped(response).await?;
+            return Ok(PluginHttpResponse { status, body });
+        };
+        if hop == MAX_HTTP_REDIRECTS {
+            break;
+        }
+        headers = headers_for_hop(&headers, &url, &next.url, next.keep_body);
+        if !next.keep_body {
+            body = None;
+        }
+        url = next.url;
+        method = next.method;
+    }
+    Err(format!("{plugin_id}: too many redirects"))
+}
+
+/// Gate for the URL the plugin passed: scheme + network grant. Shares its
+/// rules with the SDK's networkGrantAllows (spec/permissions.json vectors).
+fn authorize_http_url(
+    grants: &[String],
+    plugin_id: &str,
+    url: &reqwest::Url,
+) -> Result<(), String> {
     match url.scheme() {
         "http" | "https" => {}
         scheme => return Err(format!("{plugin_id}: url scheme not allowed: {scheme}")),
@@ -531,33 +617,123 @@ pub(crate) async fn plugin_http_request(
     let host = url
         .host_str()
         .ok_or_else(|| format!("{plugin_id}: url has no host"))?;
-    let port = url.port_or_known_default();
-    require_network_grant(&grants, &plugin_id, host, port)?;
+    require_network_grant(grants, plugin_id, host, url.port_or_known_default())
+}
 
-    let client = &*HTTP_CLIENT;
-    let mut request = client.request(method, url);
-    if let Some(headers) = headers {
-        for (name, value) in headers {
-            let Ok(name) = reqwest::header::HeaderName::from_bytes(name.as_bytes()) else {
-                continue;
-            };
-            let Ok(value) = reqwest::header::HeaderValue::from_str(&value) else {
-                continue;
-            };
-            request = request.header(name, value);
+/// Gate for a redirect target the server chose. Messages name the hop as a
+/// redirect (host:port only) so plugin authors can tell why it failed.
+fn authorize_redirect(
+    grants: &[String],
+    plugin_id: &str,
+    url: &reqwest::Url,
+) -> Result<(), String> {
+    if !matches!(url.scheme(), "http" | "https") {
+        return Err(format!(
+            "{plugin_id}: redirect to unsupported scheme: {}",
+            url.scheme()
+        ));
+    }
+    if !url.username().is_empty() || url.password().is_some() {
+        return Err(format!("{plugin_id}: redirect target carries credentials"));
+    }
+    let host = url
+        .host_str()
+        .ok_or_else(|| format!("{plugin_id}: redirect target has no host"))?;
+    let port = url.port_or_known_default();
+    if network_grant_allows(grants, host, port) {
+        return Ok(());
+    }
+    Err(format!(
+        "{plugin_id}: redirect to {host}:{} is not covered by a network grant",
+        port.map(|p| p.to_string())
+            .unwrap_or_else(|| "*".to_string())
+    ))
+}
+
+fn header_map(headers: Option<HashMap<String, String>>) -> reqwest::header::HeaderMap {
+    let mut map = reqwest::header::HeaderMap::new();
+    for (name, value) in headers.unwrap_or_default() {
+        let Ok(name) = reqwest::header::HeaderName::from_bytes(name.as_bytes()) else {
+            continue;
+        };
+        let Ok(value) = reqwest::header::HeaderValue::from_str(&value) else {
+            continue;
+        };
+        // append, not insert: "X-Tag" and "x-tag" both go out, as before.
+        map.append(name, value);
+    }
+    map
+}
+
+struct RedirectHop {
+    url: reqwest::Url,
+    method: reqwest::Method,
+    keep_body: bool,
+}
+
+/// Next hop for a 3xx with Location, following browser method rules:
+/// 307/308 keep method and body; 303 (and 301/302 for POST) become GET
+/// without a body. The target's scheme is checked by authorize_redirect.
+fn redirect_hop(
+    status: u16,
+    location: Option<&str>,
+    current: &reqwest::Url,
+    method: &reqwest::Method,
+) -> Option<RedirectHop> {
+    if !matches!(status, 301 | 302 | 303 | 307 | 308) {
+        return None;
+    }
+    let url = current.join(location?).ok()?;
+    let to_get = status == 303 || (matches!(status, 301 | 302) && *method == reqwest::Method::POST);
+    if to_get {
+        let method = if *method == reqwest::Method::HEAD {
+            reqwest::Method::HEAD
+        } else {
+            reqwest::Method::GET
+        };
+        return Some(RedirectHop {
+            url,
+            method,
+            keep_body: false,
+        });
+    }
+    Some(RedirectHop {
+        url,
+        method: method.clone(),
+        keep_body: true,
+    })
+}
+
+/// Headers for the next hop: credentials never cross origins, and body
+/// headers go away together with the body.
+fn headers_for_hop(
+    headers: &reqwest::header::HeaderMap,
+    from: &reqwest::Url,
+    to: &reqwest::Url,
+    keep_body: bool,
+) -> reqwest::header::HeaderMap {
+    use reqwest::header;
+    let mut next = headers.clone();
+    if from.origin() != to.origin() {
+        for name in [
+            header::AUTHORIZATION,
+            header::COOKIE,
+            header::PROXY_AUTHORIZATION,
+        ] {
+            next.remove(name);
         }
     }
-    if let Some(body) = body {
-        request = request.body(body);
+    if !keep_body {
+        for name in [
+            header::CONTENT_TYPE,
+            header::CONTENT_LENGTH,
+            header::CONTENT_ENCODING,
+            header::TRANSFER_ENCODING,
+        ] {
+            next.remove(name);
+        }
     }
-
-    let response = request
-        .send()
-        .await
-        .map_err(|error| format!("{plugin_id}: request failed: {error}"))?;
-    let status = response.status().as_u16();
-    let body = read_body_capped(response).await?;
-    Ok(PluginHttpResponse { status, body })
+    next
 }
 
 /// Grant gate for `plugin_add_workspace`, pure for tests: base permission
@@ -802,6 +978,257 @@ mod tests {
     }
 
     #[test]
+    fn redirect_hops_follow_browser_method_rules() {
+        let url = reqwest::Url::parse("https://open.feishu.cn/open-apis/bot/v2/hook/abc").unwrap();
+        let post = reqwest::Method::POST;
+        let get = reqwest::Method::GET;
+        // 非 3xx / 没有 Location：不跟随
+        assert!(redirect_hop(200, Some("/x"), &url, &post).is_none());
+        assert!(redirect_hop(302, None, &url, &post).is_none());
+        assert!(redirect_hop(304, Some("/x"), &url, &get).is_none());
+        // 307 / 308：保留方法与请求体
+        let hop = redirect_hop(307, Some("https://evil.example/steal"), &url, &post).unwrap();
+        assert_eq!(hop.url.as_str(), "https://evil.example/steal");
+        assert_eq!(hop.method, reqwest::Method::POST);
+        assert!(hop.keep_body);
+        // 301 / 302 的 POST 与 303：改成 GET、丢请求体；相对地址按当前 URL 解析
+        let hop = redirect_hop(302, Some("/other"), &url, &post).unwrap();
+        assert_eq!(hop.url.as_str(), "https://open.feishu.cn/other");
+        assert_eq!(hop.method, reqwest::Method::GET);
+        assert!(!hop.keep_body);
+        let hop = redirect_hop(303, Some("/other"), &url, &reqwest::Method::PUT).unwrap();
+        assert_eq!(hop.method, reqwest::Method::GET);
+        assert!(!hop.keep_body);
+        // 301 的 GET 照旧 GET
+        let hop = redirect_hop(301, Some("/a"), &url, &get).unwrap();
+        assert_eq!(hop.method, reqwest::Method::GET);
+        // 非 http(s) 目标交给逐跳闸门拒绝（报错，而不是把 3xx 当成功返回）
+        let hop = redirect_hop(302, Some("file:///etc/passwd"), &url, &get).unwrap();
+        let g = grants(&["network:open.feishu.cn"]);
+        let err = authorize_redirect(&g, "p", &hop.url).unwrap_err();
+        assert!(err.contains("scheme"), "{err}");
+    }
+
+    #[test]
+    fn cross_origin_redirect_drops_credentials() {
+        let mut headers = reqwest::header::HeaderMap::new();
+        headers.insert("authorization", "Bearer t".parse().unwrap());
+        headers.insert("cookie", "s=1".parse().unwrap());
+        headers.insert("proxy-authorization", "x".parse().unwrap());
+        headers.insert("content-type", "application/json".parse().unwrap());
+        headers.insert("x-custom", "1".parse().unwrap());
+        let from = reqwest::Url::parse("https://a.example/x").unwrap();
+        let same = reqwest::Url::parse("https://a.example/y").unwrap();
+        let other = reqwest::Url::parse("https://b.example/y").unwrap();
+        let kept = headers_for_hop(&headers, &from, &same, true);
+        assert!(kept.contains_key("authorization"));
+        let stripped = headers_for_hop(&headers, &from, &other, true);
+        assert!(!stripped.contains_key("authorization"));
+        assert!(!stripped.contains_key("cookie"));
+        assert!(!stripped.contains_key("proxy-authorization"));
+        assert!(stripped.contains_key("x-custom"));
+        // 丢请求体时连带去掉描述请求体的头
+        let no_body = headers_for_hop(&headers, &from, &same, false);
+        assert!(!no_body.contains_key("content-type"));
+    }
+
+    async fn bind_local() -> (tokio::net::TcpListener, u16) {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        (listener, port)
+    }
+
+    /// Scripted local HTTP server: one connection per reply (`Connection:
+    /// close`); resolves to the raw requests it saw (headers + body).
+    async fn serve(
+        listener: tokio::net::TcpListener,
+        replies: Vec<String>,
+    ) -> tokio::task::JoinHandle<Vec<String>> {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        tokio::spawn(async move {
+            let mut seen = Vec::new();
+            for reply in replies {
+                let (mut stream, _) = listener.accept().await.unwrap();
+                let mut raw = Vec::new();
+                let mut buffer = [0u8; 4096];
+                while !raw.windows(4).any(|w| w == b"\r\n\r\n") {
+                    let read = stream.read(&mut buffer).await.unwrap();
+                    if read == 0 {
+                        break;
+                    }
+                    raw.extend_from_slice(&buffer[..read]);
+                }
+                let text = String::from_utf8_lossy(&raw).to_string();
+                let length = text
+                    .lines()
+                    .find_map(|l| {
+                        l.to_ascii_lowercase()
+                            .strip_prefix("content-length:")
+                            .map(|v| v.trim().parse::<usize>().unwrap_or(0))
+                    })
+                    .unwrap_or(0);
+                let head_end = raw.windows(4).position(|w| w == b"\r\n\r\n").unwrap() + 4;
+                while raw.len() < head_end + length {
+                    let read = stream.read(&mut buffer).await.unwrap();
+                    if read == 0 {
+                        break;
+                    }
+                    raw.extend_from_slice(&buffer[..read]);
+                }
+                seen.push(String::from_utf8_lossy(&raw).to_string());
+                let _ = stream.write_all(reply.as_bytes()).await;
+            }
+            seen
+        })
+    }
+
+    fn redirect_reply(status: &str, location: &str) -> String {
+        format!("HTTP/1.1 {status}\r\nLocation: {location}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
+    }
+
+    fn ok_reply(body: &str) -> String {
+        format!(
+            "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+            body.len()
+        )
+    }
+
+    fn local_client() -> reqwest::Client {
+        reqwest::Client::builder()
+            .no_proxy()
+            .redirect(reqwest::redirect::Policy::none())
+            .timeout(Duration::from_secs(5))
+            .build()
+            .unwrap()
+    }
+
+    fn post_call(url: &str, headers: &[(&str, &str)], body: &str) -> HttpCall {
+        HttpCall {
+            method: reqwest::Method::POST,
+            url: reqwest::Url::parse(url).unwrap(),
+            headers: header_map(Some(
+                headers
+                    .iter()
+                    .map(|(k, v)| (k.to_string(), v.to_string()))
+                    .collect(),
+            )),
+            body: Some(body.to_string()),
+        }
+    }
+
+    #[tokio::test]
+    async fn redirect_to_an_ungranted_host_never_sends_the_body_there() {
+        let (a, a_port) = bind_local().await;
+        let (b, b_port) = bind_local().await;
+        let a_task = serve(
+            a,
+            vec![redirect_reply(
+                "307 Temporary Redirect",
+                &format!("http://127.0.0.1:{b_port}/steal"),
+            )],
+        )
+        .await;
+        let g = grants(&[&format!("network:127.0.0.1:{a_port}")]);
+        let call = post_call(
+            &format!("http://127.0.0.1:{a_port}/hook/SECRET"),
+            &[],
+            "payload",
+        );
+        let err = follow_redirects(&local_client(), &g, "p", call)
+            .await
+            .unwrap_err();
+        assert!(err.contains("redirect to 127.0.0.1"), "{err}");
+        assert!(!err.contains("SECRET"), "{err}");
+        a_task.await.unwrap();
+        // b 从未收到连接
+        let accepted = tokio::time::timeout(Duration::from_millis(150), b.accept()).await;
+        assert!(accepted.is_err(), "ungranted host must not be contacted");
+    }
+
+    #[tokio::test]
+    async fn post_302_becomes_get_and_drops_body_and_cross_origin_credentials() {
+        let (a, a_port) = bind_local().await;
+        let (b, b_port) = bind_local().await;
+        let a_task = serve(
+            a,
+            vec![redirect_reply(
+                "302 Found",
+                &format!("http://127.0.0.1:{b_port}/next"),
+            )],
+        )
+        .await;
+        let b_task = serve(b, vec![ok_reply("done")]).await;
+        let g = grants(&[
+            &format!("network:127.0.0.1:{a_port}"),
+            &format!("network:127.0.0.1:{b_port}"),
+        ]);
+        let call = post_call(
+            &format!("http://127.0.0.1:{a_port}/start"),
+            &[
+                ("Authorization", "Bearer t"),
+                ("Content-Type", "application/json"),
+                ("X-Custom", "1"),
+            ],
+            "{\"a\":1}",
+        );
+        let out = follow_redirects(&local_client(), &g, "p", call)
+            .await
+            .unwrap();
+        assert_eq!(out.status, 200);
+        assert_eq!(out.body, "done");
+        let first = a_task.await.unwrap().remove(0).to_ascii_lowercase();
+        assert!(first.starts_with("post /start"));
+        assert!(first.contains("authorization: bearer t"));
+        let second = b_task.await.unwrap().remove(0).to_ascii_lowercase();
+        assert!(second.starts_with("get /next"), "{second}");
+        assert!(!second.contains("authorization"), "{second}");
+        assert!(!second.contains("content-type"), "{second}");
+        assert!(second.contains("x-custom: 1"), "{second}");
+        assert!(!second.contains("{\"a\":1}"), "{second}");
+    }
+
+    #[tokio::test]
+    async fn redirect_loops_stop_after_the_limit() {
+        let (a, a_port) = bind_local().await;
+        let loop_to = format!("http://127.0.0.1:{a_port}/again");
+        let replies = vec![redirect_reply("302 Found", &loop_to); MAX_HTTP_REDIRECTS + 1];
+        let task = serve(a, replies).await;
+        let g = grants(&[&format!("network:127.0.0.1:{a_port}")]);
+        let call = post_call(&loop_to, &[], "");
+        let err = follow_redirects(&local_client(), &g, "p", call)
+            .await
+            .unwrap_err();
+        assert!(err.contains("too many redirects"), "{err}");
+        assert_eq!(task.await.unwrap().len(), MAX_HTTP_REDIRECTS + 1);
+    }
+
+    #[tokio::test]
+    async fn connection_errors_do_not_echo_the_url() {
+        let (closed, port) = bind_local().await;
+        drop(closed);
+        let g = grants(&[&format!("network:127.0.0.1:{port}")]);
+        let call = post_call(
+            &format!("http://127.0.0.1:{port}/hook/SECRET?token=SECRET"),
+            &[],
+            "",
+        );
+        let err = follow_redirects(&local_client(), &g, "p", call)
+            .await
+            .unwrap_err();
+        assert!(err.contains("request failed"), "{err}");
+        assert!(!err.contains("SECRET"), "{err}");
+    }
+
+    #[test]
+    fn duplicate_header_names_are_all_kept() {
+        let mut raw = HashMap::new();
+        raw.insert("X-Tag".to_string(), "a".to_string());
+        raw.insert("x-tag".to_string(), "b".to_string());
+        let map = header_map(Some(raw));
+        assert_eq!(map.get_all("x-tag").iter().count(), 2);
+    }
+
+    #[test]
     fn workspace_grants_gate() {
         let wsl_meta =
             serde_json::json!({"wsl": {"host": "10.0.0.2", "user": "d", "distro": "Ubuntu"}});
@@ -874,12 +1301,7 @@ mod tests {
             // against the grants.
             let allowed = reqwest::Url::parse(url)
                 .ok()
-                .filter(|u| matches!(u.scheme(), "http" | "https"))
-                .and_then(|u| {
-                    u.host_str()
-                        .map(|host| network_grant_allows(&grants, host, u.port_or_known_default()))
-                })
-                .unwrap_or(false);
+                .is_some_and(|u| authorize_http_url(&grants, "p", &u).is_ok());
             assert_eq!(allowed, expected, "networkAllow[{i}]: {grants:?} vs {url}");
         }
     }

@@ -8,7 +8,11 @@
 //! 见 slash_commands.rs 的扫描根）。宿主自己在别处塞一份，引擎看不到，等于
 //! 假成功。
 //!
-//! 幂等与不越权（每次启动跑一次，成本是一次目录读）：
+//! 只在用户点插件中心的「创建插件」时写入（`creator_skill_install`），不在
+//! 启动时写：每次启动都改动其他 CLI 的配置目录，正是安全审查关注的「篡改
+//! 他人配置」特征（docs/security-incidents/2026-11-security-audit.zh-CN.md M5）。
+//!
+//! 幂等与不越权：
 //!
 //! - 目标目录不存在 → 写入全部文件 + `.ccgui-managed.json` 标记；
 //! - 标记是本应用写的、且内容哈希与随包分发的一致 → 一个字节都不写；
@@ -268,34 +272,6 @@ pub fn install(resource_dir: Option<&Path>) -> SkillInstallReport {
     SkillInstallReport {
         source: Some(source.to_string_lossy().to_string()),
         targets,
-    }
-}
-
-/// 启动时同步（非致命：失败只写日志，插件开发 skill 缺失不影响应用使用）。
-pub(crate) fn install_at_startup(app: &tauri::AppHandle) {
-    use tauri::Manager;
-    let resource_dir = app.path().resource_dir().ok();
-    let report = install(resource_dir.as_deref());
-    if report.source.is_none() {
-        eprintln!("[creator-skill] bundled skill resource is missing; skip install");
-        return;
-    }
-    for target in &report.targets {
-        match (target.action, &target.error) {
-            (SkillAction::Written, _) => {
-                eprintln!("[creator-skill] installed into {}", target.path);
-            }
-            (SkillAction::Conflict, _) => {
-                eprintln!(
-                    "[creator-skill] {} exists without our marker; left untouched",
-                    target.path
-                );
-            }
-            (SkillAction::Failed, Some(error)) => {
-                eprintln!("[creator-skill] {} failed: {error}", target.path);
-            }
-            _ => {}
-        }
     }
 }
 

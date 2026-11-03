@@ -182,22 +182,23 @@ export function rememberSettledRun(session: SessionState | undefined, runId: str
   return [...(session?.settledRunIds ?? []).filter((id) => id !== runId), runId].slice(-32);
 }
 /** runId -> last activity (stamped at routing, refreshed on each routed
- * event). A run that dies without done/error (engine crash, killed process)
- * never gets its routing entry removed by the settling paths, so each newly
- * routed run sweeps entries silent for longer than the TTL — bounded, no
- * timer. Activity-based rather than start-based so an hours-long codex turn
- * is never swept while it is still talking. */
+ * event). A run that dies without done/error (engine crash, killed process,
+ * an observer that missed the terminal event) never gets its routing entry
+ * removed by the settling paths, so each newly routed run reports entries
+ * silent for longer than the TTL — bounded, no timer. Silence alone is not
+ * death (a long command or a question waiting on the user emits nothing), so
+ * a reported run stays routed until the host confirms it is gone. */
 const runActivity = new Map<string, number>();
 const RUN_ORPHAN_TTL_MS = 30 * 60_000;
 
-/** Route a run to its session key and stamp its activity. Each call also
- * sweeps runs silent past the TTL; the returned `[runId, sessionKey]` pairs
- * are the dropped orphans, so the caller can clear their other run-scoped
- * state (usage maps, streaming flags). */
+/** Route a run to its session key and stamp its activity. Returns the
+ * `[runId, sessionKey]` pairs silent past the TTL: orphan candidates, still
+ * routed until the caller confirms with the host (reapOrphanedRuns) and
+ * drops them via dropOrphanRun. */
 export function routeRun(runId: string, key: string): Array<[string, string]> {
   runRouting.set(runId, key);
   runActivity.set(runId, Date.now());
-  return sweepOrphanRuns();
+  return staleRuns();
 }
 
 /** Refresh a live run's activity stamp on each routed event. */
@@ -210,18 +211,29 @@ export function untrackRun(runId: string) {
   runActivity.delete(runId);
 }
 
-/** Drop routing entries silent past the TTL — their done/error never came. */
-function sweepOrphanRuns(): Array<[string, string]> {
+/** Runs silent past the TTL. One whose routing is already gone has nothing
+ * left to settle and is forgotten here. */
+function staleRuns(): Array<[string, string]> {
   const now = Date.now();
-  const orphaned: Array<[string, string]> = [];
+  const stale: Array<[string, string]> = [];
   for (const [runId, seenAt] of runActivity) {
     if (now - seenAt < RUN_ORPHAN_TTL_MS) continue;
-    runActivity.delete(runId);
     const key = runRouting.get(runId);
-    runRouting.delete(runId);
-    if (key !== undefined) orphaned.push([runId, key]);
+    if (key === undefined) runActivity.delete(runId);
+    else stale.push([runId, key]);
   }
-  return orphaned;
+  return stale;
+}
+
+/** Drop a run the host no longer runs, unless it spoke or settled since it
+ * was reported stale. Returns the session key it was routed to. */
+export function dropOrphanRun(runId: string): string | undefined {
+  const seenAt = runActivity.get(runId);
+  if (seenAt === undefined || Date.now() - seenAt < RUN_ORPHAN_TTL_MS) return undefined;
+  runActivity.delete(runId);
+  const key = runRouting.get(runId);
+  runRouting.delete(runId);
+  return key;
 }
 
 /** One ordered stream chunk. Thinking and text deltas interleave within a

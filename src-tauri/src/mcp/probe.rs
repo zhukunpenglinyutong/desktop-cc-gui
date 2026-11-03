@@ -1,8 +1,13 @@
 //! MCP 连接检测：按配置真的连一次，做 `initialize` + `tools/list` 握手。
+//! stdio 服务会被拉起来，`npx` 可能顺带下载包。结果只说明「本应用此刻能连上
+//! 并握手成功」，与某个 CLI 会话里报告的连接状态分开表达。
 //!
-//! 这是显式动作（UI 上的「检测」/「检测全部」）：stdio 服务会被拉起来，
-//! `npx` 可能顺带下载包，所以不在打开页面时自动执行。结果只说明「本应用
-//! 此刻能连上并握手成功」，与某个 CLI 会话里报告的连接状态分开表达。
+//! 何时执行（前端 `src/features/mcp/probe-store.ts`）：
+//! - 用户级来源（`~/.claude.json`、`~/.codex/config.toml` 等用户自己的文件）：
+//!   打开 MCP 页面 / `/mcp` 面板时会自动检测一次（结果缓存 3 分钟），也可手动检测；
+//! - 工作区来源（`workspace_file`，配置文件在仓库目录里，可随仓库下载）：
+//!   从不自动检测；手动检测前先用 `mcp_probe_plan` 把完整命令 / 地址给用户
+//!   确认，检测时 URL 与请求头里的 `${ENV}` 也不展开。
 //!
 //! 安全边界：目标命令、参数、环境变量与请求头一律从配置文件重新解析
 //! （`probe_target`），不接受前端传入的命令；返回值只带工具名与错误摘要，
@@ -39,6 +44,9 @@ pub(crate) struct ProbeTarget {
     pub headers: Vec<(String, String)>,
     /// 配置里的传输类型原样（stdio / http / sse / local / remote / …）。
     pub transport: Option<String>,
+    /// 来自工作区里的配置文件（`super::source_in_workspace`）：URL 与请求头里的
+    /// `${ENV}` 原样发送，不用本进程的环境变量展开。
+    pub from_workspace: bool,
 }
 
 impl ProbeTarget {
@@ -52,6 +60,88 @@ impl ProbeTarget {
             _ => "unknown",
         }
     }
+
+    /// URL / 请求头里的值：用户自己的配置照 CLI 的规则展开 `${VAR}`；仓库带来
+    /// 的配置不展开，否则一个 `"url": "https://x/?k=${OPENAI_API_KEY}"` 就能借
+    /// 检测把密钥发出去。
+    fn outbound_value(&self, value: &str) -> String {
+        if self.from_workspace {
+            value.to_string()
+        } else {
+            expand_env(value)
+        }
+    }
+}
+
+/// 手动检测工作区来源前给用户确认的内容：完整命令与地址，环境变量与请求头
+/// 只给键名（值可能是密钥）。URL 已脱敏，且不展开 `${ENV}`。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct McpProbePlan {
+    /// stdio | http | unknown
+    pub kind: String,
+    pub command: Option<String>,
+    pub args: Vec<String>,
+    pub cwd: Option<String>,
+    pub env_keys: Vec<String>,
+    pub url: Option<String>,
+    pub header_keys: Vec<String>,
+    /// Hash of the full target (values included): `mcp_probe` runs a
+    /// workspace target only when handed this exact fingerprint, so what
+    /// executes is what the user confirmed — not whatever the file says by
+    /// the time the click lands (a `git pull` or an agent may rewrite it).
+    pub fingerprint: String,
+}
+
+fn plan_for(target: &ProbeTarget) -> McpProbePlan {
+    McpProbePlan {
+        kind: target.kind().to_string(),
+        command: target.command.clone(),
+        args: target.args.clone(),
+        cwd: target.cwd.clone(),
+        env_keys: target.env.iter().map(|(key, _)| key.clone()).collect(),
+        url: target.url.as_deref().map(super::redact_url),
+        header_keys: target.headers.iter().map(|(key, _)| key.clone()).collect(),
+        fingerprint: fingerprint(target),
+    }
+}
+
+fn fingerprint(target: &ProbeTarget) -> String {
+    use sha2::{Digest, Sha256};
+    let canonical = json!([
+        target.kind(),
+        target.transport,
+        target.command,
+        target.args,
+        target.cwd,
+        target.env,
+        target.url,
+        target.headers,
+    ]);
+    let digest = Sha256::digest(canonical.to_string().as_bytes());
+    digest.iter().map(|byte| format!("{byte:02x}")).collect()
+}
+
+/// Workspace targets need the fingerprint of the plan the user confirmed;
+/// the user's own servers never asked for confirmation.
+fn require_confirmed(target: &ProbeTarget, confirmed: Option<&str>) -> Result<(), McpError> {
+    if !target.from_workspace || confirmed == Some(fingerprint(target).as_str()) {
+        return Ok(());
+    }
+    Err(McpError::conflict(
+        "workspace MCP config changed since it was confirmed; confirm it again",
+    ))
+}
+
+/// 检测前的确认信息（不执行任何东西）。
+#[tauri::command]
+pub(crate) async fn mcp_probe_plan(
+    db: tauri::State<'_, std::sync::Arc<crate::db::Db>>,
+    request: McpProbeRequest,
+) -> Result<McpProbePlan, McpError> {
+    let workspace = super::validate_workspace(request.workspace.as_deref(), &db)?;
+    let target = super::probe_target(&request.entry_id, workspace.as_deref())?;
+    Ok(plan_for(&target))
 }
 
 /// 前端提交的检测请求；条目标识由后端解析成配置里的真实命令。
@@ -61,6 +151,10 @@ pub(crate) struct McpProbeRequest {
     pub entry_id: String,
     #[serde(default)]
     pub workspace: Option<String>,
+    /// `McpProbePlan.fingerprint` of the plan the user confirmed; required
+    /// for workspace sources (see `require_confirmed`).
+    #[serde(default)]
+    pub plan_fingerprint: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -117,6 +211,7 @@ pub(crate) async fn mcp_probe(
 ) -> Result<McpProbeResult, McpError> {
     let workspace = super::validate_workspace(request.workspace.as_deref(), &db)?;
     let target = super::probe_target(&request.entry_id, workspace.as_deref())?;
+    require_confirmed(&target, request.plan_fingerprint.as_deref())?;
     Ok(run_probe(&target).await)
 }
 
@@ -342,7 +437,7 @@ fn overlong_note<R: tokio::io::AsyncRead + Unpin>(reader: &LineReader<R>) -> Str
 // ===== HTTP / SSE =====
 
 async fn probe_http(target: &ProbeTarget) -> McpProbeResult {
-    let Some(url) = target.url.as_deref().map(expand_env) else {
+    let Some(url) = target.url.as_deref().map(|url| target.outbound_value(url)) else {
         return McpProbeResult::failed("配置里没有服务器地址");
     };
     let mut builder = reqwest::Client::builder().timeout(HTTP_TIMEOUT);
@@ -364,7 +459,7 @@ async fn probe_http(target: &ProbeTarget) -> McpProbeResult {
             )
             .json(&body);
         for (key, value) in &target.headers {
-            request = request.header(key, expand_env(value));
+            request = request.header(key, target.outbound_value(value));
         }
         if let Some(session) = session {
             request = request.header("mcp-session-id", session);

@@ -18,6 +18,8 @@ use serde_json::Value;
 use std::sync::Arc;
 
 mod config;
+pub mod launch;
+pub(crate) mod lazy;
 pub(crate) mod probe;
 mod runtime;
 mod sources;
@@ -25,6 +27,20 @@ mod sources;
 use config::*;
 use sources::{engine_of_source, engine_support};
 
+
+/// 配置文件放在工作区目录里的来源：`.mcp.json`、`.codex/config.toml`、
+/// `.omp/mcp.json` 以及各引擎的 project / local 文件，内容可以随仓库下载。
+/// 这些条目的命令与地址不可信：打开页面不自动检测，手动检测前先让用户确认
+/// 完整命令，检测时也不把 `${ENV}` 展开进 URL 与请求头（否则仓库能借一次
+/// 检测把环境变量里的密钥发到任意地址）。
+/// `claude_local` 虽是项目作用域，但写在用户自己的 `~/.claude.json` 里，不
+/// 属于仓库内容。未知来源按工作区来源处理：判断不了就收紧。
+pub(crate) fn source_in_workspace(source: &str) -> bool {
+    if source == sources::SOURCE_CLAUDE_LOCAL {
+        return false;
+    }
+    sources::source_spec(source).map_or(true, |spec| spec.scope == "project")
+}
 
 /// 连接检测的目标解析：条目 id → 真实命令/地址（未脱敏，仅供探针使用）。
 pub(crate) fn probe_target(
@@ -38,7 +54,9 @@ pub(crate) fn probe_target(
     if name.is_empty() {
         return Err(McpError::invalid("MCP server name must not be empty"));
     }
-    config::probe_target(source, name, workspace)
+    let mut target = config::probe_target(source, name, workspace)?;
+    target.from_workspace = source_in_workspace(source);
+    Ok(target)
 }
 
 /// 写入同一路径的串行化锁：写入前回读 + 原子替换，配合这把锁避免本应用
@@ -99,6 +117,9 @@ pub(crate) struct McpConfigEntry {
     pub(crate) source: String,
     /// user | project
     pub(crate) scope: String,
+    /// 配置文件在工作区目录里（`source_in_workspace`）：内容来自仓库，不自动
+    /// 检测、检测前须确认。前端以此为准，不按 `scope` 猜。
+    pub(crate) workspace_file: bool,
     /// 展示用文件路径（项目级显示 workspace 相对路径）。
     pub(crate) path: String,
     pub(crate) format: String,
@@ -116,6 +137,11 @@ pub(crate) struct McpConfigEntry {
     pub(crate) readonly_reason_code: Option<String>,
     /// 读取时的文件内容哈希；写入时回读比对，不一致即冲突。
     pub(crate) version: String,
+    /// 启动方式（launch.rs）：`eager` 随会话启动 / `onDemand` 首次调用时启动。
+    pub(crate) launch_mode: String,
+    /// 不能按需启动的原因码（engine | transport | workspace_file | workspace_env |
+    /// project_trust | name | shadowed）；None = 可选。
+    pub(crate) launch_mode_unsupported: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -197,6 +223,16 @@ pub(crate) struct McpSetEnabledRequest {
     pub(crate) workspace: Option<String>,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct McpSetLaunchModeRequest {
+    pub(crate) entry_id: String,
+    /// `eager` | `onDemand`
+    pub(crate) mode: String,
+    #[serde(default)]
+    pub(crate) workspace: Option<String>,
+}
+
 /// 配置清单：每个引擎都有独立分区；运行时可查询的引擎给快照，其余显式
 /// 标注「当前构建无法查询」，不假装没有服务。
 #[tauri::command]
@@ -219,6 +255,7 @@ pub(crate) async fn mcp_inventory(
     // 其余引擎的声明式来源（Kimi / Grok / OMP / OpenCode / Antigravity /
     // Qoder / dsh）追加到同一份清单，按 engine 过滤后分给各自的 tab。
     sources::append_entries(&mut config, workspace.as_deref());
+    launch::annotate(&mut config, workspace.as_deref());
     let collected_at = now_ms();
 
     let by_engine = |engine: &str, runtime: McpRuntimeSection| {
@@ -297,6 +334,32 @@ pub(crate) async fn mcp_set_enabled(
         &request.version,
         workspace.as_deref(),
     )
+}
+
+/// 切换一个条目的启动方式（只写 ccgui 自己的设置，不碰 CLI 配置）。
+#[tauri::command]
+pub(crate) async fn mcp_set_launch_mode(
+    app: tauri::AppHandle,
+    db: tauri::State<'_, Arc<crate::db::Db>>,
+    request: McpSetLaunchModeRequest,
+) -> Result<McpConfigEntry, McpError> {
+    let workspace = validate_workspace(request.workspace.as_deref(), &db)?;
+    let mut section = read_config_entries(workspace.as_deref());
+    sources::append_entries(&mut section, workspace.as_deref());
+    let entry = section
+        .entries
+        .iter()
+        .find(|entry| entry.id == request.entry_id)
+        .cloned()
+        .ok_or_else(|| McpError::not_found("MCP entry not found"))?;
+    launch::write_mode(&entry, &section.entries, &request.mode, workspace.as_deref())?;
+    crate::settings::announce_settings(&app);
+    launch::annotate(&mut section, workspace.as_deref());
+    section
+        .entries
+        .into_iter()
+        .find(|entry| entry.id == request.entry_id)
+        .ok_or_else(|| McpError::not_found("MCP entry not found"))
 }
 
 pub(crate) fn now_ms() -> i64 {

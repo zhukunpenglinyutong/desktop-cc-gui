@@ -8,7 +8,7 @@ import { useChatStore, sessionKey as toSessionKey, type ActiveSession } from "..
 import { parseAppCommand } from "@/components/application/ai-chat/app-commands";
 import {
   COMPUTER_USE_SETTINGS_HASH,
-  engineSupportsComputerUse,
+  computerUseRefusalKey,
 } from "../computer-use";
 import { useMcpPanel } from "@/features/mcp/panel";
 import { recordPrompt } from "../prompt-history";
@@ -70,14 +70,21 @@ export function useComposerActions({
           ? parseAppCommand(value, active.workspacePath)
           : null;
       if (appCommand?.command === "cua") {
+        // A web-access client cannot drive this machine at all; say so even
+        // for the bare form instead of opening a settings page it can't use.
+        const refusal = computerUseRefusalKey(engines, active.engine);
+        if (refusal === "chat.cuaDesktopOnly") {
+          setSessionError(sessionKey, t(refusal));
+          return;
+        }
         // Bare form opens the setup door: permission status and the grant
         // flow live in Settings → 电脑操控.
         if (!appCommand.arg) {
           window.location.hash = COMPUTER_USE_SETTINGS_HASH;
           return;
         }
-        if (!engineSupportsComputerUse(engines, active.engine)) {
-          setSessionError(sessionKey, t("chat.cuaUnsupportedEngine"));
+        if (refusal) {
+          setSessionError(sessionKey, t(refusal));
           return;
         }
         recordPrompt(value);

@@ -304,6 +304,86 @@ async fn http_probe_maps_auth_and_unreachable_to_distinct_states() {
     assert!(message.contains("无法连接"), "message={message}");
 }
 
+/// A server that records the first request it receives and answers 401, so
+/// the probe stops after the `initialize` request.
+fn spawn_recording_http() -> (String, std::sync::Arc<std::sync::Mutex<String>>) {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let addr = listener.local_addr().unwrap();
+    let seen = std::sync::Arc::new(std::sync::Mutex::new(String::new()));
+    let sink = std::sync::Arc::clone(&seen);
+    std::thread::spawn(move || {
+        if let Some(Ok(mut stream)) = listener.incoming().next() {
+            let mut buffer = Vec::new();
+            let mut chunk = [0u8; 2048];
+            while let Ok(read) = stream.read(&mut chunk) {
+                if read == 0 {
+                    break;
+                }
+                buffer.extend_from_slice(&chunk[..read]);
+                if String::from_utf8_lossy(&buffer).contains("\r\n\r\n") {
+                    break;
+                }
+            }
+            *sink.lock().unwrap() = String::from_utf8_lossy(&buffer).into_owned();
+            let _ = stream.write_all(
+                b"HTTP/1.1 401 Unauthorized\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+            );
+        }
+    });
+    (format!("http://{addr}/mcp"), seen)
+}
+
+#[tokio::test]
+async fn workspace_targets_send_env_placeholders_verbatim() {
+    std::env::set_var("CCGUI_PROBE_LEAK_TEST", "leak-value-7731");
+    for (from_workspace, should_leak) in [(true, false), (false, true)] {
+        let (url, seen) = spawn_recording_http();
+        let target = ProbeTarget {
+            url: Some(format!("{url}?k=${{CCGUI_PROBE_LEAK_TEST}}")),
+            headers: vec![(
+                "Authorization".to_string(),
+                "Bearer ${CCGUI_PROBE_LEAK_TEST}".to_string(),
+            )],
+            from_workspace,
+            ..ProbeTarget::default()
+        };
+        let result = probe_http(&target).await;
+        assert_eq!(result.status, "needs_auth", "{:?}", result.message);
+        let request = seen.lock().unwrap().clone();
+        assert_eq!(
+            request.contains("leak-value-7731"),
+            should_leak,
+            "from_workspace={from_workspace} request={request}"
+        );
+    }
+    std::env::remove_var("CCGUI_PROBE_LEAK_TEST");
+}
+
+#[test]
+fn probe_plan_shows_the_command_and_only_key_names() {
+    let target = ProbeTarget {
+        command: Some("powershell".to_string()),
+        args: vec!["-enc".to_string(), "AAAA".to_string()],
+        cwd: Some("/ws".to_string()),
+        env: vec![("API_KEY".to_string(), "env-secret-1".to_string())],
+        headers: vec![("Authorization".to_string(), "Bearer header-secret-2".to_string())],
+        url: Some("https://user:pw-secret-3@host.example/mcp?token=query-secret-4&x=1".to_string()),
+        from_workspace: true,
+        ..ProbeTarget::default()
+    };
+    let plan = plan_for(&target);
+    assert_eq!(plan.command.as_deref(), Some("powershell"));
+    assert_eq!(plan.args, vec!["-enc", "AAAA"]);
+    assert_eq!(plan.cwd.as_deref(), Some("/ws"));
+    assert_eq!(plan.env_keys, vec!["API_KEY"]);
+    assert_eq!(plan.header_keys, vec!["Authorization"]);
+    let shown = serde_json::to_string(&plan).unwrap();
+    for secret in ["env-secret-1", "header-secret-2", "pw-secret-3", "query-secret-4"] {
+        assert!(!shown.contains(secret), "{secret} leaked into {shown}");
+    }
+    assert!(shown.contains("host.example"));
+}
+
 #[test]
 fn declarative_targets_map_engine_specific_fields() {
     let scratch = std::env::temp_dir().join(format!("ccgui-mcp-probe-map-{}", std::process::id()));
@@ -353,4 +433,33 @@ fn declarative_targets_map_engine_specific_fields() {
     );
 
     let _ = std::fs::remove_dir_all(&scratch);
+}
+
+/// What runs must be what the user confirmed: a workspace target is only
+/// probed with the fingerprint of the exact plan shown, and any change to
+/// the command, its args, env values or URL yields a new fingerprint.
+#[test]
+fn workspace_probe_requires_the_confirmed_plan_fingerprint() {
+    let target = ProbeTarget {
+        command: Some("node".to_string()),
+        args: vec!["server.js".to_string()],
+        env: vec![("API_KEY".to_string(), "one".to_string())],
+        from_workspace: true,
+        ..ProbeTarget::default()
+    };
+    let shown = plan_for(&target).fingerprint;
+    assert!(require_confirmed(&target, Some(&shown)).is_ok());
+    assert!(require_confirmed(&target, None).is_err());
+    assert!(require_confirmed(&target, Some("stale")).is_err());
+
+    let mut changed = target.clone();
+    changed.args.push("--evil".to_string());
+    assert!(require_confirmed(&changed, Some(&shown)).is_err());
+    let mut env_changed = target.clone();
+    env_changed.env[0].1 = "two".to_string();
+    assert_ne!(plan_for(&env_changed).fingerprint, shown);
+
+    // The user's own servers never needed a confirmation.
+    let user = ProbeTarget { from_workspace: false, ..target };
+    assert!(require_confirmed(&user, None).is_ok());
 }

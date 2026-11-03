@@ -27,10 +27,12 @@ four typography fields, not fonts. Persistence is fixture-only, not the running 
 
 Open `/tests/browser/concurrent-status.html` for concurrent session indicators:
 the real `AiChatSidebar` and `SessionTab` each render 1, 6 (default), or 12
-synthetic sessions. Switch Processing / Retry / Complete, light / dark, and
-Normal / Reduced motion. The fixture selects the shipped reduced-motion CSS
-declaration by changing its media condition, without overriding its animation
-styles. Processing must retain a changing `transform` on all status dots, while
+synthetic sessions, plus the workspace header's aggregate run dot (one per
+workspace, present only while something streams). Switch Processing / Retry /
+Complete, light / dark, and Normal / Reduced motion. The fixture selects the
+shipped reduced-motion CSS declaration by changing its media condition, without
+overriding its animation styles. Processing must retain a changing `transform`
+on all status dots, while
 Retry, Complete and Reduced motion must have no running status animation.
 The JSON readout reports FAIL if an active keyframe includes any property other
 than `transform` or `opacity` (including `boxShadow`, `filter` or

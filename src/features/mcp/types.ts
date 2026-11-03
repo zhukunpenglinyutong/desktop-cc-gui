@@ -64,6 +64,11 @@ export interface McpConfigEntry {
   name: string;
   source: McpConfigSource;
   scope: "user" | "project";
+  /** The config file lives inside the workspace directory, so a cloned repo
+   *  can ship it: never auto-probed, and a manual probe asks first
+   *  (probe-confirm.ts). `claude_local` is project-scoped but sits in the
+   *  user's own ~/.claude.json, so it is false there. */
+  workspaceFile: boolean;
   path: string;
   format: "json" | "toml" | "yaml";
   enabled: boolean;
@@ -81,7 +86,14 @@ export interface McpConfigEntry {
   readonlyReasonCode?: string | null;
   /** Content hash at read time; a mismatch on write means an external edit. */
   version: string;
+  /** 启动方式：随会话启动（默认）/ 首次调用时才启动（`--mcp-lazy` 代理）。
+   *  只存 ccgui 自己的设置，不写 CLI 配置。 */
+  launchMode?: McpLaunchMode;
+  /** 不能按需启动的原因码（`mcp.launch.unsupported.<code>`）；null = 可选。 */
+  launchModeUnsupported?: string | null;
 }
+
+export type McpLaunchMode = "eager" | "onDemand";
 
 export interface McpSourceError {
   source: string;
@@ -141,10 +153,27 @@ export type McpErrorCode =
   | "format"
   | "permission"
   | "invalid_input"
+  | "unsupported"
   | "internal";
 
 /** 「本应用检测」的连接结果：与 CLI 会话上报的运行时状态分开表达。 */
 export type McpProbeStatus = "connected" | "needs_auth" | "failed" | "unsupported";
+
+/** What a probe would run (`mcp_probe_plan`), shown before probing a
+ *  workspace server. Env / header values are never included, only keys; the
+ *  URL is redacted and `${ENV}` is left unexpanded. */
+export interface McpProbePlan {
+  kind: "stdio" | "http" | "unknown";
+  command: string | null;
+  args: string[];
+  cwd: string | null;
+  envKeys: string[];
+  url: string | null;
+  headerKeys: string[];
+  /** Hash of the full target; the backend runs a workspace server only
+   *  when the probe carries the fingerprint of the plan the user saw. */
+  fingerprint: string;
+}
 
 export interface McpProbeResult {
   status: McpProbeStatus;

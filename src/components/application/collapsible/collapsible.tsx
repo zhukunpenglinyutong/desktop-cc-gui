@@ -7,8 +7,11 @@ const COLLAPSE_EASE = "cubic-bezier(0.22, 1, 0.36, 1)";
  * CSS grid-rows accordion: the panel's real box grows/collapses, so siblings
  * are pushed smoothly, while the browser interpolates — no per-frame JS and
  * no motion layout props. Content stays mounted so the collapse can animate;
- * `visibility` flips at the END of closing (instantly on open), keeping the
- * fade while dropping the closed panel out of the tab order and a11y tree.
+ * `visibility` flips to hidden at the END of closing, dropping the closed
+ * panel out of the tab order and a11y tree. When open it is left to inherit
+ * the ancestor instead of forcing `visible`: a forced value would keep the
+ * content painted inside hidden tabs/surfaces (the editor find card used to
+ * leak its replace row over the next file tab this way).
  */
 export function Collapsible({
   open,
@@ -32,7 +35,7 @@ export function Collapsible({
         display: "grid",
         gridTemplateRows: open ? "1fr" : "0fr",
         opacity: open ? 1 : 0,
-        visibility: open ? "visible" : "hidden",
+        visibility: open ? undefined : "hidden",
         transition:
           `grid-template-rows ${seconds}s ${COLLAPSE_EASE}, ` +
           `opacity ${seconds}s ${COLLAPSE_EASE}, ` +

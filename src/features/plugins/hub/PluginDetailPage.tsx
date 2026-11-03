@@ -28,11 +28,13 @@ import {
   isOfficialPlugin,
   OFFICIAL_PLUGIN_LOGIN,
 } from "./catalog";
+import { formatInstallCount } from "./install-count";
 import { PluginAvatar } from "./PluginAvatar";
 import { usePluginArtwork } from "./artwork";
 import { PluginReadme } from "./PluginReadme";
 import { PluginScreenshotCarousel } from "./PluginScreenshotCarousel";
 import { describePermission } from "./permissions";
+import { CredentialConsentControl } from "./CredentialConsentControl";
 import { usePluginSettingsKey } from "./use-plugin-settings-key";
 import { usePluginsStore } from "../manager/usePlugins";
 import { useMarketplaceStore } from "../marketplace/store";
@@ -217,7 +219,14 @@ function PermissionList({ permissions }: { permissions: string[] }) {
                 aria-hidden
                 className="mt-2 size-1 shrink-0 rounded-full bg-foreground-icon-secondary"
               />
-              {t(label.key, label.params ?? {})}
+              {permission === "limits.read" ? (
+                <div className="flex flex-col gap-0.5">
+                  {t(label.key, label.params ?? {})}
+                  <CredentialConsentControl />
+                </div>
+              ) : (
+                t(label.key, label.params ?? {})
+              )}
             </li>
           );
         })}
@@ -436,7 +445,7 @@ function PluginDetailHeader({
           {installed && <span className={BADGE_OK}>{t("plugins.hub.installed")}</span>}
           {model.downloads != null && (
             <span className={BADGE}>
-              {t("plugins.hub.downloadsShort", { n: model.downloads.toLocaleString() })}
+              {t("plugins.hub.downloadsShort", { n: formatInstallCount(model.downloads) })}
             </span>
           )}
         </div>
@@ -594,7 +603,7 @@ function PluginDetailRail({
       {model.downloads != null && (
         <RailRow label={t("plugins.hub.downloadsLabel")}>
           <span className={RAIL_VALUE}>
-            {t("plugins.hub.downloadsShort", { n: model.downloads.toLocaleString() })}
+            {t("plugins.hub.downloadsShort", { n: formatInstallCount(model.downloads) })}
           </span>
         </RailRow>
       )}
