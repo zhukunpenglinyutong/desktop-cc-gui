@@ -362,9 +362,9 @@ describe("user bubble copy affordance", () => {
   });
 });
 
-/** design §4.3.1：**助手回复**的操作区常驻（复制 + 分支），元信息才走 hover；
- *  分支图标用 GitFork 而不是 GitBranch（状态栏 git 切换器已占用后者）。
- *  用户气泡不常驻、也没有分叉入口（见下面的 user bubble copy affordance）。 */
+/** design §4.3.1：**助手回复**的操作区里复制常驻、分叉悬停 / 获焦才显形，
+ *  元信息也走 hover；分支图标用 GitFork 而不是 GitBranch（状态栏 git 切换器
+ *  已占用后者）。用户气泡不常驻、也没有分叉入口（见 user bubble copy affordance）。 */
 describe("assistant message actions", () => {
   let container: HTMLDivElement;
   let root: Root;
@@ -399,6 +399,10 @@ describe("assistant message actions", () => {
     expect(copy!.className).not.toContain("opacity-0");
     const fork = container.querySelector<HTMLButtonElement>(".message-fork-btn");
     expect(fork).not.toBeNull();
+    // 分叉不常驻：悬停消息或键盘 Tab 到按钮才显形（复制仍然常驻）。
+    expect(fork!.className).toContain("opacity-0");
+    expect(fork!.className).toContain("group-hover:opacity-100");
+    expect(fork!.className).toContain("focus-visible:opacity-100");
     // GitFork 是「两上节点 + 汇合线 + 一下节点」；GitBranch 是一条竖线 + 弧线。
     // 断言靠在场的那条 GitFork 专属路径上，避免两个图标被换用而测试察觉不到。
     expect(fork!.querySelector('path[d="M12 12v3"]')).not.toBeNull();
@@ -534,11 +538,11 @@ describe("fork entry through the real row build", () => {
     return forkSession;
   }
 
-  async function renderTimeline(streaming = false) {
+  async function renderTimeline(streaming = false, messages = conversation) {
     await act(async () => {
       root.render(
         <MessageTimeline
-          session={{ ...EMPTY_SESSION, messages: conversation }}
+          session={{ ...EMPTY_SESSION, messages }}
           streaming={streaming}
           onLoadEarlier={() => {}}
           workspacePath="/ws"
@@ -547,8 +551,8 @@ describe("fork entry through the real row build", () => {
     });
   }
 
-  /** 分叉入口**只出现在助手回复下方**（用户气泡没有入口）：整条时间线里
-   *  `.message-fork-btn` 应当恰好只有回复那一颗。 */
+  /** 分叉入口**只出现在助手回复下方**（用户气泡没有入口），且**一轮只有一颗**
+   *  （该轮最后一个助手分段）：整条时间线里 `.message-fork-btn` 应恰好一个。 */
   function replyForkButton(): HTMLButtonElement {
     const buttons = container.querySelectorAll<HTMLButtonElement>(".message-fork-btn");
     expect(buttons.length).toBe(1);
@@ -573,6 +577,27 @@ describe("fork entry through the real row build", () => {
       // 从尾部数的同文本序号：这条之后没有同样的文本 ⇒ 0。
       tailOccurrence: 0,
     });
+  });
+
+  it("offers exactly one fork entry per turn, on its final assistant segment", async () => {
+    // 真机反馈：一句话被工具调用拆成几段时，每段下方都挂一颗分叉图标，密集到
+    // 无法阅读；而各段解析出来的是**同一个**锚点，重复的只是同一个操作。
+    const split: Message[] = [
+      { seq: 1, role: "user", text: "排一下这个问题", ts: null },
+      { seq: 2, role: "assistant", text: "先看一下日志", ts: null },
+      { seq: 3, role: "tool", text: "Read", ts: null },
+      { seq: 4, role: "assistant", text: "定位到了", ts: null },
+    ];
+    await renderTimeline(false, split);
+
+    const buttons = container.querySelectorAll<HTMLButtonElement>(".message-fork-btn");
+    expect(buttons).toHaveLength(1);
+    // 入口跟着回合末尾走，而不是每个被工具调用拆开的分段各一颗。
+    const row = buttons[0].closest<HTMLElement>(".group");
+    expect(row?.textContent ?? "").toContain("定位到了");
+    expect(row?.textContent ?? "").not.toContain("先看一下日志");
+    // 复制不受影响：两个助手分段 + 用户气泡（各一颗）都仍在。
+    expect(container.querySelectorAll(".message-copy-btn")).toHaveLength(3);
   });
 
   it("keeps the entry present but disabled while the turn streams", async () => {
