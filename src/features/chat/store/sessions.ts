@@ -1,8 +1,11 @@
 import { normalizeOmpServiceTier } from "@/lib/omp-service-tier";
 import {
+  AGENT_STATUS_ROLE,
   ipc,
   type EngineInfo,
+  type Message,
   type SessionMeta,
+  type SessionPage,
   type Workspace,
 } from "@/lib/ipc";
 import type { EffortLevel } from "@/components/application/ai-chat/cli-menu";
@@ -46,6 +49,7 @@ import {
 } from "./session-utils";
 import type { ChatStore } from "./types";
 import type { LoadHistoryPage, StoreGet, StoreSet } from "./context";
+import { agentState, deriveAgentTaskSteps, dispatchRefsFromArgs } from "../components/agent-task-steps";
 
 function omitKey(rec: Record<string, boolean>, key: string) {
   const next = { ...rec };
@@ -72,6 +76,265 @@ function withoutArchived(
   );
 }
 
+const SUBAGENT_STATUS_RETRY_DELAYS_MS = [2_000, 10_000, 30_000] as const;
+const SUBAGENT_STATUS_PAGE_SIZE = 100;
+/** After the backoff, keep polling at the capped interval for roughly ten
+ *  minutes: a job whose completion never reaches the transcript (killed
+ *  task, crashed engine) must not keep this tab reading forever. */
+const SUBAGENT_STATUS_MAX_RETRIES = 20;
+/** Only the pi-family extractor turns async completions into status rows. */
+const SUBAGENT_STATUS_ENGINES: Record<string, true> = { pi: true, omp: true };
+/** A hung read (remote / WSL page fetch) would otherwise hold `task.promise`
+ *  forever and freeze every later refresh for this session. */
+const SUBAGENT_STATUS_READ_TIMEOUT_MS = 60_000;
+const SUBAGENT_STATUS_BUCKETS = ["jobs", "peers", "progress"] as const;
+
+function withStatusReadTimeout<T>(read: Promise<T>, ms: number): Promise<T> {
+  const { promise, resolve, reject } = Promise.withResolvers<T>();
+  const timer = window.setTimeout(
+    () => reject(new Error("subagent status read timed out")),
+    ms,
+  );
+  read.then(
+    (value) => {
+      window.clearTimeout(timer);
+      resolve(value);
+    },
+    (error) => {
+      window.clearTimeout(timer);
+      reject(error);
+    },
+  );
+  return promise;
+}
+// Appending rows changes their local seq, not their transcript identity/order.
+const statusRowSources = new WeakMap<Message, { seq: number; signature: string | null }>();
+// Rows parsed from a transcript carry the engine host's clock; rows appended
+// from the live event stream carry this machine's. The two clocks are not
+// comparable (a WSL / remote host can run minutes behind after a suspend), so
+// supersede checks only trust timestamps from transcript rows.
+const transcriptRows = new WeakSet<Message>();
+
+function markTranscriptRows(rows: Message[]): void {
+  for (const row of rows) transcriptRows.add(row);
+}
+
+type StatusRefreshTask = {
+  retriesScheduled: number;
+  /** Retry attempts since the last `done` / `error` / tab revisit; unlike
+   *  `retriesScheduled` this is not capped by the delay table. */
+  retriesTotal: number;
+  timer: number | null;
+  promise: Promise<void> | null;
+  cancelled: boolean;
+  refreshAfterCancel: boolean;
+  /** An arm that arrived while a cancelled read still held the slot; the
+   *  backoff is re-scheduled once that read settles. */
+  pendingArm: boolean;
+};
+
+function recordValue(value: unknown): Record<string, unknown> | null {
+  return value !== null && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+function statusJobId(value: unknown): string | undefined {
+  const entry = recordValue(value);
+  if (!entry || agentState(entry.status) === undefined) return undefined;
+  const id = typeof entry.id === "string" ? entry.id.trim() : "";
+  const jobId = typeof entry.jobId === "string" ? entry.jobId.trim() : "";
+  return id || jobId || undefined;
+}
+
+function statusJobIds(message: Message): string[] {
+  if (message.role !== "tool" && message.role !== AGENT_STATUS_ROLE) return [];
+  const details = recordValue(recordValue(message.result)?.details);
+  if (!details) return [];
+  const ids: string[] = [];
+  for (const bucket of SUBAGENT_STATUS_BUCKETS) {
+    const values = details[bucket];
+    if (!Array.isArray(values)) continue;
+    for (const value of values) {
+      const id = statusJobId(value);
+      if (id) ids.push(id);
+    }
+  }
+  return ids;
+}
+
+function isNewerTranscriptRow(message: Message, candidate: Message): boolean {
+  if (message === candidate) return false;
+  // Both sides sort in the transcript's sequence space: history rows keep the
+  // file's seq and appended status rows carry the source seq recorded in
+  // `statusRowSources`. Timestamps win when both sides have one; a live row's
+  // clock is not comparable with the engine host's, and the caller gates that
+  // case before trusting a time comparison.
+  const timestamp = message.ts ? Date.parse(message.ts) : NaN;
+  const candidateTimestamp = candidate.ts ? Date.parse(candidate.ts) : NaN;
+  if (Number.isFinite(timestamp) && Number.isFinite(candidateTimestamp) && timestamp !== candidateTimestamp) {
+    return timestamp > candidateTimestamp;
+  }
+  return (statusRowSources.get(message)?.seq ?? message.seq) >
+    (statusRowSources.get(candidate)?.seq ?? candidate.seq);
+}
+
+function hasNewerJobEvidence(
+  candidate: Message,
+  jobId: string,
+  transcript: Message[],
+  sameClock: (message: Message) => boolean,
+): boolean {
+  return transcript.some((message) => {
+    if (!isNewerTranscriptRow(message, candidate)) return false;
+    // A live row's timestamp comes from this machine, the delivery's from the
+    // engine host. When the host clock runs behind, the delivery looks older
+    // than the last live "running" snapshot even though it happened after;
+    // only rows from the same transcript clock may supersede it by time.
+    if (message.ts && candidate.ts && !sameClock(message)) return false;
+    if (statusJobIds(message).includes(jobId)) return true;
+    return message.role === "tool" &&
+      dispatchRefsFromArgs(message.args).some((ref) => ref.id === jobId);
+  });
+}
+
+function withoutSupersededJobs(
+  message: Message,
+  transcript: Message[],
+  sameClock: (message: Message) => boolean,
+): Message | null {
+  const result = recordValue(message.result);
+  const details = recordValue(result?.details);
+  if (!result || !details) return null;
+  let changed = false;
+  let remaining = 0;
+  const nextDetails = { ...details };
+  const keepProgressIdentity = message.role === "tool" && Boolean(message.toolCallId) &&
+    dispatchRefsFromArgs(message.args).length > 0;
+  for (const bucket of SUBAGENT_STATUS_BUCKETS) {
+    const values = details[bucket];
+    if (!Array.isArray(values)) continue;
+    const filtered: unknown[] = [];
+    let bucketChanged = false;
+    for (const value of values) {
+      const id = statusJobId(value);
+      if (id && hasNewerJobEvidence(message, id, transcript, sameClock)) {
+        bucketChanged = true;
+        // Completion supersedes the running state, not the dispatch's
+        // authoritative index -> runtime id association.
+        const entry = recordValue(value);
+        if (bucket === "progress" && keepProgressIdentity && typeof entry?.id === "string") {
+          filtered.push({ id: entry.id, index: entry.index });
+          remaining++;
+        }
+      } else {
+        filtered.push(value);
+        if (id) remaining++;
+      }
+    }
+    if (bucketChanged) {
+      changed = true;
+      nextDetails[bucket] = filtered;
+    }
+  }
+  if (!remaining) return null;
+  return changed
+    ? { ...message, result: { ...result, details: nextDetails } }
+    : message;
+}
+
+function statusRowSignature(message: Message): string | null {
+  const source = statusRowSources.get(message);
+  if (source) return source.signature;
+  try {
+    return JSON.stringify([message.text, message.args ?? null, message.result ?? null]);
+  } catch {
+    return null;
+  }
+}
+
+function freshStatusRows(
+  current: Message[],
+  pageMessages: Message[],
+  firstSequence: number,
+): Message[] {
+  const transcript = [...current, ...pageMessages];
+  // The page and previously appended transcript rows share the engine's
+  // clock; everything else in `current` is live.
+  const pageRows = new WeakSet(pageMessages);
+  const sameClock = (message: Message) =>
+    pageRows.has(message) || transcriptRows.has(message);
+  // A tool snapshot can supersede a delivery only if its state is retained
+  // too. Keep it hidden rather than adding a second visible hub/task row.
+  const sourceKey = (message: Message) => JSON.stringify([
+    statusRowSources.get(message)?.seq ?? message.seq,
+    message.ts,
+    statusRowSignature(message),
+  ]);
+  const currentSources = new Set(current
+    .filter((message) => statusRowSources.has(message) || statusJobIds(message).length > 0)
+    .map(sourceKey));
+  // A delivery is identified by its timestamp, but two deliveries can land in
+  // the same millisecond; only treat a same-ts row as a duplicate when every
+  // job it reports is already covered by that timestamp.
+  const timestampJobs = new Map<string, Set<string>>();
+  for (const message of current) {
+    if (message.role !== AGENT_STATUS_ROLE || !message.ts) continue;
+    const known = timestampJobs.get(message.ts) ?? new Set<string>();
+    for (const id of statusJobIds(message)) known.add(id);
+    timestampJobs.set(message.ts, known);
+  }
+  const signatures = new Set(
+    current
+      .filter((message) => message.role === AGENT_STATUS_ROLE && !message.ts)
+      .map(statusRowSignature)
+      .filter((signature): signature is string => Boolean(signature)),
+  );
+  const rows = pageMessages
+    .filter((message) => message.role === AGENT_STATUS_ROLE || statusJobIds(message).length > 0)
+    .sort((left, right) => left.seq - right.seq);
+  const fresh: Message[] = [];
+  let seq = firstSequence;
+  for (const source of rows) {
+    const signature = statusRowSignature(source);
+    const key = sourceKey(source);
+    if (source.role === "tool" && currentSources.has(key)) continue;
+    const jobs = source.ts ? statusJobIds(source) : [];
+    if (source.role === AGENT_STATUS_ROLE) {
+      if (source.ts) {
+        const known = timestampJobs.get(source.ts);
+        if (known && jobs.every((id) => known.has(id))) continue;
+      } else if (signature && signatures.has(signature)) {
+        continue;
+      }
+    }
+    const message = withoutSupersededJobs(source, transcript, sameClock);
+    if (!message) continue;
+    const appended = { ...message, seq: seq++, role: AGENT_STATUS_ROLE, text: "" };
+    transcriptRows.add(appended);
+    statusRowSources.set(appended, {
+      seq: statusRowSources.get(source)?.seq ?? source.seq,
+      signature,
+    });
+    fresh.push(appended);
+    currentSources.add(key);
+    if (source.ts) {
+      const known = timestampJobs.get(source.ts) ?? new Set<string>();
+      for (const id of jobs) known.add(id);
+      timestampJobs.set(source.ts, known);
+    } else if (signature) {
+      signatures.add(signature);
+    }
+  }
+  return fresh;
+}
+
+
+function hasActiveSubagents(messages: Message[], engine: string): boolean {
+  return deriveAgentTaskSteps(messages, false, engine).some(
+    (step) => step.state === "active",
+  );
+}
 /**
  * Session lifecycle: init/refresh of the session/engine catalogs, history
  * paging, and sidebar session ops (archive/delete/pin/rename).
@@ -104,6 +367,8 @@ export function createSessionActions(
   | "refreshSessions"
   | "refreshEngines"
   | "selectSession"
+  | "refreshSubagentStatus"
+  | "cancelSubagentStatusRefresh"
   | "reloadSession"
   | "forkSession"
   | "loadEarlier"
@@ -126,6 +391,289 @@ export function createSessionActions(
   } = deps;
   let historyReloadId = 0;
 
+  const statusRefreshes = new Map<string, StatusRefreshTask>();
+
+  const cancelStatusRefresh = (key: string) => {
+    const task = statusRefreshes.get(key);
+    if (!task) return;
+    if (task.timer !== null) {
+      window.clearTimeout(task.timer);
+      task.timer = null;
+    }
+    task.cancelled = true;
+    task.refreshAfterCancel = false;
+    task.pendingArm = false;
+    if (!task.promise) statusRefreshes.delete(key);
+  };
+
+  const runStatusRefresh = (key: string, task: StatusRefreshTask): Promise<void> => {
+    if (statusRefreshes.get(key) !== task || task.cancelled) return Promise.resolve();
+    if (task.promise) return task.promise;
+
+    const request = (async () => {
+      const beforeStore = get();
+      const tab = beforeStore.openTabs.find(
+        (item) => sessionKey(item.engine, item.sessionId, item.workspacePath) === key,
+      );
+      const before = beforeStore.bySession[key];
+      if (
+        !tab?.sessionId ||
+        !before ||
+        !SUBAGENT_STATUS_ENGINES[tab.engine] ||
+        before.streaming ||
+        beforeStore.streamingByKey[key] ||
+        !hasActiveSubagents([...before.subagentHistory, ...before.messages], tab.engine)
+      ) {
+        cancelStatusRefresh(key);
+        return;
+      }
+
+      const sessionId = tab.sessionId;
+      const readPage = (beforeSeq: number | null) =>
+        withStatusReadTimeout(
+          loadHistoryPage(
+            tab.engine,
+            sessionId,
+            tab.workspacePath,
+            SUBAGENT_STATUS_PAGE_SIZE,
+            beforeSeq,
+          ),
+          SUBAGENT_STATUS_READ_TIMEOUT_MS,
+        );
+      // The read in flight may finish after the window moved (a stream, a
+      // reload, another history page); only fold it over the exact window it
+      // was requested for. A cancelled task is left untouched: `clearRequest`
+      // owns its restart (or the pending arm), so clearing its flag here would
+      // drop the refresh that was queued for it.
+      const stillFresh = (): boolean => {
+        if (statusRefreshes.get(key) !== task) return false;
+        if (task.cancelled) return false;
+        const store = get();
+        const current = store.bySession[key];
+        if (!current || current.streaming || store.streamingByKey[key]) {
+          cancelStatusRefresh(key);
+          return false;
+        }
+        if (
+          !store.openTabs.some(
+            (item) => sessionKey(item.engine, item.sessionId, item.workspacePath) === key,
+          )
+        ) {
+          cancelStatusRefresh(key);
+          return false;
+        }
+        if (current.messages !== before.messages || current.subagentHistory !== before.subagentHistory) {
+          if (hasActiveSubagents([...current.subagentHistory, ...current.messages], tab.engine)) {
+            scheduleStatusRetry(key, task, tab.engine);
+          } else {
+            cancelStatusRefresh(key);
+          }
+          return false;
+        }
+        return true;
+      };
+      const collectFresh = (pages: SessionPage[]): Message[] => {
+        const pageRows = pages.flatMap((entry) => [...entry.subagentHistory, ...entry.messages]);
+        const currentRows = [...before.subagentHistory, ...before.messages];
+        // Appended rows must sort after every transcript row on screen — the
+        // folded history uses the same sequence space as `messages`.
+        let firstSequence = 1;
+        for (const message of [...currentRows, ...pageRows]) {
+          if (message.seq >= firstSequence) firstSequence = message.seq + 1;
+        }
+        return freshStatusRows(currentRows, pageRows, firstSequence);
+      };
+
+      try {
+        // `page.messages` carries the deliveries inside the newest window and
+        // `page.subagentHistory` every one before it, so this single page is
+        // the whole transcript's status. Paging older never adds a delivery.
+        const page = await readPage(null);
+        if (!stillFresh()) return;
+        const rows = collectFresh([page]);
+        if (rows.length > 0) {
+          patchSession(set, key, { messages: [...before.messages, ...rows] });
+        }
+        const current = get().bySession[key];
+        if (
+          current &&
+          !current.streaming &&
+          !get().streamingByKey[key] &&
+          hasActiveSubagents([...current.subagentHistory, ...current.messages], tab.engine)
+        ) {
+          scheduleStatusRetry(key, task, tab.engine);
+        } else {
+          cancelStatusRefresh(key);
+        }
+      } catch {
+        if (statusRefreshes.get(key) !== task || task.cancelled) return;
+        const latestStore = get();
+        const latest = latestStore.bySession[key];
+        if (latest?.streaming || latestStore.streamingByKey[key]) {
+          cancelStatusRefresh(key);
+        } else if (
+          latest &&
+          hasActiveSubagents([...latest.subagentHistory, ...latest.messages], tab.engine)
+        ) {
+          scheduleStatusRetry(key, task, tab.engine);
+        } else {
+          cancelStatusRefresh(key);
+        }
+      }
+    })();
+    task.promise = request;
+    const clearRequest = () => {
+      if (statusRefreshes.get(key) !== task || task.promise !== request) return;
+      task.promise = null;
+      if (task.refreshAfterCancel) {
+        task.refreshAfterCancel = false;
+        task.cancelled = false;
+        task.retriesScheduled = 0;
+        task.retriesTotal = 0;
+        void runStatusRefresh(key, task);
+      } else if (task.pendingArm) {
+        // Manual reload finished while this read was in flight: restart the
+        // backoff on the reloaded window instead of leaving the poll dead.
+        task.pendingArm = false;
+        task.cancelled = false;
+        task.retriesScheduled = 0;
+        task.retriesTotal = 0;
+        const engine = get().openTabs.find(
+          (item) => sessionKey(item.engine, item.sessionId, item.workspacePath) === key,
+        )?.engine;
+        if (engine) scheduleStatusRetry(key, task, engine);
+        else statusRefreshes.delete(key);
+      } else if (task.cancelled || task.timer === null) {
+        statusRefreshes.delete(key);
+      }
+    };
+    void request.then(clearRequest, clearRequest);
+    return request;
+  };
+
+  const scheduleStatusRetry = (
+    key: string,
+    task: StatusRefreshTask,
+    engine: string,
+  ) => {
+    if (statusRefreshes.get(key) !== task || task.timer !== null) return;
+    const latestStore = get();
+    const latest = latestStore.bySession[key];
+    if (
+      !latest ||
+      latest.streaming ||
+      latestStore.streamingByKey[key] ||
+      !latestStore.openTabs.some((tab) => sessionKey(tab.engine, tab.sessionId, tab.workspacePath) === key) ||
+      !hasActiveSubagents([...latest.subagentHistory, ...latest.messages], engine)
+    ) {
+      cancelStatusRefresh(key);
+      return;
+    }
+    // The transcript can settle after the engine's `done` event; keep polling
+    // at the capped interval while the delegated task still appears active.
+    if (task.retriesTotal >= SUBAGENT_STATUS_MAX_RETRIES) {
+      cancelStatusRefresh(key);
+      return;
+    }
+    task.retriesTotal += 1;
+    const delayIndex = Math.min(
+      task.retriesScheduled,
+      SUBAGENT_STATUS_RETRY_DELAYS_MS.length - 1,
+    );
+    task.retriesScheduled = delayIndex + 1;
+    const delay = SUBAGENT_STATUS_RETRY_DELAYS_MS[delayIndex];
+    task.timer = window.setTimeout(() => {
+      task.timer = null;
+      void runStatusRefresh(key, task);
+    }, delay);
+  };
+
+  const refreshSubagentStatus = (key: string): Promise<void> => {
+    let task = statusRefreshes.get(key);
+    if (task?.promise) {
+      const activeTask = task;
+      const inFlight = task.promise;
+      if (!activeTask.cancelled) {
+        // The turn just settled / failed: the read in flight still belongs to
+        // the new signal, so restart the retry budget from here.
+        activeTask.retriesScheduled = 0;
+        activeTask.retriesTotal = 0;
+        return inFlight;
+      }
+      activeTask.refreshAfterCancel = true;
+      return inFlight.then(() => {
+        if (statusRefreshes.get(key) === activeTask) return activeTask.promise ?? undefined;
+      });
+    }
+    if (task?.timer !== null && task?.timer !== undefined) {
+      window.clearTimeout(task.timer);
+      task.timer = null;
+    }
+    if (!task) {
+      task = {
+        retriesScheduled: 0,
+        retriesTotal: 0,
+        timer: null,
+        promise: null,
+        cancelled: false,
+        refreshAfterCancel: false,
+        pendingArm: false,
+      };
+      statusRefreshes.set(key, task);
+    }
+    task.cancelled = false;
+    // A fresh signal (turn settled, failure, tab revisit) re-arms the budget.
+    task.retriesScheduled = 0;
+    task.retriesTotal = 0;
+    return runStatusRefresh(key, task);
+  };
+
+  /** The page just loaded is already the newest page, so reading it again
+   *  right away can only return the same rows. When it still shows a running
+   *  subagent, wait out the first backoff instead. */
+  const armStatusRetry = (key: string): void => {
+    const store = get();
+    const tab = store.openTabs.find(
+      (item) => sessionKey(item.engine, item.sessionId, item.workspacePath) === key,
+    );
+    const session = store.bySession[key];
+    if (
+      !tab ||
+      !session ||
+      !SUBAGENT_STATUS_ENGINES[tab.engine] ||
+      session.streaming ||
+      store.streamingByKey[key] ||
+      !hasActiveSubagents([...session.subagentHistory, ...session.messages], tab.engine)
+    ) {
+      return;
+    }
+    let task = statusRefreshes.get(key);
+    if (task?.timer !== null && task?.timer !== undefined) return;
+    if (task?.promise) {
+      // A cancelled read (manual reload took over) still holds the slot; arm
+      // once it settles instead of dropping the backoff for good.
+      if (task.cancelled) task.pendingArm = true;
+      return;
+    }
+    if (!task) {
+      task = {
+        retriesScheduled: 0,
+        retriesTotal: 0,
+        timer: null,
+        promise: null,
+        cancelled: false,
+        refreshAfterCancel: false,
+        pendingArm: false,
+      };
+      statusRefreshes.set(key, task);
+    }
+    task.cancelled = false;
+    task.refreshAfterCancel = false;
+    task.retriesScheduled = 0;
+    task.retriesTotal = 0;
+    scheduleStatusRetry(key, task, tab.engine);
+  };
+
   /** Migrate the engine pref off a CLI that is gone or disabled in
    * settings. All CLIs disabled: leave the pref alone — the composer shows
    * the "no CLI enabled" placeholder instead of a misleading fallback. */
@@ -137,6 +685,9 @@ export function createSessionActions(
   }
 
   return {
+    refreshSubagentStatus,
+    cancelSubagentStatusRefresh: cancelStatusRefresh,
+
     init: async () => {
       if (get().initialized) return;
       set({ initialized: true });
@@ -150,6 +701,8 @@ export function createSessionActions(
               markUnseenIfBackground,
               upsertSessionMeta: (meta) => upsertSessionMetaInto(set, meta),
               refreshSessionUsage: (k) => get().refreshSessionUsage(k),
+              refreshSubagentStatus: (k) => void refreshSubagentStatus(k),
+              cancelSubagentStatusRefresh: cancelStatusRefresh,
               turnSettled,
             }),
           ),
@@ -444,7 +997,11 @@ export function createSessionActions(
         sessionSelection(get(), engine, sessionId, workspacePath),
       );
       const existing = get().bySession[key];
-      if (existing?.loading || (existing && existing.messages.length > 0)) return;
+      if (existing?.loading) return;
+      if (existing && existing.messages.length > 0) {
+        void refreshSubagentStatus(key);
+        return;
+      }
       patchSession(set, key, { loading: true });
       // 并行取计划审批历史:失败静默降级为无历史计划,绝不阻塞会话加载。
       const plansPromise = ipc
@@ -452,6 +1009,8 @@ export function createSessionActions(
         .catch(() => null);
       try {
         const page = await loadHistoryPage(engine, sessionId, workspacePath, 100);
+        markTranscriptRows(page.messages);
+        markTranscriptRows(page.subagentHistory);
         patchSession(set, key, {
           messages: page.messages,
           subagentHistory: page.subagentHistory,
@@ -462,6 +1021,7 @@ export function createSessionActions(
           usage:
             [...page.messages].reverse().find((m) => m.usage)?.usage ?? null,
         });
+        armStatusRetry(key);
         // 历史页应用后再并入计划卡片(按 planId+revision 去重;活跃等待点
         // 可否恢复由后端状态保证,前端只按 record.status 渲染)。
         const plans = await plansPromise;
@@ -490,6 +1050,9 @@ export function createSessionActions(
         return;
       }
       if (existing?.loading || get().archivedSessionKeys[key]) return;
+      // A status append replaces `messages`, which would make every `unchanged`
+      // check below fail and drop this refresh without any feedback.
+      cancelStatusRefresh(key);
       patchSession(set, key, { loading: true, error: null, historyReloadId: ++historyReloadId });
       set({ actionError: null });
       const snapshot = get().bySession[key];
@@ -510,6 +1073,8 @@ export function createSessionActions(
         do {
           const page = await loadHistoryPage(engine, sessionId, workspacePath, Math.min(500, remaining), before, session, pages.length === 0);
           if (!unchanged()) return;
+          markTranscriptRows(page.messages);
+          markTranscriptRows(page.subagentHistory);
           pages.push(page.messages);
           remaining -= page.messages.length;
           before = page.nextBefore;
@@ -533,7 +1098,12 @@ export function createSessionActions(
         if (unchanged()) set({ actionError: i18n.t("chat.sessionRefreshFailed", { error: errorText(error) }) });
       } finally {
         // Deleted/archived entries must not be recreated by a late completion.
-        if (get().bySession[key]?.historyReloadId === snapshot.historyReloadId) patchSession(set, key, { loading: false, historyReloadId: undefined });
+        if (get().bySession[key]?.historyReloadId === snapshot.historyReloadId) {
+          patchSession(set, key, { loading: false, historyReloadId: undefined });
+          // A failed reload keeps the previous window, which can still have
+          // running agents just like a successfully refreshed window.
+          armStatusRetry(key);
+        }
       }
     },
 
@@ -645,6 +1215,8 @@ export function createSessionActions(
           100,
           state.nextBefore,
         );
+        markTranscriptRows(page.messages);
+        markTranscriptRows(page.subagentHistory);
         patchSession(set, targetKey, {
           messages: [
             ...page.messages,

@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ipc } from "@/lib/ipc";
 import { collectBeforeTurnContributions, registerTurnHooks } from "@/features/plugins/runtime/hooks";
-import { routeRun } from "./stream";
+import { EMPTY_SESSION, routeRun } from "./stream";
 import {
   bindRunLifecycle,
   finishRunLifecycle,
@@ -11,6 +11,7 @@ import {
   registerPendingRunLifecycle,
   replayBufferedEngineEvents,
   settleOrphanedRuns,
+  settledRuns,
   unregisterRunLifecycle,
 } from "./engine-events";
 
@@ -642,5 +643,77 @@ describe("terminal turn lifecycle", () => {
 
     expect(afterTurn).toHaveBeenCalledTimes(1);
     expect(afterTurn).toHaveBeenCalledWith(expect.objectContaining({ status: "cancelled" }));
+  });
+});
+
+describe("subagent status refresh lifecycle", () => {
+  function statusDeps(streaming = true) {
+    const key = "omp/status-session";
+    const state = {
+      bySession: { [key]: { ...EMPTY_SESSION, streaming } },
+      openTabs: [{ engine: "omp", sessionId: "status-session", workspacePath: workspace.path }],
+      models: {},
+      efforts: {},
+      streamingByKey: streaming ? { [key]: true } : {},
+      retryingByKey: {},
+    };
+    return {
+      key: key as keyof typeof state.bySession,
+      state,
+      deps: {
+        set: (update: (current: typeof state) => Partial<typeof state>) => {
+          Object.assign(state, update(state));
+        },
+        get: () => state,
+        drainQueue: vi.fn(),
+        markUnseenIfBackground: vi.fn(),
+        upsertSessionMeta: vi.fn(),
+        refreshSubagentStatus: vi.fn((sessionKey: string) => {
+          expect(sessionKey).toBe(key);
+          expect(state.bySession[key].streaming).toBe(false);
+          expect(state.streamingByKey[key]).toBeFalsy();
+        }),
+        cancelSubagentStatusRefresh: vi.fn(),
+      },
+    };
+  }
+
+  it.each(["done", "error"] as const)("refreshes after %s settles streaming, but not for duplicate terminal events", (kind) => {
+    const { key, state, deps } = statusDeps();
+    const runId = `status-refresh-${kind}`;
+    routeRun(runId, key);
+    fixtureDisposers.push(() => settledRuns.delete(runId));
+    const event = {
+      runId, sessionId: "status-session", engine: "omp", seq: 1, kind,
+      data: kind === "done" ? { usage: null } : "Engine failed",
+    };
+
+    handleEngineEvents([event, event], deps as never);
+
+    expect(state.bySession[key].streaming).toBe(false);
+    expect(deps.refreshSubagentStatus).toHaveBeenCalledTimes(1);
+    expect(deps.refreshSubagentStatus).toHaveBeenCalledWith(key);
+    expect(deps.drainQueue).toHaveBeenCalledTimes(1);
+  });
+
+  it("cancels pending status work as soon as an observed run starts", () => {
+    const { key, state, deps } = statusDeps(false);
+    const runId = "status-refresh-observed";
+    routeRun(runId, key);
+    fixtureDisposers.push(() => settledRuns.delete(runId));
+    try {
+      handleEngineEvents([
+        { runId, sessionId: "status-session", engine: "omp", seq: 1, kind: "model", data: "omp-test" },
+      ], deps as never);
+
+      expect(deps.cancelSubagentStatusRefresh).toHaveBeenCalledWith(key);
+      expect(state.bySession[key].streaming).toBe(true);
+      expect(state.streamingByKey[key]).toBe(true);
+      expect(deps.refreshSubagentStatus).not.toHaveBeenCalled();
+    } finally {
+      handleEngineEvents([
+        { runId, sessionId: "status-session", engine: "omp", seq: 2, kind: "done", data: { usage: null } },
+      ], deps as never);
+    }
   });
 });

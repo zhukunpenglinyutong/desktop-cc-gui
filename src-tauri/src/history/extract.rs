@@ -328,7 +328,8 @@ fn fold_rows(rows: Vec<LineRow>) -> ParsedSession {
         }
         // Same predicate as the fork cut's `user_row_lines`: a row dropped here
         // must be dropped there, or "the n-th user message" drifts by a turn.
-        if !user_row_is_visible(&row.text, !row.images.is_empty()) {
+        // Hidden agent-status rows are intentionally textless and must survive.
+        if row.role != "__agent_status__" && !user_row_is_visible(&row.text, !row.images.is_empty()) {
             continue;
         }
         let parsed_ts = row.ts.as_deref().and_then(super::parse_ts_ms_str);
@@ -1127,8 +1128,176 @@ fn pi_assistant_part(part: &Value, out: &mut LineRows, text: &mut String, ts: &O
     }
 }
 
+/// Match the same state vocabulary as the frontend's `agentState`, while
+/// accepting the duration/exit annotations and merge prefix in task summaries.
+fn pi_async_status(status: &str) -> Option<&'static str> {
+    let summary = status.split(['(', '>']).next()?.trim();
+    let mut words = summary.split_whitespace();
+    let first = words.next()?;
+    let state = if first.eq_ignore_ascii_case("merge") { words.next()? } else { first };
+    if words.next().is_some() {
+        return None;
+    }
+    [
+        "active", "in_progress", "pending", "queued", "running", "aborted",
+        "canceled", "cancelled", "complete", "completed", "done", "error",
+        "errored", "failed", "finished", "idle", "killed", "parked", "stopped",
+        "succeeded", "success", "timed_out", "timeout",
+    ].into_iter().find(|known| state.eq_ignore_ascii_case(known))
+}
+
+struct PiAsyncTaskResult<'a> {
+    range: std::ops::Range<usize>,
+    id: Option<&'a str>,
+    status: Option<&'static str>,
+}
+
+/// Only outer result envelopes carry status. A closed envelope discards any
+/// nested examples; output/preview blocks are quoted even if truncated. Bare
+/// opening-tag fragments have no closing envelope proving nesting, so retain
+/// the legacy adjacent-fragment format rather than treating it as a tree.
+fn pi_async_task_results(text: &str) -> Vec<PiAsyncTaskResult<'_>> {
+    static TAG: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+        regex::Regex::new(r#"<(/?)(task-result|output|preview)\b((?:[^>"']|"[^"]*"|'[^']*')*)>"#).unwrap()
+    });
+    static ATTRIBUTE: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+        // Consume entire attribute values, including attributes we ignore, so
+        // quoted text such as `agent="example id=Other"` cannot supply an id.
+        regex::Regex::new(r#"(?:^|\s)([^\s=]+)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+))"#).unwrap()
+    });
+    let mut results: Vec<PiAsyncTaskResult<'_>> = Vec::new();
+    let mut open: Vec<usize> = Vec::new();
+    let mut quoted_depth = 0usize;
+    for tag in TAG.captures_iter(text) {
+        let closing = &tag[1] == "/";
+        if &tag[2] != "task-result" {
+            if closing {
+                quoted_depth = quoted_depth.saturating_sub(1);
+            } else if !tag[3].trim_end().ends_with('/') {
+                quoted_depth += 1;
+            }
+            continue;
+        }
+        // A sample need not be balanced markup. Even its closing result tags
+        // are opaque until the surrounding output/preview block ends.
+        if quoted_depth != 0 {
+            continue;
+        }
+        if closing {
+            if let Some(index) = open.pop() {
+                results[index].range.end = tag.get(0).unwrap().end();
+                results.truncate(index + 1);
+            }
+            continue;
+        }
+        let index = results.len();
+        let mut result = PiAsyncTaskResult {
+            range: tag.get(0).unwrap().range(),
+            id: None,
+            status: None,
+        };
+        for attribute in ATTRIBUTE.captures_iter(tag.get(3).unwrap().as_str()) {
+            let value = attribute.get(2)
+                .or_else(|| attribute.get(3))
+                .or_else(|| attribute.get(4))
+                .unwrap().as_str().trim();
+            match &attribute[1] {
+                "id" => result.id = (!value.is_empty()).then_some(value),
+                "status" => result.status = pi_async_status(value),
+                _ => {}
+            }
+        }
+        results.push(result);
+        if !tag[3].trim_end().ends_with('/') {
+            open.push(index);
+        }
+    }
+    results
+}
+
+/// Async completions are status snapshots, not user/assistant chat bodies.
+/// Job headers associate each result with its background handle: job-manager
+/// may suffix that handle on collision without changing the actual agent id.
+fn pi_async_result_rows(value: &Value) -> LineRows {
+    static JOB_HEADER: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+        regex::Regex::new(r"(?m)^(?:Background job (\S+) has completed[^\r\n]*|── Job (\S+)(?: \([^\r\n]*\))? ──)[ \t]*\r?$").unwrap()
+    });
+    let mut jobs = value
+        .get("details")
+        .and_then(|details| details.get("jobs"))
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    let scoped = !jobs.is_empty();
+    let text = content_text(value.get("content"));
+    let mut headers = JOB_HEADER.captures_iter(&text).peekable();
+    let mut job_id = None;
+    let mut previous_end = 0;
+    for result in pi_async_task_results(&text) {
+        while headers.peek().is_some_and(|header| header.get(0).unwrap().start() < result.range.start) {
+            let header = headers.next().unwrap();
+            // A result body can quote an entire job delivery, including its
+            // header. It must not change the owner of the next outer result.
+            if header.get(0).unwrap().start() >= previous_end {
+                job_id = header.get(1).or_else(|| header.get(2)).map(|id| id.as_str());
+            }
+        }
+        previous_end = result.range.end;
+        let Some(id) = result.id else { continue };
+        if scoped {
+            let job = jobs.iter_mut().find(|job| {
+                let explicit_id = job.get("id").and_then(Value::as_str);
+                let handle = job.get("jobId").and_then(Value::as_str);
+                match job_id {
+                    Some(owner) => handle.or(explicit_id) == Some(owner),
+                    None => explicit_id.or(handle) == Some(id),
+                }
+            });
+            let Some(job) = job.and_then(Value::as_object_mut) else { continue };
+            if job.get("type").and_then(Value::as_str).is_some_and(|kind| kind != "task") {
+                continue;
+            }
+            // An explicit structured agent id is authoritative, just like a
+            // structured status; only a jobId-only row needs identity repair.
+            if job.get("id").is_some_and(|explicit| explicit.as_str() != Some(id)) {
+                continue;
+            }
+            job.entry("id").or_insert_with(|| Value::String(id.to_string()));
+            if let Some(status) = result.status {
+                job.entry("status").or_insert_with(|| Value::String(status.to_string()));
+            }
+        } else if let Some(status) = result.status {
+            let mut job = serde_json::json!({"id": id, "type": "task", "status": status});
+            if let Some(job_id) = job_id {
+                job["jobId"] = Value::String(job_id.to_string());
+            }
+            jobs.push(job);
+        }
+    }
+    for job in &mut jobs {
+        let Some(job) = job.as_object_mut() else { continue };
+        if !job.contains_key("id") {
+            if let Some(id) = job.get("jobId").and_then(Value::as_str).map(str::to_string) {
+                job.insert("id".into(), Value::String(id));
+            }
+        }
+    }
+    if jobs.is_empty() {
+        return Vec::new();
+    }
+    vec![LineRow {
+        result: Some(serde_json::json!({"details": {"jobs": jobs}})),
+        ..LineRow::new("__agent_status__", String::new(), ts_string(value, &["timestamp"]))
+    }]
+}
+
 /// pi/omp session lines: {type:"message", timestamp, message:{role, content, usage?}}
 fn extract_pi_family_line(engine: &str, value: &Value, images: ImageMode) -> LineRows {
+    if value.get("type").and_then(Value::as_str) == Some("custom_message")
+        && value.get("customType").and_then(Value::as_str) == Some("async-result")
+    {
+        return pi_async_result_rows(value);
+    }
     if value.get("type").and_then(Value::as_str) != Some("message") {
         return Vec::new();
     }
@@ -2290,6 +2459,281 @@ mod tests {
         );
         assert_eq!(rows[3].text, "answer two");
         assert_eq!(rows[3].path, None);
+    }
+
+    #[test]
+    fn pi_async_results_preserve_structured_status_and_scope_tag_fallbacks() {
+        let line = serde_json::json!({
+            "type": "custom_message",
+            "customType": "async-result",
+            "timestamp": "2026-10-28T10:00:01Z",
+            "content": [{"type": "text", "text": concat!(
+                "<task-result id=\"Reviewer\" status=\"failed (exit 1)\">stale</task-result>",
+                "<task-result id=\"TagOnly\" agent=\"reviewer\" status=\"failed (exit 1)\" duration=\"9m22s\">",
+                "quoted <task-result id=\"OtherJob\" status=\"completed\">unrelated</task-result>",
+                "</task-result>"
+            )}],
+            "details": {"jobs": [
+                {"jobId": "bg_2", "type": "bash", "status": "completed", "label": "Build"},
+                {"jobId": "Reviewer", "type": "task", "status": "running", "label": "Review"},
+                {"jobId": "TagOnly", "type": "task", "label": "Late result"}
+            ]}
+        });
+        for engine in ["pi", "omp"] {
+            let parsed = fold_rows(extract_line_messages(engine, &line, ImageMode::Collect));
+            assert_eq!(parsed.messages.len(), 1, "{engine}");
+            let row = &parsed.messages[0];
+            assert_eq!(row.role, "__agent_status__");
+            assert!(row.text.is_empty());
+            assert_eq!(row.seq, 1);
+            assert_eq!(row.ts.as_deref(), Some("2026-10-28T10:00:01Z"));
+            let jobs = row.result.as_ref().unwrap()["details"]["jobs"].as_array().unwrap();
+            assert_eq!(jobs.len(), 3);
+            assert_eq!(jobs[0]["id"], "bg_2");
+            assert_eq!(jobs[0]["status"], "completed");
+            assert_eq!(jobs[0]["type"], "bash");
+            assert_eq!(jobs[1]["id"], "Reviewer");
+            assert_eq!(jobs[1]["status"], "running");
+            assert_eq!(jobs[1]["label"], "Review");
+            assert_eq!(jobs[2]["id"], "TagOnly");
+            assert_eq!(jobs[2]["status"], "failed");
+            assert!(jobs.iter().all(|job| job["id"] != "OtherJob"));
+        }
+    }
+
+    #[test]
+    fn pi_async_results_accept_all_tags_when_job_entries_are_absent() {
+        for details in [serde_json::json!({}), serde_json::json!({"jobs": []})] {
+            let line = serde_json::json!({
+                "type": "custom_message",
+                "customType": "async-result",
+                "content": concat!(
+                    "<task-result status='failed (exit 1)' id='First'>failed</task-result>",
+                    "<task-result id=\"Second\" status=\"completed\">done</task-result>"
+                ),
+                "details": details
+            });
+            let parsed = fold_rows(extract_pi_family_line("omp", &line, ImageMode::Collect));
+            assert_eq!(parsed.messages.len(), 1);
+            let jobs = &parsed.messages[0].result.as_ref().unwrap()["details"]["jobs"];
+            assert_eq!(jobs.as_array().unwrap().len(), 2);
+            assert_eq!(jobs[0]["id"], "First");
+            assert_eq!(jobs[0]["status"], "failed");
+            assert_eq!(jobs[1]["id"], "Second");
+            assert_eq!(jobs[1]["status"], "completed");
+        }
+    }
+
+    #[test]
+    fn pi_async_results_parse_bare_and_quoted_attributes() {
+        let line = serde_json::json!({
+            "type": "custom_message",
+            "customType": "async-result",
+            "content": [{"type": "text", "text": concat!(
+                "<task-result id=Bare status=completed>",
+                "<task-result id=\"Quoted\" status=\"failed > 1m (exit 2)\">",
+                "<task-result id=\"Merged\" status=\"merge failed\">"
+            )}],
+            "details": {"jobs": []}
+        });
+        let parsed = fold_rows(extract_pi_family_line("omp", &line, ImageMode::Collect));
+        assert_eq!(parsed.messages.len(), 1);
+        let jobs = parsed.messages[0].result.as_ref().unwrap()["details"]["jobs"].as_array().unwrap();
+        assert_eq!(jobs.len(), 3);
+        assert_eq!(jobs[0]["id"], "Bare");
+        assert_eq!(jobs[0]["status"], "completed");
+        assert_eq!(jobs[1]["id"], "Quoted");
+        assert_eq!(jobs[1]["status"], "failed");
+        // `merge failed` is a state *phrase*: the leading word is not a state.
+        assert_eq!(jobs[2]["id"], "Merged");
+        assert_eq!(jobs[2]["status"], "failed");
+    }
+
+    #[test]
+    fn pi_async_results_resolve_single_job_handle_collisions() {
+        for status in [None, Some("running"), Some("unrecognized")] {
+            let mut job = serde_json::json!({"jobId": "bg_1-2", "type": "task", "label": "Collision"});
+            if let Some(status) = status {
+                job["status"] = serde_json::json!(status);
+            }
+            let line = serde_json::json!({
+                "type": "custom_message", "customType": "async-result",
+                "content": concat!(
+                    "Background job bg_1-2 has completed\n\n",
+                    "<task-result id=\"bg_1\" status=\"completed\"><output>done</output></task-result>"
+                ),
+                "details": {"jobs": [job]}
+            });
+            let parsed = fold_rows(extract_pi_family_line("omp", &line, ImageMode::Collect));
+            let jobs = parsed.messages[0].result.as_ref().unwrap()["details"]["jobs"].as_array().unwrap();
+            assert_eq!(jobs.len(), 1);
+            assert_eq!(jobs[0]["jobId"], "bg_1-2");
+            assert_eq!(jobs[0]["id"], "bg_1");
+            assert_eq!(jobs[0]["status"], status.unwrap_or("completed"));
+            assert_eq!(jobs[0]["label"], "Collision");
+        }
+    }
+
+    #[test]
+    fn pi_async_results_match_batch_headers_not_tag_or_job_order() {
+        let line = serde_json::json!({
+            "type": "custom_message", "customType": "async-result",
+            "content": concat!(
+                "── Job Unlisted (not in this delivery) ──\n",
+                "<task-result id=\"Waiting\" status=\"completed\">unrelated</task-result>\n",
+                "── Job bg_1-2 (Collision) ──\n",
+                "<task-result id=\"bg_1\" status=\"completed\"><output>\n",
+                "── Job Real-2 (quoted header) ──\n",
+                "<task-result id=\"Real-2\" status=\"running\">example</task-result>\n",
+                "</output></task-result>\n",
+                "── Job Build ──\n",
+                "<task-result id=\"NotAnAgent\" status=\"failed\">shell output</task-result>\n",
+                "── Job Real-2 ──\n",
+                "<task-result id=\"Real-2\" status=\"failed (exit 2)\">failed</task-result>"
+            ),
+            "details": {"jobs": [
+                {"jobId": "Real-2", "type": "task"},
+                {"jobId": "Waiting", "type": "task"},
+                {"jobId": "Build", "type": "bash", "status": "completed"},
+                {"jobId": "bg_1-2", "type": "task"}
+            ]}
+        });
+        let parsed = fold_rows(extract_pi_family_line("omp", &line, ImageMode::Collect));
+        let jobs = parsed.messages[0].result.as_ref().unwrap()["details"]["jobs"].as_array().unwrap();
+        assert_eq!(jobs.len(), 4);
+        assert_eq!(jobs[0]["jobId"], "Real-2");
+        assert_eq!(jobs[0]["id"], "Real-2");
+        assert_eq!(jobs[0]["status"], "failed");
+        assert_eq!(jobs[1]["id"], "Waiting");
+        assert!(jobs[1].get("status").is_none());
+        assert_eq!(jobs[2]["id"], "Build");
+        assert_eq!(jobs[2]["status"], "completed");
+        assert_eq!(jobs[2]["type"], "bash");
+        assert_eq!(jobs[3]["jobId"], "bg_1-2");
+        assert_eq!(jobs[3]["id"], "bg_1");
+        assert_eq!(jobs[3]["status"], "completed");
+    }
+
+    #[test]
+    fn pi_async_results_do_not_take_same_batch_status_from_nested_examples() {
+        let balanced = "<task-result id=\"B\" status=\"running\">example</task-result>";
+        let bare = "<task-result id=\"B\" status=\"running\">";
+        for (wrapper, sample) in [
+            ("output", balanced), ("preview", balanced), ("", balanced),
+            ("output", bare), ("preview", bare),
+        ] {
+            for details in [None, Some(serde_json::json!({"jobs": [
+                {"jobId": "A", "type": "task"},
+                {"jobId": "B", "type": "task"}
+            ]}))] {
+                let quoted = if wrapper.is_empty() {
+                    sample.to_string()
+                } else {
+                    format!("<{wrapper}>{sample}</{wrapper}>")
+                };
+                let mut line = serde_json::json!({
+                    "type": "custom_message", "customType": "async-result",
+                    "content": format!(
+                        "<task-result id=\"A\" status=\"completed\">{quoted}</task-result>\n\
+                         <task-result id=\"B\" status=\"completed\">done</task-result>"
+                    )
+                });
+                if let Some(details) = details {
+                    line["details"] = details;
+                }
+                let parsed = fold_rows(extract_pi_family_line("omp", &line, ImageMode::Collect));
+                let jobs = parsed.messages[0].result.as_ref().unwrap()["details"]["jobs"].as_array().unwrap();
+                assert_eq!(jobs.len(), 2, "{wrapper}");
+                assert_eq!(jobs[0]["id"], "A");
+                assert_eq!(jobs[0]["status"], "completed");
+                assert_eq!(jobs[1]["id"], "B");
+                assert_eq!(jobs[1]["status"], "completed");
+            }
+        }
+    }
+
+    #[test]
+    fn pi_async_results_normalize_only_known_state_phrases() {
+        for state in [
+            "active", "in_progress", "pending", "queued", "running", "aborted",
+            "canceled", "cancelled", "complete", "completed", "done", "error",
+            "errored", "failed", "finished", "idle", "killed", "parked", "stopped",
+            "succeeded", "success", "timed_out", "timeout",
+        ] {
+            assert_eq!(pi_async_status(state), Some(state));
+        }
+        for (phrase, expected) in [
+            ("failed > 1m (exit 2)", "failed"),
+            ("merge failed", "failed"),
+            ("running > 1m", "running"),
+            (" COMPLETED (2s) ", "completed"),
+        ] {
+            let line = serde_json::json!({
+                "type": "custom_message", "customType": "async-result",
+                "content": format!("<task-result id='Agent' status='{phrase}'>result</task-result>")
+            });
+            let rows = extract_pi_family_line("omp", &line, ImageMode::Collect);
+            assert_eq!(rows[0].result.as_ref().unwrap()["details"]["jobs"][0]["status"], expected);
+        }
+        for unknown in ["", "unrecognized", "not completed", "almost done", "merge unknown", "1m"] {
+            assert_eq!(pi_async_status(unknown), None);
+            let line = serde_json::json!({
+                "type": "custom_message", "customType": "async-result",
+                "content": format!("<task-result id='Agent' status='{unknown}'>result</task-result>")
+            });
+            assert!(extract_pi_family_line("omp", &line, ImageMode::Collect).is_empty());
+        }
+    }
+
+    #[test]
+    fn pi_async_results_ignore_empty_and_damaged_lines() {
+        let damaged = serde_json::json!({
+            "type": "custom_message", "customType": "async-result",
+            "content": "<task-result id='Broken' status='completed'"
+        });
+        let valid = serde_json::json!({
+            "type": "custom_message", "customType": "async-result",
+            "content": "<task-result id='Agent' status='completed'>done</task-result>"
+        });
+        let input = format!("\nnot json\nnull\n{{}}\n{damaged}\n\n{valid}\n");
+        let extractor: LineExtractor<'_> =
+            Box::new(|value| extract_pi_family_line("omp", value, ImageMode::Collect));
+        let parsed = collect_session(std::io::Cursor::new(input), &extractor, &HashSet::new());
+        assert_eq!(parsed.messages.len(), 1);
+        assert_eq!(parsed.messages[0].role, "__agent_status__");
+        assert_eq!(parsed.messages[0].seq, 1);
+        assert_eq!(parsed.messages[0].result.as_ref().unwrap()["details"]["jobs"][0]["id"], "Agent");
+    }
+
+    #[test]
+    fn pi_async_status_does_not_consume_tool_results_or_chat_timestamps() {
+        let lines = [
+            serde_json::json!({"type": "message", "timestamp": "2026-10-28T10:00:00Z",
+                "message": {"role": "user", "content": "Run the task"}}),
+            serde_json::json!({"type": "message", "message": {"role": "assistant", "content": [
+                {"type": "toolCall", "id": "dispatch", "name": "task", "arguments": {}}
+            ]}}),
+            serde_json::json!({"type": "custom_message", "customType": "async-result",
+                "timestamp": "2026-10-28T10:00:01Z", "details": {"jobs": [
+                    {"id": "Worker", "status": "completed"}
+                ]}}),
+            serde_json::json!({"type": "message", "message": {"role": "toolResult",
+                "toolCallId": "dispatch", "content": "Spawned"}}),
+            serde_json::json!({"type": "message", "timestamp": "2026-10-28T10:00:02Z",
+                "message": {"role": "assistant", "content": "Done"}}),
+        ];
+        let input = lines.iter().map(Value::to_string).collect::<Vec<_>>().join("\n");
+        let extractor: LineExtractor<'_> =
+            Box::new(|value| extract_pi_family_line("omp", value, ImageMode::Collect));
+        let parsed = collect_session(std::io::Cursor::new(input), &extractor, &HashSet::new());
+        assert_eq!(parsed.messages.len(), 4);
+        assert_eq!(parsed.messages[1].result, Some(serde_json::json!("Spawned")));
+        assert_eq!(parsed.messages[2].role, "__agent_status__");
+        assert_eq!(parsed.messages[3].duration_ms, Some(2000));
+        assert_eq!(parsed.messages[3].seq, 4);
+        let unrelated = serde_json::json!({"type": "custom_message", "customType": "notice",
+            "details": {"jobs": [{"id": "Worker", "status": "completed"}]}});
+        assert!(extract_pi_family_line("omp", &unrelated, ImageMode::Collect).is_empty());
     }
 
     /// Results pair with their call by id, not by arrival order: parallel tool
