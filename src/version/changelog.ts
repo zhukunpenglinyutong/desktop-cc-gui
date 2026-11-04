@@ -29,6 +29,18 @@ export function changelogEntryFor(version: string): ChangelogEntry | undefined {
 
 export const CHANGELOG_DATA: ChangelogEntry[] = [
   {
+    version: "1.2.2",
+    date: "2026-11-04",
+    content: {
+      zh: `修复
+- **保留 CLI 原生请求身份**：Codex 初始化改用不覆盖请求身份的握手，不再把 User-Agent、originator 或 UA 后缀改成 CC GUI；版本、平台信息和请求头由已安装的 Codex 自己生成。共享 ACP 初始化不再传入可选的 CC GUI 客户端信息，文件访问、提问和计划审批能力声明不变。
+- **已有会话保持原样**：不迁移或修改历史记录。旧 Codex 会话续聊的 User-Agent 恢复原生值，但 CLI 仍可能沿用历史中保存的 originator；若服务商因此拒绝请求，请新建会话。`,
+      en: `Fixes
+- **Preserve native CLI request identity**: Codex initialization now uses a non-originating handshake instead of replacing the User-Agent, originator or UA suffix with CC GUI branding. The installed CLI generates its own version, platform information and request headers. Shared ACP initialization no longer sends optional CC GUI client information; file access, question and plan-approval capabilities are unchanged.
+- **Existing sessions are preserved**: no history migration or edits. Resumed Codex sessions use the native User-Agent, but the CLI may retain an originator stored in their history. Start a new session if a provider rejects that historical originator.`,
+    },
+  },
+  {
     version: "1.2.1",
     date: "2026-11-02",
     content: {
