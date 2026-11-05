@@ -30,6 +30,11 @@ import { getAppVersion } from "@/lib/platform";
 import { useReleaseNotesTabStore } from "@/features/update/notes-tab";
 import { statusBarRegistry } from "@ccgui/plugin-sdk";
 import type { Disposer } from "@ccgui/plugin-sdk";
+import {
+  STATUS_BAR_BUILTIN_IDS,
+  setStatusBarItemsVisible,
+  useStatusBarVisibilityStore,
+} from "@/lib/status-bar-visibility";
 
 // React 18's act() requires this flag to be set by the test environment.
 declare global {
@@ -44,6 +49,7 @@ describe("AppStatusBar plugin items (plan §4.2 #8)", () => {
   const disposers: Disposer[] = [];
 
   beforeEach(async () => {
+    useStatusBarVisibilityStore.setState({ hidden: new Set() });
     container = document.createElement("div");
     document.body.appendChild(container);
     root = createRoot(container);
@@ -57,6 +63,8 @@ describe("AppStatusBar plugin items (plan §4.2 #8)", () => {
       while (disposers.length) disposers.pop()!();
       root.unmount();
     });
+    useStatusBarVisibilityStore.setState({ hidden: new Set() });
+    localStorage.clear();
     container.remove();
   });
 
@@ -139,6 +147,51 @@ describe("AppStatusBar plugin items (plan §4.2 #8)", () => {
     } finally {
       silence.mockRestore();
     }
+  });
+
+  it("hides a plugin chip without unregistering the plugin", async () => {
+    await act(async () => {
+      disposers.push(
+        statusBarRegistry.register({
+          id: "plugin:hide-me:chip",
+          component: () => <span>HIDE ME</span>,
+        }),
+      );
+    });
+    expect(container.textContent).toContain("HIDE ME");
+
+    await act(async () => {
+      setStatusBarItemsVisible(["plugin:hide-me:chip"], false);
+    });
+    expect(container.textContent).not.toContain("HIDE ME");
+    // 隐藏 = 不渲染，不是停用：插件条目仍在注册表里，重新打开即恢复。
+    expect(statusBarRegistry.get("plugin:hide-me:chip")).toBeDefined();
+
+    await act(async () => {
+      setStatusBarItemsVisible(["plugin:hide-me:chip"], true);
+    });
+    expect(container.textContent).toContain("HIDE ME");
+  });
+
+  it("hides a builtin item and drops its separator with it", async () => {
+    const perfLabel = i18n.t("statusbar.performance");
+    expect(container.textContent).toContain(perfLabel);
+    await act(async () => {
+      setStatusBarItemsVisible([STATUS_BAR_BUILTIN_IDS.performance], false);
+    });
+    expect(container.textContent).not.toContain(perfLabel);
+  });
+
+  it("collapses the whole strip once every item is hidden", async () => {
+    // The isWeb mock hides the zoom slot and getAppVersion resolves null, so
+    // performance + sync are the only slots left to close.
+    await act(async () => {
+      setStatusBarItemsVisible(
+        [STATUS_BAR_BUILTIN_IDS.performance, STATUS_BAR_BUILTIN_IDS.sync],
+        false,
+      );
+    });
+    expect(container.firstElementChild).toBeNull();
   });
 });
 describe("AppStatusBar version chip", () => {
