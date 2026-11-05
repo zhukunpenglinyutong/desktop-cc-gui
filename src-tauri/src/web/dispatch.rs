@@ -359,6 +359,7 @@ struct ListDirArgs {
 #[serde(rename_all = "camelCase")]
 struct PathArgs {
     path: String,
+    encoding: Option<String>,
     /// Optional workspace meta passthrough (plugin workspaces.add keeps
     /// transport descriptions alive on the web runtime too).
     meta: Option<serde_json::Value>,
@@ -509,6 +510,9 @@ struct SetWorkspaceGroupArgs {
 struct WriteFileArgs {
     path: String,
     content: String,
+    encoding: Option<String>,
+    bom: Option<bool>,
+    line_ending: Option<String>,
 }
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -1102,11 +1106,21 @@ pub(super) async fn dispatch(
         }
         "read_file" => {
             let a: PathArgs = parse_args(&raw)?;
-            ser(crate::files::read_file(app.state(), a.path).await)
+            ser(crate::files::read_file(app.state(), a.path, a.encoding).await)
         }
         "write_file" => {
             let a: WriteFileArgs = parse_args(&raw)?;
-            ser(crate::files::write_file(app.state(), a.path, a.content).await)
+            ser(
+                crate::files::write_file(
+                    app.state(),
+                    a.path,
+                    a.content,
+                    a.encoding,
+                    a.bom,
+                    a.line_ending,
+                )
+                .await,
+            )
         }
         "create_dir" => {
             let a: PathArgs = parse_args(&raw)?;

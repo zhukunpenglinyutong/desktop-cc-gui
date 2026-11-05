@@ -1360,6 +1360,10 @@ export const en: Messages = {
   files: {
     tab: "Files",
     saveFile: "Save",
+    encoding: "File encoding",
+    encodingDecodeError: "Incomplete decoding · read-only",
+    encodingCannotRepresent: "GBK cannot represent '{{character}}' (U+{{codePoint}}) on line {{line}}. The file was not saved.",
+    encodingCannotRepresentGeneric: "The content contains characters that GBK cannot represent. The file was not saved.",
     preview: "Preview",
     editMode: "Edit",
     wordWrap: "Word wrap",

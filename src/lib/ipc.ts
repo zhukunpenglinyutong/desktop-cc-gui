@@ -660,6 +660,10 @@ export interface FileContent {
   text: string | null;
   dataUrl: string | null;
   truncated: boolean;
+  encoding?: "utf-8" | "gbk" | null;
+  bom?: boolean;
+  decodeError?: boolean;
+  lineEnding?: "lf" | "crlf" | "cr" | null;
   /** Served by a remote reader (e.g. WSL distro, features/files/remote-files):
    *  content is complete but writes are unsupported, so the editor stays
    *  read-only — distinct from `truncated`, which means partial content. */
@@ -1756,9 +1760,22 @@ export const ipc = {
     withGrantRetry(() =>
       invoke<DirEntry[]>("list_dir", { path, gitIgnoreRoot: opts?.gitIgnoreRoot }),
     ),
-  readFile: (path: string) => withGrantRetry(() => invoke<FileContent>("read_file", { path })),
-  writeFile: (path: string, content: string) =>
-    withGrantRetry(() => invoke<void>("write_file", { path, content })),
+  readFile: (path: string, encoding?: "utf-8" | "gbk") =>
+    withGrantRetry(() => invoke<FileContent>("read_file", { path, encoding: encoding ?? null })),
+  writeFile: (
+    path: string,
+    content: string,
+    encoding?: "utf-8" | "gbk",
+    bom?: boolean,
+    lineEnding?: "lf" | "crlf" | "cr",
+  ) =>
+    withGrantRetry(() => invoke<void>("write_file", {
+      path,
+      content,
+      encoding: encoding ?? null,
+      bom: bom ?? false,
+      lineEnding: lineEnding ?? null,
+    })),
   createDir: (path: string) => withGrantRetry(() => invoke<void>("create_dir", { path })),
   /** Fails when the file already exists (unlike write_file, which overwrites). */
   createFile: (path: string) => withGrantRetry(() => invoke<void>("create_file", { path })),

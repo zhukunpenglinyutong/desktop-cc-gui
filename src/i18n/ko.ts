@@ -1242,6 +1242,10 @@ export const ko: Messages = {
   files: {
     tab: "파일",
     saveFile: "저장",
+    encoding: "파일 인코딩",
+    encodingDecodeError: "디코딩 불완전 · 읽기 전용",
+    encodingCannotRepresent: "GBK는 {{line}}번째 줄의 '{{character}}'(U+{{codePoint}}) 문자를 표현할 수 없어 파일을 저장하지 않았습니다.",
+    encodingCannotRepresentGeneric: "GBK로 표현할 수 없는 문자가 있어 파일을 저장하지 않았습니다.",
     preview: "미리보기",
     editMode: "편집",
     wordWrap: "자동 줄 바꿈",

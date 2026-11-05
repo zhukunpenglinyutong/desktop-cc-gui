@@ -12,6 +12,11 @@ function baseProps() {
   return {
     path: "/ws/index.html",
     name: "index.html",
+    encoding: "utf-8" as "utf-8" | "gbk",
+    decodeError: false,
+    truncated: false,
+    encodingChangeDisabled: false,
+    onEncodingChange: vi.fn(),
     dirty: false,
     readOnly: false,
     canPreview: true,
@@ -80,5 +85,19 @@ describe("FileEditorHeader preview controls", () => {
     expect(byText(i18n.t("files.preview"))).toBeNull();
     expect(byText(i18n.t("files.editMode"))).toBeNull();
     expect(byLabel(i18n.t("common.refresh"))).toBeNull();
+  });
+
+  it("shows the detected source encoding and can disable encoding changes", () => {
+    renderHeader({ encodingChangeDisabled: true, encoding: "gbk" });
+    const encoding = byLabel(i18n.t("files.encoding"));
+    expect(encoding).not.toBeNull();
+    expect((encoding as HTMLButtonElement).disabled).toBe(true);
+    expect(encoding?.textContent).toContain("GBK");
+  });
+
+  it("shows truncation and decode errors together", () => {
+    renderHeader({ truncated: true, decodeError: true, readOnly: true });
+    expect(container.textContent).toContain(i18n.t("files.fileTruncated"));
+    expect(container.textContent).toContain(i18n.t("files.encodingDecodeError"));
   });
 });
