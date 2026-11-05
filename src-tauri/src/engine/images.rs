@@ -182,11 +182,11 @@ pub fn load_image(
     };
     // Confinement: only workspace files and sandboxed pasted images may be
     // read into a prompt — the refs arrive over IPC.
-    let resolved = crate::files::canonicalize_lenient(&path)?;
-    let workspace_ok = crate::files::canonicalize_lenient(workspace)
+    let resolved = crate::paths::RelayToolsBoundary::new()?.ensure_path(&path)?;
+    let workspace_ok = crate::paths::canonicalize_lenient(workspace)
         .map(|root| resolved.starts_with(root))
         .unwrap_or(false);
-    let pasted_ok = crate::files::canonicalize_lenient(&pasted_images_dir())
+    let pasted_ok = crate::paths::canonicalize_lenient(&pasted_images_dir())
         .map(|root| resolved.starts_with(root))
         .unwrap_or(false);
     if !workspace_ok && !pasted_ok {
@@ -325,4 +325,28 @@ pub fn grok_prompt_json(
     serde_json::to_string(&blocks)
         .map(Some)
         .map_err(|e| e.to_string())
+}
+
+#[cfg(test)]
+mod relay_boundary_tests {
+    use super::*;
+
+    #[test]
+    fn image_references_cannot_read_relay_credentials_from_a_workspace_ancestor() {
+        let scratch = crate::plugins::test_support::Scratch::new();
+        let home = scratch.path("portable-data");
+        let secret = home.join("relay-tools/.auth-fixture/home/.wrangler/config/default.toml");
+        let ordinary = home.join("workspace/image.png");
+        std::fs::create_dir_all(secret.parent().unwrap()).unwrap();
+        std::fs::create_dir_all(ordinary.parent().unwrap()).unwrap();
+        std::fs::write(&secret, b"fake-oauth-token").unwrap();
+        std::fs::write(&ordinary, b"ordinary-image").unwrap();
+        crate::paths::with_test_app_home(&home, || {
+            assert!(load_image(&secret.to_string_lossy(), &home).is_err());
+            assert!(claude_stdin_message("test", &[secret.to_string_lossy().into_owned()], &home).is_err());
+            let (mime, data) = load_image(&ordinary.to_string_lossy(), &home).unwrap();
+            assert_eq!(mime, "image/png");
+            assert_eq!(base64::engine::general_purpose::STANDARD.decode(data).unwrap(), b"ordinary-image");
+        });
+    }
 }

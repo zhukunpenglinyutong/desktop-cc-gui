@@ -148,6 +148,9 @@ pub fn run() {
             let db = Arc::new(db::Db::open().expect("failed to open app db"));
             // Sweep per-send credential staging left behind by a crash.
             engine::sweep_staging_dirs();
+            // Only abandoned, marked one-shot profiles; live leases and
+            // unmarked older-version profiles are never guessed stale.
+            relay::login::sweep_stale_credentials();
             if let Err(error) = db::import_legacy_workspaces_once(&db) {
                 // Import failure must never block startup; the sidebar simply
                 // starts empty and the user adds workspaces by hand.
@@ -368,6 +371,10 @@ pub fn run() {
                 if window.label() != "main" {
                     return;
                 }
+                // Stop accepting login/deploy tasks before any main-window
+                // teardown. This awaits owned child/logout/local cleanup;
+                // an in-flight deployment keeps its key-persistence boundary.
+                tauri::async_runtime::block_on(relay::login::shutdown());
                 if let Some(pet) = window.app_handle().get_webview_window("pet-overlay") {
                     let _ = pet.destroy();
                 }
@@ -683,6 +690,8 @@ pub fn run() {
         .expect("error while building tauri application")
         .run(|app, event| {
             if matches!(event, tauri::RunEvent::Exit) {
+                // Idempotent fallback for quit paths without Destroyed.
+                tauri::async_runtime::block_on(relay::login::shutdown());
                 // macOS 空闲时的 ⌘Q / 程序坞退出不经过窗口的 CloseRequested /
                 // Destroyed（见 quit_guard.rs），只走到这里：兜底落盘最后一次窗口
                 // 变化。其余平台窗口关闭时已 flush，这里重复写同一份快照，无害。

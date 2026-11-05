@@ -142,29 +142,34 @@ fn check_absolute_path(path: &Path) -> Result<(), String> {
     Ok(())
 }
 
-/// Directories a plugin must never hold as a grant root, matching the scope
-/// the rest of the app already enforces (tauri.conf.json assetProtocol.deny
-/// and web.rs read_scoped_file): the credential/app-data dirs under $HOME,
-/// $HOME itself, and the filesystem root. Compared in both directions —
-/// granting an ancestor of a denied dir exposes it just as surely as
-/// granting the denied dir itself.
-pub(super) fn denied_grant_root(canonical: &Path) -> bool {
+/// Directory grants may not overlap credential roots or the actual app home
+/// (including portable locations), in either direction. Re-resolve at read
+/// time too: old grants and aliases must not bypass the current boundary.
+pub(super) fn denied_grant_root(path: &Path) -> bool {
+    let Ok(canonical) = crate::paths::canonicalize_lenient(path) else {
+        return true;
+    };
     if canonical.parent().is_none() {
+        return true;
+    }
+    let overlaps = |root: &Path| {
+        crate::paths::path_is_within(&canonical, root)
+            || crate::paths::path_is_within(root, &canonical)
+    };
+    let Ok(app_home) = crate::paths::canonicalize_lenient(&crate::paths::app_home()) else {
+        return true;
+    };
+    if overlaps(&app_home) {
         return true;
     }
     let Some(home) = dirs::home_dir() else {
         return false;
     };
-    // Resolve the home the same way as the candidate: a symlinked $HOME would
-    // otherwise make both the equality check and the credential-dir prefixes
-    // miss against an already-canonical path.
-    let home = dunce::canonicalize(&home).unwrap_or(home);
-    if canonical == home {
-        return true;
-    }
+    let home = crate::paths::canonicalize_lenient(&home).unwrap_or(home);
     [".ssh", ".aws", ".gnupg", ".ccgui-next"].iter().any(|denied| {
         let denied = home.join(denied);
-        canonical.starts_with(&denied) || denied.starts_with(canonical)
+        let denied = crate::paths::canonicalize_lenient(&denied).unwrap_or(denied);
+        overlaps(&denied)
     })
 }
 
@@ -349,7 +354,9 @@ fn reveal_target_at(
     }
     if require_permission(&state, id, "assets:directory").is_ok() {
         if let Some(entries) = state.asset_directories.get(id) {
-            allowed_roots.extend(entries.iter().map(|entry| PathBuf::from(&entry.path)));
+            allowed_roots.extend(entries.iter()
+                .filter(|entry| !denied_grant_root(Path::new(&entry.path)))
+                .map(|entry| PathBuf::from(&entry.path)));
         }
     }
     let denied = || format!("{id}: path is outside plugin.storage and granted asset directories");
@@ -361,6 +368,9 @@ fn reveal_target_at(
     // Canonicalization alone would hide a symlink back into an allowed root.
     storage::confine_to_root(path, path).map_err(|_| denied())?;
     let canonical = dunce::canonicalize(path).map_err(|_| denied())?;
+    crate::paths::RelayToolsBoundary::new()
+        .and_then(|boundary| boundary.ensure_path(&canonical))
+        .map_err(|_| denied())?;
     for root in allowed_roots {
         if storage::confine_to_root(&root, &root).is_err() {
             continue;
@@ -451,6 +461,8 @@ fn read_local_at(
     }
     let target = root.join(safe);
     storage::confine_to_root(&root, &target).map_err(|_| AssetError::Forbidden)?;
+    let boundary = crate::paths::RelayToolsBoundary::new().map_err(|_| AssetError::Forbidden)?;
+    boundary.ensure_path(&target).map_err(|_| AssetError::Forbidden)?;
     let metadata = fs::metadata(&target).map_err(file_error)?;
     if !metadata.is_file() {
         return Err(AssetError::NotFound);
@@ -459,6 +471,7 @@ fn read_local_at(
         return Err(AssetError::TooLarge);
     }
     storage::confine_to_root(&root, &target).map_err(|_| AssetError::Forbidden)?;
+    boundary.ensure_path(&target).map_err(|_| AssetError::Forbidden)?;
     let file = fs::File::open(&target).map_err(file_error)?;
     if !file.metadata().map_err(file_error)?.is_file() {
         return Err(AssetError::NotFound);
@@ -925,6 +938,97 @@ mod tests {
                 .status(),
             StatusCode::FORBIDDEN
         );
+    }
+
+    #[test]
+    fn portable_app_home_is_denied_for_new_and_legacy_directory_grants() {
+        let scratch = Scratch::new();
+        let state_path = fixture(&scratch);
+        let home = scratch.path("portable/app-data");
+        let secret = home.join("relay-tools/.auth-fixture/home/.wrangler/config/default.toml");
+        let ordinary = scratch.path("ordinary");
+        fs::create_dir_all(secret.parent().unwrap()).unwrap();
+        fs::create_dir_all(&ordinary).unwrap();
+        fs::write(&secret, b"fake-oauth-token").unwrap();
+        fs::write(ordinary.join("model.bin"), b"ordinary-asset").unwrap();
+        crate::paths::with_test_app_home(&home, || {
+            for root in [home.parent().unwrap(), home.as_path(), secret.parent().unwrap()] {
+                assert!(grant_directory_at(&state_path, "vendor.one", root).is_err());
+                let mut state = state::read_state(&state_path).unwrap();
+                state.asset_directories.insert("vendor.one".into(), vec![AssetDirectoryGrant {
+                    grant_id: "legacy-portable".into(),
+                    path: root.to_string_lossy().into_owned(),
+                }]);
+                state::write_state(&state_path, &state).unwrap();
+                let source = AssetSource::Directory {
+                    grant_id: "legacy-portable".into(),
+                    relative: secret.strip_prefix(root).unwrap().to_string_lossy().replace('\\', "/"),
+                };
+                assert_eq!(
+                    read_local_at(&state_path, &scratch.path("plugins"), None, "vendor.one", &source)
+                        .unwrap_err().status(),
+                    StatusCode::FORBIDDEN
+                );
+                assert!(reveal_target_at(&state_path, None, "vendor.one", &secret).is_err());
+            }
+            let grant = grant_directory_at(&state_path, "vendor.one", &ordinary).unwrap();
+            let source = AssetSource::Directory {
+                grant_id: grant.grant_id,
+                relative: "model.bin".into(),
+            };
+            assert_eq!(
+                read_local_at(&state_path, &scratch.path("plugins"), None, "vendor.one", &source)
+                    .unwrap().body,
+                b"ordinary-asset"
+            );
+        });
+    }
+
+    #[test]
+    fn relay_tools_are_denied_across_bundle_and_document_asset_sources() {
+        let scratch = Scratch::new();
+        let state_path = fixture(&scratch);
+        let home = scratch.path("portable-data");
+        let tools = home.join("relay-tools");
+        let roots = storage::StorageRoots { data: tools.clone(), program: scratch.path("program") };
+        for root in [tools.join("bundles/vendor.one"), tools.join("plugin-data/vendor.one"), home.join("plugins/vendor.one")] {
+            fs::create_dir_all(&root).unwrap();
+            fs::write(root.join("model.bin"), b"fixture-bytes").unwrap();
+        }
+        crate::paths::with_test_app_home(&home, || {
+            for source in [AssetSource::Bundle("model.bin".into()), AssetSource::Document("model.bin".into())] {
+                assert_eq!(
+                    read_local_at(&state_path, &tools.join("bundles"), Some(&roots), "vendor.one", &source)
+                        .unwrap_err().status(),
+                    StatusCode::FORBIDDEN
+                );
+            }
+            assert_eq!(
+                read_local_at(&state_path, &home.join("plugins"), None, "vendor.one", &AssetSource::Bundle("model.bin".into()))
+                    .unwrap().body,
+                b"fixture-bytes"
+            );
+        });
+    }
+
+    #[test]
+    fn portable_app_home_aliases_cannot_evade_sensitive_root_checks() {
+        let scratch = Scratch::new();
+        let state_path = fixture(&scratch);
+        let real_home = scratch.path("physical-data");
+        let home_alias = scratch.path("portable-alias");
+        fs::create_dir_all(real_home.join("relay-tools")).unwrap();
+        fs::write(real_home.join("relay-tools/default.toml"), b"fake-oauth-token").unwrap();
+        if !create_dir_link(&home_alias, &real_home) {
+            return;
+        }
+        crate::paths::with_test_app_home(&home_alias, || {
+            for root in [&real_home, &real_home.join("relay-tools"), &scratch.0] {
+                assert!(grant_directory_at(&state_path, "vendor.one", root).is_err());
+                assert!(denied_grant_root(root));
+            }
+            assert!(grant_directory_at(&state_path, "vendor.one", &home_alias).is_err());
+        });
     }
 
     #[test]

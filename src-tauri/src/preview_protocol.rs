@@ -112,6 +112,7 @@ pub(crate) struct PreviewTarget {
 /// the same form request paths are canonicalized to.
 fn open_root(file: &Path, roots: &mut Roots) -> Result<PreviewTarget, String> {
     let file = std::fs::canonicalize(file).map_err(|error| format!("preview: {error}"))?;
+    crate::paths::RelayToolsBoundary::new()?.ensure_path(&file)?;
     if !file.is_file() {
         return Err("preview: not a file".to_string());
     }
@@ -214,6 +215,9 @@ fn resolve_in_root(root: &Path, segments: &[String]) -> Result<PathBuf, StatusCo
     if !resolved.starts_with(root) {
         return Err(StatusCode::FORBIDDEN);
     }
+    crate::paths::RelayToolsBoundary::new()
+        .and_then(|boundary| boundary.ensure_path(&resolved))
+        .map_err(|_| StatusCode::FORBIDDEN)?;
     if !resolved.is_file() {
         return Err(StatusCode::NOT_FOUND);
     }
@@ -462,6 +466,24 @@ mod tests {
         fn drop(&mut self) {
             let _ = std::fs::remove_dir_all(&self.base);
         }
+    }
+
+    #[test]
+    fn ancestor_preview_token_cannot_serve_relay_credentials() {
+        let scratch = Scratch::new("relay-boundary");
+        let secret = scratch.root.join("relay-tools/.auth-fixture/home/.wrangler/config/default.toml");
+        std::fs::create_dir_all(secret.parent().unwrap()).unwrap();
+        std::fs::write(&secret, b"fake-oauth-token").unwrap();
+        crate::paths::with_test_app_home(&scratch.root, || {
+            let mut roots = Roots::new();
+            assert!(open_root(&secret, &mut roots).is_err());
+            let response = handle(
+                &get(&url(&["relay-tools", ".auth-fixture", "home", ".wrangler", "config", "default.toml"])),
+                scratch.lookup(),
+            );
+            assert_eq!(response.status(), StatusCode::FORBIDDEN);
+            assert_eq!(handle(&get(&url(&["index.html"])), scratch.lookup()).status(), StatusCode::OK);
+        });
     }
 
     #[test]

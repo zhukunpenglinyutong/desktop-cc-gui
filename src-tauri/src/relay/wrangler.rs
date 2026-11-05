@@ -15,6 +15,8 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::process::{Child, Command};
 use tokio::sync::watch;
 
+use super::auth_storage::{self, AuthDirectory};
+
 const NODE_VERSION: &str = "22.23.4";
 const WRANGLER_VERSION: &str = "4.157.0";
 const OAUTH_CLIENT_ID: &str = "54d11594-84e4-41aa-b438-e81b8fa78ee7";
@@ -32,14 +34,14 @@ const ARCHIVE_ERROR: &str = "Node 运行时压缩包不安全或已损坏";
 pub(super) struct WranglerAuth {
     pub(super) token: String,
     launch: LaunchContext,
-    _credentials: OwnedDirectory,
+    credentials: AuthDirectory,
 }
 
 impl WranglerAuth {
-    pub(super) async fn cleanup(mut self) {
+    pub(super) async fn cleanup(mut self) -> Result<(), String> {
         self.token.clear();
-        logout_owned(&self.launch).await;
-        // The owned directory guard removes only this run, never the tool cache.
+        logout_owned(&self.launch, &self.credentials).await;
+        self.credentials.remove()
     }
 }
 
@@ -50,47 +52,92 @@ pub(super) async fn login(
 ) -> Result<WranglerAuth, String> {
     check_cancel(&cancel)?;
     progress("preparing");
-    let tools = crate::paths::app_home().join("relay-tools");
-    private_dir(&tools)?;
-    let tools = dunce::canonicalize(&tools).map_err(|_| "无法访问私有登录工具目录")?;
-    let credentials = OwnedDirectory::create(&tools, "auth")?;
-    let runtime = prepare_runtime(&tools, &credentials.path, &mut cancel).await?;
-    let launch = LaunchContext::new(runtime, &credentials.path)?;
-    check_cancel(&cancel)?;
+    let tools = tools_root()?;
+    let credentials = AuthDirectory::create(&tools)?;
+    let runtime = match prepare_runtime(&tools, &credentials, &mut cancel).await {
+        Ok(runtime) => runtime,
+        Err(error) => return Err(with_cleanup_error(error, credentials.remove())),
+    };
+    let launch = match LaunchContext::new(runtime, &credentials.path) {
+        Ok(launch) => launch,
+        Err(error) => return Err(with_cleanup_error(error, credentials.remove())),
+    };
     progress("authorizing");
     let result = async {
+        check_cancel(&cancel)?;
+        auth_storage::validate_credentials(&launch.root)?;
         let mut command = launch.wrangler();
         command.args(["login", "--browser=false", "--use-keyring=false", "--scopes"]);
         command.args(OAUTH_SCOPES);
-        run_child(command, &mut cancel, Duration::from_secs(180), Some(&open_url)).await?;
+        run_child(command, &credentials, &mut cancel, Duration::from_secs(180), Some(&open_url)).await?;
         check_cancel(&cancel)?;
         let mut command = launch.wrangler();
         command.args(["auth", "token", "--json"]);
-        let output = run_child(command, &mut cancel, Duration::from_secs(45), None).await?;
+        let output = run_child(command, &credentials, &mut cancel, Duration::from_secs(45), None).await?;
         let token = parse_oauth_token(&output)?;
         check_cancel(&cancel)?;
         Ok(token)
     }.await;
     match result {
-        Ok(token) => Ok(WranglerAuth { token, launch, _credentials: credentials }),
+        Ok(token) => Ok(WranglerAuth { token, launch, credentials }),
         Err(error) => {
             // A cancel may race with the callback writing its credentials.
-            logout_owned(&launch).await;
-            Err(error)
+            logout_owned(&launch, &credentials).await;
+            Err(with_cleanup_error(error, credentials.remove()))
         }
     }
 }
 
-async fn logout_owned(launch: &LaunchContext) {
+pub(super) fn with_cleanup_error(error: String, cleanup: Result<(), String>) -> String {
+    match cleanup {
+        Ok(()) => error,
+        Err(cleanup) => {
+            eprintln!("[relay login] Local credential cleanup failed: {cleanup}");
+            format!("{error}；本地临时授权清理失败：{cleanup}")
+        }
+    }
+}
+
+fn tools_root() -> Result<PathBuf, String> {
+    // The app-home may be a deliberate portable alias; establish its trusted
+    // canonical root first, but reject a substituted relay-tools child.
+    let home = dunce::canonicalize(crate::paths::app_home())
+        .map_err(|error| format!("无法访问应用数据目录：{error}"))?;
+    let tools = home.join("relay-tools");
+    if !tools.try_exists().map_err(|error| error.to_string())? {
+        private_dir(&tools)?;
+    }
+    auth_storage::check_directory(&tools)?;
+    Ok(tools)
+}
+
+pub(super) fn sweep_stale_auth() {
+    // Do not create the tool cache on startup for users who never log in.
+    let path = crate::paths::app_home().join("relay-tools");
+    if std::fs::symlink_metadata(&path).is_err_and(|error| error.kind() == std::io::ErrorKind::NotFound) {
+        return;
+    }
+    match tools_root().and_then(|root| auth_storage::sweep(&root)) {
+        Ok(report) => report.report(),
+        Err(error) => eprintln!("[relay login] Startup credential sweep failed: {error}"),
+    }
+}
+
+async fn logout_owned(launch: &LaunchContext, credentials: &AuthDirectory) {
+    if let Err(error) = auth_storage::validate_credentials(&launch.root) {
+        eprintln!("[relay login] Refusing logout through an unsafe auth path: {error}");
+        return;
+    }
     if !launch.root.join("home/.wrangler/config/default.toml").is_file() {
         return;
     }
     let (_keep_alive, mut cancel) = watch::channel(false);
     let mut command = launch.wrangler();
     command.arg("logout");
-    if run_child(command, &mut cancel, Duration::from_secs(15), None).await.is_err() {
-        // Revoke is best-effort offline; local credentials are still removed.
-        eprintln!("[relay login] Temporary OAuth logout did not complete; removing local credentials");
+    if run_child(command, credentials, &mut cancel, Duration::from_secs(15), None).await.is_err() {
+        // Revoke is best-effort offline. Local removal is a separate fallible
+        // operation: do not claim it succeeded until AuthDirectory::remove.
+        eprintln!("[relay login] Temporary OAuth logout did not complete; remote authorization may remain valid");
     }
 }
 
@@ -114,7 +161,11 @@ impl OwnedDirectory {
 
 impl Drop for OwnedDirectory {
     fn drop(&mut self) {
-        let _ = std::fs::remove_dir_all(&self.path);
+        if let Err(error) = std::fs::remove_dir_all(&self.path) {
+            if error.kind() != std::io::ErrorKind::NotFound {
+                eprintln!("[relay login] Temporary tool directory cleanup failed at {}: {error}", self.path.display());
+            }
+        }
     }
 }
 
@@ -262,7 +313,7 @@ fn node_archive() -> Result<NodeArchive, String> {
     Ok(NodeArchive { platform, sha256, zip: cfg!(windows) })
 }
 
-async fn prepare_runtime(tools: &Path, auth_root: &Path, cancel: &mut watch::Receiver<bool>) -> Result<Runtime, String> {
+async fn prepare_runtime(tools: &Path, credentials: &AuthDirectory, cancel: &mut watch::Receiver<bool>) -> Result<Runtime, String> {
     let archive = node_archive()?;
     let cache = tools.join(format!("node-{NODE_VERSION}-wrangler-{WRANGLER_VERSION}-{}", archive.platform));
     let lock = OpenOptions::new().read(true).write(true).create(true).truncate(false)
@@ -313,20 +364,20 @@ async fn prepare_runtime(tools: &Path, auth_root: &Path, cancel: &mut watch::Rec
     private_dir(&install_dir)?;
     std::fs::write(install_dir.join("package.json"), "{\"private\":true}")
         .map_err(|_| "无法初始化 Wrangler 安装目录")?;
-    let launch = LaunchContext::new(Runtime::at(&staging.path), auth_root)?;
+    let launch = LaunchContext::new(Runtime::at(&staging.path), &credentials.path)?;
     let mut command = launch.node();
     command.arg(&launch.runtime.npm).arg("install")
         .arg("--prefix").arg(&install_dir).current_dir(&install_dir)
         .args(["--ignore-scripts", "--no-audit", "--no-fund", "--no-package-lock", "--save-exact", "--registry=https://registry.npmjs.org/"])
         .arg(format!("wrangler@{WRANGLER_VERSION}"));
-    run_child(command, cancel, Duration::from_secs(300), None).await
+    run_child(command, credentials, cancel, Duration::from_secs(300), None).await
         .map_err(|e| if e == CANCELLED { e } else { "无法安装私有 Wrangler，请检查网络或代理设置后重试".into() })?;
     if cfg!(all(windows, target_arch = "aarch64")) {
-        install_windows_arm_workerd(&launch, &install_dir, cancel).await?;
+        install_windows_arm_workerd(&launch, credentials, &install_dir, cancel).await?;
     }
     let mut command = launch.wrangler();
     command.arg("--version");
-    let output = run_child(command, cancel, Duration::from_secs(30), None).await?;
+    let output = run_child(command, credentials, cancel, Duration::from_secs(30), None).await?;
     if std::str::from_utf8(&output).ok().map(str::trim) != Some(WRANGLER_VERSION) {
         return Err("Wrangler 版本校验失败".into());
     }
@@ -339,6 +390,7 @@ async fn prepare_runtime(tools: &Path, auth_root: &Path, cancel: &mut watch::Rec
 
 async fn install_windows_arm_workerd(
     launch: &LaunchContext,
+    credentials: &AuthDirectory,
     install_dir: &Path,
     cancel: &mut watch::Receiver<bool>,
 ) -> Result<(), String> {
@@ -363,7 +415,7 @@ async fn install_windows_arm_workerd(
         .arg("--prefix").arg(&staging.path).current_dir(&staging.path)
         .args(["--cpu=x64", "--ignore-scripts", "--no-audit", "--no-fund", "--no-package-lock", "--save-exact", "--registry=https://registry.npmjs.org/"])
         .arg(format!("{PACKAGE}@{version}"));
-    run_child(command, cancel, Duration::from_secs(180), None).await?;
+    run_child(command, credentials, cancel, Duration::from_secs(180), None).await?;
     check_cancel(cancel)?;
     let package = staging.path.join("node_modules").join(PACKAGE);
     if !package.join("bin/workerd.exe").is_file() {
@@ -561,12 +613,20 @@ impl Drop for OwnedChild {
 
 async fn run_child(
     mut command: Command,
+    credentials: &AuthDirectory,
     cancel: &mut watch::Receiver<bool>,
     timeout: Duration,
     open_url: Option<&(dyn Fn(&str) -> Result<(), String> + Sync)>,
 ) -> Result<Vec<u8>, String> {
     check_cancel(cancel)?;
+    #[cfg(unix)]
+    credentials.inherit_lease(command.as_std_mut())?;
+    #[cfg(not(unix))]
+    let _ = credentials;
     let mut child = command.spawn().map_err(|_| "无法启动私有 Node/Wrangler 运行时")?;
+    // pre_exec owns a CLOEXEC duplicate on Unix. The child now owns its
+    // inherited descriptor; release the parent's command copy immediately.
+    drop(command);
     #[cfg(windows)]
     let job = match crate::engine::job::assign_kill_on_close(&child) {
         Some(job) => Some(job),
@@ -629,7 +689,10 @@ async fn run_child(
     }.await;
     owned.stop_tree();
     let _ = owned.child.start_kill();
-    let _ = tokio::time::timeout(Duration::from_secs(3), owned.child.wait()).await;
+    // Do not release its credential lease while the child may still write.
+    // Application shutdown bounds the wait, but leaves this task/lease intact
+    // on an abnormal OS reaping delay instead of racing directory deletion.
+    owned.child.wait().await.map_err(|_| "无法确认私有登录进程已退出，本地授权清理可能不完整")?;
     result
 }
 
@@ -704,6 +767,23 @@ async fn cancelled(cancel: &mut watch::Receiver<bool>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn authorized_cleanup_removes_local_profile_even_if_logout_cannot_start() {
+        let scratch = OwnedDirectory::create(&std::env::temp_dir(), "ccgui-logout-test").unwrap();
+        let root = dunce::canonicalize(&scratch.path).unwrap();
+        let credentials = AuthDirectory::create(&root).unwrap();
+        let path = credentials.path.clone();
+        // No runtime is installed and no network is used: the real logout
+        // spawn fails, but its local deletion obligation must still complete.
+        let launch = LaunchContext::new(Runtime::at(&root.join("missing-runtime")), &path).unwrap();
+        std::fs::create_dir_all(path.join("home/.wrangler/config")).unwrap();
+        std::fs::write(path.join("home/.wrangler/config/default.toml"), "fake credential").unwrap();
+        let auth = WranglerAuth { token: "fake-token".into(), launch, credentials };
+        auth.cleanup().await.unwrap();
+        assert!(!path.exists());
+        assert!(root.is_dir());
+    }
 
     #[test]
     fn private_environment_drops_credentials_and_code_injection_but_keeps_proxies() {

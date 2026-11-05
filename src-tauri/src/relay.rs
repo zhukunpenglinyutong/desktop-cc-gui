@@ -31,6 +31,7 @@ use tokio::sync::{mpsc, watch};
 use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 use tokio_tungstenite::tungstenite::Message;
 
+mod auth_storage;
 pub mod login;
 mod wrangler;
 
