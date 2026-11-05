@@ -1560,6 +1560,17 @@ struct TurnStarted {
     turn_id: Option<String>,
 }
 
+/// `clientInfo` is required, but Codex treats `codex-backend` as a
+/// non-originating client: it leaves the CLI's process-wide originator and UA
+/// suffix untouched. Do not send the host's name or version here, or hard-code
+/// a User-Agent that will drift from the CLI.
+fn initialize_params(experimental: bool) -> Value {
+    json!({
+        "clientInfo": { "name": "codex-backend", "version": "" },
+        "capabilities": { "experimentalApi": experimental },
+    })
+}
+
 /// `initialize` → thread → [plan-item verification] → `turn/start`, up to the
 /// turn's acknowledgement. `decision` marks a plan-decision turn: the reviewed
 /// plan item is re-fetched and compared first, and the turn starts in the
@@ -1587,13 +1598,7 @@ async fn handshake_and_start(
         || decision.is_some()
         || req.permission.as_deref() == Some("plan");
     let key = server
-        .request(
-            "initialize",
-            json!({ "clientInfo": {
-                "name": "ccgui",
-                "version": env!("CARGO_PKG_VERSION"),
-            }, "capabilities": {"experimentalApi": experimental}}),
-        )
+        .request("initialize", initialize_params(experimental))
         .await?;
     let initialized = server
         .pump(
@@ -2315,7 +2320,7 @@ mod tests {
         let killed = AtomicBool::new(false);
         let result: Result<(),String> = async {
             for (method,params) in [
-                ("initialize",json!({"clientInfo":{"name":"ccgui_probe","version":"1"},"capabilities":{"experimentalApi":true}})),
+                ("initialize",initialize_params(true)),
                 ("configRequirements/read",json!({})),
                 ("config/read",json!({"cwd":workspace,"includeLayers":true})),
                 ("thread/start",json!({"cwd":workspace,"model":"probe","sandbox":"read-only","approvalPolicy":"never","ephemeral":true,"dynamicTools":[],"selectedCapabilityRoots":[],"environments":[{"environmentId":"local","cwd":workspace}]})),
