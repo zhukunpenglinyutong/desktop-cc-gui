@@ -29,6 +29,78 @@ export function changelogEntryFor(version: string): ChangelogEntry | undefined {
 
 export const CHANGELOG_DATA: ChangelogEntry[] = [
   {
+    version: "1.2.1",
+    date: "2026-11-02",
+    content: {
+      zh: `✨ 新功能
+- **会话分叉**（#1436）：助手回复下方常驻「复制 / 创建分支」。点「创建分支」当场把分叉点之前的完整轮次复制成新会话并登记，新页签立刻显示继承的对话——不需要先发一条消息、不消耗 token，原会话完全不变。分叉点落在完整轮次（提问 + 回答）之后，点用户行也包含用户点的那一轮；支持 Claude Code / Codex / DeepSeek Harness（dsh），远程（WSL 等）会话与其他引擎的入口置灰并说明原因。分支标题为「<来源会话当前名> (fork #N)」，编号按父会话的兄弟取 max+1、空号不复用；从分支再分叉会继续叠加后缀以保留血缘，整条标题上限 80 字符、后缀最多 5 段。流式期间入口保留占位但禁用；同一进程内的并发分叉逐个执行，桌面端与网页端同时分叉不会再拿到同一个编号；失败会清掉已写出的转录本与目录，已成功的分叉不再误报「创建分支失败」；模型 / 思考档位 / 供应商继承失败时会明确提示，而不是静默改用引擎默认值。用户气泡只保留 hover / 聚焦显形的复制，不放分叉入口；Codex 分支与原生分叉同形（改第一条 session_meta 的身份并补 forked_from_id），Claude / dsh 的切点与解析器同源，同文本多轮按从尾部计数的序号消歧。
+- **对话栏宽度四档可调**（#1469）：设置 → 通用 → 外观的「对话栏宽度」可选窄 750px（默认）/ 中 960px / 宽 1200px / 满宽，时间线、输入框、状态条、附件行、排队消息与问答 / 计划 dock 共用同一条居中轨道。默认档不写变量，时间线与输入框一侧各自回落 750px / 768px，界面与此前逐像素一致；960 / 1200 写像素，满宽去掉上限。宽幕布开启时该项禁用（它本身就是满宽），变量只作用于两个聊天专用类，不影响其他 max-w-3xl 界面或插件。
+- **MCP 按需启动**（#1466）：stdio 条目可以选择「随会话启动」或「按需启动」，设置只保存在本应用，不改 CLI 配置。按需条目由引擎经透明代理拉起：握手与工具清单用上次运行的缓存应答，第一次真正调用工具时才启动真实服务，每次发送不再先等全部 MCP 启动；工具名、参数与权限规则不变。支持 Claude / CodeBuddy / Codex / OMP；其他引擎、非 stdio 条目、带环境变量的 OMP 条目（OMP 只能经项目里的 .omp/mcp.json 注入，避免令牌落进项目文件）、Codex 项目级条目（避免绕过 Codex 的项目信任检查）以及被同名高优先级条目遮住的条目会说明不可用原因；打开页面时的自动检测跳过按需条目。列表行改为检测、启动方式、启用三个图标，启用开关常驻，只读来源置灰并在悬停时说明原因；详情弹窗限高并在框内滚动。OMP 自己 mcp.json 里的条目可以直接启停，名字在 OMP 停用 / 启用名单里的按名单显示并只读。修复 Windows 上 Claude 用户 / local 条目启停总报「配置文件中没有这个项目的记录」，以及 Grok / OpenCode 启停开关点下去后一直卡住、之后所有 MCP 开关都不再响应。
+
+🐛 修复
+- **设置写入不再互相覆盖**：读取、合并、写盘在同一把写锁内完成，网页端保存也走同一路径；整对象保存时缺少「使用统计」字段会保留已存的选择，不会把关闭的开关重新打开。
+- **电脑操控回合的挂起进程不会被普通消息复用**：FollowupPrefs 记录 computer_use，不一致时结束挂起进程并重新启动，后续消息（包括远端发来的）不会落进已经挂载并预批准操控驱动的进程。
+- **CLI 终端安装不会开出两个终端**：新增 launching 状态和防重入，已关闭对话框的迟到结果按代次丢弃；Windows 使用 PowerShell 的绝对路径，非 Windows 使用 set -o pipefail，curl 失败不再被判为成功。
+- **DSH 的链接与 cookie 只发给本次启动的进程**：launch token 只为本次运行自己拉起的 origin 生成，存储的 BrowserAuth cookie 也只附给该 origin，端口上的其他程序两者都拿不到。
+- **工作区 MCP 检测执行的就是用户确认的那份计划**：确认绑定完整目标（含参数与环境变量值）的指纹，后端执行前重读并比对，git pull 或 agent 改写配置文件后不会执行新命令；检测工作区条目时也不展开 \${ENV}。
+
+🛡️ 安全与隐私
+- **v1.2.0 终端安全告警的修复**：CodeBuddy 账号区不再探测系统凭据存储（不运行 cmdkey /list、security find-generic-password、secret-tool search），改为中性说明与「终端登录」，登录状态由 CLI 自己管理；引擎禁用时认证区直接不挂载，Pi / OMP 不再在窗口获得焦点时读取认证文件。
+- **读取 CLI 登录凭据前先征得同意**：用量插件查询订阅限额时，桌面端弹框逐项列出本机实际路径 / 钥匙串服务名与唯一发送目标（api.anthropic.com / chatgpt.com），并说明插件拿不到凭据原文；拒绝后本次运行不再询问，可在插件详情页允许或撤销，Web 访问端没有同意入口。
+- **电脑操控的驱动拆成独立程序**：截屏（xcap）与键鼠注入（enigo）只存在于 ccgui-computer-use，主程序不再链接；引擎只在用户主动发起的操控回合拉起它，辅助程序缺失时发送前明确报错，旧参数 --computer-use-mcp 仅作转发兼容；桌宠的光标读取也改用原生 API，不再为此链接输入注入库。
+- **HTML 文件默认显示源码**：点「预览」才渲染；预览协议只服务被预览文件所在目录（随机令牌，最多缓存 64 个根），iframe 去掉 allow-same-origin，每个响应带禁止外联的 CSP，符号链接 / junction 不能逃出该目录，未知扩展名不再按 HTML 返回；需要 CDN 脚本的草稿可用「在浏览器中打开」查看完整效果。
+- **工作区里的 MCP 配置不自动执行**：打开 MCP 页只自动检测用户级配置；工作区条目手动检测前先弹窗列出完整命令、参数、工作目录、env 键名与脱敏后的 URL / 请求头键名，确认后才运行。
+- **使用统计改为后端发送并可关闭**：主窗口不再加载 hm.js，CSP 移除百度域名；发布构建每次启动由后端发送一次 hm.gif，只带版本、系统、界面语言、屏幕尺寸与随机访客 ID，不含页面地址、文件路径或任何令牌。设置 → 关于新增「使用统计」开关（默认开启），保存失败时开关回到原状态。
+- **Windows 性能诊断只检查本应用的后代进程**：用 Toolhelp 快照读取进程表，不再对全系统进程（含 lsass）调用 OpenProcess；句柄只为选中的本应用进程打开，也只刷新选中项。
+- **DSH 不再结束其他程序的进程**：自动启动要求开关开启、引擎已启用且已安装；端口被占用只提示，不执行 netstat / taskkill 或 lsof / kill；「停止」只结束自己启动的 dsh web。
+- **Web 访问端不能扩大访问面**：电脑操控与 /ccgui-cua 在 Web 端强制关闭；中继启停、无人值守、部署与设备批准只在桌面端可用（设备撤销仍可远程执行）；远端保存设置时保留远程访问与统计字段；访问令牌从地址栏移入当前标签页的 sessionStorage 并清掉 URL。
+- **官方安装脚本在可见终端里运行**：claude / codex 的安装与更新不再隐藏执行 powershell -ExecutionPolicy Bypass；确认后在内置终端输入命令并显示输出，可随时中断；npm 安装仍在应用内流式显示。
+- **配置文件与数据目录收紧权限**：Unix 上原子写入统一为 0600（保留属主执行位），应用数据目录启动时收为 0700；写穿 dotfile 符号链接，临时文件名唯一，不再覆盖同名 .tmp 或并发写入。macOS「移到废纸篓」改走 NSFileManager，不再经 osascript 控制 Finder。
+- **Windows 程序图标改为进程内提取**：使用 SHGetFileInfoW + GetIconInfo + GetDIBits，不再隐藏启动 PowerShell 做 System.Drawing → Base64。
+- **Windows 发布接入 Authenticode 签名**：配置 Azure Trusted Signing 或证书后，为 exe、辅助程序、安装器与卸载器签名；构建后解包安装器逐个校验签名，并确认包含 ccgui-computer-use.exe。未配置证书时构建仍成功，但给出未签名警告。
+
+🧹 内部优化
+- 分叉实现拆成 engine/fork（mod / anchor / title / landing / tests）与 fork_dsh，引擎差异收口在能力表；锚点一趟预计算，时间线行组件不再接收整份消息列表。
+- 新增安全复盘与全仓自查文档（docs/security-incidents/），把「不枚举凭据库、隐藏窗口脚本、截屏 / 输入注入隔离、挂载不产生副作用、工作区内容不可信」等规则写进 AGENTS.md，并补发版前自查命令。
+- MCP 按需代理的行为参考 mcp-snooze（MIT），第三方声明已补；代理协议、Codex 项目信任与 OMP env 限制均有回归覆盖。
+- 开发与发布：pnpm dev 现在同时构建 ccgui-computer-use 辅助程序，Windows 免安装产物也一并上传；签名脚本支持 Azure Trusted Signing 或证书。
+- 版本号对齐到 1.2.1；插件 SDK 仍为 0.3.25，limits.read 的同意行为与新设置字段已同步到 SDK 文档和内置插件开发 skill。`,
+      en: `✨ Features
+- **Fork conversations** (#1436): assistant replies now carry a permanent Copy / Fork pair. Clicking Fork copies the complete turns before the fork point into a new session and registers it immediately, so the new tab shows the inherited conversation without sending a message or spending tokens, and the source session stays untouched. The fork point always follows a complete turn (question + answer) and includes the turn the user clicked; Claude Code, Codex and DeepSeek Harness (dsh) are supported, while remote (WSL) sessions and other engines are greyed out with the reason. Branch titles are "<source session's current name> (fork #N)"; numbering is max+1 among the parent's siblings and never reuses a gap, and forking a branch stacks the suffix so lineage stays visible (whole title capped at 80 characters, at most 5 suffixes). The entry keeps its place but is disabled while streaming; concurrent forks in one process run one at a time, so desktop and web clients no longer receive the same number; a failure removes the transcript and directory it wrote, and a successful fork is no longer reported as "could not create branch"; when the model / effort / provider could not be inherited, the app says so instead of silently falling back to engine defaults. User bubbles keep only the hover / focus copy button and have no fork entry. Codex branches match the native fork shape (the first session_meta gets the new identity plus forked_from_id), Claude / dsh cut points share the parser's decision, and repeated identical text is disambiguated by a tail-counted occurrence.
+- **Four chat column widths** (#1469): Settings → General → Appearance → Chat column width offers Narrow 750px (default) / Medium 960px / Wide 1200px / Full width, driving the timeline, composer, status strip, attachments, queued messages and question / plan docks through one shared centered track. The default writes no variable, so the timeline and composer side keep their previous 750px / 768px fallbacks pixel for pixel; 960 / 1200 write pixels and Full removes the cap. The option is disabled while Wide canvas is on (that is full width itself), and the variable only affects the two chat-specific classes, never other max-w-3xl UI or plugins.
+- **Start MCP servers on demand** (#1466): each stdio entry can start with the session or on demand; the choice is stored in this app only and leaves the CLI config unchanged. On-demand entries are launched through a transparent proxy that answers the handshake and tool lists from the last run's cache and starts the real server on the first actual call, so a send no longer waits for every MCP server to start; tool names, parameters and permission rules stay the same. Supported for Claude, CodeBuddy, Codex and OMP. Other engines, non-stdio entries, OMP entries with environment variables (OMP only accepts them through the workspace .omp/mcp.json, which would put tokens into a project file), Codex project-level entries (which would bypass Codex's project trust check) and entries hidden by a same-name entry of higher precedence explain why the option is unavailable; the automatic check on page open skips on-demand entries. Each row now shows three icons (check, start mode, enable); the enable toggle is always shown, and read-only sources are greyed out with the reason on hover. The details dialog has a height limit and scrolls inside. Entries in OMP's own mcp.json files can be enabled and disabled directly; names on OMP's disabled/enabled server lists follow those lists and are read-only. Fixes enabling or disabling Claude user/local entries on Windows, which always failed because the project record was not found, and the Grok/OpenCode enable toggles hanging after a click and leaving every later MCP toggle unresponsive.
+
+🐛 Fixes
+- **Settings writes no longer overwrite each other**: read, merge and persist now share one write lock, including the web path; a full-object save that omits the usage-statistics field keeps the stored choice instead of turning an off switch back on.
+- **A parked computer-use process is not reused for normal messages**: FollowupPrefs records computer_use, and when it differs the parked process is ended and restarted, so later messages (including remote ones) cannot land in a process that already mounted and pre-approved the driver.
+- **CLI terminal installs cannot open two terminals**: a new launching state and re-entrancy guard discard late results for a closed dialog by generation. Windows uses PowerShell's absolute path, other platforms use set -o pipefail, and a failed curl no longer counts as success.
+- **DSH launch links and cookies go only to the child this run started**: the launch token is generated only for our own origin, and the stored BrowserAuth cookie is attached only there, so anything else on the port receives neither.
+- **Workspace MCP probing runs exactly the plan the user confirmed**: confirmation binds the fingerprint of the full target (arguments and env values), and the backend re-reads and compares before running, so a git pull or an agent rewrite cannot swap in a new command; workspace entries also leave \${ENV} unexpanded.
+
+🛡️ Security and privacy
+- **Fixes for the v1.2.0 endpoint-security alert**: the CodeBuddy account area no longer probes the OS credential store (no cmdkey /list, security find-generic-password or secret-tool search) and instead gives a neutral note plus Terminal login, leaving login state to the CLI; authentication sections are not mounted at all while an engine is disabled, and Pi / OMP stop reading authentication files on window focus.
+- **Consent before reading CLI credentials**: when the usage plugin queries subscription limits, a desktop dialog lists each local path / keychain service and the only destination (api.anthropic.com / chatgpt.com) and explains that the plugin cannot see credential contents; a refusal stops asking for the rest of the run, the plugin detail page can allow or revoke, and the web client has no consent route.
+- **The computer-use driver is now a separate program**: screen capture (xcap) and input injection (enigo) live only in ccgui-computer-use and are no longer linked into the main app; an engine launches it only for a computer-use turn the user started, a missing helper fails the send with an actionable reason, and the old --computer-use-mcp flag remains only as a forwarding shim; the pet's cursor read now uses native APIs too, so no input-injection library is linked for it.
+- **HTML files open as source**: rendering starts only after clicking Preview; the preview protocol serves only the previewed file's directory (random token, at most 64 cached roots), the iframe drops allow-same-origin, every response carries a CSP that forbids outbound connections, symlinks / junctions cannot escape the directory, and unknown extensions are no longer served as HTML. Drafts that need CDN scripts can use Open in browser for the full page.
+- **Workspace MCP configs never run automatically**: opening the MCP page auto-checks user-level configs only; before checking a workspace entry the app lists the full command, arguments, working directory, env key names and masked URL / header keys, and runs it only after confirmation.
+- **Usage statistics move to the backend and can be turned off**: the main window no longer loads hm.js and the CSP no longer allows the Baidu domain; release builds send one hm.gif per launch from the backend, carrying only version, OS, UI language, screen size and a random visitor id — no page URL, file path or token. Settings → About gains a Usage Statistics switch (on by default) that reverts when saving fails.
+- **Windows performance diagnostics look only at this app's descendants**: a Toolhelp snapshot provides the process table instead of calling OpenProcess on every process on the system (lsass included); handles are opened only for the selected own processes and only those are refreshed.
+- **DSH no longer ends other programs' processes**: autostart requires the switch on, the engine enabled and the CLI installed; an occupied port is reported without netstat / taskkill or lsof / kill, and Stop ends only the dsh web this app started.
+- **The web client cannot widen access**: computer use and /ccgui-cua are force-disabled over the web bridge; relay on/off, unattended mode, deployment and device approval are desktop-only (revoking a device still works remotely); remote settings writes preserve the remote-access and analytics fields; the access token moves from the address bar into the current tab's sessionStorage and is removed from the URL.
+- **Official installer scripts run in a visible terminal**: claude / codex installs and updates no longer run powershell -ExecutionPolicy Bypass in a hidden window; after confirmation the command is typed into the built-in terminal with visible output and can be interrupted, while npm installs still stream inside the app.
+- **Tighter permissions for config files and the data directory**: on Unix, atomic writes are always 0600 (keeping an owner execute bit) and the app data directory is narrowed to 0700 at startup; dotfile symlinks are written through, staging names are unique, and a real .tmp sibling or concurrent writer is no longer clobbered. macOS moves items to the Trash through NSFileManager instead of controlling Finder via osascript.
+- **Windows program icons are extracted in-process**: SHGetFileInfoW + GetIconInfo + GetDIBits replace a hidden PowerShell spawn that loaded System.Drawing and printed Base64.
+- **Windows releases can be Authenticode-signed**: with Azure Trusted Signing or a certificate configured, the exe, helper, installer and uninstaller are signed; after packaging the installer is unpacked and every signature checked, including the presence of ccgui-computer-use.exe. Without a certificate the build still succeeds but warns that it is unsigned.
+
+🧹 Internal
+- Forking is split into engine/fork (mod / anchor / title / landing / tests) and fork_dsh, with every engine difference in one capability table; anchors are precomputed in one pass and timeline rows no longer receive the whole message list.
+- New incident and repository-wide audit documents (docs/security-incidents/) record the rules against enumerating credential stores, hidden-window scripts, separating screen capture / input injection, avoiding side effects on mount and treating workspace content as untrusted in AGENTS.md, plus the pre-release self-check commands.
+- The on-demand MCP proxy follows mcp-snooze (MIT) behaviour, with the third-party notice added; the proxy protocol, Codex project trust and OMP env restrictions are covered by regression tests.
+- Development and release: pnpm dev now also builds the ccgui-computer-use helper, the portable Windows artifact ships it too, and the signing script supports Azure Trusted Signing or a certificate.
+- Versions are aligned to 1.2.1; the plugin SDK stays at 0.3.25, and the limits.read consent behaviour and new settings fields are documented in the SDK docs and the bundled plugin-creator skill.`,
+    },
+  },
+  {
     version: "1.2.0",
     date: "2026-10-31",
     content: {

@@ -10,15 +10,17 @@
 //! Credential chain: the spawned host prints a one-time launch token
 //! (`dsh web: http://…/?token=…`) on its output; we capture it, exchange it
 //! via `GET /?token=…` (303 + set-cookie, no redirects), and persist the
-//! cookie per-origin in `~/.ccgui-next/dsh-host-credentials.json`. A host
-//! that answers with 401 is alive but credential-locked: local listeners are
-//! stopped so we can respawn with our own token chain (credentials are ours
-//! to manage), remote origins can't be adopted.
+//! cookie per-origin in `~/.ccgui-next/dsh-host-credentials.json`. The cookie
+//! rides only on requests to the origin of the child this run spawned
+//! ([`TRUSTED_ORIGIN`]); anything else answering on the port never sees it.
 //!
-//! Ownership rule: only hosts we spawned are tracked in [`DshHostState`] and
-//! killed (app exit / dsh_host_stop). A pre-existing host answering describe
-//! is adopted and never killed — except via dsh_host_stop's local-listener
-//! termination, which only ever targets loopback addresses.
+//! Ownership rule: only the `dsh web` child we spawned is tracked in
+//! [`DshHostState`], restarted and killed (app exit / dsh_host_stop). A host
+//! answering describe without our credentials is adopted as-is; anything else
+//! on the port — a 401, a different HTTP service — is reported as "port
+//! occupied" and left running. CC GUI never looks up and kills whatever
+//! listens on a port: v1.2.0 did (`netstat` + `taskkill /T /F`, `lsof` +
+//! `kill -KILL`) on every launch and took down other apps' services on 3080.
 
 use std::collections::BTreeMap;
 use std::fs::{File, OpenOptions};
@@ -104,6 +106,7 @@ struct Spawned {
 
 impl Drop for Spawned {
     fn drop(&mut self) {
+        distrust_origin(&self.origin);
         if let Some(pid) = self.child.id() {
             crate::engine::kill_process_group(pid);
         }
@@ -112,12 +115,25 @@ impl Drop for Spawned {
 }
 
 impl DshHostState {
-    /// Kill only the host child we spawned (window Destroyed). Adopted hosts
-    /// are never tracked, so they survive us by construction.
-    pub fn kill_spawned(&self) {
+    /// Kill only the host child we spawned (window Destroyed, stop, restart).
+    /// Adopted hosts are never tracked, so they survive us by construction.
+    /// Returns whether there was a child to kill.
+    pub fn kill_spawned(&self) -> bool {
         let mut guard = lock(&self.spawned);
         // Drop of Spawned kills the process group.
-        guard.take();
+        guard.take().is_some()
+    }
+
+    /// Forget a tracked child that has already exited, so a dead child is
+    /// neither treated as ours nor keeps the cookie trusted.
+    fn reap_exited(&self) {
+        let mut guard = lock(&self.spawned);
+        let exited = guard
+            .as_mut()
+            .is_some_and(|spawned| !matches!(spawned.child.try_wait(), Ok(None)));
+        if exited {
+            guard.take();
+        }
     }
 
     fn spawned_origin(&self) -> Option<String> {
@@ -131,6 +147,59 @@ fn lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
     mutex
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
+/// Origin of the `dsh web` child this run spawned: set right after the spawn
+/// (its readiness probes need the cookie) and cleared when the child is
+/// dropped or the spawn fails. The stored BrowserAuth cookie is attached only
+/// for this origin, so another program on the port — or one squatting it
+/// while the host is down — never receives a credential for the real host.
+static TRUSTED_ORIGIN: Mutex<Option<String>> = Mutex::new(None);
+
+fn origin_trusted(origin: &str) -> bool {
+    lock(&TRUSTED_ORIGIN).as_deref() == Some(origin)
+}
+
+fn distrust_origin(origin: &str) {
+    let mut trusted = lock(&TRUSTED_ORIGIN);
+    if trusted.as_deref() == Some(origin) {
+        *trusted = None;
+    }
+}
+
+/// Trust for a spawn still proving itself: dropped without `keep()` (any
+/// early return from the readiness loop) it withdraws the trust again.
+struct PendingTrust {
+    origin: String,
+    kept: bool,
+}
+
+impl PendingTrust {
+    fn grant(origin: &str) -> Self {
+        *lock(&TRUSTED_ORIGIN) = Some(origin.to_string());
+        Self {
+            origin: origin.to_string(),
+            kept: false,
+        }
+    }
+
+    /// Hand the trust over to the tracked [`Spawned`] (its drop withdraws it).
+    fn keep(mut self) {
+        self.kept = true;
+    }
+
+    /// Withdraw early, before probing a port our child no longer answers on.
+    fn withdraw(&self) {
+        distrust_origin(&self.origin);
+    }
+}
+
+impl Drop for PendingTrust {
+    fn drop(&mut self) {
+        if !self.kept {
+            distrust_origin(&self.origin);
+        }
+    }
 }
 
 // ==================== Config / status ====================
@@ -413,6 +482,9 @@ pub(crate) fn configured_origin(settings: &AppSettings) -> String {
 /// Host-session RPC (chat turns) rides the same credential chain as the
 /// probes: cookie captured from the launch token, keyed by origin.
 pub(crate) fn host_cookie(origin: &str) -> Option<String> {
+    if !origin_trusted(origin) {
+        return None;
+    }
     load_credentials(origin).map(|credentials| credentials.cookie)
 }
 
@@ -425,7 +497,7 @@ async fn host_post(origin: &str, method: &str, args: Value) -> Result<(u16, Valu
     let mut request = http_client(origin)
         .post(format!("{origin}/api/{method}"))
         .header(reqwest::header::CONTENT_TYPE, "application/json");
-    if let Some(cookie) = load_credentials(origin).map(|c| c.cookie) {
+    if let Some(cookie) = host_cookie(origin) {
         request = request.header(reqwest::header::COOKIE, cookie);
     }
     let body = json!({
@@ -524,6 +596,10 @@ pub(crate) async fn host_call_rpc(
 pub(crate) enum ProbeOutcome {
     Live(Value),
     Unauthorized,
+    /// Something answered HTTP but is not a usable DSH host (non-envelope
+    /// body, refused describe): the port is taken, not free.
+    Answered(String),
+    /// Nothing reachable (connect / transport failure).
     Down(String),
 }
 
@@ -545,7 +621,7 @@ pub(crate) async fn probe_describe(origin: &str) -> ProbeOutcome {
         return ProbeOutcome::Unauthorized;
     }
     if envelope.get("type").and_then(Value::as_str) != Some("server-response") {
-        return ProbeOutcome::Down(format!("describe 响应格式不正确（HTTP {status}）"));
+        return ProbeOutcome::Answered(format!("describe 响应格式不正确（HTTP {status}）"));
     }
     let result = envelope.get("result").cloned().unwrap_or(Value::Null);
     if result.get("ok").and_then(Value::as_bool) == Some(true) {
@@ -555,14 +631,55 @@ pub(crate) async fn probe_describe(origin: &str) -> ProbeOutcome {
         .pointer("/error/message")
         .and_then(Value::as_str)
         .unwrap_or("未知错误");
-    ProbeOutcome::Down(format!("describe 被拒绝：{message}"))
+    ProbeOutcome::Answered(format!("describe 被拒绝：{message}"))
 }
 
-/// Anything that answers owns the port — live or credential-locked. Only the
-/// unix stop path escalates on a still-answering listener.
-#[cfg(unix)]
-async fn host_alive(origin: &str) -> bool {
-    !matches!(probe_describe(origin).await, ProbeOutcome::Down(_))
+/// What ensure does with the port, given the probe and whether the answering
+/// side can be our own tracked child. Only our child is ever restarted:
+/// anything else that answers is reported as occupied and left running.
+#[derive(Debug, PartialEq)]
+enum EnsureAction {
+    Adopt,
+    Spawn,
+    RestartOwn,
+    Occupied(String),
+}
+
+fn ensure_action(probe: &ProbeOutcome, ours: bool) -> EnsureAction {
+    match probe {
+        ProbeOutcome::Live(_) => EnsureAction::Adopt,
+        _ if ours => EnsureAction::RestartOwn,
+        ProbeOutcome::Down(_) => EnsureAction::Spawn,
+        ProbeOutcome::Unauthorized => EnsureAction::Occupied("HTTP 401".to_string()),
+        ProbeOutcome::Answered(detail) => EnsureAction::Occupied(detail.clone()),
+    }
+}
+
+fn occupied_message(port: u16, detail: &str) -> String {
+    format!(
+        "端口 {port} 已被其他程序占用（{detail}）。CC GUI 只会结束自己启动的 dsh web，不会关闭其他程序；请先关闭占用该端口的程序，或在设置里改用其他端口。"
+    )
+}
+
+/// Autostart only when the user can actually be running DSH from CC GUI:
+/// the switch is on, the engine is enabled in CLI 管理 and a `dsh` binary
+/// resolves. Otherwise the port is not touched at all — no probe, no spawn.
+pub(crate) fn autostart_allowed(settings: &AppSettings) -> bool {
+    should_autostart(
+        settings.dsh_auto_start,
+        crate::config::ensure_engine_enabled("dsh").is_ok(),
+        dsh_installed(settings),
+    )
+}
+
+fn should_autostart(switch: Option<bool>, engine_enabled: bool, installed: bool) -> bool {
+    switch != Some(false) && engine_enabled && installed
+}
+
+fn dsh_installed(settings: &AppSettings) -> bool {
+    let bin = dsh_bin(settings);
+    let path = Path::new(&bin);
+    path.is_absolute() && path.is_file()
 }
 
 /// 0.1.2 describe value → the flat `{provider, model}` view the settings
@@ -841,9 +958,10 @@ fn ring_snapshot(buf: &Mutex<String>) -> String {
 
 // ==================== ensure (adopt-or-spawn) ====================
 
-/// Adopt the host if it already answers with valid credentials, otherwise
-/// spawn `dsh web` and wait for readiness. Used by dsh_host_start and the
-/// setup autostart task.
+/// Adopt a host that already answers, restart our own child when it stopped
+/// answering, otherwise spawn `dsh web` and wait for readiness. Anything else
+/// holding the port is reported, never killed. Used by dsh_host_start, chat
+/// turns and the gated setup autostart.
 pub(crate) async fn ensure_host(
     host_state: &DshHostState,
     settings: &AppSettings,
@@ -851,26 +969,16 @@ pub(crate) async fn ensure_host(
     let _serialize = host_state.ensure.lock().await;
     let cfg = HostConfig::from(settings);
 
-    // Fast path: a host answering with valid credentials is adopted as-is
-    // (including our own still-live spawned child from an earlier start).
-    if probe_describe(&cfg.origin).await.is_live() {
-        return Ok(());
-    }
-    // BrowserAuth: a listener rejecting our cookie is alive but locked.
-    // Local ports are ours to reclaim — stop the listener and spawn with our
-    // own token chain; remote origins can't be adopted.
-    if matches!(
-        probe_describe(&cfg.origin).await,
-        ProbeOutcome::Unauthorized
-    ) {
-        if !is_local_host(&cfg.host) {
-            return Err(format!(
-                "DSH host 已在 {} 运行但缺少凭据（401）。远程 host 无法自动接管，请在设置里改用本机地址。",
-                cfg.origin
-            ));
+    host_state.reap_exited();
+    let ours = host_state.spawned_origin().as_deref() == Some(cfg.origin.as_str());
+    match ensure_action(&probe_describe(&cfg.origin).await, ours) {
+        EnsureAction::Adopt => return Ok(()),
+        EnsureAction::Occupied(detail) => return Err(occupied_message(cfg.port, &detail)),
+        EnsureAction::RestartOwn => {
+            host_state.kill_spawned();
+            sleep(Duration::from_millis(600)).await;
         }
-        terminate_local_listener(cfg.port, &cfg.origin).await?;
-        sleep(Duration::from_millis(600)).await;
+        EnsureAction::Spawn => {}
     }
 
     let bin = dsh_bin(settings);
@@ -895,6 +1003,9 @@ pub(crate) async fn ensure_host(
     let mut child = command.spawn().map_err(|e| {
         format!("无法启动 dsh web（{bin}）：{e}。请确认已安装 @deepseek-ai/dsh，或检查自定义路径。")
     })?;
+    // The readiness probes below need our cookie; any early return withdraws
+    // the trust again, success hands it to the tracked child.
+    let trust = PendingTrust::grant(&cfg.origin);
     // Kill-on-close job (Windows): same orphan class as engine runs — host
     // sessions' grandchildren escape every tree walk once their parent exits.
     #[cfg(windows)]
@@ -947,6 +1058,7 @@ pub(crate) async fn ensure_host(
                 #[cfg(windows)]
                 _tree_guard: tree_guard,
             });
+            trust.keep();
             return Ok(());
         }
         // 401 with the token already seen: the one-shot capture may have
@@ -960,8 +1072,10 @@ pub(crate) async fn ensure_host(
         }
         match child.try_wait() {
             Ok(Some(status)) => {
-                // Spawn race: our child died but a credentialed host now
-                // answers — adopt it instead of erroring.
+                // Spawn race: our child died but another host now answers.
+                // It is not ours, so it never gets our cookie: adopt it only
+                // when it answers without one.
+                trust.withdraw();
                 if probe_describe(&cfg.origin).await.is_live() {
                     return Ok(());
                 }
@@ -986,14 +1100,15 @@ pub(crate) async fn ensure_host(
             }
         }
         if Instant::now() >= deadline {
-            // Spawn race on timeout: a credentialed host won the port
-            // meanwhile.
+            // Our child never became ready: stop it first, then see whether
+            // some other host took the port meanwhile (adopted only when it
+            // answers without our cookie).
+            let _ = child.start_kill();
+            trust.withdraw();
             if probe_describe(&cfg.origin).await.is_live() {
-                let _ = child.start_kill();
                 return Ok(());
             }
             let tail = ring_snapshot(&output);
-            let _ = child.start_kill();
             if last_unauthorized {
                 return Err(format!(
                     "dsh host 已在 {} 应答但凭据未被接受（401），等待 {} 秒未就绪。{}",
@@ -1040,19 +1155,26 @@ async fn status_snapshot(host_state: &DshHostState, settings: &AppSettings) -> D
     } else {
         None
     };
+    let ours = host_state.spawned_origin().as_deref() == Some(cfg.origin.as_str());
     let (describe, error) = match probe {
         ProbeOutcome::Live(value) => (Some(normalize_describe(&value)), None),
-        ProbeOutcome::Unauthorized => (
+        // Our own child lost its credentials: 立即启动 restarts it.
+        ProbeOutcome::Unauthorized if ours => (
             None,
             Some(
                 "host 已运行但凭据无效（401）。点「立即启动」重新拉起，凭据会随之更新。"
                     .to_string(),
             ),
         ),
+        ProbeOutcome::Unauthorized => (None, Some(occupied_message(cfg.port, "HTTP 401"))),
+        ProbeOutcome::Answered(detail) => (None, Some(occupied_message(cfg.port, &detail))),
         ProbeOutcome::Down(error) => (None, Some(error)),
     };
-    let web_url = load_credentials(&cfg.origin)
-        .map(|credentials| format!("{}/?token={}", cfg.origin, credentials.launch_token));
+    let web_url = compose_web_url(
+        &cfg.origin,
+        origin_trusted(&cfg.origin),
+        load_credentials(&cfg.origin),
+    );
     DshHostStatus {
         installed: cli.installed,
         version: cli.version,
@@ -1066,6 +1188,20 @@ async fn status_snapshot(host_state: &DshHostState, settings: &AppSettings) -> D
         web_url,
         error,
     }
+}
+
+/// The "open in browser" link carries the launch token, which the host trades
+/// for its auth cookie: only offer it for the `dsh web` this run spawned
+/// (same rule as the cookie), never for whatever else answers on the port.
+fn compose_web_url(
+    origin: &str,
+    trusted: bool,
+    credentials: Option<HostCredentials>,
+) -> Option<String> {
+    if !trusted {
+        return None;
+    }
+    credentials.map(|credentials| format!("{origin}/?token={}", credentials.launch_token))
 }
 
 // ==================== Commands ====================
@@ -1091,18 +1227,34 @@ pub async fn dsh_host_start(
 pub async fn dsh_host_stop(state: tauri::State<'_, crate::AppState>) -> Result<OkResult, String> {
     let settings = crate::settings::read_settings().unwrap_or_default();
     let cfg = HostConfig::from(&settings);
-    // Kill only our own spawned child first.
-    state.dsh_host.kill_spawned();
-    if !is_local_host(&cfg.host) {
-        return Err("只能停止本机的 DSH host，远程地址不会被关闭。".to_string());
+    // Only our own child is ever stopped. Whatever else answers on the port
+    // (a host the user started, another app) is reported, never killed.
+    let had_child = state.dsh_host.kill_spawned();
+    for _ in 0..STOP_SETTLE_ATTEMPTS {
+        if matches!(probe_describe(&cfg.origin).await, ProbeOutcome::Down(_)) {
+            return Ok(OkResult { ok: true });
+        }
+        sleep(STOP_SETTLE_INTERVAL).await;
     }
-    // Terminate whatever still listens — a credential-locked host owns the
-    // port just as much as a healthy one, so liveness no longer gates this.
-    terminate_local_listener(cfg.port, &cfg.origin).await?;
-    Ok(OkResult { ok: true })
+    Err(if had_child {
+        format!(
+            "已结束 CC GUI 启动的 dsh web，但端口 {} 仍有程序在应答。CC GUI 不会结束不是它启动的进程，请手动关闭占用该端口的程序。",
+            cfg.port
+        )
+    } else {
+        format!(
+            "端口 {} 上的 DSH host 不是由 CC GUI 启动的，CC GUI 不会结束它。请在启动它的终端或程序里关闭。",
+            cfg.port
+        )
+    })
 }
 
-// ==================== Stop helpers ====================
+/// After killing our child, how long stop waits for its port to go quiet
+/// before reporting that something else still answers there.
+const STOP_SETTLE_ATTEMPTS: usize = 8;
+const STOP_SETTLE_INTERVAL: Duration = Duration::from_millis(250);
+
+// ==================== Locality ====================
 
 fn is_local_host(host: &str) -> bool {
     matches!(
@@ -1128,95 +1280,150 @@ fn origin_is_local(origin: &str) -> bool {
     is_local_host(host)
 }
 
-/// Terminate whatever listens on `port`: SIGTERM, re-probe, SIGKILL if the
-/// host still answers.
-#[cfg(unix)]
-async fn terminate_local_listener(port: u16, origin: &str) -> Result<(), String> {
-    let output = std::process::Command::new("lsof")
-        .arg("-n")
-        .arg("-P")
-        .arg("-t")
-        .arg(format!("-iTCP:{port}"))
-        .arg("-sTCP:LISTEN")
-        .stdin(Stdio::null())
-        .stderr(Stdio::null())
-        .output()
-        .map_err(|e| format!("检查端口 {port} 失败：{e}"))?;
-    let pids: Vec<u32> = String::from_utf8_lossy(&output.stdout)
-        .lines()
-        .filter_map(|line| line.trim().parse::<u32>().ok())
-        .collect();
-    if pids.is_empty() {
-        return Ok(());
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn web_url_with_the_launch_token_is_only_offered_for_our_own_host() {
+        let credentials = || {
+            Some(super::HostCredentials {
+                cookie: "c".into(),
+                launch_token: "tok".into(),
+            })
+        };
+        let origin = "http://127.0.0.1:3080";
+        assert_eq!(
+            super::compose_web_url(origin, true, credentials()).as_deref(),
+            Some("http://127.0.0.1:3080/?token=tok")
+        );
+        // Something else on the port must never be handed the token.
+        assert_eq!(super::compose_web_url(origin, false, credentials()), None);
+        assert_eq!(super::compose_web_url(origin, true, None), None);
     }
-    for pid in &pids {
-        let _ = std::process::Command::new("kill")
-            .arg("-TERM")
-            .arg(pid.to_string())
-            .status();
-    }
-    sleep(Duration::from_millis(500)).await;
-    if host_alive(origin).await {
-        for pid in &pids {
-            let _ = std::process::Command::new("kill")
-                .arg("-KILL")
-                .arg(pid.to_string())
-                .status();
-        }
-    }
-    Ok(())
-}
 
-#[cfg(windows)]
-async fn terminate_local_listener(port: u16, _origin: &str) -> Result<(), String> {
-    use std::os::windows::process::CommandExt;
-    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-    let mut netstat = std::process::Command::new("netstat");
-    netstat
-        .args(["-ano", "-p", "tcp"])
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .creation_flags(CREATE_NO_WINDOW);
-    let output = netstat
-        .output()
-        .map_err(|e| format!("检查端口 {port} 失败：{e}"))?;
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let needle = format!(":{port}");
-    let mut pids = Vec::new();
-    for line in stdout.lines() {
-        let cols: Vec<&str> = line.split_whitespace().collect();
-        if cols.len() < 5 || !cols[3].eq_ignore_ascii_case("LISTENING") {
-            continue;
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn autostart_needs_the_switch_the_enabled_engine_and_a_binary() {
+        assert!(should_autostart(None, true, true));
+        assert!(should_autostart(Some(true), true, true));
+        assert!(!should_autostart(Some(false), true, true), "switch off");
+        assert!(!should_autostart(None, false, true), "engine disabled in CLI 管理");
+        assert!(!should_autostart(None, true, false), "dsh not installed");
+    }
+
+    #[test]
+    fn only_our_own_child_is_ever_restarted() {
+        let live = ProbeOutcome::Live(json!({}));
+        assert_eq!(ensure_action(&live, false), EnsureAction::Adopt);
+        assert_eq!(ensure_action(&live, true), EnsureAction::Adopt);
+        // Nothing listening: spawn, or replace our own hung child.
+        let down = ProbeOutcome::Down("refused".into());
+        assert_eq!(ensure_action(&down, false), EnsureAction::Spawn);
+        assert_eq!(ensure_action(&down, true), EnsureAction::RestartOwn);
+        // Something else answers (401, or not a DSH at all): never ours to
+        // kill — report the port as occupied.
+        for answered in [
+            ProbeOutcome::Unauthorized,
+            ProbeOutcome::Answered("HTTP 404".into()),
+        ] {
+            assert!(matches!(
+                ensure_action(&answered, false),
+                EnsureAction::Occupied(_)
+            ));
+            assert_eq!(ensure_action(&answered, true), EnsureAction::RestartOwn);
         }
-        if cols[1].ends_with(&needle) {
-            if let Ok(pid) = cols[4].parse::<u32>() {
-                pids.push(pid);
+    }
+
+    /// Scratch HOME so stored credentials land in a temp app home.
+    struct ScratchHome {
+        dir: PathBuf,
+        previous: Option<std::ffi::OsString>,
+        _lock: parking_lot::MutexGuard<'static, ()>,
+    }
+
+    impl ScratchHome {
+        fn new() -> Self {
+            let lock = crate::paths::HOME_ENV_LOCK.lock();
+            let dir = std::env::temp_dir().join(format!("ccgui-dsh-home-{}", uuid::Uuid::new_v4()));
+            std::fs::create_dir_all(dir.join(".ccgui-next")).unwrap();
+            let previous = std::env::var_os("HOME");
+            std::env::set_var("HOME", &dir);
+            Self {
+                dir,
+                previous,
+                _lock: lock,
             }
         }
     }
-    for pid in pids {
-        let mut taskkill = std::process::Command::new("taskkill");
-        taskkill
-            .args(["/PID", &pid.to_string(), "/T", "/F"])
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .creation_flags(CREATE_NO_WINDOW);
-        let _ = taskkill.status();
+
+    impl Drop for ScratchHome {
+        fn drop(&mut self) {
+            match &self.previous {
+                Some(home) => std::env::set_var("HOME", home),
+                None => std::env::remove_var("HOME"),
+            }
+            let _ = std::fs::remove_dir_all(&self.dir);
+        }
     }
-    Ok(())
-}
 
-#[cfg(not(any(unix, windows)))]
-async fn terminate_local_listener(_port: u16, _origin: &str) -> Result<(), String> {
-    Err("当前平台不支持停止本机 DSH host。".to_string())
-}
+    /// Another program on the DSH port (401 for everyone): ensure must report
+    /// the port as occupied, leave the program running, and never hand it the
+    /// stored BrowserAuth cookie.
+    #[tokio::test]
+    async fn foreign_listener_is_reported_untouched_and_never_sees_the_cookie() {
+        use std::sync::atomic::AtomicUsize;
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use serde_json::json;
+        let _home = ScratchHome::new();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let hits = Arc::new(AtomicUsize::new(0));
+        let saw_cookie = Arc::new(AtomicBool::new(false));
+        let (server_hits, server_cookie) = (Arc::clone(&hits), Arc::clone(&saw_cookie));
+        let server = tokio::spawn(async move {
+            loop {
+                let Ok((mut socket, _)) = listener.accept().await else { return };
+                let mut buf = vec![0u8; 8192];
+                let n = socket.read(&mut buf).await.unwrap_or(0);
+                let request = String::from_utf8_lossy(&buf[..n]).to_ascii_lowercase();
+                server_hits.fetch_add(1, Ordering::SeqCst);
+                if request.contains("\r\ncookie:") {
+                    server_cookie.store(true, Ordering::SeqCst);
+                }
+                let _ = socket
+                    .write_all(b"HTTP/1.1 401 Unauthorized\r\ncontent-length: 0\r\nconnection: close\r\n\r\n")
+                    .await;
+            }
+        });
+
+        let origin = format!("http://127.0.0.1:{port}");
+        store_credentials(
+            &origin,
+            HostCredentials {
+                cookie: "dsh-auth-secret=1".into(),
+                launch_token: "token".into(),
+            },
+        );
+        assert!(load_credentials(&origin).is_some(), "credentials staged");
+        let settings = AppSettings {
+            dsh_host: Some("127.0.0.1".into()),
+            dsh_port: Some(port),
+            ..AppSettings::default()
+        };
+        let state = DshHostState::default();
+
+        let error = ensure_host(&state, &settings).await.unwrap_err();
+        assert!(error.contains("占用"), "{error}");
+        assert!(hits.load(Ordering::SeqCst) > 0, "the port was probed");
+        assert!(!saw_cookie.load(Ordering::SeqCst), "cookie leaked to a foreign listener");
+        assert!(
+            tokio::net::TcpStream::connect(("127.0.0.1", port)).await.is_ok(),
+            "the foreign listener must keep running"
+        );
+        assert!(lock(&state.spawned).is_none(), "nothing was spawned");
+        server.abort();
+    }
 
     /// The per-run log name must sort by spawn time and stay inside the app
     /// home, so the surviving file of a killed host is findable by name.

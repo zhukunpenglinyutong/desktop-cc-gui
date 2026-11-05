@@ -8,6 +8,12 @@ import { ipc, type EngineInfo } from "@/lib/ipc";
  * ordinary chat the user did not ask for.
  */
 
+// jsdom has no __TAURI_INTERNALS__, so the app would see itself as a
+// web-access client; these are desktop sends (web: computer-use-web.test.ts).
+vi.mock("@/lib/platform", async (original) => ({
+  ...(await original<typeof import("@/lib/platform")>()),
+  isWeb: false,
+}));
 vi.mock("@/lib/ipc", () => ({
   ipc: {
     sendMessage: vi.fn(async () => ({ runId: "run-1", sessionId: null })),

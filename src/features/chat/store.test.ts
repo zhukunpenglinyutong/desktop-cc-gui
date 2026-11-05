@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { ipc, type SessionMeta } from "@/lib/ipc";
+import { ipc, type ForkPlan, type SessionMeta } from "@/lib/ipc";
 import {
   pluginBus,
   resetPluginBusForTests,
@@ -30,6 +30,15 @@ vi.mock("@/lib/ipc", () => ({
     loadRemoteSessionPage: vi.fn(async () => ({ messages: [], nextBefore: null, subagentHistory: [] })),
     deleteSession: vi.fn(async () => {}),
     deleteRemoteSession: vi.fn(async () => {}),
+    // 回显被要求分叉的那个会话（真后端就是这样返回的）。
+    forkSession: vi.fn(async (_engine: string, sessionId: string) => ({
+      sourceSessionId: sessionId,
+      sourceEngine: "claude",
+      targetSessionId: "target-session",
+      atTip: false,
+      keepRecords: 6,
+      sourceTitle: "甲会话",
+    })),
     getAppSettings: vi.fn(async () => ({})),
     updateAppSettings: vi.fn(async () => {}),
     rescanSessions: vi.fn(async () => {}),
@@ -63,6 +72,7 @@ function resetStore() {
     bySession: {},
     streamingByKey: {},
     retryingByKey: {},
+    forkingByKey: {},
     unseen: {},
     drafts: {},
     restoredSessionKeys: {},
@@ -1366,6 +1376,205 @@ describe("session://selection-changed emissions", () => {
       expect(changed.seen).toEqual([]);
     } finally {
       changed.dispose();
+    }
+  });
+});
+
+/** 会话分叉的点击入口（真机反馈：点分支后当前窗口变空白）。
+ *
+ *  分叉是**点击即落盘**的（后端在 `fork_session` 里就写好继承过来的前缀转录本
+ *  并登记 `sessions` 行），所以分支页签从出现的第一刻起就有历史可读。这里盯的
+ *  是**页签**：如果 `openTabs` 里没有它，页签条上就看不到这条分支，用户无法切回
+ *  原会话，观感就是"当前窗口被清空了"。 */
+describe("forkSession", () => {
+  const SRC = "11111111-2222-4333-8444-555555555555";
+
+  it("appends a new tab and activates it, keeping the source tab", async () => {
+    useChatStore.setState({
+      openTabs: [{ engine: "claude", sessionId: SRC, workspacePath: WS }],
+      active: { engine: "claude", sessionId: SRC, workspacePath: WS },
+      activeEngine: "claude",
+      // 分支标题的来源：会话目录里的这条（`customTitle` 优先）。
+      sessions: [
+        {
+          engine: "claude",
+          sessionId: SRC,
+          workspacePath: WS,
+          title: "甲会话",
+        } as never,
+      ],
+      bySession: {},
+    });
+
+    await useChatStore.getState().forkSession("claude", SRC, WS);
+
+    const s = useChatStore.getState();
+    // 原会话仍在（不能被替换掉，否则用户回不去）。
+    expect(s.openTabs.some((t) => t.sessionId === SRC)).toBe(true);
+    // 新分支页签真的加进来了，并且是当前激活项。
+    expect(s.openTabs).toHaveLength(2);
+    const forkTab = s.openTabs.find((t) => t.sessionId === "target-session");
+    expect(forkTab).toBeDefined();
+    expect(s.active?.sessionId).toBe("target-session");
+    // 标题由后端生成（`<来源标题> (fork #N)`），前端不再传标题，也无需自己查重。
+    expect(ipc.forkSession).toHaveBeenCalledWith("claude", SRC, null);
+    expect(s.actionError).toBeFalsy();
+  });
+
+  it("opens the branch in the workspace the backend reports, not blindly the source's", async () => {
+    // 后端可能把分支落在**另一个**工作区（Claude 按"源转录本所在目录"找文件）。
+    // 这个字段一旦被前端忽略，页签会指向源会话的工作区，而转录本在别处——用户看到
+    // 的分支就是空的历史。默认 mock 不返回 `workspacePath`，所以只覆盖了回退分支；
+    // 这里显式覆盖"后端给了不同工作区"的那条路。
+    vi.mocked(ipc.forkSession).mockResolvedValueOnce({
+      sourceSessionId: SRC,
+      sourceEngine: "claude",
+      targetSessionId: "target-elsewhere",
+      workspacePath: "D:/some/other/workspace",
+      atTip: false,
+      keepRecords: 6,
+      sourceTitle: "甲会话",
+    });
+    useChatStore.setState({
+      openTabs: [{ engine: "claude", sessionId: SRC, workspacePath: WS }],
+      active: { engine: "claude", sessionId: SRC, workspacePath: WS },
+      activeEngine: "claude",
+      sessions: [
+        { engine: "claude", sessionId: SRC, workspacePath: WS, title: "甲会话" } as never,
+      ],
+      bySession: {},
+    });
+
+    await useChatStore.getState().forkSession("claude", SRC, WS);
+
+    const s = useChatStore.getState();
+    const forkTab = s.openTabs.find((t) => t.sessionId === "target-elsewhere");
+    expect(forkTab?.workspacePath).toBe("D:/some/other/workspace");
+    expect(s.active?.workspacePath).toBe("D:/some/other/workspace");
+  });
+
+  it("reports a fork failure with the fork-specific message", async () => {
+    vi.mocked(ipc.forkSession).mockRejectedValueOnce(new Error("boom"));
+    useChatStore.setState({
+      openTabs: [{ engine: "claude", sessionId: SRC, workspacePath: WS }],
+      active: { engine: "claude", sessionId: SRC, workspacePath: WS },
+      actionError: null,
+    });
+
+    await useChatStore.getState().forkSession("claude", SRC, WS);
+
+    const s = useChatStore.getState();
+    // 失败要说清是"创建分支"失败，而不是丢一句原始错误。
+    expect(s.actionError).toContain("boom");
+    expect(s.actionError).not.toBe("boom");
+    // 失败不动原会话、不加页签。
+    expect(s.openTabs).toHaveLength(1);
+    expect(s.active?.sessionId).toBe(SRC);
+  });
+
+  it("does not report a fork failure when only reading the branch history fails", async () => {
+    // 分叉本身已经成功（分支文件 + sessions 行都落地了），只有后续"把历史读进
+    // 时间线"失败。这时报「创建分支失败」会让用户以为白点了一次，而分支其实
+    // 已经存在、页签也开好了。
+    useChatStore.setState({
+      openTabs: [{ engine: "claude", sessionId: SRC, workspacePath: WS }],
+      active: { engine: "claude", sessionId: SRC, workspacePath: WS },
+      actionError: null,
+      bySession: {},
+      forkingByKey: {},
+    });
+    const selectSpy = vi
+      .spyOn(useChatStore.getState(), "selectSession")
+      .mockRejectedValueOnce(new Error("read failed"));
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    await useChatStore.getState().forkSession("claude", SRC, WS);
+
+    const s = useChatStore.getState();
+    expect(s.actionError).toBeFalsy();
+    // 分支页签已经在了 —— 证明分叉确实成功。
+    expect(s.openTabs.some((t) => t.sessionId === "target-session")).toBe(true);
+    // 防重入标记也要清掉，否则入口永远停在"进行中"。
+    expect(s.forkingByKey[`claude/${SRC}`]).toBeUndefined();
+    selectSpy.mockRestore();
+    errorSpy.mockRestore();
+  });
+
+  it("ignores a second fork of the same session while the first is in flight", async () => {
+    vi.mocked(ipc.forkSession).mockClear();
+    let releaseFork!: (plan: ForkPlan) => void;
+    vi.mocked(ipc.forkSession).mockImplementationOnce(
+      () =>
+        new Promise<ForkPlan>((resolve) => {
+          releaseFork = resolve;
+        }),
+    );
+    useChatStore.setState({
+      openTabs: [{ engine: "claude", sessionId: SRC, workspacePath: WS }],
+      active: { engine: "claude", sessionId: SRC, workspacePath: WS },
+      bySession: {},
+      forkingByKey: {},
+    });
+
+    const first = useChatStore.getState().forkSession("claude", SRC, WS);
+    const second = useChatStore.getState().forkSession("claude", SRC, WS);
+
+    // 防重入：双击不该建出两个分支（后端各自分配标题编号，用户拿到两条看起来
+    // 一样的会话）。第二次点击直接丢弃。
+    expect(ipc.forkSession).toHaveBeenCalledTimes(1);
+    // 在飞期间入口显示"进行中"（按钮据此置灰）。
+    expect(useChatStore.getState().forkingByKey[`claude/${SRC}`]).toBe(true);
+
+    releaseFork({
+      sourceSessionId: SRC,
+      sourceEngine: "claude",
+      targetSessionId: "target-session",
+      atTip: true,
+      sourceTitle: "甲会话",
+    });
+    await Promise.all([first, second]);
+
+    expect(useChatStore.getState().forkingByKey[`claude/${SRC}`]).toBeUndefined();
+    expect(useChatStore.getState().openTabs).toHaveLength(2);
+  });
+
+  it("clears the in-flight mark when the fork fails", async () => {
+    vi.mocked(ipc.forkSession).mockClear();
+    vi.mocked(ipc.forkSession).mockRejectedValueOnce(new Error("boom"));
+    useChatStore.setState({
+      openTabs: [{ engine: "claude", sessionId: SRC, workspacePath: WS }],
+      active: { engine: "claude", sessionId: SRC, workspacePath: WS },
+      forkingByKey: {},
+    });
+
+    await useChatStore.getState().forkSession("claude", SRC, WS);
+
+    // 失败也要解锁，否则入口会永远停在"进行中"。
+    expect(useChatStore.getState().forkingByKey[`claude/${SRC}`]).toBeUndefined();
+  });
+
+  it("announces the new session to plugins exactly once", async () => {
+    // 该主题是**保留**主题：晚订阅者会先收到上一次的值（回声），先清干净再订阅，
+    // 否则数到的是上一条测试留下的那一次。
+    resetPluginBusForTests();
+    const seen: { engine: string | null; sessionId: string | null }[] = [];
+    const dispose = pluginBus.on(SESSION_ACTIVATED_TOPIC, (data) =>
+      seen.push(data as { engine: string | null; sessionId: string | null }),
+    );
+    try {
+      useChatStore.setState({
+        openTabs: [{ engine: "claude", sessionId: SRC, workspacePath: WS }],
+        active: { engine: "claude", sessionId: SRC, workspacePath: WS },
+        forkingByKey: {},
+      });
+
+      await useChatStore.getState().forkSession("claude", SRC, WS);
+
+      // selectSession 每次都广播；forkSession 里再补发一次就是同一件事说两遍。
+      expect(seen.filter((event) => event.sessionId === "target-session")).toHaveLength(1);
+    } finally {
+      dispose();
+      resetPluginBusForTests();
     }
   });
 });

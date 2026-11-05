@@ -6,7 +6,15 @@ const mocks = vi.hoisted(() => ({
   cliVersionStatus: vi.fn(),
   cliUpdate: vi.fn(),
 }));
+const terminal = vi.hoisted(() => ({
+  backlog: new Map<string, string>(),
+  open: new Set<string>(),
+}));
 vi.mock("@/lib/ipc", () => ({ ipc: mocks }));
+vi.mock("@/features/terminal/sessions", () => ({
+  terminalBacklog: (id: string) => terminal.backlog.get(id) ?? "",
+  hasTerminalSession: (id: string) => terminal.open.has(id),
+}));
 
 import type { CliVersionStatus } from "@/lib/ipc";
 import type { EngineId } from "./providers";
@@ -145,5 +153,63 @@ describe("useCliVersionStatus session store", () => {
     expect(latest.updating).toBe(false);
     // No re-probe after a failed install.
     expect(mocks.cliVersionStatus.mock.calls.length).toBe(probesBefore);
+  });
+
+  it("a terminal install stays updating until its marker, then re-probes", async () => {
+    vi.useFakeTimers();
+    try {
+      mocks.cliVersionStatus.mockResolvedValue(versionStatus("opencode", { localVersion: "0.1.0" }));
+      await render("opencode");
+      terminal.open.add("tab-ok");
+      terminal.backlog.set("tab-ok", '$ curl … | bash; echo "__CCGUI_CLI_DONE__$?"\r\n');
+      const probesBefore = mocks.cliVersionStatus.mock.calls.length;
+
+      await act(async () => latest.watchTerminal("tab-ok"));
+      expect(latest.updating).toBe(true);
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(3000);
+      });
+      // The echoed command is not a completion.
+      expect(latest.updating).toBe(true);
+      expect(mocks.cliVersionStatus.mock.calls.length).toBe(probesBefore);
+
+      terminal.backlog.set("tab-ok", "…installed\r\n__CCGUI_CLI_DONE__0\r\n$ ");
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1100);
+      });
+      expect(latest.updating).toBe(false);
+      expect(latest.error).toBeNull();
+      expect(mocks.cliVersionStatus.mock.calls.length).toBe(probesBefore + 1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("a failed or abandoned terminal install still converges", async () => {
+    vi.useFakeTimers();
+    try {
+      mocks.cliVersionStatus.mockResolvedValue(versionStatus("claude"));
+      await render("claude");
+      terminal.open.add("tab-fail");
+      await act(async () => latest.watchTerminal("tab-fail"));
+      terminal.backlog.set("tab-fail", "boom\r\n__CCGUI_CLI_DONE__1\r\n");
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1100);
+      });
+      expect(latest.updating).toBe(false);
+      expect(latest.error).not.toBeNull();
+
+      // Closing the tab (Ctrl+C then close, or a lost PTY) also ends the watch.
+      terminal.open.add("tab-closed");
+      await act(async () => latest.watchTerminal("tab-closed"));
+      expect(latest.updating).toBe(true);
+      terminal.open.delete("tab-closed");
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1100);
+      });
+      expect(latest.updating).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

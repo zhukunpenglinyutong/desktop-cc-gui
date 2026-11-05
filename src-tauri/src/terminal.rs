@@ -48,7 +48,7 @@ fn default_shell_path() -> String {
 /// Settings "terminalShellPath" wins when set and valid; anything else (unset,
 /// blank, hand-edited junk) falls back to the auto-detected shell so a bad
 /// value can never wedge every terminal spawn.
-fn resolve_shell_path() -> String {
+pub(crate) fn resolve_shell_path() -> String {
     let configured = crate::settings::read_settings()
         .ok()
         .and_then(|s| s.terminal_shell_path)

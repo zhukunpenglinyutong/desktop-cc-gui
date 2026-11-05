@@ -8,6 +8,8 @@ import type {
   McpConfigEntry,
   McpErrorCode,
   McpInventory,
+  McpLaunchMode,
+  McpProbePlan,
   McpProbeResult,
 } from "./types";
 
@@ -58,14 +60,42 @@ export const mcpApi = {
       throw normalize(error);
     }
   },
+  /** 启动方式只写 ccgui 设置（settings.json），不碰 CLI 配置文件。 */
+  setLaunchMode: async (
+    entry: McpConfigEntry,
+    mode: McpLaunchMode,
+    workspace: string | null,
+  ): Promise<McpConfigEntry> => {
+    try {
+      return await invoke<McpConfigEntry>("mcp_set_launch_mode", {
+        request: { entryId: entry.id, mode, workspace },
+      });
+    } catch (error) {
+      throw normalize(error);
+    }
+  },
+  /** 检测前的确认信息：完整命令 / 地址，env 与请求头只给键名；不执行任何东西。 */
+  probePlan: async (
+    entry: McpConfigEntry,
+    workspace: string | null,
+  ): Promise<McpProbePlan> => {
+    try {
+      return await invoke<McpProbePlan>("mcp_probe_plan", {
+        request: { entryId: entry.id, workspace },
+      });
+    } catch (error) {
+      throw normalize(error);
+    }
+  },
   /** 显式连接检测：后端按配置里的真实命令/地址启动或连接一次并握手。 */
   probe: async (
     entry: McpConfigEntry,
     workspace: string | null,
+    planFingerprint?: string,
   ): Promise<McpProbeResult> => {
     try {
       return await invoke<McpProbeResult>("mcp_probe", {
-        request: { entryId: entry.id, workspace },
+        request: { entryId: entry.id, workspace, planFingerprint },
       });
     } catch (error) {
       throw normalize(error);

@@ -82,7 +82,7 @@ fn decode_text(
             Err(_) => (String::from_utf8_lossy(payload).into_owned(), true),
         },
         TextEncoding::Gbk => {
-            let (text, _, had_errors) = GBK.decode(payload);
+            let (text, had_errors) = GBK.decode_without_bom_handling(payload);
             (text.into_owned(), had_errors)
         }
     };
@@ -117,24 +117,39 @@ fn encode_text(
 ) -> Result<Vec<u8>, String> {
     let encoding = TextEncoding::from_name(encoding)
         .ok_or_else(|| format!("unsupported text encoding: {encoding}"))?;
-    let line_ending = match line_ending.unwrap_or("lf") {
-        "lf" => "\n",
-        "crlf" => "\r\n",
-        "cr" => "\r",
-        other => return Err(format!("unsupported line ending: {other}")),
-    };
-    let normalized = text.replace("\r\n", "\n").replace('\r', "\n");
-    let text = if line_ending == "\n" {
-        normalized
+    let text = if let Some(line_ending) = line_ending {
+        let line_ending = match line_ending {
+            "lf" => "\n",
+            "crlf" => "\r\n",
+            "cr" => "\r",
+            other => return Err(format!("unsupported line ending: {other}")),
+        };
+        let normalized = text.replace("\r\n", "\n").replace('\r', "\n");
+        if line_ending == "\n" {
+            normalized
+        } else {
+            normalized.replace('\n', line_ending)
+        }
     } else {
-        normalized.replace('\n', line_ending)
+        text.to_string()
     };
     let mut bytes = match encoding {
         TextEncoding::Utf8 => text.as_bytes().to_vec(),
         TextEncoding::Gbk => {
             let (encoded, _, had_errors) = GBK.encode(&text);
             if had_errors {
-                return Err("file_encoding_unrepresentable".to_string());
+                let mut line = 1;
+                let character = text.chars().find(|character| {
+                    let mut buffer = [0; 4];
+                    let scalar = character.encode_utf8(&mut buffer);
+                    let (_, _, has_error) = GBK.encode(scalar);
+                    if *character == '\n' {
+                        line += 1;
+                    }
+                    has_error
+                });
+                let character = character.unwrap_or('\u{FFFD}');
+                return Err(format!("file_encoding_unrepresentable:{line}:{character}"));
             }
             encoded.into_owned()
         }
@@ -447,6 +462,13 @@ fn read_file_blocking(
     let truncated = bytes.len() > MAX_READ_BYTES;
     if truncated {
         bytes.truncate(MAX_READ_BYTES);
+        // A byte cap can split a UTF-8 scalar. Drop only the incomplete suffix
+        // so the valid prefix is not mistaken for legacy-encoded text.
+        if let Err(error) = std::str::from_utf8(&bytes) {
+            if error.error_len().is_none() {
+                bytes.truncate(error.valid_up_to());
+            }
+        }
     }
     // Binary detection: NUL in the first 8KB.
     if bytes[..bytes.len().min(8192)].contains(&0) {
@@ -563,6 +585,23 @@ pub async fn rename_item(
     .map_err(|e| e.to_string())?
 }
 
+/// Move `path` to the OS trash in-process. On macOS the trash crate defaults
+/// to asking Finder through `osascript`: an Automation permission prompt, and
+/// an osascript → Finder process chain that endpoint security associates
+/// with macOS stealers. NSFileManager's `trashItemAtURL` needs neither. The
+/// trade-off: Finder's "Put Back" may be missing for these items; dragging
+/// them out of the Trash still restores them.
+pub(crate) fn move_to_trash(path: &Path) -> Result<(), trash::Error> {
+    #[cfg_attr(not(target_os = "macos"), allow(unused_mut))]
+    let mut context = trash::TrashContext::default();
+    #[cfg(target_os = "macos")]
+    {
+        use trash::macos::{DeleteMethod, TrashContextExtMacos};
+        context.set_delete_method(DeleteMethod::NsFileManager);
+    }
+    context.delete(path)
+}
+
 #[tauri::command]
 pub async fn trash_item(
     db: tauri::State<'_, Arc<crate::db::Db>>,
@@ -571,7 +610,7 @@ pub async fn trash_item(
     let db = Arc::clone(db.inner());
     tauri::async_runtime::spawn_blocking(move || {
         let target = ensure_allowed(&path, &db)?;
-        trash::delete(&target).map_err(|e| format!("trash {}: {e}", target.display()))
+        move_to_trash(&target).map_err(|e| format!("trash {}: {e}", target.display()))
     })
     .await
     .map_err(|e| e.to_string())?
@@ -1289,7 +1328,7 @@ mod tests {
     fn rejects_gbk_save_when_text_has_unrepresentable_characters() {
         assert_eq!(
             encode_text("中文🛠", "gbk", false, None).unwrap_err(),
-            "file_encoding_unrepresentable"
+            "file_encoding_unrepresentable:1:🛠"
         );
     }
 
@@ -1304,6 +1343,109 @@ mod tests {
                 .as_slice(),
             source
         );
+    }
+
+    #[test]
+    fn truncated_utf8_cut_mid_character_stays_utf8() {
+        let scratch = Scratch::new();
+        let db = crate::db::Db::open_at(&scratch.0.join("test.db")).unwrap();
+        let workspace = Scratch::new();
+        grant_root_in(&db, &workspace.0.to_string_lossy()).unwrap();
+        for pad in 0..3 {
+            let mut source = vec![b'a'; pad];
+            while source.len() <= MAX_READ_BYTES {
+                source.extend_from_slice("这是一份普通的中文说明文档内容".as_bytes());
+            }
+            let path = workspace.0.join(format!("big-{pad}.md"));
+            std::fs::write(&path, source).unwrap();
+            let content = read_file_blocking(&db, path.to_str().unwrap(), None).unwrap();
+            assert!(content.truncated, "pad {pad}");
+            assert_eq!(content.encoding.as_deref(), Some("utf-8"), "pad {pad}");
+            assert!(!content.decode_error, "pad {pad}");
+            let text = content.text.unwrap();
+            assert!(text.contains("这是一份普通的中文说明文档内容"), "pad {pad}");
+            assert!(!text.contains('\u{FFFD}'), "pad {pad}");
+        }
+    }
+
+    #[test]
+    fn truncated_gbk_is_still_detected_as_gbk() {
+        let scratch = Scratch::new();
+        let db = crate::db::Db::open_at(&scratch.0.join("test.db")).unwrap();
+        let workspace = Scratch::new();
+        grant_root_in(&db, &workspace.0.to_string_lossy()).unwrap();
+        let encoded = GBK.encode("这是一份普通的中文说明文档内容").0;
+        let mut source = Vec::new();
+        while source.len() <= MAX_READ_BYTES {
+            source.extend_from_slice(&encoded);
+        }
+        let path = workspace.0.join("big-gbk.txt");
+        std::fs::write(&path, source).unwrap();
+        let content = read_file_blocking(&db, path.to_str().unwrap(), None).unwrap();
+        assert!(content.truncated);
+        assert_eq!(content.encoding.as_deref(), Some("gbk"));
+        assert!(content
+            .text
+            .unwrap()
+            .starts_with("这是一份普通的中文说明文档内容"));
+    }
+
+    #[test]
+    fn manual_gbk_does_not_follow_a_utf8_bom() {
+        let mut source = vec![0xEF, 0xBB, 0xBF];
+        source.extend_from_slice("中文\n".as_bytes());
+        let (text, encoding, bom, _, _) = decode_text(&source, Some("gbk")).unwrap();
+        assert_eq!(encoding.name(), "gbk");
+        assert!(!bom);
+        assert_eq!(text, GBK.decode_without_bom_handling(&source).0);
+    }
+
+    #[test]
+    fn utf16_bom_is_not_decoded_and_labelled_as_gbk() {
+        let mut source = vec![0xFF, 0xFE];
+        for unit in "中文内容".encode_utf16() {
+            source.extend_from_slice(&unit.to_le_bytes());
+        }
+        let (text, _, _, decode_error, _) = decode_text(&source, None).unwrap();
+        assert_ne!(text, "中文内容");
+        assert!(decode_error);
+    }
+
+    #[test]
+    fn gbk_refusal_names_the_offending_character_and_line() {
+        let error = encode_text("第一行\n第二行✓\n", "gbk", false, None).unwrap_err();
+        assert_eq!(error, "file_encoding_unrepresentable:2:✓");
+    }
+
+    #[test]
+    fn missing_line_ending_preserves_input_bytes() {
+        let source = "first\r\nsecond\rthird\n";
+        assert_eq!(
+            encode_text(source, "utf-8", false, None).unwrap(),
+            source.as_bytes()
+        );
+    }
+
+    /// Every trash goes through `move_to_trash`: the trash crate's own
+    /// `delete` defaults to an osascript → Finder chain on macOS.
+    #[test]
+    fn trash_calls_go_through_move_to_trash() {
+        let needle = ["trash", "::delete("].concat();
+        let mut offenders = Vec::new();
+        let mut stack = vec![PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src")];
+        while let Some(dir) = stack.pop() {
+            for entry in std::fs::read_dir(&dir).unwrap().flatten() {
+                let path = entry.path();
+                if path.is_dir() {
+                    stack.push(path);
+                } else if path.extension().is_some_and(|ext| ext == "rs")
+                    && std::fs::read_to_string(&path).unwrap().contains(&needle)
+                {
+                    offenders.push(path.display().to_string());
+                }
+            }
+        }
+        assert!(offenders.is_empty(), "direct trash deletes: {offenders:?}");
     }
 
     struct Scratch(PathBuf);

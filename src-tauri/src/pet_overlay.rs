@@ -2,9 +2,6 @@
 
 use std::sync::{Mutex, OnceLock};
 
-use enigo::Enigo;
-#[cfg(not(windows))]
-use enigo::{Mouse, Settings};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager, Runtime};
 
@@ -221,25 +218,53 @@ fn set_visible(visible: bool) -> Result<(), String> {
 /// scale factor is exact whenever cursor and window share a monitor, which
 /// is the only case the hit test can match.
 ///
-/// macOS/Linux: enigo reads NSEvent::mouseLocation (points) and flips it
-/// with the main display's point height — the same convention tao uses for
-/// logical window positions (`bottom_left_to_top_left`), so both sides
-/// already agree in logical space and no scale-factor conversion is needed.
-/// (Empirically CGDisplayPixelsHigh returns the mode's point height, not
-/// the backing pixel height, so enigo's x/y stay in points throughout.)
+/// macOS: NSEvent::mouseLocation (points) flipped with the main display's
+/// point height — the same convention tao uses for logical window positions
+/// (`bottom_left_to_top_left`), so both sides already agree in logical space
+/// and no scale-factor conversion is needed. (Empirically CGDisplayPixelsHigh
+/// returns the mode's point height, not the backing pixel height, so x/y
+/// stay in points throughout.) Integer truncation matches what the hit test
+/// has always been fed.
+///
+/// Linux: the window's cursor_position is physical pixels, converted like
+/// Windows. Wayland has no global cursor and tao answers `Ok((0, 0))` there
+/// instead of an error, so an exact origin counts as unavailable — otherwise
+/// the pet would stare at the top-left corner and never see a hover.
+///
+/// All three are plain reads: none needs an input-injection grant, and the
+/// app links no input-injection library for them.
 #[cfg(windows)]
-fn cursor_position(_input: &mut Option<Enigo>, dpi: f64) -> Option<(f64, f64)> {
+fn cursor_position<R: Runtime>(_window: &tauri::WebviewWindow<R>, dpi: f64) -> Option<(f64, f64)> {
     let mut point = POINT::default();
-    // Read the desktop cursor directly. This does not require the input
-    // injection permission that Enigo needs for mouse/keyboard actions.
+    // Read the desktop cursor directly.
     unsafe { GetCursorPos(&mut point).ok()? };
     Some((point.x as f64 / dpi, point.y as f64 / dpi))
 }
 
-#[cfg(not(windows))]
-fn cursor_position(input: &mut Option<Enigo>, _dpi: f64) -> Option<(f64, f64)> {
-    let (x, y) = input.as_mut()?.location().ok()?;
-    Some((x as f64, y as f64))
+#[cfg(target_os = "macos")]
+mod mac_cursor {
+    #[link(name = "CoreGraphics", kind = "framework")]
+    extern "C" {
+        pub fn CGMainDisplayID() -> u32;
+        pub fn CGDisplayPixelsHigh(display: u32) -> usize;
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn cursor_position<R: Runtime>(_window: &tauri::WebviewWindow<R>, _dpi: f64) -> Option<(f64, f64)> {
+    let point = objc2_app_kit::NSEvent::mouseLocation();
+    let main_height = unsafe { mac_cursor::CGDisplayPixelsHigh(mac_cursor::CGMainDisplayID()) };
+    let (x, y_inv) = (point.x as i32, point.y as i32);
+    Some((x as f64, (main_height as i32 - y_inv) as f64))
+}
+
+#[cfg(all(not(windows), not(target_os = "macos")))]
+fn cursor_position<R: Runtime>(window: &tauri::WebviewWindow<R>, dpi: f64) -> Option<(f64, f64)> {
+    let point = window.cursor_position().ok()?;
+    if point.x == 0.0 && point.y == 0.0 {
+        return None;
+    }
+    Some((point.x / dpi, point.y / dpi))
 }
 
 fn start_look_tracking() {
@@ -248,10 +273,6 @@ fn start_look_tracking() {
     }
     let Ok(app) = app().map(Clone::clone) else { return };
     tauri::async_runtime::spawn(async move {
-        #[cfg(windows)]
-        let mut input: Option<Enigo> = None;
-        #[cfg(not(windows))]
-        let mut input = Enigo::new(&Settings::default()).ok();
         let mut interval =
             tokio::time::interval(std::time::Duration::from_millis(HIT_TEST_INTERVAL_MS));
         let mut next_look_update = tokio::time::Instant::now();
@@ -272,7 +293,7 @@ fn start_look_tracking() {
             let Ok(position) = window.outer_position() else { continue };
             let Ok(size) = window.outer_size() else { continue };
             let dpi = window.scale_factor().unwrap_or(1.0);
-            let Some((mouse_x, mouse_y)) = cursor_position(&mut input, dpi) else {
+            let Some((mouse_x, mouse_y)) = cursor_position(&window, dpi) else {
                 // e.g. Linux/Wayland without a cursor source: the overlay
                 // stays click-through (non-interactive) rather than blocking
                 // the desktop with an invisible interactive region.

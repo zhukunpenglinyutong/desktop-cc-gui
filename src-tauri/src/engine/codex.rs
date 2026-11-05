@@ -46,32 +46,24 @@ fn apply_computer_use(
     if req.computer_use != Some(true) {
         return Ok(());
     }
-    let exe = std::env::current_exe()
-        .map_err(|e| format!("resolve own exe for computer use: {e}"))?;
-    let name = crate::computer_use::MCP_SERVER_NAME;
+    let spec = crate::computer_use::computer_use_spec()?;
+    let name = spec.name;
+    let args = spec
+        .args
+        .iter()
+        .map(|arg| toml_string(arg))
+        .collect::<Vec<_>>()
+        .join(", ");
     let mut overrides = vec![
-        format!(
-            "mcp_servers.{name}.command={}",
-            toml_string(&exe.to_string_lossy())
-        ),
-        format!(
-            "mcp_servers.{name}.args=[{}]",
-            toml_string("--computer-use-mcp")
-        ),
+        format!("mcp_servers.{name}.command={}", toml_string(&spec.command)),
+        format!("mcp_servers.{name}.args=[{args}]"),
     ];
     // Overlay control channel: the child reports action targets so the main
     // app's virtual cursor can follow (absent in tests).
-    if let (Some(base), Some(token)) = (
-        crate::cu_overlay::control_base(),
-        crate::cu_overlay::control_token(),
-    ) {
+    for (key, value) in &spec.env {
         overrides.push(format!(
-            "mcp_servers.{name}.env.CCGUI_CU_CONTROL={}",
-            toml_string(&base)
-        ));
-        overrides.push(format!(
-            "mcp_servers.{name}.env.CCGUI_CU_TOKEN={}",
-            toml_string(&token)
+            "mcp_servers.{name}.env.{key}={}",
+            toml_string(value)
         ));
     }
     for value in overrides {
@@ -331,6 +323,25 @@ impl Engine for CodexEngine {
     }
     fn supports_memory(&self) -> bool {
         true
+    }
+    /// 按需条目：`-c mcp_servers.<name>.command/args` 按键合并到用户定义上，
+    /// env/cwd/timeout 等继续继承。`-c` 写在 app-server 之后也生效（同上面
+    /// 的 service_tier）。
+    fn mount_on_demand(
+        &self,
+        built: &mut BuiltCommand,
+        servers: &[crate::mcp::launch::OnDemandServer],
+        _workspace: &std::path::Path,
+    ) -> Result<(), String> {
+        for server in servers {
+            let Some(overrides) = server.codex_overrides(toml_string) else {
+                continue;
+            };
+            for value in overrides {
+                built.command.arg("-c").arg(value);
+            }
+        }
+        Ok(())
     }
     fn supports_effort(&self) -> bool {
         true
@@ -736,10 +747,16 @@ mod tests {
         let command = mounted("command")
             .and_then(toml::Value::as_str)
             .unwrap_or_else(|| panic!("driver not mounted: {args:?}"));
-        assert!(!command.is_empty());
+        // The driver is the separate helper binary, never this executable.
+        assert_eq!(
+            std::path::Path::new(command)
+                .file_stem()
+                .and_then(|s| s.to_str()),
+            Some(crate::computer_use::HELPER_BIN)
+        );
         assert_eq!(
             mounted("args").and_then(toml::Value::as_array),
-            Some(&vec![toml::Value::from("--computer-use-mcp")])
+            Some(&Vec::new())
         );
         // `-c` is a top-level option: the app-server subcommand has to come
         // after every override.

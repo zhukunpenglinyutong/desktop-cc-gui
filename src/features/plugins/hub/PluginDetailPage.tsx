@@ -34,6 +34,7 @@ import { usePluginArtwork } from "./artwork";
 import { PluginReadme } from "./PluginReadme";
 import { PluginScreenshotCarousel } from "./PluginScreenshotCarousel";
 import { describePermission } from "./permissions";
+import { CredentialConsentControl } from "./CredentialConsentControl";
 import { usePluginSettingsKey } from "./use-plugin-settings-key";
 import { usePluginsStore } from "../manager/usePlugins";
 import { useMarketplaceStore } from "../marketplace/store";
@@ -218,7 +219,14 @@ function PermissionList({ permissions }: { permissions: string[] }) {
                 aria-hidden
                 className="mt-2 size-1 shrink-0 rounded-full bg-foreground-icon-secondary"
               />
-              {t(label.key, label.params ?? {})}
+              {permission === "limits.read" ? (
+                <div className="flex flex-col gap-0.5">
+                  {t(label.key, label.params ?? {})}
+                  <CredentialConsentControl />
+                </div>
+              ) : (
+                t(label.key, label.params ?? {})
+              )}
             </li>
           );
         })}

@@ -62,6 +62,10 @@ pub(crate) struct FollowupPrefs {
     pub provider_id: Option<String>,
     pub memory_bot: Option<String>,
     pub allowed_tools: Option<Vec<String>>,
+    /// The run mounted the computer-use driver (pre-approved). Only a
+    /// computer-use send may continue it; any other send gets a fresh
+    /// process, so the driver never outlives the send that opted in.
+    pub computer_use: bool,
 }
 /// A settled run kept alive for the CLI's self-started follow-up turn.
 #[derive(Debug, Clone)]
@@ -677,6 +681,7 @@ mod registry_tests {
             provider_id: None,
             memory_bot: None,
             allowed_tools: None,
+            computer_use: false,
         };
         registry.set_awaiting_followup("s-1", "run-1", prefs());
         registry.set_awaiting_followup("s-2", "run-2", prefs());
@@ -894,6 +899,7 @@ mod registry_tests {
             provider_id: None,
             memory_bot: None,
             allowed_tools: None,
+            computer_use: false,
         };
         registry.set_awaiting_followup("session-b", "run-b", prefs);
         assert!(registry.live_run_ids(&asked).is_empty());

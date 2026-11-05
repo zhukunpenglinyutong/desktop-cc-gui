@@ -16,6 +16,7 @@ export function FileEditorHeader({
   name,
   encoding,
   decodeError,
+  truncated,
   encodingChangeDisabled,
   onEncodingChange,
   dirty,
@@ -38,6 +39,7 @@ export function FileEditorHeader({
   name: string;
   encoding: "utf-8" | "gbk";
   decodeError: boolean;
+  truncated: boolean;
   encodingChangeDisabled: boolean;
   onEncodingChange: (encoding: "utf-8" | "gbk") => void;
   dirty: boolean;
@@ -78,7 +80,7 @@ export function FileEditorHeader({
           {t("files.unsavedChanges")}
         </span>
       )}
-      {readOnly && !decodeError && (
+      {truncated && (
         <span className="shrink-0 text-caption-1-regular text-text-tertiary">
           {t("files.fileTruncated")}
         </span>

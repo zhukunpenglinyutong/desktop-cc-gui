@@ -84,7 +84,7 @@ describe("CliConfigBody disabled overlay", () => {
     return (node?.parentElement as HTMLElement) ?? null;
   }
 
-  it("disabled: overlay wrapper contains official config, auth and channels — but not the enable switch", async () => {
+  it("disabled: overlay keeps config and channels, the auth section is not mounted, the enable switch stays reachable", async () => {
     await render(makeCli({ enabled: false }));
 
     const mask = overlay();
@@ -94,9 +94,11 @@ describe("CliConfigBody disabled overlay", () => {
     expect(mask!.className).toContain("absolute");
     expect(mask!.className).toContain("inset-0");
 
-    // Everything below the enable switch is under the mask.
+    // Config rows stay visible under the mask; the auth section is not even
+    // mounted: it reads the CLI's credential store, and a disabled engine
+    // must not trigger that (the mask is visual only).
     expect(wrapper.textContent).toContain(i18n.t("settings.cliOfficial"));
-    expect(wrapper.querySelector("[data-testid='pi-auth-section']")).not.toBeNull();
+    expect(container.querySelector("[data-testid='pi-auth-section']")).toBeNull();
     expect(wrapper.textContent).toContain(i18n.t("settings.cliChannels"));
 
     // The enable switch sits above the mask, still reachable.
@@ -108,6 +110,7 @@ describe("CliConfigBody disabled overlay", () => {
   it("enabled: no overlay is rendered", async () => {
     await render(makeCli({ enabled: true }));
     expect(overlay()).toBeNull();
+    expect(container.querySelector("[data-testid='pi-auth-section']")).not.toBeNull();
   });
 });
 

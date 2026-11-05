@@ -28,7 +28,13 @@ import {
 import { FileEditorHeader } from "./FileEditorHeader";
 import { HtmlPreview } from "./HtmlPreview";
 import { MarkdownPreview } from "./MarkdownPreview";
-import { isHtmlFile, isMarkdownFile, opensInPreview, type EditorViewMode } from "./editor-view-mode";
+import {
+  canPreviewFile,
+  isHtmlFile,
+  isMarkdownFile,
+  opensInPreview,
+  type EditorViewMode,
+} from "./editor-view-mode";
 import { registerShortcutHandler } from "@/features/shortcuts/runtime";
 import { EditorView, lineNumbers } from "@codemirror/view";
 import { FONT_CHANGE_EVENT } from "@/features/settings/font";
@@ -69,6 +75,13 @@ function useIsDark(): boolean {
 export function EditorPane({ path }: { path: string }) {
   const entry = useFilesStore((s) => s.fileStates[path]);
   const [wordWrap, setWordWrap] = useState(false);
+  const [viewMode, setViewMode] = useState<EditorViewMode | null>(null);
+  const name = entry?.name ?? fileName(path);
+  const defaultViewMode = canPreviewFile(name, !isWeb) && opensInPreview(name) ? "preview" : "edit";
+
+  useEffect(() => {
+    if (entry?.content) setViewMode((current) => current ?? defaultViewMode);
+  }, [entry?.content, defaultViewMode]);
 
   if (!entry || entry.loading) {
     return <CenteredSpinner />;
@@ -79,12 +92,14 @@ export function EditorPane({ path }: { path: string }) {
   if (!entry.content) {
     return <CenteredSpinner />;
   }
-  // key remounts the editor with a fresh draft whenever the file (re)loads.
+  // Remount the editor draft on reload while keeping the view mode above it.
   return (
     <FileEditor
       key={`${path}:${entry.loadNonce}`}
       path={path}
       content={entry.content}
+      viewMode={viewMode ?? defaultViewMode}
+      onViewModeChange={setViewMode}
       wordWrap={wordWrap}
       onToggleWordWrap={() => setWordWrap((wrap) => !wrap)}
     />
@@ -166,9 +181,11 @@ function FileLoadError({ path, entry }: { path: string; entry: OpenFileState }) 
   );
 }
 
-function FileEditor({ path, content, wordWrap, onToggleWordWrap }: {
+function FileEditor({ path, content, viewMode, onViewModeChange, wordWrap, onToggleWordWrap }: {
   path: string;
   content: FileContent;
+  viewMode: EditorViewMode;
+  onViewModeChange: (mode: EditorViewMode) => void;
   wordWrap: boolean;
   onToggleWordWrap: () => void;
 }) {
@@ -199,15 +216,15 @@ function FileEditor({ path, content, wordWrap, onToggleWordWrap }: {
   const name = entry?.name ?? fileName(path);
   const isMarkdown = isMarkdownFile(name);
   const isHtml = isHtmlFile(name);
-  // HTML opens rendered too, but only where the asset protocol serves real
-  // paths — web-access mode keeps the code view (see editor-view-mode.ts).
-  const canPreview = opensInPreview(name, !isWeb);
+  // HTML gets the preview toggle only where the preview protocol exists
+  // (desktop), and opens as code: rendering runs the page's scripts, so it
+  // waits for an explicit click (see editor-view-mode.ts).
+  const canPreview = canPreviewFile(name, !isWeb);
 
   const [draft, setDraft] = useState(content.text ?? "");
   const [savedText, setSavedText] = useState(content.text ?? "");
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
-  const [viewMode, setViewMode] = useState<EditorViewMode>(canPreview ? "preview" : "edit");
   // HTML preview reload: bumped to remount the iframe (the frame reads the
   // saved file itself, so there is nothing else to refresh).
   const [previewReloadKey, setPreviewReloadKey] = useState(0);
@@ -350,8 +367,8 @@ function FileEditor({ path, content, wordWrap, onToggleWordWrap }: {
     // Close before the CodeMirror view unmounts, otherwise the open-panel
     // state and match highlights would be dropped without a teardown.
     closeEditorSearch();
-    setViewMode(mode);
-  }, [closeEditorSearch]);
+    onViewModeChange(mode);
+  }, [closeEditorSearch, onViewModeChange]);
 
   // 刷新走 §4.1 转圈 → 对号：iframe 重挂载没有可等待的完成事件，对号 = 重新
   // 加载指令已下发（与内置浏览器的刷新语义一致）。
@@ -387,9 +404,16 @@ function FileEditor({ path, content, wordWrap, onToggleWordWrap }: {
     } catch (e) {
       const message = errorText(e);
       setSaveError(
-        message.includes("file_encoding_unrepresentable")
-          ? t("files.encodingCannotRepresent")
-          : message,
+        (() => {
+          const match = /^file_encoding_unrepresentable:(\d+):(.*)$/.exec(message);
+          if (match) {
+            const codePoint = match[2].codePointAt(0)?.toString(16).toUpperCase().padStart(4, "0") ?? "?";
+            return t("files.encodingCannotRepresent", { line: match[1], character: match[2], codePoint });
+          }
+          return message.includes("file_encoding_unrepresentable")
+            ? t("files.encodingCannotRepresentGeneric")
+            : message;
+        })(),
       );
     } finally {
       setSaving(false);
@@ -436,6 +460,7 @@ function FileEditor({ path, content, wordWrap, onToggleWordWrap }: {
         name={name}
         encoding={content.encoding ?? "utf-8"}
         decodeError={content.decodeError === true}
+        truncated={content.truncated}
         encodingChangeDisabled={dirty || content.readOnly === true || content.truncated || Boolean(entry?.session)}
         onEncodingChange={(encoding) => void reloadFile(path, encoding)}
         dirty={dirty}

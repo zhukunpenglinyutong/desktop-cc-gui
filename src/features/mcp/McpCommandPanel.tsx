@@ -31,7 +31,7 @@ import {
 } from "./probe-store";
 import { engineLabel, openMcpSettings } from "./labels";
 import { useMcpPanel } from "./panel";
-import type { McpConfigEntry, McpEngineInventory } from "./types";
+import type { McpConfigEntry, McpEngineInventory, McpLaunchMode } from "./types";
 import { useMcpInventory } from "./useMcpInventory";
 
 export function McpCommandPanel() {
@@ -213,6 +213,7 @@ function PanelConfigSection({
   checkedAt,
   onOpen,
   onToggle,
+  onLaunchMode,
 }: {
   engine: McpEngineInventory;
   pendingId: string | null;
@@ -221,6 +222,7 @@ function PanelConfigSection({
   checkedAt: number | null;
   onOpen: (entry: McpConfigEntry) => void;
   onToggle: (entry: McpConfigEntry, enabled: boolean) => void;
+  onLaunchMode: (entry: McpConfigEntry, mode: McpLaunchMode) => void;
 }) {
   const { t, i18n } = useTranslation();
   const timeFormat = useMemo(
@@ -256,6 +258,7 @@ function PanelConfigSection({
           workspacePath={workspacePath}
           onOpen={onOpen}
           onToggle={onToggle}
+          onLaunchMode={onLaunchMode}
         />
       )}
     </section>
@@ -271,6 +274,7 @@ function PanelSections({
   checkedAt,
   onOpen,
   onToggle,
+  onLaunchMode,
 }: {
   engine: McpEngineInventory | null;
   pendingId: string | null;
@@ -279,6 +283,7 @@ function PanelSections({
   checkedAt: number | null;
   onOpen: (entry: McpConfigEntry) => void;
   onToggle: (entry: McpConfigEntry, enabled: boolean) => void;
+  onLaunchMode: (entry: McpConfigEntry, mode: McpLaunchMode) => void;
 }) {
   if (!engine || engine.support === "none") return null;
   return (
@@ -291,6 +296,7 @@ function PanelSections({
         checkedAt={checkedAt}
         onOpen={onOpen}
         onToggle={onToggle}
+        onLaunchMode={onLaunchMode}
       />
       <RuntimeBlock section={engine.runtime} filter="all" query="" />
     </>
@@ -312,6 +318,7 @@ function PanelContent({
   workspacePath,
   onOpen,
   onToggle,
+  onLaunchMode,
 }: {
   engine: McpEngineInventory | null;
   label: string;
@@ -326,6 +333,7 @@ function PanelContent({
   workspacePath: string | null;
   onOpen: (entry: McpConfigEntry) => void;
   onToggle: (entry: McpConfigEntry, enabled: boolean) => void;
+  onLaunchMode: (entry: McpConfigEntry, mode: McpLaunchMode) => void;
 }) {
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto pr-1">
@@ -340,6 +348,7 @@ function PanelContent({
         checkedAt={checkedAt}
         onOpen={onOpen}
         onToggle={onToggle}
+        onLaunchMode={onLaunchMode}
       />
       <PanelAvailability engine={engine} />
     </div>
@@ -353,7 +362,9 @@ function PanelBody() {
   const workspacePath = useChatStore((state) => state.active?.workspacePath ?? null);
   const store = useMcpInventory(workspacePath);
   const engine = store.inventory?.engines.find((item) => item.id === engineId) ?? null;
-  const [selected, setSelected] = useState<McpConfigEntry | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  // 弹窗跟随回读后的清单（切换后显示真实状态）。
+  const selected = engine?.config.entries.find((entry) => entry.id === selectedId) ?? null;
   const [toggleError, setToggleError] = useState<string | null>(null);
   const refreshAction = useActionFeedback({ spin: true });
   const probeAll = useMcpProbeStore((state) => state.probeAll);
@@ -369,6 +380,12 @@ function PanelBody() {
   const handleToggle = (entry: McpConfigEntry, enabled: boolean) => {
     setToggleError(null);
     void store.setEnabled(entry, enabled).catch((error: unknown) => {
+      setToggleError(error instanceof Error ? error.message : String(error));
+    });
+  };
+  const handleLaunchMode = (entry: McpConfigEntry, mode: McpLaunchMode) => {
+    setToggleError(null);
+    void store.setLaunchMode(entry, mode).catch((error: unknown) => {
       setToggleError(error instanceof Error ? error.message : String(error));
     });
   };
@@ -414,8 +431,9 @@ function PanelBody() {
           pendingId={store.pendingId}
           selectedId={selected?.id ?? null}
           workspacePath={workspacePath}
-          onOpen={setSelected}
+          onOpen={(entry) => setSelectedId(entry.id)}
           onToggle={handleToggle}
+          onLaunchMode={handleLaunchMode}
         />
       )}
 
@@ -425,7 +443,8 @@ function PanelBody() {
           pending={store.pendingId === selected.id}
           workspacePath={workspacePath}
           onToggle={(enabled) => handleToggle(selected, enabled)}
-          onClose={() => setSelected(null)}
+          onLaunchMode={(mode) => handleLaunchMode(selected, mode)}
+          onClose={() => setSelectedId(null)}
         />
       ) : null}
     </ModalShell>

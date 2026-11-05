@@ -9,6 +9,8 @@ import type * as Platform from "@/lib/platform";
 import i18n from "@/lib/i18n";
 
 const mocks = vi.hoisted(() => ({
+  readFile: vi.fn(),
+  writeFile: vi.fn(),
   readSessionFile: vi.fn(),
   writeSessionFile: vi.fn(),
   openSessionFileInDefaultEditor: vi.fn(),
@@ -414,5 +416,48 @@ describe("session editor recovery and wrapping", () => {
     });
     expect(view.state.doc.toString()).toBe(original);
     expect(useFilesStore.getState().dirtyPaths[path]).toBeUndefined();
+  });
+
+  it.each(["zh", "en", "ko"])("reports the first unrepresentable character and line in %s", async (language) => {
+    await i18n.changeLanguage(language);
+    const path = "/repo/notes.txt";
+    const content: FileContent = {
+      kind: "text", text: "first line\nsecond line", dataUrl: null, truncated: false,
+      encoding: "gbk", bom: false, decodeError: false, lineEnding: "lf",
+    };
+    useFilesStore.setState({
+      openFiles: [path], activeFilePath: path,
+      fileStates: { [path]: { path, content, loading: false, error: null, loadNonce: 1, name: "notes.txt" } },
+    });
+    await act(async () => root.render(<EditorPane path={path} />));
+    const view = EditorView.findFromDOM(container.querySelector<HTMLElement>(".cm-editor")!)!;
+    await act(async () => view.dispatch({ changes: { from: view.state.doc.length, insert: "✓" } }));
+    mocks.writeFile.mockRejectedValueOnce(new Error("file_encoding_unrepresentable:2:✓"));
+    const save = [...container.querySelectorAll<HTMLButtonElement>("button")]
+      .find((node) => node.textContent?.trim() === i18n.t("files.saveFile"))!;
+    await act(async () => save.click());
+    const expected = i18n.t("files.encodingCannotRepresent", { line: "2", character: "✓", codePoint: "2713" });
+    expect(container.textContent).toContain(expected);
+    expect(useFilesStore.getState().fileStates[path].content?.text).toBe("first line\nsecond line");
+  });
+
+  it("preserves Markdown edit mode while reloading with another encoding", async () => {
+    const path = "/repo/README.md";
+    const content: FileContent = { kind: "text", text: "# Heading", dataUrl: null, truncated: false, encoding: "utf-8" };
+    useFilesStore.setState({
+      openFiles: [path], activeFilePath: path,
+      fileStates: { [path]: { path, content, loading: false, error: null, loadNonce: 1, name: "README.md" } },
+    });
+    await act(async () => root.render(<EditorPane path={path} />));
+    expect(container.querySelector(".cm-editor")).toBeNull();
+    const edit = [...container.querySelectorAll<HTMLButtonElement>("button")]
+      .find((node) => node.textContent?.includes(i18n.t("files.editMode")))!;
+    await act(async () => edit.click());
+    expect(container.querySelector(".cm-editor")).not.toBeNull();
+
+    mocks.readFile.mockResolvedValueOnce({ ...content, text: "# 새 제목", encoding: "gbk" });
+    await act(async () => useFilesStore.getState().reloadFile(path, "gbk"));
+    expect(container.querySelector(".cm-editor")).not.toBeNull();
+    expect(EditorView.findFromDOM(container.querySelector<HTMLElement>(".cm-editor")!)!.state.doc.toString()).toBe("# 새 제목");
   });
 });

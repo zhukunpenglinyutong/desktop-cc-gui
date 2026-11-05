@@ -66,6 +66,20 @@ impl Engine for ClaudeEngine {
     fn supports_memory(&self) -> bool {
         true
     }
+    /// 按需条目经私有文件交给 `--mcp-config`：同名时它覆盖用户/项目/本地
+    /// 作用域的定义（整条替换），只对这一次进程生效。`--mcp-config` 是可
+    /// 重复的列表参数，追加在末尾不会吞掉别的参数。
+    fn mount_on_demand(
+        &self,
+        built: &mut BuiltCommand,
+        servers: &[crate::mcp::launch::OnDemandServer],
+        _workspace: &std::path::Path,
+    ) -> Result<(), String> {
+        let path = crate::mcp::launch::stage_claude_config(servers, "claude-staging")?;
+        built.cleanup_files.push(path.clone());
+        built.command.arg("--mcp-config").arg(path);
+        Ok(())
+    }
     fn supports_effort(&self) -> bool {
         true
     }

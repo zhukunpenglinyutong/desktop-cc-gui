@@ -728,7 +728,7 @@ fn bot_delete_blocking(id: String) -> Result<bool, String> {
     }
     // The folder holds user prose; move it to the OS trash instead of
     // unlinking so a mis-click is recoverable.
-    match trash::delete(&dir) {
+    match crate::files::move_to_trash(&dir) {
         Ok(()) => Ok(true),
         Err(e) => {
             eprintln!("[bots] trash {} failed ({e}); removing permanently", dir.display());

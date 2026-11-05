@@ -81,3 +81,44 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
+
+---
+
+## mcp-snooze
+
+- Upstream: https://github.com/askmegit/mcp-snooze
+- License: MIT, Copyright (c) 2026 askmegit
+- What CC GUI references: the on-demand MCP start proxy (`ccgui-next --mcp-lazy`,
+  `src-tauri/src/mcp/lazy.rs`) follows mcp-snooze's lazy-start behaviour: `initialize`
+  and the discovery lists are answered from a cache keyed by argv, working directory and
+  `protocolVersion`; the first other request starts the real server, replays the client's
+  `initialize`, refreshes the lists and sends `list_changed` when they differ; without a
+  cache, `initialize` starts the server once to fill it; `server/discover` is refused so
+  dual-revision clients fall back to `initialize`. The code is an independent Rust
+  implementation, marked `Behaviour follows askmegit/mcp-snooze (MIT)` in the source.
+- Not reused: idle reaping, config rewriting (`scan` / `wrap` / `unwrap`) and the Claude
+  Code plugin.
+
+```
+MIT License
+
+Copyright (c) 2026 askmegit
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```

@@ -188,6 +188,22 @@ export const en: Messages = {
     sessionRefreshRunning: "Stop the running session before refreshing its rendering.",
     sessionRefreshFailed: "Failed to refresh conversation rendering: {{error}}",
     loadEarlier: "Load earlier messages",
+    /** Fork conversation: derive a new session that inherits the context up to
+     *  a chosen message. */
+    forkConversation: "Fork conversation",
+    forkFailed: "Could not fork the conversation: {{reason}}",
+    forkDegraded: "Branch created, but {{items}} could not be inherited; its first turn will use engine defaults.",
+    forkDegradedItem: {
+      model: "the model",
+      effort: "the reasoning effort",
+      provider: "the provider",
+    },
+    /** Why the entry is greyed out when it cannot be used (the disabled state
+     *  carries this as a `title` plus aria-disabled, so it stays reachable). */
+    forkUnavailableRemote: "Remote (WSL) sessions cannot be forked yet",
+    forkUnavailableEngine: "This engine cannot fork conversations yet",
+    forkUnavailableImageOnly: "This turn has images but no text, so it cannot be forked yet",
+    copied: "Copied",
     searchPlaceholder: "Search conversation",
     grantTitle: "Directory access required",
     grantScopeNote:
@@ -390,6 +406,8 @@ export const en: Messages = {
     slashAppMcp: "Show this CLI's MCP servers",
     slashAppCua:
       "Computer use: let the agent see the screen and drive apps (/ccgui-cua <task>)",
+    cuaDesktopOnly:
+      "Computer use can only be started on the desktop: remote access cannot capture or drive this computer's screen, keyboard and mouse.",
     cuaUnsupportedEngine:
       "This engine cannot do computer use (it cannot mount the driver). Switch to an engine that supports it, or see Settings → Computer use for per-engine support.",
     refreshUsage: "Refresh",
@@ -750,6 +768,13 @@ export const en: Messages = {
     chatWideLayout: "Wide canvas",
     chatWideLayoutDesc:
       "Let chat content fill the window width instead of the centered column; off keeps the current default width",
+    chatColumnWidth: "Chat column width",
+    chatColumnWidthDesc:
+      "Width of the centered track shared by the timeline, composer, status bar and docks; ignored while Wide canvas is on",
+    chatColumnWidth750: "Narrow · 750px (default)",
+    chatColumnWidth960: "Medium · 960px",
+    chatColumnWidth1200: "Wide · 1200px",
+    chatColumnWidthFull: "Full width · no gutter",
     fontFamily: "Interface font",
     codeFontFamily: "Code font",
     codeFontFamilyDesc: "Chat code, code editors, diffs and the built-in terminal",
@@ -949,6 +974,13 @@ export const en: Messages = {
       "No devices yet. A browser shows up here once it submits the pairing key — approve it to let it in.",
     webDeviceAnonymous: "Unknown browser",
     webDevicePending: "Waiting for approval",
+    analyticsTitle: "Usage Statistics",
+    analyticsToggle: "Send anonymous usage statistics",
+    analyticsDesc:
+      "On each launch the app's backend sends one visit record to Baidu Tongji: version, OS, UI language, screen size and a random visitor id. It contains no conversations, files, paths or account details, and no third-party script runs in the app.",
+    analyticsSaveFailed: "Could not save; try again",
+    webWanDesktopOnly:
+      "Relay connection, unattended mode, deployment and device approval for internet access can only be set on the desktop.",
     webDeviceApproved: "Approved",
     webDeviceApprove: "Authorize",
     webDeviceRename: "Rename",
@@ -1095,6 +1127,18 @@ export const en: Messages = {
     cliUpdateConfirm: "Confirm & Run",
     cliUpdateRunning: "Running…",
     cliUpdateSucceeded: "Install finished",
+    cliUpdateTerminalCommand: "Will run in the built-in terminal",
+    cliUpdateTerminalHint:
+      "The official installer runs in this workspace's built-in terminal, where you can see all of its output and press Ctrl+C to cancel.",
+    cliUpdateRunInTerminal: "Run in Terminal",
+    cliUpdateInTerminal:
+      "Started in the built-in terminal. The version refreshes automatically when it finishes.",
+    cliUpdateGoToTerminal: "Go to Terminal",
+    cliUpdateNoWorkspace:
+      "Open a project first: the official installer runs in that workspace's built-in terminal",
+    cliUpdateTerminalUnavailable:
+      "Could not open the built-in terminal; copy the manual command below and run it yourself",
+    cliUpdateTerminalFailed: "The installer failed; see its output in the built-in terminal",
     cliUpdateRetry: "Retry",
     cliUpdateClose: "Close",
     cliChannels: "Provider Channels",
@@ -1208,18 +1252,10 @@ export const en: Messages = {
     codebuddyAccountTitle: "Account Login",
     codebuddyAccountHint:
       "Authenticate with Tencent Cloud / WeCom / WeChat account (/login)",
-    codebuddyAccountRefresh: "Refresh Status",
-    codebuddyAccountChecking: "Checking…",
-    codebuddyAccountCheckingDesc: "Reading the OS credential store",
-    codebuddyAccountError: "Status Check Failed",
-    codebuddyAccountErrorDesc: "Could not read the login status; try Refresh Status",
-    codebuddyAccountLoggedIn: "Logged In",
-    codebuddyAccountUnknown: "Status Unknown",
-    codebuddyAccountUnknownDesc:
-      "Could not confirm login state in the OS credential store; if you already ran /login in a terminal, it works as-is",
-    codebuddyAccountReady: "Credentials ready for chat",
+    codebuddyAccountCliOwned: "Login state is managed by the CodeBuddy CLI",
+    codebuddyAccountCliOwnedDesc:
+      "CC GUI does not read the OS credential store, so it shows no login state; if you already ran /login in a terminal, you can chat right away",
     codebuddyAccountLogin: "Terminal Login",
-    codebuddyAccountRelogin: "Switch Account",
     codebuddyLoginNoWorkspace:
       "Open a project first: the login runs in a workspace terminal",
     codebuddyLoginFailed: "Could not open the login terminal",
@@ -1326,7 +1362,8 @@ export const en: Messages = {
     saveFile: "Save",
     encoding: "File encoding",
     encodingDecodeError: "Incomplete decoding · read-only",
-    encodingCannotRepresent: "The content contains characters that GBK cannot represent. The file was not saved.",
+    encodingCannotRepresent: "GBK cannot represent '{{character}}' (U+{{codePoint}}) on line {{line}}. The file was not saved.",
+    encodingCannotRepresentGeneric: "The content contains characters that GBK cannot represent. The file was not saved.",
     preview: "Preview",
     editMode: "Edit",
     wordWrap: "Word wrap",
@@ -1406,6 +1443,8 @@ export const en: Messages = {
     openFile: "Open File",
     openInApp: "Open in {{app}}",
     openInBrowser: "Open in Browser",
+    htmlPreviewUnavailable:
+      "Can't preview: the file is outside the registered workspaces or was moved. Try Open in Browser instead",
     copyLink: "Copy Link",
     revealInFinder: "Reveal in Finder",
     revealInExplorer: "Reveal in Explorer",
@@ -1617,6 +1656,18 @@ export const en: Messages = {
     days: "{{count}}d",
   },
   plugins: {
+    credentialConsent: {
+      message: "Allow CC GUI to read your local CLI logins to look up subscription limits?",
+      detail: "An enabled plugin asked for subscription limits. CC GUI reads only the logins below, on this machine, and sends each one only to the official API listed with it; the plugin never sees them, and they are never modified or refreshed. If you decline, you will not be asked again until restart; you can allow or revoke this any time on the plugin's detail page.",
+      keychain: "macOS Keychain item \"{{location}}\"",
+      sentTo: "sent only to {{host}}",
+      allow: "Allow Reading",
+      granted: "CC GUI may read your local CLI logins (shared by all plugins)",
+      notGranted: "Reading local CLI logins is not allowed, so limit lookups fail",
+      revoke: "Revoke",
+      grant: "Allow",
+      failed: "That did not work; try again",
+    },
     conversationMode: {
       recoveryRequired: "This conversation has an unfinished plugin task. Re-enable its plugin to recover or stop the task before returning to normal chat or closing this tab.",
       busy: "Finish the current turn and queued messages before switching conversation mode",
@@ -1740,7 +1791,7 @@ export const en: Messages = {
         hostWindow: "Read and position the main window; sample WeChat bounds",
         hostModels: "Read the host engine and model catalog (explicit provider refresh uses the network)",
         usageRead: "Read local usage statistics (computed by CC GUI from CLI session logs, never uploaded; updating prices downloads a public file)",
-        limitsRead: "Read subscription limits (CC GUI queries the official APIs read-only with your local CLI login; the plugin never sees credentials)",
+        limitsRead: "Read subscription limits (CC GUI queries the official APIs read-only with your local CLI login; the plugin never sees credentials, and CC GUI lists what it reads and asks first)",
         networkNone: "No network access",
         uiSettingsSection: "Add a settings page",
         uiAddMenu: "Add an “+ menu” entry",
@@ -2312,6 +2363,31 @@ export const en: Messages = {
   mcp: {
     searchPlaceholder: "Search server names",
     toggle: "Enable {{name}}",
+    enableHint: {
+      on: "{{name}}: enabled in config. Click to disable",
+      off: "{{name}}: disabled in config. Click to enable",
+    },
+    launch: {
+      title: "Start on demand",
+      toggle: "Start {{name}} on demand",
+      onDemandHint: "{{name}}: starts on demand (on first call). Click to start it with the session",
+      eagerHint: "{{name}}: starts with the session. Click to start it on demand (on first call)",
+      description:
+        "When on, sessions this app launches no longer start this server up front: the model still gets its tool list (cached from the last run), and the server starts on the first real call. Only affects this app; the CLI config is unchanged.",
+      disabledEntry: "The entry is disabled: enable it to choose how it starts",
+      unsupported: {
+        engine: "This engine has no per-launch MCP override channel yet",
+        transport: "Only stdio servers can start on demand: remote servers have no local process",
+        workspace_file:
+          "The entry lives in the workspace .omp/mcp.json and cannot be overridden per launch; move it to the user-level mcp.json",
+        workspace_env:
+          "OMP can only take on-demand entries through the workspace .omp/mcp.json, so an entry with environment variables (often tokens) would be copied into a project file; remove its env to use this",
+        project_trust:
+          "Codex reads .codex/config.toml only in trusted projects, and the on-demand command-line override would bypass that check, so project-level entries are not supported; move it to the user-level config.toml",
+        name: "The name contains a dot, quote or similar character that Codex command-line overrides cannot express, so it keeps starting with the session",
+        shadowed: "An entry with the same name in a higher-precedence scope is the one the engine starts: set it on that entry instead",
+      },
+    },
     enabled: "Enabled in config",
     disabled: "Disabled in config",
     builtin: "Built-in",
@@ -2327,6 +2403,10 @@ export const en: Messages = {
         "dsh serves MCP through plugins (one dsh-mcp-client instance per server); add or remove them in the profile's cordis config",
       jsonc_readonly:
         "This file is JSONC (it carries comments): writing would drop them, so it is read-only here — edit it in your editor",
+      needs_workspace:
+        "Claude records enable/disable per workspace (that workspace's disabledMcpServers in ~/.claude.json): open a workspace to switch it here",
+      omp_server_list:
+        "This name is in the disabledServers / enabledServers list of OMP's user-level mcp.json, which decides whether it runs; changing the entry itself would have no effect, so use /mcp enable or /mcp disable in OMP",
     },
     support: {
       none: "{{name}} does not ship MCP: no source is invented for it. Its extension mechanism can still add MCP.",
@@ -2424,7 +2504,16 @@ export const en: Messages = {
     probe: {
       check: "Check {{name}}",
       checkAll: "Check all",
-      hint: "A check starts the stdio server from your config (npx may download packages) or connects to the remote URL and performs a handshake, then ends the process. It only means this app can connect right now. Opening the page checks automatically and reuses results younger than 3 minutes; \"Check all\" forces a fresh run.",
+      hint: "A check starts the stdio server from your config (npx may download packages) or connects to the remote URL and performs a handshake, then ends the process. It only means this app can connect right now. Opening the page checks the servers in your own config and reuses results younger than 3 minutes; \"Check all\" forces a fresh run. Servers configured inside the workspace are never checked automatically, and a manual check lists what will run first.",
+      confirmTitle: "Run the MCP config from this workspace?",
+      confirmDetail: "These servers are defined in config files inside the current workspace, which can come with a cloned repository. Checking them really starts these commands or connects to these addresses on this machine; continue only if you trust the repository. Local environment variables are not filled into addresses or headers during the check.",
+      confirmRun: "Run Check",
+      confirmCommand: "Command",
+      confirmCwd: "Directory",
+      confirmEnv: "Environment",
+      confirmUrl: "Address",
+      confirmHeaders: "Headers",
+      confirmUnavailable: "Could not read this server's config, so what it would run cannot be shown",
       lastChecked: "Status updated at {{time}}",
       pending: "Checking",
       connected: "Connected",
