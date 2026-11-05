@@ -73,13 +73,61 @@ fn try_peek_head_json_lines(
         .collect())
 }
 
-pub(super) fn discover_claude(workspace: &Path) -> Vec<SessionFile> {
-    // The CLI's config root honors CLAUDE_CONFIG_DIR; pinning ~/.claude here
-    // would lose the history of users who relocate it.
-    let base = crate::engine::engine_home(Some("CLAUDE_CONFIG_DIR"), ".claude").join("projects");
-    let mut out = Vec::new();
-    let mut seen_sessions = std::collections::HashSet::new();
-    for dir in claude_project_dirs(&base, workspace) {
+/// One Claude CLI transcript found on disk. `session_id` is the file stem
+/// (`edit.rs` keys Claude files by `{session_id}.jsonl`); `cwd` comes from the
+/// transcript head so attribution does not depend on the project-dir slug.
+pub(super) struct ClaudeTranscript {
+    pub session_id: String,
+    cwd: Option<String>,
+    canonical_cwd: Option<PathBuf>,
+    project_dir: PathBuf,
+    path: PathBuf,
+    modified: std::time::SystemTime,
+}
+
+struct CachedClaudeHead {
+    signature: (i64, i64),
+    cwd: Option<String>,
+}
+
+// Keep head peeks out of no-op scans. Clearing at the bound is cheaper than LRU
+// bookkeeping and mirrors the other small, rebuildable disk caches.
+const CLAUDE_HEAD_CACHE_CAPACITY: usize = 4096;
+static CLAUDE_HEAD_CACHE: std::sync::LazyLock<
+    parking_lot::Mutex<std::collections::HashMap<PathBuf, CachedClaudeHead>>,
+> = std::sync::LazyLock::new(|| parking_lot::Mutex::new(std::collections::HashMap::new()));
+
+#[cfg(test)]
+static CLAUDE_HEAD_READS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+#[cfg(test)]
+pub(super) fn reset_claude_head_read_count() {
+    CLAUDE_HEAD_READS.store(0, std::sync::atomic::Ordering::Relaxed);
+}
+
+#[cfg(test)]
+pub(super) fn claude_head_read_count() -> usize {
+    CLAUDE_HEAD_READS.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+/// `<claude home>/projects`: honors CLAUDE_CONFIG_DIR, since pinning `~/.claude`
+/// here would lose the history of users who relocate it.
+fn claude_projects_base() -> PathBuf {
+    crate::engine::engine_home(Some("CLAUDE_CONFIG_DIR"), ".claude").join("projects")
+}
+
+/// Every Claude transcript path on disk (no content reads, no dedupe).
+fn claude_transcript_paths() -> Vec<PathBuf> {
+    let base = claude_projects_base();
+    let mut found = Vec::new();
+    let Ok(projects) = std::fs::read_dir(&base) else {
+        return found;
+    };
+    for project in projects.flatten() {
+        let dir = project.path();
+        if !dir.is_dir() {
+            continue;
+        }
         let Ok(entries) = std::fs::read_dir(&dir) else {
             continue;
         };
@@ -88,21 +136,180 @@ pub(super) fn discover_claude(workspace: &Path) -> Vec<SessionFile> {
             if path.extension().and_then(|e| e.to_str()) != Some("jsonl") {
                 continue;
             }
-            let Some(stem) = path.file_stem().and_then(|s| s.to_str()) else {
-                continue;
-            };
-            if stem == "history" || !seen_sessions.insert(stem.to_string()) {
+            // `history` is the CLI's per-project prompt index, not a session.
+            if path.file_stem().and_then(|s| s.to_str()) == Some("history") {
                 continue;
             }
-            out.push(SessionFile {
-                engine: "claude",
-                session_id: stem.to_string(),
-                workspace_path: workspace.to_string_lossy().to_string(),
-                file_path: path,
-            });
+            found.push(path);
         }
     }
-    out
+    found
+}
+
+/// Enumerate every Claude transcript once per scan, reading the cwd recorded on
+/// its conversation lines. The project-dir slug cannot carry attribution: the
+/// CLI maps *every* non-alphanumeric byte of the workspace path to `-`, so
+/// distinct workspaces collide (`.../Desktop/语典` and `.../Desktop/六安` both
+/// encode to `-Users-me-Desktop---`). The old per-workspace readdir then handed
+/// a colliding transcript to whichever workspace was scanned first, and the
+/// next scan moved it again — sessions appeared to vanish from their workspace.
+/// Deduping by session id (newest transcript wins) keeps the retained file
+/// deterministic when a resume leaves copies under two project dirs.
+pub(super) fn claude_transcripts() -> Vec<ClaudeTranscript> {
+    let mut by_session: std::collections::HashMap<String, ClaudeTranscript> =
+        std::collections::HashMap::new();
+    for path in claude_transcript_paths() {
+        let Some(session_id) = path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .map(str::to_string)
+        else {
+            continue;
+        };
+        let Some(project_dir) = path.parent().map(Path::to_path_buf) else {
+            continue;
+        };
+        let metadata = std::fs::metadata(&path).ok();
+        let signature = metadata.as_ref().and_then(claude_metadata_signature);
+        let cwd = claude_head_with_signature(&path, signature).unwrap_or(None);
+        let modified = metadata
+            .as_ref()
+            .and_then(|metadata| metadata.modified().ok())
+            .unwrap_or(std::time::SystemTime::UNIX_EPOCH);
+        // Resolve once per transcript per scan, not once per workspace. Kept
+        // outside the content cache so retargeting a symlink is observed.
+        let canonical_cwd = cwd
+            .as_deref()
+            .and_then(|cwd| std::fs::canonicalize(cwd).ok());
+        let transcript = ClaudeTranscript {
+            session_id: session_id.clone(),
+            cwd,
+            canonical_cwd,
+            project_dir,
+            path,
+            modified,
+        };
+        match by_session.entry(session_id) {
+            std::collections::hash_map::Entry::Occupied(mut current) => {
+                let kept = current.get();
+                if (transcript.modified, &transcript.path) > (kept.modified, &kept.path) {
+                    current.insert(transcript);
+                }
+            }
+            std::collections::hash_map::Entry::Vacant(slot) => {
+                slot.insert(transcript);
+            }
+        }
+    }
+    let mut found: Vec<ClaudeTranscript> = by_session.into_values().collect();
+    // Stable candidate order regardless of hash iteration order.
+    found.sort_by(|a, b| a.path.cmp(&b.path));
+    found
+}
+
+pub(super) fn discover_claude_in(
+    transcripts: &[ClaudeTranscript],
+    workspace: &Path,
+) -> Vec<SessionFile> {
+    // Canonicalize each workspace once per scan. Transcript cwd resolution was
+    // done once during enumeration, avoiding a canonicalize per workspace×transcript.
+    let canonical_workspace = std::fs::canonicalize(workspace).ok();
+    // Transcripts with no recorded cwd (damaged or foreign files) keep the
+    // historical project-dir derivation so they stay visible; a cwd-less file
+    // is the only case where the slug is still the best evidence available.
+    let fallback_dirs = claude_project_dirs(&claude_projects_base(), workspace);
+    transcripts
+        .iter()
+        .filter(|transcript| match transcript.cwd.as_deref() {
+            Some(cwd) => {
+                same_or_child(Path::new(cwd), workspace)
+                    || canonical_workspace.as_ref().is_some_and(|workspace| {
+                        transcript
+                            .canonical_cwd
+                            .as_ref()
+                            .is_some_and(|cwd| same_or_child(cwd, workspace))
+                    })
+            }
+            None => fallback_dirs.contains(&transcript.project_dir),
+        })
+        .map(|transcript| SessionFile {
+            engine: "claude",
+            session_id: transcript.session_id.clone(),
+            workspace_path: workspace.to_string_lossy().to_string(),
+            file_path: transcript.path.clone(),
+        })
+        .collect()
+}
+
+#[cfg(test)]
+pub(super) fn discover_claude(workspace: &Path) -> Vec<SessionFile> {
+    discover_claude_in(&claude_transcripts(), workspace)
+}
+
+fn claude_metadata_signature(metadata: &std::fs::Metadata) -> Option<(i64, i64)> {
+    let mtime_ms = metadata
+        .modified()
+        .ok()?
+        .duration_since(std::time::UNIX_EPOCH)
+        .ok()?
+        .as_millis() as i64;
+    Some((metadata.len() as i64, mtime_ms))
+}
+
+fn claude_head_with_signature(
+    path: &Path,
+    signature: Option<(i64, i64)>,
+) -> std::io::Result<Option<String>> {
+    if let Some(signature) = signature {
+        let cached = CLAUDE_HEAD_CACHE
+            .lock()
+            .get(path)
+            .and_then(|cached| (cached.signature == signature).then(|| cached.cwd.clone()));
+        if let Some(cwd) = cached {
+            return Ok(cwd);
+        }
+    }
+
+    // Only successful reads enter the cache, including confirmed cwd-free files.
+    // A transient error must be retried on the next scan.
+    let cwd = read_claude_head(path)?;
+    if let Some(signature) = signature {
+        let mut cache = CLAUDE_HEAD_CACHE.lock();
+        if cache.len() >= CLAUDE_HEAD_CACHE_CAPACITY && !cache.contains_key(path) {
+            cache.clear();
+        }
+        cache.insert(
+            path.to_path_buf(),
+            CachedClaudeHead {
+                signature,
+                cwd: cwd.clone(),
+            },
+        );
+    }
+    Ok(cwd)
+}
+
+/// Working directory from a Claude transcript's head lines. Every conversation
+/// line carries `cwd` (`{"type":"user",...,"cwd":"/Users/me/ws"}`); bookkeeping
+/// heads (`summary`, `file-history-snapshot`, `ai-title`) may not, so a few
+/// lines are skipped before giving up. The byte cap in `peek_head_json_lines`
+/// bounds the cost of a head that never carries a usable cwd.
+fn read_claude_head(path: &Path) -> std::io::Result<Option<String>> {
+    #[cfg(test)]
+    CLAUDE_HEAD_READS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+
+    for head in try_peek_head_json_lines(path, false, 16)? {
+        let Some(cwd) = head
+            .get("cwd")
+            .and_then(|v| v.as_str())
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+        else {
+            continue;
+        };
+        return Ok(Some(cwd.to_string()));
+    }
+    Ok(None)
 }
 
 /// One CodeBuddy transcript found on disk. `session_id`/`cwd` come from its
@@ -1607,6 +1814,86 @@ mod tests {
         std::fs::remove_dir_all(&home).ok();
     }
 
+    /// The CLI's slug maps every non-alphanumeric byte to `-`, so distinct
+    /// non-ASCII workspaces share one project dir. Attribution must follow the
+    /// cwd recorded on each transcript; reading the shared dir per workspace
+    /// moved every colliding session to whichever workspace scanned first.
+    #[test]
+    fn discover_claude_attributes_colliding_slugs_by_transcript_cwd() {
+        let home = scratch_dir("discover-claude-collision");
+        let config_dir = home.join("claude-config");
+        let first_ws = home.join("Desktop").join("语典");
+        let second_ws = home.join("Desktop").join("六安");
+        std::fs::create_dir_all(&first_ws).unwrap();
+        std::fs::create_dir_all(&second_ws).unwrap();
+        assert_eq!(
+            super::super::claude_encode_project_path(&first_ws.to_string_lossy()),
+            super::super::claude_encode_project_path(&second_ws.to_string_lossy()),
+            "fixture must reproduce the slug collision"
+        );
+        let encoded = super::super::claude_encode_project_path(&first_ws.to_string_lossy());
+        let project_dir = config_dir.join("projects").join(encoded);
+        std::fs::create_dir_all(&project_dir).unwrap();
+        let write = |path: PathBuf, id: &str, cwd: &Path| {
+            std::fs::write(
+                &path,
+                format!(
+                    "{{\"type\":\"summary\",\"summary\":\"s\"}}\n{{\"parentUuid\":null,\"sessionId\":\"{id}\",\"cwd\":\"{}\",\"type\":\"user\",\"message\":{{\"role\":\"user\",\"content\":\"hi\"}}}}\n",
+                    cwd.to_string_lossy().replace('\\', "\\\\"),
+                ),
+            )
+            .unwrap();
+        };
+        write(project_dir.join("s-first.jsonl"), "s-first", &first_ws);
+        write(project_dir.join("s-second.jsonl"), "s-second", &second_ws);
+
+        let _guard = ClaudeConfigDirGuard::set(&config_dir);
+        let transcripts = claude_transcripts();
+        let found = discover_claude_in(&transcripts, &first_ws);
+        assert_eq!(found.len(), 1, "only the matching workspace's session");
+        assert_eq!(found[0].session_id, "s-first");
+        assert_eq!(found[0].file_path, project_dir.join("s-first.jsonl"));
+        let found = discover_claude_in(&transcripts, &second_ws);
+        assert_eq!(
+            found.len(),
+            1,
+            "the sibling workspace keeps its own session"
+        );
+        assert_eq!(found[0].session_id, "s-second");
+
+        std::fs::remove_dir_all(&home).ok();
+    }
+
+    /// A CLI run in a subdirectory of an open workspace is the same project:
+    /// its transcript records the subdirectory as cwd while living in a slug
+    /// of its own.
+    #[test]
+    fn discover_claude_attributes_subdirectory_cwd_to_workspace() {
+        let home = scratch_dir("discover-claude-subdir");
+        let config_dir = home.join("claude-config");
+        let workspace = home.join("ws");
+        let subdir = workspace.join("sub");
+        std::fs::create_dir_all(&subdir).unwrap();
+        let encoded = super::super::claude_encode_project_path(&subdir.to_string_lossy());
+        let project_dir = config_dir.join("projects").join(encoded);
+        std::fs::create_dir_all(&project_dir).unwrap();
+        std::fs::write(
+            project_dir.join("s1.jsonl"),
+            format!(
+                "{{\"type\":\"user\",\"cwd\":\"{}\",\"message\":{{\"role\":\"user\",\"content\":\"hi\"}}}}\n",
+                subdir.to_string_lossy().replace('\\', "\\\\"),
+            ),
+        )
+        .unwrap();
+
+        let _guard = ClaudeConfigDirGuard::set(&config_dir);
+        let found = discover_claude_in(&claude_transcripts(), &workspace);
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].session_id, "s1");
+
+        std::fs::remove_dir_all(&home).ok();
+    }
+
     #[test]
     fn discover_codebuddy_attributes_by_transcript_cwd_not_dir_name() {
         let home = scratch_dir("discover-codebuddy");
@@ -2213,3 +2500,4 @@ mod tests {
         std::fs::remove_dir_all(&home).ok();
     }
 }
+
