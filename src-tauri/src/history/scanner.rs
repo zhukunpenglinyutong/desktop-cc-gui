@@ -1,7 +1,7 @@
 use super::discovery::{
-    codebuddy_transcripts, codex_candidates, discover_agy, discover_claude, discover_codebuddy_in,
-    discover_grok, discover_kimi, discover_minimax, discover_opencode, discover_qoder,
-    dsh_candidates, identify_head, is_codex_subagent_file, is_dsh_subagent_file,
+    claude_transcripts, codebuddy_transcripts, codex_candidates, discover_agy, discover_claude_in,
+    discover_codebuddy_in, discover_grok, discover_kimi, discover_minimax, discover_opencode,
+    discover_qoder, dsh_candidates, identify_head, is_codex_subagent_file, is_dsh_subagent_file,
     opencode_db_updated_times, opencode_db_visible_sessions, opencode_tree_file_superseded,
     opencode_tree_root, path_is_under, pi_family_candidates,
 };
@@ -23,6 +23,12 @@ pub(super) static SCAN_LOCK: parking_lot::Mutex<()> = parking_lot::Mutex::new(()
 /// capture validator recorded their identity, so summaries derived by the
 /// older "any JSON-valid frame" guess are stale.
 const TITLE_VERSION: &str = "10";
+
+/// Bump when an engine's workspace-attribution rule changes, so rows indexed by
+/// the old rule are re-derived and their `workspace_path` rewritten. v1: Claude
+/// attributes by the transcript's recorded cwd instead of the project-dir slug,
+/// which mapped distinct workspaces onto one directory.
+const ATTRIBUTION_VERSION: &str = "1";
 
 // ==================== Scan ====================
 
@@ -82,14 +88,26 @@ pub(super) fn scan_with_guard(
 fn gather_candidates(workspaces: &[String]) -> Vec<Candidate> {
     let mut candidates: Vec<Candidate> = Vec::new();
     let mut seen_paths: std::collections::HashSet<PathBuf> = std::collections::HashSet::new();
-    // CodeBuddy project dirs are CLI-private, so attribution needs each
-    // transcript's recorded cwd. Its bounded cache reads only new/changed heads,
-    // once per file rather than once per workspace.
+    // Claude and CodeBuddy project dirs cannot carry attribution: Claude's slug
+    // maps every non-alphanumeric byte to `-` (distinct non-ASCII workspaces
+    // collide), CodeBuddy's is CLI-private. Both attribute by the cwd recorded
+    // on each transcript, read once per file from a bounded head cache instead
+    // of once per workspace.
+    let claude = claude_transcripts();
     let codebuddy = codebuddy_transcripts();
-    for workspace_path in workspaces {
+    // Deepest workspace first. A parent workspace also matches a child's cwd
+    // (`same_or_child`), and `seen_paths` is first-come-first-served, so the
+    // most specific workspace has to claim a nested session before its parent
+    // does — otherwise a monorepo root would take every subpackage's sessions
+    // and they would vanish from the workspace that owns them. This ordering is
+    // shared by every per-workspace engine below, so Kimi/Grok/… become
+    // depth-first too.
+    let mut by_specificity: Vec<&String> = workspaces.iter().collect();
+    by_specificity.sort_by_key(|path| std::cmp::Reverse(Path::new(path).components().count()));
+    for workspace_path in by_specificity {
         let workspace = PathBuf::from(workspace_path);
         // Filename/index-keyed engines identify cheaply per workspace.
-        for file in discover_claude(&workspace)
+        for file in discover_claude_in(&claude, &workspace)
             .into_iter()
             .chain(discover_kimi(&workspace))
             .chain(discover_grok(&workspace))
@@ -170,10 +188,10 @@ fn stat_all(
 }
 
 /// Tier-1 gate (brief lock): a matching global signature means nothing
-/// changed unless indexed summaries were produced by an older derivation.
+/// changed unless rows were produced by an older derivation.
 struct Tier1 {
     signature: String,
-    retitle_pending: bool,
+    reindex_pending: bool,
 }
 
 fn tier1_gate(db: &crate::db::Db, signature: String) -> Result<Option<Tier1>, String> {
@@ -188,23 +206,25 @@ fn tier1_gate(db: &crate::db::Db, signature: String) -> Result<Option<Tier1>, St
     let row_count: i64 = conn
         .query_row("SELECT COUNT(*) FROM sessions", [], |r| r.get(0))
         .unwrap_or(0);
-    let title_version: Option<String> = conn
-        .query_row(
-            "SELECT value FROM meta WHERE key='title_version'",
-            [],
-            |r| r.get(0),
-        )
-        .ok();
+    let stored_version = |key: &str| {
+        conn.query_row("SELECT value FROM meta WHERE key=?1", [key], |r| r.get(0))
+            .ok()
+    };
+    let title_version: Option<String> = stored_version("title_version");
+    let attribution_version: Option<String> = stored_version("attribution_version");
     // A summary derivation change invalidates every indexed title and preview:
     // their old values cannot reliably identify which normalization rule is
     // missing (for example, a visible prefix followed by a host-only tail).
-    let retitle_pending = title_version.as_deref() != Some(TITLE_VERSION);
-    if previous.as_deref() == Some(signature.as_str()) && row_count > 0 && !retitle_pending {
+    // An attribution change invalidates the stored workspace_path the same way:
+    // the file is unchanged, so only a re-derivation can move the row.
+    let reindex_pending = title_version.as_deref() != Some(TITLE_VERSION)
+        || attribution_version.as_deref() != Some(ATTRIBUTION_VERSION);
+    if previous.as_deref() == Some(signature.as_str()) && row_count > 0 && !reindex_pending {
         return Ok(None);
     }
     Ok(Some(Tier1 {
         signature,
-        retitle_pending,
+        reindex_pending,
     }))
 }
 
@@ -218,19 +238,25 @@ struct IndexedFile {
     engine: String,
     session_id: String,
     accepted_signature: String,
+    /// Workspace the row is attributed to right now. A per-workspace engine's
+    /// candidate names the workspace that claimed the file this scan, so a row
+    /// recorded under a different one is stale even though the file is not:
+    /// the real workspace may have been opened only after that row was written.
+    workspace_path: String,
 }
 
-/// Prefetch (brief lock) the stored per-file index state and, while a summary
-/// migration runs, mark every indexed path stale. Parsing remains lock-free.
+/// Prefetch (brief lock) the stored per-file index state and, while a summary or
+/// attribution migration runs, mark every indexed path stale. Parsing remains
+/// lock-free.
 fn prefetch_stat_keys(
     db: &crate::db::Db,
-    retitle_pending: bool,
+    reindex_pending: bool,
 ) -> Result<(std::collections::HashMap<String, IndexedFile>, HashSet<String>), String> {
     let conn = db.0.lock();
     let mut stmt = conn
         .prepare(
             "SELECT file_path, file_size, file_mtime_ms, engine, session_id,
-                    accepted_frames_signature
+                    accepted_frames_signature, workspace_path
              FROM sessions",
         )
         .map_err(|e| e.to_string())?;
@@ -244,6 +270,7 @@ fn prefetch_stat_keys(
                     engine: r.get(3)?,
                     session_id: r.get(4)?,
                     accepted_signature: r.get(5)?,
+                    workspace_path: r.get(6)?,
                 },
             ))
         })
@@ -257,7 +284,7 @@ fn prefetch_stat_keys(
             Err(e) => eprintln!("[scanner] skipping undecodable session stat row: {e}"),
         }
     }
-    let stale = if retitle_pending {
+    let stale = if reindex_pending {
         stats.keys().cloned().collect()
     } else {
         HashSet::new()
@@ -290,16 +317,21 @@ fn prepare_candidate(
 ) -> Option<PreparedUpsert> {
     let (size, mtime_ms) = sig;
     let path_str = cand.path.to_string_lossy().to_string();
-    // Unchanged on disk, derived from the same recorded frame identities, and
-    // not pending re-title: reuse. The stored row names the session, so this
-    // check costs no head peek.
+    // Unchanged on disk, derived from the same recorded frame identities, still
+    // attributed to the workspace that claims it, and not pending a re-derive:
+    // reuse. The stored row names the session, so this check costs no head peek.
     if let Some(indexed) = stat_keys.get(&path_str) {
         let current = accepted
             .get(indexed.engine.as_str())
             .and_then(|sessions| sessions.get(indexed.session_id.as_str()))
             .map_or("", |set| set.signature.as_str());
+        let attributed_as_claimed = cand
+            .known_workspace
+            .as_deref()
+            .is_none_or(|workspace| workspace == indexed.workspace_path);
         if (indexed.size, indexed.mtime_ms) == sig
             && indexed.accepted_signature == current
+            && attributed_as_claimed
             && !stale_paths.contains(&path_str)
         {
             return None;
@@ -750,6 +782,12 @@ fn upsert_rows(
             [TITLE_VERSION],
         )
         .map_err(|e| e.to_string())?;
+        tx.execute(
+            "INSERT INTO meta(key, value) VALUES('attribution_version', ?1)
+             ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+            [ATTRIBUTION_VERSION],
+        )
+        .map_err(|e| e.to_string())?;
     }
     tx.commit().map_err(|e| e.to_string())
 }
@@ -782,7 +820,7 @@ fn scan_inner(
             reused: candidates.len(),
         });
     };
-    let (stat_keys, stale_paths) = prefetch_stat_keys(db, tier1.retitle_pending)?;
+    let (stat_keys, stale_paths) = prefetch_stat_keys(db, tier1.reindex_pending)?;
 
     // Phase A (lock-free): parse changed files, collect rows to upsert.
     let total = candidates.len();
@@ -796,7 +834,7 @@ fn scan_inner(
     }
     let mut rows = Vec::new();
     let mut reused = 0usize;
-    let mut retitle_complete = true;
+    let mut reindex_complete = true;
     for (index, (cand, sig)) in candidates.iter().zip(stats.iter()).enumerate() {
         let processed = index + 1;
         if processed % step == 0 {
@@ -810,7 +848,7 @@ fn scan_inner(
         let stale = stale_paths.contains(&path_str);
         let Some(sig) = sig else {
             if stale {
-                retitle_complete = false;
+                reindex_complete = false;
             }
             continue;
         };
@@ -818,7 +856,7 @@ fn scan_inner(
             Some(row) => rows.push(row),
             None => {
                 if stale {
-                    retitle_complete = false;
+                    reindex_complete = false;
                 }
                 if stat_keys
                     .get(&path_str)
@@ -836,7 +874,7 @@ fn scan_inner(
         db,
         &rows,
         &tier1,
-        !tier1.retitle_pending || retitle_complete,
+        !tier1.reindex_pending || reindex_complete,
     )?;
     prune_missing_file_sessions(db, &candidates)?;
     prune_stale_sessions(db)?;
@@ -1258,7 +1296,351 @@ pub(super) mod tests {
             .map_err(|e| e.to_string())?;
         assert_eq!(title, "updated second title");
 
-        drop(workspace_for);
+        drop(db);
+        std::fs::remove_dir_all(&home).ok();
+        Ok(())
+    }
+
+    /// Claude's project slug maps every non-alphanumeric byte to `-`, so two
+    /// workspaces can share one project dir. Attribution must follow each
+    /// transcript's cwd on every scan: reading the shared dir per workspace made
+    /// a session migrate to another workspace (and vanish from its own).
+    fn write_claude_transcript(home: &Path, cwd: &Path, id: &str, turns: usize) -> PathBuf {
+        let dir = home
+            .join(".claude")
+            .join("projects")
+            .join(super::super::claude_encode_project_path(&cwd.to_string_lossy()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let line = serde_json::json!({
+            "type": "user",
+            "sessionId": id,
+            "cwd": cwd.to_string_lossy(),
+            "message": {"role": "user", "content": "hello"},
+        });
+        let path = dir.join(format!("{id}.jsonl"));
+        std::fs::write(&path, format!("{line}\n").repeat(turns)).unwrap();
+        path
+    }
+
+    fn register_workspace(db: &crate::db::Db, path: &Path) {
+        db.0.lock()
+            .execute(
+                "INSERT INTO workspaces(id, path, name) VALUES(?1, ?1, ?1)",
+                [path.to_string_lossy()],
+            )
+            .unwrap();
+    }
+
+    fn claude_row_workspace(db: &crate::db::Db, id: &str) -> String {
+        db.0.lock()
+            .query_row(
+                "SELECT workspace_path FROM sessions WHERE engine='claude' AND session_id=?1",
+                [id],
+                |row| row.get(0),
+            )
+            .unwrap()
+    }
+
+    /// 父子工作区都打开时，子工作区的会话不能被父工作区收走，有新内容后也不能。
+    #[test]
+    fn nested_workspace_keeps_its_own_claude_sessions() {
+        let home = scratch_dir(&format!("attr-nested-{}", uuid::Uuid::new_v4()));
+        let parent = home.join("repo");
+        let child = parent.join("packages").join("app");
+        std::fs::create_dir_all(&child).unwrap();
+        let _guard = HomeGuard::set(&home);
+        let db = crate::db::Db::open_at(&home.join("app.db")).unwrap();
+        register_workspace(&db, &child);
+        register_workspace(&db, &parent);
+        write_claude_transcript(&home, &parent, "in-parent", 1);
+        write_claude_transcript(&home, &child, "in-child", 1);
+
+        scan_with(&db, || {}).unwrap();
+        assert_eq!(
+            claude_row_workspace(&db, "in-parent"),
+            parent.to_string_lossy()
+        );
+        assert_eq!(
+            claude_row_workspace(&db, "in-child"),
+            child.to_string_lossy()
+        );
+
+        write_claude_transcript(&home, &child, "in-child", 2);
+        scan_with(&db, || {}).unwrap();
+        assert_eq!(
+            claude_row_workspace(&db, "in-child"),
+            child.to_string_lossy()
+        );
+
+        drop(db);
+        std::fs::remove_dir_all(&home).ok();
+    }
+
+    /// 升级迁移不能把旧版本已经归对的嵌套工作区会话挪给父工作区。
+    #[test]
+    fn attribution_migration_keeps_nested_workspace_rows() {
+        let home = scratch_dir(&format!("attr-migrate-{}", uuid::Uuid::new_v4()));
+        let parent = home.join("repo");
+        let child = parent.join("packages").join("app");
+        std::fs::create_dir_all(&child).unwrap();
+        let _guard = HomeGuard::set(&home);
+        let db = crate::db::Db::open_at(&home.join("app.db")).unwrap();
+        register_workspace(&db, &child);
+        register_workspace(&db, &parent);
+        write_claude_transcript(&home, &child, "s", 1);
+        scan_with(&db, || {}).unwrap();
+
+        // 模拟旧版本留下的行：归属正确，还没有 attribution_version 标记。
+        {
+            let conn = db.0.lock();
+            conn.execute(
+                "UPDATE sessions SET workspace_path=?1 WHERE session_id='s'",
+                [child.to_string_lossy()],
+            )
+            .unwrap();
+            conn.execute("DELETE FROM meta WHERE key='attribution_version'", [])
+                .unwrap();
+        }
+
+        scan_with(&db, || {}).unwrap();
+        assert_eq!(claude_row_workspace(&db, "s"), child.to_string_lossy());
+
+        drop(db);
+        std::fs::remove_dir_all(&home).ok();
+    }
+
+    /// 真正的工作区之后才被打开时，文件没变的旧行也要立刻搬回去，且只重算一次。
+    #[test]
+    fn opening_the_real_workspace_moves_an_unchanged_claude_row() {
+        let home = scratch_dir(&format!("attr-open-later-{}", uuid::Uuid::new_v4()));
+        let real = home.join("Desktop").join("一号");
+        let other = home.join("Desktop").join("二号");
+        std::fs::create_dir_all(&real).unwrap();
+        std::fs::create_dir_all(&other).unwrap();
+        let _guard = HomeGuard::set(&home);
+        let db = crate::db::Db::open_at(&home.join("app.db")).unwrap();
+        register_workspace(&db, &other);
+        let transcript = write_claude_transcript(&home, &real, "s", 1);
+        let (size, mtime_ms) = stat_signature(&transcript).unwrap();
+        // 旧版本只打开了二号时留下的错误归属。
+        db.0.lock()
+            .execute(
+                "INSERT INTO sessions(engine, session_id, workspace_path, file_path, file_size, file_mtime_ms)
+                 VALUES('claude', 's', ?1, ?2, ?3, ?4)",
+                rusqlite::params![
+                    other.to_string_lossy(),
+                    transcript.to_string_lossy(),
+                    size,
+                    mtime_ms
+                ],
+            )
+            .unwrap();
+
+        register_workspace(&db, &real);
+        let report = scan_with(&db, || {}).unwrap();
+        assert_eq!(claude_row_workspace(&db, "s"), real.to_string_lossy());
+        assert_eq!(report.reparsed, 1);
+        assert_eq!(
+            scan_with(&db, || {}).unwrap().reparsed,
+            0,
+            "不能每次扫描都重算"
+        );
+
+        drop(db);
+        std::fs::remove_dir_all(&home).ok();
+    }
+
+    /// 转录本数量超过缓存上限时，空转扫描仍然不应该重读文件头。
+    #[test]
+    fn claude_head_cache_survives_more_transcripts_than_its_capacity() {
+        let home = scratch_dir(&format!("attr-cache-{}", uuid::Uuid::new_v4()));
+        let workspace = home.join("ws");
+        std::fs::create_dir_all(&workspace).unwrap();
+        let _guard = HomeGuard::set(&home);
+        let db = crate::db::Db::open_at(&home.join("app.db")).unwrap();
+        register_workspace(&db, &workspace);
+        for index in 0..4100 {
+            write_claude_transcript(&home, &workspace, &format!("s{index}"), 1);
+        }
+        scan_with(&db, || {}).unwrap();
+
+        super::super::discovery::reset_claude_head_read_count();
+        assert_eq!(scan_with(&db, || {}).unwrap().reparsed, 0);
+        assert_eq!(super::super::discovery::claude_head_read_count(), 0);
+
+        drop(db);
+        std::fs::remove_dir_all(&home).ok();
+    }
+
+    #[test]
+    fn scan_keeps_colliding_claude_workspaces_apart() -> Result<(), String> {
+        let home = scratch_dir(&format!("scan-claude-collision-{}", uuid::Uuid::new_v4()));
+        let workspace_a = home.join("Desktop").join("语典");
+        let workspace_b = home.join("Desktop").join("六安");
+        let config_dir = home.join(".claude");
+        std::fs::create_dir_all(&workspace_a).map_err(|e| e.to_string())?;
+        std::fs::create_dir_all(&workspace_b).map_err(|e| e.to_string())?;
+        let slug_a = super::super::claude_encode_project_path(&workspace_a.to_string_lossy());
+        let slug_b = super::super::claude_encode_project_path(&workspace_b.to_string_lossy());
+        assert_eq!(slug_a, slug_b, "fixture must reproduce the slug collision");
+        let project_dir = config_dir.join("projects").join(&slug_a);
+        std::fs::create_dir_all(&project_dir).map_err(|e| e.to_string())?;
+        let write_transcript = |path: &Path, id: &str, cwd: &Path, text: &str| {
+            let line = serde_json::json!({
+                "type": "user",
+                "sessionId": id,
+                "cwd": cwd.to_string_lossy(),
+                "message": {"role": "user", "content": text},
+            });
+            std::fs::write(path, format!("{line}\n")).map_err(|e| e.to_string())
+        };
+        let first = project_dir.join("first.jsonl");
+        let second = project_dir.join("second.jsonl");
+        write_transcript(&first, "first", &workspace_a, "first title")?;
+        write_transcript(&second, "second", &workspace_b, "second title")?;
+
+        struct ConfigGuard(Option<std::ffi::OsString>);
+        impl Drop for ConfigGuard {
+            fn drop(&mut self) {
+                match &self.0 {
+                    Some(value) => std::env::set_var("CLAUDE_CONFIG_DIR", value),
+                    None => std::env::remove_var("CLAUDE_CONFIG_DIR"),
+                }
+            }
+        }
+        let _home_guard = HomeGuard::set(&home);
+        let previous_config = std::env::var_os("CLAUDE_CONFIG_DIR");
+        std::env::set_var("CLAUDE_CONFIG_DIR", &config_dir);
+        let _config_guard = ConfigGuard(previous_config);
+
+        let db = crate::db::Db::open_at(&home.join("app.db")).map_err(|e| e.to_string())?;
+        {
+            let conn = db.0.lock();
+            for (id, workspace) in [("wa", &workspace_a), ("wb", &workspace_b)] {
+                conn.execute(
+                    "INSERT INTO workspaces(id, path, name) VALUES(?1, ?2, ?2)",
+                    rusqlite::params![id, workspace.to_string_lossy()],
+                )
+                .map_err(|e| e.to_string())?;
+            }
+        }
+        let workspace_for = |id: &str| {
+            db.0.lock()
+                .query_row(
+                    "SELECT workspace_path FROM sessions WHERE engine='claude' AND session_id=?1",
+                    [id],
+                    |row| row.get::<_, String>(0),
+                )
+                .map_err(|e| e.to_string())
+        };
+
+        let path_a = workspace_a.to_string_lossy().to_string();
+        let path_b = workspace_b.to_string_lossy().to_string();
+        super::super::discovery::reset_claude_head_read_count();
+        assert_eq!(scan_with(&db, || {})?.reparsed, 2);
+        assert_eq!(super::super::discovery::claude_head_read_count(), 2);
+        assert_eq!(workspace_for("first")?, path_a);
+        assert_eq!(workspace_for("second")?, path_b);
+
+        // A no-op scan keeps both rows where they are, and re-reads no head.
+        super::super::discovery::reset_claude_head_read_count();
+        assert_eq!(scan_with(&db, || {})?.reparsed, 0);
+        assert_eq!(super::super::discovery::claude_head_read_count(), 0);
+        assert_eq!(workspace_for("first")?, path_a);
+        assert_eq!(workspace_for("second")?, path_b);
+
+        // Growing one transcript re-indexes only it, and not into a sibling.
+        write_transcript(&second, "second", &workspace_b, "second title grown")?;
+        super::super::discovery::reset_claude_head_read_count();
+        assert_eq!(scan_with(&db, || {})?.reparsed, 1);
+        assert_eq!(super::super::discovery::claude_head_read_count(), 1);
+        assert_eq!(workspace_for("first")?, path_a);
+        assert_eq!(workspace_for("second")?, path_b);
+
+        drop(db);
+        std::fs::remove_dir_all(&home).ok();
+        Ok(())
+    }
+
+    /// Rows indexed before the attribution change keep their stale
+    /// workspace_path until their transcript changes. The attribution marker
+    /// forces one re-derivation so an upgrade repairs them without touching the
+    /// files, and the following scan reuses the repaired rows again.
+    #[test]
+    fn attribution_migration_rewrites_workspace_of_unchanged_sessions() -> Result<(), String> {
+        let home = scratch_dir(&format!(
+            "scan-claude-attribution-migration-{}",
+            uuid::Uuid::new_v4()
+        ));
+        let workspace = home.join("ws");
+        let config_dir = home.join(".claude");
+        std::fs::create_dir_all(&workspace).map_err(|e| e.to_string())?;
+        let project_dir = config_dir
+            .join("projects")
+            .join(super::super::claude_encode_project_path(
+                &workspace.to_string_lossy(),
+            ));
+        std::fs::create_dir_all(&project_dir).map_err(|e| e.to_string())?;
+        let line = serde_json::json!({
+            "type": "user",
+            "sessionId": "s1",
+            "cwd": workspace.to_string_lossy(),
+            "message": {"role": "user", "content": "hello"},
+        });
+        std::fs::write(project_dir.join("s1.jsonl"), format!("{line}\n"))
+            .map_err(|e| e.to_string())?;
+
+        struct ConfigGuard(Option<std::ffi::OsString>);
+        impl Drop for ConfigGuard {
+            fn drop(&mut self) {
+                match &self.0 {
+                    Some(value) => std::env::set_var("CLAUDE_CONFIG_DIR", value),
+                    None => std::env::remove_var("CLAUDE_CONFIG_DIR"),
+                }
+            }
+        }
+        let _home_guard = HomeGuard::set(&home);
+        let previous_config = std::env::var_os("CLAUDE_CONFIG_DIR");
+        std::env::set_var("CLAUDE_CONFIG_DIR", &config_dir);
+        let _config_guard = ConfigGuard(previous_config);
+
+        let db = crate::db::Db::open_at(&home.join("app.db")).map_err(|e| e.to_string())?;
+        db.0.lock()
+            .execute(
+                "INSERT INTO workspaces(id, path, name) VALUES('w1', ?1, 'ws')",
+                [workspace.to_string_lossy().to_string()],
+            )
+            .map_err(|e| e.to_string())?;
+        let workspace_for = |id: &str| {
+            db.0.lock()
+                .query_row(
+                    "SELECT workspace_path FROM sessions WHERE engine='claude' AND session_id=?1",
+                    [id],
+                    |row| row.get::<_, String>(0),
+                )
+                .map_err(|e| e.to_string())
+        };
+
+        assert_eq!(scan_with(&db, || {})?.reparsed, 1);
+        assert_eq!(workspace_for("s1")?, workspace.to_string_lossy());
+
+        // Simulate a row written by the previous build: attributed to the wrong
+        // workspace, stamped with the older attribution marker.
+        db.0.lock()
+            .execute(
+                "UPDATE sessions SET workspace_path='/stale/other' WHERE engine='claude'",
+                [],
+            )
+            .map_err(|e| e.to_string())?;
+        db.0.lock()
+            .execute("UPDATE meta SET value='0' WHERE key='attribution_version'", [])
+            .map_err(|e| e.to_string())?;
+
+        assert_eq!(scan_with(&db, || {})?.reparsed, 1, "unchanged file re-derived");
+        assert_eq!(workspace_for("s1")?, workspace.to_string_lossy());
+
+        assert_eq!(scan_with(&db, || {})?.reparsed, 0, "marker now current");
+
         drop(db);
         std::fs::remove_dir_all(&home).ok();
         Ok(())
