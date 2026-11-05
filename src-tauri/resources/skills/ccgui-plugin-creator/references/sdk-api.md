@@ -1,7 +1,7 @@
 <!-- 由 src/features/plugins/skill/creator-skill-docs.ts 从源码生成，请勿手改。 -->
 <!-- 重新生成：pnpm plugin-skill:docs（测试 creator-skill-docs.test.ts 会断言本文件与源码一致）。 -->
 
-# CC GUI 插件 SDK 参考（SDK 0.3.25）
+# CC GUI 插件 SDK 参考（SDK 0.3.26）
 
 本文件由脚本从 `packages/plugin-sdk`（公共契约）与宿主运行时（权限门禁）派生，属于 `ccgui-plugin-creator` skill。
 字段、方法、权限以本文件为准：**文中没有的 API 一律视为不存在**，不要凭记忆猜测方法名或权限名。
@@ -366,7 +366,7 @@ sessions: {
   /** 权限：host:session */
   setEffort(engine: string, sessionId: string, workspacePath: string, effort: string): Promise<void>;
   /** 权限：host:session */
-  startRun(def: { engine: string; prompt: string; workspacePath: string; model?: string | null; effort?: string | null; providerId?: string | null }): Promise<{ runId: string; sessionId: string | null }>;
+  startRun(def: { engine: string; prompt: string; workspacePath: string; sessionId?: string | null; model?: string | null; effort?: string | null; providerId?: string | null }): Promise<{ runId: string; sessionId: string | null }>;
   /** 权限：host:session */
   interruptRun(def: { engine: string; workspacePath: string; sessionId?: string | null }): Promise<void>;
   /** 权限：host:session */

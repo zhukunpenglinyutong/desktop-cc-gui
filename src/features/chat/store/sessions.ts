@@ -106,6 +106,7 @@ export function createSessionActions(
   | "selectSession"
   | "reloadSession"
   | "forkSession"
+  | "hydrateSession"
   | "loadEarlier"
   | "archiveSession"
   | "deleteSession"
@@ -618,6 +619,47 @@ export function createSessionActions(
           delete forkingByKey[key];
           return { forkingByKey };
         });
+      }
+    },
+
+    hydrateSession: async ({ engine, sessionId, workspacePath }) => {
+      const key = sessionKey(engine, sessionId, workspacePath);
+      const existing = get().bySession[key];
+      // Already loaded, being loaded, or mid-turn: the caller can append now.
+      if (get().streamingByKey[key] || existing?.streaming) return;
+      if (existing?.loading || (existing && existing.messages.length > 0)) return;
+      if (get().archivedSessionKeys[key]) return;
+      patchSession(set, key, { loading: true, error: null });
+      const plansPromise = ipc
+        .listPlanReviews(engine, sessionId)
+        .catch(() => null);
+      try {
+        const page = await loadHistoryPage(engine, sessionId, workspacePath, 100);
+        const plans = await plansPromise;
+        set((s) => {
+          const cur = s.bySession[key];
+          // Deleted/archived while the read was in flight: never resurrect it.
+          if (!cur || s.archivedSessionKeys[key]) return {};
+          const messages = mergePlanReviewHistory(page.messages, plans ?? []) ?? page.messages;
+          return {
+            bySession: {
+              ...s.bySession,
+              [key]: {
+                ...cur,
+                messages,
+                subagentHistory: page.subagentHistory,
+                nextBefore: page.nextBefore,
+                loading: false,
+                usage: [...messages].reverse().find((m) => m.usage)?.usage ?? null,
+              },
+            },
+          };
+        });
+      } catch (error) {
+        // 调用方（插件续跑）据此放弃这一轮：绝不能把新消息追加到没读出来的
+        // 转录上——打开标签页时「已有消息」会跳过历史加载，旧对话就丢了。
+        patchSession(set, key, { loading: false });
+        throw error;
       }
     },
 

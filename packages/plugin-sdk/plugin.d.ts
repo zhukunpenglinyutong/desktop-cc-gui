@@ -949,6 +949,12 @@ export interface PluginContext {
       prompt: string;
       /** 会话所属工作区路径(如某个 worktree)。 */
       workspacePath: string;
+      /** 续跑一个已有会话(0.3.26 起,可选):传了就投递进这个会话,效果等同
+       *  于用户在聊天里再发一条——历史、实时流式、停止都在原会话里,不新开
+       *  侧栏行。必须已存在(engine + workspacePath 对得上),且没有在跑的
+       *  轮次,否则以 rejection 失败(session_busy / invalid_args)。
+       *  缺省/null = 新建会话(0.3.18 起的行为)。 */
+      sessionId?: string | null;
       /** 本轮模型 id(ctx.agent.catalog 的 models[].id)。 */
       model?: string | null;
       /** 本轮推理强度(catalog 的 efforts 里的一档)。 */
