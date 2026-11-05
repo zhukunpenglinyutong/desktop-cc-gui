@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useId, useLayoutEffect, useRef, useState } from "react";
-import type { CSSProperties, ReactNode } from "react";
+import type { CSSProperties, ReactNode, RefObject } from "react";
 import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
 import Check from "lucide-react/dist/esm/icons/check";
@@ -25,6 +25,7 @@ import {
 } from "./model-list";
 import { EFFORT_LABEL_KEYS, supportsEffort, type EffortLevel } from "./effort-levels";
 import { EffortSlider } from "./effort-slider";
+import { useLockedMinWidth } from "./use-locked-min-width";
 import type { MenuOption, ModelOption } from "./cli-menu";
 
 export interface ChannelOption {
@@ -37,6 +38,9 @@ const FLYOUT_CLASSES = cx(
   "absolute bottom-0 z-10 w-max min-w-[min(320px,var(--flyout-max-width))] max-w-[var(--flyout-max-width)]",
   "rounded-lg border border-border-button-default bg-background-primary-default p-1 shadow-dropdown",
 );
+const FLYOUT_MAX_WIDTH = 480;
+/** 16px viewport margin plus the 8px gap beside the CLI popover. */
+const FLYOUT_EDGE_SPACE = 24;
 
 /* ------------------------------------------------------------------ flyout */
 
@@ -65,7 +69,7 @@ function ChannelRow({
           : "hover:bg-background-primary-hover focus-visible:bg-background-primary-hover",
       )}
     >
-      <span className="min-w-0 truncate text-body-medium text-text-primary">
+      <span className="min-w-0 text-body-medium whitespace-normal text-text-primary [overflow-wrap:anywhere]">
         {option.label}
       </span>
       {selected && (
@@ -156,7 +160,9 @@ function ChannelPicker({
         <span className="shrink-0 text-body-2-medium text-text-tertiary">
           {t("chat.channelPicker")}
         </span>
-        <span className="min-w-0 truncate text-body-medium text-text-primary">
+        {/* w-0 + flex-1: picking a long channel must not widen the flyout. The
+            row stays one line; the title and the opened list show the full name. */}
+        <span title={selected?.label} className="w-0 flex-1 truncate text-body-medium text-text-primary">
           {selected?.label ?? t("chat.channelUnselected")}
         </span>
         <ChevronDownSmall
@@ -167,11 +173,13 @@ function ChannelPicker({
         />
       </button>
       {expanded && (
+        // w-0 + min-w-full: fills the panel but adds nothing to its max-content
+        // width, so opening the list can't make the flyout jump.
         <div
           id={listId}
           role="radiogroup"
           aria-label={t("chat.channelPicker")}
-          className="flex max-h-[200px] w-full flex-col overflow-y-auto"
+          className="flex max-h-[200px] w-0 min-w-full flex-col overflow-y-auto"
         >
           {visible.map((channel) => (
             <ChannelRow
@@ -641,22 +649,20 @@ export function EngineModelPanel({
   );
 }
 
-/** Desktop-only wrapper: the model panel flies out on the roomier side of
- *  the CLI popover. On mobile CliMenu renders the same panel in a modal
- *  dialog instead (hover flyouts don't work on touch). */
-export function EngineFlyout(props: Parameters<typeof EngineModelPanel>[0]) {
-  const ref = useRef<HTMLDivElement>(null);
-  const [layout, setLayout] = useState({ left: false, maxWidth: 480 });
+/** Which side of the CLI popover the flyout opens on and how wide it may get,
+ *  re-measured whenever the popover can have moved or settled. */
+function useFlyoutLayout(ref: RefObject<HTMLDivElement | null>) {
+  const [layout, setLayout] = useState({ left: false, maxWidth: FLYOUT_MAX_WIDTH });
   useLayoutEffect(() => {
     const panel = ref.current;
     const anchor = panel?.parentElement;
     if (!panel || !anchor) return;
     const update = () => {
       const bounds = anchor.getBoundingClientRect();
-      const rightSpace = window.innerWidth - bounds.right - 24;
-      const leftSpace = bounds.left - 24;
-      const left = rightSpace < Math.min(480, leftSpace);
-      const maxWidth = Math.max(0, Math.min(480, left ? leftSpace : rightSpace));
+      const rightSpace = window.innerWidth - bounds.right - FLYOUT_EDGE_SPACE;
+      const leftSpace = bounds.left - FLYOUT_EDGE_SPACE;
+      const left = rightSpace < Math.min(FLYOUT_MAX_WIDTH, leftSpace);
+      const maxWidth = Math.max(0, Math.min(FLYOUT_MAX_WIDTH, left ? leftSpace : rightSpace));
       setLayout((current) => current.left === left && current.maxWidth === maxWidth
         ? current : { left, maxWidth });
     };
@@ -668,13 +674,31 @@ export function EngineFlyout(props: Parameters<typeof EngineModelPanel>[0]) {
     const popover = anchor.closest('[role="dialog"]')?.parentElement;
     const positionObserver = new MutationObserver(update);
     if (popover) positionObserver.observe(popover, { attributes: true, attributeFilter: ["style"] });
+    // 入场动画期间外层弹层只有 95% 大小，上面读到的边界偏小，动画结束后再量一次；
+    // 行悬停等子元素的过渡会冒泡上来，不算。
+    const onPopoverTransitionEnd = (event: Event) => {
+      if (event.target === popover) update();
+    };
+    popover?.addEventListener("transitionend", onPopoverTransitionEnd);
     window.addEventListener("resize", update);
     return () => {
       observer?.disconnect();
       positionObserver.disconnect();
+      popover?.removeEventListener("transitionend", onPopoverTransitionEnd);
       window.removeEventListener("resize", update);
     };
-  }, []);
+  }, [ref]);
+  return layout;
+}
+
+/** Desktop-only wrapper: the model panel flies out on the roomier side of
+ *  the CLI popover. On mobile CliMenu renders the same panel in a modal
+ *  dialog instead (hover flyouts don't work on touch). */
+export function EngineFlyout(props: Parameters<typeof EngineModelPanel>[0]) {
+  const ref = useRef<HTMLDivElement>(null);
+  const layout = useFlyoutLayout(ref);
+  // 搜索期间保持搜索前的宽度：筛掉最长的名字后，浮层不变窄，输入框也不会横向挪动。
+  const searchMinWidth = useLockedMinWidth(Boolean(props.query), ref);
   // data-engine-flyout: CliMenu's hover-intent guard checks focus against
   // this marker so hovering a row never swaps the panel while the user is
   // typing in its search / channel filter.
@@ -683,7 +707,10 @@ export function EngineFlyout(props: Parameters<typeof EngineModelPanel>[0]) {
       ref={ref}
       data-engine-flyout
       className={cx(FLYOUT_CLASSES, layout.left ? "right-full mr-2" : "left-full ml-2")}
-      style={{ "--flyout-max-width": `${layout.maxWidth}px` } as CSSProperties}
+      style={{
+        "--flyout-max-width": `${layout.maxWidth}px`,
+        minWidth: searchMinWidth === undefined ? undefined : Math.min(searchMinWidth, layout.maxWidth),
+      } as CSSProperties}
     >
       <EngineModelPanel {...props} />
     </div>

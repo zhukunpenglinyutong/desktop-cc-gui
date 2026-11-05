@@ -21,6 +21,7 @@ import { cx } from "@/utils/cx";
 import { usePopoverState } from "@/utils/use-dismiss-on-outside-press";
 import { EFFORT_LEVELS, EFFORT_LABEL_KEYS, supportsEffort, type EffortLevel } from "./effort-levels";
 import { EngineFlyout, EngineModelPanel, type ChannelOption } from "./engine-model-panel";
+import { useLockedMinWidth } from "./use-locked-min-width";
 
 export type { EffortLevel } from "./effort-levels";
 
@@ -138,27 +139,6 @@ function EngineRow({
       </span>
     </button>
   );
-}
-
-/** Trigger min-width lock while the popover is open: snapshot on open, clear
- *  on close, so shorter model labels can't shrink the trigger mid-session
- *  and slide the top-end popover. Adjusted during render (prev-prop pattern)
- *  so every open/close path — trigger press, outside press, Esc — flips it,
- *  not just onOpenChange. */
-function useLockedMinWidth(isOpen: boolean, triggerRef: Ref<HTMLButtonElement>) {
-  const [lockedMinWidth, setLockedMinWidth] = useState<number | undefined>();
-  const [prevIsOpen, setPrevIsOpen] = useState(isOpen);
-  if (prevIsOpen !== isOpen) {
-    setPrevIsOpen(isOpen);
-    if (!isOpen) {
-      setLockedMinWidth(undefined);
-    } else {
-      const node =
-        triggerRef && typeof triggerRef !== "function" ? triggerRef.current : null;
-      if (node) setLockedMinWidth(node.offsetWidth);
-    }
-  }
-  return lockedMinWidth;
 }
 
 /** Borderless trigger carrying the whole selection at a glance:
@@ -515,8 +495,12 @@ export function CliMenu({
     if (!setOpen(o)) return;
     clearHoverTimer();
     setOpenEngine(o ? value : null);
-    if (!o) setQuery("");
   };
+  // Every close path clears the search: outside press and close() skip
+  // handleOpenChange above.
+  useEffect(() => {
+    if (!isOpen) setQuery("");
+  }, [isOpen]);
 
   const dialogOption = options.find((o) => o.id === dialogEngine);
   // Hover pre-opens the row's flyout after a short intent delay: long

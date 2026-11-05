@@ -71,6 +71,22 @@ describe("EngineModelPanel channel picker", () => {
     expect(container.textContent).toContain("provider-9");
   });
 
+  it("shows full channel names without letting them drive the panel width", () => {
+    render("p2");
+    // The collapsed row stays one line: the title carries the full name, and
+    // w-0 + flex-1 keep it out of the panel's max-content width.
+    const selectedLabel = trigger()!.querySelector('[title="provider-2"]')!;
+    expect(selectedLabel.classList.contains("w-0")).toBe(true);
+    expect(selectedLabel.classList.contains("flex-1")).toBe(true);
+    act(() => trigger()!.click());
+    const list = document.getElementById(trigger()!.getAttribute("aria-controls")!)!;
+    expect(list.querySelector(".truncate")).toBeNull();
+    // The list fills the panel but adds nothing to its max-content width, so
+    // opening it can't make the flyout jump (measured in cli-model-names.html).
+    expect(list.classList.contains("w-0")).toBe(true);
+    expect(list.classList.contains("min-w-full")).toBe(true);
+  });
+
   it("picks a channel and closes the dropdown", () => {
     render("p2");
     act(() => trigger()!.click());
@@ -273,6 +289,21 @@ describe("EngineModelPanel model sections", () => {
 });
 
 describe("长模型名称", () => {
+  const flyoutProps = {
+    option: { id: "pi", label: "PI" },
+    models: [],
+    selectedModelId: "",
+    query: "",
+    onQueryChange: () => {},
+    effort: "medium" as const,
+    onPickModel: () => {},
+    onEffortChange: () => {},
+    ompServiceTier: null,
+    onOmpServiceTierChange: async () => {},
+    codexServiceTier: null,
+    onCodexServiceTierChange: async () => {},
+  };
+
   it("保留完整名称和描述，并按完整 ID 选择同前缀模型", () => {
     const container = document.createElement("div");
     document.body.appendChild(container);
@@ -303,6 +334,8 @@ describe("长模型名称", () => {
       expect(rows[0].textContent).toContain(models[0].label);
       expect(rows[0].textContent).toContain(models[0].description);
       expect(rows[1].textContent).toContain(models[1].label);
+      // 省略号只改显示、不改文字，只读 textContent 查不出截断。
+      expect(container.querySelector('button[role="radio"] .truncate')).toBeNull();
       act(() => rows[1].click());
       expect(onPickModel).toHaveBeenCalledWith("pi", models[1].id);
     } finally {
@@ -345,6 +378,90 @@ describe("长模型名称", () => {
       bounds.mockReturnValue({ left: 120, right: 376 } as DOMRect);
       await act(async () => { popover.style.left = "120px"; });
       expect(panel.style.getPropertyValue("--flyout-max-width")).toBe("368px");
+    } finally {
+      act(() => root.unmount());
+      popover.remove();
+      bounds.mockRestore();
+      window.innerWidth = originalWidth;
+    }
+  });
+
+  it("搜索期间锁住浮层宽度，可用空间不足时让位，清空后解除", () => {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    // 筛选词提交到 DOM 后内容才变窄：快照必须读到提交之前的宽度。
+    const width = vi.spyOn(HTMLElement.prototype, "offsetWidth", "get").mockImplementation(function (this: HTMLElement) {
+      return this.querySelector<HTMLInputElement>('input:not([type="range"])')?.value ? 320 : 420;
+    });
+    const bounds = vi.spyOn(container, "getBoundingClientRect").mockReturnValue({ left: 16, right: 272 } as DOMRect);
+    const originalWidth = window.innerWidth;
+    window.innerWidth = 1280;
+    const render = (query: string) =>
+      act(() => root.render(<EngineFlyout {...flyoutProps} query={query} />));
+    try {
+      render("");
+      const panel = container.querySelector<HTMLElement>("[data-engine-flyout]")!;
+      expect(panel.style.minWidth).toBe("");
+      render("flash");
+      expect(panel.style.minWidth).toBe("420px");
+      window.innerWidth = 600;
+      act(() => window.dispatchEvent(new Event("resize")));
+      expect(panel.style.minWidth).toBe("304px");
+      render("");
+      expect(panel.style.minWidth).toBe("");
+    } finally {
+      act(() => root.unmount());
+      container.remove();
+      width.mockRestore();
+      bounds.mockRestore();
+      window.innerWidth = originalWidth;
+    }
+  });
+
+  it("带着搜索词挂载（切换引擎后重建）也锁住宽度", () => {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    const width = vi.spyOn(HTMLElement.prototype, "offsetWidth", "get").mockReturnValue(360);
+    const render = (query: string) =>
+      act(() => root.render(<EngineFlyout {...flyoutProps} query={query} />));
+    try {
+      render("flash");
+      const panel = container.querySelector<HTMLElement>("[data-engine-flyout]")!;
+      expect(panel.style.minWidth).toBe("360px");
+      render("");
+      expect(panel.style.minWidth).toBe("");
+    } finally {
+      act(() => root.unmount());
+      container.remove();
+      width.mockRestore();
+    }
+  });
+
+  it("外层弹层入场动画结束后按真实边界重新计算", () => {
+    const container = document.createElement("div");
+    const popover = document.createElement("div");
+    const dialog = document.createElement("div");
+    dialog.setAttribute("role", "dialog");
+    dialog.appendChild(container);
+    popover.appendChild(dialog);
+    document.body.appendChild(popover);
+    const root = createRoot(container);
+    // 入场时弹层是 95% 大小，读到的右边界比真实位置偏左。
+    const bounds = vi.spyOn(container, "getBoundingClientRect").mockReturnValue({ left: 120, right: 356 } as DOMRect);
+    const originalWidth = window.innerWidth;
+    window.innerWidth = 800;
+    try {
+      act(() => root.render(<EngineFlyout {...flyoutProps} />));
+      const panel = container.querySelector<HTMLElement>("[data-engine-flyout]")!;
+      expect(panel.style.getPropertyValue("--flyout-max-width")).toBe("420px");
+      bounds.mockReturnValue({ left: 120, right: 368 } as DOMRect);
+      // 行悬停等子元素的过渡冒泡上来，不算弹层动画结束。
+      act(() => panel.dispatchEvent(new Event("transitionend", { bubbles: true })));
+      expect(panel.style.getPropertyValue("--flyout-max-width")).toBe("420px");
+      act(() => popover.dispatchEvent(new Event("transitionend")));
+      expect(panel.style.getPropertyValue("--flyout-max-width")).toBe("408px");
     } finally {
       act(() => root.unmount());
       popover.remove();
