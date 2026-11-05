@@ -280,6 +280,9 @@ export function createTabActions(
       dispatchSessionClosed(
         sessionLifecycleBase(get, { engine, sessionId, workspacePath }),
       );
+      if (engine === "codebuddy") {
+        void get().interrupt({ engine, sessionId, workspacePath });
+      }
       clearScopedContributions(set, engine, sessionId, workspacePath);
       removeTab(engine, sessionId, workspacePath);
     },

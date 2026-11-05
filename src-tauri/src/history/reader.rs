@@ -1174,6 +1174,14 @@ pub async fn delete_session(
     engine: String,
     session_id: String,
 ) -> Result<(), String> {
+    let lease_session_id = session_id.clone();
+    let _edit = if engine == "codebuddy" {
+        let edit = state.processes.begin_session_edit(&lease_session_id)?;
+        state.processes.retire_codebuddy(&session_id).await?;
+        Some(edit)
+    } else {
+        None
+    };
     let db = Arc::clone(&state.db);
     let sink = Arc::clone(&state.sink);
     tauri::async_runtime::spawn_blocking(move || {
