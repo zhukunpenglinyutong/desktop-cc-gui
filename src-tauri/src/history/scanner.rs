@@ -2340,4 +2340,130 @@ pub(super) mod tests {
         }
         std::fs::remove_dir_all(&home).ok();
     }
+
+    fn write_qoder_session(bucket: &Path, session_id: &str, cwd: &Path) {
+        std::fs::create_dir_all(bucket).unwrap();
+        std::fs::write(
+            bucket.join(format!("{session_id}.jsonl")),
+            format!("{}\n", qoder_user_line(session_id, cwd, "第一轮")),
+        )
+        .unwrap();
+    }
+
+    fn qoder_user_line(session_id: &str, cwd: &Path, text: &str) -> serde_json::Value {
+        serde_json::json!({
+            "type": "user",
+            "sessionId": session_id,
+            "cwd": cwd.to_string_lossy(),
+            "uuid": format!("{session_id}-{text}"),
+            "timestamp": "2026-11-01T00:00:00.000Z",
+            "message": { "role": "user", "content": text },
+        })
+    }
+
+    fn register_workspace(db: &crate::db::Db, id: &str, path: &Path) {
+        db.0.lock()
+            .execute(
+                "INSERT INTO workspaces(id, path, name) VALUES(?1, ?2, ?1)",
+                rusqlite::params![id, path.to_string_lossy()],
+            )
+            .unwrap();
+    }
+
+    fn qoder_session_workspace(db: &crate::db::Db, session_id: &str) -> Option<String> {
+        db.0.lock()
+            .query_row(
+                "SELECT workspace_path FROM sessions WHERE engine='qoder' AND session_id=?1",
+                [session_id],
+                |row| row.get(0),
+            )
+            .ok()
+    }
+
+    /// 「前端」「后端」编码后是同一个目录，会话必须按转录本里的 cwd 归属。
+    #[test]
+    fn qoder_colliding_workspaces_keep_their_own_sessions() {
+        let home = scratch_dir("qoder-collision-both");
+        let _guard = HomeGuard::set(&home);
+        let frontend = home.join("项目").join("前端");
+        let backend = home.join("项目").join("后端");
+        std::fs::create_dir_all(&frontend).unwrap();
+        std::fs::create_dir_all(&backend).unwrap();
+        let slug = super::super::claude_encode_project_path(&frontend.to_string_lossy());
+        assert_eq!(
+            slug,
+            super::super::claude_encode_project_path(&backend.to_string_lossy())
+        );
+        let bucket = home.join(".qoder").join("projects").join(&slug);
+        write_qoder_session(&bucket, "frontend-session", &frontend);
+        write_qoder_session(&bucket, "backend-session", &backend);
+        let db = crate::db::Db::open_at(&home.join("app.db")).unwrap();
+        register_workspace(&db, "w1", &frontend);
+        register_workspace(&db, "w2", &backend);
+
+        scan_with(&db, || {}).unwrap();
+
+        assert_eq!(
+            qoder_session_workspace(&db, "frontend-session").as_deref(),
+            Some(&*frontend.to_string_lossy())
+        );
+        assert_eq!(
+            qoder_session_workspace(&db, "backend-session").as_deref(),
+            Some(&*backend.to_string_lossy())
+        );
+        std::fs::remove_dir_all(&home).ok();
+    }
+
+    /// 没有加入 CC GUI 的「后端」只在终端里用过，它的会话不能出现在「前端」名下。
+    #[test]
+    fn qoder_unregistered_neighbor_stays_out_of_workspace() {
+        let home = scratch_dir("qoder-collision-neighbor");
+        let _guard = HomeGuard::set(&home);
+        let frontend = home.join("项目").join("前端");
+        let backend = home.join("项目").join("后端");
+        std::fs::create_dir_all(&frontend).unwrap();
+        let slug = super::super::claude_encode_project_path(&frontend.to_string_lossy());
+        let bucket = home.join(".qoder").join("projects").join(&slug);
+        write_qoder_session(&bucket, "backend-session", &backend);
+        let db = crate::db::Db::open_at(&home.join("app.db")).unwrap();
+        register_workspace(&db, "w1", &frontend);
+
+        scan_with(&db, || {}).unwrap();
+
+        assert_eq!(qoder_session_workspace(&db, "backend-session"), None);
+        std::fs::remove_dir_all(&home).ok();
+    }
+
+    /// 回归：`my-app` 的会话在基线上一直归属正确，加入 `my app` 后再聊一轮也不能跳走。
+    #[test]
+    fn qoder_new_turn_stays_in_its_workspace_after_colliding_add() {
+        let home = scratch_dir("qoder-collision-turn");
+        let _guard = HomeGuard::set(&home);
+        let dashed = home.join("my-app");
+        let spaced = home.join("my app");
+        std::fs::create_dir_all(&dashed).unwrap();
+        std::fs::create_dir_all(&spaced).unwrap();
+        let slug = super::super::claude_encode_project_path(&dashed.to_string_lossy());
+        let bucket = home.join(".qoder").join("projects").join(&slug);
+        write_qoder_session(&bucket, "dashed-session", &dashed);
+        let db = crate::db::Db::open_at(&home.join("app.db")).unwrap();
+        register_workspace(&db, "w1", &dashed);
+        scan_with(&db, || {}).unwrap();
+
+        register_workspace(&db, "w2", &spaced);
+        let transcript = bucket.join("dashed-session.jsonl");
+        let mut text = std::fs::read_to_string(&transcript).unwrap();
+        text.push_str(&format!(
+            "{}\n",
+            qoder_user_line("dashed-session", &dashed, "第二轮")
+        ));
+        std::fs::write(&transcript, text).unwrap();
+        scan_with(&db, || {}).unwrap();
+
+        assert_eq!(
+            qoder_session_workspace(&db, "dashed-session").as_deref(),
+            Some(&*dashed.to_string_lossy())
+        );
+        std::fs::remove_dir_all(&home).ok();
+    }
 }

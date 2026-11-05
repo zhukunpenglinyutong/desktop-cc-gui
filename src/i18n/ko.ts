@@ -172,6 +172,7 @@ export const ko: Messages = {
     archiveSession: "세션 보관",
     archiveRunning: "실행 중인 세션을 중지한 뒤 보관하세요.",
     renameSession: "세션 이름 변경",
+    renameSessionMissing: "세션이 아직 색인되지 않았거나 삭제되어 이름을 저장하지 못했습니다. 세션 목록을 새로 고친 후 다시 시도하세요.",
     copySessionId: "ID 복사",
     editSession: "세션 편집",
     refreshSessionRendering: "렌더링 새로고침",

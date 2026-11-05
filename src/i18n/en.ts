@@ -180,6 +180,7 @@ export const en: Messages = {
     archiveSession: "Archive session",
     archiveRunning: "Stop the running session before archiving it.",
     renameSession: "Rename session",
+    renameSessionMissing: "The session has not been indexed or has been removed. The name was not saved. Refresh the session list and try again.",
     copySessionId: "Copy ID",
     editSession: "Edit session",
     refreshSessionRendering: "Refresh rendering",
