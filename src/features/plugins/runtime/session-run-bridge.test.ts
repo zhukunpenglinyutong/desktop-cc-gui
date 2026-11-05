@@ -140,10 +140,9 @@ describe("plugin session-run bridge", () => {
     ).rejects.toThrow(/may only stop a run started by this plugin/);
     expect(interruptMock).not.toHaveBeenCalled();
 
-    // The native id may not be known yet: a null identity stops the plugin's
-    // own live run in that engine+workspace scope.
+    // 省略会话 ID 时，按属主轮次实际所在的会话停止。
     await interruptPluginChatRun("p", { engine: "pi", workspacePath: "/w" });
-    expect(interruptMock).toHaveBeenCalledWith({ engine: "pi", sessionId: null, workspacePath: "/w" });
+    expect(interruptMock).toHaveBeenCalledWith({ engine: "pi", sessionId: "sess-owned", workspacePath: "/w" });
 
     await expect(interruptPluginChatRun("p", { engine: "", workspacePath: "" })).rejects.toThrow(
       /engine and workspacePath/,
@@ -205,5 +204,48 @@ describe("plugin session-run bridge", () => {
     release();
     await first;
     emitEngineEvents?.([engineEvent("race-resume", "done", { engine: "claude", sessionId: "existing" })]);
+  });
+
+  it("不传 sessionId 时按轮次实际所在的会话停止", async () => {
+    sendMock.mockImplementation(async (_prompt, _images, options) => {
+      options.onStarted({ runId: "run-late-id", sessionId: null });
+    });
+    await startPluginChatRun("p", { engine: "pi", prompt: "x", workspacePath: "/w" });
+
+    // id 未知：只能按待发键停（与聊天栏在 spawn 前点停止同一路径）。
+    await interruptPluginChatRun("p", { engine: "pi", workspacePath: "/w" });
+    expect(interruptMock).toHaveBeenLastCalledWith({ engine: "pi", sessionId: null, workspacePath: "/w" });
+
+    // id 学到以后：轮次已迁到原生键，必须停原生键。
+    emitEngineEvents?.([engineEvent("run-late-id", "session", { sessionId: "sess-late" })]);
+    interruptMock.mockClear();
+    await interruptPluginChatRun("p", { engine: "pi", workspacePath: "/w" });
+    expect(interruptMock).toHaveBeenCalledWith({ engine: "pi", sessionId: "sess-late", workspacePath: "/w" });
+
+    emitEngineEvents?.([engineEvent("run-late-id", "done", { sessionId: "sess-late" })]);
+  });
+
+  it.each([undefined, null])("省略或传空会话 ID（%s）时停止范围内全部属主轮次", async (sessionId) => {
+    const records = [
+      { plugin: "scope-owner", engine: "pi", workspacePath: "/w", runId: "scope-a", sessionId: "session-a" },
+      { plugin: "scope-owner", engine: "pi", workspacePath: "/w", runId: "scope-b", sessionId: "session-b" },
+      { plugin: "scope-other", engine: "pi", workspacePath: "/w", runId: "scope-other", sessionId: "other-session" },
+      { plugin: "scope-owner", engine: "claude", workspacePath: "/w", runId: "scope-engine", sessionId: "other-engine" },
+      { plugin: "scope-owner", engine: "pi", workspacePath: "/other", runId: "scope-workspace", sessionId: "other-workspace" },
+    ];
+    for (const record of records) {
+      sendMock.mockImplementationOnce(async (_prompt, _images, options) => {
+        options.onStarted({ runId: record.runId, sessionId: record.sessionId });
+      });
+      await startPluginChatRun(record.plugin, { engine: record.engine, workspacePath: record.workspacePath, prompt: "任务" });
+    }
+
+    await interruptPluginChatRun("scope-owner", { engine: "pi", workspacePath: "/w", sessionId });
+
+    expect(interruptMock.mock.calls.map(([target]) => target)).toEqual([
+      { engine: "pi", workspacePath: "/w", sessionId: "session-a" },
+      { engine: "pi", workspacePath: "/w", sessionId: "session-b" },
+    ]);
+    emitEngineEvents?.(records.map((record) => engineEvent(record.runId, "done", { sessionId: record.sessionId })));
   });
 });
