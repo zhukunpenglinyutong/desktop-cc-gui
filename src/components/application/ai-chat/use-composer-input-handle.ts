@@ -32,14 +32,16 @@ export function useComposerInputHandle({
       focus: () => editableRef.current?.focus(),
       insertText: (text) => {
         const el = editableRef.current;
-        if (!el) return;
+        // Collapse previously unmounted the field. Keep commands inactive
+        // while hidden, including late native clipboard replies.
+        if (!el || el.hidden) return;
         insertTextAtCaret(el, text);
         emitChange();
         syncTags();
       },
       openSlashPicker: () => {
         const el = editableRef.current;
-        if (!el) return;
+        if (!el || el.hidden) return;
         el.focus();
         // Append at the end: the trigger regex only accepts a line-start
         // `/`, so an arbitrary caret position mid-line could not open the

@@ -3,6 +3,7 @@
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -160,6 +161,7 @@ export function Composer({
 
   /** Last text we emitted upward; the value-sync effect skips our own echoes. */
   const lastEmittedRef = useRef("");
+  const pendingCaretOffsetRef = useRef<number | null>(null);
 
   const emitChange = useCallback(() => {
     const el = editableRef.current;
@@ -217,7 +219,10 @@ export function Composer({
     const el = editableRef.current;
     if (!el) return;
     el.innerHTML = sanitizeEditableHtml(htmlFromText(text));
-    setCaretOffset(el, text.length);
+    // Hidden drafts still receive external updates, but must not replace the
+    // selection in another visible editor. Restore their caret on expansion.
+    pendingCaretOffsetRef.current = el.hidden ? text.length : null;
+    if (!el.hidden) setCaretOffset(el, text.length);
   }, []);
 
   // Replace the field's content and emit upward (history recall, Tab accept).
@@ -254,6 +259,14 @@ export function Composer({
     lastEmittedRef.current = v;
     replaceEditableText(v);
   }, [value, replaceEditableText]);
+
+  useLayoutEffect(() => {
+    const offset = pendingCaretOffsetRef.current;
+    const el = editableRef.current;
+    if (isCollapsed || offset === null || !el) return;
+    pendingCaretOffsetRef.current = null;
+    setCaretOffset(el, offset);
+  }, [isCollapsed]);
 
   // Expose the field handle (focus + mention insertion from the file tree).
   useComposerInputHandle({
@@ -309,36 +322,36 @@ export function Composer({
         <SelectedBotChip bot={selectedBot} onClear={clearSelectedBot} />
       )}
 
-      {!isCollapsed && (
-        <ComposerEditable
-          editableRef={editableRef}
-          sendShortcut={sendShortcut}
-          mentionOpen={mention != null}
-          slashOpen={slash != null}
-          botOpen={bot != null}
-          promptOpen={prompt != null}
-          completionSuffix={completion.suffix}
-          acceptCompletion={completion.accept}
-          setEditableText={setEditableText}
-          handleHistoryKeyDown={handleHistoryKeyDown}
-          resetHistoryNavigation={resetHistoryNavigation}
-          mentionMenuRef={mentionMenuRef}
-          slashMenuRef={slashMenuRef}
-          botMenuRef={botMenuRef}
-          promptMenuRef={promptMenuRef}
-          isComposingRef={isComposingRef}
-          setIsComposing={setIsComposing}
-          emitChange={emitChange}
-          syncTags={syncTags}
-          updateTriggers={updateTriggers}
-          disabled={disabled}
-          onSubmit={onSubmit}
-          onPasteImages={onPasteImages}
-          onPastePaths={onPastePaths}
-          manualHeightPx={manualHeightPx}
-          placeholder={placeholder}
-        />
-      )}
+      {/* Keep the editing node, selection and undo history across collapse. */}
+      <ComposerEditable
+        editableRef={editableRef}
+        hidden={isCollapsed}
+        sendShortcut={sendShortcut}
+        mentionOpen={mention != null}
+        slashOpen={slash != null}
+        botOpen={bot != null}
+        promptOpen={prompt != null}
+        completionSuffix={completion.suffix}
+        acceptCompletion={completion.accept}
+        setEditableText={setEditableText}
+        handleHistoryKeyDown={handleHistoryKeyDown}
+        resetHistoryNavigation={resetHistoryNavigation}
+        mentionMenuRef={mentionMenuRef}
+        slashMenuRef={slashMenuRef}
+        botMenuRef={botMenuRef}
+        promptMenuRef={promptMenuRef}
+        isComposingRef={isComposingRef}
+        setIsComposing={setIsComposing}
+        emitChange={emitChange}
+        syncTags={syncTags}
+        updateTriggers={updateTriggers}
+        disabled={disabled}
+        onSubmit={onSubmit}
+        onPasteImages={onPasteImages}
+        onPastePaths={onPastePaths}
+        manualHeightPx={manualHeightPx}
+        placeholder={placeholder}
+      />
 
       {!isCollapsed && (
         <ComposerToolbar

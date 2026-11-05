@@ -29,6 +29,18 @@ export function changelogEntryFor(version: string): ChangelogEntry | undefined {
 
 export const CHANGELOG_DATA: ChangelogEntry[] = [
   {
+    version: "1.2.2",
+    date: "2026-11-05",
+    content: {
+      zh: `修复
+- **输入框折叠后保留草稿**：折叠与展开不再卸载编辑节点，保留正文、文件标签、选区和撤销历史；初始折叠及折叠期间的草稿切换、预填和清空在展开后显示最新内容，隐藏更新不干扰前台其他编辑器的选区。
+- **历史补全不再用过期建议覆盖输入**：修改正文后立即隐藏旧建议，Tab 接受前校验当前正文和历史开关；失效建议不消费 Tab。正常补全、历史管理和上下键召回保持不变。`,
+      en: `Fixes
+- **Composer drafts survive collapse**: collapsing and expanding no longer unmount the editor, preserving text, file tags, selection and undo history. Initially collapsed and externally updated drafts show the latest content on expansion, without disturbing another foreground editor's selection while hidden.
+- **Stale history completions cannot overwrite new input**: changing the draft immediately hides the previous suggestion, and Tab checks the current editor text and history setting before accepting it. Rejected suggestions leave Tab available for navigation. Normal completion, history management and arrow-key recall remain unchanged.`,
+    },
+  },
+  {
     version: "1.2.1",
     date: "2026-11-02",
     content: {

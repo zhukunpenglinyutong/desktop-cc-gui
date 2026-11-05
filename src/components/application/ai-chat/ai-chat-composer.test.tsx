@@ -3,11 +3,16 @@ import { createRoot, type Root } from "react-dom/client";
 import { HashRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import i18n from "@/lib/i18n";
-import { Composer, StatusBar } from "./ai-chat-composer";
+import { Composer, StatusBar, type ComposerInputHandle } from "./ai-chat-composer";
 import { getProxyQuickToggleAction } from "./proxy-toggle";
 import { ipc, type AppSettings } from "@/lib/ipc";
-import { extractText, getCaretOffset } from "./file-tags";
-import { clearPromptHistory, recordPrompt } from "@/features/chat/prompt-history";
+import * as events from "@/lib/events";
+import { extractText, FILE_TAG_CLASS, getCaretOffset } from "./file-tags";
+import {
+  clearPromptHistory,
+  recordPrompt,
+  setPromptHistoryEnabled,
+} from "@/features/chat/prompt-history";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT =
   true;
@@ -203,6 +208,250 @@ describe("Composer 中文编辑与历史召回", () => {
   });
 });
 
+describe("Composer 折叠与补全的输入完整性", () => {
+  let container: HTMLDivElement;
+  let root: Root;
+  let setDraft: (value: string) => void;
+  let previousSize: string | null;
+  let inputRef: { current: ComposerInputHandle | null };
+  const onChange = vi.fn();
+
+  function ControlledComposer({ initialValue }: { initialValue: string }) {
+    const [value, setValue] = useState(initialValue);
+    setDraft = setValue;
+    return <Composer value={value} inputRef={inputRef} onValueChange={(next) => {
+      onChange(next);
+      setValue(next);
+    }} />;
+  }
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    inputRef = { current: null };
+    previousSize = localStorage.getItem("composer:size-v1");
+    localStorage.setItem("composer:size-v1", JSON.stringify({ wrapperHeightPx: 66 }));
+    clearPromptHistory();
+    setPromptHistoryEnabled(true);
+    onChange.mockClear();
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+  });
+
+  afterEach(async () => {
+    await act(async () => root.unmount());
+    container.remove();
+    clearPromptHistory();
+    setPromptHistoryEnabled(true);
+    if (previousSize === null) localStorage.removeItem("composer:size-v1");
+    else localStorage.setItem("composer:size-v1", previousSize);
+    vi.useRealTimers();
+  });
+
+  async function mount(initialValue = "") {
+    await act(async () => root.render(
+      <HashRouter><ControlledComposer initialValue={initialValue} /></HashRouter>,
+    ));
+  }
+
+  function editable() {
+    return container.querySelector<HTMLElement>(".composer-editable")!;
+  }
+
+  function keyEvent(key: string) {
+    return new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true });
+  }
+
+  async function resize(key: "ArrowDown" | "ArrowUp") {
+    await act(async () => {
+      container.querySelector('[role="separator"]')!.dispatchEvent(keyEvent(key));
+    });
+  }
+
+  function input(text: string) {
+    editable().textContent = text;
+    editable().dispatchEvent(new InputEvent("input", { bubbles: true, data: text }));
+  }
+
+  async function tab() {
+    const event = keyEvent("Tab");
+    await act(async () => { editable().dispatchEvent(event); });
+    return event;
+  }
+
+  async function complete(text = "dep") {
+    recordPrompt("deploy production");
+    await mount(text);
+    await act(async () => { vi.advanceTimersByTime(100); });
+    expect(editable().dataset.completionSuffix).toBe("loy production");
+  }
+
+  it("折叠展开保留中文草稿和选区，继续输入只替换选中部分", async () => {
+    await mount("保留草稿🙂\n下一行");
+    const range = document.createRange();
+    range.setStart(editable().firstChild!, 2);
+    range.setEnd(editable().firstChild!, 6);
+    const selection = window.getSelection()!;
+    selection.removeAllRanges();
+    selection.addRange(range);
+
+    await resize("ArrowDown");
+    await resize("ArrowUp");
+    expect(extractText(editable())).toBe("保留草稿🙂\n下一行");
+    expect(selection.toString()).toBe("草稿🙂");
+    await act(async () => {
+      const selected = selection.getRangeAt(0);
+      selected.deleteContents();
+      selected.insertNode(document.createTextNode("正文"));
+      editable().dispatchEvent(new InputEvent("input", { bubbles: true, data: "正文" }));
+    });
+    expect(onChange).toHaveBeenLastCalledWith("保留正文\n下一行");
+  });
+
+  it("折叠期间切换外部草稿与清空，展开显示最新值", async () => {
+    await mount("会话 A 草稿");
+    await resize("ArrowDown");
+    await act(async () => setDraft("会话 B 草稿🙂"));
+    await resize("ArrowUp");
+    expect(extractText(editable())).toBe("会话 B 草稿🙂");
+    await resize("ArrowDown");
+    await resize("ArrowDown");
+    await act(async () => setDraft(""));
+    await resize("ArrowUp");
+    expect(extractText(editable())).toBe("");
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it("折叠期间外部更新不移动前台选区，展开后新草稿光标落在末尾", async () => {
+    await mount("会话 A");
+    await resize("ArrowDown");
+    const other = document.createElement("div");
+    other.contentEditable = "true";
+    other.textContent = "前台编辑";
+    container.appendChild(other);
+    const selection = window.getSelection()!;
+    const range = document.createRange();
+    range.setStart(other.firstChild!, 2);
+    range.setEnd(other.firstChild!, 4);
+    selection.removeAllRanges();
+    selection.addRange(range);
+    await act(async () => setDraft("后台预填🙂"));
+    expect(selection.toString()).toBe("编辑");
+    expect(selection.anchorNode).toBe(other.firstChild);
+    await resize("ArrowUp");
+    expect(extractText(editable())).toBe("后台预填🙂");
+    expect(getCaretOffset(editable())).toBe("后台预填🙂".length);
+  });
+
+  it("折叠时的命令式插入和菜单快捷入口不改草稿或前台选区", async () => {
+    await mount("已有草稿");
+    await resize("ArrowDown");
+    const other = document.createElement("div");
+    other.contentEditable = "true";
+    other.textContent = "前台编辑";
+    container.appendChild(other);
+    const selection = window.getSelection()!;
+    const range = document.createRange();
+    range.setStart(other.firstChild!, 2);
+    range.setEnd(other.firstChild!, 4);
+    selection.removeAllRanges();
+    selection.addRange(range);
+    await act(async () => {
+      inputRef.current!.insertText("迟到插入");
+      inputRef.current!.openSlashPicker();
+    });
+    expect(selection.toString()).toBe("编辑");
+    expect(selection.anchorNode).toBe(other.firstChild);
+    expect(extractText(editable())).toBe("已有草稿");
+    expect(onChange).not.toHaveBeenCalled();
+    await resize("ArrowUp");
+    await act(async () => inputRef.current!.insertText("追加"));
+    expect(extractText(editable())).toBe("已有草稿追加");
+    expect(onChange).toHaveBeenLastCalledWith("已有草稿追加");
+  });
+
+  it("初始折叠的草稿展开后保留文件标签及删除行为", async () => {
+    localStorage.setItem("composer:size-v1", JSON.stringify({ wrapperHeightPx: 66, isCollapsed: true }));
+    await mount("参考 @/tmp/notes.md 继续");
+    await resize("ArrowUp");
+    expect(extractText(editable())).toBe("参考 @/tmp/notes.md 继续");
+    const close = editable().querySelector<HTMLElement>(`.${FILE_TAG_CLASS}-close`)!;
+    expect(close).not.toBeNull();
+    await act(async () => close.click());
+    expect(extractText(editable())).toBe("参考  继续");
+    expect(onChange).toHaveBeenLastCalledWith("参考  继续");
+  });
+
+  it.each(["fix", "depl", "d", ""])("查询变成 %j 后立即隐藏并拒绝旧建议", async (query) => {
+    await complete();
+    await act(async () => input(query));
+    expect(editable().dataset.completionSuffix).toBeUndefined();
+    expect((await tab()).defaultPrevented).toBe(false);
+    expect(extractText(editable())).toBe(query);
+  });
+
+  it("同一次 React 批处理中修改正文后按 Tab 不覆盖新输入，也不吞 Tab", async () => {
+    await complete();
+    const event = keyEvent("Tab");
+    await act(async () => {
+      input("fix");
+      editable().dispatchEvent(event);
+    });
+    expect(extractText(editable())).toBe("fix");
+    expect(event.defaultPrevented).toBe(false);
+    expect(onChange).toHaveBeenCalledExactlyOnceWith("fix");
+  });
+
+  it("关闭历史功能与 Tab 同批发生时不接受旧建议", async () => {
+    await complete();
+    const event = keyEvent("Tab");
+    await act(async () => {
+      setPromptHistoryEnabled(false);
+      editable().dispatchEvent(event);
+    });
+    expect(extractText(editable())).toBe("dep");
+    expect(editable().dataset.completionSuffix).toBeUndefined();
+    expect(event.defaultPrevented).toBe(false);
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it("中文组合输入期间不显示或接受历史建议，提交后仍可正常补全", async () => {
+    await complete();
+    const event = keyEvent("Tab");
+    await act(async () => {
+      editable().dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true }));
+      editable().dispatchEvent(event);
+    });
+    expect(editable().dataset.completionSuffix).toBeUndefined();
+    expect(event.defaultPrevented).toBe(false);
+    await act(async () => {
+      editable().dispatchEvent(new CompositionEvent("compositionend", { bubbles: true }));
+    });
+    await act(async () => { vi.advanceTimersByTime(100); });
+    expect((await tab()).defaultPrevented).toBe(true);
+    expect(extractText(editable())).toBe("deploy production");
+  });
+
+  it.each([" \u200BDEP ", "dep\r\n"])("有效补全保留 %j 的大小写、空白和零宽字符匹配规则", async (query) => {
+    await complete(query);
+    expect((await tab()).defaultPrevented).toBe(true);
+    expect(extractText(editable())).toBe("deploy production");
+    expect(onChange).toHaveBeenCalledExactlyOnceWith("deploy production");
+  });
+
+  it("查询更改后只接受新一轮防抖生成的建议", async () => {
+    await complete();
+    await act(async () => {
+      recordPrompt("fix regression");
+      input("fix");
+    });
+    await act(async () => { vi.advanceTimersByTime(100); });
+    expect(editable().dataset.completionSuffix).toBe(" regression");
+    expect((await tab()).defaultPrevented).toBe(true);
+    expect(extractText(editable())).toBe("fix regression");
+  });
+});
+
 describe("代理快捷开关", () => {
   it("无配置时保留图标并打开代理设置", () => {
     expect(getProxyQuickToggleAction({ enabled: false, url: null })).toBe("settings");
@@ -240,6 +489,9 @@ describe("代理快捷开关文案", () => {
   // proxyOff/proxyTipOff 曾被误删而组件仍引用它们，纯函数测试发现不了——
   // 只有真的渲染这个状态才能钉住。代理开关挂在 StatusBar 上。
   it("已配置但关闭时显示中文开关文案，而不是词条编号", async () => {
+    // This component test has no desktop bridge; do not leave a reconnect
+    // timer running after jsdom is torn down.
+    vi.spyOn(events, "listenSettingsChanged").mockResolvedValue(() => {});
     vi.spyOn(ipc, "getAppSettings").mockResolvedValue({
       systemProxyEnabled: false,
       systemProxyUrl: "http://127.0.0.1:7890",
