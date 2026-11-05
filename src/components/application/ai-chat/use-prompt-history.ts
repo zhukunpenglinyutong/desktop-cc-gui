@@ -18,8 +18,8 @@ const INVISIBLE_CHARS_RE = /[\u200B-\u200D\uFEFF]/g;
 export interface PromptCompletion {
   /** Ghost suffix painted after the caret; "" when nothing matches. */
   suffix: string;
-  /** Accept the current suggestion: returns the full text, or null. */
-  accept: () => string | null;
+  /** Accept only if the editable still contains the query that produced it. */
+  accept: (currentText: string) => string | null;
 }
 
 /**
@@ -28,7 +28,7 @@ export interface PromptCompletion {
  * produce a ghost.
  */
 export function usePromptCompletion(text: string, debounceMs = 100): PromptCompletion {
-  const [suggestion, setSuggestion] = useState<string | null>(null);
+  const [suggestion, setSuggestion] = useState<{ query: string; text: string } | null>(null);
   const [enabled, setEnabled] = useState(isPromptHistoryEnabled);
 
   // The settings toggle fires the same change event as history mutations.
@@ -46,18 +46,32 @@ export function usePromptCompletion(text: string, debounceMs = 100): PromptCompl
       setSuggestion(null);
       return;
     }
-    const timer = setTimeout(() => setSuggestion(findPromptCompletion(text)), debounceMs);
+    const timer = setTimeout(() => {
+      const completion = findPromptCompletion(text);
+      setSuggestion(completion === null ? null : { query: text, text: completion });
+    }, debounceMs);
     return () => clearTimeout(timer);
   }, [text, debounceMs, enabled]);
 
   const clean = text.replace(INVISIBLE_CHARS_RE, "").trim();
-  const suffix =
-    suggestion !== null && suggestion.length > clean.length ? suggestion.slice(clean.length) : "";
+  // Invalidate during render, not in the next effect or debounce callback.
+  const full =
+    enabled && suggestion?.query === text && clean.length >= 2 &&
+    suggestion.text.length > clean.length &&
+    suggestion.text.toLowerCase().startsWith(clean.toLowerCase())
+      ? suggestion.text
+      : null;
+  const suffix = full === null ? "" : full.slice(clean.length);
 
-  const accept = useCallback((): string | null => {
+  const accept = useCallback((currentText: string): string | null => {
     setSuggestion(null);
-    return suggestion;
-  }, [suggestion]);
+    // Input and Tab (or the settings toggle) can share a React batch. Check
+    // the live DOM and switch too, rather than trusting this render's props.
+    // HTML parsing may normalize a restored draft's line endings. Compare
+    // using the same whitespace/zero-width rules as the completion query.
+    const currentClean = currentText.replace(INVISIBLE_CHARS_RE, "").trim();
+    return isPromptHistoryEnabled() && currentClean === clean ? full : null;
+  }, [clean, full]);
 
   return { suffix, accept };
 }
