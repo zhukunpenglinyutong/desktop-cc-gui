@@ -34,8 +34,12 @@ regex = "1"
 toml = "0.8"
 toml_edit = "0.22"
 rusqlite = { version = "0.32", features = ["bundled"] }
-tokio = { version = "1", features = ["rt", "macros", "net", "process", "time", "sync", "io-util"] }
+tokio = { version = "1", features = ["rt", "macros", "net", "process", "time", "sync", "io-util", "fs"] }
 sha2 = "0.10"
+# Official portable Node archives for the private relay OAuth runtime.
+zip = { version = "4.6.1", default-features = false, features = ["deflate"] }
+tar = "0.4.46"
+flate2 = "1.1.10"
 dirs = "6"
 dunce = "1"
 # vendored-libgit2 mirrors the openssl-sys treatment below: on a dev Mac with

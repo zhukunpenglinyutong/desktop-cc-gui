@@ -1,8 +1,10 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { SettingsCard } from "@/components/application/settings/settings-rows";
 import { ipc } from "@/lib/ipc";
 import { isWeb } from "@/lib/platform";
+import { listenSettingsChanged } from "@/lib/events";
+import { useTauriEvent } from "@/hooks/use-tauri-event";
 import { WebRelayDeployCard } from "./WebRelayDeployCard";
 import { WebRelayCard } from "./WebRelayCard";
 import { WebAuthCard } from "./WebAuthCard";
@@ -34,16 +36,31 @@ function WanDesktopOnlyNotice() {
 function WanControls({ onInfoRefresh }: { onInfoRefresh: () => void }) {
   const [relayUrl, setRelayUrl] = useState("");
   const [relayKey, setRelayKey] = useState("");
+  const savedRelay = useRef<{ url: string; key: string } | null>(null);
+  const refreshSequence = useRef(0);
 
-  useEffect(() => {
-    void ipc
-      .getAppSettings()
-      .then((s) => {
-        setRelayUrl(s.webRelayUrl ?? "");
-        setRelayKey(s.webRelayKey ?? "");
-      })
-      .catch(() => {});
+  const refreshRelayFields = useCallback(async () => {
+    const sequence = ++refreshSequence.current;
+    try {
+      const settings = await ipc.refreshAppSettings();
+      if (sequence !== refreshSequence.current) return;
+      const saved = { url: settings.webRelayUrl ?? "", key: settings.webRelayKey ?? "" };
+      // A deployment can finish after this page was closed and reopened.
+      // Reconcile committed changes, but don't erase drafts on unrelated events.
+      if (savedRelay.current?.url !== saved.url || savedRelay.current?.key !== saved.key) {
+        savedRelay.current = saved;
+        setRelayUrl(saved.url);
+        setRelayKey(saved.key);
+      }
+    } catch {
+      // Keep the current fields when a settings refresh is unavailable.
+    }
   }, []);
+  useTauriEvent(() => listenSettingsChanged(refreshRelayFields));
+  useEffect(() => {
+    void refreshRelayFields();
+    return () => { ++refreshSequence.current; };
+  }, [refreshRelayFields]);
 
   const saveRelayFields = useCallback(async (url: string, key: string) => {
     const latest = await ipc.getAppSettings();
@@ -61,7 +78,6 @@ function WanControls({ onInfoRefresh }: { onInfoRefresh: () => void }) {
               setRelayUrl(url);
               setRelayKey(key);
             }}
-            saveRelayFields={saveRelayFields}
           />
         </div>
         <div className="flex min-w-0 flex-1">
