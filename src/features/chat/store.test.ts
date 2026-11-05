@@ -11,6 +11,9 @@ import { OPEN_TABS_KEY } from "./store/persistence";
 import { EMPTY_SESSION } from "./store/stream";
 import { handleEngineEvents, type EngineEventDeps } from "./store/engine-events";
 import { registerSessionHooks, registerTurnHooks } from "@/features/plugins/runtime/hooks";
+import { startPluginChatRun, interruptPluginChatRun } from "@/features/plugins/runtime/session-run-bridge";
+import { usePluginHubStore } from "@/features/plugins/hub/store";
+import { usePluginTabsStore } from "@/features/plugins/runtime/center-tabs";
 import { getConversationModeState } from "@/features/plugins/conversation/state";
 
 vi.mock("@/lib/ipc", () => ({
@@ -1576,5 +1579,129 @@ describe("forkSession", () => {
       dispose();
       resetPluginBusForTests();
     }
+  });
+});
+
+describe("插件续接原生会话", () => {
+  const target: SessionMeta = {
+    engine: "claude", sessionId: "plugin-resume", workspacePath: WS,
+    filePath: "/tmp/plugin-resume.jsonl", fileSize: 10, fileMtimeMs: 1,
+    title: "续接会话", preview: "", createdAt: 1, updatedAt: 1,
+    messageCount: 0, pinned: false, customTitle: null,
+  };
+  const key = "claude/plugin-resume";
+  const def = { engine: target.engine, sessionId: target.sessionId, workspacePath: WS, prompt: "继续任务" };
+
+  beforeEach(() => {
+    resetStore();
+    usePluginHubStore.getState().close();
+    usePluginTabsStore.setState({ tabs: [], activeId: null });
+    vi.mocked(ipc.loadSessionPage).mockReset();
+    vi.mocked(ipc.loadSessionPage).mockResolvedValue({ messages: [], nextBefore: null, subagentHistory: [] });
+    vi.mocked(ipc.listPlanReviews).mockResolvedValue([]);
+    vi.mocked(ipc.sendMessage).mockResolvedValue({ runId: "resume-integration", sessionId: target.sessionId });
+    useChatStore.setState({ sessions: [target] });
+  });
+
+  it.each(["插件中心", "插件页签"])("从%s续接时显示聊天并保留历史", async (surface) => {
+    if (surface === "插件中心") usePluginHubStore.getState().openHub();
+    else usePluginTabsStore.getState().openTab("plugin:board");
+    vi.mocked(ipc.loadSessionPage).mockResolvedValue({
+      messages: [{ seq: 1, role: "assistant", text: "已有回复", ts: null }], nextBefore: null, subagentHistory: [],
+    });
+
+    await startPluginChatRun("board", def);
+
+    expect(usePluginHubStore.getState().active).toBe(false);
+    expect(usePluginTabsStore.getState().activeId).toBeNull();
+    expect(useChatStore.getState().active).toMatchObject({ engine: def.engine, sessionId: def.sessionId, workspacePath: WS });
+    expect(useChatStore.getState().bySession[key].messages.map((message) => message.text)).toEqual(["已有回复", def.prompt]);
+    expect(ipc.sendMessage).toHaveBeenCalledWith(expect.objectContaining({ sessionId: target.sessionId }));
+    await interruptPluginChatRun("board", def);
+  });
+
+  it("历史读取失败后可重试，成功加载空历史会清除旧错误", async () => {
+    vi.mocked(ipc.loadSessionPage).mockRejectedValueOnce(new Error("读取失败"));
+    await expect(startPluginChatRun("board", def)).rejects.toThrow("session_load_failed");
+    expect(ipc.sendMessage).not.toHaveBeenCalled();
+    expect(useChatStore.getState().bySession[key].error).toContain("读取失败");
+
+    await expect(startPluginChatRun("board", def)).resolves.toMatchObject({ sessionId: target.sessionId });
+    expect(useChatStore.getState().bySession[key].error).toBeNull();
+    expect(ipc.sendMessage).toHaveBeenCalledTimes(1);
+    await interruptPluginChatRun("board", def);
+  });
+
+  it("引擎回执未返回会话 ID 时仍保留续接身份与停止权限", async () => {
+    vi.mocked(ipc.sendMessage).mockResolvedValueOnce({ runId: "resume-no-id", sessionId: null });
+    await expect(startPluginChatRun("board", def)).resolves.toEqual({ runId: "resume-no-id", sessionId: target.sessionId });
+    await interruptPluginChatRun("board", def);
+    expect(ipc.interruptSession).toHaveBeenCalledWith(target.sessionId);
+  });
+
+  it("已有历史加载尚未完成时拒绝发送，不提前追加消息", async () => {
+    const pending = Promise.withResolvers<Awaited<ReturnType<typeof ipc.loadSessionPage>>>();
+    vi.mocked(ipc.loadSessionPage).mockReturnValueOnce(pending.promise);
+    const loading = useChatStore.getState().selectSession(target.engine, target.sessionId, WS);
+    await expect(startPluginChatRun("board", def)).rejects.toThrow("session_busy");
+    expect(ipc.sendMessage).not.toHaveBeenCalled();
+    pending.resolve({ messages: [], nextBefore: null, subagentHistory: [] });
+    await loading;
+  });
+
+  it("不传 sessionId 停止时只停插件自己的续接轮次，不碰用户的新聊天", async () => {
+    const pendingKey = `new:${target.engine}:${WS}`;
+    vi.mocked(ipc.sendMessage).mockResolvedValueOnce({ runId: "user-new-chat", sessionId: null });
+    useChatStore.getState().startNewChat(WS);
+    await useChatStore.getState().send("用户自己的新聊天", []);
+    expect(useChatStore.getState().streamingByKey[pendingKey]).toBe(true);
+
+    vi.mocked(ipc.sendMessage).mockResolvedValueOnce({ runId: "plugin-resume-run", sessionId: target.sessionId });
+    await startPluginChatRun("stop-probe", def);
+    vi.mocked(ipc.interruptSession).mockClear();
+
+    await interruptPluginChatRun("stop-probe", { engine: def.engine, workspacePath: WS });
+
+    expect(ipc.interruptSession).not.toHaveBeenCalledWith("user-new-chat");
+    expect(useChatStore.getState().streamingByKey[pendingKey]).toBe(true);
+    expect(ipc.interruptSession).toHaveBeenCalledWith(target.sessionId);
+    expect(useChatStore.getState().streamingByKey[key]).toBeFalsy();
+  });
+
+  it("续接时模型、渠道和推理强度都沿用会话自己的，忽略本轮覆盖", async () => {
+    useChatStore.setState({
+      sessions: [{ ...target, model: "session-model", provider: "session-channel", effort: "low" }],
+    });
+    vi.mocked(ipc.rememberSessionModel).mockClear();
+
+    await startPluginChatRun("override-probe", {
+      ...def, model: "plugin-model", providerId: "plugin-channel", effort: "high",
+    });
+
+    expect(ipc.sendMessage).toHaveBeenCalledWith(
+      expect.objectContaining({ model: "session-model", providerId: "session-channel", effort: "low" }),
+    );
+    expect(ipc.rememberSessionModel).not.toHaveBeenCalledWith(target.engine, target.sessionId, "plugin-model");
+  });
+
+  it("不传 sessionId 连续新建时，第二轮不因第一轮尚未拿到原生 id 被拒绝", async () => {
+    vi.mocked(ipc.sendMessage)
+      .mockResolvedValueOnce({ runId: "new-a", sessionId: null })
+      .mockResolvedValueOnce({ runId: "new-b", sessionId: null });
+    const newRun = { engine: def.engine, workspacePath: WS, prompt: "新任务" };
+
+    await startPluginChatRun("new-run-probe", newRun);
+    await expect(startPluginChatRun("new-run-probe", newRun)).resolves.toMatchObject({ runId: "new-b" });
+    expect(ipc.sendMessage).toHaveBeenCalledTimes(2);
+  });
+
+  it("send 层的忙碌检查对续接仍然生效", async () => {
+    useChatStore.setState({ streamingByKey: { [key]: true } });
+    await expect(
+      useChatStore.getState().send("继续", [], { onStarted: () => {} }, {
+        engine: target.engine, sessionId: target.sessionId, workspacePath: WS,
+      }),
+    ).rejects.toThrow("session_busy");
+    expect(ipc.sendMessage).not.toHaveBeenCalled();
   });
 });

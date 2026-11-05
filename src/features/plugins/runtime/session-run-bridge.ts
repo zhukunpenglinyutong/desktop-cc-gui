@@ -1,5 +1,6 @@
 import { listenEngineEvents, type EngineEventPayload } from "@/lib/events";
 import { pluginBus } from "./events";
+import { dismissCenterSurfaces } from "@/features/chat/center-surfaces";
 
 /**
  * 插件发起的「聊天会话轮次」宿主实现（SDK 0.3.18，权限 host:session）。
@@ -23,6 +24,7 @@ export interface PluginChatRunDef {
   model?: string | null;
   effort?: string | null;
   providerId?: string | null;
+  sessionId?: string | null;
 }
 
 export interface PluginChatRunHandle {
@@ -39,6 +41,7 @@ interface RunRecord {
 
 /** runId → 属主插件与工作区；只在轮次存活期间有记录。 */
 const runs = new Map<string, RunRecord>();
+const resuming = new Set<string>();
 
 /** 终止事件里的原因文本（data 形状由引擎定义，逐种兜底）。 */
 function errorTextOf(event: EngineEventPayload): string | null {
@@ -102,31 +105,56 @@ export async function startPluginChatRun(
   if (!workspacePath) {
     throw new Error(`invalid_args: ${pluginId} sessions.startRun: empty workspacePath`);
   }
+  const sessionId = def.sessionId == null ? null : def.sessionId.trim();
+  if (sessionId === "") throw new Error("invalid_args: sessionId must be non-empty or null");
   ensureRunBridge();
 
   // 动态引入：chat store 依赖链重，且本模块被 context.ts 静态引用。
   const chat = await import("@/features/chat/store");
   const store = chat.useChatStore.getState();
+  const resumeKey = sessionId ? `${engine}/${sessionId}` : null;
+  if (sessionId) {
+    const known = store.sessions.some((session) =>
+      session.engine === engine && session.sessionId === sessionId && session.workspacePath === workspacePath,
+    );
+    if (!known) throw new Error("session_not_found: engine, session and workspace must match an existing session");
+    if (store.streamingByKey[resumeKey!] || store.bySession[resumeKey!]?.loading || resuming.has(resumeKey!)) {
+      throw new Error("session_busy: the session is already running or loading");
+    }
+    resuming.add(resumeKey!);
+  }
   const target = {
     engine,
-    sessionId: null,
+    sessionId,
     workspacePath,
-    ...(def.model ? { model: def.model } : {}),
-    ...(def.effort ? { effort: def.effort as never } : {}),
-    ...(def.providerId ? { provider: def.providerId } : {}),
+    ...(sessionId ? {} : {
+      ...(def.model ? { model: def.model } : {}),
+      ...(def.effort ? { effort: def.effort as never } : {}),
+      ...(def.providerId ? { provider: def.providerId } : {}),
+    }),
   };
   let handle: PluginChatRunHandle | null = null;
   try {
+    if (sessionId) {
+      dismissCenterSurfaces();
+      await store.selectSession(engine, sessionId, workspacePath);
+      const current = chat.useChatStore.getState();
+      if (current.streamingByKey[resumeKey!] || current.bySession[resumeKey!]?.loading) {
+        throw new Error("session_busy: the session is already running or loading");
+      }
+      const loaded = current.bySession[resumeKey!];
+      if (loaded?.error && !loaded.messages.length) throw new Error("session_load_failed: unable to restore session history");
+    }
     // send 走宿主聊天发送路径：会话进侧栏、流式进 bySession、可停。
     await store.send(prompt, [], {
       onStarted: (info) => {
-        handle = info;
-        runs.set(info.runId, { pluginId, engine, workspacePath, sessionId: info.sessionId });
+        handle = { ...info, sessionId: info.sessionId ?? sessionId };
+        runs.set(info.runId, { pluginId, engine, workspacePath, sessionId: handle.sessionId });
         // started 先于 send 返回发出：插件在 startRun resolve 前就能把轮次
         // 认领到自己的任务上，之后不会漏掉紧跟的 done/error。
         pluginBus.emit(`plugin-run://${pluginId}`, {
           runId: info.runId,
-          sessionId: info.sessionId,
+          sessionId: handle.sessionId,
           engine,
           workspacePath,
           kind: "started",
@@ -137,6 +165,8 @@ export async function startPluginChatRun(
   } catch (error) {
     if (handle) runs.delete((handle as PluginChatRunHandle).runId);
     throw error;
+  } finally {
+    if (resumeKey) resuming.delete(resumeKey);
   }
   if (!handle) {
     // 理论上不可达：send 成功返回时 onStarted 已经跑过。
@@ -160,24 +190,28 @@ export async function interruptPluginChatRun(
   // stopped. `sessionId: null` matches any live run of this plugin in the
   // scope because the native id is often announced after startRun resolves.
   const sessionId = def.sessionId ?? null;
-  const owned = [...runs.values()].some(
+  const matched = [...runs.values()].filter(
     (record) =>
       record.pluginId === pluginId &&
       record.engine === engine &&
       record.workspacePath === workspacePath &&
       (sessionId === null || record.sessionId === sessionId),
   );
-  if (!owned) {
+  if (matched.length === 0) {
     throw new Error(
       `${pluginId}: sessions.interruptRun may only stop a run started by this plugin`,
     );
   }
   const chat = await import("@/features/chat/store");
-  // 等价于聊天里的停止：sessionId 未知（尚未 announce）时按待发键停，
-  // 与聊天栏在 spawn 前就能点停止是同一条路径。
-  await chat.useChatStore.getState().interrupt({
+  // 省略 ID 时停止本插件在此范围内的全部轮次，按记录中的实际会话寻址。
+  // 尚未 announce 的轮次仍走待发键；同一会话只停止一次。
+  const targets = sessionId !== null
+    ? [sessionId]
+    : [...new Set(matched.map((record) => record.sessionId))];
+  const store = chat.useChatStore.getState();
+  await Promise.all(targets.map((target) => store.interrupt({
     engine,
-    sessionId: def.sessionId ?? null,
+    sessionId: target,
     workspacePath,
-  });
+  })));
 }
