@@ -90,9 +90,9 @@ struct CachedClaudeHead {
     cwd: Option<String>,
 }
 
-// Keep head peeks out of no-op scans. Clearing at the bound is cheaper than LRU
-// bookkeeping and mirrors the other small, rebuildable disk caches.
-const CLAUDE_HEAD_CACHE_CAPACITY: usize = 4096;
+// Keep head peeks out of no-op scans. Entries are dropped when their file
+// disappears (see `claude_transcripts`), so the map stays bounded by what is on
+// disk instead of being cleared wholesale at a fixed size.
 static CLAUDE_HEAD_CACHE: std::sync::LazyLock<
     parking_lot::Mutex<std::collections::HashMap<PathBuf, CachedClaudeHead>>,
 > = std::sync::LazyLock::new(|| parking_lot::Mutex::new(std::collections::HashMap::new()));
@@ -156,9 +156,15 @@ fn claude_transcript_paths() -> Vec<PathBuf> {
 /// Deduping by session id (newest transcript wins) keeps the retained file
 /// deterministic when a resume leaves copies under two project dirs.
 pub(super) fn claude_transcripts() -> Vec<ClaudeTranscript> {
+    let paths = claude_transcript_paths();
+    // Evict only the entries whose file is gone. A fixed-size cache that clears
+    // itself once full would lose every entry on each pass the moment a library
+    // outgrew it, and then re-read every head on every scan (a machine running
+    // `claude -p` accumulates past any bound eventually).
+    let live: std::collections::HashSet<PathBuf> = paths.iter().cloned().collect();
     let mut by_session: std::collections::HashMap<String, ClaudeTranscript> =
         std::collections::HashMap::new();
-    for path in claude_transcript_paths() {
+    for path in &paths {
         let Some(session_id) = path
             .file_stem()
             .and_then(|s| s.to_str())
@@ -169,9 +175,9 @@ pub(super) fn claude_transcripts() -> Vec<ClaudeTranscript> {
         let Some(project_dir) = path.parent().map(Path::to_path_buf) else {
             continue;
         };
-        let metadata = std::fs::metadata(&path).ok();
+        let metadata = std::fs::metadata(path).ok();
         let signature = metadata.as_ref().and_then(claude_metadata_signature);
-        let cwd = claude_head_with_signature(&path, signature).unwrap_or(None);
+        let cwd = claude_head_with_signature(path, signature).unwrap_or(None);
         let modified = metadata
             .as_ref()
             .and_then(|metadata| metadata.modified().ok())
@@ -186,7 +192,7 @@ pub(super) fn claude_transcripts() -> Vec<ClaudeTranscript> {
             cwd,
             canonical_cwd,
             project_dir,
-            path,
+            path: path.clone(),
             modified,
         };
         match by_session.entry(session_id) {
@@ -204,6 +210,9 @@ pub(super) fn claude_transcripts() -> Vec<ClaudeTranscript> {
     let mut found: Vec<ClaudeTranscript> = by_session.into_values().collect();
     // Stable candidate order regardless of hash iteration order.
     found.sort_by(|a, b| a.path.cmp(&b.path));
+    CLAUDE_HEAD_CACHE
+        .lock()
+        .retain(|path, _| live.contains(path));
     found
 }
 
@@ -275,9 +284,6 @@ fn claude_head_with_signature(
     let cwd = read_claude_head(path)?;
     if let Some(signature) = signature {
         let mut cache = CLAUDE_HEAD_CACHE.lock();
-        if cache.len() >= CLAUDE_HEAD_CACHE_CAPACITY && !cache.contains_key(path) {
-            cache.clear();
-        }
         cache.insert(
             path.to_path_buf(),
             CachedClaudeHead {
@@ -291,23 +297,46 @@ fn claude_head_with_signature(
 
 /// Working directory from a Claude transcript's head lines. Every conversation
 /// line carries `cwd` (`{"type":"user",...,"cwd":"/Users/me/ws"}`); bookkeeping
-/// heads (`summary`, `file-history-snapshot`, `ai-title`) may not, so a few
-/// lines are skipped before giving up. The byte cap in `peek_head_json_lines`
-/// bounds the cost of a head that never carries a usable cwd.
+/// heads (`summary`, `file-history-snapshot`, `ai-title`) may not, so lines are
+/// skipped until one does. Streams line by line instead of buffering a fixed
+/// number of them: real transcripts carry cwd within the first few lines, so a
+/// cold scan reads a few KB per file rather than the whole budget. The budget
+/// (one line's worth of pasted images can run to megabytes) still bounds the
+/// cost of a head that never carries a usable cwd — such a file falls back to
+/// the project-dir slug, which can attribute it to a colliding workspace.
 fn read_claude_head(path: &Path) -> std::io::Result<Option<String>> {
+    use std::io::{BufRead, BufReader, Read};
+
     #[cfg(test)]
     CLAUDE_HEAD_READS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 
-    for head in try_peek_head_json_lines(path, false, 16)? {
-        let Some(cwd) = head
-            .get("cwd")
-            .and_then(|v| v.as_str())
-            .map(str::trim)
-            .filter(|s| !s.is_empty())
-        else {
-            continue;
-        };
-        return Ok(Some(cwd.to_string()));
+    const MAX_LINES: usize = 32;
+    const MAX_BYTES: u64 = 1024 * 1024;
+    let file = std::fs::File::open(path)?;
+    let mut reader = BufReader::with_capacity(8 * 1024, file);
+    let mut budget = MAX_BYTES;
+    for _ in 0..MAX_LINES {
+        let mut line = Vec::new();
+        // `take` keeps one unbounded line from being read into memory whole;
+        // a truncated tail never parses, which is the same outcome as before.
+        let read = Read::take(&mut reader, budget).read_until(b'\n', &mut line)?;
+        if read == 0 {
+            return Ok(None);
+        }
+        budget = budget.saturating_sub(read as u64);
+        if let Ok(head) = serde_json::from_slice::<serde_json::Value>(&line) {
+            if let Some(cwd) = head
+                .get("cwd")
+                .and_then(|v| v.as_str())
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+            {
+                return Ok(Some(cwd.to_string()));
+            }
+        }
+        if budget == 0 {
+            return Ok(None);
+        }
     }
     Ok(None)
 }
