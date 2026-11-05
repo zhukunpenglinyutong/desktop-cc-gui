@@ -3,9 +3,10 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import i18n from "@/lib/i18n";
 
-const mocks = vi.hoisted(() => ({ getAppSettings: vi.fn(), isWeb: false }));
+const mocks = vi.hoisted(() => ({ refreshAppSettings: vi.fn(), isWeb: false }));
 
-vi.mock("@/lib/ipc", () => ({ ipc: { getAppSettings: mocks.getAppSettings } }));
+vi.mock("@/lib/ipc", () => ({ ipc: { refreshAppSettings: mocks.refreshAppSettings } }));
+vi.mock("@/lib/events", () => ({ listenSettingsChanged: async () => () => {} }));
 vi.mock("@/lib/platform", () => ({
   get isWeb() {
     return mocks.isWeb;
@@ -33,7 +34,7 @@ beforeEach(() => {
   container = document.createElement("div");
   document.body.appendChild(container);
   mocks.isWeb = false;
-  mocks.getAppSettings.mockReset().mockResolvedValue({ webRelayUrl: null, webRelayKey: null });
+  mocks.refreshAppSettings.mockReset().mockResolvedValue({ webRelayUrl: null, webRelayKey: null });
 });
 
 afterEach(async () => {
@@ -58,6 +59,6 @@ describe("WebWanPane", () => {
       expect(container.textContent).not.toContain(card);
     }
     // Nothing to load either: the relay fields are desktop-owned.
-    expect(mocks.getAppSettings).not.toHaveBeenCalled();
+    expect(mocks.refreshAppSettings).not.toHaveBeenCalled();
   });
 });

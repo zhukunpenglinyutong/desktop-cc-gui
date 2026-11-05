@@ -966,9 +966,9 @@ fn delete_dir_session_disk_anchored(
         return Err(format!("no session dir for {}", path.display()));
     };
     let anchored = roots.iter().any(|root| {
-        crate::files::canonicalize_lenient(session_dir)
+        crate::paths::canonicalize_lenient(session_dir)
             .map(|resolved| {
-                crate::files::canonicalize_lenient(root)
+                crate::paths::canonicalize_lenient(root)
                     .map(|base| resolved.starts_with(base))
                     .unwrap_or(false)
             })

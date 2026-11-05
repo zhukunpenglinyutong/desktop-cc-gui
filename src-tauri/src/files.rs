@@ -1,7 +1,9 @@
 use base64::Engine as _;
 use serde::Serialize;
-use std::path::{Component, Path, PathBuf};
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
+
+use crate::paths::{canonicalize_lenient, RelayToolsBoundary};
 
 const MAX_READ_BYTES: usize = 1024 * 1024;
 const MAX_IMAGE_BYTES: usize = 5 * 1024 * 1024;
@@ -56,41 +58,6 @@ fn mtime_ms(meta: &std::fs::Metadata) -> i64 {
         .unwrap_or(0)
 }
 
-/// Canonicalize a path that may not exist yet: resolve its nearest existing
-/// ancestor and re-append the missing names (an agent's write target, and so
-/// its grant request, can sit under directories nobody has created yet).
-/// Only truly absent components are re-appended: a dangling symlink resolves
-/// nowhere, and its lexical tail would escape the root being checked.
-pub(crate) fn canonicalize_lenient(path: &Path) -> Result<PathBuf, String> {
-    match std::fs::canonicalize(path) {
-        Ok(resolved) => return Ok(resolved),
-        Err(e)
-            if e.kind() != std::io::ErrorKind::NotFound
-                || std::fs::symlink_metadata(path).is_ok() =>
-        {
-            return Err(format!("cannot resolve {}: {e}", path.display()));
-        }
-        Err(_) => {}
-    }
-    let unresolved = || format!("cannot resolve {}", path.display());
-    // `..` outside the verified prefix is not something we may reproduce
-    // lexically: whether a hop over a missing directory still resolves
-    // depends on the platform's path parser (Unix fails component-wise,
-    // Windows' Win32 layer collapses `..` before touching the filesystem),
-    // so the result would diverge per OS. Refuse instead of guessing.
-    if path.components().any(|c| matches!(c, Component::ParentDir)) {
-        return Err(unresolved());
-    }
-    // `file_name` is None for a trailing `..`, which cannot be resolved
-    // lexically once the directory before it is missing.
-    let name = path.file_name().ok_or_else(unresolved)?;
-    let parent = path
-        .parent()
-        .filter(|p| !p.as_os_str().is_empty())
-        .ok_or_else(unresolved)?;
-    Ok(canonicalize_lenient(parent)?.join(name))
-}
-
 /// Workspace roots, user-granted directories and the pasted-images sandbox
 /// are the only trees the file commands may touch: `path` comes over IPC and
 /// would otherwise be an arbitrary-filesystem primitive.
@@ -110,12 +77,58 @@ fn allowed_roots(db: &crate::db::Db) -> Vec<PathBuf> {
 }
 
 pub(crate) fn ensure_allowed(path: &str, db: &crate::db::Db) -> Result<PathBuf, String> {
+    ensure_allowed_with(path, db, &RelayToolsBoundary::new()?, false)
+}
+
+pub(crate) fn ensure_tree_allowed(path: &str, db: &crate::db::Db) -> Result<PathBuf, String> {
+    ensure_allowed_with(path, db, &RelayToolsBoundary::new()?, true)
+}
+
+/// Native clipboard consumers do not call our guard for each copied child.
+/// Inspect the tree before exporting it, including nested canonical aliases;
+/// visited directories bound cycles without reading any file contents.
+pub(crate) fn ensure_export_allowed(path: &str, db: &crate::db::Db) -> Result<PathBuf, String> {
+    let boundary = RelayToolsBoundary::new()?;
+    let root = ensure_allowed_with(path, db, &boundary, true)?;
+    if !root.is_dir() {
+        return Ok(root);
+    }
+    let mut pending = vec![root.clone()];
+    let mut visited = std::collections::HashSet::new();
+    while let Some(dir) = pending.pop() {
+        if visited.contains(&dir) {
+            continue;
+        }
+        let entries = std::fs::read_dir(&dir)
+            .map_err(|error| format!("read {}: {error}", dir.display()))?;
+        visited.insert(dir);
+        for entry in entries {
+            let entry = entry.map_err(|error| format!("read export entry: {error}"))?;
+            let resolved = boundary.ensure_tree(&entry.path())?;
+            if resolved.is_dir() {
+                pending.push(resolved);
+            }
+        }
+    }
+    Ok(root)
+}
+
+fn ensure_allowed_with(
+    path: &str,
+    db: &crate::db::Db,
+    boundary: &RelayToolsBoundary,
+    include_ancestors: bool,
+) -> Result<PathBuf, String> {
     // No trim: a trailing-space filename is a real, distinct path. Only a
     // whitespace-only input is rejected as empty.
     if path.trim().is_empty() {
         return Err("empty path".to_string());
     }
-    let resolved = canonicalize_lenient(Path::new(path))?;
+    let resolved = if include_ancestors {
+        boundary.ensure_tree(Path::new(path))?
+    } else {
+        boundary.ensure_path(Path::new(path))?
+    };
     let roots = allowed_roots(db);
     if roots.iter().any(|root| resolved.starts_with(root)) {
         Ok(resolved)
@@ -139,7 +152,7 @@ fn strip_verbatim_prefix(path: PathBuf) -> PathBuf {
 /// a directory, otherwise its parent (granting a single file would not cover
 /// its siblings, which is never what the file-tree user wants).
 fn grant_dir_for(path: &str) -> Result<PathBuf, String> {
-    let resolved = canonicalize_lenient(Path::new(path))?;
+    let resolved = RelayToolsBoundary::new()?.ensure_path(Path::new(path))?;
     let dir = if resolved.is_dir() {
         resolved
     } else {
@@ -212,13 +225,15 @@ fn list_dir_blocking(
     path: &str,
     git_ignore_root: Option<&str>,
 ) -> Result<Vec<DirEntry>, String> {
-    let dir = ensure_allowed(path, db)?;
+    let boundary = RelayToolsBoundary::new()?;
+    let dir = ensure_allowed_with(path, db, &boundary, false)?;
     let ignore_root = git_ignore_root
-        .map(|root| ensure_allowed(root, db))
+        .map(|root| ensure_allowed_with(root, db, &boundary, false))
         .transpose()?;
     let entries = std::fs::read_dir(&dir).map_err(|e| format!("read {}: {e}", dir.display()))?;
     let raw: Vec<(String, Option<std::fs::Metadata>)> = entries
         .flatten()
+        .filter(|entry| boundary.ensure_path(&entry.path()).is_ok())
         .map(|entry| {
             (
                 entry.file_name().to_string_lossy().to_string(),
@@ -404,6 +419,14 @@ pub async fn create_file(
     .map_err(|e| e.to_string())?
 }
 
+fn rename_item_blocking(db: &crate::db::Db, from: &str, to: &str) -> Result<(), String> {
+    let boundary = RelayToolsBoundary::new()?;
+    let src = ensure_allowed_with(from, db, &boundary, true)?;
+    let dst = ensure_allowed_with(to, db, &boundary, true)?;
+    std::fs::rename(&src, &dst)
+        .map_err(|e| format!("rename {} -> {}: {e}", src.display(), dst.display()))
+}
+
 #[tauri::command]
 pub async fn rename_item(
     db: tauri::State<'_, Arc<crate::db::Db>>,
@@ -411,12 +434,7 @@ pub async fn rename_item(
     to: String,
 ) -> Result<(), String> {
     let db = Arc::clone(db.inner());
-    tauri::async_runtime::spawn_blocking(move || {
-        let src = ensure_allowed(&from, &db)?;
-        let dst = ensure_allowed(&to, &db)?;
-        std::fs::rename(&src, &dst)
-            .map_err(|e| format!("rename {} -> {}: {e}", src.display(), dst.display()))
-    })
+    tauri::async_runtime::spawn_blocking(move || rename_item_blocking(&db, &from, &to))
     .await
     .map_err(|e| e.to_string())?
 }
@@ -438,16 +456,18 @@ pub(crate) fn move_to_trash(path: &Path) -> Result<(), trash::Error> {
     context.delete(path)
 }
 
+fn trash_item_blocking(db: &crate::db::Db, path: &str) -> Result<(), String> {
+    let target = ensure_tree_allowed(path, db)?;
+    move_to_trash(&target).map_err(|e| format!("trash {}: {e}", target.display()))
+}
+
 #[tauri::command]
 pub async fn trash_item(
     db: tauri::State<'_, Arc<crate::db::Db>>,
     path: String,
 ) -> Result<(), String> {
     let db = Arc::clone(db.inner());
-    tauri::async_runtime::spawn_blocking(move || {
-        let target = ensure_allowed(&path, &db)?;
-        move_to_trash(&target).map_err(|e| format!("trash {}: {e}", target.display()))
-    })
+    tauri::async_runtime::spawn_blocking(move || trash_item_blocking(&db, &path))
     .await
     .map_err(|e| e.to_string())?
 }
@@ -481,8 +501,11 @@ fn copy_destination_name(source: &Path, is_dir: bool, counter: u32) -> Result<St
 fn copy_dir_recursive_with(
     src: &Path,
     dst: &Path,
+    boundary: &RelayToolsBoundary,
     copy_file: &mut impl FnMut(&Path, &Path) -> Result<u64, String>,
 ) -> Result<(), String> {
+    boundary.ensure_tree(src)?;
+    boundary.ensure_path(dst)?;
     std::fs::create_dir_all(dst).map_err(|e| format!("mkdir {}: {e}", dst.display()))?;
     let entries = std::fs::read_dir(src).map_err(|e| format!("read {}: {e}", src.display()))?;
     for entry in entries {
@@ -496,8 +519,10 @@ fn copy_dir_recursive_with(
             return Err(format!("cannot copy symlink {}", src_path.display()));
         }
         if src_path.is_dir() {
-            copy_dir_recursive_with(&src_path, &dst_path, copy_file)?;
+            copy_dir_recursive_with(&src_path, &dst_path, boundary, copy_file)?;
         } else {
+            let src_path = boundary.ensure_tree(&src_path)?;
+            let dst_path = boundary.ensure_path(&dst_path)?;
             copy_file(&src_path, &dst_path)?;
         }
     }
@@ -514,6 +539,11 @@ fn copy_item_into_dir_with(
     prefer_original_name: bool,
     copy_file: &mut impl FnMut(&Path, &Path) -> Result<u64, String>,
 ) -> Result<PathBuf, String> {
+    let boundary = RelayToolsBoundary::new()?;
+    let source = boundary.ensure_tree(source)?;
+    let source = source.as_path();
+    let target_dir = boundary.ensure_path(target_dir)?;
+    let target_dir = target_dir.as_path();
     if is_dir && target_dir.starts_with(source) {
         return Err("cannot paste a folder into itself or its descendant".to_string());
     }
@@ -531,17 +561,19 @@ fn copy_item_into_dir_with(
             .find(|candidate| !candidate.exists())
             .ok_or_else(|| "too many copies exist".to_string())?;
     }
+    boundary.ensure_tree(&destination)?;
     // A unique staged name isolates concurrent copies; only this operation's
     // temporary item is ever cleaned up. It does not embed the source name:
     // a long name plus the suffix would exceed the 255-unit name limit and
     // fail a copy whose real destination fits.
     let temporary = target_dir.join(format!(".ccgui-copying-{}", uuid::Uuid::new_v4()));
+    boundary.ensure_path(&temporary)?;
     if is_dir {
         std::fs::create_dir(&temporary)
             .map_err(|error| format!("mkdir {}: {error}", temporary.display()))?;
     }
     let copy_result = if is_dir {
-        copy_dir_recursive_with(source, &temporary, copy_file)
+        copy_dir_recursive_with(source, &temporary, &boundary, copy_file)
     } else {
         copy_file(source, &temporary).map(|_| ())
     };
@@ -815,28 +847,30 @@ fn copy_item_into_dir(
     )
 }
 
+fn duplicate_item_blocking(db: &crate::db::Db, path: &str) -> Result<FileOpResult, String> {
+    let source = ensure_tree_allowed(path, db)?;
+    let meta = std::fs::symlink_metadata(&source)
+        .map_err(|e| format!("stat {}: {e}", source.display()))?;
+    if meta.file_type().is_symlink() {
+        return Err(format!("cannot copy symlink {}", source.display()));
+    }
+    let parent = source
+        .parent()
+        .ok_or_else(|| format!("invalid path {}", source.display()))?;
+    let destination = copy_item_into_dir(&source, meta.is_dir(), parent, false)?;
+    Ok(FileOpResult {
+        path: destination.to_string_lossy().into_owned(),
+        is_dir: meta.is_dir(),
+    })
+}
+
 #[tauri::command]
 pub async fn duplicate_item(
     db: tauri::State<'_, Arc<crate::db::Db>>,
     path: String,
 ) -> Result<FileOpResult, String> {
     let db = Arc::clone(db.inner());
-    tauri::async_runtime::spawn_blocking(move || {
-        let source = ensure_allowed(&path, &db)?;
-        let meta = std::fs::symlink_metadata(&source)
-            .map_err(|e| format!("stat {}: {e}", source.display()))?;
-        if meta.file_type().is_symlink() {
-            return Err(format!("cannot copy symlink {}", source.display()));
-        }
-        let parent = source
-            .parent()
-            .ok_or_else(|| format!("invalid path {}", source.display()))?;
-        let destination = copy_item_into_dir(&source, meta.is_dir(), parent, false)?;
-        Ok(FileOpResult {
-            path: destination.to_string_lossy().into_owned(),
-            is_dir: meta.is_dir(),
-        })
-    })
+    tauri::async_runtime::spawn_blocking(move || duplicate_item_blocking(&db, &path))
     .await
     .map_err(|e| e.to_string())?
 }
@@ -849,7 +883,7 @@ pub async fn paste_item(
 ) -> Result<FileOpResult, String> {
     let db = Arc::clone(db.inner());
     tauri::async_runtime::spawn_blocking(move || {
-        let source = ensure_allowed(&source, &db)?;
+        let source = ensure_tree_allowed(&source, &db)?;
         let dir = ensure_allowed(&target_dir, &db)?;
         if !dir.is_dir() {
             return Err(format!("{} is not a directory", dir.display()));
@@ -976,7 +1010,8 @@ fn search_text_blocking(
     query: &str,
 ) -> Result<Vec<SearchHit>, String> {
     use std::io::BufRead;
-    let root = ensure_allowed(path, db)?;
+    let boundary = RelayToolsBoundary::new()?;
+    let root = ensure_allowed_with(path, db, &boundary, false)?;
     let needle = query.trim().to_string();
     if needle.is_empty() {
         return Ok(Vec::new());
@@ -1001,6 +1036,9 @@ fn search_text_blocking(
             if name.starts_with('.') || name == "node_modules" || name == "target" {
                 continue;
             }
+            let Ok(p) = boundary.ensure_path(&p) else {
+                continue;
+            };
             let Ok(meta) = entry.metadata() else {
                 continue;
             };
@@ -1059,7 +1097,8 @@ fn list_file_index_blocking(
     path: &str,
     include_ignored: bool,
 ) -> Result<Vec<FileIndexEntry>, String> {
-    let root = ensure_allowed(path, db)?;
+    let boundary = RelayToolsBoundary::new()?;
+    let root = ensure_allowed_with(path, db, &boundary, false)?;
     let mut out: Vec<FileIndexEntry> = Vec::new();
     let walker = ignore::WalkBuilder::new(&root)
         .hidden(true)
@@ -1070,6 +1109,9 @@ fn list_file_index_blocking(
         .require_git(false)
         .follow_links(false)
         .filter_entry(move |e| {
+            if boundary.ensure_path(e.path()).is_err() {
+                return false;
+            }
             if !e.file_type().is_some_and(|t| t.is_dir()) {
                 return true;
             }
@@ -1154,6 +1196,124 @@ mod tests {
         fn drop(&mut self) {
             let _ = std::fs::remove_dir_all(&self.0);
         }
+    }
+
+    fn with_relay_fixture(test: impl FnOnce(&crate::db::Db, &Path, &Path, &Path)) {
+        let scratch = Scratch::new();
+        let db = crate::db::Db::open_at(&scratch.0.join("test.db")).unwrap();
+        let home = scratch.0.join("portable-data");
+        let secret = home.join("relay-tools/.auth-fixture/home/.wrangler/config/default.toml");
+        let ordinary = home.join("workspace/readme.txt");
+        std::fs::create_dir_all(secret.parent().unwrap()).unwrap();
+        std::fs::create_dir_all(ordinary.parent().unwrap()).unwrap();
+        std::fs::write(&secret, b"oauth_token = 'relay-secret-fixture'").unwrap();
+        // Visible legacy data also exercises walks that normally skip dotdirs.
+        std::fs::write(home.join("relay-tools/legacy.toml"), b"relay-secret-fixture").unwrap();
+        std::fs::write(&ordinary, b"ordinary-fixture").unwrap();
+        db.0.lock().execute(
+            "INSERT INTO workspaces(id, path, name) VALUES('ancestor', ?1, 'ancestor')",
+            [scratch.0.to_string_lossy().as_ref()],
+        ).unwrap();
+        crate::paths::with_test_app_home(&home, || test(&db, &home, &secret, &ordinary));
+    }
+
+    #[test]
+    fn relay_tools_remain_private_under_registered_and_granted_roots() {
+        with_relay_fixture(|db, home, secret, ordinary| {
+            let tools = home.join("relay-tools");
+            db.0.lock().execute(
+                "INSERT INTO workspaces(id, path, name) VALUES('tools', ?1, 'tools')",
+                [tools.to_string_lossy().as_ref()],
+            ).unwrap();
+            db.add_granted_root(&tools.to_string_lossy()).unwrap();
+            assert!(list_dir_blocking(db, &tools.to_string_lossy(), None).is_err());
+            assert!(read_file_blocking(db, &secret.to_string_lossy()).is_err());
+            assert!(ensure_allowed(&tools.join("new/deep/file").to_string_lossy(), db).is_err());
+            assert!(grant_root_in(db, &tools.join("new/deep/file").to_string_lossy()).is_err());
+            assert!(!tools.join("new").exists());
+            assert_eq!(
+                read_file_blocking(db, &ordinary.to_string_lossy()).unwrap().text.as_deref(),
+                Some("ordinary-fixture")
+            );
+            assert!(ensure_allowed(&home.join("workspace/new/deep/file").to_string_lossy(), db).is_ok());
+        });
+    }
+
+    #[test]
+    fn relay_tools_are_pruned_from_ancestor_enumeration_search_and_index() {
+        with_relay_fixture(|db, home, _, _| {
+            let root = home.to_string_lossy();
+            let entries = list_dir_blocking(db, &root, None).unwrap();
+            assert!(entries.iter().any(|entry| entry.name == "workspace"));
+            assert!(!entries.iter().any(|entry| entry.name == "relay-tools"));
+            assert!(search_text_blocking(db, &root, "relay-secret-fixture").unwrap().is_empty());
+            assert_eq!(search_text_blocking(db, &root, "ordinary-fixture").unwrap().len(), 1);
+            for include_ignored in [false, true] {
+                let index = list_file_index_blocking(db, &root, include_ignored).unwrap();
+                assert!(index.iter().any(|entry| entry.rel == "workspace/readme.txt"));
+                assert!(!index.iter().any(|entry| entry.rel.starts_with("relay-tools")));
+            }
+        });
+    }
+
+    #[test]
+    fn relay_tools_cannot_leave_via_ancestor_copy_duplicate_clipboard_or_move() {
+        with_relay_fixture(|db, home, secret, ordinary| {
+            let destination = Scratch::new();
+            let root = home.to_string_lossy();
+            assert!(ensure_tree_allowed(&root, db).is_err());
+            assert!(ensure_tree_allowed(&ordinary.to_string_lossy(), db).is_ok());
+            assert!(copy_item_into_dir(home, true, &destination.0, true).is_err());
+            assert!(duplicate_item_blocking(db, &root).is_err());
+            assert!(rename_item_blocking(db, &root, &home.with_file_name("moved").to_string_lossy()).is_err());
+            assert!(trash_item_blocking(db, &root).is_err());
+            let pasted = copy_clipboard_items_into(&[root.into_owned()], &destination.0);
+            assert!(pasted.created.is_empty());
+            assert_eq!(pasted.failed.len(), 1);
+            assert_eq!(std::fs::read_dir(&destination.0).unwrap().count(), 0);
+            assert_eq!(std::fs::read(secret).unwrap(), b"oauth_token = 'relay-secret-fixture'");
+            let copied = copy_item_into_dir(ordinary.parent().unwrap(), true, &destination.0, true).unwrap();
+            assert_eq!(std::fs::read(copied.join("readme.txt")).unwrap(), b"ordinary-fixture");
+        });
+    }
+
+    #[test]
+    fn relay_tools_aliases_cannot_bypass_direct_or_recursive_access() {
+        with_relay_fixture(|db, home, _, _| {
+            let alias = home.join("workspace").join("tools-alias");
+            assert!(crate::plugins::test_support::create_dir_link(&alias, &home.join("relay-tools")));
+            assert!(read_file_blocking(db, &alias.join("legacy.toml").to_string_lossy()).is_err());
+            assert!(ensure_allowed(&alias.join("uncreated/deep/file").to_string_lossy(), db).is_err());
+            let root = home.join("workspace");
+            assert!(!list_dir_blocking(db, &root.to_string_lossy(), None).unwrap().iter().any(|entry| entry.name == "tools-alias"));
+            assert!(search_text_blocking(db, &root.to_string_lossy(), "relay-secret-fixture").unwrap().is_empty());
+            assert!(!list_file_index_blocking(db, &root.to_string_lossy(), true).unwrap().iter().any(|entry| entry.rel.contains("tools-alias")));
+            let destination = Scratch::new();
+            assert!(copy_item_into_dir(&root, true, &destination.0, true).is_err());
+            assert_eq!(std::fs::read_dir(&destination.0).unwrap().count(), 0);
+        });
+    }
+
+    #[cfg(any(windows, target_os = "macos"))]
+    #[test]
+    fn relay_tools_missing_root_case_alias_cannot_be_created() {
+        let scratch = Scratch::new();
+        let db = crate::db::Db::open_at(&scratch.0.join("test.db")).unwrap();
+        let home = scratch.0.join("portable-data");
+        std::fs::create_dir(&home).unwrap();
+        db.add_granted_root(&home.to_string_lossy()).unwrap();
+        crate::paths::with_test_app_home(&home, || {
+            let target = home.join("RELAY-TOOLS/new/default.toml");
+            assert!(ensure_allowed(&target.to_string_lossy(), &db).is_err());
+            assert!(grant_root_in(&db, &target.to_string_lossy()).is_err());
+            let source = home.join("staged/RELAY-TOOLS");
+            std::fs::create_dir_all(&source).unwrap();
+            std::fs::write(source.join("payload"), "must not enter tools cache").unwrap();
+            assert!(rename_item_blocking(&db, &source.to_string_lossy(), &home.join("RELAY-TOOLS").to_string_lossy()).is_err());
+            assert!(copy_item_into_dir(&source, true, &home, true).is_err());
+            assert!(source.join("payload").is_file());
+            assert!(!home.join("relay-tools").exists());
+        });
     }
 
     #[test]
@@ -1335,7 +1495,7 @@ mod tests {
         assert_eq!(std::fs::read_dir(&destination.0).unwrap().count(), 0);
 
         let retry = copy_item_into_dir(&directory, true, &destination.0, true).unwrap();
-        assert_eq!(retry, destination.0.join("assets"));
+        assert_eq!(retry.file_name(), Some(std::ffi::OsStr::new("assets")));
         assert_eq!(std::fs::read(retry.join("a.txt")).unwrap(), b"a");
         assert_eq!(std::fs::read(retry.join("b.txt")).unwrap(), b"b");
     }
@@ -1489,7 +1649,8 @@ mod tests {
         std::fs::write(&file, b"hi").unwrap();
 
         let pasted = copy_item_into_dir(&file, false, &destination.0, true).unwrap();
-        assert_eq!(pasted, destination.0.join(&name));
+        assert_eq!(pasted.file_name(), Some(std::ffi::OsStr::new(&name)));
+        assert_eq!(std::fs::read(&pasted).unwrap(), b"hi");
         let duplicated = copy_item_into_dir(&file, false, &source.0, false).unwrap();
         assert_eq!(std::fs::read(duplicated).unwrap(), b"hi");
     }

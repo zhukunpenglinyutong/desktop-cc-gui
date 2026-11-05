@@ -26,10 +26,14 @@ use parking_lot::Mutex;
 use futures_util::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
 
-use tauri::Manager;
+use tauri::{Emitter, Manager};
 use tokio::sync::{mpsc, watch};
 use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 use tokio_tungstenite::tungstenite::Message;
+
+mod auth_storage;
+pub mod login;
+mod wrangler;
 
 /// Pause before redialing after a dropped socket: long enough for the Worker
 /// to finish recycling the old connection, short enough that a phone reload
@@ -559,6 +563,8 @@ pub struct RelayDeployResult {
     pub key: String,
     pub account_id: String,
     pub account_name: String,
+    /// Upload succeeded; retain its secret even if persistence or activation fails.
+    pub error: Option<String>,
 }
 
 /// Cloudflare answers every REST call with `{success, errors[], result}`; fold
@@ -692,21 +698,135 @@ async fn cf_subdomain(
     Ok(subdomain)
 }
 
+async fn cf_worker_exists(
+    client: &reqwest::Client,
+    token: &str,
+    account_id: &str,
+) -> Result<bool, String> {
+    let response = client
+        .get(format!("{API_BASE}/accounts/{account_id}/workers/scripts/{SCRIPT_NAME}"))
+        .bearer_auth(token)
+        .send()
+        .await
+        .map_err(|error| format!("检查中转 Worker 失败：{error}"))?;
+    if response.status() == reqwest::StatusCode::NOT_FOUND {
+        return Ok(false);
+    }
+    if response.status().is_success() {
+        return Ok(true);
+    }
+    cf_json(response, "检查中转 Worker").await?;
+    Err("无法确认中转 Worker 是否存在".to_string())
+}
+
+async fn cf_upload_relay(
+    client: &reqwest::Client,
+    token: &str,
+    account_id: &str,
+    key: &str,
+    exists: bool,
+) -> Result<(), String> {
+    let mut metadata = serde_json::json!({
+        "main_module": "index.js",
+        "compatibility_date": "2025-01-01",
+        "bindings": [
+            { "type": "durable_object_namespace", "name": "RELAY", "class_name": "Relay" },
+            { "type": "secret_text", "name": "RELAY_KEY", "text": key },
+        ],
+    });
+    // Only declare the SQLite DO class on first deployment. Repeating an
+    // already-applied migration tag is rejected by Cloudflare.
+    if !exists {
+        metadata["migrations"] = serde_json::json!({
+            "new_tag": "v1",
+            "steps": [{ "new_sqlite_classes": ["Relay"] }],
+        });
+    }
+    let form = reqwest::multipart::Form::new()
+        .part(
+            "metadata",
+            reqwest::multipart::Part::text(metadata.to_string())
+                .mime_str("application/json")
+                .map_err(|error| error.to_string())?,
+        )
+        .part(
+            "index.js",
+            reqwest::multipart::Part::text(WORKER_SOURCE)
+                .file_name("index.js")
+                .mime_str("application/javascript+module")
+                .map_err(|error| error.to_string())?,
+        );
+    let response = client
+        .put(format!("{API_BASE}/accounts/{account_id}/workers/scripts/{SCRIPT_NAME}"))
+        .bearer_auth(token)
+        .multipart(form)
+        .send()
+        .await
+        .map_err(|error| format!("上传 Worker 失败：{error}"))?;
+    cf_json(response, "上传 Worker")
+        .await
+        .map_err(|error| error.replace(token, "[redacted]").replace(key, "[redacted]"))?;
+    Ok(())
+}
+
+async fn cf_enable_relay(
+    client: &reqwest::Client,
+    token: &str,
+    account_id: &str,
+) -> Result<(), String> {
+    let response = client
+        .post(format!("{API_BASE}/accounts/{account_id}/workers/scripts/{SCRIPT_NAME}/subdomain"))
+        .bearer_auth(token)
+        .json(&serde_json::json!({ "enabled": true }))
+        .send()
+        .await
+        .map_err(|error| format!("启用中转地址失败：{error}"))?;
+    let value = cf_json(response, "启用中转地址").await?;
+    if value.pointer("/result/enabled").and_then(serde_json::Value::as_bool) != Some(true) {
+        return Err("Cloudflare 未确认 workers.dev 中转地址已启用".to_string());
+    }
+    Ok(())
+}
+
+async fn complete_relay_deploy(
+    app: &tauri::AppHandle,
+    client: &reqwest::Client,
+    token: &str,
+    mut result: RelayDeployResult,
+) -> RelayDeployResult {
+    // The uploaded secret cannot be read back. Commit it before enabling the
+    // public route, and always return it so visible fields cannot retain an old key.
+    let saved = {
+        let _guard = crate::settings::settings_write_lock();
+        persist_relay_target(&result.url, &result.key)
+    };
+    result.error = match saved {
+        Ok(_) => {
+            let _ = app.emit("settings://changed", ());
+            cf_enable_relay(client, token, &result.account_id).await.err()
+                .map(|error| format!("Worker 已上传且地址/密钥已保存，但中转地址启用失败：{error}"))
+        }
+        Err(error) => Some(format!("Worker 已上传，但地址和密钥保存失败；请保留当前字段后重试保存：{error}")),
+    }.map(|error| error.replace(token, "[redacted]").replace(&result.key, "[redacted]"));
+    result
+}
+
 /// Ship the Worker into the user's own account in one call: the Durable Object
 /// class (via `migrations`), its binding, and the relay key all ride along in
-/// the upload metadata, which is why nobody has to run wrangler. The relay URL
-/// is only reported back — the settings page decides whether to fill it.
+/// the upload metadata, which is why nobody has to run wrangler. The backend
+/// saves the uploaded URL/key before activation, even if the page is closed.
 ///
 /// The key is always minted here: it is the only thing standing between the
 /// `/agent` endpoint and whoever guesses it, so it must never be whatever the
 /// settings field happened to hold (a leftover test value, a hand-typed
-/// short string). The caller stores what comes back.
+/// short string). The caller adopts the committed fields, including partial failures.
 ///
 /// `account_id` is optional: user tokens can list their accounts, account-owned
 /// ones (which Cloudflare now hands out as `cfat_…`) cannot, so for those the
 /// page asks for the id instead.
 #[tauri::command]
 pub async fn relay_deploy(
+    app: tauri::AppHandle,
     token: String,
     account_id: Option<String>,
 ) -> Result<RelayDeployResult, String> {
@@ -727,82 +847,16 @@ pub async fn relay_deploy(
     let (account_id, account_name) = cf_account(&client, &token, account_id.as_deref()).await?;
     let subdomain = cf_subdomain(&client, &token, &account_id).await?;
 
-    // A fresh script needs the Durable Object class declared in the upload's
-    // migrations; an existing one already owns it, and Cloudflare rejects a
-    // migration tag it has seen (old_tag verifies the live tag, and we do not
-    // track it here). So: declare only when creating.
-    let exists = client
-        .get(format!(
-            "{API_BASE}/accounts/{account_id}/workers/scripts/{SCRIPT_NAME}"
-        ))
-        .bearer_auth(&token)
-        .send()
-        .await
-        .map(|response| response.status().is_success())
-        .unwrap_or(false);
+    let exists = cf_worker_exists(&client, &token, &account_id).await?;
+    cf_upload_relay(&client, &token, &account_id, &key, exists).await?;
 
-    let mut metadata = serde_json::json!({
-        "main_module": "index.js",
-        "compatibility_date": "2025-01-01",
-        "bindings": [
-            { "type": "durable_object_namespace", "name": "RELAY", "class_name": "Relay" },
-            // secret_text: the dashboard never shows the value back.
-            { "type": "secret_text", "name": "RELAY_KEY", "text": key.clone() },
-        ],
-    });
-    if !exists {
-        // An object, not the array wrangler.toml shows: the API unmarshals it
-        // into ActorMigrations ({new_tag, old_tag?, steps[]}).
-        metadata["migrations"] = serde_json::json!({
-            "new_tag": "v1",
-            "steps": [{ "new_sqlite_classes": ["Relay"] }],
-        });
-    }
-    let form = reqwest::multipart::Form::new()
-        .part(
-            "metadata",
-            reqwest::multipart::Part::text(metadata.to_string())
-                .mime_str("application/json")
-                .map_err(|error| error.to_string())?,
-        )
-        .part(
-            "index.js",
-            // Cloudflare matches the part by filename as well as field name;
-            // a filename-less part reads as "No such module: index.js".
-            reqwest::multipart::Part::text(WORKER_SOURCE)
-                .file_name("index.js")
-                .mime_str("application/javascript+module")
-                .map_err(|error| error.to_string())?,
-        );
-    let response = client
-        .put(format!(
-            "{API_BASE}/accounts/{account_id}/workers/scripts/{SCRIPT_NAME}"
-        ))
-        .bearer_auth(&token)
-        .multipart(form)
-        .send()
-        .await
-        .map_err(|error| format!("上传 Worker 失败：{error}"))?;
-    cf_json(response, "上传 Worker").await?;
-
-    // Make it reachable at <script>.<subdomain>.workers.dev. A failure here is
-    // not fatal: an existing route may already be enabled, and the user can
-    // always bind a custom domain instead.
-    let _ = client
-        .post(format!(
-            "{API_BASE}/accounts/{account_id}/workers/scripts/{SCRIPT_NAME}/subdomain"
-        ))
-        .bearer_auth(&token)
-        .json(&serde_json::json!({ "enabled": true }))
-        .send()
-        .await;
-
-    Ok(RelayDeployResult {
+    Ok(complete_relay_deploy(&app, &client, &token, RelayDeployResult {
         url: format!("https://{SCRIPT_NAME}.{subdomain}.workers.dev"),
         key,
         account_id,
         account_name,
-    })
+        error: None,
+    }).await)
 }
 
 /// Backoff before the next dial: 1s, 2s, 4s … capped. Attempt 0 (the redial

@@ -972,12 +972,16 @@ async fn plugin_asset_handler(
 /// except the credential/app-data dirs. Canonicalized first so symlinks and
 /// `..` cannot escape.
 fn read_scoped_file(path: &Path) -> Option<(Vec<u8>, &'static str)> {
+    read_scoped_file_with_home(path, &dirs::home_dir()?)
+}
+
+fn read_scoped_file_with_home(path: &Path, home: &Path) -> Option<(Vec<u8>, &'static str)> {
     const MAX_BYTES: u64 = 64 * 1024 * 1024;
-    let canon = dunce::canonicalize(path).ok()?;
+    let canon = std::fs::canonicalize(path).ok()?;
     if !canon.is_file() {
         return None;
     }
-    let home = dirs::home_dir()?;
+    let home = std::fs::canonicalize(home).ok()?;
     if !canon.starts_with(&home) {
         return None;
     }
@@ -985,9 +989,11 @@ fn read_scoped_file(path: &Path) -> Option<(Vec<u8>, &'static str)> {
     // static deny list below (mirroring tauri.conf.json's assetProtocol
     // scope) only knows that one name — refuse the resolved app_home() too
     // so plugins.json, provider API keys, and session history never leak.
-    if canon.starts_with(crate::paths::app_home()) {
+    let app_home = crate::paths::canonicalize_lenient(&crate::paths::app_home()).ok()?;
+    if crate::paths::path_is_within(&canon, &app_home) {
         return None;
     }
+    crate::paths::RelayToolsBoundary::new().ok()?.ensure_path(&canon).ok()?;
     for denied in [".ssh", ".aws", ".gnupg", ".ccgui-next"] {
         if canon.starts_with(home.join(denied)) {
             return None;
@@ -1279,6 +1285,26 @@ pub fn available_lan_ips() -> Vec<LanIpEntry> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn scoped_files_deny_a_canonical_portable_home_but_serve_its_sibling() {
+        let scratch = crate::plugins::test_support::Scratch::new();
+        let profile = scratch.path("profile");
+        let app_home = profile.join("portable-data");
+        let secret = app_home.join("relay-tools/.auth-fixture/default.toml");
+        let ordinary = profile.join("ordinary.txt");
+        std::fs::create_dir_all(secret.parent().unwrap()).unwrap();
+        std::fs::write(&secret, b"fake-oauth-token").unwrap();
+        std::fs::write(&ordinary, b"ordinary").unwrap();
+        let alias = scratch.path("app-home-alias");
+        if !crate::plugins::test_support::create_dir_link(&alias, &app_home) {
+            return;
+        }
+        crate::paths::with_test_app_home(&alias, || {
+            assert!(read_scoped_file_with_home(&secret, &profile).is_none());
+            assert_eq!(read_scoped_file_with_home(&ordinary, &profile).unwrap().0, b"ordinary");
+        });
+    }
 
     fn device(approved_at: Option<i64>) -> WebDevice {
         WebDevice {

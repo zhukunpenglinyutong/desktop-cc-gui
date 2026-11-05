@@ -629,6 +629,10 @@ fn desktop_only_refusal(cmd: &str) -> Option<String> {
             | "web_relay_unattended_set"
             | "relay_deploy_pack"
             | "relay_deploy"
+            | "relay_login_start"
+            | "relay_login_inspect"
+            | "relay_login_deploy"
+            | "relay_login_cancel"
             | "web_device_approve"
     )
     .then(|| format!("{DESKTOP_ONLY_PREFIX}{cmd} is only available on the desktop"))
@@ -1513,6 +1517,10 @@ mod tests {
             "web_relay_unattended_set",
             "relay_deploy_pack",
             "relay_deploy",
+            "relay_login_start",
+            "relay_login_inspect",
+            "relay_login_deploy",
+            "relay_login_cancel",
             "web_device_approve",
         ] {
             let error = desktop_only_refusal(cmd).unwrap_or_else(|| panic!("{cmd} must be refused"));

@@ -1109,6 +1109,26 @@ export interface RelayDeployResult {
   key: string;
   accountId: string;
   accountName: string;
+  /** Upload completed, but saving or enabling the route failed. Keep URL/key. */
+  error: string | null;
+}
+
+/** Wrangler login metadata only; OAuth credentials never cross IPC. */
+export interface RelayLoginAccount {
+  id: string;
+  name: string;
+}
+
+export interface RelayLoginInspection {
+  accountId: string;
+  accountName: string;
+  subdomain: string | null;
+  workerExists: boolean;
+}
+
+export interface RelayLoginProgress {
+  runId: string;
+  stage: "preparing" | "authorizing" | "deploying";
 }
 
 /** A browser that reached the LAN bridge; approved devices may use it. */
@@ -2108,6 +2128,14 @@ export const ipc = {
    *  from the caller — it is the only guard on the agent endpoint. */
   relayDeploy: (token: string, accountId: string | null) =>
     invoke<RelayDeployResult>("relay_deploy", { token, accountId }),
+  /** Desktop-only, isolated Wrangler authorization and relay deployment. */
+  relayLoginStart: (runId: string) =>
+    invoke<RelayLoginAccount[]>("relay_login_start", { runId }),
+  relayLoginInspect: (runId: string, accountId: string) =>
+    invoke<RelayLoginInspection>("relay_login_inspect", { runId, accountId }),
+  relayLoginDeploy: (runId: string, accountId: string, subdomain: string | null, overwrite: boolean) =>
+    invoke<RelayDeployResult>("relay_login_deploy", { runId, accountId, subdomain, overwrite }),
+  relayLoginCancel: (runId: string) => invoke<void>("relay_login_cancel", { runId }),
   webAccessStart: () => invoke<WebAccessInfo>("web_access_start"),
   webAccessStop: () => invoke<void>("web_access_stop"),
   webAccessStatus: () => invoke<WebAccessInfo | null>("web_access_status"),

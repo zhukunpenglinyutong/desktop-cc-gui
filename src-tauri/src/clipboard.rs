@@ -45,26 +45,47 @@ pub fn clipboard_change_count() -> Option<u64> {
 /// Replace the general clipboard with a file list, so another app's paste
 /// inserts the actual items (Explorer / Finder semantics, not a path string).
 ///
-/// The renderer may only name paths inside the registered roots
-/// (`ensure_allowed`): anything outside is dropped, so this command cannot
-/// become a write-then-paste bridge that smuggles arbitrary host files into
-/// a workspace. Disallowed and missing paths are dropped alike — the outcome
-/// must not reveal whether an outside path exists.
+/// The renderer may only name paths inside the registered roots. Trees that
+/// include protected relay tools are also dropped: Explorer/Finder copies
+/// descendants without going back through the app's per-file checks.
+/// Disallowed and missing paths are dropped alike — the outcome must not
+/// reveal whether an outside path exists.
 #[tauri::command]
-pub fn clipboard_set_file_paths(
+pub async fn clipboard_set_file_paths(
+    app: tauri::AppHandle,
     db: tauri::State<'_, std::sync::Arc<crate::db::Db>>,
     paths: Vec<String>,
 ) -> Result<(), String> {
+    let db = std::sync::Arc::clone(db.inner());
+    let (sender, receiver) = tokio::sync::oneshot::channel();
+    tauri::async_runtime::spawn_blocking(move || {
+        set_allowed_file_paths(&db, paths, move |paths| {
+            app.run_on_main_thread(move || {
+                let _ = sender.send(platform::set_file_paths(&paths));
+            })
+            .map_err(|error| format!("cannot reach the main thread: {error}"))
+        })
+    })
+    .await
+    .map_err(|error| error.to_string())??;
+    receiver.await.map_err(|_| "the clipboard write was dropped".to_string())?
+}
+
+fn set_allowed_file_paths(
+    db: &crate::db::Db,
+    paths: Vec<String>,
+    write: impl FnOnce(Vec<String>) -> Result<(), String>,
+) -> Result<(), String> {
     let paths: Vec<String> = paths
         .into_iter()
-        .filter(|path| crate::files::ensure_allowed(path, &db).is_ok())
+        .filter(|path| crate::files::ensure_export_allowed(path, db).is_ok())
         .collect();
-    set_existing_file_paths(paths, platform::set_file_paths)
+    set_existing_file_paths(paths, write)
 }
 
 fn set_existing_file_paths(
     paths: Vec<String>,
-    write: impl FnOnce(&[String]) -> Result<(), String>,
+    write: impl FnOnce(Vec<String>) -> Result<(), String>,
 ) -> Result<(), String> {
     let existing: Vec<String> = paths
         .into_iter()
@@ -73,7 +94,7 @@ fn set_existing_file_paths(
     if existing.is_empty() {
         return Err("no existing path to put on the clipboard".to_string());
     }
-    write(&existing)
+    write(existing)
 }
 
 /// Host-side read used by file commands: the clipboard is the source of
@@ -354,6 +375,55 @@ mod platform {
 }
 #[cfg(test)]
 mod path_tests {
+    #[test]
+    fn file_export_rejects_a_nested_alias_to_relay_tools() {
+        let scratch = crate::plugins::test_support::Scratch::new();
+        let db = crate::db::Db::open_at(&scratch.path("test.db")).unwrap();
+        let home = scratch.path("portable-data");
+        let tools = home.join("relay-tools");
+        let workspace = scratch.path("workspace");
+        std::fs::create_dir_all(&tools).unwrap();
+        std::fs::create_dir_all(workspace.join("nested")).unwrap();
+        std::fs::write(tools.join("default.toml"), b"fake-oauth-token").unwrap();
+        assert!(crate::plugins::test_support::create_dir_link(&workspace.join("nested").join("tools"), &tools));
+        db.add_granted_root(&workspace.to_string_lossy()).unwrap();
+        crate::paths::with_test_app_home(&home, || {
+            assert!(super::set_allowed_file_paths(
+                &db,
+                vec![workspace.to_string_lossy().into_owned()],
+                |_| panic!("nested protected alias reached clipboard writer"),
+            ).is_err());
+        });
+    }
+
+    #[test]
+    fn file_export_drops_relay_tools_and_their_ancestors() {
+        let scratch = crate::plugins::test_support::Scratch::new();
+        let db = crate::db::Db::open_at(&scratch.path("test.db")).unwrap();
+        let home = scratch.path("portable-data");
+        let secret = home.join("relay-tools/.auth-fixture/default.toml");
+        let ordinary = home.join("ordinary.txt");
+        std::fs::create_dir_all(secret.parent().unwrap()).unwrap();
+        std::fs::write(&secret, b"fake-oauth-token").unwrap();
+        std::fs::write(&ordinary, b"ordinary").unwrap();
+        db.add_granted_root(&scratch.0.to_string_lossy()).unwrap();
+        crate::paths::with_test_app_home(&home, || {
+            let mut exported = Vec::new();
+            super::set_allowed_file_paths(
+                &db,
+                [&home, &home.join("relay-tools"), &secret, &ordinary]
+                    .into_iter().map(|path| path.to_string_lossy().into_owned()).collect(),
+                |paths| { exported.extend_from_slice(&paths); Ok(()) },
+            ).unwrap();
+            assert_eq!(exported, [ordinary.to_string_lossy()]);
+            assert!(super::set_allowed_file_paths(
+                &db,
+                vec![home.to_string_lossy().into_owned()],
+                |_| panic!("protected tree reached clipboard writer"),
+            ).is_err());
+        });
+    }
+
     /// Explorer reads the list back as shell paths: the tree's `/` joins
     /// become `\`, spaces and the double-NUL end stay intact.
     #[test]
@@ -384,7 +454,7 @@ mod path_tests {
         super::set_existing_file_paths(
             vec![selected.to_string_lossy().into_owned(), String::new()],
             |paths| {
-                written.extend_from_slice(paths);
+                written.extend_from_slice(&paths);
                 Ok(())
             },
         )
