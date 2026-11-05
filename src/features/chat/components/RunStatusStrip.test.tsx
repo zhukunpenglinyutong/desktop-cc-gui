@@ -9,6 +9,15 @@ import { deriveTodoList } from "./agent-task-steps";
 import { ipc } from "@/lib/ipc";
 import type { Message, TodosPayload } from "@/lib/ipc";
 
+// Importing the real IPC module subscribes to settings and opens a WebSocket
+// in jsdom. Keep this UI/store suite offline; history is supplied per test.
+vi.mock("@/lib/ipc", () => ({
+  ipc: {
+    loadSessionPage: vi.fn(),
+    listPlanReviews: vi.fn(async () => []),
+  },
+}));
+
 // React's act() environment flag — a well-known global the runtime can't
 // validate, so a named cast with no narrowing is the right boundary.
 const actEnvironment = globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean };
