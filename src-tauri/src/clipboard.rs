@@ -385,9 +385,7 @@ mod path_tests {
         std::fs::create_dir_all(&tools).unwrap();
         std::fs::create_dir_all(workspace.join("nested")).unwrap();
         std::fs::write(tools.join("default.toml"), b"fake-oauth-token").unwrap();
-        if !crate::plugins::test_support::create_dir_link(&workspace.join("nested/tools"), &tools) {
-            return;
-        }
+        assert!(crate::plugins::test_support::create_dir_link(&workspace.join("nested").join("tools"), &tools));
         db.add_granted_root(&workspace.to_string_lossy()).unwrap();
         crate::paths::with_test_app_home(&home, || {
             assert!(super::set_allowed_file_paths(

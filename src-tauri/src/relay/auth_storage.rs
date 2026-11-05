@@ -560,26 +560,22 @@ mod tests {
     #[cfg(any(unix, windows))]
     #[test]
     fn root_and_nested_symlinks_are_never_followed_or_removed() {
-        #[cfg(windows)]
-        use std::os::windows::fs::symlink_dir as symlink;
-        #[cfg(unix)]
-        use std::os::unix::fs::symlink;
         let scratch = Scratch::new();
         let outside = Scratch::new();
         std::fs::write(outside.0.join("keep"), "outside").unwrap();
         let alias = scratch.0.join("alias");
-        symlink(&outside.0, &alias).unwrap();
+        assert!(crate::plugins::test_support::create_dir_link(&alias, &outside.0));
         assert!(AuthDirectory::create(&alias).is_err());
         assert!(sweep(&alias).is_err());
         let mut owned = AuthDirectory::create(&scratch.0).unwrap();
-        symlink(&outside.0, owned.path.join("linked-home")).unwrap();
+        assert!(crate::plugins::test_support::create_dir_link(&owned.path.join("linked-home"), &outside.0));
         assert!(validate_credentials(&owned.path).is_err());
         drop(owned.lease.take());
         owned.cleaned = true;
         let report = sweep(&scratch.0).unwrap();
         assert_eq!(report.removed, 0);
         assert!(report.warnings.iter().any(|warning| warning.contains("link")));
-        assert!(owned.path.join("linked-home").symlink_metadata().unwrap().file_type().is_symlink());
+        assert_eq!(std::fs::canonicalize(owned.path.join("linked-home")).unwrap(), std::fs::canonicalize(&outside.0).unwrap());
         assert_eq!(std::fs::read_to_string(outside.0.join("keep")).unwrap(), "outside");
     }
 

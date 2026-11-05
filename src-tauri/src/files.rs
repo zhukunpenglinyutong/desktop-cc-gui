@@ -1280,10 +1280,8 @@ mod tests {
     #[test]
     fn relay_tools_aliases_cannot_bypass_direct_or_recursive_access() {
         with_relay_fixture(|db, home, _, _| {
-            let alias = home.join("workspace/tools-alias");
-            if !crate::plugins::test_support::create_dir_link(&alias, &home.join("relay-tools")) {
-                return;
-            }
+            let alias = home.join("workspace").join("tools-alias");
+            assert!(crate::plugins::test_support::create_dir_link(&alias, &home.join("relay-tools")));
             assert!(read_file_blocking(db, &alias.join("legacy.toml").to_string_lossy()).is_err());
             assert!(ensure_allowed(&alias.join("uncreated/deep/file").to_string_lossy(), db).is_err());
             let root = home.join("workspace");
