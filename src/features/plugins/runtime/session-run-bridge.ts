@@ -127,9 +127,11 @@ export async function startPluginChatRun(
     engine,
     sessionId,
     workspacePath,
-    ...(def.model ? { model: def.model } : {}),
-    ...(def.effort ? { effort: def.effort as never } : {}),
-    ...(def.providerId ? { provider: def.providerId } : {}),
+    ...(sessionId ? {} : {
+      ...(def.model ? { model: def.model } : {}),
+      ...(def.effort ? { effort: def.effort as never } : {}),
+      ...(def.providerId ? { provider: def.providerId } : {}),
+    }),
   };
   let handle: PluginChatRunHandle | null = null;
   try {
@@ -188,24 +190,28 @@ export async function interruptPluginChatRun(
   // stopped. `sessionId: null` matches any live run of this plugin in the
   // scope because the native id is often announced after startRun resolves.
   const sessionId = def.sessionId ?? null;
-  const owned = [...runs.values()].some(
+  const matched = [...runs.values()].filter(
     (record) =>
       record.pluginId === pluginId &&
       record.engine === engine &&
       record.workspacePath === workspacePath &&
       (sessionId === null || record.sessionId === sessionId),
   );
-  if (!owned) {
+  if (matched.length === 0) {
     throw new Error(
       `${pluginId}: sessions.interruptRun may only stop a run started by this plugin`,
     );
   }
   const chat = await import("@/features/chat/store");
-  // 等价于聊天里的停止：sessionId 未知（尚未 announce）时按待发键停，
-  // 与聊天栏在 spawn 前就能点停止是同一条路径。
-  await chat.useChatStore.getState().interrupt({
+  // 省略 ID 时停止本插件在此范围内的全部轮次，按记录中的实际会话寻址。
+  // 尚未 announce 的轮次仍走待发键；同一会话只停止一次。
+  const targets = sessionId !== null
+    ? [sessionId]
+    : [...new Set(matched.map((record) => record.sessionId))];
+  const store = chat.useChatStore.getState();
+  await Promise.all(targets.map((target) => store.interrupt({
     engine,
-    sessionId: def.sessionId ?? null,
+    sessionId: target,
     workspacePath,
-  });
+  })));
 }

@@ -230,7 +230,7 @@ export function createMessagingActions(
     }
     const engine = tab.engine;
     const key = sessionKey(engine, tab.sessionId, tab.workspacePath);
-    if (options?.onStarted && get().streamingByKey[key]) {
+    if (options?.onStarted && tab.sessionId && get().streamingByKey[key]) {
       throw new Error("session_busy: the session is already running");
     }
     // Computer use asks for the driver; a web-access client or an engine

@@ -98,8 +98,8 @@ export default function activate(ctx: PluginContext): void | (() => void) {
 | `ctx.sessions.selectSession` | `host:session` | — |
 | `ctx.sessions.refresh` | `host:session` | 请求宿主立即刷新会话目录（侧栏/标签页），0.3.7 起。 插件绕过宿主直写会话数据（如 sqlite custom_title、转录 title 行）后 调用——否则变更要等用户手动同步或下次常规刷新才可见。 |
 | `ctx.sessions.setEffort` | `host:session` | 修改已有会话的 effort 档位，0.3.10 起。直写宿主会话状态并持久化 （等价于用户在会话内切换档位，refreshSessions 不会回滚）。未知会话 或空 effort 以 rejection 失败——不会创建幽灵会话条目。 |
-| `ctx.sessions.startRun` | `host:session` | 把一个 AI 轮次跑成**宿主聊天会话**（0.3.18 起，权限 `host:session`）： 会话立刻出现在侧栏（带运行中状态，不需要手动同步），打开就是实时 流式输出；停止既能在聊天里点，也能用 `interruptRun`。会话挂在 `workspacePath` 工作区下，模型/强度/渠道只覆盖这一轮，不动用户的 全局默认。 与 `ctx.agent.start` 的分工：那个是插件自有的后台轮次（事件只回 插件，不进聊天）；这个就是「像用户自己发了一条」。需要用户看得见、 随时能接管/停止的轮次用本方法。 spawn 成功后 resolve `{ runId, sessionId }`（引擎稍后才 announce sessionId 时为 null）；轮次终止经 `plugin-run://<pluginId>` 事件回执： `{ runId, sessionId, engine, workspacePath, kind: "done" \| "error", error }`。 被用户/插件中断的轮次同样以 `done` 收尾。 |
-| `ctx.sessions.interruptRun` | `host:session` | 停止 `startRun` 起的轮次（等价于聊天里的停止按钮）。 |
+| `ctx.sessions.startRun` | `host:session` | 把一个 AI 轮次跑成**宿主聊天会话**（0.3.18 起，权限 `host:session`）： 会话立刻出现在侧栏（带运行中状态，不需要手动同步），打开就是实时 流式输出；停止既能在聊天里点，也能用 `interruptRun`。会话挂在 `workspacePath` 工作区下；新建轮次可覆盖模型/强度/渠道，不动用户的 全局默认，续接轮次沿用已有会话的选择。 续接忽略 model / effort / providerId 覆盖，并切回该会话；只应由用户 主动操作触发，不用于定时或后台任务。 与 `ctx.agent.start` 的分工：那个是插件自有的后台轮次（事件只回 插件，不进聊天）；这个就是「像用户自己发了一条」。需要用户看得见、 随时能接管/停止的轮次用本方法。 spawn 成功后 resolve `{ runId, sessionId }`（引擎稍后才 announce sessionId 时为 null）；轮次终止经 `plugin-run://<pluginId>` 事件回执： `{ runId, sessionId, engine, workspacePath, kind: "done" \| "error", error }`。 被用户/插件中断的轮次同样以 `done` 收尾。 |
+| `ctx.sessions.interruptRun` | `host:session` | 停止本插件通过 `startRun` 启动的在跑轮次（等价于聊天里的停止按钮）。 省略 sessionId 或传 null 时，停止本插件在该引擎与工作区下的全部在跑轮次； 提供 ID 时仅停止匹配的会话。无匹配轮次时拒绝，不停止用户或其他插件的轮次。 |
 | `ctx.sessions.registerSource` | `host:session` | — |
 | `ctx.window.getState` | `host:window` | — |
 | `ctx.window.setNormalBounds` | `host:window` | — |
