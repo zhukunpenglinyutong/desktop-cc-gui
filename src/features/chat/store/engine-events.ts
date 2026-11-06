@@ -1360,11 +1360,11 @@ export function patchGrantBySeq(
   });
 }
 
-/** Patch a question card by its control-protocol request id (the settled
- * event carries the request id, not the row seq). */
+/** RPC ids can repeat across runs, so both ids identify a question card. */
 export function patchQuestionByRequestId(
   set: (fn: (s: ChatStore) => Partial<ChatStore>) => void,
   key: string,
+  runId: string,
   requestId: string,
   patch: (question: NonNullable<Message["question"]>) => NonNullable<Message["question"]>,
 ) {
@@ -1373,7 +1373,7 @@ export function patchQuestionByRequestId(
     if (!cur) return {};
     let changed = false;
     const messages = cur.messages.map((m) => {
-      if (m.role !== "question" || m.question?.requestId !== requestId) return m;
+      if (m.role !== "question" || m.question?.runId !== runId || m.question.requestId !== requestId) return m;
       changed = true;
       return { ...m, question: patch(m.question) };
     });
@@ -1525,7 +1525,7 @@ function onQuestion(
   // The CLI re-asks a multi-select question with a fresh request id after every
   // answer, so those frames resume the card the round already owns.
   const loop = askLoops.get(key);
-  if (loop && loop.base === frame.base) {
+  if (loop && loop.runId === event.runId && loop.base === frame.base) {
     if (loop.phase === "sent") {
       // It re-asked because the editor answer was lost: re-arm and re-send.
       loop.requestId = requestId;
@@ -1562,7 +1562,7 @@ function onQuestion(
     const messages = settleLiveRows(base);
     // A replayed frame (initialize re-arm) must not double-render the card.
     const dup = messages.some(
-      (m) => m.role === "question" && m.question?.requestId === requestId,
+      (m) => m.role === "question" && m.question?.runId === event.runId && m.question.requestId === requestId,
     );
     // No new card, but the chunks drained above are out of the buffer now:
     // keep them (still live, as the scheduled flush would), or the text
@@ -1722,11 +1722,12 @@ function onQuestionSettled(
 ) {
   const requestId = (event.data as { requestId?: string })?.requestId?.trim();
   if (!requestId) return;
-  patchQuestionByRequestId(deps.set, key, requestId, (question) =>
+  patchQuestionByRequestId(deps.set, key, event.runId, requestId, (question) =>
     question.status === "pending" ? { ...question, status: "cancelled" as const } : question,
   );
   // A settled frame ends its round: whatever the CLI was waiting on is gone.
-  if (askLoops.get(key)?.requestId === requestId) askLoops.delete(key);
+  const loop = askLoops.get(key);
+  if (loop?.runId === event.runId && loop.requestId === requestId) askLoops.delete(key);
 }
 
 function onWarn(event: ChatEngineEvent, key: string, deps: EngineEventDeps) {

@@ -22,10 +22,8 @@
 //! shapes are terminal so a newer CLI cannot hang the pump until the prompt
 //! timeout.
 //!
-//! Approvals are declined, never granted: the CLI runs with
-//! `approvalPolicy: "never"` and the sandbox is the enforced boundary, exactly
-//! as the exec transport's auto-decline behaves, so answering "approve" here
-//! would hand the model a privilege the app never offered.
+//! Ordinary local runs ask for approval through the existing question cards.
+//! Isolated read-only tasks and planning runs keep approvals disabled.
 //!
 //! Plan approval (next_turn): a `permission == "plan"` run starts its turn
 //! with `collaborationMode {mode:"plan"}` (EXPERIMENTAL in the 0.154.0
@@ -52,6 +50,9 @@ use tokio::io::{AsyncWriteExt, BufReader};
 use tokio::process::{Child, ChildStdin, ChildStdout, Command};
 use tokio::sync::Mutex as TokioMutex;
 use tokio::time::{timeout, Instant};
+
+#[path = "codex_approvals.rs"]
+mod approvals;
 
 use super::codex_read_only;
 use super::images;
@@ -108,6 +109,7 @@ enum Handled {
 /// Per-run projection state: what streamed, and what to report at settle time.
 #[derive(Default)]
 struct TurnView {
+    approvals_enabled: bool,
     /// Item id whose text already streamed as deltas. A completed
     /// `agentMessage` repeats that text in full, and a `message` row appends as
     /// a settled snapshot (the UI collapses the live row first), so replaying
@@ -327,6 +329,29 @@ fn route(core: &TurnCore, state: &mut TurnState, view: &mut TurnView, value: &Va
     };
     let params = value.get("params").cloned().unwrap_or(Value::Null);
     match value.get("id").filter(|id| !id.is_null()) {
+        Some(id)
+            if view.approvals_enabled
+                && matches!(
+                    method,
+                    "item/commandExecution/requestApproval"
+                        | "item/fileChange/requestApproval"
+                        | "item/permissions/requestApproval"
+                ) =>
+        {
+            let (card, context) = approvals::card(id, method, &params);
+            core.dispatch_event(
+                state,
+                EngineEvent::Question {
+                    request_id: id.to_string(),
+                    tool_use_id: params
+                        .get("itemId")
+                        .and_then(Value::as_str)
+                        .map(str::to_string),
+                    input: json!({"questions":[card],"codexApp":{"approval":context}}),
+                },
+            );
+            Handled::Parked
+        }
         Some(id) => handle_server_request(core, state, method, id, &params),
         None => handle_notification(core, state, view, method, &params),
     }
@@ -354,9 +379,7 @@ fn handle_server_request(
             park_question(core, state, id, params, cards, ids);
             Handled::Parked
         }
-        // Always declined: `approvalPolicy` is pinned to "never" and the
-        // sandbox is the boundary this app chose, so approving here would be a
-        // privilege escalation the exec transport never allowed either.
+        // Non-interactive planning and isolated tasks never request grants.
         "item/commandExecution/requestApproval" | "item/fileChange/requestApproval" => {
             Handled::Answer(jsonrpc_result_response(
                 id,
@@ -385,6 +408,21 @@ fn handle_notification(
     params: &Value,
 ) -> Handled {
     match method {
+        "serverRequest/resolved" => {
+            if let Some(id) = params.get("requestId") {
+                let key = id.to_string();
+                let pending = core
+                    .registry
+                    .get(&core.run_id)
+                    .and_then(|entry| entry.questions.lock().ok()?.get(&key).cloned());
+                if pending
+                    .as_ref()
+                    .is_some_and(|value| value.pointer("/codexApp/approval").is_some())
+                {
+                    core.dispatch_event(state, EngineEvent::QuestionSettled { request_id: key });
+                }
+            }
+        }
         "item/agentMessage/delta" => {
             if let Some(delta) = params.get("delta").and_then(Value::as_str) {
                 if !delta.is_empty() {
@@ -950,6 +988,9 @@ pub(super) fn next_async_question_rpc_id() -> String {
 /// asked is an error instead: it means the card and the request drifted, and
 /// silently dropping the answer would park the turn forever.
 pub(super) fn answer_frame(parked: &Value, answers: Option<&Value>) -> Result<Value, String> {
+    if let Some(context) = parked.get("approval") {
+        return approvals::answer(context, answers);
+    }
     let id = parked
         .get("rpcId")
         .ok_or_else(|| "parked question lost its rpc id".to_string())?;
@@ -1644,8 +1685,7 @@ async fn handshake_and_start(
         }
     }
     // Resuming re-attaches the conversation the app already holds; starting
-    // opens a new one. Both take the run's sandbox, and approvals stay pinned
-    // off: this client has no approval UI and the sandbox is the boundary.
+    // opens a new one. Reapply the selected policy to both paths.
     let deadline = Instant::now()
         + if req.session_id.is_some() {
             RESUME_TIMEOUT
@@ -1655,7 +1695,13 @@ async fn handshake_and_start(
     let (method, mut params) = thread_open_request(req.session_id.as_deref());
     params["cwd"] = json!(req.workspace.to_string_lossy());
     params["sandbox"] = json!(sandbox_for(req.permission.as_deref()));
-    params["approvalPolicy"] = json!("never");
+    let approval_policy =
+        approvals::policy(req.permission.as_deref(), codex_read_only::requested(req));
+    view.approvals_enabled = approval_policy != "never";
+    params["approvalPolicy"] = json!(approval_policy);
+    if view.approvals_enabled {
+        params["config"] = json!({"approvals_reviewer":"user"});
+    }
     if codex_read_only::requested(req) {
         params["ephemeral"] = json!(true);
         params["dynamicTools"] = json!([]);
@@ -2668,7 +2714,8 @@ require('node:readline').createInterface({input: process.stdin}).on('line', line
     assert.equal(params.capabilities.experimentalApi, resumed);
     result = {};
   } else if (method === 'thread/resume' || method === 'thread/start') {
-    assert.equal(params.approvalPolicy, 'never');
+    assert.equal(params.approvalPolicy, 'on-request');
+    assert.equal(params.config.approvals_reviewer, 'user');
     assert.equal(params.sandbox, 'workspace-write');
     assert.equal(params.excludeTurns, resumed ? true : undefined);
     assert.equal(params.threadId, resumed ? 'thread-123' : undefined);
@@ -2981,6 +3028,69 @@ require('node:readline').createInterface({input: process.stdin}).on('line', line
             entry.questions.lock().unwrap().is_empty(),
             "nothing may be left waiting for an answer"
         );
+    }
+
+    #[tokio::test]
+    async fn permission_request_parks_until_an_explicit_user_decision() {
+        for method in [
+            "item/commandExecution/requestApproval",
+            "item/fileChange/requestApproval",
+            "item/permissions/requestApproval",
+        ] {
+            let (core, _registry, emitter) = test_core();
+            let mut state = TurnState::new(None);
+            let mut view = TurnView {
+                approvals_enabled: true,
+                ..Default::default()
+            };
+            assert!(matches!(
+                route(
+                    &core,
+                    &mut state,
+                    &mut view,
+                    &json!({"jsonrpc":"2.0","id":"grant-1","method":method,"params":{"command":"git commit","permissions":{"network":{"enabled":true}}}})
+                ),
+                Handled::Parked
+            ));
+            let entry = core.registry.get(&core.run_id).unwrap();
+            let parked = entry
+                .questions
+                .lock()
+                .unwrap()
+                .get("\"grant-1\"")
+                .unwrap()
+                .clone();
+            let context = &parked["codexApp"];
+            let title = context["approval"]["question"].as_str().unwrap();
+            let frame = answer_frame(context, Some(&json!({title:"Allow once"}))).unwrap();
+            assert_eq!(frame["id"], json!("grant-1"));
+            if method == "item/permissions/requestApproval" {
+                assert_eq!(
+                    frame["result"],
+                    json!({"permissions":{"network":{"enabled":true}},"scope":"turn"})
+                );
+            } else {
+                assert_eq!(frame["result"], json!({"decision":"accept"}));
+                assert_eq!(
+                    answer_frame(context, None).unwrap()["result"],
+                    json!({"decision":"decline"})
+                );
+            }
+            route(
+                &core,
+                &mut state,
+                &mut view,
+                &json!({"method":"serverRequest/resolved","params":{"requestId":"grant-1"}}),
+            );
+            assert!(entry.questions.lock().unwrap().is_empty());
+            assert_eq!(
+                flushed(&core, &emitter)
+                    .iter()
+                    .map(|(kind, _)| kind.as_str())
+                    .collect::<Vec<_>>(),
+                ["question", "question_settled"]
+            );
+        }
     }
 
     #[tokio::test]
