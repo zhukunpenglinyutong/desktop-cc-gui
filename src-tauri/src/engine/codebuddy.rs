@@ -2,6 +2,36 @@ use super::{
     claude::ClaudeEngine, command_for_binary, images, BuiltCommand, Engine, EngineEvent,
     SendRequest,
 };
+use serde_json::{json, Value};
+
+pub(super) fn question_response(
+    request_id: &str,
+    context: &Value,
+    answers: Option<Value>,
+) -> Value {
+    let mut response = json!({ "allowed": false, "tool_use_id": context["toolUseId"] });
+    if let Some(Value::Object(mut answers)) = answers {
+        for answer in answers.values_mut() {
+            if let Value::Array(labels) = answer {
+                *answer = json!(labels
+                    .iter()
+                    .filter_map(Value::as_str)
+                    .collect::<Vec<_>>()
+                    .join(", "));
+            }
+        }
+        let mut input = context["input"].as_object().cloned().unwrap_or_default();
+        input.insert("answers".into(), Value::Object(answers));
+        response["allowed"] = json!(true);
+        response["updatedInput"] = Value::Object(input);
+    } else {
+        response["reason"] = json!("The user skipped the question.");
+    }
+    json!({
+        "type": "control_response",
+        "response": { "subtype": "success", "request_id": request_id, "response": response },
+    })
+}
 
 /// Provider-selection env keys a codebuddy channel owns outright once a
 /// channel drives the launch. Like the claude adapter (claude_channel.rs),
@@ -353,14 +383,24 @@ impl Engine for CodeBuddyEngine {
             cmd.arg(session_id);
         }
 
-        let stdin_payload = images::claude_stdin_message(&req.prompt, &req.images, &req.workspace)
+        let user_message = images::claude_stdin_message(&req.prompt, &req.images, &req.workspace)
             .map_err(|error| {
-                super::cleanup_staged_files(&cleanup_files);
-                error
-            })?;
+            super::cleanup_staged_files(&cleanup_files);
+            error
+        })?;
+        // CodeBuddy processes the first initialize before the queued user frame.
+        let initialize = json!({
+            "type": "control_request",
+            "request_id": uuid::Uuid::new_v4().to_string(),
+            "request": {
+                "subtype": "initialize",
+                "hasPrompt": true,
+                "capabilities": { "askUserQuestion": true },
+            },
+        });
         Ok(BuiltCommand {
             command: cmd,
-            stdin_payload: Some(stdin_payload),
+            stdin_payload: Some(format!("{initialize}\n{user_message}")),
             keep_stdin_open: true,
             cleanup_files,
             mcp_restore: None,
@@ -533,6 +573,87 @@ mod tests {
         assert!(debug.contains("high"));
         assert!(debug.contains("-r"));
         assert!(debug.contains("sess-123"));
+    }
+
+    #[test]
+    fn initializes_question_capability_before_sending_prompt() {
+        let engine = CodeBuddyEngine::new();
+        let mut req = sample_req();
+        req.session_id = Some("existing-session".into());
+        let built = engine.build_command(&req, "codebuddy").unwrap();
+        assert!(built.keep_stdin_open);
+        let payload = built.stdin_payload.unwrap();
+        let frames: Vec<Value> = payload
+            .lines()
+            .map(|line| serde_json::from_str(line).unwrap())
+            .collect();
+        assert_eq!(frames.len(), 2);
+        assert_eq!(frames[0]["type"], "control_request");
+        assert!(frames[0]["request_id"]
+            .as_str()
+            .is_some_and(|id| !id.is_empty()));
+        assert_eq!(
+            frames[0]["request"],
+            json!({
+                "subtype": "initialize",
+                "hasPrompt": true,
+                "capabilities": { "askUserQuestion": true },
+            })
+        );
+        assert_eq!(frames[1]["type"], "user");
+        assert_eq!(frames[1]["message"]["content"][0]["text"], req.prompt);
+    }
+
+    #[test]
+    fn question_callback_round_trips_with_codebuddy_response_shape() {
+        let engine = CodeBuddyEngine::new();
+        let input = json!({"questions": [], "metadata": {"source": "test"}});
+        let callback = json!({
+            "type": "control_request",
+            "request_id": "req",
+            "request": {
+                "subtype": "can_use_tool",
+                "tool_name": "AskUserQuestion",
+                "tool_use_id": "tool",
+                "input": input,
+            },
+        });
+        let mut events = Vec::new();
+        engine.parse_line(&callback.to_string(), &mut events);
+        let [EngineEvent::Question {
+            request_id,
+            tool_use_id,
+            input: parsed,
+        }] = events.as_slice()
+        else {
+            panic!("expected a question event");
+        };
+        assert_eq!(parsed, &input);
+        let context = json!({"input": parsed, "toolUseId": tool_use_id});
+        let frame = question_response(
+            request_id,
+            &context,
+            Some(json!({"单选": "甲", "多选": ["乙", "丙"]})),
+        );
+        assert_eq!(frame["type"], "control_response");
+        assert_eq!(frame["response"]["request_id"], "req");
+        assert_eq!(
+            frame["response"]["response"],
+            json!({
+                "allowed": true,
+                "tool_use_id": "tool",
+                "updatedInput": {
+                    "questions": [],
+                    "metadata": {"source": "test"},
+                    "answers": {"单选": "甲", "多选": "乙, 丙"},
+                },
+            }),
+        );
+        let skipped = question_response(request_id, &context, None);
+        assert_eq!(skipped["response"]["response"]["allowed"], false);
+        assert!(skipped["response"]["response"]
+            .get("updatedInput")
+            .is_none());
     }
 
     #[test]
