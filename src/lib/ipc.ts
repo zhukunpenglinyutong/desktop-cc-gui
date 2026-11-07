@@ -1049,6 +1049,13 @@ export interface GitStatus {
   untracked: GitFileEntry[];
 }
 
+/** Both sides of an image change as data URLs; a null side means the file
+ *  does not exist in that revision (added / deleted). */
+export interface GitImageDiff {
+  old: string | null;
+  new: string | null;
+}
+
 /** Compact status for a directory that is itself a Git worktree root. */
 export interface RepositorySummary {
   path: string;
@@ -1916,6 +1923,9 @@ export const ipc = {
     invoke<GitTreeStatus>("git_tree_status", { levels }),
   gitDiff: (path: string, file: string, staged: boolean) =>
     invoke<string>("git_diff", { path, file, staged }),
+  /** Image files diff as bytes, not patch text. */
+  gitDiffImages: (path: string, file: string, staged: boolean) =>
+    invoke<GitImageDiff>("git_diff_images", { path, file, staged }),
   gitStage: (path: string, files: string[]) => invoke<void>("git_stage", { path, files }),
   gitUnstage: (path: string, files: string[]) =>
     invoke<void>("git_unstage", { path, files }),
