@@ -344,6 +344,10 @@ impl TurnCore {
     }
 
     pub(crate) fn dispatch_event(&self, state: &mut TurnState, event: EngineEvent) {
+        self.dispatch(state, event, false);
+    }
+
+    fn dispatch(&self, state: &mut TurnState, event: EngineEvent, keep_stdin: bool) {
         // Terminal state is monotonic, even if a CLI or its usage tail emits
         // more data before exiting: no late retry/content/warn event may
         // revive a settled run. The one exception is SessionId — a done that
@@ -857,7 +861,9 @@ impl TurnCore {
                     crate::mcp::mark_run_ended(&self.run_id);
                     // The turn is over: EOF the interactive stdin so the CLI
                     // exits instead of waiting for a next message forever.
-                    self.registry.close_stdin(&self.run_id);
+                    if !keep_stdin {
+                        self.registry.close_stdin(&self.run_id);
+                    }
                 }
                 state.push_with_gen_ms(
                     &self.sink,
@@ -916,6 +922,10 @@ impl Drop for RunContext {
         self.core
             .registry
             .remove_run_if_pid(&self.core.run_id, self.pid);
+        if self.core.engine_id == "codebuddy" {
+            self.core.registry.4.lock().unwrap_or_else(|e| e.into_inner())
+                .retain(|_, idle| idle.entry.run_id != self.core.run_id || idle.entry.pid != self.pid);
+        }
     }
 }
 impl RunContext {
@@ -1056,9 +1066,66 @@ fn selection_payload(model: Option<String>, effort: Option<String>) -> Value {
     }
     Value::Object(out)
 }
-/// Read NDJSON stdout until EOF, dispatch events, then settle the turn:
-/// registry cleanup, temp-file cleanup, and the terminal done/error event.
-pub(crate) async fn run_reader(stdout: ChildStdout, ctx: RunContext) {
+type ParkedCodeBuddy = (
+    super::registry::ChildEntry,
+    tokio::sync::oneshot::Receiver<super::codebuddy::ResumeTurn>,
+    tokio::sync::watch::Sender<()>,
+);
+
+fn park_codebuddy(
+    ctx: &RunContext,
+    session_id: &str,
+    signature: [u8; 32],
+) -> Option<ParkedCodeBuddy> {
+    let registry = &ctx.core.registry;
+    let mut runs = registry.0.lock().ok()?;
+    let entry = runs.get(&ctx.core.run_id)?.clone();
+    if entry.killed.load(std::sync::atomic::Ordering::SeqCst)
+        || !entry.questions.lock().ok()?.is_empty()
+        || !entry.plans.lock().ok()?.is_empty()
+        || runs
+            .get(session_id)
+            .is_some_and(|run| run.run_id != entry.run_id)
+    {
+        return None;
+    }
+    let mut idle = registry.4.lock().ok()?;
+    if idle.contains_key(session_id) {
+        return None;
+    }
+    let (resume, next) = tokio::sync::oneshot::channel();
+    let (exited, exit) = tokio::sync::watch::channel(());
+    idle.insert(
+        session_id.to_string(),
+        super::codebuddy::IdleProcess {
+            entry: entry.clone(),
+            signature,
+            resume: Some(resume),
+            exited: exit,
+        },
+    );
+    runs.retain(|_, run| run.run_id != entry.run_id);
+    Some((entry, next, exited))
+}
+
+/// None means no bytes were written and a fresh process may safely retry.
+async fn write_codebuddy_prompt(entry: &super::registry::ChildEntry, payload: String) -> Option<bool> {
+    let mut guard = entry.stdin.as_ref()?.lock().await;
+    let stdin = guard.as_mut()?;
+    let mut frame = payload.into_bytes();
+    frame.push(b'\n');
+    let deadline = tokio::time::Instant::now() + READER_SETTLE_GRACE;
+    let written = tokio::time::timeout_at(deadline, stdin.write(&frame)).await.ok()?.ok()?;
+    if written == 0 {
+        return None;
+    }
+    Some(matches!(
+        tokio::time::timeout_at(deadline, stdin.write_all(&frame[written..])).await,
+        Ok(Ok(()))
+    ))
+}
+
+fn begin_process_turn(ctx: &RunContext) -> TurnState {
     let mut state = TurnState::new(ctx.preassigned_session_id.clone());
     // The launch selection is one `launch` event, not `model`/`effort`
     // reports: the response check compares it against what the stream later
@@ -1074,6 +1141,22 @@ pub(crate) async fn run_reader(stdout: ChildStdout, ctx: RunContext) {
             },
         );
     }
+    state
+}
+
+/// Read NDJSON stdout until EOF, dispatch events, then settle the turn:
+/// registry cleanup, temp-file cleanup, and the terminal done/error event.
+#[cfg(test)]
+pub(crate) async fn run_reader(stdout: ChildStdout, ctx: RunContext) {
+    run_process_reader(stdout, ctx, None).await;
+}
+
+pub(crate) async fn run_process_reader(
+    stdout: ChildStdout,
+    mut ctx: RunContext,
+    signature: Option<([u8; 32], String)>,
+) {
+    let (signature, workspace) = signature.unzip();
     // codex reports usage into its own session log instead of the stdout
     // stream (the stream only carries it with `turn.completed`), so a long
     // turn would otherwise show nothing until it ended. Poll that log
@@ -1115,7 +1198,9 @@ pub(crate) async fn run_reader(stdout: ChildStdout, ctx: RunContext) {
         });
     }
     let mut child_exited = false;
-    loop {
+    let mut idle_exit = None;
+    let mut state = begin_process_turn(&ctx);
+    'read: loop {
         let read = tokio::select! {
             line = read_line_capped(&mut reader, &mut line_buf) => line,
             _ = &mut exit_rx, if !child_exited => {
@@ -1197,7 +1282,85 @@ pub(crate) async fn run_reader(stdout: ChildStdout, ctx: RunContext) {
                     }
                 }
             }
-            ctx.dispatch_event(&mut state, event);
+            let idle = match (&event, signature) {
+                (EngineEvent::Done { session_id, .. }, Some(signature))
+                    if !child_exited
+                        && !state.saw_done
+                        && !state.saw_error
+                        && state.pending_background_tasks == 0 =>
+                {
+                    session_id
+                        .as_ref()
+                        .or(state.native_session_id.as_ref())
+                        .and_then(|id| park_codebuddy(&ctx, id, signature))
+                }
+                _ => None,
+            };
+            ctx.core.dispatch(&mut state, event, idle.is_some());
+            let Some((entry, mut resume, exited)) = idle else {
+                continue;
+            };
+            idle_exit = Some(exited);
+            let deadline = tokio::time::sleep(super::codebuddy::IDLE_TIMEOUT);
+            tokio::pin!(deadline);
+            let next = loop {
+                tokio::select! {
+                    biased;
+                    _ = &mut deadline => break None,
+                    _ = &mut exit_rx, if !child_exited => {
+                        child_exited = true;
+                        break None;
+                    }
+                    next = &mut resume => break next.ok(),
+                    line = read_line_capped(&mut reader, &mut line_buf) => {
+                        if !matches!(line, Ok(LineRead::Line(_))) {
+                            break None;
+                        }
+                    }
+                }
+            };
+            if let Some(next) = next {
+                if !next.killed.load(std::sync::atomic::Ordering::SeqCst) {
+                    if let Some(complete) = write_codebuddy_prompt(&entry, next.payload).await {
+                        if ctx.core.registry.activate_codebuddy(&next.run_id, &next.session_id, &entry) {
+                            idle_exit = None;
+                            ctx.core.run_id = next.run_id;
+                            ctx.killed = next.killed;
+                            ctx.preassigned_session_id = Some(next.session_id);
+                            ctx.comparison_model = next.comparison_model;
+                            if let Some(handle) = entry.reader_abort.get() {
+                                let _ = next.reader_abort.set(handle.clone());
+                            }
+                            if let Some(workspace) = workspace.as_deref() {
+                                crate::mcp::register_run(&ctx.core.run_id, workspace);
+                            }
+                            let _ = next.accept.send(());
+                            state = begin_process_turn(&ctx);
+                            if complete && !ctx.killed.load(std::sync::atomic::Ordering::SeqCst) {
+                                continue 'read;
+                            }
+                            crate::mcp::mark_run_ended(&ctx.core.run_id);
+                        }
+                    }
+                }
+            }
+            if let Some(stdin) = entry.stdin {
+                stdin.lock().await.take();
+            }
+            if !child_exited {
+                let pid = ctx.pid;
+                #[cfg(unix)]
+                if pid != 0 {
+                    kill_process_group(pid);
+                }
+                #[cfg(windows)]
+                if let Some(job) = ctx._tree_guard.take() {
+                    drop(job);
+                } else if pid != 0 {
+                    let _ = tokio::task::spawn_blocking(move || kill_process_group(pid)).await;
+                }
+            }
+            break 'read;
         }
     }
 
@@ -1342,6 +1505,8 @@ pub(crate) async fn run_reader(stdout: ChildStdout, ctx: RunContext) {
         state.confirm_exit(&ctx.core);
     }
     ctx.core.sink.flush();
+    drop(ctx);
+    drop(idle_exit);
 }
 #[cfg(test)]
 mod staging_tests {

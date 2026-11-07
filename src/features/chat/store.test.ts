@@ -227,6 +227,20 @@ describe("per-session composer selection", () => {
   });
 });
 
+describe("closing a CodeBuddy tab", () => {
+  it("releases only the closed session's CLI process", () => {
+    resetStore();
+    const closing = { engine: "codebuddy", sessionId: "closing", workspacePath: WS };
+    const remaining = { engine: "codebuddy", sessionId: "remaining", workspacePath: WS };
+    useChatStore.setState({ active: remaining, openTabs: [closing, remaining] });
+
+    useChatStore.getState().closeTab(closing.engine, closing.sessionId, WS);
+
+    expect(ipc.interruptSession).toHaveBeenCalledExactlyOnceWith("closing");
+    expect(useChatStore.getState().openTabs).toEqual([remaining]);
+  });
+});
+
 describe("stop during an in-flight send", () => {
   beforeEach(resetStore);
 

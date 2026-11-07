@@ -732,12 +732,12 @@ export function createMessagingActions(
     // Registry is keyed by native session id once known; before that the
     // run id routes. Try both.
     const sessionId = key.includes("/") ? key.slice(key.indexOf("/") + 1) : "";
-    if (sessionId && !key.startsWith("new:"))
-      await ipc.interruptSession(sessionId).catch(() => false);
     const deadRunIds: string[] = [];
     for (const [runId, routed] of runRouting) {
       if (routed === key) deadRunIds.push(runId);
     }
+    if (sessionId && !key.startsWith("new:"))
+      await ipc.interruptSession(sessionId).catch(() => false);
     // Independent kills, one IPC call per routed run — fired together.
     await Promise.all(
       deadRunIds.map((runId) => ipc.interruptSession(runId).catch(() => false)),

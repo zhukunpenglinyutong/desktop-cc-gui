@@ -83,6 +83,8 @@ pub struct ProcessRegistry(
     Mutex<HashMap<String, AwaitingFollowup>>,
     /// Sessions being saved; leases never hold the live-process map across I/O.
     Mutex<HashSet<String>>,
+    /// CodeBuddy children between turns, excluded from active-run accounting.
+    pub(crate) Mutex<HashMap<String, super::codebuddy::IdleProcess>>,
 );
 
 pub(crate) struct SessionEditGuard<'a> {
@@ -367,6 +369,47 @@ impl ProcessRegistry {
         self.2.lock().ok().and_then(|mut map| map.remove(session_id))
     }
 
+    pub(crate) async fn retire_codebuddy(&self, session_id: &str) -> Result<(), String> {
+        let exited = self.4.lock().ok().and_then(|mut pool| {
+            let parked = pool.get_mut(session_id)?;
+            parked.resume.take();
+            Some(parked.exited.clone())
+        });
+        if let Some(mut exited) = exited {
+            tokio::time::timeout(READER_SETTLE_GRACE, exited.changed())
+                .await
+                .map_err(|_| "Timed out waiting for the CodeBuddy process to exit")?
+                .ok();
+        }
+        Ok(())
+    }
+
+    /// Move a parked child into the reserved run while both maps are locked.
+    /// Shutdown and interrupt can always find the child in one of the maps.
+    pub(crate) fn activate_codebuddy(&self, run_id: &str, session_id: &str, child: &ChildEntry) -> bool {
+        let mut active = self.0.lock().unwrap_or_else(|e| e.into_inner());
+        let mut idle = self.4.lock().unwrap_or_else(|e| e.into_inner());
+        let Some(reserved) = active.get(run_id).cloned() else {
+            return false;
+        };
+        if !idle.get(session_id).is_some_and(|parked| parked.entry.pid == child.pid) {
+            return false;
+        }
+        let entry = ChildEntry {
+            child: child.child.clone(),
+            pid: child.pid,
+            stdin: child.stdin.clone(),
+            ..reserved
+        };
+        for key in [run_id, session_id] {
+            if let Some(reserved) = active.get_mut(key).filter(|entry| entry.run_id == run_id) {
+                *reserved = entry.clone();
+            }
+        }
+        idle.remove(session_id);
+        true
+    }
+
     pub(crate) fn insert(&self, key: String, entry: ChildEntry) {
         if let Ok(mut map) = self.0.lock() {
             for reserved in map.values_mut().filter(|reserved| reserved.pid == 0 && reserved.run_id == entry.run_id) {
@@ -495,11 +538,26 @@ impl ProcessRegistry {
             Arc<std::sync::OnceLock<tokio::task::AbortHandle>>,
         )> = match self.0.lock() {
             Ok(map) => {
+                let mut idle = self.4.lock().unwrap_or_else(|e| e.into_inner());
+                let parked = idle.iter_mut().filter_map(|(session, process)| {
+                    if session != key && process.entry.run_id != key {
+                        return None;
+                    }
+                    process.resume.take();
+                    Some(&process.entry)
+                });
                 let mut seen_pids = std::collections::HashSet::new();
                 map.iter()
                     .filter(|(k, e)| *k == key || e.run_id == key)
-                    .filter(|(_, e)| seen_pids.insert(e.pid))
-                    .map(|(_, e)| {
+                    .map(|(_, entry)| entry)
+                    .chain(parked)
+                    .filter(|entry| {
+                        // A parked child may be handing off to a pid-0 reservation.
+                        // Mark both before releasing the registry locks.
+                        entry.killed.store(true, std::sync::atomic::Ordering::SeqCst);
+                        seen_pids.insert(entry.pid)
+                    })
+                    .map(|e| {
                         (
                             e.pid,
                             e.run_id.clone(),
@@ -553,9 +611,15 @@ impl ProcessRegistry {
     pub fn kill_all(&self) {
         // Blocking lock on the teardown path: skipping children because the
         // lock was briefly contended would leak engine processes.
-        let mut entries: Vec<ChildEntry> = match self.0.lock() {
-            Ok(mut map) => map.drain().map(|(_, e)| e).collect(),
-            Err(poisoned) => poisoned.into_inner().drain().map(|(_, e)| e).collect(),
+        let mut entries: Vec<ChildEntry> = {
+            let mut map = self.0.lock().unwrap_or_else(|e| e.into_inner());
+            let mut idle = self.4.lock().unwrap_or_else(|e| e.into_inner());
+            for entry in map.values() {
+                entry.killed.store(true, std::sync::atomic::Ordering::SeqCst);
+            }
+            map.drain().map(|(_, entry)| entry)
+                .chain(idle.drain().map(|(_, process)| process.entry))
+                .collect()
         };
         // rekey keys one child under BOTH its session id and run id:
         // de-duplicate by pid or the sweep signals the same process group
@@ -587,7 +651,10 @@ impl Drop for ProcessRegistry {
         // &mut self makes locking unnecessary; poisoning must not skip the
         // kill sweep either (a panicked run leaves live children).
         let map = self.0.get_mut().unwrap_or_else(|e| e.into_inner());
-        let mut entries: Vec<ChildEntry> = map.drain().map(|(_, e)| e).collect();
+        let idle = self.4.get_mut().unwrap_or_else(|e| e.into_inner());
+        let mut entries: Vec<ChildEntry> = map.drain().map(|(_, entry)| entry)
+            .chain(idle.drain().map(|(_, process)| process.entry))
+            .collect();
         // Same double-keying as kill_all: signal each process group once.
         entries.sort_by_key(|e| e.pid);
         entries.dedup_by_key(|e| e.pid);
@@ -866,6 +933,45 @@ mod registry_tests {
             "stop left process-tree survivors alive: {alive:?}"
         );
     }
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn codebuddy_stop_kills_child_during_handoff() {
+        let registry = Arc::new(ProcessRegistry::default());
+        let child = tokio::process::Command::new("/bin/sleep")
+            .arg("30")
+            .process_group(0)
+            .kill_on_drop(true)
+            .spawn()
+            .unwrap();
+        let mut parked = stub_entry("parked", child.id().unwrap());
+        let child = Arc::new(TokioMutex::new(child));
+        parked.child = Some(Arc::clone(&child));
+        let (_, exited) = tokio::sync::watch::channel(());
+        registry.4.lock().unwrap().insert(
+            "session".into(),
+            super::super::codebuddy::IdleProcess {
+                entry: parked,
+                signature: [0; 32],
+                resume: None,
+                exited,
+            },
+        );
+        let reservation = stub_entry("next", 0);
+        registry.insert("next".into(), reservation.clone());
+        registry.insert_alias("session".into(), reservation.clone());
+
+        assert!(registry.kill("session"));
+        assert!(reservation.killed.load(std::sync::atomic::Ordering::SeqCst));
+        let status = tokio::time::timeout(
+            std::time::Duration::from_secs(2),
+            async { child.lock().await.wait().await.unwrap() },
+        )
+        .await
+        .expect("the parked child must exit before the handoff finishes");
+        assert!(!status.success());
+        registry.4.lock().unwrap().clear();
+    }
+
     fn stub_entry(run_id: &str, pid: u32) -> ChildEntry {
         ChildEntry {
             child: None,
