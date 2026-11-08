@@ -88,6 +88,10 @@ export interface TodosPayload {
 
 /** One AskUserQuestion question as the CLI emits it (control protocol). */
 export interface QuestionSpec {
+  approval?: {
+    kind: "command" | "file" | "permissions";
+    details: Record<string, unknown>;
+  };
   question: string;
   header: string;
   multiSelect?: boolean;

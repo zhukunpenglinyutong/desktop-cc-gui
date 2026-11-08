@@ -1,5 +1,14 @@
 # Chat streaming regression
 
+Open `/tests/browser/codex-approval.html` for the production Codex approval
+dock and its settled record with synthetic command, file and permission
+requests. Switch Chinese, English and Korean; inspect the command and scope,
+cycle options with Tab / Shift+Tab or arrows, confirm with Enter, and reject
+with Escape. The readout must stay unchanged until an explicit decision, and
+translated options must still send `Allow once` / `Reject` on the wire. Opening
+a fresh request reuses RPC id `0` with a new run id and resets the choice.
+No CLI, native IPC, saved conversation or real permission grant is used.
+
 Open `/tests/browser/file-tree-features.html?reset=1` for the real file tree
 against a synthetic directory listing. Expand `a` once to reach
 `a/b/c` and show its file. The readout shows every

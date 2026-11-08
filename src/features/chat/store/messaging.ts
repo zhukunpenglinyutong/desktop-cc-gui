@@ -873,7 +873,7 @@ export function createMessagingActions(
           question.requestId,
           loop ? { [loop.base]: ASK_OTHER_OPTION } : answers,
         );
-        patchQuestionByRequestId(set, key, question.requestId, (cur) => ({
+        patchQuestionByRequestId(set, key, question.runId, question.requestId, (cur) => ({
           ...cur,
           status: answers ? ("answered" as const) : ("dismissed" as const),
           ...(answers ? { answers } : {}),

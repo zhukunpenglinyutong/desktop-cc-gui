@@ -34,7 +34,7 @@ export function QuestionDock() {
   return (
     <div className={centerColumnClass(wide)}>
       <div className="rounded-xl border border-border-secondary bg-background-secondary-default px-3.5 py-3 shadow-lg">
-        <QuestionCard message={pending} />
+        <QuestionCard key={`${pending.question?.runId}:${pending.seq}`} message={pending} />
       </div>
     </div>
   );
