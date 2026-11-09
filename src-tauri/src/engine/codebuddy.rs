@@ -4,33 +4,71 @@ use super::{
 };
 use serde_json::{json, Value};
 
+/// CodeBuddy's own "skip these questions" answer: the tool settles with a
+/// non-error "the user chose not to answer, continue" result.
+const SKIP_QUESTION_ACTION: &str = "skip_question";
+
+/// Reply to a parked AskUserQuestion `can_use_tool` request in CodeBuddy's
+/// shape, `{allowed, updatedInput}` (a claude-style `behavior: "allow"` reads
+/// as a denial there). Answers are keyed by question text and the CLI's
+/// schema takes string values only, so multi-select picks are joined ", ".
+///
+/// A skip (`None`) is CodeBuddy's native `_action: "skip_question"`, not a
+/// denial: a denial lands in the turn's `permission_denials` (a bogus
+/// permission card) and hands the model an error result. An empty map is a
+/// skip too: allowed with no answers parks the CLI on answers forever.
 pub(super) fn question_response(
     request_id: &str,
     context: &Value,
     answers: Option<Value>,
-) -> Value {
-    let mut response = json!({ "allowed": false, "tool_use_id": context["toolUseId"] });
-    if let Some(Value::Object(mut answers)) = answers {
-        for answer in answers.values_mut() {
-            if let Value::Array(labels) = answer {
-                *answer = json!(labels
-                    .iter()
-                    .filter_map(Value::as_str)
-                    .collect::<Vec<_>>()
-                    .join(", "));
-            }
+) -> Result<Value, String> {
+    let answers = match answers {
+        Some(Value::Object(answers)) if !answers.is_empty() => answer_texts(answers)?,
+        Some(Value::Object(_)) | None => {
+            serde_json::Map::from_iter([("_action".to_string(), json!(SKIP_QUESTION_ACTION))])
         }
-        let mut input = context["input"].as_object().cloned().unwrap_or_default();
-        input.insert("answers".into(), Value::Object(answers));
-        response["allowed"] = json!(true);
-        response["updatedInput"] = Value::Object(input);
-    } else {
-        response["reason"] = json!("The user skipped the question.");
-    }
-    json!({
+        Some(_) => return Err("question answers must be an object".to_string()),
+    };
+    let mut input = context["input"].as_object().cloned().unwrap_or_default();
+    input.insert("answers".into(), Value::Object(answers));
+    Ok(json!({
         "type": "control_response",
-        "response": { "subtype": "success", "request_id": request_id, "response": response },
-    })
+        "response": {
+            "subtype": "success",
+            "request_id": request_id,
+            "response": {
+                "allowed": true,
+                "tool_use_id": context["toolUseId"],
+                "updatedInput": Value::Object(input),
+            },
+        },
+    }))
+}
+
+/// Each answer as the single string CodeBuddy's schema accepts. Malformed
+/// values fail before any frame is written, so the card stays answerable.
+fn answer_texts(
+    answers: serde_json::Map<String, Value>,
+) -> Result<serde_json::Map<String, Value>, String> {
+    answers
+        .into_iter()
+        .map(|(question, answer)| {
+            let text = match answer {
+                Value::String(text) => text,
+                Value::Array(labels) => labels
+                    .iter()
+                    .map(|label| label.as_str().ok_or_else(|| malformed_answer(&question)))
+                    .collect::<Result<Vec<_>, _>>()?
+                    .join(", "),
+                _ => return Err(malformed_answer(&question)),
+            };
+            Ok((question, Value::String(text)))
+        })
+        .collect()
+}
+
+fn malformed_answer(question: &str) -> String {
+    format!("answer to \"{question}\" must be a string or a list of strings")
 }
 
 /// Provider-selection env keys a codebuddy channel owns outright once a
@@ -634,7 +672,8 @@ mod tests {
             request_id,
             &context,
             Some(json!({"单选": "甲", "多选": ["乙", "丙"]})),
-        );
+        )
+        .unwrap();
         assert_eq!(frame["type"], "control_response");
         assert_eq!(frame["response"]["request_id"], "req");
         assert_eq!(
@@ -649,11 +688,54 @@ mod tests {
                 },
             }),
         );
-        let skipped = question_response(request_id, &context, None);
-        assert_eq!(skipped["response"]["response"]["allowed"], false);
-        assert!(skipped["response"]["response"]
-            .get("updatedInput")
-            .is_none());
+    }
+
+    /// A skip must not be a denial: CodeBuddy lists denied calls in the
+    /// turn's `permission_denials`, which surfaced as a bogus "permission
+    /// required" card, and the model got an error result. The native skip is
+    /// allowed with `answers._action = "skip_question"`. An empty map is a
+    /// skip too — allowed with no answers parks the CLI on answers forever.
+    #[test]
+    fn skipped_question_uses_codebuddys_native_skip_not_a_denial() {
+        let context = json!({
+            "input": {"questions": [{"question": "Q?"}]},
+            "toolUseId": "tool",
+        });
+        for answers in [None, Some(json!({}))] {
+            let frame = question_response("req", &context, answers).unwrap();
+            assert_eq!(frame["response"]["request_id"], "req");
+            assert_eq!(
+                frame["response"]["response"],
+                json!({
+                    "allowed": true,
+                    "tool_use_id": "tool",
+                    "updatedInput": {
+                        "questions": [{"question": "Q?"}],
+                        "answers": {"_action": "skip_question"},
+                    },
+                }),
+            );
+        }
+    }
+
+    /// Malformed answers fail before a frame is written (the card stays
+    /// answerable) instead of silently degrading into a skip or a dropped
+    /// label.
+    #[test]
+    fn malformed_question_answers_are_rejected() {
+        let context = json!({"input": {"questions": []}, "toolUseId": "tool"});
+        for answers in [
+            json!("甲"),
+            json!(["甲"]),
+            json!({"Q?": 1}),
+            json!({"Q?": ["甲", 2]}),
+            json!({"Q?": null}),
+        ] {
+            assert!(
+                question_response("req", &context, Some(answers.clone())).is_err(),
+                "accepted {answers}"
+            );
+        }
     }
 
     #[test]

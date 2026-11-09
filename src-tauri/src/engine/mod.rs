@@ -1726,7 +1726,7 @@ pub async fn answer_question(
         return Ok(());
     }
     if let Some(context) = input.get("codebuddyQuestion") {
-        let frame = codebuddy::question_response(&request_id, context, answers);
+        let frame = codebuddy::question_response(&request_id, context, answers)?;
         state
             .processes
             .write_line(&session_id, frame.to_string())
