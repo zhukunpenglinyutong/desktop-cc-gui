@@ -1564,6 +1564,18 @@ struct TurnStarted {
 /// non-originating client: it leaves the CLI's process-wide originator and UA
 /// suffix untouched. Do not send the host's name or version here, or hard-code
 /// a User-Agent that will drift from the CLI.
+///
+/// Known consequences (codex 0.167 source, recheck
+/// `app-server/src/request_processors/initialize_processor.rs` on upgrades):
+/// - The exemption list (`NON_ORIGINATING_CLIENT_NAMES`) exists since 0.131;
+///   older CLIs adopt `codex-backend` as the originator.
+/// - The default originator `codex_cli_rs` counts as first-party, which
+///   unlocks skill MCP-dependency auto-install; `CodexEngine::host_command`
+///   disables that feature.
+/// - Since 0.157 a non-originating client never enables automatic browser
+///   sign-in for gateway-OAuth providers: a missing or rejected gateway token
+///   fails with "Gateway sign-in required" until the user signs in with Codex.
+/// - Codex hooks receive `client: "codex-backend"`.
 fn initialize_params(experimental: bool) -> Value {
     json!({
         "clientInfo": { "name": "codex-backend", "version": "" },

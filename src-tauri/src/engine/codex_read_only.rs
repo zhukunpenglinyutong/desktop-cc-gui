@@ -317,6 +317,8 @@ mod tests {
     #[test]
     fn rejects_unaudited_versions_and_unconfirmed_sandbox() {
         assert!(validate_version(&json!({"userAgent":"ccgui/0.154.0 (Mac OS)"})).is_ok());
+        // The app-server handshake keeps the CLI's native identity.
+        assert!(validate_version(&json!({"userAgent":"codex_cli_rs/0.154.0 (Mac OS 15.5.0; arm64) unknown"})).is_ok());
         assert!(validate_version(&json!({"userAgent":"Codex Desktop/0.154.0 (Mac OS)"})).is_ok());
         for version in [
             "ccgui/0.153.0 x",
