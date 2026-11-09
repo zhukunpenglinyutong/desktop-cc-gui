@@ -1502,7 +1502,7 @@ pub async fn live_runs(
     Ok(state.processes.live_run_ids(&run_ids))
 }
 /// Answer a pending question card. Multiple transports share this command:
-/// - claude (control protocol): the answers merge into the parked tool input
+/// - claude / codebuddy (control protocol): the answers merge into the parked tool input
 ///   and ride stdin as a `control_response`.
 /// - omp (rpc-ui): the parked value carries the dialog method; the answer is
 ///   an `extension_ui_response` frame on the CLI's stdin.
@@ -1720,6 +1720,17 @@ pub async fn answer_question(
         )
         .await?;
         // Delivered: drop the parked copy so the turn-end drain skips it.
+        if let Ok(mut questions) = entry.questions.lock() {
+            questions.remove(&request_id);
+        }
+        return Ok(());
+    }
+    if let Some(context) = input.get("codebuddyQuestion") {
+        let frame = codebuddy::question_response(&request_id, context, answers)?;
+        state
+            .processes
+            .write_line(&session_id, frame.to_string())
+            .await?;
         if let Ok(mut questions) = entry.questions.lock() {
             questions.remove(&request_id);
         }
