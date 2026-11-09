@@ -29,6 +29,36 @@ export function changelogEntryFor(version: string): ChangelogEntry | undefined {
 
 export const CHANGELOG_DATA: ChangelogEntry[] = [
   {
+    version: "1.2.2",
+    date: "2026-11-08",
+    content: {
+      zh: `✨ 新功能
+- **变更面板直接预览图片改动**：图片文件的 Diff 不再只显示「Binary files … differ」补丁文本，改为并排展示修改前 / 修改后两版；新增或删除的图片只显示存在的一侧，点击图片可放大查看。已暂存条目对比 HEAD 与暂存区，未暂存条目对比暂存区与工作区，单侧上限 5 MiB 并给出明确提示，工作区读取限定在仓库目录内。文本 Diff 不变，远程访问的网页端也能看到同样的预览。
+
+🐛 修复
+- **保留 CLI 原生请求身份**（#1490）：Codex 初始化改用不覆盖请求身份的握手，不再把 User-Agent、originator 或 UA 后缀改成 CC GUI；版本、平台信息和请求头由已安装的 Codex 自己生成，对外使用 Codex CLI 自己的默认身份（codex_cli_rs，需 Codex 0.131 及以上）。共享 ACP 初始化不再传入可选的 CC GUI 客户端信息，文件访问、提问和计划审批能力声明不变。
+- **完全访问模式下技能不会改写全局 Codex 配置**：原生身份会让 Codex 把 CC GUI 视为官方客户端，从而开启「技能缺少 MCP 时自动安装」。CC GUI 启动 Codex 时关闭这项功能，在消息里点名技能（包括仓库自带的技能）不会把技能声明的 MCP 服务器不经确认写进全局 Codex 配置（config.toml），与此前行为一致。
+- **已有会话保持原样**：不迁移或修改历史记录。旧 Codex 会话以及从它创建的分支续聊时，User-Agent 恢复原生值，但 Codex 仍沿用会话里保存的 originator（ccgui）；若服务商因此拒绝请求，请新建会话。
+- **网关 OAuth 登录需要手动完成**：Codex 0.157 起，不改写身份的客户端不会自动打开浏览器登录。使用网关 OAuth 的自定义服务商在令牌缺失或失效时会提示需要登录，请先在终端运行 Codex 完成网关登录后再重试；仍然有效或可以续期的令牌不受影响。
+- **CodeBuddy 交互提问卡恢复**（#1492，修复 #1488）：CodeBuddy 会话重新出现单选、多选提问卡。发送时先声明提问能力，单选、多选与跳过都按 CodeBuddy 自己的协议回传。
+- **跳过提问不再误报「需要权限」**：跳过原先被回传成拒绝，CodeBuddy 把它记入本轮权限拒绝，界面会多出一张「需要权限」卡和系统通知，模型拿到的也是报错结果。现在改回 CodeBuddy 原生的跳过结果，模型照常继续；空答案按跳过处理，答案格式异常时在提交前报错、卡片保持可重试；被拒或跳过的提问也不会再被解析成授权卡。
+- **CLI 模型长名称完整可读**（#1482，修复 #1477）：模型浮层按内容与可用空间扩宽（上限 480px），按左右剩余空间选择展开方向、距视口边缘保留 16px；模型名称与说明自动换行，不再以省略号截断，连续的长字符串也能折行。底部入口的悬停提示补齐完整模型名称、与名称不同的模型 ID 和推理档位。搜索时锁定进入搜索前的宽度，筛掉长名称后浮层与搜索框不再横移；点击菜单外关闭也会清空搜索词；渠道名换行显示全名，展开渠道列表不再把浮层撑宽。
+- **一轮对话只留一个分叉入口**：回复被工具调用拆成多段时，此前每个分段下方都会挂一颗分叉图标。现在只在该轮最后一段显示，悬停或键盘聚焦时显形，复制按钮保持常驻；流式期间入口仍在原位并禁用。`,
+      en: `✨ Features
+- **Image changes preview as before/after images**: image files in the changes panel no longer show only the "Binary files … differ" patch text. The panel shows the previous and current versions side by side, keeps just the one side that exists for added or deleted images, and opens a lightbox on click. Staged entries compare HEAD with the index and unstaged entries compare the index with the worktree; each side is capped at 5 MiB with a clear message, and worktree reads stay inside the repository. Text diffs are unchanged, and the web client of remote access shows the same preview.
+
+🐛 Fixes
+- **Preserve native CLI request identity** (#1490): Codex initialization now uses a non-originating handshake instead of replacing the User-Agent, originator or UA suffix with CC GUI branding. The installed CLI generates its own version, platform information and request headers and presents the Codex CLI's own default identity (codex_cli_rs; requires Codex 0.131 or later). Shared ACP initialization no longer sends optional CC GUI client information; file access, question and plan-approval capabilities are unchanged.
+- **Skills do not rewrite the global Codex config in full-access mode**: the native identity makes Codex treat CC GUI as a first-party client, which turns on automatic installation of MCP servers that a skill needs. CC GUI now launches Codex with that feature off, so naming a skill in a message (including skills shipped inside a repository) does not write the skill's MCP servers into the global Codex config (config.toml) without confirmation, matching the previous behavior.
+- **Existing sessions are preserved**: no history migration or edits. Old Codex sessions, and branches created from them, resume with the native User-Agent, but Codex keeps the originator stored in the session (ccgui). Start a new session if a provider rejects that historical originator.
+- **Gateway OAuth sign-in is now manual**: since Codex 0.157, a client that does not rewrite the identity never opens a browser for sign-in automatically. Custom providers behind a gateway OAuth now report that sign-in is required when the token is missing or rejected; run Codex in a terminal to finish the gateway sign-in, then retry. Tokens that are still valid or refreshable are unaffected.
+- **CodeBuddy interactive question cards are back** (#1492, fixes #1488): CodeBuddy sessions show single-select and multi-select question cards again. A send now declares the question capability up front, and single, multiple and skipped answers all go back in CodeBuddy's own protocol.
+- **Skipping a question no longer raises a bogus permission card**: a skip used to be sent as a denial, so CodeBuddy recorded it in the turn's permission denials, the app showed a "permission required" card plus a system notification, and the model received an error result. It now sends CodeBuddy's native skip and the turn continues. An empty answer counts as a skip; a malformed answer fails before submission and leaves the card retryable; declined or skipped questions are no longer parsed into a grant card.
+- **Long CLI model names are fully readable** (#1482, fixes #1477): the model flyout widens to fit its content up to 480px, opens on whichever side has room with 16px from the viewport edge, and wraps model names and descriptions instead of truncating them, including unbroken long strings. The composer trigger's hover tooltip now carries the full model name, the model ID when it differs and the effort level. The width is locked to what it was before a search, so filtering out long names no longer shifts the flyout or the search field; closing the menu by clicking outside also clears the search; channel names wrap to show the full name and expanding the channel list no longer widens the flyout.
+- **One fork entry per turn**: when tool calls split a reply into several segments, each segment used to show its own fork icon. The entry now appears only on the last segment of the turn, reveals on hover or keyboard focus, keeps copy always visible, and stays in place as a disabled placeholder while streaming.`,
+    },
+  },
+  {
     version: "1.2.1",
     date: "2026-11-02",
     content: {

@@ -244,7 +244,12 @@ const TimelineRowView = memo(function TimelineRowView({
       turnStartSeq={turnStartSeq}
       sessionRemote={sessionRemote}
       forkPending={forkPending}
-      forkAnchor={forkAnchor}
+      // 一轮里的每个助手分段都解析到**同一个**锚点（`resolveForkAnchors` 按用户
+      // 消息分发），把入口摊到每一段只是把同一个操作重复 N 次——真机反馈：一句话
+      // 被工具调用拆成几段，每个分段下方都挂一颗分叉图标，长对话看着像刷屏。
+      // 只在 `turnFinal`（该轮最后一个助手分段）上给入口。流式期间 `row.turnFinal`
+      // 仍为真（`!turnLive` 只抑制元信息），入口保留为禁用占位。
+      forkAnchor={row.turnFinal ? forkAnchor : null}
     />
   );
 });
@@ -359,10 +364,10 @@ function MessageMeta({ message }: { message: Message }) {
   );
 }
 
-/** 消息操作按钮的共用外观。常驻可见（design §4.3.1）：复制与分支一直在，
- *  元信息才走 hover。`focus-visible` 是可达性要求（ui-ux-spec §3：按钮类
- *  控件的焦点环只走 focus-visible）——此前这两个按钮只靠 group-hover 显形，
- *  键盘用户根本够不到，属既有违规，随本次常驻化一并修掉。
+/** 消息操作按钮的共用外观。复制常驻；分叉只在该轮最后一个分段、悬停或获焦时
+ *  显形（design §4.3.1）。元信息也走 hover。`focus-visible` 是可达性要求（ui-ux-spec §3：按钮类
+ *  控件的焦点环只走 focus-visible）——分叉靠 hover 显形，`focus-visible` 让它
+ *  在键盘 Tab 到时同样可见，不能只有悬停一条路。
  *  `aria-disabled` 的视觉与 `disabled` 同款：解释性禁用走前者（原生 disabled
  *  收不到 hover / focus，挂在它上面的原因读不到）。 */
 const ICON_BTN =
@@ -464,7 +469,8 @@ function ForkButton({
   );
 }
 
-/** Assistant message actions: copy + fork, both always visible. */
+/** Assistant message actions: 复制常驻（高频、成功反馈靠图标），分叉只在
+ *  悬停 / 聚焦时显形（低频、图标本身没有成功反馈，常驻只会给长对话加噪声）。 */
 function MessageActions({
   text,
   live,
@@ -475,7 +481,7 @@ function MessageActions({
   text: string;
   /** 本轮还在流式：复制与分叉**一起**禁用（规范要求两个按钮同源），避免复制到半句话。 */
   live: boolean;
-  /** 这条消息能当分叉锚点（入口常驻）；不能时只撤掉分支按钮，复制仍在。 */
+  /** 这一行是回合末尾且能回溯到该轮用户消息；不能时只撤掉分支按钮，复制仍在。 */
   showFork: boolean;
   forkUnavailable: ForkUnavailable | null;
   onFork: () => void;
@@ -483,7 +489,15 @@ function MessageActions({
   return (
     <div className="flex items-center gap-0.5">
       <CopyButton text={text} disabled={live} />
-      {showFork && <ForkButton unavailable={forkUnavailable} onFork={onFork} />}
+      {showFork && (
+        <ForkButton
+          unavailable={forkUnavailable}
+          onFork={onFork}
+          // 分叉不常驻：悬停这条回复（或键盘 Tab 到它）才显形，与用户气泡的
+          // 复制入口同一形态。视觉噪声归零，占位尺寸不变，显隐不引起布局跳动。
+          className="opacity-0 transition-opacity duration-150 group-hover:opacity-100 focus-visible:opacity-100 motion-reduce:transition-none"
+        />
+      )}
     </div>
   );
 }
@@ -492,7 +506,8 @@ function MessageActions({
  *
  *  用户气泡上刻意**没有**分叉入口：实际使用中创建分支几乎都是基于助手回复发起的
  *  （「这一轮答得不错，从这儿分个支」），用户气泡常驻一组图标只会让长对话更密。
- *  分叉入口只出现在助手消息下方，并常驻（可 Tab 聚焦），见 `MessageActions`。
+ *  分叉入口只出现在助手消息下方，且只在该轮最后一个分段、悬停 / 聚焦时显形
+ *  （可 Tab 聚焦），见 `MessageActions` 与 `TimelineRowView`。
  *
  *  复制保留：它是气泡上唯一有用的动作，沿用改动前的 hover 形态
  *  （`opacity-0 group-hover:opacity-100 focus-visible:opacity-100`）——
@@ -639,9 +654,9 @@ export const MessageRow = memo(function MessageRow({
     // decision actions live in the dock, settled rows stay as history.
     return <PlanReviewCard message={message} workspacePath={workspacePath} />;
   }
-  // 分叉入口只出现在**助手**消息下方：可见性只看「这条消息能否当锚点」
-  // （`resolveForkAnchors` 已按轮算好），与 `turnFinal` 无关——想分叉的那条回复
-  // 未必是本轮最后一段。用户气泡没有入口（见 `UserCopyActions`）。
+  // 分叉入口只出现在**助手**消息下方，且只挂在本轮最后一个分段上：同轮各分段
+  // 解析到的是同一个锚点，`TimelineRowView` 只给 `turnFinal` 行传入口（其余传
+  // null）。用户气泡没有入口（见 `UserCopyActions`）。
   const forkTarget = forkAnchor ?? null;
   // 可见性只看"能否定位到这一轮"，**不**看这一轮有没有文本：纯图片轮定位得到但没有
   // 可用的文本摘要，那是"不可用"（置灰 + 说明），不是"看不见"。
@@ -674,8 +689,8 @@ export const MessageRow = memo(function MessageRow({
   return (
     <div className="group flex flex-col text-left">
       <Markdown text={text} workspacePath={workspacePath} streaming={message.live} />
-      {/* 常驻行（design §4.3.1）：复制/分支一直在，元信息才走 hover。
-          这一行不依赖 turnFinal——用户想分叉的那条回复未必是本轮最后一段。 */}
+      {/* 复制常驻、分叉悬停显形（design §4.3.1）。分叉入口由 `TimelineRowView`
+          只发给本轮最后一个分段——同轮各分段解析出来的是同一个锚点。 */}
       <div className="mt-1 flex items-center gap-2">
         <MessageActions
           text={message.text}

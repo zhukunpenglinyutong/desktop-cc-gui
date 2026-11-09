@@ -568,7 +568,14 @@ impl TurnCore {
                 state.gen_end();
                 if let Some(entry) = self.registry.get(&self.run_id) {
                     if let Ok(mut questions) = entry.questions.lock() {
-                        questions.insert(request_id.clone(), input.clone());
+                        let parked_input = if self.engine_id == "codebuddy" {
+                            serde_json::json!({
+                                "codebuddyQuestion": { "input": input, "toolUseId": tool_use_id },
+                            })
+                        } else {
+                            input.clone()
+                        };
+                        questions.insert(request_id.clone(), parked_input);
                     }
                 }
                 state.push(

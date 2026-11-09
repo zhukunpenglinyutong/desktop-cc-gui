@@ -1,7 +1,7 @@
 "use client";
 
-import { useMemo, useId, useRef, useState } from "react";
-import type { ReactNode } from "react";
+import { useMemo, useId, useLayoutEffect, useRef, useState } from "react";
+import type { CSSProperties, ReactNode, RefObject } from "react";
 import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
 import Check from "lucide-react/dist/esm/icons/check";
@@ -25,6 +25,7 @@ import {
 } from "./model-list";
 import { EFFORT_LABEL_KEYS, supportsEffort, type EffortLevel } from "./effort-levels";
 import { EffortSlider } from "./effort-slider";
+import { useLockedMinWidth } from "./use-locked-min-width";
 import type { MenuOption, ModelOption } from "./cli-menu";
 
 export interface ChannelOption {
@@ -32,13 +33,14 @@ export interface ChannelOption {
   label: string;
 }
 
-/** Per-engine model flyout: pops to the right of the CLI popover, bottom-
- *  aligned with the engine list so the taller panel never clips below the
- *  composer-anchored popover. */
+/** Bottom-aligned model flyout; its available side determines the width. */
 const FLYOUT_CLASSES = cx(
-  "absolute left-full bottom-0 z-10 ml-2 w-80 max-w-[calc(100vw-32px)]",
+  "absolute bottom-0 z-10 w-max min-w-[min(320px,var(--flyout-max-width))] max-w-[var(--flyout-max-width)]",
   "rounded-lg border border-border-button-default bg-background-primary-default p-1 shadow-dropdown",
 );
+const FLYOUT_MAX_WIDTH = 480;
+/** 16px viewport margin plus the 8px gap beside the CLI popover. */
+const FLYOUT_EDGE_SPACE = 24;
 
 /* ------------------------------------------------------------------ flyout */
 
@@ -67,7 +69,7 @@ function ChannelRow({
           : "hover:bg-background-primary-hover focus-visible:bg-background-primary-hover",
       )}
     >
-      <span className="min-w-0 truncate text-body-medium text-text-primary">
+      <span className="min-w-0 text-body-medium whitespace-normal text-text-primary [overflow-wrap:anywhere]">
         {option.label}
       </span>
       {selected && (
@@ -158,7 +160,9 @@ function ChannelPicker({
         <span className="shrink-0 text-body-2-medium text-text-tertiary">
           {t("chat.channelPicker")}
         </span>
-        <span className="min-w-0 truncate text-body-medium text-text-primary">
+        {/* w-0 + flex-1: picking a long channel must not widen the flyout. The
+            row stays one line; the title and the opened list show the full name. */}
+        <span title={selected?.label} className="w-0 flex-1 truncate text-body-medium text-text-primary">
           {selected?.label ?? t("chat.channelUnselected")}
         </span>
         <ChevronDownSmall
@@ -169,11 +173,13 @@ function ChannelPicker({
         />
       </button>
       {expanded && (
+        // w-0 + min-w-full: fills the panel but adds nothing to its max-content
+        // width, so opening the list can't make the flyout jump.
         <div
           id={listId}
           role="radiogroup"
           aria-label={t("chat.channelPicker")}
-          className="flex max-h-[200px] w-full flex-col overflow-y-auto"
+          className="flex max-h-[200px] w-0 min-w-full flex-col overflow-y-auto"
         >
           {visible.map((channel) => (
             <ChannelRow
@@ -233,14 +239,14 @@ function ModelRow({
         size={18}
         className="shrink-0 text-foreground-icon-primary"
       />
-      <span className="flex min-w-0 flex-col">
-        <span className="truncate text-body-medium whitespace-nowrap text-text-primary">
+      <span className="flex min-w-0 flex-col [overflow-wrap:anywhere]">
+        <span className="text-body-medium whitespace-normal text-text-primary">
           {option.label}
         </span>
         {/* CLI /model-menu style subtitle ("Custom Opus model"); absent
             for plain catalog rows. */}
         {option.description && (
-          <span className="truncate text-body-2-regular whitespace-nowrap text-text-secondary">
+          <span className="text-body-2-regular whitespace-normal text-text-secondary">
             {option.description}
           </span>
         )}
@@ -643,15 +649,69 @@ export function EngineModelPanel({
   );
 }
 
-/** Desktop-only wrapper: the model panel as a flyout popping to the right of
+/** Which side of the CLI popover the flyout opens on and how wide it may get,
+ *  re-measured whenever the popover can have moved or settled. */
+function useFlyoutLayout(ref: RefObject<HTMLDivElement | null>) {
+  const [layout, setLayout] = useState({ left: false, maxWidth: FLYOUT_MAX_WIDTH });
+  useLayoutEffect(() => {
+    const panel = ref.current;
+    const anchor = panel?.parentElement;
+    if (!panel || !anchor) return;
+    const update = () => {
+      const bounds = anchor.getBoundingClientRect();
+      const rightSpace = window.innerWidth - bounds.right - FLYOUT_EDGE_SPACE;
+      const leftSpace = bounds.left - FLYOUT_EDGE_SPACE;
+      const left = rightSpace < Math.min(FLYOUT_MAX_WIDTH, leftSpace);
+      const maxWidth = Math.max(0, Math.min(FLYOUT_MAX_WIDTH, left ? leftSpace : rightSpace));
+      setLayout((current) => current.left === left && current.maxWidth === maxWidth
+        ? current : { left, maxWidth });
+    };
+    update();
+    const observer = typeof ResizeObserver === "undefined" ? undefined : new ResizeObserver(update);
+    observer?.observe(anchor);
+    observer?.observe(panel);
+    // 入口变宽时外层弹层会平移，浮层自身尺寸可能不变。
+    const popover = anchor.closest('[role="dialog"]')?.parentElement;
+    const positionObserver = new MutationObserver(update);
+    if (popover) positionObserver.observe(popover, { attributes: true, attributeFilter: ["style"] });
+    // 入场动画期间外层弹层只有 95% 大小，上面读到的边界偏小，动画结束后再量一次；
+    // 行悬停等子元素的过渡会冒泡上来，不算。
+    const onPopoverTransitionEnd = (event: Event) => {
+      if (event.target === popover) update();
+    };
+    popover?.addEventListener("transitionend", onPopoverTransitionEnd);
+    window.addEventListener("resize", update);
+    return () => {
+      observer?.disconnect();
+      positionObserver.disconnect();
+      popover?.removeEventListener("transitionend", onPopoverTransitionEnd);
+      window.removeEventListener("resize", update);
+    };
+  }, [ref]);
+  return layout;
+}
+
+/** Desktop-only wrapper: the model panel flies out on the roomier side of
  *  the CLI popover. On mobile CliMenu renders the same panel in a modal
  *  dialog instead (hover flyouts don't work on touch). */
 export function EngineFlyout(props: Parameters<typeof EngineModelPanel>[0]) {
+  const ref = useRef<HTMLDivElement>(null);
+  const layout = useFlyoutLayout(ref);
+  // 搜索期间保持搜索前的宽度：筛掉最长的名字后，浮层不变窄，输入框也不会横向挪动。
+  const searchMinWidth = useLockedMinWidth(Boolean(props.query), ref);
   // data-engine-flyout: CliMenu's hover-intent guard checks focus against
   // this marker so hovering a row never swaps the panel while the user is
   // typing in its search / channel filter.
   return (
-    <div data-engine-flyout className={FLYOUT_CLASSES}>
+    <div
+      ref={ref}
+      data-engine-flyout
+      className={cx(FLYOUT_CLASSES, layout.left ? "right-full mr-2" : "left-full ml-2")}
+      style={{
+        "--flyout-max-width": `${layout.maxWidth}px`,
+        minWidth: searchMinWidth === undefined ? undefined : Math.min(searchMinWidth, layout.maxWidth),
+      } as CSSProperties}
+    >
       <EngineModelPanel {...props} />
     </div>
   );
