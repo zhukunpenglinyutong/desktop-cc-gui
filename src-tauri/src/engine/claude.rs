@@ -399,6 +399,9 @@ impl Engine for ClaudeEngine {
                     let tool = id
                         .as_ref()
                         .and_then(|id| self.tool_names.lock().ok()?.get(id).cloned());
+                    if is_question_tool(tool.as_deref()) {
+                        continue;
+                    }
                     let path = id
                         .as_ref()
                         .and_then(|id| self.tool_paths.lock().ok()?.get(id).cloned())
@@ -478,6 +481,9 @@ impl Engine for ClaudeEngine {
                             .map(str::trim)
                             .filter(|t| !t.is_empty())
                             .map(str::to_string);
+                        if is_question_tool(tool.as_deref()) {
+                            continue;
+                        }
                         let path = denial.get("tool_input").and_then(super::tool_path_arg);
                         let tool_use_id = denial
                             .get("tool_use_id")
@@ -681,6 +687,13 @@ const DENIAL_PHRASES: &[&str] = &[
     "outside the allowed",
     "outside workspace",
 ];
+
+/// A declined or skipped question is the user's own answer, not a permission
+/// the user could grant here: never surface it as a grant card (CodeBuddy
+/// lists a declined AskUserQuestion in the result's `permission_denials`).
+fn is_question_tool(tool: Option<&str>) -> bool {
+    tool == Some("AskUserQuestion")
+}
 
 fn looks_like_permission_denial(message: &str) -> bool {
     let normalized = message.trim().to_ascii_lowercase();
@@ -1702,6 +1715,66 @@ mod tests {
             _ => panic!("expected permission denial"),
         }
         assert!(matches!(out[1], EngineEvent::Done { .. }));
+    }
+
+    /// A declined AskUserQuestion is the user's answer, not a grantable
+    /// permission. CodeBuddy 2.179 lists it in `permission_denials` (shape
+    /// copied from a real run) and its mid-turn result reads "Permission
+    /// denied by SDK"; neither may raise a "permission required" card.
+    #[test]
+    fn declined_question_never_surfaces_as_permission_denial() {
+        let engine = ClaudeEngine::new();
+        let start = serde_json::json!({
+            "type": "stream_event",
+            "event": {
+                "type": "content_block_start",
+                "index": 0,
+                "content_block": {
+                    "type": "tool_use", "id": "call_ask_1", "name": "AskUserQuestion", "input": {}
+                }
+            }
+        })
+        .to_string();
+        let stop = serde_json::json!({
+            "type": "stream_event",
+            "event": { "type": "content_block_stop", "index": 0 }
+        })
+        .to_string();
+        let declined = serde_json::json!({
+            "type": "user",
+            "message": {
+                "role": "user",
+                "content": [{
+                    "type": "tool_result",
+                    "tool_use_id": "call_ask_1",
+                    "is_error": true,
+                    "content": [{ "type": "text", "text": "Permission denied by SDK" }]
+                }]
+            }
+        })
+        .to_string();
+        let result = serde_json::json!({
+            "type": "result",
+            "subtype": "success",
+            "is_error": false,
+            "session_id": "s-1",
+            "permission_denials": [{
+                "tool_name": "AskUserQuestion",
+                "tool_use_id": "call_ask_1",
+                "tool_input": { "questions": [{ "question": "Which color?", "header": "Color" }] }
+            }]
+        })
+        .to_string();
+        let mut out = Vec::new();
+        for line in [&start, &stop, &declined, &result] {
+            engine.parse_line(line, &mut out);
+        }
+        assert!(
+            !out.iter()
+                .any(|e| matches!(e, EngineEvent::PermissionDenied { .. })),
+            "declined question surfaced as a permission denial: {out:?}"
+        );
+        assert!(matches!(out.last(), Some(EngineEvent::Done { .. })));
     }
 
     #[test]
