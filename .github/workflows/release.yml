@@ -480,6 +480,15 @@ jobs:
           Set-Content -LiteralPath $path -Value $config -Encoding utf8NoBOM
           "config=$path" >> $env:GITHUB_OUTPUT
 
+      # tauri-bundler fetches NSIS 3.13 with a single unretried GET from
+      # github.com; run 42564996572 got an HTTP 504 there after the app had
+      # already compiled (~9.5 min) and failed the job. Seed the cache the
+      # bundler validates instead, using the same pinned URL and SHA-1s but
+      # with retries, so bundling does not depend on that request at all.
+      - name: Prefetch NSIS toolchain
+        shell: pwsh
+        run: pwsh -NoProfile -NonInteractive -File scripts/prefetch-tauri-nsis.ps1
+
       # tauri.windows.conf.json merges in the embedded WebView2 bootstrapper,
       # matching what 0.9.x installers shipped. The NSIS upgrade code derives
       # from the bundle identifier, which is unchanged — installed 0.9.x
