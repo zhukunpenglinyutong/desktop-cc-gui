@@ -29,6 +29,22 @@ export function changelogEntryFor(version: string): ChangelogEntry | undefined {
 
 export const CHANGELOG_DATA: ChangelogEntry[] = [
   {
+    version: "1.2.2",
+    date: "2026-11-04",
+    content: {
+      zh: `🐛 修复
+- **保留 CLI 原生请求身份**（#1490）：Codex 初始化改用不覆盖请求身份的握手，不再把 User-Agent、originator 或 UA 后缀改成 CC GUI；版本、平台信息和请求头由已安装的 Codex 自己生成，对外使用 Codex CLI 自己的默认身份（codex_cli_rs，需 Codex 0.131 及以上）。共享 ACP 初始化不再传入可选的 CC GUI 客户端信息，文件访问、提问和计划审批能力声明不变。
+- **完全访问模式下技能不会改写全局 Codex 配置**：原生身份会让 Codex 把 CC GUI 视为官方客户端，从而开启「技能缺少 MCP 时自动安装」。CC GUI 启动 Codex 时关闭这项功能，在消息里点名技能（包括仓库自带的技能）不会把技能声明的 MCP 服务器不经确认写进全局 Codex 配置（config.toml），与此前行为一致。
+- **已有会话保持原样**：不迁移或修改历史记录。旧 Codex 会话以及从它创建的分支续聊时，User-Agent 恢复原生值，但 Codex 仍沿用会话里保存的 originator（ccgui）；若服务商因此拒绝请求，请新建会话。
+- **网关 OAuth 登录需要手动完成**：Codex 0.157 起，不改写身份的客户端不会自动打开浏览器登录。使用网关 OAuth 的自定义服务商在令牌缺失或失效时会提示需要登录，请先在终端运行 Codex 完成网关登录后再重试；仍然有效或可以续期的令牌不受影响。`,
+      en: `🐛 Fixes
+- **Preserve native CLI request identity** (#1490): Codex initialization now uses a non-originating handshake instead of replacing the User-Agent, originator or UA suffix with CC GUI branding. The installed CLI generates its own version, platform information and request headers and presents the Codex CLI's own default identity (codex_cli_rs; requires Codex 0.131 or later). Shared ACP initialization no longer sends optional CC GUI client information; file access, question and plan-approval capabilities are unchanged.
+- **Skills do not rewrite the global Codex config in full-access mode**: the native identity makes Codex treat CC GUI as a first-party client, which turns on automatic installation of MCP servers that a skill needs. CC GUI now launches Codex with that feature off, so naming a skill in a message (including skills shipped inside a repository) does not write the skill's MCP servers into the global Codex config (config.toml) without confirmation, matching the previous behavior.
+- **Existing sessions are preserved**: no history migration or edits. Old Codex sessions, and branches created from them, resume with the native User-Agent, but Codex keeps the originator stored in the session (ccgui). Start a new session if a provider rejects that historical originator.
+- **Gateway OAuth sign-in is now manual**: since Codex 0.157, a client that does not rewrite the identity never opens a browser for sign-in automatically. Custom providers behind a gateway OAuth now report that sign-in is required when the token is missing or rejected; run Codex in a terminal to finish the gateway sign-in, then retry. Tokens that are still valid or refreshable are unaffected.`,
+    },
+  },
+  {
     version: "1.2.1",
     date: "2026-11-02",
     content: {
