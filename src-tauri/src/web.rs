@@ -3,9 +3,9 @@
 //! same UI can run in a phone browser against the desktop backend.
 //!
 //! Security model: the bridge exposes terminal shells and file read/write, so
-//! every start generates a fresh random token; the WS handshake and the /file
-//! route reject anything without it. The token rides in the URL (?token=…)
-//! because <img> tags cannot set auth headers.
+//! the persisted token must be available before it starts; the WS handshake
+//! and the /file route reject anything without it. The token rides in the URL
+//! (?token=…) because <img> tags cannot set auth headers.
 
 use std::net::SocketAddr;
 use std::path::Path;
@@ -40,13 +40,9 @@ pub struct WebAccessState {
 }
 
 impl WebAccessState {
-    /// Where the relay should dial (127.0.0.1:<port>) and the token its
-    /// public URL carries, when the bridge is running.
-    pub fn bridge_target(&self) -> Option<(u16, String)> {
-        self.inner
-            .lock()
-            .as_ref()
-            .map(|running| (running.info.port, running.info.token.clone()))
+    /// Current loopback port for new relay streams; never cache across starts.
+    pub fn bridge_port(&self) -> Option<u16> {
+        self.inner.lock().as_ref().map(|running| running.info.port)
     }
 
     fn take_if_token(&self, token: &str) -> Option<Running> {
@@ -256,6 +252,24 @@ pub async fn web_access_start(app: tauri::AppHandle) -> Result<WebAccessInfo, St
         .map(|(info, _created)| info)
 }
 
+/// Token creation and rotation share the same locked read-modify-write as
+/// other dedicated settings commands. A rejected write must not publish a
+/// transient credential; a committed warning must not discard a durable one.
+fn web_access_settings(rotate_token: bool) -> Result<(crate::settings::AppSettings, bool), String> {
+    let _guard = crate::settings::settings_write_lock();
+    let mut settings = crate::settings::read_settings()?;
+    if !rotate_token
+        && settings.web_access_token.as_ref().is_some_and(|token| !token.trim().is_empty())
+    {
+        return Ok((settings, false));
+    }
+    settings.web_access_token = Some(format!("{}{}", Uuid::new_v4().simple(), Uuid::new_v4().simple()));
+    if let Some(warning) = crate::settings::persist_settings_committed(&mut settings)? {
+        eprintln!("[web] token committed with warning: {warning}");
+    }
+    Ok((settings, true))
+}
+
 /// Ensure the bridge exists and report whether this invocation published it.
 /// The ownership bit lets callers roll back only their own newly-created
 /// bridge when a later operation fails.
@@ -265,16 +279,11 @@ async fn ensure_web_access_locked(app: tauri::AppHandle) -> Result<(WebAccessInf
         return Ok((running.info.clone(), false));
     }
 
-    let settings = crate::settings::get_app_settings().unwrap_or_default();
-    let token = if let Some(custom_token) = settings.web_access_token.as_ref().filter(|t| !t.trim().is_empty()).cloned() {
-        custom_token
-    } else {
-        let generated = format!("{}{}", Uuid::new_v4().simple(), Uuid::new_v4().simple());
-        let mut new_settings = settings.clone();
-        new_settings.web_access_token = Some(generated.clone());
-        let _ = crate::settings::update_app_settings(app.clone(), new_settings);
-        generated
-    };
+    let (mut settings, token_changed) = web_access_settings(false)?;
+    if token_changed {
+        crate::settings::announce_settings(&app);
+    }
+    let token = settings.web_access_token.take().expect("persisted web access token");
 
     // Lagging receivers drop events rather than back-pressuring the app.
     let (events_tx, _) = broadcast::channel::<String>(512);
@@ -393,11 +402,9 @@ pub fn web_access_available_ips() -> Vec<LanIpEntry> {
 
 #[tauri::command]
 pub fn web_access_rotate_token(app: tauri::AppHandle) -> Result<String, String> {
-    let new_token = format!("{}{}", Uuid::new_v4().simple(), Uuid::new_v4().simple());
-    let mut settings = crate::settings::get_app_settings()?;
-    settings.web_access_token = Some(new_token.clone());
-    crate::settings::update_app_settings(app, settings)?;
-    Ok(new_token)
+    let (settings, _) = web_access_settings(true)?;
+    crate::settings::announce_settings(&app);
+    Ok(settings.web_access_token.expect("persisted web access token"))
 }
 
 // ==================== Device gate ====================
@@ -1280,6 +1287,105 @@ pub fn available_lan_ips() -> Vec<LanIpEntry> {
 mod tests {
     use super::*;
 
+    struct SettingsHome {
+        dir: std::path::PathBuf,
+        previous: Option<std::ffi::OsString>,
+        _guard: parking_lot::MutexGuard<'static, ()>,
+    }
+
+    impl SettingsHome {
+        fn new() -> Self {
+            let guard = crate::paths::HOME_ENV_LOCK.lock();
+            let dir = std::env::temp_dir().join(format!("ccgui-web-token-{}", Uuid::new_v4()));
+            std::fs::create_dir_all(dir.join(".ccgui-next")).unwrap();
+            let previous = std::env::var_os("HOME");
+            std::env::set_var("HOME", &dir);
+            Self { dir, previous, _guard: guard }
+        }
+
+        fn settings_path(&self) -> std::path::PathBuf {
+            self.dir.join(".ccgui-next/settings.json")
+        }
+    }
+
+    impl Drop for SettingsHome {
+        fn drop(&mut self) {
+            match &self.previous {
+                Some(value) => std::env::set_var("HOME", value),
+                None => std::env::remove_var("HOME"),
+            }
+            let _ = std::fs::remove_dir_all(&self.dir);
+        }
+    }
+
+    #[test]
+    fn token_initialization_leaves_unreadable_settings_untouched() {
+        let home = SettingsHome::new();
+        let damaged = r#"{"theme":"dark","webAccessToken":"#;
+        std::fs::write(home.settings_path(), damaged).unwrap();
+
+        assert!(web_access_settings(false).is_err());
+        assert_eq!(std::fs::read_to_string(home.settings_path()).unwrap(), damaged);
+    }
+
+    #[test]
+    fn token_initialization_and_rotation_preserve_other_settings() {
+        let home = SettingsHome::new();
+        std::fs::write(home.settings_path(), r#"{"theme":"dark","customExtra":{"keep":true}}"#).unwrap();
+
+        let (first, changed) = web_access_settings(false).unwrap();
+        assert!(changed);
+        let first_token = first.web_access_token.unwrap();
+        let persisted = std::fs::read_to_string(home.settings_path()).unwrap();
+        let (reused, changed) = web_access_settings(false).unwrap();
+        assert!(!changed);
+        assert_eq!(reused.web_access_token.as_ref(), Some(&first_token));
+        assert_eq!(std::fs::read_to_string(home.settings_path()).unwrap(), persisted);
+
+        let (rotated, changed) = web_access_settings(true).unwrap();
+        assert!(changed);
+        assert_ne!(rotated.web_access_token.as_ref(), Some(&first_token));
+        let saved: Value = serde_json::from_str(&std::fs::read_to_string(home.settings_path()).unwrap()).unwrap();
+        assert_eq!(saved["webAccessToken"].as_str(), rotated.web_access_token.as_deref());
+        assert_eq!(saved["theme"], "dark");
+        assert_eq!(saved["customExtra"]["keep"], true);
+    }
+
+    #[test]
+    fn token_initialization_propagates_precommit_failure() {
+        let home = SettingsHome::new();
+        let invalid = r#"{"theme":"dark","ompOpenaiServiceTier":"invalid"}"#;
+        std::fs::write(home.settings_path(), invalid).unwrap();
+
+        assert!(web_access_settings(false).is_err());
+        assert_eq!(std::fs::read_to_string(home.settings_path()).unwrap(), invalid);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn token_initialization_propagates_file_write_failure() {
+        use std::os::windows::fs::OpenOptionsExt;
+        let home = SettingsHome::new();
+        let original = r#"{"theme":"dark"}"#;
+        std::fs::write(home.settings_path(), original).unwrap();
+        // Permit reads but deny replacement of the destination file.
+        let _file = std::fs::OpenOptions::new().read(true).share_mode(1)
+            .open(home.settings_path()).unwrap();
+
+        assert!(web_access_settings(false).is_err());
+        assert_eq!(std::fs::read_to_string(home.settings_path()).unwrap(), original);
+    }
+
+    #[test]
+    fn token_initialization_keeps_a_committed_token_despite_apply_warnings() {
+        let home = SettingsHome::new();
+        std::fs::write(home.settings_path(), r#"{"claudeBin":"/missing/ccgui-test-binary"}"#).unwrap();
+
+        let (settings, changed) = web_access_settings(false).unwrap();
+        assert!(changed);
+        assert_eq!(crate::settings::read_settings().unwrap().web_access_token, settings.web_access_token);
+    }
+
     fn device(approved_at: Option<i64>) -> WebDevice {
         WebDevice {
             id: "d".into(),
@@ -1309,9 +1415,9 @@ mod tests {
 
         *state.inner.lock() = Some(running("new-owner"));
         assert!(state.take_if_token("old-owner").is_none());
-        assert_eq!(state.bridge_target().unwrap().1, "new-owner");
+        assert_eq!(state.bridge_port(), Some(1420));
         assert!(state.take_if_token("new-owner").is_some());
-        assert!(state.bridge_target().is_none());
+        assert!(state.bridge_port().is_none());
     }
 
     #[tokio::test]
@@ -1333,7 +1439,7 @@ mod tests {
         let contender_state = Arc::clone(&state);
         let contender = tokio::spawn(async move {
             let _transition = contender_state.lock_transition().await;
-            contender_state.bridge_target()
+            contender_state.bridge_port()
         });
 
         tokio::task::yield_now().await;
