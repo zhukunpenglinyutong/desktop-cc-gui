@@ -247,11 +247,11 @@ export function htmlFromText(text: string): string {
   let match: RegExpExecArray | null;
   while ((match = MENTION_RE.exec(text)) !== null) {
     const before = text.slice(lastIndex, match.index);
-    parts.push(escapeHtmlText(before).replace(/\n/g, "<br>"));
+    parts.push(textToInsertHtml(before));
     parts.push(chipHtml(match[1] ?? match[2]));
     lastIndex = match.index + match[0].length;
   }
-  parts.push(escapeHtmlText(text.slice(lastIndex)).replace(/\n/g, "<br>"));
+  parts.push(textToInsertHtml(text.slice(lastIndex)));
   return parts.join("");
 }
 

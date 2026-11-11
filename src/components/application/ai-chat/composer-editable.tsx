@@ -3,6 +3,7 @@ import {
   type MutableRefObject,
   type RefObject,
   useCallback,
+  useEffect,
 } from "react";
 import { useTranslation } from "react-i18next";
 import {
@@ -30,6 +31,7 @@ import { cx } from "@/utils/cx";
  */
 export function ComposerEditable({
   editableRef,
+  hidden = false,
   sendShortcut,
   mentionOpen,
   slashOpen,
@@ -50,6 +52,7 @@ export function ComposerEditable({
   syncTags,
   updateTriggers,
   disabled,
+  onFocus,
   onSubmit,
   onPasteImages,
   onPastePaths,
@@ -57,6 +60,7 @@ export function ComposerEditable({
   placeholder,
 }: {
   editableRef: RefObject<HTMLDivElement>;
+  hidden?: boolean;
   sendShortcut: "enter" | "cmdEnter";
   /** A mention trigger is active: gates the ghost completion + key delegation. */
   mentionOpen: boolean;
@@ -68,8 +72,8 @@ export function ComposerEditable({
   promptOpen: boolean;
   /** Ghost-text history suffix painted after the caret ("" = none). */
   completionSuffix: string;
-  /** Accept the ghost suggestion: returns the full text, or null. */
-  acceptCompletion: () => string | null;
+  /** Accept only a suggestion matching the editable's current text. */
+  acceptCompletion: (text: string) => string | null;
   setEditableText: (text: string) => void;
   handleHistoryKeyDown: (event: ReactKeyboardEvent<HTMLDivElement>) => boolean;
   /** Editing a recalled prompt ends history navigation without changing text. */
@@ -85,6 +89,7 @@ export function ComposerEditable({
   /** Re-derive completion triggers (`/` first, then `@`) after real input. */
   updateTriggers: () => void;
   disabled: boolean;
+  onFocus?: () => void;
   onSubmit?: (value: string) => void;
   onPasteImages?: (files: File[]) => void;
   /** Clipboard files with a resolvable path: routed exactly like a drop
@@ -123,11 +128,38 @@ export function ComposerEditable({
     },
     [onPastePaths],
   );
+  useEffect(() => {
+    const el = editableRef.current;
+    if (!el) return;
+    const start = () => {
+      isComposingRef.current = true;
+      setIsComposing(true);
+      resetHistoryNavigation();
+    };
+    const end = () => {
+      isComposingRef.current = false;
+      setIsComposing(false);
+      // WKWebView can commit without input. Hiding the node can also end
+      // composition during a React DOM commit, when synthetic events pause.
+      emitChange();
+      if (!el.hidden) {
+        syncTags();
+        updateTriggers();
+      }
+    };
+    el.addEventListener("compositionstart", start);
+    el.addEventListener("compositionend", end);
+    return () => {
+      el.removeEventListener("compositionstart", start);
+      el.removeEventListener("compositionend", end);
+    };
+  }, [editableRef, isComposingRef, setIsComposing, resetHistoryNavigation, emitChange, syncTags, updateTriggers]);
   // Send gesture labels name the real modifier: ⌘ on macOS, Ctrl elsewhere.
   const isMac = navigator.platform.includes("Mac");
   return (
     <div
       ref={editableRef}
+      hidden={hidden}
       contentEditable
       role="textbox"
       aria-multiline="true"
@@ -136,6 +168,7 @@ export function ComposerEditable({
         ? t(isMac ? "chat.inputPlaceholderCmdEnter" : "chat.inputPlaceholderCmdEnterCtrl")
         : t("chat.inputPlaceholder"))}
       data-completion-suffix={mentionOpen || slashOpen || botOpen || promptOpen ? undefined : completionSuffix || undefined}
+      onFocus={onFocus}
       onInput={() => {
         // insertTextAtCaret's editing command fires input mid-insert. Acting
         // on it (especially syncTags → innerHTML) wipes the undo step the
@@ -144,21 +177,6 @@ export function ComposerEditable({
         emitChange();
         syncTags();
         if (!isComposingRef.current) updateTriggers();
-      }}
-      onCompositionStart={() => {
-        isComposingRef.current = true;
-        setIsComposing(true);
-        // IME keydowns bypass shortcuts, including the key that normally
-        // leaves history navigation. Reset now so later arrows keep edits.
-        resetHistoryNavigation();
-      }}
-      onCompositionEnd={() => {
-        isComposingRef.current = false;
-        setIsComposing(false);
-        // Composition commits text without an input event in WKWebView.
-        emitChange();
-        syncTags();
-        updateTriggers();
       }}
       onKeyDown={(event) => {
         // Leave active composition to the IME. WebKit can report the final
@@ -190,10 +208,12 @@ export function ComposerEditable({
         }
         // Tab accepts the ghost-text history completion (never mid-IME).
         if (event.key === "Tab" && completionSuffix) {
-          event.preventDefault();
-          const full = acceptCompletion();
-          if (full !== null) setEditableText(full);
-          return;
+          const full = acceptCompletion(extractText(event.currentTarget));
+          if (full !== null) {
+            event.preventDefault();
+            setEditableText(full);
+            return;
+          }
         }
         // ArrowUp/ArrowDown recall submitted prompts from history.
         if (handleHistoryKeyDown(event)) return;

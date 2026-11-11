@@ -29,6 +29,18 @@ export function changelogEntryFor(version: string): ChangelogEntry | undefined {
 
 export const CHANGELOG_DATA: ChangelogEntry[] = [
   {
+    version: "1.2.3",
+    date: "2026-11-11",
+    content: {
+      zh: `修复
+- **输入框折叠后保留草稿**：折叠与展开不再卸载编辑节点，保留正文、文件标签、选区和撤销历史；隐藏期间 IME 提交的文件引用展开后生成可删除标签。键盘通过手柄展开后可直接继续编辑，不抢占其他编辑器的焦点或选区；隐藏期间外部更新、切换与清空的草稿在主动编辑时恢复最新光标位置。
+- **历史补全不再用过期建议覆盖输入**：真正改变正文后立即隐藏旧建议，Tab 接受前校验当前正文和历史开关；失效建议不消费 Tab。内部 CRLF / CR 与 LF 使用同一换行规则，草稿不会多出空行，已显示的合法建议可以接受；仅改变大小写（包括同批输入后按 Tab）仍可补全。历史管理、容量、排序和上下键召回保持不变。`,
+      en: `Fixes
+- **Composer drafts survive collapse**: collapsing and expanding no longer unmount the editor, preserving text, file tags, selection and undo history. File references committed by IME while hidden become removable tags on expansion. Expanding with the keyboard grip restores editing focus without taking focus or selection from another editor; externally updated, switched or cleared hidden drafts restore the latest caret when editing resumes.
+- **Stale history completions cannot overwrite new input**: a genuinely changed query immediately hides the previous suggestion, and Tab checks the live text and history setting before accepting it. Rejected suggestions leave Tab available for navigation. Internal CRLF, CR and LF use the same newline rules, avoiding extra blank lines and allowing displayed suggestions to be accepted. Case-only changes remain valid, including input and Tab in one batch. History management, capacity, ranking and arrow-key recall remain unchanged.`,
+    },
+  },
+  {
     version: "1.2.2",
     date: "2026-11-08",
     content: {

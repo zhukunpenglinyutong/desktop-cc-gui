@@ -167,6 +167,33 @@ describe("ComposerEditable IME Enter", () => {
     expect((await enter()).defaultPrevented).toBe(true);
     expect(props.onSubmit).not.toHaveBeenCalled();
   });
+
+  it("隐藏提交同步结束组合输入后，独立回车仍发送保留的正文", async () => {
+    await compose("compositionstart");
+    const setAttribute = editable.setAttribute;
+    vi.spyOn(editable, "setAttribute").mockImplementation(function (name, value) {
+      setAttribute.call(editable, name, value);
+      if (name === "hidden") {
+        // Chromium ends IME synchronously while React applies hidden. React
+        // pauses synthetic events during that commit; native listeners must
+        // still publish the text and release the composition guard.
+        editable.dispatchEvent(new CompositionEvent("compositionend", {
+          bubbles: true,
+          data: "中文😀",
+        }));
+      }
+    });
+    props.hidden = true;
+    await render();
+    expect(editable.textContent).toBe("中文😀");
+    expect(props.emitChange).toHaveBeenCalledTimes(1);
+    props.hidden = false;
+    await render();
+    expect((await enter({ keyCode: 229 })).defaultPrevented).toBe(false);
+    expect(props.onSubmit).not.toHaveBeenCalled();
+    expect((await enter()).defaultPrevented).toBe(true);
+    expect(props.onSubmit).toHaveBeenCalledExactlyOnceWith("中文😀");
+  });
 });
 
 describe("ComposerEditable 粘贴文件", () => {

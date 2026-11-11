@@ -9,17 +9,16 @@ import {
   findPromptCompletion,
   getPromptHistory,
   isPromptHistoryEnabled,
+  normalizePromptCompletionQuery,
   subscribePromptHistory,
 } from "@/features/chat/prompt-history";
 import { extractText } from "@/components/application/ai-chat/file-tags";
 
-const INVISIBLE_CHARS_RE = /[\u200B-\u200D\uFEFF]/g;
-
 export interface PromptCompletion {
   /** Ghost suffix painted after the caret; "" when nothing matches. */
   suffix: string;
-  /** Accept the current suggestion: returns the full text, or null. */
-  accept: () => string | null;
+  /** Accept only if the editable still contains the query that produced it. */
+  accept: (currentText: string) => string | null;
 }
 
 /**
@@ -28,7 +27,7 @@ export interface PromptCompletion {
  * produce a ghost.
  */
 export function usePromptCompletion(text: string, debounceMs = 100): PromptCompletion {
-  const [suggestion, setSuggestion] = useState<string | null>(null);
+  const [suggestion, setSuggestion] = useState<{ query: string; text: string } | null>(null);
   const [enabled, setEnabled] = useState(isPromptHistoryEnabled);
 
   // The settings toggle fires the same change event as history mutations.
@@ -42,22 +41,38 @@ export function usePromptCompletion(text: string, debounceMs = 100): PromptCompl
       setSuggestion(null);
       return;
     }
-    if (text.replace(INVISIBLE_CHARS_RE, "").trim().length < 2) {
+    if (normalizePromptCompletionQuery(text).length < 2) {
       setSuggestion(null);
       return;
     }
-    const timer = setTimeout(() => setSuggestion(findPromptCompletion(text)), debounceMs);
+    const timer = setTimeout(() => {
+      const completion = findPromptCompletion(text);
+      setSuggestion(completion === null ? null : {
+        query: normalizePromptCompletionQuery(text).toLowerCase(),
+        text: completion.replace(/\r\n|\r/g, "\n"),
+      });
+    }, debounceMs);
     return () => clearTimeout(timer);
   }, [text, debounceMs, enabled]);
 
-  const clean = text.replace(INVISIBLE_CHARS_RE, "").trim();
-  const suffix =
-    suggestion !== null && suggestion.length > clean.length ? suggestion.slice(clean.length) : "";
+  const clean = normalizePromptCompletionQuery(text);
+  const query = clean.toLowerCase();
+  // Invalidate during render, not in the next effect or debounce callback.
+  const full =
+    enabled && suggestion?.query === query && clean.length >= 2 &&
+    suggestion.text.length > clean.length &&
+    suggestion.text.toLowerCase().startsWith(query)
+      ? suggestion.text
+      : null;
+  const suffix = full === null ? "" : full.slice(clean.length);
 
-  const accept = useCallback((): string | null => {
+  const accept = useCallback((currentText: string): string | null => {
     setSuggestion(null);
-    return suggestion;
-  }, [suggestion]);
+    // Input and Tab (or the settings toggle) can share a React batch. Check
+    // the live DOM and switch too, rather than trusting this render's props.
+    const currentQuery = normalizePromptCompletionQuery(currentText).toLowerCase();
+    return isPromptHistoryEnabled() && currentQuery === query ? full : null;
+  }, [query, full]);
 
   return { suffix, accept };
 }
@@ -115,7 +130,7 @@ export function usePromptHistoryNav({
       const el = editableRef.current;
       const currentText = el ? extractText(el) : "";
       // Navigation only starts from an empty input; ArrowDown never starts it.
-      if (!isNavigating && currentText.replace(INVISIBLE_CHARS_RE, "").trim()) return false;
+      if (!isNavigating && normalizePromptCompletionQuery(currentText)) return false;
       if (!isNavigating && key === "ArrowDown") return false;
 
       event.preventDefault();
