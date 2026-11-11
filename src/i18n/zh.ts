@@ -176,6 +176,7 @@ export const zh = {
     archiveSession: "归档会话",
     archiveRunning: "请先停止正在运行的会话，再归档。",
     renameSession: "重命名会话",
+    renameSessionMissing: "会话尚未入库或已被移除，未能保存名称。请刷新会话列表后重试。",
     copySessionId: "复制 ID",
     editSession: "编辑会话",
     refreshSessionRendering: "刷新渲染",

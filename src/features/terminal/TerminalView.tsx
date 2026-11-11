@@ -9,6 +9,8 @@ import { terminalFontFamily, terminalFontSize, terminalTheme } from "./appearanc
 import { FONT_CHANGE_EVENT } from "@/features/settings/font";
 import { TYPOGRAPHY_CHANGE_EVENT } from "@/features/settings/interface-typography";
 import { createPathLinkProvider } from "./links";
+import { attachInputBridge } from "./input-bridge";
+import { createInputQueue } from "./input-queue";
 import { TerminalContextMenu, type TerminalMenuState } from "./TerminalContextMenu";
 import {
   ensureTerminalOutputListener,
@@ -244,20 +246,17 @@ export const TerminalView = memo(function TerminalView({ id, cwd }: { id: string
         }),
       );
 
-      inputDisposable = term.onData((data) => {
-        const write = () =>
-          ipc.terminalWrite(id, data).catch((e: unknown) => {
-            // Shell exited (exit/Ctrl-D): respawn, then deliver the input.
-            if (String(e).includes("Terminal session not found")) {
-              markTerminalClosed(id);
-              void openSession().then(() =>
-                ipc.terminalWrite(id, data).catch(() => {}),
-              );
-            }
-          });
-        if (hasTerminalSession(id)) void write();
-        else void openSession().then(write);
+      // One ordered write channel for typed input: xterm's onData plus the
+      // WKWebView/IME insertion fallback (input-bridge.ts).
+      const inputQueue = createInputQueue({
+        write: (data) => ipc.terminalWrite(id, data),
+        reopen: () => {
+          markTerminalClosed(id);
+          return openSession();
+        },
+        isSessionGone: (error) => String(error).includes("Terminal session not found"),
       });
+      inputDisposable = attachInputBridge(term, inputQueue.send);
 
       resizeObserver = new ResizeObserver(() => {
         safeFit();
