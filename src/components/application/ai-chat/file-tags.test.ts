@@ -2,6 +2,8 @@ import { describe, expect, it, vi } from "vitest";
 import {
   COMPOSER_INSERTING_ATTR,
   FILE_TAG_CLASS,
+  extractText,
+  htmlFromText,
   insertTextAtCaret,
   mentionToken,
   renderFileTags,
@@ -37,6 +39,15 @@ describe("renderFileTags", () => {
     expect(chip?.getAttribute("data-file-path")).toBe(
       "/S:/AIWorker/desktop-cc-gui/tests",
     );
+  });
+});
+
+describe("htmlFromText", () => {
+  it.each(["\r\n", "\r", "\n"])("restores internal %j as one newline around file tags", (newline) => {
+    const el = document.createElement("div");
+    el.innerHTML = htmlFromText(`deploy${newline}@/tmp/notes.md${newline}production`);
+    expect(extractText(el)).toBe("deploy\n@/tmp/notes.md\nproduction");
+    expect(el.querySelector(`.${FILE_TAG_CLASS}`)?.getAttribute("data-file-path")).toBe("/tmp/notes.md");
   });
 });
 

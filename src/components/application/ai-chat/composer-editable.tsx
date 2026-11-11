@@ -52,6 +52,7 @@ export function ComposerEditable({
   syncTags,
   updateTriggers,
   disabled,
+  onFocus,
   onSubmit,
   onPasteImages,
   onPastePaths,
@@ -88,6 +89,7 @@ export function ComposerEditable({
   /** Re-derive completion triggers (`/` first, then `@`) after real input. */
   updateTriggers: () => void;
   disabled: boolean;
+  onFocus?: () => void;
   onSubmit?: (value: string) => void;
   onPasteImages?: (files: File[]) => void;
   /** Clipboard files with a resolvable path: routed exactly like a drop
@@ -166,6 +168,7 @@ export function ComposerEditable({
         ? t(isMac ? "chat.inputPlaceholderCmdEnter" : "chat.inputPlaceholderCmdEnterCtrl")
         : t("chat.inputPlaceholder"))}
       data-completion-suffix={mentionOpen || slashOpen || botOpen || promptOpen ? undefined : completionSuffix || undefined}
+      onFocus={onFocus}
       onInput={() => {
         // insertTextAtCaret's editing command fires input mid-insert. Acting
         // on it (especially syncTags → innerHTML) wipes the undo step the

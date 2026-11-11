@@ -260,13 +260,39 @@ export function Composer({
     replaceEditableText(v);
   }, [value, replaceEditableText]);
 
-  useLayoutEffect(() => {
-    const offset = pendingCaretOffsetRef.current;
+  const handleEditableFocus = useCallback(() => {
     const el = editableRef.current;
-    if (isCollapsed || offset === null || !el) return;
-    pendingCaretOffsetRef.current = null;
-    setCaretOffset(el, offset);
-  }, [isCollapsed]);
+    if (!el || el.hidden) return;
+    // Native focus can reset contentEditable's selection after focus handlers.
+    queueMicrotask(() => {
+      if (el !== editableRef.current || el.hidden || document.activeElement !== el) return;
+      const offset = pendingCaretOffsetRef.current;
+      if (offset !== null) {
+        pendingCaretOffsetRef.current = null;
+        setCaretOffset(el, offset);
+      }
+      if (!isComposingRef.current) updateTriggers();
+    });
+  }, [updateTriggers]);
+
+  const wasCollapsedRef = useRef(isCollapsed);
+  useLayoutEffect(() => {
+    const expanding = wasCollapsedRef.current && !isCollapsed;
+    wasCollapsedRef.current = isCollapsed;
+    const el = editableRef.current;
+    if (!expanding || !el) return;
+    // Hiding can commit IME text while tag/trigger synchronization is paused.
+    syncTags();
+    const active = document.activeElement;
+    const handle = wrapperRef.current?.querySelector('[role="separator"]');
+    if (active === handle) {
+      el.focus({ preventScroll: true });
+    } else if (active === el) {
+      handleEditableFocus();
+    }
+    // Otherwise retain the foreground editor's focus and selection; a later
+    // explicit focus restores this draft's pending caret instead.
+  }, [isCollapsed, syncTags, handleEditableFocus]);
 
   // Expose the field handle (focus + mention insertion from the file tree).
   useComposerInputHandle({
@@ -326,6 +352,7 @@ export function Composer({
       <ComposerEditable
         editableRef={editableRef}
         hidden={isCollapsed}
+        onFocus={handleEditableFocus}
         sendShortcut={sendShortcut}
         mentionOpen={mention != null}
         slashOpen={slash != null}

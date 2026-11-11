@@ -9,11 +9,10 @@ import {
   findPromptCompletion,
   getPromptHistory,
   isPromptHistoryEnabled,
+  normalizePromptCompletionQuery,
   subscribePromptHistory,
 } from "@/features/chat/prompt-history";
 import { extractText } from "@/components/application/ai-chat/file-tags";
-
-const INVISIBLE_CHARS_RE = /[\u200B-\u200D\uFEFF]/g;
 
 export interface PromptCompletion {
   /** Ghost suffix painted after the caret; "" when nothing matches. */
@@ -42,23 +41,27 @@ export function usePromptCompletion(text: string, debounceMs = 100): PromptCompl
       setSuggestion(null);
       return;
     }
-    if (text.replace(INVISIBLE_CHARS_RE, "").trim().length < 2) {
+    if (normalizePromptCompletionQuery(text).length < 2) {
       setSuggestion(null);
       return;
     }
     const timer = setTimeout(() => {
       const completion = findPromptCompletion(text);
-      setSuggestion(completion === null ? null : { query: text, text: completion });
+      setSuggestion(completion === null ? null : {
+        query: normalizePromptCompletionQuery(text).toLowerCase(),
+        text: completion.replace(/\r\n|\r/g, "\n"),
+      });
     }, debounceMs);
     return () => clearTimeout(timer);
   }, [text, debounceMs, enabled]);
 
-  const clean = text.replace(INVISIBLE_CHARS_RE, "").trim();
+  const clean = normalizePromptCompletionQuery(text);
+  const query = clean.toLowerCase();
   // Invalidate during render, not in the next effect or debounce callback.
   const full =
-    enabled && suggestion?.query === text && clean.length >= 2 &&
+    enabled && suggestion?.query === query && clean.length >= 2 &&
     suggestion.text.length > clean.length &&
-    suggestion.text.toLowerCase().startsWith(clean.toLowerCase())
+    suggestion.text.toLowerCase().startsWith(query)
       ? suggestion.text
       : null;
   const suffix = full === null ? "" : full.slice(clean.length);
@@ -67,11 +70,9 @@ export function usePromptCompletion(text: string, debounceMs = 100): PromptCompl
     setSuggestion(null);
     // Input and Tab (or the settings toggle) can share a React batch. Check
     // the live DOM and switch too, rather than trusting this render's props.
-    // HTML parsing may normalize a restored draft's line endings. Compare
-    // using the same whitespace/zero-width rules as the completion query.
-    const currentClean = currentText.replace(INVISIBLE_CHARS_RE, "").trim();
-    return isPromptHistoryEnabled() && currentClean === clean ? full : null;
-  }, [clean, full]);
+    const currentQuery = normalizePromptCompletionQuery(currentText).toLowerCase();
+    return isPromptHistoryEnabled() && currentQuery === query ? full : null;
+  }, [query, full]);
 
   return { suffix, accept };
 }
@@ -129,7 +130,7 @@ export function usePromptHistoryNav({
       const el = editableRef.current;
       const currentText = el ? extractText(el) : "";
       // Navigation only starts from an empty input; ArrowDown never starts it.
-      if (!isNavigating && currentText.replace(INVISIBLE_CHARS_RE, "").trim()) return false;
+      if (!isNavigating && normalizePromptCompletionQuery(currentText)) return false;
       if (!isNavigating && key === "ArrowDown") return false;
 
       event.preventDefault();

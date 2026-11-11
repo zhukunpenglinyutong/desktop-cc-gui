@@ -107,20 +107,26 @@ export function subscribePromptHistory(listener: () => void): () => void {
 
 const INVISIBLE_CHARS_RE = /[\u200B-\u200D\uFEFF]/g;
 
+/** Match restored Windows drafts against the editable's LF text. */
+export function normalizePromptCompletionQuery(text: string): string {
+  return text.replace(/\r\n|\r/g, "\n").replace(INVISIBLE_CHARS_RE, "").trim();
+}
+
 /**
  * Best ghost completion for `query`: a history entry that starts with the
  * query (case-insensitive) and is longer than it, ranked by usage count
  * (desc) then shorter first. Returns the full entry, or null.
  */
 export function findPromptCompletion(query: string, minQueryLength = 2): string | null {
-  const clean = query.replace(INVISIBLE_CHARS_RE, "").trim();
+  const clean = normalizePromptCompletionQuery(query);
   if (clean.length < minQueryLength) return null;
   const lower = clean.toLowerCase();
   const counts = getPromptCounts();
   let best: string | null = null;
   for (const item of getPromptHistory()) {
-    if (item.length <= clean.length) continue;
-    if (!item.toLowerCase().startsWith(lower)) continue;
+    const normalized = item.replace(/\r\n|\r/g, "\n");
+    if (normalized.length <= clean.length) continue;
+    if (!normalized.toLowerCase().startsWith(lower)) continue;
     const count = counts[item] ?? 0;
     const bestCount = best !== null ? (counts[best] ?? 0) : -1;
     if (count > bestCount || (count === bestCount && best !== null && item.length < best.length)) {

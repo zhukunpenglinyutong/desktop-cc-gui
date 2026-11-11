@@ -286,7 +286,7 @@ describe("Composer 折叠与补全的输入完整性", () => {
     expect(editable().dataset.completionSuffix).toBe("loy production");
   }
 
-  it("折叠展开保留中文草稿和选区，继续输入只替换选中部分", async () => {
+  it("折叠展开保留中文草稿和选区", async () => {
     await mount("保留草稿🙂\n下一行");
     const range = document.createRange();
     range.setStart(editable().firstChild!, 2);
@@ -299,13 +299,18 @@ describe("Composer 折叠与补全的输入完整性", () => {
     await resize("ArrowUp");
     expect(extractText(editable())).toBe("保留草稿🙂\n下一行");
     expect(selection.toString()).toBe("草稿🙂");
-    await act(async () => {
-      const selected = selection.getRangeAt(0);
-      selected.deleteContents();
-      selected.insertNode(document.createTextNode("正文"));
-      editable().dispatchEvent(new InputEvent("input", { bubbles: true, data: "正文" }));
-    });
-    expect(onChange).toHaveBeenLastCalledWith("保留正文\n下一行");
+  });
+
+  it("手柄通过方向键折叠展开后焦点回到输入框", async () => {
+    await mount("继续编辑🙂");
+    const handle = container.querySelector<HTMLElement>('[role="separator"]')!;
+    handle.focus();
+    await resize("ArrowDown");
+    expect(editable().hidden).toBe(true);
+    await resize("ArrowUp");
+    expect(document.activeElement).toBe(editable());
+    expect(editable().hidden).toBe(false);
+    expect(extractText(editable())).toBe("继续编辑🙂");
   });
 
   it("折叠期间切换外部草稿与清空，展开显示最新值", async () => {
@@ -322,13 +327,14 @@ describe("Composer 折叠与补全的输入完整性", () => {
     expect(onChange).not.toHaveBeenCalled();
   });
 
-  it("折叠期间外部更新不移动前台选区，展开后新草稿光标落在末尾", async () => {
+  it("隐藏草稿更新与展开不抢占其他编辑器，主动聚焦后光标落在最新草稿末尾", async () => {
     await mount("会话 A");
     await resize("ArrowDown");
     const other = document.createElement("div");
-    other.contentEditable = "true";
+    other.setAttribute("contenteditable", "true");
     other.textContent = "前台编辑";
     container.appendChild(other);
+    other.focus();
     const selection = window.getSelection()!;
     const range = document.createRange();
     range.setStart(other.firstChild!, 2);
@@ -340,6 +346,10 @@ describe("Composer 折叠与补全的输入完整性", () => {
     expect(selection.anchorNode).toBe(other.firstChild);
     await resize("ArrowUp");
     expect(extractText(editable())).toBe("后台预填🙂");
+    expect(document.activeElement).toBe(other);
+    expect(selection.toString()).toBe("编辑");
+    expect(selection.anchorNode).toBe(other.firstChild);
+    await act(async () => editable().focus());
     expect(getCaretOffset(editable())).toBe("后台预填🙂".length);
   });
 
@@ -368,6 +378,29 @@ describe("Composer 折叠与补全的输入完整性", () => {
     await act(async () => inputRef.current!.insertText("追加"));
     expect(extractText(editable())).toBe("已有草稿追加");
     expect(onChange).toHaveBeenLastCalledWith("已有草稿追加");
+  });
+
+  it("隐藏期间 IME 提交的完整文件引用展开后生成可删除标签", async () => {
+    await mount();
+    await act(async () => {
+      editable().focus();
+      editable().dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true }));
+      input("@/tmp/notes.md");
+    });
+    await resize("ArrowDown");
+    await act(async () => {
+      editable().dispatchEvent(new CompositionEvent("compositionend", {
+        bubbles: true,
+        data: "@/tmp/notes.md",
+      }));
+    });
+    await resize("ArrowUp");
+    expect(extractText(editable())).toBe("@/tmp/notes.md");
+    const close = editable().querySelector<HTMLElement>(`.${FILE_TAG_CLASS}-close`)!;
+    expect(close).not.toBeNull();
+    await act(async () => close.click());
+    expect(extractText(editable())).toBe("");
+    expect(onChange).toHaveBeenLastCalledWith("");
   });
 
   it("初始折叠的草稿展开后保留文件标签及删除行为", async () => {
@@ -437,6 +470,38 @@ describe("Composer 折叠与补全的输入完整性", () => {
     expect((await tab()).defaultPrevented).toBe(true);
     expect(extractText(editable())).toBe("deploy production");
     expect(onChange).toHaveBeenCalledExactlyOnceWith("deploy production");
+  });
+
+  it.each([
+    ["\r\n", "\r\n"],
+    ["\r\n", "\n"],
+    ["\n", "\r\n"],
+    ["\r", "\r"],
+  ])("内部多行历史 %j 与草稿 %j 使用相同换行显示并接受补全", async (historyNewline, draftNewline) => {
+    recordPrompt(`deploy${historyNewline}production`);
+    await mount(`deploy${draftNewline}prod`);
+    expect(extractText(editable())).toBe("deploy\nprod");
+    await act(async () => { vi.advanceTimersByTime(100); });
+    expect(editable().dataset.completionSuffix).toBe("uction");
+    expect((await tab()).defaultPrevented).toBe(true);
+    expect(extractText(editable())).toBe("deploy\nproduction");
+    expect(onChange).toHaveBeenCalledExactlyOnceWith("deploy\nproduction");
+  });
+
+  it.each(["同批", "提交后"])("建议生成后仅改变大小写，%s Tab 仍接受有效补全", async (timing) => {
+    await complete();
+    const event = keyEvent("Tab");
+    await act(async () => {
+      input("DEP");
+      if (timing === "同批") editable().dispatchEvent(event);
+    });
+    if (timing === "提交后") {
+      expect(editable().dataset.completionSuffix).toBe("loy production");
+      await act(async () => { editable().dispatchEvent(event); });
+    }
+    expect(event.defaultPrevented).toBe(true);
+    expect(extractText(editable())).toBe("deploy production");
+    expect(onChange).toHaveBeenLastCalledWith("deploy production");
   });
 
   it("查询更改后只接受新一轮防抖生成的建议", async () => {

@@ -598,6 +598,7 @@ pub fn run() {
             git::git_file_colors,
             git::git_tree_status,
             git::git_diff,
+            git::git_diff_images,
             git::git_stage,
             git::git_unstage,
             git::git_discard,
