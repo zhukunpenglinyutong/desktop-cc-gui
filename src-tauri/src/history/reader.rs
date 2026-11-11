@@ -1285,23 +1285,38 @@ pub async fn rename_session(
     session_id: String,
     title: String,
 ) -> Result<(), String> {
-    let value = if title.trim().is_empty() {
-        None
-    } else {
-        Some(title.trim().to_string())
-    };
     let db = Arc::clone(&state.db);
     let sink = Arc::clone(&state.sink);
     tauri::async_runtime::spawn_blocking(move || {
-        mutate_sessions(
-            &db,
-            "UPDATE sessions SET custom_title=?3 WHERE engine=?1 AND session_id=?2",
-            rusqlite::params![engine, session_id, value],
-        )
+        rename_session_in(&db, &engine, &session_id, &title)
     })
     .await
     .map_err(|e| e.to_string())??;
     sink.emit_sessions_changed();
+    Ok(())
+}
+
+fn rename_session_in(
+    db: &crate::db::Db,
+    engine: &str,
+    session_id: &str,
+    title: &str,
+) -> Result<(), String> {
+    let value = if title.trim().is_empty() {
+        None
+    } else {
+        Some(title.trim())
+    };
+    let changed =
+        db.0.lock()
+            .execute(
+                "UPDATE sessions SET custom_title=?3 WHERE engine=?1 AND session_id=?2",
+                rusqlite::params![engine, session_id, value],
+            )
+            .map_err(|e| e.to_string())?;
+    if changed == 0 {
+        return Err("CCGUI_SESSION_NOT_FOUND".to_string());
+    }
     Ok(())
 }
 
@@ -1766,6 +1781,39 @@ pub async fn remove_workspace(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn rename_session_requires_existing_row_and_persists_title() {
+        let home = scratch_dir("rename");
+        {
+            let db = crate::db::Db::open_at(&home.join("app.db")).unwrap();
+            assert_eq!(
+                rename_session_in(&db, "qoder", "missing", "title"),
+                Err("CCGUI_SESSION_NOT_FOUND".to_string())
+            );
+            db.0.lock().execute(
+                    "INSERT INTO sessions(engine, session_id, workspace_path, file_path, file_size, file_mtime_ms)
+                     VALUES('qoder', 'sid', '/ws', '/ws/sid.jsonl', 1, 1)", [],
+                ).unwrap();
+            assert!(rename_session_in(&db, "claude", "sid", "wrong engine").is_err());
+            rename_session_in(&db, "qoder", "sid", "  新标题  ").unwrap();
+            rename_session_in(&db, "qoder", "sid", "新标题").unwrap();
+            assert_eq!(
+                list_sessions_from(&db).unwrap()[0].custom_title.as_deref(),
+                Some("新标题")
+            );
+        }
+        {
+            let db = crate::db::Db::open_at(&home.join("app.db")).unwrap();
+            assert_eq!(
+                list_sessions_from(&db).unwrap()[0].custom_title.as_deref(),
+                Some("新标题")
+            );
+            rename_session_in(&db, "qoder", "sid", "   ").unwrap();
+            assert_eq!(list_sessions_from(&db).unwrap()[0].custom_title, None);
+        }
+        std::fs::remove_dir_all(&home).unwrap();
+    }
 
     fn scratch_dir(tag: &str) -> PathBuf {
         let dir = std::env::temp_dir().join(format!(

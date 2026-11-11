@@ -276,12 +276,20 @@ impl Engine for CodexEngine {
     }
 
     /// The command the driver spawns. Model/effort/provider flags land on it
-    /// from [`apply_channel`] like any child; only the switch that enables the
-    /// question tool has to be here.
+    /// from [`apply_channel`] like any child; only the app-server's own
+    /// switches live here (the question tool on, skill MCP auto-install off).
     fn host_command(&self, req: &SendRequest, bin: &str) -> Result<BuiltCommand, String> {
         let mut cmd = command_for_binary(bin);
         apply_computer_use(&mut cmd, req)?;
         apply_memory(&mut cmd, req)?;
+        // The native client identity (codex_app::initialize_params) makes Codex
+        // treat this client as first-party, which unlocks skill MCP-dependency
+        // auto-install: with approval "never" and full access, naming a skill
+        // (repo-provided ones included) writes its MCP servers into the global
+        // config.toml without asking. Keep it off as before; Codex ignores
+        // unknown feature keys, so older CLIs still start.
+        cmd.arg("-c");
+        cmd.arg("features.skill_mcp_dependency_install=false");
         cmd.arg("app-server");
         // Without this the model never asks: it emits a plain agent message
         // (plus a sleep item) instead of a client request.
@@ -950,6 +958,42 @@ mod tests {
             .map(|a| a.to_string_lossy().to_string())
             .collect();
         assert!(args.iter().any(|a| a == "model_reasoning_effort=\"high\""));
+    }
+
+    /// Native identity makes Codex treat the app-server client as first-party,
+    /// which unlocks skill MCP-dependency auto-install. Under approval "never"
+    /// plus full access it writes the skill's MCP servers into the global
+    /// config.toml without asking (verified on codex 0.167, repo-provided
+    /// skills included), so every app-server launch must keep it off.
+    #[test]
+    fn host_command_disables_skill_mcp_dependency_install() {
+        for permission in [Some("bypass"), Some("auto"), Some("plan"), None] {
+            let mut req = base_req();
+            req.permission = permission.map(str::to_string);
+            let built = CodexEngine.host_command(&req, "fake-bin").unwrap();
+            assert_eq!(
+                overrides(&built.command)
+                    .get("features")
+                    .and_then(|features| features.get("skill_mcp_dependency_install")),
+                Some(&toml::Value::Boolean(false)),
+                "{permission:?}"
+            );
+            let args: Vec<String> = built
+                .command
+                .as_std()
+                .get_args()
+                .map(|a| a.to_string_lossy().to_string())
+                .collect();
+            let flag = args
+                .iter()
+                .position(|a| a == "features.skill_mcp_dependency_install=false")
+                .unwrap_or_else(|| panic!("{args:?}"));
+            let subcommand = args
+                .iter()
+                .position(|a| a == "app-server")
+                .unwrap_or_else(|| panic!("{args:?}"));
+            assert!(flag < subcommand, "{args:?}");
+        }
     }
 
     fn parse(line: &str) -> Vec<EngineEvent> {

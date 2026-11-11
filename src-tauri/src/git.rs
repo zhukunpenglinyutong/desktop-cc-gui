@@ -1,3 +1,4 @@
+use base64::Engine as _;
 use git2::{Repository, StatusOptions};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -760,6 +761,118 @@ fn git_diff_blocking(path: &str, file: &str, staged: bool) -> Result<String, Str
 #[tauri::command]
 pub async fn git_diff(path: String, file: String, staged: bool) -> Result<String, String> {
     tauri::async_runtime::spawn_blocking(move || git_diff_blocking(&path, &file, staged))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+/// Both sides of an image change as base64 data URLs. A `None` side means the
+/// file does not exist in that revision (added / deleted). Patch text is
+/// useless for images — libgit2 only emits "Binary files … differ" — so the
+/// diff view renders these instead.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GitImageDiff {
+    pub old: Option<String>,
+    pub new: Option<String>,
+}
+
+fn image_data_url(file: &str, bytes: &[u8]) -> String {
+    format!(
+        "data:{};base64,{}",
+        crate::files::image_mime(Path::new(file)),
+        base64::engine::general_purpose::STANDARD.encode(bytes)
+    )
+}
+
+/// The 5 MiB preview cap is applied before copying blob/worktree bytes, so a
+/// huge asset never gets duplicated into memory just to be rejected.
+fn ensure_image_size(size: usize) -> Result<(), String> {
+    if size > crate::files::MAX_IMAGE_BYTES {
+        return Err("image exceeds 5MB preview limit".to_string());
+    }
+    Ok(())
+}
+
+/// `file` in the HEAD tree; `None` for an unborn HEAD (no commits yet) or a
+/// path absent from that revision.
+fn head_blob_bytes(repo: &Repository, file: &str) -> Result<Option<Vec<u8>>, String> {
+    let Ok(head) = repo.head() else {
+        return Ok(None);
+    };
+    let tree = head.peel_to_tree().map_err(|e| e.to_string())?;
+    let Ok(entry) = tree.get_path(Path::new(file)) else {
+        return Ok(None);
+    };
+    let object = entry.to_object(repo).map_err(|e| e.to_string())?;
+    let Some(blob) = object.as_blob() else {
+        return Ok(None);
+    };
+    ensure_image_size(blob.size())?;
+    Ok(Some(blob.content().to_vec()))
+}
+
+/// `file` in the index; `None` when the path is not staged (untracked or
+/// removed from the index).
+fn index_blob_bytes(repo: &Repository, file: &str) -> Result<Option<Vec<u8>>, String> {
+    let index = repo.index().map_err(|e| e.to_string())?;
+    let Some(entry) = index.get_path(Path::new(file), 0) else {
+        return Ok(None);
+    };
+    let blob = repo.find_blob(entry.id).map_err(|e| e.to_string())?;
+    ensure_image_size(blob.size())?;
+    Ok(Some(blob.content().to_vec()))
+}
+
+/// Current worktree bytes, confined to the repository directory so a crafted
+/// path (`../…` or a symlink pointing outside) cannot turn this into an
+/// arbitrary file read.
+fn worktree_image_bytes(repo: &Repository, file: &str) -> Result<Option<Vec<u8>>, String> {
+    let Some(workdir) = repo.workdir() else {
+        return Ok(None);
+    };
+    let candidate = workdir.join(file);
+    if !candidate.is_file() {
+        return Ok(None);
+    }
+    let root = std::fs::canonicalize(workdir).map_err(|e| e.to_string())?;
+    let real = std::fs::canonicalize(&candidate).map_err(|e| e.to_string())?;
+    if !real.starts_with(&root) {
+        return Err(format!("path escapes repository: {file}"));
+    }
+    let size = std::fs::metadata(&real).map_err(|e| e.to_string())?.len();
+    ensure_image_size(size as usize)?;
+    std::fs::read(&real)
+        .map(Some)
+        .map_err(|e| format!("read {file}: {e}"))
+}
+
+fn git_diff_images_blocking(
+    path: &str,
+    file: &str,
+    staged: bool,
+) -> Result<GitImageDiff, String> {
+    if !crate::files::is_image(Path::new(file)) {
+        return Err(format!("not an image file: {file}"));
+    }
+    let repo = open_repo(path)?;
+    let (old, new) = if staged {
+        (head_blob_bytes(&repo, file)?, index_blob_bytes(&repo, file)?)
+    } else {
+        (index_blob_bytes(&repo, file)?, worktree_image_bytes(&repo, file)?)
+    };
+    Ok(GitImageDiff {
+        old: old.map(|bytes| image_data_url(file, &bytes)),
+        new: new.map(|bytes| image_data_url(file, &bytes)),
+    })
+}
+
+#[tauri::command]
+pub async fn git_diff_images(
+    path: String,
+    file: String,
+    staged: bool,
+) -> Result<GitImageDiff, String> {
+    tauri::async_runtime::spawn_blocking(move || git_diff_images_blocking(&path, &file, staged))
         .await
         .map_err(|e| e.to_string())?
 }
@@ -1887,6 +2000,65 @@ mod tests {
             text.contains("Binary files /dev/null and b/bin.dat differ"),
             "binary patch shows libgit2 marker: {text}"
         );
+    }
+
+    #[test]
+    fn image_diff_returns_both_sides_for_worktree_changes() {
+        let scratch = Scratch::new();
+        let repo = Repository::init(&scratch.0).unwrap();
+        commit_file(&repo, "logo.png", "v1");
+        std::fs::write(scratch.0.join("logo.png"), "v2").unwrap();
+        let diff = git_diff_images_blocking(scratch.0.to_str().unwrap(), "logo.png", false)
+            .expect("both sides load");
+        assert_eq!(diff.old.as_deref(), Some("data:image/png;base64,djE="));
+        assert_eq!(diff.new.as_deref(), Some("data:image/png;base64,djI="));
+    }
+
+    #[test]
+    fn image_diff_marks_added_and_deleted_sides() {
+        let scratch = Scratch::new();
+        let path = scratch.0.to_str().unwrap();
+        let repo = Repository::init(&scratch.0).unwrap();
+        commit_file(&repo, "keep.txt", "keep\n");
+        std::fs::write(scratch.0.join("added.webp"), "webp").unwrap();
+
+        // Untracked: the index has no entry, the worktree does.
+        let untracked = git_diff_images_blocking(path, "added.webp", false).unwrap();
+        assert!(untracked.old.is_none());
+        assert!(untracked.new.is_some());
+
+        git_stage_blocking(path, &["added.webp".to_string()]).unwrap();
+        let added = git_diff_images_blocking(path, "added.webp", true).unwrap();
+        assert!(added.old.is_none(), "added image has no HEAD side");
+        assert!(added
+            .new
+            .as_deref()
+            .unwrap()
+            .starts_with("data:image/webp;base64,"));
+
+        // Commit it first so the staged deletion has a HEAD side to show.
+        commit_file(&repo, "added.webp", "webp");
+        std::fs::remove_file(scratch.0.join("added.webp")).unwrap();
+        git_stage_blocking(path, &["added.webp".to_string()]).unwrap();
+        let deleted = git_diff_images_blocking(path, "added.webp", true).unwrap();
+        assert!(deleted.old.is_some(), "staged deletion keeps HEAD side");
+        assert!(deleted.new.is_none(), "staged deletion drops index side");
+    }
+
+    #[test]
+    fn image_diff_rejects_oversized_assets_and_non_images() {
+        let scratch = Scratch::new();
+        let path = scratch.0.to_str().unwrap();
+        let repo = Repository::init(&scratch.0).unwrap();
+        commit_file(&repo, "keep.txt", "keep\n");
+        std::fs::write(
+            scratch.0.join("big.png"),
+            vec![0u8; crate::files::MAX_IMAGE_BYTES + 1],
+        )
+        .unwrap();
+        let error = git_diff_images_blocking(path, "big.png", false).unwrap_err();
+        assert!(error.contains("5MB"), "size cap reported: {error}");
+        assert!(git_diff_images_blocking(path, "keep.txt", false).is_err());
     }
 
     #[test]

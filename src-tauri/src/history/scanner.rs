@@ -2,6 +2,7 @@ use super::discovery::{
     codebuddy_transcripts, codex_candidates, discover_agy, discover_claude, discover_codebuddy_in,
     discover_grok, discover_kimi, discover_minimax, discover_opencode, discover_qoder,
     dsh_candidates, identify_head, is_codex_subagent_file, is_dsh_subagent_file,
+    qoder_transcript_conflicts_with_workspace,
     opencode_db_updated_times, opencode_db_visible_sessions, opencode_tree_file_superseded,
     opencode_tree_root, path_is_under, pi_family_candidates,
 };
@@ -217,6 +218,7 @@ struct IndexedFile {
     mtime_ms: i64,
     engine: String,
     session_id: String,
+    workspace_path: String,
     accepted_signature: String,
 }
 
@@ -230,7 +232,7 @@ fn prefetch_stat_keys(
     let mut stmt = conn
         .prepare(
             "SELECT file_path, file_size, file_mtime_ms, engine, session_id,
-                    accepted_frames_signature
+                    workspace_path, accepted_frames_signature
              FROM sessions",
         )
         .map_err(|e| e.to_string())?;
@@ -243,7 +245,8 @@ fn prefetch_stat_keys(
                     mtime_ms: r.get(2)?,
                     engine: r.get(3)?,
                     session_id: r.get(4)?,
-                    accepted_signature: r.get(5)?,
+                    workspace_path: r.get(5)?,
+                    accepted_signature: r.get(6)?,
                 },
             ))
         })
@@ -300,6 +303,10 @@ fn prepare_candidate(
             .map_or("", |set| set.signature.as_str());
         if (indexed.size, indexed.mtime_ms) == sig
             && indexed.accepted_signature == current
+            && cand
+                .known_workspace
+                .as_ref()
+                .is_none_or(|workspace| workspace == &indexed.workspace_path)
             && !stale_paths.contains(&path_str)
         {
             return None;
@@ -635,14 +642,22 @@ fn prune_missing_file_sessions(
     let live: HashSet<PathBuf> = candidates.iter().map(|c| c.path.clone()).collect();
     // Short lock for the row read; all file probing happens outside the lock
     // so metadata I/O cannot stretch the write-side critical section.
-    let rows: Vec<(String, String, String)> = {
+    let rows: Vec<(String, String, String, String)> = {
         let conn = db.0.lock();
         let mut stmt = conn
-            .prepare("SELECT engine, session_id, file_path FROM sessions WHERE file_path <> ''")
+            .prepare(
+                "SELECT engine, session_id, file_path, workspace_path
+                 FROM sessions WHERE file_path <> ''",
+            )
             .map_err(|e| e.to_string())?;
         let rows = stmt
             .query_map([], |r| {
-                Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?))
+                Ok((
+                    r.get::<_, String>(0)?,
+                    r.get::<_, String>(1)?,
+                    r.get::<_, String>(2)?,
+                    r.get::<_, String>(3)?,
+                ))
             })
             .map_err(|e| e.to_string())?;
         let mut out = Vec::new();
@@ -656,12 +671,22 @@ fn prune_missing_file_sessions(
     };
     let mut attached: HashMap<PathBuf, bool> = HashMap::new();
     let mut dead: Vec<(String, String)> = Vec::new();
-    for (engine, session_id, file_path) in rows {
+    for (engine, session_id, file_path, workspace_path) in rows {
         let path = PathBuf::from(&file_path);
         if live.contains(&path)
             || is_remote_path(&file_path)
             || super::split_opencode_db_path(&path).is_some()
         {
+            continue;
+        }
+        // A previous Qoder discovery build could persist a colliding bucket's
+        // file under the wrong workspace. The file still exists, so missing-
+        // file GC alone would never repair it. Delete only positive conflicts;
+        // unreadable/unknown cwd must not destroy an indexed custom title.
+        if matches!(engine.as_str(), "qoder" | "qoder-cn")
+            && qoder_transcript_conflicts_with_workspace(&path, Path::new(&workspace_path))
+        {
+            dead.push((engine, session_id));
             continue;
         }
         if definitely_missing(&path, &mut attached) {
@@ -2338,6 +2363,268 @@ pub(super) mod tests {
                 assert!(!storage_attached(&sessions, &mut verdicts));
             }
         }
+        std::fs::remove_dir_all(&home).ok();
+    }
+
+    fn write_qoder_session(bucket: &Path, session_id: &str, cwd: &Path) {
+        std::fs::create_dir_all(bucket).unwrap();
+        std::fs::write(
+            bucket.join(format!("{session_id}.jsonl")),
+            format!("{}\n", qoder_user_line(session_id, cwd, "第一轮")),
+        )
+        .unwrap();
+    }
+
+    fn qoder_user_line(session_id: &str, cwd: &Path, text: &str) -> serde_json::Value {
+        serde_json::json!({
+            "type": "user",
+            "sessionId": session_id,
+            "cwd": cwd.to_string_lossy(),
+            "uuid": format!("{session_id}-{text}"),
+            "timestamp": "2026-11-01T00:00:00.000Z",
+            "message": { "role": "user", "content": text },
+        })
+    }
+
+    fn register_workspace(db: &crate::db::Db, id: &str, path: &Path) {
+        db.0.lock()
+            .execute(
+                "INSERT INTO workspaces(id, path, name) VALUES(?1, ?2, ?1)",
+                rusqlite::params![id, path.to_string_lossy()],
+            )
+            .unwrap();
+    }
+
+    fn qoder_session_workspace(db: &crate::db::Db, session_id: &str) -> Option<String> {
+        db.0.lock()
+            .query_row(
+                "SELECT workspace_path FROM sessions WHERE engine='qoder' AND session_id=?1",
+                [session_id],
+                |row| row.get(0),
+            )
+            .ok()
+    }
+
+    fn seed_qoder_row(
+        db: &crate::db::Db,
+        session_id: &str,
+        workspace: &Path,
+        transcript: &Path,
+        custom_title: &str,
+    ) {
+        let (size, mtime_ms) = stat_signature(transcript).unwrap();
+        db.0.lock()
+            .execute(
+                "INSERT INTO sessions(
+                    engine, session_id, workspace_path, file_path, file_size,
+                    file_mtime_ms, custom_title
+                 ) VALUES('qoder', ?1, ?2, ?3, ?4, ?5, ?6)",
+                rusqlite::params![
+                    session_id,
+                    workspace.to_string_lossy(),
+                    transcript.to_string_lossy(),
+                    size,
+                    mtime_ms,
+                    custom_title,
+                ],
+            )
+            .unwrap();
+    }
+
+    /// 「前端」「后端」编码后是同一个目录，会话必须按转录本里的 cwd 归属。
+    #[test]
+    fn qoder_colliding_workspaces_keep_their_own_sessions() {
+        let home = scratch_dir("qoder-collision-both");
+        let _guard = HomeGuard::set(&home);
+        let frontend = home.join("项目").join("前端");
+        let backend = home.join("项目").join("后端");
+        std::fs::create_dir_all(&frontend).unwrap();
+        std::fs::create_dir_all(&backend).unwrap();
+        let slug = super::super::claude_encode_project_path(&frontend.to_string_lossy());
+        assert_eq!(
+            slug,
+            super::super::claude_encode_project_path(&backend.to_string_lossy())
+        );
+        let bucket = home.join(".qoder").join("projects").join(&slug);
+        write_qoder_session(&bucket, "frontend-session", &frontend);
+        write_qoder_session(&bucket, "backend-session", &backend);
+        let db = crate::db::Db::open_at(&home.join("app.db")).unwrap();
+        register_workspace(&db, "w1", &frontend);
+        register_workspace(&db, "w2", &backend);
+
+        scan_with(&db, || {}).unwrap();
+
+        assert_eq!(
+            qoder_session_workspace(&db, "frontend-session").as_deref(),
+            Some(&*frontend.to_string_lossy())
+        );
+        assert_eq!(
+            qoder_session_workspace(&db, "backend-session").as_deref(),
+            Some(&*backend.to_string_lossy())
+        );
+        std::fs::remove_dir_all(&home).ok();
+    }
+
+    /// 没有加入 CC GUI 的「后端」只在终端里用过，它的会话不能出现在「前端」名下。
+    #[test]
+    fn qoder_unregistered_neighbor_stays_out_of_workspace() {
+        let home = scratch_dir("qoder-collision-neighbor");
+        let _guard = HomeGuard::set(&home);
+        let frontend = home.join("项目").join("前端");
+        let backend = home.join("项目").join("后端");
+        std::fs::create_dir_all(&frontend).unwrap();
+        let slug = super::super::claude_encode_project_path(&frontend.to_string_lossy());
+        let bucket = home.join(".qoder").join("projects").join(&slug);
+        write_qoder_session(&bucket, "backend-session", &backend);
+        let db = crate::db::Db::open_at(&home.join("app.db")).unwrap();
+        register_workspace(&db, "w1", &frontend);
+
+        scan_with(&db, || {}).unwrap();
+
+        assert_eq!(qoder_session_workspace(&db, "backend-session"), None);
+        std::fs::remove_dir_all(&home).ok();
+    }
+
+    /// 回归：`my-app` 的会话在基线上一直归属正确，加入 `my app` 后再聊一轮也不能跳走。
+    #[test]
+    fn qoder_new_turn_stays_in_its_workspace_after_colliding_add() {
+        let home = scratch_dir("qoder-collision-turn");
+        let _guard = HomeGuard::set(&home);
+        let dashed = home.join("my-app");
+        let spaced = home.join("my app");
+        std::fs::create_dir_all(&dashed).unwrap();
+        std::fs::create_dir_all(&spaced).unwrap();
+        let slug = super::super::claude_encode_project_path(&dashed.to_string_lossy());
+        let bucket = home.join(".qoder").join("projects").join(&slug);
+        write_qoder_session(&bucket, "dashed-session", &dashed);
+        let db = crate::db::Db::open_at(&home.join("app.db")).unwrap();
+        register_workspace(&db, "w1", &dashed);
+        scan_with(&db, || {}).unwrap();
+
+        register_workspace(&db, "w2", &spaced);
+        let transcript = bucket.join("dashed-session.jsonl");
+        let mut text = std::fs::read_to_string(&transcript).unwrap();
+        text.push_str(&format!(
+            "{}\n",
+            qoder_user_line("dashed-session", &dashed, "第二轮")
+        ));
+        std::fs::write(&transcript, text).unwrap();
+        scan_with(&db, || {}).unwrap();
+
+        assert_eq!(
+            qoder_session_workspace(&db, "dashed-session").as_deref(),
+            Some(&*dashed.to_string_lossy())
+        );
+        std::fs::remove_dir_all(&home).ok();
+    }
+
+    /// 有损 CLI 目录里的无 cwd 文件不能靠目录名猜归某一个碰撞工作区。
+    #[test]
+    fn qoder_unknown_cwd_is_not_guessed_from_cli_bucket() {
+        let home = scratch_dir("qoder-collision-unknown-cwd");
+        let _guard = HomeGuard::set(&home);
+        let frontend = home.join("项目").join("前端");
+        let backend = home.join("项目").join("后端");
+        std::fs::create_dir_all(&frontend).unwrap();
+        std::fs::create_dir_all(&backend).unwrap();
+        let slug = super::super::claude_encode_project_path(&frontend.to_string_lossy());
+        let bucket = home.join(".qoder").join("projects").join(&slug);
+        std::fs::create_dir_all(&bucket).unwrap();
+        std::fs::write(bucket.join("unknown.jsonl"), "{}\n").unwrap();
+        let db = crate::db::Db::open_at(&home.join("app.db")).unwrap();
+        register_workspace(&db, "w1", &frontend);
+        register_workspace(&db, "w2", &backend);
+
+        scan_with(&db, || {}).unwrap();
+
+        assert_eq!(qoder_session_workspace(&db, "unknown"), None);
+        std::fs::remove_dir_all(&home).ok();
+    }
+
+    /// 旧构建已经写错工作区时，即使文件签名不变也必须重写归属并保留标题。
+    #[test]
+    fn qoder_unchanged_file_repairs_previous_workspace_attribution() {
+        let home = scratch_dir("qoder-repair-unchanged");
+        let _guard = HomeGuard::set(&home);
+        let frontend = home.join("项目").join("前端");
+        let backend = home.join("项目").join("后端");
+        std::fs::create_dir_all(&frontend).unwrap();
+        std::fs::create_dir_all(&backend).unwrap();
+        let slug = super::super::claude_encode_project_path(&frontend.to_string_lossy());
+        let bucket = home.join(".qoder").join("projects").join(&slug);
+        write_qoder_session(&bucket, "frontend-session", &frontend);
+        let transcript = bucket.join("frontend-session.jsonl");
+        let db = crate::db::Db::open_at(&home.join("app.db")).unwrap();
+        register_workspace(&db, "w1", &frontend);
+        register_workspace(&db, "w2", &backend);
+        seed_qoder_row(&db, "frontend-session", &backend, &transcript, "保留标题");
+
+        scan_with(&db, || {}).unwrap();
+
+        assert_eq!(
+            qoder_session_workspace(&db, "frontend-session").as_deref(),
+            Some(&*frontend.to_string_lossy())
+        );
+        let title: String = db
+            .0
+            .lock()
+            .query_row(
+                "SELECT custom_title FROM sessions WHERE engine='qoder' AND session_id='frontend-session'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(title, "保留标题");
+        std::fs::remove_dir_all(&home).ok();
+    }
+
+    /// 实际工作区未注册时，已确认归属别处的旧行也不能继续挂在错误工作区。
+    #[test]
+    fn qoder_confirmed_old_misattribution_is_pruned() {
+        let home = scratch_dir("qoder-prune-misattributed");
+        let _guard = HomeGuard::set(&home);
+        let frontend = home.join("项目").join("前端");
+        let backend = home.join("项目").join("后端");
+        std::fs::create_dir_all(&frontend).unwrap();
+        let slug = super::super::claude_encode_project_path(&frontend.to_string_lossy());
+        let bucket = home.join(".qoder").join("projects").join(&slug);
+        write_qoder_session(&bucket, "backend-session", &backend);
+        let transcript = bucket.join("backend-session.jsonl");
+        let db = crate::db::Db::open_at(&home.join("app.db")).unwrap();
+        register_workspace(&db, "w1", &frontend);
+        seed_qoder_row(&db, "backend-session", &frontend, &transcript, "旧标题");
+
+        scan_with(&db, || {}).unwrap();
+
+        assert_eq!(qoder_session_workspace(&db, "backend-session"), None);
+        std::fs::remove_dir_all(&home).ok();
+    }
+
+    /// 工作区符号链接的目标暂时脱盘时，路径别名差异不能触发破坏性清理。
+    #[cfg(unix)]
+    #[test]
+    fn qoder_detached_workspace_alias_keeps_indexed_metadata() {
+        let home = scratch_dir("qoder-detached-alias");
+        let _guard = HomeGuard::set(&home);
+        let target = home.join("detached-target");
+        let workspace = home.join("workspace-link");
+        std::fs::create_dir_all(&target).unwrap();
+        std::os::unix::fs::symlink(&target, &workspace).unwrap();
+        let slug = super::super::claude_encode_project_path(&target.to_string_lossy());
+        let bucket = home.join(".qoder").join("projects").join(&slug);
+        write_qoder_session(&bucket, "detached-session", &target);
+        let transcript = bucket.join("detached-session.jsonl");
+        let db = crate::db::Db::open_at(&home.join("app.db")).unwrap();
+        register_workspace(&db, "w1", &workspace);
+        seed_qoder_row(&db, "detached-session", &workspace, &transcript, "保留标题");
+        std::fs::remove_dir_all(&target).unwrap();
+
+        scan_with(&db, || {}).unwrap();
+
+        assert_eq!(
+            qoder_session_workspace(&db, "detached-session").as_deref(),
+            Some(&*workspace.to_string_lossy())
+        );
         std::fs::remove_dir_all(&home).ok();
     }
 }

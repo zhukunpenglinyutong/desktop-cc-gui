@@ -1323,6 +1323,10 @@ pub(super) async fn dispatch(
             let a: GitDiffArgs = parse_args(&raw)?;
             ser(crate::git::git_diff(a.path, a.file, a.staged).await)
         }
+        "git_diff_images" => {
+            let a: GitDiffArgs = parse_args(&raw)?;
+            ser(crate::git::git_diff_images(a.path, a.file, a.staged).await)
+        }
         "git_stage" => {
             let a: GitFilesArgs = parse_args(&raw)?;
             ser(crate::git::git_stage(a.path, a.files).await)
