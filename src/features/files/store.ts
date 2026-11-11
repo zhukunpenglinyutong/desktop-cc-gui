@@ -238,7 +238,7 @@ interface FilesStore {
   /** Return the center area to the chat (a chat tab was selected). */
   clearActiveFile: () => void;
   /** Re-read a file from disk, resetting its editor draft. */
-  reloadFile: (path: string) => Promise<void>;
+  reloadFile: (path: string, encoding?: "utf-8" | "gbk") => Promise<void>;
   closeFile: (path: string) => void;
   /** Move an open file tab to a new position (drag-reorder in the tab strip). */
   moveOpenFile: (path: string, toIndex: number) => void;
@@ -639,7 +639,7 @@ export const useFilesStore = create<FilesStore>((set, get) => ({
 
   saveFile: async (path, content) => {
     const entry = get().fileStates[path];
-    if (!entry?.content || entry.content.kind !== "text" || entry.content.truncated || entry.content.readOnly) {
+    if (!entry?.content || entry.content.kind !== "text" || entry.content.truncated || entry.content.readOnly || entry.content.decodeError) {
       throw new Error("File is not editable");
     }
     const target = entry.session;
@@ -670,7 +670,13 @@ export const useFilesStore = create<FilesStore>((set, get) => ({
         throw error;
       }
     } else {
-      await ipc.writeFile(path, content);
+      await ipc.writeFile(
+        path,
+        content,
+        entry.content.encoding ?? "utf-8",
+        entry.content.bom ?? false,
+        entry.content.lineEnding ?? "lf",
+      );
       set((s) => {
         const current = s.fileStates[path];
         if (!current?.content || current.session) return s;
@@ -689,7 +695,7 @@ export const useFilesStore = create<FilesStore>((set, get) => ({
 
   clearActiveFile: () => set({ activeFilePath: null }),
 
-  reloadFile: async (path) => {
+  reloadFile: async (path, encoding) => {
     const entry = get().fileStates[path];
     if (!entry || (entry.session && entry.saving)) return;
     const target = entry.session;
@@ -707,7 +713,7 @@ export const useFilesStore = create<FilesStore>((set, get) => ({
         : null;
       const content: FileContent = document
         ? { kind: "text", text: document.text, dataUrl: null, truncated: false }
-        : await readRemoteAware(path, (p) => ipc.readFile(p));
+        : await readRemoteAware(path, (p) => ipc.readFile(p, encoding));
       set((s) => {
         const st = s.fileStates[path];
         if (!st || (target ? st !== pending : st.session !== target)) return s;

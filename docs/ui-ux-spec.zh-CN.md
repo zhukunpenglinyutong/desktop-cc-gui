@@ -71,6 +71,7 @@
 
 ## 3. 状态与可用性
 
+- **源码编辑器按字节检测 UTF-8 / GBK 并按原格式保存**：桌面文件读取先识别 UTF-8 BOM，再严格尝试 UTF-8；不是有效 UTF-8 时按 GBK 解码。读取上限落在 UTF-8 字符中间时丢弃不完整尾字节，不误判整个前缀为 GBK。编辑器头部显示编码选择器，手动切换会从磁盘按选中编码重读，文件有未保存修改、远端只读或文件被截断时禁用切换；切换编码时保留当前编辑 / 预览模式。解码仍有错误时允许切换编码重读，不允许把替换字符写回文件；截断状态与解码错误同时显示。保存沿用读取时的编码、UTF-8 BOM 与检测到的主换行格式；GBK 无法表示的字符必须报错并提示首个字符、Unicode 码点和行号，不可静默替换；未提供换行格式的写入沿用传入文本中的换行。实现：`src-tauri/src/files.rs`（`decode_text` / `encode_text`）、`src/features/files/FileEditorHeader.tsx`、`EditorPane.tsx`。回归：`files.rs` 编解码用例、`EditorPane.test.tsx`、`FileEditorHeader.test.tsx`。
 - **工作区里的 MCP 配置不自动执行**：MCP 页与 `/mcp` 面板打开时只自动检测用户自己配置里的服务（`autoProbeEligible`）；配置文件位于工作区内的条目（后端 `workspaceFile`，由 `mcp::source_in_workspace` 判定，未知来源按工作区处理）从不自动检测。手动检测（单条或「检测全部」）先弹「运行工作区里的 MCP 配置？」（`McpProbeConfirmHost`，`mcp_probe_plan` 提供内容）：列出命令与参数、工作目录、env 键名、脱敏后的 URL 与请求头键名，弹出时焦点不在「运行检测」上；确认绑定计划指纹（`McpProbePlan.fingerprint`，完整目标含参数与 env 值的哈希），每次检测前重读计划，指纹没变不再询问，变了（`git pull` 或 agent 改了文件，哪怕列表还没刷新）就重新询问；检测请求带上已确认的指纹，后端重新计算不一致时以 `conflict` 拒绝执行，前端随即忘掉这条确认。拒绝后「检测全部」只检测用户级服务。检测工作区条目时 URL 与请求头里的 `${ENV}` 原样发送、不展开（避免把环境变量里的密钥发到仓库指定的地址）。回归：`probe-store.test.ts`、`probe-confirm.test.ts`、`McpProbeConfirmHost.test.tsx`、`McpSection.test.tsx`、Rust `mcp::probe::tests`。
 - **使用统计可关闭，且不在页面里运行第三方脚本**：「设置 → 关于 → 使用统计」开关（`AnalyticsSetting.tsx`，仅桌面端显示，默认开启，存 `AppSettings.analyticsEnabled`，只经 `analytics_enabled_get/set` 读写，整对象保存时缺省该字段会保留原值）。每次启动由后端（`baidu_tongji.rs`）向百度统计发一次 hm.gif 访问记录，内容只有版本、系统、界面语言、屏幕尺寸与随机访客 ID，不带页面地址与任何令牌；主窗口与 Web 端都不加载 `hm.js`，CSP 不放行百度域名。保存失败时开关回到原状态并提示 `settings.analyticsSaveFailed`。
 - **电脑操控与外网访问设置只在桌面端可用**：Web 访问端输入 `/ccgui-cua`（带不带内容都一样）在会话错误条显示 `chat.cuaDesktopOnly`，不当普通消息发出；后端 dispatch 也强制关闭电脑操控。Web 端的外网访问面板只显示 `settings.webWanDesktopOnly`：中继启停、无人值守、部署与设备批准都会被后端以 `desktop-only:` 拒绝，远端调 `update_app_settings` 时远程访问与统计相关字段保留桌面端现值；设备撤销仍可在 Web 端操作（只会收紧访问）。Web 端令牌从地址栏读到后移入当前标签页的 sessionStorage 并用 `history.replaceState` 清掉。
@@ -355,6 +356,7 @@ const feedback = useRunningFeedback(store.loading);
 | 模型目录 | `src/components/application/ai-chat/engine-model-panel.tsx` | `useActionFeedback` | — |
 | 浏览器刷新 | `src/features/browser/BrowserPane.tsx` | `useActionFeedback` | webview 无加载完成事件，对号 = 指令已下发 |
 | HTML 预览刷新 | `src/features/files/FileEditorHeader.tsx` | `useActionFeedback({ spin: true })` | 重挂载 iframe 重新读盘；iframe 同样没有可等待的加载完成事件，对号 = 指令已下发 |
+| 文件编码切换并重读 | `src/features/files/FileEditorHeader.tsx`、`EditorPane.tsx` | 编辑器内容区加载态 | 从磁盘原始字节按选择的 UTF-8 / GBK 重读；有未保存改动时禁用 |
 | 状态栏「立即同步」 | `src/components/application/app-status-bar/app-status-bar.tsx` | `useRunningFeedback(syncing)` | 进度由 `scan://progress` 事件驱动 |
 | Skills 刷新 | `src/features/skills/InstalledPane.tsx` | `useActionFeedback({ spin: true })` | 一次动作同时重读已安装列表与更新信号；失败走行内 `role="alert"` |
 | Bot「刷新上下文」 | `src/features/settings/agents-prompts/bot-prompt-preview.tsx` | **不加反馈**（就地换成一行说明） | 丢弃已冻结的提示词区块，下次发送重新拼装；语义是「放弃这次会话的快照」而非重读数据，所以不进转圈→对号那套，点击后按钮旁写明「已刷新，下次发送重新拼装」与「会让前缀缓存失效」 |
@@ -517,6 +519,3 @@ const feedback = useRunningFeedback(store.loading);
 | v0.3 | 2026-09 | 插件市场开发者列改用 GitHub 真实头像（失败回落首字母瓷砖）；补充§3 头像规则 |
 | v0.2 | 2026-09 | 插件市场改为表格化列表（分类 chips 带计数、排序、搜索、行内单一状态）；详情页改「左正文 + 右信息栏」；补充§3 列表状态规则 |
 | v0.1 | 2026-09 | 首版：设计基础、状态规范、刷新/复制动作反馈、刷新入口清单 |
-
-
-

@@ -75,6 +75,13 @@ function useIsDark(): boolean {
 export function EditorPane({ path }: { path: string }) {
   const entry = useFilesStore((s) => s.fileStates[path]);
   const [wordWrap, setWordWrap] = useState(false);
+  const [viewMode, setViewMode] = useState<EditorViewMode | null>(null);
+  const name = entry?.name ?? fileName(path);
+  const defaultViewMode = canPreviewFile(name, !isWeb) && opensInPreview(name) ? "preview" : "edit";
+
+  useEffect(() => {
+    if (entry?.content) setViewMode((current) => current ?? defaultViewMode);
+  }, [entry?.content, defaultViewMode]);
 
   if (!entry || entry.loading) {
     return <CenteredSpinner />;
@@ -85,12 +92,14 @@ export function EditorPane({ path }: { path: string }) {
   if (!entry.content) {
     return <CenteredSpinner />;
   }
-  // key remounts the editor with a fresh draft whenever the file (re)loads.
+  // Remount the editor draft on reload while keeping the view mode above it.
   return (
     <FileEditor
       key={`${path}:${entry.loadNonce}`}
       path={path}
       content={entry.content}
+      viewMode={viewMode ?? defaultViewMode}
+      onViewModeChange={setViewMode}
       wordWrap={wordWrap}
       onToggleWordWrap={() => setWordWrap((wrap) => !wrap)}
     />
@@ -172,13 +181,17 @@ function FileLoadError({ path, entry }: { path: string; entry: OpenFileState }) 
   );
 }
 
-function FileEditor({ path, content, wordWrap, onToggleWordWrap }: {
+function FileEditor({ path, content, viewMode, onViewModeChange, wordWrap, onToggleWordWrap }: {
   path: string;
   content: FileContent;
+  viewMode: EditorViewMode;
+  onViewModeChange: (mode: EditorViewMode) => void;
   wordWrap: boolean;
   onToggleWordWrap: () => void;
 }) {
+  const { t } = useTranslation();
   const setFileDirty = useFilesStore((s) => s.setFileDirty);
+  const reloadFile = useFilesStore((s) => s.reloadFile);
   const entry = useFilesStore((s) => s.fileStates[path]);
   const saveFile = useFilesStore((s) => s.saveFile);
   // Inactive (invisible) editors stay mounted; only the visible tab may
@@ -212,9 +225,6 @@ function FileEditor({ path, content, wordWrap, onToggleWordWrap }: {
   const [savedText, setSavedText] = useState(content.text ?? "");
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
-  const [viewMode, setViewMode] = useState<EditorViewMode>(
-    canPreview && opensInPreview(name) ? "preview" : "edit",
-  );
   // HTML preview reload: bumped to remount the iframe (the frame reads the
   // saved file itself, so there is nothing else to refresh).
   const [previewReloadKey, setPreviewReloadKey] = useState(0);
@@ -222,9 +232,9 @@ function FileEditor({ path, content, wordWrap, onToggleWordWrap }: {
   // preview drops it so switching back to read mode starts clean.
   const [previewSearchOpen, setPreviewSearchOpen] = useState(false);
   const [langExt, setLangExt] = useState<Extension[]>([]);
-  // Truncated files are partial (editing + saving would clobber the tail);
-  // remote-readOnly files are complete but unwritable — both stay read-only.
-  const readOnly = content.truncated || content.readOnly === true;
+  // Truncated files are partial; remote files are unwritable; decode failures
+  // show replacement characters and must never be saved over the source bytes.
+  const readOnly = content.truncated || content.readOnly === true || content.decodeError === true;
 
   // Editor find/replace: React owns the visible card, CodeMirror owns the
   // search state, match highlighting and navigation commands. The native
@@ -357,8 +367,8 @@ function FileEditor({ path, content, wordWrap, onToggleWordWrap }: {
     // Close before the CodeMirror view unmounts, otherwise the open-panel
     // state and match highlights would be dropped without a teardown.
     closeEditorSearch();
-    setViewMode(mode);
-  }, [closeEditorSearch]);
+    onViewModeChange(mode);
+  }, [closeEditorSearch, onViewModeChange]);
 
   // 刷新走 §4.1 转圈 → 对号：iframe 重挂载没有可等待的完成事件，对号 = 重新
   // 加载指令已下发（与内置浏览器的刷新语义一致）。
@@ -392,7 +402,19 @@ function FileEditor({ path, content, wordWrap, onToggleWordWrap }: {
       setSavedText(committed);
       setDraft((current) => current === draft ? committed : current);
     } catch (e) {
-      setSaveError(errorText(e));
+      const message = errorText(e);
+      setSaveError(
+        (() => {
+          const match = /^file_encoding_unrepresentable:(\d+):(.*)$/.exec(message);
+          if (match) {
+            const codePoint = match[2].codePointAt(0)?.toString(16).toUpperCase().padStart(4, "0") ?? "?";
+            return t("files.encodingCannotRepresent", { line: match[1], character: match[2], codePoint });
+          }
+          return message.includes("file_encoding_unrepresentable")
+            ? t("files.encodingCannotRepresentGeneric")
+            : message;
+        })(),
+      );
     } finally {
       setSaving(false);
     }
@@ -436,6 +458,11 @@ function FileEditor({ path, content, wordWrap, onToggleWordWrap }: {
       <FileEditorHeader
         path={entry?.sourcePath ?? path}
         name={name}
+        encoding={content.encoding ?? "utf-8"}
+        decodeError={content.decodeError === true}
+        truncated={content.truncated}
+        encodingChangeDisabled={dirty || content.readOnly === true || content.truncated || Boolean(entry?.session)}
+        onEncodingChange={(encoding) => void reloadFile(path, encoding)}
         dirty={dirty}
         readOnly={readOnly}
         canPreview={canPreview}

@@ -1,4 +1,5 @@
 use base64::Engine as _;
+use encoding_rs::GBK;
 use serde::Serialize;
 use std::path::{Component, Path, PathBuf};
 use std::sync::Arc;
@@ -30,6 +31,133 @@ pub struct FileContent {
     pub text: Option<String>,
     pub data_url: Option<String>,
     pub truncated: bool,
+    pub encoding: Option<String>,
+    pub bom: bool,
+    pub decode_error: bool,
+    pub line_ending: Option<String>,
+}
+
+#[derive(Clone, Copy)]
+enum TextEncoding {
+    Utf8,
+    Gbk,
+}
+
+impl TextEncoding {
+    fn from_name(name: &str) -> Option<Self> {
+        match name.to_ascii_lowercase().as_str() {
+            "utf-8" | "utf8" => Some(Self::Utf8),
+            "gbk" | "gb2312" => Some(Self::Gbk),
+            _ => None,
+        }
+    }
+
+    fn name(self) -> &'static str {
+        match self {
+            Self::Utf8 => "utf-8",
+            Self::Gbk => "gbk",
+        }
+    }
+}
+
+fn decode_text(
+    bytes: &[u8],
+    requested: Option<&str>,
+) -> Result<(String, TextEncoding, bool, bool, &'static str), String> {
+    let has_utf8_bom = bytes.starts_with(&[0xEF, 0xBB, 0xBF]);
+    let encoding = match requested {
+        Some(name) => TextEncoding::from_name(name)
+            .ok_or_else(|| format!("unsupported text encoding: {name}"))?,
+        None if has_utf8_bom || std::str::from_utf8(bytes).is_ok() => TextEncoding::Utf8,
+        None => TextEncoding::Gbk,
+    };
+    let payload = if has_utf8_bom && matches!(encoding, TextEncoding::Utf8) {
+        &bytes[3..]
+    } else {
+        bytes
+    };
+    let (text, decode_error) = match encoding {
+        TextEncoding::Utf8 => match std::str::from_utf8(payload) {
+            Ok(text) => (text.to_string(), false),
+            Err(_) => (String::from_utf8_lossy(payload).into_owned(), true),
+        },
+        TextEncoding::Gbk => {
+            let (text, had_errors) = GBK.decode_without_bom_handling(payload);
+            (text.into_owned(), had_errors)
+        }
+    };
+    let line_ending = detect_line_ending(&text);
+    Ok((
+        text,
+        encoding,
+        has_utf8_bom && matches!(encoding, TextEncoding::Utf8),
+        decode_error,
+        line_ending,
+    ))
+}
+
+fn detect_line_ending(text: &str) -> &'static str {
+    let crlf = text.matches("\r\n").count();
+    let lf = text.matches('\n').count().saturating_sub(crlf);
+    let cr = text.matches('\r').count().saturating_sub(crlf);
+    if crlf >= lf && crlf >= cr && crlf > 0 {
+        "crlf"
+    } else if cr > lf {
+        "cr"
+    } else {
+        "lf"
+    }
+}
+
+fn encode_text(
+    text: &str,
+    encoding: &str,
+    bom: bool,
+    line_ending: Option<&str>,
+) -> Result<Vec<u8>, String> {
+    let encoding = TextEncoding::from_name(encoding)
+        .ok_or_else(|| format!("unsupported text encoding: {encoding}"))?;
+    let text = if let Some(line_ending) = line_ending {
+        let line_ending = match line_ending {
+            "lf" => "\n",
+            "crlf" => "\r\n",
+            "cr" => "\r",
+            other => return Err(format!("unsupported line ending: {other}")),
+        };
+        let normalized = text.replace("\r\n", "\n").replace('\r', "\n");
+        if line_ending == "\n" {
+            normalized
+        } else {
+            normalized.replace('\n', line_ending)
+        }
+    } else {
+        text.to_string()
+    };
+    let mut bytes = match encoding {
+        TextEncoding::Utf8 => text.as_bytes().to_vec(),
+        TextEncoding::Gbk => {
+            let (encoded, _, had_errors) = GBK.encode(&text);
+            if had_errors {
+                let mut line = 1;
+                let character = text.chars().find(|character| {
+                    let mut buffer = [0; 4];
+                    let scalar = character.encode_utf8(&mut buffer);
+                    let (_, _, has_error) = GBK.encode(scalar);
+                    if *character == '\n' {
+                        line += 1;
+                    }
+                    has_error
+                });
+                let character = character.unwrap_or('\u{FFFD}');
+                return Err(format!("file_encoding_unrepresentable:{line}:{character}"));
+            }
+            encoded.into_owned()
+        }
+    };
+    if bom && matches!(encoding, TextEncoding::Utf8) {
+        bytes.splice(0..0, [0xEF, 0xBB, 0xBF]);
+    }
+    Ok(bytes)
 }
 
 #[derive(Serialize)]
@@ -294,7 +422,11 @@ pub(crate) fn image_mime(path: &Path) -> &'static str {
 
 /// Sync body of `read_file`; the command wrapper runs it off the main
 /// thread via spawn_blocking (a 1MB read must not stall IPC).
-fn read_file_blocking(db: &crate::db::Db, path: &str) -> Result<FileContent, String> {
+fn read_file_blocking(
+    db: &crate::db::Db,
+    path: &str,
+    encoding_override: Option<&str>,
+) -> Result<FileContent, String> {
     let file = ensure_allowed(path, db)?;
     let meta = std::fs::metadata(&file).map_err(|e| format!("stat {}: {e}", file.display()))?;
     if is_image(&file) {
@@ -312,6 +444,10 @@ fn read_file_blocking(db: &crate::db::Db, path: &str) -> Result<FileContent, Str
             text: None,
             data_url: Some(data_url),
             truncated: false,
+            encoding: None,
+            bom: false,
+            decode_error: false,
+            line_ending: None,
         });
     }
     let mut bytes = Vec::new();
@@ -326,6 +462,13 @@ fn read_file_blocking(db: &crate::db::Db, path: &str) -> Result<FileContent, Str
     let truncated = bytes.len() > MAX_READ_BYTES;
     if truncated {
         bytes.truncate(MAX_READ_BYTES);
+        // A byte cap can split a UTF-8 scalar. Drop only the incomplete suffix
+        // so the valid prefix is not mistaken for legacy-encoded text.
+        if let Err(error) = std::str::from_utf8(&bytes) {
+            if error.error_len().is_none() {
+                bytes.truncate(error.valid_up_to());
+            }
+        }
     }
     // Binary detection: NUL in the first 8KB.
     if bytes[..bytes.len().min(8192)].contains(&0) {
@@ -334,13 +477,22 @@ fn read_file_blocking(db: &crate::db::Db, path: &str) -> Result<FileContent, Str
             text: None,
             data_url: None,
             truncated: false,
+            encoding: None,
+            bom: false,
+            decode_error: false,
+            line_ending: None,
         });
     }
+    let (text, encoding, bom, decode_error, line_ending) = decode_text(&bytes, encoding_override)?;
     Ok(FileContent {
         kind: "text".to_string(),
-        text: Some(String::from_utf8_lossy(&bytes).to_string()),
+        text: Some(text),
         data_url: None,
         truncated,
+        encoding: Some(encoding.name().to_string()),
+        bom,
+        decode_error,
+        line_ending: Some(line_ending.to_string()),
     })
 }
 
@@ -348,11 +500,14 @@ fn read_file_blocking(db: &crate::db::Db, path: &str) -> Result<FileContent, Str
 pub async fn read_file(
     db: tauri::State<'_, Arc<crate::db::Db>>,
     path: String,
+    encoding: Option<String>,
 ) -> Result<FileContent, String> {
     let db = Arc::clone(db.inner());
-    tauri::async_runtime::spawn_blocking(move || read_file_blocking(&db, &path))
-        .await
-        .map_err(|e| e.to_string())?
+    tauri::async_runtime::spawn_blocking(move || {
+        read_file_blocking(&db, &path, encoding.as_deref())
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
@@ -360,11 +515,20 @@ pub async fn write_file(
     db: tauri::State<'_, Arc<crate::db::Db>>,
     path: String,
     content: String,
+    encoding: Option<String>,
+    bom: Option<bool>,
+    line_ending: Option<String>,
 ) -> Result<(), String> {
     let db = Arc::clone(db.inner());
     tauri::async_runtime::spawn_blocking(move || {
         let file = ensure_allowed(&path, &db)?;
-        std::fs::write(&file, content).map_err(|e| format!("write {}: {e}", file.display()))
+        let bytes = encode_text(
+            &content,
+            encoding.as_deref().unwrap_or("utf-8"),
+            bom.unwrap_or(false),
+            line_ending.as_deref(),
+        )?;
+        std::fs::write(&file, bytes).map_err(|e| format!("write {}: {e}", file.display()))
     })
     .await
     .map_err(|e| e.to_string())?
@@ -1118,6 +1282,149 @@ pub async fn list_file_index(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn decodes_gbk_and_preserves_encoding_when_saving() {
+        let source = [0xD6, 0xD0, 0xCE, 0xC4];
+        let (text, encoding, bom, decode_error, _) = decode_text(&source, None).unwrap();
+        assert_eq!(text, "中文");
+        assert_eq!(encoding.name(), "gbk");
+        assert!(!bom);
+        assert!(!decode_error);
+        assert_eq!(
+            encode_text(&text, encoding.name(), bom, None)
+                .unwrap()
+                .as_slice(),
+            &source
+        );
+    }
+
+    #[test]
+    fn detects_utf8_bom_and_preserves_it_on_save() {
+        let source = [0xEF, 0xBB, 0xBF, b'h', b'i'];
+        let (text, encoding, bom, decode_error, _) = decode_text(&source, None).unwrap();
+        assert_eq!(text, "hi");
+        assert_eq!(encoding.name(), "utf-8");
+        assert!(bom);
+        assert!(!decode_error);
+        assert_eq!(
+            encode_text(&text, encoding.name(), bom, None)
+                .unwrap()
+                .as_slice(),
+            &source
+        );
+    }
+
+    #[test]
+    fn requested_encoding_overrides_automatic_detection() {
+        let source = [0xD6, 0xD0, 0xCE, 0xC4];
+        let (text, encoding, _, decode_error, _) = decode_text(&source, Some("utf-8")).unwrap();
+        assert_eq!(encoding.name(), "utf-8");
+        assert!(decode_error);
+        assert!(text.contains('\u{FFFD}'));
+    }
+
+    #[test]
+    fn rejects_gbk_save_when_text_has_unrepresentable_characters() {
+        assert_eq!(
+            encode_text("中文🛠", "gbk", false, None).unwrap_err(),
+            "file_encoding_unrepresentable:1:🛠"
+        );
+    }
+
+    #[test]
+    fn preserves_crlf_when_saving_editor_text() {
+        let source = b"first\r\nsecond\r\n";
+        let (text, _, _, _, line_ending) = decode_text(source, None).unwrap();
+        assert_eq!(line_ending, "crlf");
+        assert_eq!(
+            encode_text(&text, "utf-8", false, Some(line_ending))
+                .unwrap()
+                .as_slice(),
+            source
+        );
+    }
+
+    #[test]
+    fn truncated_utf8_cut_mid_character_stays_utf8() {
+        let scratch = Scratch::new();
+        let db = crate::db::Db::open_at(&scratch.0.join("test.db")).unwrap();
+        let workspace = Scratch::new();
+        grant_root_in(&db, &workspace.0.to_string_lossy()).unwrap();
+        for pad in 0..3 {
+            let mut source = vec![b'a'; pad];
+            while source.len() <= MAX_READ_BYTES {
+                source.extend_from_slice("这是一份普通的中文说明文档内容".as_bytes());
+            }
+            let path = workspace.0.join(format!("big-{pad}.md"));
+            std::fs::write(&path, source).unwrap();
+            let content = read_file_blocking(&db, path.to_str().unwrap(), None).unwrap();
+            assert!(content.truncated, "pad {pad}");
+            assert_eq!(content.encoding.as_deref(), Some("utf-8"), "pad {pad}");
+            assert!(!content.decode_error, "pad {pad}");
+            let text = content.text.unwrap();
+            assert!(text.contains("这是一份普通的中文说明文档内容"), "pad {pad}");
+            assert!(!text.contains('\u{FFFD}'), "pad {pad}");
+        }
+    }
+
+    #[test]
+    fn truncated_gbk_is_still_detected_as_gbk() {
+        let scratch = Scratch::new();
+        let db = crate::db::Db::open_at(&scratch.0.join("test.db")).unwrap();
+        let workspace = Scratch::new();
+        grant_root_in(&db, &workspace.0.to_string_lossy()).unwrap();
+        let encoded = GBK.encode("这是一份普通的中文说明文档内容").0;
+        let mut source = Vec::new();
+        while source.len() <= MAX_READ_BYTES {
+            source.extend_from_slice(&encoded);
+        }
+        let path = workspace.0.join("big-gbk.txt");
+        std::fs::write(&path, source).unwrap();
+        let content = read_file_blocking(&db, path.to_str().unwrap(), None).unwrap();
+        assert!(content.truncated);
+        assert_eq!(content.encoding.as_deref(), Some("gbk"));
+        assert!(content
+            .text
+            .unwrap()
+            .starts_with("这是一份普通的中文说明文档内容"));
+    }
+
+    #[test]
+    fn manual_gbk_does_not_follow_a_utf8_bom() {
+        let mut source = vec![0xEF, 0xBB, 0xBF];
+        source.extend_from_slice("中文\n".as_bytes());
+        let (text, encoding, bom, _, _) = decode_text(&source, Some("gbk")).unwrap();
+        assert_eq!(encoding.name(), "gbk");
+        assert!(!bom);
+        assert_eq!(text, GBK.decode_without_bom_handling(&source).0);
+    }
+
+    #[test]
+    fn utf16_bom_is_not_decoded_and_labelled_as_gbk() {
+        let mut source = vec![0xFF, 0xFE];
+        for unit in "中文内容".encode_utf16() {
+            source.extend_from_slice(&unit.to_le_bytes());
+        }
+        let (text, _, _, decode_error, _) = decode_text(&source, None).unwrap();
+        assert_ne!(text, "中文内容");
+        assert!(decode_error);
+    }
+
+    #[test]
+    fn gbk_refusal_names_the_offending_character_and_line() {
+        let error = encode_text("第一行\n第二行✓\n", "gbk", false, None).unwrap_err();
+        assert_eq!(error, "file_encoding_unrepresentable:2:✓");
+    }
+
+    #[test]
+    fn missing_line_ending_preserves_input_bytes() {
+        let source = "first\r\nsecond\rthird\n";
+        assert_eq!(
+            encode_text(source, "utf-8", false, None).unwrap(),
+            source.as_bytes()
+        );
+    }
 
     /// Every trash goes through `move_to_trash`: the trash crate's own
     /// `delete` defaults to an osascript → Finder chain on macOS.

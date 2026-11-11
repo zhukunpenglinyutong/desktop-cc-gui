@@ -1294,6 +1294,10 @@ export const zh = {
   files: {
     tab: "文件",
     saveFile: "保存",
+    encoding: "文件编码",
+    encodingDecodeError: "解码不完整，只读",
+    encodingCannotRepresent: "GBK 无法表示第 {{line}} 行的“{{character}}”（U+{{codePoint}}），文件未保存。",
+    encodingCannotRepresentGeneric: "当前内容包含 GBK 无法表示的字符，未保存文件。",
     preview: "预览",
     editMode: "编辑",
     wordWrap: "自动换行",
