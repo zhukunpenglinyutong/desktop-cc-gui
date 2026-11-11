@@ -574,9 +574,24 @@ static QODER_CWD_CACHE: std::sync::LazyLock<
     parking_lot::Mutex<std::collections::HashMap<PathBuf, CachedQoderCwd>>,
 > = std::sync::LazyLock::new(|| parking_lot::Mutex::new(std::collections::HashMap::new()));
 
+fn read_qoder_transcript_cwd(path: &Path, bucket: &str) -> Option<String> {
+    const HEAD_LINES: usize = 64;
+    // Use the first cwd consistent with the containing directory. Later
+    // turns can record another cwd (for example after entering a worktree).
+    // The shared head reader bounds both lines and bytes.
+    try_peek_head_json_lines(path, false, HEAD_LINES)
+        .ok()?
+        .into_iter()
+        .find_map(|line| {
+            let cwd = line.get("cwd")?.as_str()?;
+            (!cwd.is_empty()
+                && (qoder_cli_project_slug(cwd) == bucket || qoder_encode_project_slug(cwd) == bucket))
+                .then(|| cwd.to_owned())
+        })
+}
+
 fn qoder_transcript_cwd(path: &Path, bucket: &str, metadata: &std::fs::Metadata) -> Option<String> {
     const CACHE_CAPACITY: usize = 4096;
-    const HEAD_LINES: usize = 64;
     let signature = metadata
         .modified()
         .ok()
@@ -588,18 +603,7 @@ fn qoder_transcript_cwd(path: &Path, bucket: &str, metadata: &std::fs::Metadata)
             }
         }
     }
-    // Use the first cwd consistent with the containing directory. Later
-    // turns can record another cwd (for example after entering a worktree).
-    // The shared head reader bounds both lines and bytes.
-    let cwd = try_peek_head_json_lines(path, false, HEAD_LINES)
-        .ok()?
-        .into_iter()
-        .find_map(|line| {
-            let cwd = line.get("cwd")?.as_str()?;
-            (!cwd.is_empty()
-                && (qoder_cli_project_slug(cwd) == bucket || qoder_encode_project_slug(cwd) == bucket))
-                .then(|| cwd.to_owned())
-        });
+    let cwd = read_qoder_transcript_cwd(path, bucket);
     if let Some(signature) = signature {
         let mut cache = QODER_CWD_CACHE.lock();
         if cache.len() >= CACHE_CAPACITY && !cache.contains_key(path) {
@@ -618,21 +622,32 @@ fn qoder_transcript_cwd(path: &Path, bucket: &str, metadata: &std::fs::Metadata)
 
 /// Candidate `<projects>/<slug>` dirs for one workspace — same spelling
 /// spread as [`claude_project_dirs`] (raw / trailing-trimmed / canonical).
-fn qoder_project_dirs(base: &Path, workspace: &Path) -> Vec<PathBuf> {
+/// `cli_encoded` marks the lossy qodercli namespace, where a transcript
+/// without a usable cwd must not be assigned by directory name alone.
+#[derive(Debug)]
+struct QoderProjectDir {
+    path: PathBuf,
+    cli_encoded: bool,
+}
+
+fn qoder_project_dirs(base: &Path, workspace: &Path) -> Vec<QoderProjectDir> {
     fn push(
-        out: &mut Vec<PathBuf>,
+        out: &mut Vec<QoderProjectDir>,
         seen: &mut std::collections::HashSet<String>,
         base: &Path,
         spelling: &str,
     ) {
         // Qoder also uses ASCII-sanitized project names (notably for Chinese
         // and spaces). Prefer that spelling while retaining legacy dirs.
-        for slug in [
-            qoder_cli_project_slug(spelling),
-            qoder_encode_project_slug(spelling),
+        for (slug, cli_encoded) in [
+            (qoder_cli_project_slug(spelling), true),
+            (qoder_encode_project_slug(spelling), false),
         ] {
             if !slug.is_empty() && seen.insert(slug.clone()) {
-                out.push(base.join(slug));
+                out.push(QoderProjectDir {
+                    path: base.join(slug),
+                    cli_encoded,
+                });
             }
         }
     }
@@ -651,6 +666,18 @@ fn qoder_project_dirs(base: &Path, workspace: &Path) -> Vec<PathBuf> {
     out
 }
 
+fn qoder_cwd_matches_workspace(
+    cwd: &str,
+    workspace: &Path,
+    canonical_workspace: Option<&Path>,
+) -> bool {
+    let cwd = Path::new(cwd);
+    cwd == workspace
+        || canonical_workspace.is_some_and(|canonical| {
+            std::fs::canonicalize(cwd).is_ok_and(|resolved| resolved == canonical)
+        })
+}
+
 /// Qoder sessions: `<config-home>/projects/<cwd-slug>/<sessionId>.jsonl`, one
 /// claude-shaped NDJSON file per session (reference qoder_history.rs). Each
 /// distribution (Global `~/.qoder` / CN `~/.qoder-cn`) owns an independent
@@ -666,10 +693,10 @@ pub(super) fn discover_qoder(
     let mut seen_sessions = std::collections::HashSet::new();
     let canonical_workspace = std::fs::canonicalize(workspace).ok();
     for dir in qoder_project_dirs(&base, workspace) {
-        let Some(bucket) = dir.file_name().and_then(|name| name.to_str()) else {
+        let Some(bucket) = dir.path.file_name().and_then(|name| name.to_str()) else {
             continue;
         };
-        let Ok(entries) = std::fs::read_dir(&dir) else {
+        let Ok(entries) = std::fs::read_dir(&dir.path) else {
             continue;
         };
         for entry in entries.flatten() {
@@ -686,15 +713,21 @@ pub(super) fn discover_qoder(
             if !metadata.is_file() {
                 continue;
             }
-            if let Some(cwd) = qoder_transcript_cwd(&path, bucket, &metadata) {
-                let cwd = Path::new(&cwd);
-                if cwd != workspace
-                    && !canonical_workspace.as_ref().is_some_and(|canonical| {
-                        std::fs::canonicalize(cwd).is_ok_and(|resolved| resolved == *canonical)
-                    })
+            match qoder_transcript_cwd(&path, bucket, &metadata) {
+                Some(cwd)
+                    if !qoder_cwd_matches_workspace(
+                        &cwd,
+                        workspace,
+                        canonical_workspace.as_deref(),
+                    ) =>
                 {
                     continue;
                 }
+                // A lossy CLI bucket can contain sessions from several
+                // workspaces. Without a matching cwd there is no safe way to
+                // choose one; retain the old fallback only for legacy dirs.
+                None if dir.cli_encoded => continue,
+                _ => {}
             }
             if !seen_sessions.insert(stem.to_string()) {
                 continue;
@@ -708,6 +741,39 @@ pub(super) fn discover_qoder(
         }
     }
     out
+}
+
+/// True only when a readable transcript positively identifies another
+/// workspace. Unknown or unreadable ownership stays conservative during GC.
+pub(super) fn qoder_transcript_conflicts_with_workspace(path: &Path, workspace: &Path) -> bool {
+    let Some(bucket) = path
+        .parent()
+        .and_then(Path::file_name)
+        .and_then(|name| name.to_str())
+    else {
+        return false;
+    };
+    let Ok(metadata) = std::fs::metadata(path) else {
+        return false;
+    };
+    if !metadata.is_file() {
+        return false;
+    }
+    let canonical_workspace = std::fs::canonicalize(workspace).ok();
+    // A destructive GC decision must not depend on a cached head if the file
+    // was replaced while preserving its size and mtime.
+    read_qoder_transcript_cwd(path, bucket).is_some_and(|cwd| {
+        if Path::new(&cwd) == workspace {
+            return false;
+        }
+        // A dangling symlink or detached volume makes canonicalization fail.
+        // Without it, a spelling difference is not positive evidence that the
+        // transcript belongs elsewhere; preserve the user's indexed metadata.
+        let Some(canonical) = canonical_workspace.as_deref() else {
+            return false;
+        };
+        !qoder_cwd_matches_workspace(&cwd, workspace, Some(canonical))
+    })
 }
 
 /// OpenCode data roots holding `storage/{session,message,part}/…` and
@@ -2000,7 +2066,8 @@ mod tests {
         let slug = qoder_encode_project_slug(&workspace.to_string_lossy());
         let dir = home.join(".qoder").join("projects").join(&slug);
         std::fs::create_dir_all(&dir).unwrap();
-        std::fs::write(dir.join("sess-1.jsonl"), "{}\n").unwrap();
+        let line = serde_json::json!({"cwd": workspace.to_string_lossy()});
+        std::fs::write(dir.join("sess-1.jsonl"), format!("{line}\n")).unwrap();
         std::fs::write(dir.join("notes.txt"), "x").unwrap();
 
         let _guard = HomeGuard::set(&home);
@@ -2021,7 +2088,8 @@ mod tests {
         let slug = qoder_encode_project_slug(&workspace.to_string_lossy());
         let dir = home.join(".qoder-cn").join("projects").join(&slug);
         std::fs::create_dir_all(&dir).unwrap();
-        std::fs::write(dir.join("sess-cn.jsonl"), "{}\n").unwrap();
+        let line = serde_json::json!({"cwd": workspace.to_string_lossy()});
+        std::fs::write(dir.join("sess-cn.jsonl"), format!("{line}\n")).unwrap();
 
         let _guard = HomeGuard::set(&home);
         let found = discover_qoder(&workspace, crate::engine::qoder::QoderDistribution::Cn);
@@ -2043,7 +2111,7 @@ mod tests {
             base,
             Path::new(r"E:\公司\深圳睿服科技\04Project\RFKJ\261015RuiFuOperationsBusiPlat"),
         );
-        assert!(dirs.contains(&base.join(
+        assert!(dirs.iter().any(|dir| dir.path == base.join(
             "E------------04Project-RFKJ-261015RuiFuOperationsBusiPlat"
         )));
     }
@@ -2070,7 +2138,12 @@ mod tests {
             ] {
                 let dir = base.join(slug);
                 std::fs::create_dir_all(&dir).unwrap();
-                std::fs::write(dir.join(format!("{id}.jsonl")), "{}\n").unwrap();
+                let content = if slug == &sanitized {
+                    serde_json::json!({"cwd": workspace.to_string_lossy()}).to_string()
+                } else {
+                    "{}".to_string()
+                };
+                std::fs::write(dir.join(format!("{id}.jsonl")), format!("{content}\n")).unwrap();
             }
             let found = discover_qoder(&workspace, distribution);
             let mut ids: Vec<_> = found.iter().map(|file| file.session_id.as_str()).collect();
@@ -2427,7 +2500,7 @@ mod tests {
         for (workspace, slug) in cases {
             let dirs = qoder_project_dirs(base, Path::new(&workspace));
             assert!(
-                dirs.contains(&base.join(&slug)),
+                dirs.iter().any(|dir| dir.path == base.join(&slug)),
                 "{workspace} should map to {slug}, got {dirs:?}"
             );
         }
