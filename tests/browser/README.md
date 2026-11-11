@@ -94,7 +94,9 @@ Open `/tests/browser/run-status-strip.html` with the Vite dev server running to
 check the actual chat status strip against seeded chat/git stores. The fixture
 shows one settled and one active delegated task; `后台任务完成` appends a hidden
 transcript status row, so the pill must move from 1/2 to 2/2 and the detail row
-must read 已完成 while streaming remains active. No model, IPC or saved conversation.
+must read 已完成 while streaming remains active. The page asserts that sequence
+itself and reports `PASS` or `FAIL` with the failed check; the buttons stay for
+manual replay. No model, IPC or saved conversation.
 
 Run the deterministic timing, grapheme, Markdown and store regressions with:
 

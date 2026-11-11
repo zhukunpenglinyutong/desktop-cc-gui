@@ -497,7 +497,9 @@ describe("refreshSubagentStatus", () => {
   });
 
   it("keeps runtime identity when completion supersedes fetched dispatch progress", async () => {
-    const original = { ...dispatch(1, ["Worker", "Other"]), toolCallId: "dispatch-runtime" };
+    // Real history rows carry no `toolCallId` (see ipc.ts); the dispatch's own
+    // `tasks[]` arguments are then the only link to its progress ids.
+    const original = dispatch(1, ["Worker", "Other"]);
     const { store, actions, loadHistoryPage } = setup([original]);
     loadHistoryPage.mockResolvedValue(page([
       { ...original, result: { details: { progress: [
@@ -527,6 +529,79 @@ describe("refreshSubagentStatus", () => {
     await actions.refreshSubagentStatus(KEY);
 
     expect(store.getState().bySession[KEY].messages).toHaveLength(2);
+  });
+
+  it("does not settle a live re-dispatch from an older completion", async () => {
+    // The old completion is already folded into the cached transcript; the new
+    // turn re-dispatches the same name and has not reached disk yet, so a
+    // refresh only sees the old delivery. It must not end the new run.
+    const oldCompletion = status(2, [{ id: "Worker", status: "completed" }], "2026-10-28T00:00:01Z");
+    const live = [
+      { seq: 10, role: "user", text: "Run Worker again", ts: null },
+      dispatch(11, ["Worker"], "2026-10-28T00:10:00Z"),
+    ];
+    const { store, actions, loadHistoryPage } = setup(live, [dispatch(1), oldCompletion]);
+    loadHistoryPage.mockResolvedValue(page([status(2, [{ id: "Worker", status: "completed" }], "2026-10-28T00:00:01Z")]));
+
+    await actions.refreshSubagentStatus(KEY);
+
+    const session = store.getState().bySession[KEY];
+    expect(
+      deriveAgentTaskSteps([...session.subagentHistory, ...session.messages], false, "omp")
+        .map((step) => step.state),
+    ).toEqual(["complete", "active"]);
+    expect(session.messages.filter((row) => row.role === AGENT_STATUS_ROLE)).toHaveLength(0);
+  });
+
+  it("ends agents missing from a fetched complete jobs roster", async () => {
+    const { store, actions, loadHistoryPage } = setup([dispatch(1, ["Worker", "Other"])]);
+    loadHistoryPage.mockResolvedValueOnce(page([
+      tool(3, { op: "jobs" }, { details: { op: "jobs", jobs: [{ id: "Worker", status: "completed" }] } }),
+    ]));
+
+    await actions.refreshSubagentStatus(KEY);
+
+    expect(
+      deriveAgentTaskSteps(store.getState().bySession[KEY].messages, false, "omp")
+        .map((step) => step.state),
+    ).toEqual(["complete", "complete"]);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("ends every active agent from an empty fetched complete jobs roster", async () => {
+    const { store, actions, loadHistoryPage } = setup([dispatch(1, ["Worker", "Other"])]);
+    loadHistoryPage.mockResolvedValueOnce(page([
+      tool(3, { op: "jobs" }, { details: { op: "jobs", jobs: [] } }),
+    ]));
+
+    await actions.refreshSubagentStatus(KEY);
+
+    expect(
+      deriveAgentTaskSteps(store.getState().bySession[KEY].messages, false, "omp")
+        .every((step) => step.state === "complete"),
+    ).toBe(true);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("keeps a running and a terminal snapshot of one job from the same millisecond", async () => {
+    const timestamp = "2026-10-28T00:00:00.123Z";
+    const { store, actions, loadHistoryPage } = setup();
+    loadHistoryPage.mockResolvedValueOnce(page([
+      status(5, [{ id: "Worker", status: "running" }], timestamp),
+      status(6, [{ id: "Worker", status: "completed" }], timestamp),
+    ]));
+
+    await actions.refreshSubagentStatus(KEY);
+
+    const messages = store.getState().bySession[KEY].messages;
+    const deliveries = messages.filter((row) => row.role === AGENT_STATUS_ROLE);
+    // The running snapshot may be superseded by the terminal one; the terminal
+    // assertion itself must survive the shared timestamp.
+    expect(deliveries).toHaveLength(1);
+    expect(deliveries[0]).toMatchObject({ ts: timestamp });
+    expect(JSON.stringify(deliveries[0].result)).toContain("completed");
+    expect(deriveAgentTaskSteps(messages, false, "omp")[0].state).toBe("complete");
+    expect(vi.getTimerCount()).toBe(0);
   });
 
   it.each(["wait ids", "unknown status"])("does not treat %s as newer state evidence", async (kind) => {

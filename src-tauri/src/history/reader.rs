@@ -685,6 +685,11 @@ fn subagent_history_row(message: &Message, delegation: bool) -> Message {
 }
 
 /// Slice a cached parse into a page (shared by local and remote loaders).
+///
+/// `limit` counts visible rows. Async status notifications are folded into
+/// `__agent_status__` rows the timeline hides, and they often arrive in runs
+/// far longer than a page; slicing the raw array would hand back a page of
+/// nothing but hidden rows and leave the conversation looking empty.
 fn page_from_cached(
     cached: &CachedSession,
     limit: Option<usize>,
@@ -692,32 +697,50 @@ fn page_from_cached(
 ) -> SessionPage {
     let limit = limit.unwrap_or(100).clamp(1, 500);
     let messages = &cached.parsed.messages;
-    let (page, next_before, start) = match before_seq {
+    let visible = |message: &Message| message.role != "__agent_status__";
+    let (start, end) = match before_seq {
         Some(before) => {
             let end = messages
                 .iter()
                 .position(|m| m.seq >= before)
                 .unwrap_or(messages.len());
-            let start = end.saturating_sub(limit);
-            let next = if start > 0 {
-                messages.get(start).map(|m| m.seq)
-            } else {
-                None
-            };
-            (messages[start..end].to_vec(), next, start)
+            let mut visible_left = limit;
+            let mut start = end;
+            while start > 0 {
+                start -= 1;
+                if visible(&messages[start]) {
+                    if visible_left == 0 {
+                        start += 1;
+                        break;
+                    }
+                    visible_left -= 1;
+                }
+            }
+            (start, end)
         }
         None => {
-            let start = messages.len().saturating_sub(limit);
-            let next = if start > 0 {
-                messages.get(start).map(|m| m.seq)
-            } else {
-                None
-            };
-            (messages[start..].to_vec(), next, start)
+            let mut visible_left = limit;
+            let mut start = messages.len();
+            while start > 0 {
+                start -= 1;
+                if visible(&messages[start]) {
+                    if visible_left == 0 {
+                        start += 1;
+                        break;
+                    }
+                    visible_left -= 1;
+                }
+            }
+            (start, messages.len())
         }
     };
+    let next_before = if start > 0 {
+        messages.get(start).map(|m| m.seq)
+    } else {
+        None
+    };
     SessionPage {
-        messages: page,
+        messages: messages[start..end].to_vec(),
         next_before,
         subagent_history: subagent_history_until(messages, &cached.fold, start),
     }
@@ -2870,6 +2893,39 @@ mod tests {
         let older = page_from_cached(&cached, Some(100), page.next_before);
         assert!(older.subagent_history.is_empty());
         assert!(older.messages.iter().any(|row| row.role == "__agent_status__"));
+    }
+
+    #[test]
+    fn session_page_counts_visible_rows_not_hidden_async_status() {
+        // A long run of async notifications after the last visible reply must
+        // not fill (or displace) the newest page: the conversation would look
+        // empty until the user paged back.
+        let mut messages = vec![plain(0, "user")];
+        messages.extend((1..=150).map(|seq| plain(seq, "assistant")));
+        messages.extend((151..=270).map(|seq| {
+            let mut status = plain(seq, "__agent_status__");
+            status.ts = Some(format!("2026-10-28T10:{:02}:{:02}Z", seq / 60, seq % 60));
+            status.result = Some(json!({"details": {"jobs": [
+                {"id": "Worker", "status": "completed"}
+            ]}}));
+            status
+        }));
+        let fold = subagent_fold(&messages);
+        let cached = CachedSession { parsed: ParsedSession { messages }, fold, footprint: 0 };
+
+        let page = page_from_cached(&cached, Some(100), None);
+        let visible: Vec<_> = page.messages.iter()
+            .filter(|message| message.role != "__agent_status__").collect();
+        assert_eq!(visible.len(), 100);
+        assert_eq!(visible.first().unwrap().seq, 51);
+        assert!(page.messages.iter().any(|message| message.role == "__agent_status__"));
+
+        let older = page_from_cached(&cached, Some(100), page.next_before);
+        let visible: Vec<_> = older.messages.iter()
+            .filter(|message| message.role != "__agent_status__").collect();
+        assert_eq!(visible.len(), 51);
+        assert_eq!(visible.first().unwrap().seq, 0);
+        assert!(older.next_before.is_none());
     }
 
     /// Cutting the cached full fold at a page start must reproduce a fresh

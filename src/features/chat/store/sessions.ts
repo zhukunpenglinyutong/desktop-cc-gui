@@ -49,7 +49,13 @@ import {
 } from "./session-utils";
 import type { ChatStore } from "./types";
 import type { LoadHistoryPage, StoreGet, StoreSet } from "./context";
-import { agentState, deriveAgentTaskSteps, dispatchRefsFromArgs } from "../components/agent-task-steps";
+import {
+  agentState,
+  deriveAgentTaskSteps,
+  dispatchRefsFromArgs,
+  isCompleteJobsRoster,
+  type AgentTaskStepState,
+} from "../components/agent-task-steps";
 
 function omitKey(rec: Record<string, boolean>, key: string) {
   const next = { ...rec };
@@ -107,8 +113,17 @@ function withStatusReadTimeout<T>(read: Promise<T>, ms: number): Promise<T> {
   );
   return promise;
 }
+type StatusJob = { id: string; state: AgentTaskStepState };
+/** What an appended row was read from, before any job was filtered out:
+ *  re-reads must be deduplicated against the source, not against what the
+ *  display happened to keep. */
+type StatusRowSource = {
+  seq: number;
+  signature: string | null;
+  jobs: StatusJob[];
+};
 // Appending rows changes their local seq, not their transcript identity/order.
-const statusRowSources = new WeakMap<Message, { seq: number; signature: string | null }>();
+const statusRowSources = new WeakMap<Message, StatusRowSource>();
 // Rows parsed from a transcript carry the engine host's clock; rows appended
 // from the live event stream carry this machine's. The two clocks are not
 // comparable (a WSL / remote host can run minutes behind after a suspend), so
@@ -143,24 +158,36 @@ function statusJobId(value: unknown): string | undefined {
   const entry = recordValue(value);
   if (!entry || agentState(entry.status) === undefined) return undefined;
   const id = typeof entry.id === "string" ? entry.id.trim() : "";
+  // `agentId` is the real agent identity; `jobId` may carry a collision
+  // suffix on the background handle (the backend also normalizes this).
+  const agentId = typeof entry.agentId === "string" ? entry.agentId.trim() : "";
   const jobId = typeof entry.jobId === "string" ? entry.jobId.trim() : "";
-  return id || jobId || undefined;
+  return id || agentId || jobId || undefined;
 }
 
-function statusJobIds(message: Message): string[] {
+/** The ids and states one message asserts for its jobs. A roster row also
+ *  asserts that an absent active job has ended, so callers that need that
+ *  semantics must check `isCompleteJobsRoster` themselves. */
+function statusJobEntries(message: Message): StatusJob[] {
   if (message.role !== "tool" && message.role !== AGENT_STATUS_ROLE) return [];
   const details = recordValue(recordValue(message.result)?.details);
   if (!details) return [];
-  const ids: string[] = [];
+  const entries: StatusJob[] = [];
   for (const bucket of SUBAGENT_STATUS_BUCKETS) {
     const values = details[bucket];
     if (!Array.isArray(values)) continue;
     for (const value of values) {
+      const entry = recordValue(value);
       const id = statusJobId(value);
-      if (id) ids.push(id);
+      const state = entry ? agentState(entry.status) : undefined;
+      if (id && state) entries.push({ id, state });
     }
   }
-  return ids;
+  return entries;
+}
+
+function statusJobIds(message: Message): string[] {
+  return statusJobEntries(message).map((job) => job.id);
 }
 
 function isNewerTranscriptRow(message: Message, candidate: Message): boolean {
@@ -185,16 +212,41 @@ function hasNewerJobEvidence(
   transcript: Message[],
   sameClock: (message: Message) => boolean,
 ): boolean {
+  // A live dispatch that follows a recorded terminal status for the same id is
+  // a new run of that name; one that does not is the run the candidate
+  // reports on, re-delivered live (its clock is not comparable). The store
+  // appends live rows in arrival order, so the recorded row's position is the
+  // only reliable "before" evidence across the two clocks.
+  const redispatchIndex = transcript.indexOf(candidate);
+  const liveRedispatch = (dispatchRow: Message) => {
+    const index = transcript.indexOf(dispatchRow);
+    if (index < 0) return false;
+    for (let i = 0; i < index && i < redispatchIndex; i++) {
+      const row = transcript[i];
+      if (row.role !== AGENT_STATUS_ROLE) continue;
+      if (statusJobEntries(row).some((job) => job.id === jobId && job.state === "complete")) {
+        return true;
+      }
+    }
+    return false;
+  };
   return transcript.some((message) => {
     if (!isNewerTranscriptRow(message, candidate)) return false;
+    const dispatched = message.role === "tool" &&
+      dispatchRefsFromArgs(message.args).some((ref) => ref.id === jobId);
     // A live row's timestamp comes from this machine, the delivery's from the
     // engine host. When the host clock runs behind, the delivery looks older
-    // than the last live "running" snapshot even though it happened after;
-    // only rows from the same transcript clock may supersede it by time.
-    if (message.ts && candidate.ts && !sameClock(message)) return false;
-    if (statusJobIds(message).includes(jobId)) return true;
-    return message.role === "tool" &&
-      dispatchRefsFromArgs(message.args).some((ref) => ref.id === jobId);
+    // than the last live snapshot even though it happened after. Only a live
+    // *re-dispatch* proves the candidate belongs to an earlier run of the id;
+    // a live terminal snapshot agrees with the delivery's own verdict, and a
+    // live "running" snapshot must not drop the terminal delivery.
+    if (message.ts && candidate.ts && !sameClock(message)) {
+      if (dispatched) return liveRedispatch(message);
+      return statusJobEntries(message).some(
+        (job) => job.id === jobId && job.state === "complete",
+      );
+    }
+    return dispatched || statusJobIds(message).includes(jobId);
   });
 }
 
@@ -206,11 +258,16 @@ function withoutSupersededJobs(
   const result = recordValue(message.result);
   const details = recordValue(result?.details);
   if (!result || !details) return null;
+  // A complete roster's meaning is "every active agent not listed has ended";
+  // filtering an entry out would turn it into a statement about the others.
+  if (isCompleteJobsRoster(message)) return message;
   let changed = false;
   let remaining = 0;
   const nextDetails = { ...details };
-  const keepProgressIdentity = message.role === "tool" && Boolean(message.toolCallId) &&
-    dispatchRefsFromArgs(message.args).length > 0;
+  // Completion supersedes the running state, not the dispatch's authoritative
+  // index -> runtime id association. History rows carry no `toolCallId`, so
+  // the dispatch's own `tasks[]` args also keep that identity.
+  const keepProgressIdentity = dispatchRefsFromArgs(message.args).length > 0;
   for (const bucket of SUBAGENT_STATUS_BUCKETS) {
     const values = details[bucket];
     if (!Array.isArray(values)) continue;
@@ -220,8 +277,6 @@ function withoutSupersededJobs(
       const id = statusJobId(value);
       if (id && hasNewerJobEvidence(message, id, transcript, sameClock)) {
         bucketChanged = true;
-        // Completion supersedes the running state, not the dispatch's
-        // authoritative index -> runtime id association.
         const entry = recordValue(value);
         if (bucket === "progress" && keepProgressIdentity && typeof entry?.id === "string") {
           filtered.push({ id: entry.id, index: entry.index });
@@ -247,7 +302,10 @@ function statusRowSignature(message: Message): string | null {
   const source = statusRowSources.get(message);
   if (source) return source.signature;
   try {
-    return JSON.stringify([message.text, message.args ?? null, message.result ?? null]);
+    // The timestamp is part of the identity: the same jobs at a later instant
+    // are a new assertion (a re-delivery whose payload repeats an earlier one
+    // must not be dropped as a duplicate).
+    return JSON.stringify([message.ts, message.text, message.args ?? null, message.result ?? null]);
   } catch {
     return null;
   }
@@ -272,26 +330,37 @@ function freshStatusRows(
     statusRowSignature(message),
   ]);
   const currentSources = new Set(current
-    .filter((message) => statusRowSources.has(message) || statusJobIds(message).length > 0)
+    .filter((message) =>
+      statusRowSources.has(message) ||
+      statusJobIds(message).length > 0 ||
+      isCompleteJobsRoster(message))
     .map(sourceKey));
   // A delivery is identified by its timestamp, but two deliveries can land in
-  // the same millisecond; only treat a same-ts row as a duplicate when every
-  // job it reports is already covered by that timestamp.
-  const timestampJobs = new Map<string, Set<string>>();
+  // the same millisecond — including the running and the terminal snapshot of
+  // one job. Coverage therefore keeps the state as well as the id, and it is
+  // rebuilt from the rows' original sources: a locally filtered row must not
+  // make an already-recorded job look new on the next read.
+  const timestampJobs = new Map<string, Map<string, AgentTaskStepState>>();
   for (const message of current) {
     if (message.role !== AGENT_STATUS_ROLE || !message.ts) continue;
-    const known = timestampJobs.get(message.ts) ?? new Set<string>();
-    for (const id of statusJobIds(message)) known.add(id);
+    const known = timestampJobs.get(message.ts) ?? new Map<string, AgentTaskStepState>();
+    const jobs = statusRowSources.get(message)?.jobs ?? statusJobEntries(message);
+    for (const job of jobs) {
+      if (known.get(job.id) !== "complete") known.set(job.id, job.state);
+    }
     timestampJobs.set(message.ts, known);
   }
   const signatures = new Set(
     current
-      .filter((message) => message.role === AGENT_STATUS_ROLE && !message.ts)
+      .filter((message) => message.role === AGENT_STATUS_ROLE)
       .map(statusRowSignature)
       .filter((signature): signature is string => Boolean(signature)),
   );
   const rows = pageMessages
-    .filter((message) => message.role === AGENT_STATUS_ROLE || statusJobIds(message).length > 0)
+    .filter((message) =>
+      message.role === AGENT_STATUS_ROLE ||
+      statusJobIds(message).length > 0 ||
+      isCompleteJobsRoster(message))
     .sort((left, right) => left.seq - right.seq);
   const fresh: Message[] = [];
   let seq = firstSequence;
@@ -299,14 +368,14 @@ function freshStatusRows(
     const signature = statusRowSignature(source);
     const key = sourceKey(source);
     if (source.role === "tool" && currentSources.has(key)) continue;
-    const jobs = source.ts ? statusJobIds(source) : [];
-    if (source.role === AGENT_STATUS_ROLE) {
-      if (source.ts) {
-        const known = timestampJobs.get(source.ts);
-        if (known && jobs.every((id) => known.has(id))) continue;
-      } else if (signature && signatures.has(signature)) {
-        continue;
-      }
+    if (signature && signatures.has(signature)) continue;
+    const jobs = statusJobEntries(source);
+    if (source.role === AGENT_STATUS_ROLE && source.ts && jobs.length > 0) {
+      const known = timestampJobs.get(source.ts);
+      if (known && jobs.every((job) => {
+        const state = known.get(job.id);
+        return state === "complete" || state === job.state;
+      })) continue;
     }
     const message = withoutSupersededJobs(source, transcript, sameClock);
     if (!message) continue;
@@ -315,15 +384,17 @@ function freshStatusRows(
     statusRowSources.set(appended, {
       seq: statusRowSources.get(source)?.seq ?? source.seq,
       signature,
+      jobs,
     });
     fresh.push(appended);
     currentSources.add(key);
-    if (source.ts) {
-      const known = timestampJobs.get(source.ts) ?? new Set<string>();
-      for (const id of jobs) known.add(id);
+    if (signature) signatures.add(signature);
+    if (source.ts && jobs.length > 0) {
+      const known = timestampJobs.get(source.ts) ?? new Map<string, AgentTaskStepState>();
+      for (const job of jobs) {
+        if (known.get(job.id) !== "complete") known.set(job.id, job.state);
+      }
       timestampJobs.set(source.ts, known);
-    } else if (signature) {
-      signatures.add(signature);
     }
   }
   return fresh;
@@ -332,7 +403,10 @@ function freshStatusRows(
 
 function hasActiveSubagents(messages: Message[], engine: string): boolean {
   return deriveAgentTaskSteps(messages, false, engine).some(
-    (step) => step.state === "active",
+    // `pending` covers a dispatch the current turn has not settled yet: its
+    // display state may already be inferred as complete, but only a status
+    // row can prove it.
+    (step) => step.state === "active" || step.pending,
   );
 }
 /**

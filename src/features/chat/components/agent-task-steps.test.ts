@@ -122,6 +122,30 @@ describe("subagent counting", () => {
     expect(deriveAgentTaskSteps([delivery], false, "omp")).toEqual([]);
   });
 
+  it("resolves a suffixed job handle through the explicit agent identity", () => {
+    const delivery: Message = {
+      seq: 6,
+      role: AGENT_STATUS_ROLE,
+      text: "",
+      ts: null,
+      result: {
+        details: {
+          jobs: [
+            // omp may suffix the background handle on collision; `agentId` is
+            // the name the dispatch used.
+            { jobId: "CoreInvokeFilterParse-2", agentId: "CoreInvokeFilterParse", status: "completed" },
+          ],
+        },
+      },
+    };
+
+    expect(deriveAgentTaskSteps([DISPATCH, delivery], true, "omp").map((step) => step.state)).toEqual([
+      "complete",
+      "active",
+      "active",
+    ]);
+  });
+
   it("prefers an explicit snapshot id and falls back to jobId for a blank id", () => {
     const delivery: Message = {
       seq: 6,

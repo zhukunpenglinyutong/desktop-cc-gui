@@ -1245,12 +1245,17 @@ fn pi_async_result_rows(value: &Value) -> LineRows {
         previous_end = result.range.end;
         let Some(id) = result.id else { continue };
         if scoped {
+            // `jobId` is the background handle and may carry a collision
+            // suffix; `agentId` is the real agent identity. Both match a tag,
+            // and the explicit agent identity wins over the handle when no
+            // header disambiguates them.
             let job = jobs.iter_mut().find(|job| {
-                let explicit_id = job.get("id").and_then(Value::as_str);
+                let identity = job.get("id").and_then(Value::as_str)
+                    .or_else(|| job.get("agentId").and_then(Value::as_str));
                 let handle = job.get("jobId").and_then(Value::as_str);
                 match job_id {
-                    Some(owner) => handle.or(explicit_id) == Some(owner),
-                    None => explicit_id.or(handle) == Some(id),
+                    Some(owner) => handle == Some(owner) || identity == Some(owner),
+                    None => identity == Some(id) || handle == Some(id),
                 }
             });
             let Some(job) = job.and_then(Value::as_object_mut) else { continue };
@@ -1262,7 +1267,11 @@ fn pi_async_result_rows(value: &Value) -> LineRows {
             if job.get("id").is_some_and(|explicit| explicit.as_str() != Some(id)) {
                 continue;
             }
-            job.entry("id").or_insert_with(|| Value::String(id.to_string()));
+            if let Some(agent) = job.get("agentId").and_then(Value::as_str).map(str::to_string) {
+                job.insert("id".into(), Value::String(agent));
+            } else {
+                job.entry("id").or_insert_with(|| Value::String(id.to_string()));
+            }
             if let Some(status) = result.status {
                 job.entry("status").or_insert_with(|| Value::String(status.to_string()));
             }
@@ -1277,7 +1286,10 @@ fn pi_async_result_rows(value: &Value) -> LineRows {
     for job in &mut jobs {
         let Some(job) = job.as_object_mut() else { continue };
         if !job.contains_key("id") {
-            if let Some(id) = job.get("jobId").and_then(Value::as_str).map(str::to_string) {
+            // No tag settled this row: the real agent identity is still the
+            // one the panel's dispatch knows, not the suffixed job handle.
+            if let Some(id) = job.get("agentId").or_else(|| job.get("jobId"))
+                .and_then(Value::as_str).map(str::to_string) {
                 job.insert("id".into(), Value::String(id));
             }
         }
@@ -2502,6 +2514,44 @@ mod tests {
     }
 
     #[test]
+    fn pi_async_results_match_a_tag_through_the_agent_identity() {
+        // omp suffixes the background handle on collision (`Worker-2`) but the
+        // agent it belongs to is still `Worker`; a tag names the agent.
+        let line = serde_json::json!({
+            "type": "custom_message",
+            "customType": "async-result",
+            "content": [{"type": "text", "text": concat!(
+                "<task-result id=\"Worker\" status=\"completed\">done</task-result>"
+            )}],
+            "details": {"jobs": [
+                {"jobId": "Worker-2", "agentId": "Worker", "type": "task"}
+            ]}
+        });
+        let parsed = fold_rows(extract_line_messages("omp", &line, ImageMode::Collect));
+        let jobs = parsed.messages[0].result.as_ref().unwrap()["details"]["jobs"]
+            .as_array().unwrap();
+        assert_eq!(jobs[0]["id"], "Worker");
+        assert_eq!(jobs[0]["status"], "completed");
+    }
+
+    #[test]
+    fn pi_async_results_prefer_agent_identity_when_no_tag_matches() {
+        let line = serde_json::json!({
+            "type": "custom_message",
+            "customType": "async-result",
+            "content": [],
+            "details": {"jobs": [
+                {"jobId": "Worker-2", "agentId": "Worker", "type": "task", "status": "completed"}
+            ]}
+        });
+        let parsed = fold_rows(extract_line_messages("omp", &line, ImageMode::Collect));
+        let jobs = parsed.messages[0].result.as_ref().unwrap()["details"]["jobs"]
+            .as_array().unwrap();
+        assert_eq!(jobs[0]["id"], "Worker");
+        assert_eq!(jobs[0]["status"], "completed");
+    }
+
+    #[test]
     fn pi_async_results_accept_all_tags_when_job_entries_are_absent() {
         for details in [serde_json::json!({}), serde_json::json!({"jobs": []})] {
             let line = serde_json::json!({
@@ -2703,6 +2753,26 @@ mod tests {
         assert_eq!(parsed.messages[0].role, "__agent_status__");
         assert_eq!(parsed.messages[0].seq, 1);
         assert_eq!(parsed.messages[0].result.as_ref().unwrap()["details"]["jobs"][0]["id"], "Agent");
+    }
+
+    #[test]
+    fn pi_async_results_keep_structured_jobs_without_content() {
+        // Some deliveries carry the jobs payload with an empty body. The
+        // structured status is the notification; dropping the row would leave
+        // the subagent pill running forever.
+        let line = serde_json::json!({
+            "type": "custom_message", "customType": "async-result", "timestamp": 1_761_000_000_000i64,
+            "content": "", "details": {"jobs": [
+                {"jobId": "Worker-2", "agentId": "Worker", "type": "task", "status": "completed"}
+            ]}
+        });
+        let rows = extract_pi_family_line("omp", &line, ImageMode::Collect);
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].role, "__agent_status__");
+        let job = &rows[0].result.as_ref().unwrap()["details"]["jobs"][0];
+        assert_eq!(job["id"], "Worker");
+        assert_eq!(job["jobId"], "Worker-2");
+        assert_eq!(job["status"], "completed");
     }
 
     #[test]

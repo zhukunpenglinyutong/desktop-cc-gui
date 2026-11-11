@@ -59,6 +59,14 @@ const ASYNC_COMPLETION: Message = {
   result: { details: { jobs: [{ jobId: "RateLimiter", status: "completed" }] } },
 };
 
+try {
+  // A collapsed strip from a previous visit would hide the pills this fixture
+  // asserts on.
+  localStorage.removeItem("ccgui.chat.runStatusChromeOpen");
+} catch {
+  // storage unavailable: the strip defaults to open anyway
+}
+
 
 function seed(streaming: boolean, includeCompletion = false) {
   useChatStore.setState({
@@ -94,9 +102,9 @@ function Fixture() {
   return (
     <div style={{ maxWidth: 768, margin: "40px auto", padding: "0 16px", fontFamily: "sans-serif" }}>
       <div style={{ marginBottom: 16, display: "flex", gap: 8 }}>
-        <button onClick={() => { seed(true); setStreaming(true); }}>▶ 进行中</button>
-        <button onClick={() => { seed(false); setStreaming(false); }}>✓ 回合结束</button>
-        <button onClick={() => { seed(true, true); setStreaming(true); }}>✓ 后台任务完成</button>
+        <button data-fixture="turn" onClick={() => { seed(true); setStreaming(true); }}>▶ 进行中</button>
+        <button data-fixture="done" onClick={() => { seed(false); setStreaming(false); }}>✓ 回合结束</button>
+        <button data-fixture="complete" onClick={() => { seed(true, true); setStreaming(true); }}>✓ 后台任务完成</button>
         <span style={{ color: "#a1a1aa", fontSize: 12, alignSelf: "center" }}>
           点击 pill 展开面板；Esc 收起；右侧方块收起整条（localStorage 持久化）
         </span>
@@ -110,8 +118,42 @@ function Fixture() {
           发消息给 Agent…
         </div>
       </div>
+      <pre id="result" style={{ marginTop: 16, fontSize: 12 }} />
     </div>
   );
 }
 
 createRoot(document.getElementById("fixture")!).render(<Fixture />);
+
+const sleep = (ms: number): Promise<void> => {
+  const { promise, resolve } = Promise.withResolvers<void>();
+  setTimeout(resolve, ms);
+  return promise;
+};
+const checks: string[] = [];
+function check(ok: boolean, description: string) {
+  if (!ok) throw new Error(description);
+  checks.push(description);
+}
+const subagentPill = () => [...document.querySelectorAll<HTMLButtonElement>('[role="tab"]')]
+  .find((element) => element.textContent?.includes("子代理"));
+async function run() {
+  await sleep(50);
+  check(subagentPill()?.textContent?.includes("1/2") ?? false,
+    "a settled and a running subagent start at 1/2");
+  document.querySelector<HTMLButtonElement>('[data-fixture="complete"]')!.click();
+  await sleep(50);
+  check(subagentPill()?.textContent?.includes("2/2") ?? false,
+    "the hidden completion settles the running subagent");
+  subagentPill()!.click();
+  await sleep(50);
+  const panel = document.querySelector('[data-testid="run-status-subagents"]')?.textContent ?? "";
+  check(panel.includes("已完成") && !panel.includes("运行中"),
+    "the detail panel reports both subagents as completed");
+  document.getElementById("result")!.textContent =
+    JSON.stringify({ status: "PASS", checks }, null, 2);
+}
+run().catch((error) => {
+  document.getElementById("result")!.textContent =
+    JSON.stringify({ status: "FAIL", error: String(error) }, null, 2);
+});
