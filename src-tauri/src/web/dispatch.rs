@@ -785,6 +785,10 @@ pub(super) async fn dispatch(
             )
             .await)
         }
+        "close_idle_codebuddy" => {
+            let a: SessionIdArgs = parse_args(&raw)?;
+            ser(crate::engine::close_idle_codebuddy(app.state(), a.session_id).await)
+        }
         "interrupt_session" => {
             let a: SessionIdArgs = parse_args(&raw)?;
             ser(crate::engine::interrupt_session(app.state(), a.session_id).await)
@@ -1322,6 +1326,10 @@ pub(super) async fn dispatch(
         "git_diff" => {
             let a: GitDiffArgs = parse_args(&raw)?;
             ser(crate::git::git_diff(a.path, a.file, a.staged).await)
+        }
+        "git_diff_images" => {
+            let a: GitDiffArgs = parse_args(&raw)?;
+            ser(crate::git::git_diff_images(a.path, a.file, a.staged).await)
         }
         "git_stage" => {
             let a: GitFilesArgs = parse_args(&raw)?;

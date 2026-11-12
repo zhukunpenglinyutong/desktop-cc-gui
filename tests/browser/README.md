@@ -366,3 +366,19 @@ an empty URL is refused, and that Escape cancels. Also measures the two pencils:
 both glyph and padding are in `em`, so the name pencil must track the 14px name
 line and the URL pencil the 11px code line (and the interface font / zoom with
 them), not a fixed pixel box. No app, no backend, no real config file.
+
+## CLI 模型长名称
+
+打开 `/tests/browser/cli-model-names.html`，使用真实 `CliMenu` 与合成模型目录验证 #1477。
+页面加载后自动打开菜单自检，并在 `#result` 输出 PASS/FAIL 与实测数值：模型行和展开的渠道行没有被裁切、
+浮层距窗口左右边缘不少于 16px、搜索筛掉最长名称后浮层宽度和输入框横向位置不变
+（浮层底部对齐，结果变少时输入框会下移，这是预期行为）、展开渠道列表或选中超长渠道不改变浮层宽度，
+选中后折叠行用 `title` 提供全名。边距要在右侧空间不足时才有检验力：
+用约 800px 宽的窗口打开 `?side=left`，否则浮层离窗口边缘很远，这一项必然通过。
+窄于 768px 时没有浮层，自检输出 SKIP。自检结束后菜单收起，下面几项手动检查：
+默认选择超长中文、emoji 和连续英文名称，名称和说明应换行，模型列表可滚动；
+选择 `deepseek-v4-pro` / `deepseek-v4.1-flash` 后，页面输出应为对应的完整 ID。
+切换入口位置检查浮层向左右展开，桌面宽度上限 480px，窗口缩放后不越界。
+底部入口悬停或键盘聚焦应显示完整名称与 ID，打开菜单后提示消失。
+390px 窄屏点击引擎行进入模型对话框，长名称不得横向溢出，发送按钮仍可见。
+此页面不读取真实配置，不调用 CLI，不代表原生 WebView 验证。

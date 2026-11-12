@@ -29,6 +29,54 @@ export function changelogEntryFor(version: string): ChangelogEntry | undefined {
 
 export const CHANGELOG_DATA: ChangelogEntry[] = [
   {
+    version: "1.2.3",
+    date: "2026-11-11",
+    content: {
+      zh: `🐛 修复
+- **Qoder 会话不再漏扫，也不再挂到错误的工作区**（#1483，修复 #1480）：Qoder 国际版与国内版（~/.qoder、~/.qoder-cn）现在同时识别旧版目录名和 qodercli 的另一种编码（中文、空格等非字母数字的字面都变成连字符，超长路径截断后带哈希后缀），所以中文和带空格的工作区里的会话也能扫到了；同一会话出现在两种目录里只按会话 ID 计一次。两个工作区编码成同一个目录名时（如「前端」「后端」，或 my-app 与 my app），此前整个目录的会话都算给扫描它的工作区，现在以转录本里记录的工作区路径为准；碰撞目录里读不出工作区路径的会话不再按目录名猜，宁可不显示也不挂错。升级后第一次扫描会重核已有记录的归属（缓存版本升到 3），文件没改动也会纠正写错的工作区并保留自定义标题；确认属于别处的旧行会被清理，工作区符号链接的目标暂时不在盘上时保守保留。
+- **重命名会话不再假成功**：此前 SQL 一行都没更新也照样提示保存成功，关掉再打开又变回原名。现在只有对应引擎和会话 ID 的记录真的更新了才算保存；会话尚未入库或已被移除时提示「会话尚未入库或已被移除，未能保存名称。请刷新会话列表后重试」，也不再发出保存成功的会话变更通知。
+- **内网访问的访问凭证必须落盘成功才启动**（#1496）：首次生成与「重新生成」Token 走同一个设置写锁，读—改—写只动访问凭证一项，已保存的凭证重启后继续复用；设置读取、解析或提交失败时直接报错，不会用默认设置覆盖原文件，也不会启动一个只存在于内存、重启就失效的凭证。已经提交、只带应用警告的保存仍按成功处理。
+- **中继跟随内网桥的当前端口**（#1496）：中继不再在启动时写死当时的端口，每个新的 HTTP 请求和 WebSocket 连接都向正在运行的内网桥取端口。内网桥停止后，新连接明确报「本机 Web 访问已停止」，不再打到旧端口上；桥重启（包括换了端口）后同一条中继连接继续可用，不用断开重连。已建立的连接就地关闭，由网页端重连恢复；「已连接」仍只表示与 Worker 的隧道状态。
+- **macOS 上用系统输入法快速打字不再丢字或重复**：WKWebView 会把输入法的 insertText 事件排在 keyCode 229 的 keydown 之前，xterm 6.0.0 的去重标志因此把快速输入的下一个字符误判成已发送而丢掉；keyCode 229 的延迟兜底又会和下一个按键抢序，偶尔补回、偶尔重复（xtermjs/xterm.js#5887、#6045）。新增的输入桥按事件顺序结算每次文本插入：xterm 已经发出就不重发，被吞掉的在 input 事件末尾补发，xterm 迟到回显已发送的文本时丢弃；中文等组合输入仍完全交给 xterm，读屏模式不介入。终端输入同时改为一次只写一段：突发按键合并成一次 IPC，避免异步命令乱序把字节写乱；shell 退出后重开会话并把这段输入补发一次。`,
+      en: `🐛 Fixes
+- **Qoder sessions are no longer missed, and no longer land in the wrong workspace** (#1483, fixes #1480): the global and CN Qoder homes (~/.qoder, ~/.qoder-cn) now read both the legacy project directory names and qodercli's second encoding, where non-alphanumeric characters (Chinese text and spaces included) become dashes and long paths are truncated with a hash suffix, so sessions under Chinese and space-containing workspaces are found; a session that appears in both layouts is counted once by session ID. When two workspaces encode to the same directory name ("前端" / "后端", or my-app and my app), the whole bucket used to belong to whichever workspace scanned it; sessions are now attributed by the workspace path recorded in the transcript, and a session whose workspace path cannot be read from a colliding bucket is left out instead of guessed. The first scan after upgrading rechecks stored attribution (cache version raised to 3), so wrongly attributed rows are corrected even when the file is unchanged and custom titles survive; rows that positively belong elsewhere are pruned, while a workspace symlink whose target is temporarily offline is preserved.
+- **Renaming a session cannot fake success**: the old code reported success even when the update matched no row, so the name reverted the next time the session was opened. A save now counts only when the row for that engine and session ID actually changed; a session that is not indexed yet or has been removed shows "The session has not been indexed or has been removed. The name was not saved. Refresh the session list and try again." and no sessions-changed notification is sent.
+- **Web access starts only when its access token is persisted** (#1496): creating the token and regenerating it share the settings write lock and touch only the token field, and a saved token is reused across restarts. If settings cannot be read, parsed or committed, start fails with that error instead of overwriting the file with defaults or publishing a token that only exists in memory and dies with the process. A save that commits with application warnings still counts as saved.
+- **The relay follows the bridge's current port** (#1496): the relay no longer pins the port it saw at start; every new HTTP request and WebSocket connection resolves the port of the running bridge. Once the bridge stops, new streams report that local web access has stopped instead of reaching the old port, and after a restart (including on a different port) the same relay connection keeps working without reconnecting. Streams that are already open are closed in place and the web client reconnects; "Connected" still refers only to the tunnel to the Worker.
+- **Fast typing with the system IME on macOS no longer drops or repeats characters**: WKWebView dispatches an IME's insertText input before the keyCode 229 keydown, so xterm 6.0.0's dedupe flag treats the next fast character as already sent and drops it, while the deferred keyCode 229 fallback races the following key and sometimes re-adds the character, sometimes duplicates it (xtermjs/xterm.js#5887, #6045). A new input bridge settles each text insertion in event order: nothing xterm already emitted is resent, an insertion the gate swallowed is delivered at the end of the input event, and xterm's late echo of text already delivered is dropped; composition input stays entirely with xterm and screen-reader mode is left alone. Terminal input is also written one chunk at a time: a burst of keys becomes a single IPC call, so out-of-order async commands cannot scramble bytes, and a shell that exited is reopened with that input re-sent once.`,
+    },
+  },
+  {
+    version: "1.2.2",
+    date: "2026-11-08",
+    content: {
+      zh: `✨ 新功能
+- **变更面板直接预览图片改动**：图片文件的 Diff 不再只显示「Binary files … differ」补丁文本，改为并排展示修改前 / 修改后两版；新增或删除的图片只显示存在的一侧，点击图片可放大查看。已暂存条目对比 HEAD 与暂存区，未暂存条目对比暂存区与工作区，单侧上限 5 MiB 并给出明确提示，工作区读取限定在仓库目录内。文本 Diff 不变，远程访问的网页端也能看到同样的预览。
+
+🐛 修复
+- **保留 CLI 原生请求身份**（#1490）：Codex 初始化改用不覆盖请求身份的握手，不再把 User-Agent、originator 或 UA 后缀改成 CC GUI；版本、平台信息和请求头由已安装的 Codex 自己生成，对外使用 Codex CLI 自己的默认身份（codex_cli_rs，需 Codex 0.131 及以上）。共享 ACP 初始化不再传入可选的 CC GUI 客户端信息，文件访问、提问和计划审批能力声明不变。
+- **完全访问模式下技能不会改写全局 Codex 配置**：原生身份会让 Codex 把 CC GUI 视为官方客户端，从而开启「技能缺少 MCP 时自动安装」。CC GUI 启动 Codex 时关闭这项功能，在消息里点名技能（包括仓库自带的技能）不会把技能声明的 MCP 服务器不经确认写进全局 Codex 配置（config.toml），与此前行为一致。
+- **已有会话保持原样**：不迁移或修改历史记录。旧 Codex 会话以及从它创建的分支续聊时，User-Agent 恢复原生值，但 Codex 仍沿用会话里保存的 originator（ccgui）；若服务商因此拒绝请求，请新建会话。
+- **网关 OAuth 登录需要手动完成**：Codex 0.157 起，不改写身份的客户端不会自动打开浏览器登录。使用网关 OAuth 的自定义服务商在令牌缺失或失效时会提示需要登录，请先在终端运行 Codex 完成网关登录后再重试；仍然有效或可以续期的令牌不受影响。
+- **CodeBuddy 交互提问卡恢复**（#1492，修复 #1488）：CodeBuddy 会话重新出现单选、多选提问卡。发送时先声明提问能力，单选、多选与跳过都按 CodeBuddy 自己的协议回传。
+- **跳过提问不再误报「需要权限」**：跳过原先被回传成拒绝，CodeBuddy 把它记入本轮权限拒绝，界面会多出一张「需要权限」卡和系统通知，模型拿到的也是报错结果。现在改回 CodeBuddy 原生的跳过结果，模型照常继续；空答案按跳过处理，答案格式异常时在提交前报错、卡片保持可重试；被拒或跳过的提问也不会再被解析成授权卡。
+- **CLI 模型长名称完整可读**（#1482，修复 #1477）：模型浮层按内容与可用空间扩宽（上限 480px），按左右剩余空间选择展开方向、距视口边缘保留 16px；模型名称与说明自动换行，不再以省略号截断，连续的长字符串也能折行。底部入口的悬停提示补齐完整模型名称、与名称不同的模型 ID 和推理档位。搜索时锁定进入搜索前的宽度，筛掉长名称后浮层与搜索框不再横移；点击菜单外关闭也会清空搜索词；渠道名换行显示全名，展开渠道列表不再把浮层撑宽。
+- **一轮对话只留一个分叉入口**：回复被工具调用拆成多段时，此前每个分段下方都会挂一颗分叉图标。现在只在该轮最后一段显示，悬停或键盘聚焦时显形，复制按钮保持常驻；流式期间入口仍在原位并禁用。`,
+      en: `✨ Features
+- **Image changes preview as before/after images**: image files in the changes panel no longer show only the "Binary files … differ" patch text. The panel shows the previous and current versions side by side, keeps just the one side that exists for added or deleted images, and opens a lightbox on click. Staged entries compare HEAD with the index and unstaged entries compare the index with the worktree; each side is capped at 5 MiB with a clear message, and worktree reads stay inside the repository. Text diffs are unchanged, and the web client of remote access shows the same preview.
+
+🐛 Fixes
+- **Preserve native CLI request identity** (#1490): Codex initialization now uses a non-originating handshake instead of replacing the User-Agent, originator or UA suffix with CC GUI branding. The installed CLI generates its own version, platform information and request headers and presents the Codex CLI's own default identity (codex_cli_rs; requires Codex 0.131 or later). Shared ACP initialization no longer sends optional CC GUI client information; file access, question and plan-approval capabilities are unchanged.
+- **Skills do not rewrite the global Codex config in full-access mode**: the native identity makes Codex treat CC GUI as a first-party client, which turns on automatic installation of MCP servers that a skill needs. CC GUI now launches Codex with that feature off, so naming a skill in a message (including skills shipped inside a repository) does not write the skill's MCP servers into the global Codex config (config.toml) without confirmation, matching the previous behavior.
+- **Existing sessions are preserved**: no history migration or edits. Old Codex sessions, and branches created from them, resume with the native User-Agent, but Codex keeps the originator stored in the session (ccgui). Start a new session if a provider rejects that historical originator.
+- **Gateway OAuth sign-in is now manual**: since Codex 0.157, a client that does not rewrite the identity never opens a browser for sign-in automatically. Custom providers behind a gateway OAuth now report that sign-in is required when the token is missing or rejected; run Codex in a terminal to finish the gateway sign-in, then retry. Tokens that are still valid or refreshable are unaffected.
+- **CodeBuddy interactive question cards are back** (#1492, fixes #1488): CodeBuddy sessions show single-select and multi-select question cards again. A send now declares the question capability up front, and single, multiple and skipped answers all go back in CodeBuddy's own protocol.
+- **Skipping a question no longer raises a bogus permission card**: a skip used to be sent as a denial, so CodeBuddy recorded it in the turn's permission denials, the app showed a "permission required" card plus a system notification, and the model received an error result. It now sends CodeBuddy's native skip and the turn continues. An empty answer counts as a skip; a malformed answer fails before submission and leaves the card retryable; declined or skipped questions are no longer parsed into a grant card.
+- **Long CLI model names are fully readable** (#1482, fixes #1477): the model flyout widens to fit its content up to 480px, opens on whichever side has room with 16px from the viewport edge, and wraps model names and descriptions instead of truncating them, including unbroken long strings. The composer trigger's hover tooltip now carries the full model name, the model ID when it differs and the effort level. The width is locked to what it was before a search, so filtering out long names no longer shifts the flyout or the search field; closing the menu by clicking outside also clears the search; channel names wrap to show the full name and expanding the channel list no longer widens the flyout.
+- **One fork entry per turn**: when tool calls split a reply into several segments, each segment used to show its own fork icon. The entry now appears only on the last segment of the turn, reveals on hover or keyboard focus, keeps copy always visible, and stays in place as a disabled placeholder while streaming.`,
+    },
+  },
+  {
     version: "1.2.1",
     date: "2026-11-02",
     content: {

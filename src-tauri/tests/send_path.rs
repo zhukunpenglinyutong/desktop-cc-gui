@@ -204,6 +204,10 @@ echo '{"type":"system","subtype":"init","session_id":"buddy-session"}'
 while IFS= read -r line; do
     case "$line" in
         *'"type":"user"'*)
+            case "$line" in
+                *buddy-diagnostics*) echo old-stdout; echo old-stderr >&2 ;;
+                *buddy-error*) echo current-stdout; exit 3 ;;
+            esac
             printf '{"type":"stream_event","event":{"type":"content_block_delta","delta":{"type":"text_delta","text":"%s"}}}\n' "$$"
             case "$line" in *buddy-broken*) exec 0<&- ;; esac
             echo '{"type":"result","subtype":"success","session_id":"buddy-session"}'
@@ -232,7 +236,8 @@ done
             tokio::time::timeout(Duration::from_secs(5), async {
                 loop {
                     if events.lock().unwrap().iter().any(|event| {
-                        event["runId"] == run && event["kind"] == "done"
+                        event["runId"] == run
+                            && event["kind"] == if run == "buddy-error" { "error" } else { "done" }
                     }) {
                         break;
                     }
@@ -254,21 +259,36 @@ done
     send("buddy-config", Some("buddy-session"), "model-b").await;
     assert_eq!(launch_count(), 3);
 
-    assert!(engine::interrupt_session(app.state(), "buddy-session".into()).await.unwrap());
-    send("buddy-4", Some("buddy-session"), "model-b").await;
+    let config = home.join(".mcp.json");
+    let modified = std::fs::metadata(&config).unwrap().modified().unwrap();
+    std::fs::write(&config, r#"{"mcpServers":[]}"#).unwrap();
+    std::fs::File::open(&config).unwrap()
+        .set_times(std::fs::FileTimes::new().set_modified(modified)).unwrap();
+    send("buddy-same-size-config", Some("buddy-session"), "model-b").await;
     assert_eq!(launch_count(), 4);
+
+    engine::close_idle_codebuddy(app.state(), "buddy-session".into()).await.unwrap();
+    send("buddy-4", Some("buddy-session"), "model-b").await;
+    assert_eq!(launch_count(), 5);
 
     tokio::time::pause();
     tokio::time::advance(Duration::from_secs(600)).await;
     tokio::task::yield_now().await;
     tokio::time::resume();
     send("buddy-5", Some("buddy-session"), "model-b").await;
-    assert_eq!(launch_count(), 5);
-    send("buddy-broken", Some("buddy-session"), "model-b").await;
-    assert_eq!(launch_count(), 5);
-    send("buddy-after-broken", Some("buddy-session"), "model-b").await;
     assert_eq!(launch_count(), 6);
-    app.state::<AppState>().processes.kill_all();
+    send("buddy-broken", Some("buddy-session"), "model-b").await;
+    assert_eq!(launch_count(), 6);
+    send("buddy-after-broken", Some("buddy-session"), "model-b").await;
+    assert_eq!(launch_count(), 7);
+    send("buddy-diagnostics", Some("buddy-session"), "model-b").await;
+    send("buddy-error", Some("buddy-session"), "model-b").await;
+    let captured = events.lock().unwrap();
+    let error = captured.iter().find(|event| {
+        event["runId"] == "buddy-error" && event["kind"] == "error"
+    }).unwrap()["data"].as_str().unwrap();
+    assert!(error.contains("current-stdout"), "{error}");
+    assert!(!error.contains("old-stdout") && !error.contains("old-stderr"), "{error}");
 }
 
 #[tokio::test]
@@ -527,4 +547,173 @@ echo '{"type":"agent_end"}'
             .any(|e| e["kind"] == "delta" && e["data"] == "ok"));
     }
     assert!(!home.join(".omp/agent/config.yml").exists());
+}
+
+/// Fake `codebuddy`: records the launch stdin frames, parks one
+/// AskUserQuestion on `can_use_tool`, records the reply, then finishes with
+/// the given result line.
+#[cfg(unix)]
+fn write_fake_codebuddy(dir: &std::path::Path, log: &std::path::Path, result: &Value) {
+    let script = r##"#!/bin/sh
+read -r l1; printf '%s\n' "$l1" > "__LOG__/1.json"
+read -r l2; printf '%s\n' "$l2" > "__LOG__/2.json"
+echo '{"type":"system","subtype":"init","session_id":"fake-cb-1"}'
+echo '{"type":"control_request","request_id":"perm_1","request":{"subtype":"can_use_tool","tool_name":"AskUserQuestion","tool_use_id":"call_ask_1","input":__INPUT__}}'
+read -r l3; printf '%s\n' "$l3" > "__LOG__/3.json"
+echo '__RESULT__'
+"##
+    .replace("__LOG__", &log.display().to_string())
+    .replace("__INPUT__", &codebuddy_ask_input().to_string())
+    .replace("__RESULT__", &result.to_string());
+    let path = dir.join("codebuddy");
+    std::fs::write(&path, script).unwrap();
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+}
+
+#[cfg(unix)]
+fn codebuddy_ask_input() -> Value {
+    serde_json::json!({
+        "questions": [
+            {"question": "Which color?", "header": "Color", "multiSelect": false,
+             "options": [{"label": "Red", "description": "r"}, {"label": "Blue", "description": "b"}]},
+            {"question": "Which pets?", "header": "Pets", "multiSelect": true,
+             "options": [{"label": "Cat", "description": "c"}, {"label": "Dog", "description": "d"}]}
+        ]
+    })
+}
+
+/// One CodeBuddy turn through the real send → question → answer_question
+/// chain; returns the captured events and the three stdin frames.
+#[cfg(unix)]
+async fn codebuddy_question_round(
+    tag: &str,
+    answers: Option<Value>,
+    result: Value,
+) -> (Vec<Value>, [Value; 3]) {
+    let home = temp_home(tag);
+    let bin_dir = home.join("bin");
+    let log = home.join("log");
+    std::fs::create_dir_all(&bin_dir).unwrap();
+    std::fs::create_dir_all(&log).unwrap();
+    write_fake_codebuddy(&bin_dir, &log, &result);
+    std::env::set_var("PATH", format!("{}:/usr/bin:/bin", bin_dir.display()));
+    let workspace = home.join("ws");
+    std::fs::create_dir_all(&workspace).unwrap();
+    let (app, events) = build_app(&home);
+    let run_id = format!("run-{tag}");
+    engine::send_message(
+        app.state(),
+        "codebuddy".into(),
+        workspace.to_string_lossy().into(),
+        None,
+        "ask me".into(),
+        Vec::new(),
+        None,
+        None,
+        None,
+        None,
+        Some("auto".into()),
+        None,
+        Some(run_id.clone()),
+        None,
+        None,
+    )
+    .await
+    .unwrap();
+    let wait_for = |kind: &'static str| {
+        let events = Arc::clone(&events);
+        async move {
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+            loop {
+                if let Some(event) = events
+                    .lock()
+                    .unwrap()
+                    .iter()
+                    .find(|e| e["kind"] == kind)
+                    .cloned()
+                {
+                    return event;
+                }
+                assert!(std::time::Instant::now() < deadline, "no {kind} event");
+                tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+            }
+        }
+    };
+    let question = wait_for("question").await;
+    // The card renders the raw tool input, not the parked reply context.
+    assert_eq!(question["data"]["input"], codebuddy_ask_input());
+    assert_eq!(question["data"]["toolUseId"], "call_ask_1");
+    engine::answer_question(
+        app.state(),
+        run_id,
+        question["data"]["requestId"].as_str().unwrap().to_string(),
+        answers,
+    )
+    .await
+    .unwrap();
+    wait_for("done").await;
+    let frame = |n: u8| -> Value {
+        let text = std::fs::read_to_string(log.join(format!("{n}.json"))).unwrap();
+        serde_json::from_str(text.trim()).unwrap()
+    };
+    let captured = events.lock().unwrap().clone();
+    (captured, [frame(1), frame(2), frame(3)])
+}
+
+/// CodeBuddy only offers AskUserQuestion to a stream-json host that declared
+/// the capability in `initialize`, and reads replies as `{allowed,
+/// updatedInput}` with string answers. A skip is its native `_action:
+/// "skip_question"`; even if the CLI still reports the question in
+/// `permission_denials`, no "permission required" card may appear.
+#[cfg(unix)]
+#[tokio::test]
+#[allow(clippy::await_holding_lock)]
+async fn codebuddy_question_card_round_trips_and_skip_is_not_a_denial() {
+    let _env_guard = ENV_LOCK.lock().unwrap();
+    let done = serde_json::json!({
+        "type": "result", "subtype": "success", "is_error": false,
+        "session_id": "fake-cb-1", "permission_denials": []
+    });
+    let (events, [init, user, reply]) = codebuddy_question_round(
+        "codebuddy-answer",
+        Some(serde_json::json!({"Which color?": "Red", "Which pets?": ["Cat", "Dog"]})),
+        done,
+    )
+    .await;
+    assert_eq!(init["type"], "control_request");
+    assert_eq!(init["request"]["subtype"], "initialize");
+    assert_eq!(init["request"]["hasPrompt"], true);
+    assert_eq!(init["request"]["capabilities"]["askUserQuestion"], true);
+    assert_eq!(user["type"], "user");
+    assert_eq!(reply["type"], "control_response");
+    assert_eq!(reply["response"]["request_id"], "perm_1");
+    let mut expected = codebuddy_ask_input();
+    expected["answers"] = serde_json::json!({"Which color?": "Red", "Which pets?": "Cat, Dog"});
+    assert_eq!(
+        reply["response"]["response"],
+        serde_json::json!({"allowed": true, "tool_use_id": "call_ask_1", "updatedInput": expected})
+    );
+    assert!(!events.iter().any(|e| e["kind"] == "permission_denied"));
+
+    let declined = serde_json::json!({
+        "type": "result", "subtype": "success", "is_error": false,
+        "session_id": "fake-cb-1",
+        "permission_denials": [{
+            "tool_name": "AskUserQuestion", "tool_use_id": "call_ask_1",
+            "tool_input": codebuddy_ask_input()
+        }]
+    });
+    let (events, [_, _, reply]) =
+        codebuddy_question_round("codebuddy-skip", None, declined).await;
+    let mut expected = codebuddy_ask_input();
+    expected["answers"] = serde_json::json!({"_action": "skip_question"});
+    assert_eq!(
+        reply["response"]["response"],
+        serde_json::json!({"allowed": true, "tool_use_id": "call_ask_1", "updatedInput": expected})
+    );
+    assert!(
+        !events.iter().any(|e| e["kind"] == "permission_denied"),
+        "a skipped question surfaced as a permission card"
+    );
 }

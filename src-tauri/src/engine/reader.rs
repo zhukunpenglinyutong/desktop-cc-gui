@@ -92,22 +92,77 @@ pub(crate) fn ring_push(buf: &Arc<Mutex<String>>, text: &str) {
     }
 }
 /// Stderr capture ring: keeps the last 4KB for the error banner.
+type StderrReset = tokio::sync::mpsc::Sender<tokio::sync::oneshot::Sender<()>>;
+
 pub(crate) fn spawn_stderr_capture(stderr: ChildStderr) -> Arc<Mutex<String>> {
+    capture_stderr(stderr, None)
+}
+
+pub(crate) fn spawn_reusable_stderr_capture(
+    stderr: ChildStderr,
+) -> (Arc<Mutex<String>>, StderrReset) {
+    let (reset, requests) = tokio::sync::mpsc::channel(1);
+    (capture_stderr(stderr, Some(requests)), reset)
+}
+
+fn capture_stderr(
+    stderr: ChildStderr,
+    mut resets: Option<tokio::sync::mpsc::Receiver<tokio::sync::oneshot::Sender<()>>>,
+) -> Arc<Mutex<String>> {
     let buf = Arc::new(Mutex::new(String::new()));
     let target = Arc::clone(&buf);
     tokio::spawn(async move {
         let mut reader = BufReader::new(stderr);
-        let mut line = String::new();
+        let mut line = Vec::new();
         loop {
-            line.clear();
-            match reader.read_line(&mut line).await {
-                Ok(0) | Err(_) => break,
-                Ok(_) => ring_push(&target, &line),
+            tokio::select! {
+                // Drain already-readable stderr before acknowledging the reset.
+                biased;
+                read = reader.read_until(b'\n', &mut line) => match read {
+                    Ok(0) | Err(_) => break,
+                    Ok(_) => {
+                        ring_push(&target, &String::from_utf8_lossy(&line));
+                        line.clear();
+                    }
+                },
+                Some(ack) = async {
+                    match &mut resets {
+                        Some(requests) => requests.recv().await,
+                        None => None,
+                    }
+                }, if resets.is_some() => {
+                    line.clear();
+                    if let Ok(mut ring) = target.lock() {
+                        ring.clear();
+                    }
+                    let _ = ack.send(());
+                }
             }
         }
     });
     buf
 }
+
+async fn reset_process_diagnostics(ctx: &RunContext, reset: Option<&StderrReset>) -> bool {
+    if let Ok(mut ring) = ctx.stdout_plain_buf.lock() {
+        ring.clear();
+    }
+    if let Some(reset) = reset {
+        let (ack, done) = tokio::sync::oneshot::channel();
+        if reset.send(ack).await.is_ok() {
+            match tokio::time::timeout(READER_SETTLE_GRACE, done).await {
+                Ok(Ok(())) => return true,
+                Ok(Err(_)) => {} // The capture task has already exited.
+                Err(_) => return false,
+            }
+        }
+    }
+    if let Ok(mut ring) = ctx.stderr_buf.lock() {
+        ring.clear();
+    }
+    true
+}
+
 // ==================== stderr redaction ====================
 
 /// Engine stderr can echo the channel credentials from the CLI's own config files; redact credential
@@ -572,7 +627,14 @@ impl TurnCore {
                 state.gen_end();
                 if let Some(entry) = self.registry.get(&self.run_id) {
                     if let Ok(mut questions) = entry.questions.lock() {
-                        questions.insert(request_id.clone(), input.clone());
+                        let parked_input = if self.engine_id == "codebuddy" {
+                            serde_json::json!({
+                                "codebuddyQuestion": { "input": input, "toolUseId": tool_use_id },
+                            })
+                        } else {
+                            input.clone()
+                        };
+                        questions.insert(request_id.clone(), parked_input);
                     }
                 }
                 state.push(
@@ -1148,13 +1210,14 @@ fn begin_process_turn(ctx: &RunContext) -> TurnState {
 /// registry cleanup, temp-file cleanup, and the terminal done/error event.
 #[cfg(test)]
 pub(crate) async fn run_reader(stdout: ChildStdout, ctx: RunContext) {
-    run_process_reader(stdout, ctx, None).await;
+    run_process_reader(stdout, ctx, None, None).await;
 }
 
 pub(crate) async fn run_process_reader(
     stdout: ChildStdout,
     mut ctx: RunContext,
     signature: Option<([u8; 32], String)>,
+    stderr_reset: Option<StderrReset>,
 ) {
     let (signature, workspace) = signature.unzip();
     // codex reports usage into its own session log instead of the stdout
@@ -1320,7 +1383,10 @@ pub(crate) async fn run_process_reader(
                 }
             };
             if let Some(next) = next {
-                if !next.killed.load(std::sync::atomic::Ordering::SeqCst) {
+                if !next.killed.load(std::sync::atomic::Ordering::SeqCst)
+                    && reset_process_diagnostics(&ctx, stderr_reset.as_ref()).await
+                    && !next.killed.load(std::sync::atomic::Ordering::SeqCst)
+                {
                     if let Some(complete) = write_codebuddy_prompt(&entry, next.payload).await {
                         if ctx.core.registry.activate_codebuddy(&next.run_id, &next.session_id, &entry) {
                             idle_exit = None;

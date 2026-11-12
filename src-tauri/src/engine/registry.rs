@@ -369,6 +369,18 @@ impl ProcessRegistry {
         self.2.lock().ok().and_then(|mut map| map.remove(session_id))
     }
 
+    pub(crate) fn close_idle_codebuddy(&self, session_id: &str) {
+        let Ok(active) = self.0.lock() else { return };
+        if active.contains_key(session_id) {
+            return;
+        }
+        if let Ok(mut idle) = self.4.lock() {
+            if let Some(parked) = idle.get_mut(session_id) {
+                parked.resume.take();
+            }
+        }
+    }
+
     pub(crate) async fn retire_codebuddy(&self, session_id: &str) -> Result<(), String> {
         let exited = self.4.lock().ok().and_then(|mut pool| {
             let parked = pool.get_mut(session_id)?;
@@ -970,6 +982,31 @@ mod registry_tests {
         .expect("the parked child must exit before the handoff finishes");
         assert!(!status.success());
         registry.4.lock().unwrap().clear();
+    }
+
+    #[test]
+    fn closing_codebuddy_tab_does_not_cancel_an_active_or_reserved_run() {
+        let registry = ProcessRegistry::default();
+        let active = stub_entry("run", 0);
+        registry.insert("run".into(), active.clone());
+        registry.insert_alias("session".into(), active.clone());
+        let (resume, _next) = tokio::sync::oneshot::channel();
+        let (_, exited) = tokio::sync::watch::channel(());
+        registry.4.lock().unwrap().insert(
+            "session".into(),
+            super::super::codebuddy::IdleProcess {
+                entry: stub_entry("parked", 1),
+                signature: [0; 32],
+                resume: Some(resume),
+                exited,
+            },
+        );
+        registry.close_idle_codebuddy("session");
+        assert!(!active.killed.load(std::sync::atomic::Ordering::SeqCst));
+        assert!(registry.4.lock().unwrap()["session"].resume.is_some());
+        registry.remove_run_if_pid("run", 0);
+        registry.close_idle_codebuddy("session");
+        assert!(registry.4.lock().unwrap().remove("session").unwrap().resume.is_none());
     }
 
     fn stub_entry(run_id: &str, pid: u32) -> ChildEntry {

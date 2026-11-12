@@ -1251,7 +1251,8 @@ async fn send_reserved(
     let signature = (engine == "codebuddy"
         && wsl_tp.is_none()
         && Arc::ptr_eq(&sink, &state.sink)
-        && computer_use != Some(true))
+        && computer_use != Some(true)
+        && launch.req.memory_bot.is_none())
         .then(|| codebuddy::launch_signature(&command, &cleanup_files))
         .flatten();
     if engine == "codebuddy" {
@@ -1267,7 +1268,8 @@ async fn send_reserved(
                     let turn = codebuddy::ResumeTurn {
                         run_id: run_id.clone(),
                         session_id: session_id.to_string(),
-                        payload: payload.clone(),
+                        // The launch payload starts with the one-time CLI handshake.
+                        payload: payload.rsplit('\n').next().unwrap_or(payload).to_owned(),
                         killed: Arc::clone(&killed),
                         reader_abort: Arc::clone(&reader_abort),
                         comparison_model: launch.comparison_model.clone(),
@@ -1371,7 +1373,12 @@ async fn send_reserved(
         );
     }
 
-    let stderr_buf = spawn_stderr_capture(stderr);
+    let (stderr_buf, stderr_reset) = if signature.is_some() {
+        let (buffer, reset) = reader::spawn_reusable_stderr_capture(stderr);
+        (buffer, Some(reset))
+    } else {
+        (spawn_stderr_capture(stderr), None)
+    };
     let initial_model = if engine == "claude" {
         launch
             .req
@@ -1426,6 +1433,7 @@ async fn send_reserved(
         stdout,
         ctx,
         signature.map(|signature| (signature, workspace_path)),
+        stderr_reset,
     ));
     // Registration order is unchanged (entries land before the task can
     // settle); the OnceLock just hands kill()/kill_all() the handle.
@@ -1537,6 +1545,15 @@ async fn send_host_stream(
 /// finish (see `kill_process_group`), and a synchronous command would hold
 /// that wait on the UI thread — the app would visibly hitch on every Stop.
 #[tauri::command]
+pub async fn close_idle_codebuddy(
+    state: tauri::State<'_, crate::AppState>,
+    session_id: String,
+) -> Result<(), String> {
+    state.processes.close_idle_codebuddy(&session_id);
+    Ok(())
+}
+
+#[tauri::command]
 pub async fn interrupt_session(
     state: tauri::State<'_, crate::AppState>,
     session_id: String,
@@ -1557,7 +1574,7 @@ pub async fn live_runs(
     Ok(state.processes.live_run_ids(&run_ids))
 }
 /// Answer a pending question card. Multiple transports share this command:
-/// - claude (control protocol): the answers merge into the parked tool input
+/// - claude / codebuddy (control protocol): the answers merge into the parked tool input
 ///   and ride stdin as a `control_response`.
 /// - omp (rpc-ui): the parked value carries the dialog method; the answer is
 ///   an `extension_ui_response` frame on the CLI's stdin.
@@ -1775,6 +1792,17 @@ pub async fn answer_question(
         )
         .await?;
         // Delivered: drop the parked copy so the turn-end drain skips it.
+        if let Ok(mut questions) = entry.questions.lock() {
+            questions.remove(&request_id);
+        }
+        return Ok(());
+    }
+    if let Some(context) = input.get("codebuddyQuestion") {
+        let frame = codebuddy::question_response(&request_id, context, answers)?;
+        state
+            .processes
+            .write_line(&session_id, frame.to_string())
+            .await?;
         if let Ok(mut questions) = entry.questions.lock() {
             questions.remove(&request_id);
         }

@@ -480,6 +480,7 @@ pub fn run() {
             // engine
             engine::send_message,
             engine::interrupt_session,
+            engine::close_idle_codebuddy,
             engine::live_runs,
             engine::answer_question,
             engine::respond_plan_review,
@@ -598,6 +599,7 @@ pub fn run() {
             git::git_file_colors,
             git::git_tree_status,
             git::git_diff,
+            git::git_diff_images,
             git::git_stage,
             git::git_unstage,
             git::git_discard,

@@ -17,6 +17,7 @@ vi.mock("@/lib/ipc", () => ({
   ipc: {
     sendMessage: vi.fn(async () => ({ runId: "run-1", sessionId: null })),
     interruptSession: vi.fn(async () => true),
+    closeIdleCodeBuddy: vi.fn(async () => {}),
     rememberSessionModel: vi.fn(async () => {}),
     rememberSessionEffort: vi.fn(async () => {}),
     listWorkspaces: vi.fn(async () => []),
@@ -236,7 +237,8 @@ describe("closing a CodeBuddy tab", () => {
 
     useChatStore.getState().closeTab(closing.engine, closing.sessionId, WS);
 
-    expect(ipc.interruptSession).toHaveBeenCalledExactlyOnceWith("closing");
+    expect(ipc.closeIdleCodeBuddy).toHaveBeenCalledExactlyOnceWith("closing");
+    expect(ipc.interruptSession).not.toHaveBeenCalled();
     expect(useChatStore.getState().openTabs).toEqual([remaining]);
   });
 });

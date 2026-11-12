@@ -4,7 +4,7 @@ use std::path::{Component, Path, PathBuf};
 use std::sync::Arc;
 
 const MAX_READ_BYTES: usize = 1024 * 1024;
-const MAX_IMAGE_BYTES: usize = 5 * 1024 * 1024;
+pub(crate) const MAX_IMAGE_BYTES: usize = 5 * 1024 * 1024;
 const MAX_SEARCH_RESULTS: usize = 200;
 /// @-mention file index: bounds the walk on monster trees (the gitignore
 /// filter drops build output, the cap is the last line of defense).
@@ -263,7 +263,7 @@ pub async fn list_dir(
     .map_err(|e| e.to_string())?
 }
 
-fn is_image(path: &Path) -> bool {
+pub(crate) fn is_image(path: &Path) -> bool {
     matches!(
         path.extension()
             .and_then(|e| e.to_str())
@@ -274,7 +274,7 @@ fn is_image(path: &Path) -> bool {
     )
 }
 
-fn image_mime(path: &Path) -> &'static str {
+pub(crate) fn image_mime(path: &Path) -> &'static str {
     match path
         .extension()
         .and_then(|e| e.to_str())

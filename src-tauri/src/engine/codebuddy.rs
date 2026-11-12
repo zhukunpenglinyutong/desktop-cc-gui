@@ -2,6 +2,74 @@ use super::{
     claude::ClaudeEngine, command_for_binary, images, BuiltCommand, Engine, EngineEvent,
     SendRequest,
 };
+use serde_json::{json, Value};
+
+/// CodeBuddy's own "skip these questions" answer: the tool settles with a
+/// non-error "the user chose not to answer, continue" result.
+const SKIP_QUESTION_ACTION: &str = "skip_question";
+
+/// Reply to a parked AskUserQuestion `can_use_tool` request in CodeBuddy's
+/// shape, `{allowed, updatedInput}` (a claude-style `behavior: "allow"` reads
+/// as a denial there). Answers are keyed by question text and the CLI's
+/// schema takes string values only, so multi-select picks are joined ", ".
+///
+/// A skip (`None`) is CodeBuddy's native `_action: "skip_question"`, not a
+/// denial: a denial lands in the turn's `permission_denials` (a bogus
+/// permission card) and hands the model an error result. An empty map is a
+/// skip too: allowed with no answers parks the CLI on answers forever.
+pub(super) fn question_response(
+    request_id: &str,
+    context: &Value,
+    answers: Option<Value>,
+) -> Result<Value, String> {
+    let answers = match answers {
+        Some(Value::Object(answers)) if !answers.is_empty() => answer_texts(answers)?,
+        Some(Value::Object(_)) | None => {
+            serde_json::Map::from_iter([("_action".to_string(), json!(SKIP_QUESTION_ACTION))])
+        }
+        Some(_) => return Err("question answers must be an object".to_string()),
+    };
+    let mut input = context["input"].as_object().cloned().unwrap_or_default();
+    input.insert("answers".into(), Value::Object(answers));
+    Ok(json!({
+        "type": "control_response",
+        "response": {
+            "subtype": "success",
+            "request_id": request_id,
+            "response": {
+                "allowed": true,
+                "tool_use_id": context["toolUseId"],
+                "updatedInput": Value::Object(input),
+            },
+        },
+    }))
+}
+
+/// Each answer as the single string CodeBuddy's schema accepts. Malformed
+/// values fail before any frame is written, so the card stays answerable.
+fn answer_texts(
+    answers: serde_json::Map<String, Value>,
+) -> Result<serde_json::Map<String, Value>, String> {
+    answers
+        .into_iter()
+        .map(|(question, answer)| {
+            let text = match answer {
+                Value::String(text) => text,
+                Value::Array(labels) => labels
+                    .iter()
+                    .map(|label| label.as_str().ok_or_else(|| malformed_answer(&question)))
+                    .collect::<Result<Vec<_>, _>>()?
+                    .join(", "),
+                _ => return Err(malformed_answer(&question)),
+            };
+            Ok((question, Value::String(text)))
+        })
+        .collect()
+}
+
+fn malformed_answer(question: &str) -> String {
+    format!("answer to \"{question}\" must be a string or a list of strings")
+}
 
 /// Provider-selection env keys a codebuddy channel owns outright once a
 /// channel drives the launch. Like the claude adapter (claude_channel.rs),
@@ -353,14 +421,24 @@ impl Engine for CodeBuddyEngine {
             cmd.arg(session_id);
         }
 
-        let stdin_payload = images::claude_stdin_message(&req.prompt, &req.images, &req.workspace)
+        let user_message = images::claude_stdin_message(&req.prompt, &req.images, &req.workspace)
             .map_err(|error| {
-                super::cleanup_staged_files(&cleanup_files);
-                error
-            })?;
+            super::cleanup_staged_files(&cleanup_files);
+            error
+        })?;
+        // CodeBuddy processes the first initialize before the queued user frame.
+        let initialize = json!({
+            "type": "control_request",
+            "request_id": uuid::Uuid::new_v4().to_string(),
+            "request": {
+                "subtype": "initialize",
+                "hasPrompt": true,
+                "capabilities": { "askUserQuestion": true },
+            },
+        });
         Ok(BuiltCommand {
             command: cmd,
-            stdin_payload: Some(stdin_payload),
+            stdin_payload: Some(format!("{initialize}\n{user_message}")),
             keep_stdin_open: true,
             cleanup_files,
             mcp_restore: None,
@@ -533,6 +611,131 @@ mod tests {
         assert!(debug.contains("high"));
         assert!(debug.contains("-r"));
         assert!(debug.contains("sess-123"));
+    }
+
+    #[test]
+    fn initializes_question_capability_before_sending_prompt() {
+        let engine = CodeBuddyEngine::new();
+        let mut req = sample_req();
+        req.session_id = Some("existing-session".into());
+        let built = engine.build_command(&req, "codebuddy").unwrap();
+        assert!(built.keep_stdin_open);
+        let payload = built.stdin_payload.unwrap();
+        let frames: Vec<Value> = payload
+            .lines()
+            .map(|line| serde_json::from_str(line).unwrap())
+            .collect();
+        assert_eq!(frames.len(), 2);
+        assert_eq!(frames[0]["type"], "control_request");
+        assert!(frames[0]["request_id"]
+            .as_str()
+            .is_some_and(|id| !id.is_empty()));
+        assert_eq!(
+            frames[0]["request"],
+            json!({
+                "subtype": "initialize",
+                "hasPrompt": true,
+                "capabilities": { "askUserQuestion": true },
+            })
+        );
+        assert_eq!(frames[1]["type"], "user");
+        assert_eq!(frames[1]["message"]["content"][0]["text"], req.prompt);
+    }
+
+    #[test]
+    fn question_callback_round_trips_with_codebuddy_response_shape() {
+        let engine = CodeBuddyEngine::new();
+        let input = json!({"questions": [], "metadata": {"source": "test"}});
+        let callback = json!({
+            "type": "control_request",
+            "request_id": "req",
+            "request": {
+                "subtype": "can_use_tool",
+                "tool_name": "AskUserQuestion",
+                "tool_use_id": "tool",
+                "input": input,
+            },
+        });
+        let mut events = Vec::new();
+        engine.parse_line(&callback.to_string(), &mut events);
+        let [EngineEvent::Question {
+            request_id,
+            tool_use_id,
+            input: parsed,
+        }] = events.as_slice()
+        else {
+            panic!("expected a question event");
+        };
+        assert_eq!(parsed, &input);
+        let context = json!({"input": parsed, "toolUseId": tool_use_id});
+        let frame = question_response(
+            request_id,
+            &context,
+            Some(json!({"单选": "甲", "多选": ["乙", "丙"]})),
+        )
+        .unwrap();
+        assert_eq!(frame["type"], "control_response");
+        assert_eq!(frame["response"]["request_id"], "req");
+        assert_eq!(
+            frame["response"]["response"],
+            json!({
+                "allowed": true,
+                "tool_use_id": "tool",
+                "updatedInput": {
+                    "questions": [],
+                    "metadata": {"source": "test"},
+                    "answers": {"单选": "甲", "多选": "乙, 丙"},
+                },
+            }),
+        );
+    }
+
+    /// A skip must not be a denial: CodeBuddy lists denied calls in the
+    /// turn's `permission_denials`, which surfaced as a bogus "permission
+    /// required" card, and the model got an error result. The native skip is
+    /// allowed with `answers._action = "skip_question"`. An empty map is a
+    /// skip too — allowed with no answers parks the CLI on answers forever.
+    #[test]
+    fn skipped_question_uses_codebuddys_native_skip_not_a_denial() {
+        let context = json!({
+            "input": {"questions": [{"question": "Q?"}]},
+            "toolUseId": "tool",
+        });
+        for answers in [None, Some(json!({}))] {
+            let frame = question_response("req", &context, answers).unwrap();
+            assert_eq!(frame["response"]["request_id"], "req");
+            assert_eq!(
+                frame["response"]["response"],
+                json!({
+                    "allowed": true,
+                    "tool_use_id": "tool",
+                    "updatedInput": {
+                        "questions": [{"question": "Q?"}],
+                        "answers": {"_action": "skip_question"},
+                    },
+                }),
+            );
+        }
+    }
+
+    /// Malformed answers fail before a frame is written (the card stays
+    /// answerable) instead of silently degrading into a skip or a dropped
+    /// label.
+    #[test]
+    fn malformed_question_answers_are_rejected() {
+        let context = json!({"input": {"questions": []}, "toolUseId": "tool"});
+        for answers in [
+            json!("甲"),
+            json!(["甲"]),
+            json!({"Q?": 1}),
+            json!({"Q?": ["甲", 2]}),
+            json!({"Q?": null}),
+        ] {
+            assert!(
+                question_response("req", &context, Some(answers.clone())).is_err(),
+                "accepted {answers}"
+            );
+        }
     }
 
     #[test]
@@ -845,12 +1048,10 @@ pub(crate) fn launch_signature(
         workspace.join(".codebuddy/settings.local.json"),
     ] {
         add(path.as_os_str().as_encoded_bytes());
-        match std::fs::metadata(path) {
-            Ok(metadata) => {
+        match std::fs::read(path) {
+            Ok(bytes) => {
                 add(&[1]);
-                add(&metadata.len().to_le_bytes());
-                let modified = metadata.modified().ok()?.duration_since(std::time::UNIX_EPOCH).ok()?;
-                add(&modified.as_nanos().to_le_bytes());
+                add(&bytes);
             }
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => add(&[0]),
             Err(_) => return None,
