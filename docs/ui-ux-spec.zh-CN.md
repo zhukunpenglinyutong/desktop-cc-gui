@@ -71,6 +71,7 @@
 
 ## 3. 状态与可用性
 
+- **侧栏会话悬停操作顺序固定**：已保存会话依次显示置顶、重命名、归档、删除；草稿只显示删除。归档按钮复用 `archive` 会话动作。
 - **工作区里的 MCP 配置不自动执行**：MCP 页与 `/mcp` 面板打开时只自动检测用户自己配置里的服务（`autoProbeEligible`）；配置文件位于工作区内的条目（后端 `workspaceFile`，由 `mcp::source_in_workspace` 判定，未知来源按工作区处理）从不自动检测。手动检测（单条或「检测全部」）先弹「运行工作区里的 MCP 配置？」（`McpProbeConfirmHost`，`mcp_probe_plan` 提供内容）：列出命令与参数、工作目录、env 键名、脱敏后的 URL 与请求头键名，弹出时焦点不在「运行检测」上；确认绑定计划指纹（`McpProbePlan.fingerprint`，完整目标含参数与 env 值的哈希），每次检测前重读计划，指纹没变不再询问，变了（`git pull` 或 agent 改了文件，哪怕列表还没刷新）就重新询问；检测请求带上已确认的指纹，后端重新计算不一致时以 `conflict` 拒绝执行，前端随即忘掉这条确认。拒绝后「检测全部」只检测用户级服务。检测工作区条目时 URL 与请求头里的 `${ENV}` 原样发送、不展开（避免把环境变量里的密钥发到仓库指定的地址）。回归：`probe-store.test.ts`、`probe-confirm.test.ts`、`McpProbeConfirmHost.test.tsx`、`McpSection.test.tsx`、Rust `mcp::probe::tests`。
 - **使用统计可关闭，且不在页面里运行第三方脚本**：「设置 → 关于 → 使用统计」开关（`AnalyticsSetting.tsx`，仅桌面端显示，默认开启，存 `AppSettings.analyticsEnabled`，只经 `analytics_enabled_get/set` 读写，整对象保存时缺省该字段会保留原值）。每次启动由后端（`baidu_tongji.rs`）向百度统计发一次 hm.gif 访问记录，内容只有版本、系统、界面语言、屏幕尺寸与随机访客 ID，不带页面地址与任何令牌；主窗口与 Web 端都不加载 `hm.js`，CSP 不放行百度域名。保存失败时开关回到原状态并提示 `settings.analyticsSaveFailed`。
 - **电脑操控与外网访问设置只在桌面端可用**：Web 访问端输入 `/ccgui-cua`（带不带内容都一样）在会话错误条显示 `chat.cuaDesktopOnly`，不当普通消息发出；后端 dispatch 也强制关闭电脑操控。Web 端的外网访问面板只显示 `settings.webWanDesktopOnly`：中继启停、无人值守、部署与设备批准都会被后端以 `desktop-only:` 拒绝，远端调 `update_app_settings` 时远程访问与统计相关字段保留桌面端现值；设备撤销仍可在 Web 端操作（只会收紧访问）。Web 端令牌从地址栏读到后移入当前标签页的 sessionStorage 并用 `history.replaceState` 清掉。
