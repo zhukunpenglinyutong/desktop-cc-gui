@@ -212,9 +212,9 @@ describe("plugin session-run bridge", () => {
     });
     await startPluginChatRun("p", { engine: "pi", prompt: "x", workspacePath: "/w" });
 
-    // id 未知：只能按待发键停（与聊天栏在 spawn 前点停止同一路径）。
+    // 原生 ID 未知时按轮次 ID 停止。
     await interruptPluginChatRun("p", { engine: "pi", workspacePath: "/w" });
-    expect(interruptMock).toHaveBeenLastCalledWith({ engine: "pi", sessionId: null, workspacePath: "/w" });
+    expect(interruptMock).toHaveBeenLastCalledWith({ engine: "pi", sessionId: null, workspacePath: "/w" }, "run-late-id");
 
     // id 学到以后：轮次已迁到原生键，必须停原生键。
     emitEngineEvents?.([engineEvent("run-late-id", "session", { sessionId: "sess-late" })]);
@@ -223,6 +223,21 @@ describe("plugin session-run bridge", () => {
     expect(interruptMock).toHaveBeenCalledWith({ engine: "pi", sessionId: "sess-late", workspacePath: "/w" });
 
     emitEngineEvents?.([engineEvent("run-late-id", "done", { sessionId: "sess-late" })]);
+  });
+
+  it("启动和停止使用相同的会话 ID 规范化规则", async () => {
+    chatState.sessions = [{ engine: "pi", sessionId: "trimmed", workspacePath: "/w" }];
+    sendMock.mockImplementationOnce(async (_prompt, _images, options) => {
+      options.onStarted({ runId: "trimmed-run", sessionId: "trimmed" });
+    });
+    const target = { engine: "pi", workspacePath: "/w", sessionId: " trimmed " };
+    await startPluginChatRun("trim-owner", { ...target, prompt: "任务" });
+    await expect(interruptPluginChatRun("trim-owner", { ...target, sessionId: " " }))
+      .rejects.toThrow("invalid_args");
+    expect(interruptMock).not.toHaveBeenCalled();
+    await interruptPluginChatRun("trim-owner", target);
+    expect(interruptMock).toHaveBeenCalledWith({ ...target, sessionId: "trimmed" });
+    emitEngineEvents?.([engineEvent("trimmed-run", "done", { sessionId: "trimmed" })]);
   });
 
   it.each([undefined, null])("省略或传空会话 ID（%s）时停止范围内全部属主轮次", async (sessionId) => {

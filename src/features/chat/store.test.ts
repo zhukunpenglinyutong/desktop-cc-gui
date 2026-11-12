@@ -1,3 +1,4 @@
+import { clearSelectedBot, selectSelectedBot } from "@/features/bots/selected-bot";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ipc, type ForkPlan, type SessionMeta } from "@/lib/ipc";
 import {
@@ -20,6 +21,7 @@ vi.mock("@/lib/ipc", () => ({
   ipc: {
     sendMessage: vi.fn(async () => ({ runId: "run-1", sessionId: null })),
     interruptSession: vi.fn(async () => true),
+    resolveEnabledBuiltInAgent: vi.fn(),
     rememberSessionModel: vi.fn(async () => {}),
     rememberSessionEffort: vi.fn(async () => {}),
     listWorkspaces: vi.fn(async () => []),
@@ -1703,5 +1705,89 @@ describe("插件续接原生会话", () => {
       }),
     ).rejects.toThrow("session_busy");
     expect(ipc.sendMessage).not.toHaveBeenCalled();
+  });
+
+  it.each([true, false])("待发键共享时只停止插件轮次（终态早于回执：%s）", async (early) => {
+    const pendingKey = `new:${target.engine}:${WS}`;
+    vi.mocked(ipc.sendMessage)
+      .mockResolvedValueOnce({ runId: "user-pending-run", sessionId: null })
+      .mockResolvedValueOnce({ runId: "plugin-pending-run", sessionId: null });
+    useChatStore.getState().startNewChat(WS);
+    await useChatStore.getState().send("用户的新聊天", []);
+    const scope = { engine: target.engine, workspacePath: WS };
+    await startPluginChatRun("pending-owner", { ...scope, prompt: "插件的新聊天" });
+
+    const ack = Promise.withResolvers<boolean>();
+    vi.mocked(ipc.interruptSession).mockReturnValueOnce(ack.promise);
+    const stop = interruptPluginChatRun("pending-owner", scope);
+    await vi.waitFor(() => expect(vi.mocked(ipc.interruptSession).mock.calls).toEqual([["plugin-pending-run"]]));
+    const deliverTerminal = () => handleEngineEvents([{
+      engine: target.engine, runId: "plugin-pending-run", kind: "done", sessionId: null, seq: 1, data: {},
+    }], engineDeps());
+    if (early) {
+      deliverTerminal();
+      expect(useChatStore.getState().streamingByKey[pendingKey]).toBe(true);
+    }
+    ack.resolve(true);
+    await stop;
+    if (!early) deliverTerminal();
+    expect(useChatStore.getState().streamingByKey[pendingKey]).toBe(true);
+    expect(useChatStore.getState().bySession[pendingKey].interrupted).toBeFalsy();
+    await useChatStore.getState().interrupt({ ...scope, sessionId: null });
+    expect(ipc.interruptSession).toHaveBeenLastCalledWith("user-pending-run");
+  });
+
+  it("Bot 解析期间开始刷新历史时拒绝续接，不追加消息", async () => {
+    const bot = Promise.withResolvers<Awaited<ReturnType<typeof ipc.resolveEnabledBuiltInAgent>>>();
+    const page = Promise.withResolvers<Awaited<ReturnType<typeof ipc.loadSessionPage>>>();
+    vi.mocked(ipc.resolveEnabledBuiltInAgent).mockReturnValueOnce(bot.promise);
+    selectSelectedBot(WS, target.sessionId, { id: "builtin", name: "内置助手", source: "builtIn", avatar: { type: "emoji", value: "🤖" } });
+    try {
+      const start = startPluginChatRun("loading-owner", def);
+      await vi.waitFor(() => expect(ipc.resolveEnabledBuiltInAgent).toHaveBeenCalled());
+      const before = useChatStore.getState().bySession[key].messages;
+      vi.mocked(ipc.loadSessionPage).mockReturnValueOnce(page.promise);
+      const reload = useChatStore.getState().reloadSession(target);
+      expect(useChatStore.getState().bySession[key].loading).toBe(true);
+      bot.resolve({ id: "builtin", name: "内置助手", icon: null, prompt: "测试", promptHash: "test" });
+      try {
+        await expect(start).rejects.toThrow("session_busy");
+        expect(ipc.sendMessage).not.toHaveBeenCalled();
+        expect(useChatStore.getState().bySession[key].messages).toBe(before);
+      } finally {
+        page.resolve({ messages: [], nextBefore: null, subagentHistory: [] });
+        await reload;
+      }
+    } finally {
+      clearSelectedBot(WS, target.sessionId);
+    }
+  });
+
+  it("停止 IPC 失败后保留待发轮次并允许重试", async () => {
+    const scope = { engine: target.engine, workspacePath: WS };
+    vi.mocked(ipc.sendMessage).mockResolvedValueOnce({ runId: "retry-stop", sessionId: null });
+    await startPluginChatRun("retry-stop-owner", { ...scope, prompt: "待发" });
+    const stop = () => interruptPluginChatRun("retry-stop-owner", scope);
+    vi.mocked(ipc.interruptSession).mockRejectedValueOnce(new Error("IPC unavailable"));
+    await expect(stop()).rejects.toThrow("IPC unavailable");
+    vi.mocked(ipc.interruptSession).mockResolvedValueOnce(false);
+    await expect(stop()).rejects.toThrow();
+    expect(useChatStore.getState().streamingByKey[`new:${target.engine}:${WS}`]).toBe(true);
+    await stop();
+    expect(vi.mocked(ipc.interruptSession).mock.calls).toEqual([["retry-stop"], ["retry-stop"], ["retry-stop"]]);
+  });
+
+  it("停止已知会话期间不停止后发的用户轮次", async () => {
+    await startPluginChatRun("known-stop-owner", def);
+    const ack = Promise.withResolvers<boolean>();
+    vi.mocked(ipc.interruptSession).mockReturnValueOnce(ack.promise);
+    const stop = interruptPluginChatRun("known-stop-owner", def);
+    await vi.waitFor(() => expect(ipc.interruptSession).toHaveBeenCalledWith(target.sessionId));
+    vi.mocked(ipc.sendMessage).mockResolvedValueOnce({ runId: "replacement-user", sessionId: target.sessionId });
+    await useChatStore.getState().send("停止期间发送的新消息", [], undefined, def);
+    ack.resolve(true);
+    await stop;
+    expect(ipc.interruptSession).not.toHaveBeenCalledWith("replacement-user");
+    expect(useChatStore.getState().streamingByKey[key]).toBe(true);
   });
 });

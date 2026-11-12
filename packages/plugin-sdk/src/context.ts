@@ -924,7 +924,8 @@ export interface PluginContext {
     }): Promise<{ runId: string; sessionId: string | null }>;
     /** 停止本插件通过 `startRun` 启动的在跑轮次（等价于聊天里的停止按钮）。
      *  省略 sessionId 或传 null 时，停止本插件在该引擎与工作区下的全部在跑轮次；
-     *  提供 ID 时仅停止匹配的会话。无匹配轮次时拒绝，不停止用户或其他插件的轮次。 */
+     *  提供 ID 时去除首尾空白并停止匹配的会话，拒绝空白 ID。
+     *  尚未获得原生会话 ID 时按轮次 ID 停止。无匹配轮次时拒绝。 */
     interruptRun(def: {
       engine: string;
       workspacePath: string;

@@ -1982,6 +1982,9 @@ function adoptObservedRun(
 export const settledRuns = new Map<string, "done" | "error">();
 const MAX_SETTLED_RUNS = 256;
 
+// 精确停止等待 IPC 回执时暂存终态，避免终态提前清理共享会话键。
+export const interruptingRunTerminals = new Map<string, ChatEngineEvent[]>();
+
 /** Resolve an event's session key (run routing, then session-id match) and
  * dispatch to the per-kind handler. */
 export function handleEngineEvents(
@@ -2007,6 +2010,11 @@ export function handleEngineEvents(
       event.sessionId !== toolBatch.event.sessionId
     )) {
       flushTools();
+    }
+    const stopping = interruptingRunTerminals.get(event.runId);
+    if (stopping && (event.kind === "done" || event.kind === "error")) {
+      stopping.push(event);
+      continue;
     }
     if (event.kind === "turn_resumed") {
       reopenSettledRun(event, deps);

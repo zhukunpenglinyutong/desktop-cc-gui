@@ -93,6 +93,12 @@ function ensureRunBridge(): void {
   });
 }
 
+function normalizeSessionId(value: string | null | undefined): string | null {
+  const sessionId = value == null ? null : value.trim();
+  if (sessionId === "") throw new Error("invalid_args: sessionId must be non-empty or null");
+  return sessionId;
+}
+
 export async function startPluginChatRun(
   pluginId: string,
   def: PluginChatRunDef,
@@ -105,8 +111,7 @@ export async function startPluginChatRun(
   if (!workspacePath) {
     throw new Error(`invalid_args: ${pluginId} sessions.startRun: empty workspacePath`);
   }
-  const sessionId = def.sessionId == null ? null : def.sessionId.trim();
-  if (sessionId === "") throw new Error("invalid_args: sessionId must be non-empty or null");
+  const sessionId = normalizeSessionId(def.sessionId);
   ensureRunBridge();
 
   // 动态引入：chat store 依赖链重，且本模块被 context.ts 静态引用。
@@ -189,9 +194,10 @@ export async function interruptPluginChatRun(
   // sibling plugin's turn. Only a live run this plugin started may be
   // stopped. `sessionId: null` matches any live run of this plugin in the
   // scope because the native id is often announced after startRun resolves.
-  const sessionId = def.sessionId ?? null;
-  const matched = [...runs.values()].filter(
-    (record) =>
+  const sessionId = normalizeSessionId(def.sessionId);
+  const chat = await import("@/features/chat/store");
+  const matched = [...runs].filter(
+    ([, record]) =>
       record.pluginId === pluginId &&
       record.engine === engine &&
       record.workspacePath === workspacePath &&
@@ -202,16 +208,18 @@ export async function interruptPluginChatRun(
       `${pluginId}: sessions.interruptRun may only stop a run started by this plugin`,
     );
   }
-  const chat = await import("@/features/chat/store");
-  // 省略 ID 时停止本插件在此范围内的全部轮次，按记录中的实际会话寻址。
-  // 尚未 announce 的轮次仍走待发键；同一会话只停止一次。
-  const targets = sessionId !== null
-    ? [sessionId]
-    : [...new Set(matched.map((record) => record.sessionId))];
   const store = chat.useChatStore.getState();
-  await Promise.all(targets.map((target) => store.interrupt({
-    engine,
-    sessionId: target,
-    workspacePath,
-  })));
+  const sessions = new Set<string>();
+  const stops: Promise<void>[] = [];
+  for (const [runId, record] of matched) {
+    const target = { engine, workspacePath, sessionId: record.sessionId };
+    if (record.sessionId === null) {
+      // 待发键由多个轮次共享，只能按已授权的轮次 ID 停止。
+      stops.push(store.interrupt(target, runId));
+    } else if (!sessions.has(record.sessionId)) {
+      sessions.add(record.sessionId);
+      stops.push(store.interrupt(target));
+    }
+  }
+  await Promise.all(stops);
 }

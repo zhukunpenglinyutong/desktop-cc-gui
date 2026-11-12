@@ -296,7 +296,7 @@ export interface ChatStore {
   /** Drop every queued message from a session (default: the active one). */
   clearQueue: (key?: string) => void;
   /** Stop the running turn (default: the active session). */
-  interrupt: (target?: ActiveSession | null) => Promise<void>;
+  interrupt: (target?: ActiveSession | null, runId?: string) => Promise<void>;
   archiveSession: (session: SessionMeta) => Promise<void>;
   deleteSession: (engine: string, sessionId: string) => Promise<void>;
   pinSession: (
