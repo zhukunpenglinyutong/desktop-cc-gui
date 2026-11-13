@@ -16,7 +16,7 @@ import {
 
 vi.mock("@/lib/ipc", () => ({
   ipc: {
-    recordAcceptedInternalFrame: vi.fn(async () => undefined),
+    recordAcceptedInternalFrames: vi.fn(async () => undefined),
     rescanSessions: vi.fn(async () => undefined),
     usageRecord: vi.fn(async () => undefined),
   },
@@ -62,7 +62,7 @@ async function begin(runId: string, nonce = "abc123") {
   return await startRun(runId, "test.capture", { channel: "facts", nonce, maxBytes: 1024 });
 }
 
-beforeEach(() => vi.mocked(ipc.recordAcceptedInternalFrame).mockClear());
+beforeEach(() => vi.mocked(ipc.recordAcceptedInternalFrames).mockClear());
 afterEach(() => {
   unregisterRunLifecycle("run-1");
   while (fixtureDisposers.length) fixtureDisposers.pop()?.();
@@ -90,7 +90,7 @@ describe("incremental internal frame routing", () => {
       await Promise.resolve();
       expect(validate).not.toHaveBeenCalled();
       expect(delivered).not.toHaveBeenCalled();
-      expect(ipc.recordAcceptedInternalFrame).not.toHaveBeenCalled();
+      expect(ipc.recordAcceptedInternalFrames).not.toHaveBeenCalled();
     } finally {
       dispose();
     }
@@ -114,7 +114,7 @@ describe("incremental internal frame routing", () => {
       await Promise.resolve();
       expect(previous).not.toHaveBeenCalled();
       expect(replacement).not.toHaveBeenCalled();
-      expect(ipc.recordAcceptedInternalFrame).not.toHaveBeenCalled();
+      expect(ipc.recordAcceptedInternalFrames).not.toHaveBeenCalled();
     } finally {
       disposeOld();
       disposeNew();
@@ -249,6 +249,7 @@ describe("incremental internal frame routing", () => {
 
   it("persists only a validator-accepted frame after the native session is known", async () => {
     const accepted = '<CCGUI_INTERNAL_abc123>{"ok":true}</CCGUI_INTERNAL_abc123>';
+    const acceptedAlso = '<CCGUI_INTERNAL_abc123>{"ok":true,"n":2}</CCGUI_INTERNAL_abc123>';
     const rejected = '<CCGUI_INTERNAL_abc123>{"ok":false}</CCGUI_INTERNAL_abc123>';
     await startRun("run-1", "test.capture", {
       channel: "facts",
@@ -262,18 +263,19 @@ describe("incremental internal frame routing", () => {
 
     expect(filterInternalFrameDelta("run-1", rejected)).toBe(rejected);
     expect(filterInternalFrameDelta("run-1", accepted)).toBe("");
-    expect(ipc.recordAcceptedInternalFrame).not.toHaveBeenCalled();
+    expect(filterInternalFrameDelta("run-1", acceptedAlso)).toBe("");
+    expect(ipc.recordAcceptedInternalFrames).not.toHaveBeenCalled();
 
     bindRunLifecycle("pending:run-1", "run-1", "session-1");
     await vi.waitFor(() =>
-      expect(ipc.recordAcceptedInternalFrame).toHaveBeenCalledWith(
+      expect(ipc.recordAcceptedInternalFrames).toHaveBeenCalledWith(
         "claude",
         "session-1",
-        accepted,
+        [accepted, acceptedAlso],
         workspace.path,
       ),
     );
-    expect(ipc.recordAcceptedInternalFrame).toHaveBeenCalledTimes(1);
+    expect(ipc.recordAcceptedInternalFrames).toHaveBeenCalledTimes(1);
   });
 
   it("releases an opening tag whose payload outgrew the capture budget", async () => {
@@ -291,7 +293,7 @@ describe("incremental internal frame routing", () => {
 
   it("retries a frame identity the host failed to record", async () => {
     const accepted = '<CCGUI_INTERNAL_abc123>{"ok":true}</CCGUI_INTERNAL_abc123>';
-    const record = vi.mocked(ipc.recordAcceptedInternalFrame);
+    const record = vi.mocked(ipc.recordAcceptedInternalFrames);
     record.mockReset();
     record.mockRejectedValueOnce(new Error("db busy")).mockResolvedValue(undefined);
     vi.useFakeTimers();
@@ -306,8 +308,8 @@ describe("incremental internal frame routing", () => {
       await vi.advanceTimersByTimeAsync(1000);
 
       expect(record.mock.calls).toEqual([
-        ["claude", "session-1", accepted, workspace.path],
-        ["claude", "session-1", accepted, workspace.path],
+        ["claude", "session-1", [accepted], workspace.path],
+        ["claude", "session-1", [accepted], workspace.path],
       ]);
     } finally {
       vi.useRealTimers();
