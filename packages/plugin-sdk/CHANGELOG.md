@@ -1,5 +1,13 @@
 # @ccgui/plugin-sdk changelog
 
+## 0.3.26 — 2026-11-05
+
+- `ctx.sessions.supportsResume` 标记宿主支持续接已有原生会话；`startRun` 新增可选 `sessionId`。省略或传 `null` 时继续新建会话，依赖续接能力的插件应声明 `sdkVersion: ">=0.3.26"`。
+- 续接时严格匹配引擎、会话 ID 与工作区；目标不存在或不匹配时拒绝并返回 `session_not_found`，正在运行或加载时返回 `session_busy`，历史恢复失败时返回 `session_load_failed`，均不创建替代会话。历史恢复成功（含空历史）会清除旧的加载错误。
+- 续接沿用会话自己的模型、渠道和推理强度，忽略本轮 `model` / `effort` / `providerId` 覆盖；只有新建轮次接受这些覆盖值。续接会切换用户当前画面并恢复该会话历史，只应在用户主动操作时调用，不用于定时或后台任务。
+- `interruptRun` 仅停止本插件启动的在跑轮次；省略 `sessionId` 或传 `null` 时，按轮次实际所在的会话停止该引擎与工作区下的全部属主轮次，提供 ID 时只停止匹配的会话，无匹配时拒绝。
+- `host:session` 权限说明明确包含打开已有会话和发送消息的能力。
+
 ## 0.3.25 — 2026-10-28
 
 - 新增权限 `usage.read` 与 `ctx.usage`：本机用量统计，由宿主从各 CLI 自己的会话日志增量计算（首批 Claude Code / Codex / Pi / oh-my-pi），只读、不上传。
