@@ -1,4 +1,5 @@
-import { useEffect } from "react";
+import { WorkspaceEngineDialog } from "@/features/chat/WorkspaceEngineDialog";
+import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
 import Archive from "lucide-react/dist/esm/icons/archive";
@@ -254,6 +255,14 @@ export function WorkspaceContextMenu({
     onNewWorktree,
     onDeleteWorktree,
   });
+  const [choosingEngine, setChoosingEngine] = useState(false);
+  if (workspace && !menu.archived && onSetAlias) builtins.push({
+    id: "workspace-default-engine",
+    label: t("chat.workspaceDefaultEngine"),
+    icon: <Pencil className="size-4" aria-hidden />,
+    onSelect: () => setChoosingEngine(true),
+    keepOpen: true,
+  });
   const extensions = buildExtensionEntries(extensionDefs, target);
   const entries: (ContextMenuEntry | "separator")[] =
     builtins.length > 0 && extensions.length > 0
@@ -266,6 +275,9 @@ export function WorkspaceContextMenu({
   }, [entries.length, onClose]);
   if (entries.length === 0) return null;
 
+  if (choosingEngine && workspace) {
+    return <WorkspaceEngineDialog workspace={workspace} onClose={onClose} />;
+  }
   return (
     <ContextMenu
       x={menu.x}

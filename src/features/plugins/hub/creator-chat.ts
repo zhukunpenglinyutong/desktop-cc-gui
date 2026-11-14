@@ -41,7 +41,7 @@ export function startCreatorChat(workspacePath: string): string {
     .catch((error) => console.warn("[creator-skill] install failed", error));
   dismissCenterSurfaces();
   const { startNewChat, activeEngine, setDraft } = useChatStore.getState();
-  startNewChat(workspacePath);
+  startNewChat(workspacePath, activeEngine);
   const key = sessionKey(activeEngine, null, workspacePath);
   setDraft(key, CREATOR_SKILL_COMMAND);
   return key;

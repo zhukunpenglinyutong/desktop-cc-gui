@@ -70,6 +70,8 @@ function resetStore() {
     openTabs: [],
     active: null,
     activeEngine: "claude",
+    workspaceDefaultEngines: {},
+    unavailableNewChat: null,
     models: { omp: "kimi-k3" },
     providers: {},
     efforts: {},
@@ -1804,5 +1806,111 @@ describe("插件续接原生会话", () => {
     await stop;
     expect(ipc.interruptSession).not.toHaveBeenCalledWith("replacement-user");
     expect(useChatStore.getState().streamingByKey[key]).toBe(true);
+  });
+});
+
+describe("workspace default engine", () => {
+  beforeEach(() => {
+    resetStore();
+    useChatStore.setState({
+      workspaces: [{ id: "a", path: WS, name: "a", groupId: null, sortOrder: null, lastOpenedAt: null }],
+      engines: [{ id: "codex", enabled: true, available: true, supportsImages: true, permissions: [] }],
+      workspaceDefaultEngines: { a: "codex" },
+    });
+  });
+
+  it("publishes workspaces with their preferences when settings load slowly", async () => {
+    const { workspaces, engines } = useChatStore.getState();
+    useChatStore.setState({ workspaces: [], engines: [], workspaceDefaultEngines: {} });
+    const settings = Promise.withResolvers<Awaited<ReturnType<typeof ipc.getAppSettings>>>();
+    vi.mocked(ipc.getAppSettings).mockReturnValueOnce(settings.promise);
+    vi.mocked(ipc.listWorkspaces).mockResolvedValueOnce(workspaces);
+    vi.mocked(ipc.listEngines).mockResolvedValueOnce(engines);
+    const unsubscribe = useChatStore.subscribe((state, previous) => {
+      if (state.workspaces.length && !previous.workspaces.length) state.startNewChat(WS);
+    });
+    try {
+      const initialization = useChatStore.getState().init();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(useChatStore.getState().workspaces).toEqual([]);
+      settings.resolve({ ...await ipc.getAppSettings(), workspaceDefaultEngines: { a: "codex" } });
+      await initialization;
+      expect(useChatStore.getState().active?.engine).toBe("codex");
+      await useChatStore.getState().send("hello", []);
+      expect(ipc.sendMessage).toHaveBeenCalledWith(expect.objectContaining({ engine: "codex" }));
+    } finally {
+      unsubscribe();
+    }
+  });
+
+  it("uses the workspace engine for the pending tab, picker and first send", async () => {
+    const store = useChatStore.getState();
+    store.startNewChat(WS);
+    store.startNewChat(WS);
+    expect(useChatStore.getState()).toMatchObject({
+      activeEngine: "codex",
+      openTabs: [{ engine: "codex", sessionId: null, workspacePath: WS }],
+    });
+    await store.send("hello", []);
+    expect(ipc.sendMessage).toHaveBeenCalledWith(expect.objectContaining({ engine: "codex" }));
+  });
+
+  it("keeps workspaces independent and permits a one-time override", () => {
+    const store = useChatStore.getState();
+    const workspace = store.workspaces[0]!;
+    useChatStore.setState({
+      workspaces: [workspace, { ...workspace, id: "b", path: "/other" }],
+      workspaceDefaultEngines: { a: "codex", b: "claude" },
+      engines: [...store.engines, { ...store.engines[0]!, id: "claude" }],
+    });
+    store.startNewChat(WS);
+    expect(useChatStore.getState().active?.engine).toBe("codex");
+    store.startNewChat("/other");
+    expect(useChatStore.getState().active?.engine).toBe("claude");
+    store.startNewChat(WS, "claude");
+    expect(useChatStore.getState().active?.engine).toBe("claude");
+    expect(useChatStore.getState().workspaceDefaultEngines).toEqual({ a: "codex", b: "claude" });
+    store.startNewChat(WS);
+    expect(useChatStore.getState().active?.engine).toBe("codex");
+  });
+
+  it.each([
+    [false, true, null, false],
+    [true, false, null, false],
+    [true, false, ["codex"], true],
+    [false, false, ["codex"], false],
+    [true, true, [], false],
+  ] as const)("checks availability for enabled=%s, installed=%s, delegated=%j", (enabled, available, delegated, accepted) => {
+    const store = useChatStore.getState();
+    useChatStore.setState({ engines: [{ ...store.engines[0]!, enabled, available }] });
+    window.__ccguiWorkspaceUI!.registerHooks({
+      allowedEngines: () => delegated === null ? null : [...delegated],
+      labelSuffix: () => null,
+    });
+    try {
+      store.startNewChat(WS);
+      const next = useChatStore.getState();
+      expect(next.active?.engine ?? null).toBe(accepted ? "codex" : null);
+      expect(next.unavailableNewChat?.engine ?? null).toBe(accepted ? null : "codex");
+      expect(next.workspaceDefaultEngines).toEqual({ a: "codex" });
+      expect(ipc.sendMessage).not.toHaveBeenCalled();
+    } finally {
+      window.__ccguiWorkspaceUI!.registerHooks(null);
+    }
+  });
+
+  it("keeps the previous tab and draft when the default cannot be used", () => {
+    const store = useChatStore.getState();
+    store.startNewChat("/other");
+    const previous = useChatStore.getState().active;
+    useChatStore.setState({ engines: [], drafts: { untouched: "draft" } });
+    store.startNewChat(WS);
+    expect(useChatStore.getState()).toMatchObject({
+      active: previous,
+      drafts: { untouched: "draft" },
+      unavailableNewChat: { workspacePath: WS, engine: "codex" },
+    });
+    store.dismissUnavailableNewChat();
+    expect(useChatStore.getState().active).toBe(previous);
   });
 });
