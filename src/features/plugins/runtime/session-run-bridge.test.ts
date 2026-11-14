@@ -10,6 +10,7 @@ const chatState = {
   sessions: [] as { engine: string; sessionId: string; workspacePath: string }[],
   streamingByKey: {} as Record<string, boolean>,
   bySession: {} as Record<string, { error?: string; messages: unknown[] }>,
+  openTabs: [] as { engine: string; sessionId: string | null; workspacePath: string; model?: string }[],
 };
 vi.mock("@/features/chat/store", () => ({
   useChatStore: {
@@ -40,6 +41,7 @@ describe("plugin session-run bridge", () => {
     chatState.sessions = [];
     chatState.streamingByKey = {};
     chatState.bySession = {};
+    chatState.openTabs = [];
     interruptMock.mockReset();
     interruptMock.mockResolvedValue(undefined);
   });

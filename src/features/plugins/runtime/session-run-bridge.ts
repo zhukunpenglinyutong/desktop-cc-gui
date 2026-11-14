@@ -1,6 +1,7 @@
 import { listenEngineEvents, type EngineEventPayload } from "@/lib/events";
 import { pluginBus } from "./events";
 import { dismissCenterSurfaces } from "@/features/chat/center-surfaces";
+import type { ActiveSession } from "@/features/chat/store";
 
 /**
  * 插件发起的「聊天会话轮次」宿主实现（SDK 0.3.18，权限 host:session）。
@@ -128,7 +129,7 @@ export async function startPluginChatRun(
     }
     resuming.add(resumeKey!);
   }
-  const target = {
+  let target: ActiveSession = {
     engine,
     sessionId,
     workspacePath,
@@ -149,6 +150,10 @@ export async function startPluginChatRun(
       }
       const loaded = current.bySession[resumeKey!];
       if (loaded?.error && !loaded.messages.length) throw new Error("session_load_failed: unable to restore session history");
+      // 会话内切换的模型只记在标签页上，续接须沿用它，与输入框显示一致。
+      target = current.openTabs.find((tab) =>
+        tab.engine === engine && tab.sessionId === sessionId && tab.workspacePath === workspacePath,
+      ) ?? target;
     }
     // send 走宿主聊天发送路径：会话进侧栏、流式进 bySession、可停。
     await store.send(prompt, [], {

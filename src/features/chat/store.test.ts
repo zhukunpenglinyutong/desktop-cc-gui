@@ -1634,6 +1634,21 @@ describe("插件续接原生会话", () => {
     await interruptPluginChatRun("board", def);
   });
 
+  it("续接沿用用户在该会话中切换的模型", async () => {
+    vi.mocked(ipc.loadSessionPage).mockResolvedValue({
+      messages: [{ seq: 1, role: "assistant", text: "已有回复", ts: null, model: "old-model" }],
+      nextBefore: null,
+      subagentHistory: [],
+    });
+    await useChatStore.getState().selectSession(target.engine, target.sessionId, WS);
+    await useChatStore.getState().setModel(target.engine, "picked-model");
+
+    await startPluginChatRun("board", { ...def, model: "plugin-override" });
+
+    expect(ipc.sendMessage).toHaveBeenCalledWith(expect.objectContaining({ model: "picked-model" }));
+    await interruptPluginChatRun("board", def);
+  });
+
   it("引擎回执未返回会话 ID 时仍保留续接身份与停止权限", async () => {
     vi.mocked(ipc.sendMessage).mockResolvedValueOnce({ runId: "resume-no-id", sessionId: null });
     await expect(startPluginChatRun("board", def)).resolves.toEqual({ runId: "resume-no-id", sessionId: target.sessionId });
