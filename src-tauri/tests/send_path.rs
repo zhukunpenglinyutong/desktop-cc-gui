@@ -186,6 +186,111 @@ async fn send_message_streams_events_end_to_end() {
         .is_empty());
 }
 
+#[cfg(unix)]
+#[tokio::test]
+#[allow(clippy::await_holding_lock)]
+async fn codebuddy_reuses_idle_process_and_restarts_after_close_or_timeout() {
+    use std::os::unix::fs::PermissionsExt;
+    use std::time::Duration;
+
+    let _env_guard = ENV_LOCK.lock().unwrap();
+    let home = temp_home("codebuddy-reuse");
+    let bin_dir = home.join("bin");
+    std::fs::create_dir_all(&bin_dir).unwrap();
+    let cli = bin_dir.join("codebuddy");
+    std::fs::write(&cli, r#"#!/bin/sh
+printf '%s\n' "$$" >> launches
+echo '{"type":"system","subtype":"init","session_id":"buddy-session"}'
+while IFS= read -r line; do
+    case "$line" in
+        *'"type":"user"'*)
+            case "$line" in
+                *buddy-diagnostics*) echo old-stdout; echo old-stderr >&2 ;;
+                *buddy-error*) echo current-stdout; exit 3 ;;
+            esac
+            printf '{"type":"stream_event","event":{"type":"content_block_delta","delta":{"type":"text_delta","text":"%s"}}}\n' "$$"
+            case "$line" in *buddy-broken*) exec 0<&- ;; esac
+            echo '{"type":"result","subtype":"success","session_id":"buddy-session"}'
+            case "$line" in *buddy-broken*) sleep 60 ;; esac
+            ;;
+    esac
+done
+"#).unwrap();
+    std::fs::set_permissions(&cli, std::fs::Permissions::from_mode(0o755)).unwrap();
+    std::env::set_var("PATH", format!("{}:/usr/bin:/bin", bin_dir.display()));
+    let (app, events) = build_app(&home);
+    let launches = home.join("launches");
+    std::fs::write(&launches, "").unwrap();
+
+    let send = |run: &'static str, session: Option<&'static str>, model: &'static str| {
+        let app = &app;
+        let events = &events;
+        let home = &home;
+        async move {
+            let result = engine::send_message(
+                app.state(), "codebuddy".into(), home.to_string_lossy().into_owned(),
+                session.map(str::to_owned), run.into(), Vec::new(), None, None,
+                Some(model.into()), None, None, None, Some(run.into()), None, None,
+            ).await.unwrap();
+            assert_eq!(result.run_id, run);
+            tokio::time::timeout(Duration::from_secs(5), async {
+                loop {
+                    if events.lock().unwrap().iter().any(|event| {
+                        event["runId"] == run
+                            && event["kind"] == if run == "buddy-error" { "error" } else { "done" }
+                    }) {
+                        break;
+                    }
+                    tokio::time::sleep(Duration::from_millis(10)).await;
+                }
+            }).await.expect("turn did not complete");
+            assert!(app.state::<AppState>().processes.0.lock().unwrap().is_empty());
+        }
+    };
+    let launch_count = || std::fs::read_to_string(&launches).unwrap().lines().count();
+    send("buddy-1", None, "model-a").await;
+    send("buddy-2", Some("buddy-session"), "model-a").await;
+    assert_eq!(launch_count(), 1);
+    send("buddy-3", Some("buddy-session"), "model-b").await;
+    assert_eq!(launch_count(), 2);
+
+    // Native project MCP changes must invalidate the live process as well.
+    std::fs::write(home.join(".mcp.json"), r#"{"mcpServers":{}}"#).unwrap();
+    send("buddy-config", Some("buddy-session"), "model-b").await;
+    assert_eq!(launch_count(), 3);
+
+    let config = home.join(".mcp.json");
+    let modified = std::fs::metadata(&config).unwrap().modified().unwrap();
+    std::fs::write(&config, r#"{"mcpServers":[]}"#).unwrap();
+    std::fs::File::open(&config).unwrap()
+        .set_times(std::fs::FileTimes::new().set_modified(modified)).unwrap();
+    send("buddy-same-size-config", Some("buddy-session"), "model-b").await;
+    assert_eq!(launch_count(), 4);
+
+    engine::close_idle_codebuddy(app.state(), "buddy-session".into()).await.unwrap();
+    send("buddy-4", Some("buddy-session"), "model-b").await;
+    assert_eq!(launch_count(), 5);
+
+    tokio::time::pause();
+    tokio::time::advance(Duration::from_secs(600)).await;
+    tokio::task::yield_now().await;
+    tokio::time::resume();
+    send("buddy-5", Some("buddy-session"), "model-b").await;
+    assert_eq!(launch_count(), 6);
+    send("buddy-broken", Some("buddy-session"), "model-b").await;
+    assert_eq!(launch_count(), 6);
+    send("buddy-after-broken", Some("buddy-session"), "model-b").await;
+    assert_eq!(launch_count(), 7);
+    send("buddy-diagnostics", Some("buddy-session"), "model-b").await;
+    send("buddy-error", Some("buddy-session"), "model-b").await;
+    let captured = events.lock().unwrap();
+    let error = captured.iter().find(|event| {
+        event["runId"] == "buddy-error" && event["kind"] == "error"
+    }).unwrap()["data"].as_str().unwrap();
+    assert!(error.contains("current-stdout"), "{error}");
+    assert!(!error.contains("old-stdout") && !error.contains("old-stderr"), "{error}");
+}
+
 #[tokio::test]
 #[allow(clippy::await_holding_lock)]
 async fn interrupt_kills_running_child() {

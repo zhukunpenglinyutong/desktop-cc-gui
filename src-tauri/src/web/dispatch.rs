@@ -793,6 +793,10 @@ pub(super) async fn dispatch(
             )
             .await)
         }
+        "close_idle_codebuddy" => {
+            let a: SessionIdArgs = parse_args(&raw)?;
+            ser(crate::engine::close_idle_codebuddy(app.state(), a.session_id).await)
+        }
         "interrupt_session" => {
             let a: SessionIdArgs = parse_args(&raw)?;
             ser(crate::engine::interrupt_session(app.state(), a.session_id).await)

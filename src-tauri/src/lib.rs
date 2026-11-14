@@ -481,6 +481,7 @@ pub fn run() {
             // engine
             engine::send_message,
             engine::interrupt_session,
+            engine::close_idle_codebuddy,
             engine::live_runs,
             engine::answer_question,
             engine::respond_plan_review,

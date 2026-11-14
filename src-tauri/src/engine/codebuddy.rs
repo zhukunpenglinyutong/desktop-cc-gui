@@ -442,7 +442,7 @@ impl Engine for CodeBuddyEngine {
             keep_stdin_open: true,
             cleanup_files,
             mcp_restore: None,
-            preassigned_session_id: None,
+            preassigned_session_id: req.session_id.clone(),
         })
     }
 
@@ -1002,4 +1002,78 @@ mod tests {
             .iter()
             .any(|e| matches!(e, EngineEvent::Model(model) if model == "custom:kimi-k3")));
     }
+}
+
+pub(crate) struct IdleProcess {
+    pub entry: super::registry::ChildEntry,
+    pub signature: [u8; 32],
+    pub resume: Option<tokio::sync::oneshot::Sender<ResumeTurn>>,
+    pub exited: tokio::sync::watch::Receiver<()>,
+}
+
+pub(crate) struct ResumeTurn {
+    pub run_id: String,
+    pub session_id: String,
+    pub payload: String,
+    pub killed: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    pub reader_abort: std::sync::Arc<std::sync::OnceLock<tokio::task::AbortHandle>>,
+    pub comparison_model: Option<Option<String>>,
+    pub accept: tokio::sync::oneshot::Sender<()>,
+}
+
+pub(crate) const IDLE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(600);
+
+/// Compare launch settings without keeping credentials or temporary paths in the pool.
+pub(crate) fn launch_signature(
+    command: &tokio::process::Command,
+    files: &[std::path::PathBuf],
+) -> Option<[u8; 32]> {
+    use sha2::{Digest, Sha256};
+    let command = command.as_std();
+    let mut digest = Sha256::new();
+    let mut add = |value: &[u8]| {
+        digest.update(value.len().to_le_bytes());
+        digest.update(value);
+    };
+    add(command.get_program().as_encoded_bytes());
+    let workspace = command.get_current_dir()?;
+    add(workspace.as_os_str().as_encoded_bytes());
+    let home = super::engine_home(Some("CODEBUDDY_CONFIG_DIR"), ".codebuddy");
+    for path in [
+        home.join("settings.json"),
+        home.join("mcp.json"),
+        workspace.join(".mcp.json"),
+        workspace.join(".codebuddy/mcp.json"),
+        workspace.join(".codebuddy/settings.json"),
+        workspace.join(".codebuddy/settings.local.json"),
+    ] {
+        add(path.as_os_str().as_encoded_bytes());
+        match std::fs::read(path) {
+            Ok(bytes) => {
+                add(&[1]);
+                add(&bytes);
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => add(&[0]),
+            Err(_) => return None,
+        }
+    }
+    let mut args = command.get_args();
+    while let Some(arg) = args.next() {
+        if arg == "-r" {
+            args.next();
+        } else if files.iter().any(|file| file.as_os_str() == arg) {
+            add(b"staged-file");
+            add(&std::fs::read(arg).ok()?);
+        } else {
+            add(arg.as_encoded_bytes());
+        }
+    }
+    for (key, value) in command.get_envs() {
+        add(key.as_encoded_bytes());
+        add(&[u8::from(value.is_some())]);
+        if let Some(value) = value {
+            add(value.as_encoded_bytes());
+        }
+    }
+    Some(digest.finalize().into())
 }

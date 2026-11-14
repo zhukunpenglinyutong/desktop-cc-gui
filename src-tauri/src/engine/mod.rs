@@ -65,7 +65,8 @@ pub use registry::{ChildEntry, ProcessRegistry};
 // Stdout reader / per-turn streaming plumbing (reader.rs).
 pub use reader::sweep_staging_dirs;
 pub(crate) use reader::{
-    cleanup_staged_files, read_line_capped, run_reader, spawn_stderr_capture, spawn_stdin_writer,
+    cleanup_staged_files, read_line_capped, run_process_reader,
+    spawn_stderr_capture, spawn_stdin_writer,
     LineRead, RunContext, TurnCore, TurnState, VirtualRunGuard, MAX_LINE_BYTES,
 };
 
@@ -996,6 +997,9 @@ async fn send_message_inner_with_sink(
         if map.contains_key(&run_id) {
             return Err("run id already active".into());
         }
+        if engine == "codebuddy" && session_id.as_ref().is_some_and(|id| map.contains_key(id)) {
+            return Err("CodeBuddy session already has a running turn".into());
+        }
         if registry::active_run_count(&map) >= MAX_CONCURRENT_RUNS {
             return Err(format!(
                 "too many concurrent runs ({MAX_CONCURRENT_RUNS}); wait for one to finish"
@@ -1244,6 +1248,55 @@ async fn send_reserved(
     // Harmless for the WSL/ssh-wrapped command (local env doesn't cross).
     command.env("PATH", resolve::cli_search_path());
 
+    let signature = (engine == "codebuddy"
+        && wsl_tp.is_none()
+        && Arc::ptr_eq(&sink, &state.sink)
+        && computer_use != Some(true)
+        && launch.req.memory_bot.is_none())
+        .then(|| codebuddy::launch_signature(&command, &cleanup_files))
+        .flatten();
+    if engine == "codebuddy" {
+        if let Some(session_id) = launch.req.session_id.as_deref() {
+            let idle = state.processes.4.lock().ok().and_then(|mut pool| {
+                let idle = pool.get_mut(session_id)?;
+                let resume = idle.resume.take().filter(|_| signature == Some(idle.signature));
+                Some((resume, idle.exited.clone()))
+            });
+            if let Some((resume, mut exited)) = idle {
+                if let (Some(resume), Some(payload)) = (resume, launch.built.stdin_payload.as_ref()) {
+                    let (accept, accepted) = tokio::sync::oneshot::channel();
+                    let turn = codebuddy::ResumeTurn {
+                        run_id: run_id.clone(),
+                        session_id: session_id.to_string(),
+                        // The launch payload starts with the one-time CLI handshake.
+                        payload: payload.rsplit('\n').next().unwrap_or(payload).to_owned(),
+                        killed: Arc::clone(&killed),
+                        reader_abort: Arc::clone(&reader_abort),
+                        comparison_model: launch.comparison_model.clone(),
+                        accept,
+                    };
+                    if resume.send(turn).is_ok() && accepted.await.is_ok() {
+                        cleanup_staged_files(&cleanup_files);
+                        return Ok(SendResult {
+                            run_id,
+                            session_id: Some(session_id.to_string()),
+                        });
+                    }
+                }
+                // Reap a stale process before resuming from disk.
+                if tokio::time::timeout(reader::READER_SETTLE_GRACE, exited.changed()).await.is_err() {
+                    cleanup_staged_files(&cleanup_files);
+                    return Err("Timed out waiting for the previous CodeBuddy process to exit".into());
+                }
+            }
+        }
+    }
+
+    if engine == "codebuddy" && killed.load(std::sync::atomic::Ordering::SeqCst) {
+        cleanup_staged_files(&cleanup_files);
+        return Err("CodeBuddy turn was cancelled before launch".into());
+    }
+
     let mut child = match command.spawn() {
         Ok(child) => child,
         Err(error) => {
@@ -1320,7 +1373,12 @@ async fn send_reserved(
         );
     }
 
-    let stderr_buf = spawn_stderr_capture(stderr);
+    let (stderr_buf, stderr_reset) = if signature.is_some() {
+        let (buffer, reset) = reader::spawn_reusable_stderr_capture(stderr);
+        (buffer, Some(reset))
+    } else {
+        (spawn_stderr_capture(stderr), None)
+    };
     let initial_model = if engine == "claude" {
         launch
             .req
@@ -1371,7 +1429,12 @@ async fn send_reserved(
         #[cfg(windows)]
         _tree_guard: tree_guard,
     };
-    let reader = tokio::spawn(run_reader(stdout, ctx));
+    let reader = tokio::spawn(run_process_reader(
+        stdout,
+        ctx,
+        signature.map(|signature| (signature, workspace_path)),
+        stderr_reset,
+    ));
     // Registration order is unchanged (entries land before the task can
     // settle); the OnceLock just hands kill()/kill_all() the handle.
     let _ = reader_abort.set(reader.abort_handle());
@@ -1481,6 +1544,15 @@ async fn send_host_stream(
 /// Async + spawn_blocking: the kill waits for the Windows tree walk to
 /// finish (see `kill_process_group`), and a synchronous command would hold
 /// that wait on the UI thread — the app would visibly hitch on every Stop.
+#[tauri::command]
+pub async fn close_idle_codebuddy(
+    state: tauri::State<'_, crate::AppState>,
+    session_id: String,
+) -> Result<(), String> {
+    state.processes.close_idle_codebuddy(&session_id);
+    Ok(())
+}
+
 #[tauri::command]
 pub async fn interrupt_session(
     state: tauri::State<'_, crate::AppState>,
@@ -2993,7 +3065,7 @@ mod retry_lifecycle_tests {
             #[cfg(windows)]
             _tree_guard: None,
         };
-        run_reader(stdout, ctx).await;
+        reader::run_reader(stdout, ctx).await;
         let events = std::mem::take(&mut *emitter.0.lock().unwrap());
         events
     }
@@ -3043,7 +3115,7 @@ mod retry_lifecycle_tests {
             #[cfg(windows)]
             _tree_guard: None,
         };
-        run_reader(stdout, ctx).await;
+        reader::run_reader(stdout, ctx).await;
         let events = std::mem::take(&mut *emitter.0.lock().unwrap());
         let last = events.last().unwrap();
         assert_eq!(last["kind"], "error");
@@ -3559,7 +3631,7 @@ mod retry_lifecycle_tests {
         };
         // Unbounded on the old EOF-only reader: the sleep holds the pipe
         // for 600s. POST_EXIT_DRAIN settles this in well under a second.
-        tokio::time::timeout(std::time::Duration::from_secs(5), run_reader(stdout, ctx))
+        tokio::time::timeout(std::time::Duration::from_secs(5), reader::run_reader(stdout, ctx))
             .await
             .expect("reader must settle after child exit, not park on the held pipe");
         let events = std::mem::take(&mut *emitter.0.lock().unwrap());

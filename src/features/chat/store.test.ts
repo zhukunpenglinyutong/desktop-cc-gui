@@ -22,6 +22,7 @@ vi.mock("@/lib/ipc", () => ({
     sendMessage: vi.fn(async () => ({ runId: "run-1", sessionId: null })),
     interruptSession: vi.fn(async () => true),
     resolveEnabledBuiltInAgent: vi.fn(),
+    closeIdleCodeBuddy: vi.fn(async () => {}),
     rememberSessionModel: vi.fn(async () => {}),
     rememberSessionEffort: vi.fn(async () => {}),
     listWorkspaces: vi.fn(async () => []),
@@ -229,6 +230,21 @@ describe("per-session composer selection", () => {
       modes.exit(identity);
       dispose();
     }
+  });
+});
+
+describe("closing a CodeBuddy tab", () => {
+  it("releases only the closed session's CLI process", () => {
+    resetStore();
+    const closing = { engine: "codebuddy", sessionId: "closing", workspacePath: WS };
+    const remaining = { engine: "codebuddy", sessionId: "remaining", workspacePath: WS };
+    useChatStore.setState({ active: remaining, openTabs: [closing, remaining] });
+
+    useChatStore.getState().closeTab(closing.engine, closing.sessionId, WS);
+
+    expect(ipc.closeIdleCodeBuddy).toHaveBeenCalledExactlyOnceWith("closing");
+    expect(ipc.interruptSession).not.toHaveBeenCalled();
+    expect(useChatStore.getState().openTabs).toEqual([remaining]);
   });
 });
 

@@ -1550,6 +1550,8 @@ export const ipc = {
      *  开启了记忆、引擎支持挂载时传）。 */
     memoryBot?: string | null;
   }) => invoke<SendResult>("send_message", args),
+  closeIdleCodeBuddy: (sessionId: string) =>
+    invoke<void>("close_idle_codebuddy", { sessionId }),
   interruptSession: (sessionId: string) =>
     invoke<boolean>("interrupt_session", { sessionId }),
   /** Which of these run ids the host still runs: the orphan sweep asks
