@@ -553,6 +553,54 @@ describe("refreshSubagentStatus", () => {
     expect(session.messages.filter((row) => row.role === AGENT_STATUS_ROLE)).toHaveLength(0);
   });
 
+  it("settles a live re-dispatch from its own completion when the host clock lags", async () => {
+    // The engine host runs five minutes behind this machine: the re-run's real
+    // completion is stamped before the live re-dispatch, yet it follows the
+    // previous run's recorded completion on the host's own clock.
+    const oldCompletion = status(2, [{ id: "Worker", status: "completed" }], "2026-10-28T00:01:00Z");
+    const live = [
+      { seq: 10, role: "user", text: "Run Worker again", ts: "2026-10-28T00:09:59Z" },
+      dispatch(11, ["Worker"], "2026-10-28T00:10:00Z"),
+    ];
+    const { store, actions, loadHistoryPage } = setup(live, [dispatch(1), oldCompletion]);
+    loadHistoryPage.mockResolvedValueOnce(page([
+      { seq: 3, role: "user", text: "Run Worker again", ts: "2026-10-28T00:04:59Z" },
+      dispatch(4, ["Worker"], "2026-10-28T00:05:00Z"),
+      status(5, [{ id: "Worker", status: "completed" }], "2026-10-28T00:05:30Z"),
+    ], [dispatch(1), status(2, [{ id: "Worker", status: "completed" }], "2026-10-28T00:01:00Z")]));
+
+    await actions.refreshSubagentStatus(KEY);
+
+    const session = store.getState().bySession[KEY];
+    expect(
+      deriveAgentTaskSteps([...session.subagentHistory, ...session.messages], false, "omp")
+        .map((step) => step.state),
+    ).toEqual(["complete", "complete"]);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("still drops a delivery older than the completion recorded before a live re-dispatch", async () => {
+    const oldCompletion = status(2, [{ id: "Worker", status: "completed" }], "2026-10-28T00:01:00Z");
+    const live = [
+      { seq: 10, role: "user", text: "Run Worker again", ts: "2026-10-28T00:09:59Z" },
+      dispatch(11, ["Worker"], "2026-10-28T00:10:00Z"),
+    ];
+    const { store, actions, loadHistoryPage } = setup(live, [dispatch(1), oldCompletion]);
+    // A late-read snapshot from the previous run, stamped before its completion.
+    loadHistoryPage.mockResolvedValueOnce(page([
+      status(3, [{ id: "Worker", status: "failed" }], "2026-10-28T00:00:30Z"),
+    ]));
+
+    await actions.refreshSubagentStatus(KEY);
+
+    const session = store.getState().bySession[KEY];
+    expect(session.messages.filter((row) => row.role === AGENT_STATUS_ROLE)).toHaveLength(0);
+    expect(
+      deriveAgentTaskSteps([...session.subagentHistory, ...session.messages], false, "omp")
+        .map((step) => step.state),
+    ).toEqual(["complete", "active"]);
+  });
+
   it("ends agents missing from a fetched complete jobs roster", async () => {
     const { store, actions, loadHistoryPage } = setup([dispatch(1, ["Worker", "Other"])]);
     loadHistoryPage.mockResolvedValueOnce(page([

@@ -216,7 +216,10 @@ function hasNewerJobEvidence(
   // a new run of that name; one that does not is the run the candidate
   // reports on, re-delivered live (its clock is not comparable). The store
   // appends live rows in arrival order, so the recorded row's position is the
-  // only reliable "before" evidence across the two clocks.
+  // only reliable "before" evidence across the two clocks. That recorded row
+  // shares the candidate's clock: a candidate stamped after it reports on a
+  // later run (the re-dispatch's own, with the host clock lagging), so only a
+  // candidate no newer than it belongs to the run the re-dispatch replaced.
   const redispatchIndex = transcript.indexOf(candidate);
   const liveRedispatch = (dispatchRow: Message) => {
     const index = transcript.indexOf(dispatchRow);
@@ -224,7 +227,10 @@ function hasNewerJobEvidence(
     for (let i = 0; i < index && i < redispatchIndex; i++) {
       const row = transcript[i];
       if (row.role !== AGENT_STATUS_ROLE) continue;
-      if (statusJobEntries(row).some((job) => job.id === jobId && job.state === "complete")) {
+      if (
+        statusJobEntries(row).some((job) => job.id === jobId && job.state === "complete") &&
+        !isNewerTranscriptRow(candidate, row)
+      ) {
         return true;
       }
     }
