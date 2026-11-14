@@ -6,7 +6,7 @@
  * 插件仓用法（包未发布 npm 前的过渡方案）：复制本文件为插件仓的
  * `src/ccgui-plugin.d.ts`，首行版本戳必须与所用宿主 SDK 一致。
  *
- * @ccgui/plugin-sdk v0.3.25
+ * @ccgui/plugin-sdk v0.3.26
  */
 
 /** 宿主实现的 SDK 契约版本。 */
@@ -922,6 +922,8 @@ export interface PluginContext {
    *  engine/sessionId/workspacePath 的外部行被丢弃。返回 Disposer,插件
    *  卸载时自动注销。 */
   sessions: {
+    /** 是否支持续接已有原生会话（0.3.26 起）；旧宿主不提供此标记。 */
+    readonly supportsResume: boolean;
     selectSession(engine: string, sessionId: string, workspacePath: string): Promise<void>;
     /** 请求宿主立即刷新会话目录（侧栏/标签页），0.3.7 起。
      *  插件绕过宿主直写会话数据（如 sqlite custom_title、转录 title 行）后
@@ -934,7 +936,9 @@ export interface PluginContext {
     /** 把一个 AI 轮次跑成**宿主聊天会话**(0.3.18 起,权限 host:session):
      *  会话立刻出现在侧栏(带运行中状态,不需要手动同步),打开就是实时流式
      *  输出;停止既能在聊天里点,也能用 interruptRun。会话挂在 workspacePath
-     *  工作区下,模型/强度/渠道只覆盖这一轮,不动用户的全局默认。
+     *  工作区下；新建轮次可覆盖模型/强度/渠道，不动用户的全局默认，续接轮次沿用已有会话的选择。
+     *  续接忽略 model / effort / providerId 覆盖，并切回该会话；只应由用户
+     *  主动操作触发，不用于定时或后台任务。
      *
      *  与 ctx.agent.start 的分工:那个是插件自有的后台轮次(事件只回插件,
      *  不进聊天);这个就是「像用户自己发了一条」。需要用户看得见、随时
@@ -945,6 +949,12 @@ export interface PluginContext {
      *  { runId, sessionId, engine, workspacePath, kind: "done" | "error", error }。
      *  被用户/插件中断的轮次同样以 done 收尾。 */
     startRun(def: {
+      /** 0.3.26 起：续接已有原生会话；省略或 null 时创建新会话。
+       * 引擎与工作区必须匹配；正在运行或加载、目标不存在、历史读取失败时拒绝，
+       * 不创建替代会话。宿主切回聊天并恢复历史后发送，沿用会话的模型、渠道与推理强度，
+       * 忽略本轮 model / effort / providerId 覆盖。续接只应由用户主动操作触发，
+       * 不应用于定时或后台任务，以免切走用户当前画面。 */
+      sessionId?: string | null;
       engine: string;
       prompt: string;
       /** 会话所属工作区路径(如某个 worktree)。 */
@@ -956,10 +966,10 @@ export interface PluginContext {
       /** 本轮渠道 id(catalog 的 providers[].id)。 */
       providerId?: string | null;
     }): Promise<{ runId: string; sessionId: string | null }>;
-    /** 停止 startRun 起的轮次(等价于聊天里的停止按钮)。只允许停止本插件
-     *  startRun 起的、仍在运行的轮次：没有匹配的在跑轮次会以 rejection 失败，
-     *  不会误停用户或其他插件的会话；`sessionId: null` 匹配本插件在该引擎+工作
-     *  区里的任意在跑轮次（原生 id 可能在 startRun 返回后才 announce）。 */
+    /** 停止本插件通过 startRun 启动的在跑轮次（等价于聊天里的停止按钮）。
+     *  省略 sessionId 或传 null 时，停止本插件在该引擎与工作区下的全部在跑轮次；
+     *  提供 ID 时去除首尾空白并停止匹配的会话，拒绝空白 ID。
+     *  尚未获得原生会话 ID 时按轮次 ID 停止。无匹配轮次时拒绝。 */
     interruptRun(def: {
       engine: string;
       workspacePath: string;

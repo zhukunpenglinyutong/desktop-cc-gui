@@ -1096,6 +1096,7 @@ export function createSessionActions(
           subagentHistory: page.subagentHistory,
           nextBefore: page.nextBefore,
           loading: false,
+          error: null,
           // Live "usage" events only cover fresh turns; a resumed session
           // adopts the newest usage snapshot carried by its history.
           usage:

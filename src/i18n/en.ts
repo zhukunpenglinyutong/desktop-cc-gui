@@ -1784,7 +1784,7 @@ export const en: Messages = {
         i18n: "Read language settings",
         agent: "Run plugin agents",
         composerDraft: "Read and write the composer draft",
-        hostSession: "Read the active session",
+        hostSession: "Open sessions and send messages in them, including existing ones",
         hostWorkspace: "Read the active workspace",
         hostWorkspaceRemote: "Access remote workspaces",
         hostWorktree: "Create local worktrees",

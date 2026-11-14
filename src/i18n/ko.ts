@@ -1655,7 +1655,7 @@ export const ko: Messages = {
         i18n: "언어 설정 읽기",
         agent: "플러그인 에이전트 실행",
         composerDraft: "입력창 초안 읽기 및 쓰기",
-        hostSession: "활성 세션 읽기",
+        hostSession: "세션을 열고 기존 세션을 포함해 메시지 보내기",
         hostWorkspace: "활성 작업공간 읽기",
         hostWorkspaceRemote: "원격 작업공간 접근",
         hostWorktree: "로컬 워크트리 생성",

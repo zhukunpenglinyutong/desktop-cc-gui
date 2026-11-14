@@ -1400,19 +1400,56 @@ pub async fn record_accepted_internal_frame(
     frame: String,
     workspace_path: String,
 ) -> Result<(), String> {
+    record_accepted_internal_frames(
+        state,
+        engine,
+        session_id,
+        vec![frame],
+        workspace_path,
+    )
+    .await
+}
+
+/// Record several validator-accepted frames while holding one database lock
+/// and invalidating the session index once. The renderer already validated
+/// each complete frame; this function only re-derives their hashes and stores
+/// the identities as one atomic batch.
+#[tauri::command]
+pub async fn record_accepted_internal_frames(
+    state: tauri::State<'_, crate::AppState>,
+    engine: String,
+    session_id: String,
+    frames: Vec<String>,
+    workspace_path: String,
+) -> Result<(), String> {
+    const MAX_BATCH: usize = 128;
     let (engine, session_id) = recordable_frame_scope(&engine, &session_id)?;
+    if frames.is_empty() {
+        return Ok(());
+    }
+    if frames.len() > MAX_BATCH {
+        return Err(format!("accepted-frame batch exceeds {MAX_BATCH} frames"));
+    }
     // The workspace the frame was accepted in. A remote session never gets a
     // `sessions` row, so a purge that joins through it cannot reach these
     // identities: this is the only key `remove_workspace` can reclaim them by.
     let workspace_path = workspace_path.trim().to_string();
-    let Some(frame_hash) = super::recordable_internal_frame_hash(&frame) else {
-        return Err("frame is not one complete internal frame with a JSON payload".to_string());
-    };
+    let frame_hashes = frames
+        .iter()
+        .map(|frame| {
+            super::recordable_internal_frame_hash(frame).ok_or_else(|| {
+                "frame is not one complete internal frame with a JSON payload".to_string()
+            })
+        })
+        .collect::<Result<Vec<_>, _>>()?;
     let db = Arc::clone(&state.db);
     let sink = Arc::clone(&state.sink);
     let stale_summary = tauri::async_runtime::spawn_blocking(move || -> Result<bool, String> {
-        let conn = db.0.lock();
-        let (for_session, total): (i64, i64) = conn
+        let mut conn = db.0.lock();
+        let tx = conn
+            .transaction()
+            .map_err(|error| error.to_string())?;
+        let (for_session, total): (i64, i64) = tx
             .query_row(
                 "SELECT
                     (SELECT COUNT(*) FROM accepted_internal_frames
@@ -1422,23 +1459,31 @@ pub async fn record_accepted_internal_frame(
                 |row| Ok((row.get(0)?, row.get(1)?)),
             )
             .map_err(|error| error.to_string())?;
-        // At capacity the identity cannot be stored, so the frame will be
-        // visible again on reload: report it instead of answering success,
-        // which would look identical to a stored identity.
-        if for_session >= MAX_RECORDED_FRAMES_PER_SESSION || total >= MAX_RECORDED_FRAMES_TOTAL {
-            return Err(format!(
-                "accepted-frame table is at capacity for {engine}/{session_id}"
-            ));
-        }
-        let inserted = conn
-            .execute(
+        let mut inserted = 0i64;
+        for frame_hash in frame_hashes {
+            // At capacity the identity cannot be stored, so report it instead
+            // of answering success, which would look identical to a stored
+            // identity. The transaction keeps a partial batch from leaking.
+            if for_session + inserted >= MAX_RECORDED_FRAMES_PER_SESSION
+                || total + inserted >= MAX_RECORDED_FRAMES_TOTAL
+            {
+                return Err(format!(
+                    "accepted-frame table is at capacity for {engine}/{session_id}"
+                ));
+            }
+            let did_insert = tx
+                .execute(
                 "INSERT OR IGNORE INTO accepted_internal_frames(engine, session_id, frame_hash, workspace_path)
                  VALUES(?1, ?2, ?3, ?4)",
                 rusqlite::params![engine, session_id, frame_hash, workspace_path],
-            )
-            .map_err(|error| error.to_string())?
-            != 0;
-        if !inserted {
+                )
+                .map_err(|error| error.to_string())?
+                != 0;
+            if did_insert {
+                inserted += 1;
+            }
+        }
+        if inserted == 0 {
             return Ok(false);
         }
         // The FTS stamp tracks only file stat + INDEX_VERSION, so frame text
@@ -1446,7 +1491,7 @@ pub async fn record_accepted_internal_frame(
         // searchable forever. Drop the stamp under the same lock: PENDING_FROM
         // treats a missing row as pending, and the scan below chains into
         // spawn_index, which re-indexes with this identity hidden.
-        conn.execute(
+        tx.execute(
             "DELETE FROM fts_state WHERE engine=?1 AND session_id=?2",
             rusqlite::params![engine, session_id],
         )
@@ -1455,13 +1500,14 @@ pub async fn record_accepted_internal_frame(
         // frames than it should. One the scanner has never reached derives its
         // summary from the identity set current at that time, so rescanning for
         // it here would be pure amplification.
-        let indexed: i64 = conn
+        let indexed: i64 = tx
             .query_row(
                 "SELECT COUNT(*) FROM sessions WHERE engine=?1 AND session_id=?2",
                 rusqlite::params![engine, session_id],
                 |row| row.get(0),
             )
             .map_err(|error| error.to_string())?;
+        tx.commit().map_err(|error| error.to_string())?;
         Ok(indexed > 0)
     })
     .await

@@ -128,18 +128,19 @@ function rememberRunId(runId: string): void {
  * permanently failing backend must not spin. */
 const FRAME_RECORD_RETRY_MS = 500;
 const FRAME_RECORD_MAX_ATTEMPTS = 5;
+const FRAME_RECORD_BATCH_SIZE = 32;
 
-function recordAcceptedFrame(
+function recordAcceptedFrames(
   engine: string,
   sessionId: string,
-  frame: string,
+  frames: string[],
   workspacePath: string,
   attempt: number,
 ): void {
-  void ipc.recordAcceptedInternalFrame(engine, sessionId, frame, workspacePath).catch(() => {
+  void ipc.recordAcceptedInternalFrames(engine, sessionId, frames, workspacePath).catch(() => {
     if (attempt >= FRAME_RECORD_MAX_ATTEMPTS) return;
     setTimeout(
-      () => recordAcceptedFrame(engine, sessionId, frame, workspacePath, attempt + 1),
+      () => recordAcceptedFrames(engine, sessionId, frames, workspacePath, attempt + 1),
       FRAME_RECORD_RETRY_MS,
     );
   });
@@ -149,8 +150,15 @@ function persistAcceptedFrames(lifecycle: RunLifecycle): void {
   const frames = lifecycle.acceptedFrames;
   const sessionId = lifecycle.sessionId;
   if (!sessionId || !frames || frames.length === 0) return;
-  for (const frame of frames.splice(0)) {
-    recordAcceptedFrame(lifecycle.engine, sessionId, frame, lifecycle.workspace.path, 1);
+  const accepted = frames.splice(0);
+  for (let offset = 0; offset < accepted.length; offset += FRAME_RECORD_BATCH_SIZE) {
+    recordAcceptedFrames(
+      lifecycle.engine,
+      sessionId,
+      accepted.slice(offset, offset + FRAME_RECORD_BATCH_SIZE),
+      lifecycle.workspace.path,
+      1,
+    );
   }
 }
 
@@ -602,6 +610,7 @@ function applyModelDisplay(
   const current = deps.get().bySession[key]?.activeModel ?? "";
   const model =
     current === reported || current.endsWith(`/${reported}`) ? current : reported;
+  updateStreamDisplayModel(key, model);
   updatePendingStreamModel(key, model);
   deps.set((s) => {
     const cur = s.bySession[key];
@@ -631,6 +640,7 @@ function applyEffortDisplay(
   key: string,
   deps: EngineEventDeps,
 ) {
+  updateStreamDisplayEffort(key, reported);
   deps.set((s) => {
     const cur = s.bySession[key];
     if (!cur || cur.activeEffort === reported) return {};
@@ -734,6 +744,50 @@ function onServed(
  *  than reading `bySession` for every streamed token. */
 const retryingKeys = new Set<string>();
 
+/** Values needed by every streamed chunk. Resolve them once per run instead
+ * of reading the store and scanning open tabs for every delta. The cache is
+ * updated when display metadata changes and dropped when the run settles. */
+interface StreamDisplayContext {
+  key: string;
+  model: string | null;
+  effort: string | null;
+}
+
+const streamDisplayContexts = new Map<string, StreamDisplayContext>();
+
+function streamDisplayContext(
+  runId: string,
+  key: string,
+  engine: string,
+  deps: EngineEventDeps,
+): StreamDisplayContext {
+  const cached = streamDisplayContexts.get(runId);
+  if (cached?.key === key) return cached;
+  const context = {
+    key,
+    model: stampedModel(deps, engine, key),
+    effort: stampedEffort(deps, engine, key),
+  };
+  streamDisplayContexts.set(runId, context);
+  return context;
+}
+
+function updateStreamDisplayModel(key: string, model: string) {
+  for (const context of streamDisplayContexts.values()) {
+    if (context.key === key) context.model = model;
+  }
+}
+
+function updateStreamDisplayEffort(key: string, effort: string) {
+  for (const context of streamDisplayContexts.values()) {
+    if (context.key === key) context.effort = effort;
+  }
+}
+
+function dropStreamDisplayContext(runId: string) {
+  streamDisplayContexts.delete(runId);
+}
+
 function onDelta(
   event: ChatEngineEvent,
   key: string,
@@ -745,12 +799,13 @@ function onDelta(
   if (retryingKeys.has(key)) clearRetry(key, deps);
   const text = filterInternalFrameDelta(event.runId, event.data as string);
   if (!text) return;
+  const display = streamDisplayContext(event.runId, key, event.engine, deps);
   bufferStreamPart(
     key,
     "delta",
     text,
-    stampedModel(deps, event.engine, key),
-    stampedEffort(deps, event.engine, key),
+    display.model,
+    display.effort,
   );
   scheduleDeltaFlush(deps.set);
 }
@@ -762,12 +817,13 @@ function onThinking(
 ) {
   // Content resumed: a re-issued request succeeded, so the retry chip goes.
   if (retryingKeys.has(key)) clearRetry(key, deps);
+  const display = streamDisplayContext(event.runId, key, event.engine, deps);
   bufferStreamPart(
     key,
     "thinking",
     event.data as string,
-    stampedModel(deps, event.engine, key),
-    stampedEffort(deps, event.engine, key),
+    display.model,
+    display.effort,
   );
   scheduleDeltaFlush(deps.set);
 }
@@ -1121,6 +1177,7 @@ const turnUsageTotals = new Map<string, ParsedUsage>();
 /** Drop a run's usage bookkeeping (settled, interrupted, or swept). */
 export function dropRunUsage(runId: string) {
   turnUsageTotals.delete(runId);
+  dropStreamDisplayContext(runId);
 }
 
 /** Settle the stale runs routeRun reported, but only those the host no
@@ -1828,6 +1885,7 @@ function onDone(event: ChatEngineEvent, key: string, deps: EngineEventDeps) {
   // The row tells the reader what the reply cost: every report of this run
   // summed, which for a multi-request reply is more than its last request.
   turnUsageTotals.delete(event.runId);
+  dropStreamDisplayContext(event.runId);
   const finalUsage = turnTotals
     ? mergeUsage(usageSnapshot(turnTotals), settledUsage)
     : settledUsage;
@@ -1989,6 +2047,9 @@ function adoptObservedRun(
 export const settledRuns = new Map<string, "done" | "error">();
 const MAX_SETTLED_RUNS = 256;
 
+// 精确停止等待 IPC 回执时暂存终态，避免终态提前清理共享会话键。
+export const interruptingRunTerminals = new Map<string, ChatEngineEvent[]>();
+
 /** Resolve an event's session key (run routing, then session-id match) and
  * dispatch to the per-kind handler. */
 export function handleEngineEvents(
@@ -2014,6 +2075,11 @@ export function handleEngineEvents(
       event.sessionId !== toolBatch.event.sessionId
     )) {
       flushTools();
+    }
+    const stopping = interruptingRunTerminals.get(event.runId);
+    if (stopping && (event.kind === "done" || event.kind === "error")) {
+      stopping.push(event);
+      continue;
     }
     if (event.kind === "turn_resumed") {
       reopenSettledRun(event, deps);
