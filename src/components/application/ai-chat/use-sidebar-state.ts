@@ -1,6 +1,6 @@
-import { useChatStore } from "@/features/chat/store";
 "use client";
 
+import { useChatStore } from "@/features/chat/store";
 import type { MouseEvent as ReactMouseEvent } from "react";
 import { useCallback, useEffect, useState } from "react";
 import type { ThreadMenuState } from "@/components/application/ai-chat/thread-context-menu";

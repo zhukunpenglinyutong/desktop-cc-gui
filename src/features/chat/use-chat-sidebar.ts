@@ -371,8 +371,8 @@ export function useChatSidebar({
     // （worktree/store.ts: refreshWorkspaces().then(startNewChat)）。
     const targetPath = workspace?.path ?? (await handleAddWorkspace());
     if (!targetPath) return;
-    dismissCenterSurfaces();
-    startNewChat(targetPath);
+    // Surfaces clear only once the chat opens; cancelling the engine dialog keeps them.
+    startNewChat(targetPath, undefined, dismissCenterSurfaces);
     // 中心面可能刚从别处（插件中心/浏览器）切回来，那时直接 focus() 会被
     // 浏览器忽略（隐藏元素），交给等可见的助手。
     focusComposerWhenVisible(composerInputRef);
@@ -385,8 +385,7 @@ export function useChatSidebar({
     (workspaceId: string) => {
       const workspace = workspaces.find((w) => w.id === workspaceId);
       if (!workspace) return;
-      dismissCenterSurfaces();
-      startNewChat(workspace.path);
+      startNewChat(workspace.path, undefined, dismissCenterSurfaces);
       focusComposerWhenVisible(composerInputRef);
       collapseSidebarOnMobile();
     },

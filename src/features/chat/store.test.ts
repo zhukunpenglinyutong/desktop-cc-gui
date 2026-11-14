@@ -1944,4 +1944,48 @@ describe("workspace default engine", () => {
     store.dismissUnavailableNewChat();
     expect(useChatStore.getState().active).toBe(previous);
   });
+
+  it("lets a picker change on an established chat win over the default in that workspace only", () => {
+    const codex = useChatStore.getState().engines[0]!;
+    const established = (workspacePath: string) => ({
+      active: { engine: "claude", sessionId: "old-session", workspacePath },
+      activeEngine: "gemini",
+    });
+    useChatStore.setState({
+      ...established(WS),
+      engines: [codex, { ...codex, id: "claude" }, { ...codex, id: "gemini" }],
+    });
+    useChatStore.getState().startNewChat(WS);
+    expect(useChatStore.getState().active?.engine).toBe("gemini");
+    expect(useChatStore.getState().pendingRuntimeSwitch).toMatchObject({
+      sourceSessionId: "old-session",
+      targetEngine: "gemini",
+    });
+
+    useChatStore.setState({ ...established("/other"), pendingRuntimeSwitch: null });
+    useChatStore.getState().startNewChat(WS);
+    expect(useChatStore.getState().active?.engine).toBe("codex");
+    expect(useChatStore.getState().pendingRuntimeSwitch).toBeNull();
+  });
+
+  it("keeps the first request's cleanup when the dialog is requested again", () => {
+    const store = useChatStore.getState();
+    const first = vi.fn();
+    const second = vi.fn();
+    useChatStore.setState({ engines: [] });
+    store.startNewChat(WS, undefined, first);
+    store.startNewChat(WS, undefined, second);
+    store.startNewChat(WS, "claude", useChatStore.getState().unavailableNewChat?.onOpened);
+    expect(first).toHaveBeenCalledTimes(1);
+    expect(second).not.toHaveBeenCalled();
+  });
+
+  it("runs the open callback before the new tab activates", () => {
+    let activeDuringCallback: unknown = "unset";
+    useChatStore.getState().startNewChat(WS, undefined, () => {
+      activeDuringCallback = useChatStore.getState().active;
+    });
+    expect(activeDuringCallback).toBeNull();
+    expect(useChatStore.getState().active?.engine).toBe("codex");
+  });
 });

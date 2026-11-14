@@ -79,6 +79,7 @@ export const ko: Messages = {
     workspaceEngineUnavailable: "{{engine}}을(를) 사용할 수 없습니다. 이 세션에 사용할 다른 엔진을 선택하세요.",
     workspaceNoEngine: "사용 가능한 엔진이 없습니다.",
     workspaceEngineSaveFailed: "기본 엔진을 저장하지 못했습니다.",
+    workspaceEngineMakeDefault: "이 워크스페이스의 기본 엔진으로도 설정",
     newSession: "새 세션",
     newBrowser: "새 브라우저",
     closeAllTabs: "모두 닫기",

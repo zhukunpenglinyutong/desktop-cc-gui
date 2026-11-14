@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { ModalShell } from "@/components/dialogs";
 import { Button } from "@/components/base/buttons/button";
+import { Checkbox } from "@/components/base/checkbox/checkbox";
 import type { Workspace } from "@/lib/ipc";
 import { Select, SelectItem } from "@/components/base/select/select";
 import { useCliNavOrder } from "@/lib/cli-nav-order";
@@ -21,6 +22,7 @@ export function WorkspaceEngineDialog({ workspace, unavailable, onClose }: Props
   const [selected, setSelected] = useState(configured);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(false);
+  const [makeDefault, setMakeDefault] = useState(false);
   useWorkspaceUIHooks();
   const path = workspace?.path ?? unavailable?.workspacePath ?? "";
   const options = orderEngineOptions(workspaceEngineOptions(engines, path, t), useCliNavOrder());
@@ -31,21 +33,23 @@ export function WorkspaceEngineDialog({ workspace, unavailable, onClose }: Props
   async function confirm() {
     if (!valid || saving) return;
     const store = useChatStore.getState();
-    if (!workspace) {
-      if (!workspaceEngineOptions(store.engines, path, t).some((option) => option.id === selected)) return;
-      store.startNewChat(path, selected, unavailable?.onOpened);
-      return;
+    if (!workspace && !workspaceEngineOptions(store.engines, path, t).some((option) => option.id === selected)) return;
+    // Picking for one chat saves nothing unless the user also makes it the default.
+    const target = workspace ?? (makeDefault ? store.workspaces.find((w) => w.path === path) : undefined);
+    if (target) {
+      setSaving(true);
+      setError(false);
+      try {
+        await store.setWorkspaceDefaultEngine(target.id, selected);
+      } catch {
+        setError(true);
+        return;
+      } finally {
+        setSaving(false);
+      }
     }
-    setSaving(true);
-    setError(false);
-    try {
-      await store.setWorkspaceDefaultEngine(workspace.id, selected);
-      onClose();
-    } catch {
-      setError(true);
-    } finally {
-      setSaving(false);
-    }
+    if (workspace) onClose();
+    else useChatStore.getState().startNewChat(path, selected, unavailable?.onOpened);
   }
 
   return (
@@ -66,6 +70,11 @@ export function WorkspaceEngineDialog({ workspace, unavailable, onClose }: Props
           )}
           {options.map((option) => <SelectItem key={option.id} id={option.id}>{option.label}</SelectItem>)}
         </Select>
+        {unavailable && (
+          <Checkbox size="sm" isSelected={makeDefault} onChange={setMakeDefault} isDisabled={saving}>
+            {t("chat.workspaceEngineMakeDefault")}
+          </Checkbox>
+        )}
       </div>
       {options.length === 0 && <p>{t("chat.workspaceNoEngine")}</p>}
       {error && <p role="alert">{t("chat.workspaceEngineSaveFailed")}</p>}

@@ -87,6 +87,7 @@ export const en: Messages = {
     workspaceEngineUnavailable: "{{engine}} is unavailable. Choose another engine for this session.",
     workspaceNoEngine: "No engines are available.",
     workspaceEngineSaveFailed: "Could not save the default engine.",
+    workspaceEngineMakeDefault: "Also make it this workspace's default",
     newSession: "New session",
     newBrowser: "New browser",
     closeAllTabs: "Close All",

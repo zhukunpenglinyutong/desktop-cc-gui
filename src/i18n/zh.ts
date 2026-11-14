@@ -83,6 +83,7 @@ export const zh = {
     workspaceEngineUnavailable: "{{engine}} 当前不可用，请为这次会话选择其他引擎。",
     workspaceNoEngine: "当前没有可用引擎。",
     workspaceEngineSaveFailed: "保存默认引擎失败。",
+    workspaceEngineMakeDefault: "同时设为该工作区的默认引擎",
     newSession: "新建会话",
     newBrowser: "新建浏览器",
     closeAllTabs: "全部关闭",

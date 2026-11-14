@@ -203,18 +203,34 @@ export function createTabActions(
 
     startNewChat: (workspacePath, engineOverride, onOpened) => {
       const state = get();
+      const source = state.active;
+      // Opening a chat syncs the picker to it, so a different picker engine on
+      // an established chat means the user chose to continue it elsewhere.
+      const pickedForSource =
+        !engineOverride &&
+        source !== null &&
+        source.sessionId !== null &&
+        source.workspacePath === workspacePath &&
+        source.engine !== state.activeEngine;
       const workspace = state.workspaces.find((w) => w.path === workspacePath);
-      const preferred = workspace && state.workspaceDefaultEngines[workspace.id];
+      const preferred = pickedForSource
+        ? undefined
+        : workspace && state.workspaceDefaultEngines[workspace.id];
       if (
         !engineOverride && preferred &&
         !workspaceEngineOptions(state.engines, workspacePath, (key) => key).some((option) => option.id === preferred)
       ) {
-        set({ unavailableNewChat: { workspacePath, engine: preferred, onOpened } });
+        // A repeat request while the dialog is up (⌘N) keeps the first one's cleanup.
+        if (state.unavailableNewChat?.workspacePath !== workspacePath) {
+          set({ unavailableNewChat: { workspacePath, engine: preferred, onOpened } });
+        }
         return;
       }
       const usesWorkspaceEngine = Boolean(engineOverride || preferred);
       const engine = engineOverride ?? (preferred || state.activeEngine);
       if (engine !== state.activeEngine) writeStored(ENGINE_PREF_KEY, engine);
+      // Before activation: callers clear center surfaces and the /new draft here.
+      onOpened?.();
       // One pending chat per workspace+engine: re-focus it instead of
       // piling up empty "new" tabs.
       const previous = get().active;
@@ -277,7 +293,6 @@ export function createTabActions(
         delete drafts[UNBOUND_DRAFT_KEY];
         return { openTabs, active: tab, activeEngine: engine, unavailableNewChat: null, pendingRuntimeSwitch, drafts, ...attachments };
       });
-      onOpened?.();
       // New-chat entry points (sidebar, ⌘N, workspace plus) skip activateTab,
       // so announce the switch here — otherwise plugins keep the previous
       // session's provider/model (and its sessionId) as the active one.
