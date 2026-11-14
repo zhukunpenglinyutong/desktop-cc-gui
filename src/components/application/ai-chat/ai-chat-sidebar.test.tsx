@@ -234,7 +234,7 @@ it("renders a retrying streaming thread with a static status dot", async () => {
   expect(dot?.classList.contains("sidebar-thread-status-retrying")).toBe(true);
 });
 
-it("keeps hover actions to pin / rename / delete (archive is context-menu only)", async () => {
+it("shows pin / rename / archive / delete hover actions for saved sessions", async () => {
   const onThreadAction = vi.fn();
   await act(async () => {
     root.render(
@@ -255,7 +255,18 @@ it("keeps hover actions to pin / rename / delete (archive is context-menu only)"
   const actionLabels = [...threadRow("悬浮操作").querySelectorAll("button[aria-label]")].map(
     (button) => button.getAttribute("aria-label"),
   );
-  expect(actionLabels).toEqual(["chat.pin", "chat.renameSession", "chat.deleteSession"]);
+  expect(actionLabels).toEqual([
+    "chat.pin",
+    "chat.renameSession",
+    "chat.archiveSession",
+    "chat.deleteSession",
+  ]);
+
+  await act(async () => threadRow("悬浮操作").querySelector<HTMLButtonElement>(
+    'button[aria-label="chat.archiveSession"]',
+  )?.click());
+  expect(onThreadAction).toHaveBeenCalledWith("claude/hover-1", "archive");
+  onThreadAction.mockClear();
 
   await rightClick(threadRow("悬浮操作"));
   const menu = openMenu();
@@ -435,6 +446,12 @@ it("draft 新对话右键只提供删除,不暴露重命名/复制 ID/插件项"
         />,
       );
     });
+
+    expect(
+      [...threadRow("新对话").querySelectorAll("button[aria-label]")].map((button) =>
+        button.getAttribute("aria-label"),
+      ),
+    ).toEqual(["chat.deleteSession"]);
 
     await rightClick(threadRow("新对话"));
     const menu = openMenu();

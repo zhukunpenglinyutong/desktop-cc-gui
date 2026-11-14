@@ -4,6 +4,7 @@ import type { MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent, 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import ChevronRight from "lucide-react/dist/esm/icons/chevron-right";
+import Archive from "lucide-react/dist/esm/icons/archive";
 import FolderOpen from "lucide-react/dist/esm/icons/folder-open";
 import FolderSymlink from "lucide-react/dist/esm/icons/folder-symlink";
 import GitBranch from "lucide-react/dist/esm/icons/git-branch";
@@ -80,7 +81,7 @@ function aggregateRunState(repo: AiChatRepo): { running: boolean; retrying: bool
   return { running, retrying: running && allRetrying };
 }
 
-/** Row-hover actions (pin / rename / delete). Drafts only offer delete. */
+/** Row-hover actions (pin / rename / archive / delete). Drafts only offer delete. */
 function ThreadHoverActions({
   id,
   pinned,
@@ -123,6 +124,19 @@ function ThreadHoverActions({
           <Pencil className="size-3.5" aria-hidden />
         </button>
       )}
+      {!isDraft && (
+        <button
+          type="button"
+          aria-label={t("chat.archiveSession")}
+          onClick={(event) => {
+            event.stopPropagation();
+            onAction(id, "archive");
+          }}
+          className={iconClass}
+        >
+          <Archive className="size-3.5" aria-hidden />
+        </button>
+      )}
       <button
         type="button"
         aria-label={t("chat.deleteSession")}
@@ -139,8 +153,7 @@ function ThreadHoverActions({
 }
 
 /** Chat row under an open repo — indented 36px, relative-time chip on the
- *  right, hover action icons (pin / rename / delete; archive lives in the
- *  right-click menu only). */
+ *  right, hover action icons (pin / rename / archive / delete). */
 function ThreadItem({
   id,
   label,
