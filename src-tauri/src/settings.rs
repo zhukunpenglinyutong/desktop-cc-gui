@@ -1169,10 +1169,6 @@ mod tests {
         std::fs::metadata(path).unwrap().permissions().mode() & 0o777
     }
 
-    /// Rewriting another CLI's credential file (auth.json, ~/.claude.json)
-    /// must never widen it, and a file an older build already widened to
-    /// 0644 is narrowed back to owner-only on the next write.
-    #[cfg(unix)]
     #[test]
     fn workspace_default_engines_round_trip_and_default_empty() {
         let mut value = serde_json::to_value(AppSettings::default()).unwrap();
@@ -1187,6 +1183,10 @@ mod tests {
         assert_eq!(decoded.workspace_default_engines, settings.workspace_default_engines);
     }
 
+    /// Rewriting another CLI's credential file (auth.json, ~/.claude.json)
+    /// must never widen it, and a file an older build already widened to
+    /// 0644 is narrowed back to owner-only on the next write.
+    #[cfg(unix)]
     #[test]
     fn atomic_write_keeps_files_owner_only() {
         use std::os::unix::fs::PermissionsExt;

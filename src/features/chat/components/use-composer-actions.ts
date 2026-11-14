@@ -100,11 +100,11 @@ export function useComposerActions({
         return;
       }
       if (appCommand?.command === "new") {
-        startNewChat(active.workspacePath);
-        if (!useChatStore.getState().unavailableNewChat) {
+        startNewChat(active.workspacePath, undefined, () => {
           recordPrompt(value);
           setDraft(sessionKey, "");
-        }
+          clearImages();
+        });
         return;
       }
       recordPrompt(value);

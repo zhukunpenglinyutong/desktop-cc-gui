@@ -3,13 +3,15 @@ import { useTranslation } from "react-i18next";
 import { ModalShell } from "@/components/dialogs";
 import { Button } from "@/components/base/buttons/button";
 import type { Workspace } from "@/lib/ipc";
-import { workspaceEngineOptions } from "./components/engine-options";
+import { Select, SelectItem } from "@/components/base/select/select";
+import { useCliNavOrder } from "@/lib/cli-nav-order";
+import { orderEngineOptions, workspaceEngineOptions } from "./components/engine-options";
 import { useChatStore } from "./store";
 import { useWorkspaceUIHooks } from "./workspace-ui-bridge";
 
 type Props = { onClose: () => void } & (
   | { workspace: Workspace; unavailable?: never }
-  | { workspace?: never; unavailable: { workspacePath: string; engine: string } }
+  | { workspace?: never; unavailable: { workspacePath: string; engine: string; onOpened?: () => void } }
 );
 
 export function WorkspaceEngineDialog({ workspace, unavailable, onClose }: Props) {
@@ -21,7 +23,8 @@ export function WorkspaceEngineDialog({ workspace, unavailable, onClose }: Props
   const [error, setError] = useState(false);
   useWorkspaceUIHooks();
   const path = workspace?.path ?? unavailable?.workspacePath ?? "";
-  const options = workspaceEngineOptions(engines, path, t);
+  const options = orderEngineOptions(workspaceEngineOptions(engines, path, t), useCliNavOrder());
+  const followKey = "follow";
   const valid = (workspace != null && selected === "") || options.some((option) => option.id === selected);
   const label = (id: string) => t(`settings.engines.${id}`, { defaultValue: id });
 
@@ -30,7 +33,7 @@ export function WorkspaceEngineDialog({ workspace, unavailable, onClose }: Props
     const store = useChatStore.getState();
     if (!workspace) {
       if (!workspaceEngineOptions(store.engines, path, t).some((option) => option.id === selected)) return;
-      store.startNewChat(path, selected);
+      store.startNewChat(path, selected, unavailable?.onOpened);
       return;
     }
     setSaving(true);
@@ -47,19 +50,23 @@ export function WorkspaceEngineDialog({ workspace, unavailable, onClose }: Props
 
   return (
     <ModalShell label={t("chat.workspaceDefaultEngine")} onClose={() => { if (!saving) onClose(); }}>
-      <label className="flex flex-col gap-2 text-body-medium">
-        {t("chat.workspaceDefaultEngine")}
+      <div className="flex flex-col gap-2 text-body-medium">
+        <span>{t("chat.workspaceDefaultEngine")}</span>
         {unavailable && <span>{t("chat.workspaceEngineUnavailable", { engine: label(unavailable.engine) })}</span>}
-        <select value={selected} onChange={(event) => setSelected(event.target.value)} disabled={saving}>
-          <option value="" disabled={!workspace}>
-            {workspace ? t("chat.workspaceFollowEngine") : "—"}
-          </option>
+        <Select
+          aria-label={t("chat.workspaceDefaultEngine")}
+          selectedKey={selected || (workspace ? followKey : null)}
+          onSelectionChange={(key) => setSelected(key === followKey || key == null ? "" : String(key))}
+          isDisabled={saving}
+          placeholder={t("chat.workspaceDefaultEngine")}
+        >
+          {workspace && <SelectItem id={followKey}>{t("chat.workspaceFollowEngine")}</SelectItem>}
           {configured && !options.some((option) => option.id === configured) && (
-            <option value={configured} disabled>{t("chat.workspaceEngineUnavailable", { engine: label(configured) })}</option>
+            <SelectItem id={configured} isDisabled>{t("chat.workspaceEngineUnavailable", { engine: label(configured) })}</SelectItem>
           )}
-          {options.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}
-        </select>
-      </label>
+          {options.map((option) => <SelectItem key={option.id} id={option.id}>{option.label}</SelectItem>)}
+        </Select>
+      </div>
       {options.length === 0 && <p>{t("chat.workspaceNoEngine")}</p>}
       {error && <p role="alert">{t("chat.workspaceEngineSaveFailed")}</p>}
       <div className="mt-4 flex justify-end gap-2">

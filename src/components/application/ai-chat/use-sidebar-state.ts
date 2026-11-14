@@ -1,3 +1,4 @@
+import { useChatStore } from "@/features/chat/store";
 "use client";
 
 import type { MouseEvent as ReactMouseEvent } from "react";
@@ -163,6 +164,7 @@ export function useWorkspaceMenu(
       // Foreign `visible` predicates can throw; a throwing entry counts as
       // hidden, matching what WorkspaceContextMenu ends up rendering.
       const hasEntries =
+        (!archived && useChatStore.getState().workspaces.some((workspace) => workspace.id === workspaceId)) ||
         Boolean(onWorkspaceAlias || onSetWorkspaceArchived || (!archived && onSetWorkspacePinned)) ||
         extensionDefs.some((def) => {
           try {

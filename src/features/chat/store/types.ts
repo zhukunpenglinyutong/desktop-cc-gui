@@ -187,10 +187,10 @@ export interface ChatStore {
     toIndex: number,
   ) => void;
   workspaceDefaultEngines: Record<string, string>;
-  unavailableNewChat: { workspacePath: string; engine: string } | null;
+  unavailableNewChat: { workspacePath: string; engine: string; onOpened?: () => void } | null;
   dismissUnavailableNewChat: () => void;
   setWorkspaceDefaultEngine: (workspaceId: string, engine: string) => Promise<void>;
-  startNewChat: (workspacePath: string, engineOverride?: string) => void;
+  startNewChat: (workspacePath: string, engineOverride?: string, onOpened?: () => void) => void;
   setActiveEngine: (engine: string) => void;
   setPermission: (permission: ComposerPermission) => void;
   setEffort: (engine: string, effort: EffortLevel) => Promise<void>;

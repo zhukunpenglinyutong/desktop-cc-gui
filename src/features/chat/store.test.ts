@@ -1855,6 +1855,22 @@ describe("workspace default engine", () => {
     expect(ipc.sendMessage).toHaveBeenCalledWith(expect.objectContaining({ engine: "codex" }));
   });
 
+  it.each(["workspace", "override", "picker"])("tracks a runtime switch only for the picker (%s)", (source) => {
+    useChatStore.setState({
+      active: { engine: "claude", sessionId: "old-session", workspacePath: WS },
+      activeEngine: source === "picker" ? "codex" : "claude",
+      workspaceDefaultEngines: source === "workspace" ? { a: "codex" } : {},
+    });
+    useChatStore.getState().startNewChat(WS, source === "override" ? "codex" : undefined);
+    const state = useChatStore.getState();
+    expect(state.active?.engine).toBe("codex");
+    if (source === "picker") {
+      expect(state.pendingRuntimeSwitch).toMatchObject({ sourceSessionId: "old-session", targetEngine: "codex" });
+    } else {
+      expect(state.pendingRuntimeSwitch).toBeNull();
+    }
+  });
+
   it("keeps workspaces independent and permits a one-time override", () => {
     const store = useChatStore.getState();
     const workspace = store.workspaces[0]!;
@@ -1897,6 +1913,21 @@ describe("workspace default engine", () => {
     } finally {
       window.__ccguiWorkspaceUI!.registerHooks(null);
     }
+  });
+
+  it("runs new-chat cleanup only when creation succeeds", () => {
+    const store = useChatStore.getState();
+    const onOpened = vi.fn();
+    useChatStore.setState({ engines: [] });
+    store.startNewChat(WS, undefined, onOpened);
+    expect(onOpened).not.toHaveBeenCalled();
+    store.dismissUnavailableNewChat();
+    expect(onOpened).not.toHaveBeenCalled();
+
+    store.startNewChat(WS, undefined, onOpened);
+    const request = useChatStore.getState().unavailableNewChat;
+    store.startNewChat(WS, "claude", request?.onOpened);
+    expect(onOpened).toHaveBeenCalledTimes(1);
   });
 
   it("keeps the previous tab and draft when the default cannot be used", () => {

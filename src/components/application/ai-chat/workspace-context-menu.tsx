@@ -7,6 +7,7 @@ import ArchiveRestore from "lucide-react/dist/esm/icons/archive-restore";
 import FolderOpen from "lucide-react/dist/esm/icons/folder-open";
 import FolderPlus from "lucide-react/dist/esm/icons/folder-plus";
 import GitBranchPlus from "lucide-react/dist/esm/icons/git-branch-plus";
+import Cpu from "lucide-react/dist/esm/icons/cpu";
 import Pencil from "lucide-react/dist/esm/icons/pencil";
 import Pin from "lucide-react/dist/esm/icons/pin";
 import PinOff from "lucide-react/dist/esm/icons/pin-off";
@@ -256,13 +257,18 @@ export function WorkspaceContextMenu({
     onDeleteWorktree,
   });
   const [choosingEngine, setChoosingEngine] = useState(false);
-  if (workspace && !menu.archived && onSetAlias) builtins.push({
-    id: "workspace-default-engine",
-    label: t("chat.workspaceDefaultEngine"),
-    icon: <Pencil className="size-4" aria-hidden />,
-    onSelect: () => setChoosingEngine(true),
-    keepOpen: true,
-  });
+  if (workspace && !menu.archived) {
+    const destructiveIndex = builtins.findIndex((entry) =>
+      entry === "separator" || entry.id === "toggle-archive",
+    );
+    builtins.splice(destructiveIndex < 0 ? builtins.length : destructiveIndex, 0, {
+      id: "workspace-default-engine",
+      label: t("chat.workspaceDefaultEngine"),
+      icon: <Cpu className="size-4" aria-hidden />,
+      onSelect: () => setChoosingEngine(true),
+      keepOpen: true,
+    });
+  }
   const extensions = buildExtensionEntries(extensionDefs, target);
   const entries: (ContextMenuEntry | "separator")[] =
     builtins.length > 0 && extensions.length > 0
