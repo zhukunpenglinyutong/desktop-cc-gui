@@ -1,3 +1,4 @@
+import { workspaceEngineOptions } from "../components/engine-options";
 import { writeStored } from "@/lib/storage";
 import {
   ENGINE_PREF_KEY,
@@ -200,7 +201,20 @@ export function createTabActions(
     forgetClosedTab,
     forgetClosedTabs,
 
-    startNewChat: (workspacePath) => {
+    startNewChat: (workspacePath, engineOverride, onOpened) => {
+      const state = get();
+      const workspace = state.workspaces.find((w) => w.path === workspacePath);
+      const preferred = workspace && state.workspaceDefaultEngines[workspace.id];
+      if (
+        !engineOverride && preferred &&
+        !workspaceEngineOptions(state.engines, workspacePath, (key) => key).some((option) => option.id === preferred)
+      ) {
+        set({ unavailableNewChat: { workspacePath, engine: preferred, onOpened } });
+        return;
+      }
+      const usesWorkspaceEngine = Boolean(engineOverride || preferred);
+      const engine = engineOverride ?? (preferred || state.activeEngine);
+      if (engine !== state.activeEngine) writeStored(ENGINE_PREF_KEY, engine);
       // One pending chat per workspace+engine: re-focus it instead of
       // piling up empty "new" tabs.
       const previous = get().active;
@@ -208,11 +222,11 @@ export function createTabActions(
         const existing = s.openTabs.find(
           (t) =>
             t.sessionId === null &&
-            t.engine === s.activeEngine &&
+            t.engine === engine &&
             t.workspacePath === workspacePath,
         );
         const tab: ActiveSession = existing ?? {
-          engine: s.activeEngine,
+          engine,
           sessionId: null,
           workspacePath,
         };
@@ -220,6 +234,7 @@ export function createTabActions(
         const newKey = sessionKey(tab.engine, tab.sessionId, tab.workspacePath);
         const source = s.active;
         const pendingRuntimeSwitch =
+          !usesWorkspaceEngine &&
           source &&
           source.sessionId !== null &&
           source.workspacePath === workspacePath &&
@@ -231,7 +246,12 @@ export function createTabActions(
                 targetSessionId: null,
                 workspacePath,
               }
-            : s.pendingRuntimeSwitch;
+            : usesWorkspaceEngine &&
+                s.pendingRuntimeSwitch?.targetEngine === engine &&
+                s.pendingRuntimeSwitch.targetSessionId === null &&
+                s.pendingRuntimeSwitch.workspacePath === workspacePath
+              ? null
+              : s.pendingRuntimeSwitch;
         persistTabs(openTabs, tab);
         // 没有标签页时贴的图（composerAttachments[""]）同样交给这个会话。
         // 图片能合并去重、不会丢，所以总是搬（不像草稿要让位给已有文字）。
@@ -251,12 +271,13 @@ export function createTabActions(
         // 整个 drafts 对象的订阅者无谓重渲染。
         const unbound = s.drafts[UNBOUND_DRAFT_KEY];
         if (!unbound || s.drafts[newKey] !== undefined) {
-          return { openTabs, active: tab, pendingRuntimeSwitch, ...attachments };
+          return { openTabs, active: tab, activeEngine: engine, unavailableNewChat: null, pendingRuntimeSwitch, ...attachments };
         }
         const drafts = { ...s.drafts, [newKey]: unbound };
         delete drafts[UNBOUND_DRAFT_KEY];
-        return { openTabs, active: tab, pendingRuntimeSwitch, drafts, ...attachments };
+        return { openTabs, active: tab, activeEngine: engine, unavailableNewChat: null, pendingRuntimeSwitch, drafts, ...attachments };
       });
+      onOpened?.();
       // New-chat entry points (sidebar, ⌘N, workspace plus) skip activateTab,
       // so announce the switch here — otherwise plugins keep the previous
       // session's provider/model (and its sessionId) as the active one.

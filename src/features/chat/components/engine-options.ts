@@ -3,6 +3,7 @@
  *  - 未安装(本机探针 available=false)的引擎不出现;
  *  - 接管工作区(allowedEngines 非 null,由 workspace-ui 桥提供)只留列表内
  *    的 CLI,可用态按列表内与否,不按本机 `command -v`。 */
+import { workspaceAllowedEngines } from "../workspace-ui-bridge";
 import type { EngineInfo } from "@/lib/ipc";
 import { orderByStoredKeys } from "@/lib/cli-nav-order";
 
@@ -48,4 +49,12 @@ export function orderEngineOptions(
     options.map((option) => ({ key: `cli:${option.id}`, option })),
     cliNavOrder,
   ).map((entry) => entry.option);
+}
+
+export function workspaceEngineOptions(
+  engines: EngineInfo[],
+  workspacePath: string,
+  t: (key: string) => string,
+): EngineOption[] {
+  return filterEngineOptions(engines, workspaceAllowedEngines(workspacePath), t);
 }

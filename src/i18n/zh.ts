@@ -78,6 +78,11 @@ export const zh = {
     ompSpeedSaveError: "保存失败，速度设置未更改，请重试。",
 
     newChat: "新对话",
+    workspaceDefaultEngine: "默认会话引擎",
+    workspaceFollowEngine: "跟随当前选择",
+    workspaceEngineUnavailable: "{{engine}} 当前不可用，请为这次会话选择其他引擎。",
+    workspaceNoEngine: "当前没有可用引擎。",
+    workspaceEngineSaveFailed: "保存默认引擎失败。",
     newSession: "新建会话",
     newBrowser: "新建浏览器",
     closeAllTabs: "全部关闭",

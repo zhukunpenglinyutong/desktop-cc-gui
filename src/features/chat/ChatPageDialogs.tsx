@@ -1,3 +1,4 @@
+import { WorkspaceEngineDialog } from "./WorkspaceEngineDialog";
 import { useTranslation } from "react-i18next";
 import { useShallow } from "zustand/react/shallow";
 import { ConfirmDialog, ConfirmPopover, PromptDialog } from "@/components/dialogs";
@@ -43,6 +44,8 @@ export function ChatPageDialogs({
       setWorkspaceArchived: s.setWorkspaceArchived,
     })),
   );
+  const unavailable = useChatStore((s) => s.unavailableNewChat);
+  const dismissUnavailable = useChatStore((s) => s.dismissUnavailableNewChat);
   const workspaces = useChatStore((s) => s.workspaces);
   const workspaceAliases = useChatStore((s) => s.workspaceAliases);
   const closeFile = useFilesStore((s) => s.closeFile);
@@ -51,6 +54,7 @@ export function ChatPageDialogs({
 
   return (
     <>
+      {unavailable && <WorkspaceEngineDialog key={unavailable.workspacePath} unavailable={unavailable} onClose={dismissUnavailable} />}
       {dialog?.kind === "rename" && (
         <PromptDialog
           title={t("chat.renameSession")}

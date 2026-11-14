@@ -36,6 +36,7 @@ export function createWorkspaceActions(
   | "reorderWorkspaceGroups"
   | "deleteWorkspaceGroup"
   | "assignWorkspaceGroup"
+  | "setWorkspaceDefaultEngine"
   | "setWorkspaceAlias"
   | "setWorkspaceArchived"
 > {
@@ -266,6 +267,10 @@ export function createWorkspaceActions(
         await get().refreshWorkspaces();
         throw error;
       }
+    },
+    setWorkspaceDefaultEngine: async (workspaceId, engine) => {
+      const workspaceDefaultEngines = await ipc.setWorkspaceDefaultEngine(workspaceId, engine);
+      set({ workspaceDefaultEngines });
     },
     setWorkspaceAlias: async (workspaceId, alias) => {
       // An alias equal to the folder name is no alias at all — same rule the
