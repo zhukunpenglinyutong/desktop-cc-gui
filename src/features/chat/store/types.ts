@@ -245,6 +245,10 @@ export interface ChatStore {
    *  computer-use command); the composer keeps the user's draft. */
   setSessionError: (key: string, message: string) => void;
   loadEarlier: (key?: string) => Promise<void>;
+  /** Refresh hidden delegation status deliveries from the latest history page. */
+  refreshSubagentStatus: (key: string) => Promise<void>;
+  /** Cancel retries and discard an in-flight subagent-status result. */
+  cancelSubagentStatusRefresh: (key: string) => void;
   /** 发送。`target` 不传时发给当前激活会话；分屏里每格带上自己的会话。 */
   send: (
     prompt: string,
@@ -296,7 +300,7 @@ export interface ChatStore {
   /** Drop every queued message from a session (default: the active one). */
   clearQueue: (key?: string) => void;
   /** Stop the running turn (default: the active session). */
-  interrupt: (target?: ActiveSession | null) => Promise<void>;
+  interrupt: (target?: ActiveSession | null, runId?: string) => Promise<void>;
   archiveSession: (session: SessionMeta) => Promise<void>;
   deleteSession: (engine: string, sessionId: string) => Promise<void>;
   pinSession: (

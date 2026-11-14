@@ -95,6 +95,8 @@ export interface QuestionSpec {
   options: { label: string; description?: string; preview?: string }[];
 }
 
+export const AGENT_STATUS_ROLE = "__agent_status__";
+
 export interface Message {
   seq: number;
   role: string; // "user" | "assistant" | "tool" | "thinking"
@@ -1595,6 +1597,18 @@ export const ipc = {
       engine,
       sessionId,
       frame,
+      workspacePath,
+    }),
+  recordAcceptedInternalFrames: (
+    engine: string,
+    sessionId: string,
+    frames: string[],
+    workspacePath: string,
+  ) =>
+    invoke<void>("record_accepted_internal_frames", {
+      engine,
+      sessionId,
+      frames,
       workspacePath,
     }),
   /** Persist a clipboard image to app home; returns its absolute path so it

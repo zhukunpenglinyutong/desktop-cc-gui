@@ -558,6 +558,10 @@ fn subagent_fold(messages: &[Message]) -> SubagentFold {
     let mut last_user = None;
     let mut needs_boundary = false;
     for (index, message) in messages.iter().enumerate() {
+        if message.role == "__agent_status__" {
+            rows.push((index, subagent_history_row(message, true)));
+            continue;
+        }
         if message.role == "user" {
             last_user = Some(message);
             continue;
@@ -609,12 +613,13 @@ fn subagent_history_until(messages: &[Message], fold: &SubagentFold, start: usiz
     let Some(user_index) = messages[..start].iter().rposition(|m| m.role == "user") else {
         return rows;
     };
-    // The pending user was already spent if a delegation or boundary closed
-    // its turn inside the prefix; as the last user before the cut, any row
-    // triggered between it and the cut closed its turn.
+    // Only a delegation or boundary spends the pending user. Async status
+    // snapshots retain their own position without closing a conversational turn.
     let closed = fold
         .iter()
-        .any(|(trigger, _)| user_index < *trigger && *trigger < start);
+        .any(|(trigger, row)| {
+            user_index < *trigger && *trigger < start && row.role != "__agent_status__"
+        });
     if !closed {
         rows.push(subagent_history_row(&messages[user_index], false));
     }
@@ -655,7 +660,7 @@ fn subagent_history_row(message: &Message, delegation: bool) -> Message {
         } else {
             String::new()
         },
-        ts: None,
+        ts: message.ts.clone(),
         path: None,
         args: if delegation {
             message.args.clone()
@@ -680,6 +685,11 @@ fn subagent_history_row(message: &Message, delegation: bool) -> Message {
 }
 
 /// Slice a cached parse into a page (shared by local and remote loaders).
+///
+/// `limit` counts visible rows. Async status notifications are folded into
+/// `__agent_status__` rows the timeline hides, and they often arrive in runs
+/// far longer than a page; slicing the raw array would hand back a page of
+/// nothing but hidden rows and leave the conversation looking empty.
 fn page_from_cached(
     cached: &CachedSession,
     limit: Option<usize>,
@@ -687,32 +697,50 @@ fn page_from_cached(
 ) -> SessionPage {
     let limit = limit.unwrap_or(100).clamp(1, 500);
     let messages = &cached.parsed.messages;
-    let (page, next_before, start) = match before_seq {
+    let visible = |message: &Message| message.role != "__agent_status__";
+    let (start, end) = match before_seq {
         Some(before) => {
             let end = messages
                 .iter()
                 .position(|m| m.seq >= before)
                 .unwrap_or(messages.len());
-            let start = end.saturating_sub(limit);
-            let next = if start > 0 {
-                messages.get(start).map(|m| m.seq)
-            } else {
-                None
-            };
-            (messages[start..end].to_vec(), next, start)
+            let mut visible_left = limit;
+            let mut start = end;
+            while start > 0 {
+                start -= 1;
+                if visible(&messages[start]) {
+                    if visible_left == 0 {
+                        start += 1;
+                        break;
+                    }
+                    visible_left -= 1;
+                }
+            }
+            (start, end)
         }
         None => {
-            let start = messages.len().saturating_sub(limit);
-            let next = if start > 0 {
-                messages.get(start).map(|m| m.seq)
-            } else {
-                None
-            };
-            (messages[start..].to_vec(), next, start)
+            let mut visible_left = limit;
+            let mut start = messages.len();
+            while start > 0 {
+                start -= 1;
+                if visible(&messages[start]) {
+                    if visible_left == 0 {
+                        start += 1;
+                        break;
+                    }
+                    visible_left -= 1;
+                }
+            }
+            (start, messages.len())
         }
     };
+    let next_before = if start > 0 {
+        messages.get(start).map(|m| m.seq)
+    } else {
+        None
+    };
     SessionPage {
-        messages: page,
+        messages: messages[start..end].to_vec(),
         next_before,
         subagent_history: subagent_history_until(messages, &cached.fold, start),
     }
@@ -1372,19 +1400,56 @@ pub async fn record_accepted_internal_frame(
     frame: String,
     workspace_path: String,
 ) -> Result<(), String> {
+    record_accepted_internal_frames(
+        state,
+        engine,
+        session_id,
+        vec![frame],
+        workspace_path,
+    )
+    .await
+}
+
+/// Record several validator-accepted frames while holding one database lock
+/// and invalidating the session index once. The renderer already validated
+/// each complete frame; this function only re-derives their hashes and stores
+/// the identities as one atomic batch.
+#[tauri::command]
+pub async fn record_accepted_internal_frames(
+    state: tauri::State<'_, crate::AppState>,
+    engine: String,
+    session_id: String,
+    frames: Vec<String>,
+    workspace_path: String,
+) -> Result<(), String> {
+    const MAX_BATCH: usize = 128;
     let (engine, session_id) = recordable_frame_scope(&engine, &session_id)?;
+    if frames.is_empty() {
+        return Ok(());
+    }
+    if frames.len() > MAX_BATCH {
+        return Err(format!("accepted-frame batch exceeds {MAX_BATCH} frames"));
+    }
     // The workspace the frame was accepted in. A remote session never gets a
     // `sessions` row, so a purge that joins through it cannot reach these
     // identities: this is the only key `remove_workspace` can reclaim them by.
     let workspace_path = workspace_path.trim().to_string();
-    let Some(frame_hash) = super::recordable_internal_frame_hash(&frame) else {
-        return Err("frame is not one complete internal frame with a JSON payload".to_string());
-    };
+    let frame_hashes = frames
+        .iter()
+        .map(|frame| {
+            super::recordable_internal_frame_hash(frame).ok_or_else(|| {
+                "frame is not one complete internal frame with a JSON payload".to_string()
+            })
+        })
+        .collect::<Result<Vec<_>, _>>()?;
     let db = Arc::clone(&state.db);
     let sink = Arc::clone(&state.sink);
     let stale_summary = tauri::async_runtime::spawn_blocking(move || -> Result<bool, String> {
-        let conn = db.0.lock();
-        let (for_session, total): (i64, i64) = conn
+        let mut conn = db.0.lock();
+        let tx = conn
+            .transaction()
+            .map_err(|error| error.to_string())?;
+        let (for_session, total): (i64, i64) = tx
             .query_row(
                 "SELECT
                     (SELECT COUNT(*) FROM accepted_internal_frames
@@ -1394,23 +1459,31 @@ pub async fn record_accepted_internal_frame(
                 |row| Ok((row.get(0)?, row.get(1)?)),
             )
             .map_err(|error| error.to_string())?;
-        // At capacity the identity cannot be stored, so the frame will be
-        // visible again on reload: report it instead of answering success,
-        // which would look identical to a stored identity.
-        if for_session >= MAX_RECORDED_FRAMES_PER_SESSION || total >= MAX_RECORDED_FRAMES_TOTAL {
-            return Err(format!(
-                "accepted-frame table is at capacity for {engine}/{session_id}"
-            ));
-        }
-        let inserted = conn
-            .execute(
+        let mut inserted = 0i64;
+        for frame_hash in frame_hashes {
+            // At capacity the identity cannot be stored, so report it instead
+            // of answering success, which would look identical to a stored
+            // identity. The transaction keeps a partial batch from leaking.
+            if for_session + inserted >= MAX_RECORDED_FRAMES_PER_SESSION
+                || total + inserted >= MAX_RECORDED_FRAMES_TOTAL
+            {
+                return Err(format!(
+                    "accepted-frame table is at capacity for {engine}/{session_id}"
+                ));
+            }
+            let did_insert = tx
+                .execute(
                 "INSERT OR IGNORE INTO accepted_internal_frames(engine, session_id, frame_hash, workspace_path)
                  VALUES(?1, ?2, ?3, ?4)",
                 rusqlite::params![engine, session_id, frame_hash, workspace_path],
-            )
-            .map_err(|error| error.to_string())?
-            != 0;
-        if !inserted {
+                )
+                .map_err(|error| error.to_string())?
+                != 0;
+            if did_insert {
+                inserted += 1;
+            }
+        }
+        if inserted == 0 {
             return Ok(false);
         }
         // The FTS stamp tracks only file stat + INDEX_VERSION, so frame text
@@ -1418,7 +1491,7 @@ pub async fn record_accepted_internal_frame(
         // searchable forever. Drop the stamp under the same lock: PENDING_FROM
         // treats a missing row as pending, and the scan below chains into
         // spawn_index, which re-indexes with this identity hidden.
-        conn.execute(
+        tx.execute(
             "DELETE FROM fts_state WHERE engine=?1 AND session_id=?2",
             rusqlite::params![engine, session_id],
         )
@@ -1427,13 +1500,14 @@ pub async fn record_accepted_internal_frame(
         // frames than it should. One the scanner has never reached derives its
         // summary from the identity set current at that time, so rescanning for
         // it here would be pure amplification.
-        let indexed: i64 = conn
+        let indexed: i64 = tx
             .query_row(
                 "SELECT COUNT(*) FROM sessions WHERE engine=?1 AND session_id=?2",
                 rusqlite::params![engine, session_id],
                 |row| row.get(0),
             )
             .map_err(|error| error.to_string())?;
+        tx.commit().map_err(|error| error.to_string())?;
         Ok(indexed > 0)
     })
     .await
@@ -2801,6 +2875,103 @@ mod tests {
         message.text = "task · worker".into();
         message.args = Some(json!({"tasks": []}));
         message
+    }
+
+    #[test]
+    fn async_status_fold_preserves_timestamps_without_closing_pending_turns() {
+        let status = |seq| {
+            let mut message = plain(seq, "__agent_status__");
+            message.ts = Some(format!("2026-10-28T10:00:{seq:02}Z"));
+            message.result = Some(json!({"details": {"jobs": [
+                {"id": "Reviewer", "status": "completed"}
+            ]}}));
+            message
+        };
+        let mut task = delegation(1);
+        task.ts = Some("2026-10-28T10:00:01Z".into());
+        let messages = vec![
+            plain(0, "user"),
+            task,
+            status(2),
+            plain(3, "assistant"), // status must not consume the delegation's boundary
+            plain(4, "user"),
+            status(5),            // does not spend pending user 4
+            plain(6, "assistant"), // no new delegation: not another boundary
+            plain(7, "user"),      // replaces user 4 in the full fold
+            status(8),
+        ];
+        let fold = subagent_fold(&messages);
+        let seqs: Vec<_> = fold.iter().map(|(_, row)| row.seq).collect();
+        assert_eq!(seqs, [0, 1, 2, 3, 5, 8, 7]);
+        let task = &fold.iter().find(|(_, row)| row.seq == 1).unwrap().1;
+        assert_eq!(task.ts.as_deref(), Some("2026-10-28T10:00:01Z"));
+        let status = &fold.iter().find(|(_, row)| row.seq == 5).unwrap().1;
+        assert_eq!(status.role, "__agent_status__");
+        assert_eq!(status.ts.as_deref(), Some("2026-10-28T10:00:05Z"));
+        assert_eq!(status.result.as_ref().unwrap()["details"]["jobs"][0]["status"], "completed");
+        for start in 0..=messages.len() {
+            let cut = serde_json::to_value(subagent_history_until(&messages, &fold, start)).unwrap();
+            let fresh = serde_json::to_value(subagent_history(&messages[..start])).unwrap();
+            assert_eq!(cut, fresh, "start={start}");
+        }
+    }
+
+    #[test]
+    fn session_page_keeps_older_async_status_and_timestamp_in_subagent_history() {
+        let mut status = plain(3, "__agent_status__");
+        status.ts = Some("2026-10-28T10:00:03Z".into());
+        status.result = Some(json!({"details": {"jobs": [
+            {"id": "Reviewer", "jobId": "Reviewer", "type": "task", "status": "failed"}
+        ]}}));
+        let mut messages = vec![plain(0, "user"), delegation(1), plain(2, "assistant"), status];
+        messages.extend((4..124).map(|seq| plain(seq, "assistant")));
+        let fold = subagent_fold(&messages);
+        let cached = CachedSession { parsed: ParsedSession { messages }, fold, footprint: 0 };
+        let page = page_from_cached(&cached, Some(100), None);
+        assert_eq!(page.messages.len(), 100);
+        assert!(page.messages.iter().all(|message| message.role == "assistant"));
+        let wire = serde_json::to_value(&page).unwrap();
+        let status = wire["subagentHistory"].as_array().unwrap().iter()
+            .find(|row| row["role"] == "__agent_status__").unwrap();
+        assert_eq!(status["ts"], "2026-10-28T10:00:03Z");
+        assert_eq!(status["result"]["details"]["jobs"][0]["status"], "failed");
+        assert_eq!(status["text"], "");
+        let older = page_from_cached(&cached, Some(100), page.next_before);
+        assert!(older.subagent_history.is_empty());
+        assert!(older.messages.iter().any(|row| row.role == "__agent_status__"));
+    }
+
+    #[test]
+    fn session_page_counts_visible_rows_not_hidden_async_status() {
+        // A long run of async notifications after the last visible reply must
+        // not fill (or displace) the newest page: the conversation would look
+        // empty until the user paged back.
+        let mut messages = vec![plain(0, "user")];
+        messages.extend((1..=150).map(|seq| plain(seq, "assistant")));
+        messages.extend((151..=270).map(|seq| {
+            let mut status = plain(seq, "__agent_status__");
+            status.ts = Some(format!("2026-10-28T10:{:02}:{:02}Z", seq / 60, seq % 60));
+            status.result = Some(json!({"details": {"jobs": [
+                {"id": "Worker", "status": "completed"}
+            ]}}));
+            status
+        }));
+        let fold = subagent_fold(&messages);
+        let cached = CachedSession { parsed: ParsedSession { messages }, fold, footprint: 0 };
+
+        let page = page_from_cached(&cached, Some(100), None);
+        let visible: Vec<_> = page.messages.iter()
+            .filter(|message| message.role != "__agent_status__").collect();
+        assert_eq!(visible.len(), 100);
+        assert_eq!(visible.first().unwrap().seq, 51);
+        assert!(page.messages.iter().any(|message| message.role == "__agent_status__"));
+
+        let older = page_from_cached(&cached, Some(100), page.next_before);
+        let visible: Vec<_> = older.messages.iter()
+            .filter(|message| message.role != "__agent_status__").collect();
+        assert_eq!(visible.len(), 51);
+        assert_eq!(visible.first().unwrap().seq, 0);
+        assert!(older.next_before.is_none());
     }
 
     /// Cutting the cached full fold at a page start must reproduce a fresh
