@@ -128,18 +128,19 @@ function rememberRunId(runId: string): void {
  * permanently failing backend must not spin. */
 const FRAME_RECORD_RETRY_MS = 500;
 const FRAME_RECORD_MAX_ATTEMPTS = 5;
+const FRAME_RECORD_BATCH_SIZE = 32;
 
-function recordAcceptedFrame(
+function recordAcceptedFrames(
   engine: string,
   sessionId: string,
-  frame: string,
+  frames: string[],
   workspacePath: string,
   attempt: number,
 ): void {
-  void ipc.recordAcceptedInternalFrame(engine, sessionId, frame, workspacePath).catch(() => {
+  void ipc.recordAcceptedInternalFrames(engine, sessionId, frames, workspacePath).catch(() => {
     if (attempt >= FRAME_RECORD_MAX_ATTEMPTS) return;
     setTimeout(
-      () => recordAcceptedFrame(engine, sessionId, frame, workspacePath, attempt + 1),
+      () => recordAcceptedFrames(engine, sessionId, frames, workspacePath, attempt + 1),
       FRAME_RECORD_RETRY_MS,
     );
   });
@@ -149,8 +150,15 @@ function persistAcceptedFrames(lifecycle: RunLifecycle): void {
   const frames = lifecycle.acceptedFrames;
   const sessionId = lifecycle.sessionId;
   if (!sessionId || !frames || frames.length === 0) return;
-  for (const frame of frames.splice(0)) {
-    recordAcceptedFrame(lifecycle.engine, sessionId, frame, lifecycle.workspace.path, 1);
+  const accepted = frames.splice(0);
+  for (let offset = 0; offset < accepted.length; offset += FRAME_RECORD_BATCH_SIZE) {
+    recordAcceptedFrames(
+      lifecycle.engine,
+      sessionId,
+      accepted.slice(offset, offset + FRAME_RECORD_BATCH_SIZE),
+      lifecycle.workspace.path,
+      1,
+    );
   }
 }
 

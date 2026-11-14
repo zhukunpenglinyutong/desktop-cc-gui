@@ -1597,6 +1597,18 @@ export const ipc = {
       frame,
       workspacePath,
     }),
+  recordAcceptedInternalFrames: (
+    engine: string,
+    sessionId: string,
+    frames: string[],
+    workspacePath: string,
+  ) =>
+    invoke<void>("record_accepted_internal_frames", {
+      engine,
+      sessionId,
+      frames,
+      workspacePath,
+    }),
   /** Persist a clipboard image to app home; returns its absolute path so it
    * can flow through the same path-based image pipeline as picked files. */
   savePastedImage: (dataBase64: string, extension: string) =>
