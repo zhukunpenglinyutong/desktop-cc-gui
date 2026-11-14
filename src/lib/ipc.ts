@@ -518,6 +518,7 @@ export interface AppSettings {
   workspaceGroups: WorkspaceGroup[];
   /** Workspace id -> sidebar display alias; absent = show the folder name. */
   workspaceAliases: Record<string, string>;
+  workspaceDefaultEngines?: Record<string, string>;
   /** Ids of workspaces hidden into the sidebar's collapsible 已归档 section. */
   archivedWorkspaces: string[];
   language: string;
@@ -1476,6 +1477,11 @@ export const ipc = {
   refreshAppSettings: () => {
     settingsPromise = null;
     return fetchAppSettings();
+  },
+  setWorkspaceDefaultEngine: async (workspaceId: string, engine: string) => {
+    const engines = await invoke<Record<string, string>>("set_workspace_default_engine", { workspaceId, engine });
+    settingsPromise = null;
+    return engines;
   },
   updateAppSettings: async (settings: AppSettings) => {
     await invoke<void>("update_app_settings", { settings });

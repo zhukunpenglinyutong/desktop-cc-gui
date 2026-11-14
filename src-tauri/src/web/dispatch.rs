@@ -763,6 +763,16 @@ pub(super) async fn dispatch(
         }
         // settings
         "get_app_settings" => ser(crate::settings::get_app_settings()),
+        "set_workspace_default_engine" => {
+            #[derive(serde::Deserialize)]
+            #[serde(rename_all = "camelCase")]
+            struct Args {
+                workspace_id: String,
+                engine: String,
+            }
+            let a: Args = parse_args(&raw)?;
+            ser(crate::settings::set_workspace_default_engine(app.clone(), a.workspace_id, a.engine))
+        }
         "update_app_settings" => {
             let a: UpdateSettingsArgs = parse_args(&raw)?;
             ser(crate::settings::update_app_settings_merged(

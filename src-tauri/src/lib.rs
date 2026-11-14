@@ -415,6 +415,7 @@ pub fn run() {
             // settings
             settings::get_app_settings,
             settings::update_app_settings,
+            settings::set_workspace_default_engine,
             settings::set_window_theme,
             // uploaded font files (设置 → 外观 字体行)
             fonts::read_font_file,

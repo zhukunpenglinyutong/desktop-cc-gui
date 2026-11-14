@@ -82,6 +82,12 @@ export const en: Messages = {
       "Could not save. Speed setting is unchanged; please retry.",
 
     newChat: "New chat",
+    workspaceDefaultEngine: "Default session engine",
+    workspaceFollowEngine: "Follow current selection",
+    workspaceEngineUnavailable: "{{engine}} is unavailable. Choose another engine for this session.",
+    workspaceNoEngine: "No engines are available.",
+    workspaceEngineSaveFailed: "Could not save the default engine.",
+    workspaceEngineMakeDefault: "Also make it this workspace's default",
     newSession: "New session",
     newBrowser: "New browser",
     closeAllTabs: "Close All",

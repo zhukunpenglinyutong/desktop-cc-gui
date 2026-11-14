@@ -804,11 +804,12 @@ export function createSessionActions(
       eventTeardowns.push(() =>
         window.removeEventListener(CLI_CONFIG_CHANGED_EVENT, onCliConfigChanged),
       );
-      const [workspaces, sessions, archivedSessions, engines] = await Promise.all([
+      const [workspaces, sessions, archivedSessions, engines, settings] = await Promise.all([
         ipc.listWorkspaces().catch(() => [] as Workspace[]),
         ipc.listSessions().catch(() => [] as SessionMeta[]),
         ipc.listArchivedSessions().catch(() => [] as SessionMeta[]),
         ipc.listEngines().catch(() => [] as EngineInfo[]),
+        ipc.getAppSettings().catch(() => null),
       ]);
       // Plugin session sources (remote/容器内 CLI) merge under the local
       // scan so WSL 等远端会话进侧栏,且重启时已开标签不至于因“会话表无
@@ -822,6 +823,7 @@ export function createSessionActions(
       );
       set({
         workspaces,
+        workspaceDefaultEngines: settings?.workspaceDefaultEngines ?? {},
         sessions: visibleSessions(allSessions, engines),
         archivedSessionKeys,
         engines,
@@ -855,38 +857,33 @@ export function createSessionActions(
       // reads them via sessionSelection, and nothing re-emits after they
       // land — a plugin loading later would replay null provider/model
       // forever (until the user switches tabs or changes a pick).
-      await Promise.all([
-        ipc
-          .getAppSettings()
-          .then((settings) =>
-            set({
-              efforts: (settings.defaultEfforts ?? {}) as Record<
-                string,
-                EffortLevel
-              >,
-              ompServiceTier: normalizeOmpServiceTier(
-                settings.ompOpenaiServiceTier,
-              ),
-              codexServiceTier: normalizeOmpServiceTier(
-                settings.codexServiceTier,
-              ),
-              models: settings.defaultModels ?? {},
-              threadLimit: settings.sidebarThreadLimit ?? 5,
-              workspaceGroups: settings.workspaceGroups ?? [],
-              workspaceAliases: settings.workspaceAliases ?? {},
-              archivedWorkspaces: settings.archivedWorkspaces ?? [],
-              sendShortcut: settings.composerSendShortcut ?? "enter",
-              thinkingAutoCollapse: settings.thinkingAutoCollapse ?? true,
-              wideLayout: settings.chatWideLayout ?? false,
-            }),
-          )
-          .catch(() => {}),
-        Promise.resolve(ipc.getCliConfig?.())
-          .then((config) => {
-            if (config) set({ providers: engineCurrents(config) });
-          })
-          .catch(() => {}),
-      ]);
+      if (settings) {
+        set({
+          efforts: (settings.defaultEfforts ?? {}) as Record<
+            string,
+            EffortLevel
+          >,
+          ompServiceTier: normalizeOmpServiceTier(
+            settings.ompOpenaiServiceTier,
+          ),
+          codexServiceTier: normalizeOmpServiceTier(
+            settings.codexServiceTier,
+          ),
+          models: settings.defaultModels ?? {},
+          threadLimit: settings.sidebarThreadLimit ?? 5,
+          workspaceGroups: settings.workspaceGroups ?? [],
+          workspaceAliases: settings.workspaceAliases ?? {},
+          archivedWorkspaces: settings.archivedWorkspaces ?? [],
+          sendShortcut: settings.composerSendShortcut ?? "enter",
+          thinkingAutoCollapse: settings.thinkingAutoCollapse ?? true,
+          wideLayout: settings.chatWideLayout ?? false,
+        });
+      }
+      await Promise.resolve(ipc.getCliConfig?.())
+        .then((config) => {
+          if (config) set({ providers: engineCurrents(config) });
+        })
+        .catch(() => {});
       if (activeTab) activateTab(activeTab);
     },
 

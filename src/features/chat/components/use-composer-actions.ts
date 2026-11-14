@@ -99,17 +99,18 @@ export function useComposerActions({
         void send(appCommand.arg, images, { computerUse: true }, active);
         return;
       }
+      if (appCommand?.command === "new") {
+        startNewChat(active.workspacePath, undefined, () => {
+          recordPrompt(value);
+          setDraft(sessionKey, "");
+          clearImages();
+        });
+        return;
+      }
       recordPrompt(value);
       setDraft(sessionKey, "");
       clearImages();
-      // App-level commands ("/new", "/compact", "/mcp") never reach the
-      // engine — headless/protocol launches can't interpret them. A
-      // user-defined catalog command of the same name takes precedence
-      // (parseAppCommand).
-      if (appCommand?.command === "new") {
-        startNewChat(active.workspacePath);
-        return;
-      }
+      // App commands are handled locally; catalog commands take precedence.
       if (appCommand?.command === "compact" && active.sessionId && !streaming) {
         void compactContext(sessionKey);
         return;
