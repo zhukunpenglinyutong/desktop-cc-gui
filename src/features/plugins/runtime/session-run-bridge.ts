@@ -20,6 +20,8 @@ export interface PluginChatRunDef {
   engine: string;
   prompt: string;
   workspacePath: string;
+  /** 续跑已有会话；缺省（null）＝新建会话。 */
+  sessionId?: string | null;
   model?: string | null;
   effort?: string | null;
   providerId?: string | null;
@@ -97,10 +99,15 @@ export async function startPluginChatRun(
   const engine = def.engine?.trim();
   const prompt = def.prompt?.trim();
   const workspacePath = def.workspacePath?.trim();
+  const resumeSessionId =
+    typeof def.sessionId === "string" ? def.sessionId.trim() : "";
   if (!engine) throw new Error(`invalid_args: ${pluginId} sessions.startRun: empty engine`);
   if (!prompt) throw new Error(`invalid_args: ${pluginId} sessions.startRun: empty prompt`);
   if (!workspacePath) {
     throw new Error(`invalid_args: ${pluginId} sessions.startRun: empty workspacePath`);
+  }
+  if (def.sessionId !== undefined && def.sessionId !== null && !resumeSessionId) {
+    throw new Error(`invalid_args: ${pluginId} sessions.startRun: empty sessionId`);
   }
   ensureRunBridge();
 
@@ -109,12 +116,41 @@ export async function startPluginChatRun(
   const store = chat.useChatStore.getState();
   const target = {
     engine,
-    sessionId: null,
+    sessionId: resumeSessionId || null,
     workspacePath,
     ...(def.model ? { model: def.model } : {}),
     ...(def.effort ? { effort: def.effort as never } : {}),
     ...(def.providerId ? { provider: def.providerId } : {}),
   };
+  if (target.sessionId) {
+    // 续跑 = 和用户在这个会话里再发一条完全一样，所以两个前置条件必须成立：
+    // 会话得真的存在（否则 --resume 起不来，松手后留一条假的行）；会话
+    // 不能正在跑（同一 native session 起两个进程会互相踩转录）。
+    const known = store.sessions.some(
+      (s) =>
+        s.engine === engine &&
+        s.sessionId === target.sessionId &&
+        s.workspacePath === workspacePath,
+    );
+    // 远程工作区（WSL 等）的会话宿主扫描不到，但工作区已登记 → 放行，
+    // 与 sessions.selectSession 同一套判定；--resume 失败会作为本轮 error 回报。
+    const workspaceRegistered = store.workspaces.some((w) => w.path === workspacePath);
+    if (!known && !workspaceRegistered) {
+      throw new Error(
+        `invalid_args: ${pluginId} sessions.startRun: unknown session ${engine}/${target.sessionId} in ${workspacePath}`,
+      );
+    }
+    const key = `${engine}/${target.sessionId}`;
+    if (store.streamingByKey?.[key]) {
+      throw new Error(
+        `session_busy: ${pluginId} sessions.startRun: session ${target.sessionId} is already running`,
+      );
+    }
+    // 冷会话必须先把转录读进 bySession 再发：聊天发送会把这一轮的乐观行
+    // 追加到同一个键上，而打开标签页时「已有消息」会跳过历史加载——不预热
+    // 的话用户点进去只看得到这一轮，旧对话像是被吞了。
+    await store.hydrateSession({ engine, sessionId: target.sessionId, workspacePath });
+  }
   let handle: PluginChatRunHandle | null = null;
   try {
     // send 走宿主聊天发送路径：会话进侧栏、流式进 bySession、可停。

@@ -168,6 +168,16 @@ export interface ChatStore {
     workspacePath: string,
     anchor?: { userTextSha256: string; seqHint?: number; tailOccurrence?: number } | null,
   ) => Promise<void>;
+  /** Make sure a native transcript is in `bySession` before appending to it,
+   *  without changing the active tab / open tabs / composer (plugin turns that
+   *  continue an existing session). No-op when the session is already loaded,
+   *  already loading, or currently streaming. Rejects when the history read
+   *  fails, so a caller never appends onto a half-loaded transcript. */
+  hydrateSession: (session: {
+    engine: string;
+    sessionId: string;
+    workspacePath: string;
+  }) => Promise<void>;
   closeTab: (
     engine: string,
     sessionId: string | null,
