@@ -1,3 +1,4 @@
+import { clearSelectedBot, selectSelectedBot } from "@/features/bots/selected-bot";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ipc, type ForkPlan, type SessionMeta } from "@/lib/ipc";
 import {
@@ -11,12 +12,16 @@ import { OPEN_TABS_KEY } from "./store/persistence";
 import { EMPTY_SESSION } from "./store/stream";
 import { handleEngineEvents, type EngineEventDeps } from "./store/engine-events";
 import { registerSessionHooks, registerTurnHooks } from "@/features/plugins/runtime/hooks";
+import { startPluginChatRun, interruptPluginChatRun } from "@/features/plugins/runtime/session-run-bridge";
+import { usePluginHubStore } from "@/features/plugins/hub/store";
+import { usePluginTabsStore } from "@/features/plugins/runtime/center-tabs";
 import { getConversationModeState } from "@/features/plugins/conversation/state";
 
 vi.mock("@/lib/ipc", () => ({
   ipc: {
     sendMessage: vi.fn(async () => ({ runId: "run-1", sessionId: null })),
     interruptSession: vi.fn(async () => true),
+    resolveEnabledBuiltInAgent: vi.fn(),
     rememberSessionModel: vi.fn(async () => {}),
     rememberSessionEffort: vi.fn(async () => {}),
     listWorkspaces: vi.fn(async () => []),
@@ -65,6 +70,8 @@ function resetStore() {
     openTabs: [],
     active: null,
     activeEngine: "claude",
+    workspaceDefaultEngines: {},
+    unavailableNewChat: null,
     models: { omp: "kimi-k3" },
     providers: {},
     efforts: {},
@@ -1576,5 +1583,409 @@ describe("forkSession", () => {
       dispose();
       resetPluginBusForTests();
     }
+  });
+});
+
+describe("插件续接原生会话", () => {
+  const target: SessionMeta = {
+    engine: "claude", sessionId: "plugin-resume", workspacePath: WS,
+    filePath: "/tmp/plugin-resume.jsonl", fileSize: 10, fileMtimeMs: 1,
+    title: "续接会话", preview: "", createdAt: 1, updatedAt: 1,
+    messageCount: 0, pinned: false, customTitle: null,
+  };
+  const key = "claude/plugin-resume";
+  const def = { engine: target.engine, sessionId: target.sessionId, workspacePath: WS, prompt: "继续任务" };
+
+  beforeEach(() => {
+    resetStore();
+    usePluginHubStore.getState().close();
+    usePluginTabsStore.setState({ tabs: [], activeId: null });
+    vi.mocked(ipc.loadSessionPage).mockReset();
+    vi.mocked(ipc.loadSessionPage).mockResolvedValue({ messages: [], nextBefore: null, subagentHistory: [] });
+    vi.mocked(ipc.listPlanReviews).mockResolvedValue([]);
+    vi.mocked(ipc.sendMessage).mockResolvedValue({ runId: "resume-integration", sessionId: target.sessionId });
+    useChatStore.setState({ sessions: [target] });
+  });
+
+  it.each(["插件中心", "插件页签"])("从%s续接时显示聊天并保留历史", async (surface) => {
+    if (surface === "插件中心") usePluginHubStore.getState().openHub();
+    else usePluginTabsStore.getState().openTab("plugin:board");
+    vi.mocked(ipc.loadSessionPage).mockResolvedValue({
+      messages: [{ seq: 1, role: "assistant", text: "已有回复", ts: null }], nextBefore: null, subagentHistory: [],
+    });
+
+    await startPluginChatRun("board", def);
+
+    expect(usePluginHubStore.getState().active).toBe(false);
+    expect(usePluginTabsStore.getState().activeId).toBeNull();
+    expect(useChatStore.getState().active).toMatchObject({ engine: def.engine, sessionId: def.sessionId, workspacePath: WS });
+    expect(useChatStore.getState().bySession[key].messages.map((message) => message.text)).toEqual(["已有回复", def.prompt]);
+    expect(ipc.sendMessage).toHaveBeenCalledWith(expect.objectContaining({ sessionId: target.sessionId }));
+    await interruptPluginChatRun("board", def);
+  });
+
+  it("历史读取失败后可重试，成功加载空历史会清除旧错误", async () => {
+    vi.mocked(ipc.loadSessionPage).mockRejectedValueOnce(new Error("读取失败"));
+    await expect(startPluginChatRun("board", def)).rejects.toThrow("session_load_failed");
+    expect(ipc.sendMessage).not.toHaveBeenCalled();
+    expect(useChatStore.getState().bySession[key].error).toContain("读取失败");
+
+    await expect(startPluginChatRun("board", def)).resolves.toMatchObject({ sessionId: target.sessionId });
+    expect(useChatStore.getState().bySession[key].error).toBeNull();
+    expect(ipc.sendMessage).toHaveBeenCalledTimes(1);
+    await interruptPluginChatRun("board", def);
+  });
+
+  it("续接沿用用户在该会话中切换的模型", async () => {
+    vi.mocked(ipc.loadSessionPage).mockResolvedValue({
+      messages: [{ seq: 1, role: "assistant", text: "已有回复", ts: null, model: "old-model" }],
+      nextBefore: null,
+      subagentHistory: [],
+    });
+    await useChatStore.getState().selectSession(target.engine, target.sessionId, WS);
+    await useChatStore.getState().setModel(target.engine, "picked-model");
+
+    await startPluginChatRun("board", { ...def, model: "plugin-override" });
+
+    expect(ipc.sendMessage).toHaveBeenCalledWith(expect.objectContaining({ model: "picked-model" }));
+    await interruptPluginChatRun("board", def);
+  });
+
+  it("引擎回执未返回会话 ID 时仍保留续接身份与停止权限", async () => {
+    vi.mocked(ipc.sendMessage).mockResolvedValueOnce({ runId: "resume-no-id", sessionId: null });
+    await expect(startPluginChatRun("board", def)).resolves.toEqual({ runId: "resume-no-id", sessionId: target.sessionId });
+    await interruptPluginChatRun("board", def);
+    expect(ipc.interruptSession).toHaveBeenCalledWith(target.sessionId);
+  });
+
+  it("已有历史加载尚未完成时拒绝发送，不提前追加消息", async () => {
+    const pending = Promise.withResolvers<Awaited<ReturnType<typeof ipc.loadSessionPage>>>();
+    vi.mocked(ipc.loadSessionPage).mockReturnValueOnce(pending.promise);
+    const loading = useChatStore.getState().selectSession(target.engine, target.sessionId, WS);
+    await expect(startPluginChatRun("board", def)).rejects.toThrow("session_busy");
+    expect(ipc.sendMessage).not.toHaveBeenCalled();
+    pending.resolve({ messages: [], nextBefore: null, subagentHistory: [] });
+    await loading;
+  });
+
+  it("不传 sessionId 停止时只停插件自己的续接轮次，不碰用户的新聊天", async () => {
+    const pendingKey = `new:${target.engine}:${WS}`;
+    vi.mocked(ipc.sendMessage).mockResolvedValueOnce({ runId: "user-new-chat", sessionId: null });
+    useChatStore.getState().startNewChat(WS);
+    await useChatStore.getState().send("用户自己的新聊天", []);
+    expect(useChatStore.getState().streamingByKey[pendingKey]).toBe(true);
+
+    vi.mocked(ipc.sendMessage).mockResolvedValueOnce({ runId: "plugin-resume-run", sessionId: target.sessionId });
+    await startPluginChatRun("stop-probe", def);
+    vi.mocked(ipc.interruptSession).mockClear();
+
+    await interruptPluginChatRun("stop-probe", { engine: def.engine, workspacePath: WS });
+
+    expect(ipc.interruptSession).not.toHaveBeenCalledWith("user-new-chat");
+    expect(useChatStore.getState().streamingByKey[pendingKey]).toBe(true);
+    expect(ipc.interruptSession).toHaveBeenCalledWith(target.sessionId);
+    expect(useChatStore.getState().streamingByKey[key]).toBeFalsy();
+  });
+
+  it("续接时模型、渠道和推理强度都沿用会话自己的，忽略本轮覆盖", async () => {
+    useChatStore.setState({
+      sessions: [{ ...target, model: "session-model", provider: "session-channel", effort: "low" }],
+    });
+    vi.mocked(ipc.rememberSessionModel).mockClear();
+
+    await startPluginChatRun("override-probe", {
+      ...def, model: "plugin-model", providerId: "plugin-channel", effort: "high",
+    });
+
+    expect(ipc.sendMessage).toHaveBeenCalledWith(
+      expect.objectContaining({ model: "session-model", providerId: "session-channel", effort: "low" }),
+    );
+    expect(ipc.rememberSessionModel).not.toHaveBeenCalledWith(target.engine, target.sessionId, "plugin-model");
+  });
+
+  it("不传 sessionId 连续新建时，第二轮不因第一轮尚未拿到原生 id 被拒绝", async () => {
+    vi.mocked(ipc.sendMessage)
+      .mockResolvedValueOnce({ runId: "new-a", sessionId: null })
+      .mockResolvedValueOnce({ runId: "new-b", sessionId: null });
+    const newRun = { engine: def.engine, workspacePath: WS, prompt: "新任务" };
+
+    await startPluginChatRun("new-run-probe", newRun);
+    await expect(startPluginChatRun("new-run-probe", newRun)).resolves.toMatchObject({ runId: "new-b" });
+    expect(ipc.sendMessage).toHaveBeenCalledTimes(2);
+  });
+
+  it("send 层的忙碌检查对续接仍然生效", async () => {
+    useChatStore.setState({ streamingByKey: { [key]: true } });
+    await expect(
+      useChatStore.getState().send("继续", [], { onStarted: () => {} }, {
+        engine: target.engine, sessionId: target.sessionId, workspacePath: WS,
+      }),
+    ).rejects.toThrow("session_busy");
+    expect(ipc.sendMessage).not.toHaveBeenCalled();
+  });
+
+  it.each([true, false])("待发键共享时只停止插件轮次（终态早于回执：%s）", async (early) => {
+    const pendingKey = `new:${target.engine}:${WS}`;
+    vi.mocked(ipc.sendMessage)
+      .mockResolvedValueOnce({ runId: "user-pending-run", sessionId: null })
+      .mockResolvedValueOnce({ runId: "plugin-pending-run", sessionId: null });
+    useChatStore.getState().startNewChat(WS);
+    await useChatStore.getState().send("用户的新聊天", []);
+    const scope = { engine: target.engine, workspacePath: WS };
+    await startPluginChatRun("pending-owner", { ...scope, prompt: "插件的新聊天" });
+
+    const ack = Promise.withResolvers<boolean>();
+    vi.mocked(ipc.interruptSession).mockReturnValueOnce(ack.promise);
+    const stop = interruptPluginChatRun("pending-owner", scope);
+    await vi.waitFor(() => expect(vi.mocked(ipc.interruptSession).mock.calls).toEqual([["plugin-pending-run"]]));
+    const deliverTerminal = () => handleEngineEvents([{
+      engine: target.engine, runId: "plugin-pending-run", kind: "done", sessionId: null, seq: 1, data: {},
+    }], engineDeps());
+    if (early) {
+      deliverTerminal();
+      expect(useChatStore.getState().streamingByKey[pendingKey]).toBe(true);
+    }
+    ack.resolve(true);
+    await stop;
+    if (!early) deliverTerminal();
+    expect(useChatStore.getState().streamingByKey[pendingKey]).toBe(true);
+    expect(useChatStore.getState().bySession[pendingKey].interrupted).toBeFalsy();
+    await useChatStore.getState().interrupt({ ...scope, sessionId: null });
+    expect(ipc.interruptSession).toHaveBeenLastCalledWith("user-pending-run");
+  });
+
+  it("Bot 解析期间开始刷新历史时拒绝续接，不追加消息", async () => {
+    const bot = Promise.withResolvers<Awaited<ReturnType<typeof ipc.resolveEnabledBuiltInAgent>>>();
+    const page = Promise.withResolvers<Awaited<ReturnType<typeof ipc.loadSessionPage>>>();
+    vi.mocked(ipc.resolveEnabledBuiltInAgent).mockReturnValueOnce(bot.promise);
+    selectSelectedBot(WS, target.sessionId, { id: "builtin", name: "内置助手", source: "builtIn", avatar: { type: "emoji", value: "🤖" } });
+    try {
+      const start = startPluginChatRun("loading-owner", def);
+      await vi.waitFor(() => expect(ipc.resolveEnabledBuiltInAgent).toHaveBeenCalled());
+      const before = useChatStore.getState().bySession[key].messages;
+      vi.mocked(ipc.loadSessionPage).mockReturnValueOnce(page.promise);
+      const reload = useChatStore.getState().reloadSession(target);
+      expect(useChatStore.getState().bySession[key].loading).toBe(true);
+      bot.resolve({ id: "builtin", name: "内置助手", icon: null, prompt: "测试", promptHash: "test" });
+      try {
+        await expect(start).rejects.toThrow("session_busy");
+        expect(ipc.sendMessage).not.toHaveBeenCalled();
+        expect(useChatStore.getState().bySession[key].messages).toBe(before);
+      } finally {
+        page.resolve({ messages: [], nextBefore: null, subagentHistory: [] });
+        await reload;
+      }
+    } finally {
+      clearSelectedBot(WS, target.sessionId);
+    }
+  });
+
+  it("停止 IPC 失败后保留待发轮次并允许重试", async () => {
+    const scope = { engine: target.engine, workspacePath: WS };
+    vi.mocked(ipc.sendMessage).mockResolvedValueOnce({ runId: "retry-stop", sessionId: null });
+    await startPluginChatRun("retry-stop-owner", { ...scope, prompt: "待发" });
+    const stop = () => interruptPluginChatRun("retry-stop-owner", scope);
+    vi.mocked(ipc.interruptSession).mockRejectedValueOnce(new Error("IPC unavailable"));
+    await expect(stop()).rejects.toThrow("IPC unavailable");
+    vi.mocked(ipc.interruptSession).mockResolvedValueOnce(false);
+    await expect(stop()).rejects.toThrow();
+    expect(useChatStore.getState().streamingByKey[`new:${target.engine}:${WS}`]).toBe(true);
+    await stop();
+    expect(vi.mocked(ipc.interruptSession).mock.calls).toEqual([["retry-stop"], ["retry-stop"], ["retry-stop"]]);
+  });
+
+  it("停止已知会话期间不停止后发的用户轮次", async () => {
+    await startPluginChatRun("known-stop-owner", def);
+    const ack = Promise.withResolvers<boolean>();
+    vi.mocked(ipc.interruptSession).mockReturnValueOnce(ack.promise);
+    const stop = interruptPluginChatRun("known-stop-owner", def);
+    await vi.waitFor(() => expect(ipc.interruptSession).toHaveBeenCalledWith(target.sessionId));
+    vi.mocked(ipc.sendMessage).mockResolvedValueOnce({ runId: "replacement-user", sessionId: target.sessionId });
+    await useChatStore.getState().send("停止期间发送的新消息", [], undefined, def);
+    ack.resolve(true);
+    await stop;
+    expect(ipc.interruptSession).not.toHaveBeenCalledWith("replacement-user");
+    expect(useChatStore.getState().streamingByKey[key]).toBe(true);
+  });
+});
+
+describe("workspace default engine", () => {
+  beforeEach(() => {
+    resetStore();
+    useChatStore.setState({
+      workspaces: [{ id: "a", path: WS, name: "a", groupId: null, sortOrder: null, lastOpenedAt: null }],
+      engines: [{ id: "codex", enabled: true, available: true, supportsImages: true, permissions: [] }],
+      workspaceDefaultEngines: { a: "codex" },
+    });
+  });
+
+  it("publishes workspaces with their preferences when settings load slowly", async () => {
+    const { workspaces, engines } = useChatStore.getState();
+    useChatStore.setState({ workspaces: [], engines: [], workspaceDefaultEngines: {} });
+    const settings = Promise.withResolvers<Awaited<ReturnType<typeof ipc.getAppSettings>>>();
+    vi.mocked(ipc.getAppSettings).mockReturnValueOnce(settings.promise);
+    vi.mocked(ipc.listWorkspaces).mockResolvedValueOnce(workspaces);
+    vi.mocked(ipc.listEngines).mockResolvedValueOnce(engines);
+    const unsubscribe = useChatStore.subscribe((state, previous) => {
+      if (state.workspaces.length && !previous.workspaces.length) state.startNewChat(WS);
+    });
+    try {
+      const initialization = useChatStore.getState().init();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(useChatStore.getState().workspaces).toEqual([]);
+      settings.resolve({ ...await ipc.getAppSettings(), workspaceDefaultEngines: { a: "codex" } });
+      await initialization;
+      expect(useChatStore.getState().active?.engine).toBe("codex");
+      await useChatStore.getState().send("hello", []);
+      expect(ipc.sendMessage).toHaveBeenCalledWith(expect.objectContaining({ engine: "codex" }));
+    } finally {
+      unsubscribe();
+    }
+  });
+
+  it("uses the workspace engine for the pending tab, picker and first send", async () => {
+    const store = useChatStore.getState();
+    store.startNewChat(WS);
+    store.startNewChat(WS);
+    expect(useChatStore.getState()).toMatchObject({
+      activeEngine: "codex",
+      openTabs: [{ engine: "codex", sessionId: null, workspacePath: WS }],
+    });
+    await store.send("hello", []);
+    expect(ipc.sendMessage).toHaveBeenCalledWith(expect.objectContaining({ engine: "codex" }));
+  });
+
+  it.each(["workspace", "override", "picker"])("tracks a runtime switch only for the picker (%s)", (source) => {
+    useChatStore.setState({
+      active: { engine: "claude", sessionId: "old-session", workspacePath: WS },
+      activeEngine: source === "picker" ? "codex" : "claude",
+      workspaceDefaultEngines: source === "workspace" ? { a: "codex" } : {},
+    });
+    useChatStore.getState().startNewChat(WS, source === "override" ? "codex" : undefined);
+    const state = useChatStore.getState();
+    expect(state.active?.engine).toBe("codex");
+    if (source === "picker") {
+      expect(state.pendingRuntimeSwitch).toMatchObject({ sourceSessionId: "old-session", targetEngine: "codex" });
+    } else {
+      expect(state.pendingRuntimeSwitch).toBeNull();
+    }
+  });
+
+  it("keeps workspaces independent and permits a one-time override", () => {
+    const store = useChatStore.getState();
+    const workspace = store.workspaces[0]!;
+    useChatStore.setState({
+      workspaces: [workspace, { ...workspace, id: "b", path: "/other" }],
+      workspaceDefaultEngines: { a: "codex", b: "claude" },
+      engines: [...store.engines, { ...store.engines[0]!, id: "claude" }],
+    });
+    store.startNewChat(WS);
+    expect(useChatStore.getState().active?.engine).toBe("codex");
+    store.startNewChat("/other");
+    expect(useChatStore.getState().active?.engine).toBe("claude");
+    store.startNewChat(WS, "claude");
+    expect(useChatStore.getState().active?.engine).toBe("claude");
+    expect(useChatStore.getState().workspaceDefaultEngines).toEqual({ a: "codex", b: "claude" });
+    store.startNewChat(WS);
+    expect(useChatStore.getState().active?.engine).toBe("codex");
+  });
+
+  it.each([
+    [false, true, null, false],
+    [true, false, null, false],
+    [true, false, ["codex"], true],
+    [false, false, ["codex"], false],
+    [true, true, [], false],
+  ] as const)("checks availability for enabled=%s, installed=%s, delegated=%j", (enabled, available, delegated, accepted) => {
+    const store = useChatStore.getState();
+    useChatStore.setState({ engines: [{ ...store.engines[0]!, enabled, available }] });
+    window.__ccguiWorkspaceUI!.registerHooks({
+      allowedEngines: () => delegated === null ? null : [...delegated],
+      labelSuffix: () => null,
+    });
+    try {
+      store.startNewChat(WS);
+      const next = useChatStore.getState();
+      expect(next.active?.engine ?? null).toBe(accepted ? "codex" : null);
+      expect(next.unavailableNewChat?.engine ?? null).toBe(accepted ? null : "codex");
+      expect(next.workspaceDefaultEngines).toEqual({ a: "codex" });
+      expect(ipc.sendMessage).not.toHaveBeenCalled();
+    } finally {
+      window.__ccguiWorkspaceUI!.registerHooks(null);
+    }
+  });
+
+  it("runs new-chat cleanup only when creation succeeds", () => {
+    const store = useChatStore.getState();
+    const onOpened = vi.fn();
+    useChatStore.setState({ engines: [] });
+    store.startNewChat(WS, undefined, onOpened);
+    expect(onOpened).not.toHaveBeenCalled();
+    store.dismissUnavailableNewChat();
+    expect(onOpened).not.toHaveBeenCalled();
+
+    store.startNewChat(WS, undefined, onOpened);
+    const request = useChatStore.getState().unavailableNewChat;
+    store.startNewChat(WS, "claude", request?.onOpened);
+    expect(onOpened).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps the previous tab and draft when the default cannot be used", () => {
+    const store = useChatStore.getState();
+    store.startNewChat("/other");
+    const previous = useChatStore.getState().active;
+    useChatStore.setState({ engines: [], drafts: { untouched: "draft" } });
+    store.startNewChat(WS);
+    expect(useChatStore.getState()).toMatchObject({
+      active: previous,
+      drafts: { untouched: "draft" },
+      unavailableNewChat: { workspacePath: WS, engine: "codex" },
+    });
+    store.dismissUnavailableNewChat();
+    expect(useChatStore.getState().active).toBe(previous);
+  });
+
+  it("lets a picker change on an established chat win over the default in that workspace only", () => {
+    const codex = useChatStore.getState().engines[0]!;
+    const established = (workspacePath: string) => ({
+      active: { engine: "claude", sessionId: "old-session", workspacePath },
+      activeEngine: "gemini",
+    });
+    useChatStore.setState({
+      ...established(WS),
+      engines: [codex, { ...codex, id: "claude" }, { ...codex, id: "gemini" }],
+    });
+    useChatStore.getState().startNewChat(WS);
+    expect(useChatStore.getState().active?.engine).toBe("gemini");
+    expect(useChatStore.getState().pendingRuntimeSwitch).toMatchObject({
+      sourceSessionId: "old-session",
+      targetEngine: "gemini",
+    });
+
+    useChatStore.setState({ ...established("/other"), pendingRuntimeSwitch: null });
+    useChatStore.getState().startNewChat(WS);
+    expect(useChatStore.getState().active?.engine).toBe("codex");
+    expect(useChatStore.getState().pendingRuntimeSwitch).toBeNull();
+  });
+
+  it("keeps the first request's cleanup when the dialog is requested again", () => {
+    const store = useChatStore.getState();
+    const first = vi.fn();
+    const second = vi.fn();
+    useChatStore.setState({ engines: [] });
+    store.startNewChat(WS, undefined, first);
+    store.startNewChat(WS, undefined, second);
+    store.startNewChat(WS, "claude", useChatStore.getState().unavailableNewChat?.onOpened);
+    expect(first).toHaveBeenCalledTimes(1);
+    expect(second).not.toHaveBeenCalled();
+  });
+
+  it("runs the open callback before the new tab activates", () => {
+    let activeDuringCallback: unknown = "unset";
+    useChatStore.getState().startNewChat(WS, undefined, () => {
+      activeDuringCallback = useChatStore.getState().active;
+    });
+    expect(activeDuringCallback).toBeNull();
+    expect(useChatStore.getState().active?.engine).toBe("codex");
   });
 });

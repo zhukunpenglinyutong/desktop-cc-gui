@@ -310,6 +310,14 @@ struct RecordAcceptedFrameArgs {
 }
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
+struct RecordAcceptedFramesArgs {
+    engine: String,
+    session_id: String,
+    frames: Vec<String>,
+    workspace_path: String,
+}
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct ArchiveSessionArgs {
     session: crate::history::SessionMeta,
 }
@@ -755,6 +763,16 @@ pub(super) async fn dispatch(
         }
         // settings
         "get_app_settings" => ser(crate::settings::get_app_settings()),
+        "set_workspace_default_engine" => {
+            #[derive(serde::Deserialize)]
+            #[serde(rename_all = "camelCase")]
+            struct Args {
+                workspace_id: String,
+                engine: String,
+            }
+            let a: Args = parse_args(&raw)?;
+            ser(crate::settings::set_workspace_default_engine(app.clone(), a.workspace_id, a.engine))
+        }
         "update_app_settings" => {
             let a: UpdateSettingsArgs = parse_args(&raw)?;
             ser(crate::settings::update_app_settings_merged(
@@ -1060,6 +1078,17 @@ pub(super) async fn dispatch(
                 a.engine,
                 a.session_id,
                 a.frame,
+                a.workspace_path,
+            )
+            .await)
+        }
+        "record_accepted_internal_frames" => {
+            let a: RecordAcceptedFramesArgs = parse_args(&raw)?;
+            ser(crate::history::reader::record_accepted_internal_frames(
+                app.state(),
+                a.engine,
+                a.session_id,
+                a.frames,
                 a.workspace_path,
             )
             .await)

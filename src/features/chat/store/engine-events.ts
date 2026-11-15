@@ -128,18 +128,19 @@ function rememberRunId(runId: string): void {
  * permanently failing backend must not spin. */
 const FRAME_RECORD_RETRY_MS = 500;
 const FRAME_RECORD_MAX_ATTEMPTS = 5;
+const FRAME_RECORD_BATCH_SIZE = 32;
 
-function recordAcceptedFrame(
+function recordAcceptedFrames(
   engine: string,
   sessionId: string,
-  frame: string,
+  frames: string[],
   workspacePath: string,
   attempt: number,
 ): void {
-  void ipc.recordAcceptedInternalFrame(engine, sessionId, frame, workspacePath).catch(() => {
+  void ipc.recordAcceptedInternalFrames(engine, sessionId, frames, workspacePath).catch(() => {
     if (attempt >= FRAME_RECORD_MAX_ATTEMPTS) return;
     setTimeout(
-      () => recordAcceptedFrame(engine, sessionId, frame, workspacePath, attempt + 1),
+      () => recordAcceptedFrames(engine, sessionId, frames, workspacePath, attempt + 1),
       FRAME_RECORD_RETRY_MS,
     );
   });
@@ -149,8 +150,15 @@ function persistAcceptedFrames(lifecycle: RunLifecycle): void {
   const frames = lifecycle.acceptedFrames;
   const sessionId = lifecycle.sessionId;
   if (!sessionId || !frames || frames.length === 0) return;
-  for (const frame of frames.splice(0)) {
-    recordAcceptedFrame(lifecycle.engine, sessionId, frame, lifecycle.workspace.path, 1);
+  const accepted = frames.splice(0);
+  for (let offset = 0; offset < accepted.length; offset += FRAME_RECORD_BATCH_SIZE) {
+    recordAcceptedFrames(
+      lifecycle.engine,
+      sessionId,
+      accepted.slice(offset, offset + FRAME_RECORD_BATCH_SIZE),
+      lifecycle.workspace.path,
+      1,
+    );
   }
 }
 
@@ -498,6 +506,10 @@ export interface EngineEventDeps {
   upsertSessionMeta: (meta: SessionMeta) => void;
   /** Re-fetch the latest token usage from session history for the given session key. */
   refreshSessionUsage?: (key: string) => Promise<void>;
+  /** Re-read recent status deliveries after a turn settles. */
+  refreshSubagentStatus?: (key: string) => void;
+  /** Stop a pending status retry as soon as another run starts. */
+  cancelSubagentStatusRefresh?: (key: string) => void;
   /** After a turn settles: feeds the background memory review's turn counter
    *  (features/bots/memory-review.ts). Optional so tests can drive the router
    *  without the memory feature. */
@@ -1373,6 +1385,7 @@ function onError(
   // stuck until it was sent or cleared by hand. A stop is still the user's
   // own call: that queue stays parked.
   if (!prev.interrupted) deps.drainQueue(key);
+  deps.refreshSubagentStatus?.(key);
 }
 
 /**
@@ -1967,6 +1980,7 @@ function onDone(event: ChatEngineEvent, key: string, deps: EngineEventDeps) {
       }, 400);
     }
   }
+  deps.refreshSubagentStatus?.(key);
 }
 
 /** A CLI that kept running after `done` (a background task was pending) opened
@@ -2007,6 +2021,7 @@ function adoptObservedRun(
   key: string,
   deps: EngineEventDeps,
 ) {
+  deps.cancelSubagentStatusRefresh?.(key);
   if (!runRouting.has(event.runId)) {
     void reapOrphanedRuns(deps.set, routeRun(event.runId, key));
   }
@@ -2031,6 +2046,9 @@ function adoptObservedRun(
 // tests would otherwise leak the previous test's terminal state.
 export const settledRuns = new Map<string, "done" | "error">();
 const MAX_SETTLED_RUNS = 256;
+
+// 精确停止等待 IPC 回执时暂存终态，避免终态提前清理共享会话键。
+export const interruptingRunTerminals = new Map<string, ChatEngineEvent[]>();
 
 /** Resolve an event's session key (run routing, then session-id match) and
  * dispatch to the per-kind handler. */
@@ -2057,6 +2075,11 @@ export function handleEngineEvents(
       event.sessionId !== toolBatch.event.sessionId
     )) {
       flushTools();
+    }
+    const stopping = interruptingRunTerminals.get(event.runId);
+    if (stopping && (event.kind === "done" || event.kind === "error")) {
+      stopping.push(event);
+      continue;
     }
     if (event.kind === "turn_resumed") {
       reopenSettledRun(event, deps);

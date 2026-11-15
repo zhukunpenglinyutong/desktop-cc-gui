@@ -820,10 +820,18 @@ jobs:
           text = cargo.read_text()
           text = text.replace('version = "$VERSION"', 'version = "$NEXT_VERSION"', 1)
           cargo.write_text(text)
+
+          # Cargo.lock 也记录本包版本；不管它当前是几（旧分支可能落后），都对齐到新版本
+          import re
+          lock = Path("src-tauri/Cargo.lock")
+          text, count = re.subn(r'(name = "ccgui-next"\nversion = ")[^"]+"', r'\g<1>$NEXT_VERSION"', lock.read_text(), count=1)
+          if count != 1:
+              raise SystemExit("Cargo.lock 中找不到 ccgui-next 包，无法同步版本")
+          lock.write_text(text)
           PY
 
           git checkout -b "v${NEXT_VERSION}"
-          git add package.json src-tauri/tauri.conf.json src-tauri/Cargo.toml
+          git add package.json src-tauri/tauri.conf.json src-tauri/Cargo.toml src-tauri/Cargo.lock
           git commit -m "chore: bump version to ${NEXT_VERSION}"
           git push origin "v${NEXT_VERSION}"
 

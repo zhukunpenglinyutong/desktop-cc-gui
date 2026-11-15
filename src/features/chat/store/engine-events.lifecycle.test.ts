@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ipc } from "@/lib/ipc";
 import { collectBeforeTurnContributions, registerTurnHooks } from "@/features/plugins/runtime/hooks";
-import { routeRun } from "./stream";
+import { EMPTY_SESSION, routeRun } from "./stream";
 import {
   bindRunLifecycle,
   finishRunLifecycle,
@@ -11,12 +11,13 @@ import {
   registerPendingRunLifecycle,
   replayBufferedEngineEvents,
   settleOrphanedRuns,
+  settledRuns,
   unregisterRunLifecycle,
 } from "./engine-events";
 
 vi.mock("@/lib/ipc", () => ({
   ipc: {
-    recordAcceptedInternalFrame: vi.fn(async () => undefined),
+    recordAcceptedInternalFrames: vi.fn(async () => undefined),
     rescanSessions: vi.fn(async () => undefined),
     usageRecord: vi.fn(async () => undefined),
   },
@@ -62,7 +63,7 @@ async function begin(runId: string, nonce = "abc123") {
   return await startRun(runId, "test.capture", { channel: "facts", nonce, maxBytes: 1024 });
 }
 
-beforeEach(() => vi.mocked(ipc.recordAcceptedInternalFrame).mockClear());
+beforeEach(() => vi.mocked(ipc.recordAcceptedInternalFrames).mockClear());
 afterEach(() => {
   unregisterRunLifecycle("run-1");
   while (fixtureDisposers.length) fixtureDisposers.pop()?.();
@@ -90,7 +91,7 @@ describe("incremental internal frame routing", () => {
       await Promise.resolve();
       expect(validate).not.toHaveBeenCalled();
       expect(delivered).not.toHaveBeenCalled();
-      expect(ipc.recordAcceptedInternalFrame).not.toHaveBeenCalled();
+      expect(ipc.recordAcceptedInternalFrames).not.toHaveBeenCalled();
     } finally {
       dispose();
     }
@@ -114,7 +115,7 @@ describe("incremental internal frame routing", () => {
       await Promise.resolve();
       expect(previous).not.toHaveBeenCalled();
       expect(replacement).not.toHaveBeenCalled();
-      expect(ipc.recordAcceptedInternalFrame).not.toHaveBeenCalled();
+      expect(ipc.recordAcceptedInternalFrames).not.toHaveBeenCalled();
     } finally {
       disposeOld();
       disposeNew();
@@ -249,6 +250,7 @@ describe("incremental internal frame routing", () => {
 
   it("persists only a validator-accepted frame after the native session is known", async () => {
     const accepted = '<CCGUI_INTERNAL_abc123>{"ok":true}</CCGUI_INTERNAL_abc123>';
+    const acceptedAlso = '<CCGUI_INTERNAL_abc123>{"ok":true,"n":2}</CCGUI_INTERNAL_abc123>';
     const rejected = '<CCGUI_INTERNAL_abc123>{"ok":false}</CCGUI_INTERNAL_abc123>';
     await startRun("run-1", "test.capture", {
       channel: "facts",
@@ -262,18 +264,19 @@ describe("incremental internal frame routing", () => {
 
     expect(filterInternalFrameDelta("run-1", rejected)).toBe(rejected);
     expect(filterInternalFrameDelta("run-1", accepted)).toBe("");
-    expect(ipc.recordAcceptedInternalFrame).not.toHaveBeenCalled();
+    expect(filterInternalFrameDelta("run-1", acceptedAlso)).toBe("");
+    expect(ipc.recordAcceptedInternalFrames).not.toHaveBeenCalled();
 
     bindRunLifecycle("pending:run-1", "run-1", "session-1");
     await vi.waitFor(() =>
-      expect(ipc.recordAcceptedInternalFrame).toHaveBeenCalledWith(
+      expect(ipc.recordAcceptedInternalFrames).toHaveBeenCalledWith(
         "claude",
         "session-1",
-        accepted,
+        [accepted, acceptedAlso],
         workspace.path,
       ),
     );
-    expect(ipc.recordAcceptedInternalFrame).toHaveBeenCalledTimes(1);
+    expect(ipc.recordAcceptedInternalFrames).toHaveBeenCalledTimes(1);
   });
 
   it("releases an opening tag whose payload outgrew the capture budget", async () => {
@@ -291,7 +294,7 @@ describe("incremental internal frame routing", () => {
 
   it("retries a frame identity the host failed to record", async () => {
     const accepted = '<CCGUI_INTERNAL_abc123>{"ok":true}</CCGUI_INTERNAL_abc123>';
-    const record = vi.mocked(ipc.recordAcceptedInternalFrame);
+    const record = vi.mocked(ipc.recordAcceptedInternalFrames);
     record.mockReset();
     record.mockRejectedValueOnce(new Error("db busy")).mockResolvedValue(undefined);
     vi.useFakeTimers();
@@ -306,8 +309,8 @@ describe("incremental internal frame routing", () => {
       await vi.advanceTimersByTimeAsync(1000);
 
       expect(record.mock.calls).toEqual([
-        ["claude", "session-1", accepted, workspace.path],
-        ["claude", "session-1", accepted, workspace.path],
+        ["claude", "session-1", [accepted], workspace.path],
+        ["claude", "session-1", [accepted], workspace.path],
       ]);
     } finally {
       vi.useRealTimers();
@@ -642,5 +645,77 @@ describe("terminal turn lifecycle", () => {
 
     expect(afterTurn).toHaveBeenCalledTimes(1);
     expect(afterTurn).toHaveBeenCalledWith(expect.objectContaining({ status: "cancelled" }));
+  });
+});
+
+describe("subagent status refresh lifecycle", () => {
+  function statusDeps(streaming = true) {
+    const key = "omp/status-session";
+    const state = {
+      bySession: { [key]: { ...EMPTY_SESSION, streaming } },
+      openTabs: [{ engine: "omp", sessionId: "status-session", workspacePath: workspace.path }],
+      models: {},
+      efforts: {},
+      streamingByKey: streaming ? { [key]: true } : {},
+      retryingByKey: {},
+    };
+    return {
+      key: key as keyof typeof state.bySession,
+      state,
+      deps: {
+        set: (update: (current: typeof state) => Partial<typeof state>) => {
+          Object.assign(state, update(state));
+        },
+        get: () => state,
+        drainQueue: vi.fn(),
+        markUnseenIfBackground: vi.fn(),
+        upsertSessionMeta: vi.fn(),
+        refreshSubagentStatus: vi.fn((sessionKey: string) => {
+          expect(sessionKey).toBe(key);
+          expect(state.bySession[key].streaming).toBe(false);
+          expect(state.streamingByKey[key]).toBeFalsy();
+        }),
+        cancelSubagentStatusRefresh: vi.fn(),
+      },
+    };
+  }
+
+  it.each(["done", "error"] as const)("refreshes after %s settles streaming, but not for duplicate terminal events", (kind) => {
+    const { key, state, deps } = statusDeps();
+    const runId = `status-refresh-${kind}`;
+    routeRun(runId, key);
+    fixtureDisposers.push(() => settledRuns.delete(runId));
+    const event = {
+      runId, sessionId: "status-session", engine: "omp", seq: 1, kind,
+      data: kind === "done" ? { usage: null } : "Engine failed",
+    };
+
+    handleEngineEvents([event, event], deps as never);
+
+    expect(state.bySession[key].streaming).toBe(false);
+    expect(deps.refreshSubagentStatus).toHaveBeenCalledTimes(1);
+    expect(deps.refreshSubagentStatus).toHaveBeenCalledWith(key);
+    expect(deps.drainQueue).toHaveBeenCalledTimes(1);
+  });
+
+  it("cancels pending status work as soon as an observed run starts", () => {
+    const { key, state, deps } = statusDeps(false);
+    const runId = "status-refresh-observed";
+    routeRun(runId, key);
+    fixtureDisposers.push(() => settledRuns.delete(runId));
+    try {
+      handleEngineEvents([
+        { runId, sessionId: "status-session", engine: "omp", seq: 1, kind: "model", data: "omp-test" },
+      ], deps as never);
+
+      expect(deps.cancelSubagentStatusRefresh).toHaveBeenCalledWith(key);
+      expect(state.bySession[key].streaming).toBe(true);
+      expect(state.streamingByKey[key]).toBe(true);
+      expect(deps.refreshSubagentStatus).not.toHaveBeenCalled();
+    } finally {
+      handleEngineEvents([
+        { runId, sessionId: "status-session", engine: "omp", seq: 2, kind: "done", data: { usage: null } },
+      ], deps as never);
+    }
   });
 });

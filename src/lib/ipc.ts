@@ -95,6 +95,8 @@ export interface QuestionSpec {
   options: { label: string; description?: string; preview?: string }[];
 }
 
+export const AGENT_STATUS_ROLE = "__agent_status__";
+
 export interface Message {
   seq: number;
   role: string; // "user" | "assistant" | "tool" | "thinking"
@@ -516,6 +518,7 @@ export interface AppSettings {
   workspaceGroups: WorkspaceGroup[];
   /** Workspace id -> sidebar display alias; absent = show the folder name. */
   workspaceAliases: Record<string, string>;
+  workspaceDefaultEngines?: Record<string, string>;
   /** Ids of workspaces hidden into the sidebar's collapsible 已归档 section. */
   archivedWorkspaces: string[];
   language: string;
@@ -1475,6 +1478,11 @@ export const ipc = {
     settingsPromise = null;
     return fetchAppSettings();
   },
+  setWorkspaceDefaultEngine: async (workspaceId: string, engine: string) => {
+    const engines = await invoke<Record<string, string>>("set_workspace_default_engine", { workspaceId, engine });
+    settingsPromise = null;
+    return engines;
+  },
   updateAppSettings: async (settings: AppSettings) => {
     await invoke<void>("update_app_settings", { settings });
     // Drop the cache instead of caching `settings`: the backend adjusts what
@@ -1595,6 +1603,18 @@ export const ipc = {
       engine,
       sessionId,
       frame,
+      workspacePath,
+    }),
+  recordAcceptedInternalFrames: (
+    engine: string,
+    sessionId: string,
+    frames: string[],
+    workspacePath: string,
+  ) =>
+    invoke<void>("record_accepted_internal_frames", {
+      engine,
+      sessionId,
+      frames,
       workspacePath,
     }),
   /** Persist a clipboard image to app home; returns its absolute path so it

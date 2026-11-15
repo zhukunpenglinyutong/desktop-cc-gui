@@ -8,6 +8,7 @@ export interface ContextMenuEntry {
   label: ReactNode;
   icon: ReactNode;
   danger?: boolean;
+  keepOpen?: boolean;
   disabled?: boolean;
   /** Native tooltip — used to explain why a disabled entry is unavailable. */
   title?: string;
@@ -104,7 +105,7 @@ export function ContextMenu({
             disabled={entry.disabled}
             title={entry.title}
             onClick={() => {
-              onClose();
+              if (!entry.keepOpen) onClose();
               entry.onSelect();
             }}
             className={cx(

@@ -31,6 +31,9 @@ import { moveComposerState } from "./attachments";
 import {
   bindRunLifecycle,
   finishRunLifecycle,
+  handleEngineEvents,
+  interruptingRunTerminals,
+  type ChatEngineEvent,
   dropRunUsage,
   firstLineTitle,
   optimisticMeta,
@@ -158,7 +161,7 @@ export function createMessagingActions(
   const { set, get, loadHistoryPage, subscribe } = deps;
   // A replacement turn can reset the session's shared interrupted flag.
   // Keep cancellation attached to the send waiting on hooks or its ACK.
-  const pendingSends = new Map<string, { cancelled: boolean }>();
+  const pendingSends = new Map<string, { cancelled: boolean; runId: string }>();
 
   /**
    * Send a prompt to a specific tab. Unlike the public `send` action this is
@@ -230,6 +233,9 @@ export function createMessagingActions(
     }
     const engine = tab.engine;
     const key = sessionKey(engine, tab.sessionId, tab.workspacePath);
+    if (options?.onStarted && tab.sessionId && (get().streamingByKey[key] || get().bySession[key]?.loading)) {
+      throw new Error("session_busy: the session is already running or loading");
+    }
     // Computer use asks for the driver; a web-access client or an engine
     // without an MCP-mount path would run the prompt text-only while the user
     // believes the machine is under agent control. Refuse loudly instead of
@@ -298,7 +304,7 @@ export function createMessagingActions(
     const hookRunId = newId();
     const previousSend = pendingSends.get(key);
     if (previousSend) previousSend.cancelled = true;
-    const pendingSend = { cancelled: false };
+    const pendingSend = { cancelled: false, runId: hookRunId };
     pendingSends.set(key, pendingSend);
     // Optimistic user message, right away: the hooks below can take up to
     // their timeout, and the turn must be visible (and stoppable) meanwhile.
@@ -451,6 +457,7 @@ export function createMessagingActions(
       }
       // 宿主能力（插件轮次）靠这个钩子在 spawn 成功后拿到轮次身份；
       // 聊天发送不传，行为不变。
+      pendingSend.runId = result.runId;
       options?.onStarted?.({ runId: result.runId, sessionId: result.sessionId ?? null });
       // A whole turn can finish while invoke is still pending. Its session
       // event has then moved the state and done has removed the routing entry.
@@ -691,16 +698,7 @@ export function createMessagingActions(
     });
   }
 
-  /** 按会话 key 中断：公共 `interrupt(target)` 与队列「立即发送」共用。
-   *  key 而不是会话对象，是因为后台会话的排队项只有 key。 */
-  async function interruptByKey(key: string) {
-    // An in-flight send is awaiting plugin beforeTurn hooks: mark it cancelled
-    // so its late launch does not start a run the user already stopped.
-    const pendingSend = pendingSends.get(key);
-    if (pendingSend) {
-      pendingSend.cancelled = true;
-      pendingSends.delete(key);
-    }
+  function settleInterruptedSession(key: string) {
     // Settle locally FIRST: the killed run's done event can arrive while
     // the kill IPCs below are still in flight, and onDone drains the queue
     // whenever interrupted is still false — that would fire the next
@@ -729,15 +727,76 @@ export function createMessagingActions(
         retryingByKey: setRetryingFlag(s.retryingByKey, key, false),
       };
     });
+  }
+
+  function settleInterruptedRun(key: string, runId: string) {
+    finishRunLifecycle(runId, "cancelled");
+    patchSession(set, key, {
+      settledRunIds: rememberSettledRun(get().bySession[key], runId),
+    });
+    runRouting.delete(runId);
+    untrackRun(runId);
+    dropRunUsage(runId);
+  }
+
+  async function interruptOwnedRun(runId: string) {
+    if (!runRouting.has(runId)) return;
+    if (interruptingRunTerminals.has(runId)) throw new Error("run_stop_pending");
+    const terminals: ChatEngineEvent[] = [];
+    interruptingRunTerminals.set(runId, terminals);
+    try {
+      let stopped: boolean;
+      try {
+        stopped = await ipc.interruptSession(runId);
+      } catch (error) {
+        if (!terminals.length) throw error;
+        stopped = false;
+      }
+      if (!stopped && !terminals.length) throw new Error("run_stop_failed");
+      const key = runRouting.get(runId);
+      if (!key) return;
+      const pending = pendingSends.get(key);
+      const shared = (pending && pending.runId !== runId)
+        || [...runRouting].some(([other, route]) => other !== runId && route === key);
+      if (!shared) settleInterruptedSession(key);
+      settleInterruptedRun(key, runId);
+      if (!shared) void get().refreshSessionUsage(key);
+    } finally {
+      interruptingRunTerminals.delete(runId);
+      if (terminals.length) {
+        handleEngineEvents(terminals, {
+          set,
+          get,
+          drainQueue,
+          markUnseenIfBackground,
+          upsertSessionMeta: (meta) => upsertSessionMetaInto(set, meta),
+          refreshSessionUsage: (key) => get().refreshSessionUsage(key),
+        });
+      }
+    }
+  }
+
+  /** 按会话 key 中断：公共 `interrupt(target)` 与队列「立即发送」共用。
+   *  key 而不是会话对象，是因为后台会话的排队项只有 key。 */
+  async function interruptByKey(key: string) {
+    // An in-flight send is awaiting plugin beforeTurn hooks: mark it cancelled
+    // so its late launch does not start a run the user already stopped.
+    const pendingSend = pendingSends.get(key);
+    if (pendingSend) {
+      pendingSend.cancelled = true;
+      pendingSends.delete(key);
+    }
+    // 停止范围在等待 IPC 前固定，后发轮次不在这次请求内。
+    const deadRunIds: string[] = [];
+    for (const [runId, routed] of runRouting) {
+      if (routed === key) deadRunIds.push(runId);
+    }
+    settleInterruptedSession(key);
     // Registry is keyed by native session id once known; before that the
     // run id routes. Try both.
     const sessionId = key.includes("/") ? key.slice(key.indexOf("/") + 1) : "";
     if (sessionId && !key.startsWith("new:"))
       await ipc.interruptSession(sessionId).catch(() => false);
-    const deadRunIds: string[] = [];
-    for (const [runId, routed] of runRouting) {
-      if (routed === key) deadRunIds.push(runId);
-    }
     // Independent kills, one IPC call per routed run — fired together.
     await Promise.all(
       deadRunIds.map((runId) => ipc.interruptSession(runId).catch(() => false)),
@@ -747,13 +806,7 @@ export function createMessagingActions(
     for (const runId of deadRunIds) {
       // Plugins observing this turn must receive its cancelled terminal state;
       // without it a registered lifecycle never settles.
-      finishRunLifecycle(runId, "cancelled");
-      patchSession(set, key, {
-        settledRunIds: rememberSettledRun(get().bySession[key], runId),
-      });
-      runRouting.delete(runId);
-      untrackRun(runId);
-      dropRunUsage(runId);
+      settleInterruptedRun(key, runId);
     }
     // Refresh without holding Stop: the read can take three loads with
     // backoff, and Stop must complete immediately (every other caller
@@ -1020,7 +1073,8 @@ export function createMessagingActions(
       drainQueue(targetKey);
     },
 
-    interrupt: async (target) => {
+    interrupt: async (target, runId) => {
+      if (runId !== undefined) return interruptOwnedRun(runId);
       const key = keyOfTarget(target === undefined ? get().active : target, null);
       if (!key) return;
       await interruptByKey(key);

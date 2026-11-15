@@ -415,6 +415,7 @@ pub fn run() {
             // settings
             settings::get_app_settings,
             settings::update_app_settings,
+            settings::set_workspace_default_engine,
             settings::set_window_theme,
             // uploaded font files (设置 → 外观 字体行)
             fonts::read_font_file,
@@ -453,6 +454,7 @@ pub fn run() {
             plugins::assets::plugin_reveal_path,
             db::workspace_metadata,
             history::reader::record_accepted_internal_frame,
+            history::reader::record_accepted_internal_frames,
             // narrow host capabilities exposed through PluginContext
             plugin_host::plugin_window_state,
             plugin_host::plugin_window_set_normal_bounds,
