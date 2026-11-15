@@ -1588,6 +1588,19 @@ export const ipc = {
   }) => invoke<SendResult>("mission_agent_start", args),
   missionAgentInterrupt: (runId: string) =>
     invoke<boolean>("mission_agent_interrupt", { runId }),
+  /** 插件介绍翻译：零工具纯文本轮次，跑在应用目录下的空沙盒里（后端
+   *  translate.rs）。事件走 mission-agent://event，按 runId 路由。 */
+  translateTextStart: (args: {
+    /** 前端预生成的 runId（translate- 前缀）；先注册监听再 invoke。 */
+    runId: string;
+    engine: string;
+    prompt: string;
+    model: string | null;
+    effort: string | null;
+    providerId: string | null;
+  }) => invoke<SendResult>("translate_text_start", args),
+  translateTextInterrupt: (runId: string) =>
+    invoke<boolean>("translate_text_interrupt", { runId }),
   listEngines: () => invoke<EngineInfo[]>("list_engines"),
   /** Record a complete internal frame already accepted by its live capture
    * validator, so history reload can hide only that exact frame.

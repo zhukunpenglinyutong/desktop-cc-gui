@@ -1972,6 +1972,7 @@ pub(crate) async fn run_plan_decision(
         computer_use: None,
         memory_bot: None,
         allowed_tools: None,
+        no_tools: false,
     };
     let mut built = super::codex::CodexEngine.host_command(&req, &bin)?;
     built.command.current_dir(&req.workspace);
@@ -2315,6 +2316,7 @@ mod tests {
             computer_use: None,
             memory_bot: None,
             allowed_tools: None,
+            no_tools: false,
         };
         assert!(crate::engine::codex::CodexEngine
             .build_command(&request, &bin)
@@ -2400,6 +2402,7 @@ mod tests {
             computer_use: None,
             memory_bot: None,
             allowed_tools: None,
+            no_tools: false,
         };
         let built = BuiltCommand {
             command,
@@ -2737,6 +2740,7 @@ require('node:readline').createInterface({input: process.stdin}).on('line', line
                 computer_use: None,
                 memory_bot: None,
                 allowed_tools: None,
+                no_tools: false,
             };
             let decision = (mode == "decision").then(|| DecisionCheck {
                 mode: "default",

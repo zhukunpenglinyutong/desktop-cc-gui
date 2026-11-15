@@ -432,6 +432,22 @@ export const builtinSearchEntries: SettingsSearchEntry[] = [
 
   ...workspaceEntries,
 
+  // 插件翻译（PluginTranslationSection.tsx）：插件中心「翻译」用的引擎与模型。
+  {
+    page: "pluginTranslation",
+    anchor: "translationEngine",
+    labelKey: "settings.translationEngine",
+    sectionKey: "settings.pluginTranslation",
+    keywords: ["translate", "translation", "翻译", "перевод"],
+  },
+  {
+    page: "pluginTranslation",
+    anchor: "translationModel",
+    labelKey: "settings.translationModel",
+    sectionKey: "settings.pluginTranslation",
+    keywords: ["translate", "translation", "翻译", "model"],
+  },
+
   // 性能诊断：这个开关是页面上唯一的设置行（打开诊断弹窗那一块是动作入口）。
   {
     page: "diagnostics",

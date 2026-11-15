@@ -93,6 +93,12 @@ impl Engine for ClaudeEngine {
         true
     }
 
+    /// 零工具轮次：`--tools ""` 卸掉全部内置工具，`--strict-mcp-config`
+    /// 且不给 `--mcp-config` 就不连任何 MCP 服务器。
+    fn supports_no_tools(&self) -> bool {
+        true
+    }
+
     fn build_command(&self, req: &SendRequest, bin: &str) -> Result<BuiltCommand, String> {
         let mut cmd = command_for_binary(bin);
         cmd.arg("-p");
@@ -115,7 +121,18 @@ impl Engine for ClaudeEngine {
         // (headless -p cannot prompt mid-turn, so anything not listed here
         // gets denied outright).
         let mut preapproved: Vec<&str> = Vec::new();
-        if let Some(tools) = req.allowed_tools.as_deref() {
+        if req.no_tools {
+            // 纯文本轮次（插件介绍翻译）：输入是不可信的第三方文本，模型手里
+            // 不能有任何工具。prepare_launch 已保证不带白名单/电脑操控/记忆，
+            // 所以下面的 --mcp-config / --allowedTools 都不会出现。会话不落盘：
+            // 这类轮次从不续接，也不该出现在历史里。
+            cmd.arg("--tools");
+            cmd.arg("");
+            cmd.arg("--strict-mcp-config");
+            cmd.arg("--permission-mode");
+            cmd.arg("default");
+            cmd.arg("--no-session-persistence");
+        } else if let Some(tools) = req.allowed_tools.as_deref() {
             // 任务工作台的只读约束：plan 模式拒绝任何编辑/命令，再叠加
             // 白名单；headless -p 下未列入 --allowedTools 的工具会被拒。
             // 已知写工具额外显式 deny，防止模式解析差异。
@@ -2032,6 +2049,7 @@ mod tests {
             computer_use: None,
             memory_bot: None,
             allowed_tools: None,
+            no_tools: false,
         };
         let built = engine.build_command(&request, "claude").unwrap();
         let args: Vec<String> = built
@@ -2084,6 +2102,7 @@ mod tests {
             computer_use: None,
             memory_bot: None,
             allowed_tools: Some(vec!["Read".into(), "Grep".into()]),
+            no_tools: false,
         };
         let built = engine.build_command(&request, "claude").unwrap();
         let args: Vec<String> = built
