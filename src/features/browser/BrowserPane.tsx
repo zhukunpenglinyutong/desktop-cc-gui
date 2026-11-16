@@ -83,7 +83,9 @@ function useWebviewSync(id: string, url: string, active: boolean, placeholderRef
       if (disposed) return;
       const rect = rectOf();
       if (rect.width < 1 || rect.height < 1) return;
-      void setBrowserWebviewBounds(id, rect);
+      void setBrowserWebviewBounds(id, rect).catch((error) => {
+        console.error("Failed to resize browser webview", { id, error });
+      });
     };
 
     // Create is idempotent; show follows the first successful bounds write
@@ -95,7 +97,11 @@ function useWebviewSync(id: string, url: string, active: boolean, placeholderRef
         .then(() => {
           if (!disposed && activeRef.current) void setBrowserWebviewVisible(id, true);
         })
-        .catch(() => {});
+        .catch((error) => {
+          // Surface the native failure instead of leaving an unexplained
+          // blank pane. Keep the tab alive so a later resize can retry.
+          console.error("Failed to create browser webview", { id, url, error });
+        });
     }
 
     const observer = new ResizeObserver(sync);
