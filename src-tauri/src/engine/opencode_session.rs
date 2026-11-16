@@ -942,6 +942,7 @@ mod tests {
             computer_use: None,
             memory_bot: None,
             allowed_tools: None,
+            no_tools: false,
         };
         let turn = tokio::spawn(run_server_turn_with_probe_port(
             core,
