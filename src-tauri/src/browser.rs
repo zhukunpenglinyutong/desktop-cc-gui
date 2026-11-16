@@ -81,7 +81,7 @@ fn parse_url(raw: &str) -> Result<Url, String> {
 /// existing id is a no-op so the React effect can retry after a failed
 /// bounds sync without tearing the page down.
 #[tauri::command]
-pub fn browser_create(
+pub async fn browser_create(
     window: tauri::Window,
     id: String,
     url: String,
@@ -90,15 +90,36 @@ pub fn browser_create(
     width: f64,
     height: f64,
 ) -> Result<(), String> {
-    validate_id(&id)?;
-    let label = label(&id);
+    // Tauri documents that Window::add_child deadlocks with WebView2 when it
+    // runs on the synchronous IPC/main thread: the callback is created, but
+    // controller initialization never finishes and the invoke never resolves.
+    // Keep the IPC future off that thread so the native message pump can
+    // complete the child webview.
+    tauri::async_runtime::spawn_blocking(move || {
+        create_browser_webview(window, &id, &url, x, y, width, height)
+    })
+    .await
+    .map_err(|error| format!("failed to create browser webview task: {error}"))?
+}
+
+fn create_browser_webview(
+    window: tauri::Window,
+    id: &str,
+    url: &str,
+    x: f64,
+    y: f64,
+    width: f64,
+    height: f64,
+) -> Result<(), String> {
+    validate_id(id)?;
+    let label = label(id);
     if window.get_webview(&label).is_some() {
         return Ok(());
     }
-    let parsed = parse_url(&url)?;
+    let parsed = parse_url(url)?;
     let app = window.app_handle().clone();
-    let nav_id = id.clone();
-    let title_id = id.clone();
+    let nav_id = id.to_string();
+    let title_id = id.to_string();
     let new_window_app = window.app_handle().clone();
     let new_window_label = label.clone();
     let builder = tauri::WebviewBuilder::new(&label, WebviewUrl::External(parsed))
