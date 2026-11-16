@@ -49,8 +49,11 @@ export function setBrowserWebviewVisible(id: string, visible: boolean): Promise<
   return invoke<void>("browser_set_visible", { id, visible }).catch(() => {});
 }
 
-export function navigateBrowserWebview(id: string, url: string): Promise<void> {
-  if (isWeb) return Promise.resolve();
+export async function navigateBrowserWebview(id: string, url: string): Promise<void> {
+  if (isWeb) return;
+  // A coalesced create keeps its first URL, and navigating before it lands
+  // hits "not found": wait so an address submitted mid-create still applies.
+  await pendingCreates.get(id)?.catch(() => {});
   return invoke<void>("browser_navigate", { id, url });
 }
 
