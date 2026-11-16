@@ -3,11 +3,14 @@
 //!
 //! Wire (verified live against dsh 0.1.2):
 //! - RPC is plain HTTP ([`crate::dsh_host::host_call`], cookie-authenticated):
-//!   `workspace/create` → `session/create` (resume passes the known
-//!   sessionId) → `session/selectModel`? → `session/prompt` (mode "queue");
-//!   interrupt sends `session/cancel`. Attachments ride the prompt as base64
-//!   image content parts, after [`super::dsh_images`] declares the input
-//!   modality on hand-declared `llm-pi-ai` routes (`settings/mutate`).
+//!   `workspace/create` → (`session/create` for a new conversation only) →
+//!   `session/selectModel`? → `session/prompt` (mode "queue"); interrupt sends
+//!   `session/cancel`. An existing conversation is resumed implicitly by
+//!   `session/prompt`: `session/create` only reuses a Session while it is
+//!   blank, and otherwise mints a replacement, dropping the context.
+//!   Attachments ride the prompt as base64 image content parts, after
+//!   [`super::dsh_images`] declares the input modality on hand-declared
+//!   `llm-pi-ai` routes (`settings/mutate`).
 //! - Streams share one WebSocket, `ws://<origin>/api/remote.mux` with the
 //!   auth cookie: open `$events` (the ready frame yields the events clientId;
 //!   waterfall frames are approval/question calls, answered via
@@ -184,6 +187,25 @@ pub(crate) async fn run_host_turn(
     core.sink.flush();
 }
 
+/// Whether this turn starts a new DSH conversation or continues one.
+///
+/// `session/create` intentionally reuses a named Session only while it is
+/// blank. Once that Session has a turn, it mints a new identity instead. An
+/// existing conversation is resumed by `session/prompt`, so a stored id must
+/// bypass create entirely.
+#[derive(Debug, PartialEq)]
+enum SessionStart<'a> {
+    Create,
+    Resume(&'a str),
+}
+
+fn session_start(session_id: Option<&str>) -> SessionStart<'_> {
+    match session_id.map(str::trim).filter(|id| !id.is_empty()) {
+        Some(session_id) => SessionStart::Resume(session_id),
+        None => SessionStart::Create,
+    }
+}
+
 async fn turn_inner(
     core: &TurnCore,
     state: &mut TurnState,
@@ -212,17 +234,24 @@ async fn turn_inner(
     .ok_or("workspace/create 未返回 workspaceId")?;
 
     // Session continuity: codemoss passes back the native id it received via
-    // the "session" event; a fresh id comes back for a new conversation.
-    let mut create_args = json!({ "request": { "workspaceId": workspace } });
-    if let Some(session_id) = req.session_id.as_deref() {
-        create_args["request"]["sessionId"] = Value::String(session_id.to_string());
-    }
-    let session_id = host_call(&origin, "session/create", create_args)
+    // the "session" event. DSH's `session/create` is a new-conversation API:
+    // it reuses a named Session only while it is still blank, then mints a
+    // replacement once a turn has started. `session/prompt` already resolves
+    // (and resumes) an existing id, so calling create here would silently
+    // switch conversations on every follow-up turn.
+    let session_id = match session_start(req.session_id.as_deref()) {
+        SessionStart::Resume(session_id) => session_id.to_string(),
+        SessionStart::Create => host_call(
+            &origin,
+            "session/create",
+            json!({ "request": { "workspaceId": workspace } }),
+        )
         .await?
         .pointer("/sessionId")
         .and_then(Value::as_str)
         .map(str::to_string)
-        .ok_or("session/create 未返回 sessionId")?;
+        .ok_or("session/create 未返回 sessionId")?,
+    };
     core.dispatch_event(state, EngineEvent::SessionId(session_id.clone()));
     // 计划审批模式（PRD §5-DSH.2）：先经 commands/list 探测 host 是否组合了
     // plan-mode 插件，缺失即受控报错——HTTP 200 不等于命令存在，绝不降级
@@ -1253,6 +1282,16 @@ mod tests {
             .all(|data| data.get("toolCallId").and_then(Value::as_str) == Some("call-17")));
     }
 
+    #[test]
+    fn existing_conversations_are_resumed_instead_of_recreated() {
+        assert_eq!(session_start(None), SessionStart::Create);
+        assert_eq!(session_start(Some(" ")), SessionStart::Create);
+        assert_eq!(
+            session_start(Some(" session-existing ")),
+            SessionStart::Resume("session-existing")
+        );
+    }
+
     /// End-to-end against the configured local host (skipped by default):
     /// `cargo test --lib dsh_session -- --ignored --nocapture`.
     /// Proves the full chain: ensure host → workspace/session → prompt →
@@ -1272,7 +1311,7 @@ mod tests {
         };
         let req = SendRequest {
             session_id: None,
-            workspace: PathBuf::from("/tmp"),
+            workspace: std::env::temp_dir(),
             prompt: "用一句话回答：1+1等于几？".to_string(),
             prompt_contributions: Vec::new(),
             native_compact: false,
@@ -1346,7 +1385,7 @@ mod tests {
     /// Resume + tools: turn 2 reuses turn 1's session id (codemoss passes it
     /// back as `session_id`), runs a tool, and projects a tool row plus its
     /// result patch. Same live-host gate as `streams_a_live_host_turn`.
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     #[ignore = "needs a running dsh host at the configured origin"]
     async fn resumes_session_and_streams_tool_rows() {
         let run = |session_id: Option<String>, prompt: &str| {
@@ -1363,7 +1402,7 @@ mod tests {
                 };
                 let req = SendRequest {
                     session_id,
-                    workspace: PathBuf::from("/tmp"),
+                    workspace: std::env::temp_dir(),
                     prompt,
                     prompt_contributions: Vec::new(),
                     native_compact: false,
