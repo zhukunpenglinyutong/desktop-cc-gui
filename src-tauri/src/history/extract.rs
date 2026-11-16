@@ -498,9 +498,10 @@ fn extract_dsh_line(value: &Value) -> LineRows {
     }
 }
 
-/// Paths embedded by `kimi_prompt_with_images` after the marker block, one
-/// `<image path="...">` tag per attachment.
-fn kimi_image_paths(block: &str) -> Vec<String> {
+/// Paths embedded by `kimi_prompt_with_images`, `minimax_prompt_with_images`,
+/// or `agy_prompt_with_images` after the marker block, one `<image path="...">`
+/// tag per attachment.
+pub(crate) fn embedded_image_paths(block: &str) -> Vec<String> {
     const TAG: &str = "<image path=\"";
     let mut out = Vec::new();
     let mut rest = block;
@@ -515,6 +516,11 @@ fn kimi_image_paths(block: &str) -> Vec<String> {
         }
     }
     out
+}
+
+#[inline]
+pub(crate) fn kimi_image_paths(block: &str) -> Vec<String> {
+    embedded_image_paths(block)
 }
 
 /// Claude image content block -> data URL for direct WebView rendering.

@@ -1,5 +1,5 @@
 use super::{
-    command_for_binary, parse_tool_args_value, safe_prompt_arg, tool_call_message,
+    command_for_binary, images, parse_tool_args_value, safe_prompt_arg, tool_call_message,
     tool_result_patch, BuiltCommand, Engine, EngineEvent, SendRequest,
 };
 use serde_json::Value;
@@ -44,7 +44,7 @@ impl Engine for AgyEngine {
     }
 
     fn supports_images(&self) -> bool {
-        false
+        true
     }
     fn supports_effort(&self) -> bool {
         true
@@ -110,6 +110,17 @@ impl Engine for AgyEngine {
             cmd.arg("--add-dir");
             cmd.arg(dir);
         }
+        for raw in &req.images {
+            if let Some(path) = images::absolutize_image_path(raw, &req.workspace) {
+                if let Some(parent) = path.parent() {
+                    let parent_str = parent.to_string_lossy();
+                    if !parent_str.is_empty() && seen_dirs.insert(parent_str.to_string()) {
+                        cmd.arg("--add-dir");
+                        cmd.arg(parent.as_os_str());
+                    }
+                }
+            }
+        }
 
         if let Some(session_id) = req
             .session_id
@@ -121,10 +132,11 @@ impl Engine for AgyEngine {
             cmd.arg(session_id);
         }
 
+        let prompt_text = images::agy_prompt_with_images(&req.prompt, &req.images, &req.workspace);
         // `--print` is a string flag: the next token is the prompt. Keep it last
         // so a following option can never be swallowed as the prompt value.
         cmd.arg("--print");
-        cmd.arg(safe_prompt_arg(&req.prompt));
+        cmd.arg(safe_prompt_arg(&prompt_text));
 
         Ok(BuiltCommand {
             command: cmd,
@@ -302,6 +314,33 @@ mod tests {
         let mut out = Vec::new();
         AgyEngine.parse_line(line, &mut out);
         out
+    }
+
+    #[test]
+    fn declares_image_support() {
+        assert!(AgyEngine.supports_images());
+    }
+
+    #[test]
+    fn image_attachments_inject_into_prompt_and_add_dirs() {
+        let mut request = req(Some("auto"));
+        let external_image = std::env::temp_dir().join("pasted-sandbox").join("paste-1.png");
+        let external_dir = external_image.parent().unwrap().to_string_lossy().to_string();
+        request.images = vec![
+            external_image.to_string_lossy().to_string(),
+            "relative/nested/img.jpg".into(),
+        ];
+        let args = argv(&request);
+        assert!(args.windows(2).any(|w| w == ["--add-dir", "/tmp/ws"]));
+        assert!(args.windows(2).any(|w| w == ["--add-dir", &external_dir]));
+        let rel_nested_dir = PathBuf::from("/tmp/ws").join("relative").join("nested");
+        assert!(args.windows(2).any(|w| w == ["--add-dir", &rel_nested_dir.to_string_lossy()]));
+
+        let prompt = args.last().unwrap();
+        assert!(prompt.contains(crate::engine::images::AGY_IMAGE_MARKER.trim()));
+        assert!(prompt.contains(&format!("<image path=\"{}\"></image>", external_image.display())));
+        let rel_image = PathBuf::from("/tmp/ws").join("relative").join("nested").join("img.jpg");
+        assert!(prompt.contains(&format!("<image path=\"{}\"></image>", rel_image.display())));
     }
 
     #[test]

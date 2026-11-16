@@ -52,12 +52,7 @@ pub(super) fn parse_agy_session(
                     });
                     if let Some(turn) = turn {
                         seq += 1;
-                        // agy's history.jsonl records the effective prompt verbatim,
-                        // internal system/request tail included — strip it
-                        // exactly like the other engines' user rows.
-                        let visible =
-                            super::extract::strip_internal_prompt_tail(&turn.text);
-                        messages.push(plain_message(seq, "user", visible.to_string(), turn.ts_ms));
+                        messages.push(user_message(seq, &turn.text, turn.ts_ms));
                     }
                 }
                 STEP_ASSISTANT => {
@@ -91,8 +86,7 @@ pub(super) fn parse_agy_session(
     // Conversation db unreadable / older than the prompt log: still show users.
     for turn in user_iter {
         seq += 1;
-        let visible = super::extract::strip_internal_prompt_tail(&turn.text);
-        messages.push(plain_message(seq, "user", visible.to_string(), turn.ts_ms));
+        messages.push(user_message(seq, &turn.text, turn.ts_ms));
     }
 
     ParsedSession { messages }
@@ -240,6 +234,20 @@ fn plain_message(seq: i64, role: &str, text: String, ts_ms: Option<i64>) -> Mess
         duration_ms: None,
         images: Vec::new(),
     }
+}
+
+fn user_message(seq: i64, raw_text: &str, ts_ms: Option<i64>) -> Message {
+    let (visible_text, images) = match raw_text.find(crate::engine::images::AGY_IMAGE_MARKER) {
+        Some(idx) => (
+            raw_text[..idx].trim_end(),
+            super::extract::embedded_image_paths(&raw_text[idx..]),
+        ),
+        None => (raw_text, Vec::new()),
+    };
+    let visible = super::extract::strip_internal_prompt_tail(visible_text);
+    let mut msg = plain_message(seq, "user", visible.to_string(), ts_ms);
+    msg.images = images;
+    msg
 }
 
 struct ProtoText {
@@ -945,5 +953,26 @@ mod tests {
         let json =
             r#"{"DirectoryPath":"/tmp","toolAction":"Checking","toolSummary":"Check config"}"#;
         assert!(pick_assistant(&[proto(1, 1, json)]).is_none());
+    }
+
+    #[test]
+    fn user_message_extracts_image_attachments_and_strips_internal_tails() {
+        let raw = concat!(
+            "请分析这两张截图\n\n",
+            "<!-- ccgui:agy-image-attachments -->\n",
+            "The user attached the following image file(s). Read each path below with your read_file tool before answering any question about visual content.\n",
+            "1. /tmp/a.png\n",
+            "<image path=\"/tmp/a.png\"></image>\n",
+            "2. /tmp/b.jpg\n",
+            "<image path=\"/tmp/b.jpg\"></image>\n",
+            "\n\n[CCGUI internal system-tail]\n",
+            "system context"
+        );
+        let msg = user_message(1, raw, Some(1700000000000));
+        assert_eq!(msg.seq, 1);
+        assert_eq!(msg.role, "user");
+        assert_eq!(msg.text, "请分析这两张截图");
+        assert_eq!(msg.ts.as_deref(), Some("1700000000000"));
+        assert_eq!(msg.images, vec!["/tmp/a.png", "/tmp/b.jpg"]);
     }
 }
