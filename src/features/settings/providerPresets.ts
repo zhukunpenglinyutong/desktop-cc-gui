@@ -14,6 +14,7 @@ import xiaomimimoIcon from "@lobehub/icons-static-svg/icons/xiaomimimo.svg";
 import zhipuIcon from "@lobehub/icons-static-svg/icons/zhipu-color.svg";
 import requestyIcon from "@/assets/model-icons/requesty.svg";
 import apiRouteIcon from "@/assets/model-icons/api-route.png";
+import teapotrouterIcon from "@/assets/model-icons/teapotrouter.svg";
 import type { EngineId } from "./providers";
 
 export interface ProviderPreset {
@@ -330,6 +331,18 @@ export const PRESETS: Partial<Record<EngineId, ProviderPreset[]>> = {
         ANTHROPIC_DEFAULT_OPUS_MODEL: "anthropic/claude-opus-4-5",
       },
     },
+    {
+      name: "TeaPotRouter",
+      baseUrl: "https://api.teapotrouter.com",
+      model: "claude-sonnet-5-5",
+      iconSrc: teapotrouterIcon,
+      env: {
+        ANTHROPIC_DEFAULT_FABLE_MODEL: "claude-fable-5-2",
+        ANTHROPIC_DEFAULT_HAIKU_MODEL: "claude-haiku-4-5",
+        ANTHROPIC_DEFAULT_SONNET_MODEL: "claude-sonnet-5-5",
+        ANTHROPIC_DEFAULT_OPUS_MODEL: "claude-opus-5-5",
+      },
+    },
   ],
   kimi: [
     { name: "Kimi Coding", baseUrl: "https://api.kimi.com/coding/v1", model: "kimi-for-coding", iconSrc: kimiIcon, iconClassName: DARK_MONO_ICON_CLASS },
@@ -349,6 +362,7 @@ export const PRESETS: Partial<Record<EngineId, ProviderPreset[]>> = {
     { name: "OpenCode Go", baseUrl: "https://opencode.ai/zen/go/v1", model: "glm-5.2", iconSrc: opencodeIcon, iconClassName: DARK_MONO_ICON_CLASS, wireApi: "chat" },
     { name: "OpenRouter", baseUrl: "https://openrouter.ai/api/v1", model: "", iconSrc: openrouterIcon, wireApi: "chat" },
     { name: "Requesty", baseUrl: "https://router.requesty.ai/v1", model: "", iconSrc: requestyIcon, wireApi: "chat" },
+    { name: "TeaPotRouter", baseUrl: "https://api.teapotrouter.com/v1", model: "gpt-6.1-sol", iconSrc: teapotrouterIcon, wireApi: "responses" },
   ],
 };
 
