@@ -518,11 +518,6 @@ pub(crate) fn embedded_image_paths(block: &str) -> Vec<String> {
     out
 }
 
-#[inline]
-pub(crate) fn kimi_image_paths(block: &str) -> Vec<String> {
-    embedded_image_paths(block)
-}
-
 /// Claude image content block -> data URL for direct WebView rendering.
 fn claude_image_data_url(block: &Value) -> Option<String> {
     let source = block.get("source")?;
@@ -896,7 +891,7 @@ fn extract_minimax_line(value: &Value) -> LineRows {
             let (display, images) = match text.find(crate::engine::images::MINIMAX_IMAGE_MARKER) {
                 Some(idx) => (
                     text[..idx].trim_end().to_string(),
-                    kimi_image_paths(&text[idx..]),
+                    embedded_image_paths(&text[idx..]),
                 ),
                 None => (text, Vec::new()),
             };
@@ -1769,7 +1764,7 @@ fn extract_kimi_line(value: &Value) -> LineRows {
             let (display, images) = match text.find(crate::engine::images::KIMI_IMAGE_MARKER) {
                 Some(idx) => (
                     text[..idx].trim_end().to_string(),
-                    kimi_image_paths(&text[idx..]),
+                    embedded_image_paths(&text[idx..]),
                 ),
                 None => (text, Vec::new()),
             };

@@ -237,7 +237,10 @@ fn plain_message(seq: i64, role: &str, text: String, ts_ms: Option<i64>) -> Mess
 }
 
 fn user_message(seq: i64, raw_text: &str, ts_ms: Option<i64>) -> Message {
-    let (visible_text, images) = match raw_text.find(crate::engine::images::AGY_IMAGE_MARKER) {
+    // Match without the marker's leading blank lines: history.jsonl rows are
+    // trimmed on load, so an image-only prompt starts directly at the marker.
+    let marker = crate::engine::images::AGY_IMAGE_MARKER.trim_start();
+    let (visible_text, images) = match raw_text.find(marker) {
         Some(idx) => (
             raw_text[..idx].trim_end(),
             super::extract::embedded_image_paths(&raw_text[idx..]),
@@ -957,22 +960,68 @@ mod tests {
 
     #[test]
     fn user_message_extracts_image_attachments_and_strips_internal_tails() {
-        let raw = concat!(
-            "请分析这两张截图\n\n",
-            "<!-- ccgui:agy-image-attachments -->\n",
-            "The user attached the following image file(s). Read each path below with your read_file tool before answering any question about visual content.\n",
-            "1. /tmp/a.png\n",
-            "<image path=\"/tmp/a.png\"></image>\n",
-            "2. /tmp/b.jpg\n",
-            "<image path=\"/tmp/b.jpg\"></image>\n",
-            "\n\n[CCGUI internal system-tail]\n",
-            "system context"
+        // Real send order: effective_prompt appends the internal tail first,
+        // then build_command appends the image block after it.
+        let raw = crate::engine::images::agy_prompt_with_images(
+            "请分析这两张截图\n\n[CCGUI internal system-tail]\nsystem context",
+            &["/tmp/a.png".to_string(), "/tmp/b.jpg".to_string()],
+            Path::new("/tmp/ws"),
         );
-        let msg = user_message(1, raw, Some(1700000000000));
+        let msg = user_message(1, &raw, Some(1700000000000));
         assert_eq!(msg.seq, 1);
         assert_eq!(msg.role, "user");
         assert_eq!(msg.text, "请分析这两张截图");
         assert_eq!(msg.ts.as_deref(), Some("1700000000000"));
         assert_eq!(msg.images, vec!["/tmp/a.png", "/tmp/b.jpg"]);
+    }
+
+    #[test]
+    fn image_only_prompt_survives_history_jsonl_trim() {
+        let _guard = crate::paths::HOME_ENV_LOCK.lock();
+        // An image-only send puts the marker at the very start of the prompt,
+        // and load_user_turns trims each history.jsonl row — eating the
+        // marker's leading blank lines.
+        let scratch =
+            std::env::temp_dir().join(format!("ccgui-agy-test-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&scratch).unwrap();
+        let previous = std::env::var_os("ANTIGRAVITY_HOME");
+        std::env::set_var("ANTIGRAVITY_HOME", &scratch);
+        let prompt = crate::engine::images::agy_prompt_with_images(
+            "",
+            &["/tmp/a.png".to_string()],
+            Path::new("/tmp/ws"),
+        );
+        let row = serde_json::json!({
+            "display": prompt,
+            "timestamp": 1,
+            "conversationId": "conv-image-only",
+        });
+        std::fs::write(scratch.join("history.jsonl"), format!("{row}\n")).unwrap();
+        let path = scratch.join("conv-image-only.db");
+        {
+            let conn = rusqlite::Connection::open(&path).unwrap();
+            conn.execute_batch(
+                "CREATE TABLE steps(idx INTEGER, step_type INTEGER, step_payload BLOB);",
+            )
+            .unwrap();
+            conn.execute(
+                "INSERT INTO steps VALUES(0, ?1, ?2)",
+                rusqlite::params![STEP_USER, Vec::<u8>::new()],
+            )
+            .unwrap();
+        }
+        let parsed = parse_agy_session(&path, &HashSet::new());
+        match previous {
+            Some(value) => std::env::set_var("ANTIGRAVITY_HOME", value),
+            None => std::env::remove_var("ANTIGRAVITY_HOME"),
+        }
+        std::fs::remove_dir_all(&scratch).unwrap();
+        let user = parsed
+            .messages
+            .iter()
+            .find(|m| m.role == "user")
+            .expect("user row");
+        assert_eq!(user.text, "");
+        assert_eq!(user.images, vec!["/tmp/a.png"]);
     }
 }
