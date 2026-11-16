@@ -5,6 +5,18 @@ import type { FeaturedPlugin, MarketPlugin } from "@/lib/ipc";
 
 let readmeText = "# 标题\n\n正文";
 const pluginFetchMarketReadme = vi.fn(async (_id: string) => readmeText);
+/** Fake model: prefix every section with "RU ". */
+const runTranslationPrompt = vi.hoisted(() =>
+  vi.fn(async (_execution: unknown, prompt: string) => {
+    const re = /(<<<CCGUI_TRANSLATION [^>]+>>>)\n([\s\S]*?)(?=\n<<<CCGUI_TRANSLATION)/g;
+    const out = [...prompt.matchAll(re)].flatMap((m) => [m[1], `RU ${m[2]}`]);
+    return `${out.join("\n")}\n<<<CCGUI_TRANSLATION_END>>>`;
+  }),
+);
+vi.mock("./runner", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./runner")>()),
+  runTranslationPrompt,
+}));
 let marketEntries: MarketPlugin[] = [];
 let featuredEntries: FeaturedPlugin[] = [];
 vi.mock("@/lib/ipc", () => ({
@@ -46,8 +58,10 @@ import { usePluginHubStore } from "../store";
 import { usePluginsStore } from "../../manager/usePlugins";
 import { useMarketplaceStore } from "../../marketplace/store";
 import { useChatStore } from "@/features/chat/store";
+import { sessionKey } from "@/features/chat/store/persistence";
 import { textFingerprint } from "./fingerprint";
 import {
+  pluginJobKey,
   summaryFingerprint,
   translationKey,
   usePluginTranslationStore,
@@ -243,6 +257,64 @@ describe("plugin hub translation", () => {
     expect(rowTranslate.querySelector("[title]")?.getAttribute("title")).toBe(
       "The translation is outdated: the original changed",
     );
+  });
+
+  it("a failed row translation is visible on the row button", async () => {
+    usePluginTranslationStore.setState({
+      errors: { [pluginJobKey("auto-title", "ru")]: { reason: "failed", detail: "not logged in" } },
+    });
+    await render();
+    const rowTranslate = container.querySelector<HTMLButtonElement>('button[aria-label="Translate this plugin"]')!;
+    expect(rowTranslate.querySelector("[title]")?.getAttribute("title")).toBe(
+      "Could not translate to Русский.",
+    );
+    expect(rowTranslate.querySelector(".text-text-error-primary")).not.toBeNull();
+    const described = document.getElementById(rowTranslate.getAttribute("aria-describedby") ?? "");
+    expect(described?.textContent).toBe("Could not translate to Русский.");
+
+    expect(document.body.querySelector('[role="alert"]')).toBeNull();
+    await act(async () => rowTranslate.click());
+    expect(document.body.querySelector('[role="alert"]')?.textContent).toBe("Could not translate to Русский.");
+  });
+
+  it("Translate again with the README unreachable keeps the cached README translation", async () => {
+    seedTranslation(source(ENTRY, null), readmeText);
+    const changed = { ...ENTRY, description: "作者改过的简介" };
+    useMarketplaceStore.setState({ entries: [changed] });
+    marketEntries = [changed];
+    pluginFetchMarketReadme.mockRejectedValue(new Error("raw.githubusercontent.com unreachable"));
+    // Follow the current session: a created Claude session on its own channel and model.
+    useChatStore.setState({
+      active: { engine: "claude", sessionId: "s1", workspacePath: "/ws", provider: "stale-tab-channel" },
+      bySession: { [sessionKey("claude", "s1", "/ws")]: { activeModel: "opus", activeProvider: "relay", messages: [] } },
+      models: { claude: "sonnet" },
+      providers: { claude: "official" },
+    } as never);
+    runTranslationPrompt.mockClear();
+    try {
+      await render();
+      await act(async () => buttonContaining("Автоназвание сессий").click());
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+      expect(container.textContent).toContain("Текст README");
+
+      await act(async () => buttonContaining("Translate again").click());
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+      expect(runTranslationPrompt.mock.calls[0][0]).toEqual({
+        engine: "claude",
+        model: "opus",
+        providerId: "relay",
+      });
+      const state = usePluginTranslationStore.getState();
+      expect(state.summaries[translationKey("auto-title", "ru")].description).toBe("RU 作者改过的简介");
+      expect(state.readmes[translationKey("auto-title", "ru")]?.text).toBe("# Заголовок\n\nТекст README");
+      expect(container.textContent).toContain("Текст README");
+    } finally {
+      pluginFetchMarketReadme.mockImplementation(async () => readmeText);
+    }
   });
 
   it("detail page shows the translated header and README, and offers Translate again once the README changes", async () => {

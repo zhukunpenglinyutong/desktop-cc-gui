@@ -561,7 +561,8 @@ impl Engine for PiFamilyEngine {
     }
 
     /// 零工具轮次只对 pi 开放：`--no-tools` 卸掉内置与扩展工具，
-    /// `--no-mcp` 不连 MCP，`--no-extensions` 不加载任何扩展（含提问桥）。
+    /// `--no-mcp` 不连 MCP，`--no-extensions` 不加载任何扩展（含提问桥），
+    /// `--no-session` 不落盘会话（rpc 的 get_state 照样给 sessionId）。
     fn supports_no_tools(&self) -> bool {
         self.id == "pi"
     }
@@ -575,7 +576,7 @@ impl Engine for PiFamilyEngine {
                         .into(),
                 );
             }
-            cmd.args(["--no-tools", "--no-mcp", "--no-extensions"]);
+            cmd.args(["--no-tools", "--no-mcp", "--no-extensions", "--no-session"]);
         } else if let Some(tools) = req.allowed_tools.as_deref() {
             if self.id != "pi"
                 || tools.is_empty()

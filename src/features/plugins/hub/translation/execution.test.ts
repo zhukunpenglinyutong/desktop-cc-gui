@@ -1,15 +1,17 @@
 import { describe, expect, it } from "vitest";
 import type { EngineInfo } from "@/lib/ipc";
 import type { ActiveSession } from "@/features/chat/store/persistence";
-import { resolveTranslationExecution } from "./execution";
+import { sessionKey } from "@/features/chat/store/persistence";
+import { resolveTranslationExecution, type CurrentSessionExecution } from "./execution";
+import { selectCurrentSession } from "./execution-view";
 import { defaultTranslationLanguage } from "./languages";
 
 function engine(id: string, overrides: Partial<EngineInfo> = {}): EngineInfo {
   return { id, available: true, enabled: true, supportsImages: false, permissions: ["auto"], ...overrides };
 }
 
-function session(overrides: Partial<ActiveSession>): ActiveSession {
-  return { engine: "claude", workspacePath: "/ws", sessionId: null, ...overrides } as ActiveSession;
+function session(overrides: Partial<CurrentSessionExecution>): CurrentSessionExecution {
+  return { engine: "claude", model: null, provider: null, ...overrides };
 }
 
 describe("resolveTranslationExecution", () => {
@@ -69,6 +71,46 @@ describe("resolveTranslationExecution", () => {
         null,
       ),
     ).toEqual({ execution: null, reason: "noEngine" });
+  });
+});
+
+describe("selectCurrentSession", () => {
+  const tab = (overrides: Partial<ActiveSession>): ActiveSession => ({
+    engine: "claude",
+    workspacePath: "/ws",
+    sessionId: "s1",
+    ...overrides,
+  });
+  const state = (active: ActiveSession, session: Record<string, unknown> | undefined) => ({
+    active,
+    bySession: session
+      ? { [sessionKey(active.engine, active.sessionId, active.workspacePath)]: session }
+      : {},
+    models: { claude: "sonnet" },
+    providers: { claude: "global-channel" },
+  }) as never;
+
+  it("uses the model and channel a created session runs with, not stale tab fields", () => {
+    expect(
+      selectCurrentSession(
+        state(tab({ provider: "stale-tab-channel" }), {
+          activeModel: "opus",
+          activeProvider: "session-relay",
+          messages: [],
+        }),
+      ),
+    ).toEqual({ engine: "claude", model: "opus", provider: "session-relay" });
+  });
+
+  it("a not-yet-created tab keeps its own picks; otherwise the engine defaults apply", () => {
+    expect(
+      selectCurrentSession(state(tab({ sessionId: null, model: "haiku", provider: "tab-channel" }), undefined)),
+    ).toEqual({ engine: "claude", model: "haiku", provider: "tab-channel" });
+    expect(selectCurrentSession(state(tab({ sessionId: null }), undefined))).toEqual({
+      engine: "claude",
+      model: "sonnet",
+      provider: "global-channel",
+    });
   });
 });
 

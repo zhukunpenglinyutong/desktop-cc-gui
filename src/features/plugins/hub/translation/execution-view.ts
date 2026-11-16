@@ -2,7 +2,15 @@ import type { TFunction } from "i18next";
 import { useShallow } from "zustand/react/shallow";
 import { CLI_DISPLAY_NAMES } from "@/components/foundations/icons/engine-brands";
 import { useChatStore } from "@/features/chat/store";
-import { resolveTranslationExecution, type TranslationExecutionResolution } from "./execution";
+import { sessionKey } from "@/features/chat/store/persistence";
+import { resolveSessionModel, resolveSessionProvider } from "@/features/chat/store/stream";
+import type { ChatStore } from "@/features/chat/store/types";
+import {
+  resolveTranslationExecution,
+  TOOL_LESS_ENGINES,
+  type CurrentSessionExecution,
+  type TranslationExecutionResolution,
+} from "./execution";
 import { usePluginTranslationStore } from "./store";
 
 /**
@@ -22,11 +30,30 @@ export function engineName(engine: string): string {
   return CLI_DISPLAY_NAMES[engine] ?? engine;
 }
 
+/**
+ * 当前会话实际在用的模型与渠道，与聊天发送（messaging.ts）同一套解析：
+ * 模型 = 标签页所选 > 会话记住的 > 历史消息里的 > 引擎默认；渠道 = 未创建
+ * 会话的标签页所选 > 会话记住的 > 引擎当前渠道。
+ */
+export function selectCurrentSession(
+  s: Pick<ChatStore, "active" | "bySession" | "models" | "providers">,
+): CurrentSessionExecution | null {
+  const tab = s.active;
+  if (!tab) return null;
+  // 每次聊天状态更新都会跑：不能零工具运行的引擎根本用不上模型/渠道，别去扫消息。
+  if (!TOOL_LESS_ENGINES.includes(tab.engine)) return { engine: tab.engine, model: null, provider: null };
+  const session = s.bySession[sessionKey(tab.engine, tab.sessionId, tab.workspacePath)];
+  return {
+    engine: tab.engine,
+    model: resolveSessionModel(tab, session, s.models[tab.engine]) || null,
+    provider: resolveSessionProvider(tab, session, s.providers[tab.engine]) ?? null,
+  };
+}
+
 /** 这次翻译会用的引擎/模型：设置里固定的优先，其次跟随当前会话。 */
 export function useTranslationExecution(): TranslationExecutionResolution {
-  const { engines, active } = useChatStore(
-    useShallow((s) => ({ engines: s.engines, active: s.active })),
-  );
+  const engines = useChatStore((s) => s.engines);
+  const active = useChatStore(useShallow(selectCurrentSession));
   const preference = usePluginTranslationStore((s) => s.preference);
   return resolveTranslationExecution(engines, active, preference);
 }

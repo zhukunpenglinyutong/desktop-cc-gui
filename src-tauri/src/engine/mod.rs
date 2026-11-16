@@ -2350,7 +2350,7 @@ mod permission_tests {
         let mut request = req(None);
         request.no_tools = true;
         let args = argv(&pi_family::pi(), &request);
-        for flag in ["--no-tools", "--no-mcp", "--no-extensions"] {
+        for flag in ["--no-tools", "--no-mcp", "--no-extensions", "--no-session"] {
             assert!(args.contains(&flag.to_string()), "{flag} missing from {args:?}");
         }
         assert!(!args.contains(&"--extension".to_string()));

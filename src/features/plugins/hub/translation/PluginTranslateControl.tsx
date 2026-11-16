@@ -1,4 +1,5 @@
-import { useState, type ReactNode } from "react";
+import { useId, useState, type ReactNode } from "react";
+import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
 import { useShallow } from "zustand/react/shallow";
 import Check from "lucide-react/dist/esm/icons/check";
@@ -41,6 +42,7 @@ import {
   type SummarySource,
   type SummaryTranslation,
   type TranslationFreshness,
+  type TranslationJobError,
 } from "./store";
 
 // ------------------------------------------------------------------ sources
@@ -141,6 +143,16 @@ function ModelFooter({
   );
 }
 
+/** 失败提示的文案：页头菜单、行内菜单与详情页状态行共用。 */
+function errorText(error: TranslationJobError, language: string, t: TFunction): string {
+  return t(
+    error.reason === "unparsable"
+      ? "plugins.hub.translate.errorUnparsable"
+      : "plugins.hub.translate.errorFailed",
+    { language: findTranslationLanguage(language)?.name ?? language },
+  );
+}
+
 function StatusBadge({ freshness, label }: { freshness: TranslationFreshness; label?: string }) {
   const { t } = useTranslation();
   return freshness === "fresh" ? (
@@ -166,18 +178,22 @@ const ICON_TRIGGER =
 const BUTTON_TRIGGER =
   "flex h-9 items-center gap-1.5 rounded-2lg border border-border-button-default bg-background-primary-default px-2.5 text-body-medium whitespace-nowrap text-text-primary transition-colors hover:bg-background-primary-hover data-[disabled]:cursor-not-allowed data-[disabled]:text-text-tertiary";
 
-/** 拿 README 原文：调用方已加载就用；否则现拉（市场插件），拉不到当作没有。 */
+/**
+ * 拿 README 原文：调用方已加载就用；否则现拉（市场插件）。本地插件没有
+ * README（null）；拉取失败是「现在不知道」（undefined）——只翻摘要，不能
+ * 因此清掉缓存里的 README 译文。
+ */
 async function resolveReadme(
   pluginId: string,
   readme: string | null | undefined,
   fetchable: boolean,
-): Promise<string | null> {
+): Promise<string | null | undefined> {
   if (readme !== undefined) return readme;
   if (!fetchable) return null;
   try {
     return await ipc.pluginFetchMarketReadme(pluginId);
   } catch {
-    return null;
+    return undefined;
   }
 }
 
@@ -209,24 +225,42 @@ export function PluginTranslateMenu({
 }) {
   const { t, i18n } = useTranslation();
   const [open, setOpen] = useState(false);
+  const failureId = useId();
   const resolution = useExecution();
-  const { summaries, displayLanguage, lastLanguage, jobs, translatePlugin, setDisplayLanguage, cancel } =
-    usePluginTranslationStore(
-      useShallow((s) => ({
-        summaries: s.summaries,
-        displayLanguage: s.displayLanguage,
-        lastLanguage: s.lastLanguage,
-        jobs: s.jobs,
-        translatePlugin: s.translatePlugin,
-        setDisplayLanguage: s.setDisplayLanguage,
-        cancel: s.cancel,
-      })),
-    );
+  const {
+    summaries,
+    displayLanguage,
+    lastLanguage,
+    jobs,
+    errors,
+    translatePlugin,
+    setDisplayLanguage,
+    cancel,
+    dismissError,
+  } = usePluginTranslationStore(
+    useShallow((s) => ({
+      summaries: s.summaries,
+      displayLanguage: s.displayLanguage,
+      lastLanguage: s.lastLanguage,
+      jobs: s.jobs,
+      errors: s.errors,
+      translatePlugin: s.translatePlugin,
+      setDisplayLanguage: s.setDisplayLanguage,
+      cancel: s.cancel,
+      dismissError: s.dismissError,
+    })),
+  );
 
   const runningLanguage =
     TRANSLATION_LANGUAGES.find((language) => jobs[pluginJobKey(pluginId, language.code)])?.code ??
     null;
   const runningJob = runningLanguage ? jobs[pluginJobKey(pluginId, runningLanguage)] : null;
+  // 行内与精选卡发起的翻译失败时，失败要在按钮上看得见（详情页另有状态行）。
+  const failedLanguage =
+    TRANSLATION_LANGUAGES.find((language) => errors[pluginJobKey(pluginId, language.code)])?.code ??
+    null;
+  const failure = failedLanguage ? errors[pluginJobKey(pluginId, failedLanguage)] : null;
+  const failureText = failure && failedLanguage ? errorText(failure, failedLanguage, t) : null;
   const shown = displayLanguage ? summaries[translationKey(pluginId, displayLanguage)] : undefined;
   const shownFreshness = shown ? summaryFreshness(shown, summary) : null;
   const preferred = displayLanguage ?? lastLanguage ?? defaultTranslationLanguage(i18n.language);
@@ -239,14 +273,19 @@ export function PluginTranslateMenu({
 
   const start = async (language: string): Promise<void> => {
     if (!resolution.execution) return;
+    if (failedLanguage) dismissError(pluginJobKey(pluginId, failedLanguage));
     const execution = resolution.execution;
     const text = await resolveReadme(pluginId, readme, fetchReadme);
     await translatePlugin({ pluginId, language, summary, readme: text, execution });
   };
   const pick = (language: string): void => {
     setOpen(false);
-    if (summaries[translationKey(pluginId, language)]) setDisplayLanguage(language);
-    else void start(language);
+    if (!summaries[translationKey(pluginId, language)]) {
+      void start(language);
+      return;
+    }
+    if (failedLanguage) dismissError(pluginJobKey(pluginId, failedLanguage));
+    setDisplayLanguage(language);
   };
 
   if (runningLanguage && runningJob) {
@@ -270,6 +309,7 @@ export function PluginTranslateMenu({
 
   const triggerTitle =
     disabledReason ??
+    failureText ??
     (shown && shownFreshness === "stale"
       ? t("plugins.hub.translate.staleShort")
       : t("plugins.hub.translate.menuLabel"));
@@ -281,9 +321,17 @@ export function PluginTranslateMenu({
         isDisabled={disabledReason !== null}
         excludeFromTabOrder={excludeFromTabOrder}
         aria-label={t("plugins.hub.translate.menuLabel")}
+        aria-describedby={failureText ? failureId : undefined}
       >
+        {failureText && (
+          <span id={failureId} className="sr-only">
+            {failureText}
+          </span>
+        )}
         <span className="contents" title={triggerTitle}>
-          {shownFreshness === "stale" ? (
+          {failureText ? (
+            <TriangleAlert className="size-4 text-text-error-primary" aria-hidden />
+          ) : shownFreshness === "stale" ? (
             <TriangleAlert className="size-4 text-text-warning-primary" aria-hidden />
           ) : (
             <Languages
@@ -305,6 +353,15 @@ export function PluginTranslateMenu({
         className="w-[280px]"
         dialogClassName="max-h-[min(480px,70dvh)] overflow-y-auto"
       >
+        {failureText && (
+          <p
+            role="alert"
+            className="px-2 pt-1 text-caption-1-regular text-text-error-primary"
+            title={failure?.detail}
+          >
+            {failureText}
+          </p>
+        )}
         {displayLanguage && (
           <DropdownItem
             onSelect={() => {
@@ -474,12 +531,7 @@ export function PluginListTranslateMenu() {
       >
         {failedLanguage && (
           <p role="alert" className="px-2 pt-1 text-caption-1-regular text-text-error-primary" title={errors[listJobKey(failedLanguage)]?.detail}>
-            {t(
-              errors[listJobKey(failedLanguage)]?.reason === "unparsable"
-                ? "plugins.hub.translate.errorUnparsable"
-                : "plugins.hub.translate.errorFailed",
-              { language: findTranslationLanguage(failedLanguage)?.name ?? failedLanguage },
-            )}
+            {errorText(errors[listJobKey(failedLanguage)], failedLanguage, t)}
           </p>
         )}
         {displayLanguage && (
@@ -586,18 +638,10 @@ export function PluginTranslationNotice({
     error: store.errors[pluginJobKey(pluginId, language.code)],
   })).find((row) => row.error);
   if (failed?.error && !running) {
-    const name = findTranslationLanguage(failed.language)?.name ?? failed.language;
     return (
       <div role="alert" className="flex flex-wrap items-center gap-x-2 gap-y-1 text-body-2-regular text-text-error-primary">
         <TriangleAlert className="size-4 shrink-0" aria-hidden />
-        <span title={failed.error.detail}>
-          {t(
-            failed.error.reason === "unparsable"
-              ? "plugins.hub.translate.errorUnparsable"
-              : "plugins.hub.translate.errorFailed",
-            { language: name },
-          )}
-        </span>
+        <span title={failed.error.detail}>{errorText(failed.error, failed.language, t)}</span>
         <button type="button" className={LINK} disabled={!canRun} onClick={() => rerun(failed.language)}>
           {t("plugins.hub.translate.retry")}
         </button>

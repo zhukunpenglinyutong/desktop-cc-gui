@@ -5,6 +5,7 @@ import { findTranslationLanguage } from "./languages";
 import {
   buildTranslationPrompt,
   chunkMarkdown,
+  isCodeOnly,
   parseTranslationOutput,
   type TranslationSection,
 } from "./prompt";
@@ -106,8 +107,11 @@ interface TranslationStore extends PersistedTranslations {
     pluginId: string;
     language: string;
     summary: SummarySource;
-    /** null：没有 README（或拉取失败），只翻译摘要。 */
-    readme: string | null;
+    /**
+     * null：插件没有 README，只翻摘要并清掉旧的 README 译文；undefined：README
+     * 现在拿不到（拉取失败），只翻摘要，已有的 README 译文原样保留。
+     */
+    readme: string | null | undefined;
     execution: TranslationExecution;
   }) => Promise<void>;
   translateList: (args: {
@@ -301,7 +305,7 @@ function summaryFromSections(
   sections: Record<string, string>,
 ): SummarySource {
   const pick = (field: string, original: string | null): string | null =>
-    original?.trim() ? (sections[`${field}:${pluginId}`]?.trim() ?? original) : original;
+    original?.trim() ? sections[`${field}:${pluginId}`]?.trim() || original : original;
   return {
     name: pick("name", summary.name) ?? summary.name,
     description: pick("description", summary.description) ?? summary.description,
@@ -312,28 +316,59 @@ function summaryFromSections(
 
 class UnparsableOutputError extends Error {}
 
-/** 每一段都与原文一字不差：模型把「复述标记」当成了全部任务。 */
-function echoedSource(sections: TranslationSection[], translated: Record<string, string>): boolean {
-  return sections.every((section) => translated[section.key]?.trim() === section.text.trim());
+/**
+ * 一起译出才算数的几段：列表里一个插件一组，单个插件翻译时每轮一组。
+ * 组内缺任何一段，这一组就不写进缓存。
+ */
+type SectionGroup = TranslationSection[];
+
+function groupMissing(group: SectionGroup, translated: Record<string, string>): boolean {
+  return group.some((section) => !translated[section.key]);
 }
 
-async function translateSections(
+/** 组内每一段都与原文一字不差：模型把「复述标记」当成了全部任务。 */
+function groupEchoed(group: SectionGroup, translated: Record<string, string>): boolean {
+  return group.every((section) => translated[section.key]?.trim() === section.text.trim());
+}
+
+/** 漏译、空译或整组原样抄回：这一组要单独重问一次。 */
+function needsRetry(group: SectionGroup, translated: Record<string, string>): boolean {
+  return groupMissing(group, translated) || groupEchoed(group, translated);
+}
+
+/**
+ * 跑一轮。输出整体解析不了（截断、没有任何标记、全空）时返回空结果：所有组
+ * 都算没译出，由调用方决定重问还是报错。
+ */
+async function translateOnce(
   execution: TranslationExecution,
-  sections: TranslationSection[],
+  groups: SectionGroup[],
   languageEnglish: string,
   signal: AbortSignal,
 ): Promise<Record<string, string>> {
+  const sections = groups.flat();
   const prompt = buildTranslationPrompt(sections, languageEnglish);
-  const keys = sections.map((section) => section.key);
-  const attempt = async (): Promise<Record<string, string>> => {
-    const parsed = parseTranslationOutput(await runTranslationPrompt(execution, prompt, signal), keys);
-    if (!parsed.ok) throw new UnparsableOutputError(parsed.reason);
-    return parsed.sections;
-  };
-  const first = await attempt();
-  // 小模型偶尔原样抄回源文本。重试一次；第二次仍一字不差就接受——原文
-  // 多半本来就是目标语言（例如把英文插件译成英文）。
-  return echoedSource(sections, first) ? attempt() : first;
+  const output = await runTranslationPrompt(execution, prompt, signal);
+  const parsed = parseTranslationOutput(output, sections.map((section) => section.key));
+  return parsed.ok ? parsed.sections : {};
+}
+
+/**
+ * 单个插件的一轮必须完整：没译出或原样抄回就重问一次，仍缺段就整体失败，
+ * 不写半截译文。第二次仍一字不差就接受——原文多半本来就是目标语言。
+ */
+async function translateGroup(
+  execution: TranslationExecution,
+  group: SectionGroup,
+  languageEnglish: string,
+  signal: AbortSignal,
+): Promise<Record<string, string>> {
+  let translated = await translateOnce(execution, [group], languageEnglish, signal);
+  if (needsRetry(group, translated)) {
+    translated = { ...translated, ...(await translateOnce(execution, [group], languageEnglish, signal)) };
+  }
+  if (groupMissing(group, translated)) throw new UnparsableOutputError("missingSections");
+  return translated;
 }
 
 function errorFor(error: unknown): TranslationJobError {
@@ -385,23 +420,28 @@ export const usePluginTranslationStore = create<TranslationStore>()((set, get) =
       const target = findTranslationLanguage(language);
       if (!target) return;
       const key = pluginJobKey(pluginId, language);
-      const chunks = readme === null ? [] : chunkMarkdown(readme);
+      const chunks = readme ? chunkMarkdown(readme) : [];
       const controller = begin(key, Math.max(1, chunks.length));
       try {
-        // 第一轮：摘要 + README 第一块；之后每轮一块。
-        const first = await translateSections(
+        // 第一轮：摘要 + README 第一块；之后每轮一块。整块都是代码的块照原样
+        // 保留，不交给模型（模型只会原样抄回，还要白白重问一次）。
+        const first = await translateGroup(
           execution,
           [
             ...summarySections(pluginId, summary),
-            ...(chunks.length ? [{ key: "readme:0", text: chunks[0] }] : []),
+            ...(chunks.length && !isCodeOnly(chunks[0]) ? [{ key: "readme:0", text: chunks[0] }] : []),
           ],
           target.english,
           controller.signal,
         );
-        const parts = chunks.length ? [first["readme:0"]] : [];
+        const parts = chunks.length ? [first["readme:0"] ?? chunks[0]] : [];
         for (let i = 1; i < chunks.length; i += 1) {
           progress(key, controller, i);
-          const next = await translateSections(
+          if (isCodeOnly(chunks[i])) {
+            parts.push(chunks[i]);
+            continue;
+          }
+          const next = await translateGroup(
             execution,
             [{ key: `readme:${i}`, text: chunks[i] }],
             target.english,
@@ -425,13 +465,15 @@ export const usePluginTranslationStore = create<TranslationStore>()((set, get) =
         set((s) => ({
           summaries: withEntries(s.summaries, [summaryEntry], MAX_SUMMARIES),
           readmes:
-            readme === null
-              ? without(s.readmes, translationKey(pluginId, language))
-              : withEntries(
-                  s.readmes,
-                  [{ ...meta, text: parts.join("\n\n"), hash: textFingerprint(readme) }],
-                  MAX_READMES,
-                ),
+            readme === undefined
+              ? s.readmes
+              : readme === null
+                ? without(s.readmes, translationKey(pluginId, language))
+                : withEntries(
+                    s.readmes,
+                    [{ ...meta, text: parts.join("\n\n"), hash: textFingerprint(readme) }],
+                    MAX_READMES,
+                  ),
         }));
         showLanguage(language);
         finish(key, controller, null);
@@ -452,37 +494,56 @@ export const usePluginTranslationStore = create<TranslationStore>()((set, get) =
       showLanguage(language);
       if (todo.length === 0) return;
       const controller = begin(key, todo.length);
+      type ListItem = (typeof todo)[number];
+      const groupOf = ({ pluginId, summary }: ListItem): SectionGroup => summarySections(pluginId, summary);
+      /** 每批立即落盘：取消或后续失败时已译的部分保留。 */
+      const save = (done: ListItem[], sections: Record<string, string>): void => {
+        if (done.length === 0) return;
+        const translatedAt = Date.now();
+        set((s) => ({
+          summaries: withEntries(
+            s.summaries,
+            done.map(({ pluginId, summary }) => ({
+              pluginId,
+              language,
+              engine: execution.engine,
+              model: execution.model,
+              translatedAt,
+              ...summaryFromSections(pluginId, summary, sections),
+              hash: summaryFingerprint(summary),
+            })),
+            MAX_SUMMARIES,
+          ),
+          // 这些插件有了新译文：之前单独翻译留下的失败标记不再适用。
+          errors: done.reduce(
+            (errors, { pluginId }) => without(errors, pluginJobKey(pluginId, language)),
+            s.errors,
+          ),
+        }));
+        persist(get());
+      };
+      let skipped = 0;
       try {
         for (let i = 0; i < todo.length; i += LIST_BATCH_SIZE) {
           const batch = todo.slice(i, i + LIST_BATCH_SIZE);
-          const sections = await translateSections(
-            execution,
-            batch.flatMap(({ pluginId, summary }) => summarySections(pluginId, summary)),
-            target.english,
-            controller.signal,
-          );
+          const first = await translateOnce(execution, batch.map(groupOf), target.english, controller.signal);
           if (!owns(key, controller)) return;
-          const translatedAt = Date.now();
-          // 每批立即落盘：取消或后续失败时已译的部分保留。
-          set((s) => ({
-            summaries: withEntries(
-              s.summaries,
-              batch.map(({ pluginId, summary }) => ({
-                pluginId,
-                language,
-                engine: execution.engine,
-                model: execution.model,
-                translatedAt,
-                ...summaryFromSections(pluginId, summary, sections),
-                hash: summaryFingerprint(summary),
-              })),
-              MAX_SUMMARIES,
-            ),
-          }));
-          persist(get());
+          // 第一次就完整的插件先落盘：重问失败或被取消时它们照样保留。
+          const again = batch.filter((item) => needsRetry(groupOf(item), first));
+          save(batch.filter((item) => !again.includes(item)), first);
+          if (again.length > 0) {
+            // 漏译、空译或原样抄回的插件单独重问一次；第二次仍一字不差就接受。
+            const retried = await translateOnce(execution, again.map(groupOf), target.english, controller.signal);
+            if (!owns(key, controller)) return;
+            const merged = { ...first, ...retried };
+            // 仍没译全的插件不写缓存：保持「缺译文」，下次「翻译列表」再补。
+            const complete = again.filter((item) => !groupMissing(groupOf(item), merged));
+            skipped += again.length - complete.length;
+            save(complete, merged);
+          }
           progress(key, controller, i + batch.length);
         }
-        finish(key, controller, null);
+        finish(key, controller, skipped > 0 ? new UnparsableOutputError("missingSections") : null);
       } catch (error) {
         finish(key, controller, error);
       }

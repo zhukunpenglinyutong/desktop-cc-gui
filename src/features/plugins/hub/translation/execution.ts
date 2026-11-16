@@ -1,5 +1,4 @@
 import type { EngineInfo } from "@/lib/ipc";
-import type { ActiveSession } from "@/features/chat/store/persistence";
 import type { TranslationExecution } from "./runner";
 import type { TranslationPreference } from "./store";
 
@@ -14,6 +13,16 @@ export function isEngineUsable(engines: EngineInfo[], id: string): boolean {
   return engines.some((info) => info.id === id && info.available && info.enabled);
 }
 
+/**
+ * 当前会话实际在用的引擎 / 模型 / 渠道，按聊天发送同一套规则解析过
+ * （execution-view.ts 的 selectCurrentSession）。
+ */
+export interface CurrentSessionExecution {
+  engine: string;
+  model: string | null;
+  provider: string | null;
+}
+
 export type TranslationExecutionResolution =
   | { execution: TranslationExecution; source: "settings" | "session" | "default" }
   | { execution: null; reason: "noEngine" }
@@ -24,13 +33,13 @@ export type TranslationExecutionResolution =
  * 这次翻译用哪个引擎/模型：
  * 1. 设置 → 插件翻译里固定了引擎：就用它（及固定的模型，未固定 = 引擎默认）；
  *    那个引擎用不了时直接报不可用，而不是悄悄换成别的引擎。
- * 2. 跟随当前会话：会话引擎能零工具运行时用它的模型与渠道；
+ * 2. 跟随当前会话：会话引擎能零工具运行时用它实际在用的模型与渠道；
  * 3. 否则退到第一个可用的受支持引擎的默认模型。
  * 推理档位不跟随会话——翻译不需要高档位，用引擎默认值。
  */
 export function resolveTranslationExecution(
   engines: EngineInfo[],
-  active: ActiveSession | null,
+  active: CurrentSessionExecution | null,
   preference?: TranslationPreference | null,
 ): TranslationExecutionResolution {
   if (preference?.engine) {
@@ -45,11 +54,7 @@ export function resolveTranslationExecution(
   }
   if (active && TOOL_LESS_ENGINES.includes(active.engine) && isEngineUsable(engines, active.engine)) {
     return {
-      execution: {
-        engine: active.engine,
-        model: active.model ?? null,
-        providerId: active.provider ?? null,
-      },
+      execution: { engine: active.engine, model: active.model, providerId: active.provider },
       source: "session",
     };
   }
