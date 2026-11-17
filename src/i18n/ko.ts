@@ -824,6 +824,8 @@ export const ko: Messages = {
     thinkingAutoCollapseDesc: "끄면 생각이 끝난 뒤에도 사고 과정을 펼쳐 둡니다(레이아웃 변동 없음). 제목을 눌러 직접 접을 수 있습니다",
     notificationsEnabled: "시스템 알림 보내기",
     notificationsEnabledDesc: "턴이 끝나거나 사용자 상호작용이 필요할 때 OS 알림을 보냅니다",
+    notificationSoundEnabled: "알림 소리",
+    notificationSoundEnabledDesc: "시스템 알림을 보낼 때 Windows 기본 알림 소리 재생",
     notifyOnCompletion: "대화 완료 시 알림",
     notifyOnCompletionDesc: "AI 응답이 끝나면 알림을 보냅니다",
     notifyOnQuestion: "대화형 질문 시 알림",

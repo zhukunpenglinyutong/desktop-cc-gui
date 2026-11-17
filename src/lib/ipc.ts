@@ -585,6 +585,7 @@ export interface AppSettings {
   thinkingAutoCollapse?: boolean | null;
   /** System notifications master switch (设置 → 通用 → 行为 → 系统通知): true/absent = enabled (default). */
   notificationsEnabled?: boolean | null;
+  notificationSoundEnabled?: boolean | null;
   /** Notify when conversation turn completes: true/absent = enabled (default). */
   notifyOnCompletion?: boolean | null;
   /** Notify on interactive questions/permission/plan review: true/absent = enabled (default). */
