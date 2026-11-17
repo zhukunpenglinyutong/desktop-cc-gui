@@ -404,10 +404,7 @@ impl Engine for ClaudeEngine {
                 // text (headless cannot prompt). Surface them so the UI can
                 // offer a directory grant instead of letting the model
                 // narrate a terminal prompt that does not exist.
-                for (id, text) in tool_result_error_blocks(&value) {
-                    if !looks_like_permission_denial(&text) {
-                        continue;
-                    }
+                for (id, text) in tool_result_permission_denials(&value) {
                     // The denied call's structured input is authoritative:
                     // resolve the real path argument by tool_use id and only
                     // fall back to scraping the free-text error when the call
@@ -450,7 +447,7 @@ impl Engine for ClaudeEngine {
                                 .get("is_error")
                                 .and_then(Value::as_bool)
                                 .unwrap_or(false)
-                                || looks_like_permission_denial(&tool_result_block_text(block))
+                                || is_claude_permission_denial(&tool_result_block_text(block))
                             {
                                 continue;
                             }
@@ -687,24 +684,6 @@ fn compact_usage(post_tokens: i64, raw: Option<&Value>) -> Value {
     usage
 }
 
-/// Phrases the CLI uses when a tool call is denied by the permission
-/// system in headless mode (matched case-insensitively against the
-/// tool_result error text).
-const DENIAL_PHRASES: &[&str] = &[
-    "requested permissions",
-    "haven't granted it yet",
-    "have not granted it yet",
-    "requires approval",
-    "requires permission",
-    "permission denied",
-    "blocked for security",
-    "blocked. for security",
-    "allowed working directories",
-    "may only write to files",
-    "outside the allowed",
-    "outside workspace",
-];
-
 /// A declined or skipped question is the user's own answer, not a permission
 /// the user could grant here: never surface it as a grant card (CodeBuddy
 /// lists a declined AskUserQuestion in the result's `permission_denials`).
@@ -712,9 +691,13 @@ fn is_question_tool(tool: Option<&str>) -> bool {
     tool == Some("AskUserQuestion")
 }
 
-fn looks_like_permission_denial(message: &str) -> bool {
-    let normalized = message.trim().to_ascii_lowercase();
-    !normalized.is_empty() && DENIAL_PHRASES.iter().any(|p| normalized.contains(p))
+fn is_claude_permission_denial(message: &str) -> bool {
+    // Tool output can contain OS errors or arbitrary prose. Match the known
+    // Claude refusal template here; other denials use result.permission_denials.
+    let normalized = message.trim().trim_end_matches('.').to_ascii_lowercase();
+    normalized.starts_with("claude requested permissions to ")
+        && (normalized.ends_with(", but you haven't granted it yet")
+            || normalized.ends_with(", but you have not granted it yet"))
 }
 
 /// First absolute-path-looking token in free text: Windows `C:\…` / `C:/…`
@@ -757,9 +740,8 @@ fn tool_result_block_text(block: &Value) -> String {
     }
 }
 
-/// (tool_use id, error text) pairs of tool_result blocks in a "user" stream
-/// line. Content may be a plain string or an array of text blocks.
-fn tool_result_error_blocks(value: &Value) -> Vec<(Option<String>, String)> {
+/// (tool_use id, denial text) pairs of tool_result blocks in a "user" stream line.
+fn tool_result_permission_denials(value: &Value) -> Vec<(Option<String>, String)> {
     let mut out = Vec::new();
     let Some(content) = value
         .get("message")
@@ -780,13 +762,12 @@ fn tool_result_error_blocks(value: &Value) -> Vec<(Option<String>, String)> {
             continue;
         }
         let text = tool_result_block_text(block);
-        let text = text.trim().chars().take(500).collect::<String>();
-        if !text.is_empty() {
+        if is_claude_permission_denial(&text) {
             let id = block
                 .get("tool_use_id")
                 .and_then(Value::as_str)
                 .map(str::to_string);
-            out.push((id, text));
+            out.push((id, text.trim().chars().take(500).collect()));
         }
     }
     out
@@ -1679,6 +1660,16 @@ mod tests {
                 "Claude requested permissions to read from /etc, but you haven't granted it yet.",
             ),
             (true, "file not found: /tmp/missing.txt"),
+            (true, "mv: /tmp/a: Permission denied"),
+            (true, "permission denied: docker"),
+            (
+                true,
+                "Exit code 1\nThe operation requires approval outside workspace",
+            ),
+            (
+                true,
+                "Exit code 1\nClaude requested permissions to run Bash, but you haven't granted it yet.",
+            ),
         ] {
             let line = serde_json::json!({
                 "type": "user",
@@ -1697,6 +1688,35 @@ mod tests {
             ClaudeEngine::new().parse_line(&line, &mut out);
             assert!(out.is_empty(), "is_error={is_error} text={text}");
         }
+    }
+
+    #[test]
+    fn successful_tool_output_with_permission_language_reaches_the_tool_row() {
+        let text = "permission denied and requires approval are examples in this file";
+        let line = serde_json::json!({
+            "type": "user",
+            "message": { "content": [{
+                "type": "tool_result",
+                "tool_use_id": "toolu_1",
+                "is_error": false,
+                "content": text
+            }] }
+        })
+        .to_string();
+        let mut out = Vec::new();
+        ClaudeEngine::new().parse_line(&line, &mut out);
+        assert!(
+            matches!(
+                out.as_slice(),
+                [EngineEvent::Message {
+                    patch: true,
+                    tool_call_id: Some(id),
+                    result: Some(Value::String(result)),
+                    ..
+                }] if id == "toolu_1" && result == text
+            ),
+            "{out:?}"
+        );
     }
 
     #[test]
