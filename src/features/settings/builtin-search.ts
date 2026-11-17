@@ -167,6 +167,17 @@ const generalEntries: SettingsSearchEntry[] = [
     sectionKey: "settings.behavior",
     keywords: ["系统通知", "通知提醒", "消息提醒", "notification", "notify"],
   },
+  ...(IS_WINDOWS && !isWeb
+    ? [
+        {
+          page: "general",
+          anchor: "notificationSoundEnabled",
+          labelKey: "settings.notificationSoundEnabled",
+          sectionKey: "settings.behavior",
+          keywords: ["通知提示音", "通知声音", "notification sound"],
+        } satisfies SettingsSearchEntry,
+      ]
+    : []),
   {
     page: "general",
     anchor: "notifyOnCompletion",

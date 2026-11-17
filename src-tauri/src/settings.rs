@@ -183,6 +183,9 @@ pub struct AppSettings {
     /// Notifications master switch (设置 → 通用 → 行为 → 系统通知): None/Some(true) = enabled (default).
     #[serde(default)]
     pub notifications_enabled: Option<bool>,
+    /// Play the Windows system notification sound. Defaults to off.
+    #[serde(default)]
+    pub notification_sound_enabled: Option<bool>,
     /// Notify on conversation turn complete: None/Some(true) = enabled (default).
     #[serde(default)]
     pub notify_on_completion: Option<bool>,
@@ -447,6 +450,7 @@ impl Default for AppSettings {
             reset_ui_scale_shortcut: default_reset_ui_scale_shortcut(),
             thinking_auto_collapse: None,
             notifications_enabled: None,
+            notification_sound_enabled: None,
             notify_on_completion: None,
             notify_on_question: None,
             notify_on_interrupted: None,

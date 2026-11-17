@@ -857,6 +857,20 @@ function BehaviorCard({
         </SettingsRow>
         {(settings.notificationsEnabled ?? true) && (
           <>
+            {IS_WINDOWS && !isWeb && (
+              <SettingsRow
+                anchor="notificationSoundEnabled"
+                label={t("settings.notificationSoundEnabled")}
+                description={t("settings.notificationSoundEnabledDesc")}
+              >
+                <Switch
+                  size="sm"
+                  aria-label={t("settings.notificationSoundEnabled")}
+                  isSelected={settings.notificationSoundEnabled ?? false}
+                  onChange={(enabled) => onNotificationPrefChange({ notificationSoundEnabled: enabled })}
+                />
+              </SettingsRow>
+            )}
             <SettingsRow
               anchor="notifyOnCompletion"
               label={t("settings.notifyOnCompletion")}

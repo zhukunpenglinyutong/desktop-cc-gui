@@ -844,6 +844,8 @@ export const zh = {
       "关闭后，思考过程在本轮回复中保持展开，可点击标题手动收起",
     notificationsEnabled: "发送系统通知",
     notificationsEnabledDesc: "对话完成或需要用户交互时，发送操作系统级别的消息通知",
+    notificationSoundEnabled: "通知提示音",
+    notificationSoundEnabledDesc: "发送系统通知时播放 Windows 默认通知音",
     notifyOnCompletion: "对话完成提醒",
     notifyOnCompletionDesc: "AI 完成一轮对话回复时发送提醒通知",
     notifyOnQuestion: "交互提问提醒",

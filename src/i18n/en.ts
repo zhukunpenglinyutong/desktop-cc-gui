@@ -879,6 +879,8 @@ export const en: Messages = {
       "Turn off to keep the thinking process expanded during the turn; click the header to fold it manually",
     notificationsEnabled: "Send system notifications",
     notificationsEnabledDesc: "Send OS notifications when a turn finishes or requires user interaction",
+    notificationSoundEnabled: "Notification sound",
+    notificationSoundEnabledDesc: "Play the default Windows notification sound when sending a system notification",
     notifyOnCompletion: "Notify on conversation completed",
     notifyOnCompletionDesc: "Send a notification when an AI response finishes",
     notifyOnQuestion: "Notify on interactive questions",

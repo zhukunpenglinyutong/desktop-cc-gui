@@ -311,6 +311,8 @@ const feedback = useRunningFeedback(store.loading);
 
 ### 4.4 系统通知（OS 级）
 
+Windows 桌面端在「发送系统通知」下提供「通知提示音」开关，默认关闭（含旧配置）。开启后，符合现有提醒条件的通知请求使用 Windows 默认通知音。实际播放由系统控制。
+
 参考实现：`src/lib/notifications.ts`，触发点在 `engine-events.ts` 的回合终态与交互事件；设置入口：设置 → 通用 → 「发送系统通知」（`SettingsRow` anchor `notifications`）。
 
 - **触发面**：对话完成（`done`）、API/流中断（`error` 且文本像断连：`中断` / `disconnect` / `abort` / `timeout` / `timed out`）、其他对话异常、交互提问、计划待审批、权限请求。用户在应用内主动中断的回合不发通知；错误与中断都受「用户已中断」守卫，不会误报。
@@ -328,6 +330,7 @@ const feedback = useRunningFeedback(store.loading);
 - 警告与失败要区分：可恢复的失败给重试入口，不可恢复的（未安装、平台不支持）给说明或跳转，不给假按钮。
 - **超大会话不是文件缺失**：`EditorPane.tsx` 对后端 64 MiB 文档上限错误显示「会话文件过大」与外部编辑建议，不提供可编辑的截断前缀。桌面端的本地普通文本会话提供「用默认文本编辑器打开」：`open_session_file_in_default_editor` 按引擎 / 会话身份重新解析已登记的真实源，拒绝运行中会话，不复制或完整读取大文件；Windows 查询含用户默认应用选择的 `.txt` 关联键并交给 Shell，macOS 用 `open -t`，Linux 用 `text/plain` 默认应用。打开期间按会话身份禁止重复请求，刷新及关闭重开页签保留忙碌状态与最终反馈；失败行内 `role="alert"` 后可重试。打开请求在启动器退出后结算，不因编辑器继承输出管道而等到编辑器关闭；成功仅表示打开请求已发出，提示保持会话停止并在保存后手动「刷新渲染」。Web、远端、压缩或数据库源只给对应格式 / 环境说明，不给不能使用的文本编辑按钮；原有文字「刷新」继续重读文件，不改变幕布。
 - **远程桥刻意拒绝的命令不给假按钮**：被 `src-tauri/src/web/dispatch.rs` 明确排除的远程命令（如目录授权 `grant_root`，注释写明远端不得扩大文件系统授权范围），对应入口在 `isWeb` 下不渲染按钮、不显示“将授权…”预览，改为原因说明并只保留拒绝（`GrantCard.tsx`、`chat.grantWebUnavailable`）；桌面端保持完整动作。
+- **Claude 权限提示的触发条件**：授权卡和权限通知来自 CLI 回合结果的结构化拒绝，或工具错误结果中匹配 Claude 固定拒绝句式的消息。普通命令错误中的 `Permission denied` 等字样不触发授权卡、通知或授权范围预览，成功工具输出包含这些字样时仍按工具结果展示。
 - 进度类反馈（安装、更新、同步）用 `Loader2` / 文字百分比表达过程，与 [§4.1](#41-刷新--重新加载转圈--对号) 的刷新反馈互不替代。
 - **Worktree 创建进度行三态**：创建对话框即交即走，进度在侧栏「WORKTREES」分组顶部的进度行表达（`WorktreeProgressRow.tsx`，事件 `worktree://create-progress` 驱动）——进行中：`Loader2` + 阶段文案（校验 / fetch / 创建 / 注册，逐段替换）+ ✕ 取消（取消杀进程组、半成品 worktree 清理、已建分支保留）；成功：行消失、worktree 子行出现（勾选了「创建后打开新会话」则先清场再在该目录开新会话）；失败/已取消：行保留为 `role="alert"`（失败原因按后端 `errorKind` 本地化分类：网络/fetch 失败给重试，分支或目录冲突给改名指引，非 git 仓库/PR 不存在给说明，仓库存在但打不开（`repo_open_failed`，如属主校验拒绝）显示后端分类原话经 `errorText` 本地化后的原因、行内截断时悬停 `title` 读全文，稀疏检出规则排除全部文件（`sparse_checkout_empty`）给修复指引），行内「重试 / 关闭」。三态行高一致，状态切换不推动其他行。
 - **非 Git 仓库的变更面板给出初始化入口**：工作区不在任何 Git 仓库内（`NOT_A_REPO`）时，变更面板空状态（`NotRepoState.tsx`，`EmptyState` + 次要小按钮）在「当前工作区不是 Git 仓库」下方给「初始化 Git 仓库」（`git.initRepo`），不必切到终端。点击走 `git_init`：只在已登记的工作区内执行（`files::ensure_allowed`，与文件树新建同一边界，远程 Web 同样受限）；初始分支跟随用户的 `init.defaultBranch`；目录不存在时报错，不代建目录；路径其实已在某个仓库内（状态过期，例如刚在终端 `git init` 过）时不嵌套初始化，只刷新；上层仓库因属主校验等原因打不开时如实报错，不当作「没有仓库」去嵌套初始化。进行中按钮禁用（`aria-busy`），直到状态刷新离开非仓库态（点击前已在途的刷新带回的旧 `NOT_A_REPO` 会再问一次）；成功后面板直接换成变更列表，分支选择器显示尚无提交的初始分支名而不是 `HEAD`；失败沿用页头错误条，按钮恢复可重试。远程 Web 走同一命令。回归：`ChangesPanel.test.tsx`、`store.test.ts`、`cargo test --lib git::tests::init_`。
