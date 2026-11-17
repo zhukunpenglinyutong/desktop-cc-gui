@@ -1446,6 +1446,7 @@ export const en: Messages = {
     emptyTree: "Empty folder",
     expandLoadedFolders: "Expand loaded folders",
     collapseAllFolders: "Collapse all folders",
+    quoteSelection: "Quote selection in chat",
     addToChat: "Add to chat",
     newFile: "New File",
     newFolder: "New Folder",

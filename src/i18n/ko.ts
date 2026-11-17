@@ -1328,6 +1328,7 @@ export const ko: Messages = {
     emptyTree: "빈 폴더",
     expandLoadedFolders: "불러온 폴더 모두 펼치기",
     collapseAllFolders: "모든 폴더 접기",
+    quoteSelection: "선택 영역을 채팅에 인용",
     addToChat: "채팅에 추가",
     newFile: "새 파일",
     newFolder: "새 폴더",

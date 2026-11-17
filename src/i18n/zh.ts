@@ -1380,6 +1380,7 @@ export const zh = {
     emptyTree: "目录为空",
     expandLoadedFolders: "展开已加载的文件夹",
     collapseAllFolders: "收起全部文件夹",
+    quoteSelection: "引用选区到对话",
     addToChat: "添加到对话",
     newFile: "新建文件",
     newFolder: "新建文件夹",

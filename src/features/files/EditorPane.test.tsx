@@ -20,6 +20,7 @@ vi.mock("@/lib/platform", async (importOriginal) => ({
   get isWeb() { return platform.isWeb; },
 }));
 
+import { sessionKey, useChatStore } from "@/features/chat/store";
 import { useFilesStore } from "./store";
 import { EditorPane } from "./EditorPane";
 
@@ -326,6 +327,43 @@ describe("session editor recovery and wrapping", () => {
     await act(async () => useFilesStore.setState({ activeFilePath: nextPath }));
     expect(panel!.classList.contains("hidden")).toBe(true);
     expect(searchPanelOpen(view.state)).toBe(false);
+  });
+
+  it("appends the unsaved selection to the active draft and can locate it again", async () => {
+    const path = "/repo/file.ts";
+    const active = { engine: "claude", sessionId: "target", workspacePath: "/repo" };
+    const key = sessionKey(active.engine, active.sessionId, active.workspacePath);
+    const previous = useChatStore.getState();
+    const content: FileContent = { kind: "text", text: "one\ntwo\nthree", dataUrl: null, truncated: false };
+    useChatStore.setState({ active, drafts: { [key]: "existing", other: "separate draft" } });
+    try {
+      useFilesStore.setState({
+        openFiles: [path],
+        activeFilePath: path,
+        fileStates: { [path]: { path, content, loading: false, error: null, loadNonce: 1 } },
+      });
+      await act(async () => root.render(<EditorPane path={path} />));
+      const view = EditorView.findFromDOM(container.querySelector<HTMLElement>(".cm-editor")!)!;
+      await act(async () => view.dispatch({
+        changes: { from: 4, to: 7, insert: "unsaved" },
+        selection: { anchor: 4, head: 11 },
+      }));
+      const quote = Array.from(container.querySelectorAll("button"))
+        .find((button) => button.textContent === i18n.t("files.quoteSelection"));
+      expect(quote?.disabled).toBe(false);
+      await act(async () => quote!.click());
+      expect(useChatStore.getState().drafts).toEqual({
+        [key]: "existing\n\n./file.ts#L2\n> unsaved\n\n",
+        other: "separate draft",
+      });
+
+      await act(async () => view.dispatch({ selection: { anchor: 0 } }));
+      await act(async () => useFilesStore.getState().openFile(path, { from: 2, to: 2 }));
+      expect(view.state.sliceDoc(view.state.selection.main.from, view.state.selection.main.to)).toBe("unsaved");
+      expect(useFilesStore.getState().lineLocation).toBeNull();
+    } finally {
+      await act(async () => useChatStore.setState({ active: previous.active, drafts: previous.drafts }));
+    }
   });
 
   it("opens the find card with F3 instead of a search behind the hidden panel", async () => {

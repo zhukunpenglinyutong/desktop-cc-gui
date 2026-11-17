@@ -28,6 +28,8 @@ export function FileEditorHeader({
   onToggleSearch,
   wordWrap,
   onToggleWordWrap,
+  onQuoteSelection,
+  canQuoteSelection,
 }: {
   path: string;
   name: string;
@@ -51,6 +53,8 @@ export function FileEditorHeader({
   onToggleSearch: () => void;
   wordWrap: boolean;
   onToggleWordWrap: () => void;
+  onQuoteSelection?: () => void;
+  canQuoteSelection?: boolean;
 }) {
   const { t } = useTranslation();
 
@@ -70,6 +74,16 @@ export function FileEditorHeader({
         </span>
       )}
       <div className="flex-1" />
+      {onQuoteSelection && (
+        <button
+          type="button"
+          onClick={onQuoteSelection}
+          disabled={!canQuoteSelection}
+          className="shrink-0 rounded-lg border border-border-button-default px-2 py-0.5 text-caption-1-regular text-text-secondary hover:text-text-primary disabled:opacity-50"
+        >
+          {t("files.quoteSelection")}
+        </button>
+      )}
       {isHtml && viewMode === "preview" && (
         <button
           type="button"
