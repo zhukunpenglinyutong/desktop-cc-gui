@@ -9,7 +9,8 @@ import { usePluginHubStore } from "@/features/plugins/hub/store";
 import type { AiChatRepo, AiChatRepoSection, ThreadAction } from "@/components/application/ai-chat/ai-chat-sidebar";
 import { ARCHIVED_SECTION_ID } from "@/components/application/ai-chat/use-sidebar-state";
 import { copyText } from "@/lib/clipboard";
-import { worktreeMetaOf, type SessionMeta, type Workspace } from "@/lib/ipc";
+import { errorText } from "@/lib/errors";
+import { ipc, worktreeMetaOf, type SessionMeta, type Workspace } from "@/lib/ipc";
 import { isWeb, pickDirectories } from "@/lib/platform";
 import { recentPointerAnchor } from "@/lib/pointer-anchor";
 import { parseDraftSessionKey, sessionKey, useChatStore, sortedWorkspaceGroups } from "./store";
@@ -18,6 +19,15 @@ import { focusComposerWhenVisible } from "./focus-composer";
 import { relativeTime } from "./time";
 import { useWorkspaceUIHooks, workspaceLabelSuffix } from "./workspace-ui-bridge";
 import type { ChatPageDialog } from "./ChatPageDialogs";
+
+/** Absolute path of the file holding a session's history. Remote rows give
+ *  the path inside their environment; OpenCode db rows carry a virtual
+ *  `<db>\u001f<sessionId>` address (Rust `opencode_db_session_path`) whose
+ *  real file is the shared database. */
+export function sessionFileLocation(session: SessionMeta): string {
+  if (session.remote) return session.remotePath ?? "";
+  return session.filePath.split("\u001f")[0] ?? "";
+}
 
 /** Sidebar data and actions: the workspace/thread repo list plus thread
  * selection, pin/rename/delete dispatch, workspace add/remove/reorder, and
@@ -264,6 +274,16 @@ export function useChatSidebar({
           void pinSession(session.engine, session.sessionId, !session.pinned);
         } else if (action === "rename") {
           setDialog({ kind: "rename", session });
+        } else if (action === "copyPath") {
+          void copyText(sessionFileLocation(session));
+        } else if (action === "reveal") {
+          if (session.remote) {
+            useChatStore.setState({ actionError: t("chat.sessionRevealRemote") });
+            return;
+          }
+          ipc.revealInFileManager(sessionFileLocation(session)).catch((error: unknown) => {
+            useChatStore.setState({ actionError: t("chat.sessionRevealFailed", { error: errorText(error) }) });
+          });
         } else if (action === "edit") {
           if (session.engine === "agy") return;
           const key = sessionKey(session.engine, session.sessionId, session.workspacePath);

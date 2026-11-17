@@ -188,12 +188,16 @@ export const en: Messages = {
     renameSession: "Rename session",
     renameSessionMissing: "The session has not been indexed or has been removed. The name was not saved. Refresh the session list and try again.",
     copySessionId: "Copy ID",
+    copySessionPath: "Copy file path",
+    revealSessionFile: "Open file location",
     editSession: "Edit session",
     refreshSessionRendering: "Refresh rendering",
     sessionRefreshing: "Refreshing conversation rendering…",
     sessionEditRunning: "Stop the running session before editing its file.",
     sessionRefreshRunning: "Stop the running session before refreshing its rendering.",
     sessionRefreshFailed: "Failed to refresh conversation rendering: {{error}}",
+    sessionRevealRemote: "This session file is remote, so its folder cannot be opened here. Use \"Copy file path\" to find it in its own environment.",
+    sessionRevealFailed: "Failed to open the session file location: {{error}}",
     loadEarlier: "Load earlier messages",
     /** Fork conversation: derive a new session that inherits the context up to
      *  a chosen message. */
