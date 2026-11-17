@@ -390,11 +390,3 @@ them), not a fixed pixel box. No app, no backend, no real config file.
 底部入口悬停或键盘聚焦应显示完整名称与 ID，打开菜单后提示消失。
 390px 窄屏点击引擎行进入模型对话框，长名称不得横向溢出，发送按钮仍可见。
 此页面不读取真实配置，不调用 CLI，不代表原生 WebView 验证。
-
-## #1521 引用选区到对话
-
-```sh
-pnpm exec vitest run src/features/chat/components/text-reference.acceptance.test.tsx
-```
-
-验收在 jsdom 中挂载实际的 CodeMirror、输入框和历史消息组件。文件读取与历史页由模拟 IPC 返回，发送在 IPC 边界捕获，排队由合成的引擎完成事件推进。测试覆盖未保存的反向选区、多会话草稿、直接发送、离开原会话后排队发送，以及历史定位、文件缩短、删除和恢复、无效路径或行号。无需模型、账户或真实桌面进程。

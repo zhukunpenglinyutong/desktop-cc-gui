@@ -26,6 +26,9 @@ import {
   type EditorSearchKeymapActions,
 } from "./editor-search";
 import { sessionKey, useChatStore } from "@/features/chat/store";
+import { dismissCenterSurfaces } from "@/features/chat/center-surfaces";
+import { focusComposerWhenVisible } from "@/features/chat/focus-composer";
+import { composerBridgeRef } from "@/features/chat/split/composer-bridge";
 import { workspaceRelativePrefix } from "./file-search";
 import { formatTextReference, isTextReferencePath } from "./text-reference";
 import { FileEditorHeader } from "./FileEditorHeader";
@@ -184,6 +187,7 @@ function FileEditor({ path, content, wordWrap, onToggleWordWrap }: {
   const setFileDirty = useFilesStore((s) => s.setFileDirty);
   const entry = useFilesStore((s) => s.fileStates[path]);
   const saveFile = useFilesStore((s) => s.saveFile);
+  const { t } = useTranslation();
   // Inactive (invisible) editors stay mounted; only the visible tab may
   // answer Cmd/Ctrl+S, or every open file would save at once.
   const isActiveTab = useFilesStore((s) => s.activeFilePath === path);
@@ -240,9 +244,16 @@ function FileEditor({ path, content, wordWrap, onToggleWordWrap }: {
     }
   }, []);
   const activeWorkspace = useChatStore((s) => s.active?.workspacePath);
-  const referencePath = !entry?.session && activeWorkspace
-    ? workspaceRelativePrefix(activeWorkspace, path)
-    : null;
+  const referencePath = activeWorkspace ? workspaceRelativePrefix(activeWorkspace, path) : null;
+  // Transcripts and names the reference syntax cannot carry get no entry;
+  // other unmet preconditions stay visible with the reason (ui-ux-spec §3).
+  const showQuote = viewMode === "edit" && !entry?.session &&
+    (referencePath === null || isTextReferencePath(referencePath));
+  const quoteBlockedReason = !activeWorkspace
+    ? t("files.quoteSelectionNoSession")
+    : referencePath === null
+      ? t("files.quoteSelectionOutsideWorkspace")
+      : hasSelection ? undefined : t("files.quoteSelectionEmpty");
   const lineLocation = useFilesStore((s) => s.lineLocation?.path === path ? s.lineLocation : null);
 
   useEffect(() => {
@@ -273,6 +284,9 @@ function FileEditor({ path, content, wordWrap, onToggleWordWrap }: {
     const key = sessionKey(active.engine, active.sessionId, active.workspacePath);
     const previous = drafts[key] ?? "";
     setDraft(key, previous ? `${previous}\n\n${reference}\n\n` : `${reference}\n\n`);
+    // The file tab hides the composer; bring it back so the quote is visible.
+    dismissCenterSurfaces();
+    focusComposerWhenVisible(composerBridgeRef);
   };
   const [editorSearchOpen, setEditorSearchOpen] = useState(false);
   const [editorSearchReplace, setEditorSearchReplace] = useState(false);
@@ -495,8 +509,8 @@ function FileEditor({ path, content, wordWrap, onToggleWordWrap }: {
         onToggleSearch={() => setPreviewSearchOpen((open) => !open)}
         wordWrap={wordWrap}
         onToggleWordWrap={onToggleWordWrap}
-        onQuoteSelection={viewMode === "edit" && referencePath && isTextReferencePath(referencePath) ? quoteSelection : undefined}
-        canQuoteSelection={hasSelection}
+        onQuoteSelection={showQuote ? quoteSelection : undefined}
+        quoteBlockedReason={quoteBlockedReason}
       />
       {saveError && (
         <p className="shrink-0 break-all border-b border-border-button-default px-3 py-1.5 text-caption-1-regular text-text-error-primary">

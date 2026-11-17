@@ -21,6 +21,8 @@ const transport = vi.hoisted(() => ({
   sendMessage: vi.fn(),
   loadSessionPage: vi.fn(),
 }));
+const focusComposer = vi.hoisted(() => vi.fn());
+vi.mock("@/features/chat/focus-composer", () => ({ focusComposerWhenVisible: focusComposer }));
 
 vi.mock("@/lib/ipc", () => ({
   ipc: {
@@ -62,7 +64,8 @@ function Fixture() {
   const key = sessionKey(active.engine, active.sessionId, active.workspacePath);
   const draft = useChatStore((s) => s.drafts[key] ?? "");
   const session = useChatStore((s) => s.bySession[key]);
-  const path = useFilesStore((s) => s.activeFilePath);
+  // Open editors stay mounted behind the chat, as in ChatCenterPane.
+  const openFiles = useFilesStore((s) => s.openFiles);
   const inputRef = useRef<ComposerInputHandle>(null);
   const streaming = session?.streaming ?? false;
   const actions = useComposerActions({
@@ -70,7 +73,7 @@ function Fixture() {
     importImageFiles: noop, supportsImages: false, composerInputRef: inputRef,
   });
   return <>
-    {path && <EditorPane path={path} />}
+    {openFiles.map((path) => <EditorPane key={path} path={path} />)}
     <Composer inputRef={inputRef} value={draft} onValueChange={actions.handleDraftChange}
       onSubmit={actions.submit} streaming={streaming} />
     {session?.messages.map((message) => (
@@ -129,7 +132,8 @@ describe("#1521 text reference acceptance", () => {
     await act(async () => useFilesStore.getState().openFile(FILE));
     await act(async () => button(i18n.t("files.editMode"))?.click());
     const view = editor();
-    expect(quoteButton()?.disabled).toBe(true);
+    expect(quoteButton()?.getAttribute("aria-disabled")).toBe("true");
+    expect(quoteButton()?.title).toBe(i18n.t("files.quoteSelectionEmpty"));
     const third = view.state.doc.line(3);
     await act(async () => view.dispatch({
       changes: { from: third.from + 4, to: third.to, insert: "unsaved" },
@@ -138,6 +142,8 @@ describe("#1521 text reference acceptance", () => {
     expect(selectedText()).toBe("  中文🙂\n    unsaved\n");
     await act(async () => quoteButton()!.click());
     expect(extractText(box())).toBe(`first draft\n\n${QUOTE}\n\n`);
+    expect(useFilesStore.getState().activeFilePath).toBeNull();
+    expect(focusComposer).toHaveBeenCalledOnce();
   }
 
   async function send() {
@@ -150,7 +156,10 @@ describe("#1521 text reference acceptance", () => {
     await quote();
     await act(async () => useChatStore.setState({ active: B }));
     expect(extractText(box())).toBe("second draft");
-    expect(quoteButton()).toBeUndefined();
+    expect(quoteButton()?.getAttribute("aria-disabled")).toBe("true");
+    expect(quoteButton()?.title).toBe(i18n.t("files.quoteSelectionOutsideWorkspace"));
+    await act(async () => quoteButton()!.click());
+    expect(extractText(box())).toBe("second draft");
     await act(async () => useChatStore.setState({ active: A }));
     expect(extractText(box())).toContain(QUOTE);
     await act(async () => {

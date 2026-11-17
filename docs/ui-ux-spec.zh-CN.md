@@ -71,8 +71,7 @@
 
 ## 3. 状态与可用性
 
-- 文件编辑器在当前会话工作区内支持「引用选区到对话」。该动作将相对路径、行范围和选中文本追加到会话草稿，用户可以继续编辑后发送。历史消息中的路径和行范围可打开当前文件并定位到对应行。实现见 `EditorPane.tsx` 和 `MessageTimeline.tsx`。
-
+- **引用选区到对话**：文件编辑器在编辑模式下（会话转录文件除外）页头显示「引用选区到对话」。点击后把 `./相对路径#L起-L止` 与逐行加 `> ` 的选中原文（含未保存改动）追加到当前会话草稿，随即切回对话并聚焦输入框（`dismissCenterSurfaces` + `focusComposerWhenVisible`）：文件页签与对话互斥，停在文件页等于没有反馈，用户会重复点击。前提不满足时按本节「前置条件未满足的禁用」保持可 hover 的禁用并说明缺什么：没有选区（`files.quoteSelectionEmpty`）、没有会话（`files.quoteSelectionNoSession`）、文件不在当前会话工作区内（`files.quoteSelectionOutsideWorkspace`）。历史用户消息里紧跟 `> ` 行的路径行可点击，打开会话工作区内的该文件并选中对应行（Markdown 预览先切编辑；文件变短时落到末行；读取失败显示错误，再点会重读）；含 `..`、空段、反斜杠或控制字符的路径不作为链接。实现见 `EditorPane.tsx`、`MessageTimeline.tsx`、`text-reference.ts`。回归：`text-reference.acceptance.test.tsx`、`EditorPane.test.tsx`、`MessageTimeline.test.tsx`、`text-reference.test.ts`。
 - **工作区里的 MCP 配置不自动执行**：MCP 页与 `/mcp` 面板打开时只自动检测用户自己配置里的服务（`autoProbeEligible`）；配置文件位于工作区内的条目（后端 `workspaceFile`，由 `mcp::source_in_workspace` 判定，未知来源按工作区处理）从不自动检测。手动检测（单条或「检测全部」）先弹「运行工作区里的 MCP 配置？」（`McpProbeConfirmHost`，`mcp_probe_plan` 提供内容）：列出命令与参数、工作目录、env 键名、脱敏后的 URL 与请求头键名，弹出时焦点不在「运行检测」上；确认绑定计划指纹（`McpProbePlan.fingerprint`，完整目标含参数与 env 值的哈希），每次检测前重读计划，指纹没变不再询问，变了（`git pull` 或 agent 改了文件，哪怕列表还没刷新）就重新询问；检测请求带上已确认的指纹，后端重新计算不一致时以 `conflict` 拒绝执行，前端随即忘掉这条确认。拒绝后「检测全部」只检测用户级服务。检测工作区条目时 URL 与请求头里的 `${ENV}` 原样发送、不展开（避免把环境变量里的密钥发到仓库指定的地址）。回归：`probe-store.test.ts`、`probe-confirm.test.ts`、`McpProbeConfirmHost.test.tsx`、`McpSection.test.tsx`、Rust `mcp::probe::tests`。
 - **使用统计可关闭，且不在页面里运行第三方脚本**：「设置 → 关于 → 使用统计」开关（`AnalyticsSetting.tsx`，仅桌面端显示，默认开启，存 `AppSettings.analyticsEnabled`，只经 `analytics_enabled_get/set` 读写，整对象保存时缺省该字段会保留原值）。每次启动由后端（`baidu_tongji.rs`）向百度统计发一次 hm.gif 访问记录，内容只有版本、系统、界面语言、屏幕尺寸与随机访客 ID，不带页面地址与任何令牌；主窗口与 Web 端都不加载 `hm.js`，CSP 不放行百度域名。保存失败时开关回到原状态并提示 `settings.analyticsSaveFailed`。
 - **电脑操控与外网访问设置只在桌面端可用**：Web 访问端输入 `/ccgui-cua`（带不带内容都一样）在会话错误条显示 `chat.cuaDesktopOnly`，不当普通消息发出；后端 dispatch 也强制关闭电脑操控。Web 端的外网访问面板只显示 `settings.webWanDesktopOnly`：中继启停、无人值守、部署与设备批准都会被后端以 `desktop-only:` 拒绝，远端调 `update_app_settings` 时远程访问与统计相关字段保留桌面端现值；设备撤销仍可在 Web 端操作（只会收紧访问）。Web 端令牌从地址栏读到后移入当前标签页的 sessionStorage 并用 `history.replaceState` 清掉。
@@ -397,6 +396,7 @@ Windows 桌面端在「发送系统通知」下提供「通知提示音」开关
 
 | 版本 | 时间 | 内容 |
 |---|---|---|
+| v1.35 | 2026-11-16 | #1521 引用选区到对话：文件编辑器页头新增入口，把路径、行范围与选中原文追加到会话草稿后切回对话并聚焦输入框；无选区、无会话或文件不在会话工作区内时保持可 hover 的禁用并说明原因；历史用户消息中的路径行可打开文件并选中对应行。§3 补条目 |
 | v1.34 | 2026-11-15 | 插件中心新增翻译：页头「翻译列表」、表格行与精选卡的翻译图标、详情页「翻译」按钮，用当前连接的模型（或 设置 → 插件 → 插件翻译 里固定的引擎与模型）把名称、简介与 README 译成所选语言并缓存在本地，原文变化后标记过期并提供「重新翻译」；翻译在后端以零工具轮次运行。§3 补规则 |
 | v1.33 | 2026-11-11 | omp 子代理完成状态收敛：`async-result` 折叠为隐藏 `__agent_status__` 行；后台 `jobId` 与代理 `id` / `agentId` 按本作业通知标题关联，不剥后缀、不按数组位置猜测，引用内容中的嵌套结果不作为真实通知；结构化显式身份与状态优先，失败说明按可识别状态词归一，未知状态不推断完成。更新的工具快照以隐藏行保留，不能只过滤旧 delivery 而丢失新状态。派发的 `progress.index` 关联真实 `progress.id`，隐藏补读可通过唯一 `toolCallId` 或同一派发参数更新已有派发；旧运行状态被终态取代时仍保留身份元数据，歧义映射不猜测、不同派发与不同有效 id 不混同。仅 pi / omp 的非流式活跃子代理补读，合并最新页 `messages` 与覆盖窗口外状态的 `subagentHistory`，不重复翻旧页；完整 `hub jobs` 名册（含空名册与缺员名册）保留「缺员即结束」语义；隐藏通知不占用可见历史页额度；60s 读取超时释放槽位；回合结束 / 失败、首次历史加载及缓存会话重开触发，首次加载后等第一次退避。按 2s / 10s / 30s 退避后每 30s 重读，最多 20 次重试；同会话合并并发，窗口改变丢弃过期结果，取消后恢复的新请求重置完整预算；手动刷新失败保留历史并恢复轮询。按同一来源的原始 job 覆盖（时间戳 + id + 状态）去重，旧通知不覆盖后续重派发，实时派发按会话内顺序压过更早的历史通知；状态词表复用 `agentState`；初始派发推断不压过显式快照；状态行、占位行与续答提示不切断工具过程组；§3 补规则 |
 | v1.32 | 2026-11-12 | 插件续接原生会话（SDK 0.3.26）：恢复历史并切回聊天；沿用会话模型、渠道与推理强度，按属主轮次停止，补齐重试与权限说明。新增「插件续接原生会话」规则 |
