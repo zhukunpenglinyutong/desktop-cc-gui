@@ -28,6 +28,7 @@ const h = vi.hoisted(() => ({
     isFocused: vi.fn(async () => false),
     isMinimized: vi.fn(async () => false),
   },
+  isWindows: false,
   store: {} as Record<string, unknown>,
   dismissCenterSurfaces: vi.fn(),
 }));
@@ -38,6 +39,7 @@ vi.mock("@/features/chat/center-surfaces", () => ({
 
 vi.mock("./platform", () => ({
   isWeb: false,
+  get IS_WINDOWS() { return h.isWindows; },
 }));
 
 vi.mock("@tauri-apps/api/core", () => ({
@@ -108,9 +110,11 @@ describe("notifications", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     h.win.label = "main";
+    h.isWindows = false;
     resetStore();
     updateCachedNotificationPreferences({
       notificationsEnabled: true,
+      notificationSoundEnabled: null,
       notifyOnCompletion: true,
       notifyOnInterrupted: true,
       notifyOnError: true,
@@ -202,6 +206,27 @@ describe("notifications", () => {
       await expect(sendOSNotification({ title: "Test Title", body: "Test Body" })).resolves.toBe(true);
       expect(postedNotices()).toEqual([
         { id: expect.any(Number), title: "Test Title", body: "Test Body", extra: undefined },
+      ]);
+    });
+
+    it.each([
+      { windows: true, enabled: true, sound: "Default" },
+      { windows: true, enabled: false, sound: undefined },
+      { windows: true, enabled: null, sound: undefined },
+      { windows: false, enabled: true, sound: undefined },
+    ])("uses the Windows default sound only when enabled (%j)", async ({ windows, enabled, sound }) => {
+      h.isWindows = windows;
+      updateCachedNotificationPreferences({ notificationSoundEnabled: enabled });
+
+      await expect(sendOSNotification({ title: "Test Title" })).resolves.toBe(true);
+      expect(postedNotices()).toEqual([
+        {
+          id: expect.any(Number),
+          title: "Test Title",
+          body: undefined,
+          extra: undefined,
+          ...(sound ? { sound } : {}),
+        },
       ]);
     });
 

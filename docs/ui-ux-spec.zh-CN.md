@@ -309,6 +309,8 @@ const feedback = useRunningFeedback(store.loading);
 
 ### 4.4 系统通知（OS 级）
 
+Windows 桌面端在「发送系统通知」下提供「通知提示音」开关，默认关闭（含旧配置）。开启后，符合现有提醒条件的通知请求使用 Windows 默认通知音。实际播放由系统控制。
+
 参考实现：`src/lib/notifications.ts`，触发点在 `engine-events.ts` 的回合终态与交互事件；设置入口：设置 → 通用 → 「发送系统通知」（`SettingsRow` anchor `notifications`）。
 
 - **触发面**：对话完成（`done`）、API/流中断（`error` 且文本像断连：`中断` / `disconnect` / `abort` / `timeout` / `timed out`）、其他对话异常、交互提问、计划待审批、权限请求。用户在应用内主动中断的回合不发通知；错误与中断都受「用户已中断」守卫，不会误报。
