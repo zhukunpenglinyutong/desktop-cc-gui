@@ -28,6 +28,8 @@ export function FileEditorHeader({
   onToggleSearch,
   wordWrap,
   onToggleWordWrap,
+  onQuoteSelection,
+  quoteBlockedReason,
 }: {
   path: string;
   name: string;
@@ -51,6 +53,9 @@ export function FileEditorHeader({
   onToggleSearch: () => void;
   wordWrap: boolean;
   onToggleWordWrap: () => void;
+  onQuoteSelection?: () => void;
+  /** Why quoting is unavailable right now; the button stays hoverable to show it. */
+  quoteBlockedReason?: string;
 }) {
   const { t } = useTranslation();
 
@@ -70,6 +75,17 @@ export function FileEditorHeader({
         </span>
       )}
       <div className="flex-1" />
+      {onQuoteSelection && (
+        <button
+          type="button"
+          onClick={quoteBlockedReason ? undefined : onQuoteSelection}
+          aria-disabled={quoteBlockedReason ? true : undefined}
+          title={quoteBlockedReason}
+          className="shrink-0 rounded-lg border border-border-button-default px-2 py-0.5 text-caption-1-regular text-text-secondary hover:text-text-primary aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:hover:text-text-secondary"
+        >
+          {t("files.quoteSelection")}
+        </button>
+      )}
       {isHtml && viewMode === "preview" && (
         <button
           type="button"

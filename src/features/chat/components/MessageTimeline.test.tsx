@@ -1,3 +1,4 @@
+import { useFilesStore } from "@/features/files/store";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -280,6 +281,23 @@ describe("user bubble copy affordance", () => {
   function userMessage(text: string): Message {
     return { seq: 1, role: "user", text, ts: null };
   }
+
+  it("opens a quoted file range from a historical user message", async () => {
+    const openFile = vi.spyOn(useFilesStore.getState(), "openFile").mockResolvedValue(undefined);
+    try {
+      await act(async () => {
+        root.render(<MessageRow message={userMessage("./src/有 空格.ts#L2-L4\n> selected code")} workspacePath="/ws" turnFinal />);
+      });
+      const link = Array.from(container.querySelectorAll("button"))
+        .find((button) => button.textContent === "./src/有 空格.ts#L2-L4");
+      expect(link).toBeDefined();
+      await act(async () => link!.click());
+      expect(openFile).toHaveBeenCalledWith("/ws/src/有 空格.ts", { from: 2, to: 4 });
+      expect(container.textContent).toContain("> selected code");
+    } finally {
+      openFile.mockRestore();
+    }
+  });
 
   it("renders the copy button as a footer after the bubble, not at its left edge", async () => {
     await act(async () => {

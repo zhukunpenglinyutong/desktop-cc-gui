@@ -1,4 +1,6 @@
-import { lazy, memo, Suspense, useCallback, useEffect, useMemo, useRef, useState, type MutableRefObject, type RefObject } from "react";
+import { parseTextReferenceLocation } from "@/features/files/text-reference";
+import { joinPath, useFilesStore } from "@/features/files/store";
+import { Fragment, lazy, memo, Suspense, useCallback, useEffect, useMemo, useRef, useState, type MutableRefObject, type RefObject } from "react";
 import { useVirtualizer, type Virtualizer } from "@tanstack/react-virtual";
 import { useTranslation } from "react-i18next";
 import Copy from "lucide-react/dist/esm/icons/copy";
@@ -562,8 +564,30 @@ function AgentBadge({
 /** User bubble. The agent block sendPrompt appended stays in history (the
  *  CLI transcript owns it), but the bubble strips it and carries the agent
  *  identity as a small badge above, mirroring the meta row's caption type. */
-function UserMessageRow({ message }: { message: Message }) {
+function UserMessageRow({ message, workspacePath }: { message: Message; workspacePath: string }) {
   const stripped = useMemo(() => stripAgentBlock(message.text), [message.text]);
+  const renderedText = useMemo(() => {
+    const root = workspacePath;
+    if (!root || !stripped.text.includes("#L")) return stripped.text;
+    const lines = stripped.text.split("\n");
+    return lines.map((line, index) => {
+      const location = lines[index + 1]?.startsWith("> ") ? parseTextReferenceLocation(line) : null;
+      return (
+        <Fragment key={index}>
+          {location ? (
+            <button
+              type="button"
+              className="max-w-full text-left underline underline-offset-2"
+              onClick={() => void useFilesStore.getState().openFile(joinPath(root, location.path), { from: location.from, to: location.to })}
+            >
+              {line}
+            </button>
+          ) : line}
+          {index < lines.length - 1 ? "\n" : null}
+        </Fragment>
+      );
+    });
+  }, [stripped.text, workspacePath]);
   return (
     <div className="group -mr-1.5 ml-auto flex w-full min-w-0 flex-col items-end">
       {stripped.agentName && (
@@ -578,7 +602,7 @@ function UserMessageRow({ message }: { message: Message }) {
           {message.images && message.images.length > 0 && (
             <MessageImages images={message.images} />
           )}
-          {stripped.text}
+          {renderedText}
         </CollapsibleMessage>
       </div>
       {/* 复制用 strip 之后的**显示文本**（`stripped.text`），与改动前的 UserMessageCopy
@@ -684,7 +708,7 @@ export const MessageRow = memo(function MessageRow({
   const onFork = () =>
     forkTarget && forkTarget.text.trim() && requestFork(forkTarget.text, forkTarget.seq, forkTarget.tail);
   if (message.role === "user") {
-    return <UserMessageRow message={message} />;
+    return <UserMessageRow message={message} workspacePath={workspacePath} />;
   }
   return (
     <div className="group flex flex-col text-left">
