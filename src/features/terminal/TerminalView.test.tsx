@@ -85,8 +85,17 @@ const xtermMocks = vi.hoisted(() => {
     registerLinkProvider() {
       return { dispose() {} };
     }
-    onData() {
-      return { dispose() {} };
+    onData(handler: (data: string) => void) {
+      this.dataHandler = handler;
+      return {
+        dispose: () => {
+          this.dataHandler = null;
+        },
+      };
+    }
+    dataHandler: ((data: string) => void) | null = null;
+    emitData(data: string) {
+      this.dataHandler?.(data);
     }
     getSelection() {
       return "";
@@ -409,5 +418,35 @@ describe("TerminalView wiring", () => {
       await new Promise((resolve) => setTimeout(resolve, 170));
     });
     expect(ipcMocks.terminalResize).not.toHaveBeenCalled();
+  });
+
+  it("writes typed input through the ordered PTY queue", async () => {
+    await mount();
+    const term = xtermMocks.instances[0];
+    await act(async () => {
+      term.emitData("ab");
+      term.emitData("c");
+    });
+    await flush();
+    expect(ipcMocks.terminalWrite.mock.calls).toEqual([
+      [ID, "ab"],
+      [ID, "c"],
+    ]);
+  });
+
+  it("respawns the shell and resends input after the PTY session is gone", async () => {
+    await mount();
+    ipcMocks.terminalWrite.mockRejectedValueOnce(new Error("Terminal session not found"));
+    const term = xtermMocks.instances[0];
+    await act(async () => {
+      term.emitData("x");
+    });
+    await flush();
+    await flush();
+    expect(ipcMocks.terminalOpen).toHaveBeenCalledTimes(2);
+    expect(ipcMocks.terminalWrite.mock.calls).toEqual([
+      [ID, "x"],
+      [ID, "x"],
+    ]);
   });
 });

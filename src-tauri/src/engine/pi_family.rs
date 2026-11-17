@@ -71,7 +71,7 @@ pub(crate) fn served_models_path(run_id: &str) -> std::path::PathBuf {
 pub(crate) fn loads_served_model_bridge(engine: &str, req: &SendRequest) -> bool {
     match engine {
         "omp" => !acp_plan_requested(req),
-        "pi" => req.allowed_tools.is_none(),
+        "pi" => req.allowed_tools.is_none() && !req.no_tools,
         _ => false,
     }
 }
@@ -560,9 +560,24 @@ impl Engine for PiFamilyEngine {
         self.id == "pi"
     }
 
+    /// 零工具轮次只对 pi 开放：`--no-tools` 卸掉内置与扩展工具，
+    /// `--no-mcp` 不连 MCP，`--no-extensions` 不加载任何扩展（含提问桥），
+    /// `--no-session` 不落盘会话（rpc 的 get_state 照样给 sessionId）。
+    fn supports_no_tools(&self) -> bool {
+        self.id == "pi"
+    }
+
     fn build_command(&self, req: &SendRequest, bin: &str) -> Result<BuiltCommand, String> {
         let mut cmd = command_for_binary(bin);
-        if let Some(tools) = req.allowed_tools.as_deref() {
+        if req.no_tools {
+            if self.id != "pi" || req.allowed_tools.is_some() || req.computer_use == Some(true) {
+                return Err(
+                    "tool-less runs are only supported on Pi without tool lists or computer use"
+                        .into(),
+                );
+            }
+            cmd.args(["--no-tools", "--no-mcp", "--no-extensions", "--no-session"]);
+        } else if let Some(tools) = req.allowed_tools.as_deref() {
             if self.id != "pi"
                 || tools.is_empty()
                 || tools
@@ -601,7 +616,7 @@ impl Engine for PiFamilyEngine {
         } else if rpc_mode {
             cmd.arg("--mode");
             cmd.arg("rpc");
-            if req.allowed_tools.is_none() {
+            if req.allowed_tools.is_none() && !req.no_tools {
                 cmd.arg("--extension");
                 cmd.arg(ensure_pi_ask_bridge()?);
             }
@@ -1404,6 +1419,7 @@ mod tests {
             computer_use: None,
             memory_bot: None,
             allowed_tools: None,
+            no_tools: false,
         }
     }
 
@@ -2553,6 +2569,7 @@ mod tests {
             computer_use: None,
             memory_bot: None,
             allowed_tools: None,
+            no_tools: false,
         };
         let built = engine.build_command(&req, "omp").unwrap();
         let args: Vec<String> = built
@@ -2583,6 +2600,7 @@ mod tests {
             computer_use: None,
             memory_bot: None,
             allowed_tools: None,
+            no_tools: false,
         };
         let built = engine.build_command(&req, "omp").unwrap();
         let payload = built.stdin_payload.expect("rpc stdin payload");
@@ -2640,6 +2658,7 @@ mod tests {
             computer_use: None,
             memory_bot: None,
             allowed_tools: None,
+            no_tools: false,
         };
         let built = engine.build_command(&req, "omp").unwrap();
         let args: Vec<String> = built

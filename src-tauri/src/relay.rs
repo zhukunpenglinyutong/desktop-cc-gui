@@ -267,7 +267,6 @@ pub async fn web_relay_start(
     let state = app.state::<crate::AppState>();
     let bridge_transition = state.web.lock_transition().await;
     let (bridge, bridge_created) = bridge_transition.ensure(app.clone()).await?;
-    let bridge_port = bridge.port;
     let bridge_token = bridge.token;
 
     let info = RelayInfo {
@@ -315,7 +314,7 @@ pub async fn web_relay_start(
 
     let handle = app.clone();
     tokio::spawn(async move {
-        run_agent(handle, agent, bridge_port, stop_rx, generation).await;
+        run_agent(handle, agent, stop_rx, generation).await;
     });
     Ok(info)
 }
@@ -878,7 +877,6 @@ where
 async fn run_agent(
     app: tauri::AppHandle,
     agent: String,
-    port: u16,
     mut stop: watch::Receiver<bool>,
     generation: u64,
 ) {
@@ -917,7 +915,7 @@ async fn run_agent(
         };
         set_error(&app, generation, String::new());
         set_connected(&app, generation, true);
-        serve(socket, port, &mut stop).await;
+        serve(socket, || app.state::<crate::AppState>().web.bridge_port(), &mut stop).await;
         set_connected(&app, generation, false);
         if *stop.borrow() {
             return;
@@ -946,11 +944,27 @@ fn queue_heartbeat(
     }
 }
 
+/// An idle relay may outlive the LAN listener. Fail only this stream while
+/// stopped; the next one resolves the replacement without redialing the Worker.
+async fn require_bridge_port(
+    id: u64,
+    port: Option<u16>,
+    out: &mpsc::Sender<OutFrame>,
+) -> Option<u16> {
+    if port.is_none() {
+        let _ = send(out, &ClientFrame::Error {
+            id,
+            message: "本机 Web 访问已停止".into(),
+        }).await;
+    }
+    port
+}
+
 async fn serve(
     socket: tokio_tungstenite::WebSocketStream<
         tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
     >,
-    port: u16,
+    bridge_port: impl Fn() -> Option<u16>,
     stop: &mut watch::Receiver<bool>,
 ) {
     let (mut tx, mut rx) = socket.split();
@@ -1027,6 +1041,9 @@ async fn serve(
                 headers,
             } => {
                 if ws {
+                    let Some(port) = require_bridge_port(id, bridge_port(), &out_tx).await else {
+                        continue;
+                    };
                     let live = spawn_socket(id, path, headers, port, out_tx.clone());
                     sockets.lock().insert(id, live);
                 } else {
@@ -1049,6 +1066,9 @@ async fn serve(
             AgentFrame::End { id } => {
                 let pending = http.lock().remove(&id);
                 if let Some(pending) = pending {
+                    let Some(port) = require_bridge_port(id, bridge_port(), &out_tx).await else {
+                        continue;
+                    };
                     spawn_http(id, pending, port, out_tx.clone(), client.clone());
                 }
             }
@@ -1898,7 +1918,7 @@ mod tests {
         let (stop_tx, stop_rx) = watch::channel(false);
         let served = tokio::spawn(async move {
             let mut stop = stop_rx;
-            serve(socket, bridge_port, &mut stop).await;
+            serve(socket, || Some(bridge_port), &mut stop).await;
         });
 
         let (status, body) = drain_stream(&mut got_rx, 3).await;
@@ -1911,5 +1931,86 @@ mod tests {
 
         let _ = stop_tx.send(true);
         let _ = tokio::time::timeout(std::time::Duration::from_secs(5), served).await;
+    }
+    #[tokio::test]
+    async fn relay_streams_follow_bridge_stop_and_restart_without_reconnecting() {
+        async fn bridge(label: &'static str) -> u16 {
+            serve_local(
+                axum::Router::new()
+                    .route("/probe", axum::routing::get(move || async move { label }))
+                    .route("/ws", axum::routing::get(move |ws: axum::extract::WebSocketUpgrade| async move {
+                        ws.on_upgrade(move |mut socket| async move {
+                            let _ = socket.send(axum::extract::ws::Message::Text(label.into())).await;
+                            let _ = socket.send(axum::extract::ws::Message::Close(None)).await;
+                        })
+                    })),
+            ).await
+        }
+
+        let first = bridge("first bridge").await;
+        let replacement = bridge("replacement bridge").await;
+        let target = Arc::new(Mutex::new(Some(first)));
+        let listener = tokio::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0)).await.unwrap();
+        let url = format!("ws://{}/agent", listener.local_addr().unwrap());
+        let (agent, worker) = tokio::join!(
+            tokio_tungstenite::connect_async(url),
+            async {
+                let (stream, _) = listener.accept().await.unwrap();
+                tokio_tungstenite::accept_async(stream).await.unwrap()
+            }
+        );
+        let (agent, _) = agent.unwrap();
+        let mut worker = worker;
+        let resolver = Arc::clone(&target);
+        let (stop_tx, mut stop) = watch::channel(false);
+        let served = tokio::spawn(async move {
+            serve(agent, move || *resolver.lock(), &mut stop).await;
+        });
+
+        // Keep the first listener alive: hitting a stale port must be detected
+        // even when that port accepts connections instead of refusing them.
+        for (index, (port, expected)) in [
+            (Some(first), Some("first bridge")),
+            (None, None),
+            (Some(replacement), Some("replacement bridge")),
+        ].into_iter().enumerate() {
+            *target.lock() = port;
+            for ws in [false, true] {
+                let id = (index * 2 + usize::from(ws)) as u64;
+                let path = if ws { "/ws" } else { "/probe" };
+                worker.send(Message::Text(serde_json::json!({
+                    "t":"open", "id":id, "ws":ws, "method":"GET", "path":path, "headers":{}
+                }).to_string().into())).await.unwrap();
+                if !ws {
+                    worker.send(Message::Text(serde_json::json!({"t":"end","id":id}).to_string().into())).await.unwrap();
+                }
+                let mut body = Vec::new();
+                let mut error = None;
+                loop {
+                    let message = tokio::time::timeout(std::time::Duration::from_secs(5), worker.next())
+                        .await.expect("stream stalled").unwrap().unwrap();
+                    let Message::Text(text) = message else { continue; };
+                    let frame: serde_json::Value = serde_json::from_str(&text).unwrap();
+                    assert_eq!(frame["id"], id);
+                    match frame["t"].as_str().unwrap() {
+                        "head" => assert_eq!(frame["status"], 200),
+                        "data" => body.extend(b64_to_bytes(frame["b64"].as_str().unwrap())),
+                        "error" => { error = Some(frame["message"].clone()); break; }
+                        "close" => break,
+                        other => panic!("unexpected frame: {other}"),
+                    }
+                }
+                match expected {
+                    Some(label) => {
+                        assert_eq!(error, None);
+                        assert_eq!(body, label.as_bytes());
+                    }
+                    None => assert!(error.is_some(), "a stopped bridge must not use the old port"),
+                }
+            }
+        }
+
+        stop_tx.send(true).unwrap();
+        tokio::time::timeout(std::time::Duration::from_secs(5), served).await.unwrap().unwrap();
     }
 }

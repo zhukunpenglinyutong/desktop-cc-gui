@@ -16,12 +16,16 @@ const mocks = vi.hoisted(() => ({
   openSessionFileInDefaultEditor: vi.fn(),
 }));
 const platform = vi.hoisted(() => ({ isWeb: false }));
+const focusComposer = vi.hoisted(() => vi.fn());
 vi.mock("@/lib/ipc", () => ({ ipc: mocks }));
+vi.mock("@/features/chat/focus-composer", () => ({ focusComposerWhenVisible: focusComposer }));
 vi.mock("@/lib/platform", async (importOriginal) => ({
   ...await importOriginal<typeof Platform>(),
   get isWeb() { return platform.isWeb; },
 }));
 
+import { sessionKey, useChatStore } from "@/features/chat/store";
+import { composerBridgeRef } from "@/features/chat/split/composer-bridge";
 import { useFilesStore } from "./store";
 import { EditorPane } from "./EditorPane";
 
@@ -328,6 +332,87 @@ describe("session editor recovery and wrapping", () => {
     await act(async () => useFilesStore.setState({ activeFilePath: nextPath }));
     expect(panel!.classList.contains("hidden")).toBe(true);
     expect(searchPanelOpen(view.state)).toBe(false);
+  });
+
+  it("appends the unsaved selection to the active draft and can locate it again", async () => {
+    const path = "/repo/file.ts";
+    const active = { engine: "claude", sessionId: "target", workspacePath: "/repo" };
+    const key = sessionKey(active.engine, active.sessionId, active.workspacePath);
+    const previous = useChatStore.getState();
+    const content: FileContent = { kind: "text", text: "one\ntwo\nthree", dataUrl: null, truncated: false };
+    useChatStore.setState({ active, drafts: { [key]: "existing", other: "separate draft" } });
+    focusComposer.mockClear();
+    try {
+      useFilesStore.setState({
+        openFiles: [path],
+        activeFilePath: path,
+        fileStates: { [path]: { path, content, loading: false, error: null, loadNonce: 1 } },
+      });
+      await act(async () => root.render(<EditorPane path={path} />));
+      const view = EditorView.findFromDOM(container.querySelector<HTMLElement>(".cm-editor")!)!;
+      const quote = () => Array.from(container.querySelectorAll("button"))
+        .find((button) => button.textContent === i18n.t("files.quoteSelection"))!;
+      // Unmet precondition: hoverable with the reason, and the click is guarded.
+      expect(quote().getAttribute("aria-disabled")).toBe("true");
+      expect(quote().disabled).toBe(false);
+      expect(quote().title).toBe(i18n.t("files.quoteSelectionEmpty"));
+      await act(async () => quote().click());
+      expect(useChatStore.getState().drafts[key]).toBe("existing");
+      expect(useFilesStore.getState().activeFilePath).toBe(path);
+
+      await act(async () => view.dispatch({
+        changes: { from: 4, to: 7, insert: "unsaved" },
+        selection: { anchor: 4, head: 11 },
+      }));
+      expect(quote().getAttribute("aria-disabled")).toBeNull();
+      expect(quote().title).toBe("");
+      await act(async () => quote().click());
+      expect(useChatStore.getState().drafts).toEqual({
+        [key]: "existing\n\n./file.ts#L2\n> unsaved\n\n",
+        other: "separate draft",
+      });
+      // The file tab hid the composer: quoting switches back to the chat and focuses it.
+      expect(useFilesStore.getState().activeFilePath).toBeNull();
+      expect(focusComposer).toHaveBeenCalledExactlyOnceWith(composerBridgeRef);
+
+      await act(async () => view.dispatch({ selection: { anchor: 0 } }));
+      await act(async () => useFilesStore.getState().openFile(path, { from: 2, to: 2 }));
+      expect(view.state.sliceDoc(view.state.selection.main.from, view.state.selection.main.to)).toBe("unsaved");
+      expect(useFilesStore.getState().lineLocation).toBeNull();
+    } finally {
+      await act(async () => useChatStore.setState({ active: previous.active, drafts: previous.drafts }));
+    }
+  });
+
+  it.each([
+    ["no session", null, "files.quoteSelectionNoSession"],
+    ["another workspace", { engine: "claude", sessionId: "other", workspacePath: "/elsewhere" }, "files.quoteSelectionOutsideWorkspace"],
+  ])("keeps the quote entry visible and explains it with %s", async (_label, active, reason) => {
+    const path = "/repo/blocked.ts";
+    const previous = useChatStore.getState();
+    const content: FileContent = { kind: "text", text: "one\ntwo", dataUrl: null, truncated: false };
+    useChatStore.setState({ active, drafts: {} });
+    focusComposer.mockClear();
+    try {
+      useFilesStore.setState({
+        openFiles: [path],
+        activeFilePath: path,
+        fileStates: { [path]: { path, content, loading: false, error: null, loadNonce: 1 } },
+      });
+      await act(async () => root.render(<EditorPane path={path} />));
+      const view = EditorView.findFromDOM(container.querySelector<HTMLElement>(".cm-editor")!)!;
+      await act(async () => view.dispatch({ selection: { anchor: 0, head: 3 } }));
+      const quote = Array.from(container.querySelectorAll("button"))
+        .find((button) => button.textContent === i18n.t("files.quoteSelection"))!;
+      expect(quote.getAttribute("aria-disabled")).toBe("true");
+      expect(quote.title).toBe(i18n.t(reason));
+      await act(async () => quote.click());
+      expect(useChatStore.getState().drafts).toEqual({});
+      expect(useFilesStore.getState().activeFilePath).toBe(path);
+      expect(focusComposer).not.toHaveBeenCalled();
+    } finally {
+      await act(async () => useChatStore.setState({ active: previous.active, drafts: previous.drafts }));
+    }
   });
 
   it("opens the find card with F3 instead of a search behind the hidden panel", async () => {

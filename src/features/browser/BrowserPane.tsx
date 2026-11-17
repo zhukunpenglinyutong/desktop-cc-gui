@@ -62,10 +62,11 @@ function useWebviewSync(id: string, url: string, active: boolean, placeholderRef
   // an open overlay hides it like a tab switch would.
   const occluded = useBrowserOccluded();
   const visible = active && !occluded;
-  // Read by the async create-then-show chain below; written in an effect so
-  // render stays pure (React may discard render work before commit).
+  // Read by the async create-then-show chain below. Written in a layout
+  // effect so render stays pure (React may discard render work before
+  // commit) and the value is already current when an IPC promise settles.
   const activeRef = useRef(visible);
-  useEffect(() => {
+  useLayoutEffect(() => {
     activeRef.current = visible;
   }, [visible]);
 
@@ -83,19 +84,35 @@ function useWebviewSync(id: string, url: string, active: boolean, placeholderRef
       if (disposed) return;
       const rect = rectOf();
       if (rect.width < 1 || rect.height < 1) return;
-      void setBrowserWebviewBounds(id, rect);
+      // Until the async create lands there is no webview ("not found"); the
+      // create chain applies the latest rect itself, so this is not an error.
+      void setBrowserWebviewBounds(id, rect).catch(() => {});
     };
 
-    // Create is idempotent; show follows the first successful bounds write
-    // so the webview never flashes in at a stale position.
+    // Create is idempotent. A new child webview starts out visible, and hide
+    // or resize calls sent while the async create was pending hit "not found"
+    // and were dropped, so reconcile with the pane's current state once the
+    // webview exists. Show follows the bounds write so the page never flashes
+    // in at a stale position.
     const rect = rectOf();
     if (rect.width >= 1 && rect.height >= 1) {
       void createBrowserWebview(id, url, rect)
-        .then(() => setBrowserWebviewBounds(id, rect))
         .then(() => {
-          if (!disposed && activeRef.current) void setBrowserWebviewVisible(id, true);
+          if (!activeRef.current) return setBrowserWebviewVisible(id, false);
+          // Disposed but still visible: a newer run of this effect owns bounds and show.
+          if (disposed) return;
+          const latest = rectOf();
+          const bounds = latest.width >= 1 && latest.height >= 1 ? latest : rect;
+          return setBrowserWebviewBounds(id, bounds).then(() => {
+            if (!disposed && activeRef.current) return setBrowserWebviewVisible(id, true);
+          });
         })
-        .catch(() => {});
+        .catch((error) => {
+          // Surface the native failure instead of leaving an unexplained
+          // blank pane. The tab stays open: hiding and re-showing it (a tab
+          // switch) runs this effect again and retries the create.
+          console.error("Failed to set up browser webview", { id, url, error });
+        });
     }
 
     const observer = new ResizeObserver(sync);

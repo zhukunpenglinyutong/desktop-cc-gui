@@ -95,6 +95,8 @@ export interface QuestionSpec {
   options: { label: string; description?: string; preview?: string }[];
 }
 
+export const AGENT_STATUS_ROLE = "__agent_status__";
+
 export interface Message {
   seq: number;
   role: string; // "user" | "assistant" | "tool" | "thinking"
@@ -516,6 +518,7 @@ export interface AppSettings {
   workspaceGroups: WorkspaceGroup[];
   /** Workspace id -> sidebar display alias; absent = show the folder name. */
   workspaceAliases: Record<string, string>;
+  workspaceDefaultEngines?: Record<string, string>;
   /** Ids of workspaces hidden into the sidebar's collapsible 已归档 section. */
   archivedWorkspaces: string[];
   language: string;
@@ -582,6 +585,7 @@ export interface AppSettings {
   thinkingAutoCollapse?: boolean | null;
   /** System notifications master switch (设置 → 通用 → 行为 → 系统通知): true/absent = enabled (default). */
   notificationsEnabled?: boolean | null;
+  notificationSoundEnabled?: boolean | null;
   /** Notify when conversation turn completes: true/absent = enabled (default). */
   notifyOnCompletion?: boolean | null;
   /** Notify on interactive questions/permission/plan review: true/absent = enabled (default). */
@@ -1053,6 +1057,13 @@ export interface GitStatus {
   untracked: GitFileEntry[];
 }
 
+/** Both sides of an image change as data URLs; a null side means the file
+ *  does not exist in that revision (added / deleted). */
+export interface GitImageDiff {
+  old: string | null;
+  new: string | null;
+}
+
 /** Compact status for a directory that is itself a Git worktree root. */
 export interface RepositorySummary {
   path: string;
@@ -1472,6 +1483,11 @@ export const ipc = {
     settingsPromise = null;
     return fetchAppSettings();
   },
+  setWorkspaceDefaultEngine: async (workspaceId: string, engine: string) => {
+    const engines = await invoke<Record<string, string>>("set_workspace_default_engine", { workspaceId, engine });
+    settingsPromise = null;
+    return engines;
+  },
   updateAppSettings: async (settings: AppSettings) => {
     await invoke<void>("update_app_settings", { settings });
     // Drop the cache instead of caching `settings`: the backend adjusts what
@@ -1577,6 +1593,19 @@ export const ipc = {
   }) => invoke<SendResult>("mission_agent_start", args),
   missionAgentInterrupt: (runId: string) =>
     invoke<boolean>("mission_agent_interrupt", { runId }),
+  /** 插件介绍翻译：零工具纯文本轮次，跑在应用目录下的空沙盒里（后端
+   *  translate.rs）。事件走 mission-agent://event，按 runId 路由。 */
+  translateTextStart: (args: {
+    /** 前端预生成的 runId（translate- 前缀）；先注册监听再 invoke。 */
+    runId: string;
+    engine: string;
+    prompt: string;
+    model: string | null;
+    effort: string | null;
+    providerId: string | null;
+  }) => invoke<SendResult>("translate_text_start", args),
+  translateTextInterrupt: (runId: string) =>
+    invoke<boolean>("translate_text_interrupt", { runId }),
   listEngines: () => invoke<EngineInfo[]>("list_engines"),
   /** Record a complete internal frame already accepted by its live capture
    * validator, so history reload can hide only that exact frame.
@@ -1592,6 +1621,18 @@ export const ipc = {
       engine,
       sessionId,
       frame,
+      workspacePath,
+    }),
+  recordAcceptedInternalFrames: (
+    engine: string,
+    sessionId: string,
+    frames: string[],
+    workspacePath: string,
+  ) =>
+    invoke<void>("record_accepted_internal_frames", {
+      engine,
+      sessionId,
+      frames,
       workspacePath,
     }),
   /** Persist a clipboard image to app home; returns its absolute path so it
@@ -1933,6 +1974,9 @@ export const ipc = {
     invoke<GitTreeStatus>("git_tree_status", { levels }),
   gitDiff: (path: string, file: string, staged: boolean) =>
     invoke<string>("git_diff", { path, file, staged }),
+  /** Image files diff as bytes, not patch text. */
+  gitDiffImages: (path: string, file: string, staged: boolean) =>
+    invoke<GitImageDiff>("git_diff_images", { path, file, staged }),
   gitStage: (path: string, files: string[]) => invoke<void>("git_stage", { path, files }),
   gitUnstage: (path: string, files: string[]) =>
     invoke<void>("git_unstage", { path, files }),

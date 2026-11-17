@@ -32,3 +32,10 @@ it("distinguishes git ownership failures from a missing repository", async () =>
   expect(errorText("GIT_UNSAFE_REPO:x")).toContain("safe.directory");
   expect(errorText("GIT_OPEN_FAILED:x")).toContain("Could not open the git repository");
 });
+
+it("localizes a rename that did not update any session", async () => {
+  await i18n.changeLanguage("zh");
+  expect(errorText("CCGUI_SESSION_NOT_FOUND")).toContain("未能保存名称");
+  await i18n.changeLanguage("en");
+  expect(errorText(new Error("CCGUI_SESSION_NOT_FOUND"))).toContain("The name was not saved");
+});

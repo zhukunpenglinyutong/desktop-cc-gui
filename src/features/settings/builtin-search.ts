@@ -167,6 +167,17 @@ const generalEntries: SettingsSearchEntry[] = [
     sectionKey: "settings.behavior",
     keywords: ["系统通知", "通知提醒", "消息提醒", "notification", "notify"],
   },
+  ...(IS_WINDOWS && !isWeb
+    ? [
+        {
+          page: "general",
+          anchor: "notificationSoundEnabled",
+          labelKey: "settings.notificationSoundEnabled",
+          sectionKey: "settings.behavior",
+          keywords: ["通知提示音", "通知声音", "notification sound"],
+        } satisfies SettingsSearchEntry,
+      ]
+    : []),
   {
     page: "general",
     anchor: "notifyOnCompletion",
@@ -431,6 +442,22 @@ export const builtinSearchEntries: SettingsSearchEntry[] = [
   ...skillsEntries,
 
   ...workspaceEntries,
+
+  // 插件翻译（PluginTranslationSection.tsx）：插件中心「翻译」用的引擎与模型。
+  {
+    page: "pluginTranslation",
+    anchor: "translationEngine",
+    labelKey: "settings.translationEngine",
+    sectionKey: "settings.pluginTranslation",
+    keywords: ["translate", "translation", "翻译", "перевод"],
+  },
+  {
+    page: "pluginTranslation",
+    anchor: "translationModel",
+    labelKey: "settings.translationModel",
+    sectionKey: "settings.pluginTranslation",
+    keywords: ["translate", "translation", "翻译", "model"],
+  },
 
   // 性能诊断：这个开关是页面上唯一的设置行（打开诊断弹窗那一块是动作入口）。
   {

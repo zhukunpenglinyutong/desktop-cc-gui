@@ -268,8 +268,9 @@ export const useWorktreeStore = create<WorktreeStore>((set, get) => {
           void store.refreshWorkspaces().then(() => {
             if (!target.openSessionAfter) return;
             void import("@/features/chat/center-surfaces").then((surfaces) => {
-              surfaces.dismissCenterSurfaces();
-              chat.useChatStore.getState().startNewChat(target.args.worktreePath);
+              chat.useChatStore
+                .getState()
+                .startNewChat(target.args.worktreePath, undefined, surfaces.dismissCenterSurfaces);
             });
           });
         });

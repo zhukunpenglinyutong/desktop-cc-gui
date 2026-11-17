@@ -59,3 +59,26 @@ test("index.html keeps boot assets external so Tauri's CSP nonce can't disable r
   assert.match(read("public/boot.css"), /#boot-splash\b/);
   assert.match(read("src-tauri/tauri.conf.json"), /style-src 'self' 'unsafe-inline'/, "plugin runtime CSS relies on style-src 'unsafe-inline'");
 });
+
+// tauri-bundler 2.10.3 fetches NSIS with one unretried GET; release run
+// 42564996572 died with `http status: 504` after the app had compiled. Both
+// workflows must seed the cache tauri-bundler validates (%LOCALAPPDATA%\tauri
+// \NSIS) before bundling, and the script must pin the same artifacts/hashes as
+// the bundler. Keep the constants in sync with @tauri-apps/cli upgrades.
+test("Windows bundling seeds the NSIS cache instead of relying on tauri-bundler's single download", () => {
+  const script = read("scripts/prefetch-tauri-nsis.ps1");
+  assert.match(script, /releases\/download\/nsis-3\.13\/nsis-3\.13\.zip/);
+  assert.match(script, /DB14F8AF2EA346B786C6AE19343F61AAF5E09B8E/);
+  assert.match(script, /nsis_tauri_utils-v0\.5\.3\/nsis_tauri_utils\.dll/);
+  assert.match(script, /75197FEE3C6A814FE035788D1C34EAD39349B860/);
+  assert.match(script, /Join-Path \$env:LOCALAPPDATA 'tauri'/);
+  assert.match(script, /Plugins\\x86-unicode\\additional\\nsis_tauri_utils\.dll/);
+
+  for (const file of [".github/workflows/release.yml", ".github/workflows/build-windows-artifact.yml"]) {
+    const workflow = read(file);
+    const prefetch = workflow.indexOf("scripts/prefetch-tauri-nsis.ps1");
+    const bundle = workflow.indexOf("--bundles nsis");
+    assert.ok(prefetch > 0, `${file} must run scripts/prefetch-tauri-nsis.ps1`);
+    assert.ok(bundle > prefetch, `${file} must seed NSIS before the bundling step`);
+  }
+});

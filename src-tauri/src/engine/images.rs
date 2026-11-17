@@ -130,6 +130,22 @@ mod tests {
         assert!(save_pasted_image("!!!not-base64!!!".to_string(), "png".to_string()).is_err());
         assert!(save_pasted_image(String::new(), "png".to_string()).is_err());
     }
+
+    #[test]
+    fn agy_prompt_with_images_injects_marker_and_paths() {
+        let empty = agy_prompt_with_images("plain prompt", &[], Path::new("/workspace"));
+        assert_eq!(empty, "plain prompt");
+
+        let prompt = agy_prompt_with_images(
+            "describe this",
+            &["/tmp/test.png".to_string(), "img.jpg".to_string()],
+            Path::new("/workspace"),
+        );
+        assert!(prompt.starts_with("describe this\n\n<!-- ccgui:agy-image-attachments -->\n"));
+        assert!(prompt.contains("<image path=\"/tmp/test.png\"></image>"));
+        let joined = Path::new("/workspace").join("img.jpg");
+        assert!(prompt.contains(&format!("<image path=\"{}\"></image>", joined.display())));
+    }
 }
 
 /// Normalize an image reference to an absolute local path: trims, skips
@@ -286,6 +302,29 @@ pub fn minimax_prompt_with_images(prompt: &str, images: &[String], workspace: &P
     out.push_str(MINIMAX_IMAGE_MARKER);
     out.push_str("The user attached the following image file(s). ");
     out.push_str("Read each path below with your file tools before answering any question about visual content.\n");
+    for (index, path) in paths.iter().enumerate() {
+        out.push_str(&format!("{}. {}\n", index + 1, path.display()));
+        out.push_str(&format!("<image path=\"{}\"></image>\n", path.display()));
+    }
+    out
+}
+
+/// Antigravity image injection: absolute path tags the agent reads with its file tools.
+/// Marker lets history parsing strip the instruction block.
+pub const AGY_IMAGE_MARKER: &str = "\n\n<!-- ccgui:agy-image-attachments -->\n";
+
+pub fn agy_prompt_with_images(prompt: &str, images: &[String], workspace: &Path) -> String {
+    let paths: Vec<PathBuf> = images
+        .iter()
+        .filter_map(|raw| absolutize_image_path(raw, workspace))
+        .collect();
+    if paths.is_empty() {
+        return prompt.to_string();
+    }
+    let mut out = prompt.trim_end().to_string();
+    out.push_str(AGY_IMAGE_MARKER);
+    out.push_str("The user attached the following image file(s). ");
+    out.push_str("Read each path below with your read_file tool before answering any question about visual content.\n");
     for (index, path) in paths.iter().enumerate() {
         out.push_str(&format!("{}. {}\n", index + 1, path.display()));
         out.push_str(&format!("<image path=\"{}\"></image>\n", path.display()));

@@ -25,6 +25,12 @@ import {
   createEditorSearchExtensions,
   type EditorSearchKeymapActions,
 } from "./editor-search";
+import { sessionKey, useChatStore } from "@/features/chat/store";
+import { dismissCenterSurfaces } from "@/features/chat/center-surfaces";
+import { focusComposerWhenVisible } from "@/features/chat/focus-composer";
+import { composerBridgeRef } from "@/features/chat/split/composer-bridge";
+import { workspaceRelativePrefix } from "./file-search";
+import { formatTextReference, isTextReferencePath } from "./text-reference";
 import { FileEditorHeader } from "./FileEditorHeader";
 import { HtmlPreview } from "./HtmlPreview";
 import { MarkdownPreview } from "./MarkdownPreview";
@@ -36,7 +42,7 @@ import {
   type EditorViewMode,
 } from "./editor-view-mode";
 import { registerShortcutHandler } from "@/features/shortcuts/runtime";
-import { EditorView, lineNumbers } from "@codemirror/view";
+import { EditorView, lineNumbers, type ViewUpdate } from "@codemirror/view";
 import { FONT_CHANGE_EVENT } from "@/features/settings/font";
 import { TYPOGRAPHY_CHANGE_EVENT } from "@/features/settings/interface-typography";
 
@@ -240,6 +246,57 @@ function FileEditor({ path, content, viewMode, onViewModeChange, wordWrap, onTog
   // search state, match highlighting and navigation commands. The native
   // panel is replaced by a hidden element (see editor-search.ts).
   const [editorView, setEditorView] = useState<EditorView | null>(null);
+  const [hasSelection, setHasSelection] = useState(false);
+  const updateSelection = useCallback((update: ViewUpdate) => {
+    if (update.startState.selection.main.empty !== update.state.selection.main.empty) {
+      setHasSelection(!update.state.selection.main.empty);
+    }
+  }, []);
+  const activeWorkspace = useChatStore((s) => s.active?.workspacePath);
+  const referencePath = activeWorkspace ? workspaceRelativePrefix(activeWorkspace, path) : null;
+  // Transcripts and names the reference syntax cannot carry get no entry;
+  // other unmet preconditions stay visible with the reason (ui-ux-spec §3).
+  const showQuote = viewMode === "edit" && !entry?.session &&
+    (referencePath === null || isTextReferencePath(referencePath));
+  const quoteBlockedReason = !activeWorkspace
+    ? t("files.quoteSelectionNoSession")
+    : referencePath === null
+      ? t("files.quoteSelectionOutsideWorkspace")
+      : hasSelection ? undefined : t("files.quoteSelectionEmpty");
+  const lineLocation = useFilesStore((s) => s.lineLocation?.path === path ? s.lineLocation : null);
+
+  useEffect(() => {
+    if (!isActiveTab || !lineLocation) return;
+    if (viewMode !== "edit") {
+      onViewModeChange("edit");
+      return;
+    }
+    if (!editorView?.dom.isConnected) return;
+    const { doc } = editorView.state;
+    const first = doc.line(Math.min(lineLocation.from, doc.lines));
+    const last = doc.line(Math.min(lineLocation.to, doc.lines));
+    editorView.dispatch({
+      selection: { anchor: first.from, head: last.to },
+      scrollIntoView: true,
+    });
+    useFilesStore.setState((s) => s.lineLocation === lineLocation ? { lineLocation: null } : s);
+  }, [editorView, isActiveTab, lineLocation, onViewModeChange, viewMode]);
+
+  const quoteSelection = () => {
+    const { active, drafts, setDraft } = useChatStore.getState();
+    const view = editorRef.current;
+    if (!active || !view || entry?.session) return;
+    const relativePath = workspaceRelativePrefix(active.workspacePath, path);
+    if (!relativePath) return;
+    const reference = formatTextReference(relativePath, view.state);
+    if (!reference) return;
+    const key = sessionKey(active.engine, active.sessionId, active.workspacePath);
+    const previous = drafts[key] ?? "";
+    setDraft(key, previous ? `${previous}\n\n${reference}\n\n` : `${reference}\n\n`);
+    // The file tab hides the composer; bring it back so the quote is visible.
+    dismissCenterSurfaces();
+    focusComposerWhenVisible(composerBridgeRef);
+  };
   const [editorSearchOpen, setEditorSearchOpen] = useState(false);
   const [editorSearchReplace, setEditorSearchReplace] = useState(false);
   const [editorSearchFocus, setEditorSearchFocus] = useState<EditorSearchFocusRequest>({
@@ -478,6 +535,8 @@ function FileEditor({ path, content, viewMode, onViewModeChange, wordWrap, onTog
         onToggleSearch={() => setPreviewSearchOpen((open) => !open)}
         wordWrap={wordWrap}
         onToggleWordWrap={onToggleWordWrap}
+        onQuoteSelection={showQuote ? quoteSelection : undefined}
+        quoteBlockedReason={quoteBlockedReason}
       />
       {saveError && (
         <p className="shrink-0 break-all border-b border-border-button-default px-3 py-1.5 text-caption-1-regular text-text-error-primary">
@@ -511,7 +570,9 @@ function FileEditor({ path, content, viewMode, onViewModeChange, wordWrap, onTog
             onCreateEditor={(view) => {
               editorRef.current = view;
               setEditorView(view);
+              setHasSelection(!view.state.selection.main.empty);
             }}
+            onUpdate={updateSelection}
             onChange={setDraft}
             extensions={extensions}
             theme={dark ? "dark" : "light"}

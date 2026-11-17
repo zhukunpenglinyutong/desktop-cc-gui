@@ -44,6 +44,7 @@ pub mod settings;
 pub mod skills_hub;
 pub mod slash_commands;
 pub mod terminal;
+pub mod translate;
 pub mod updater;
 pub mod usage_limits;
 pub mod usage_stats;
@@ -415,6 +416,7 @@ pub fn run() {
             // settings
             settings::get_app_settings,
             settings::update_app_settings,
+            settings::set_workspace_default_engine,
             settings::set_window_theme,
             // uploaded font files (设置 → 外观 字体行)
             fonts::read_font_file,
@@ -453,6 +455,7 @@ pub fn run() {
             plugins::assets::plugin_reveal_path,
             db::workspace_metadata,
             history::reader::record_accepted_internal_frame,
+            history::reader::record_accepted_internal_frames,
             // narrow host capabilities exposed through PluginContext
             plugin_host::plugin_window_state,
             plugin_host::plugin_window_set_normal_bounds,
@@ -598,6 +601,7 @@ pub fn run() {
             git::git_file_colors,
             git::git_tree_status,
             git::git_diff,
+            git::git_diff_images,
             git::git_stage,
             git::git_unstage,
             git::git_discard,
@@ -643,6 +647,8 @@ pub fn run() {
             plugin_caps::plugin_agent_interrupt,
             mission::mission_agent_start,
             mission::mission_agent_interrupt,
+            translate::translate_text_start,
+            translate::translate_text_interrupt,
             // web access
             web::web_access_start,
             web::web_access_stop,

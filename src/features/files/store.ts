@@ -1,3 +1,4 @@
+import type { FileLineRange } from "./text-reference";
 import { create } from "zustand";
 import { useBrowserStore } from "@/features/browser/store";
 import { useGitStore } from "@/features/git/store";
@@ -199,6 +200,7 @@ interface FilesStore {
   fileStates: Record<string, OpenFileState>;
   /** File tab shown in the center area; null = a chat tab is active. */
   activeFilePath: string | null;
+  lineLocation: (FileLineRange & { path: string }) | null;
   /** Paths with unsaved editor drafts (reported by EditorPane). */
   dirtyPaths: Record<string, true>;
   /** Session-identity launch state survives reloads and pending tab reopens. */
@@ -227,7 +229,7 @@ interface FilesStore {
   loadGitStatus: (levels: Record<string, DirEntry[]>) => Promise<void>;
   selectPath: (path: string | null, isDir?: boolean) => void;
   /** Open a file as a center tab (or focus its existing tab). */
-  openFile: (path: string) => Promise<void>;
+  openFile: (path: string, range?: FileLineRange) => Promise<void>;
   /** Open the CLI's complete native transcript in the existing editor. */
   openSessionFile: (session: SessionMeta) => Promise<void>;
   /** Ask the host's default text editor to open a stopped, local transcript. */
@@ -313,6 +315,7 @@ export const useFilesStore = create<FilesStore>((set, get) => ({
   openFiles: [],
   fileStates: {},
   activeFilePath: null,
+  lineLocation: null,
   dirtyPaths: {},
   externalEditorLaunches: {},
   clipboard: null,
@@ -551,10 +554,13 @@ export const useFilesStore = create<FilesStore>((set, get) => ({
 
   selectPath: (path, isDir = false) => set({ selectedPath: path, selectedIsDir: isDir }),
 
-  openFile: async (path) => {
+  openFile: async (path, range) => {
+    const lineLocation = range ? { path, ...range } : null;
     dismissNonFileSurfaces();
-    if (get().fileStates[path]) {
-      set({ activeFilePath: path, selectedPath: path, selectedIsDir: false });
+    const existing = get().fileStates[path];
+    if (existing) {
+      set({ activeFilePath: path, selectedPath: path, selectedIsDir: false, lineLocation });
+      if (range && existing.error && !existing.loading) await get().reloadFile(path);
       return;
     }
     set((s) => ({
@@ -564,6 +570,7 @@ export const useFilesStore = create<FilesStore>((set, get) => ({
         [path]: { path, content: null, loading: true, error: null, loadNonce: 0 },
       },
       activeFilePath: path,
+      lineLocation,
       selectedPath: path,
       selectedIsDir: false,
     }));

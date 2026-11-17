@@ -588,13 +588,11 @@ pub(crate) fn answer_agent_request(
     }
 }
 
+// ACP clientInfo is optional. Omit host identity so each CLI keeps its native
+// request identity; capability negotiation below is independent of branding.
 pub(crate) fn initialize_params() -> Value {
     json!({
         "protocolVersion": ACP_PROTOCOL_VERSION,
-        "clientInfo": {
-            "name": "ccgui",
-            "version": env!("CARGO_PKG_VERSION"),
-        },
         "clientCapabilities": {
             "fs": {
                 "readTextFile": true,

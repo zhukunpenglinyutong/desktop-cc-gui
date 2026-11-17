@@ -47,8 +47,9 @@ fn seed_write_stamp(conn: &Connection) -> rusqlite::Result<()> {
 }
 
 /// Folded into the scanner's stat signature so a schema/derivation change
-/// still invalidates cached parse results.
-pub const CACHE_VERSION: &str = "2";
+/// still invalidates cached parse results. Version 3 also revalidates the
+/// workspace attribution of unchanged Qoder transcripts.
+pub const CACHE_VERSION: &str = "3";
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 #[serde(rename_all = "camelCase")]

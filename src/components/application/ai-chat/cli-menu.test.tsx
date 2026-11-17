@@ -133,6 +133,47 @@ describe("CliMenu flyout switching", () => {
     });
   };
 
+  it("底部入口提示保留完整模型名称和不同的模型 ID", async () => {
+    act(() => root.render(
+      <CliMenu
+        options={OPTIONS} value="claude" onChange={() => {}}
+        modelsByEngine={{ claude: [{ id: "relay/deepseek-v4.1-flash", label: "deepseek-v4.1-flash" }] }}
+        models={{ claude: "relay/deepseek-v4.1-flash" }} onModelChange={() => {}}
+        efforts={{}} onEffortChange={() => {}}
+        ompServiceTier={null} onOmpServiceTierChange={async () => {}}
+        codexServiceTier={null} onCodexServiceTierChange={async () => {}}
+      />,
+    ));
+    const chip = container.querySelector("button")!;
+    await act(async () => {
+      document.dispatchEvent(new KeyboardEvent("keydown", { key: "Tab", bubbles: true }));
+      chip.focus();
+    });
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 600)); });
+    const tooltip = document.querySelector('[role="tooltip"]');
+    expect(tooltip?.textContent).toContain("Claude Code / deepseek-v4.1-flash");
+    expect(tooltip?.textContent).toContain("relay/deepseek-v4.1-flash");
+  });
+
+  it("点击菜单外关闭后清空模型搜索", async () => {
+    render();
+    await openMenu();
+    const search = () =>
+      document.querySelector<HTMLInputElement>('[data-engine-flyout] input:not([type="range"])')!;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(search(), "gpt");
+      search().dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    expect(search().value).toBe("gpt");
+    // 外部点击走 close()，不经过 onOpenChange。
+    await act(async () => {
+      document.body.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+    });
+    expect(document.querySelector("[data-engine-flyout]")).toBeNull();
+    await openMenu();
+    expect(search().value).toBe("");
+  });
+
   it("切换 Codex 渠道后保留面板并将焦点交回渠道按钮", async () => {
     render("codex");
     await openMenu();

@@ -6,6 +6,15 @@ import { useChatStore } from "@/features/chat/store";
 import { AiChatSidebar } from "./ai-chat-sidebar";
 import type { AiChatRepo } from "./ai-chat-sidebar";
 
+// jsdom 没有 Tauri 宿主，真实 isWeb 为 true；默认沿用它，单个用例再切到桌面端。
+const platform = vi.hoisted(() => ({ isWeb: true }));
+vi.mock("@/lib/platform", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/platform")>()),
+  get isWeb() {
+    return platform.isWeb;
+  },
+}));
+
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({ t: (key: string) => key }),
   // The palette's content-hit rows format relative time via the real i18n
@@ -305,6 +314,11 @@ it("opens the thread context menu on right-click and dispatches its entries", as
 
   await rightClick(threadRow("整理发布脚本"));
   menu = openMenu();
+  await act(async () => menuItem(menu, "chat.copySessionPath").click());
+  expect(onThreadAction).toHaveBeenCalledWith("claude/abc-123", "copyPath");
+
+  await rightClick(threadRow("整理发布脚本"));
+  menu = openMenu();
   await act(async () => menuItem(menu, "chat.archiveSession").click());
   expect(onThreadAction).toHaveBeenCalledWith("claude/abc-123", "archive");
 
@@ -312,6 +326,25 @@ it("opens the thread context menu on right-click and dispatches its entries", as
   menu = openMenu();
   await act(async () => menuItem(menu, "chat.deleteSession").click());
   expect(onThreadAction).toHaveBeenCalledWith("claude/abc-123", "delete");
+});
+
+it("「打开文件路径」只在桌面端出现：web 访问会在宿主机上开文件管理器", async () => {
+  const onThreadAction = vi.fn();
+  const repos = [{ id: "a", label: "a", defaultOpen: true, threads: [{ id: "codex/s-1", label: "定位会话", time: "1m" }] }];
+  await act(async () => root.render(<AiChatSidebar repos={repos} onThreadAction={onThreadAction} />));
+  await rightClick(threadRow("定位会话"));
+  expect(openMenu().textContent).not.toContain("chat.revealSessionFile");
+  expect(openMenu().textContent).toContain("chat.copySessionPath");
+  await act(async () => document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" })));
+
+  platform.isWeb = false;
+  try {
+    await rightClick(threadRow("定位会话"));
+    await act(async () => menuItem(openMenu(), "chat.revealSessionFile").click());
+    expect(onThreadAction).toHaveBeenCalledWith("codex/s-1", "reveal");
+  } finally {
+    platform.isWeb = true;
+  }
 });
 
 it("renders plugin session-menu items and dispatches the parsed target", async () => {

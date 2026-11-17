@@ -3,7 +3,13 @@ import { useVirtualizer, type ReactVirtualizer } from "@tanstack/react-virtual";
 import { useTranslation } from "react-i18next";
 import ArrowLeft from "lucide-react/dist/esm/icons/arrow-left";
 import { IconButton } from "@/components/base/buttons/icon-button";
-import { ipc, type GitFileEntry, type GitStatus } from "@/lib/ipc";
+import { ImageLightbox } from "@/components/base/image-lightbox";
+import {
+  ipc,
+  type GitFileEntry,
+  type GitImageDiff,
+  type GitStatus,
+} from "@/lib/ipc";
 import { errorText } from "@/lib/errors";
 import { cx } from "@/utils/cx";
 import type { DiffTarget } from "./store";
@@ -12,6 +18,9 @@ import type { DiffTarget } from "./store";
 
 const DIFF_TRUNCATE_LINES = 2000;
 const DIFF_VIRTUALIZE_LINES = 500;
+
+/** Mirrors `files::is_image` in the backend, which also serves the bytes. */
+const IMAGE_FILE_RE = /\.(?:png|jpe?g|gif|webp|svg|bmp|ico)$/i;
 
 export function DiffView({
   workspacePath,
@@ -25,8 +34,10 @@ export function DiffView({
   onBack: () => void;
 }) {
   const [diffText, setDiffText] = useState<string | null>(null);
+  const [imageDiff, setImageDiff] = useState<GitImageDiff | null>(null);
   const [error, setError] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const isImage = IMAGE_FILE_RE.test(target.file);
 
   // Reload when the target changes or when THIS file's status row changes
   // (stage/unstage flips its list membership, edits move add/del counts).
@@ -39,18 +50,32 @@ export function DiffView({
   useEffect(() => {
     let cancelled = false;
     setError(null);
-    ipc
-      .gitDiff(workspacePath, target.file, target.staged)
-      .then((text) => {
-        if (!cancelled) setDiffText(text);
-      })
-      .catch((err: unknown) => {
-        if (!cancelled) setError(errorText(err));
-      });
+    // Binary images have no meaningful patch text — libgit2 only reports
+    // "Binary files … differ" — so fetch both revisions as data URLs.
+    if (isImage) {
+      setImageDiff(null);
+      ipc
+        .gitDiffImages(workspacePath, target.file, target.staged)
+        .then((sides) => {
+          if (!cancelled) setImageDiff(sides);
+        })
+        .catch((err: unknown) => {
+          if (!cancelled) setError(errorText(err));
+        });
+    } else {
+      ipc
+        .gitDiff(workspacePath, target.file, target.staged)
+        .then((text) => {
+          if (!cancelled) setDiffText(text);
+        })
+        .catch((err: unknown) => {
+          if (!cancelled) setError(errorText(err));
+        });
+    }
     return () => {
       cancelled = true;
     };
-  }, [workspacePath, target.file, target.staged, entrySig]);
+  }, [workspacePath, target.file, target.staged, entrySig, isImage]);
 
   const { lines, truncated } = useMemo<{ lines: AnnotatedLine[] | null; truncated: boolean }>(() => {
     if (diffText === null) return { lines: null, truncated: false };
@@ -71,15 +96,19 @@ export function DiffView({
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <DiffViewHeader file={target.file} staged={target.staged} onBack={onBack} />
-      <div ref={scrollRef} className="min-h-0 flex-1 overflow-auto">
-        <DiffContent
-          error={error}
-          lines={lines}
-          truncated={truncated}
-          virtualize={virtualize}
-          rowVirtualizer={rowVirtualizer}
-        />
-      </div>
+      {isImage ? (
+        <ImageDiffBody file={target.file} sides={imageDiff} error={error} />
+      ) : (
+        <div ref={scrollRef} className="min-h-0 flex-1 overflow-auto">
+          <DiffContent
+            error={error}
+            lines={lines}
+            truncated={truncated}
+            virtualize={virtualize}
+            rowVirtualizer={rowVirtualizer}
+          />
+        </div>
+      )}
     </div>
   );
 }
@@ -167,6 +196,86 @@ function DiffContent({
         <p className="sticky bottom-0 bg-background-primary-default px-3 py-1.5 text-xs text-text-tertiary">
           {t("git.diffTooLarge")}
         </p>
+      )}
+    </>
+  );
+}
+
+/** Before / after image preview. Sides that do not exist in a revision are
+ *  dropped, so a newly added image shows one pane, not an empty compare. */
+function ImageDiffBody({
+  file,
+  sides,
+  error,
+}: {
+  file: string;
+  sides: GitImageDiff | null;
+  error: string | null;
+}) {
+  const { t } = useTranslation();
+  const [zoom, setZoom] = useState<{ src: string; label: string } | null>(null);
+
+  if (error) {
+    return <p className="p-3 text-xs text-text-error-primary">{error}</p>;
+  }
+  if (sides === null) {
+    return <p className="p-3 text-body-medium text-text-tertiary">{t("common.loading")}</p>;
+  }
+  const both = sides.old !== null && sides.new !== null;
+  const panes: { key: string; label: string; src: string }[] = [];
+  if (sides.old !== null) {
+    panes.push({
+      key: "old",
+      label: both ? t("git.imageBefore") : t("git.deleted"),
+      src: sides.old,
+    });
+  }
+  if (sides.new !== null) {
+    panes.push({
+      key: "new",
+      label: both ? t("git.imageAfter") : t("git.newFile"),
+      src: sides.new,
+    });
+  }
+  if (panes.length === 0) {
+    return <p className="p-3 text-body-medium text-text-tertiary">{t("git.noChanges")}</p>;
+  }
+
+  return (
+    <>
+      <div className="flex min-h-0 flex-1 gap-2 p-2">
+        {panes.map((pane) => (
+          <div
+            key={pane.key}
+            className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-lg border border-separator-border bg-background-secondary-default"
+          >
+            <div className="shrink-0 border-b border-separator-border px-2 py-1 text-caption-1-medium text-text-tertiary">
+              {pane.label}
+            </div>
+            <div className="min-h-0 flex-1 overflow-auto p-2">
+              <button
+                type="button"
+                onClick={() => setZoom({ src: pane.src, label: pane.label })}
+                aria-label={`${pane.label}: ${file}`}
+                title={t("chat.zoomIn")}
+                className="flex h-full w-full cursor-zoom-in items-center justify-center"
+              >
+                <img
+                  src={pane.src}
+                  alt=""
+                  className="max-h-full max-w-full object-contain"
+                />
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+      {zoom && (
+        <ImageLightbox
+          src={zoom.src}
+          name={`${zoom.label} · ${file}`}
+          onClose={() => setZoom(null)}
+        />
       )}
     </>
   );

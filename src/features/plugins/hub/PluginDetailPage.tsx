@@ -38,6 +38,15 @@ import { CredentialConsentControl } from "./CredentialConsentControl";
 import { usePluginSettingsKey } from "./use-plugin-settings-key";
 import { usePluginsStore } from "../manager/usePlugins";
 import { useMarketplaceStore } from "../marketplace/store";
+import {
+  PluginTranslateMenu,
+  PluginTranslationNotice,
+  useMarketSummarySource,
+  useReadmeTranslation,
+  useSummaryView,
+  type SummaryView,
+} from "./translation/PluginTranslateControl";
+import type { ReadmeTranslation, SummarySource } from "./translation/store";
 
 const BADGE =
   "rounded-md bg-background-secondary-default px-1.5 py-0.5 text-xs text-text-secondary";
@@ -307,6 +316,18 @@ export function PluginDetailPage({
   const [confirming, setConfirming] = useState(false);
 
   const model = pluginDetailModel(id, entry, installed);
+  // 翻译的原文：市场插件用索引里的名称/简介（与列表行共用同一份译文），
+  // 本地插件用清单。README 加载中/拉取失败时是 undefined（未知），不在市场
+  // 里的插件没有 README，记为 null。
+  const summary = useMarketSummarySource(
+    id,
+    entry
+      ? { name: entry.name, description: entry.description ?? "" }
+      : { name: model.name, description: model.description },
+  );
+  const view = useSummaryView(id, summary);
+  const readmeSource = readme.status === "ready" ? readme.markdown : entry ? undefined : null;
+  const readmeTranslation = useReadmeTranslation(id);
   // Market-first artwork, with the installed manifest as the fallback for
   // plugins the index does not carry (locally developed ones).
   const artwork = usePluginArtwork(entry, installed);
@@ -352,16 +373,31 @@ export function PluginDetailPage({
             onInstall={() => void install(id)}
             onOpenSettings={openSettings}
             onRequestUninstall={() => setConfirming(true)}
+            translation={{
+              summary,
+              view,
+              readme: readmeSource,
+              readmeTranslation,
+              fetchReadme: !!entry,
+            }}
           />
 
           <div className="grid grid-cols-1 gap-x-8 gap-y-6 lg:grid-cols-[minmax(0,1fr)_272px]">
             <div className="flex min-w-0 flex-col gap-6">
               <PluginScreenshotCarousel images={artwork.screenshots} name={model.name} />
-              {readme.status === "loading" && <CenteredSpinner className="py-8" />}
-              {readme.status === "ready" && (
-                <PluginReadme markdown={readme.markdown} repo={model.repo ?? ""} />
+              {readmeTranslation ? (
+                // 译文 README 走同一个渲染器（同一套清洗与相对链接解析）；
+                // README 拉取失败时缓存里的译文照样可看。
+                <PluginReadme markdown={readmeTranslation.text} repo={model.repo ?? ""} />
+              ) : (
+                <>
+                  {readme.status === "loading" && <CenteredSpinner className="py-8" />}
+                  {readme.status === "ready" && (
+                    <PluginReadme markdown={readme.markdown} repo={model.repo ?? ""} />
+                  )}
+                </>
               )}
-              {readme.status === "error" && (
+              {readme.status === "error" && !readmeTranslation && (
                 <p className="text-body-2-regular text-text-tertiary">
                   {t("plugins.hub.readmeUnavailable")}
                 </p>
@@ -408,6 +444,7 @@ function PluginDetailHeader({
   onInstall,
   onOpenSettings,
   onRequestUninstall,
+  translation,
 }: {
   id: string;
   model: PluginDetailModel;
@@ -421,15 +458,38 @@ function PluginDetailHeader({
   onInstall: () => void;
   onOpenSettings: () => void;
   onRequestUninstall: () => void;
+  translation: {
+    summary: SummarySource;
+    view: SummaryView;
+    readme: string | null | undefined;
+    readmeTranslation: ReadmeTranslation | null;
+    fetchReadme: boolean;
+  };
 }) {
   const { t } = useTranslation();
+  const translated = translation.view.translation;
+  const name = translated ? translation.view.name : model.name;
+  const description = translated ? translation.view.description : model.description;
   return (
     <header className="flex flex-wrap items-start gap-4">
       <PluginAvatar id={id} name={model.name} src={icon} size={56} />
       <div className="flex min-w-0 flex-1 flex-col gap-2">
-        <h2 className="text-title-3-medium text-text-primary">{model.name}</h2>
-        {model.description && (
-          <p className="max-w-2xl text-body-2-regular text-text-secondary">{model.description}</p>
+        <h2
+          title={translated ? model.name : undefined}
+          className="text-title-3-medium text-text-primary"
+        >
+          {name}
+        </h2>
+        <PluginTranslationNotice
+          pluginId={id}
+          summary={translation.summary}
+          view={translation.view}
+          readme={translation.readme}
+          readmeTranslation={translation.readmeTranslation}
+          fetchReadme={translation.fetchReadme}
+        />
+        {description && (
+          <p className="max-w-2xl text-body-2-regular text-text-secondary">{description}</p>
         )}
         <div className="flex flex-wrap items-center gap-2">
           {model.version && <span className={BADGE}>v{model.version}</span>}
@@ -452,6 +512,15 @@ function PluginDetailHeader({
       </div>
 
       <PluginHeaderActions
+        translateMenu={
+          <PluginTranslateMenu
+            pluginId={id}
+            summary={translation.summary}
+            readme={translation.readme}
+            fetchReadme={translation.fetchReadme}
+            variant="button"
+          />
+        }
         entry={entry}
         installed={installed}
         installing={installing}
@@ -468,6 +537,7 @@ function PluginDetailHeader({
 
 /** Install / update / settings / uninstall cluster on the title row. */
 function PluginHeaderActions({
+  translateMenu,
   entry,
   installed,
   installing,
@@ -478,6 +548,7 @@ function PluginHeaderActions({
   onOpenSettings,
   onRequestUninstall,
 }: {
+  translateMenu: React.ReactNode;
   entry?: MarketPlugin;
   installed?: PluginInfo;
   installing: InstallProgress;
@@ -491,6 +562,7 @@ function PluginHeaderActions({
   const { t } = useTranslation();
   return (
     <div className="flex shrink-0 flex-wrap items-center gap-2 pt-1">
+      {translateMenu}
       {installing ? (
         <button type="button" disabled className={INSTALLING_BUTTON}>
           <Loader2 className="size-4 animate-spin" aria-hidden />

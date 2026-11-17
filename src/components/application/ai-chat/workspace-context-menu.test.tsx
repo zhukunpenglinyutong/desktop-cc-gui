@@ -20,7 +20,7 @@ describe("workspace menu plugin isolation", () => {
   const menu = { x: 10, y: 10, workspaceId: "menu-workspace", archived: false };
 
   beforeEach(() => {
-    useChatStore.setState({ workspaces: [] });
+    useChatStore.setState({ workspaces: [], workspaceDefaultEngines: {}, engines: [] });
     disposers = [];
     container = document.createElement("div");
     document.body.appendChild(container);
@@ -56,6 +56,21 @@ describe("workspace menu plugin isolation", () => {
     act(() => useChatStore.setState({ workspaces: [{ ...useChatStore.getState().workspaces[0]!, parentId: "parent", kind: "worktree" }] }));
     act(() => root.render(<WorkspaceContextMenu menu={menu} onClose={() => {}} onSetPinned={onSetPinned} />));
     expect(menuItems().some((button) => button.textContent === i18n.t("chat.unpinWorkspace"))).toBe(false);
+  });
+
+  it("opens the default engine picker for the right-clicked workspace", () => {
+    useChatStore.setState({
+      workspaces: [{ id: menu.workspaceId, path: "/ws", name: "ws", lastOpenedAt: null, sortOrder: 0, groupId: null }],
+      workspaceDefaultEngines: { [menu.workspaceId]: "codex" },
+      engines: [{ id: "codex", enabled: true, available: true, supportsImages: true, permissions: [] }],
+    });
+    act(() => root.render(<WorkspaceContextMenu menu={menu} onClose={() => {}} onSetArchived={() => {}} />));
+    const item = menuItems().find((button) => button.textContent === i18n.t("chat.workspaceDefaultEngine"));
+    expect(item).toBeDefined();
+    expect(menuItems()[0]).toBe(item);
+    expect(menuItems()[1]?.textContent).toBe(i18n.t("chat.archiveWorkspace"));
+    act(() => item!.click());
+    expect(document.querySelector('[role="dialog"] button[aria-haspopup="listbox"]')?.textContent).toContain(i18n.t("settings.engines.codex"));
   });
 
   it("keeps the workspace alias action usable when a plugin icon crashes", () => {

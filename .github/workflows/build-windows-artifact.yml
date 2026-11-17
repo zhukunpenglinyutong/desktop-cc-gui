@@ -49,6 +49,12 @@ jobs:
           $config.bundle.createUpdaterArtifacts = $false
           $config | ConvertTo-Json -Depth 20 | Set-Content $path
 
+      # Same single-attempt NSIS download as release.yml; see
+      # scripts/prefetch-tauri-nsis.ps1.
+      - name: Prefetch NSIS toolchain
+        shell: pwsh
+        run: pwsh -NoProfile -NonInteractive -File scripts/prefetch-tauri-nsis.ps1
+
       - name: Build unsigned Windows installer
         env:
           NODE_OPTIONS: --max-old-space-size=8192

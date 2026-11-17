@@ -1,4 +1,4 @@
-import type { Message } from "@/lib/ipc";
+import { AGENT_STATUS_ROLE, type Message } from "@/lib/ipc";
 import { isCompactCommandRow, isResumeNudgeRow } from "../internal-rows";
 
 export type ProcessItem = {
@@ -108,19 +108,13 @@ export function buildRows(messages: Message[]): TimelineRow[] {
   let i = 0;
   while (i < messages.length) {
     const message = messages[i];
-    if (isPlaceholderMessage(message)) {
+    if (message.role === AGENT_STATUS_ROLE || isPlaceholderMessage(message) || isResumeNudgeRow(message)) {
       i++;
       continue;
     }
-    // The compaction command keeps its place in the transcript, as the grey
-    // line; the resume nudge has no place at all — the reply it triggers is
-    // the visible part.
+    // The compaction command keeps its place as a grey line in the transcript.
     if (isCompactCommandRow(message)) {
       rows.push(getCurtainRow(message));
-      i++;
-      continue;
-    }
-    if (isResumeNudgeRow(message)) {
       i++;
       continue;
     }
@@ -131,7 +125,11 @@ export function buildRows(messages: Message[]): TimelineRow[] {
         const step = messages[i];
         if (step.role === "tool" || step.role === "thinking") {
           items.push(getProcessItem(step));
-        } else if (!isPlaceholderMessage(step)) {
+        } else if (
+          step.role !== AGENT_STATUS_ROLE &&
+          !isPlaceholderMessage(step) &&
+          !isResumeNudgeRow(step)
+        ) {
           break;
         }
         i++;

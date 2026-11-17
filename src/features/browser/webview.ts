@@ -11,13 +11,29 @@ export interface WebviewRect {
   height: number;
 }
 
+/** Coalesce concurrent creates for the same tab. Creation is async in the
+ * native layer, so React StrictMode's double effect (or a bounds-change
+ * retry during startup) must not race two add_child calls with one label. */
+const pendingCreates = new Map<string, Promise<void>>();
+
 export function createBrowserWebview(id: string, url: string, rect: WebviewRect): Promise<void> {
   if (isWeb) return Promise.resolve();
-  return invoke<void>("browser_create", { id, url, ...rect });
+  const pending = pendingCreates.get(id);
+  if (pending) return pending;
+  const creation = invoke<void>("browser_create", { id, url, ...rect });
+  pendingCreates.set(id, creation);
+  const clear = () => {
+    if (pendingCreates.get(id) === creation) pendingCreates.delete(id);
+  };
+  creation.then(clear, clear);
+  return creation;
 }
 
-export function closeBrowserWebview(id: string): Promise<void> {
+export async function closeBrowserWebview(id: string): Promise<void> {
   if (isWeb) return Promise.resolve();
+  // Creating is async now; a tab can be closed before add_child settles. Wait
+  // for that create so the new native webview cannot outlive its tab.
+  await pendingCreates.get(id)?.catch(() => {});
   // Late invocations can land after the native side already closed the
   // webview (tab close races an unmount); "not found" is not an error here.
   return invoke<void>("browser_close", { id }).catch(() => {});
@@ -25,7 +41,7 @@ export function closeBrowserWebview(id: string): Promise<void> {
 
 export function setBrowserWebviewBounds(id: string, rect: WebviewRect): Promise<void> {
   if (isWeb) return Promise.resolve();
-  return invoke<void>("browser_set_bounds", { id, ...rect }).catch(() => {});
+  return invoke<void>("browser_set_bounds", { id, ...rect });
 }
 
 export function setBrowserWebviewVisible(id: string, visible: boolean): Promise<void> {
@@ -33,8 +49,11 @@ export function setBrowserWebviewVisible(id: string, visible: boolean): Promise<
   return invoke<void>("browser_set_visible", { id, visible }).catch(() => {});
 }
 
-export function navigateBrowserWebview(id: string, url: string): Promise<void> {
-  if (isWeb) return Promise.resolve();
+export async function navigateBrowserWebview(id: string, url: string): Promise<void> {
+  if (isWeb) return;
+  // A coalesced create keeps its first URL, and navigating before it lands
+  // hits "not found": wait so an address submitted mid-create still applies.
+  await pendingCreates.get(id)?.catch(() => {});
   return invoke<void>("browser_navigate", { id, url });
 }
 

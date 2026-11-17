@@ -105,9 +105,11 @@ describe("worktree store", () => {
     useWorktreeStore.getState().applyProgress(progress(id, "done"));
 
     expect(useWorktreeStore.getState().pending).toHaveLength(0);
-    await vi.waitFor(() => expect(startNewChatMock).toHaveBeenCalledWith(ARGS.worktreePath));
+    // Surfaces clear inside startNewChat, only once the chat really opens.
+    await vi.waitFor(() =>
+      expect(startNewChatMock).toHaveBeenCalledWith(ARGS.worktreePath, undefined, dismissCenterSurfacesMock),
+    );
     expect(refreshWorkspacesMock).toHaveBeenCalled();
-    expect(dismissCenterSurfacesMock).toHaveBeenCalled();
   });
 
   it("done without openSessionAfter refreshes but does not open a chat", async () => {

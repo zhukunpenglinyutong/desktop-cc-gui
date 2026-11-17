@@ -25,6 +25,9 @@ function gitErrorText(text: string): string | null {
 export function errorText(err: unknown): string {
   const text = typeof err === "string" ? err : err instanceof Error ? err.message : null;
   if (text !== null) {
+    if (text === "CCGUI_SESSION_NOT_FOUND") {
+      return i18n.t("chat.renameSessionMissing") || text;
+    }
     const git = gitErrorText(text);
     if (git !== null) return git;
     const prefix = "CCGUI_PROVIDER_MIGRATION_CONFLICT:";
