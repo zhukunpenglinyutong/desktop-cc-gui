@@ -6,13 +6,13 @@ import {
   type Message,
   type SessionMeta,
   type SessionPage,
-  type Workspace,
 } from "@/lib/ipc";
 import type { EffortLevel } from "@/components/application/ai-chat/cli-menu";
 import { listenEngineEvents, listenSessionsChanged, listenComputerUseEscape } from "@/lib/events";
 import { errorText } from "@/lib/errors";
 import { writeStored } from "@/lib/storage";
 import { subscribeTauriEvent } from "@/hooks/use-tauri-event";
+import { sameWorkspacePath } from "@/lib/workspace-path";
 import {
   CLI_CONFIG_CHANGED_EVENT,
   engineCurrents,
@@ -771,6 +771,34 @@ export function createSessionActions(
     init: async () => {
       if (get().initialized) return;
       set({ initialized: true });
+      let initializing = true;
+      let catalogChanged = false;
+      let disposed = false;
+      let unlistenSessions: (() => void) | undefined;
+      eventTeardowns.push(() => {
+        disposed = true;
+        unlistenSessions?.();
+      });
+      const onCatalogChanged = () => {
+        if (disposed) return;
+        if (initializing) {
+          catalogChanged = true;
+        } else {
+          void get().refreshWorkspaces().then(() => get().refreshSessions());
+        }
+      };
+      try {
+        // Register before reading: a fast packaged startup scan can finish
+        // between the first query and an asynchronous listener registration.
+        unlistenSessions = await listenSessionsChanged(onCatalogChanged);
+        if (disposed) {
+          unlistenSessions();
+          return;
+        }
+      } catch (error) {
+        if (!disposed) set({ initialized: false, actionError: errorText(error) });
+        return;
+      }
       eventTeardowns.push(
         subscribeTauriEvent(() =>
           listenEngineEvents((events) =>
@@ -787,9 +815,6 @@ export function createSessionActions(
             }),
           ),
         ),
-        subscribeTauriEvent(() =>
-          listenSessionsChanged(() => void get().refreshSessions()),
-        ),
         // Global Esc during a computer-use run: the backend arms that hotkey
         // only while a run is active, so this fires exactly when the user
         // needs the escape hatch out of a machine-driving turn.
@@ -804,18 +829,45 @@ export function createSessionActions(
       eventTeardowns.push(() =>
         window.removeEventListener(CLI_CONFIG_CHANGED_EVENT, onCliConfigChanged),
       );
-      const [workspaces, sessions, archivedSessions, engines, settings] = await Promise.all([
-        ipc.listWorkspaces().catch(() => [] as Workspace[]),
-        ipc.listSessions().catch(() => [] as SessionMeta[]),
-        ipc.listArchivedSessions().catch(() => [] as SessionMeta[]),
-        ipc.listEngines().catch(() => [] as EngineInfo[]),
-        ipc.getAppSettings().catch(() => null),
-      ]);
+      setSessionSourcesChangedCallback(onCatalogChanged);
+      // Binary discovery can stall on a CLI installation or an unavailable
+      // search path. It must never gate the persisted catalog or tab restore.
+      // Apply its result to current state: history may change while it runs.
+      void ipc.listEngines().then((engines) => {
+        if (disposed) return;
+        set((state) => ({
+          engines,
+          sessions: visibleSessions(state.sessions, engines),
+        }));
+        ensureUsableEngine(engines);
+      }).catch((error) => {
+        if (!disposed) set({ actionError: errorText(error) });
+      });
+      let snapshot;
+      do {
+        catalogChanged = false;
+        snapshot = await Promise.all([
+          ipc.listWorkspaces().catch(() => ipc.listWorkspaces()).catch((error) => {
+            set({ actionError: errorText(error) });
+            return get().workspaces;
+          }),
+          ipc.listSessions().catch(() => ipc.listSessions()).catch((error) => {
+            set({ actionError: errorText(error) });
+            return get().sessions;
+          }),
+          ipc.listArchivedSessions().catch(() => [] as SessionMeta[]),
+          ipc.getAppSettings().catch(() => null),
+          listExternalSessionMetas(),
+        ]);
+        // A change received during this snapshot invalidates it. Re-read
+        // before restoring tabs so a stale empty catalog cannot discard them.
+      } while (catalogChanged);
+      if (disposed) return;
+      const [workspaces, sessions, archivedSessions, settings, external] = snapshot;
+      const engines = get().engines;
       // Plugin session sources (remote/容器内 CLI) merge under the local
       // scan so WSL 等远端会话进侧栏,且重启时已开标签不至于因“会话表无
       // 此会话”被清掉。
-      setSessionSourcesChangedCallback(() => void get().refreshSessions());
-      const external = await listExternalSessionMetas();
       const archivedSessionKeys = archivedKeyMap(archivedSessions);
       const allSessions = withoutArchived(
         mergeExternalSessions(sessions, external, workspaces.map((w) => w.path)),
@@ -832,7 +884,7 @@ export function createSessionActions(
       // Restore persisted tabs; drop ones whose workspace/session is gone.
       const restoredTabs = readPersistedTabs().filter(
         (t) =>
-          workspaces.some((w) => w.path === t.workspacePath) &&
+          workspaces.some((w) => sameWorkspacePath(w.path, t.workspacePath)) &&
           (t.sessionId === null ||
             allSessions.some(
               (s) => s.engine === t.engine && s.sessionId === t.sessionId,
@@ -884,7 +936,14 @@ export function createSessionActions(
           if (config) set({ providers: engineCurrents(config) });
         })
         .catch(() => {});
+      if (disposed) return;
       if (activeTab) activateTab(activeTab);
+      initializing = false;
+      // Plugin discovery/provider hydration above can also yield to a scan.
+      if (catalogChanged) {
+        await get().refreshWorkspaces();
+        await get().refreshSessions();
+      }
     },
 
     refreshSessions: async () => {
