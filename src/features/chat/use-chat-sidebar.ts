@@ -16,6 +16,7 @@ import { parseDraftSessionKey, sessionKey, useChatStore, sortedWorkspaceGroups }
 import { dismissCenterSurfaces } from "./center-surfaces";
 import { focusComposerWhenVisible } from "./focus-composer";
 import { relativeTime } from "./time";
+import { sameWorkspacePath } from "@/lib/workspace-path";
 import { useWorkspaceUIHooks, workspaceLabelSuffix } from "./workspace-ui-bridge";
 import type { ChatPageDialog } from "./ChatPageDialogs";
 
@@ -138,7 +139,7 @@ export function useChatSidebar({
         worktrees: children?.map((c) => buildRepo(c, false)),
         threads: [
           ...openTabs.flatMap((tab) => {
-            if (tab.sessionId !== null || tab.workspacePath !== w.path) return [];
+            if (tab.sessionId !== null || !sameWorkspacePath(tab.workspacePath, w.path)) return [];
             return [
               {
                 id: sessionKey(tab.engine, null, tab.workspacePath),
@@ -150,7 +151,7 @@ export function useChatSidebar({
             ];
           }),
           ...sorted.flatMap((s) => {
-            if (s.workspacePath !== w.path) return [];
+            if (!sameWorkspacePath(s.workspacePath, w.path)) return [];
             return [
               {
                 id: `${s.engine}/${s.sessionId}`,

@@ -149,6 +149,8 @@ fn stat_all(
 ) -> (Vec<Option<(i64, i64)>>, String) {
     let mut signature_hasher = Sha256::new();
     signature_hasher.update(format!("v{}|", crate::db::CACHE_VERSION).as_bytes());
+    // Retry previously skipped Windows cwd spellings even if no file moved.
+    signature_hasher.update(b"workspace-match=2|");
     signature_hasher.update(accepted_signature.as_bytes());
     signature_hasher.update(b"codex_home=");
     signature_hasher.update(crate::engine::codex_home().to_string_lossy().as_bytes());
@@ -881,28 +883,69 @@ fn scan_inner(
     })
 }
 
-/// Spawn a background scan off the Tauri runtime. Concurrent invocations
-/// collapse: a scan already in flight makes the new call a no-op.
+#[derive(Default)]
+struct ScanRequests {
+    running: bool,
+    pending: bool,
+}
+
+impl ScanRequests {
+    /// Coalesce requests during a pass into one further pass. In particular,
+    /// workspace registration after gather_candidates must not be forgotten.
+    fn request(&mut self) -> bool {
+        if self.running {
+            self.pending = true;
+            false
+        } else {
+            self.running = true;
+            true
+        }
+    }
+
+    fn finish_pass(&mut self) -> bool {
+        if self.pending {
+            self.pending = false;
+            true
+        } else {
+            self.running = false;
+            false
+        }
+    }
+}
+
+static SCAN_REQUESTS: parking_lot::Mutex<ScanRequests> = parking_lot::Mutex::new(ScanRequests {
+    running: false,
+    pending: false,
+});
+
+/// Spawn one background worker; requests arriving during a pass schedule a
+/// further pass using a fresh workspace/file snapshot.
 pub fn spawn_scan(db: Arc<crate::db::Db>, sink: Arc<crate::event_sink::EventSink>) {
-    use std::sync::atomic::{AtomicBool, Ordering};
-    static SCAN_RUNNING: AtomicBool = AtomicBool::new(false);
-    if SCAN_RUNNING
-        .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
-        .is_err()
-    {
+    if !SCAN_REQUESTS.lock().request() {
         return;
     }
     tauri::async_runtime::spawn_blocking(move || {
         // RAII so a panicking scan still frees the slot for the next one.
-        struct ResetOnDrop;
+        struct ResetOnDrop(bool);
         impl Drop for ResetOnDrop {
             fn drop(&mut self) {
-                SCAN_RUNNING.store(false, Ordering::SeqCst);
+                if self.0 {
+                    *SCAN_REQUESTS.lock() = ScanRequests::default();
+                }
             }
         }
-        let _guard = ResetOnDrop;
-        if let Err(error) = scan_with_sink(&db, &sink) {
-            eprintln!("[scanner] scan failed: {error}");
+        let mut guard = ResetOnDrop(true);
+        loop {
+            if let Err(error) = scan_with_sink(&db, &sink) {
+                eprintln!("[scanner] scan failed: {error}");
+            }
+            let mut requests = SCAN_REQUESTS.lock();
+            if !requests.finish_pass() {
+                // Disarm while holding the lock: a new worker can start as
+                // soon as it is released and must keep its own running slot.
+                guard.0 = false;
+                break;
+            }
         }
         // Full-text index follows every scan — including tier-1
         // short-circuits: right after an upgrade the scan may see no file
@@ -916,6 +959,29 @@ pub fn spawn_scan(db: Arc<crate::db::Db>, sink: Arc<crate::event_sink::EventSink
 #[cfg(test)]
 pub(super) mod tests {
     use super::*;
+
+    #[test]
+    fn scan_requests_keep_workspace_additions_during_an_active_pass() {
+        let mut requests = ScanRequests::default();
+        assert!(requests.request());
+        assert!(!requests.request());
+        assert!(!requests.request());
+        assert!(requests.finish_pass(), "new workspaces require a fresh pass");
+        assert!(!requests.finish_pass(), "requests coalesce into one extra pass");
+        assert!(requests.request(), "the worker can restart after becoming idle");
+        assert!(!requests.finish_pass());
+    }
+
+    #[test]
+    fn scan_requests_during_a_followup_pass_schedule_another_pass() {
+        let mut requests = ScanRequests::default();
+        assert!(requests.request());
+        assert!(!requests.request());
+        assert!(requests.finish_pass());
+        assert!(!requests.request());
+        assert!(requests.finish_pass());
+        assert!(!requests.finish_pass());
+    }
 
     /// Point HOME at a scratch dir for the duration of a test.
     /// Serialized: two tests mutating HOME in parallel would clobber each other.
