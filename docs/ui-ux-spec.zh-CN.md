@@ -71,6 +71,7 @@
 
 ## 3. 状态与可用性
 
+- **源码编辑器按字节检测 UTF-8 / GBK 并按原格式保存**：桌面文件读取先识别 UTF-8 BOM，再严格尝试 UTF-8；不是有效 UTF-8 时按 GBK 解码。读取上限落在 UTF-8 或 GBK 字符中间时丢弃不完整尾字节，不误判整个前缀为 GBK，也不显示解码错误。GBK 解码后无法逐字节写回原文的内容（GB18030 四字节序列、`A2E3`、`A3A0`）按解码错误处理并只读，避免保存时改动用户没碰过的字节。编辑器头部显示编码选择器，手动切换会从磁盘按选中编码重读，文件有未保存修改、远端只读或文件被截断时禁用切换；切换编码时保留当前编辑 / 预览模式。解码仍有错误时允许切换编码重读，不允许把替换字符写回文件；截断状态与解码错误同时显示。保存沿用读取时的编码、UTF-8 BOM 与检测到的主换行格式；GBK 无法表示的字符必须报错并提示首个字符、Unicode 码点和行号（CRLF、CR、LF 各算一行），不可静默替换；未提供换行格式的写入沿用传入文本中的换行。实现：`src-tauri/src/files.rs`（`decode_text` / `encode_text`）、`src/features/files/FileEditorHeader.tsx`、`EditorPane.tsx`。回归：`files.rs` 编解码用例、`EditorPane.test.tsx`、`FileEditorHeader.test.tsx`。
 - **引用选区到对话**：文件编辑器在编辑模式下（会话转录文件除外）页头显示「引用选区到对话」。点击后把 `./相对路径#L起-L止` 与逐行加 `> ` 的选中原文（含未保存改动）追加到当前会话草稿，随即切回对话并聚焦输入框（`dismissCenterSurfaces` + `focusComposerWhenVisible`）：文件页签与对话互斥，停在文件页等于没有反馈，用户会重复点击。前提不满足时按本节「前置条件未满足的禁用」保持可 hover 的禁用并说明缺什么：没有选区（`files.quoteSelectionEmpty`）、没有会话（`files.quoteSelectionNoSession`）、文件不在当前会话工作区内（`files.quoteSelectionOutsideWorkspace`）。历史用户消息里紧跟 `> ` 行的路径行可点击，打开会话工作区内的该文件并选中对应行（Markdown 预览先切编辑；文件变短时落到末行；读取失败显示错误，再点会重读）；含 `..`、空段、反斜杠或控制字符的路径不作为链接。实现见 `EditorPane.tsx`、`MessageTimeline.tsx`、`text-reference.ts`。回归：`text-reference.acceptance.test.tsx`、`EditorPane.test.tsx`、`MessageTimeline.test.tsx`、`text-reference.test.ts`。
 - **工作区里的 MCP 配置不自动执行**：MCP 页与 `/mcp` 面板打开时只自动检测用户自己配置里的服务（`autoProbeEligible`）；配置文件位于工作区内的条目（后端 `workspaceFile`，由 `mcp::source_in_workspace` 判定，未知来源按工作区处理）从不自动检测。手动检测（单条或「检测全部」）先弹「运行工作区里的 MCP 配置？」（`McpProbeConfirmHost`，`mcp_probe_plan` 提供内容）：列出命令与参数、工作目录、env 键名、脱敏后的 URL 与请求头键名，弹出时焦点不在「运行检测」上；确认绑定计划指纹（`McpProbePlan.fingerprint`，完整目标含参数与 env 值的哈希），每次检测前重读计划，指纹没变不再询问，变了（`git pull` 或 agent 改了文件，哪怕列表还没刷新）就重新询问；检测请求带上已确认的指纹，后端重新计算不一致时以 `conflict` 拒绝执行，前端随即忘掉这条确认。拒绝后「检测全部」只检测用户级服务。检测工作区条目时 URL 与请求头里的 `${ENV}` 原样发送、不展开（避免把环境变量里的密钥发到仓库指定的地址）。回归：`probe-store.test.ts`、`probe-confirm.test.ts`、`McpProbeConfirmHost.test.tsx`、`McpSection.test.tsx`、Rust `mcp::probe::tests`。
 - **使用统计可关闭，且不在页面里运行第三方脚本**：「设置 → 关于 → 使用统计」开关（`AnalyticsSetting.tsx`，仅桌面端显示，默认开启，存 `AppSettings.analyticsEnabled`，只经 `analytics_enabled_get/set` 读写，整对象保存时缺省该字段会保留原值）。每次启动由后端（`baidu_tongji.rs`）向百度统计发一次 hm.gif 访问记录，内容只有版本、系统、界面语言、屏幕尺寸与随机访客 ID，不带页面地址与任何令牌；主窗口与 Web 端都不加载 `hm.js`，CSP 不放行百度域名。保存失败时开关回到原状态并提示 `settings.analyticsSaveFailed`。
@@ -363,6 +364,7 @@ Windows 桌面端在「发送系统通知」下提供「通知提示音」开关
 | 模型目录 | `src/components/application/ai-chat/engine-model-panel.tsx` | `useActionFeedback` | — |
 | 浏览器刷新 | `src/features/browser/BrowserPane.tsx` | `useActionFeedback` | webview 无加载完成事件，对号 = 指令已下发 |
 | HTML 预览刷新 | `src/features/files/FileEditorHeader.tsx` | `useActionFeedback({ spin: true })` | 重挂载 iframe 重新读盘；iframe 同样没有可等待的加载完成事件，对号 = 指令已下发 |
+| 文件编码切换并重读 | `src/features/files/FileEditorHeader.tsx`、`EditorPane.tsx` | 编辑器内容区加载态 | 从磁盘原始字节按选择的 UTF-8 / GBK 重读；有未保存改动时禁用 |
 | 状态栏「立即同步」 | `src/components/application/app-status-bar/app-status-bar.tsx` | `useRunningFeedback(syncing)` | 进度由 `scan://progress` 事件驱动 |
 | Skills 刷新 | `src/features/skills/InstalledPane.tsx` | `useActionFeedback({ spin: true })` | 一次动作同时重读已安装列表与更新信号；失败走行内 `role="alert"` |
 | Bot「刷新上下文」 | `src/features/settings/agents-prompts/bot-prompt-preview.tsx` | **不加反馈**（就地换成一行说明） | 丢弃已冻结的提示词区块，下次发送重新拼装；语义是「放弃这次会话的快照」而非重读数据，所以不进转圈→对号那套，点击后按钮旁写明「已刷新，下次发送重新拼装」与「会让前缀缓存失效」 |
@@ -530,10 +532,6 @@ Windows 桌面端在「发送系统通知」下提供「通知提示音」开关
 | v0.3 | 2026-09 | 插件市场开发者列改用 GitHub 真实头像（失败回落首字母瓷砖）；补充§3 头像规则 |
 | v0.2 | 2026-09 | 插件市场改为表格化列表（分类 chips 带计数、排序、搜索、行内单一状态）；详情页改「左正文 + 右信息栏」；补充§3 列表状态规则 |
 | v0.1 | 2026-09 | 首版：设计基础、状态规范、刷新/复制动作反馈、刷新入口清单 |
-
-
-
-
 
 ## 插件续接原生会话（SDK 0.3.26）
 
