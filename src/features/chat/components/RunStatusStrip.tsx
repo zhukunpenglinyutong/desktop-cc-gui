@@ -805,11 +805,19 @@ export const RunStatusStrip = memo(function RunStatusStrip({
   // Every fold below walks the whole loaded session. Stream flushes replace
   // the array per frame, so the summary republishes at most four times a
   // second instead of re-reading a long transcript on every token.
-  const messages = useCoalescedValue(liveMessages, STRIP_REFRESH_MS, sameSummaryHistory);
+  // Keyed by session: switching tabs shows the new session at once instead of
+  // the previous session's summary for up to one refresh window.
+  const messages = useCoalescedValue(
+    liveMessages,
+    STRIP_REFRESH_MS,
+    sameSummaryHistory,
+    sessionKey,
+  );
   const subagentHistory = useCoalescedValue(
     liveSubagentHistory,
     STRIP_REFRESH_MS,
     sameSummaryHistory,
+    sessionKey,
   );
   const allHistory = useMemo(
     () => (subagentHistory.length ? [...subagentHistory, ...messages] : messages),

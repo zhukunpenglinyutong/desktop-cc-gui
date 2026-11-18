@@ -38,23 +38,36 @@ export function useThrottled(value: string, ms: number): string {
  *  those never republish and never schedule work. For consumers whose render
  *  cost scales with the input — a session-wide fold re-read on every stream
  *  flush — a status summary does not need a per-frame cadence. Not for text
- *  that must stay frame-accurate. */
+ *  that must stay frame-accurate.
+ *
+ *  `resetKey` names the source of `value` (e.g. the session). A new source is
+ *  not an update of the old one, so it is shown in the same render instead of
+ *  waiting out the previous source's window. */
 export function useCoalescedValue<T>(
   value: T,
   ms: number,
   isSame: (previous: T, next: T) => boolean = Object.is,
+  resetKey?: unknown,
 ): T {
-  const [visible, setVisible] = useState(value);
+  const [visible, setVisible] = useState({ value, key: resetKey });
   const latest = useRef(value);
   const timer = useRef<number | null>(null);
   const publishedAt = useRef(Number.NEGATIVE_INFINITY);
+  const sourceChanged = !Object.is(visible.key, resetKey);
   useLayoutEffect(() => {
     latest.current = value;
-    if (isSame(visible, value)) return;
+    if (sourceChanged) {
+      if (timer.current !== null) window.clearTimeout(timer.current);
+      timer.current = null;
+      publishedAt.current = Date.now();
+      setVisible({ value, key: resetKey });
+      return;
+    }
+    if (isSame(visible.value, value)) return;
     const wait = publishedAt.current + ms - Date.now();
     if (wait <= 0) {
       publishedAt.current = Date.now();
-      setVisible(value);
+      setVisible({ value, key: resetKey });
       return;
     }
     // A trailing publish is already scheduled; it reads the newest value.
@@ -62,9 +75,10 @@ export function useCoalescedValue<T>(
     timer.current = window.setTimeout(() => {
       timer.current = null;
       publishedAt.current = Date.now();
-      setVisible(latest.current);
+      // A source change clears this timer, so `resetKey` is still current.
+      setVisible({ value: latest.current, key: resetKey });
     }, wait);
-  }, [value, visible, ms, isSame]);
+  }, [value, visible, ms, isSame, resetKey, sourceChanged]);
   useLayoutEffect(
     () => () => {
       if (timer.current !== null) window.clearTimeout(timer.current);
@@ -72,5 +86,5 @@ export function useCoalescedValue<T>(
     },
     [],
   );
-  return visible;
+  return sourceChanged ? value : visible.value;
 }

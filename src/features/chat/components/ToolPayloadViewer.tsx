@@ -36,8 +36,12 @@ function truncatePreviewText(text: string): {
   if (text.length <= TOOL_TEXT_PREVIEW_CHARS) {
     return { text, truncated: false, totalChars: text.length };
   }
+  // Do not split a surrogate pair (emoji) at the cut, or a stray "\uFFFD" shows.
+  const end = /[\uD800-\uDBFF]/.test(text[TOOL_TEXT_PREVIEW_CHARS - 1])
+    ? TOOL_TEXT_PREVIEW_CHARS - 1
+    : TOOL_TEXT_PREVIEW_CHARS;
   return {
-    text: text.slice(0, TOOL_TEXT_PREVIEW_CHARS),
+    text: text.slice(0, end),
     truncated: true,
     totalChars: text.length,
   };
@@ -50,7 +54,7 @@ function BoundedPre({
   text: string;
   className?: string;
 }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [showFull, setShowFull] = useState(false);
   const preview = useMemo(() => truncatePreviewText(text), [text]);
   const visibleText = showFull ? text : preview.text;
@@ -61,8 +65,8 @@ function BoundedPre({
         <div className="flex items-center justify-between border-t border-border-secondary/60 bg-background-secondary-default/40 px-3 py-1.5 text-[11px] text-text-tertiary">
           <span>
             {t("chat.toolPayloadTruncated", {
-              shown: TOOL_TEXT_PREVIEW_CHARS.toLocaleString(),
-              total: preview.totalChars.toLocaleString(),
+              shown: preview.text.length.toLocaleString(i18n.language),
+              total: preview.totalChars.toLocaleString(i18n.language),
             })}
           </span>
           <button

@@ -113,4 +113,44 @@ describe("useCoalescedValue", () => {
     });
     container.remove();
   });
+
+  it("shows a new source at once and drops the old source's pending publish", () => {
+    const D = [4];
+    let latest: number[] = A;
+    let key = "session-a";
+    const renders: number[][] = [];
+    function TestComponent() {
+      const value = useCoalescedValue(latest, 250, Object.is, key);
+      renders.push(value);
+      return null;
+    }
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    const push = (value: number[], nextKey = key) => {
+      latest = value;
+      key = nextKey;
+      act(() => {
+        root.render(<TestComponent />);
+      });
+    };
+    act(() => {
+      root.render(<TestComponent />);
+    });
+    push(B); // leading edge: published, window open
+    push(C); // held for the trailing publish
+    expect(renders.at(-1)).toBe(B);
+
+    const before = renders.length;
+    push(D, "session-b");
+    // Not one render of the new source may show the old source's value.
+    expect(renders.slice(before).every((value) => value === D)).toBe(true);
+    act(() => vi.advanceTimersByTime(1000));
+    expect(renders.at(-1)).toBe(D);
+
+    act(() => {
+      root.unmount();
+    });
+    container.remove();
+  });
 });
