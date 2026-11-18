@@ -60,9 +60,12 @@ impl TextEncoding {
     }
 }
 
+/// `complete` is false when the read was capped, so a character split by the
+/// cap is left out instead of being reported as a decode error.
 fn decode_text(
     bytes: &[u8],
     requested: Option<&str>,
+    complete: bool,
 ) -> Result<(String, TextEncoding, bool, bool, &'static str), String> {
     let has_utf8_bom = bytes.starts_with(&[0xEF, 0xBB, 0xBF]);
     let encoding = match requested {
@@ -82,8 +85,17 @@ fn decode_text(
             Err(_) => (String::from_utf8_lossy(payload).into_owned(), true),
         },
         TextEncoding::Gbk => {
-            let (text, had_errors) = GBK.decode_without_bom_handling(payload);
-            (text.into_owned(), had_errors)
+            let mut decoder = GBK.new_decoder_without_bom_handling();
+            let capacity = decoder
+                .max_utf8_buffer_length(payload.len())
+                .ok_or_else(|| "text too large to decode".to_string())?;
+            let mut text = String::with_capacity(capacity);
+            let (_, _, had_errors) = decoder.decode_to_string(payload, &mut text, complete);
+            // GB18030 four-byte sequences, A2E3 and A3A0 decode cleanly but are
+            // written back as other bytes, so saving would alter untouched text.
+            let changes_on_save =
+                complete && !had_errors && GBK.encode(&text).0.as_ref() != payload;
+            (text, had_errors || changes_on_save)
         }
     };
     let line_ending = detect_line_ending(&text);
@@ -139,14 +151,15 @@ fn encode_text(
             let (encoded, _, had_errors) = GBK.encode(&text);
             if had_errors {
                 let mut line = 1;
-                let character = text.chars().find(|character| {
-                    let mut buffer = [0; 4];
-                    let scalar = character.encode_utf8(&mut buffer);
-                    let (_, _, has_error) = GBK.encode(scalar);
-                    if *character == '\n' {
+                let mut previous = '\0';
+                let character = text.chars().find(|&character| {
+                    // CRLF, CR and LF each end one line.
+                    if character == '\r' || (character == '\n' && previous != '\r') {
                         line += 1;
                     }
-                    has_error
+                    previous = character;
+                    let mut buffer = [0; 4];
+                    GBK.encode(character.encode_utf8(&mut buffer)).2
                 });
                 let character = character.unwrap_or('\u{FFFD}');
                 return Err(format!("file_encoding_unrepresentable:{line}:{character}"));
@@ -483,7 +496,8 @@ fn read_file_blocking(
             line_ending: None,
         });
     }
-    let (text, encoding, bom, decode_error, line_ending) = decode_text(&bytes, encoding_override)?;
+    let (text, encoding, bom, decode_error, line_ending) =
+        decode_text(&bytes, encoding_override, !truncated)?;
     Ok(FileContent {
         kind: "text".to_string(),
         text: Some(text),
@@ -1286,7 +1300,7 @@ mod tests {
     #[test]
     fn decodes_gbk_and_preserves_encoding_when_saving() {
         let source = [0xD6, 0xD0, 0xCE, 0xC4];
-        let (text, encoding, bom, decode_error, _) = decode_text(&source, None).unwrap();
+        let (text, encoding, bom, decode_error, _) = decode_text(&source, None, true).unwrap();
         assert_eq!(text, "中文");
         assert_eq!(encoding.name(), "gbk");
         assert!(!bom);
@@ -1302,7 +1316,7 @@ mod tests {
     #[test]
     fn detects_utf8_bom_and_preserves_it_on_save() {
         let source = [0xEF, 0xBB, 0xBF, b'h', b'i'];
-        let (text, encoding, bom, decode_error, _) = decode_text(&source, None).unwrap();
+        let (text, encoding, bom, decode_error, _) = decode_text(&source, None, true).unwrap();
         assert_eq!(text, "hi");
         assert_eq!(encoding.name(), "utf-8");
         assert!(bom);
@@ -1318,7 +1332,8 @@ mod tests {
     #[test]
     fn requested_encoding_overrides_automatic_detection() {
         let source = [0xD6, 0xD0, 0xCE, 0xC4];
-        let (text, encoding, _, decode_error, _) = decode_text(&source, Some("utf-8")).unwrap();
+        let (text, encoding, _, decode_error, _) =
+            decode_text(&source, Some("utf-8"), true).unwrap();
         assert_eq!(encoding.name(), "utf-8");
         assert!(decode_error);
         assert!(text.contains('\u{FFFD}'));
@@ -1335,7 +1350,7 @@ mod tests {
     #[test]
     fn preserves_crlf_when_saving_editor_text() {
         let source = b"first\r\nsecond\r\n";
-        let (text, _, _, _, line_ending) = decode_text(source, None).unwrap();
+        let (text, _, _, _, line_ending) = decode_text(source, None, true).unwrap();
         assert_eq!(line_ending, "crlf");
         assert_eq!(
             encode_text(&text, "utf-8", false, Some(line_ending))
@@ -1375,26 +1390,54 @@ mod tests {
         let workspace = Scratch::new();
         grant_root_in(&db, &workspace.0.to_string_lossy()).unwrap();
         let encoded = GBK.encode("这是一份普通的中文说明文档内容").0;
-        let mut source = Vec::new();
-        while source.len() <= MAX_READ_BYTES {
-            source.extend_from_slice(&encoded);
+        // pad 1 makes the byte cap land between the two bytes of a character.
+        for pad in 0..2 {
+            let mut source = vec![b'a'; pad];
+            while source.len() <= MAX_READ_BYTES {
+                source.extend_from_slice(&encoded);
+            }
+            let path = workspace.0.join(format!("big-gbk-{pad}.txt"));
+            std::fs::write(&path, source).unwrap();
+            let content = read_file_blocking(&db, path.to_str().unwrap(), None).unwrap();
+            assert!(content.truncated, "pad {pad}");
+            assert_eq!(content.encoding.as_deref(), Some("gbk"), "pad {pad}");
+            assert!(!content.decode_error, "pad {pad}");
+            let text = content.text.unwrap();
+            assert!(
+                text[pad..].starts_with("这是一份普通的中文说明文档内容"),
+                "pad {pad}"
+            );
+            assert!(!text.contains('\u{FFFD}'), "pad {pad}");
         }
-        let path = workspace.0.join("big-gbk.txt");
-        std::fs::write(&path, source).unwrap();
-        let content = read_file_blocking(&db, path.to_str().unwrap(), None).unwrap();
-        assert!(content.truncated);
-        assert_eq!(content.encoding.as_deref(), Some("gbk"));
-        assert!(content
-            .text
-            .unwrap()
-            .starts_with("这是一份普通的中文说明文档内容"));
+    }
+
+    #[test]
+    fn gbk_bytes_that_cannot_be_written_back_identically_are_read_only() {
+        // GB18030 four-byte sequence, A2E3 (saved back as 80) and A3A0 (saved back as A1A1).
+        for source in [&[0x81, 0x30, 0x81, 0x30][..], &[0xA2, 0xE3], &[0xA3, 0xA0]] {
+            let (_, encoding, _, decode_error, _) = decode_text(source, Some("gbk"), true).unwrap();
+            assert_eq!(encoding.name(), "gbk");
+            assert!(decode_error, "{source:02X?}");
+        }
+    }
+
+    #[test]
+    fn gbk_refusal_counts_cr_and_crlf_lines() {
+        assert_eq!(
+            encode_text("一\n二\n三✓\n", "gbk", false, Some("cr")).unwrap_err(),
+            "file_encoding_unrepresentable:3:✓"
+        );
+        assert_eq!(
+            encode_text("一\n二✓\n", "gbk", false, Some("crlf")).unwrap_err(),
+            "file_encoding_unrepresentable:2:✓"
+        );
     }
 
     #[test]
     fn manual_gbk_does_not_follow_a_utf8_bom() {
         let mut source = vec![0xEF, 0xBB, 0xBF];
         source.extend_from_slice("中文\n".as_bytes());
-        let (text, encoding, bom, _, _) = decode_text(&source, Some("gbk")).unwrap();
+        let (text, encoding, bom, _, _) = decode_text(&source, Some("gbk"), true).unwrap();
         assert_eq!(encoding.name(), "gbk");
         assert!(!bom);
         assert_eq!(text, GBK.decode_without_bom_handling(&source).0);
@@ -1406,7 +1449,7 @@ mod tests {
         for unit in "中文内容".encode_utf16() {
             source.extend_from_slice(&unit.to_le_bytes());
         }
-        let (text, _, _, decode_error, _) = decode_text(&source, None).unwrap();
+        let (text, _, _, decode_error, _) = decode_text(&source, None, true).unwrap();
         assert_ne!(text, "中文内容");
         assert!(decode_error);
     }
