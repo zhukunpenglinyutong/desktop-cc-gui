@@ -453,6 +453,27 @@ impl Engine for CodeBuddyEngine {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(unix)]
+    #[test]
+    fn codebuddy_signature_skips_fifo_and_oversized_configs() {
+        use std::os::unix::ffi::OsStrExt;
+
+        let scratch = ScratchHome::new("signature-file");
+        let path = scratch.dir.join(".mcp.json");
+        let mut command = tokio::process::Command::new("codebuddy");
+        command.current_dir(&scratch.dir);
+        assert!(super::launch_signature(&command, &[]).is_some());
+
+        let fifo = std::ffi::CString::new(path.as_os_str().as_bytes()).unwrap();
+        // SAFETY: fifo is NUL-terminated and points to the test's private directory.
+        assert_eq!(unsafe { libc::mkfifo(fifo.as_ptr(), 0o600) }, 0);
+        assert!(super::launch_signature(&command, &[]).is_none());
+
+        std::fs::remove_file(&path).unwrap();
+        std::fs::File::create(&path).unwrap().set_len(5 * 1024 * 1024).unwrap();
+        assert!(super::launch_signature(&command, &[]).is_none());
+    }
+
     use super::*;
     use std::path::PathBuf;
 
@@ -1024,6 +1045,36 @@ pub(crate) struct ResumeTurn {
 
 pub(crate) const IDLE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(600);
 
+fn read_signature_config(path: &std::path::Path) -> std::io::Result<Vec<u8>> {
+    use std::io::{Error, ErrorKind, Read};
+
+    const MAX_CONFIG_BYTES: u64 = 4 * 1024 * 1024;
+    let metadata = std::fs::metadata(path)?;
+    if !metadata.is_file() || metadata.len() > MAX_CONFIG_BYTES {
+        return Err(Error::new(ErrorKind::InvalidData, "unsupported configuration file"));
+    }
+
+    let mut options = std::fs::OpenOptions::new();
+    options.read(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        // A workspace can replace a regular file with a FIFO after metadata().
+        options.custom_flags(libc::O_NONBLOCK);
+    }
+    let file = options.open(path)?;
+    let metadata = file.metadata()?;
+    if !metadata.is_file() || metadata.len() > MAX_CONFIG_BYTES {
+        return Err(Error::new(ErrorKind::InvalidData, "unsupported configuration file"));
+    }
+    let mut bytes = Vec::new();
+    file.take(MAX_CONFIG_BYTES + 1).read_to_end(&mut bytes)?;
+    if bytes.len() as u64 > MAX_CONFIG_BYTES {
+        return Err(Error::new(ErrorKind::InvalidData, "configuration file exceeds size limit"));
+    }
+    Ok(bytes)
+}
+
 /// Compare launch settings without keeping credentials or temporary paths in the pool.
 pub(crate) fn launch_signature(
     command: &tokio::process::Command,
@@ -1049,7 +1100,7 @@ pub(crate) fn launch_signature(
         workspace.join(".codebuddy/settings.local.json"),
     ] {
         add(path.as_os_str().as_encoded_bytes());
-        match std::fs::read(path) {
+        match read_signature_config(&path) {
             Ok(bytes) => {
                 add(&[1]);
                 add(&bytes);
@@ -1064,7 +1115,7 @@ pub(crate) fn launch_signature(
             args.next();
         } else if files.iter().any(|file| file.as_os_str() == arg) {
             add(b"staged-file");
-            add(&std::fs::read(arg).ok()?);
+            add(&read_signature_config(std::path::Path::new(arg)).ok()?);
         } else {
             add(arg.as_encoded_bytes());
         }

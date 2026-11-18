@@ -1453,6 +1453,13 @@ pub(crate) async fn run_process_reader(
     if ctx.pid != 0 {
         kill_process_group(ctx.pid);
     }
+    // The parked turn already emitted Done and released its active registry
+    // entries. Drop cleans staged files and the idle entry without emitting events.
+    if idle_exit.is_some() {
+        drop(ctx);
+        return;
+    }
+
     for path in &ctx.cleanup_files {
         let _ = std::fs::remove_file(path);
     }

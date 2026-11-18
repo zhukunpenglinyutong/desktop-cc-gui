@@ -282,6 +282,12 @@ done
     send("buddy-after-broken", Some("buddy-session"), "model-b").await;
     assert_eq!(launch_count(), 7);
     send("buddy-diagnostics", Some("buddy-session"), "model-b").await;
+    engine::close_idle_codebuddy(app.state(), "buddy-session".into()).await.unwrap();
+    send("buddy-after-idle-exit", Some("buddy-session"), "model-b").await;
+    assert!(!events.lock().unwrap().iter().any(|event| {
+        event["runId"] == "buddy-diagnostics" && event["kind"] == "warn"
+    }));
+    send("buddy-diagnostics-again", Some("buddy-session"), "model-b").await;
     send("buddy-error", Some("buddy-session"), "model-b").await;
     let captured = events.lock().unwrap();
     let error = captured.iter().find(|event| {
