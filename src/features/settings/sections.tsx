@@ -15,6 +15,7 @@ import FileText from "lucide-react/dist/esm/icons/file-text";
 import Smartphone from "lucide-react/dist/esm/icons/smartphone";
 import Sparkles from "lucide-react/dist/esm/icons/sparkles";
 import Plug from "lucide-react/dist/esm/icons/plug";
+import Languages from "lucide-react/dist/esm/icons/languages";
 // 电脑操控入口：暂时隐藏，恢复时取消注释。
 // import MousePointer2 from "lucide-react/dist/esm/icons/mouse-pointer-2";
 import i18n from "@/lib/i18n";
@@ -37,6 +38,8 @@ import { BetaFeaturesSection } from "./BetaFeaturesSection";
 import { UpdateSection } from "./UpdateSection";
 import { WebAccessSection } from "./WebAccessSection";
 import { ShortcutsSection } from "@/features/shortcuts/ShortcutsSection";
+import { TRANSLATION_SETTINGS_PAGE } from "@/features/plugins/hub/translation/execution-view";
+import { PluginTranslationSection } from "./PluginTranslationSection";
 import { ENGINE_IDS, type EngineId } from "./providers";
 import { builtinSearchEntries } from "./builtin-search";
 import { registerSettingsSearchEntries } from "./settings-search";
@@ -210,6 +213,17 @@ settingsRegistry.register({
 //   order: 2,
 //   component: LazyComputerUseSection,
 // });
+// 插件中心「翻译」用哪个引擎/模型：宿主自己的页面，放在「插件」分组最前，
+// 插件注册的设置页排在它后面（插件页 order 从 0 起）。
+settingsRegistry.register({
+  id: TRANSLATION_SETTINGS_PAGE,
+  key: TRANSLATION_SETTINGS_PAGE,
+  label: () => i18n.t("settings.pluginTranslation"),
+  icon: Languages,
+  group: "plugins",
+  order: -1,
+  component: PluginTranslationSection,
+});
 settingsRegistry.register({
   id: "pet",
   key: "pet",

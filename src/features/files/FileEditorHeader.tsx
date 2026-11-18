@@ -4,6 +4,7 @@ import PencilLine from "lucide-react/dist/esm/icons/pencil-line";
 import RefreshCw from "lucide-react/dist/esm/icons/refresh-cw";
 import Save from "lucide-react/dist/esm/icons/save";
 import Search from "lucide-react/dist/esm/icons/search";
+import { Select, SelectItem } from "@/components/base/select/select";
 import WrapText from "lucide-react/dist/esm/icons/wrap-text";
 import { ActionFeedbackIcon, type ActionFeedback } from "@/components/base/action-feedback";
 import { Button } from "@/components/base/buttons/button";
@@ -13,6 +14,11 @@ import { cx } from "@/utils/cx";
 export function FileEditorHeader({
   path,
   name,
+  encoding,
+  decodeError,
+  truncated,
+  encodingChangeDisabled,
+  onEncodingChange,
   dirty,
   readOnly,
   canPreview,
@@ -28,9 +34,16 @@ export function FileEditorHeader({
   onToggleSearch,
   wordWrap,
   onToggleWordWrap,
+  onQuoteSelection,
+  quoteBlockedReason,
 }: {
   path: string;
   name: string;
+  encoding: "utf-8" | "gbk";
+  decodeError: boolean;
+  truncated: boolean;
+  encodingChangeDisabled: boolean;
+  onEncodingChange: (encoding: "utf-8" | "gbk") => void;
   dirty: boolean;
   readOnly: boolean;
   /** File kinds with a rendered preview (Markdown anywhere, HTML on desktop)
@@ -51,6 +64,9 @@ export function FileEditorHeader({
   onToggleSearch: () => void;
   wordWrap: boolean;
   onToggleWordWrap: () => void;
+  onQuoteSelection?: () => void;
+  /** Why quoting is unavailable right now; the button stays hoverable to show it. */
+  quoteBlockedReason?: string;
 }) {
   const { t } = useTranslation();
 
@@ -59,17 +75,48 @@ export function FileEditorHeader({
       <span className="truncate text-body-medium text-text-primary" title={path}>
         {name}
       </span>
+      {decodeError && (
+        <span className="shrink-0 text-caption-1-regular text-text-error-primary">
+          {t("files.encodingDecodeError")}
+        </span>
+      )}
       {dirty && (
         <span className="shrink-0 rounded-sm bg-badge-neutral-background px-1.5 py-0.5 text-caption-1-medium text-text-secondary">
           {t("files.unsavedChanges")}
         </span>
       )}
-      {readOnly && (
+      {truncated && (
         <span className="shrink-0 text-caption-1-regular text-text-tertiary">
           {t("files.fileTruncated")}
         </span>
       )}
       <div className="flex-1" />
+      <Select
+        aria-label={t("files.encoding")}
+        selectedKey={encoding}
+        onSelectionChange={(key) => {
+          if (key === "utf-8" || key === "gbk") onEncodingChange(key);
+        }}
+        isDisabled={encodingChangeDisabled}
+        size="sm"
+        className="w-[100px] shrink-0"
+        triggerClassName="h-6 rounded-md px-2 py-0 text-caption-1-medium shadow-none"
+        popoverClassName="w-[140px]"
+      >
+        <SelectItem id="utf-8">UTF-8</SelectItem>
+        <SelectItem id="gbk">GBK</SelectItem>
+      </Select>
+      {onQuoteSelection && (
+        <button
+          type="button"
+          onClick={quoteBlockedReason ? undefined : onQuoteSelection}
+          aria-disabled={quoteBlockedReason ? true : undefined}
+          title={quoteBlockedReason}
+          className="shrink-0 rounded-lg border border-border-button-default px-2 py-0.5 text-caption-1-regular text-text-secondary hover:text-text-primary aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:hover:text-text-secondary"
+        >
+          {t("files.quoteSelection")}
+        </button>
+      )}
       {isHtml && viewMode === "preview" && (
         <button
           type="button"

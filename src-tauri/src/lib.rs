@@ -44,6 +44,7 @@ pub mod settings;
 pub mod skills_hub;
 pub mod slash_commands;
 pub mod terminal;
+pub mod translate;
 pub mod updater;
 pub mod usage_limits;
 pub mod usage_stats;
@@ -415,6 +416,7 @@ pub fn run() {
             // settings
             settings::get_app_settings,
             settings::update_app_settings,
+            settings::set_workspace_default_engine,
             settings::set_window_theme,
             // uploaded font files (设置 → 外观 字体行)
             fonts::read_font_file,
@@ -646,6 +648,8 @@ pub fn run() {
             plugin_caps::plugin_agent_interrupt,
             mission::mission_agent_start,
             mission::mission_agent_interrupt,
+            translate::translate_text_start,
+            translate::translate_text_interrupt,
             // web access
             web::web_access_start,
             web::web_access_stop,

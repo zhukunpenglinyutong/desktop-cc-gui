@@ -109,6 +109,9 @@ impl Db {
         let conn = Connection::open(path)?;
         conn.pragma_update(None, "journal_mode", "WAL")?;
         conn.pragma_update(None, "synchronous", "NORMAL")?;
+        // Cap retained WAL size after checkpoints so a multi-hundred-MB
+        // first-time FTS index does not keep `app.db-wal` bloated forever.
+        conn.pragma_update(None, "journal_size_limit", 16_i64 * 1024 * 1024)?;
         // The memory MCP child (a separate process the CLI spawns) writes
         // through its own connection while the app holds one: a busy writer
         // must wait for the short write lock, not fail the tool call.
@@ -127,6 +130,10 @@ impl Db {
         let reader = Connection::open(path)?;
         reader.busy_timeout(std::time::Duration::from_secs(5))?;
         reader.pragma_update(None, "query_only", true)?;
+        // Fold any WAL left by a previous unclean exit into the main file so
+        // the next write restarts the log and trims it to `journal_size_limit`.
+        // PASSIVE never waits on other connections; failure only skips it.
+        let _ = conn.query_row("PRAGMA wal_checkpoint(PASSIVE)", [], |_| Ok(()));
         Ok(Self(Mutex::new(conn), Mutex::new(reader)))
     }
 

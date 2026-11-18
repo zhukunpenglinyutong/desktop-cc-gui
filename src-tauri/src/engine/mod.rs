@@ -172,6 +172,10 @@ pub struct SendRequest {
     /// 逐次调用的工具白名单（任务工作台只读节点）：引擎必须真正把它兑现
     /// 为运行时约束，否则 prepare_launch 直接拒绝——不允许用节点名假装。
     pub allowed_tools: Option<Vec<String>>,
+    /// 纯文本轮次（插件介绍翻译，translate.rs）：不给模型任何工具、不挂
+    /// MCP、不加载扩展。输入是不可信的第三方文本，必须真正零工具；引擎
+    /// 不能兑现（`Engine::supports_no_tools`）时 prepare_launch 直接拒绝。
+    pub no_tools: bool,
 }
 pub struct BuiltCommand {
     pub command: Command,
@@ -285,6 +289,13 @@ pub trait Engine: Send + Sync {
     /// read-only nodes). Engines that return false are rejected before
     /// spawn rather than silently running without the constraint.
     fn supports_tool_constraints(&self) -> bool {
+        false
+    }
+    /// Whether this engine can run a turn with zero tools and zero MCP
+    /// servers (`SendRequest::no_tools`). Engines that return false are
+    /// rejected before spawn: a text-only turn fed untrusted input must not
+    /// silently fall back to the default tool set.
+    fn supports_no_tools(&self) -> bool {
         false
     }
     /// Permission modes this engine can honor at spawn ("auto" | "manual" |
@@ -558,6 +569,7 @@ fn prepare_launch(
     computer_use: Option<bool>,
     memory_bot: Option<String>,
     allowed_tools: Option<Vec<String>>,
+    no_tools: bool,
     wsl: bool,
 ) -> Result<Launch, String> {
     let engine_impl = engine_by_id(engine).ok_or_else(|| format!("unknown engine: {engine}"))?;
@@ -591,6 +603,18 @@ fn prepare_launch(
         Some(_) => return Err("tool constraints must not be empty".into()),
         None => None,
     };
+    // 零工具轮次与白名单/电脑操控/记忆互斥：它们都会往进程里挂工具。
+    if no_tools {
+        if !engine_impl.supports_no_tools() {
+            return Err(format!("engine {engine} does not support tool-less runs"));
+        }
+        if allowed_tools.is_some()
+            || computer_use == Some(true)
+            || memory_bot.as_deref().is_some_and(|id| !id.trim().is_empty())
+        {
+            return Err("tool-less runs cannot carry tools, computer use or memory".into());
+        }
+    }
     let provider_id = provider_id.filter(|s| !s.trim().is_empty());
     let provider = crate::config::resolve_provider(engine, provider_id.as_deref())?;
     let channel_env = provider
@@ -652,6 +676,7 @@ fn prepare_launch(
             })
             .filter(|_| engine_impl.supports_memory()),
         allowed_tools,
+        no_tools,
     };
     let bin = engine_bin(&settings, engine);
     // Host-transport engines spawn through their driver instead: codex/grok
@@ -671,7 +696,7 @@ fn prepare_launch(
     // 按需启动的 MCP 条目：只对本机工作区、无工具白名单的普通发送生效
     // （远端 CLI 读不到本机 exe；只读/计划隔离要求零 MCP）。失败就保持
     // 随会话启动，不拦发送。
-    if !wsl && req.allowed_tools.is_none() && !codex_read_only::requested(&req) {
+    if !wsl && req.allowed_tools.is_none() && !req.no_tools && !codex_read_only::requested(&req) {
         let servers = crate::mcp::launch::on_demand_servers(engine, &req.workspace);
         if !servers.is_empty() {
             if let Err(error) = engine_impl.mount_on_demand(&mut built, &servers, &req.workspace) {
@@ -812,6 +837,7 @@ pub(crate) async fn plugin_agent_send(
         None,
         None,
         allowed_tools,
+        false,
     )
     .await
 }
@@ -874,6 +900,45 @@ pub(crate) async fn mission_agent_send(
         None,
         None,
         allowed_tools,
+        false,
+    )
+    .await
+}
+
+/// 纯文本翻译轮次入口（translate::translate_text_start 调用）：同一条
+/// spawn/reader/registry 管线，事件借用任务工作台的 `mission-agent://event`
+/// 流（前端按 run id 路由，未登记的 run 被忽略）。`no_tools` 恒为真：
+/// 输入是不可信的第三方文本，引擎不能兑现零工具时 prepare_launch 拒绝。
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn translate_text_send(
+    state: &crate::AppState,
+    engine: String,
+    workspace_path: String,
+    prompt: String,
+    model: Option<String>,
+    effort: Option<String>,
+    provider_id: Option<String>,
+    run_id: String,
+) -> Result<SendResult, String> {
+    send_message_inner_with_sink(
+        state,
+        Arc::clone(&state.mission_sink),
+        engine,
+        workspace_path,
+        None,
+        prompt,
+        Vec::new(),
+        None,
+        None,
+        model,
+        effort,
+        None,
+        provider_id,
+        Some(run_id),
+        None,
+        None,
+        None,
+        true,
     )
     .await
 }
@@ -914,6 +979,7 @@ pub async fn send_message_inner(
         computer_use,
         memory_bot,
         None,
+        false,
     )
     .await
 }
@@ -937,6 +1003,7 @@ async fn send_message_inner_with_sink(
     computer_use: Option<bool>,
     memory_bot: Option<String>,
     allowed_tools: Option<Vec<String>>,
+    no_tools: bool,
 ) -> Result<SendResult, String> {
     // A claude process may still be alive for a background task's follow-up
     // turn on this very session. A new process would stop that task, so the
@@ -1041,6 +1108,7 @@ async fn send_message_inner_with_sink(
         computer_use,
         memory_bot,
         allowed_tools,
+        no_tools,
     )
     .await;
     if result.is_err() {
@@ -1107,6 +1175,7 @@ async fn send_reserved(
     computer_use: Option<bool>,
     memory_bot: Option<String>,
     allowed_tools: Option<Vec<String>>,
+    no_tools: bool,
 ) -> Result<SendResult, String> {
     // WSL 远程工作区:引擎进程经 ssh 在发行版内执行(见 wsl_transport)。
     let wsl_tp = wsl_transport::transport_for_workspace(&state.db, &workspace_path);
@@ -1123,12 +1192,18 @@ async fn send_reserved(
         permission,
         // Every user-granted directory rides along as a launch argument, so
         // a grant approved mid-conversation takes effect on the next send
-        // (each send is a fresh process).
-        state.db.granted_roots().unwrap_or_default(),
+        // (each send is a fresh process). Tool-less runs have no file tool
+        // to hand them to.
+        if no_tools {
+            Vec::new()
+        } else {
+            state.db.granted_roots().unwrap_or_default()
+        },
         provider_id,
         computer_use,
         memory_bot,
         allowed_tools,
+        no_tools,
         wsl_tp.is_some(),
     )?;
     if wsl_tp.is_none() && matches!(engine.as_str(), "pi" | "omp") {
@@ -2169,6 +2244,7 @@ mod codebuddy_launch_tests {
             None,
             None,
             false,
+            false,
         )
         .unwrap();
         assert_eq!(launch.req.model, None);
@@ -2269,6 +2345,7 @@ mod permission_tests {
             computer_use: None,
             memory_bot: None,
             allowed_tools: None,
+            no_tools: false,
         }
     }
 
@@ -2317,6 +2394,55 @@ mod permission_tests {
         assert!(pi_family::omp().build_command(&request, "omp").is_err());
         request.computer_use = Some(true);
         assert!(pi_family::pi().build_command(&request, "pi").is_err());
+    }
+
+    /// 纯文本轮次（插件介绍翻译）：claude 必须卸掉全部内置工具、不连 MCP、
+    /// 不预批任何工具、不落盘会话。
+    #[test]
+    fn claude_no_tools_launch_strips_tools_and_mcp() {
+        let mut request = req(Some("bypass"));
+        request.no_tools = true;
+        let args = argv(&claude::ClaudeEngine::new(), &request);
+        assert!(args.windows(2).any(|w| w == ["--tools", ""]));
+        assert!(args.contains(&"--strict-mcp-config".to_string()));
+        assert!(args.contains(&"--no-session-persistence".to_string()));
+        assert!(args.windows(2).any(|w| w == ["--permission-mode", "default"]));
+        for forbidden in [
+            "--allowedTools",
+            "--mcp-config",
+            "--dangerously-skip-permissions",
+            "--add-dir",
+        ] {
+            assert!(!args.contains(&forbidden.to_string()), "{forbidden} in {args:?}");
+        }
+    }
+
+    #[test]
+    fn pi_no_tools_launch_disables_tools_mcp_and_extensions() {
+        let mut request = req(None);
+        request.no_tools = true;
+        let args = argv(&pi_family::pi(), &request);
+        for flag in ["--no-tools", "--no-mcp", "--no-extensions", "--no-session"] {
+            assert!(args.contains(&flag.to_string()), "{flag} missing from {args:?}");
+        }
+        assert!(!args.contains(&"--extension".to_string()));
+        assert!(!args.contains(&"--tools".to_string()));
+        assert!(!pi_family::loads_served_model_bridge("pi", &request));
+    }
+
+    #[test]
+    fn no_tools_is_refused_where_it_cannot_be_honored() {
+        let mut request = req(None);
+        request.no_tools = true;
+        assert!(pi_family::omp().build_command(&request, "omp").is_err());
+        request.allowed_tools = Some(vec!["read".into()]);
+        assert!(pi_family::pi().build_command(&request, "pi").is_err());
+        for engine in ["codex", "grok", "kimi", "opencode", "codebuddy", "omp", "agy"] {
+            let engine_impl = engine_by_id(engine).unwrap();
+            assert!(!engine_impl.supports_no_tools(), "{engine} claims tool-less support");
+        }
+        assert!(engine_by_id("claude").unwrap().supports_no_tools());
+        assert!(engine_by_id("pi").unwrap().supports_no_tools());
     }
 
     #[test]

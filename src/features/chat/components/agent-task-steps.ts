@@ -263,14 +263,19 @@ export function agentState(status: unknown): AgentTaskStepState | undefined {
   }
 }
 
+/** Shared empty result: most rows carry no tool result, and the fold runs on
+ *  every stream flush, so allocating a Map per row is pure churn. Callers only
+ *  read it. */
+const NO_JOB_STATES: ReadonlyMap<string, AgentTaskStepState> = new Map();
+
 /** Job states from tool results and hidden status deliveries: `details.jobs`
  *  on a wait, `details.peers` on a roster, `details.progress` on a dispatch.
  *  Unknown states are ignored instead of being guessed terminal. */
-function jobStatesFromResult(result: unknown): Map<string, AgentTaskStepState> {
+function jobStatesFromResult(result: unknown): ReadonlyMap<string, AgentTaskStepState> {
+  if (!result || typeof result !== "object") return NO_JOB_STATES;
   const states = new Map<string, AgentTaskStepState>();
-  if (!result || typeof result !== "object") return states;
   const details = (result as Record<string, unknown>).details;
-  if (!details || typeof details !== "object") return states;
+  if (!details || typeof details !== "object") return NO_JOB_STATES;
   const buckets = ["jobs", "peers", "progress"].map((key) =>
     (details as Record<string, unknown>)[key],
   );
@@ -355,6 +360,46 @@ function currentTurnStart(messages: Message[]): number {
   return 0;
 }
 
+/** Per-message inputs of the fold. A message's args/result never change in
+ *  place (patches replace the row) and the fold re-runs on every stream
+ *  flush, so each row's JSON work is done once per row identity. */
+interface ToolRowFacts {
+  refs?: (SubagentRef | undefined)[];
+  waitIds?: string[];
+  argsKey?: string;
+  jobStates?: ReadonlyMap<string, AgentTaskStepState>;
+  roster?: boolean;
+  progress?: Map<SubagentRef, string>;
+}
+const toolRowFacts = new WeakMap<Message, ToolRowFacts>();
+function factsOf(message: Message): ToolRowFacts {
+  let facts = toolRowFacts.get(message);
+  if (!facts) {
+    facts = {};
+    toolRowFacts.set(message, facts);
+  }
+  return facts;
+}
+
+/** Whether two message arrays feed the summary folds identically. Assistant
+ *  and thinking text grows on every stream frame, while the folds read only
+ *  row kinds, tool payloads and hidden status rows — re-running them for a
+ *  text delta re-reads the whole session for no change. */
+export function sameSummaryHistory(a: Message[], b: Message[]): boolean {
+  if (a === b) return true;
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < b.length; i++) {
+    if (a[i] === b[i]) continue;
+    const left = a[i];
+    const right = b[i];
+    if (left.seq !== right.seq || left.role !== right.role) return false;
+    // Only tool rows and hidden status rows carry fold inputs (args, result,
+    // todos, toolCallId). A growing answer or thinking row changes nothing.
+    if (right.role === "tool" || right.role === AGENT_STATUS_ROLE) return false;
+  }
+  return true;
+}
+
 /**
  * Fold subagent tool rows across the session into panel steps.
  * Steps in prior turns are settled/complete; current-turn steps stay active
@@ -389,7 +434,8 @@ export function deriveAgentTaskSteps(
   const waitNamed = new Set<string>();
   for (const message of messages) {
     if (message.role !== "tool") continue;
-    for (const id of waitIdsFromArgs(message.args)) waitNamed.add(id);
+    const facts = factsOf(message);
+    for (const id of (facts.waitIds ??= waitIdsFromArgs(message.args))) waitNamed.add(id);
   }
   // Bind aliases to this dispatch entry, not its requested name: two calls
   // can request the same name and receive different allocated agent ids.
@@ -408,7 +454,8 @@ export function deriveAgentTaskSteps(
   const repeatedNames = new Set<string>();
   for (const message of messages) {
     if (message.role !== "tool") continue;
-    const refs = dispatchRefsByIndex(message.args);
+    const facts = factsOf(message);
+    const refs = (facts.refs ??= dispatchRefsByIndex(message.args));
     dispatchesByMessage.set(message, refs);
     for (const ref of refs) {
       if (!ref) continue;
@@ -424,7 +471,7 @@ export function deriveAgentTaskSteps(
     // A transcript re-read drops the call id from both the dispatch and its
     // result, so only such rows may bind by arguments: a live hidden row that
     // lost its id is a different call, even when the arguments coincide.
-    const args = JSON.stringify(message.args ?? null);
+    const args = (facts.argsKey ??= JSON.stringify(message.args ?? null));
     dispatchArgs.set(args, (dispatchArgs.get(args) ?? 0) + 1);
     dispatchesByArgs.set(args, refs);
   }
@@ -447,8 +494,15 @@ export function deriveAgentTaskSteps(
         if (alias) lastRestart.set(alias, i);
       }
     }
-    const snapshot = jobStatesFromResult(message.result);
-    if (isCompleteJobsRoster(message)) {
+    const toolRow = message.role === "tool" || message.role === AGENT_STATUS_ROLE;
+    const facts = toolRow ? factsOf(message) : null;
+    const snapshot = facts
+      ? (facts.jobStates ??= jobStatesFromResult(message.result))
+      : jobStatesFromResult(message.result);
+    const roster = facts
+      ? (facts.roster ??= isCompleteJobsRoster(message))
+      : isCompleteJobsRoster(message);
+    if (roster) {
       for (const [id, state] of states) {
         if (state === "active" && !snapshot.has(id)) {
           states.set(id, "complete");
@@ -465,7 +519,7 @@ export function deriveAgentTaskSteps(
       // Bind it to its own dispatch by call id, or — for history rows that
       // have none — by the dispatch arguments it carries.
       const callId = argText(message.toolCallId);
-      const args = JSON.stringify(message.args ?? null);
+      const args = (factsOf(message).argsKey ??= JSON.stringify(message.args ?? null));
       const refs = callId
         ? dispatchesByCall.get(callId)
         : dispatchArgs.get(args) === 1 ? dispatchesByArgs.get(args) : undefined;
@@ -477,10 +531,11 @@ export function deriveAgentTaskSteps(
       }
     }
     if (message.role !== "tool") continue;
+    const toolFacts = factsOf(message);
     const dispatchRefs = dispatchesByMessage.get(message) ?? [];
     const refs = dispatchRefs.filter((ref): ref is SubagentRef => ref !== undefined);
-    const waitIds = waitIdsFromArgs(message.args);
-    for (const [ref, id] of dispatchIdsFromProgress(dispatchRefs, message.result)) {
+    const waitIds = (toolFacts.waitIds ??= waitIdsFromArgs(message.args));
+    for (const [ref, id] of (toolFacts.progress ??= dispatchIdsFromProgress(dispatchRefs, message.result))) {
       runtimeIds.set(ref, id);
     }
     for (const ref of refs) {
@@ -636,6 +691,11 @@ function parseTodoFromResult(result: unknown): TodosPayload | null {
   if (!result) return null;
   let parsed = result;
   if (typeof result === "string") {
+    // Only the phases envelope is JSON text. Shell output and file bodies —
+    // the overwhelming majority of tool results — would otherwise pay a
+    // throwing JSON.parse (stack capture included) on every fold, which is
+    // what made a long session's status strip cost ~150ms per stream flush.
+    if (!result.includes('"phases"')) return null;
     try {
       parsed = JSON.parse(result);
     } catch {
@@ -689,6 +749,20 @@ function parseTodoFromResult(result: unknown): TodosPayload | null {
   if (items.length === 0) return null;
   return { items, replace: true };
 }
+
+/** A message's result never changes in place — the store replaces the row
+ *  when it patches — so the parse is cached per message identity. The fold
+ *  itself runs on every stream flush over the whole session. */
+const todoPayloadCache = new WeakMap<Message, TodosPayload | null>();
+function todoPayloadOf(message: Message): TodosPayload | null {
+  if (message.role !== "tool" && message.role !== AGENT_STATUS_ROLE) return null;
+  const cached = todoPayloadCache.get(message);
+  if (cached !== undefined) return cached;
+  const payload = parseTodoFromResult(message.result) ?? message.todos ?? null;
+  todoPayloadCache.set(message, payload);
+  return payload;
+}
+
 export function deriveTodoList(messages: Message[]): TodoItem[] {
   let items: TodoItem[] = [];
 
@@ -711,7 +785,7 @@ export function deriveTodoList(messages: Message[]): TodoItem[] {
   }
 
   for (const message of messages) {
-    const payload = parseTodoFromResult(message.result) ?? message.todos;
+    const payload = todoPayloadOf(message);
     if (!payload) continue;
     if (payload.replace) {
       items = payload.items

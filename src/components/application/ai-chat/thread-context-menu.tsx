@@ -4,6 +4,8 @@ import Archive from "lucide-react/dist/esm/icons/archive";
 import Columns2 from "lucide-react/dist/esm/icons/columns-2";
 import Copy from "lucide-react/dist/esm/icons/copy";
 import FilePenLine from "lucide-react/dist/esm/icons/file-pen-line";
+import FolderOpen from "lucide-react/dist/esm/icons/folder-open";
+import Link2 from "lucide-react/dist/esm/icons/link-2";
 import RefreshCw from "lucide-react/dist/esm/icons/refresh-cw";
 import Pencil from "lucide-react/dist/esm/icons/pencil";
 import Rows2 from "lucide-react/dist/esm/icons/rows-2";
@@ -17,6 +19,7 @@ import {
 import { ContextMenu, type ContextMenuEntry } from "@/components/context-menu";
 import type { ThreadAction } from "@/components/application/ai-chat/sidebar-types";
 import { openSessionBeside, sessionFromThreadId } from "@/features/chat/split/store";
+import { isWeb } from "@/lib/platform";
 
 export interface ThreadMenuState {
   x: number;
@@ -77,6 +80,21 @@ function buildHostSections({
     });
   }
   if (onThreadAction && !isDraft) {
+    actions.push({
+      id: "copy-path",
+      label: t("chat.copySessionPath"),
+      icon: <Link2 className="size-4" aria-hidden />,
+      onSelect: () => onThreadAction(threadId, "copyPath"),
+    });
+    // Web access would open the file manager on the host, out of the remote user's sight.
+    if (!isWeb) {
+      actions.push({
+        id: "reveal",
+        label: t("chat.revealSessionFile"),
+        icon: <FolderOpen className="size-4" aria-hidden />,
+        onSelect: () => onThreadAction(threadId, "reveal"),
+      });
+    }
     if (parseThreadTarget(threadId)?.engine !== "agy") {
       actions.push({
         id: "edit-session",

@@ -3,11 +3,14 @@
 //!
 //! Wire (verified live against dsh 0.1.2):
 //! - RPC is plain HTTP ([`crate::dsh_host::host_call`], cookie-authenticated):
-//!   `workspace/create` → `session/create` (resume passes the known
-//!   sessionId) → `session/selectModel`? → `session/prompt` (mode "queue");
-//!   interrupt sends `session/cancel`. Attachments ride the prompt as base64
-//!   image content parts, after [`super::dsh_images`] declares the input
-//!   modality on hand-declared `llm-pi-ai` routes (`settings/mutate`).
+//!   `workspace/create` → (`session/create` for a new conversation only) →
+//!   `session/selectModel`? → `session/prompt` (mode "queue"); interrupt sends
+//!   `session/cancel`. An existing conversation is resumed implicitly by
+//!   `session/prompt`: `session/create` only reuses a Session while it is
+//!   blank, and otherwise mints a replacement, dropping the context.
+//!   Attachments ride the prompt as base64 image content parts, after
+//!   [`super::dsh_images`] declares the input modality on hand-declared
+//!   `llm-pi-ai` routes (`settings/mutate`).
 //! - Streams share one WebSocket, `ws://<origin>/api/remote.mux` with the
 //!   auth cookie: open `$events` (the ready frame yields the events clientId;
 //!   waterfall frames are approval/question calls, answered via
@@ -90,6 +93,10 @@ const FOLLOW_READY_TIMEOUT: Duration = Duration::from_secs(5);
 /// plan 权限下等待 host 回读 plan/mode{active:true} 的上限：无 open turn
 /// 时 /plan 立即 committed 并追加该日志事件，超时即 host 未确认。
 const PLAN_MODE_CONFIRM_TIMEOUT: Duration = Duration::from_secs(10);
+/// 订阅时还没收尾的那一轮结束后，等本次 `turn/start` 的上限。
+const QUEUED_TURN_START_TIMEOUT: Duration = Duration::from_secs(15);
+/// 续聊前等同一会话上一个 ccgui 运行收尾（发完 `session/cancel`）的上限。
+const PREVIOUS_RUN_WAIT: Duration = Duration::from_secs(5);
 
 type Ws =
     tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
@@ -101,6 +108,15 @@ struct TurnView {
     attempt_streamed_text: bool,
     last_usage: Option<Value>,
     turn_ended: bool,
+    /// 本次发送的轮次已开始（follow 增量里见到了 `turn/start`）。续聊复用同一
+    /// 会话，订阅时可能还有一轮没收尾（如刚取消的上一轮）：在它之前到达的轮内
+    /// 事件——尤其是那一轮的 `turn/end`——不属于本次发送。follow 未在 prompt
+    /// 前就绪、或快照迟到时无法区分，直接置真，退回不过滤。
+    turn_started: bool,
+    /// 丢弃那一轮遗留 `turn/end` 的时刻。DSH 在一轮结束后会立刻开下一轮排队
+    /// 的消息；超过 [`QUEUED_TURN_START_TIMEOUT`] 还没有 `turn/start`，说明
+    /// 本次消息被留在了 DSH 队列里，主循环据此报错而不是无限等待。
+    stale_turn_ended_at: Option<std::time::Instant>,
     /// `request/context` 通告的上下文窗口（本轮内有效）。usage 报告自带窗口时
     /// 由它兜底，done 载荷也要带上，否则前端在回合结束时丢回 200k 假定值。
     context_window: Option<i64>,
@@ -184,6 +200,91 @@ pub(crate) async fn run_host_turn(
     core.sink.flush();
 }
 
+/// Whether this turn starts a new DSH conversation or continues one.
+///
+/// `session/create` intentionally reuses a named Session only while it is
+/// blank. Once that Session has a turn, it mints a new identity instead. An
+/// existing conversation is resumed by `session/prompt`, so a stored id must
+/// bypass create entirely.
+#[derive(Debug, PartialEq)]
+enum SessionStart<'a> {
+    Create,
+    Resume(&'a str),
+}
+
+fn session_start(session_id: Option<&str>) -> SessionStart<'_> {
+    match session_id.map(str::trim).filter(|id| !id.is_empty()) {
+        Some(session_id) => SessionStart::Resume(session_id),
+        None => SessionStart::Create,
+    }
+}
+
+/// Sessions with a ccgui run in flight, counted per id. "Send now" stops the
+/// running turn and sends at once, but the stopped run only issues
+/// `session/cancel` on its next poll. DSH leaves a prompt it admitted behind
+/// a live turn in its queue, without a turn, once that turn is cancelled (it
+/// latches the wake only for an already-aborted driver). So a send first
+/// waits for the previous run on its session to finish.
+static SESSION_RUNS: std::sync::LazyLock<std::sync::Mutex<HashMap<String, usize>>> =
+    std::sync::LazyLock::new(Default::default);
+
+fn session_runs() -> std::sync::MutexGuard<'static, HashMap<String, usize>> {
+    SESSION_RUNS
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
+/// One run's hold on [`SESSION_RUNS`], released on drop (return, abort or
+/// panic alike).
+struct SessionRun(String);
+
+impl SessionRun {
+    /// Wait (bounded by [`PREVIOUS_RUN_WAIT`], cut short by a stop) until no
+    /// other run holds `session_id`, then hold it.
+    async fn enter(session_id: &str, killed: &AtomicBool) -> Self {
+        let deadline = tokio::time::Instant::now() + PREVIOUS_RUN_WAIT;
+        loop {
+            let busy = session_runs().contains_key(session_id);
+            if !busy || killed.load(Ordering::SeqCst) || tokio::time::Instant::now() >= deadline {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+        *session_runs().entry(session_id.to_string()).or_insert(0) += 1;
+        Self(session_id.to_string())
+    }
+}
+
+impl Drop for SessionRun {
+    fn drop(&mut self) {
+        let mut runs = session_runs();
+        if let Some(count) = runs.get_mut(&self.0) {
+            *count -= 1;
+            if *count == 0 {
+                runs.remove(&self.0);
+            }
+        }
+    }
+}
+
+/// Read-only existence probe: `session/page` cut at `throughSeq: -1` returns
+/// an empty page for a stored Session and `session/not-found` otherwise
+/// (same contract from 0.1.2 through 0.2.2). Any other failure is left for
+/// `session/prompt` to report.
+async fn session_missing(origin: &str, session_id: &str) -> bool {
+    let probe = crate::dsh_host::host_call_rpc(
+        origin,
+        "session/page",
+        json!({ "request": {
+            "address": { "kind": "session", "sessionId": session_id },
+            "throughSeq": -1,
+            "maxMessages": 1,
+        } }),
+    )
+    .await;
+    matches!(probe, Err(error) if error.code == "session/not-found")
+}
+
 async fn turn_inner(
     core: &TurnCore,
     state: &mut TurnState,
@@ -212,18 +313,45 @@ async fn turn_inner(
     .ok_or("workspace/create 未返回 workspaceId")?;
 
     // Session continuity: codemoss passes back the native id it received via
-    // the "session" event; a fresh id comes back for a new conversation.
-    let mut create_args = json!({ "request": { "workspaceId": workspace } });
-    if let Some(session_id) = req.session_id.as_deref() {
-        create_args["request"]["sessionId"] = Value::String(session_id.to_string());
+    // the "session" event. DSH's `session/create` is a new-conversation API:
+    // it reuses a named Session only while it is still blank, then mints a
+    // replacement once a turn has started. `session/prompt` already resolves
+    // (and resumes) an existing id, so calling create here would silently
+    // switch conversations on every follow-up turn.
+    let mut start = session_start(req.session_id.as_deref());
+    if let SessionStart::Resume(session_id) = start {
+        if session_missing(&origin, session_id).await {
+            // 宿主已没有这个会话（数据被清、换了 host 地址）：prompt 会回
+            // session/not-found，这段对话此后每轮都会失败。改开新会话并明说
+            // 上下文没带过去，而不是让用户卡在报错里。
+            core.dispatch_event(
+                state,
+                EngineEvent::Warn(
+                    "DSH 中已找不到这段对话的原会话，已开启新会话，之前的上下文不会带入"
+                        .to_string(),
+                ),
+            );
+            start = SessionStart::Create;
+        }
     }
-    let session_id = host_call(&origin, "session/create", create_args)
+    let session_id = match start {
+        SessionStart::Resume(session_id) => session_id.to_string(),
+        SessionStart::Create => host_call(
+            &origin,
+            "session/create",
+            json!({ "request": { "workspaceId": workspace } }),
+        )
         .await?
         .pointer("/sessionId")
         .and_then(Value::as_str)
         .map(str::to_string)
-        .ok_or("session/create 未返回 sessionId")?;
+        .ok_or("session/create 未返回 sessionId")?,
+    };
     core.dispatch_event(state, EngineEvent::SessionId(session_id.clone()));
+    let _session_run = SessionRun::enter(&session_id, killed).await;
+    if killed.load(Ordering::SeqCst) {
+        return Ok(()); // stopped while waiting: nothing reached the host
+    }
     // 计划审批模式（PRD §5-DSH.2）：先经 commands/list 探测 host 是否组合了
     // plan-mode 插件，缺失即受控报错——HTTP 200 不等于命令存在，绝不降级
     // auto 执行。
@@ -279,6 +407,7 @@ async fn turn_inner(
     // before the ready frame and the question was skipped as "未就绪".
     let opened = ws_open_and_wait(&mut ws, &session_id).await;
     view.events_client_id = opened.events_client_id;
+    view.turn_started = !opened.follow_ready;
     if view.events_client_id.is_none() {
         core.dispatch_event(
             state,
@@ -289,6 +418,17 @@ async fn turn_inner(
         // 进入 plan 模式：commands/execute "/plan"，并等 follow 流回读
         // plan/mode{active:true} 提交后才允许下发 prompt（事件回读确认）。
         enter_plan_mode(&origin, &session_id, &mut ws, opened.plan_active).await?;
+    } else if opened.plan_active {
+        // 续聊恢复的是整段会话日志，plan 状态也随之回来（如上轮停在计划审批
+        // 就被中止）。本轮不是 plan 权限，就不能继续按计划模式回复。
+        if let Err(error) = leave_plan_mode(&origin, &session_id).await {
+            core.dispatch_event(
+                state,
+                EngineEvent::Warn(format!(
+                    "未能退出上一轮遗留的计划模式，本轮可能仍按计划模式回复：{error}"
+                )),
+            );
+        }
     }
 
     let mut prompt_request = json!({
@@ -306,6 +446,12 @@ async fn turn_inner(
     {
         prompt_request["effort"] = json!(effort);
         prompt_request["reasoningEffort"] = json!(effort);
+    }
+    // Stopped during the follow / plan waits above: a prompt sent now would
+    // queue behind the next send's turn and its cancel would abort that one.
+    if killed.load(Ordering::SeqCst) {
+        let _ = ws.close(None).await;
+        return Ok(());
     }
     let prompt = crate::dsh_host::host_call_rpc(
         &origin,
@@ -373,11 +519,29 @@ async fn turn_inner(
                     .await;
                     break;
                 }
+                if view.queued_turn_stranded() {
+                    let _ = write.close().await;
+                    return Err(
+                        "上一轮结束后 DSH 没有开始本轮：这条消息仍排在 DSH 的队列里，下次发送时会先执行它"
+                            .to_string(),
+                    );
+                }
             }
         }
     }
     let _ = write.close().await;
     Ok(())
+}
+
+impl TurnView {
+    /// A turn still open at subscribe time has ended, yet this send's turn
+    /// never started within [`QUEUED_TURN_START_TIMEOUT`].
+    fn queued_turn_stranded(&self) -> bool {
+        !self.turn_started
+            && self
+                .stale_turn_ended_at
+                .is_some_and(|ended| ended.elapsed() >= QUEUED_TURN_START_TIMEOUT)
+    }
 }
 
 // ==================== plan mode entry ====================
@@ -458,6 +622,37 @@ async fn enter_plan_mode(
     await_plan_mode_active(ws).await
 }
 
+/// 退出续聊带回来的 plan 状态：`/plan off` 在无 open turn 时立即 committed，
+/// 有 open turn 时排到下一个 pre-step，两者都早于本轮 prompt 的第一步，
+/// 所以不必像进入那样等回读。
+async fn leave_plan_mode(origin: &str, session_id: &str) -> Result<(), String> {
+    let result = host_call(
+        origin,
+        "commands/execute",
+        json!({
+            "agentId": session_id,
+            "line": "/plan off",
+            "submittedAttachments": [],
+        }),
+    )
+    .await?;
+    plan_off_outcome(&result)
+}
+
+/// `/plan off` 的应答：只有 `result.kind == "success"` 算退出成功（含
+/// "已是非计划模式" 的 noop）；undefined 应答或 error 结果都如实上报。
+fn plan_off_outcome(result: &Value) -> Result<(), String> {
+    if result.pointer("/result/kind").and_then(Value::as_str) == Some("success") {
+        return Ok(());
+    }
+    Err(result
+        .pointer("/result/text")
+        .and_then(Value::as_str)
+        .filter(|text| !text.is_empty())
+        .unwrap_or("host 未确认 /plan off")
+        .to_string())
+}
+
 /// 等 follow 流回读 plan/mode{active:true}（P0：无 open turn 时 /plan 立即
 /// committed 并向会话日志追加该事件，随 follow 流下行）。超时/断流 =
 /// host 未确认，受控报错；期间到达的其它事件（含 plan/mode:false）按
@@ -500,14 +695,30 @@ async fn await_plan_mode_active(ws: &mut Ws) -> Result<(), String> {
 /// `assistant-stream` live frames.
 fn handle_follow(core: &TurnCore, state: &mut TurnState, view: &mut TurnView, value: &Value) {
     match value.get("type").and_then(Value::as_str) {
-        Some("snapshot") => {} // history replay: codemoss renders its own log
+        // History replay is codemoss's own log. A snapshot landing here came
+        // after the prompt, so this turn may have started inside it.
+        Some("snapshot") => view.turn_started = true,
         Some("event") => {
             let event = value.get("event").cloned().unwrap_or(Value::Null);
             let event_type = event.get("type").and_then(Value::as_str).unwrap_or("");
+            if event_type == "turn/start" {
+                view.turn_started = true;
+            } else if !view.turn_started {
+                // Tail of a turn still open at subscribe time.
+                if event_type == "turn/end" {
+                    view.stale_turn_ended_at
+                        .get_or_insert_with(std::time::Instant::now);
+                }
+                return;
+            }
             let data = event.get("data").cloned().unwrap_or(Value::Null);
             handle_session_event(core, state, view, event_type, &data);
         }
-        Some("assistant-stream") => handle_assistant_stream(core, state, view, value),
+        // Same queue as the durable events, so this turn's `turn/start` always
+        // precedes its live frames; earlier ones belong to the closing turn.
+        Some("assistant-stream") if view.turn_started => {
+            handle_assistant_stream(core, state, view, value)
+        }
         _ => {}
     }
 }
@@ -1070,9 +1281,12 @@ async fn ws_send(ws: &mut Ws, payload: Value) -> Result<(), String> {
 /// 已激活时不会再有 plan/mode 事件可回读）。
 struct StreamsOpened {
     events_client_id: Option<String>,
-    /// follow 快照里 plan 投影的 active 位（dsh-plan-mode wire view
-    /// {active, pending}）；快照缺失或投影未注册时为 false。
+    /// follow 快照里的 plan 投影见 [`plan_engaged`]；快照缺失或投影未注册时
+    /// 为 false。
     plan_active: bool,
+    /// The follow snapshot arrived before the prompt, so every later follow
+    /// event postdates the subscription.
+    follow_ready: bool,
 }
 
 /// Open both logical streams and wait for the follow snapshot (proof the
@@ -1113,6 +1327,7 @@ async fn ws_open_and_wait(ws: &mut Ws, session_id: &str) -> StreamsOpened {
         return StreamsOpened {
             events_client_id: None,
             plan_active: false,
+            follow_ready: false,
         };
     }
     let mut follow_ready = false;
@@ -1136,12 +1351,7 @@ async fn ws_open_and_wait(ws: &mut Ws, session_id: &str) -> StreamsOpened {
                             == Some("snapshot") =>
                     {
                         follow_ready = true;
-                        // plan 投影的裁剪视图 {active, pending}（dsh-plan-mode
-                        // planProjectionDefinition wire）；缺失即未注册插件。
-                        plan_active = value
-                            .pointer("/value/projections/values/plan/active")
-                            .and_then(Value::as_bool)
-                            .unwrap_or(false);
+                        plan_active = plan_engaged(&value);
                     }
                     Some(STREAM_EVENTS)
                         if value.pointer("/value/type").and_then(Value::as_str)
@@ -1161,7 +1371,23 @@ async fn ws_open_and_wait(ws: &mut Ws, session_id: &str) -> StreamsOpened {
     StreamsOpened {
         events_client_id,
         plan_active,
+        follow_ready,
     }
+}
+
+/// plan 投影的裁剪视图 {active, pending}（dsh-plan-mode planProjectionDefinition
+/// wire；缺失即未注册插件）。`pending` 表示已记录、尚未生效的切换（有 open
+/// turn 时 `/plan` 排到下一个 pre-step），所以两位任一为真都说明这个会话
+/// 已经或即将处在计划模式：进入时 `/plan` 不会再追加 plan/mode 可回读，非
+/// plan 轮次则要 `/plan off`。
+fn plan_engaged(snapshot_frame: &Value) -> bool {
+    let plan = snapshot_frame.pointer("/value/projections/values/plan");
+    let flag = |key: &str| {
+        plan.and_then(|plan| plan.get(key))
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+    };
+    flag("active") || flag("pending")
 }
 
 fn message_text(data: &Value) -> String {
@@ -1191,7 +1417,6 @@ mod tests {
     use super::*;
     use crate::engine::ProcessRegistry;
     use crate::event_sink::{Emit, EventSink};
-    use std::path::PathBuf;
     use std::sync::Mutex as StdMutex;
 
     /// Test emitter collecting flushed event JSON for assertions.
@@ -1253,6 +1478,246 @@ mod tests {
             .all(|data| data.get("toolCallId").and_then(Value::as_str) == Some("call-17")));
     }
 
+    #[test]
+    fn existing_conversations_are_resumed_instead_of_recreated() {
+        assert_eq!(session_start(None), SessionStart::Create);
+        assert_eq!(session_start(Some(" ")), SessionStart::Create);
+        assert_eq!(
+            session_start(Some(" session-existing ")),
+            SessionStart::Resume("session-existing")
+        );
+    }
+
+    /// The existence probe sends a read-only `session/page` cut at -1 and
+    /// reports "missing" only for `session/not-found`; a stored session or any
+    /// other failure keeps the resume path.
+    #[tokio::test]
+    async fn session_probe_flags_only_not_found_as_missing() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let origin = format!("http://{}", listener.local_addr().unwrap());
+        let bodies = Arc::new(StdMutex::new(Vec::<Value>::new()));
+        let seen = Arc::clone(&bodies);
+        tokio::spawn(async move {
+            while let Ok((mut socket, _)) = listener.accept().await {
+                let mut raw = Vec::new();
+                let mut buf = [0u8; 4096];
+                let body = loop {
+                    let n = socket.read(&mut buf).await.unwrap_or(0);
+                    if n == 0 {
+                        break None;
+                    }
+                    raw.extend_from_slice(&buf[..n]);
+                    let text = String::from_utf8_lossy(&raw).to_string();
+                    let Some((head, body)) = text.split_once("\r\n\r\n") else {
+                        continue;
+                    };
+                    let length = head
+                        .lines()
+                        .find_map(|line| {
+                            line.to_ascii_lowercase()
+                                .strip_prefix("content-length:")
+                                .map(|v| v.trim().parse::<usize>().unwrap_or(0))
+                        })
+                        .unwrap_or(0);
+                    if body.len() >= length {
+                        break serde_json::from_str::<Value>(body).ok();
+                    }
+                };
+                let Some(body) = body else { continue };
+                let session = body
+                    .pointer("/payload/args/request/address/sessionId")
+                    .and_then(Value::as_str)
+                    .unwrap_or("")
+                    .to_string();
+                seen.lock().unwrap().push(body);
+                let result = match session.as_str() {
+                    "session-gone" => {
+                        json!({ "ok": false, "error": { "code": "session/not-found", "message": "not found" } })
+                    }
+                    "session-locked" => {
+                        json!({ "ok": false, "error": { "code": "session/writer-held", "message": "held" } })
+                    }
+                    _ => json!({ "ok": true, "value": { "records": [], "hasMore": true } }),
+                };
+                let reply = json!({ "type": "server-response", "result": result }).to_string();
+                let response = format!(
+                    "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{reply}",
+                    reply.len()
+                );
+                let _ = socket.write_all(response.as_bytes()).await;
+            }
+        });
+
+        assert!(session_missing(&origin, "session-gone").await);
+        assert!(!session_missing(&origin, "session-live").await);
+        assert!(!session_missing(&origin, "session-locked").await);
+
+        let bodies = bodies.lock().unwrap().clone();
+        assert_eq!(bodies.len(), 3, "{bodies:?}");
+        assert_eq!(bodies[0]["method"], "session/page");
+        assert_eq!(
+            bodies[0]["payload"]["args"]["request"],
+            json!({
+                "address": { "kind": "session", "sessionId": "session-gone" },
+                "throughSeq": -1,
+                "maxMessages": 1,
+            })
+        );
+    }
+
+    #[test]
+    fn plan_off_accepts_only_a_success_result() {
+        let success =
+            json!({ "commandId": "c1", "result": { "kind": "success", "text": "Plan mode off." } });
+        assert_eq!(plan_off_outcome(&success), Ok(()));
+        let failed = json!({ "commandId": "c2", "result": { "kind": "error", "text": "boom" } });
+        assert_eq!(plan_off_outcome(&failed), Err("boom".to_string()));
+        assert_eq!(
+            plan_off_outcome(&Value::Null),
+            Err("host 未确认 /plan off".to_string())
+        );
+    }
+
+    fn follow_event(kind: &str, data: Value) -> Value {
+        json!({ "type": "event", "event": { "type": kind, "data": data } })
+    }
+
+    fn feed(core: &TurnCore, state: &mut TurnState, view: &mut TurnView, items: &[Value]) {
+        for item in items {
+            handle_follow(core, state, view, item);
+        }
+    }
+
+    fn text_delta(text: &str) -> Value {
+        json!({
+            "type": "assistant-stream",
+            "frame": { "type": "chunk", "chunk": { "type": "text-delta", "text": text } }
+        })
+    }
+
+    fn text_message(text: &str) -> Value {
+        json!({ "message": { "content": [{ "type": "text", "text": text }] } })
+    }
+
+    /// Resuming one session means the subscription can open while an earlier
+    /// turn (e.g. one just cancelled) is still closing. Its tail (live text,
+    /// durable message and its `turn/end`) must neither render into nor settle
+    /// this send.
+    #[tokio::test]
+    async fn tail_of_a_turn_open_at_subscribe_time_is_not_this_send() {
+        let (core, _registry, emitter) = test_core();
+        let mut state = TurnState::new(Some("session-1".to_string()));
+        let mut view = TurnView::default(); // follow was ready before the prompt
+
+        let stale_end = json!({ "turn": 3, "reason": { "kind": "cancelled" } });
+        let stale = [
+            text_delta("旧一轮的流式片段"),
+            follow_event("assistant/message", text_message("旧一轮的回复")),
+            follow_event("turn/end", stale_end),
+        ];
+        feed(&core, &mut state, &mut view, &stale);
+        assert!(
+            !view.turn_ended,
+            "an earlier turn's end must not settle this send"
+        );
+        assert!(view.stale_turn_ended_at.is_some());
+
+        let own_end = json!({ "turn": 4, "reason": { "kind": "completed" } });
+        let own = [
+            follow_event("turn/start", json!({ "turn": 4 })),
+            text_delta("本轮回复"),
+            follow_event("turn/end", own_end),
+        ];
+        feed(&core, &mut state, &mut view, &own);
+        assert!(view.turn_ended);
+
+        core.sink.flush();
+        let events = emitter.0.lock().unwrap().join("\n");
+        assert!(events.contains("本轮回复"), "{events}");
+        assert!(!events.contains("旧一轮"), "{events}");
+        assert!(!events.contains("cancelled"), "{events}");
+    }
+
+    /// A follow snapshot that only lands after the prompt may already contain
+    /// this turn's `turn/start`; filtering would then wait forever.
+    #[test]
+    fn late_follow_snapshot_turns_the_filter_off() {
+        let (core, _registry, _emitter) = test_core();
+        let mut state = TurnState::new(Some("session-1".to_string()));
+        let mut view = TurnView::default();
+
+        handle_follow(&core, &mut state, &mut view, &json!({ "type": "snapshot" }));
+        let end = json!({ "turn": 4, "reason": { "kind": "completed" } });
+        handle_follow(&core, &mut state, &mut view, &follow_event("turn/end", end));
+        assert!(view.turn_ended);
+    }
+
+    /// The gate never waits forever: once the stale turn has ended, a turn
+    /// that does not start within the limit is reported.
+    #[test]
+    fn a_turn_that_never_starts_after_the_stale_end_is_reported() {
+        let ended = |ago: Duration| TurnView {
+            stale_turn_ended_at: std::time::Instant::now().checked_sub(ago),
+            ..TurnView::default()
+        };
+        assert!(!TurnView::default().queued_turn_stranded());
+        assert!(!ended(Duration::from_secs(1)).queued_turn_stranded());
+        assert!(ended(QUEUED_TURN_START_TIMEOUT).queued_turn_stranded());
+        let started = TurnView {
+            turn_started: true,
+            ..ended(QUEUED_TURN_START_TIMEOUT)
+        };
+        assert!(!started.queued_turn_stranded());
+    }
+
+    /// "Send now" stops the running turn and sends at once; the new send must
+    /// wait until the stopped run on the same session has finished.
+    #[tokio::test]
+    async fn a_send_waits_for_the_previous_run_on_its_session() {
+        let running = AtomicBool::new(false);
+        let previous = SessionRun::enter("session-run-wait", &running).await;
+        let next = tokio::spawn(async {
+            let running = AtomicBool::new(false);
+            let _held = SessionRun::enter("session-run-wait", &running).await;
+        });
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        assert!(
+            !next.is_finished(),
+            "must wait while the previous run holds the session"
+        );
+        drop(previous);
+        tokio::time::timeout(Duration::from_secs(2), next)
+            .await
+            .expect("enters once the previous run is gone")
+            .unwrap();
+        assert!(!session_runs().contains_key("session-run-wait"));
+
+        // A stop while waiting cuts the wait short.
+        let _held = SessionRun::enter("session-run-stop", &running).await;
+        let stopped = AtomicBool::new(true);
+        let started = tokio::time::Instant::now();
+        let _other = SessionRun::enter("session-run-stop", &stopped).await;
+        assert!(started.elapsed() < Duration::from_millis(100));
+    }
+
+    #[test]
+    fn plan_counts_as_engaged_when_active_or_pending() {
+        let frame = |plan: Value| json!({ "value": { "type": "snapshot", "projections": { "values": { "plan": plan } } } });
+        assert!(plan_engaged(&frame(
+            json!({ "active": true, "pending": false })
+        )));
+        assert!(plan_engaged(&frame(
+            json!({ "active": false, "pending": true })
+        )));
+        assert!(!plan_engaged(&frame(
+            json!({ "active": false, "pending": false })
+        )));
+        let absent = json!({ "value": { "type": "snapshot", "projections": { "values": {} } } });
+        assert!(!plan_engaged(&absent));
+    }
+
     /// End-to-end against the configured local host (skipped by default):
     /// `cargo test --lib dsh_session -- --ignored --nocapture`.
     /// Proves the full chain: ensure host → workspace/session → prompt →
@@ -1272,7 +1737,7 @@ mod tests {
         };
         let req = SendRequest {
             session_id: None,
-            workspace: PathBuf::from("/tmp"),
+            workspace: std::env::temp_dir(),
             prompt: "用一句话回答：1+1等于几？".to_string(),
             prompt_contributions: Vec::new(),
             native_compact: false,
@@ -1286,6 +1751,7 @@ mod tests {
             computer_use: None,
             memory_bot: None,
             allowed_tools: None,
+            no_tools: false,
         };
         run_host_turn(
             core,
@@ -1345,7 +1811,7 @@ mod tests {
     /// Resume + tools: turn 2 reuses turn 1's session id (codemoss passes it
     /// back as `session_id`), runs a tool, and projects a tool row plus its
     /// result patch. Same live-host gate as `streams_a_live_host_turn`.
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     #[ignore = "needs a running dsh host at the configured origin"]
     async fn resumes_session_and_streams_tool_rows() {
         let run = |session_id: Option<String>, prompt: &str| {
@@ -1362,7 +1828,7 @@ mod tests {
                 };
                 let req = SendRequest {
                     session_id,
-                    workspace: PathBuf::from("/tmp"),
+                    workspace: std::env::temp_dir(),
                     prompt,
                     prompt_contributions: Vec::new(),
                     native_compact: false,
@@ -1376,6 +1842,7 @@ mod tests {
                     computer_use: None,
                     memory_bot: None,
                     allowed_tools: None,
+                    no_tools: false,
                 };
                 run_host_turn(
                     core,

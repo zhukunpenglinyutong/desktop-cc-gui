@@ -17,6 +17,7 @@ import { PluginMarketRow } from "./PluginMarketRow";
 import { PluginSpotlight } from "./PluginSpotlight";
 import { usePluginsStore } from "../manager/usePlugins";
 import { useMarketplaceStore } from "../marketplace/store";
+import { translationKey, usePluginTranslationStore } from "./translation/store";
 
 const SELECT_TRIGGER = "min-w-36";
 const TH = "px-4 py-2.5 text-left text-caption-1-medium text-text-tertiary";
@@ -105,18 +106,25 @@ export function PluginMarketView({ onOpenDetail }: { onOpenDetail: (id: string) 
     category !== "all" ||
     sort === "official" ||
     sort === "thirdParty";
-  const filtered = useMemo(
-    () =>
-      sortPlugins(
-        entries.filter(
-          (entry) =>
-            pluginMatchesQuery(entry, query) &&
-            (category === "all" || categorizePlugin(entry) === category),
-        ),
-        sort,
+  // 显示译文时，搜索也命中译文：用户照着屏幕上的文字搜，不该只匹配看不见的原文。
+  const displayLanguage = usePluginTranslationStore((s) => s.displayLanguage);
+  const summaries = usePluginTranslationStore((s) => s.summaries);
+  const filtered = useMemo(() => {
+    const needle = query.trim().toLowerCase();
+    const matchesTranslation = (id: string): boolean => {
+      if (!needle || !displayLanguage) return false;
+      const translated = summaries[translationKey(id, displayLanguage)];
+      return !!translated && `${translated.name}\n${translated.description}`.toLowerCase().includes(needle);
+    };
+    return sortPlugins(
+      entries.filter(
+        (entry) =>
+          (pluginMatchesQuery(entry, query) || matchesTranslation(entry.id)) &&
+          (category === "all" || categorizePlugin(entry) === category),
       ),
-    [entries, query, category, sort],
-  );
+      sort,
+    );
+  }, [entries, query, category, sort, displayLanguage, summaries]);
 
   return (
     <div className="flex w-full flex-col gap-4">
@@ -232,7 +240,7 @@ export function PluginMarketView({ onOpenDetail }: { onOpenDetail: (id: string) 
                   <th scope="col" className={`${TH} w-[96px] text-right`}>
                     {t("plugins.hub.tableVersion")}
                   </th>
-                  <th scope="col" className={`${TH} w-[150px] text-right`}>
+                  <th scope="col" className={`${TH} w-[190px] text-right`}>
                     {t("plugins.hub.tableActions")}
                   </th>
                 </tr>

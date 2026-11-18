@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { AGENT_STATUS_ROLE, type Message } from "@/lib/ipc";
-import { deriveAgentTaskSteps, deriveTodoList, agentState, subagentRefsFromArgs } from "./agent-task-steps";
+import {
+  deriveAgentTaskSteps,
+  deriveTodoList,
+  agentState,
+  sameSummaryHistory,
+  subagentRefsFromArgs,
+} from "./agent-task-steps";
 
 function tool(seq: number, text: string, args?: unknown, result?: unknown): Message {
   return { seq, role: "tool", text, ts: null, args, result } as Message;
@@ -782,5 +788,36 @@ describe("deriveTodoList id-keyed patches", () => {
       todoRow(2, "TaskCreate", patch([{ id: "1", content: "A", status: "pending" }])),
     ]);
     expect(items.map(({ id, content }) => ({ id, content }))).toEqual([{ id: "1", content: "A" }]);
+  });
+});
+
+describe("sameSummaryHistory", () => {
+  it("ignores text growth on answer and thinking rows", () => {
+    const rows: Message[] = [
+      tool(1, "edit_file", { file_path: "/ws/a.ts" }),
+      { seq: 2, role: "thinking", text: "分析", ts: null },
+      { seq: 3, role: "assistant", text: "正在写", ts: null },
+    ];
+    const grown = rows.map((row, i) =>
+      i === 0 ? row : { ...row, text: `${row.text}更多` },
+    );
+    expect(sameSummaryHistory(rows, grown)).toBe(true);
+  });
+
+  it("detects tool payload changes, row changes and appends", () => {
+    const toolRow = tool(1, "edit_file", { file_path: "/ws/a.ts" });
+    const base: Message[] = [
+      { seq: 1, role: "user", text: "改一下", ts: null },
+      toolRow,
+    ];
+    const settled = [base[0], { ...toolRow, result: "ok" }];
+    expect(sameSummaryHistory(base, settled)).toBe(false);
+    expect(sameSummaryHistory(base, [...base, { seq: 2, role: "assistant", text: "好", ts: null }])).toBe(false);
+    expect(
+      sameSummaryHistory(base, [
+        base[0],
+        { ...toolRow, seq: 9 },
+      ]),
+    ).toBe(false);
   });
 });

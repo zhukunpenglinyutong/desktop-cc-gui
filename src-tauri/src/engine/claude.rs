@@ -93,6 +93,12 @@ impl Engine for ClaudeEngine {
         true
     }
 
+    /// 零工具轮次：`--tools ""` 卸掉全部内置工具，`--strict-mcp-config`
+    /// 且不给 `--mcp-config` 就不连任何 MCP 服务器。
+    fn supports_no_tools(&self) -> bool {
+        true
+    }
+
     fn build_command(&self, req: &SendRequest, bin: &str) -> Result<BuiltCommand, String> {
         let mut cmd = command_for_binary(bin);
         cmd.arg("-p");
@@ -115,7 +121,18 @@ impl Engine for ClaudeEngine {
         // (headless -p cannot prompt mid-turn, so anything not listed here
         // gets denied outright).
         let mut preapproved: Vec<&str> = Vec::new();
-        if let Some(tools) = req.allowed_tools.as_deref() {
+        if req.no_tools {
+            // 纯文本轮次（插件介绍翻译）：输入是不可信的第三方文本，模型手里
+            // 不能有任何工具。prepare_launch 已保证不带白名单/电脑操控/记忆，
+            // 所以下面的 --mcp-config / --allowedTools 都不会出现。会话不落盘：
+            // 这类轮次从不续接，也不该出现在历史里。
+            cmd.arg("--tools");
+            cmd.arg("");
+            cmd.arg("--strict-mcp-config");
+            cmd.arg("--permission-mode");
+            cmd.arg("default");
+            cmd.arg("--no-session-persistence");
+        } else if let Some(tools) = req.allowed_tools.as_deref() {
             // 任务工作台的只读约束：plan 模式拒绝任何编辑/命令，再叠加
             // 白名单；headless -p 下未列入 --allowedTools 的工具会被拒。
             // 已知写工具额外显式 deny，防止模式解析差异。
@@ -387,10 +404,7 @@ impl Engine for ClaudeEngine {
                 // text (headless cannot prompt). Surface them so the UI can
                 // offer a directory grant instead of letting the model
                 // narrate a terminal prompt that does not exist.
-                for (id, text) in tool_result_error_blocks(&value) {
-                    if !looks_like_permission_denial(&text) {
-                        continue;
-                    }
+                for (id, text) in tool_result_permission_denials(&value) {
                     // The denied call's structured input is authoritative:
                     // resolve the real path argument by tool_use id and only
                     // fall back to scraping the free-text error when the call
@@ -433,7 +447,7 @@ impl Engine for ClaudeEngine {
                                 .get("is_error")
                                 .and_then(Value::as_bool)
                                 .unwrap_or(false)
-                                || looks_like_permission_denial(&tool_result_block_text(block))
+                                || is_claude_permission_denial(&tool_result_block_text(block))
                             {
                                 continue;
                             }
@@ -670,24 +684,6 @@ fn compact_usage(post_tokens: i64, raw: Option<&Value>) -> Value {
     usage
 }
 
-/// Phrases the CLI uses when a tool call is denied by the permission
-/// system in headless mode (matched case-insensitively against the
-/// tool_result error text).
-const DENIAL_PHRASES: &[&str] = &[
-    "requested permissions",
-    "haven't granted it yet",
-    "have not granted it yet",
-    "requires approval",
-    "requires permission",
-    "permission denied",
-    "blocked for security",
-    "blocked. for security",
-    "allowed working directories",
-    "may only write to files",
-    "outside the allowed",
-    "outside workspace",
-];
-
 /// A declined or skipped question is the user's own answer, not a permission
 /// the user could grant here: never surface it as a grant card (CodeBuddy
 /// lists a declined AskUserQuestion in the result's `permission_denials`).
@@ -695,9 +691,13 @@ fn is_question_tool(tool: Option<&str>) -> bool {
     tool == Some("AskUserQuestion")
 }
 
-fn looks_like_permission_denial(message: &str) -> bool {
-    let normalized = message.trim().to_ascii_lowercase();
-    !normalized.is_empty() && DENIAL_PHRASES.iter().any(|p| normalized.contains(p))
+fn is_claude_permission_denial(message: &str) -> bool {
+    // Tool output can contain OS errors or arbitrary prose. Match the known
+    // Claude refusal template here; other denials use result.permission_denials.
+    let normalized = message.trim().trim_end_matches('.').to_ascii_lowercase();
+    normalized.starts_with("claude requested permissions to ")
+        && (normalized.ends_with(", but you haven't granted it yet")
+            || normalized.ends_with(", but you have not granted it yet"))
 }
 
 /// First absolute-path-looking token in free text: Windows `C:\…` / `C:/…`
@@ -740,9 +740,8 @@ fn tool_result_block_text(block: &Value) -> String {
     }
 }
 
-/// (tool_use id, error text) pairs of tool_result blocks in a "user" stream
-/// line. Content may be a plain string or an array of text blocks.
-fn tool_result_error_blocks(value: &Value) -> Vec<(Option<String>, String)> {
+/// (tool_use id, denial text) pairs of tool_result blocks in a "user" stream line.
+fn tool_result_permission_denials(value: &Value) -> Vec<(Option<String>, String)> {
     let mut out = Vec::new();
     let Some(content) = value
         .get("message")
@@ -763,13 +762,12 @@ fn tool_result_error_blocks(value: &Value) -> Vec<(Option<String>, String)> {
             continue;
         }
         let text = tool_result_block_text(block);
-        let text = text.trim().chars().take(500).collect::<String>();
-        if !text.is_empty() {
+        if is_claude_permission_denial(&text) {
             let id = block
                 .get("tool_use_id")
                 .and_then(Value::as_str)
                 .map(str::to_string);
-            out.push((id, text));
+            out.push((id, text.trim().chars().take(500).collect()));
         }
     }
     out
@@ -1662,6 +1660,16 @@ mod tests {
                 "Claude requested permissions to read from /etc, but you haven't granted it yet.",
             ),
             (true, "file not found: /tmp/missing.txt"),
+            (true, "mv: /tmp/a: Permission denied"),
+            (true, "permission denied: docker"),
+            (
+                true,
+                "Exit code 1\nThe operation requires approval outside workspace",
+            ),
+            (
+                true,
+                "Exit code 1\nClaude requested permissions to run Bash, but you haven't granted it yet.",
+            ),
         ] {
             let line = serde_json::json!({
                 "type": "user",
@@ -1680,6 +1688,35 @@ mod tests {
             ClaudeEngine::new().parse_line(&line, &mut out);
             assert!(out.is_empty(), "is_error={is_error} text={text}");
         }
+    }
+
+    #[test]
+    fn successful_tool_output_with_permission_language_reaches_the_tool_row() {
+        let text = "permission denied and requires approval are examples in this file";
+        let line = serde_json::json!({
+            "type": "user",
+            "message": { "content": [{
+                "type": "tool_result",
+                "tool_use_id": "toolu_1",
+                "is_error": false,
+                "content": text
+            }] }
+        })
+        .to_string();
+        let mut out = Vec::new();
+        ClaudeEngine::new().parse_line(&line, &mut out);
+        assert!(
+            matches!(
+                out.as_slice(),
+                [EngineEvent::Message {
+                    patch: true,
+                    tool_call_id: Some(id),
+                    result: Some(Value::String(result)),
+                    ..
+                }] if id == "toolu_1" && result == text
+            ),
+            "{out:?}"
+        );
     }
 
     #[test]
@@ -2032,6 +2069,7 @@ mod tests {
             computer_use: None,
             memory_bot: None,
             allowed_tools: None,
+            no_tools: false,
         };
         let built = engine.build_command(&request, "claude").unwrap();
         let args: Vec<String> = built
@@ -2084,6 +2122,7 @@ mod tests {
             computer_use: None,
             memory_bot: None,
             allowed_tools: Some(vec!["Read".into(), "Grep".into()]),
+            no_tools: false,
         };
         let built = engine.build_command(&request, "claude").unwrap();
         let args: Vec<String> = built

@@ -29,6 +29,32 @@ export function changelogEntryFor(version: string): ChangelogEntry | undefined {
 
 export const CHANGELOG_DATA: ChangelogEntry[] = [
   {
+    version: "1.2.4",
+    date: "2026-11-14",
+    content: {
+      zh: `✨ 新功能
+- **按工作区设置新建会话的默认引擎**（#1512，关闭 #1503）：在工作区右键菜单里为新建会话指定默认引擎，也可以选择跟随当前选择。工作区「＋」、侧栏、页签条和快捷键共用同一套引擎选择规则；默认引擎被禁用或未安装时可以临时改选，取消会保留原标签和草稿。启动时先加载工作区和默认配置再创建会话，配置尚未返回时不会提前建出会话；设置会持久化，缺少新字段的旧配置照常读取。
+- **插件可以续接已有的原生会话**（#1481）：插件 SDK 0.3.26 的 \`sessions.startRun({ sessionId })\` 会校验引擎、会话和工作区，然后切回聊天、恢复历史并追加新一轮；不传会话 ID 时仍是新建。续接沿用会话自己的模型、渠道和推理强度，忽略本轮的 \`model\` / \`effort\` / \`providerId\` 覆盖。不存在、不匹配、正在运行或加载中的会话会被拒绝；历史恢复失败时不发送、不创建替代会话，重试成功后清除旧错误。\`interruptRun\` 不传或传 \`null\` 的 \`sessionId\` 时，只停止本插件在该引擎与工作区下的在跑轮次，不会误停用户或其他插件的聊天。依赖续接的插件需声明 \`sdkVersion: ">=0.3.26"\`。
+
+🐛 修复
+- **子代理状态条不再卡在「运行中」**（#1423）：omp 把后台任务完成通知写进转录本（\`async-result\`），但事件流不转发，回合结束后状态条仍停在「0/1 · 运行中」，重开会话也不恢复。现在读取历史时解析这类通知并折叠进子代理历史，回合结束、出错或状态仍在运行时会补读最新历史页并退避重试；较旧的结果不会覆盖较新的状态，主机时钟偏慢时同名重派发的完成通知也不再被丢弃。任务在回合结束后才完成时，需切回会话或等下一轮结束才更新。
+
+⚡ 性能
+- **流式输出少做重复查找**（#1509）：每个流式片段不再重新读取状态、遍历页签和历史来确定本轮的模型与推理强度，改为按轮次缓存，收到模型或推理强度变更时更新，轮次结束时清除。显示内容不变。
+- **插件写入的消息帧批量保存**（#1510）：此前每帧都单独获取数据库写锁并让会话索引失效，连续输出时 IPC、锁竞争和重新扫描成倍增加。现在每 32 帧一批，在一个事务里写入，失败时整批重试，每批最多触发一次重新扫描。`,
+      en: `✨ Features
+- **Per-workspace default engine for new sessions** (#1512, closes #1503): pick the engine new sessions use from a workspace's context menu, or let it follow the current selection. The workspace "+" button, the sidebar, the tab bar and the keyboard shortcut share one engine-selection rule; when the default engine is disabled or not installed you can switch for this session, and cancelling keeps the original tab and draft. Workspaces and default settings load before any session is created, so nothing is created before the settings arrive; the setting persists, and older settings without the new field still load.
+- **Plugins can continue an existing native session** (#1481): \`sessions.startRun({ sessionId })\` in plugin SDK 0.3.26 checks the engine, session and workspace, switches back to the chat, restores its history and appends a new turn; omitting the session ID still starts a new session. A continued session keeps its own model, provider and reasoning effort and ignores per-turn \`model\` / \`effort\` / \`providerId\` overrides. Sessions that do not exist, do not match, are running or are still loading are rejected; if history fails to restore nothing is sent and no replacement session is created, and a successful retry clears the old error. \`interruptRun\` with an omitted or \`null\` \`sessionId\` stops only this plugin's running turns for that engine and workspace, never the user's or another plugin's chats. Plugins that rely on continuation should declare \`sdkVersion: ">=0.3.26"\`.
+
+🐛 Fixes
+- **The subagent status pill no longer sticks at "running"** (#1423): omp writes background-task completion notices into the transcript (\`async-result\`) but the event stream does not forward them, so the pill stayed at "0/1 · running" after the turn and reopening the session did not fix it. History reads now parse these notices into the subagent history, and the latest history page is re-read with backoff when a turn ends, fails or still reports running; older results never overwrite newer state, and a same-name re-dispatch no longer drops its own completion notice when the host clock runs slow. A task that finishes after the turn ends updates when you return to the session or the next turn ends.
+
+⚡ Performance
+- **Less repeated lookup while streaming** (#1509): each streamed chunk no longer re-reads state and scans tabs and history to find the run's model and effort; they are cached per run, updated when model or effort reports arrive, and dropped when the run settles. What is displayed is unchanged.
+- **Plugin message frames are saved in batches** (#1510): every frame used to take the database write lock and invalidate the session index on its own, so bursts multiplied IPC calls, lock contention and rescans. Frames are now written 32 at a time in one transaction, a failed batch is retried as a whole, and each batch triggers at most one rescan.`,
+    },
+  },
+  {
     version: "1.2.3",
     date: "2026-11-11",
     content: {

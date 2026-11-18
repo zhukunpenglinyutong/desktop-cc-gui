@@ -498,9 +498,10 @@ fn extract_dsh_line(value: &Value) -> LineRows {
     }
 }
 
-/// Paths embedded by `kimi_prompt_with_images` after the marker block, one
-/// `<image path="...">` tag per attachment.
-fn kimi_image_paths(block: &str) -> Vec<String> {
+/// Paths embedded by `kimi_prompt_with_images`, `minimax_prompt_with_images`,
+/// or `agy_prompt_with_images` after the marker block, one `<image path="...">`
+/// tag per attachment.
+pub(crate) fn embedded_image_paths(block: &str) -> Vec<String> {
     const TAG: &str = "<image path=\"";
     let mut out = Vec::new();
     let mut rest = block;
@@ -890,7 +891,7 @@ fn extract_minimax_line(value: &Value) -> LineRows {
             let (display, images) = match text.find(crate::engine::images::MINIMAX_IMAGE_MARKER) {
                 Some(idx) => (
                     text[..idx].trim_end().to_string(),
-                    kimi_image_paths(&text[idx..]),
+                    embedded_image_paths(&text[idx..]),
                 ),
                 None => (text, Vec::new()),
             };
@@ -1763,7 +1764,7 @@ fn extract_kimi_line(value: &Value) -> LineRows {
             let (display, images) = match text.find(crate::engine::images::KIMI_IMAGE_MARKER) {
                 Some(idx) => (
                     text[..idx].trim_end().to_string(),
-                    kimi_image_paths(&text[idx..]),
+                    embedded_image_paths(&text[idx..]),
                 ),
                 None => (text, Vec::new()),
             };

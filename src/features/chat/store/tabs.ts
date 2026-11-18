@@ -1,4 +1,5 @@
 import { ipc } from "@/lib/ipc";
+import { workspaceEngineOptions } from "../components/engine-options";
 import { writeStored } from "@/lib/storage";
 import {
   ENGINE_PREF_KEY,
@@ -118,10 +119,30 @@ export function createTabActions(
 
   /** Reopen cache for closed tabs: keys whose bySession entry survives tab
    * close so selectSession skips a backend reload, most-recently-closed
-   * last. Bounded — the oldest non-streaming entries beyond the cap are
-   * evicted, so the cache cannot grow forever. */
-  const CLOSED_CACHE_LIMIT = 10;
+   * last. Bounded both by entry count AND retained payload/message size so a
+   * few huge tool-heavy sessions cannot pin hundreds of MB in renderer RAM. */
+  const CLOSED_CACHE_LIMIT = 4;
+  const CLOSED_CACHE_MAX_CHARS = 8_000_000;
   const closedTabCache: string[] = [];
+
+  function sessionCacheChars(s: Pick<ChatStore, "bySession">, key: string): number {
+    const session = s.bySession[key];
+    if (!session) return 0;
+    let chars = 0;
+    for (const m of session.messages) {
+      chars += m.text.length + 128;
+      if (m.args != null) {
+        chars += typeof m.args === "string" ? m.args.length : JSON.stringify(m.args).length;
+      }
+      if (m.result != null) {
+        chars += typeof m.result === "string" ? m.result.length : JSON.stringify(m.result).length;
+      }
+      if (m.images) {
+        for (const img of m.images) chars += img.length;
+      }
+    }
+    return chars;
+  }
 
   function rememberClosedTab(key: string) {
     const i = closedTabCache.indexOf(key);
@@ -136,15 +157,24 @@ export function createTabActions(
     for (let j = closedTabCache.length - 1; j >= 0; j--) {
       if (openKeys.has(closedTabCache[j])) closedTabCache.splice(j, 1);
     }
+    const state = get();
+    const sizes = new Map<string, number>();
+    let totalChars = 0;
+    for (const cached of closedTabCache) {
+      const size = sessionCacheChars(state, cached);
+      sizes.set(cached, size);
+      totalChars += size;
+    }
     let overflow = closedTabCache.length - CLOSED_CACHE_LIMIT;
-    if (overflow <= 0) return;
+    if (overflow <= 0 && totalChars <= CLOSED_CACHE_MAX_CHARS) return;
     const evict: string[] = [];
     for (const cached of closedTabCache) {
-      if (overflow <= 0) break;
+      if (overflow <= 0 && totalChars <= CLOSED_CACHE_MAX_CHARS) break;
       // A streaming closed tab still receives events — never evict it.
-      if (get().streamingByKey[cached]) continue;
+      if (state.streamingByKey[cached]) continue;
       evict.push(cached);
       overflow--;
+      totalChars -= sizes.get(cached) ?? 0;
     }
     if (evict.length === 0) return;
     for (const cached of evict) {
@@ -201,7 +231,36 @@ export function createTabActions(
     forgetClosedTab,
     forgetClosedTabs,
 
-    startNewChat: (workspacePath) => {
+    startNewChat: (workspacePath, engineOverride, onOpened) => {
+      const state = get();
+      const source = state.active;
+      // Opening a chat syncs the picker to it, so a different picker engine on
+      // an established chat means the user chose to continue it elsewhere.
+      const pickedForSource =
+        !engineOverride &&
+        source !== null &&
+        source.sessionId !== null &&
+        source.workspacePath === workspacePath &&
+        source.engine !== state.activeEngine;
+      const workspace = state.workspaces.find((w) => w.path === workspacePath);
+      const preferred = pickedForSource
+        ? undefined
+        : workspace && state.workspaceDefaultEngines[workspace.id];
+      if (
+        !engineOverride && preferred &&
+        !workspaceEngineOptions(state.engines, workspacePath, (key) => key).some((option) => option.id === preferred)
+      ) {
+        // A repeat request while the dialog is up (⌘N) keeps the first one's cleanup.
+        if (state.unavailableNewChat?.workspacePath !== workspacePath) {
+          set({ unavailableNewChat: { workspacePath, engine: preferred, onOpened } });
+        }
+        return;
+      }
+      const usesWorkspaceEngine = Boolean(engineOverride || preferred);
+      const engine = engineOverride ?? (preferred || state.activeEngine);
+      if (engine !== state.activeEngine) writeStored(ENGINE_PREF_KEY, engine);
+      // Before activation: callers clear center surfaces and the /new draft here.
+      onOpened?.();
       // One pending chat per workspace+engine: re-focus it instead of
       // piling up empty "new" tabs.
       const previous = get().active;
@@ -209,11 +268,11 @@ export function createTabActions(
         const existing = s.openTabs.find(
           (t) =>
             t.sessionId === null &&
-            t.engine === s.activeEngine &&
+            t.engine === engine &&
             t.workspacePath === workspacePath,
         );
         const tab: ActiveSession = existing ?? {
-          engine: s.activeEngine,
+          engine,
           sessionId: null,
           workspacePath,
         };
@@ -221,6 +280,7 @@ export function createTabActions(
         const newKey = sessionKey(tab.engine, tab.sessionId, tab.workspacePath);
         const source = s.active;
         const pendingRuntimeSwitch =
+          !usesWorkspaceEngine &&
           source &&
           source.sessionId !== null &&
           source.workspacePath === workspacePath &&
@@ -232,7 +292,12 @@ export function createTabActions(
                 targetSessionId: null,
                 workspacePath,
               }
-            : s.pendingRuntimeSwitch;
+            : usesWorkspaceEngine &&
+                s.pendingRuntimeSwitch?.targetEngine === engine &&
+                s.pendingRuntimeSwitch.targetSessionId === null &&
+                s.pendingRuntimeSwitch.workspacePath === workspacePath
+              ? null
+              : s.pendingRuntimeSwitch;
         persistTabs(openTabs, tab);
         // 没有标签页时贴的图（composerAttachments[""]）同样交给这个会话。
         // 图片能合并去重、不会丢，所以总是搬（不像草稿要让位给已有文字）。
@@ -252,11 +317,11 @@ export function createTabActions(
         // 整个 drafts 对象的订阅者无谓重渲染。
         const unbound = s.drafts[UNBOUND_DRAFT_KEY];
         if (!unbound || s.drafts[newKey] !== undefined) {
-          return { openTabs, active: tab, pendingRuntimeSwitch, ...attachments };
+          return { openTabs, active: tab, activeEngine: engine, unavailableNewChat: null, pendingRuntimeSwitch, ...attachments };
         }
         const drafts = { ...s.drafts, [newKey]: unbound };
         delete drafts[UNBOUND_DRAFT_KEY];
-        return { openTabs, active: tab, pendingRuntimeSwitch, drafts, ...attachments };
+        return { openTabs, active: tab, activeEngine: engine, unavailableNewChat: null, pendingRuntimeSwitch, drafts, ...attachments };
       });
       // New-chat entry points (sidebar, ⌘N, workspace plus) skip activateTab,
       // so announce the switch here — otherwise plugins keep the previous

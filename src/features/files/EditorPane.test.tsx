@@ -9,17 +9,23 @@ import type * as Platform from "@/lib/platform";
 import i18n from "@/lib/i18n";
 
 const mocks = vi.hoisted(() => ({
+  readFile: vi.fn(),
+  writeFile: vi.fn(),
   readSessionFile: vi.fn(),
   writeSessionFile: vi.fn(),
   openSessionFileInDefaultEditor: vi.fn(),
 }));
 const platform = vi.hoisted(() => ({ isWeb: false }));
+const focusComposer = vi.hoisted(() => vi.fn());
 vi.mock("@/lib/ipc", () => ({ ipc: mocks }));
+vi.mock("@/features/chat/focus-composer", () => ({ focusComposerWhenVisible: focusComposer }));
 vi.mock("@/lib/platform", async (importOriginal) => ({
   ...await importOriginal<typeof Platform>(),
   get isWeb() { return platform.isWeb; },
 }));
 
+import { sessionKey, useChatStore } from "@/features/chat/store";
+import { composerBridgeRef } from "@/features/chat/split/composer-bridge";
 import { useFilesStore } from "./store";
 import { EditorPane } from "./EditorPane";
 
@@ -328,6 +334,87 @@ describe("session editor recovery and wrapping", () => {
     expect(searchPanelOpen(view.state)).toBe(false);
   });
 
+  it("appends the unsaved selection to the active draft and can locate it again", async () => {
+    const path = "/repo/file.ts";
+    const active = { engine: "claude", sessionId: "target", workspacePath: "/repo" };
+    const key = sessionKey(active.engine, active.sessionId, active.workspacePath);
+    const previous = useChatStore.getState();
+    const content: FileContent = { kind: "text", text: "one\ntwo\nthree", dataUrl: null, truncated: false };
+    useChatStore.setState({ active, drafts: { [key]: "existing", other: "separate draft" } });
+    focusComposer.mockClear();
+    try {
+      useFilesStore.setState({
+        openFiles: [path],
+        activeFilePath: path,
+        fileStates: { [path]: { path, content, loading: false, error: null, loadNonce: 1 } },
+      });
+      await act(async () => root.render(<EditorPane path={path} />));
+      const view = EditorView.findFromDOM(container.querySelector<HTMLElement>(".cm-editor")!)!;
+      const quote = () => Array.from(container.querySelectorAll("button"))
+        .find((button) => button.textContent === i18n.t("files.quoteSelection"))!;
+      // Unmet precondition: hoverable with the reason, and the click is guarded.
+      expect(quote().getAttribute("aria-disabled")).toBe("true");
+      expect(quote().disabled).toBe(false);
+      expect(quote().title).toBe(i18n.t("files.quoteSelectionEmpty"));
+      await act(async () => quote().click());
+      expect(useChatStore.getState().drafts[key]).toBe("existing");
+      expect(useFilesStore.getState().activeFilePath).toBe(path);
+
+      await act(async () => view.dispatch({
+        changes: { from: 4, to: 7, insert: "unsaved" },
+        selection: { anchor: 4, head: 11 },
+      }));
+      expect(quote().getAttribute("aria-disabled")).toBeNull();
+      expect(quote().title).toBe("");
+      await act(async () => quote().click());
+      expect(useChatStore.getState().drafts).toEqual({
+        [key]: "existing\n\n./file.ts#L2\n> unsaved\n\n",
+        other: "separate draft",
+      });
+      // The file tab hid the composer: quoting switches back to the chat and focuses it.
+      expect(useFilesStore.getState().activeFilePath).toBeNull();
+      expect(focusComposer).toHaveBeenCalledExactlyOnceWith(composerBridgeRef);
+
+      await act(async () => view.dispatch({ selection: { anchor: 0 } }));
+      await act(async () => useFilesStore.getState().openFile(path, { from: 2, to: 2 }));
+      expect(view.state.sliceDoc(view.state.selection.main.from, view.state.selection.main.to)).toBe("unsaved");
+      expect(useFilesStore.getState().lineLocation).toBeNull();
+    } finally {
+      await act(async () => useChatStore.setState({ active: previous.active, drafts: previous.drafts }));
+    }
+  });
+
+  it.each([
+    ["no session", null, "files.quoteSelectionNoSession"],
+    ["another workspace", { engine: "claude", sessionId: "other", workspacePath: "/elsewhere" }, "files.quoteSelectionOutsideWorkspace"],
+  ])("keeps the quote entry visible and explains it with %s", async (_label, active, reason) => {
+    const path = "/repo/blocked.ts";
+    const previous = useChatStore.getState();
+    const content: FileContent = { kind: "text", text: "one\ntwo", dataUrl: null, truncated: false };
+    useChatStore.setState({ active, drafts: {} });
+    focusComposer.mockClear();
+    try {
+      useFilesStore.setState({
+        openFiles: [path],
+        activeFilePath: path,
+        fileStates: { [path]: { path, content, loading: false, error: null, loadNonce: 1 } },
+      });
+      await act(async () => root.render(<EditorPane path={path} />));
+      const view = EditorView.findFromDOM(container.querySelector<HTMLElement>(".cm-editor")!)!;
+      await act(async () => view.dispatch({ selection: { anchor: 0, head: 3 } }));
+      const quote = Array.from(container.querySelectorAll("button"))
+        .find((button) => button.textContent === i18n.t("files.quoteSelection"))!;
+      expect(quote.getAttribute("aria-disabled")).toBe("true");
+      expect(quote.title).toBe(i18n.t(reason));
+      await act(async () => quote.click());
+      expect(useChatStore.getState().drafts).toEqual({});
+      expect(useFilesStore.getState().activeFilePath).toBe(path);
+      expect(focusComposer).not.toHaveBeenCalled();
+    } finally {
+      await act(async () => useChatStore.setState({ active: previous.active, drafts: previous.drafts }));
+    }
+  });
+
   it("opens the find card with F3 instead of a search behind the hidden panel", async () => {
     const path = "/repo/f3.ts";
     const content: FileContent = { kind: "text", text: "alpha foo beta foo\n", dataUrl: null, truncated: false };
@@ -414,5 +501,48 @@ describe("session editor recovery and wrapping", () => {
     });
     expect(view.state.doc.toString()).toBe(original);
     expect(useFilesStore.getState().dirtyPaths[path]).toBeUndefined();
+  });
+
+  it.each(["zh", "en", "ko"])("reports the first unrepresentable character and line in %s", async (language) => {
+    await i18n.changeLanguage(language);
+    const path = "/repo/notes.txt";
+    const content: FileContent = {
+      kind: "text", text: "first line\nsecond line", dataUrl: null, truncated: false,
+      encoding: "gbk", bom: false, decodeError: false, lineEnding: "lf",
+    };
+    useFilesStore.setState({
+      openFiles: [path], activeFilePath: path,
+      fileStates: { [path]: { path, content, loading: false, error: null, loadNonce: 1, name: "notes.txt" } },
+    });
+    await act(async () => root.render(<EditorPane path={path} />));
+    const view = EditorView.findFromDOM(container.querySelector<HTMLElement>(".cm-editor")!)!;
+    await act(async () => view.dispatch({ changes: { from: view.state.doc.length, insert: "✓" } }));
+    mocks.writeFile.mockRejectedValueOnce(new Error("file_encoding_unrepresentable:2:✓"));
+    const save = [...container.querySelectorAll<HTMLButtonElement>("button")]
+      .find((node) => node.textContent?.trim() === i18n.t("files.saveFile"))!;
+    await act(async () => save.click());
+    const expected = i18n.t("files.encodingCannotRepresent", { line: "2", character: "✓", codePoint: "2713" });
+    expect(container.textContent).toContain(expected);
+    expect(useFilesStore.getState().fileStates[path].content?.text).toBe("first line\nsecond line");
+  });
+
+  it("preserves Markdown edit mode while reloading with another encoding", async () => {
+    const path = "/repo/README.md";
+    const content: FileContent = { kind: "text", text: "# Heading", dataUrl: null, truncated: false, encoding: "utf-8" };
+    useFilesStore.setState({
+      openFiles: [path], activeFilePath: path,
+      fileStates: { [path]: { path, content, loading: false, error: null, loadNonce: 1, name: "README.md" } },
+    });
+    await act(async () => root.render(<EditorPane path={path} />));
+    expect(container.querySelector(".cm-editor")).toBeNull();
+    const edit = [...container.querySelectorAll<HTMLButtonElement>("button")]
+      .find((node) => node.textContent?.includes(i18n.t("files.editMode")))!;
+    await act(async () => edit.click());
+    expect(container.querySelector(".cm-editor")).not.toBeNull();
+
+    mocks.readFile.mockResolvedValueOnce({ ...content, text: "# 새 제목", encoding: "gbk" });
+    await act(async () => useFilesStore.getState().reloadFile(path, "gbk"));
+    expect(container.querySelector(".cm-editor")).not.toBeNull();
+    expect(EditorView.findFromDOM(container.querySelector<HTMLElement>(".cm-editor")!)!.state.doc.toString()).toBe("# 새 제목");
   });
 });

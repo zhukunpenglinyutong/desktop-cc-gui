@@ -518,6 +518,7 @@ export interface AppSettings {
   workspaceGroups: WorkspaceGroup[];
   /** Workspace id -> sidebar display alias; absent = show the folder name. */
   workspaceAliases: Record<string, string>;
+  workspaceDefaultEngines?: Record<string, string>;
   /** Ids of workspaces hidden into the sidebar's collapsible 已归档 section. */
   archivedWorkspaces: string[];
   language: string;
@@ -584,6 +585,7 @@ export interface AppSettings {
   thinkingAutoCollapse?: boolean | null;
   /** System notifications master switch (设置 → 通用 → 行为 → 系统通知): true/absent = enabled (default). */
   notificationsEnabled?: boolean | null;
+  notificationSoundEnabled?: boolean | null;
   /** Notify when conversation turn completes: true/absent = enabled (default). */
   notifyOnCompletion?: boolean | null;
   /** Notify on interactive questions/permission/plan review: true/absent = enabled (default). */
@@ -662,6 +664,10 @@ export interface FileContent {
   text: string | null;
   dataUrl: string | null;
   truncated: boolean;
+  encoding?: "utf-8" | "gbk" | null;
+  bom?: boolean;
+  decodeError?: boolean;
+  lineEnding?: "lf" | "crlf" | "cr" | null;
   /** Served by a remote reader (e.g. WSL distro, features/files/remote-files):
    *  content is complete but writes are unsupported, so the editor stays
    *  read-only — distinct from `truncated`, which means partial content. */
@@ -1477,6 +1483,11 @@ export const ipc = {
     settingsPromise = null;
     return fetchAppSettings();
   },
+  setWorkspaceDefaultEngine: async (workspaceId: string, engine: string) => {
+    const engines = await invoke<Record<string, string>>("set_workspace_default_engine", { workspaceId, engine });
+    settingsPromise = null;
+    return engines;
+  },
   updateAppSettings: async (settings: AppSettings) => {
     await invoke<void>("update_app_settings", { settings });
     // Drop the cache instead of caching `settings`: the backend adjusts what
@@ -1584,6 +1595,19 @@ export const ipc = {
   }) => invoke<SendResult>("mission_agent_start", args),
   missionAgentInterrupt: (runId: string) =>
     invoke<boolean>("mission_agent_interrupt", { runId }),
+  /** 插件介绍翻译：零工具纯文本轮次，跑在应用目录下的空沙盒里（后端
+   *  translate.rs）。事件走 mission-agent://event，按 runId 路由。 */
+  translateTextStart: (args: {
+    /** 前端预生成的 runId（translate- 前缀）；先注册监听再 invoke。 */
+    runId: string;
+    engine: string;
+    prompt: string;
+    model: string | null;
+    effort: string | null;
+    providerId: string | null;
+  }) => invoke<SendResult>("translate_text_start", args),
+  translateTextInterrupt: (runId: string) =>
+    invoke<boolean>("translate_text_interrupt", { runId }),
   listEngines: () => invoke<EngineInfo[]>("list_engines"),
   /** Record a complete internal frame already accepted by its live capture
    * validator, so history reload can hide only that exact frame.
@@ -1779,9 +1803,22 @@ export const ipc = {
     withGrantRetry(() =>
       invoke<DirEntry[]>("list_dir", { path, gitIgnoreRoot: opts?.gitIgnoreRoot }),
     ),
-  readFile: (path: string) => withGrantRetry(() => invoke<FileContent>("read_file", { path })),
-  writeFile: (path: string, content: string) =>
-    withGrantRetry(() => invoke<void>("write_file", { path, content })),
+  readFile: (path: string, encoding?: "utf-8" | "gbk") =>
+    withGrantRetry(() => invoke<FileContent>("read_file", { path, encoding: encoding ?? null })),
+  writeFile: (
+    path: string,
+    content: string,
+    encoding?: "utf-8" | "gbk",
+    bom?: boolean,
+    lineEnding?: "lf" | "crlf" | "cr",
+  ) =>
+    withGrantRetry(() => invoke<void>("write_file", {
+      path,
+      content,
+      encoding: encoding ?? null,
+      bom: bom ?? false,
+      lineEnding: lineEnding ?? null,
+    })),
   createDir: (path: string) => withGrantRetry(() => invoke<void>("create_dir", { path })),
   /** Fails when the file already exists (unlike write_file, which overwrites). */
   createFile: (path: string) => withGrantRetry(() => invoke<void>("create_file", { path })),

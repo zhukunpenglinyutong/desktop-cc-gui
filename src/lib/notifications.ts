@@ -5,7 +5,7 @@ import {
   requestPermission,
   onAction,
 } from "@tauri-apps/plugin-notification";
-import { isWeb } from "./platform";
+import { IS_WINDOWS, isWeb } from "./platform";
 import { ipc, type AppSettings } from "./ipc";
 import { sessionKey, useChatStore } from "@/features/chat/store";
 import { useSplitStore } from "@/features/chat/split/store";
@@ -115,6 +115,7 @@ export const initializeNotifications = initNotificationActions;
  */
 export async function getNotificationPreferences(): Promise<{
   enabled: boolean;
+  soundEnabled: boolean;
   onCompletion: boolean;
   onQuestion: boolean;
   onInterrupted: boolean;
@@ -129,6 +130,7 @@ export async function getNotificationPreferences(): Promise<{
       // authoritative — the next event retries the IPC instead.
       return {
         enabled: true,
+        soundEnabled: false,
         onCompletion: true,
         onQuestion: true,
         onInterrupted: true,
@@ -139,6 +141,7 @@ export async function getNotificationPreferences(): Promise<{
   }
   return {
     enabled: cachedSettings.notificationsEnabled ?? true,
+    soundEnabled: cachedSettings.notificationSoundEnabled ?? false,
     onCompletion: cachedSettings.notifyOnCompletion ?? true,
     onQuestion: cachedSettings.notifyOnQuestion ?? true,
     onInterrupted: cachedSettings.notifyOnInterrupted ?? true,
@@ -365,6 +368,7 @@ export async function sendOSNotification(options: SendSystemNotificationOptions)
         id: notifId,
         title: options.title,
         body: options.body,
+        ...(IS_WINDOWS && prefs.soundEnabled ? { sound: "Default" } : {}),
         extra: options.sessionKey ? { sessionKey: options.sessionKey } : undefined,
       },
     });

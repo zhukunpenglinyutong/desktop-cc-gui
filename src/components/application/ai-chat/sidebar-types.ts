@@ -1,4 +1,4 @@
-export type ThreadAction = "pin" | "rename" | "edit" | "refresh" | "archive" | "delete";
+export type ThreadAction = "pin" | "rename" | "copyPath" | "reveal" | "edit" | "refresh" | "archive" | "delete";
 
 export interface AiChatThread {
   id?: string;

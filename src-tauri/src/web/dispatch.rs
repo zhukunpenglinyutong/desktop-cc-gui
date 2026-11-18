@@ -367,6 +367,7 @@ struct ListDirArgs {
 #[serde(rename_all = "camelCase")]
 struct PathArgs {
     path: String,
+    encoding: Option<String>,
     /// Optional workspace meta passthrough (plugin workspaces.add keeps
     /// transport descriptions alive on the web runtime too).
     meta: Option<serde_json::Value>,
@@ -517,6 +518,9 @@ struct SetWorkspaceGroupArgs {
 struct WriteFileArgs {
     path: String,
     content: String,
+    encoding: Option<String>,
+    bom: Option<bool>,
+    line_ending: Option<String>,
 }
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -763,6 +767,16 @@ pub(super) async fn dispatch(
         }
         // settings
         "get_app_settings" => ser(crate::settings::get_app_settings()),
+        "set_workspace_default_engine" => {
+            #[derive(serde::Deserialize)]
+            #[serde(rename_all = "camelCase")]
+            struct Args {
+                workspace_id: String,
+                engine: String,
+            }
+            let a: Args = parse_args(&raw)?;
+            ser(crate::settings::set_workspace_default_engine(app.clone(), a.workspace_id, a.engine))
+        }
         "update_app_settings" => {
             let a: UpdateSettingsArgs = parse_args(&raw)?;
             ser(crate::settings::update_app_settings_merged(
@@ -1125,11 +1139,21 @@ pub(super) async fn dispatch(
         }
         "read_file" => {
             let a: PathArgs = parse_args(&raw)?;
-            ser(crate::files::read_file(app.state(), a.path).await)
+            ser(crate::files::read_file(app.state(), a.path, a.encoding).await)
         }
         "write_file" => {
             let a: WriteFileArgs = parse_args(&raw)?;
-            ser(crate::files::write_file(app.state(), a.path, a.content).await)
+            ser(
+                crate::files::write_file(
+                    app.state(),
+                    a.path,
+                    a.content,
+                    a.encoding,
+                    a.bom,
+                    a.line_ending,
+                )
+                .await,
+            )
         }
         "create_dir" => {
             let a: PathArgs = parse_args(&raw)?;

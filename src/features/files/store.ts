@@ -1,3 +1,4 @@
+import type { FileLineRange } from "./text-reference";
 import { create } from "zustand";
 import { useBrowserStore } from "@/features/browser/store";
 import { useGitStore } from "@/features/git/store";
@@ -199,6 +200,7 @@ interface FilesStore {
   fileStates: Record<string, OpenFileState>;
   /** File tab shown in the center area; null = a chat tab is active. */
   activeFilePath: string | null;
+  lineLocation: (FileLineRange & { path: string }) | null;
   /** Paths with unsaved editor drafts (reported by EditorPane). */
   dirtyPaths: Record<string, true>;
   /** Session-identity launch state survives reloads and pending tab reopens. */
@@ -227,7 +229,7 @@ interface FilesStore {
   loadGitStatus: (levels: Record<string, DirEntry[]>) => Promise<void>;
   selectPath: (path: string | null, isDir?: boolean) => void;
   /** Open a file as a center tab (or focus its existing tab). */
-  openFile: (path: string) => Promise<void>;
+  openFile: (path: string, range?: FileLineRange) => Promise<void>;
   /** Open the CLI's complete native transcript in the existing editor. */
   openSessionFile: (session: SessionMeta) => Promise<void>;
   /** Ask the host's default text editor to open a stopped, local transcript. */
@@ -238,7 +240,7 @@ interface FilesStore {
   /** Return the center area to the chat (a chat tab was selected). */
   clearActiveFile: () => void;
   /** Re-read a file from disk, resetting its editor draft. */
-  reloadFile: (path: string) => Promise<void>;
+  reloadFile: (path: string, encoding?: "utf-8" | "gbk") => Promise<void>;
   closeFile: (path: string) => void;
   /** Move an open file tab to a new position (drag-reorder in the tab strip). */
   moveOpenFile: (path: string, toIndex: number) => void;
@@ -313,6 +315,7 @@ export const useFilesStore = create<FilesStore>((set, get) => ({
   openFiles: [],
   fileStates: {},
   activeFilePath: null,
+  lineLocation: null,
   dirtyPaths: {},
   externalEditorLaunches: {},
   clipboard: null,
@@ -551,10 +554,13 @@ export const useFilesStore = create<FilesStore>((set, get) => ({
 
   selectPath: (path, isDir = false) => set({ selectedPath: path, selectedIsDir: isDir }),
 
-  openFile: async (path) => {
+  openFile: async (path, range) => {
+    const lineLocation = range ? { path, ...range } : null;
     dismissNonFileSurfaces();
-    if (get().fileStates[path]) {
-      set({ activeFilePath: path, selectedPath: path, selectedIsDir: false });
+    const existing = get().fileStates[path];
+    if (existing) {
+      set({ activeFilePath: path, selectedPath: path, selectedIsDir: false, lineLocation });
+      if (range && existing.error && !existing.loading) await get().reloadFile(path);
       return;
     }
     set((s) => ({
@@ -564,6 +570,7 @@ export const useFilesStore = create<FilesStore>((set, get) => ({
         [path]: { path, content: null, loading: true, error: null, loadNonce: 0 },
       },
       activeFilePath: path,
+      lineLocation,
       selectedPath: path,
       selectedIsDir: false,
     }));
@@ -639,7 +646,7 @@ export const useFilesStore = create<FilesStore>((set, get) => ({
 
   saveFile: async (path, content) => {
     const entry = get().fileStates[path];
-    if (!entry?.content || entry.content.kind !== "text" || entry.content.truncated || entry.content.readOnly) {
+    if (!entry?.content || entry.content.kind !== "text" || entry.content.truncated || entry.content.readOnly || entry.content.decodeError) {
       throw new Error("File is not editable");
     }
     const target = entry.session;
@@ -670,7 +677,13 @@ export const useFilesStore = create<FilesStore>((set, get) => ({
         throw error;
       }
     } else {
-      await ipc.writeFile(path, content);
+      await ipc.writeFile(
+        path,
+        content,
+        entry.content.encoding ?? "utf-8",
+        entry.content.bom ?? false,
+        entry.content.lineEnding ?? "lf",
+      );
       set((s) => {
         const current = s.fileStates[path];
         if (!current?.content || current.session) return s;
@@ -689,7 +702,7 @@ export const useFilesStore = create<FilesStore>((set, get) => ({
 
   clearActiveFile: () => set({ activeFilePath: null }),
 
-  reloadFile: async (path) => {
+  reloadFile: async (path, encoding) => {
     const entry = get().fileStates[path];
     if (!entry || (entry.session && entry.saving)) return;
     const target = entry.session;
@@ -707,7 +720,7 @@ export const useFilesStore = create<FilesStore>((set, get) => ({
         : null;
       const content: FileContent = document
         ? { kind: "text", text: document.text, dataUrl: null, truncated: false }
-        : await readRemoteAware(path, (p) => ipc.readFile(p));
+        : await readRemoteAware(path, (p) => ipc.readFile(p, encoding));
       set((s) => {
         const st = s.fileStates[path];
         if (!st || (target ? st !== pending : st.session !== target)) return s;

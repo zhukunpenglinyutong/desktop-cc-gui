@@ -37,6 +37,8 @@ pub struct AppSettings {
     /// folder name; workspaces missing here display their directory name.
     #[serde(default)]
     pub workspace_aliases: HashMap<String, String>,
+    #[serde(default)]
+    pub workspace_default_engines: HashMap<String, String>,
     /// Ids of workspaces hidden from the sidebar into the collapsible
     /// 已归档 section; the record and its sessions stay intact.
     #[serde(default)]
@@ -181,6 +183,9 @@ pub struct AppSettings {
     /// Notifications master switch (设置 → 通用 → 行为 → 系统通知): None/Some(true) = enabled (default).
     #[serde(default)]
     pub notifications_enabled: Option<bool>,
+    /// Play the Windows system notification sound. Defaults to off.
+    #[serde(default)]
+    pub notification_sound_enabled: Option<bool>,
     /// Notify on conversation turn complete: None/Some(true) = enabled (default).
     #[serde(default)]
     pub notify_on_completion: Option<bool>,
@@ -400,6 +405,7 @@ impl Default for AppSettings {
             titlebar: default_titlebar(),
             workspace_groups: Vec::new(),
             workspace_aliases: HashMap::new(),
+            workspace_default_engines: HashMap::new(),
             archived_workspaces: Vec::new(),
             enabled_builtin_agent_ids: Vec::new(),
             web_auth_enabled: false,
@@ -444,6 +450,7 @@ impl Default for AppSettings {
             reset_ui_scale_shortcut: default_reset_ui_scale_shortcut(),
             thinking_auto_collapse: None,
             notifications_enabled: None,
+            notification_sound_enabled: None,
             notify_on_completion: None,
             notify_on_question: None,
             notify_on_interrupted: None,
@@ -884,6 +891,28 @@ pub fn update_app_settings<R: tauri::Runtime>(
     update_app_settings_merged(app, settings, None)
 }
 
+#[tauri::command]
+pub fn set_workspace_default_engine<R: tauri::Runtime>(
+    app: tauri::AppHandle<R>,
+    workspace_id: String,
+    engine: String,
+) -> Result<HashMap<String, String>, String> {
+    let engines = {
+        let _guard = settings_write_lock();
+        let mut settings = read_settings()?;
+        if engine.is_empty() {
+            settings.workspace_default_engines.remove(&workspace_id);
+        } else {
+            settings.workspace_default_engines.insert(workspace_id, engine);
+        }
+        let content = serde_json::to_string_pretty(&settings).map_err(|e| e.to_string())?;
+        atomic_write(&crate::paths::settings_path(), &content)?;
+        settings.workspace_default_engines
+    };
+    let _ = app.emit("settings://changed", ());
+    Ok(engines)
+}
+
 /// Full-object settings write. Reading the stored copy, merging fields the
 /// incoming object must not reset, and persisting all happen under the one
 /// settings write lock: read-then-lock let a concurrent dedicated write
@@ -906,6 +935,7 @@ pub(crate) fn update_app_settings_merged<R: tauri::Runtime>(
         let prev_home = current.as_ref().and_then(|s| s.codex_home.clone());
         if let Some(current) = current.as_ref() {
             keep_unset_dedicated_fields(&mut settings, current);
+            settings.workspace_default_engines = current.workspace_default_engines.clone();
         }
         let result = match persist_settings_committed(&mut settings) {
             Ok(Some(warning)) => Err(warning),
@@ -1141,6 +1171,20 @@ mod tests {
     fn mode_of(path: &std::path::Path) -> u32 {
         use std::os::unix::fs::PermissionsExt;
         std::fs::metadata(path).unwrap().permissions().mode() & 0o777
+    }
+
+    #[test]
+    fn workspace_default_engines_round_trip_and_default_empty() {
+        let mut value = serde_json::to_value(AppSettings::default()).unwrap();
+        let object = value.as_object_mut().unwrap();
+        assert!(object.remove("workspaceDefaultEngines").is_some());
+        let mut settings: AppSettings = serde_json::from_value(value).unwrap();
+        assert!(settings.workspace_default_engines.is_empty());
+        settings.workspace_default_engines.insert("a".into(), "codex".into());
+        settings.workspace_default_engines.insert("b".into(), "claude".into());
+        let decoded: AppSettings =
+            serde_json::from_str(&serde_json::to_string(&settings).unwrap()).unwrap();
+        assert_eq!(decoded.workspace_default_engines, settings.workspace_default_engines);
     }
 
     /// Rewriting another CLI's credential file (auth.json, ~/.claude.json)

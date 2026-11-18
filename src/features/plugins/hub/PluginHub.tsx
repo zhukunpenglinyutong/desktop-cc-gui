@@ -14,6 +14,7 @@ import { PluginMarketView } from "./PluginMarketView";
 import { DevelopGuideDialog } from "./DevelopGuideDialog";
 import { usePluginsStore } from "../manager/usePlugins";
 import { useMarketplaceStore } from "../marketplace/store";
+import { PluginListTranslateMenu } from "./translation/PluginTranslateControl";
 
 const HEADER_BUTTON =
   "flex cursor-pointer items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-body-2-medium text-text-secondary transition-colors hover:bg-background-primary-hover hover:text-text-primary";
@@ -93,6 +94,7 @@ export function PluginHub({
           </PillTabList>
         </div>
         <div className="flex shrink-0 items-center gap-1">
+          <PluginListTranslateMenu />
           <button
             type="button"
             disabled={!onCreatePluginChat}
