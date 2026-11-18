@@ -193,6 +193,13 @@ describe("RunStatusStrip", () => {
         };
       });
     });
+    // The strip coalesces its session-wide folds; a structural row lands on
+    // the trailing edge, at most one refresh window later.
+    await act(async () => {
+      const { promise, resolve } = Promise.withResolvers<void>();
+      setTimeout(resolve, 260);
+      await promise;
+    });
     expect(container.querySelector("[data-agent-step-key]")?.textContent).toContain("运行中");
     expect(pill("子代理").textContent).toContain("0/1");
   });

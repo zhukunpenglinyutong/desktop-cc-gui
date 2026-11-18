@@ -31,3 +31,46 @@ export function useThrottled(value: string, ms: number): string {
   useLayoutEffect(() => () => controller.cancel(), [controller]);
   return controller.bypass(value, ms) ? value : visible;
 }
+
+/** Republish `value` at most once per `ms` while it keeps changing: the first
+ *  change lands before paint, later ones coalesce into a trailing publish of
+ *  the newest value. `isSame` reports inputs that no consumer can tell apart;
+ *  those never republish and never schedule work. For consumers whose render
+ *  cost scales with the input — a session-wide fold re-read on every stream
+ *  flush — a status summary does not need a per-frame cadence. Not for text
+ *  that must stay frame-accurate. */
+export function useCoalescedValue<T>(
+  value: T,
+  ms: number,
+  isSame: (previous: T, next: T) => boolean = Object.is,
+): T {
+  const [visible, setVisible] = useState(value);
+  const latest = useRef(value);
+  const timer = useRef<number | null>(null);
+  const publishedAt = useRef(Number.NEGATIVE_INFINITY);
+  useLayoutEffect(() => {
+    latest.current = value;
+    if (isSame(visible, value)) return;
+    const wait = publishedAt.current + ms - Date.now();
+    if (wait <= 0) {
+      publishedAt.current = Date.now();
+      setVisible(value);
+      return;
+    }
+    // A trailing publish is already scheduled; it reads the newest value.
+    if (timer.current !== null) return;
+    timer.current = window.setTimeout(() => {
+      timer.current = null;
+      publishedAt.current = Date.now();
+      setVisible(latest.current);
+    }, wait);
+  }, [value, visible, ms, isSame]);
+  useLayoutEffect(
+    () => () => {
+      if (timer.current !== null) window.clearTimeout(timer.current);
+      timer.current = null;
+    },
+    [],
+  );
+  return visible;
+}
