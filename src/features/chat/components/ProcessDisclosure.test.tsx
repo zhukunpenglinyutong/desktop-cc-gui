@@ -315,6 +315,67 @@ describe("ProcessDisclosure tool args", () => {
 
     expect(container.textContent).toContain("On branch main");
   });
+
+  it("caps oversized bash output on expand and reveals full text on demand", async () => {
+    const bigOutput = "A".repeat(40_000) + "__TAIL_MARKER__";
+    const bashItem: ProcessItem = {
+      type: "tool",
+      text: "Bash",
+      args: { command: "cat huge.log" },
+      result: { stdout: bigOutput, stderr: "" },
+    };
+    await render([bashItem]);
+
+    const toggle = [...container.querySelectorAll("button")].find((el) =>
+      el.getAttribute("aria-label")?.includes("展开工具参数"),
+    );
+    expect(toggle).toBeTruthy();
+    await act(async () => {
+      toggle!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    expect(container.textContent).not.toContain("__TAIL_MARKER__");
+    expect(container.textContent).toContain("已截断显示前");
+
+    const showAll = [...container.querySelectorAll("button")].find((el) =>
+      el.textContent?.includes("显示全部"),
+    );
+    expect(showAll).toBeTruthy();
+    await act(async () => {
+      showAll!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    expect(container.textContent).toContain("__TAIL_MARKER__");
+  });
+
+  it("caps oversized diff previews and expands all lines on click", async () => {
+    const content = Array.from({ length: 450 }, (_, i) => `line-${i}`).join("\n");
+    const editItem: ProcessItem = {
+      type: "tool",
+      text: "Write",
+      path: "src/big.ts",
+      args: { file_path: "src/big.ts", content },
+    };
+    await render([editItem]);
+
+    const toggle = [...container.querySelectorAll("button")].find((el) =>
+      el.getAttribute("aria-label")?.includes("展开工具参数"),
+    );
+    await act(async () => {
+      toggle!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    expect(container.textContent).toContain("line-0");
+    expect(container.textContent).not.toContain("line-449");
+    expect(container.textContent).toContain("已显示前 400 行差异");
+
+    const showAll = [...container.querySelectorAll("button")].find((el) =>
+      el.textContent?.includes("显示全部"),
+    );
+    await act(async () => {
+      showAll!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    expect(container.textContent).toContain("line-449");
+  });
 });
 
 describe("ProcessDisclosure thinking expansion", () => {

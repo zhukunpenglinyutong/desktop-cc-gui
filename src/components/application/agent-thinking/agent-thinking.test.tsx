@@ -160,4 +160,35 @@ describe("AgentThinking", () => {
     expect(star).not.toBeNull();
     expect(getComputedStyle(star!).opacity).toBe("0.7");
   });
+
+  it("pauses dot and elapsed timers when document is hidden and resumes on visible", () => {
+    let hidden = true;
+    Object.defineProperty(document, "hidden", { configurable: true, get: () => hidden });
+    const setIntervalSpy = vi.spyOn(window, "setInterval");
+    const clearIntervalSpy = vi.spyOn(window, "clearInterval");
+    try {
+      act(() => {
+        root.render(<AgentThinking label="响应中" startedAt={Date.now() - 5000} />);
+      });
+      expect(setIntervalSpy).not.toHaveBeenCalled();
+
+      hidden = false;
+      act(() => {
+        document.dispatchEvent(new Event("visibilitychange"));
+      });
+      expect(setIntervalSpy).toHaveBeenCalledWith(expect.any(Function), 80);
+      expect(setIntervalSpy).toHaveBeenCalledWith(expect.any(Function), 500);
+
+      const clearBefore = clearIntervalSpy.mock.calls.length;
+      hidden = true;
+      act(() => {
+        document.dispatchEvent(new Event("visibilitychange"));
+      });
+      expect(clearIntervalSpy.mock.calls.length).toBeGreaterThanOrEqual(clearBefore + 2);
+    } finally {
+      setIntervalSpy.mockRestore();
+      clearIntervalSpy.mockRestore();
+      Reflect.deleteProperty(document, "hidden");
+    }
+  });
 });

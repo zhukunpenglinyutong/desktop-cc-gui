@@ -23,6 +23,64 @@ export interface ToolPayloadViewerProps {
   result?: unknown;
 }
 
+/** Cap rendered payload size in DOM so MB-scale tool outputs (e.g. bash logs,
+ *  big diffs) do not freeze layout/scrolling when expanded. */
+const TOOL_TEXT_PREVIEW_CHARS = 32_000;
+const TOOL_DIFF_PREVIEW_LINES = 400;
+
+function truncatePreviewText(text: string): {
+  text: string;
+  truncated: boolean;
+  totalChars: number;
+} {
+  if (text.length <= TOOL_TEXT_PREVIEW_CHARS) {
+    return { text, truncated: false, totalChars: text.length };
+  }
+  // Do not split a surrogate pair (emoji) at the cut, or a stray "\uFFFD" shows.
+  const end = /[\uD800-\uDBFF]/.test(text[TOOL_TEXT_PREVIEW_CHARS - 1])
+    ? TOOL_TEXT_PREVIEW_CHARS - 1
+    : TOOL_TEXT_PREVIEW_CHARS;
+  return {
+    text: text.slice(0, end),
+    truncated: true,
+    totalChars: text.length,
+  };
+}
+
+function BoundedPre({
+  text,
+  className,
+}: {
+  text: string;
+  className?: string;
+}) {
+  const { t, i18n } = useTranslation();
+  const [showFull, setShowFull] = useState(false);
+  const preview = useMemo(() => truncatePreviewText(text), [text]);
+  const visibleText = showFull ? text : preview.text;
+  return (
+    <>
+      <pre className={className}>{visibleText}</pre>
+      {preview.truncated && !showFull ? (
+        <div className="flex items-center justify-between border-t border-border-secondary/60 bg-background-secondary-default/40 px-3 py-1.5 text-[11px] text-text-tertiary">
+          <span>
+            {t("chat.toolPayloadTruncated", {
+              shown: preview.text.length.toLocaleString(i18n.language),
+              total: preview.totalChars.toLocaleString(i18n.language),
+            })}
+          </span>
+          <button
+            type="button"
+            onClick={() => setShowFull(true)}
+            className="cursor-pointer font-medium text-accent-500 hover:underline"
+          >
+            {t("chat.toolPayloadShowAll")}
+          </button>
+        </div>
+      ) : null}
+    </>
+  );
+}
 /** Check if the tool is an edit/diff operation. */
 function isEditTool(name: string): boolean {
   const lower = name.toLowerCase();
@@ -57,6 +115,7 @@ export const FileDiffViewer = memo(function FileDiffViewer({
 }: EditArgs) {
   const { t } = useTranslation();
   const { copied, copy } = useCopied();
+  const [showAllDiff, setShowAllDiff] = useState(false);
 
   const diffLines = useMemo<DiffLine[]>(() => {
     if (patch) return parsePatchLines(patch);
@@ -128,38 +187,60 @@ export const FileDiffViewer = memo(function FileDiffViewer({
             {t("chat.diffEmpty")}
           </div>
         ) : (
-          diffLines.map((line, idx) => {
-            const isAdd = line.type === "add";
-            const isDel = line.type === "del";
-            const isHdr = line.type === "header";
-            return (
-              <div
-                key={idx}
-                className={cx(
-                  "flex items-baseline px-2 py-[1px] hover:bg-background-secondary-hover/40",
-                  isAdd && "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
-                  isDel && "bg-red-500/10 text-red-700 dark:text-red-300",
-                  isHdr && "bg-background-tertiary-default/50 text-sky-600 dark:text-sky-400 font-semibold"
-                )}
-              >
-                {/* Line Numbers */}
-                <span className="w-8 shrink-0 select-none text-right pr-2 text-[10px] text-text-quaternary tabular-nums">
-                  {line.oldLineNo ?? ""}
+          <>
+            {(showAllDiff || diffLines.length <= TOOL_DIFF_PREVIEW_LINES
+              ? diffLines
+              : diffLines.slice(0, TOOL_DIFF_PREVIEW_LINES)
+            ).map((line, idx) => {
+              const isAdd = line.type === "add";
+              const isDel = line.type === "del";
+              const isHdr = line.type === "header";
+              return (
+                <div
+                  key={idx}
+                  className={cx(
+                    "flex items-baseline px-2 py-[1px] hover:bg-background-secondary-hover/40",
+                    isAdd && "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
+                    isDel && "bg-red-500/10 text-red-700 dark:text-red-300",
+                    isHdr && "bg-background-tertiary-default/50 text-sky-600 dark:text-sky-400 font-semibold"
+                  )}
+                >
+                  {/* Line Numbers */}
+                  <span className="w-8 shrink-0 select-none text-right pr-2 text-[10px] text-text-quaternary tabular-nums">
+                    {line.oldLineNo ?? ""}
+                  </span>
+                  <span className="w-8 shrink-0 select-none text-right pr-2 text-[10px] text-text-quaternary tabular-nums">
+                    {line.newLineNo ?? ""}
+                  </span>
+                  {/* Sign */}
+                  <span className="w-4 shrink-0 select-none text-center font-bold">
+                    {isAdd ? "+" : isDel ? "-" : isHdr ? "@" : " "}
+                  </span>
+                  {/* Line text */}
+                  <span className="flex-1 whitespace-pre-wrap break-all pl-1">
+                    {line.text || " "}
+                  </span>
+                </div>
+              );
+            })}
+            {!showAllDiff && diffLines.length > TOOL_DIFF_PREVIEW_LINES ? (
+              <div className="flex items-center justify-between border-t border-border-secondary/60 bg-background-secondary-default/40 px-3 py-1.5 text-[11px] text-text-tertiary">
+                <span>
+                  {t("chat.toolDiffTruncated", {
+                    shown: TOOL_DIFF_PREVIEW_LINES,
+                    total: diffLines.length,
+                  })}
                 </span>
-                <span className="w-8 shrink-0 select-none text-right pr-2 text-[10px] text-text-quaternary tabular-nums">
-                  {line.newLineNo ?? ""}
-                </span>
-                {/* Sign */}
-                <span className="w-4 shrink-0 select-none text-center font-bold">
-                  {isAdd ? "+" : isDel ? "-" : isHdr ? "@" : " "}
-                </span>
-                {/* Line text */}
-                <span className="flex-1 whitespace-pre-wrap break-all pl-1">
-                  {line.text || " "}
-                </span>
+                <button
+                  type="button"
+                  onClick={() => setShowAllDiff(true)}
+                  className="cursor-pointer font-medium text-accent-500 hover:underline"
+                >
+                  {t("chat.toolPayloadShowAll")}
+                </button>
               </div>
-            );
-          })
+            ) : null}
+          </>
         )}
       </div>
     </div>
@@ -303,16 +384,15 @@ export const BashCommandViewer = memo(function BashCommandViewer({
             </button>
           </div>
           {showResult && (
-            <pre
+            <BoundedPre
+              text={formattedResult.text}
               className={cx(
                 "max-h-60 overflow-auto whitespace-pre-wrap break-all px-3 py-2 text-[11px] leading-[1.5]",
                 formattedResult.isError
                   ? "text-red-600 dark:text-red-400 bg-red-500/5"
                   : "text-text-secondary"
               )}
-            >
-              {formattedResult.text}
-            </pre>
+            />
           )}
         </div>
       )}
@@ -353,9 +433,10 @@ export const GenericToolViewer = memo(function GenericToolViewer({
           <div className="mb-1 text-caption-1-medium text-text-tertiary">
             {t("chat.toolCallArgs")}
           </div>
-          <pre className="max-h-56 overflow-auto whitespace-pre-wrap break-all text-text-secondary">
-            {formattedArgs}
-          </pre>
+          <BoundedPre
+            text={formattedArgs}
+            className="max-h-56 overflow-auto whitespace-pre-wrap break-all text-text-secondary"
+          />
         </div>
       )}
       {formattedResult && (
@@ -369,14 +450,13 @@ export const GenericToolViewer = memo(function GenericToolViewer({
             <span>{t("chat.toolResult")}</span>
           </button>
           {showResult && (
-            <pre
+            <BoundedPre
+              text={formattedResult.text}
               className={cx(
                 "max-h-56 overflow-auto whitespace-pre-wrap break-all text-text-secondary",
                 formattedResult.isError && "text-red-600 dark:text-red-400"
               )}
-            >
-              {formattedResult.text}
-            </pre>
+            />
           )}
         </div>
       )}

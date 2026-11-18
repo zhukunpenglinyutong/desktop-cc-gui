@@ -9,12 +9,18 @@ import {
   deriveAgentTaskSteps,
   deriveEditedFiles,
   deriveTodoList,
+  sameSummaryHistory,
   type AgentTaskStep,
 } from "./agent-task-steps";
 import { createEditLineStatsBuilder, type EditLineStat } from "./edit-line-stats";
 import { RollingStat } from "./RollingStat";
+import { useCoalescedValue } from "@/hooks/use-throttled";
 
 const EMPTY_MESSAGES: Message[] = [];
+
+/** A status summary does not need a per-token cadence; see the coalescing
+ *  note at the message subscriptions. */
+const STRIP_REFRESH_MS = 250;
 
 /**
  * Run-status strip above the composer, ported from the reference app's
@@ -787,14 +793,31 @@ export const RunStatusStrip = memo(function RunStatusStrip({
   engine: string;
   workspacePath: string;
 }) {
-  const messages = useChatStore((s) =>
+  const liveMessages = useChatStore((s) =>
     sessionKey ? (s.bySession[sessionKey]?.messages ?? EMPTY_MESSAGES) : EMPTY_MESSAGES,
   );
-  const subagentHistory = useChatStore((s) =>
+  const liveSubagentHistory = useChatStore((s) =>
     sessionKey ? (s.bySession[sessionKey]?.subagentHistory ?? EMPTY_MESSAGES) : EMPTY_MESSAGES,
   );
   const streaming = useChatStore((s) =>
     sessionKey ? (s.bySession[sessionKey]?.streaming ?? false) : false,
+  );
+  // Every fold below walks the whole loaded session. Stream flushes replace
+  // the array per frame, so the summary republishes at most four times a
+  // second instead of re-reading a long transcript on every token.
+  // Keyed by session: switching tabs shows the new session at once instead of
+  // the previous session's summary for up to one refresh window.
+  const messages = useCoalescedValue(
+    liveMessages,
+    STRIP_REFRESH_MS,
+    sameSummaryHistory,
+    sessionKey,
+  );
+  const subagentHistory = useCoalescedValue(
+    liveSubagentHistory,
+    STRIP_REFRESH_MS,
+    sameSummaryHistory,
+    sessionKey,
   );
   const allHistory = useMemo(
     () => (subagentHistory.length ? [...subagentHistory, ...messages] : messages),

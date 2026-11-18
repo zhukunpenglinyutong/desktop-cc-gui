@@ -118,10 +118,30 @@ export function createTabActions(
 
   /** Reopen cache for closed tabs: keys whose bySession entry survives tab
    * close so selectSession skips a backend reload, most-recently-closed
-   * last. Bounded — the oldest non-streaming entries beyond the cap are
-   * evicted, so the cache cannot grow forever. */
-  const CLOSED_CACHE_LIMIT = 10;
+   * last. Bounded both by entry count AND retained payload/message size so a
+   * few huge tool-heavy sessions cannot pin hundreds of MB in renderer RAM. */
+  const CLOSED_CACHE_LIMIT = 4;
+  const CLOSED_CACHE_MAX_CHARS = 8_000_000;
   const closedTabCache: string[] = [];
+
+  function sessionCacheChars(s: Pick<ChatStore, "bySession">, key: string): number {
+    const session = s.bySession[key];
+    if (!session) return 0;
+    let chars = 0;
+    for (const m of session.messages) {
+      chars += m.text.length + 128;
+      if (m.args != null) {
+        chars += typeof m.args === "string" ? m.args.length : JSON.stringify(m.args).length;
+      }
+      if (m.result != null) {
+        chars += typeof m.result === "string" ? m.result.length : JSON.stringify(m.result).length;
+      }
+      if (m.images) {
+        for (const img of m.images) chars += img.length;
+      }
+    }
+    return chars;
+  }
 
   function rememberClosedTab(key: string) {
     const i = closedTabCache.indexOf(key);
@@ -136,15 +156,24 @@ export function createTabActions(
     for (let j = closedTabCache.length - 1; j >= 0; j--) {
       if (openKeys.has(closedTabCache[j])) closedTabCache.splice(j, 1);
     }
+    const state = get();
+    const sizes = new Map<string, number>();
+    let totalChars = 0;
+    for (const cached of closedTabCache) {
+      const size = sessionCacheChars(state, cached);
+      sizes.set(cached, size);
+      totalChars += size;
+    }
     let overflow = closedTabCache.length - CLOSED_CACHE_LIMIT;
-    if (overflow <= 0) return;
+    if (overflow <= 0 && totalChars <= CLOSED_CACHE_MAX_CHARS) return;
     const evict: string[] = [];
     for (const cached of closedTabCache) {
-      if (overflow <= 0) break;
+      if (overflow <= 0 && totalChars <= CLOSED_CACHE_MAX_CHARS) break;
       // A streaming closed tab still receives events — never evict it.
-      if (get().streamingByKey[cached]) continue;
+      if (state.streamingByKey[cached]) continue;
       evict.push(cached);
       overflow--;
+      totalChars -= sizes.get(cached) ?? 0;
     }
     if (evict.length === 0) return;
     for (const cached of evict) {

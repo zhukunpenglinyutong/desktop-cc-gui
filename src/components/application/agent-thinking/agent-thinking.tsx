@@ -127,11 +127,29 @@ function DotsIndicator({ variant, animated }: { variant: "wave" | "spin"; animat
     )
       return;
     let phase = 0;
-    const id = window.setInterval(() => {
-      phase = (phase + DOTS_PHASE_STEP) % 1;
-      setOpacities(dotOpacities(variant, phase));
-    }, DOTS_TICK_MS);
-    return () => window.clearInterval(id);
+    let id: number | null = null;
+    const start = () => {
+      if (id !== null || document.hidden) return;
+      id = window.setInterval(() => {
+        phase = (phase + DOTS_PHASE_STEP) % 1;
+        setOpacities(dotOpacities(variant, phase));
+      }, DOTS_TICK_MS);
+    };
+    const stop = () => {
+      if (id === null) return;
+      window.clearInterval(id);
+      id = null;
+    };
+    const onVisibility = () => {
+      if (document.hidden) stop();
+      else start();
+    };
+    start();
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibility);
+      stop();
+    };
   }, [animated, variant]);
 
   return (
@@ -287,19 +305,34 @@ function ElapsedTimer({
   );
 
   useEffect(() => {
-    if (startedAt) {
-      const id = window.setInterval(
-        () => setElapsed(Math.max(0, (Date.now() - startedAt) / 1000)),
-        100,
-      );
-      return () => window.clearInterval(id);
-    }
-    const started = performance.now();
-    const id = window.setInterval(
-      () => setElapsed((performance.now() - started) / 1000),
-      100,
-    );
-    return () => window.clearInterval(id);
+    // 500ms cadence: visually smooth enough for "12.3s" without waking React 10x/s,
+    // and pauses completely while the window/tab is hidden.
+    const origin = startedAt ?? performance.now();
+    const readElapsed = () =>
+      startedAt
+        ? Math.max(0, (Date.now() - origin) / 1000)
+        : (performance.now() - origin) / 1000;
+    let id: number | null = null;
+    const start = () => {
+      if (id !== null || document.hidden) return;
+      setElapsed(readElapsed());
+      id = window.setInterval(() => setElapsed(readElapsed()), 500);
+    };
+    const stop = () => {
+      if (id === null) return;
+      window.clearInterval(id);
+      id = null;
+    };
+    const onVisibility = () => {
+      if (document.hidden) stop();
+      else start();
+    };
+    start();
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibility);
+      stop();
+    };
   }, [startedAt]);
 
   const raw = formatElapsed(elapsed);
