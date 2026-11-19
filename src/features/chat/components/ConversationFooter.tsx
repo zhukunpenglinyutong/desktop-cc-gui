@@ -261,13 +261,18 @@ function FooterStatusBar({
   const compactContext = useChatStore((s) => s.compactContext);
   const refreshSessionUsage = useChatStore((s) => s.refreshSessionUsage);
   const wide = useChatStore((s) => s.wideLayout);
-  const [compacting, setCompacting] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
 
   // 压缩/刷新按本格子的会话 key 发出：分屏时不能再落到全局 active 上。
   const sessionKeyValue = active
     ? sessionKey(active.engine, active.sessionId, active.workspacePath)
     : "";
+  // 进行中的压缩按会话 key 记账：同一格子里切换会话时 footer 不会重挂载，
+  // 单个布尔值会把 A 的压缩带到 B 上，B 的手动与自动压缩都会被挡住直到 A 结束。
+  const [compactingKeys, setCompactingKeys] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
+  const compacting = sessionKeyValue !== "" && compactingKeys.has(sessionKeyValue);
   const autoCompact = useAutoCompactSettings(sessionKeyValue);
   const autoCompactLatch = useRef<{
     sessionKey: string;
@@ -318,15 +323,21 @@ function FooterStatusBar({
 
   const compactSession = useCallback(
     async (trigger: "manual" | "threshold") => {
-      if (!sessionKeyValue || streaming || compacting) return;
-      setCompacting(true);
+      const key = sessionKeyValue;
+      if (!key || streaming || compacting) return;
+      setCompactingKeys((prev) => new Set(prev).add(key));
       try {
-        await compactContext(sessionKeyValue, { trigger });
+        await compactContext(key, { trigger });
         if (trigger === "threshold") {
-          resumeAfterAutoCompact(sessionKeyValue);
+          resumeAfterAutoCompact(key);
         }
       } finally {
-        setCompacting(false);
+        setCompactingKeys((prev) => {
+          if (!prev.has(key)) return prev;
+          const next = new Set(prev);
+          next.delete(key);
+          return next;
+        });
       }
     },
     [compactContext, compacting, resumeAfterAutoCompact, sessionKeyValue, streaming],
