@@ -1,13 +1,13 @@
 use super::{run_probe, EngineModel};
 
-/// Offline fallback matching `agy models` on 1.2.x when the probe cannot run
-/// (binary missing / network). The live probe always wins when it returns rows.
+/// Offline fallback when the probe cannot run (binary missing, not signed in,
+/// network, timeout): the built-in list agy 1.5.x itself prints when it cannot
+/// fetch the account catalog, so every row still resolves under `--model`.
+/// The live probe always wins when it returns rows.
 const FALLBACK: &[(&str, &str)] = &[
     ("gemini-3.8-flash-high", "Gemini 3.8 Flash (High)"),
     ("gemini-3.8-flash-medium", "Gemini 3.8 Flash (Medium)"),
     ("gemini-3.8-flash-low", "Gemini 3.8 Flash (Low)"),
-    ("gemini-3.1-pro-high", "Gemini 3.1 Pro (High)"),
-    ("gemini-3.1-pro-low", "Gemini 3.1 Pro (Low)"),
     ("claude-sonnet-4-6", "Claude Sonnet 4.6 (Thinking)"),
     ("claude-opus-4-6-thinking", "Claude Opus 4.6 (Thinking)"),
     ("gpt-oss-120b-medium", "GPT-OSS 120B (Medium)"),
@@ -20,7 +20,13 @@ pub(super) async fn agy_catalog(bin: &str) -> super::EngineCatalog {
             return super::EngineCatalog::authoritative(models);
         }
     }
-    super::EngineCatalog::authoritative(fallback_models())
+    // Not authoritative: the account may serve more (Gemini 4), so a stored
+    // pick outside this list must survive instead of being reset to row one.
+    super::EngineCatalog {
+        models: fallback_models(),
+        authoritative: false,
+        remote: false,
+    }
 }
 
 /// `agy models` prints a status line then `id<TAB>Display Name` rows.
@@ -105,6 +111,19 @@ claude-sonnet-4-6\tClaude Sonnet 4.6 (Thinking)
         assert_eq!(models[0].name.as_deref(), Some("Gemini 3.8 Flash (High)"));
         assert_eq!(models[0].provider, "google");
         assert_eq!(models[2].provider, "anthropic");
+    }
+
+    // Issue #1530: a failed probe showed the stale 1.2.x list as authoritative,
+    // which reset a stored Gemini 4 pick to the first fallback row.
+    #[tokio::test]
+    async fn failed_probe_falls_back_without_resetting_picks() {
+        let catalog = agy_catalog("/nonexistent/ccgui-test/agy").await;
+        assert!(!catalog.authoritative);
+        assert!(!catalog.models.is_empty());
+        assert!(catalog
+            .models
+            .iter()
+            .all(|m| !m.id.starts_with("gemini-3.1-pro")));
     }
 
     #[test]
