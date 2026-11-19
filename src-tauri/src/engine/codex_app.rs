@@ -1787,6 +1787,22 @@ async fn handshake_and_start(
         // shapes is sent. A missing model is schema-invalid — fail closed.
         turn_params["collaborationMode"] =
             plan_collaboration(req.model.as_deref(), thread_model.as_deref(), req.effort.as_deref())?;
+    } else if let Some(model) = req
+        .session_id
+        .as_ref()
+        .filter(|_| !codex_read_only::requested(req))
+        .and(req.model.as_deref().or(thread_model.as_deref()))
+        .filter(|m| !m.trim().is_empty())
+    {
+        // An earlier planning turn left "Plan Mode until a developer message
+        // ends it" in the thread; codex only appends that ending when a turn
+        // restates the mode (measured on 0.169). Never-planned threads get one
+        // harmless Default note, appended once.
+        turn_params["collaborationMode"] = collaboration_mode(
+            "default",
+            model,
+            req.effort.as_deref().or(reported_effort.as_deref()),
+        );
     } else {
         if let Some(effort) = req.effort.as_deref() {
             turn_params["effort"] = json!(effort);
@@ -2702,10 +2718,14 @@ require('node:readline').createInterface({input: process.stdin}).on('line', line
     assert.equal(params.threadId, 'thread-123');
     assert.equal(params.input[0].text, 'Continue the conversation');
     assert.equal(params.history, undefined);
-    if (mode === 'decision') {
+    if (resumed) {
+      // A plain resumed turn restates Default too: an earlier planning turn
+      // left Plan Mode instructions in the thread that only a mode change ends.
       assert.equal(params.collaborationMode.mode, 'default');
       assert.equal(params.collaborationMode.settings.model, 'test-model');
       assert.equal(params.collaborationMode.settings.reasoning_effort, 'high');
+    } else {
+      assert.equal(params.collaborationMode, undefined);
     }
     result = {turn: {id: 'next-turn'}};
   }
