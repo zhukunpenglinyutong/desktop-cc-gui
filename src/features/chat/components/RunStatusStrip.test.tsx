@@ -133,6 +133,9 @@ describe("RunStatusStrip", () => {
         subagentHistory: [],
       }),
     );
+    // selectSession also reads plan reviews; unmocked it would dial the web
+    // bridge and hang whenever something else listens on the test origin.
+    vi.spyOn(ipc, "listPlanReviews").mockResolvedValue([]);
     const open = async (id: string) => {
       await act(async () => {
         await useChatStore.getState().selectSession("omp", id, WS);
@@ -192,6 +195,13 @@ describe("RunStatusStrip", () => {
           },
         };
       });
+    });
+    // The strip coalesces its session-wide folds; a structural row lands on
+    // the trailing edge, at most one refresh window later.
+    await act(async () => {
+      const { promise, resolve } = Promise.withResolvers<void>();
+      setTimeout(resolve, 260);
+      await promise;
     });
     expect(container.querySelector("[data-agent-step-key]")?.textContent).toContain("运行中");
     expect(pill("子代理").textContent).toContain("0/1");
@@ -687,5 +697,39 @@ describe("RunStatusStrip", () => {
     expect(container.querySelector("[data-testid='todo-detail-overlay']")).toBeNull();
     expect(container.querySelectorAll("[data-todo-item-key]")).toHaveLength(1);
     expect(document.activeElement?.getAttribute("data-todo-item-key")).toBe("定位页面查询零条数原因");
+  });
+});
+
+describe("RunStatusStrip session switch", () => {
+  it("never shows the previous session's summary after a switch", async () => {
+    const edited = [msg(1, "user", "a"), msg(2, "tool", "edit_file", "/ws/src/a.ts")];
+    useChatStore.setState({
+      bySession: {
+        A: { messages: edited, streaming: true } as never,
+        B: { messages: [msg(1, "user", "b")], streaming: false } as never,
+      },
+    });
+    await act(async () => {
+      root.render(<RunStatusStrip sessionKey="A" engine="pi" workspacePath={WS} />);
+    });
+    // A new tool row in A publishes on the leading edge and opens a window.
+    await act(async () => {
+      useChatStore.setState((s) => ({
+        bySession: {
+          ...s.bySession,
+          A: {
+            messages: [...edited, msg(3, "tool", "edit_file", "/ws/src/b.ts")],
+            streaming: true,
+          } as never,
+        },
+      }));
+    });
+    expect(container.querySelector('[data-testid="run-status-strip"]')).not.toBeNull();
+
+    // Session B has nothing to summarize: the strip is gone in the same render.
+    await act(async () => {
+      root.render(<RunStatusStrip sessionKey="B" engine="pi" workspacePath={WS} />);
+    });
+    expect(container.querySelector('[data-testid="run-status-strip"]')).toBeNull();
   });
 });

@@ -54,6 +54,7 @@ import { CliConfigBody } from "./CliConfigBody";
 import { GeneralSection } from "./GeneralSection";
 import { PerformanceDiagnosticsSection } from "./PerformanceDiagnostics";
 import { PetSection } from "./PetSection";
+import { PluginTranslationSection } from "./PluginTranslationSection";
 import { ProxySection } from "./ProxySection";
 import { ENGINE_IDS, type EngineId } from "./providers";
 import type { CliConfigState } from "./useCliConfig";
@@ -146,6 +147,7 @@ const PAGES: PageSpec[] = [
   { page: "prompts", render: () => <PromptsPane /> },
   { page: "skills", render: () => <SkillsSection /> },
   { page: "workspaces", render: () => <WorkspacesSection /> },
+  { page: "pluginTranslation", render: () => <PluginTranslationSection /> },
   {
     page: "webAccess",
     render: () => <WebAccessSection />,

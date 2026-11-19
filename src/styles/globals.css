@@ -73,7 +73,6 @@
   background-clip: text;
   -webkit-background-clip: text;
   animation: ai-chat-text-shimmer 3.4s linear infinite;
-  will-change: background-position;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -360,7 +359,6 @@ input[type="search"]::-webkit-search-cancel-button {
   background-clip: text;
   -webkit-background-clip: text;
   animation: ai-chat-text-shimmer 2.6s linear infinite;
-  will-change: background-position;
 }
 
 /* Provider backoff keeps the status visible without competing with the

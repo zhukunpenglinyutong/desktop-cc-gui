@@ -29,6 +29,46 @@ export function changelogEntryFor(version: string): ChangelogEntry | undefined {
 
 export const CHANGELOG_DATA: ChangelogEntry[] = [
   {
+    version: "1.2.5",
+    date: "2026-11-18",
+    content: {
+      zh: `✨ 新功能
+- **插件中心可用已连接的模型翻译插件介绍**（#1514）：把插件介绍译成当前界面语言。后续补齐了边界情况：README 译文会保留，翻译跟随当前会话渠道，失败对用户可见，残缺译文不写入缓存。
+- **Antigravity（agy）支持粘贴与多图片附件**（#1515）：可将图片交给 agy，在 prompt 中注入路径与 <image> 标记，并用 \`--add-dir\` 打开附件所在目录以免沙箱拦截。另修复了只发图片的消息在重载历史后无法提取附件的问题。
+- **会话右键可复制或打开文件路径**（#1520）：在会话菜单中新增「复制文件路径」「打开文件路径」，方便把会话记录交给其他 Agent 阅读。
+- **把文件选区引用到对话**（#1525，对应 #1521）：在文件编辑器里把选中的文本、工作区相对路径和行范围追加到当前会话草稿，支持未保存的文本；引用可直接发送或进入队列。历史里的引用可打开文件并定位对应行。无法引用时会切回对话并说明原因。
+- **Windows 系统通知支持提示音**（#1524）：可在通知偏好里打开提示音。
+
+🐛 修复
+- **保留非 UTF-8 文本编码**（#1472）：检测 UTF-8 与 GBK，保存时保留编码、BOM 和换行符；可手动选择编码，解码失败或 GBK 无法表示编辑后的文本时阻止有损保存。后续保证 GBK 保存字节精确，并报告正确行数。
+- **DSH 续聊复用已有会话**（#1517）：不再重建会话。后续修复了复用同一会话后的计划模式残留、会话失效与轮次串扰。
+- **Windows 子 webview 改在后台线程创建**（#1518）：避免在主线程创建造成卡顿；异步创建期间丢失的隐藏、尺寸与导航会在创建完成后补齐。
+- **Claude 工具输出不再误报授权卡**（#1523，关闭 #1522）：不再用过宽的关键词把普通系统错误（例如 Bash 的 Permission denied）当成权限拒绝；改为识别已知的 Claude 拒绝句式，并继续处理回合结果中的结构化拒绝。
+- **Codex 会话从计划模式切回自动后不再卡住**：计划轮会在线程里留下「直到明确结束前都处于 Plan Mode」的指令；之后的普通轮次现在会显式发送 Default 协作模式，避免模型继续拒绝写操作。
+- **agy 模型目录探测失败时不再重置已选模型**（#1530）：探测失败时的离线兜底改为非权威，并更新为与 agy 1.5.x 一致的内置列表，避免把用户已选的 Gemini 4 等型号冲掉。
+
+⚡ 性能
+- **收敛长会话流式渲染与工具输出开销**（#1526）：合并状态条重算、限制超长工具输出进入 DOM、窗口隐藏时停止动画计时，并限制会话库 WAL 膨胀。另修复了切换会话时状态条闪现上一个会话汇总的问题。`,
+      en: `✨ Features
+- **Translate plugin descriptions with the connected model** (#1514): Plugin Center can translate descriptions into the current UI language. Follow-up work keeps README translations, follows the current session channel, surfaces failures, and never caches incomplete translations.
+- **Antigravity (agy) paste and multi-image attachments** (#1515): Images can be sent to agy with path and <image> markers in the prompt, plus \`--add-dir\` so the sandbox can read the attachment folder. A follow-up also restores image-only messages when history is reloaded.
+- **Copy or open a session file path from the context menu** (#1520): Sessions gain "Copy file path" and "Open file path" so records can be handed to another agent.
+- **Quote a file selection into the conversation** (#1525, #1521): The editor appends the selected text, workspace-relative path, and line range to the current draft, including unsaved text. Quotes can be sent immediately or queued. Quotes in history open the file at the matching lines. When a quote is unavailable, the app returns to the conversation and explains why.
+- **Windows notification sound** (#1524): Notification preferences can enable a system sound.
+
+🐛 Fixes
+- **Preserve legacy text encodings** (#1472): Detect UTF-8 and GBK, and keep encoding, BOM, and line endings on save. Encoding can be chosen manually, and lossy saves are blocked after decode errors or when GBK cannot represent the edited text. A follow-up keeps GBK saves byte-exact and reports the correct line count.
+- **DSH resumes existing sessions instead of recreating them** (#1517): Follow-up work also clears leftover plan mode, invalid sessions, and cross-turn interference after reuse.
+- **Create Windows child webviews off the main thread** (#1518): Avoids UI stalls; hide, size, and navigation changes issued during async creation are applied when the webview is ready.
+- **Claude tool output no longer false-triggers permission cards** (#1523, closes #1522): Ordinary system errors such as Bash "Permission denied" are no longer treated as permission denials by broad keyword matching. Recognition is limited to known Claude denial phrasing, plus structured denials in the turn result.
+- **Codex no longer stays stuck in Plan mode after switching back to Auto**: A planning turn leaves "stay in Plan Mode until a developer message ends it" in the thread. Later non-plan turns now explicitly send Default collaboration mode so the model can write again.
+- **Failed agy model catalog probes no longer reset the selected model** (#1530): The offline fallback is no longer authoritative and now matches the agy 1.5.x built-in list, so a failed probe will not overwrite a user-selected model such as Gemini 4.
+
+⚡ Performance
+- **Reduce streaming and tool-output cost in long chats** (#1526): Status-bar recalculation is coalesced, oversized tool output is capped in the DOM, timers pause when the window is hidden, and session-db WAL growth is limited. A follow-up also stops the status bar from flashing the previous session's summary when switching sessions.`,
+    },
+  },
+  {
     version: "1.2.4",
     date: "2026-11-14",
     content: {

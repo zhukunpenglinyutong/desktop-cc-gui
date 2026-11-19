@@ -5,6 +5,11 @@ import { githubLoginFor, isOfficialPlugin } from "./catalog";
 import { formatInstallCount } from "./install-count";
 import { MarketActionButton } from "./MarketActionButton";
 import { PluginAvatar } from "./PluginAvatar";
+import {
+  PluginTranslateMenu,
+  useMarketSummarySource,
+  useSummaryView,
+} from "./translation/PluginTranslateControl";
 
 const BADGE =
   "rounded-md bg-background-secondary-default px-1.5 py-0.5 text-xs text-text-secondary";
@@ -35,6 +40,8 @@ export function PluginMarketRow({
   const { t } = useTranslation();
   const authorLogin = githubLoginFor(entry);
   const official = isOfficialPlugin(entry);
+  const summary = useMarketSummarySource(entry.id, entry);
+  const view = useSummaryView(entry.id, summary);
 
   return (
     <tr
@@ -53,17 +60,23 @@ export function PluginMarketRow({
             className="flex min-w-0 flex-1 cursor-pointer flex-col items-start gap-0.5 text-left"
           >
             <span className="flex w-full min-w-0 items-center gap-2">
-              <span className="truncate text-body-medium text-text-primary">{entry.name}</span>
+              <span
+                title={view.translation ? entry.name : undefined}
+                className="truncate text-body-medium text-text-primary"
+              >
+                {view.name}
+              </span>
               {entry.tier === "declarative" && (
                 <span className={BADGE}>{t("plugins.hub.tierDeclarative")}</span>
               )}
             </span>
-            {entry.description && (
+            {view.description && (
               <span
+                // 译文的悬停提示给原文，原文的悬停提示给全文（单行截断）。
                 title={entry.description}
                 className="w-full truncate text-body-2-regular text-text-secondary"
               >
-                {entry.description}
+                {view.description}
               </span>
             )}
           </button>
@@ -100,7 +113,13 @@ export function PluginMarketRow({
       <td className={NUM_CELL}>v{entry.version}</td>
 
       <td className={CELL}>
-        <div className="flex justify-end">
+        <div className="flex items-center justify-end gap-2">
+          <PluginTranslateMenu
+            pluginId={entry.id}
+            summary={summary}
+            fetchReadme
+            variant="icon"
+          />
           <MarketActionButton entry={entry} onOpenDetail={onOpenDetail} />
         </div>
       </td>
