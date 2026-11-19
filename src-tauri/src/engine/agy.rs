@@ -334,14 +334,30 @@ mod tests {
         let args = argv(&request);
         assert!(args.windows(2).any(|w| w == ["--add-dir", "/tmp/ws"]));
         assert!(args.windows(2).any(|w| w == ["--add-dir", &external_dir]));
-        let rel_nested_dir = PathBuf::from("/tmp/ws").join("relative").join("nested");
-        assert!(args.windows(2).any(|w| w == ["--add-dir", &rel_nested_dir.to_string_lossy()]));
+        // Build the expected relative path the same way the engine does.
+        // On Windows, PathBuf::from("/tmp/ws").join("relative").join("nested")
+        // is not the same string as workspace.join("relative/nested/img.jpg").parent()
+        // because push keeps slashes from the joined relative path and inserts `\`.
+        let rel_image = crate::engine::images::absolutize_image_path(
+            "relative/nested/img.jpg",
+            &request.workspace,
+        )
+        .expect("relative image path should resolve");
+        let rel_nested_dir = rel_image
+            .parent()
+            .expect("resolved relative image has a parent directory");
+        assert!(
+            args.windows(2).any(|w| w == ["--add-dir", &rel_nested_dir.to_string_lossy()]),
+            "expected --add-dir for relative image parent {rel_nested_dir:?}, args={args:?}"
+        );
 
         let prompt = args.last().unwrap();
         assert!(prompt.contains(crate::engine::images::AGY_IMAGE_MARKER.trim()));
         assert!(prompt.contains(&format!("<image path=\"{}\"></image>", external_image.display())));
-        let rel_image = PathBuf::from("/tmp/ws").join("relative").join("nested").join("img.jpg");
-        assert!(prompt.contains(&format!("<image path=\"{}\"></image>", rel_image.display())));
+        assert!(
+            prompt.contains(&format!("<image path=\"{}\"></image>", rel_image.display())),
+            "prompt should reference the resolved relative image path, prompt={prompt}"
+        );
     }
 
     #[test]
