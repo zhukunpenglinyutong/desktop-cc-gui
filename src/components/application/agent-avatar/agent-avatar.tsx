@@ -226,6 +226,19 @@ export function AgentAvatar({ config, size = 64, paused = false, label = "Agent 
         last = now;
       }
     };
+    const syncSubscription = () => {
+      const shouldRun =
+        !paused && !reduced.matches && config.motion > 0 && visible && !document.hidden;
+      if (shouldRun) {
+        if (!stop) {
+          last = 0;
+          stop = subscribeFrame(tick);
+        }
+      } else if (stop) {
+        stop();
+        stop = null;
+      }
+    };
     const start = () => {
       stop?.(); stop = null; last = 0;
       if (reduced.matches || config.motion === 0) {
@@ -241,12 +254,21 @@ export function AgentAvatar({ config, size = 64, paused = false, label = "Agent 
         if (!paused || config.lookAt !== "wander") gaze.current = gazeAngles(appearance, phase.current, target, wander.current?.point);
       }
       draw();
-      if (!paused && !reduced.matches && config.motion > 0) stop = subscribeFrame(tick);
+      syncSubscription();
     };
-    const observer = new IntersectionObserver(([entry]) => { visible = entry.isIntersecting; });
+    const observer = new IntersectionObserver(([entry]) => {
+      visible = entry.isIntersecting;
+      syncSubscription();
+    });
     observer.observe(canvas);
+    document.addEventListener("visibilitychange", syncSubscription);
     reduced.addEventListener("change", start); start();
-    return () => { stop?.(); observer.disconnect(); reduced.removeEventListener("change", start); };
+    return () => {
+      stop?.();
+      observer.disconnect();
+      document.removeEventListener("visibilitychange", syncSubscription);
+      reduced.removeEventListener("change", start);
+    };
   }, [config, size, paused, entranceKey, workingKey, workingCycles]);
   return <canvas ref={ref} role="img" aria-label={label} style={{ width: size, height: size, maxWidth: "100%", objectFit: "contain" }} />;
 }

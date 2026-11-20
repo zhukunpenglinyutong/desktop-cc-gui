@@ -19,6 +19,7 @@ import {
   type QueuedMessage,
   type QueueMoveDirection,
 } from "../store";
+import type { SessionState } from "../store/stream";
 
 import { MessageTimeline } from "./MessageTimeline";
 import { clearSessionScrollSnapshot } from "./use-scroll-follow";
@@ -58,7 +59,8 @@ interface KeptTimelineEntry {
 
 /** One session's message list with its own bySession subscription and frozen
  *  SessionScope: stream flushes stay inside this subtree, and hidden kept
- *  timelines never re-render when another tab becomes active. */
+ *  timelines freeze their snapshot reference so background streaming triggers
+ *  zero React re-renders, Markdown reparses, or virtualizer layout passes. */
 const KeptSessionTimeline = memo(function KeptSessionTimeline({
   entry,
   visible,
@@ -68,7 +70,19 @@ const KeptSessionTimeline = memo(function KeptSessionTimeline({
   visible: boolean;
   onLoadEarlier: (sessionKey: string) => void;
 }) {
-  const session = useChatStore((s) => s.bySession[entry.key]);
+  const frozenRef = useRef<SessionState | undefined>(undefined);
+  const session = useChatStore((s) => {
+    const live = s.bySession[entry.key];
+    if (visible) {
+      frozenRef.current = live;
+      return live;
+    }
+    if (!live) {
+      frozenRef.current = undefined;
+      return undefined;
+    }
+    return frozenRef.current ?? live;
+  });
   const handleLoadEarlier = useCallback(
     () => onLoadEarlier(entry.key),
     [onLoadEarlier, entry.key],

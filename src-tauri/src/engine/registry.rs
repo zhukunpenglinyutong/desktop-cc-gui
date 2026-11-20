@@ -52,10 +52,10 @@ pub struct ChildEntry {
 }
 
 /// Maximum number of idle-reusable CLI processes (OMP `rpc-ui`) kept warm
-/// concurrently across sessions. Least-recently-used idle processes are closed
-/// gracefully when another session parks past this cap.
-pub(crate) const MAX_IDLE_REUSE_PROCESSES: usize = 4;
-
+/// concurrently across sessions. Capped at 1 because an OMP process that ran
+/// background workers/MCP can keep burning CPU while parked idle; evicting the
+/// previous idle session immediately prevents multi-process CPU starvation.
+pub(crate) const MAX_IDLE_REUSE_PROCESSES: usize = 1;
 /// Launch-time settings of a run parked for a follow-up or idle-reuse turn.
 /// A live process cannot accept new launch flags, so a send whose settings
 /// differ must not be written into it — it falls back to a fresh process.

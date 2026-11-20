@@ -48,38 +48,29 @@
  * --------------------------------------------------------------------------- */
 @custom-variant dark (&:where(.dark, .dark *));
 
+/* Pure compositor opacity pulse: animating background-position with
+ * background-clip: text forced per-frame CPU glyph re-rasterization and GPU
+ * texture uploads in Chromium/WebView2. Opacity stays strictly on the GPU
+ * compositor thread with negligible CPU cost. */
 @keyframes ai-chat-text-shimmer {
-  from {
-    background-position: 200% center;
+  0%,
+  100% {
+    opacity: 0.58;
   }
-
-  to {
-    background-position: -100% center;
+  50% {
+    opacity: 1;
   }
 }
 
 .agent-progress-loading-text {
-  color: transparent;
-  background-image: linear-gradient(
-    100deg,
-    var(--color-text-secondary) 16%,
-    var(--color-text-secondary) 38%,
-    var(--color-text-primary) 50%,
-    var(--color-text-secondary) 62%,
-    var(--color-text-secondary) 84%
-  );
-  background-position: 200% center;
-  background-size: 300% 100%;
-  background-clip: text;
-  -webkit-background-clip: text;
-  animation: ai-chat-text-shimmer 3.4s linear infinite;
+  color: var(--color-text-secondary);
+  animation: ai-chat-text-shimmer 2.4s ease-in-out infinite;
 }
 
 @media (prefers-reduced-motion: reduce) {
   .agent-progress-loading-text {
-    color: var(--color-text-secondary);
-    background-image: none;
     animation: none;
+    opacity: 1;
   }
 }
 
@@ -347,22 +338,34 @@ input[type="search"]::-webkit-search-cancel-button {
  * its base/highlight both derive from the tone the component sets via
  * --bui-agent-thinking-tone, so every tone shimmers consistently. */
 .bui-agent-thinking-label {
-  color: transparent;
-  background-image: linear-gradient(
-    100deg,
-    color-mix(in oklab, var(--bui-agent-thinking-tone) 55%, transparent) 30%,
-    var(--bui-agent-thinking-tone) 50%,
-    color-mix(in oklab, var(--bui-agent-thinking-tone) 55%, transparent) 70%
-  );
-  background-position: 200% center;
-  background-size: 300% 100%;
-  background-clip: text;
-  -webkit-background-clip: text;
-  animation: ai-chat-text-shimmer 2.6s linear infinite;
+  color: var(--bui-agent-thinking-tone);
+  animation: ai-chat-text-shimmer 2.2s ease-in-out infinite;
 }
 
-/* Provider backoff keeps the status visible without competing with the
- * sidebar's scroll; the indicator remains on its deterministic first frame. */
+/* Compositor-only dot pulse for the 3×3 wave/spin grids (replaces 80ms JS
+ * setInterval + overlapping CSS opacity transitions). */
+@keyframes bui-agent-thinking-dot {
+  0% {
+    opacity: 1;
+  }
+  35% {
+    opacity: 0.12;
+  }
+  100% {
+    opacity: 0.12;
+  }
+}
+
+.bui-agent-thinking-dot {
+  animation-name: bui-agent-thinking-dot;
+  animation-timing-function: ease-out;
+  animation-iteration-count: infinite;
+}
+
+/* Provider backoff or hidden keep-alive tab freezes motion cleanly. */
+.bui-agent-thinking-static .bui-agent-thinking-dot {
+  animation: none;
+}
 .bui-agent-thinking-static .bui-agent-thinking-star {
   animation: none;
   transform: none;
@@ -414,8 +417,13 @@ input[type="search"]::-webkit-search-cancel-button {
 @media (prefers-reduced-motion: reduce) {
   .bui-agent-thinking-label {
     color: var(--bui-agent-thinking-tone);
-    background-image: none;
     animation: none;
+    opacity: 1;
+  }
+
+  .bui-agent-thinking-dot {
+    animation: none;
+    opacity: 0.55;
   }
 
   /* Stars rest visible instead of frozen at scale(0). */

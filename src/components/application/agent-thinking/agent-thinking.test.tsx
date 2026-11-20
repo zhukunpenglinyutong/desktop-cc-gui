@@ -124,24 +124,19 @@ describe("AgentThinking", () => {
   });
 
   it("pauses visual heartbeat while waiting for a provider retry", () => {
-    const setIntervalSpy = vi.spyOn(window, "setInterval");
-    try {
-      act(() => {
-        root.render(
-          <AgentThinking
-            label="响应中"
-            retry="重试中 8/50"
-            startedAt={Date.now() - 5000}
-          />,
-        );
-      });
+    act(() => {
+      root.render(
+        <AgentThinking
+          label="响应中"
+          retry="重试中 8/50"
+          startedAt={Date.now() - 5000}
+        />,
+      );
+    });
 
-      expect(container.querySelector(".bui-agent-thinking-label")).toBeNull();
-      expect(setIntervalSpy).not.toHaveBeenCalledWith(expect.any(Function), 80);
-      expect(container.textContent).toContain("重试中 8/50");
-    } finally {
-      setIntervalSpy.mockRestore();
-    }
+    expect(container.querySelector(".bui-agent-thinking-label")).toBeNull();
+    expect(container.querySelector(".bui-agent-thinking-dot")).toBeNull();
+    expect(container.textContent).toContain("重试中 8/50");
   });
 
   it("keeps the stars indicator visible while waiting for a retry", () => {
@@ -161,7 +156,7 @@ describe("AgentThinking", () => {
     expect(getComputedStyle(star!).opacity).toBe("0.7");
   });
 
-  it("pauses dot and elapsed timers when document is hidden and resumes on visible", () => {
+  it("pauses elapsed timer when document is hidden and uses compositor CSS for dots", () => {
     let hidden = true;
     Object.defineProperty(document, "hidden", { configurable: true, get: () => hidden });
     const setIntervalSpy = vi.spyOn(window, "setInterval");
@@ -171,24 +166,39 @@ describe("AgentThinking", () => {
         root.render(<AgentThinking label="响应中" startedAt={Date.now() - 5000} />);
       });
       expect(setIntervalSpy).not.toHaveBeenCalled();
+      expect(container.querySelectorAll(".bui-agent-thinking-dot")).toHaveLength(9);
 
       hidden = false;
       act(() => {
         document.dispatchEvent(new Event("visibilitychange"));
       });
-      expect(setIntervalSpy).toHaveBeenCalledWith(expect.any(Function), 80);
       expect(setIntervalSpy).toHaveBeenCalledWith(expect.any(Function), 500);
+      expect(setIntervalSpy).not.toHaveBeenCalledWith(expect.any(Function), 80);
 
       const clearBefore = clearIntervalSpy.mock.calls.length;
       hidden = true;
       act(() => {
         document.dispatchEvent(new Event("visibilitychange"));
       });
-      expect(clearIntervalSpy.mock.calls.length).toBeGreaterThanOrEqual(clearBefore + 2);
+      expect(clearIntervalSpy.mock.calls.length).toBeGreaterThanOrEqual(clearBefore + 1);
     } finally {
       setIntervalSpy.mockRestore();
       clearIntervalSpy.mockRestore();
       Reflect.deleteProperty(document, "hidden");
+    }
+  });
+
+  it("stops animations and elapsed timer while paused in a hidden keep-alive tab", () => {
+    const setIntervalSpy = vi.spyOn(window, "setInterval");
+    try {
+      act(() => {
+        root.render(<AgentThinking label="响应中" paused startedAt={Date.now() - 5000} />);
+      });
+      expect(setIntervalSpy).not.toHaveBeenCalled();
+      expect(container.querySelector(".bui-agent-thinking-label")).toBeNull();
+      expect(container.querySelector(".bui-agent-thinking-dot")).toBeNull();
+    } finally {
+      setIntervalSpy.mockRestore();
     }
   });
 });

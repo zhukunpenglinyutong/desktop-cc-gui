@@ -11,6 +11,8 @@ import { EMPTY_SESSION } from "./store/stream";
 const timelineLifecycle = vi.hoisted(() => ({
   mounts: [] as string[],
   unmounts: [] as string[],
+  renders: {} as Record<string, number>,
+  lastCount: {} as Record<string, number>,
 }));
 
 vi.mock("@/lib/ipc", () => ({
@@ -54,9 +56,11 @@ vi.mock("@/features/chat/components/ConversationFooter", () => ({
   ConversationFooter: () => <div data-testid="footer" />,
 }));
 vi.mock("@/features/chat/components/MessageTimeline", () => ({
-  MessageTimeline: () => {
+  MessageTimeline: ({ session }: { session: { messages: unknown[] } }) => {
     const scoped = useScopedSession();
     const id = scoped?.sessionId ?? "none";
+    timelineLifecycle.renders[id] = (timelineLifecycle.renders[id] ?? 0) + 1;
+    timelineLifecycle.lastCount[id] = session.messages.length;
     useEffect(() => {
       timelineLifecycle.mounts.push(id);
       return () => {
@@ -99,6 +103,8 @@ describe("SessionTimeline keep-alive across tab switches", () => {
   beforeEach(() => {
     timelineLifecycle.mounts = [];
     timelineLifecycle.unmounts = [];
+    timelineLifecycle.renders = {};
+    timelineLifecycle.lastCount = {};
     const tabs = ["s-1", "s-2", "s-3", "s-4", "s-5"].map(makeTab);
     useChatStore.setState({
       openTabs: tabs,
@@ -185,5 +191,38 @@ describe("SessionTimeline keep-alive across tab switches", () => {
       }));
     });
     expect(timelineLifecycle.unmounts).toEqual(["s-2", "s-3"]);
+  });
+
+  it("freezes hidden kept timelines during background streaming and catches up on reveal", () => {
+    const [t1, t2] = useChatStore.getState().openTabs;
+    const k1 = sessionKey(t1.engine, t1.sessionId, t1.workspacePath);
+
+    render(t1);
+    render(t2);
+    const rendersWhileHidden = timelineLifecycle.renders["s-1"];
+
+    // Background stream chunks land on hidden tab s-1: must not re-render its timeline.
+    act(() => {
+      for (let i = 2; i <= 5; i++) {
+        useChatStore.setState((s) => ({
+          bySession: {
+            ...s.bySession,
+            [k1]: {
+              ...s.bySession[k1],
+              streaming: true,
+              messages: [
+                ...s.bySession[k1].messages,
+                { seq: i, role: "assistant", text: `chunk-${i}`, ts: null },
+              ],
+            },
+          },
+        }));
+      }
+    });
+    expect(timelineLifecycle.renders["s-1"]).toBe(rendersWhileHidden);
+
+    // Switching back to t1 reconciles all accumulated background messages immediately.
+    render(t1);
+    expect(timelineLifecycle.lastCount["s-1"]).toBe(5);
   });
 });
