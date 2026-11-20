@@ -76,3 +76,12 @@ export function createCachedHighlighter(
     };
   };
 }
+
+/** Shared bounded syntax-highlight cache across Markdown mounts: switching tabs
+ *  or scrolling rows in/out of the virtualizer reuses highlighted code trees
+ *  instead of re-running highlight.js from scratch. Callers with external
+ *  mutating rehype plugins must bypass this shared cache. */
+export const sharedCachedHighlighter = createCachedHighlighter(highlight, {
+  entries: 256,
+  characters: 2_000_000,
+});

@@ -54,6 +54,7 @@ pub(crate) fn spawn_stdin_writer(
             tokio::spawn(async move {
                 let _ = stdin.write_all(payload.as_bytes()).await;
                 let _ = stdin.write_all(b"\n").await;
+                let _ = stdin.flush().await;
                 // drop closes stdin -> EOF
             });
         }
@@ -67,6 +68,7 @@ pub(crate) fn spawn_stdin_writer(
             if let Some(stdin) = guard.as_mut() {
                 let _ = stdin.write_all(payload.as_bytes()).await;
                 let _ = stdin.write_all(b"\n").await;
+                let _ = stdin.flush().await;
             }
         });
     }
@@ -211,9 +213,14 @@ pub(crate) struct TurnState {
     gen_ms: u64,
     /// Background tasks the CLI reported as still running.
     pending_background_tasks: usize,
-    /// `done` went out while a background task was still running and the CLI
-    /// is kept alive: its self-started follow-up turn is still to come.
+    /// `done` went out while a background task was still running or the process
+    /// is parked idle for session reuse (OMP `rpc-ui`): stdin stays open and
+    /// the next turn reopens the run via `turn_resumed`.
     awaiting_followup: bool,
+    /// Shared with the registry's `AwaitingFollowup`: flipped to `true` once
+    /// `deliver_to_idle_followup` writes a new user turn to this live process
+    /// so an unexpected EOF/Stop before the first stdout line still settles UI.
+    idle_claimed: Arc<std::sync::atomic::AtomicBool>,
 }
 impl TurnState {
     pub(crate) fn new(preassigned: Option<String>) -> Self {
@@ -231,6 +238,7 @@ impl TurnState {
             gen_ms: 0,
             pending_background_tasks: 0,
             awaiting_followup: false,
+            idle_claimed: Arc::new(std::sync::atomic::AtomicBool::new(false)),
         }
     }
 
@@ -334,6 +342,10 @@ impl TurnState {
         }
     }
 }
+/// Idle TTL for a warm OMP `rpc-ui` process parked between user turns. Kept
+/// short (2 minutes) so rapid follow-ups reuse the warm process in milliseconds
+/// while idle processes with active background workers do not linger and burn CPU.
+pub(crate) const IDLE_REUSE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(120);
 /// Event-routing core shared by process runs ([`RunContext`]) and virtual
 /// host-stream runs ([`dsh_session::run_host_turn`]): the fields
 /// `dispatch_event` needs to route engine events to the UI sink and keep the
@@ -346,9 +358,9 @@ pub(crate) struct TurnCore {
     /// 审批事实源:计划事件到达即落盘(engine/plan_review.rs)。驱动内部与
     /// 测试构造点没有 db 句柄时为 None——那些路径不产生计划事件。
     pub(crate) db: Option<Arc<crate::db::Db>>,
-    /// Launch settings of a chat run eligible for background-follow-up
-    /// parking (`Some` only for chat-sink claude runs). `None` — plugin and
-    /// mission turns, other engines, tests — keeps the old settle behavior:
+    /// Launch settings of a chat run eligible for follow-up / idle-reuse
+    /// parking (`Some` for chat-sink claude background-task runs and local
+    /// chat-sink OMP `rpc-ui` runs). `None` keeps one-shot settle behavior:
     /// stdin closes at `done` and the process exits instead of idling.
     pub(crate) followup: Option<FollowupPrefs>,
 }
@@ -379,8 +391,11 @@ pub(crate) fn expire_parked_plans(core: &TurnCore, state: &mut TurnState, key: &
 }
 
 impl TurnCore {
+    fn is_idle_reuse(&self) -> bool {
+        self.followup.as_ref().is_some_and(|prefs| prefs.idle_reuse)
+    }
+
     /// Adopt a native session id: rekey the registry entry (no overwrite) and
-    /// remember it for subsequent event payloads.
     fn adopt_session_id(&self, state: &mut TurnState, id: &str, announce: bool) {
         if state.native_session_id.as_deref() == Some(id) {
             return;
@@ -411,15 +426,29 @@ impl TurnCore {
         if (state.saw_done || state.saw_error) && !matches!(event, EngineEvent::SessionId(_)) {
             return;
         }
-        // The CLI's follow-up turn (after a background task) streams under a
-        // run the UI already settled: tell it to reopen the run first.
+        // The CLI's follow-up or reused turn streams under a run the UI already
+        // settled: tell it to reopen the run first on any turn-level event
+        // (including Generation/Retry/Compaction/Question/Error/Done so a fast
+        // /compact or immediate prompt error is never dropped as post-settled).
         if state.awaiting_followup
             && matches!(
                 event,
-                EngineEvent::Delta(_) | EngineEvent::Thinking(_) | EngineEvent::Message { .. }
+                EngineEvent::Delta(_)
+                    | EngineEvent::Thinking(_)
+                    | EngineEvent::Message { .. }
+                    | EngineEvent::Generation { active: true }
+                    | EngineEvent::Compaction { active: true, .. }
+                    | EngineEvent::Retry { .. }
+                    | EngineEvent::Question { .. }
+                    | EngineEvent::Error(_)
+                    | EngineEvent::Done { .. }
             )
         {
             state.awaiting_followup = false;
+            state
+                .idle_claimed
+                .store(false, std::sync::atomic::Ordering::SeqCst);
+            state.attempt_error = None;
             self.registry.clear_awaiting_followup(&self.run_id);
             state.push(
                 &self.sink,
@@ -902,23 +931,39 @@ impl TurnCore {
                 }
                 let park_prefs = if state.pending_background_tasks > 0 {
                     self.followup.clone()
+                } else if self.is_idle_reuse() && state.native_session_id.is_some() {
+                    self.followup.clone()
                 } else {
                     None
                 };
                 if let Some(prefs) = park_prefs {
-                    // A background task is still running: the CLI opens a
-                    // follow-up turn by itself when it finishes. Settle the
-                    // visible turn now so the UI is usable, but keep stdin and
-                    // the reader alive (saw_done stays false) so that turn is
-                    // still received; `turn_resumed` reopens the run for it.
+                    // Either a background task is still running (claude) or the
+                    // process stays warm for the next user turn (omp rpc-ui).
+                    // Settle the visible turn now so the UI is usable, keep
+                    // stdin and the reader alive (saw_done stays false), and
+                    // reopen via `turn_resumed` when the next turn starts.
                     state.awaiting_followup = true;
+                    state.attempt_error = None;
+                    state
+                        .idle_claimed
+                        .store(false, std::sync::atomic::Ordering::SeqCst);
                     if let Some(id) = state.native_session_id.as_deref() {
-                        self.registry
-                            .set_awaiting_followup(id, &self.run_id, prefs);
+                        let evicted = self.registry.set_awaiting_followup(
+                            id,
+                            &self.run_id,
+                            prefs,
+                            Arc::clone(&state.idle_claimed),
+                        );
+                        for old_run_id in evicted {
+                            self.registry.close_stdin(&old_run_id);
+                        }
                     }
                 } else {
                     state.saw_done = true;
                     state.awaiting_followup = false;
+                    state
+                        .idle_claimed
+                        .store(false, std::sync::atomic::Ordering::SeqCst);
                     self.registry.clear_awaiting_followup(&self.run_id);
                     crate::mcp::mark_run_ended(&self.run_id);
                     // The turn is over: EOF the interactive stdin so the CLI
@@ -1265,11 +1310,32 @@ pub(crate) async fn run_process_reader(
     let mut child_exited = false;
     let mut idle_exit = None;
     let mut state = begin_process_turn(&ctx);
+    let mut idle_deadline: Option<tokio::time::Instant> = None;
     'read: loop {
+        if state.awaiting_followup && ctx.core.is_idle_reuse() {
+            if idle_deadline.is_none() {
+                idle_deadline = Some(tokio::time::Instant::now() + IDLE_REUSE_TIMEOUT);
+            }
+        } else {
+            idle_deadline = None;
+        }
         let read = tokio::select! {
             line = read_line_capped(&mut reader, &mut line_buf) => line,
             _ = &mut exit_rx, if !child_exited => {
                 child_exited = true;
+                continue;
+            }
+            _ = async {
+                if let Some(deadline) = idle_deadline {
+                    tokio::time::sleep_until(deadline).await;
+                } else {
+                    std::future::pending::<()>().await;
+                }
+            }, if idle_deadline.is_some() && !child_exited => {
+                idle_deadline = None;
+                if ctx.core.registry.retire_idle_followup(&ctx.core.run_id) {
+                    ctx.core.registry.close_stdin(&ctx.core.run_id);
+                }
                 continue;
             }
             _ = poll.tick(), if is_codex && !state.saw_done && !state.saw_error => {
@@ -1521,7 +1587,20 @@ pub(crate) async fn run_process_reader(
         );
     }
 
-    if !state.saw_done && !state.saw_error && !state.awaiting_followup {
+    let claimed_for_new_turn = state
+        .idle_claimed
+        .load(std::sync::atomic::Ordering::SeqCst);
+    if !state.saw_done && !state.saw_error && (!state.awaiting_followup || claimed_for_new_turn) {
+        if state.awaiting_followup && claimed_for_new_turn {
+            state.awaiting_followup = false;
+            state.push(
+                &ctx.core.sink,
+                &ctx.core.run_id,
+                &ctx.core.engine_id,
+                "turn_resumed",
+                Value::Null,
+            );
+        }
         let killed = ctx.killed.load(std::sync::atomic::Ordering::SeqCst);
         if killed {
             // User-initiated stop: commit whatever streamed so far as a

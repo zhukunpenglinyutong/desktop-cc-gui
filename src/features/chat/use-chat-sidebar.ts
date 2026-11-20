@@ -111,6 +111,27 @@ export function useChatSidebar({
     };
   }, [visibleWorkspaces]);
 
+  // Sidebar repos only render pending (sessionId === null) tabs from openTabs.
+  // Key them by a primitive string so opening, reordering, or switching real
+  // session tabs never invalidates the sidebar's repo/session tree memo.
+  const draftTabsKey = useMemo(
+    () =>
+      openTabs
+        .filter((tab) => tab.sessionId === null)
+        .map((tab) => `${tab.engine}\0${tab.workspacePath}`)
+        .join("\n"),
+    [openTabs],
+  );
+  const draftTabs = useMemo(
+    () =>
+      draftTabsKey
+        ? draftTabsKey.split("\n").map((entry) => {
+            const sep = entry.indexOf("\0");
+            return { engine: entry.slice(0, sep), workspacePath: entry.slice(sep + 1) };
+          })
+        : [],
+    [draftTabsKey],
+  );
   const repos: AiChatRepo[] = useMemo(() => {
     const groups = sortedWorkspaceGroups(workspaceGroups);
     const groupIds = new Set(groups.map((group) => group.id));
@@ -147,8 +168,8 @@ export function useChatSidebar({
         worktree: meta ? { branch: meta.branch, prNumber: meta.prNumber ?? undefined } : undefined,
         worktrees: children?.map((c) => buildRepo(c, false)),
         threads: [
-          ...openTabs.flatMap((tab) => {
-            if (tab.sessionId !== null || tab.workspacePath !== w.path) return [];
+          ...draftTabs.flatMap((tab) => {
+            if (tab.workspacePath !== w.path) return [];
             return [
               {
                 id: sessionKey(tab.engine, null, tab.workspacePath),
@@ -178,7 +199,7 @@ export function useChatSidebar({
       };
     };
     return parentWorkspaces.map((w) => buildRepo(w, w.id === firstWorkspace?.id));
-  }, [parentWorkspaces, childrenByParent, workspaceGroups, workspaceAliases, sessions, openTabs, threadLimit, threadStreaming, threadRetrying, unseen, i18n.language, uiHooks, t]);
+  }, [parentWorkspaces, childrenByParent, workspaceGroups, workspaceAliases, sessions, draftTabs, threadLimit, threadStreaming, threadRetrying, unseen, i18n.language, uiHooks, t]);
   // 工作区二级分类: bucket repos by their workspace's group assignment.
   // Ungrouped repos come first (no header), then groups in settings order.
   // Empty groups stay in the tree — the sidebar renders them like populated

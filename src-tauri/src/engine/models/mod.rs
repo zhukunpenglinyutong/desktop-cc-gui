@@ -72,32 +72,93 @@ pub(crate) fn claude_comparison_model(
 }
 
 use serde::Serialize;
+use std::future::Future;
 
 /// Catalog probe budget; with extension boot skipped the call lands in ~1s,
 /// this is pure slow-machine headroom.
 const PROBE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(15);
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) enum ProbeError {
+    /// Subprocess exceeded `PROBE_TIMEOUT` and was terminated: callers must NOT
+    /// chain fallback probes back-to-back, which multiplies startup contention.
+    Timeout(String),
+    /// Spawn error, non-zero exit, or unparseable output (e.g. an older binary
+    /// that lacks a newer subcommand/flag): safe to try a compatibility fallback.
+    Failed(String),
+}
+
+impl ProbeError {
+    pub(super) fn into_message(self) -> String {
+        match self {
+            Self::Timeout(msg) | Self::Failed(msg) => msg,
+        }
+    }
+}
+
 /// Run one catalog probe (`bin args…`) under the shared budget; stdout as
 /// lossy UTF-8 on success. `probe` names the subcommand in error messages
 /// ("models --json").
-pub(super) async fn run_probe(bin: &str, args: &[&str], probe: &str) -> Result<String, String> {
+pub(super) async fn run_probe_detailed(
+    bin: &str,
+    args: &[&str],
+    probe: &str,
+) -> Result<String, ProbeError> {
     let mut cmd = super::command_for_binary(bin);
     for arg in args {
         cmd.arg(arg);
     }
-    // A timed-out probe must not outlive its budget: kill_on_drop kills the
-    // child with the handle instead of leaking a half-finished CLI.
-    cmd.kill_on_drop(true);
+    cmd.stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        // A timed-out probe must not outlive its budget: kill_on_drop kills the
+        // direct child handle, and the job/process-group guard below sweeps any
+        // grandchildren (Windows `.cmd` shims / Bun native workers).
+        .kill_on_drop(true);
+    #[cfg(unix)]
+    cmd.process_group(0);
     #[cfg(windows)]
     super::hide_console(&mut cmd);
-    let output = tokio::time::timeout(PROBE_TIMEOUT, cmd.output())
-        .await
-        .map_err(|_| format!("{bin} {probe} timed out"))?
-        .map_err(|e| format!("failed to run {bin}: {e}"))?;
+    let child = cmd
+        .spawn()
+        .map_err(|e| ProbeError::Failed(format!("failed to run {bin}: {e}")))?;
+    let pid = child.id();
+    #[cfg(windows)]
+    let tree_guard = super::job::assign_kill_on_close(&child);
+    let output = match tokio::time::timeout(PROBE_TIMEOUT, child.wait_with_output()).await {
+        Ok(Ok(output)) => output,
+        Ok(Err(e)) => return Err(ProbeError::Failed(format!("failed to run {bin}: {e}"))),
+        Err(_) => {
+            #[cfg(unix)]
+            if let Some(pid) = pid {
+                super::kill_process_group(pid);
+            }
+            #[cfg(windows)]
+            {
+                let had_job = tree_guard.is_some();
+                drop(tree_guard);
+                if !had_job {
+                    if let Some(pid) = pid {
+                        tokio::task::spawn_blocking(move || super::kill_process_group(pid));
+                    }
+                }
+            }
+            return Err(ProbeError::Timeout(format!("{bin} {probe} timed out")));
+        }
+    };
     if !output.status.success() {
-        return Err(format!("{bin} {probe} exited with {}", output.status));
+        return Err(ProbeError::Failed(format!(
+            "{bin} {probe} exited with {}",
+            output.status
+        )));
     }
     Ok(String::from_utf8_lossy(&output.stdout).to_string())
+}
+
+pub(super) async fn run_probe(bin: &str, args: &[&str], probe: &str) -> Result<String, String> {
+    run_probe_detailed(bin, args, probe)
+        .await
+        .map_err(ProbeError::into_message)
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -151,11 +212,150 @@ impl EngineCatalog {
     }
 }
 
+/// Process-wide cache for local engine model catalogs: switching to another
+/// local workspace triggers a workspace-context probe, and without this cache
+/// every unseen local workspace would respawn every enabled CLI binary at once.
+/// Kept for 10 minutes (invalidated immediately when pi/omp's own models file
+/// changes on disk) so heavy CLIs like `omp` are not respawned every 2 minutes.
+const LOCAL_CATALOG_TTL: std::time::Duration = std::time::Duration::from_secs(600);
+/// Cooldown after a probe timeout/failure: prevents back-to-back callers from
+/// spawning another wave of probes while the CLI / SQLite cache is contended.
+const LOCAL_CATALOG_FAILURE_COOLDOWN: std::time::Duration = std::time::Duration::from_secs(60);
+
+type ConfigStamp = Option<(u64, Option<std::time::SystemTime>)>;
+
+struct CachedLocalCatalog {
+    bin: String,
+    config_stamp: ConfigStamp,
+    catalog: EngineCatalog,
+    cached_at: std::time::Instant,
+    ttl: std::time::Duration,
+    from_probe: bool,
+}
+
+static LOCAL_CATALOG_CACHE: std::sync::LazyLock<
+    std::sync::Mutex<std::collections::HashMap<String, CachedLocalCatalog>>,
+> = std::sync::LazyLock::new(|| std::sync::Mutex::new(std::collections::HashMap::new()));
+
+/// Per-engine single-flight lock: concurrent `list_engine_models` / plugin
+/// catalog calls on a cold or expired cache coalesce onto one CLI spawn instead
+/// of launching N parallel `omp.exe` processes that fight over SQLite locks.
+static INFLIGHT_LOCAL_PROBES: std::sync::LazyLock<
+    std::sync::Mutex<std::collections::HashMap<String, std::sync::Arc<tokio::sync::Mutex<()>>>>,
+> = std::sync::LazyLock::new(|| std::sync::Mutex::new(std::collections::HashMap::new()));
+
+fn engine_probe_lock(engine: &str) -> std::sync::Arc<tokio::sync::Mutex<()>> {
+    let mut guard = INFLIGHT_LOCAL_PROBES
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    guard
+        .entry(engine.to_string())
+        .or_insert_with(|| std::sync::Arc::new(tokio::sync::Mutex::new(())))
+        .clone()
+}
+
+fn engine_config_stamp(engine: &str) -> ConfigStamp {
+    let file = match engine {
+        "pi" => "models.json",
+        "omp" => "models.yml",
+        _ => return None,
+    };
+    let path = super::pi_family_auth::agent_dir(engine).ok()?.join(file);
+    let meta = std::fs::metadata(path).ok()?;
+    Some((meta.len(), meta.modified().ok()))
+}
+
+fn read_cached_local_catalog(engine: &str, bin: &str) -> Option<EngineCatalog> {
+    let stamp = engine_config_stamp(engine);
+    let guard = LOCAL_CATALOG_CACHE.lock().ok()?;
+    let entry = guard.get(engine)?;
+    if entry.bin == bin && entry.config_stamp == stamp && entry.cached_at.elapsed() < entry.ttl {
+        Some(entry.catalog.clone())
+    } else {
+        None
+    }
+}
+
+fn read_last_good_local_catalog(engine: &str, bin: &str) -> Option<EngineCatalog> {
+    let stamp = engine_config_stamp(engine);
+    let guard = LOCAL_CATALOG_CACHE.lock().ok()?;
+    let entry = guard.get(engine)?;
+    if entry.from_probe && entry.bin == bin && entry.config_stamp == stamp {
+        Some(entry.catalog.clone())
+    } else {
+        None
+    }
+}
+
+fn write_cached_local_catalog_with_meta(
+    engine: &str,
+    bin: String,
+    catalog: &EngineCatalog,
+    ttl: std::time::Duration,
+    from_probe: bool,
+) {
+    let config_stamp = engine_config_stamp(engine);
+    if let Ok(mut guard) = LOCAL_CATALOG_CACHE.lock() {
+        guard.insert(
+            engine.to_string(),
+            CachedLocalCatalog {
+                bin,
+                config_stamp,
+                catalog: catalog.clone(),
+                cached_at: std::time::Instant::now(),
+                ttl,
+                from_probe,
+            },
+        );
+    }
+}
+
+#[cfg(test)]
+fn write_cached_local_catalog(engine: &str, bin: String, catalog: &EngineCatalog) {
+    write_cached_local_catalog_with_meta(engine, bin, catalog, LOCAL_CATALOG_TTL, true);
+}
+
+async fn resolve_local_catalog_with<F, Fut>(
+    engine: &str,
+    bin_key: &str,
+    force: bool,
+    probe: F,
+) -> Result<EngineCatalog, String>
+where
+    F: FnOnce(Option<EngineCatalog>) -> Fut,
+    Fut: Future<Output = Result<(EngineCatalog, std::time::Duration, bool), String>>,
+{
+    if !force {
+        if let Some(cached) = read_cached_local_catalog(engine, bin_key) {
+            return Ok(cached);
+        }
+    }
+    let probe_lock = engine_probe_lock(engine);
+    let _probe_guard = probe_lock.lock().await;
+    if !force {
+        if let Some(cached) = read_cached_local_catalog(engine, bin_key) {
+            return Ok(cached);
+        }
+    }
+    let last_good = read_last_good_local_catalog(engine, bin_key);
+    let had_last_good = last_good.is_some();
+    let (catalog, ttl, from_probe) = probe(last_good).await?;
+    write_cached_local_catalog_with_meta(
+        engine,
+        bin_key.to_string(),
+        &catalog,
+        ttl,
+        from_probe || had_last_good,
+    );
+    Ok(catalog)
+}
+
 #[tauri::command]
 pub async fn list_engine_models(
     state: tauri::State<'_, crate::AppState>,
     engine: String,
     workspace: Option<String>,
+    force: Option<bool>,
 ) -> Result<EngineCatalog, String> {
     // 停用 (设置 → CLI 管理) gates the catalog too: every branch below either
     // runs the engine's CLI here or asks the distro to (`opencode models`,
@@ -189,34 +389,53 @@ pub async fn list_engine_models(
             }
         }
     }
-    match engine.as_str() {
-        "codex" => Ok(codex_catalog().await),
-        "kimi" => Ok(kimi_catalog().await),
-        "grok" => Ok(grok_catalog()),
-        "claude" => Ok(claude_catalog()),
-        "pi" | "omp" => Ok(pi_family_catalog(&engine).await),
-        "dsh" => dsh_catalog().await,
-        "agy" => Ok(agy_catalog().await),
-        "opencode" => Ok(opencode_catalog().await),
-        "qoder" => qoder_catalog("qoder").await,
-        "qoder-cn" => qoder_catalog("qoder-cn").await,
-        // MiniMax's catalog comes from a live `mcode acp` probe (the /model
-        // menu only exists on the session handshake), cached last-success;
-        // a failed probe falls back to the static stock list.
-        "minimax" => {
+    let bin_key = {
+        let engine_for_bin = engine.clone();
+        tauri::async_runtime::spawn_blocking(move || {
             let settings = crate::settings::read_settings().unwrap_or_default();
-            let bin = super::engine_bin(&settings, "minimax");
-            Ok(minimax::minimax_catalog(&bin).await)
-        }
-        "codebuddy" => {
-            let settings = crate::settings::read_settings().unwrap_or_default();
-            let bin = super::engine_bin(&settings, "codebuddy");
-            Ok(codebuddy::codebuddy_catalog(&bin).await)
-        }
-        // Unknown engine: no CLI-sourced catalog — the frontend fills the
-        // picker from the configured provider channels.
-        _ => Ok(EngineCatalog::authoritative(Vec::new())),
-    }
+            super::engine_bin(&settings, &engine_for_bin)
+        })
+        .await
+        .map_err(|e| format!("engine bin lookup failed: {e}"))?
+    };
+    let force = force.unwrap_or(false);
+    let engine_ref = engine.as_str();
+    let bin_ref = bin_key.as_str();
+    resolve_local_catalog_with(engine_ref, bin_ref, force, |last_good| async move {
+        Ok(match engine_ref {
+            "codex" => (codex_catalog().await, LOCAL_CATALOG_TTL, true),
+            "kimi" => (kimi_catalog().await, LOCAL_CATALOG_TTL, true),
+            "grok" => (grok_catalog(), LOCAL_CATALOG_TTL, true),
+            "claude" => (claude_catalog(), LOCAL_CATALOG_TTL, true),
+            "pi" | "omp" => {
+                let (catalog, probed) = pi_family_catalog(engine_ref, bin_ref, last_good).await;
+                let ttl = if probed {
+                    LOCAL_CATALOG_TTL
+                } else {
+                    LOCAL_CATALOG_FAILURE_COOLDOWN
+                };
+                (catalog, ttl, probed)
+            }
+            "dsh" => (dsh_catalog().await?, LOCAL_CATALOG_TTL, true),
+            "agy" => (agy_catalog().await, LOCAL_CATALOG_TTL, true),
+            "opencode" => (opencode_catalog().await, LOCAL_CATALOG_TTL, true),
+            "qoder" => (qoder_catalog("qoder").await?, LOCAL_CATALOG_TTL, true),
+            "qoder-cn" => (qoder_catalog("qoder-cn").await?, LOCAL_CATALOG_TTL, true),
+            // MiniMax's catalog comes from a live `mcode acp` probe (the /model
+            // menu only exists on the session handshake), cached last-success;
+            // a failed probe falls back to the static stock list.
+            "minimax" => (minimax::minimax_catalog(bin_ref).await, LOCAL_CATALOG_TTL, true),
+            "codebuddy" => (
+                codebuddy::codebuddy_catalog(bin_ref).await,
+                LOCAL_CATALOG_TTL,
+                true,
+            ),
+            // Unknown engine: no CLI-sourced catalog — the frontend fills the
+            // picker from the configured provider channels.
+            _ => (EngineCatalog::authoritative(Vec::new()), LOCAL_CATALOG_TTL, true),
+        })
+    })
+    .await
 }
 
 /// DSH has no CLI-side catalog: the model list lives on the running host
@@ -396,28 +615,69 @@ fn claude_catalog() -> EngineCatalog {
     EngineCatalog::authoritative(claude::claude_models(bin_path.as_deref()))
 }
 
-async fn pi_family_catalog(engine: &str) -> EngineCatalog {
-    let settings = crate::settings::read_settings().unwrap_or_default();
-    let bin = super::engine_bin(&settings, engine);
-    let configured = pi::configured_models(engine).unwrap_or_default();
-    if let Ok(models) = pi::run_models_json(&bin).await {
-        if !models.is_empty() {
-            return EngineCatalog::authoritative(pi::merge_configured_models(models, configured));
-        }
-    }
-    // Fresh binaries skip extension boot; old ones fall back to a bare run.
-    for extra in [&["--no-extensions"][..], &[][..]] {
-        if let Ok(models) = pi::run_list_models(&bin, extra).await {
-            if !models.is_empty() {
-                return EngineCatalog::authoritative(pi::merge_configured_models(
-                    models, configured,
-                ));
+enum PiCatalogStage {
+    ModelsJson,
+    ListModelsNoExtensions,
+    ListModelsBare,
+}
+
+async fn pi_family_catalog_with<F, Fut>(
+    configured: Vec<EngineModel>,
+    last_good: Option<EngineCatalog>,
+    mut run_stage: F,
+) -> (EngineCatalog, bool)
+where
+    F: FnMut(PiCatalogStage) -> Fut,
+    Fut: Future<Output = Result<Vec<EngineModel>, ProbeError>>,
+{
+    for stage in [
+        PiCatalogStage::ModelsJson,
+        PiCatalogStage::ListModelsNoExtensions,
+        PiCatalogStage::ListModelsBare,
+    ] {
+        match run_stage(stage).await {
+            Ok(models) if !models.is_empty() => {
+                return (
+                    EngineCatalog::authoritative(pi::merge_configured_models(models, configured)),
+                    true,
+                );
             }
+            // A timeout means the binary is slow/contended (e.g. cold startup or
+            // SQLite lock wait), NOT that it lacks the subcommand. Chaining two
+            // more `--list-models` spawns immediately would triple the storm.
+            Err(ProbeError::Timeout(_)) => {
+                return (
+                    last_good.unwrap_or_else(|| EngineCatalog::authoritative(configured)),
+                    false,
+                );
+            }
+            Ok(_) | Err(ProbeError::Failed(_)) => {}
         }
     }
     // A missing/broken CLI is not an error here: the picker falls back to
     // provider-config models.
-    EngineCatalog::authoritative(configured)
+    (
+        last_good.unwrap_or_else(|| EngineCatalog::authoritative(configured)),
+        false,
+    )
+}
+
+async fn pi_family_catalog(
+    engine: &str,
+    bin: &str,
+    last_good: Option<EngineCatalog>,
+) -> (EngineCatalog, bool) {
+    let configured = pi::configured_models(engine).unwrap_or_default();
+    pi_family_catalog_with(configured, last_good, |stage| async move {
+        match stage {
+            PiCatalogStage::ModelsJson => pi::run_models_json(bin).await,
+            PiCatalogStage::ListModelsNoExtensions => {
+                pi::run_list_models(bin, &["--no-extensions"]).await
+            }
+            PiCatalogStage::ListModelsBare => pi::run_list_models(bin, &[]).await,
+        }
+    })
+    .await
 }
 
 /// Top-level `key = "…"` only: stop at the first `[table]` header so a
@@ -637,5 +897,130 @@ model = \"must-not-leak\"
             .map(|m| m.id)
             .collect();
         assert_eq!(ids, vec!["a", "b"]);
+    }
+
+    #[test]
+    fn local_catalog_cache_reuses_within_ttl_and_invalidates_on_bin_change() {
+        let engine = "__test_local_cache_engine__";
+        let catalog = EngineCatalog::authoritative(vec![EngineModel {
+            id: "m1".to_string(),
+            name: None,
+            description: None,
+            provider: "p".to_string(),
+            context_window: None,
+        }]);
+        write_cached_local_catalog(engine, "/bin/v1".to_string(), &catalog);
+        let hit = read_cached_local_catalog(engine, "/bin/v1").expect("cache hit");
+        assert_eq!(hit.models.len(), 1);
+        assert_eq!(hit.models[0].id, "m1");
+        assert!(read_cached_local_catalog(engine, "/bin/v2").is_none());
+    }
+
+    #[tokio::test]
+    async fn local_catalog_single_flight_coalesces_concurrent_misses() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::sync::Arc;
+        let engine = "__test_single_flight_omp__";
+        let calls = Arc::new(AtomicUsize::new(0));
+        let barrier = Arc::new(tokio::sync::Barrier::new(4));
+
+        let mut handles = Vec::new();
+        for _ in 0..4 {
+            let calls = Arc::clone(&calls);
+            let barrier = Arc::clone(&barrier);
+            handles.push(tokio::spawn(async move {
+                barrier.wait().await;
+                resolve_local_catalog_with(engine, "/bin/omp", false, |_last_good| async move {
+                    calls.fetch_add(1, Ordering::SeqCst);
+                    tokio::time::sleep(std::time::Duration::from_millis(40)).await;
+                    Ok((
+                        EngineCatalog::authoritative(vec![EngineModel {
+                            id: "p/m1".to_string(),
+                            name: None,
+                            description: None,
+                            provider: "p".to_string(),
+                            context_window: None,
+                        }]),
+                        LOCAL_CATALOG_TTL,
+                        true,
+                    ))
+                })
+                .await
+                .unwrap()
+            }));
+        }
+        for handle in handles {
+            let catalog = handle.await.unwrap();
+            assert_eq!(catalog.models.len(), 1);
+            assert_eq!(catalog.models[0].id, "p/m1");
+        }
+        assert_eq!(
+            calls.load(Ordering::SeqCst),
+            1,
+            "concurrent misses must coalesce into a single CLI probe"
+        );
+    }
+
+    #[tokio::test]
+    async fn pi_family_catalog_stops_immediately_on_timeout_and_preserves_last_good() {
+        let mut stages_called = Vec::new();
+        let last_good = EngineCatalog::authoritative(vec![EngineModel {
+            id: "cached/model".to_string(),
+            name: None,
+            description: None,
+            provider: "cached".to_string(),
+            context_window: None,
+        }]);
+        let (catalog, probed) = pi_family_catalog_with(Vec::new(), Some(last_good), |stage| {
+            let name = match stage {
+                PiCatalogStage::ModelsJson => "models-json",
+                PiCatalogStage::ListModelsNoExtensions => "list-no-ext",
+                PiCatalogStage::ListModelsBare => "list-bare",
+            };
+            stages_called.push(name);
+            async move { Err(ProbeError::Timeout("omp models --json timed out".into())) }
+        })
+        .await;
+        assert!(!probed);
+        assert_eq!(
+            stages_called,
+            vec!["models-json"],
+            "a timeout must not chain fallback --list-models spawns"
+        );
+        assert_eq!(catalog.models.len(), 1);
+        assert_eq!(catalog.models[0].id, "cached/model");
+    }
+
+    #[tokio::test]
+    async fn pi_family_catalog_falls_back_on_non_timeout_failure() {
+        let mut stages_called = Vec::new();
+        let (catalog, probed) = pi_family_catalog_with(Vec::new(), None, |stage| {
+            let name = match stage {
+                PiCatalogStage::ModelsJson => "models-json",
+                PiCatalogStage::ListModelsNoExtensions => "list-no-ext",
+                PiCatalogStage::ListModelsBare => "list-bare",
+            };
+            stages_called.push(name);
+            async move {
+                match stage {
+                    PiCatalogStage::ModelsJson => {
+                        Err(ProbeError::Failed("unknown subcommand models".into()))
+                    }
+                    PiCatalogStage::ListModelsNoExtensions => Ok(vec![EngineModel {
+                        id: "legacy/m1".to_string(),
+                        name: None,
+                        description: None,
+                        provider: "legacy".to_string(),
+                        context_window: None,
+                    }]),
+                    PiCatalogStage::ListModelsBare => unreachable!("should have succeeded already"),
+                }
+            }
+        })
+        .await;
+        assert!(probed);
+        assert_eq!(stages_called, vec!["models-json", "list-no-ext"]);
+        assert_eq!(catalog.models.len(), 1);
+        assert_eq!(catalog.models[0].id, "legacy/m1");
     }
 }

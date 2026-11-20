@@ -95,7 +95,10 @@ export const useGitStore = create<GitStore>((set, get) => {
     diffView: null,
 
     openDiff: (workspacePath, target) => set({ diffView: { workspacePath, target } }),
-    closeDiff: () => set({ diffView: null }),
+    closeDiff: () => {
+      if (get().diffView === null) return;
+      set({ diffView: null });
+    },
     clearError: (workspacePath) =>
       set((s) => ({
         errorByWorkspace: { ...s.errorByWorkspace, [workspacePath]: null },

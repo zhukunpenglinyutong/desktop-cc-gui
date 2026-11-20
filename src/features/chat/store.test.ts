@@ -2005,3 +2005,30 @@ describe("workspace default engine", () => {
     expect(useChatStore.getState().active?.engine).toBe("codex");
   });
 });
+
+describe("selectSession tab-switch stability", () => {
+  it("preserves openTabs and stored tab references when switching between open tabs", async () => {
+    const tabA = { engine: "codex", sessionId: "s-a", workspacePath: "/ws" };
+    const tabB = { engine: "codex", sessionId: "s-b", workspacePath: "/ws" };
+    useChatStore.setState({
+      openTabs: [tabA, tabB],
+      active: tabA,
+      activeEngine: "codex",
+      restoredSessionKeys: { "codex/s-a": true, "codex/s-b": true },
+      bySession: {
+        "codex/s-a": {
+          ...EMPTY_SESSION,
+          messages: [{ seq: 1, role: "user", text: "hi A", ts: null }],
+        },
+        "codex/s-b": {
+          ...EMPTY_SESSION,
+          messages: [{ seq: 1, role: "user", text: "hi B", ts: null }],
+        },
+      },
+    });
+    const openTabsBefore = useChatStore.getState().openTabs;
+    await useChatStore.getState().selectSession("codex", "s-b", "/ws");
+    expect(useChatStore.getState().openTabs).toBe(openTabsBefore);
+    expect(useChatStore.getState().active).toBe(tabB);
+  });
+});

@@ -51,13 +51,21 @@ pub struct ChildEntry {
     pub plans: Arc<Mutex<HashMap<String, Value>>>,
 }
 
-/// Launch-time settings of a run parked for a background follow-up turn.
+/// Maximum number of idle-reusable CLI processes (OMP `rpc-ui`) kept warm
+/// concurrently across sessions. Capped at 1 because an OMP process that ran
+/// background workers/MCP can keep burning CPU while parked idle; evicting the
+/// previous idle session immediately prevents multi-process CPU starvation.
+pub(crate) const MAX_IDLE_REUSE_PROCESSES: usize = 1;
+/// Launch-time settings of a run parked for a follow-up or idle-reuse turn.
 /// A live process cannot accept new launch flags, so a send whose settings
 /// differ must not be written into it — it falls back to a fresh process.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub(crate) struct FollowupPrefs {
+    pub engine: String,
+    pub workspace: String,
     pub model: Option<String>,
     pub effort: Option<String>,
+    pub service_tier: Option<String>,
     pub permission: Option<String>,
     pub provider_id: Option<String>,
     pub memory_bot: Option<String>,
@@ -66,14 +74,24 @@ pub(crate) struct FollowupPrefs {
     /// computer-use send may continue it; any other send gets a fresh
     /// process, so the driver never outlives the send that opted in.
     pub computer_use: bool,
+    /// Engine config file fingerprint (OMP `models.yml` size + mtime): editing
+    /// models/providers invalidates the warm process so the next send reloads.
+    pub config_stamp: Option<(u64, Option<std::time::SystemTime>)>,
+    /// True when the run parks after every settled turn for session reuse
+    /// (OMP `rpc-ui`); false for Claude background-task parking.
+    pub idle_reuse: bool,
 }
-/// A settled run kept alive for the CLI's self-started follow-up turn.
+/// A settled run kept alive for a follow-up turn (Claude background task) or
+/// multi-turn session reuse (OMP `rpc-ui`).
 #[derive(Debug, Clone)]
 pub(crate) struct AwaitingFollowup {
     pub run_id: String,
     pub prefs: FollowupPrefs,
+    /// Flipped to `true` once `deliver_to_idle_followup` hands a new user turn
+    /// to this live process so an early EOF/kill still settles the UI cleanly.
+    pub claimed: Arc<std::sync::atomic::AtomicBool>,
+    pub parked_at: std::time::Instant,
 }
-
 #[derive(Default)]
 pub struct ProcessRegistry(
     pub Mutex<HashMap<String, ChildEntry>>,
@@ -112,16 +130,71 @@ pub(crate) fn active_run_count(map: &HashMap<String, ChildEntry>) -> usize {
 /// an evicted child leaks (no key routes an interrupt to it).
 impl ProcessRegistry {
     /// Atomically exclude existing/launching turns and new sends to this session.
-    pub(crate) fn begin_session_edit<'a>(&'a self, session_id: &'a str) -> Result<SessionEditGuard<'a>, String> {
-        let map = self.0.lock().map_err(|_| "native session process registry is unavailable".to_string())?;
-        if map.contains_key(session_id) {
-            return Err("native session cannot be edited while a turn is running or launching".into());
+    /// If the session only holds an idle-reuse warm process (no active turn),
+    /// evict that warm process first so session editing is not falsely blocked.
+    pub(crate) fn begin_session_edit<'a>(
+        &'a self,
+        session_id: &'a str,
+    ) -> Result<SessionEditGuard<'a>, String> {
+        let idle_evict = self
+            .2
+            .lock()
+            .ok()
+            .and_then(|mut parked| {
+                let is_idle_reuse = parked
+                    .get(session_id)
+                    .is_some_and(|waiting| waiting.prefs.idle_reuse);
+                is_idle_reuse.then(|| parked.remove(session_id)).flatten()
+            });
+        if let Some(evicted) = idle_evict {
+            self.evict_parked_run_sync(&evicted.run_id);
         }
-        let mut edits = self.3.lock().map_err(|_| "native session edit registry is unavailable".to_string())?;
+        let map = self
+            .0
+            .lock()
+            .map_err(|_| "native session process registry is unavailable".to_string())?;
+        if map.contains_key(session_id) {
+            return Err(
+                "native session cannot be edited while a turn is running or launching".into(),
+            );
+        }
+        let mut edits = self
+            .3
+            .lock()
+            .map_err(|_| "native session edit registry is unavailable".to_string())?;
         if !edits.insert(session_id.to_string()) {
             return Err("native session save is already in progress".into());
         }
-        Ok(SessionEditGuard { registry: self, session_id })
+        Ok(SessionEditGuard {
+            registry: self,
+            session_id,
+        })
+    }
+
+    /// Synchronously tear down a parked idle-reuse run and clear its registry
+    /// entries so callers like `begin_session_edit` see a clean map immediately.
+    fn evict_parked_run_sync(&self, run_id: &str) {
+        let removed: Vec<ChildEntry> = match self.0.lock() {
+            Ok(mut map) => {
+                let keys: Vec<String> = map
+                    .iter()
+                    .filter(|(k, e)| k.as_str() == run_id || e.run_id == run_id)
+                    .map(|(k, _)| k.clone())
+                    .collect();
+                keys.into_iter().filter_map(|k| map.remove(&k)).collect()
+            }
+            Err(_) => Vec::new(),
+        };
+        let mut seen_pids = HashSet::new();
+        for entry in removed {
+            if !seen_pids.insert(entry.pid) {
+                continue;
+            }
+            Self::kill_entry(entry.child.as_ref(), entry.pid, &entry.killed);
+            if let Some(handle) = entry.reader_abort.get() {
+                handle.abort();
+            }
+        }
     }
 
     /// Call under the launch map lock, before inserting the run reservation.
@@ -206,13 +279,27 @@ impl ProcessRegistry {
     }
 
     /// Number of in-flight runs, ignoring the run-id/session-id alias
-    /// duplication. The macOS quit guard asks this before letting Cmd+Q /
+    /// duplication and idle-reuse warm processes (which already settled their
+    /// turns). The macOS quit guard asks this before letting Cmd+Q /
     /// AppleScript `quit` take the app down mid-turn.
     pub fn active_run_count(&self) -> usize {
-        match self.0.lock() {
-            Ok(map) => active_run_count(&map),
-            Err(poisoned) => active_run_count(&poisoned.into_inner()),
-        }
+        let idle_reuse: HashSet<String> = self
+            .2
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .values()
+            .filter(|waiting| waiting.prefs.idle_reuse)
+            .map(|waiting| waiting.run_id.clone())
+            .collect();
+        let map = self
+            .0
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        map.values()
+            .map(|entry| entry.run_id.as_str())
+            .filter(|run_id| !idle_reuse.contains(*run_id))
+            .collect::<HashSet<_>>()
+            .len()
     }
 
     /// The subset of `run_ids` still mid-turn. Matched on the entry's run
@@ -266,7 +353,11 @@ impl ProcessRegistry {
         handle
             .write_all(b"\n")
             .await
-            .map_err(|e| format!("write to the session's stdin: {e}"))
+            .map_err(|e| format!("write to the session's stdin: {e}"))?;
+        handle
+            .flush()
+            .await
+            .map_err(|e| format!("flush the session's stdin: {e}"))
     }
 
     /// Close a run's interactive stdin: the CLI treats EOF as the end of the
@@ -334,24 +425,75 @@ impl ProcessRegistry {
             .collect()
     }
 
-    /// Record that `run_id` settled its turn but still waits for the CLI's
-    /// follow-up turn on `session_id`, snapshotting its launch settings so a
-    /// later send can tell whether the live process still matches them.
+    /// Fast in-memory check for whether `session_id` currently has a parked
+    /// follow-up / idle-reuse process.
+    pub(crate) fn has_awaiting_followup(&self, session_id: &str) -> bool {
+        self.2
+            .lock()
+            .map(|map| map.contains_key(session_id))
+            .unwrap_or(false)
+    }
+
+    /// Record that `run_id` settled its turn but stays alive on `session_id`,
+    /// snapshotting its launch settings so a later send can tell whether the
+    /// live process still matches them. For `idle_reuse` runs, returns any
+    /// least-recently-used idle run ids evicted past `MAX_IDLE_REUSE_PROCESSES`
+    /// so the caller can close their stdin outside the lock.
     pub(crate) fn set_awaiting_followup(
         &self,
         session_id: &str,
         run_id: &str,
         prefs: FollowupPrefs,
-    ) {
+        claimed: Arc<std::sync::atomic::AtomicBool>,
+    ) -> Vec<String> {
+        let mut evicted = Vec::new();
         if let Ok(mut map) = self.2.lock() {
+            let is_idle_reuse = prefs.idle_reuse;
             map.insert(
                 session_id.to_string(),
                 AwaitingFollowup {
                     run_id: run_id.to_string(),
                     prefs,
+                    claimed,
+                    parked_at: std::time::Instant::now(),
                 },
             );
+            if is_idle_reuse {
+                while map.values().filter(|w| w.prefs.idle_reuse).count()
+                    > MAX_IDLE_REUSE_PROCESSES
+                {
+                    let oldest_key = map
+                        .iter()
+                        .filter(|(k, w)| w.prefs.idle_reuse && k.as_str() != session_id)
+                        .min_by_key(|(_, w)| w.parked_at)
+                        .map(|(k, _)| k.clone());
+                    let Some(key) = oldest_key else {
+                        break;
+                    };
+                    if let Some(removed) = map.remove(&key) {
+                        evicted.push(removed.run_id);
+                    }
+                }
+            }
         }
+        evicted
+    }
+
+    /// Atomically retire an `idle_reuse` entry on timeout if it has not been
+    /// claimed by a concurrent send. Returns `true` iff this call retired it.
+    pub(crate) fn retire_idle_followup(&self, run_id: &str) -> bool {
+        let Ok(mut map) = self.2.lock() else {
+            return false;
+        };
+        let key = map
+            .iter()
+            .find(|(_, w)| w.run_id == run_id && w.prefs.idle_reuse)
+            .map(|(k, _)| k.clone());
+        let Some(key) = key else {
+            return false;
+        };
+        map.remove(&key);
+        true
     }
 
     /// The run no longer waits (follow-up arrived, run settled or exited).
@@ -753,17 +895,10 @@ mod registry_tests {
     #[test]
     fn awaiting_followup_is_taken_once_per_session_and_cleared_by_run() {
         let registry = ProcessRegistry::default();
-        let prefs = || FollowupPrefs {
-            model: None,
-            effort: None,
-            permission: None,
-            provider_id: None,
-            memory_bot: None,
-            allowed_tools: None,
-            computer_use: false,
-        };
-        registry.set_awaiting_followup("s-1", "run-1", prefs());
-        registry.set_awaiting_followup("s-2", "run-2", prefs());
+        let prefs = FollowupPrefs::default;
+        let claimed = || Arc::new(std::sync::atomic::AtomicBool::new(false));
+        registry.set_awaiting_followup("s-1", "run-1", prefs(), claimed());
+        registry.set_awaiting_followup("s-2", "run-2", prefs(), claimed());
 
         assert_eq!(
             registry.take_awaiting_followup("s-1").map(|a| a.run_id).as_deref(),
@@ -1069,16 +1204,13 @@ mod registry_tests {
         assert_eq!(registry.live_run_ids(&asked), ["run-b"]);
         // Parked for a background follow-up: the process lives on, but its
         // turn already sent done — an observer that missed it must recover.
-        let prefs = FollowupPrefs {
-            model: None,
-            effort: None,
-            permission: None,
-            provider_id: None,
-            memory_bot: None,
-            allowed_tools: None,
-            computer_use: false,
-        };
-        registry.set_awaiting_followup("session-b", "run-b", prefs);
+        let prefs = FollowupPrefs::default();
+        registry.set_awaiting_followup(
+            "session-b",
+            "run-b",
+            prefs,
+            Arc::new(std::sync::atomic::AtomicBool::new(false)),
+        );
         assert!(registry.live_run_ids(&asked).is_empty());
         registry.clear_awaiting_followup("run-b");
         assert_eq!(registry.live_run_ids(&asked), ["run-b"]);
@@ -1181,5 +1313,63 @@ mod registry_tests {
         registry.insert("run-1".to_string(), stub_entry("run-1", 101));
         registry.remove_run_if_pid("run-1", 999);
         assert!(registry.get("run-1").is_some());
+    }
+
+    #[test]
+    fn idle_reuse_lru_evicts_oldest_and_excludes_from_active_run_count() {
+        let registry = ProcessRegistry::default();
+        let idle_prefs = || FollowupPrefs {
+            engine: "omp".to_string(),
+            workspace: "/tmp/ws".to_string(),
+            idle_reuse: true,
+            ..FollowupPrefs::default()
+        };
+        let claimed = || Arc::new(std::sync::atomic::AtomicBool::new(false));
+        for i in 1..=MAX_IDLE_REUSE_PROCESSES {
+            let run_id = format!("omp-run-{i}");
+            let sid = format!("omp-s-{i}");
+            registry.insert(run_id.clone(), stub_entry(&run_id, 100 + i as u32));
+            registry.insert_alias(sid.clone(), stub_entry(&run_id, 100 + i as u32));
+            let evicted = registry.set_awaiting_followup(&sid, &run_id, idle_prefs(), claimed());
+            assert!(evicted.is_empty());
+            // Guarantee monotonic timestamps across entries on coarse Windows clocks.
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
+        // Parked idle-reuse processes do not count as active turns for quit guard.
+        assert_eq!(registry.active_run_count(), 0);
+
+        // Adding one more past the cap evicts the oldest idle session.
+        let extra_run = format!("omp-run-{}", MAX_IDLE_REUSE_PROCESSES + 1);
+        let extra_sid = format!("omp-s-{}", MAX_IDLE_REUSE_PROCESSES + 1);
+        registry.insert(extra_run.clone(), stub_entry(&extra_run, 200));
+        let evicted =
+            registry.set_awaiting_followup(&extra_sid, &extra_run, idle_prefs(), claimed());
+        assert_eq!(evicted, vec!["omp-run-1"]);
+        assert!(!registry.has_awaiting_followup("omp-s-1"));
+        assert!(registry.has_awaiting_followup(&extra_sid));
+    }
+
+    #[test]
+    fn begin_session_edit_evicts_idle_reuse_process_instead_of_blocking() {
+        let registry = ProcessRegistry::default();
+        registry.insert("omp-idle".into(), stub_entry("omp-idle", 301));
+        registry.insert_alias("omp-session".into(), stub_entry("omp-idle", 301));
+        registry.set_awaiting_followup(
+            "omp-session",
+            "omp-idle",
+            FollowupPrefs {
+                engine: "omp".to_string(),
+                workspace: "/tmp/ws".to_string(),
+                idle_reuse: true,
+                ..FollowupPrefs::default()
+            },
+            Arc::new(std::sync::atomic::AtomicBool::new(false)),
+        );
+        let guard = registry
+            .begin_session_edit("omp-session")
+            .expect("idle-reuse warm process should be evicted rather than blocking edit");
+        assert!(!registry.has_awaiting_followup("omp-session"));
+        assert!(registry.get("omp-session").is_none());
+        drop(guard);
     }
 }

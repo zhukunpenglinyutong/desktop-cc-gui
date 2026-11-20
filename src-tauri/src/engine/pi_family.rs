@@ -407,6 +407,45 @@ pub(crate) fn acp_plan_requested(req: &SendRequest) -> bool {
     req.permission.as_deref() == Some("plan")
 }
 
+/// OMP `models.yml` 文件指纹（大小 + mtime）：用于判断是否可以安全复用空闲泊车的
+/// `omp --mode rpc-ui` 进程——用户修改了渠道/密钥/模型配置后自动触发重启加载新配置。
+pub(crate) fn omp_models_config_stamp() -> Option<(u64, Option<std::time::SystemTime>)> {
+    let path = super::pi_family_auth::agent_dir("omp").ok()?.join("models.yml");
+    let meta = std::fs::metadata(path).ok()?;
+    Some((meta.len(), meta.modified().ok()))
+}
+
+/// 构造 OMP `rpc-ui` 单轮请求帧（`prompt` 或原生 `compact`）：首次启动与空闲复用
+/// 共用同一编码，避免两处漂移。
+pub(crate) fn omp_rpc_turn_line(
+    prompt: &str,
+    image_paths: &[String],
+    workspace: &std::path::Path,
+    native_compact: bool,
+) -> Result<String, String> {
+    if native_compact && image_paths.is_empty() {
+        return Ok(serde_json::json!({ "id": "ccgui-compact", "type": "compact" }).to_string());
+    }
+    let mut req = serde_json::json!({
+        "id": "ccgui-prompt",
+        "type": "prompt",
+        "message": prompt,
+    });
+    if !image_paths.is_empty() {
+        let mut payloads = Vec::new();
+        for raw in image_paths {
+            let (mime, data) = images::load_image(raw, workspace)?;
+            payloads.push(serde_json::json!({
+                "type": "image",
+                "data": data,
+                "mimeType": mime,
+            }));
+        }
+        req["images"] = Value::Array(payloads);
+    }
+    Ok(req.to_string())
+}
+
 /// ACP 计划会话的启动命令：`omp --mode acp`（src/cli/flag-tables.ts:
 /// 123-127；`omp acp` 子命令等价，src/commands/acp.ts:30-33）。子进程由
 /// omp_acp 驱动 spawn，stdin/stdout 是 JSON-RPC 管道，所以这里没有
@@ -700,28 +739,12 @@ impl Engine for PiFamilyEngine {
             // OMP 将 /compact 作为本地 RPC 命令处理。用普通 prompt 会得到
             // agentInvoked:false 和 command_output,但不会发 agent_end,宿主因此
             // 永远等不到回合终态。原生命令的 response 在压缩完成后才返回。
-            let request = if is_omp_compact {
-                serde_json::json!({ "id": "ccgui-compact", "type": "compact" })
-            } else {
-                let mut prompt = serde_json::json!({
-                    "id": "ccgui-prompt",
-                    "type": "prompt",
-                    "message": req.prompt,
-                });
-                if !req.images.is_empty() {
-                    let mut payloads = Vec::new();
-                    for raw in &req.images {
-                        let (mime, data) = images::load_image(raw, &req.workspace)?;
-                        payloads.push(serde_json::json!({
-                            "type": "image",
-                            "data": data,
-                            "mimeType": mime,
-                        }));
-                    }
-                    prompt["images"] = Value::Array(payloads);
-                }
-                prompt
-            };
+            let request_line = omp_rpc_turn_line(
+                &req.prompt,
+                &req.images,
+                &req.workspace,
+                is_omp_compact,
+            )?;
             // v2 分片协商是 omp 的 fork 自加;pi 只有 v1(超大帧截断降级,
             // 不影响会话)。json 模式的 session 头帧在 rpc 没有等价物,
             // get_state 响应带回 sessionId。
@@ -738,7 +761,7 @@ impl Engine for PiFamilyEngine {
                 lines.push(serde_json::json!({"id": "ccgui-effort", "type": "set_thinking_level", "level": effort}).to_string());
             }
             lines.push(serde_json::json!({"id": "ccgui-state", "type": "get_state"}).to_string());
-            lines.push(request.to_string());
+            lines.push(request_line);
             let payload = lines.join("\n");
             // omp 没有 --mcp-config 启动参数(MCP 只从固定文件发现):
             // 注入工作区 .omp/mcp.json,回合结束按引用计数恢复,崩溃残留
