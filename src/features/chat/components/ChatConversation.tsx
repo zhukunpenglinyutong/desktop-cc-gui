@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useMemo, useState } from "react";
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 import { useShallow } from "zustand/react/shallow";
@@ -21,6 +21,7 @@ import {
 } from "../store";
 
 import { MessageTimeline } from "./MessageTimeline";
+import { clearSessionScrollSnapshot } from "./use-scroll-follow";
 import { ConversationFooter } from "./ConversationFooter";
 import { useComposerActions } from "./use-composer-actions";
 import { filterEngineOptions, orderEngineOptions } from "./engine-options";
@@ -45,9 +46,9 @@ import { useConversationMode } from "@/features/plugins/conversation/use-convers
 const EMPTY_QUEUE: QueuedMessage[] = [];
 
 /** Keep the most recently visited session timelines mounted (hidden via
- *  visibility:hidden + contain:strict) so switching between recent tabs skips
- *  full DOM teardown/Markdown reparse and preserves scroll position. Closed
- *  tabs and entries beyond this cap unmount immediately to bound RAM. */
+ *  visibility:hidden on fixed absolute layers) so switching between recent tabs
+ *  skips full DOM teardown/Markdown reparse and preserves native scrollTop.
+ *  Closed tabs and entries beyond this cap unmount immediately to bound RAM. */
 const MAX_KEPT_TIMELINES = 4;
 
 interface KeptTimelineEntry {
@@ -77,10 +78,9 @@ const KeptSessionTimeline = memo(function KeptSessionTimeline({
     <SessionScope session={entry.session}>
       <div
         aria-hidden={!visible}
-        style={visible ? undefined : { contain: "strict" }}
         className={
           visible
-            ? "relative flex min-h-0 flex-1 flex-col"
+            ? "absolute inset-0 flex flex-col"
             : "invisible pointer-events-none absolute inset-0 flex flex-col"
         }
       >
@@ -89,13 +89,18 @@ const KeptSessionTimeline = memo(function KeptSessionTimeline({
           streaming={session.streaming}
           onLoadEarlier={handleLoadEarlier}
           workspacePath={entry.session.workspacePath}
+          scrollMemoryKey={entry.key}
+          visible={visible}
         />
       </div>
     </SessionScope>
   );
 });
 
-/** LRU stack of kept session timelines inside one conversation pane. */
+/** LRU stack of kept session timelines inside one conversation pane.
+ *  DOM insertion order stays strictly monotonic — existing items are never
+ *  reordered on activation, because React translates child reordering into
+ *  appendChild/insertBefore which resets scrollTop to 0 in browsers. */
 const SessionTimeline = memo(function SessionTimeline({
   active,
   activeKey,
@@ -106,12 +111,14 @@ const SessionTimeline = memo(function SessionTimeline({
   onLoadEarlier: (sessionKey: string) => void;
 }) {
   const openTabs = useChatStore((s) => s.openTabs);
+  const lruTickRef = useRef(0);
+  const lruRankRef = useRef(new Map<string, number>());
   const [kept, setKept] = useState<KeptTimelineEntry[]>(() =>
     active && activeKey ? [{ key: activeKey, session: active }] : [],
   );
 
-  // Reconcile the LRU during render so the newly activated tab mounts in the
-  // same commit with no blank frame, and closed tabs drop immediately.
+  // Reconcile kept entries during render so newly activated tabs mount in the
+  // same commit with no blank frame, while preserving relative DOM order.
   let nextKept = kept;
   const openKeys = new Set(
     openTabs.map((t) => sessionKey(t.engine, t.sessionId, t.workspacePath)),
@@ -122,24 +129,45 @@ const SessionTimeline = memo(function SessionTimeline({
   if (filtered.length !== kept.length) nextKept = filtered;
 
   if (active && activeKey) {
-    const idx = nextKept.findIndex((entry) => entry.key === activeKey);
-    if (idx < 0) {
-      const added = [...nextKept, { key: activeKey, session: active }];
-      nextKept =
-        added.length > MAX_KEPT_TIMELINES
-          ? added.slice(added.length - MAX_KEPT_TIMELINES)
-          : added;
-    } else if (idx !== nextKept.length - 1) {
-      // Move the active tab to the MRU tail without swapping its entry object
-      // when its identity is unchanged, keeping React.memo intact.
-      const current = nextKept[idx];
-      nextKept = [...nextKept.slice(0, idx), ...nextKept.slice(idx + 1), current];
+    const exists = nextKept.some((entry) => entry.key === activeKey);
+    if (!exists) {
+      let base = nextKept;
+      if (base.length >= MAX_KEPT_TIMELINES) {
+        let victimIdx = 0;
+        let victimRank = Infinity;
+        for (let i = 0; i < base.length; i += 1) {
+          const rank = lruRankRef.current.get(base[i].key) ?? 0;
+          if (rank < victimRank) {
+            victimRank = rank;
+            victimIdx = i;
+          }
+        }
+        base = [...base.slice(0, victimIdx), ...base.slice(victimIdx + 1)];
+      }
+      nextKept = [...base, { key: activeKey, session: active }];
     }
   }
 
   if (nextKept !== kept) {
     setKept(nextKept);
   }
+
+  // Record LRU recency for eviction and drop scroll snapshots only when a tab
+  // is actually closed (LRU-evicted open tabs retain their scroll position).
+  useLayoutEffect(() => {
+    if (activeKey) {
+      lruRankRef.current.set(activeKey, ++lruTickRef.current);
+    }
+    const open = new Set(
+      openTabs.map((t) => sessionKey(t.engine, t.sessionId, t.workspacePath)),
+    );
+    for (const k of Array.from(lruRankRef.current.keys())) {
+      if (k !== activeKey && !open.has(k)) {
+        lruRankRef.current.delete(k);
+        clearSessionScrollSnapshot(k);
+      }
+    }
+  }, [activeKey, openTabs]);
 
   if (nextKept.length === 0) return null;
   return (

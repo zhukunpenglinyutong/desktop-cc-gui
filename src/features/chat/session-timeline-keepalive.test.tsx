@@ -123,6 +123,45 @@ describe("SessionTimeline keep-alive across tab switches", () => {
     container.remove();
   });
 
+  it("never reorders or reparents kept timeline DOM nodes when switching back between tabs", () => {
+    const [t1, t2, t3, t4, t5] = useChatStore.getState().openTabs;
+
+    render(t1);
+    render(t2);
+    const node1 = container.querySelector('[data-testid="timeline-s-1"]')!.parentElement!;
+    const node2 = container.querySelector('[data-testid="timeline-s-2"]')!.parentElement!;
+    const host = node1.parentElement!;
+    expect(Array.from(host.children)).toEqual([node1, node2]);
+    expect(node1.style.contain).toBe("");
+    expect(node2.style.contain).toBe("");
+
+    // Spy on DOM reparenting: moving an existing node with appendChild or
+    // insertBefore resets scrollTop to 0 in browsers.
+    const appendSpy = vi.spyOn(host, "appendChild");
+    const insertSpy = vi.spyOn(host, "insertBefore");
+
+    // Switching back and forth between t1 and t2 must not move either DOM node.
+    render(t1);
+    render(t2);
+    render(t1);
+    expect(appendSpy).not.toHaveBeenCalled();
+    expect(insertSpy).not.toHaveBeenCalled();
+    expect(Array.from(host.children)).toEqual([node1, node2]);
+
+    // Evicting the LRU tab (t2) on the 5th tab must keep surviving nodes in place.
+    render(t3);
+    render(t4);
+    const node3 = container.querySelector('[data-testid="timeline-s-3"]')!.parentElement!;
+    const node4 = container.querySelector('[data-testid="timeline-s-4"]')!.parentElement!;
+    appendSpy.mockClear();
+    insertSpy.mockClear();
+    render(t5);
+    const node5 = container.querySelector('[data-testid="timeline-s-5"]')!.parentElement!;
+    expect(Array.from(host.children)).toEqual([node1, node3, node4, node5]);
+    expect(appendSpy.mock.calls.map(([child]) => child)).toEqual([node5]);
+    expect(insertSpy).not.toHaveBeenCalled();
+  });
+
   it("keeps recent timelines mounted when switching back and evicts beyond cap or on tab close", () => {
     const [t1, t2, t3, t4, t5] = useChatStore.getState().openTabs;
 

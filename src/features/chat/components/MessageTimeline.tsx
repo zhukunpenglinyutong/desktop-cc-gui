@@ -1,6 +1,6 @@
 import { parseTextReferenceLocation } from "@/features/files/text-reference";
 import { joinPath, useFilesStore } from "@/features/files/store";
-import { Fragment, lazy, memo, Suspense, useCallback, useEffect, useMemo, useRef, useState, type MutableRefObject, type RefObject } from "react";
+import { Fragment, lazy, memo, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type MutableRefObject, type RefObject } from "react";
 import { useVirtualizer, type Virtualizer } from "@tanstack/react-virtual";
 import { useTranslation } from "react-i18next";
 import Copy from "lucide-react/dist/esm/icons/copy";
@@ -34,7 +34,13 @@ import { modelDisplayName } from "@/features/chat/model-display-name";
 import { ProcessDisclosure, type ProcessSearchTarget } from "./ProcessDisclosure";
 import { ResponseCheckBadge } from "./response-check-badge";
 import { CollapsibleMessage } from "./CollapsibleMessage";
-import { useScrollFollow, useTailPin } from "./use-scroll-follow";
+import {
+  readSessionScrollSnapshot,
+  useScrollFollow,
+  useTailPin,
+  writeSessionScrollSnapshot,
+  type SessionScrollSnapshot,
+} from "./use-scroll-follow";
 import { ScrollControl } from "./ScrollControl";
 import { pluginIdFromRegistryKey, timelineRowRegistry, useRegistry } from "@ccgui/plugin-sdk";
 import { PluginBoundary } from "@/features/plugins/boundary/PluginBoundary";
@@ -981,13 +987,18 @@ export const MessageTimeline = memo(function MessageTimeline({
   streaming,
   onLoadEarlier,
   workspacePath,
+  scrollMemoryKey,
+  visible = true,
 }: {
   session: SessionState;
   streaming: boolean;
   onLoadEarlier: () => void;
   workspacePath: string;
+  /** Optional key for preserving scroll position across keep-alive hide/eviction. */
+  scrollMemoryKey?: string;
+  /** Whether this timeline is the active visible tab inside a keep-alive stack. */
+  visible?: boolean;
 }) {
-
   const { t } = useTranslation();
   const thinkingAutoCollapse = useChatStore((s) => s.thinkingAutoCollapse);
   const wideLayout = useChatStore((s) => s.wideLayout);
@@ -1083,21 +1094,38 @@ export const MessageTimeline = memo(function MessageTimeline({
   // A compaction keeps it mounted even between sends, so the line does not
   // blink out in the gap between the compact turn and the resume turn.
   const count = rows.length + (streaming || session.compaction ? 1 : 0);
+  const [initialSnapshot] = useState(() => readSessionScrollSnapshot(scrollMemoryKey));
+  const restoredScrollTop =
+    initialSnapshot && (!initialSnapshot.atBottom || initialSnapshot.userPaused)
+      ? initialSnapshot.scrollTop
+      : null;
 
   const virtualizer = useVirtualizer({
     count,
     getScrollElement: () => scrollRef.current,
     estimateSize: () => 160,
     overscan: 4,
-    // Start near the estimated tail on cold mounts so the first commit renders
-    // the latest rows instead of parsing the oldest 0..N rows only for
-    // useTailPin to discard them on the next layout pass.
-    initialOffset: () => (count > 0 ? count * 160 : 0),
+    // Start near the saved reading position (after LRU eviction) or near the
+    // estimated tail on cold mounts so the first commit avoids parsing the
+    // oldest rows only for useTailPin to discard them.
+    initialOffset: () =>
+      restoredScrollTop !== null
+        ? restoredScrollTop
+        : count > 0
+          ? Math.max(0, count * 160 - 800)
+          : 0,
     getItemKey: (index) =>
       index < rows.length ? rowKey(rows[index]) : "streaming-tail",
   });
 
-  const { atBottomRef, userPausedRef, isFollowing, scrollToBottom, scrollToEdge } = useScrollFollow({ scrollRef });
+  const {
+    atBottomRef,
+    userPausedRef,
+    isFollowing,
+    scrollToBottom,
+    restoreScrollTop,
+    scrollToEdge,
+  } = useScrollFollow({ scrollRef, initialSnapshot });
   const {
     searchOpen,
     setSearchOpen,
@@ -1125,7 +1153,75 @@ export const MessageTimeline = memo(function MessageTimeline({
     atBottomRef,
     userPausedRef,
   });
-  useTailPin({ scrollRef, count, items, streaming, isFollowing, scrollToBottom });
+  useTailPin({
+    scrollRef,
+    count,
+    items,
+    streaming,
+    isFollowing,
+    scrollToBottom,
+    restoreScrollTop,
+    initialScrollTop: restoredScrollTop,
+  });
+
+  // Snapshot scroll state on keep-alive hide/unmount and reconcile on reveal so
+  // returning to a tab always lands where the user left it (at the tail if they
+  // were following, or at their exact historical offset if they scrolled up).
+  const hiddenSnapshotRef = useRef<SessionScrollSnapshot | null>(null);
+  const prevVisibleRef = useRef(visible);
+  const visibleRef = useRef(visible);
+  visibleRef.current = visible;
+
+  useLayoutEffect(() => {
+    const prev = prevVisibleRef.current;
+    prevVisibleRef.current = visible;
+    const el = scrollRef.current;
+    if (!el || prev === visible) return;
+    if (!visible) {
+      const snap: SessionScrollSnapshot = {
+        scrollTop: el.scrollTop,
+        atBottom: atBottomRef.current,
+        userPaused: userPausedRef.current,
+      };
+      hiddenSnapshotRef.current = snap;
+      if (scrollMemoryKey) writeSessionScrollSnapshot(scrollMemoryKey, snap);
+      return;
+    }
+    if (isFollowing()) {
+      scrollToBottom();
+    } else if (
+      hiddenSnapshotRef.current &&
+      el.scrollTop !== hiddenSnapshotRef.current.scrollTop
+    ) {
+      restoreScrollTop(hiddenSnapshotRef.current.scrollTop);
+    }
+  }, [
+    visible,
+    scrollMemoryKey,
+    atBottomRef,
+    userPausedRef,
+    isFollowing,
+    scrollToBottom,
+    restoreScrollTop,
+  ]);
+
+  useLayoutEffect(() => {
+    if (!scrollMemoryKey) return;
+    return () => {
+      const el = scrollRef.current;
+      const snap =
+        !visibleRef.current && hiddenSnapshotRef.current
+          ? hiddenSnapshotRef.current
+          : el
+            ? {
+                scrollTop: el.scrollTop,
+                atBottom: atBottomRef.current,
+                userPaused: userPausedRef.current,
+              }
+            : null;
+      if (snap) writeSessionScrollSnapshot(scrollMemoryKey, snap);
+    };
+  }, [scrollMemoryKey, atBottomRef, userPausedRef]);
   useLoadEarlier({
     scrollRef,
     virtualizer,

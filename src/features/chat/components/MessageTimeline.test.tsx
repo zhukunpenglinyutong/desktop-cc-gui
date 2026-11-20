@@ -4,6 +4,10 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { formatDuration } from "./format-duration";
 import { MessageRow, MessageTimeline, resolveForkAnchors } from "./MessageTimeline";
+import {
+  clearSessionScrollSnapshot,
+  resetSessionScrollSnapshots,
+} from "./use-scroll-follow";
 import { buildBotBlock } from "./agent-block";
 import { useChatStore } from "../store";
 import { useBotStore } from "@/features/bots/bot-store";
@@ -1104,5 +1108,89 @@ describe("process run fold timing", () => {
       ),
     ).toEqual(["false", "true"]);
     expect(container.textContent).toContain("第二轮分析");
+  });
+});
+
+describe("scroll position preservation across tab switches", () => {
+  let container: HTMLDivElement;
+  let root: Root;
+
+  beforeEach(() => {
+    resetSessionScrollSnapshots();
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+  });
+
+  afterEach(() => {
+    act(() => root.unmount());
+    container.remove();
+    resetSessionScrollSnapshots();
+  });
+
+  const makeMessages = (count: number): Message[] =>
+    Array.from({ length: count }, (_, i) => ({
+      seq: i + 1,
+      role: i % 2 === 0 ? "user" : "assistant",
+      text: `message ${i + 1}`,
+      ts: null,
+    }));
+
+  function configureScrollBox(el: HTMLDivElement, scrollHeight: number, clientHeight = 500) {
+    Object.defineProperty(el, "scrollHeight", { configurable: true, value: scrollHeight });
+    Object.defineProperty(el, "clientHeight", { configurable: true, value: clientHeight });
+  }
+
+  it("preserves a scrolled-up reading position across hide/reveal and LRU remount, and resets on tab close", async () => {
+    const key = "claude/s-scroll";
+    const session: SessionState = { ...EMPTY_SESSION, messages: makeMessages(20) };
+    const renderView = async (visible: boolean, nextSession = session) => {
+      await act(async () => {
+        root.render(
+          <MessageTimeline
+            session={nextSession}
+            streaming={false}
+            onLoadEarlier={() => {}}
+            workspacePath="/ws"
+            scrollMemoryKey={key}
+            visible={visible}
+          />,
+        );
+      });
+    };
+
+    await renderView(true);
+    const scroller = container.querySelector<HTMLDivElement>(".overflow-y-auto")!;
+    configureScrollBox(scroller, 3000, 500);
+
+    // User scrolls up away from the tail to y = 420.
+    await act(async () => {
+      scroller.dispatchEvent(new WheelEvent("wheel", { deltaY: -120, bubbles: true }));
+      scroller.scrollTop = 420;
+    });
+
+    // Hide tab (switch away), simulate an external browser reset to 0 while hidden, then reveal.
+    await renderView(false);
+    scroller.scrollTop = 0;
+    await renderView(true);
+    expect(scroller.scrollTop).toBe(420);
+
+    // Unmount (simulates LRU eviction while the tab remains open) and remount: restores y = 420.
+    await act(async () => root.render(null));
+    await renderView(true);
+    const remountedScroller = container.querySelector<HTMLDivElement>(".overflow-y-auto")!;
+    configureScrollBox(remountedScroller, 3000, 500);
+    expect(remountedScroller.scrollTop).toBe(420);
+
+    // Explicitly closing the tab clears the snapshot, so reopening starts at the bottom.
+    await act(async () => root.render(null));
+    clearSessionScrollSnapshot(key);
+    await renderView(true);
+    const reopenedScroller = container.querySelector<HTMLDivElement>(".overflow-y-auto")!;
+    configureScrollBox(reopenedScroller, 3000, 500);
+    // Trigger reveal tail check after layout metrics exist.
+    await renderView(false);
+    await renderView(true);
+    expect(reopenedScroller.scrollTop).toBe(2500);
   });
 });
