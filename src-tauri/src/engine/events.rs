@@ -41,6 +41,11 @@ pub enum EngineEvent {
     /// `reader.rs` folds the spans into the next usage report's `genMs` wire
     /// field, which plugins use to compute generation speed.
     Generation { active: bool },
+    /// Activity marker (never streamed to the UI): a content block of the
+    /// model's response started (`Some(kind)`: "thinking" | "text" |
+    /// "tool_input" | "other") or stopped (`None`). Only the run-activity
+    /// panel reads it — see `engine/activity.rs`.
+    Block { kind: Option<&'static str> },
     /// Engine-reported error.
     Error(String),
     /// Non-terminal engine notice (e.g. an upstream 429 the CLI is

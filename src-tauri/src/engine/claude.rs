@@ -790,7 +790,10 @@ fn format_api_retry(value: &Value) -> String {
         .map(str::trim)
         .filter(|e| !e.is_empty() && *e != "unknown");
     let mut msg = match value.get("error_status").and_then(Value::as_u64) {
-        Some(code) => format!("API error (HTTP {code})"),
+        Some(code) => match detail {
+            Some(detail) => format!("API error (HTTP {code}: {detail})"),
+            None => format!("API error (HTTP {code})"),
+        },
         None => match detail {
             Some(detail) => format!("API error: {detail}"),
             None => "API error".to_string(),
@@ -883,7 +886,19 @@ fn parse_content_block_start(
     let Some(block) = event.get("content_block") else {
         return;
     };
-    if block.get("type").and_then(Value::as_str) != Some("tool_use") {
+    let block_type = block.get("type").and_then(Value::as_str).unwrap_or("");
+    // Activity marker for the run-status panel: a thinking block can run for
+    // minutes without a single visible delta (omitted thinking display), and
+    // only its start tells the user the model is working rather than stalled.
+    out.push(EngineEvent::Block {
+        kind: Some(match block_type {
+            "thinking" | "redacted_thinking" => "thinking",
+            "text" => "text",
+            "tool_use" => "tool_input",
+            _ => "other",
+        }),
+    });
+    if block_type != "tool_use" {
         return;
     }
     let name = block
@@ -929,6 +944,7 @@ fn parse_content_block_stop(
     event: &Value,
     out: &mut Vec<EngineEvent>,
 ) {
+    out.push(EngineEvent::Block { kind: None });
     let Some(index) = event.get("index").and_then(Value::as_u64) else {
         return;
     };
@@ -1294,8 +1310,9 @@ mod tests {
         .to_string();
         let mut out = Vec::new();
         ClaudeEngine::new().parse_line(&line, &mut out);
-        assert_eq!(out.len(), 1);
-        match &out[0] {
+        assert_eq!(out.len(), 2);
+        assert!(matches!(&out[0], EngineEvent::Block { kind: Some("tool_input") }));
+        match &out[1] {
             EngineEvent::Message {
                 role,
                 text,
@@ -1341,11 +1358,12 @@ mod tests {
         let mut out = Vec::new();
         engine.parse_line(&start, &mut out);
         engine.parse_line(&delta, &mut out);
-        assert_eq!(out.len(), 1);
+        assert_eq!(out.len(), 2, "block marker + name-only tool row");
         out.clear();
         engine.parse_line(&stop, &mut out);
-        assert_eq!(out.len(), 1);
-        match &out[0] {
+        assert_eq!(out.len(), 2);
+        assert!(matches!(&out[0], EngineEvent::Block { kind: None }));
+        match &out[1] {
             EngineEvent::Message {
                 text,
                 path,
@@ -1538,7 +1556,7 @@ mod tests {
     }
 
     #[test]
-    fn text_block_start_emits_nothing() {
+    fn text_block_start_emits_only_the_activity_marker() {
         let line = serde_json::json!({
             "type": "stream_event",
             "event": {
@@ -1550,7 +1568,26 @@ mod tests {
         .to_string();
         let mut out = Vec::new();
         ClaudeEngine::new().parse_line(&line, &mut out);
-        assert!(out.is_empty());
+        // No timeline content, only the run-activity marker.
+        assert_eq!(out.len(), 1);
+        assert!(matches!(&out[0], EngineEvent::Block { kind: Some("text") }));
+    }
+
+    #[test]
+    fn thinking_block_start_marks_silent_thinking() {
+        let line = serde_json::json!({
+            "type": "stream_event",
+            "event": {
+                "type": "content_block_start",
+                "index": 0,
+                "content_block": { "type": "thinking", "thinking": "" }
+            }
+        })
+        .to_string();
+        let mut out = Vec::new();
+        ClaudeEngine::new().parse_line(&line, &mut out);
+        assert_eq!(out.len(), 1);
+        assert!(matches!(&out[0], EngineEvent::Block { kind: Some("thinking") }));
     }
 
     #[test]
