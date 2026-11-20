@@ -1,5 +1,5 @@
 import { clearSelectedBot, selectSelectedBot } from "@/features/bots/selected-bot";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ipc, type ForkPlan, type SessionMeta } from "@/lib/ipc";
 import {
   pluginBus,
@@ -10,6 +10,7 @@ import {
 import { setPluginSessionEffort, useChatStore } from "./store";
 import { OPEN_TABS_KEY } from "./store/persistence";
 import { EMPTY_SESSION } from "./store/stream";
+import { listenSessionsChanged } from "@/lib/events";
 import { handleEngineEvents, type EngineEventDeps } from "./store/engine-events";
 import { registerSessionHooks, registerTurnHooks } from "@/features/plugins/runtime/hooks";
 import { startPluginChatRun, interruptPluginChatRun } from "@/features/plugins/runtime/session-run-bridge";
@@ -58,6 +59,128 @@ vi.mock("@/lib/events", () => ({
 }));
 
 const WS = "/tmp/ws";
+
+describe("startup history synchronization", () => {
+  beforeEach(() => {
+    resetStore();
+    vi.mocked(ipc.getAppSettings).mockClear();
+    vi.mocked(listenSessionsChanged).mockClear();
+    useChatStore.setState({ workspaces: [], sessions: [], engines: [], actionError: null });
+  });
+
+  afterEach(() => {
+    vi.mocked(ipc.listWorkspaces).mockResolvedValue([]);
+    vi.mocked(ipc.listSessions).mockResolvedValue([]);
+  });
+
+  it("keeps scan results arriving while startup settings are loading", async () => {
+    const settings = Promise.withResolvers<Awaited<ReturnType<typeof ipc.getAppSettings>>>();
+    vi.mocked(ipc.getAppSettings).mockReturnValueOnce(settings.promise);
+    const workspace = { id: "startup-ws", path: WS, name: "ws", lastOpenedAt: null, sortOrder: null, groupId: null };
+    const session = { engine: "codex", sessionId: "startup-session", workspacePath: WS } as SessionMeta;
+    vi.mocked(ipc.listWorkspaces).mockResolvedValue([]);
+    vi.mocked(ipc.listSessions).mockResolvedValue([]);
+    const init = useChatStore.getState().init();
+    await vi.waitFor(() => expect(ipc.getAppSettings).toHaveBeenCalled());
+    vi.mocked(ipc.listWorkspaces).mockResolvedValue([workspace]);
+    vi.mocked(ipc.listSessions).mockResolvedValue([session]);
+    const changed = vi.mocked(listenSessionsChanged).mock.calls.at(-1)![0];
+    changed();
+    await Promise.resolve();
+    settings.resolve({} as Awaited<ReturnType<typeof ipc.getAppSettings>>);
+    await init;
+    await vi.waitFor(() => {
+      expect(useChatStore.getState().workspaces).toEqual([workspace]);
+      expect(useChatStore.getState().sessions).toEqual([session]);
+    });
+  });
+
+  it("does not read the startup snapshot before the change listener is ready", async () => {
+    const listener = Promise.withResolvers<() => void>();
+    vi.mocked(listenSessionsChanged).mockReturnValueOnce(listener.promise);
+    const reads = vi.mocked(ipc.listSessions).mock.calls.length;
+    const init = useChatStore.getState().init();
+    await Promise.resolve();
+    try {
+      expect(ipc.listSessions).toHaveBeenCalledTimes(reads);
+    } finally {
+      listener.resolve(() => {});
+      await init;
+    }
+  });
+
+  it("refreshes workspace registration together with subsequent history changes", async () => {
+    await useChatStore.getState().init();
+    const workspace = { id: "restored-ws", path: WS, name: "ws", lastOpenedAt: null, sortOrder: null, groupId: null };
+    const session = { engine: "codex", sessionId: "restored-session", workspacePath: WS } as SessionMeta;
+    vi.mocked(ipc.listWorkspaces).mockResolvedValue([workspace]);
+    vi.mocked(ipc.listSessions).mockResolvedValue([session]);
+    vi.mocked(listenSessionsChanged).mock.calls.at(-1)![0]();
+    await vi.waitFor(() => {
+      expect(useChatStore.getState().workspaces).toEqual([workspace]);
+      expect(useChatStore.getState().sessions).toEqual([session]);
+    });
+  });
+
+  it("loads the catalog and restores tabs without waiting for CLI detection", async () => {
+    const detection = Promise.withResolvers<Awaited<ReturnType<typeof ipc.listEngines>>>();
+    vi.mocked(ipc.listEngines).mockReturnValueOnce(detection.promise);
+    const workspace = { id: "slow-cli-ws", path: WS, name: "ws", lastOpenedAt: null, sortOrder: null, groupId: null };
+    const session = { engine: "codex", sessionId: "slow-cli-session", workspacePath: WS } as SessionMeta;
+    vi.mocked(ipc.listWorkspaces).mockResolvedValue([workspace]);
+    vi.mocked(ipc.listSessions).mockResolvedValue([session]);
+    localStorage.setItem(OPEN_TABS_KEY, JSON.stringify([{ engine: "codex", sessionId: session.sessionId, workspacePath: WS }]));
+    let finished = false;
+    const init = useChatStore.getState().init().then(() => { finished = true; });
+    try {
+      await vi.waitFor(() => {
+        expect(useChatStore.getState().workspaces).toEqual([workspace]);
+        expect(useChatStore.getState().sessions).toEqual([session]);
+        expect(useChatStore.getState().openTabs).toHaveLength(1);
+        expect(finished).toBe(true);
+      });
+      // Detection must filter the current catalog, not overwrite it with the
+      // snapshot captured before a later history refresh.
+      const newer = { ...session, sessionId: "newer-session" };
+      useChatStore.setState({ sessions: [newer, { ...session, engine: "claude" }] });
+      detection.resolve([{ id: "codex", enabled: true, available: true, supportsImages: true, permissions: [] }]);
+      await vi.waitFor(() => expect(useChatStore.getState().sessions).toEqual([newer]));
+    } finally {
+      detection.resolve([]);
+      await init;
+    }
+  });
+
+  it("reports startup workspace read errors instead of silently presenting an empty catalog", async () => {
+    vi.mocked(ipc.listWorkspaces)
+      .mockRejectedValueOnce(new Error("database is locked"))
+      .mockRejectedValueOnce(new Error("database is locked"));
+    await useChatStore.getState().init();
+    expect(useChatStore.getState().actionError).toContain("database is locked");
+  });
+
+  it("keeps persisted history visible when CLI detection fails", async () => {
+    const workspace = { id: "failed-cli-ws", path: WS, name: "ws", lastOpenedAt: null, sortOrder: null, groupId: null };
+    const session = { engine: "codex", sessionId: "failed-cli-session", workspacePath: WS } as SessionMeta;
+    vi.mocked(ipc.listWorkspaces).mockResolvedValue([workspace]);
+    vi.mocked(ipc.listSessions).mockResolvedValue([session]);
+    vi.mocked(ipc.listEngines).mockRejectedValueOnce(new Error("engine detection task failed"));
+    await useChatStore.getState().init();
+    expect(useChatStore.getState().workspaces).toEqual([workspace]);
+    expect(useChatStore.getState().sessions).toEqual([session]);
+    expect(useChatStore.getState().actionError).toContain("engine detection task failed");
+  });
+
+  it("recovers from one transient startup workspace read failure without re-adding the folder", async () => {
+    const workspace = { id: "retry-ws", path: WS, name: "ws", lastOpenedAt: null, sortOrder: null, groupId: null };
+    vi.mocked(ipc.listWorkspaces)
+      .mockRejectedValueOnce(new Error("database is locked"))
+      .mockResolvedValueOnce([workspace]);
+    await useChatStore.getState().init();
+    expect(useChatStore.getState().workspaces).toEqual([workspace]);
+    expect(useChatStore.getState().actionError).toBeNull();
+  });
+});
 
 function resetStore() {
   localStorage.clear();
