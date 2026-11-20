@@ -833,15 +833,20 @@ export const RunStatusStrip = memo(function RunStatusStrip({
   const sessionStats = useMemo(() => buildEditLineStats(messages), [buildEditLineStats, messages]);
 
   // git line stats are the fallback for files the session recorded without an
-  // edit payload; force-refresh when the turn settles.
+  // edit payload; force-refresh only when THIS session's turn just settled
+  // (streaming: true -> false). Tab switches stay on the git store's 30s TTL.
   const gitStatus = useGitStore((s) =>
     workspacePath ? s.statusByWorkspace[workspacePath] : undefined,
   );
   const refreshGit = useGitStore((s) => s.refresh);
+  const prevTurnRef = useRef({ sessionKey, streaming });
   useEffect(() => {
+    const prev = prevTurnRef.current;
+    prevTurnRef.current = { sessionKey, streaming };
     if (!workspacePath || files.length === 0) return;
-    void refreshGit(workspacePath, !streaming).catch(() => undefined);
-  }, [workspacePath, streaming, files.length, refreshGit]);
+    const justSettled = prev.sessionKey === sessionKey && prev.streaming && !streaming;
+    void refreshGit(workspacePath, justSettled).catch(() => undefined);
+  }, [sessionKey, workspacePath, streaming, files.length, refreshGit]);
   const { perFile, total } = useMemo(
     () => collectFileStats(files, sessionStats, gitStatus, workspacePath),
     [files, sessionStats, gitStatus, workspacePath],

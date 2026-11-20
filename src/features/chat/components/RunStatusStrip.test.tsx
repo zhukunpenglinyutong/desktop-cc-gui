@@ -732,4 +732,53 @@ describe("RunStatusStrip session switch", () => {
     });
     expect(container.querySelector('[data-testid="run-status-strip"]')).toBeNull();
   });
+
+  it("keeps git refresh on TTL across tab switches and force-refreshes only when a turn settles", async () => {
+    const refresh = vi.fn(async () => {});
+    useGitStore.setState({ refresh });
+    useChatStore.setState({
+      bySession: {
+        A: {
+          messages: [msg(1, "user", "a"), msg(2, "tool", "edit_file", "/ws/src/a.ts")],
+          streaming: false,
+        } as never,
+        B: {
+          messages: [
+            msg(1, "user", "b"),
+            msg(2, "tool", "edit_file", "/ws/src/a.ts"),
+            msg(3, "tool", "edit_file", "/ws/src/b.ts"),
+          ],
+          streaming: false,
+        } as never,
+      },
+    });
+
+    await act(async () => {
+      root.render(<RunStatusStrip sessionKey="A" engine="pi" workspacePath={WS} />);
+    });
+    expect(refresh).toHaveBeenCalledWith(WS, false);
+    refresh.mockClear();
+
+    // Switching to another settled session in the same workspace with a
+    // different edited file count must not bypass the 30s TTL.
+    await act(async () => {
+      root.render(<RunStatusStrip sessionKey="B" engine="pi" workspacePath={WS} />);
+    });
+    expect(refresh).toHaveBeenCalledWith(WS, false);
+    refresh.mockClear();
+
+    // A running turn in B settling (streaming: true -> false) force-refreshes.
+    await act(async () => {
+      useChatStore.setState((s) => ({
+        bySession: { ...s.bySession, B: { ...s.bySession.B, streaming: true } },
+      }));
+    });
+    refresh.mockClear();
+    await act(async () => {
+      useChatStore.setState((s) => ({
+        bySession: { ...s.bySession, B: { ...s.bySession.B, streaming: false } },
+      }));
+    });
+    expect(refresh).toHaveBeenCalledWith(WS, true);
+  });
 });

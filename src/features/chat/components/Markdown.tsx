@@ -23,7 +23,7 @@ import {
 import { RevealText } from "./reveal-text";
 import { useLiveReveal } from "./use-live-reveal";
 import { createRevealPlan } from "./reveal-plan";
-import { createCachedHighlighter } from "./cached-highlight";
+import { createCachedHighlighter, sharedCachedHighlighter } from "./cached-highlight";
 import { splitMarkdown } from "./markdown-chunks";
 import { openExternal } from "@/lib/platform";
 import { useTranslation } from "react-i18next";
@@ -250,10 +250,14 @@ export default memo(function Markdown({
   const contributions = useRegistry(markdownRegistry);
   // External rehype plugins may mutate highlighted nodes in place. Avoid
   // sharing cached subtrees with that pipeline so mutations cannot accumulate.
-  const cachedHighlight = useMemo(() => createCachedHighlighter(undefined, {
-    entries: contributions.some(c => c.rehypePlugins?.length) ? 0 : 32,
-    characters: 256_000,
-  }), [contributions]);
+  const hasExternalRehype = contributions.some((c) => c.rehypePlugins?.length);
+  const cachedHighlight = useMemo(
+    () =>
+      hasExternalRehype
+        ? createCachedHighlighter(undefined, { entries: 0, characters: 0 })
+        : sharedCachedHighlighter,
+    [hasExternalRehype],
+  );
   // Historical rows need no reveal spans/subscriptions. Once a live row uses
   // them, retain its DOM shape on settle so selection does not jump.
   const [revealEnabled, setRevealEnabled] = useState(streaming);

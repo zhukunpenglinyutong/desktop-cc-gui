@@ -1,7 +1,7 @@
 "use client";
 
 import type { Ref } from "react";
-import { useCallback, useMemo, useState } from "react";
+import { memo, useCallback, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   ARCHIVED_SECTION_ID,
@@ -34,7 +34,7 @@ export type { AiChatRepo, AiChatRepoSection, AiChatThread, ThreadAction } from "
  * footer, context menus) lives in sidebar-chrome.tsx.
  */
 
-export function AiChatSidebar({
+export const AiChatSidebar = memo(function AiChatSidebar({
   repos = [],
   sections,
   archivedRepos = [],
@@ -244,4 +244,4 @@ export function AiChatSidebar({
       />
     </aside>
   );
-}
+});

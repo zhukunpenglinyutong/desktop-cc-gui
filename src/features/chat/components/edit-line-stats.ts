@@ -213,8 +213,12 @@ export function deriveEditLineStats(messages: Message[]): Map<string, EditLineSt
   return createEditLineStatsBuilder()(messages);
 }
 
+/** Shared per-message line-count cache across session switches: WeakMap keys
+ *  never retain evicted messages, so switching tabs reuses parsed edit args. */
+const sharedEditLineCache = new WeakMap<Message, EditLineStat | null>();
+
 export function createEditLineStatsBuilder() {
-  const cache = new WeakMap<Message, EditLineStat | null>();
+  const cache = sharedEditLineCache;
   let previous: Message[] = [];
   let stats = new Map<string, EditLineStat>();
   return (messages: Message[]): Map<string, EditLineStat> => {

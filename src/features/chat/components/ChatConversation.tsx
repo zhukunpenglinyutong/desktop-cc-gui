@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useMemo } from "react";
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 import { useShallow } from "zustand/react/shallow";
@@ -21,6 +21,7 @@ import {
 } from "../store";
 
 import { MessageTimeline } from "./MessageTimeline";
+import { clearSessionScrollSnapshot } from "./use-scroll-follow";
 import { ConversationFooter } from "./ConversationFooter";
 import { useComposerActions } from "./use-composer-actions";
 import { filterEngineOptions, orderEngineOptions } from "./engine-options";
@@ -44,31 +45,144 @@ import { useConversationMode } from "@/features/plugins/conversation/use-convers
 
 const EMPTY_QUEUE: QueuedMessage[] = [];
 
-/** Message list with its own bySession subscription: stream flushes swap the
- * messages array once per animation frame, and this boundary keeps that
- * high-frequency re-render from reaching the composer/status bar above. */
-const SessionTimeline = memo(function SessionTimeline({
-  sessionKey: key,
-  workspacePath,
+/** Keep the most recently visited session timelines mounted (hidden via
+ *  visibility:hidden on fixed absolute layers) so switching between recent tabs
+ *  skips full DOM teardown/Markdown reparse and preserves native scrollTop.
+ *  Closed tabs and entries beyond this cap unmount immediately to bound RAM. */
+const MAX_KEPT_TIMELINES = 4;
+
+interface KeptTimelineEntry {
+  key: string;
+  session: ActiveSession;
+}
+
+/** One session's message list with its own bySession subscription and frozen
+ *  SessionScope: stream flushes stay inside this subtree, and hidden kept
+ *  timelines never re-render when another tab becomes active. */
+const KeptSessionTimeline = memo(function KeptSessionTimeline({
+  entry,
+  visible,
   onLoadEarlier,
 }: {
-  sessionKey: string;
-  workspacePath: string;
-  onLoadEarlier: () => void;
+  entry: KeptTimelineEntry;
+  visible: boolean;
+  onLoadEarlier: (sessionKey: string) => void;
 }) {
-  const session = useChatStore((s) => s.bySession[key]);
+  const session = useChatStore((s) => s.bySession[entry.key]);
+  const handleLoadEarlier = useCallback(
+    () => onLoadEarlier(entry.key),
+    [onLoadEarlier, entry.key],
+  );
   if (!session) return null;
   return (
-    <MessageTimeline
-      key={key}
-      session={session}
-      streaming={session.streaming}
-      onLoadEarlier={onLoadEarlier}
-      workspacePath={workspacePath}
-    />
+    <SessionScope session={entry.session}>
+      <div
+        aria-hidden={!visible}
+        className={
+          visible
+            ? "absolute inset-0 flex flex-col"
+            : "invisible pointer-events-none absolute inset-0 flex flex-col"
+        }
+      >
+        <MessageTimeline
+          session={session}
+          streaming={session.streaming}
+          onLoadEarlier={handleLoadEarlier}
+          workspacePath={entry.session.workspacePath}
+          scrollMemoryKey={entry.key}
+          visible={visible}
+        />
+      </div>
+    </SessionScope>
   );
 });
 
+/** LRU stack of kept session timelines inside one conversation pane.
+ *  DOM insertion order stays strictly monotonic — existing items are never
+ *  reordered on activation, because React translates child reordering into
+ *  appendChild/insertBefore which resets scrollTop to 0 in browsers. */
+const SessionTimeline = memo(function SessionTimeline({
+  active,
+  activeKey,
+  onLoadEarlier,
+}: {
+  active: ActiveSession | null;
+  activeKey: string;
+  onLoadEarlier: (sessionKey: string) => void;
+}) {
+  const openTabs = useChatStore((s) => s.openTabs);
+  const lruTickRef = useRef(0);
+  const lruRankRef = useRef(new Map<string, number>());
+  const [kept, setKept] = useState<KeptTimelineEntry[]>(() =>
+    active && activeKey ? [{ key: activeKey, session: active }] : [],
+  );
+
+  // Reconcile kept entries during render so newly activated tabs mount in the
+  // same commit with no blank frame, while preserving relative DOM order.
+  let nextKept = kept;
+  const openKeys = new Set(
+    openTabs.map((t) => sessionKey(t.engine, t.sessionId, t.workspacePath)),
+  );
+  const filtered = kept.filter(
+    (entry) => entry.key === activeKey || openKeys.has(entry.key),
+  );
+  if (filtered.length !== kept.length) nextKept = filtered;
+
+  if (active && activeKey) {
+    const exists = nextKept.some((entry) => entry.key === activeKey);
+    if (!exists) {
+      let base = nextKept;
+      if (base.length >= MAX_KEPT_TIMELINES) {
+        let victimIdx = 0;
+        let victimRank = Infinity;
+        for (let i = 0; i < base.length; i += 1) {
+          const rank = lruRankRef.current.get(base[i].key) ?? 0;
+          if (rank < victimRank) {
+            victimRank = rank;
+            victimIdx = i;
+          }
+        }
+        base = [...base.slice(0, victimIdx), ...base.slice(victimIdx + 1)];
+      }
+      nextKept = [...base, { key: activeKey, session: active }];
+    }
+  }
+
+  if (nextKept !== kept) {
+    setKept(nextKept);
+  }
+
+  // Record LRU recency for eviction and drop scroll snapshots only when a tab
+  // is actually closed (LRU-evicted open tabs retain their scroll position).
+  useLayoutEffect(() => {
+    if (activeKey) {
+      lruRankRef.current.set(activeKey, ++lruTickRef.current);
+    }
+    const open = new Set(
+      openTabs.map((t) => sessionKey(t.engine, t.sessionId, t.workspacePath)),
+    );
+    for (const k of Array.from(lruRankRef.current.keys())) {
+      if (k !== activeKey && !open.has(k)) {
+        lruRankRef.current.delete(k);
+        clearSessionScrollSnapshot(k);
+      }
+    }
+  }, [activeKey, openTabs]);
+
+  if (nextKept.length === 0) return null;
+  return (
+    <>
+      {nextKept.map((entry) => (
+        <KeptSessionTimeline
+          key={entry.key}
+          entry={entry}
+          visible={entry.key === activeKey}
+          onLoadEarlier={onLoadEarlier}
+        />
+      ))}
+    </>
+  );
+});
 
 /** Timeline (with the session error banner) for an open session, or the
  *  no-session placeholder. */
@@ -85,7 +199,7 @@ function ConversationBody({
   sessionError: string | null;
   sessionKey: string;
   onDismissError: () => void;
-  onLoadEarlier: () => void;
+  onLoadEarlier: (sessionKey: string) => void;
 }) {
   const { t } = useTranslation();
   // 空态的前提有两种，文案不能混：一条工作区都还没有时，「新建会话」会先
@@ -94,30 +208,31 @@ function ConversationBody({
   // Hook 必须在 early return 之前：这个组件在「没有会话」与「有会话」两种
   // 形态间来回切换，把订阅放到 return 之后会让 Hook 数量随 props 变化。
   const workspaceCount = useChatStore((s) => s.workspaces.length);
-  if (!active || !hasSession) {
-    return (
-      <EmptyState className="text-body-medium">
-        <div className="flex flex-col gap-1">
-          <span>{workspaceCount === 0 ? t("chat.noWorkspaceYet") : t("chat.selectSession")}</span>
-          {workspaceCount === 0 && (
-            <span className="text-caption-1-regular text-text-tertiary">
-              {t("chat.noWorkspaceHint")}
-            </span>
-          )}
-        </div>
-      </EmptyState>
-    );
-  }
+  const showTimeline = Boolean(active && hasSession);
   return (
     <>
-      {sessionError && (
+      {showTimeline && sessionError && (
         <ErrorBanner className="mx-4 mt-3" message={sessionError} onDismiss={onDismissError} />
       )}
-      <SessionTimeline
-        sessionKey={key}
-        workspacePath={active.workspacePath}
-        onLoadEarlier={onLoadEarlier}
-      />
+      <div className="relative flex min-h-0 flex-1 flex-col">
+        {!showTimeline && (
+          <EmptyState className="text-body-medium">
+            <div className="flex flex-col gap-1">
+              <span>{workspaceCount === 0 ? t("chat.noWorkspaceYet") : t("chat.selectSession")}</span>
+              {workspaceCount === 0 && (
+                <span className="text-caption-1-regular text-text-tertiary">
+                  {t("chat.noWorkspaceHint")}
+                </span>
+              )}
+            </div>
+          </EmptyState>
+        )}
+        <SessionTimeline
+          active={showTimeline ? active : null}
+          activeKey={showTimeline ? key : ""}
+          onLoadEarlier={onLoadEarlier}
+        />
+      </div>
     </>
   );
 }
@@ -439,8 +554,12 @@ export const ChatConversation = memo(function ChatConversation({
   const supportsImages = engineInfo?.supportsImages ?? false;
 
   const handleLoadEarlier = useCallback(
-    () => void loadEarlier(key),
-    [loadEarlier, key],
+    (targetKey: string) => void loadEarlier(targetKey),
+    [loadEarlier],
+  );
+  const handleDismissSessionError = useCallback(
+    () => dismissSessionError(key),
+    [dismissSessionError, key],
   );
 
   // 队列操作都按本栏的会话 key 发出：分屏后每格管自己的队列。
@@ -534,7 +653,7 @@ export const ChatConversation = memo(function ChatConversation({
         hasSession={hasSession}
         sessionError={sessionError}
         sessionKey={key}
-        onDismissError={() => dismissSessionError(key)}
+        onDismissError={handleDismissSessionError}
         onLoadEarlier={handleLoadEarlier}
       />
 

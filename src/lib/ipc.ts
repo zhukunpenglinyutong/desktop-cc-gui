@@ -1658,9 +1658,13 @@ export const ipc = {
    *  clipboard still carries the item (Linux has no native bridge). */
   setClipboardFilePaths: (paths: string[]) =>
     invoke<void>("clipboard_set_file_paths", { paths }),
-  listEngineModels: (engine: string, workspace?: string) =>
+  listEngineModels: (engine: string, workspace?: string, force?: boolean) =>
     withGrantRetry(() =>
-      invoke<EngineCatalog>("list_engine_models", { engine, workspace: workspace ?? null }),
+      invoke<EngineCatalog>("list_engine_models", {
+        engine,
+        workspace: workspace ?? null,
+        ...(force ? { force: true } : {}),
+      }),
     ),
   // history
   listSessions: () => invoke<SessionMeta[]>("list_sessions"),
