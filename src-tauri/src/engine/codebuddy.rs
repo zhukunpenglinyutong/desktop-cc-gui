@@ -103,7 +103,9 @@ pub(super) fn apply_channel(
     for key in CHANNEL_SETTINGS_ENV_KEYS {
         overlay.insert(key.to_string(), serde_json::Value::String(String::new()));
     }
-    for (key, value) in env {
+    // serde_json keeps insertion order: a HashMap walk would make identical
+    // launches stage different bytes and miss process reuse.
+    for (key, value) in env.iter().collect::<std::collections::BTreeMap<_, _>>() {
         overlay.insert(key.clone(), serde_json::Value::String(value.clone()));
     }
     let mut settings = serde_json::json!({ "env": overlay });
@@ -451,8 +453,134 @@ impl Engine for CodeBuddyEngine {
     }
 }
 
+pub(crate) struct IdleProcess {
+    pub entry: super::registry::ChildEntry,
+    pub signature: [u8; 32],
+    pub resume: Option<tokio::sync::oneshot::Sender<ResumeTurn>>,
+    pub exited: tokio::sync::watch::Receiver<()>,
+    pub parked_at: std::time::Instant,
+}
+
+pub(crate) struct ResumeTurn {
+    pub run_id: String,
+    pub session_id: String,
+    pub payload: String,
+    pub killed: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    pub reader_abort: std::sync::Arc<std::sync::OnceLock<tokio::task::AbortHandle>>,
+    pub comparison_model: Option<Option<String>>,
+    pub accept: tokio::sync::oneshot::Sender<()>,
+}
+
+pub(crate) const IDLE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(600);
+/// An idle CLI holds about 370 MB, so only the most recently used few stay parked.
+pub(crate) const MAX_IDLE_PROCESSES: usize = 3;
+
+/// Retire the longest-idle parked process when the pool is full. Dropping its
+/// resume sender makes its reader kill the child; entries already being handed
+/// off or retired (resume taken) do not count.
+pub(crate) fn make_room_for_idle(pool: &mut std::collections::HashMap<String, IdleProcess>) {
+    if pool.values().filter(|process| process.resume.is_some()).count() < MAX_IDLE_PROCESSES {
+        return;
+    }
+    if let Some(oldest) = pool
+        .values_mut()
+        .filter(|process| process.resume.is_some())
+        .min_by_key(|process| process.parked_at)
+    {
+        oldest.resume.take();
+    }
+}
+
+fn read_signature_config(path: &std::path::Path) -> std::io::Result<Vec<u8>> {
+    use std::io::{Error, ErrorKind, Read};
+
+    const MAX_CONFIG_BYTES: u64 = 4 * 1024 * 1024;
+    let metadata = std::fs::metadata(path)?;
+    if !metadata.is_file() || metadata.len() > MAX_CONFIG_BYTES {
+        return Err(Error::new(ErrorKind::InvalidData, "unsupported configuration file"));
+    }
+
+    let mut options = std::fs::OpenOptions::new();
+    options.read(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        // A workspace can replace a regular file with a FIFO after metadata().
+        options.custom_flags(libc::O_NONBLOCK);
+    }
+    let file = options.open(path)?;
+    let metadata = file.metadata()?;
+    if !metadata.is_file() || metadata.len() > MAX_CONFIG_BYTES {
+        return Err(Error::new(ErrorKind::InvalidData, "unsupported configuration file"));
+    }
+    let mut bytes = Vec::new();
+    file.take(MAX_CONFIG_BYTES + 1).read_to_end(&mut bytes)?;
+    if bytes.len() as u64 > MAX_CONFIG_BYTES {
+        return Err(Error::new(ErrorKind::InvalidData, "configuration file exceeds size limit"));
+    }
+    Ok(bytes)
+}
+
+/// Compare launch settings without keeping credentials or temporary paths in the pool.
+pub(crate) fn launch_signature(
+    command: &tokio::process::Command,
+    files: &[std::path::PathBuf],
+) -> Option<[u8; 32]> {
+    use sha2::{Digest, Sha256};
+    let command = command.as_std();
+    let mut digest = Sha256::new();
+    let mut add = |value: &[u8]| {
+        digest.update(value.len().to_le_bytes());
+        digest.update(value);
+    };
+    add(command.get_program().as_encoded_bytes());
+    let workspace = command.get_current_dir()?;
+    add(workspace.as_os_str().as_encoded_bytes());
+    let home = super::engine_home(Some("CODEBUDDY_CONFIG_DIR"), ".codebuddy");
+    for path in [
+        home.join("settings.json"),
+        home.join("mcp.json"),
+        workspace.join(".mcp.json"),
+        workspace.join(".codebuddy/mcp.json"),
+        workspace.join(".codebuddy/settings.json"),
+        workspace.join(".codebuddy/settings.local.json"),
+    ] {
+        add(path.as_os_str().as_encoded_bytes());
+        match read_signature_config(&path) {
+            Ok(bytes) => {
+                add(&[1]);
+                add(&bytes);
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => add(&[0]),
+            Err(_) => return None,
+        }
+    }
+    let mut args = command.get_args();
+    while let Some(arg) = args.next() {
+        if arg == "-r" {
+            args.next();
+        } else if files.iter().any(|file| file.as_os_str() == arg) {
+            add(b"staged-file");
+            add(&read_signature_config(std::path::Path::new(arg)).ok()?);
+        } else {
+            add(arg.as_encoded_bytes());
+        }
+    }
+    for (key, value) in command.get_envs() {
+        add(key.as_encoded_bytes());
+        add(&[u8::from(value.is_some())]);
+        if let Some(value) = value {
+            add(value.as_encoded_bytes());
+        }
+    }
+    Some(digest.finalize().into())
+}
+
 #[cfg(test)]
 mod tests {
+    use super::*;
+    use std::path::PathBuf;
+
     #[cfg(unix)]
     #[test]
     fn codebuddy_signature_skips_fifo_and_oversized_configs() {
@@ -474,8 +602,39 @@ mod tests {
         assert!(super::launch_signature(&command, &[]).is_none());
     }
 
-    use super::*;
-    use std::path::PathBuf;
+    #[test]
+    fn identical_channel_launches_share_a_reuse_signature() {
+        let scratch = ScratchHome::new("channel-signature");
+        let env: std::collections::HashMap<String, String> = [
+            ("CODEBUDDY_API_KEY", "sk-test"),
+            ("CODEBUDDY_SMALL_FAST_MODEL", "small"),
+            ("HTTPS_PROXY", "http://127.0.0.1:7890"),
+            ("NO_PROXY", "localhost"),
+        ]
+        .into_iter()
+        .map(|(key, value)| (key.to_string(), value.to_string()))
+        .collect();
+        let signatures: std::collections::HashSet<_> = (0..20)
+            .map(|_| {
+                // A fresh HashMap per launch, like provider_files::channel_env.
+                let env = env.clone().into_iter().collect();
+                let mut built = BuiltCommand {
+                    command: tokio::process::Command::new("codebuddy"),
+                    stdin_payload: None,
+                    keep_stdin_open: true,
+                    cleanup_files: Vec::new(),
+                    mcp_restore: None,
+                    preassigned_session_id: None,
+                };
+                built.command.current_dir(&scratch.dir);
+                apply_channel(&mut built, &env, None, &scratch.dir.join("staging")).unwrap();
+                let signature = launch_signature(&built.command, &built.cleanup_files);
+                crate::engine::cleanup_staged_files(&built.cleanup_files);
+                signature.unwrap()
+            })
+            .collect();
+        assert_eq!(signatures.len(), 1);
+    }
 
     fn sample_req() -> SendRequest {
         SendRequest {
@@ -1024,108 +1183,4 @@ mod tests {
             .iter()
             .any(|e| matches!(e, EngineEvent::Model(model) if model == "custom:kimi-k3")));
     }
-}
-
-pub(crate) struct IdleProcess {
-    pub entry: super::registry::ChildEntry,
-    pub signature: [u8; 32],
-    pub resume: Option<tokio::sync::oneshot::Sender<ResumeTurn>>,
-    pub exited: tokio::sync::watch::Receiver<()>,
-}
-
-pub(crate) struct ResumeTurn {
-    pub run_id: String,
-    pub session_id: String,
-    pub payload: String,
-    pub killed: std::sync::Arc<std::sync::atomic::AtomicBool>,
-    pub reader_abort: std::sync::Arc<std::sync::OnceLock<tokio::task::AbortHandle>>,
-    pub comparison_model: Option<Option<String>>,
-    pub accept: tokio::sync::oneshot::Sender<()>,
-}
-
-pub(crate) const IDLE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(600);
-
-fn read_signature_config(path: &std::path::Path) -> std::io::Result<Vec<u8>> {
-    use std::io::{Error, ErrorKind, Read};
-
-    const MAX_CONFIG_BYTES: u64 = 4 * 1024 * 1024;
-    let metadata = std::fs::metadata(path)?;
-    if !metadata.is_file() || metadata.len() > MAX_CONFIG_BYTES {
-        return Err(Error::new(ErrorKind::InvalidData, "unsupported configuration file"));
-    }
-
-    let mut options = std::fs::OpenOptions::new();
-    options.read(true);
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::OpenOptionsExt;
-        // A workspace can replace a regular file with a FIFO after metadata().
-        options.custom_flags(libc::O_NONBLOCK);
-    }
-    let file = options.open(path)?;
-    let metadata = file.metadata()?;
-    if !metadata.is_file() || metadata.len() > MAX_CONFIG_BYTES {
-        return Err(Error::new(ErrorKind::InvalidData, "unsupported configuration file"));
-    }
-    let mut bytes = Vec::new();
-    file.take(MAX_CONFIG_BYTES + 1).read_to_end(&mut bytes)?;
-    if bytes.len() as u64 > MAX_CONFIG_BYTES {
-        return Err(Error::new(ErrorKind::InvalidData, "configuration file exceeds size limit"));
-    }
-    Ok(bytes)
-}
-
-/// Compare launch settings without keeping credentials or temporary paths in the pool.
-pub(crate) fn launch_signature(
-    command: &tokio::process::Command,
-    files: &[std::path::PathBuf],
-) -> Option<[u8; 32]> {
-    use sha2::{Digest, Sha256};
-    let command = command.as_std();
-    let mut digest = Sha256::new();
-    let mut add = |value: &[u8]| {
-        digest.update(value.len().to_le_bytes());
-        digest.update(value);
-    };
-    add(command.get_program().as_encoded_bytes());
-    let workspace = command.get_current_dir()?;
-    add(workspace.as_os_str().as_encoded_bytes());
-    let home = super::engine_home(Some("CODEBUDDY_CONFIG_DIR"), ".codebuddy");
-    for path in [
-        home.join("settings.json"),
-        home.join("mcp.json"),
-        workspace.join(".mcp.json"),
-        workspace.join(".codebuddy/mcp.json"),
-        workspace.join(".codebuddy/settings.json"),
-        workspace.join(".codebuddy/settings.local.json"),
-    ] {
-        add(path.as_os_str().as_encoded_bytes());
-        match read_signature_config(&path) {
-            Ok(bytes) => {
-                add(&[1]);
-                add(&bytes);
-            }
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => add(&[0]),
-            Err(_) => return None,
-        }
-    }
-    let mut args = command.get_args();
-    while let Some(arg) = args.next() {
-        if arg == "-r" {
-            args.next();
-        } else if files.iter().any(|file| file.as_os_str() == arg) {
-            add(b"staged-file");
-            add(&read_signature_config(std::path::Path::new(arg)).ok()?);
-        } else {
-            add(arg.as_encoded_bytes());
-        }
-    }
-    for (key, value) in command.get_envs() {
-        add(key.as_encoded_bytes());
-        add(&[u8::from(value.is_some())]);
-        if let Some(value) = value {
-            add(value.as_encoded_bytes());
-        }
-    }
-    Some(digest.finalize().into())
 }

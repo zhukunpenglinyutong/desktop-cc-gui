@@ -297,6 +297,56 @@ done
     assert!(!error.contains("old-stdout") && !error.contains("old-stderr"), "{error}");
 }
 
+/// The queue drains on `done`. On a turn that does not park its CLI (memory
+/// tool, computer use, WSL, plugin sinks, unreadable config), the old process
+/// is still exiting then: the next send must start, not be refused.
+#[cfg(unix)]
+#[tokio::test]
+#[allow(clippy::await_holding_lock)]
+async fn codebuddy_send_right_after_done_starts_while_old_cli_exits() {
+    use std::os::unix::fs::PermissionsExt;
+    use std::time::Duration;
+
+    let _env_guard = ENV_LOCK.lock().unwrap();
+    let home = temp_home("codebuddy-queue-after-done");
+    let bin_dir = home.join("bin");
+    std::fs::create_dir_all(&bin_dir).unwrap();
+    let cli = bin_dir.join("codebuddy");
+    std::fs::write(&cli, r#"#!/bin/sh
+echo '{"type":"system","subtype":"init","session_id":"queue-session"}'
+while IFS= read -r line; do
+    case "$line" in
+        *'"type":"user"'*) echo '{"type":"result","subtype":"success","session_id":"queue-session"}' ;;
+    esac
+done
+sleep 0.3
+"#).unwrap();
+    std::fs::set_permissions(&cli, std::fs::Permissions::from_mode(0o755)).unwrap();
+    std::env::set_var("PATH", format!("{}:/usr/bin:/bin", bin_dir.display()));
+    // An oversized project MCP file disables reuse for this launch.
+    std::fs::File::create(home.join(".mcp.json")).unwrap().set_len(5 * 1024 * 1024).unwrap();
+    let (app, events) = build_app(&home);
+    let send = |run: &'static str, session: Option<&'static str>| {
+        let app = &app;
+        let home = &home;
+        async move {
+            engine::send_message(
+                app.state(), "codebuddy".into(), home.to_string_lossy().into_owned(),
+                session.map(str::to_owned), run.into(), Vec::new(), None, None,
+                None, None, None, None, Some(run.into()), None, None,
+            ).await.map(|result| result.run_id)
+        }
+    };
+
+    send("queue-1", None).await.unwrap();
+    tokio::time::timeout(Duration::from_secs(5), async {
+        while !events.lock().unwrap().iter().any(|e| e["runId"] == "queue-1" && e["kind"] == "done") {
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+    }).await.expect("turn did not complete");
+    assert_eq!(send("queue-2", Some("queue-session")).await, Ok("queue-2".to_string()));
+}
+
 #[tokio::test]
 #[allow(clippy::await_holding_lock)]
 async fn interrupt_kills_running_child() {

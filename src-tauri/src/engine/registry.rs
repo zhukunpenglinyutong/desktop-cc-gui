@@ -966,6 +966,7 @@ mod registry_tests {
                 signature: [0; 32],
                 resume: None,
                 exited,
+                parked_at: std::time::Instant::now(),
             },
         );
         let reservation = stub_entry("next", 0);
@@ -999,6 +1000,7 @@ mod registry_tests {
                 signature: [0; 32],
                 resume: Some(resume),
                 exited,
+                parked_at: std::time::Instant::now(),
             },
         );
         registry.close_idle_codebuddy("session");
@@ -1007,6 +1009,38 @@ mod registry_tests {
         registry.remove_run_if_pid("run", 0);
         registry.close_idle_codebuddy("session");
         assert!(registry.4.lock().unwrap().remove("session").unwrap().resume.is_none());
+    }
+
+    #[test]
+    fn full_codebuddy_idle_pool_retires_only_the_longest_idle_process() {
+        use super::super::codebuddy::{make_room_for_idle, IdleProcess, MAX_IDLE_PROCESSES};
+        let start = std::time::Instant::now();
+        let mut receivers = Vec::new();
+        let mut pool = HashMap::new();
+        let mut park = |pool: &mut HashMap<String, IdleProcess>, session: &str, age: u64, live: bool| {
+            let (resume, next) = tokio::sync::oneshot::channel();
+            receivers.push(next);
+            let (_, exited) = tokio::sync::watch::channel(());
+            pool.insert(session.to_string(), IdleProcess {
+                entry: stub_entry(session, 1),
+                signature: [0; 32],
+                resume: live.then_some(resume),
+                exited,
+                parked_at: start - std::time::Duration::from_secs(age),
+            });
+        };
+        // Already handed off: older than all, but no longer counts or gets picked.
+        park(&mut pool, "handing-off", 99, false);
+        for (index, session) in ["old", "mid", "new"].into_iter().enumerate() {
+            park(&mut pool, session, 30 - index as u64 * 10, true);
+        }
+        assert_eq!(MAX_IDLE_PROCESSES, 3);
+        make_room_for_idle(&mut pool);
+        let live = ["handing-off", "old", "mid", "new"].map(|session| pool[session].resume.is_some());
+        assert_eq!(live, [false, false, true, true]);
+        // Below the cap nothing else is retired.
+        make_room_for_idle(&mut pool);
+        assert!(pool["mid"].resume.is_some() && pool["new"].resume.is_some());
     }
 
     fn stub_entry(run_id: &str, pid: u32) -> ChildEntry {

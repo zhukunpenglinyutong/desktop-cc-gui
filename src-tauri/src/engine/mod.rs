@@ -1064,9 +1064,6 @@ async fn send_message_inner_with_sink(
         if map.contains_key(&run_id) {
             return Err("run id already active".into());
         }
-        if engine == "codebuddy" && session_id.as_ref().is_some_and(|id| map.contains_key(id)) {
-            return Err("CodeBuddy session already has a running turn".into());
-        }
         if registry::active_run_count(&map) >= MAX_CONCURRENT_RUNS {
             return Err(format!(
                 "too many concurrent runs ({MAX_CONCURRENT_RUNS}); wait for one to finish"
@@ -1367,11 +1364,6 @@ async fn send_reserved(
         }
     }
 
-    if engine == "codebuddy" && killed.load(std::sync::atomic::Ordering::SeqCst) {
-        cleanup_staged_files(&cleanup_files);
-        return Err("CodeBuddy turn was cancelled before launch".into());
-    }
-
     let mut child = match command.spawn() {
         Ok(child) => child,
         Err(error) => {
@@ -1616,9 +1608,6 @@ async fn send_host_stream(
         session_id: resume_session_id,
     })
 }
-/// Async + spawn_blocking: the kill waits for the Windows tree walk to
-/// finish (see `kill_process_group`), and a synchronous command would hold
-/// that wait on the UI thread — the app would visibly hitch on every Stop.
 #[tauri::command]
 pub async fn close_idle_codebuddy(
     state: tauri::State<'_, crate::AppState>,
@@ -1628,6 +1617,9 @@ pub async fn close_idle_codebuddy(
     Ok(())
 }
 
+/// Async + spawn_blocking: the kill waits for the Windows tree walk to
+/// finish (see `kill_process_group`), and a synchronous command would hold
+/// that wait on the UI thread — the app would visibly hitch on every Stop.
 #[tauri::command]
 pub async fn interrupt_session(
     state: tauri::State<'_, crate::AppState>,

@@ -1157,6 +1157,7 @@ fn park_codebuddy(
     }
     let (resume, next) = tokio::sync::oneshot::channel();
     let (exited, exit) = tokio::sync::watch::channel(());
+    super::codebuddy::make_room_for_idle(&mut idle);
     idle.insert(
         session_id.to_string(),
         super::codebuddy::IdleProcess {
@@ -1164,6 +1165,7 @@ fn park_codebuddy(
             signature,
             resume: Some(resume),
             exited: exit,
+            parked_at: std::time::Instant::now(),
         },
     );
     runs.retain(|_, run| run.run_id != entry.run_id);
