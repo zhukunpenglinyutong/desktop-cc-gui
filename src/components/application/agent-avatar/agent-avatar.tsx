@@ -226,10 +226,15 @@ export function AgentAvatar({ config, size = 64, paused = false, label = "Agent 
         last = now;
       }
     };
+    // Whether the frame loop should currently run: motion allowed, on screen,
+    // and the window visible. The initial `visible = true` is the default the
+    // observer confirms asynchronously — start() subscribes off it, and the
+    // observer callback that fires at observe() time must not subscribe a
+    // second time when it reports the same state.
+    const shouldRun = () =>
+      !paused && !reduced.matches && config.motion > 0 && visible && !document.hidden;
     const syncSubscription = () => {
-      const shouldRun =
-        !paused && !reduced.matches && config.motion > 0 && visible && !document.hidden;
-      if (shouldRun) {
+      if (shouldRun()) {
         if (!stop) {
           last = 0;
           stop = subscribeFrame(tick);
@@ -257,6 +262,13 @@ export function AgentAvatar({ config, size = 64, paused = false, label = "Agent 
       syncSubscription();
     };
     const observer = new IntersectionObserver(([entry]) => {
+      // The callback fires once at observe() time with the current state.
+      // start() already subscribed against the initial `visible = true`, so a
+      // same-state callback must not run syncSubscription again (it would
+      // re-ensure the subscription; a no-op for the guard here, but the real
+      // double-subscribe risk is start() + observer both arming). Only react to
+      // an actual intersection flip.
+      if (visible === entry.isIntersecting) return;
       visible = entry.isIntersecting;
       syncSubscription();
     });
