@@ -21,6 +21,7 @@ import { useCopied } from "@/hooks/use-copied";
 import { sha256Hex } from "@/lib/sha256";
 import { useScopedSession } from "../split/session-scope";
 import { sessionKey } from "../store/persistence";
+import { RunActivityTrigger } from "./run-activity-panel";
 import { MessageImages } from "./MessageImages";
 import { GrantCard } from "./GrantCard";
 import { QuestionRecord } from "./QuestionCard";
@@ -1003,10 +1004,11 @@ export const MessageTimeline = memo(function MessageTimeline({
         meta.engine === engine && meta.sessionId === sessionId && meta.remote === true,
     );
   });
+  const activeSessionKey = scoped
+    ? sessionKey(scoped.engine, scoped.sessionId, scoped.workspacePath)
+    : null;
   const forkPending = useChatStore(
-    (s) =>
-      !!scoped &&
-      s.forkingByKey[sessionKey(scoped.engine, scoped.sessionId, scoped.workspacePath)] === true,
+    (s) => activeSessionKey !== null && s.forkingByKey[activeSessionKey] === true,
   );
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const items = session.messages;
@@ -1255,28 +1257,30 @@ export const MessageTimeline = memo(function MessageTimeline({
                   session.compaction?.automatic ? (
                     <CompactionCurtain />
                   ) : session.compaction ? null : (
-                    <AgentThinking
-                      variant="wave"
-                      label={t("chat.thinking")}
-                      className="py-2"
-                      startedAt={session.turnStartedAt ?? undefined}
-                      durationFormatter={(d) => t("chat.metaDuration", { duration: d })}
-                      model={activeModelFormatted}
-                      effort={activeEffortFormatted}
-                      usage={liveUsage}
-                      metaExtra={<ResponseCheckBadge check={session.responseCheck} />}
-                      retry={
-                        session.retry
-                          ? session.retry.max > 0
-                            ? t("chat.retrying", {
-                                attempt: session.retry.attempt,
-                                max: session.retry.max,
-                              })
-                            : t("chat.retryingNoMax", { attempt: session.retry.attempt })
-                          : null
-                      }
-                      retryDetail={session.retry?.message || null}
-                    />
+                    <RunActivityTrigger sessionKey={activeSessionKey}>
+                      <AgentThinking
+                        variant="wave"
+                        label={t("chat.thinking")}
+                        className="py-2"
+                        startedAt={session.turnStartedAt ?? undefined}
+                        durationFormatter={(d) => t("chat.metaDuration", { duration: d })}
+                        model={activeModelFormatted}
+                        effort={activeEffortFormatted}
+                        usage={liveUsage}
+                        metaExtra={<ResponseCheckBadge check={session.responseCheck} />}
+                        retry={
+                          session.retry
+                            ? session.retry.max > 0
+                              ? t("chat.retrying", {
+                                  attempt: session.retry.attempt,
+                                  max: session.retry.max,
+                                })
+                              : t("chat.retryingNoMax", { attempt: session.retry.attempt })
+                            : null
+                        }
+                        retryDetail={session.retry?.message || null}
+                      />
+                    </RunActivityTrigger>
                   )
                 ) : (
                   <TimelineRowView
