@@ -1,3 +1,4 @@
+import { ipc } from "@/lib/ipc";
 import { workspaceEngineOptions } from "../components/engine-options";
 import { writeStored } from "@/lib/storage";
 import {
@@ -345,6 +346,9 @@ export function createTabActions(
       dispatchSessionClosed(
         sessionLifecycleBase(get, { engine, sessionId, workspacePath }),
       );
+      if (engine === "codebuddy" && sessionId) {
+        void ipc.closeIdleCodeBuddy(sessionId).catch(() => {});
+      }
       clearScopedContributions(set, engine, sessionId, workspacePath);
       removeTab(engine, sessionId, workspacePath);
     },
