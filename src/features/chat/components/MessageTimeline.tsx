@@ -1024,8 +1024,8 @@ export const MessageTimeline = memo(function MessageTimeline({
   // not replay height 0→auto. Do not lock an empty set — loading failure
   // and load-earlier both flip `session.loading`, and an empty new chat
   // must still animate the first live tools.
-  const [seenTools] = useState(() => new Set<string>());
-  const [primed, setPrimed] = useState(false);
+  const [seenTools] = useState(() => new Set<string>(collectToolKeys(rows)));
+  const [primed, setPrimed] = useState(() => rows.length > 0);
   if (!primed && rows.length > 0) {
     for (const key of collectToolKeys(rows)) seenTools.add(key);
     setPrimed(true);
@@ -1087,8 +1087,12 @@ export const MessageTimeline = memo(function MessageTimeline({
   const virtualizer = useVirtualizer({
     count,
     getScrollElement: () => scrollRef.current,
-    estimateSize: () => 72,
-    overscan: 8,
+    estimateSize: () => 160,
+    overscan: 4,
+    // Start near the estimated tail on cold mounts so the first commit renders
+    // the latest rows instead of parsing the oldest 0..N rows only for
+    // useTailPin to discard them on the next layout pass.
+    initialOffset: () => (count > 0 ? count * 160 : 0),
     getItemKey: (index) =>
       index < rows.length ? rowKey(rows[index]) : "streaming-tail",
   });

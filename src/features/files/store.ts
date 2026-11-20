@@ -700,7 +700,10 @@ export const useFilesStore = create<FilesStore>((set, get) => ({
     dismissNonFileSurfaces();
   },
 
-  clearActiveFile: () => set({ activeFilePath: null }),
+  clearActiveFile: () => {
+    if (get().activeFilePath === null) return;
+    set({ activeFilePath: null });
+  },
 
   reloadFile: async (path, encoding) => {
     const entry = get().fileStates[path];

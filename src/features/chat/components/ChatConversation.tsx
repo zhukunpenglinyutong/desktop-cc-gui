@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useMemo } from "react";
+import { memo, useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 import { useShallow } from "zustand/react/shallow";
@@ -44,31 +44,117 @@ import { useConversationMode } from "@/features/plugins/conversation/use-convers
 
 const EMPTY_QUEUE: QueuedMessage[] = [];
 
-/** Message list with its own bySession subscription: stream flushes swap the
- * messages array once per animation frame, and this boundary keeps that
- * high-frequency re-render from reaching the composer/status bar above. */
-const SessionTimeline = memo(function SessionTimeline({
-  sessionKey: key,
-  workspacePath,
+/** Keep the most recently visited session timelines mounted (hidden via
+ *  visibility:hidden + contain:strict) so switching between recent tabs skips
+ *  full DOM teardown/Markdown reparse and preserves scroll position. Closed
+ *  tabs and entries beyond this cap unmount immediately to bound RAM. */
+const MAX_KEPT_TIMELINES = 4;
+
+interface KeptTimelineEntry {
+  key: string;
+  session: ActiveSession;
+}
+
+/** One session's message list with its own bySession subscription and frozen
+ *  SessionScope: stream flushes stay inside this subtree, and hidden kept
+ *  timelines never re-render when another tab becomes active. */
+const KeptSessionTimeline = memo(function KeptSessionTimeline({
+  entry,
+  visible,
   onLoadEarlier,
 }: {
-  sessionKey: string;
-  workspacePath: string;
-  onLoadEarlier: () => void;
+  entry: KeptTimelineEntry;
+  visible: boolean;
+  onLoadEarlier: (sessionKey: string) => void;
 }) {
-  const session = useChatStore((s) => s.bySession[key]);
+  const session = useChatStore((s) => s.bySession[entry.key]);
+  const handleLoadEarlier = useCallback(
+    () => onLoadEarlier(entry.key),
+    [onLoadEarlier, entry.key],
+  );
   if (!session) return null;
   return (
-    <MessageTimeline
-      key={key}
-      session={session}
-      streaming={session.streaming}
-      onLoadEarlier={onLoadEarlier}
-      workspacePath={workspacePath}
-    />
+    <SessionScope session={entry.session}>
+      <div
+        aria-hidden={!visible}
+        style={visible ? undefined : { contain: "strict" }}
+        className={
+          visible
+            ? "relative flex min-h-0 flex-1 flex-col"
+            : "invisible pointer-events-none absolute inset-0 flex flex-col"
+        }
+      >
+        <MessageTimeline
+          session={session}
+          streaming={session.streaming}
+          onLoadEarlier={handleLoadEarlier}
+          workspacePath={entry.session.workspacePath}
+        />
+      </div>
+    </SessionScope>
   );
 });
 
+/** LRU stack of kept session timelines inside one conversation pane. */
+const SessionTimeline = memo(function SessionTimeline({
+  active,
+  activeKey,
+  onLoadEarlier,
+}: {
+  active: ActiveSession | null;
+  activeKey: string;
+  onLoadEarlier: (sessionKey: string) => void;
+}) {
+  const openTabs = useChatStore((s) => s.openTabs);
+  const [kept, setKept] = useState<KeptTimelineEntry[]>(() =>
+    active && activeKey ? [{ key: activeKey, session: active }] : [],
+  );
+
+  // Reconcile the LRU during render so the newly activated tab mounts in the
+  // same commit with no blank frame, and closed tabs drop immediately.
+  let nextKept = kept;
+  const openKeys = new Set(
+    openTabs.map((t) => sessionKey(t.engine, t.sessionId, t.workspacePath)),
+  );
+  const filtered = kept.filter(
+    (entry) => entry.key === activeKey || openKeys.has(entry.key),
+  );
+  if (filtered.length !== kept.length) nextKept = filtered;
+
+  if (active && activeKey) {
+    const idx = nextKept.findIndex((entry) => entry.key === activeKey);
+    if (idx < 0) {
+      const added = [...nextKept, { key: activeKey, session: active }];
+      nextKept =
+        added.length > MAX_KEPT_TIMELINES
+          ? added.slice(added.length - MAX_KEPT_TIMELINES)
+          : added;
+    } else if (idx !== nextKept.length - 1) {
+      // Move the active tab to the MRU tail without swapping its entry object
+      // when its identity is unchanged, keeping React.memo intact.
+      const current = nextKept[idx];
+      nextKept = [...nextKept.slice(0, idx), ...nextKept.slice(idx + 1), current];
+    }
+  }
+
+  if (nextKept !== kept) {
+    setKept(nextKept);
+  }
+
+  if (nextKept.length === 0) return null;
+  return (
+    <>
+      {nextKept.map((entry) => (
+        <KeptSessionTimeline
+          key={entry.key}
+          entry={entry}
+          visible={entry.key === activeKey}
+          onLoadEarlier={onLoadEarlier}
+        />
+      ))}
+    </>
+  );
+});
 
 /** Timeline (with the session error banner) for an open session, or the
  *  no-session placeholder. */
@@ -85,7 +171,7 @@ function ConversationBody({
   sessionError: string | null;
   sessionKey: string;
   onDismissError: () => void;
-  onLoadEarlier: () => void;
+  onLoadEarlier: (sessionKey: string) => void;
 }) {
   const { t } = useTranslation();
   // 空态的前提有两种，文案不能混：一条工作区都还没有时，「新建会话」会先
@@ -94,30 +180,31 @@ function ConversationBody({
   // Hook 必须在 early return 之前：这个组件在「没有会话」与「有会话」两种
   // 形态间来回切换，把订阅放到 return 之后会让 Hook 数量随 props 变化。
   const workspaceCount = useChatStore((s) => s.workspaces.length);
-  if (!active || !hasSession) {
-    return (
-      <EmptyState className="text-body-medium">
-        <div className="flex flex-col gap-1">
-          <span>{workspaceCount === 0 ? t("chat.noWorkspaceYet") : t("chat.selectSession")}</span>
-          {workspaceCount === 0 && (
-            <span className="text-caption-1-regular text-text-tertiary">
-              {t("chat.noWorkspaceHint")}
-            </span>
-          )}
-        </div>
-      </EmptyState>
-    );
-  }
+  const showTimeline = Boolean(active && hasSession);
   return (
     <>
-      {sessionError && (
+      {showTimeline && sessionError && (
         <ErrorBanner className="mx-4 mt-3" message={sessionError} onDismiss={onDismissError} />
       )}
-      <SessionTimeline
-        sessionKey={key}
-        workspacePath={active.workspacePath}
-        onLoadEarlier={onLoadEarlier}
-      />
+      <div className="relative flex min-h-0 flex-1 flex-col">
+        {!showTimeline && (
+          <EmptyState className="text-body-medium">
+            <div className="flex flex-col gap-1">
+              <span>{workspaceCount === 0 ? t("chat.noWorkspaceYet") : t("chat.selectSession")}</span>
+              {workspaceCount === 0 && (
+                <span className="text-caption-1-regular text-text-tertiary">
+                  {t("chat.noWorkspaceHint")}
+                </span>
+              )}
+            </div>
+          </EmptyState>
+        )}
+        <SessionTimeline
+          active={showTimeline ? active : null}
+          activeKey={showTimeline ? key : ""}
+          onLoadEarlier={onLoadEarlier}
+        />
+      </div>
     </>
   );
 }
@@ -439,8 +526,12 @@ export const ChatConversation = memo(function ChatConversation({
   const supportsImages = engineInfo?.supportsImages ?? false;
 
   const handleLoadEarlier = useCallback(
-    () => void loadEarlier(key),
-    [loadEarlier, key],
+    (targetKey: string) => void loadEarlier(targetKey),
+    [loadEarlier],
+  );
+  const handleDismissSessionError = useCallback(
+    () => dismissSessionError(key),
+    [dismissSessionError, key],
   );
 
   // 队列操作都按本栏的会话 key 发出：分屏后每格管自己的队列。
@@ -534,7 +625,7 @@ export const ChatConversation = memo(function ChatConversation({
         hasSession={hasSession}
         sessionError={sessionError}
         sessionKey={key}
-        onDismissError={() => dismissSessionError(key)}
+        onDismissError={handleDismissSessionError}
         onLoadEarlier={handleLoadEarlier}
       />
 

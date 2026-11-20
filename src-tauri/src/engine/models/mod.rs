@@ -151,11 +151,50 @@ impl EngineCatalog {
     }
 }
 
+/// Process-wide cache for local engine model catalogs: switching to another
+/// local workspace triggers a workspace-context probe, and without this cache
+/// every unseen local workspace would respawn every enabled CLI binary at once.
+const LOCAL_CATALOG_TTL: std::time::Duration = std::time::Duration::from_secs(120);
+
+struct CachedLocalCatalog {
+    bin: String,
+    catalog: EngineCatalog,
+    cached_at: std::time::Instant,
+}
+
+static LOCAL_CATALOG_CACHE: std::sync::LazyLock<
+    std::sync::Mutex<std::collections::HashMap<String, CachedLocalCatalog>>,
+> = std::sync::LazyLock::new(|| std::sync::Mutex::new(std::collections::HashMap::new()));
+
+fn read_cached_local_catalog(engine: &str, bin: &str) -> Option<EngineCatalog> {
+    let guard = LOCAL_CATALOG_CACHE.lock().ok()?;
+    let entry = guard.get(engine)?;
+    if entry.bin == bin && entry.cached_at.elapsed() < LOCAL_CATALOG_TTL {
+        Some(entry.catalog.clone())
+    } else {
+        None
+    }
+}
+
+fn write_cached_local_catalog(engine: &str, bin: String, catalog: &EngineCatalog) {
+    if let Ok(mut guard) = LOCAL_CATALOG_CACHE.lock() {
+        guard.insert(
+            engine.to_string(),
+            CachedLocalCatalog {
+                bin,
+                catalog: catalog.clone(),
+                cached_at: std::time::Instant::now(),
+            },
+        );
+    }
+}
+
 #[tauri::command]
 pub async fn list_engine_models(
     state: tauri::State<'_, crate::AppState>,
     engine: String,
     workspace: Option<String>,
+    force: Option<bool>,
 ) -> Result<EngineCatalog, String> {
     // 停用 (设置 → CLI 管理) gates the catalog too: every branch below either
     // runs the engine's CLI here or asks the distro to (`opencode models`,
@@ -189,34 +228,37 @@ pub async fn list_engine_models(
             }
         }
     }
-    match engine.as_str() {
-        "codex" => Ok(codex_catalog().await),
-        "kimi" => Ok(kimi_catalog().await),
-        "grok" => Ok(grok_catalog()),
-        "claude" => Ok(claude_catalog()),
-        "pi" | "omp" => Ok(pi_family_catalog(&engine).await),
-        "dsh" => dsh_catalog().await,
-        "agy" => Ok(agy_catalog().await),
-        "opencode" => Ok(opencode_catalog().await),
-        "qoder" => qoder_catalog("qoder").await,
-        "qoder-cn" => qoder_catalog("qoder-cn").await,
+    let bin_key = {
+        let settings = crate::settings::read_settings().unwrap_or_default();
+        super::engine_bin(&settings, &engine)
+    };
+    if !force.unwrap_or(false) {
+        if let Some(cached) = read_cached_local_catalog(&engine, &bin_key) {
+            return Ok(cached);
+        }
+    }
+    let catalog = match engine.as_str() {
+        "codex" => codex_catalog().await,
+        "kimi" => kimi_catalog().await,
+        "grok" => grok_catalog(),
+        "claude" => claude_catalog(),
+        "pi" | "omp" => pi_family_catalog(&engine).await,
+        "dsh" => dsh_catalog().await?,
+        "agy" => agy_catalog().await,
+        "opencode" => opencode_catalog().await,
+        "qoder" => qoder_catalog("qoder").await?,
+        "qoder-cn" => qoder_catalog("qoder-cn").await?,
         // MiniMax's catalog comes from a live `mcode acp` probe (the /model
         // menu only exists on the session handshake), cached last-success;
         // a failed probe falls back to the static stock list.
-        "minimax" => {
-            let settings = crate::settings::read_settings().unwrap_or_default();
-            let bin = super::engine_bin(&settings, "minimax");
-            Ok(minimax::minimax_catalog(&bin).await)
-        }
-        "codebuddy" => {
-            let settings = crate::settings::read_settings().unwrap_or_default();
-            let bin = super::engine_bin(&settings, "codebuddy");
-            Ok(codebuddy::codebuddy_catalog(&bin).await)
-        }
+        "minimax" => minimax::minimax_catalog(&bin_key).await,
+        "codebuddy" => codebuddy::codebuddy_catalog(&bin_key).await,
         // Unknown engine: no CLI-sourced catalog — the frontend fills the
         // picker from the configured provider channels.
-        _ => Ok(EngineCatalog::authoritative(Vec::new())),
-    }
+        _ => EngineCatalog::authoritative(Vec::new()),
+    };
+    write_cached_local_catalog(&engine, bin_key, &catalog);
+    Ok(catalog)
 }
 
 /// DSH has no CLI-side catalog: the model list lives on the running host
@@ -637,5 +679,22 @@ model = \"must-not-leak\"
             .map(|m| m.id)
             .collect();
         assert_eq!(ids, vec!["a", "b"]);
+    }
+
+    #[test]
+    fn local_catalog_cache_reuses_within_ttl_and_invalidates_on_bin_change() {
+        let engine = "__test_local_cache_engine__";
+        let catalog = EngineCatalog::authoritative(vec![EngineModel {
+            id: "m1".to_string(),
+            name: None,
+            description: None,
+            provider: "p".to_string(),
+            context_window: None,
+        }]);
+        write_cached_local_catalog(engine, "/bin/v1".to_string(), &catalog);
+        let hit = read_cached_local_catalog(engine, "/bin/v1").expect("cache hit");
+        assert_eq!(hit.models.len(), 1);
+        assert_eq!(hit.models[0].id, "m1");
+        assert!(read_cached_local_catalog(engine, "/bin/v2").is_none());
     }
 }

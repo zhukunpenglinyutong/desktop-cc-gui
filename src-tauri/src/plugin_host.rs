@@ -400,7 +400,7 @@ pub async fn plugin_list_engine_models(
     }
     // Error strings from the engine layer may embed endpoint URLs; plugins
     // get the same sanitized message as the aggregate catalog.
-    crate::engine::models::list_engine_models(state, engine, workspace)
+    crate::engine::models::list_engine_models(state, engine, workspace, None)
         .await
         .map_err(|_| "model catalog unavailable".to_string())
 }
@@ -566,6 +566,7 @@ pub async fn plugin_model_catalog(
             state.clone(),
             engine_id.clone(),
             workspace.clone(),
+            None,
         )
         .await
         {
