@@ -22,6 +22,7 @@
 //!   its in-flight turns settle; new sends immediately use a fresh daemon.
 
 use std::collections::{BTreeMap, HashMap};
+use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
@@ -101,7 +102,7 @@ pub(crate) struct OmpDaemonSpec {
     pub(crate) auto_approve: bool,
     pub(crate) service_tier: Option<String>,
     pub(crate) extra_env: BTreeMap<String, String>,
-    pub(crate) search_path: Option<String>,
+    pub(crate) search_path: Option<OsString>,
     pub(crate) proxy_env: BTreeMap<String, String>,
     pub(crate) config_stamps: Vec<Option<FileStamp>>,
 }
@@ -111,7 +112,7 @@ impl OmpDaemonSpec {
         bin: String,
         req: &SendRequest,
         command: &tokio::process::Command,
-        search_path: Option<String>,
+        search_path: Option<OsString>,
     ) -> Result<Self, String> {
         let auto_approve = req.permission.as_deref() == Some("bypass");
         let service_tier = if req.model.as_deref().is_some_and(|m| {

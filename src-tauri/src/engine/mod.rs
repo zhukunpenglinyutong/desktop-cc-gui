@@ -1175,7 +1175,7 @@ pub async fn prewarm_omp_session(
                 false,
             )?;
             let child_search_path = resolve::cli_search_path();
-            Ok((None, Some(launch), child_search_path))
+            Ok((None, Some(launch), Some(child_search_path)))
         })
         .await
         .map_err(|e| format!("prepare omp prewarm failed: {e}"))??;
@@ -1326,7 +1326,7 @@ async fn send_reserved(
             launch.bin.clone(),
             &launch.req,
             &launch.built.command,
-            child_search_path,
+            Some(child_search_path),
         )?;
         return send_host_stream(
             state,
