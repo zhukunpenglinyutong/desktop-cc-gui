@@ -46,8 +46,8 @@ use crate::engine::qoder_session::{
     AcpRpcError, JSONRPC_INTERNAL_ERROR, KILL_POLL, SESSION_NEW_TIMEOUT,
 };
 use crate::engine::{
-    command_for_binary, kill_process_group, spawn_stderr_capture, BuiltCommand, EngineEvent,
-    SendRequest, TurnCore, TurnState, VirtualRunGuard,
+    command_for_binary, kill_process_group, spawn_stderr_capture, EngineEvent, SendRequest,
+    TurnCore, TurnState, VirtualRunGuard,
 };
 
 const DAEMON_INIT_TIMEOUT: Duration = Duration::from_secs(45);
@@ -73,15 +73,13 @@ const CONFIG_STAMP_FILES: [&str; 4] = ["models.yml", "config.yml", "settings.jso
 type FileStamp = (u64, Option<SystemTime>);
 
 /// Eligibility gate: normal local OMP sends run on the shared ACP daemon.
-/// Plan approval (`omp_acp`), WSL, computer-use, memory-bot, tool-constrained
-/// runs, and workspace `.omp/mcp.json` on-demand injections keep their isolated
-/// single-run transports.
-pub(crate) fn should_use_daemon(
-    engine: &str,
-    req: &SendRequest,
-    built: &BuiltCommand,
-    wsl: bool,
-) -> bool {
+/// Plan approval (`omp_acp`), WSL, computer-use, memory-bot, and tool-constrained
+/// runs keep their isolated single-run transports.
+///
+/// Note: on-demand MCP (`mcp_launch_modes`) is handled directly inside the ACP
+/// daemon by wrapping stdio `mcpServers` with `--mcp-lazy --`, so it does NOT
+/// inject workspace `.omp/mcp.json` or disqualify the daemon.
+pub(crate) fn should_use_daemon(engine: &str, req: &SendRequest, wsl: bool) -> bool {
     engine == "omp"
         && !wsl
         && !super::pi_family::acp_plan_requested(req)
@@ -89,10 +87,7 @@ pub(crate) fn should_use_daemon(
         && req.memory_bot.is_none()
         && req.allowed_tools.is_none()
         && !req.no_tools
-        && built.mcp_restore.is_none()
-        && built.cleanup_files.is_empty()
 }
-
 /// Launch specification & fingerprint for an `omp --mode acp` daemon instance.
 /// Any change here triggers graceful rotation (draining old daemon, spawning
 /// a fresh one for new sends).
@@ -105,6 +100,7 @@ pub(crate) struct OmpDaemonSpec {
     pub(crate) search_path: Option<OsString>,
     pub(crate) proxy_env: BTreeMap<String, String>,
     pub(crate) config_stamps: Vec<Option<FileStamp>>,
+    pub(crate) omp_on_demand_servers: Vec<String>,
 }
 
 impl OmpDaemonSpec {
@@ -147,8 +143,23 @@ impl OmpDaemonSpec {
             search_path,
             proxy_env: current_proxy_env(),
             config_stamps: omp_config_stamps(),
+            omp_on_demand_servers: omp_user_on_demand_names(),
         })
     }
+}
+
+fn omp_user_on_demand_names() -> Vec<String> {
+    let modes = match crate::settings::read_settings() {
+        Ok(settings) if !settings.mcp_launch_modes.is_empty() => settings.mcp_launch_modes,
+        _ => return Vec::new(),
+    };
+    let mut names: Vec<String> = modes
+        .into_iter()
+        .filter(|(k, v)| k.starts_with("omp_user:") && v == crate::mcp::launch::ON_DEMAND)
+        .filter_map(|(k, _)| k.strip_prefix("omp_user:").map(str::to_string))
+        .collect();
+    names.sort();
+    names
 }
 
 fn current_proxy_env() -> BTreeMap<String, String> {
@@ -1279,6 +1290,8 @@ fn build_loaded_meta(workspace: &Path, session_id: &str, result: &Value) -> Load
 /// mode hardcodes `enableMCP: false` internally and relies on the client to
 /// supply MCP servers per session. Intentionally reads ONLY the user's own
 /// config — never workspace `.omp/mcp.json` (untrusted repository content).
+/// Servers marked `onDemand` under `omp_user:<name>` are wrapped through
+/// `ccgui-next --mcp-lazy --` directly, without writing workspace `.omp/mcp.json`.
 fn load_user_omp_mcp_servers() -> Vec<Value> {
     let Ok(dir) = super::pi_family_auth::agent_dir("omp") else {
         return Vec::new();
@@ -1289,12 +1302,27 @@ fn load_user_omp_mcp_servers() -> Vec<Value> {
     let Ok(root) = serde_json::from_str::<Value>(&raw) else {
         return Vec::new();
     };
-    parse_omp_mcp_servers(&root)
+    let on_demand: std::collections::HashSet<String> =
+        omp_user_on_demand_names().into_iter().collect();
+    parse_omp_mcp_servers_with_lazy(&root, &on_demand, crate::mcp::lazy::wrap)
 }
 
 /// Convert an OMP `mcp.json` document into ACP `mcpServers` JSON entries
 /// matching OMP's `#We` transport adapter (`stdio`, `http`, `sse`).
+#[cfg(test)]
 pub(crate) fn parse_omp_mcp_servers(root: &Value) -> Vec<Value> {
+    let empty = std::collections::HashSet::new();
+    parse_omp_mcp_servers_with_lazy(root, &empty, |cmd, args| Ok((cmd.to_string(), args.to_vec())))
+}
+
+fn parse_omp_mcp_servers_with_lazy<F>(
+    root: &Value,
+    on_demand: &std::collections::HashSet<String>,
+    wrap_lazy: F,
+) -> Vec<Value>
+where
+    F: Fn(&str, &[String]) -> Result<(String, Vec<String>), String>,
+{
     let Some(servers) = root.get("mcpServers").and_then(Value::as_object) else {
         return Vec::new();
     };
@@ -1343,20 +1371,27 @@ pub(crate) fn parse_omp_mcp_servers(root: &Value) -> Vec<Value> {
             .map(str::trim)
             .filter(|s| !s.is_empty())
         {
-            let args: Vec<Value> = spec
+            let raw_args: Vec<String> = spec
                 .get("args")
                 .and_then(Value::as_array)
                 .map(|arr| {
                     arr.iter()
                         .filter_map(Value::as_str)
-                        .map(|s| Value::String(s.to_string()))
+                        .map(str::to_string)
                         .collect()
                 })
                 .unwrap_or_default();
+            let (final_cmd, final_args) = if on_demand.contains(name) {
+                wrap_lazy(command, &raw_args)
+                    .unwrap_or_else(|_| (command.to_string(), raw_args))
+            } else {
+                (command.to_string(), raw_args)
+            };
+            let args: Vec<Value> = final_args.into_iter().map(Value::String).collect();
             let env = kv_pairs_from_object(spec.get("env"));
             out.push(json!({
                 "name": name,
-                "command": command,
+                "command": final_cmd,
                 "args": args,
                 "env": env,
             }));
@@ -1817,45 +1852,32 @@ mod tests {
         }
     }
 
-    fn empty_built() -> BuiltCommand {
-        BuiltCommand {
-            command: command_for_binary("omp"),
-            stdin_payload: None,
-            keep_stdin_open: false,
-            cleanup_files: Vec::new(),
-            mcp_restore: None,
-            preassigned_session_id: None,
-        }
-    }
-
     #[test]
     fn should_use_daemon_gates_only_eligible_local_omp_sends() {
-        let built = empty_built();
-        assert!(should_use_daemon("omp", &sample_req(), &built, false));
+        assert!(should_use_daemon("omp", &sample_req(), false));
 
         // Bypass and compact both run on the daemon.
         let mut bypass = sample_req();
         bypass.permission = Some("bypass".into());
         bypass.native_compact = true;
-        assert!(should_use_daemon("omp", &bypass, &built, false));
+        assert!(should_use_daemon("omp", &bypass, false));
 
         // Plan, WSL, computer_use, memory_bot, non-omp all stay off the daemon.
-        assert!(!should_use_daemon("pi", &sample_req(), &built, false));
-        assert!(!should_use_daemon("omp", &sample_req(), &built, true));
+        assert!(!should_use_daemon("pi", &sample_req(), false));
+        assert!(!should_use_daemon("omp", &sample_req(), true));
 
         let mut plan = sample_req();
         plan.permission = Some("plan".into());
-        assert!(!should_use_daemon("omp", &plan, &built, false));
+        assert!(!should_use_daemon("omp", &plan, false));
 
         let mut cu = sample_req();
         cu.computer_use = Some(true);
-        assert!(!should_use_daemon("omp", &cu, &built, false));
+        assert!(!should_use_daemon("omp", &cu, false));
 
         let mut mem = sample_req();
         mem.memory_bot = Some("bot-1".into());
-        assert!(!should_use_daemon("omp", &mem, &built, false));
+        assert!(!should_use_daemon("omp", &mem, false));
     }
-
     #[test]
     fn resolve_model_value_handles_exact_and_bare_ids() {
         let available = vec![
@@ -2036,5 +2058,35 @@ mod tests {
         assert_eq!(remote["headers"], json!([{ "name": "Authorization", "value": "Bearer x" }]));
         let stream = servers.iter().find(|s| s["name"] == "stream").unwrap();
         assert_eq!(stream["type"], "sse");
+    }
+
+    #[test]
+    fn parse_omp_mcp_servers_wraps_on_demand_stdio_entries_through_lazy_proxy() {
+        let doc = json!({
+            "mcpServers": {
+                "codegraph": {
+                    "type": "stdio",
+                    "command": "node",
+                    "args": ["serve", "--mcp"]
+                },
+                "eager": {
+                    "type": "stdio",
+                    "command": "python",
+                    "args": ["srv.py"]
+                }
+            }
+        });
+        let on_demand: std::collections::HashSet<String> = ["codegraph".to_string()].into();
+        let servers = parse_omp_mcp_servers_with_lazy(&doc, &on_demand, |cmd, args| {
+            let mut wrapped = vec!["--mcp-lazy".to_string(), "--".to_string(), cmd.to_string()];
+            wrapped.extend(args.iter().cloned());
+            Ok(("ccgui-next".to_string(), wrapped))
+        });
+        let cg = servers.iter().find(|s| s["name"] == "codegraph").unwrap();
+        assert_eq!(cg["command"], "ccgui-next");
+        assert_eq!(cg["args"], json!(["--mcp-lazy", "--", "node", "serve", "--mcp"]));
+        let eager = servers.iter().find(|s| s["name"] == "eager").unwrap();
+        assert_eq!(eager["command"], "python");
+        assert_eq!(eager["args"], json!(["srv.py"]));
     }
 }

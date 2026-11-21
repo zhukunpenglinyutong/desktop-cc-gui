@@ -695,9 +695,15 @@ fn prepare_launch(
         engine_impl.build_command(&req, &bin)?
     };
     // 按需启动的 MCP 条目：只对本机工作区、无工具白名单的普通发送生效
-    // （远端 CLI 读不到本机 exe；只读/计划隔离要求零 MCP）。失败就保持
-    // 随会话启动，不拦发送。
-    if !wsl && req.allowed_tools.is_none() && !req.no_tools && !codex_read_only::requested(&req) {
+    // （远端 CLI 读不到本机 exe；只读/计划隔离要求零 MCP）。
+    // 走常驻 OMP ACP 守护进程时，按需 MCP 直接在 ACP `mcpServers` 里包
+    // `--mcp-lazy --`，不再写工作区 `.omp/mcp.json`。失败就保持随会话启动。
+    if !wsl
+        && req.allowed_tools.is_none()
+        && !req.no_tools
+        && !codex_read_only::requested(&req)
+        && !omp_daemon::should_use_daemon(engine, &req, wsl)
+    {
         let servers = crate::mcp::launch::on_demand_servers(engine, &req.workspace);
         if !servers.is_empty() {
             if let Err(error) = engine_impl.mount_on_demand(&mut built, &servers, &req.workspace) {
@@ -1185,7 +1191,7 @@ pub async fn prewarm_omp_session(
     let Some(mut launch) = launch.take() else {
         return Ok(());
     };
-    let use_daemon = omp_daemon::should_use_daemon("omp", &launch.req, &launch.built, false);
+    let use_daemon = omp_daemon::should_use_daemon("omp", &launch.req, false);
     if let Some(restore) = &launch.built.mcp_restore {
         restore.restore();
     }
@@ -1321,7 +1327,11 @@ async fn send_reserved(
     // Eligible local OMP turns run on the shared long-lived `omp --mode acp`
     // daemon: single process across sessions & workspaces, zero cold start on
     // new chat / session switch / model switch, concurrent sessions supported.
-    if omp_daemon::should_use_daemon(&engine, &launch.req, &launch.built, wsl_tp.is_some()) {
+    if omp_daemon::should_use_daemon(&engine, &launch.req, wsl_tp.is_some()) {
+        if let Some(restore) = &launch.built.mcp_restore {
+            restore.restore();
+        }
+        cleanup_staged_files(&launch.built.cleanup_files);
         let spec = omp_daemon::OmpDaemonSpec::from_launch(
             launch.bin.clone(),
             &launch.req,
