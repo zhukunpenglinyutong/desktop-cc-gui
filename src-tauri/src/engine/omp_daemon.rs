@@ -30,6 +30,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime};
 
 use serde_json::{json, Map, Value};
+use sha2::Digest as _;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, ChildStdin, ChildStdout};
 use tokio::sync::{mpsc, oneshot, Mutex as TokioMutex};
@@ -70,7 +71,18 @@ const PROXY_ENV_KEYS: [&str; 8] = [
 
 const CONFIG_STAMP_FILES: [&str; 4] = ["models.yml", "config.yml", "settings.json", "mcp.json"];
 
-type FileStamp = (u64, Option<SystemTime>);
+/// Content digest of a config file, ignoring trailing ASCII whitespace.
+///
+/// OMP rewrites `models.yml` from its model registry and appends a trailing
+/// blank line each time. A size+mtime fingerprint therefore changes on every
+/// run, which rotated the daemon on every send (a self-sustaining cold-start
+/// loop). Hashing the trimmed content keeps real user edits detectable while
+/// identical rewrites stay stable.
+type FileStamp = [u8; 32];
+
+/// Size + mtime for a session transcript: cheap, and transcripts can be far
+/// too large to hash on every send.
+type SessionFileStamp = (u64, Option<SystemTime>);
 
 /// Eligibility gate: normal local OMP sends run on the shared ACP daemon.
 /// Plan approval (`omp_acp`), WSL, computer-use, memory-bot, and tool-constrained
@@ -185,6 +197,23 @@ fn omp_config_stamps() -> Vec<Option<FileStamp>> {
 }
 
 fn file_stamp(path: &Path) -> Option<FileStamp> {
+    const MAX_STAMP_BYTES: u64 = 4 * 1024 * 1024;
+    let meta = std::fs::metadata(path).ok()?;
+    if !meta.is_file() || meta.len() > MAX_STAMP_BYTES {
+        return None;
+    }
+    let bytes = std::fs::read(path).ok()?;
+    let end = bytes
+        .iter()
+        .rposition(|byte| !byte.is_ascii_whitespace())
+        .map(|index| index + 1)
+        .unwrap_or(0);
+    let mut hasher = sha2::Sha256::new();
+    hasher.update(&bytes[..end]);
+    Some(hasher.finalize().into())
+}
+
+fn session_file_stamp(path: &Path) -> Option<SessionFileStamp> {
     let meta = std::fs::metadata(path).ok()?;
     Some((meta.len(), meta.modified().ok()))
 }
@@ -227,19 +256,25 @@ impl OmpDaemonState {
             return Ok(client);
         }
 
-        // Retire any mismatched or dead previous daemon before spawning.
-        let retired = {
+        // Retire any mismatched or dead previous daemon before spawning, and
+        // reap drained daemons that already finished their last in-flight turn.
+        let (retired, idle_draining) = {
             let mut holder = lock_unpoisoned(&self.holder);
-            holder.draining.retain(|client| client.is_alive());
-            holder.current.take()
+            let mut idle = Vec::new();
+            holder.draining.retain(|client| {
+                if !client.is_alive() {
+                    return false;
+                }
+                if client.active_turn_count() == 0 {
+                    idle.push(Arc::clone(client));
+                    return false;
+                }
+                true
+            });
+            (holder.current.take(), idle)
         };
-        if let Some(old) = retired {
-            old.mark_draining();
-            if old.active_turn_count() == 0 {
-                old.shutdown_sync();
-            } else if old.is_alive() {
-                lock_unpoisoned(&self.holder).draining.push(old);
-            }
+        for client in idle_draining {
+            client.shutdown_sync();
         }
 
         let client = OmpDaemonClient::spawn_and_initialize(spec.clone()).await?;
@@ -370,7 +405,7 @@ struct LoadedSessionMeta {
     current_effort: Option<String>,
     available_models: Vec<String>,
     session_file: Option<PathBuf>,
-    session_file_stamp: Option<FileStamp>,
+    session_file_stamp: Option<SessionFileStamp>,
 }
 
 static NEXT_DAEMON_ID: AtomicU64 = AtomicU64::new(1);
@@ -630,7 +665,9 @@ impl OmpDaemonClient {
         if let Some(meta) = cached {
             let same_workspace = meta.workspace == workspace;
             let file_unchanged = match (&meta.session_file, &meta.session_file_stamp) {
-                (Some(path), Some(expected)) => file_stamp(path).as_ref() == Some(expected),
+                (Some(path), Some(expected)) => {
+                    session_file_stamp(path).as_ref() == Some(expected)
+                }
                 _ => true,
             };
             if same_workspace && file_unchanged {
@@ -731,7 +768,7 @@ impl OmpDaemonClient {
         if entry.session_file.is_none() {
             entry.session_file = locate_session_file(workspace, session_id);
         }
-        entry.session_file_stamp = entry.session_file.as_deref().and_then(file_stamp);
+        entry.session_file_stamp = entry.session_file.as_deref().and_then(session_file_stamp);
     }
 
     async fn close_idle_session(&self, session_id: &str) {
@@ -1274,7 +1311,7 @@ pub(crate) fn resolve_model_value(requested: &str, available: &[String]) -> Stri
 
 fn build_loaded_meta(workspace: &Path, session_id: &str, result: &Value) -> LoadedSessionMeta {
     let session_file = locate_session_file(workspace, session_id);
-    let session_file_stamp = session_file.as_deref().and_then(file_stamp);
+    let session_file_stamp = session_file.as_deref().and_then(session_file_stamp);
     LoadedSessionMeta {
         workspace: workspace.to_path_buf(),
         current_model: parse_config_current(result, "model"),
@@ -2088,5 +2125,32 @@ mod tests {
         let eager = servers.iter().find(|s| s["name"] == "eager").unwrap();
         assert_eq!(eager["command"], "python");
         assert_eq!(eager["args"], json!(["srv.py"]));
+    }
+}
+
+#[cfg(test)]
+mod stamp_tests {
+    use super::*;
+
+    #[test]
+    fn file_stamp_ignores_trailing_blank_lines_but_tracks_real_edits() {
+        let dir = std::env::temp_dir().join(format!(
+            "ccgui-omp-stamp-{}",
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("models.yml");
+        std::fs::write(&path, "providers:\n  a: {}\n").unwrap();
+        let baseline = file_stamp(&path).unwrap();
+
+        // OMP's YAML writer appends blank lines on every registry rewrite.
+        std::fs::write(&path, "providers:\n  a: {}\n\n\n\n").unwrap();
+        assert_eq!(file_stamp(&path), Some(baseline));
+
+        // A real user edit must still invalidate the fingerprint.
+        std::fs::write(&path, "providers:\n  a: {}\n  b: {}\n").unwrap();
+        assert_ne!(file_stamp(&path), Some(baseline));
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
