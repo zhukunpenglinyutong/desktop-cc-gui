@@ -890,8 +890,15 @@ pub(crate) fn handle_session_update(
             tool_name,
             input,
         } => {
-            view.tool_names.insert(tool_id, tool_name.clone());
-            core.dispatch_event(state, crate::engine::tool_call_message(tool_name, input.as_ref()));
+            view.tool_names.insert(tool_id.clone(), tool_name.clone());
+            core.dispatch_event(
+                state,
+                crate::engine::tool_call_message_with_id(
+                    tool_name,
+                    input.as_ref(),
+                    Some(&tool_id),
+                ),
+            );
         }
         QoderSessionUpdate::ToolCompleted {
             tool_id,
@@ -907,7 +914,10 @@ pub(crate) fn handle_session_update(
                 (None, Some(error)) => json!({ "text": error, "isError": true }),
                 (None, None) => Value::Null,
             };
-            core.dispatch_event(state, crate::engine::tool_result_patch(name, Some(&result)));
+            core.dispatch_event(
+                state,
+                crate::engine::tool_result_patch_with_id(name, Some(&result), Some(&tool_id)),
+            );
         }
         QoderSessionUpdate::Ignore => {}
     }
