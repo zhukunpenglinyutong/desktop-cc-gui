@@ -34,6 +34,7 @@ mod kimi_acp;
 pub mod minimax;
 mod minimax_acp;
 pub mod models;
+pub mod omp_daemon;
 pub mod opencode;
 pub mod opencode_server;
 mod opencode_session;
@@ -1048,42 +1049,7 @@ async fn send_message_inner_with_sink(
     {
         return Err("invalid run id".into());
     }
-    // Reserve the run id atomically, before the first await: a contains_key
-    // check here with the registry insert after spawn would let two
-    // concurrent sends carrying the same client id both pass, and the second
-    // insert would overwrite the first entry — orphaning its child (no key
-    // routes an interrupt to it) and streaming two runs under one runId.
-    // The placeholder owns the run's killed/reader_abort handles, so a Stop
-    // landing inside the launch window still settles the turn; every error
-    // path before the real registration drops the reservation.
-    let killed = Arc::new(std::sync::atomic::AtomicBool::new(false));
-    let reader_abort = Arc::new(std::sync::OnceLock::new());
-    {
-        let mut map = state.processes.0.lock().map_err(|e| e.to_string())?;
-        state.processes.ensure_session_not_editing(session_id.as_deref())?;
-        if map.contains_key(&run_id) {
-            return Err("run id already active".into());
-        }
-        if registry::active_run_count(&map) >= MAX_CONCURRENT_RUNS {
-            return Err(format!(
-                "too many concurrent runs ({MAX_CONCURRENT_RUNS}); wait for one to finish"
-            ));
-        }
-        let entry = ChildEntry {
-            child: None,
-            pid: 0,
-            run_id: run_id.clone(),
-            killed: Arc::clone(&killed),
-            reader_abort: Arc::clone(&reader_abort),
-            stdin: None,
-            questions: Arc::new(Mutex::new(HashMap::new())),
-            plans: Arc::new(Mutex::new(HashMap::new())),
-        };
-        if let Some(session_id) = session_id.as_ref() {
-            map.entry(session_id.clone()).or_insert_with(|| entry.clone());
-        }
-        map.insert(run_id.clone(), entry);
-    }
+    let (killed, reader_abort) = reserve_chat_run(&state, session_id.as_deref(), &run_id)?;
     let reserved = run_id.clone();
     let result = send_reserved(
         state,
@@ -1113,6 +1079,150 @@ async fn send_message_inner_with_sink(
     }
     result
 }
+/// Reserve a chat run id atomically before the first await: the placeholder
+/// owns the run's killed/reader_abort handles so Stop landing during launch
+/// still settles the turn; every error path drops the reservation.
+fn reserve_chat_run(
+    state: &crate::AppState,
+    session_id: Option<&str>,
+    run_id: &str,
+) -> Result<
+    (
+        Arc<std::sync::atomic::AtomicBool>,
+        Arc<std::sync::OnceLock<tokio::task::AbortHandle>>,
+    ),
+    String,
+> {
+    let killed = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let reader_abort = Arc::new(std::sync::OnceLock::new());
+    let mut map = state.processes.0.lock().map_err(|e| e.to_string())?;
+    state.processes.ensure_session_not_editing(session_id)?;
+    if map.contains_key(run_id) {
+        return Err("run id already active".into());
+    }
+    if registry::active_run_count(&map) >= MAX_CONCURRENT_RUNS {
+        return Err(format!(
+            "too many concurrent runs ({MAX_CONCURRENT_RUNS}); wait for one to finish"
+        ));
+    }
+    let entry = ChildEntry {
+        child: None,
+        pid: 0,
+        run_id: run_id.to_string(),
+        killed: Arc::clone(&killed),
+        reader_abort: Arc::clone(&reader_abort),
+        stdin: None,
+        questions: Arc::new(Mutex::new(HashMap::new())),
+        plans: Arc::new(Mutex::new(HashMap::new())),
+    };
+    if let Some(session_id) = session_id {
+        map.entry(session_id.to_string()).or_insert_with(|| entry.clone());
+    }
+    map.insert(run_id.to_string(), entry);
+    Ok((killed, reader_abort))
+}
+
+/// Pre-warm the single-instance `omp --mode acp` daemon (and optionally load
+/// an existing session via `session/resume`) while the user reads or composes.
+/// Never creates a user turn; safe to call on pending tabs, existing tabs, or
+/// workspace switch.
+#[tauri::command]
+pub async fn prewarm_omp_session(
+    state: tauri::State<'_, crate::AppState>,
+    workspace_path: String,
+    session_id: Option<String>,
+    model: Option<String>,
+    effort: Option<String>,
+    permission: Option<String>,
+    provider_id: Option<String>,
+    memory_bot: Option<String>,
+) -> Result<(), String> {
+    if permission.as_deref() == Some("plan")
+        || memory_bot.as_deref().is_some_and(|id| !id.trim().is_empty())
+    {
+        return Ok(());
+    }
+    let db = Arc::clone(&state.db);
+    let ws = workspace_path.clone();
+    let session_for_launch = session_id.clone();
+    let model_for_launch = model.clone();
+    let effort_for_launch = effort.clone();
+    let permission_for_launch = permission.clone();
+    let provider_for_launch = provider_id.clone();
+    let (wsl_tp, mut launch, child_search_path) =
+        tauri::async_runtime::spawn_blocking(move || -> Result<_, String> {
+            let wsl_tp = wsl_transport::transport_for_workspace(&db, &ws);
+            if wsl_tp.is_some() {
+                return Ok((wsl_tp, None, None));
+            }
+            let launch = prepare_launch(
+                "omp",
+                &ws,
+                session_for_launch,
+                String::new(),
+                Vec::new(),
+                None,
+                None,
+                model_for_launch,
+                effort_for_launch,
+                permission_for_launch,
+                Vec::new(),
+                provider_for_launch,
+                None,
+                None,
+                None,
+                false,
+                false,
+            )?;
+            let child_search_path = resolve::cli_search_path();
+            Ok((None, Some(launch), child_search_path))
+        })
+        .await
+        .map_err(|e| format!("prepare omp prewarm failed: {e}"))??;
+    if wsl_tp.is_some() {
+        return Ok(());
+    }
+    let Some(mut launch) = launch.take() else {
+        return Ok(());
+    };
+    let use_daemon = omp_daemon::should_use_daemon("omp", &launch.req, &launch.built, false);
+    if let Some(restore) = &launch.built.mcp_restore {
+        restore.restore();
+    }
+    cleanup_staged_files(&launch.built.cleanup_files);
+    if !use_daemon {
+        return Ok(());
+    }
+    pi_family_env::apply(&mut launch.built.command, "omp").await;
+    let spec = omp_daemon::OmpDaemonSpec::from_launch(
+        launch.bin,
+        &launch.req,
+        &launch.built.command,
+        child_search_path,
+    )?;
+    state
+        .omp_daemon
+        .prewarm(
+            &spec,
+            &launch.req.workspace,
+            launch.req.session_id.as_deref(),
+            launch.req.model.as_deref(),
+            launch.req.effort.as_deref(),
+        )
+        .await
+}
+
+/// Close an idle OMP session inside the shared ACP daemon (e.g. tab closed)
+/// to free its memory without touching the daemon or any active sibling turns.
+#[tauri::command]
+pub async fn close_omp_session(
+    state: tauri::State<'_, crate::AppState>,
+    session_id: String,
+) -> Result<(), String> {
+    state.omp_daemon.close_session(&session_id).await;
+    Ok(())
+}
+
 /// Write a new prompt into the process that settled its turn but stays alive
 /// for a background task's follow-up turn on `session_id`. Returns that run's
 /// id, or None when no such process exists, its launch settings no longer
@@ -1208,6 +1318,28 @@ async fn send_reserved(
         // 只注入这次子进程；WSL 不带本机 env，跳过。
         pi_family_env::apply(&mut launch.built.command, &engine).await;
     }
+    // Eligible local OMP turns run on the shared long-lived `omp --mode acp`
+    // daemon: single process across sessions & workspaces, zero cold start on
+    // new chat / session switch / model switch, concurrent sessions supported.
+    if omp_daemon::should_use_daemon(&engine, &launch.req, &launch.built, wsl_tp.is_some()) {
+        let spec = omp_daemon::OmpDaemonSpec::from_launch(
+            launch.bin.clone(),
+            &launch.req,
+            &launch.built.command,
+            child_search_path,
+        )?;
+        return send_host_stream(
+            state,
+            sink,
+            launch,
+            engine,
+            run_id,
+            killed,
+            reader_abort,
+            Some(spec),
+        )
+        .await;
+    }
     // pi/omp: the injected extension observes the provider response's own
     // `model` field and appends it to a per-run sidecar. The reader consults
     // that file when `message_end` has no `upstreamModel`. Remote workspaces
@@ -1241,7 +1373,17 @@ async fn send_reserved(
         if engine == "codex" && !codex_read_only::requested(&launch.req) {
             codex_provider_env::apply(&mut launch.built.command).await;
         }
-        return send_host_stream(state, launch, engine, run_id, killed, reader_abort).await;
+        return send_host_stream(
+            state,
+            sink,
+            launch,
+            engine,
+            run_id,
+            killed,
+            reader_abort,
+            None,
+        )
+        .await;
     }
     let (mut command, extra_cleanup, skip_local_cwd) = match &wsl_tp {
         Some(tp) => {
@@ -1519,11 +1661,13 @@ async fn send_reserved(
 /// and settles the turn itself (done/error + registry cleanup).
 async fn send_host_stream(
     state: &crate::AppState,
+    sink: Arc<event_sink::EventSink>,
     launch: Launch,
     engine: String,
     run_id: String,
     killed: Arc<std::sync::atomic::AtomicBool>,
     reader_abort: Arc<std::sync::OnceLock<tokio::task::AbortHandle>>,
+    omp_daemon_spec: Option<omp_daemon::OmpDaemonSpec>,
 ) -> Result<SendResult, String> {
     let pid = next_virtual_pid();
     let entry = ChildEntry {
@@ -1544,7 +1688,7 @@ async fn send_host_stream(
     }
 
     let core = TurnCore {
-        sink: Arc::clone(&state.sink),
+        sink,
         registry: Arc::clone(&state.processes),
         engine_id: engine.clone(),
         run_id: run_id.clone(),
@@ -1593,13 +1737,23 @@ async fn send_host_stream(
             killed,
             pid,
         )),
-        "omp" => tokio::spawn(pi_family::omp_acp::run_acp_turn(
-            core,
-            launch.req,
-            launch.built,
-            killed,
-            pid,
-        )),
+        "omp" => match omp_daemon_spec {
+            Some(spec) => tokio::spawn(omp_daemon::run_daemon_turn(
+                core,
+                launch.req,
+                spec,
+                Arc::clone(&state.omp_daemon),
+                killed,
+                pid,
+            )),
+            None => tokio::spawn(pi_family::omp_acp::run_acp_turn(
+                core,
+                launch.req,
+                launch.built,
+                killed,
+                pid,
+            )),
+        },
         _ => unreachable!("send_host_stream only routes drives_own_transport engines: {engine}"),
     };
     let _ = reader_abort.set(task.abort_handle());
@@ -1677,6 +1831,17 @@ pub async fn answer_question(
         .get(&request_id)
         .cloned()
         .ok_or_else(|| "question is no longer pending".to_string())?;
+    if let Some(context) = input.get("ompAcpElicitation") {
+        let frame = omp_daemon::answer_frame(context, answers.as_ref())?;
+        state
+            .omp_daemon
+            .write_elicitation_reply(context, &frame)
+            .await?;
+        if let Ok(mut questions) = entry.questions.lock() {
+            questions.remove(&request_id);
+        }
+        return Ok(());
+    }
     if let Some(context) = input.get("kimiAcp") {
         let frame = kimi_acp::answer_frame(context, answers.as_ref())?;
         state
@@ -3851,6 +4016,7 @@ mod plan_respond_tests {
             relay: crate::relay::RelayState::default(),
             dsh_host: Arc::new(crate::dsh_host::DshHostState::default()),
             opencode_server: Arc::new(opencode_server::OpencodeServerState::default()),
+            omp_daemon: Arc::new(omp_daemon::OmpDaemonState::default()),
             worktree_creations: crate::git_worktree::CreationRegistry::default(),
         });
         (app, db)

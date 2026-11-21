@@ -76,10 +76,10 @@ pub(crate) const RESUME_REFUSAL: &str = "OMP ACP 计划会话必须从全新会�
 /// Per-turn projection state: prompt 结果里的 usage、tool_call 名称补丁表、
 /// usage_update 推送的上下文窗口。
 #[derive(Default)]
-struct TurnView {
-    last_usage: Option<Value>,
-    tool_names: HashMap<String, String>,
-    context_window: Option<i64>,
+pub(crate) struct TurnView {
+    pub(crate) last_usage: Option<Value>,
+    pub(crate) tool_names: HashMap<String, String>,
+    pub(crate) context_window: Option<i64>,
 }
 
 /// Drive one send as an OMP ACP plan-mode turn. Settle contract mirrors
@@ -316,14 +316,14 @@ async fn handshake_and_prompt(
 
 /// OMP 的 initialize 参数：共享管线参数 + elicitation.form 声明
 /// （protocol.ts:150 的 ClientCapabilities.elicitation.form）。
-fn omp_initialize_params() -> Value {
+pub(crate) fn omp_initialize_params() -> Value {
     let mut params = initialize_params();
     params["clientCapabilities"]["elicitation"] = json!({ "form": {} });
     params
 }
 
 /// 启动前自检：OMP 未收到 form 声明会静默自动批准，声明缺失必须 fail。
-fn elicitation_form_declared(params: &Value) -> bool {
+pub(crate) fn elicitation_form_declared(params: &Value) -> bool {
     params
         .get("clientCapabilities")
         .and_then(|caps| caps.get("elicitation"))
@@ -347,7 +347,7 @@ fn plan_mode_advertised(session_result: &Value) -> bool {
         .unwrap_or(true)
 }
 
-fn extract_session_id(value: &Value) -> Option<String> {
+pub(crate) fn extract_session_id(value: &Value) -> Option<String> {
     value
         .get("sessionId")
         .or_else(|| value.get("session_id"))
@@ -359,7 +359,7 @@ fn extract_session_id(value: &Value) -> Option<String> {
 
 /// ACP prompt content blocks: text plus base64 image blocks（OMP 声明
 /// promptCapabilities.image=true，acp-agent.ts:668-673）。
-fn prompt_blocks(text: &str, images: &[String], workspace: &Path) -> Result<Vec<Value>, String> {
+pub(crate) fn prompt_blocks(text: &str, images: &[String], workspace: &Path) -> Result<Vec<Value>, String> {
     let mut blocks = vec![json!({ "type": "text", "text": text })];
     for raw in images {
         let (mime, base64) = crate::engine::images::load_image(raw, workspace)?;
@@ -554,10 +554,11 @@ fn encode_session_dir_name(
     encode_legacy(legacy_basis)
 }
 
-fn session_dir_name(workspace: &Path) -> String {
+pub(crate) fn session_dir_name(workspace: &Path) -> String {
     let resolved = normalize_absolute(workspace);
     let canonical = realpath_or(&resolved);
     let home = std::env::var_os("HOME")
+        .or_else(|| std::env::var_os("USERPROFILE"))
         .map(PathBuf::from)
         .map(|home| realpath_or(&normalize_absolute(&home)));
     let tmp = realpath_or(&std::env::temp_dir());
@@ -856,7 +857,7 @@ fn build_review(
 /// One `session/update` notification projected to engine events. OMP 的
 /// 增量词汇与 qoder/grok 相同，复用共享映射；usage_update 只取上下文
 /// 窗口（acp-agent.ts:2153-2158），token 总量以 prompt 应答为准。
-fn handle_session_update(
+pub(crate) fn handle_session_update(
     core: &TurnCore,
     state: &mut TurnState,
     view: &mut TurnView,
@@ -914,7 +915,7 @@ fn handle_session_update(
 
 /// prompt 应答的 usage（acp-agent.ts:2187-2206 buildTurnUsage：
 /// 顶层 `usage.{input,output,total}Tokens(+cached*)`）。
-fn prompt_usage(result: &Value, context_window: Option<i64>) -> Option<Value> {
+pub(crate) fn prompt_usage(result: &Value, context_window: Option<i64>) -> Option<Value> {
     let usage = result.get("usage").filter(|usage| usage.is_object())?;
     let total = usage.get("totalTokens").and_then(Value::as_u64)?;
     if total == 0 {
@@ -942,7 +943,7 @@ fn prompt_usage(result: &Value, context_window: Option<i64>) -> Option<Value> {
 
 /// Terminal message precedence（同 grok）：rpc error 的 message 部分 →
 /// CLI 的 stderr 尾巴 → 原始错误。
-fn terminal_message(raw: String, stderr_buf: &Arc<Mutex<String>>) -> String {
+pub(crate) fn terminal_message(raw: String, stderr_buf: &Arc<Mutex<String>>) -> String {
     let bare = raw
         .strip_prefix("rpc:")
         .and_then(|rest| rest.split_once(':'))

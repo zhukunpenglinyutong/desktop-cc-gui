@@ -976,14 +976,22 @@ pub async fn write_session_file(state: tauri::State<'_, crate::AppState>, engine
     }
     let db = Arc::clone(&state.db);
     let processes = Arc::clone(&state.processes);
-    tauri::async_runtime::spawn_blocking(move || {
-        let _edit = processes.begin_session_edit(&session_id)?;
+    let engine_for_write = engine.clone();
+    let session_for_write = session_id.clone();
+    let document = tauri::async_runtime::spawn_blocking(move || {
+        let _edit = processes.begin_session_edit(&session_for_write)?;
         // The per-session lease excludes starts without holding the global
         // process registry mutex during file I/O or database transactions.
-        let result = write_local_document(&db, &engine, &session_id, content, &expected_version);
+        let result = write_local_document(&db, &engine_for_write, &session_for_write, content, &expected_version);
         drop(_edit);
         result
-    }).await.map_err(|e| e.to_string())?
+    }).await.map_err(|e| e.to_string())??;
+    if engine == "omp" {
+        // Evict any cached session handle in the shared OMP ACP daemon so the
+        // next send reloads the edited transcript from disk.
+        state.omp_daemon.close_session(&session_id).await;
+    }
+    Ok(document)
 }
 
 #[cfg(test)]

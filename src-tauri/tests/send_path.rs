@@ -69,6 +69,9 @@ fn build_app(
         opencode_server: std::sync::Arc::new(
             ccgui_next_lib::engine::opencode_server::OpencodeServerState::default(),
         ),
+        omp_daemon: std::sync::Arc::new(
+            ccgui_next_lib::engine::omp_daemon::OmpDaemonState::default(),
+        ),
         worktree_creations: ccgui_next_lib::git_worktree::CreationRegistry::default(),
     };
     app.manage(state);
@@ -480,6 +483,9 @@ fn ipc_send_message_accepts_camel_case_args() {
         dsh_host: Arc::new(ccgui_next_lib::dsh_host::DshHostState::default()),
         opencode_server: std::sync::Arc::new(
             ccgui_next_lib::engine::opencode_server::OpencodeServerState::default(),
+        ),
+        omp_daemon: std::sync::Arc::new(
+            ccgui_next_lib::engine::omp_daemon::OmpDaemonState::default(),
         ),
         worktree_creations: ccgui_next_lib::git_worktree::CreationRegistry::default(),
     });

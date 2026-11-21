@@ -172,6 +172,23 @@ struct SessionIdArgs {
 }
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
+struct PrewarmOmpArgs {
+    workspace_path: String,
+    #[serde(default)]
+    session_id: Option<String>,
+    #[serde(default)]
+    model: Option<String>,
+    #[serde(default)]
+    effort: Option<String>,
+    #[serde(default)]
+    permission: Option<String>,
+    #[serde(default)]
+    provider_id: Option<String>,
+    #[serde(default)]
+    memory_bot: Option<String>,
+}
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct RunIdsArgs {
     run_ids: Vec<String>,
 }
@@ -810,6 +827,24 @@ pub(super) async fn dispatch(
         "close_idle_codebuddy" => {
             let a: SessionIdArgs = parse_args(&raw)?;
             ser(crate::engine::close_idle_codebuddy(app.state(), a.session_id).await)
+        }
+        "prewarm_omp_session" => {
+            let a: PrewarmOmpArgs = parse_args(&raw)?;
+            ser(crate::engine::prewarm_omp_session(
+                app.state(),
+                a.workspace_path,
+                a.session_id,
+                a.model,
+                a.effort,
+                a.permission,
+                a.provider_id,
+                a.memory_bot,
+            )
+            .await)
+        }
+        "close_omp_session" => {
+            let a: SessionIdArgs = parse_args(&raw)?;
+            ser(crate::engine::close_omp_session(app.state(), a.session_id).await)
         }
         "interrupt_session" => {
             let a: SessionIdArgs = parse_args(&raw)?;
