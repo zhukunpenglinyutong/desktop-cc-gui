@@ -591,10 +591,11 @@ impl OmpDaemonClient {
 
     async fn create_session(&self, workspace: &Path) -> Result<(String, LoadedSessionMeta), String> {
         let cwd = workspace.to_string_lossy().to_string();
+        let mcp_servers = load_user_omp_mcp_servers();
         let result = self
             .rpc_call(
                 "session/new",
-                json!({ "cwd": cwd, "mcpServers": [] }),
+                json!({ "cwd": cwd, "mcpServers": mcp_servers }),
                 Some(SESSION_NEW_TIMEOUT),
             )
             .await?;
@@ -636,10 +637,11 @@ impl OmpDaemonClient {
         }
 
         let cwd = workspace.to_string_lossy().to_string();
+        let mcp_servers = load_user_omp_mcp_servers();
         let result = self
             .rpc_call(
                 "session/resume",
-                json!({ "sessionId": session_id, "cwd": cwd, "mcpServers": [] }),
+                json!({ "sessionId": session_id, "cwd": cwd, "mcpServers": mcp_servers }),
                 Some(SESSION_RESUME_TIMEOUT),
             )
             .await?;
@@ -1271,6 +1273,135 @@ fn build_loaded_meta(workspace: &Path, session_id: &str, result: &Value) -> Load
     }
 }
 
+/// Read user-level `~/.omp/agent/mcp.json` and translate enabled servers into
+/// ACP `mcpServers` entries (`session/new` and `session/resume`). OMP's ACP
+/// mode hardcodes `enableMCP: false` internally and relies on the client to
+/// supply MCP servers per session. Intentionally reads ONLY the user's own
+/// config — never workspace `.omp/mcp.json` (untrusted repository content).
+fn load_user_omp_mcp_servers() -> Vec<Value> {
+    let Ok(dir) = super::pi_family_auth::agent_dir("omp") else {
+        return Vec::new();
+    };
+    let Ok(raw) = std::fs::read_to_string(dir.join("mcp.json")) else {
+        return Vec::new();
+    };
+    let Ok(root) = serde_json::from_str::<Value>(&raw) else {
+        return Vec::new();
+    };
+    parse_omp_mcp_servers(&root)
+}
+
+/// Convert an OMP `mcp.json` document into ACP `mcpServers` JSON entries
+/// matching OMP's `#We` transport adapter (`stdio`, `http`, `sse`).
+pub(crate) fn parse_omp_mcp_servers(root: &Value) -> Vec<Value> {
+    let Some(servers) = root.get("mcpServers").and_then(Value::as_object) else {
+        return Vec::new();
+    };
+    let disabled: std::collections::HashSet<&str> = root
+        .get("disabledServers")
+        .and_then(Value::as_array)
+        .map(|arr| arr.iter().filter_map(Value::as_str).collect())
+        .unwrap_or_default();
+    let enabled_only: Option<std::collections::HashSet<&str>> = root
+        .get("enabledServers")
+        .and_then(Value::as_array)
+        .filter(|arr| !arr.is_empty())
+        .map(|arr| arr.iter().filter_map(Value::as_str).collect());
+
+    let mut out = Vec::new();
+    for (name, raw_spec) in servers {
+        let name = name.trim();
+        if name.is_empty() {
+            continue;
+        }
+        let Some(spec) = raw_spec.as_object() else {
+            continue;
+        };
+        if disabled.contains(name) {
+            continue;
+        }
+        if let Some(allow) = &enabled_only {
+            if !allow.contains(name) {
+                continue;
+            }
+        }
+        if spec.get("enabled").and_then(Value::as_bool) == Some(false) {
+            continue;
+        }
+        if spec.get("disabled").and_then(Value::as_bool) == Some(true) {
+            continue;
+        }
+        let explicit_type = spec
+            .get("type")
+            .or_else(|| spec.get("transport"))
+            .and_then(Value::as_str)
+            .map(|s| s.trim().to_ascii_lowercase());
+        if let Some(command) = spec
+            .get("command")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+        {
+            let args: Vec<Value> = spec
+                .get("args")
+                .and_then(Value::as_array)
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(Value::as_str)
+                        .map(|s| Value::String(s.to_string()))
+                        .collect()
+                })
+                .unwrap_or_default();
+            let env = kv_pairs_from_object(spec.get("env"));
+            out.push(json!({
+                "name": name,
+                "command": command,
+                "args": args,
+                "env": env,
+            }));
+            continue;
+        }
+        let Some(url) = spec
+            .get("url")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+        else {
+            continue;
+        };
+        let transport = match explicit_type.as_deref() {
+            Some("sse") => "sse",
+            Some("http" | "streamable-http" | "streamablehttp") | None => "http",
+            _ => continue,
+        };
+        let headers = kv_pairs_from_object(spec.get("headers"));
+        out.push(json!({
+            "name": name,
+            "type": transport,
+            "url": url,
+            "headers": headers,
+        }));
+    }
+    out
+}
+
+fn kv_pairs_from_object(value: Option<&Value>) -> Vec<Value> {
+    let Some(map) = value.and_then(Value::as_object) else {
+        return Vec::new();
+    };
+    map.iter()
+        .filter_map(|(k, v)| {
+            let val = match v {
+                Value::String(s) => s.clone(),
+                Value::Number(n) => n.to_string(),
+                Value::Bool(b) => b.to_string(),
+                _ => return None,
+            };
+            Some(json!({ "name": k, "value": val }))
+        })
+        .collect()
+}
+
 /// Best-effort lookup of `<agent_dir>/sessions/<encoded_cwd>/*_<session_id>.jsonl`
 /// so external edits to a session file can invalidate the daemon's cached handle.
 fn locate_session_file(workspace: &Path, session_id: &str) -> Option<PathBuf> {
@@ -1861,5 +1992,48 @@ mod tests {
         let spec_b = OmpDaemonSpec::from_launch("omp".into(), &req, &cmd, None).unwrap();
         assert!(spec_b.auto_approve);
         assert_ne!(spec_a, spec_b);
+    }
+
+    #[test]
+    fn parse_omp_mcp_servers_translates_stdio_http_sse_and_skips_disabled() {
+        let doc = json!({
+            "disabledServers": ["blocked"],
+            "mcpServers": {
+                "codegraph": {
+                    "type": "stdio",
+                    "command": "node",
+                    "args": ["serve", "--mcp"],
+                    "env": { "LOG": "info" }
+                },
+                "remote": {
+                    "type": "http",
+                    "url": "https://example.test/mcp",
+                    "headers": { "Authorization": "Bearer x" }
+                },
+                "stream": {
+                    "type": "sse",
+                    "url": "https://example.test/sse"
+                },
+                "off_flag": {
+                    "command": "node",
+                    "enabled": false
+                },
+                "blocked": {
+                    "command": "node"
+                }
+            }
+        });
+        let servers = parse_omp_mcp_servers(&doc);
+        assert_eq!(servers.len(), 3);
+        let cg = servers.iter().find(|s| s["name"] == "codegraph").unwrap();
+        assert_eq!(cg["command"], "node");
+        assert_eq!(cg["args"], json!(["serve", "--mcp"]));
+        assert_eq!(cg["env"], json!([{ "name": "LOG", "value": "info" }]));
+        let remote = servers.iter().find(|s| s["name"] == "remote").unwrap();
+        assert_eq!(remote["type"], "http");
+        assert_eq!(remote["url"], "https://example.test/mcp");
+        assert_eq!(remote["headers"], json!([{ "name": "Authorization", "value": "Bearer x" }]));
+        let stream = servers.iter().find(|s| s["name"] == "stream").unwrap();
+        assert_eq!(stream["type"], "sse");
     }
 }

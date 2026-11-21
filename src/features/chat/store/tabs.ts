@@ -88,7 +88,7 @@ export function createTabActions(
         ? pinnedBot.id
         : null;
     void ipc
-      .prewarmOmpSession({
+      .prewarmOmpSession?.({
         workspacePath: tab.workspacePath,
         sessionId: tab.sessionId,
         model: resolveSessionModel(tab, session, get().models.omp) ?? null,
@@ -98,7 +98,7 @@ export function createTabActions(
           resolveSessionProvider(tab, session, get().providers.omp) ?? null,
         memoryBot,
       })
-      .catch(() => {});
+      ?.catch(() => {});
   }
 
   /** Activate a tab: existing sessions lazy-load via selectSession, pending chats just set. */
@@ -394,7 +394,7 @@ export function createTabActions(
         void ipc.closeIdleCodeBuddy(sessionId).catch(() => {});
       }
       if (engine === "omp" && sessionId) {
-        void ipc.closeOmpSession(sessionId).catch(() => {});
+        void ipc.closeOmpSession?.(sessionId)?.catch(() => {});
       }
       clearScopedContributions(set, engine, sessionId, workspacePath);
       removeTab(engine, sessionId, workspacePath);
