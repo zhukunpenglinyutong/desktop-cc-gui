@@ -438,20 +438,6 @@ impl Engine for ClaudeEngine {
                 {
                     for block in content {
                         if block.get("type").and_then(Value::as_str) == Some("tool_result") {
-                            // Error blocks are surfaced as permission denials
-                            // above (or narrated by the model); denial-shaped
-                            // text without is_error stays silent for the same
-                            // reason. Keep both out of the timeline panel to
-                            // avoid double-reporting.
-                            if block
-                                .get("is_error")
-                                .and_then(Value::as_bool)
-                                .unwrap_or(false)
-                                || is_claude_permission_denial(&tool_result_block_text(block))
-                            {
-                                continue;
-                            }
-                            let res = value.get("toolUseResult").or_else(|| block.get("content"));
                             let tool_call_id = block.get("tool_use_id").and_then(Value::as_str);
                             let name = tool_call_id
                                 .and_then(|id| {
@@ -461,6 +447,23 @@ impl Engine for ClaudeEngine {
                                         .and_then(|map| map.get(id).cloned())
                                 })
                                 .unwrap_or_default();
+                            // Error blocks are surfaced as permission denials
+                            // above (or narrated by the model); denial-shaped
+                            // text without is_error stays silent for the same
+                            // reason. Keep both out of the timeline panel to
+                            // avoid double-reporting — but the call is over
+                            // (a failed command is is_error), so tell the
+                            // run-activity panel to stop listing it as running.
+                            if block
+                                .get("is_error")
+                                .and_then(Value::as_bool)
+                                .unwrap_or(false)
+                                || is_claude_permission_denial(&tool_result_block_text(block))
+                            {
+                                out.push(super::tool_settled(name, tool_call_id));
+                                continue;
+                            }
+                            let res = value.get("toolUseResult").or_else(|| block.get("content"));
                             out.push(super::tool_result_patch_with_id(name, res, tool_call_id));
                         }
                     }
@@ -790,7 +793,10 @@ fn format_api_retry(value: &Value) -> String {
         .map(str::trim)
         .filter(|e| !e.is_empty() && *e != "unknown");
     let mut msg = match value.get("error_status").and_then(Value::as_u64) {
-        Some(code) => format!("API error (HTTP {code})"),
+        Some(code) => match detail {
+            Some(detail) => format!("API error (HTTP {code}: {detail})"),
+            None => format!("API error (HTTP {code})"),
+        },
         None => match detail {
             Some(detail) => format!("API error: {detail}"),
             None => "API error".to_string(),
@@ -883,7 +889,19 @@ fn parse_content_block_start(
     let Some(block) = event.get("content_block") else {
         return;
     };
-    if block.get("type").and_then(Value::as_str) != Some("tool_use") {
+    let block_type = block.get("type").and_then(Value::as_str).unwrap_or("");
+    // Activity marker for the run-status panel: a thinking block can run for
+    // minutes without a single visible delta (omitted thinking display), and
+    // only its start tells the user the model is working rather than stalled.
+    out.push(EngineEvent::Block {
+        kind: Some(match block_type {
+            "thinking" | "redacted_thinking" => "thinking",
+            "text" => "text",
+            "tool_use" => "tool_input",
+            _ => "other",
+        }),
+    });
+    if block_type != "tool_use" {
         return;
     }
     let name = block
@@ -929,6 +947,7 @@ fn parse_content_block_stop(
     event: &Value,
     out: &mut Vec<EngineEvent>,
 ) {
+    out.push(EngineEvent::Block { kind: None });
     let Some(index) = event.get("index").and_then(Value::as_u64) else {
         return;
     };
@@ -1294,8 +1313,9 @@ mod tests {
         .to_string();
         let mut out = Vec::new();
         ClaudeEngine::new().parse_line(&line, &mut out);
-        assert_eq!(out.len(), 1);
-        match &out[0] {
+        assert_eq!(out.len(), 2);
+        assert!(matches!(&out[0], EngineEvent::Block { kind: Some("tool_input") }));
+        match &out[1] {
             EngineEvent::Message {
                 role,
                 text,
@@ -1341,11 +1361,12 @@ mod tests {
         let mut out = Vec::new();
         engine.parse_line(&start, &mut out);
         engine.parse_line(&delta, &mut out);
-        assert_eq!(out.len(), 1);
+        assert_eq!(out.len(), 2, "block marker + name-only tool row");
         out.clear();
         engine.parse_line(&stop, &mut out);
-        assert_eq!(out.len(), 1);
-        match &out[0] {
+        assert_eq!(out.len(), 2);
+        assert!(matches!(&out[0], EngineEvent::Block { kind: None }));
+        match &out[1] {
             EngineEvent::Message {
                 text,
                 path,
@@ -1538,7 +1559,7 @@ mod tests {
     }
 
     #[test]
-    fn text_block_start_emits_nothing() {
+    fn text_block_start_emits_only_the_activity_marker() {
         let line = serde_json::json!({
             "type": "stream_event",
             "event": {
@@ -1550,7 +1571,26 @@ mod tests {
         .to_string();
         let mut out = Vec::new();
         ClaudeEngine::new().parse_line(&line, &mut out);
-        assert!(out.is_empty());
+        // No timeline content, only the run-activity marker.
+        assert_eq!(out.len(), 1);
+        assert!(matches!(&out[0], EngineEvent::Block { kind: Some("text") }));
+    }
+
+    #[test]
+    fn thinking_block_start_marks_silent_thinking() {
+        let line = serde_json::json!({
+            "type": "stream_event",
+            "event": {
+                "type": "content_block_start",
+                "index": 0,
+                "content_block": { "type": "thinking", "thinking": "" }
+            }
+        })
+        .to_string();
+        let mut out = Vec::new();
+        ClaudeEngine::new().parse_line(&line, &mut out);
+        assert_eq!(out.len(), 1);
+        assert!(matches!(&out[0], EngineEvent::Block { kind: Some("thinking") }));
     }
 
     #[test]
@@ -1573,7 +1613,11 @@ mod tests {
         .to_string();
         let mut out = Vec::new();
         ClaudeEngine::new().parse_line(&line, &mut out);
-        assert_eq!(out.len(), 1);
+        assert_eq!(out.len(), 2, "the denial card plus the call's activity settle marker");
+        assert!(matches!(
+            &out[1],
+            EngineEvent::ToolSettled { tool_call_id: Some(id), .. } if id == "toolu_1"
+        ));
         match &out[0] {
             EngineEvent::PermissionDenied {
                 tool,
@@ -1686,8 +1730,56 @@ mod tests {
             .to_string();
             let mut out = Vec::new();
             ClaudeEngine::new().parse_line(&line, &mut out);
-            assert!(out.is_empty(), "is_error={is_error} text={text}");
+            // Nothing for the timeline: only the activity marker that ends the call.
+            assert!(
+                matches!(
+                    &out[..],
+                    [EngineEvent::ToolSettled { tool_call_id: Some(id), .. }] if id == "toolu_1"
+                ),
+                "is_error={is_error} text={text} out={out:?}"
+            );
         }
+    }
+
+    #[test]
+    fn failed_tool_result_ends_the_call_in_run_activity() {
+        // A failing command comes back as an is_error tool_result (real
+        // transcripts: "Exit code 1\n…"). The timeline skips it, but the
+        // run-activity panel must not keep listing the call as running.
+        let engine = ClaudeEngine::new();
+        let id = "claude-failed-tool-activity";
+        let lines = [
+            serde_json::json!({"type": "stream_event", "event": {"type": "message_start", "message": {}}}),
+            serde_json::json!({"type": "stream_event", "event": {
+                "type": "content_block_start", "index": 0,
+                "content_block": {"type": "tool_use", "id": "toolu_f", "name": "Bash", "input": {}}
+            }}),
+            serde_json::json!({"type": "stream_event", "event": {
+                "type": "content_block_delta", "index": 0,
+                "delta": {"type": "input_json_delta", "partial_json": "{\"command\":\"pnpm test\"}"}
+            }}),
+            serde_json::json!({"type": "stream_event", "event": {"type": "content_block_stop", "index": 0}}),
+            serde_json::json!({"type": "stream_event", "event": {"type": "message_stop"}}),
+        ];
+        let mut feed = |line: &Value| {
+            let mut out = Vec::new();
+            engine.parse_line(&line.to_string(), &mut out);
+            for event in &out {
+                super::super::activity::observe(id, "claude", event);
+            }
+        };
+        for line in &lines {
+            feed(line);
+        }
+        let running = super::super::activity::snapshot(&[id.to_string()]);
+        assert_eq!(running[0].tools.len(), 1, "the command is running");
+        feed(&serde_json::json!({"type": "user", "message": {"role": "user", "content": [{
+            "type": "tool_result", "tool_use_id": "toolu_f", "is_error": true,
+            "content": "Exit code 1\nFAIL"
+        }]}}));
+        let settled = super::super::activity::snapshot(&[id.to_string()]);
+        super::super::activity::end(id);
+        assert!(settled[0].tools.is_empty(), "a failed command is no longer running");
     }
 
     #[test]
