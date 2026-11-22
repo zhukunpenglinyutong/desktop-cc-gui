@@ -33,9 +33,11 @@ pub fn parse_session_file(
 }
 
 /// Everything the sidebar needs from a scan: title/preview/timestamps/count.
-/// Derived in one streaming pass without materializing the message list or
-/// any image data URLs.
+/// 标题和消息摘要在同一次流式读取中提取，不加载完整消息或图片数据。
 pub struct ScanSummary {
+    /// None 表示没有原生改名记录，Some(空串) 表示显式清空名称。
+    pub native_title: Option<String>,
+    pub native_title_error: Option<String>,
     pub title: String,
     pub preview: String,
     pub first_ts: Option<i64>,
@@ -60,15 +62,30 @@ pub fn scan_summary_file(
     }
     let reader = open_line_reader(engine, path)?;
     let mut acc = ScanAcc::default();
-    walk_lines(
-        reader,
-        &extractor_for(engine, ImageMode::SkipDataUrls),
-        accepted_internal_frames,
-        |_, row| {
-            acc.accept(row);
-        },
-    );
-    Ok(acc.finish())
+    let native_title = std::cell::RefCell::new(None);
+    let extract = extractor_for(engine, ImageMode::SkipDataUrls);
+    let observing: LineExtractor<'_> = Box::new(|value| {
+        if engine == "claude" {
+            if let Some(title) = super::claude_sessions::title_record(value, path) {
+                *native_title.borrow_mut() = Some(title.trim().to_string());
+            }
+        }
+        extract(value)
+    });
+    walk_lines(reader, &observing, accepted_internal_frames, |_, row| acc.accept(row));
+    drop(observing);
+    let mut summary = acc.finish();
+    if engine == "claude" {
+        let title = match native_title.into_inner() {
+            Some(title) => Ok(Some(title)),
+            None => super::claude_sessions::read_sidecar_title(path),
+        };
+        match title {
+            Ok(title) => summary.native_title = title,
+            Err(error) => summary.native_title_error = Some(error),
+        }
+    }
+    Ok(summary)
 }
 
 /// dsh session files are zstd-compressed NDJSON; everything else is plain.
@@ -419,6 +436,8 @@ impl ScanAcc {
             .or_else(|| self.first_user_text.map(|t| super::truncate_chars(&t, 80)))
             .unwrap_or_default();
         ScanSummary {
+            native_title: None,
+            native_title_error: None,
             title,
             preview: self
                 .last_assistant_text

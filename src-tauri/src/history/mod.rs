@@ -1,5 +1,6 @@
 mod agy;
 mod codex_titles;
+pub(crate) mod claude_sessions;
 pub(crate) mod discovery;
 pub(crate) mod edit;
 mod extract;

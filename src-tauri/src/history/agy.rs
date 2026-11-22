@@ -136,6 +136,8 @@ pub(super) fn scan_agy_summary(
         .count() as i64;
 
     ScanSummary {
+        native_title: None,
+        native_title_error: None,
         title,
         preview,
         first_ts,
