@@ -407,12 +407,41 @@ pub(crate) fn acp_plan_requested(req: &SendRequest) -> bool {
     req.permission.as_deref() == Some("plan")
 }
 
-/// OMP `models.yml` 文件指纹（大小 + mtime）：用于判断是否可以安全复用空闲泊车的
-/// `omp --mode rpc-ui` 进程——用户修改了渠道/密钥/模型配置后自动触发重启加载新配置。
+/// OMP `models.yml` + `config.yml` + `agent.db` 凭据版本指纹：用于判断是否
+/// 可以安全复用空闲泊车的 `omp --mode rpc-ui` 进程——用户修改了渠道/密钥/
+/// 模型、OMP 配置或登录状态后自动触发重启加载新配置。
 pub(crate) fn omp_models_config_stamp() -> Option<(u64, Option<std::time::SystemTime>)> {
     let path = super::pi_family_auth::agent_dir("omp").ok()?.join("models.yml");
     let meta = std::fs::metadata(path).ok()?;
     Some((meta.len(), meta.modified().ok()))
+}
+
+pub(crate) fn omp_config_yml_stamp() -> Option<(u64, Option<std::time::SystemTime>)> {
+    let path = super::pi_family_auth::agent_dir("omp").ok()?.join("config.yml");
+    let meta = std::fs::metadata(path).ok()?;
+    Some((meta.len(), meta.modified().ok()))
+}
+
+/// Read OMP's `auth_change_revision` counter from `<agent>/agent.db` (if the
+/// store exists) so credential / OAuth login changes invalidate a warm parked
+/// process without touching sensitive values.
+pub(crate) fn omp_auth_revision_stamp() -> Option<i64> {
+    let path = super::pi_family_auth::agent_dir("omp").ok()?.join("agent.db");
+    if !path.exists() {
+        return None;
+    }
+    let conn = rusqlite::Connection::open_with_flags(
+        &path,
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+    )
+    .ok()?;
+    let _ = conn.busy_timeout(std::time::Duration::from_millis(200));
+    conn.query_row(
+        "SELECT revision FROM auth_change_revision WHERE id = 1",
+        [],
+        |row| row.get::<_, i64>(0),
+    )
+    .ok()
 }
 
 /// 构造 OMP `rpc-ui` 单轮请求帧（`prompt` 或原生 `compact`）：首次启动与空闲复用

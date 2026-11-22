@@ -68,8 +68,15 @@ pub(crate) struct FollowupPrefs {
     pub service_tier: Option<String>,
     pub permission: Option<String>,
     pub provider_id: Option<String>,
+    /// SHA-256 digest of the resolved channel env (`API Key` / `Base URL` / …):
+    /// detects edits to a provider whose `provider_id` stayed the same without
+    /// retaining plaintext secrets in memory.
+    pub channel_env_hash: [u8; 32],
     pub memory_bot: Option<String>,
     pub allowed_tools: Option<Vec<String>>,
+    /// Sorted on-demand MCP server specs active for this send so toggling
+    /// per-server lazy launch invalidates a parked OMP process.
+    pub on_demand_mcp: Vec<String>,
     /// The run mounted the computer-use driver (pre-approved). Only a
     /// computer-use send may continue it; any other send gets a fresh
     /// process, so the driver never outlives the send that opted in.
@@ -77,11 +84,14 @@ pub(crate) struct FollowupPrefs {
     /// Engine config file fingerprint (OMP `models.yml` size + mtime): editing
     /// models/providers invalidates the warm process so the next send reloads.
     pub config_stamp: Option<(u64, Option<std::time::SystemTime>)>,
+    /// OMP `config.yml` fingerprint (size + mtime).
+    pub omp_config_stamp: Option<(u64, Option<std::time::SystemTime>)>,
+    /// OMP `agent.db` `auth_change_revision`: tracks API-key / OAuth changes.
+    pub auth_revision: Option<i64>,
     /// True when the run parks after every settled turn for session reuse
     /// (OMP `rpc-ui`); false for Claude background-task parking.
     pub idle_reuse: bool,
 }
-/// A settled run kept alive for a follow-up turn (Claude background task) or
 /// multi-turn session reuse (OMP `rpc-ui`).
 #[derive(Debug, Clone)]
 pub(crate) struct AwaitingFollowup {
@@ -122,6 +132,19 @@ impl Drop for SessionEditGuard<'_> {
 pub(crate) fn active_run_count(map: &HashMap<String, ChildEntry>) -> usize {
     map.values()
         .map(|entry| entry.run_id.as_str())
+        .collect::<std::collections::HashSet<_>>()
+        .len()
+}
+
+/// Same as [`active_run_count`], excluding idle-reuse parked run ids while
+/// holding `self.0` so the concurrency cap does not charge warm OMP slots.
+pub(crate) fn active_run_count_excluding(
+    map: &HashMap<String, ChildEntry>,
+    excluded: &HashSet<String>,
+) -> usize {
+    map.values()
+        .map(|entry| entry.run_id.as_str())
+        .filter(|run_id| !excluded.contains(*run_id))
         .collect::<std::collections::HashSet<_>>()
         .len()
 }
@@ -511,6 +534,89 @@ impl ProcessRegistry {
         self.2.lock().ok().and_then(|mut map| map.remove(session_id))
     }
 
+    /// Snapshot the run ids of currently parked `idle_reuse` processes.
+    pub(crate) fn idle_reuse_run_ids(&self) -> HashSet<String> {
+        self.2
+            .lock()
+            .map(|map| {
+                map.values()
+                    .filter(|waiting| waiting.prefs.idle_reuse)
+                    .map(|waiting| waiting.run_id.clone())
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    /// Tear down a parked `idle_reuse` run (if any) on `session_id`, remove its
+    /// registry entries, and wait until the child exits so a subsequent delete
+    /// or `--resume` cannot collide with its OS session lock or exit write.
+    /// Returns `Ok(())` immediately when no `idle_reuse` run is parked on this
+    /// session (active turns and Claude background-task follow-ups are untouched).
+    pub(crate) async fn retire_idle_reuse(&self, session_id: &str) -> Result<(), String> {
+        let evicted = self.2.lock().ok().and_then(|mut parked| {
+            let is_idle_reuse = parked
+                .get(session_id)
+                .is_some_and(|waiting| waiting.prefs.idle_reuse);
+            is_idle_reuse.then(|| parked.remove(session_id)).flatten()
+        });
+        let Some(evicted) = evicted else {
+            return Ok(());
+        };
+        self.evict_and_wait_run(&evicted.run_id).await
+    }
+
+    /// Remove every registry entry belonging to `run_id`, terminate its process
+    /// tree, and wait up to `READER_SETTLE_GRACE` for the child process to exit
+    /// so any session lock file it held is released before the caller proceeds.
+    pub(crate) async fn evict_and_wait_run(&self, run_id: &str) -> Result<(), String> {
+        let removed: Vec<ChildEntry> = match self.0.lock() {
+            Ok(mut map) => {
+                let keys: Vec<String> = map
+                    .iter()
+                    .filter(|(k, e)| k.as_str() == run_id || e.run_id == run_id)
+                    .map(|(k, _)| k.clone())
+                    .collect();
+                keys.into_iter().filter_map(|k| map.remove(&k)).collect()
+            }
+            Err(_) => Vec::new(),
+        };
+        let mut seen_pids = HashSet::new();
+        let mut to_teardown = Vec::new();
+        for entry in removed {
+            if !seen_pids.insert(entry.pid) {
+                continue;
+            }
+            entry.killed.store(true, std::sync::atomic::Ordering::SeqCst);
+            if let Some(handle) = entry.reader_abort.get() {
+                handle.abort();
+            }
+            to_teardown.push((entry.pid, entry.child, entry.stdin));
+        }
+        for (pid, child, stdin) in to_teardown {
+            if let Some(stdin) = stdin {
+                *stdin.lock().await = None;
+            }
+            if let Some(child) = child {
+                // Only signal the OS process group when we actually own the
+                // child handle (guards against PID reuse after an earlier reap).
+                let _ = tokio::task::spawn_blocking(move || {
+                    if pid != 0 {
+                        kill_process_group(pid);
+                    }
+                })
+                .await;
+                let wait = async {
+                    let mut guard = child.lock().await;
+                    let _ = guard.start_kill();
+                    let _ = guard.wait().await;
+                };
+                tokio::time::timeout(READER_SETTLE_GRACE, wait)
+                    .await
+                    .map_err(|_| "Timed out waiting for the parked CLI process to exit")?;
+            }
+        }
+        Ok(())
+    }
     pub(crate) fn close_idle_codebuddy(&self, session_id: &str) {
         let Ok(active) = self.0.lock() else { return };
         if active.contains_key(session_id) {
@@ -1338,6 +1444,12 @@ mod registry_tests {
         // Parked idle-reuse processes do not count as active turns for quit guard.
         assert_eq!(registry.active_run_count(), 0);
 
+        let idle_runs = registry.idle_reuse_run_ids();
+        assert_eq!(idle_runs.len(), MAX_IDLE_REUSE_PROCESSES);
+        {
+            let map = registry.0.lock().unwrap();
+            assert_eq!(active_run_count_excluding(&map, &idle_runs), 0);
+        }
         // Adding one more past the cap evicts the oldest idle session.
         let extra_run = format!("omp-run-{}", MAX_IDLE_REUSE_PROCESSES + 1);
         let extra_sid = format!("omp-s-{}", MAX_IDLE_REUSE_PROCESSES + 1);
@@ -1371,5 +1483,60 @@ mod registry_tests {
         assert!(!registry.has_awaiting_followup("omp-session"));
         assert!(registry.get("omp-session").is_none());
         drop(guard);
+    }
+
+    #[tokio::test]
+    async fn retire_idle_reuse_evicts_parked_omp_but_spares_claude_background() {
+        let registry = ProcessRegistry::default();
+        #[cfg(windows)]
+        let omp_child = tokio::process::Command::new("cmd")
+            .args(["/c", "ping -n 30 127.0.0.1 >nul"])
+            .spawn()
+            .unwrap();
+        #[cfg(unix)]
+        let omp_child = tokio::process::Command::new("/bin/sleep")
+            .arg("30")
+            .process_group(0)
+            .spawn()
+            .unwrap();
+        let pid = omp_child.id().unwrap();
+        let mut entry = stub_entry("omp-idle-run", pid);
+        entry.child = Some(Arc::new(TokioMutex::new(omp_child)));
+        registry.insert("omp-idle-run".into(), entry.clone());
+        registry.insert_alias("omp-session".into(), entry);
+        registry.set_awaiting_followup(
+            "omp-session",
+            "omp-idle-run",
+            FollowupPrefs {
+                engine: "omp".to_string(),
+                workspace: "/tmp/ws".to_string(),
+                idle_reuse: true,
+                ..FollowupPrefs::default()
+            },
+            Arc::new(std::sync::atomic::AtomicBool::new(false)),
+        );
+
+        // Claude background-task parking (idle_reuse = false) must not be touched.
+        registry.insert("claude-bg-run".into(), stub_entry("claude-bg-run", 401));
+        registry.set_awaiting_followup(
+            "claude-session",
+            "claude-bg-run",
+            FollowupPrefs {
+                engine: "claude".to_string(),
+                workspace: "/tmp/ws".to_string(),
+                idle_reuse: false,
+                ..FollowupPrefs::default()
+            },
+            Arc::new(std::sync::atomic::AtomicBool::new(false)),
+        );
+
+        registry.retire_idle_reuse("claude-session").await.unwrap();
+        assert!(registry.has_awaiting_followup("claude-session"));
+        assert!(registry.get("claude-bg-run").is_some());
+
+        registry.retire_idle_reuse("omp-session").await.unwrap();
+        assert!(!registry.has_awaiting_followup("omp-session"));
+        assert!(registry.get("omp-idle-run").is_none());
+        assert!(registry.get("omp-session").is_none());
     }
 }

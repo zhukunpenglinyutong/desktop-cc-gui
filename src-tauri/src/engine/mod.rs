@@ -548,6 +548,8 @@ fn ensure_plan_approval(
 /// Resolved launch parameters for one send: request, binary, built command.
 struct Launch {
     comparison_model: Option<Option<String>>,
+    channel_env_hash: [u8; 32],
+    on_demand_mcp: Vec<String>,
     req: SendRequest,
     bin: String,
     built: BuiltCommand,
@@ -748,8 +750,20 @@ fn prepare_launch(
             wsl,
         )
     });
+    let channel_env_hash = hash_channel_env(&channel_env);
+    let on_demand_mcp = if !wsl
+        && req.allowed_tools.is_none()
+        && !req.no_tools
+        && !codex_read_only::requested(&req)
+    {
+        on_demand_mcp_signature(engine, &req.workspace)
+    } else {
+        Vec::new()
+    };
     Ok(Launch {
         comparison_model,
+        channel_env_hash,
+        on_demand_mcp,
         req,
         bin,
         built,
@@ -1008,99 +1022,107 @@ async fn send_message_inner_with_sink(
     // A live process may already be parked on this session:
     // - claude: waiting for a background task's follow-up turn;
     // - omp (local rpc-ui): kept warm between user turns to skip 15-120s cold startup.
-    // Chat sends only: plugin/mission turns report on their own event streams.
-    // Any incompatible send (e.g. computer-use, plan mode, drifted model/effort/config)
-    // kills the parked process first so the fresh `--resume` launch cannot race it.
-    if matches!(engine.as_str(), "claude" | "omp")
-        && Arc::ptr_eq(&sink, &state.sink)
-        && session_id
-            .as_deref()
-            .is_some_and(|id| state.processes.has_awaiting_followup(id))
-    {
-        let incompatible = computer_use == Some(true)
-            || no_tools
-            || allowed_tools.is_some()
-            || (engine == "omp" && permission.as_deref() == Some("plan"));
-        if incompatible {
-            if let Some(awaiting) = session_id
-                .as_deref()
-                .and_then(|id| state.processes.take_awaiting_followup(id))
-            {
-                let registry = Arc::clone(&state.processes);
-                let idle_run = awaiting.run_id;
-                let _ = tauri::async_runtime::spawn_blocking(move || registry.kill(&idle_run)).await;
-            }
-        } else {
-            let workspace = PathBuf::from(&workspace_path);
-            let images = image_paths.clone().unwrap_or_default();
-            let effective = effective_prompt(&prompt, prompt_contributions.clone());
-            let db = Arc::clone(&state.db);
-            let engine_for_prefs = engine.clone();
-            let workspace_for_prefs = workspace_path.clone();
-            let model_for_prefs = model.clone();
-            let effort_for_prefs = effort.clone();
-            let permission_for_prefs = permission.clone();
-            let provider_for_prefs = provider_id.clone();
-            let memory_for_prefs = memory_bot.clone();
-            let allowed_for_prefs = allowed_tools.clone();
-            let (is_wsl, prefs) = tauri::async_runtime::spawn_blocking(move || {
-                let is_wsl =
-                    wsl_transport::transport_for_workspace(&db, &workspace_for_prefs).is_some();
-                let settings = crate::settings::read_settings().unwrap_or_default();
-                let prefs = build_followup_prefs(
-                    &engine_for_prefs,
-                    &workspace_for_prefs,
-                    &settings,
-                    model_for_prefs,
-                    effort_for_prefs,
-                    permission_for_prefs,
-                    provider_for_prefs,
-                    memory_for_prefs,
-                    allowed_for_prefs,
-                    false,
-                    engine_for_prefs == "omp",
-                );
-                (is_wsl, prefs)
-            })
-            .await
-            .map_err(|e| format!("resolve followup prefs failed: {e}"))?;
-            if engine == "omp" && is_wsl {
-                if let Some(awaiting) = session_id
-                    .as_deref()
-                    .and_then(|id| state.processes.take_awaiting_followup(id))
-                {
-                    let registry = Arc::clone(&state.processes);
-                    let idle_run = awaiting.run_id;
-                    let _ =
-                        tauri::async_runtime::spawn_blocking(move || registry.kill(&idle_run)).await;
+    // Chat sends can reuse a matching parked process; non-chat sends (plugin /
+    // mission) or incompatible/drifted sends MUST evict any parked `idle_reuse`
+    // OMP process and wait for it to exit BEFORE launching `--resume`, so the
+    // new process never collides with the old process's OS session lock file
+    // and silently forks the transcript.
+    let is_chat_sink = Arc::ptr_eq(&sink, &state.sink);
+    if let Some(sid) = session_id.as_deref() {
+        if state.processes.has_awaiting_followup(sid) {
+            if !is_chat_sink {
+                // Non-chat send (plugin / mission) never reuses a chat-sink
+                // process, so retire any parked OMP idle-reuse process first
+                // (Claude background-task follow-ups are untouched).
+                let _ = state.processes.retire_idle_reuse(sid).await;
+            } else if matches!(engine.as_str(), "claude" | "omp") {
+                let incompatible = computer_use == Some(true)
+                    || no_tools
+                    || allowed_tools.is_some()
+                    || (engine == "omp" && permission.as_deref() == Some("plan"));
+                if incompatible {
+                    if let Some(awaiting) = state.processes.take_awaiting_followup(sid) {
+                        let _ = state.processes.evict_and_wait_run(&awaiting.run_id).await;
+                    }
+                } else {
+                    let workspace = PathBuf::from(&workspace_path);
+                    let images = image_paths.clone().unwrap_or_default();
+                    let effective = effective_prompt(&prompt, prompt_contributions.clone());
+                    let db = Arc::clone(&state.db);
+                    let engine_for_prefs = engine.clone();
+                    let workspace_for_prefs = workspace_path.clone();
+                    let model_for_prefs = model.clone();
+                    let effort_for_prefs = effort.clone();
+                    let permission_for_prefs = permission.clone();
+                    let provider_for_prefs = provider_id.clone();
+                    let memory_for_prefs = memory_bot.clone();
+                    let allowed_for_prefs = allowed_tools.clone();
+                    let (is_wsl, prefs) = tauri::async_runtime::spawn_blocking(
+                        move || -> Result<_, String> {
+                            // Reuse skips `prepare_launch`, so enforce engine-enabled gate here.
+                            crate::config::ensure_engine_enabled(&engine_for_prefs)?;
+                            let is_wsl = wsl_transport::transport_for_workspace(
+                                &db,
+                                &workspace_for_prefs,
+                            )
+                            .is_some();
+                            let settings = crate::settings::read_settings().unwrap_or_default();
+                            let prefs = build_followup_prefs(
+                                &engine_for_prefs,
+                                &workspace_for_prefs,
+                                &settings,
+                                model_for_prefs,
+                                effort_for_prefs,
+                                permission_for_prefs,
+                                provider_for_prefs,
+                                memory_for_prefs,
+                                allowed_for_prefs,
+                                false,
+                                engine_for_prefs == "omp",
+                                is_wsl,
+                            );
+                            Ok((is_wsl, prefs))
+                        },
+                    )
+                    .await
+                    .map_err(|e| format!("resolve followup prefs failed: {e}"))??;
+                    if engine == "omp" && is_wsl {
+                        if let Some(awaiting) = state.processes.take_awaiting_followup(sid) {
+                            let _ = state.processes.evict_and_wait_run(&awaiting.run_id).await;
+                        }
+                    } else {
+                        let is_omp_compact =
+                            engine == "omp" && native_compact == Some(true) && images.is_empty();
+                        if let Some(live_run) = deliver_to_idle_followup(
+                            &state.processes,
+                            Some(sid),
+                            &prefs,
+                            || {
+                                if engine == "omp" {
+                                    pi_family::omp_rpc_turn_line(
+                                        &effective,
+                                        &images,
+                                        &workspace,
+                                        is_omp_compact,
+                                    )
+                                } else {
+                                    images::claude_stdin_message(&effective, &images, &workspace)
+                                }
+                            },
+                        )
+                        .await?
+                        {
+                            return Ok(SendResult {
+                                run_id: live_run,
+                                session_id,
+                            });
+                        }
+                    }
                 }
             } else {
-                let is_omp_compact =
-                    engine == "omp" && native_compact == Some(true) && images.is_empty();
-                if let Some(live_run) = deliver_to_idle_followup(
-                    &state.processes,
-                    session_id.as_deref(),
-                    &prefs,
-                    || {
-                        if engine == "omp" {
-                            pi_family::omp_rpc_turn_line(
-                                &effective,
-                                &images,
-                                &workspace,
-                                is_omp_compact,
-                            )
-                        } else {
-                            images::claude_stdin_message(&effective, &images, &workspace)
-                        }
-                    },
-                )
-                .await?
-                {
-                    return Ok(SendResult {
-                        run_id: live_run,
-                        session_id,
-                    });
-                }
+                // Unrelated engine send carrying the same session id: still retire
+                // any parked idle-reuse process so nothing races on disk.
+                let _ = state.processes.retire_idle_reuse(sid).await;
             }
         }
     }
@@ -1123,13 +1145,17 @@ async fn send_message_inner_with_sink(
     // path before the real registration drops the reservation.
     let killed = Arc::new(std::sync::atomic::AtomicBool::new(false));
     let reader_abort = Arc::new(std::sync::OnceLock::new());
+    // Snapshot idle-reuse run ids BEFORE locking `self.0` (consistent lock order,
+    // never holding both locks at once) so parked OMP processes do not consume
+    // a slot of MAX_CONCURRENT_RUNS.
+    let idle_reuse_runs = state.processes.idle_reuse_run_ids();
     {
         let mut map = state.processes.0.lock().map_err(|e| e.to_string())?;
         state.processes.ensure_session_not_editing(session_id.as_deref())?;
         if map.contains_key(&run_id) {
             return Err("run id already active".into());
         }
-        if registry::active_run_count(&map) >= MAX_CONCURRENT_RUNS {
+        if registry::active_run_count_excluding(&map, &idle_reuse_runs) >= MAX_CONCURRENT_RUNS {
             return Err(format!(
                 "too many concurrent runs ({MAX_CONCURRENT_RUNS}); wait for one to finish"
             ));
@@ -1178,10 +1204,40 @@ async fn send_message_inner_with_sink(
     }
     result
 }
+/// Hash sorted `channel_env` entries into a SHA-256 digest so `FollowupPrefs`
+/// detects edits to a channel's API Key / Base URL without retaining secrets.
+fn hash_channel_env(env: &HashMap<String, String>) -> [u8; 32] {
+    use sha2::Digest as _;
+    let mut pairs: Vec<(&str, &str)> = env
+        .iter()
+        .map(|(k, v)| (k.as_str(), v.as_str()))
+        .collect();
+    pairs.sort_unstable();
+    let mut hasher = sha2::Sha256::new();
+    for (k, v) in pairs {
+        hasher.update(k.as_bytes());
+        hasher.update([0]);
+        hasher.update(v.as_bytes());
+        hasher.update([0xff]);
+    }
+    hasher.finalize().into()
+}
+
+/// Stable sorted list of on-demand MCP server identities for `engine` +
+/// `workspace` so toggling per-server lazy launch invalidates a parked run.
+fn on_demand_mcp_signature(engine: &str, workspace: &Path) -> Vec<String> {
+    let mut names: Vec<String> = crate::mcp::launch::on_demand_servers(engine, workspace)
+        .into_iter()
+        .map(|s| s.name)
+        .collect();
+    names.sort();
+    names
+}
+
 /// Normalize launch settings into a [`registry::FollowupPrefs`] snapshot using
 /// the same resolution order as [`prepare_launch`] so follow-up / idle-reuse
-/// comparisons match apples-to-apples (including default models/efforts and
-/// Claude channel model remapping).
+/// comparisons match apples-to-apples (including default models/efforts,
+/// channel env digest, on-demand MCP switches, and Claude channel model remapping).
 #[allow(clippy::too_many_arguments)]
 fn build_followup_prefs(
     engine: &str,
@@ -1195,20 +1251,22 @@ fn build_followup_prefs(
     allowed_tools: Option<Vec<String>>,
     computer_use: bool,
     idle_reuse: bool,
+    wsl: bool,
 ) -> registry::FollowupPrefs {
     let provider_id = provider_id.filter(|s| !s.trim().is_empty());
+    let provider = crate::config::resolve_provider(engine, provider_id.as_deref())
+        .ok()
+        .flatten();
+    let channel_env = provider
+        .as_ref()
+        .and_then(|p| crate::provider_files::channel_env(engine, p).ok())
+        .unwrap_or_default();
+    let channel_env_hash = hash_channel_env(&channel_env);
     let model = model
         .filter(|m| !m.trim().is_empty())
         .or_else(|| settings.default_models.get(engine).cloned())
         .filter(|m| !m.trim().is_empty());
     let model = if engine == "claude" {
-        let provider = crate::config::resolve_provider(engine, provider_id.as_deref())
-            .ok()
-            .flatten();
-        let channel_env = provider
-            .as_ref()
-            .and_then(|p| crate::provider_files::channel_env(engine, p).ok())
-            .unwrap_or_default();
         claude_channel::resolve_model(model.as_deref(), provider.as_ref(), &channel_env)
     } else {
         model
@@ -1231,10 +1289,19 @@ fn build_followup_prefs(
                     .bytes()
                     .all(|c| c.is_ascii_alphanumeric() || c == b'-' || c == b'_')
         });
-    let config_stamp = if engine == "omp" {
-        pi_family::omp_models_config_stamp()
+    let on_demand_mcp = if !wsl && allowed_tools.is_none() {
+        on_demand_mcp_signature(engine, Path::new(workspace))
     } else {
-        None
+        Vec::new()
+    };
+    let (config_stamp, omp_config_stamp, auth_revision) = if engine == "omp" {
+        (
+            pi_family::omp_models_config_stamp(),
+            pi_family::omp_config_yml_stamp(),
+            pi_family::omp_auth_revision_stamp(),
+        )
+    } else {
+        (None, None, None)
     };
     registry::FollowupPrefs {
         engine: engine.to_string(),
@@ -1244,10 +1311,14 @@ fn build_followup_prefs(
         service_tier,
         permission,
         provider_id,
+        channel_env_hash,
         memory_bot,
         allowed_tools,
+        on_demand_mcp,
         computer_use,
         config_stamp,
+        omp_config_stamp,
+        auth_revision,
         idle_reuse,
     }
 }
@@ -1256,8 +1327,9 @@ fn build_followup_prefs(
 /// background-task follow-up or OMP `rpc-ui` idle reuse). Returns that run's
 /// id, or None when no such process exists, its launch settings no longer
 /// match this send (a live process cannot take new launch flags), or it can
-/// no longer take input — a mismatched or unwritable one is killed so the
-/// caller's normal `--resume` launch cannot race it on the same session.
+/// no longer take input — a mismatched or unwritable one is killed and waited
+/// for so the caller's normal `--resume` launch cannot collide with its OS
+/// session lock file.
 async fn deliver_to_idle_followup(
     registry: &Arc<ProcessRegistry>,
     session_id: Option<&str>,
@@ -1268,18 +1340,20 @@ async fn deliver_to_idle_followup(
         return Ok(None);
     };
     let idle_run = awaiting.run_id;
-    let kill_idle = |registry: &Arc<ProcessRegistry>, run: &str| {
-        let registry = Arc::clone(registry);
-        let run = run.to_string();
-        async move {
-            let _ = tauri::async_runtime::spawn_blocking(move || registry.kill(&run)).await;
-        }
-    };
     if &awaiting.prefs != prefs {
-        kill_idle(registry, &idle_run).await;
+        let _ = registry.evict_and_wait_run(&idle_run).await;
         return Ok(None);
     }
-    let line = message()?;
+    let line = match message() {
+        Ok(line) => line,
+        Err(error) => {
+            // Never orphan the taken entry: once removed from the awaiting map
+            // the 120s idle timer can no longer retire it, so tear it down now
+            // (leaving the session clean for the user's retry).
+            let _ = registry.evict_and_wait_run(&idle_run).await;
+            return Err(error);
+        }
+    };
     // Mark claimed BEFORE writing stdin so an immediate EOF/Stop after write
     // still settles the frontend cleanly instead of looking like an idle exit.
     awaiting
@@ -1291,7 +1365,7 @@ async fn deliver_to_idle_followup(
     awaiting
         .claimed
         .store(false, std::sync::atomic::Ordering::SeqCst);
-    kill_idle(registry, &idle_run).await;
+    let _ = registry.evict_and_wait_run(&idle_run).await;
     Ok(None)
 }
 /// Body of [`send_message_inner`] once the run id is reserved: the caller id
@@ -1639,10 +1713,14 @@ async fn send_reserved(
                     service_tier: None,
                     permission: launch.req.permission.clone(),
                     provider_id: launch.req.provider_id.clone(),
+                    channel_env_hash: launch.channel_env_hash,
                     memory_bot: launch.req.memory_bot.clone(),
                     allowed_tools: launch.req.allowed_tools.clone(),
+                    on_demand_mcp: launch.on_demand_mcp.clone(),
                     computer_use: launch.req.computer_use == Some(true),
                     config_stamp: None,
+                    omp_config_stamp: None,
+                    auth_revision: None,
                     idle_reuse: false,
                 })
             } else if engine == "omp"
@@ -1661,10 +1739,14 @@ async fn send_reserved(
                     service_tier: launch.req.service_tier.clone(),
                     permission: launch.req.permission.clone(),
                     provider_id: launch.req.provider_id.clone(),
+                    channel_env_hash: launch.channel_env_hash,
                     memory_bot: launch.req.memory_bot.clone(),
                     allowed_tools: None,
+                    on_demand_mcp: launch.on_demand_mcp.clone(),
                     computer_use: false,
                     config_stamp: pi_family::omp_models_config_stamp(),
+                    omp_config_stamp: pi_family::omp_config_yml_stamp(),
+                    auth_revision: pi_family::omp_auth_revision_stamp(),
                     idle_reuse: true,
                 })
             } else {
@@ -3903,6 +3985,7 @@ mod retry_lifecycle_tests {
     async fn send_with_drifted_settings_kills_the_idle_process_and_falls_back() {
         let registry = Arc::new(ProcessRegistry::default());
         let mut child = idle_followup_child(&registry, "idle-run", "s-3").await;
+        let killed = registry.get("idle-run").unwrap().killed;
         let drifted = registry::FollowupPrefs {
             model: Some("opus".to_string()),
             ..test_followup_prefs()
@@ -3914,17 +3997,56 @@ mod retry_lifecycle_tests {
         .unwrap();
         assert_eq!(delivered, None);
         assert!(registry.take_awaiting_followup("s-3").is_none());
-        // kill() goes through spawn_blocking; the run's killed flag is how a
-        // child-less entry records it (the real path start_kills the child).
-        let killed = registry.get("idle-run").unwrap().killed;
-        for _ in 0..100 {
-            if killed.load(std::sync::atomic::Ordering::SeqCst) {
-                let _ = child.kill().await;
-                return;
-            }
-            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-        }
-        panic!("idle run was not killed after settings drift");
+        assert!(registry.get("idle-run").is_none());
+        assert!(
+            killed.load(std::sync::atomic::Ordering::SeqCst),
+            "idle run was not killed after settings drift"
+        );
+        let _ = child.kill().await;
+    }
+
+    /// 复用时组装本轮消息失败（如图片缺失/超限）：已从待命表取出的进程
+    /// 必须被回收，不能变成永远不退出的孤儿。
+    #[tokio::test]
+    async fn omp_idle_reuse_message_error_does_not_orphan_parked_process() {
+        let registry = Arc::new(ProcessRegistry::default());
+        let prefs = registry::FollowupPrefs {
+            engine: "omp".to_string(),
+            workspace: "/tmp/ws".to_string(),
+            idle_reuse: true,
+            ..registry::FollowupPrefs::default()
+        };
+        let mut child =
+            idle_followup_child_with(&registry, "omp-run", "omp-s", prefs.clone()).await;
+        let result = deliver_to_idle_followup(&registry, Some("omp-s"), &prefs, || {
+            Err("image file not found".to_string())
+        })
+        .await;
+        assert!(result.is_err(), "the image error still reaches the user");
+        let still_parked = registry.has_awaiting_followup("omp-s");
+        let killed = registry
+            .get("omp-run")
+            .map(|entry| entry.killed.load(std::sync::atomic::Ordering::SeqCst))
+            .unwrap_or(true);
+        let _ = child.kill().await;
+        assert!(
+            still_parked || killed,
+            "parked OMP process was taken out of the idle table but neither killed nor re-parked: \
+             the 120s idle timer can never retire it"
+        );
+    }
+
+    #[test]
+    fn channel_env_hash_detects_value_edits_and_is_order_independent() {
+        let mut a = HashMap::new();
+        a.insert("BASE_URL".into(), "https://a.test".into());
+        a.insert("API_KEY".into(), "k1".into());
+        let mut b = HashMap::new();
+        b.insert("API_KEY".into(), "k1".into());
+        b.insert("BASE_URL".into(), "https://a.test".into());
+        assert_eq!(hash_channel_env(&a), hash_channel_env(&b));
+        b.insert("API_KEY".into(), "k2".into());
+        assert_ne!(hash_channel_env(&a), hash_channel_env(&b));
     }
 
     /// A run launched for computer use has the driver mounted and
@@ -3943,21 +4065,19 @@ mod retry_lifecycle_tests {
             },
         )
         .await;
+        let killed = registry.get("cu-run").unwrap().killed;
         let delivered = deliver_to_idle_followup(&registry, Some("s-cu"), &test_followup_prefs(), || {
             panic!("the prompt must not reach the computer-use process")
         })
         .await
         .unwrap();
         assert_eq!(delivered, None);
-        let killed = registry.get("cu-run").unwrap().killed;
-        for _ in 0..100 {
-            if killed.load(std::sync::atomic::Ordering::SeqCst) {
-                let _ = child.kill().await;
-                return;
-            }
-            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-        }
-        panic!("parked computer-use run was not killed");
+        assert!(registry.get("cu-run").is_none());
+        assert!(
+            killed.load(std::sync::atomic::Ordering::SeqCst),
+            "parked computer-use run was not killed"
+        );
+        let _ = child.kill().await;
     }
 
     /// The first turn settles at its own result even with a task pending, so

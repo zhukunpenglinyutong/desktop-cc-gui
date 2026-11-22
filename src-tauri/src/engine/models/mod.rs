@@ -119,16 +119,38 @@ pub(super) async fn run_probe_detailed(
     cmd.process_group(0);
     #[cfg(windows)]
     super::hide_console(&mut cmd);
-    let child = cmd
+    let mut child = cmd
         .spawn()
         .map_err(|e| ProbeError::Failed(format!("failed to run {bin}: {e}")))?;
     let pid = child.id();
     #[cfg(windows)]
     let tree_guard = super::job::assign_kill_on_close(&child);
-    let output = match tokio::time::timeout(PROBE_TIMEOUT, child.wait_with_output()).await {
-        Ok(Ok(output)) => output,
+    let stdout_pipe = child.stdout.take();
+    let stderr_pipe = child.stderr.take();
+    let stdout_task = tokio::spawn(async move {
+        use tokio::io::AsyncReadExt;
+        let mut buf = Vec::new();
+        if let Some(mut s) = stdout_pipe {
+            let _ = s.read_to_end(&mut buf).await;
+        }
+        buf
+    });
+    let stderr_task = tokio::spawn(async move {
+        use tokio::io::AsyncReadExt;
+        let mut buf = Vec::new();
+        if let Some(mut s) = stderr_pipe {
+            let _ = s.read_to_end(&mut buf).await;
+        }
+        buf
+    });
+    let status = match tokio::time::timeout(PROBE_TIMEOUT, child.wait()).await {
+        Ok(Ok(status)) => status,
         Ok(Err(e)) => return Err(ProbeError::Failed(format!("failed to run {bin}: {e}"))),
         Err(_) => {
+            // Tear down the whole process tree BEFORE dropping `child`
+            // (whose `kill_on_drop` terminates only the direct child): on
+            // Windows without a Job Object, `taskkill /T` must walk the tree
+            // while the root pid is still alive (see registry::kill_process_group).
             #[cfg(unix)]
             if let Some(pid) = pid {
                 super::kill_process_group(pid);
@@ -139,21 +161,27 @@ pub(super) async fn run_probe_detailed(
                 drop(tree_guard);
                 if !had_job {
                     if let Some(pid) = pid {
-                        tokio::task::spawn_blocking(move || super::kill_process_group(pid));
+                        let _ = tokio::task::spawn_blocking(move || super::kill_process_group(pid))
+                            .await;
                     }
                 }
             }
+            let _ = child.start_kill();
+            stdout_task.abort();
+            stderr_task.abort();
             return Err(ProbeError::Timeout(format!("{bin} {probe} timed out")));
         }
     };
-    if !output.status.success() {
+    let stdout_bytes = stdout_task.await.unwrap_or_default();
+    let _ = stderr_task.await;
+    if !status.success() {
         return Err(ProbeError::Failed(format!(
-            "{bin} {probe} exited with {}",
-            output.status
+            "{bin} {probe} exited with {status}"
         )));
     }
-    Ok(String::from_utf8_lossy(&output.stdout).to_string())
+    Ok(String::from_utf8_lossy(&stdout_bytes).to_string())
 }
+
 
 pub(super) async fn run_probe(bin: &str, args: &[&str], probe: &str) -> Result<String, String> {
     run_probe_detailed(bin, args, probe)
@@ -215,13 +243,14 @@ impl EngineCatalog {
 /// Process-wide cache for local engine model catalogs: switching to another
 /// local workspace triggers a workspace-context probe, and without this cache
 /// every unseen local workspace would respawn every enabled CLI binary at once.
-/// Kept for 10 minutes (invalidated immediately when pi/omp's own models file
-/// changes on disk) so heavy CLIs like `omp` are not respawned every 2 minutes.
-const LOCAL_CATALOG_TTL: std::time::Duration = std::time::Duration::from_secs(600);
+/// Engines without a config-file fingerprint keep a 2-minute TTL so manual
+/// config edits surface promptly; pi/omp carry a models-file fingerprint that
+/// invalidates immediately on edit and therefore hold a 10-minute TTL.
+const LOCAL_CATALOG_TTL: std::time::Duration = std::time::Duration::from_secs(120);
+const PI_FAMILY_LOCAL_CATALOG_TTL: std::time::Duration = std::time::Duration::from_secs(600);
 /// Cooldown after a probe timeout/failure: prevents back-to-back callers from
 /// spawning another wave of probes while the CLI / SQLite cache is contended.
 const LOCAL_CATALOG_FAILURE_COOLDOWN: std::time::Duration = std::time::Duration::from_secs(60);
-
 type ConfigStamp = Option<(u64, Option<std::time::SystemTime>)>;
 
 struct CachedLocalCatalog {
@@ -290,11 +319,11 @@ fn read_last_good_local_catalog(engine: &str, bin: &str) -> Option<EngineCatalog
 fn write_cached_local_catalog_with_meta(
     engine: &str,
     bin: String,
+    config_stamp: ConfigStamp,
     catalog: &EngineCatalog,
     ttl: std::time::Duration,
     from_probe: bool,
 ) {
-    let config_stamp = engine_config_stamp(engine);
     if let Ok(mut guard) = LOCAL_CATALOG_CACHE.lock() {
         guard.insert(
             engine.to_string(),
@@ -312,7 +341,8 @@ fn write_cached_local_catalog_with_meta(
 
 #[cfg(test)]
 fn write_cached_local_catalog(engine: &str, bin: String, catalog: &EngineCatalog) {
-    write_cached_local_catalog_with_meta(engine, bin, catalog, LOCAL_CATALOG_TTL, true);
+    let stamp = engine_config_stamp(engine);
+    write_cached_local_catalog_with_meta(engine, bin, stamp, catalog, LOCAL_CATALOG_TTL, true);
 }
 
 async fn resolve_local_catalog_with<F, Fut>(
@@ -337,19 +367,24 @@ where
             return Ok(cached);
         }
     }
+    // Capture the config fingerprint BEFORE running the probe: if the user
+    // saves models.yml/models.json while the probe is in flight, tagging the
+    // stale result with the pre-probe stamp ensures the next read sees the
+    // mismatch and immediately re-probes instead of caching stale data.
+    let pre_probe_stamp = engine_config_stamp(engine);
     let last_good = read_last_good_local_catalog(engine, bin_key);
     let had_last_good = last_good.is_some();
     let (catalog, ttl, from_probe) = probe(last_good).await?;
     write_cached_local_catalog_with_meta(
         engine,
         bin_key.to_string(),
+        pre_probe_stamp,
         &catalog,
         ttl,
         from_probe || had_last_good,
     );
     Ok(catalog)
 }
-
 #[tauri::command]
 pub async fn list_engine_models(
     state: tauri::State<'_, crate::AppState>,
@@ -410,7 +445,7 @@ pub async fn list_engine_models(
             "pi" | "omp" => {
                 let (catalog, probed) = pi_family_catalog(engine_ref, bin_ref, last_good).await;
                 let ttl = if probed {
-                    LOCAL_CATALOG_TTL
+                    PI_FAMILY_LOCAL_CATALOG_TTL
                 } else {
                     LOCAL_CATALOG_FAILURE_COOLDOWN
                 };
@@ -1022,5 +1057,14 @@ model = \"must-not-leak\"
         assert_eq!(stages_called, vec!["models-json", "list-no-ext"]);
         assert_eq!(catalog.models.len(), 1);
         assert_eq!(catalog.models[0].id, "legacy/m1");
+    }
+
+    #[test]
+    fn pi_family_local_catalog_ttl_is_longer_than_unfingerprinted_engines() {
+        assert_eq!(LOCAL_CATALOG_TTL, std::time::Duration::from_secs(120));
+        assert_eq!(
+            PI_FAMILY_LOCAL_CATALOG_TTL,
+            std::time::Duration::from_secs(600)
+        );
     }
 }
