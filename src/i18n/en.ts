@@ -380,7 +380,7 @@ export const en: Messages = {
         unknown: "Unknown cause",
       },
       retryCategoryHint: {
-        network: "the connection to the provider failed (your network, proxy or VPN).",
+        network: "the connection to the provider dropped or failed: your network, proxy or VPN, or the provider closing it.",
         rate_limit: "the provider is limiting how often you can send requests.",
         overloaded: "the provider is overloaded; your connection is fine.",
         server: "the provider returned a server error; your connection is fine.",

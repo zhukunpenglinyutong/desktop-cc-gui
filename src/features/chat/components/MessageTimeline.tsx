@@ -1254,32 +1254,40 @@ export const MessageTimeline = memo(function MessageTimeline({
                   // A host-sent compaction already shows in place (its /compact
                   // row became the grey line), so the tail only carries the
                   // engine's own mid-turn compaction — a flag with no row.
-                  session.compaction?.automatic ? (
-                    <CompactionCurtain />
-                  ) : session.compaction ? null : (
-                    <RunActivityTrigger sessionKey={activeSessionKey}>
-                      <AgentThinking
-                        variant="wave"
-                        label={t("chat.thinking")}
-                        className="py-2"
-                        startedAt={session.turnStartedAt ?? undefined}
-                        durationFormatter={(d) => t("chat.metaDuration", { duration: d })}
-                        model={activeModelFormatted}
-                        effort={activeEffortFormatted}
-                        usage={liveUsage}
-                        metaExtra={<ResponseCheckBadge check={session.responseCheck} />}
-                        retry={
-                          session.retry
-                            ? session.retry.max > 0
-                              ? t("chat.retrying", {
-                                  attempt: session.retry.attempt,
-                                  max: session.retry.max,
-                                })
-                              : t("chat.retryingNoMax", { attempt: session.retry.attempt })
-                            : null
-                        }
-                        retryDetail={session.retry?.message || null}
-                      />
+                  // That curtain stays inside the same trigger as the status
+                  // line, so an open run-activity panel survives the switch
+                  // and shows the compaction phase.
+                  session.compaction && !session.compaction.automatic ? null : (
+                    <RunActivityTrigger
+                      sessionKey={activeSessionKey}
+                      className={session.compaction ? "ml-auto" : undefined}
+                    >
+                      {session.compaction ? (
+                        <CompactionCurtain />
+                      ) : (
+                        <AgentThinking
+                          variant="wave"
+                          label={t("chat.thinking")}
+                          className="py-2"
+                          startedAt={session.turnStartedAt ?? undefined}
+                          durationFormatter={(d) => t("chat.metaDuration", { duration: d })}
+                          model={activeModelFormatted}
+                          effort={activeEffortFormatted}
+                          usage={liveUsage}
+                          metaExtra={<ResponseCheckBadge check={session.responseCheck} />}
+                          retry={
+                            session.retry
+                              ? session.retry.max > 0
+                                ? t("chat.retrying", {
+                                    attempt: session.retry.attempt,
+                                    max: session.retry.max,
+                                  })
+                                : t("chat.retryingNoMax", { attempt: session.retry.attempt })
+                              : null
+                          }
+                          retryDetail={session.retry?.message || null}
+                        />
+                      )}
                     </RunActivityTrigger>
                   )
                 ) : (

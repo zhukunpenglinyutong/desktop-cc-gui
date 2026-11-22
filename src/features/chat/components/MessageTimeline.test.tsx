@@ -979,6 +979,22 @@ describe("host compaction rows", () => {
     expect(curtains().length).toBe(0);
     expect(container.textContent).toContain(i18n.t("chat.thinking"));
   });
+
+  it("keeps the run-activity trigger mounted when an engine compaction starts", async () => {
+    const messages: Message[] = [{ seq: 1, role: "user", text: "继续", ts: null }];
+    const trigger = () =>
+      container.querySelector(`[role="button"][aria-label="${i18n.t("chat.runActivity.open")}"]`);
+    await renderCompacting(messages, null, true);
+    const before = trigger();
+    expect(before?.textContent).toContain(i18n.t("chat.thinking"));
+
+    // Same node, so an open "current progress" panel stays open and can show
+    // the compaction phase instead of closing under the user.
+    await renderCompacting(messages, { automatic: true, startedAt: 1 }, true);
+    expect(trigger()).toBe(before);
+    expect(before?.contains(curtains()[0])).toBe(true);
+    expect(before?.className).toContain("ml-auto");
+  });
 });
 
 describe("chat column width (宽幕布)", () => {

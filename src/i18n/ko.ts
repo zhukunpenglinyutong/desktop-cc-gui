@@ -345,7 +345,7 @@ export const ko: Messages = {
         unknown: "원인 불명",
       },
       retryCategoryHint: {
-        network: "제공자와의 연결이 실패했습니다(네트워크, 프록시 또는 VPN).",
+        network: "제공자와의 연결이 끊기거나 실패했습니다(네트워크, 프록시, VPN 또는 제공자 측의 연결 종료).",
         rate_limit: "제공자가 요청 빈도를 제한하고 있습니다.",
         overloaded: "제공자가 과부하 상태입니다. 연결은 정상입니다.",
         server: "제공자가 서버 오류를 반환했습니다. 연결은 정상입니다.",

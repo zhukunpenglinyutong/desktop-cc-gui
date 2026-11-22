@@ -35,9 +35,11 @@ import { formatDuration } from "./format-duration";
  */
 export function RunActivityTrigger({
   sessionKey,
+  className,
   children,
 }: {
   sessionKey: string | null;
+  className?: string;
   children: ReactNode;
 }) {
   const { t } = useTranslation();
@@ -60,6 +62,7 @@ export function RunActivityTrigger({
             "-mx-2 w-fit max-w-[calc(100%+16px)] cursor-pointer rounded-xl px-2 outline-none transition-colors",
             "hover:bg-background-secondary-hover focus-visible:ring-2 focus-visible:ring-border-focus-ring",
             open && "bg-background-secondary-hover",
+            className,
           )}
         >
           {children}

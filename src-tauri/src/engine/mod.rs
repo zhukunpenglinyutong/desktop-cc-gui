@@ -56,7 +56,7 @@ pub(crate) use resolve::command_for_binary;
 pub(crate) use events::{
     assistant_message, parse_todo_args, parse_todo_result, parse_tool_args_value, push_session_id, safe_prompt_arg,
     tool_call_message, tool_call_message_with_id, tool_call_patch_with_id,
-    tool_path_arg, tool_result_patch, tool_result_patch_with_id,
+    tool_path_arg, tool_result_patch, tool_result_patch_with_id, tool_settled,
 };
 pub use events::{EngineEvent, TodoItem, TodosPayload};
 pub use plan_review::{PlanApproval, PlanReview, PlanReviewKind};

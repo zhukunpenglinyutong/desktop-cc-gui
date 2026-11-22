@@ -364,7 +364,7 @@ export const zh = {
         unknown: "原因不明",
       },
       retryCategoryHint: {
-        network: "与服务商的连接失败（本机网络、代理或 VPN）。",
+        network: "与服务商的连接中断或失败：可能是本机网络、代理或 VPN，也可能是服务端断开了连接。",
         rate_limit: "服务商限制了请求频率。",
         overloaded: "服务商过载，你的网络连接正常。",
         server: "服务商返回了服务端错误，你的网络连接正常。",

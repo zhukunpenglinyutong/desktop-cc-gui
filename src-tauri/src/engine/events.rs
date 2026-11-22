@@ -46,6 +46,15 @@ pub enum EngineEvent {
     /// "tool_input" | "other") or stopped (`None`). Only the run-activity
     /// panel reads it — see `engine/activity.rs`.
     Block { kind: Option<&'static str> },
+    /// Activity marker (never streamed to the UI): a tool call ended with no
+    /// timeline result — claude's error / permission-denied `tool_result`
+    /// blocks, which the timeline leaves to the denial card or the model's
+    /// own narration. Only `engine/activity.rs` reads it, so the run-activity
+    /// panel stops listing the call as running.
+    ToolSettled {
+        name: String,
+        tool_call_id: Option<String>,
+    },
     /// Engine-reported error.
     Error(String),
     /// Non-terminal engine notice (e.g. an upstream 429 the CLI is
@@ -480,6 +489,13 @@ pub(crate) fn tool_result_patch_with_id(
         args: None,
         result: result.cloned(),
         patch: true,
+        tool_call_id: tool_call_identity(tool_call_id),
+    }
+}
+/// A call that ended without a timeline result (see [`EngineEvent::ToolSettled`]).
+pub(crate) fn tool_settled(name: impl Into<String>, tool_call_id: Option<&str>) -> EngineEvent {
+    EngineEvent::ToolSettled {
+        name: name.into(),
         tool_call_id: tool_call_identity(tool_call_id),
     }
 }

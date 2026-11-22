@@ -453,8 +453,8 @@ impl TurnCore {
                     Value::String(text),
                 )
             }
-            // Activity-panel marker only (recorded above).
-            EngineEvent::Block { .. } => {}
+            // Activity-panel markers only (recorded above).
+            EngineEvent::Block { .. } | EngineEvent::ToolSettled { .. } => {}
             EngineEvent::Generation { active } => {
                 // Internal marker: never streamed, only folded into genMs.
                 if active {

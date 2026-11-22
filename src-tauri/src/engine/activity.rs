@@ -142,6 +142,13 @@ impl RunActivity {
         self.last_event_at_ms = Some(now);
     }
 
+    /// The open model response (and its content block) is over.
+    fn close_response(&mut self) {
+        self.response_since_ms = None;
+        self.block = None;
+        self.block_since_ms = None;
+    }
+
     fn content(&mut self, kind: &'static str, now: i64) {
         self.event(kind, now);
         self.response_has_output = true;
@@ -168,9 +175,7 @@ impl RunActivity {
                 self.event("response_start", now);
             }
             EngineEvent::Generation { active: false } => {
-                self.response_since_ms = None;
-                self.block = None;
-                self.block_since_ms = None;
+                self.close_response();
                 self.event("response_end", now);
             }
             EngineEvent::Block { kind: Some(kind) } => {
@@ -207,7 +212,18 @@ impl RunActivity {
                     self.content("message", now);
                 }
             }
-            EngineEvent::Usage(_) => self.event("usage", now),
+            // A usage report ends the response, as it closes reader.rs's
+            // genMs window: pi / omp mark only the start (message_start) and
+            // report usage at message_end, so without this the response
+            // would stay "open" through every tool the run then executes.
+            EngineEvent::Usage(_) => {
+                self.close_response();
+                self.event("usage", now);
+            }
+            EngineEvent::ToolSettled { name, tool_call_id } => {
+                self.finish_tool(tool_call_id.as_deref(), name);
+                self.content("tool_result", now);
+            }
             EngineEvent::Retry {
                 attempt,
                 max,
@@ -220,9 +236,7 @@ impl RunActivity {
                 }
                 self.retrying = true;
                 // The response that failed is over; the next one opens anew.
-                self.response_since_ms = None;
-                self.block = None;
-                self.block_since_ms = None;
+                self.close_response();
                 let (status, category) = classify_retry(message);
                 self.retries.push(RetryActivity {
                     at_ms: now,
@@ -259,9 +273,7 @@ impl RunActivity {
             }
             EngineEvent::Done { .. } => {
                 self.event("done", now);
-                self.response_since_ms = None;
-                self.block = None;
-                self.block_since_ms = None;
+                self.close_response();
                 self.retrying = false;
                 self.compacting_since_ms = None;
                 self.awaiting_user = false;
@@ -416,6 +428,7 @@ pub(crate) fn classify_retry(message: &str) -> (Option<u16>, &'static str) {
         &lower,
         &[
             "internal server error",
+            "server_error",
             "api_error",
             "server error",
             "bad gateway",
@@ -549,6 +562,12 @@ mod tests {
         assert_eq!(classify_retry("Overloaded"), (None, "overloaded"));
         assert_eq!(classify_retry("rate limit exceeded"), (None, "rate_limit"));
         assert_eq!(classify_retry("Internal server error"), (None, "server"));
+        // codex wraps a provider-side failure in its stream-disconnect text:
+        // the service failed, not the user's network.
+        assert_eq!(
+            classify_retry("stream disconnected before completion: {\"type\":\"server_error\"}"),
+            (None, "server")
+        );
         assert_eq!(classify_retry(""), (None, "unknown"));
         // A bare number that is not a status must not be read as one.
         assert_eq!(classify_retry("retrying (500 ms)").0, None);
@@ -612,6 +631,29 @@ mod tests {
         }
         assert_eq!(a.retries.len(), MAX_RETRIES);
         assert_eq!(a.retries.last().map(|r| r.attempt), Some(30));
+    }
+
+    #[test]
+    fn usage_report_ends_a_start_only_response() {
+        // pi / omp: message_start, deltas, message_end (usage), then the tool.
+        let mut a = RunActivity::new("r", "omp", 0);
+        a.apply(&EngineEvent::Generation { active: true }, 1);
+        a.apply(&EngineEvent::Delta("Running build".into()), 2);
+        a.apply(&EngineEvent::Usage(json!({"output_tokens": 5})), 3);
+        assert_eq!(a.response_since_ms, None, "the response ended with its usage report");
+        a.apply(&tool_call_message_with_id("bash", Some(&json!({"command": "sleep 300"})), Some("c1")), 4);
+        assert_eq!(a.tools.len(), 1);
+    }
+
+    #[test]
+    fn settle_marker_ends_a_call_without_a_result() {
+        let mut a = RunActivity::new("r", "claude", 0);
+        a.apply(&tool_call_message_with_id("Bash", Some(&json!({"command": "pnpm test"})), Some("t1")), 1);
+        a.apply(&tool_call_message_with_id("Bash", Some(&json!({"command": "pnpm build"})), Some("t2")), 2);
+        a.apply(&crate::engine::events::tool_settled("Bash", Some("t1")), 3);
+        assert_eq!(a.tools.len(), 1);
+        assert_eq!(a.tools[0].detail.as_deref(), Some("pnpm build"), "only the settled call ends");
+        assert_eq!(a.last_event, Some("tool_result"));
     }
 
     #[test]
