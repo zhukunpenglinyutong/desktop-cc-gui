@@ -19,9 +19,9 @@ import {
   type QueuedMessage,
   type QueueMoveDirection,
 } from "../store";
+import type { SessionState } from "../store/stream";
 
 import { MessageTimeline } from "./MessageTimeline";
-import { clearSessionScrollSnapshot } from "./use-scroll-follow";
 import { ConversationFooter } from "./ConversationFooter";
 import { useComposerActions } from "./use-composer-actions";
 import { filterEngineOptions, orderEngineOptions } from "./engine-options";
@@ -58,7 +58,8 @@ interface KeptTimelineEntry {
 
 /** One session's message list with its own bySession subscription and frozen
  *  SessionScope: stream flushes stay inside this subtree, and hidden kept
- *  timelines never re-render when another tab becomes active. */
+ *  timelines freeze their snapshot reference so background streaming triggers
+ *  zero React re-renders until the tab becomes visible again. */
 const KeptSessionTimeline = memo(function KeptSessionTimeline({
   entry,
   visible,
@@ -68,7 +69,19 @@ const KeptSessionTimeline = memo(function KeptSessionTimeline({
   visible: boolean;
   onLoadEarlier: (sessionKey: string) => void;
 }) {
-  const session = useChatStore((s) => s.bySession[entry.key]);
+  const frozenRef = useRef<SessionState | undefined>(undefined);
+  const session = useChatStore((s) => {
+    const live = s.bySession[entry.key];
+    if (visible) {
+      frozenRef.current = live;
+      return live;
+    }
+    if (!live) {
+      frozenRef.current = undefined;
+      return undefined;
+    }
+    return frozenRef.current ?? live;
+  });
   const handleLoadEarlier = useCallback(
     () => onLoadEarlier(entry.key),
     [onLoadEarlier, entry.key],
@@ -89,7 +102,6 @@ const KeptSessionTimeline = memo(function KeptSessionTimeline({
           streaming={session.streaming}
           onLoadEarlier={handleLoadEarlier}
           workspacePath={entry.session.workspacePath}
-          scrollMemoryKey={entry.key}
           visible={visible}
         />
       </div>
@@ -152,8 +164,7 @@ const SessionTimeline = memo(function SessionTimeline({
     setKept(nextKept);
   }
 
-  // Record LRU recency for eviction and drop scroll snapshots only when a tab
-  // is actually closed (LRU-evicted open tabs retain their scroll position).
+  // Record LRU recency for eviction and drop stale keys when a tab closes.
   useLayoutEffect(() => {
     if (activeKey) {
       lruRankRef.current.set(activeKey, ++lruTickRef.current);
@@ -164,7 +175,6 @@ const SessionTimeline = memo(function SessionTimeline({
     for (const k of Array.from(lruRankRef.current.keys())) {
       if (k !== activeKey && !open.has(k)) {
         lruRankRef.current.delete(k);
-        clearSessionScrollSnapshot(k);
       }
     }
   }, [activeKey, openTabs]);

@@ -20,47 +20,6 @@ const TOUCH_IDLE_MS = 150;
  *  the pin effects, the anchor rail and the floating edge-jump control. */
 export type ScrollEdge = "top" | "bottom";
 
-export interface SessionScrollSnapshot {
-  scrollTop: number;
-  atBottom: boolean;
-  userPaused: boolean;
-}
-
-const MAX_SCROLL_SNAPSHOTS = 64;
-const sessionScrollSnapshots = new Map<string, SessionScrollSnapshot>();
-
-/** Read a saved scroll position for a session that was hidden or evicted. */
-export function readSessionScrollSnapshot(
-  key?: string,
-): SessionScrollSnapshot | undefined {
-  if (!key) return undefined;
-  return sessionScrollSnapshots.get(key);
-}
-
-/** Persist a session's scroll position in a bounded LRU map (in-memory only). */
-export function writeSessionScrollSnapshot(
-  key: string,
-  snapshot: SessionScrollSnapshot,
-): void {
-  if (sessionScrollSnapshots.has(key)) sessionScrollSnapshots.delete(key);
-  sessionScrollSnapshots.set(key, snapshot);
-  while (sessionScrollSnapshots.size > MAX_SCROLL_SNAPSHOTS) {
-    const oldest = sessionScrollSnapshots.keys().next().value;
-    if (oldest === undefined) break;
-    sessionScrollSnapshots.delete(oldest);
-  }
-}
-
-/** Drop a closed tab's saved scroll position so reopening starts at the tail. */
-export function clearSessionScrollSnapshot(key: string): void {
-  sessionScrollSnapshots.delete(key);
-}
-
-/** Test helper: clear all saved session scroll snapshots. */
-export function resetSessionScrollSnapshots(): void {
-  sessionScrollSnapshots.clear();
-}
-
 export interface ScrollFollow {
   /** Whether the viewport currently sits at the tail. */
   atBottomRef: MutableRefObject<boolean>;
@@ -90,20 +49,17 @@ function prefersReducedMotion(): boolean {
  * scrolls are tagged and ignored. */
 export function useScrollFollow({
   scrollRef,
-  initialSnapshot,
 }: {
   scrollRef: RefObject<HTMLDivElement | null>;
-  initialSnapshot?: SessionScrollSnapshot;
 }): ScrollFollow {
   // Sampling geometry at content-change time misfires in a virtualized
-  // list: a freshly mounted tool row still has the 72px estimated height,
+  // list: a freshly mounted tool row still has the estimated height,
   // so scrollHeight is stale and a "near bottom" check reads wrong. Track
   // user intent instead: wheel-up pauses following, scrolling back down to
   // the bottom resumes it; programmatic scrolls are tagged and ignored.
-  const atBottomRef = useRef(initialSnapshot ? initialSnapshot.atBottom : true);
-  const userPausedRef = useRef(initialSnapshot ? initialSnapshot.userPaused : false);
+  const atBottomRef = useRef(true);
+  const userPausedRef = useRef(false);
   const autoScrollingRef = useRef(false);
-  // The floating control's smooth slide to the tail: programmatic pins stand
   // down until it settles, or one stream flush mid-animation would hard-jump
   // the viewport and cut the transition short.
   const smoothPinRef = useRef(false);
@@ -354,8 +310,6 @@ export function useTailPin({
   streaming,
   isFollowing,
   scrollToBottom,
-  restoreScrollTop,
-  initialScrollTop,
 }: {
   scrollRef: RefObject<HTMLDivElement | null>;
   count: number;
@@ -363,33 +317,19 @@ export function useTailPin({
   streaming: boolean;
   isFollowing: () => boolean;
   scrollToBottom: () => void;
-  restoreScrollTop?: (top: number) => void;
-  initialScrollTop?: number | null;
 }) {
   // Scroll to bottom when switching sessions (new page loaded) or when a new
-  // message is appended while following the tail. If the session is returning
-  // after LRU eviction with a saved non-tail position, restore that offset
-  // instead of yanking back to the bottom.
+  // message is appended while following the tail.
   const lastCountRef = useRef(0);
-  const initialScrollTopRef = useRef(initialScrollTop ?? null);
   useLayoutEffect(() => {
     if (!scrollRef.current || count === 0) return;
     const grew = count > lastCountRef.current;
     const switched = lastCountRef.current === 0;
-    if (switched) {
-      const savedTop = initialScrollTopRef.current;
-      initialScrollTopRef.current = null;
-      if (savedTop !== null && !isFollowing() && restoreScrollTop) {
-        restoreScrollTop(savedTop);
-      } else {
-        scrollToBottom();
-      }
-    } else if (grew && isFollowing()) {
+    if (switched || (grew && isFollowing())) {
       scrollToBottom();
     }
     lastCountRef.current = count;
-  }, [count, isFollowing, restoreScrollTop, scrollToBottom, scrollRef]);
-
+  }, [count, isFollowing, scrollToBottom, scrollRef]);
   // Keep the tail pinned while stream rows grow, if the user is at bottom.
   // `items` changes identity on every flush, so this tracks both thinking
   // and text growth.

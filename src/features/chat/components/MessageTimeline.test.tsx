@@ -4,10 +4,6 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { formatDuration } from "./format-duration";
 import { MessageRow, MessageTimeline, resolveForkAnchors } from "./MessageTimeline";
-import {
-  clearSessionScrollSnapshot,
-  resetSessionScrollSnapshots,
-} from "./use-scroll-follow";
 import { buildBotBlock } from "./agent-block";
 import { useChatStore } from "../store";
 import { useBotStore } from "@/features/bots/bot-store";
@@ -1111,12 +1107,11 @@ describe("process run fold timing", () => {
   });
 });
 
-describe("scroll position preservation across tab switches", () => {
+describe("scroll position preservation and modal dialog cleanup across tab switches", () => {
   let container: HTMLDivElement;
   let root: Root;
 
   beforeEach(() => {
-    resetSessionScrollSnapshots();
     container = document.createElement("div");
     document.body.appendChild(container);
     root = createRoot(container);
@@ -1125,7 +1120,6 @@ describe("scroll position preservation across tab switches", () => {
   afterEach(() => {
     act(() => root.unmount());
     container.remove();
-    resetSessionScrollSnapshots();
   });
 
   const makeMessages = (count: number): Message[] =>
@@ -1141,8 +1135,7 @@ describe("scroll position preservation across tab switches", () => {
     Object.defineProperty(el, "clientHeight", { configurable: true, value: clientHeight });
   }
 
-  it("preserves a scrolled-up reading position across hide/reveal and LRU remount, and resets on tab close", async () => {
-    const key = "claude/s-scroll";
+  it("preserves a scrolled-up reading position across keep-alive hide/reveal and starts at tail after LRU unmount", async () => {
     const session: SessionState = { ...EMPTY_SESSION, messages: makeMessages(20) };
     const renderView = async (visible: boolean, nextSession = session) => {
       await act(async () => {
@@ -1152,7 +1145,6 @@ describe("scroll position preservation across tab switches", () => {
             streaming={false}
             onLoadEarlier={() => {}}
             workspacePath="/ws"
-            scrollMemoryKey={key}
             visible={visible}
           />,
         );
@@ -1175,22 +1167,73 @@ describe("scroll position preservation across tab switches", () => {
     await renderView(true);
     expect(scroller.scrollTop).toBe(420);
 
-    // Unmount (simulates LRU eviction while the tab remains open) and remount: restores y = 420.
+    // Unmount (simulates LRU eviction) and remount: lands at the tail instead of a stale pixel offset.
     await act(async () => root.render(null));
     await renderView(true);
     const remountedScroller = container.querySelector<HTMLDivElement>(".overflow-y-auto")!;
     configureScrollBox(remountedScroller, 3000, 500);
-    expect(remountedScroller.scrollTop).toBe(420);
-
-    // Explicitly closing the tab clears the snapshot, so reopening starts at the bottom.
-    await act(async () => root.render(null));
-    clearSessionScrollSnapshot(key);
-    await renderView(true);
-    const reopenedScroller = container.querySelector<HTMLDivElement>(".overflow-y-auto")!;
-    configureScrollBox(reopenedScroller, 3000, 500);
-    // Trigger reveal tail check after layout metrics exist.
     await renderView(false);
     await renderView(true);
-    expect(reopenedScroller.scrollTop).toBe(2500);
+    expect(remountedScroller.scrollTop).toBe(2500);
+  });
+
+  it("closes an open PlanReviewCard modal dialog when the timeline becomes hidden", async () => {
+    const planMessage: Message = {
+      seq: 1,
+      role: "plan_review",
+      text: "",
+      ts: null,
+      planReview: {
+        planId: "plan-1",
+        engine: "claude",
+        sessionId: "s-1",
+        workspacePath: "/ws",
+        runId: "run-1",
+        revision: 1,
+        title: "Refactor plan",
+        content: "# Refactor\n\nStep 1",
+        contentHash: "abc",
+        complete: true,
+        reviewKind: "native_request",
+        nativePlanId: "native-1",
+        execPermission: "auto",
+        status: "awaiting_review",
+        execution: "not_started",
+        decision: null,
+        decisionIntentAt: null,
+        appliedAt: null,
+        createdAt: 1,
+        updatedAt: 1,
+        supersededBy: null,
+      },
+    };
+    const session: SessionState = { ...EMPTY_SESSION, messages: [planMessage] };
+    const renderView = async (visible: boolean) => {
+      await act(async () => {
+        root.render(
+          <MessageTimeline
+            session={session}
+            streaming={false}
+            onLoadEarlier={() => {}}
+            workspacePath="/ws"
+            visible={visible}
+          />,
+        );
+      });
+    };
+
+    await renderView(true);
+    const viewFullBtn = Array.from(container.querySelectorAll("button")).find((btn) =>
+      btn.textContent?.includes(i18n.t("chat.planReviewViewFull")),
+    );
+    expect(viewFullBtn).toBeDefined();
+    await act(async () => {
+      viewFullBtn!.click();
+    });
+    expect(container.querySelector("dialog")).not.toBeNull();
+
+    // Hiding the timeline must close/unmount the modal dialog so the page never goes inert.
+    await renderView(false);
+    expect(container.querySelector("dialog")).toBeNull();
   });
 });

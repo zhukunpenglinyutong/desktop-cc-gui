@@ -34,13 +34,7 @@ import { modelDisplayName } from "@/features/chat/model-display-name";
 import { ProcessDisclosure, type ProcessSearchTarget } from "./ProcessDisclosure";
 import { ResponseCheckBadge } from "./response-check-badge";
 import { CollapsibleMessage } from "./CollapsibleMessage";
-import {
-  readSessionScrollSnapshot,
-  useScrollFollow,
-  useTailPin,
-  writeSessionScrollSnapshot,
-  type SessionScrollSnapshot,
-} from "./use-scroll-follow";
+import { useScrollFollow, useTailPin } from "./use-scroll-follow";
 import { ScrollControl } from "./ScrollControl";
 import { pluginIdFromRegistryKey, timelineRowRegistry, useRegistry } from "@ccgui/plugin-sdk";
 import { PluginBoundary } from "@/features/plugins/boundary/PluginBoundary";
@@ -51,6 +45,7 @@ import { BotAvatarView } from "@/features/bots/bot-avatar";
 import { avatarFromLegacyIcon } from "@/features/bots/bot-avatar-model";
 import { useBotStore } from "@/features/bots/bot-store";
 import { registerShortcutHandler } from "@/features/shortcuts/runtime";
+import { TimelineVisibleContext } from "./timeline-visibility";
 import { FindOnlyPanel } from "@/components/base/find-panel/find-only-panel";
 import {
   clearSearchHighlights,
@@ -987,15 +982,12 @@ export const MessageTimeline = memo(function MessageTimeline({
   streaming,
   onLoadEarlier,
   workspacePath,
-  scrollMemoryKey,
   visible = true,
 }: {
   session: SessionState;
   streaming: boolean;
   onLoadEarlier: () => void;
   workspacePath: string;
-  /** Optional key for preserving scroll position across keep-alive hide/eviction. */
-  scrollMemoryKey?: string;
   /** Whether this timeline is the active visible tab inside a keep-alive stack. */
   visible?: boolean;
 }) {
@@ -1094,26 +1086,15 @@ export const MessageTimeline = memo(function MessageTimeline({
   // A compaction keeps it mounted even between sends, so the line does not
   // blink out in the gap between the compact turn and the resume turn.
   const count = rows.length + (streaming || session.compaction ? 1 : 0);
-  const [initialSnapshot] = useState(() => readSessionScrollSnapshot(scrollMemoryKey));
-  const restoredScrollTop =
-    initialSnapshot && (!initialSnapshot.atBottom || initialSnapshot.userPaused)
-      ? initialSnapshot.scrollTop
-      : null;
 
   const virtualizer = useVirtualizer({
     count,
     getScrollElement: () => scrollRef.current,
     estimateSize: () => 160,
     overscan: 4,
-    // Start near the saved reading position (after LRU eviction) or near the
-    // estimated tail on cold mounts so the first commit avoids parsing the
-    // oldest rows only for useTailPin to discard them.
-    initialOffset: () =>
-      restoredScrollTop !== null
-        ? restoredScrollTop
-        : count > 0
-          ? Math.max(0, count * 160 - 800)
-          : 0,
+    // Start near the estimated tail on cold mounts so the first commit avoids
+    // parsing the oldest rows only for useTailPin to discard them.
+    initialOffset: () => (count > 0 ? Math.max(0, count * 160 - 800) : 0),
     getItemKey: (index) =>
       index < rows.length ? rowKey(rows[index]) : "streaming-tail",
   });
@@ -1125,7 +1106,7 @@ export const MessageTimeline = memo(function MessageTimeline({
     scrollToBottom,
     restoreScrollTop,
     scrollToEdge,
-  } = useScrollFollow({ scrollRef, initialSnapshot });
+  } = useScrollFollow({ scrollRef });
   const {
     searchOpen,
     setSearchOpen,
@@ -1160,17 +1141,13 @@ export const MessageTimeline = memo(function MessageTimeline({
     streaming,
     isFollowing,
     scrollToBottom,
-    restoreScrollTop,
-    initialScrollTop: restoredScrollTop,
   });
 
-  // Snapshot scroll state on keep-alive hide/unmount and reconcile on reveal so
-  // returning to a tab always lands where the user left it (at the tail if they
-  // were following, or at their exact historical offset if they scrolled up).
-  const hiddenSnapshotRef = useRef<SessionScrollSnapshot | null>(null);
+  // Preserve exact scrollTop across keep-alive hide/reveal (the DOM and
+  // virtualizer measurements stay mounted). Tabs evicted past the LRU cap
+  // remount fresh at the tail rather than restoring a stale pixel offset.
+  const hiddenScrollTopRef = useRef<number | null>(null);
   const prevVisibleRef = useRef(visible);
-  const visibleRef = useRef(visible);
-  visibleRef.current = visible;
 
   useLayoutEffect(() => {
     const prev = prevVisibleRef.current;
@@ -1178,50 +1155,18 @@ export const MessageTimeline = memo(function MessageTimeline({
     const el = scrollRef.current;
     if (!el || prev === visible) return;
     if (!visible) {
-      const snap: SessionScrollSnapshot = {
-        scrollTop: el.scrollTop,
-        atBottom: atBottomRef.current,
-        userPaused: userPausedRef.current,
-      };
-      hiddenSnapshotRef.current = snap;
-      if (scrollMemoryKey) writeSessionScrollSnapshot(scrollMemoryKey, snap);
+      hiddenScrollTopRef.current = el.scrollTop;
       return;
     }
     if (isFollowing()) {
       scrollToBottom();
     } else if (
-      hiddenSnapshotRef.current &&
-      el.scrollTop !== hiddenSnapshotRef.current.scrollTop
+      hiddenScrollTopRef.current !== null &&
+      el.scrollTop !== hiddenScrollTopRef.current
     ) {
-      restoreScrollTop(hiddenSnapshotRef.current.scrollTop);
+      restoreScrollTop(hiddenScrollTopRef.current);
     }
-  }, [
-    visible,
-    scrollMemoryKey,
-    atBottomRef,
-    userPausedRef,
-    isFollowing,
-    scrollToBottom,
-    restoreScrollTop,
-  ]);
-
-  useLayoutEffect(() => {
-    if (!scrollMemoryKey) return;
-    return () => {
-      const el = scrollRef.current;
-      const snap =
-        !visibleRef.current && hiddenSnapshotRef.current
-          ? hiddenSnapshotRef.current
-          : el
-            ? {
-                scrollTop: el.scrollTop,
-                atBottom: atBottomRef.current,
-                userPaused: userPausedRef.current,
-              }
-            : null;
-      if (snap) writeSessionScrollSnapshot(scrollMemoryKey, snap);
-    };
-  }, [scrollMemoryKey, atBottomRef, userPausedRef]);
+  }, [visible, isFollowing, scrollToBottom, restoreScrollTop]);
   useLoadEarlier({
     scrollRef,
     virtualizer,
@@ -1272,6 +1217,7 @@ export const MessageTimeline = memo(function MessageTimeline({
   );
 
   return (
+    <TimelineVisibleContext.Provider value={visible}>
     <div className="relative flex min-h-0 flex-1 flex-col">
       {session.historyReloadId !== undefined && (
         <div role="status" className="flex shrink-0 items-center justify-center gap-2 py-2 text-caption-1-regular text-text-tertiary">
@@ -1403,5 +1349,6 @@ export const MessageTimeline = memo(function MessageTimeline({
         </div>
       </div>
     </div>
+    </TimelineVisibleContext.Provider>
   );
 });
