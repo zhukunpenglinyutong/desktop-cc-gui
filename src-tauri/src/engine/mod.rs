@@ -1350,6 +1350,15 @@ async fn send_reserved(
         )
         .await;
     }
+    // Non-daemon OMP send (plan / computer-use / memory-bot / tool-constrained
+    // / WSL): close any idle handle the resident ACP daemon holds on this
+    // session so `--resume` on the isolated process never collides with the
+    // daemon's session lock file or cached state.
+    if engine == "omp" {
+        if let Some(sid) = launch.req.session_id.as_deref() {
+            state.omp_daemon.close_session(sid).await;
+        }
+    }
     // pi/omp: the injected extension observes the provider response's own
     // `model` field and appends it to a per-run sidecar. The reader consults
     // that file when `message_end` has no `upstreamModel`. Remote workspaces

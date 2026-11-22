@@ -1202,11 +1202,13 @@ pub async fn delete_session(
     engine: String,
     session_id: String,
 ) -> Result<(), String> {
-    // A parked CLI keeps the transcript in memory: retire it before the delete
-    // so it cannot write the session back. Running turns are left alone, as for
-    // every other engine.
+    // A parked CLI or resident daemon keeps the transcript in memory: retire
+    // or close the session before deleting so it cannot write the file back.
+    // Running turns are left alone, as for every other engine.
     if engine == "codebuddy" {
         state.processes.retire_codebuddy(&session_id).await?;
+    } else if engine == "omp" {
+        state.omp_daemon.close_session(&session_id).await;
     }
     let db = Arc::clone(&state.db);
     let sink = Arc::clone(&state.sink);

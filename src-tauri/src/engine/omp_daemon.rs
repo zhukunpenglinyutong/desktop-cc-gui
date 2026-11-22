@@ -112,6 +112,7 @@ pub(crate) struct OmpDaemonSpec {
     pub(crate) search_path: Option<OsString>,
     pub(crate) proxy_env: BTreeMap<String, String>,
     pub(crate) config_stamps: Vec<Option<FileStamp>>,
+    pub(crate) auth_revision: Option<i64>,
     pub(crate) omp_on_demand_servers: Vec<String>,
 }
 
@@ -155,6 +156,7 @@ impl OmpDaemonSpec {
             search_path,
             proxy_env: current_proxy_env(),
             config_stamps: omp_config_stamps(),
+            auth_revision: omp_auth_revision_stamp(),
             omp_on_demand_servers: omp_user_on_demand_names(),
         })
     }
@@ -194,6 +196,28 @@ fn omp_config_stamps() -> Vec<Option<FileStamp>> {
         .iter()
         .map(|name| file_stamp(&dir.join(name)))
         .collect()
+}
+
+/// Read OMP's `auth_change_revision` counter from `<agent>/agent.db` (if it
+/// exists) so credential / OAuth login changes rotate the warm daemon without
+/// reading any secret values.
+fn omp_auth_revision_stamp() -> Option<i64> {
+    let path = super::pi_family_auth::agent_dir("omp").ok()?.join("agent.db");
+    if !path.exists() {
+        return None;
+    }
+    let conn = rusqlite::Connection::open_with_flags(
+        &path,
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+    )
+    .ok()?;
+    let _ = conn.busy_timeout(Duration::from_millis(200));
+    conn.query_row(
+        "SELECT revision FROM auth_change_revision WHERE id = 1",
+        [],
+        |row| row.get::<_, i64>(0),
+    )
+    .ok()
 }
 
 fn file_stamp(path: &Path) -> Option<FileStamp> {
