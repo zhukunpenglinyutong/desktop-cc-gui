@@ -12,6 +12,10 @@ import {
   computeDiffLines,
   parseEditArgs,
   parsePatchLines,
+  previewContentLines,
+  previewDiffLines,
+  previewPatchLines,
+  type BoundedDiffLines,
   type DiffLine,
   type EditArgs,
 } from "./edit-line-stats";
@@ -27,6 +31,81 @@ export interface ToolPayloadViewerProps {
  *  big diffs) do not freeze layout/scrolling when expanded. */
 const TOOL_TEXT_PREVIEW_CHARS = 32_000;
 const TOOL_DIFF_PREVIEW_LINES = 400;
+
+/** A diff narrowed to the rendered window. Built once per tool-call args
+ *  object: the store replaces a tool row instead of mutating its args, so the
+ *  reference survives collapses and re-opening a panel reuses the window
+ *  instead of re-materializing a line object per file line. */
+interface DiffPreview extends BoundedDiffLines {
+  filePath?: string;
+  copyText: string;
+  /** Whole line set, built only for the explicit 「显示全部」 click. */
+  expand: () => DiffLine[];
+}
+
+const diffPreviewCache = new WeakMap<object, DiffPreview | null>();
+
+function buildDiffPreview(edit: EditArgs, path: string | null | undefined): DiffPreview {
+  const { patch, content, oldString, newString } = edit;
+  const bounded = patch
+    ? previewPatchLines(patch, TOOL_DIFF_PREVIEW_LINES)
+    : content !== undefined
+      ? previewContentLines(content, TOOL_DIFF_PREVIEW_LINES)
+      : previewDiffLines(oldString, newString, TOOL_DIFF_PREVIEW_LINES);
+  return {
+    ...bounded,
+    filePath: edit.filePath ?? path ?? undefined,
+    copyText: newString ?? content ?? patch ?? oldString ?? "",
+    expand: () =>
+      patch
+        ? parsePatchLines(patch)
+        : content !== undefined
+          ? content.split("\n").map((text, index) => ({
+              type: "add" as const,
+              text,
+              newLineNo: index + 1,
+            }))
+          : computeDiffLines(oldString, newString),
+  };
+}
+
+/** Cached diff window for an edit-class tool call, or null when the args carry
+ *  no diffable payload (the generic viewer takes over then). */
+function diffPreviewOf(args: unknown, path: string | null | undefined): DiffPreview | null {
+  if (!args || typeof args !== "object") return null;
+  const cached = diffPreviewCache.get(args);
+  if (cached !== undefined) return cached;
+  const edit = parseEditArgs(args);
+  const preview = edit ? buildDiffPreview(edit, path) : null;
+  diffPreviewCache.set(args, preview);
+  return preview;
+}
+
+/** Tool payloads never change in place, so their rendered text is cached per
+ *  object identity: the same panel is re-expanded many times. The cache is
+ *  skipped above the render cap so a multi-megabyte payload never pins a
+ *  second full copy of itself in memory — re-serializing that rare case costs
+ *  a few milliseconds, retaining it costs the session's budget. */
+const CACHEABLE_TEXT_CHARS = TOOL_TEXT_PREVIEW_CHARS * 4;
+const jsonTextCache = new WeakMap<object, string | null>();
+const resultTextCache = new WeakMap<object, { text: string; isError: boolean } | null>();
+
+function formatToolArgs(args: unknown): string | null {
+  if (args == null) return null;
+  if (typeof args === "string") return args.trim();
+  if (typeof args !== "object") return JSON.stringify(args, null, 2) ?? null;
+  const cached = jsonTextCache.get(args);
+  if (cached !== undefined) return cached;
+  let text: string | null;
+  try {
+    const json = JSON.stringify(args, null, 2);
+    text = json && json !== "{}" && json !== "[]" ? json : null;
+  } catch {
+    text = String(args);
+  }
+  if (text === null || text.length <= CACHEABLE_TEXT_CHARS) jsonTextCache.set(args, text);
+  return text;
+}
 
 function truncatePreviewText(text: string): {
   text: string;
@@ -105,47 +184,21 @@ function isBashTool(name: string): boolean {
   );
 }
 
-/** Git Diff-style file change viewer. */
+/** Git Diff-style file change viewer. Renders the precomputed window so the
+ *  panel opens on the click frame; the unbounded line set is built only when
+ *  the user asks for every line. */
 export const FileDiffViewer = memo(function FileDiffViewer({
-  filePath,
-  oldString,
-  newString,
-  content,
-  patch,
-}: EditArgs) {
+  preview,
+}: {
+  preview: DiffPreview;
+}) {
   const { t } = useTranslation();
   const { copied, copy } = useCopied();
-  const [showAllDiff, setShowAllDiff] = useState(false);
-
-  const diffLines = useMemo<DiffLine[]>(() => {
-    if (patch) return parsePatchLines(patch);
-    if (content !== undefined) {
-      return content.split("\n").map((text, i) => ({
-        type: "add" as const,
-        text,
-        newLineNo: i + 1,
-      }));
-    }
-    return computeDiffLines(oldString, newString);
-  }, [patch, content, oldString, newString]);
-
-  const { addCount, delCount } = useMemo(() => {
-    let add = 0;
-    let del = 0;
-    for (const l of diffLines) {
-      if (l.type === "add") add++;
-      else if (l.type === "del") del++;
-    }
-    return { addCount: add, delCount: del };
-  }, [diffLines]);
-
-  const copyText = useMemo(() => {
-    if (newString !== undefined) return newString;
-    if (content !== undefined) return content;
-    if (patch !== undefined) return patch;
-    return oldString || "";
-  }, [newString, content, patch, oldString]);
-
+  const [showAll, setShowAll] = useState(false);
+  const fullLines = useMemo(() => (showAll ? preview.expand() : null), [showAll, preview]);
+  const lines = fullLines ?? preview.lines;
+  const total = fullLines ? fullLines.length : preview.total;
+  const { addCount, delCount, filePath, copyText } = preview;
   const fileName = filePath ? filePath.split(/[\\/]/).pop() : null;
 
   return (
@@ -154,7 +207,7 @@ export const FileDiffViewer = memo(function FileDiffViewer({
       <div className="flex items-center justify-between border-b border-border-secondary bg-background-secondary-default px-2.5 py-1.5 text-caption-1-medium text-text-secondary">
         <div className="flex items-center gap-1.5 overflow-hidden">
           <FileDiff className="size-3.5 shrink-0 text-text-tertiary" aria-hidden />
-          <span className="truncate" title={filePath ?? undefined}>
+          <span className="truncate" title={filePath}>
             {filePath || fileName || t("chat.editedFiles_one", { count: 1 })}
           </span>
           <div className="ml-1.5 flex items-center gap-1 tabular-nums text-[11px]">
@@ -182,16 +235,13 @@ export const FileDiffViewer = memo(function FileDiffViewer({
 
       {/* Diff Content */}
       <div className="max-h-72 overflow-auto py-1">
-        {diffLines.length === 0 ? (
+        {total === 0 ? (
           <div className="px-3 py-2 text-text-tertiary italic">
             {t("chat.diffEmpty")}
           </div>
         ) : (
           <>
-            {(showAllDiff || diffLines.length <= TOOL_DIFF_PREVIEW_LINES
-              ? diffLines
-              : diffLines.slice(0, TOOL_DIFF_PREVIEW_LINES)
-            ).map((line, idx) => {
+            {lines.map((line, idx) => {
               const isAdd = line.type === "add";
               const isDel = line.type === "del";
               const isHdr = line.type === "header";
@@ -223,17 +273,17 @@ export const FileDiffViewer = memo(function FileDiffViewer({
                 </div>
               );
             })}
-            {!showAllDiff && diffLines.length > TOOL_DIFF_PREVIEW_LINES ? (
+            {!showAll && total > TOOL_DIFF_PREVIEW_LINES ? (
               <div className="flex items-center justify-between border-t border-border-secondary/60 bg-background-secondary-default/40 px-3 py-1.5 text-[11px] text-text-tertiary">
                 <span>
                   {t("chat.toolDiffTruncated", {
                     shown: TOOL_DIFF_PREVIEW_LINES,
-                    total: diffLines.length,
+                    total,
                   })}
                 </span>
                 <button
                   type="button"
-                  onClick={() => setShowAllDiff(true)}
+                  onClick={() => setShowAll(true)}
                   className="cursor-pointer font-medium text-accent-500 hover:underline"
                 >
                   {t("chat.toolPayloadShowAll")}
@@ -309,6 +359,20 @@ function formatExecutionResult(result: unknown): {
   return { text: String(result), isError: false };
 }
 
+/** `formatExecutionResult` memoized per payload object (see `resultTextCache`). */
+function executionResultOf(result: unknown): { text: string; isError: boolean } | null {
+  if (result !== null && typeof result === "object") {
+    const cached = resultTextCache.get(result);
+    if (cached !== undefined) return cached;
+    const formatted = formatExecutionResult(result);
+    if (formatted === null || formatted.text.length <= CACHEABLE_TEXT_CHARS) {
+      resultTextCache.set(result, formatted);
+    }
+    return formatted;
+  }
+  return formatExecutionResult(result);
+}
+
 /** Terminal-style Bash Command & Result Viewer. */
 export const BashCommandViewer = memo(function BashCommandViewer({
   toolName,
@@ -325,7 +389,7 @@ export const BashCommandViewer = memo(function BashCommandViewer({
   const { copied, copy } = useCopied();
   const [showResult, setShowResult] = useState(true);
 
-  const formattedResult = useMemo(() => formatExecutionResult(result), [result]);
+  const formattedResult = useMemo(() => executionResultOf(result), [result]);
 
   return (
     <div className="mt-1.5 overflow-hidden rounded-md border border-border-secondary bg-background-primary-default text-[12px] font-mono leading-[1.55]">
@@ -358,9 +422,12 @@ export const BashCommandViewer = memo(function BashCommandViewer({
       <div className="bg-background-secondary-default/50 px-3 py-2 text-text-primary">
         <div className="flex items-start gap-2">
           <span className="select-none font-bold text-emerald-600 dark:text-emerald-400">$</span>
-          <pre className="flex-1 whitespace-pre-wrap break-all font-mono">
-            {command}
-          </pre>
+          <div className="min-w-0 flex-1">
+            <BoundedPre
+              text={command}
+              className="whitespace-pre-wrap break-all font-mono"
+            />
+          </div>
         </div>
       </div>
 
@@ -411,18 +478,9 @@ export const GenericToolViewer = memo(function GenericToolViewer({
   const { t } = useTranslation();
   const [showResult, setShowResult] = useState(true);
 
-  const formattedArgs = useMemo(() => {
-    if (args == null) return null;
-    if (typeof args === "string") return args.trim();
-    try {
-      const text = JSON.stringify(args, null, 2);
-      return text && text !== "{}" && text !== "[]" ? text : null;
-    } catch {
-      return String(args);
-    }
-  }, [args]);
+  const formattedArgs = useMemo(() => formatToolArgs(args), [args]);
 
-  const formattedResult = useMemo(() => formatExecutionResult(result), [result]);
+  const formattedResult = useMemo(() => executionResultOf(result), [result]);
 
   if (!formattedArgs && !formattedResult) return null;
 
@@ -473,18 +531,8 @@ export const ToolPayloadViewer = memo(function ToolPayloadViewer({
 }: ToolPayloadViewerProps) {
   // 1. Check if it is an edit tool with diffable args
   if (isEditTool(toolName)) {
-    const editArgs = parseEditArgs(args);
-    if (editArgs) {
-      return (
-        <FileDiffViewer
-          filePath={editArgs.filePath ?? path ?? undefined}
-          oldString={editArgs.oldString}
-          newString={editArgs.newString}
-          content={editArgs.content}
-          patch={editArgs.patch}
-        />
-      );
-    }
+    const preview = diffPreviewOf(args, path);
+    if (preview) return <FileDiffViewer preview={preview} />;
   }
 
   // 2. Check if it is a bash/terminal command
