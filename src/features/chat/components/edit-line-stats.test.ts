@@ -1,6 +1,15 @@
 import { describe, expect, it, vi } from "vitest";
 import type { Message } from "@/lib/ipc";
-import { computeDiffLines, countEditLines, createEditLineStatsBuilder, deriveEditLineStats } from "./edit-line-stats";
+import {
+  computeDiffLines,
+  countEditLines,
+  createEditLineStatsBuilder,
+  deriveEditLineStats,
+  parsePatchLines,
+  previewContentLines,
+  previewDiffLines,
+  previewPatchLines,
+} from "./edit-line-stats";
 
 function editRow(seq: number, path: string, args: unknown, text = "edit · Applying"): Message {
   return { seq, role: "tool", text, ts: null, path, args } as Message;
@@ -139,5 +148,50 @@ describe("large edit payloads", () => {
         });
       }
     }
+  });
+
+  it("bounds the rendered window while keeping whole-diff counts exact", () => {
+    const inputs = [undefined, "", "中文🙂", "a\n", "a\nb", "x\na\nb", "a\nb\nx"];
+    for (const oldString of inputs) {
+      for (const newString of inputs) {
+        if (!oldString && !newString) continue;
+        const full = computeDiffLines(oldString, newString);
+        for (const limit of [0, 1, 2, 400]) {
+          const preview = previewDiffLines(oldString, newString, limit);
+          expect(preview.lines).toEqual(full.slice(0, limit));
+          expect(preview.total).toBe(full.length);
+          expect(preview.addCount).toBe(full.filter((line) => line.type === "add").length);
+          expect(preview.delCount).toBe(full.filter((line) => line.type === "del").length);
+        }
+      }
+    }
+  });
+
+  it("never materializes a whole-file write", () => {
+    const content = Array.from({ length: 20_000 }, (_, index) => `line ${index}`).join("\n");
+    const preview = previewContentLines(content, 400);
+    expect(preview.lines).toHaveLength(400);
+    expect(preview.lines.at(-1)).toEqual({ type: "add", text: "line 399", newLineNo: 400 });
+    expect(preview).toMatchObject({ total: 20_000, addCount: 20_000, delCount: 0 });
+    expect(countEditLines({ path: "src/big.ts", content })).toEqual({
+      additions: 20_000,
+      deletions: 0,
+    });
+  });
+
+  it("bounds a unified patch and keeps its hunk numbering", () => {
+    const patch = [
+      "@@ -1,2 +1,2 @@",
+      " ctx",
+      "-old",
+      "+new",
+      ...Array.from({ length: 500 }, (_, index) => `+added ${index}`),
+    ].join("\n");
+    const full = parsePatchLines(patch);
+    const preview = previewPatchLines(patch, 3);
+    expect(preview.lines).toEqual(full.slice(0, 3));
+    expect(preview.total).toBe(full.length);
+    expect(preview.addCount).toBe(full.filter((line) => line.type === "add").length);
+    expect(preview.delCount).toBe(full.filter((line) => line.type === "del").length);
   });
 });
