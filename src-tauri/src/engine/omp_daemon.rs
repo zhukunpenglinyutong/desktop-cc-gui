@@ -463,7 +463,9 @@ impl OmpDaemonState {
         if self.release_session_elsewhere(sid, &client).await.is_err() {
             return Ok(());
         }
-        let meta = client.ensure_session_resumed(sid, workspace).await?;
+        // A background prewarm never rewrites the transcript: a session whose
+        // recorded model was deleted simply stays unloaded until a real send.
+        let meta = client.ensure_session_resumed(sid, workspace, None).await?;
         if !client.has_active_turn(sid) {
             let _ = client
                 .apply_session_options(sid, &meta, model, effort, provider_hint)
@@ -739,10 +741,18 @@ impl OmpDaemonClient {
         Ok((session_id, meta))
     }
 
+    /// Load `session_id` into this daemon. OMP's ACP resume refuses a session
+    /// whose last recorded model no longer exists ("Could not restore model",
+    /// ACP runs without OMP's interactive fallback) and offers no way to pass
+    /// a model with the resume. When the send names a usable `fallback_model`,
+    /// a `model_change` entry is appended to the transcript (the same record
+    /// OMP writes on a model switch) and the resume is retried; otherwise the
+    /// user gets an actionable error instead of OMP's internal one.
     async fn ensure_session_resumed(
         &self,
         session_id: &str,
         workspace: &Path,
+        fallback_model: Option<&str>,
     ) -> Result<LoadedSessionMeta, String> {
         let lock = self.session_setup_lock(session_id);
         let _guard = lock.lock().await;
@@ -771,18 +781,49 @@ impl OmpDaemonClient {
             lock_unpoisoned(&self.loaded_sessions).remove(session_id);
         }
 
-        let cwd = workspace.to_string_lossy().to_string();
-        let mcp_servers = load_user_omp_mcp_servers();
-        let result = self
-            .rpc_call(
-                "session/resume",
-                json!({ "sessionId": session_id, "cwd": cwd, "mcpServers": mcp_servers }),
-                Some(SESSION_RESUME_TIMEOUT),
-            )
-            .await?;
+        let result = match self.resume_rpc(session_id, workspace).await {
+            Ok(result) => result,
+            Err(error) => {
+                let Some(missing) = missing_restore_model(&error).map(str::to_string) else {
+                    return Err(error);
+                };
+                let replacement = fallback_model
+                    .filter(|model| *model != missing)
+                    .ok_or_else(|| {
+                        format!(
+                            "该 OMP 会话上次使用的模型 {missing} 已不可用（可能已被删除），请在模型选择器中改选一个可用模型后重新发送"
+                        )
+                    })?;
+                let path = locate_session_file(workspace, session_id).ok_or_else(|| {
+                    format!(
+                        "该 OMP 会话上次使用的模型 {missing} 已不可用，且找不到会话文件，无法切换到 {replacement}"
+                    )
+                })?;
+                append_model_change(&path, replacement)?;
+                self.resume_rpc(session_id, workspace)
+                    .await
+                    .map_err(|retry| match missing_restore_model(&retry) {
+                        Some(still) => format!(
+                            "该 OMP 会话的模型 {still} 已不可用，请在模型选择器中改选一个可用模型后重新发送"
+                        ),
+                        None => retry,
+                    })?
+            }
+        };
         let meta = build_loaded_meta(workspace, session_id, &result);
         lock_unpoisoned(&self.loaded_sessions).insert(session_id.to_string(), meta.clone());
         Ok(meta)
+    }
+
+    async fn resume_rpc(&self, session_id: &str, workspace: &Path) -> Result<Value, String> {
+        let cwd = workspace.to_string_lossy().to_string();
+        let mcp_servers = load_user_omp_mcp_servers();
+        self.rpc_call(
+            "session/resume",
+            json!({ "sessionId": session_id, "cwd": cwd, "mcpServers": mcp_servers }),
+            Some(SESSION_RESUME_TIMEOUT),
+        )
+        .await
     }
 
     async fn apply_session_options(
@@ -1172,8 +1213,9 @@ async fn turn_inner(
             daemon_state
                 .release_session_elsewhere(existing, &client)
                 .await?;
+            let fallback = qualified_model(req.model.as_deref(), req.provider_id.as_deref());
             let meta = race_with_kill(
-                client.ensure_session_resumed(existing, &req.workspace),
+                client.ensure_session_resumed(existing, &req.workspace, fallback.as_deref()),
                 killed,
             )
             .await?;
@@ -1610,6 +1652,77 @@ fn locate_session_file(workspace: &Path, session_id: &str) -> Option<PathBuf> {
         }
     }
     None
+}
+
+/// `provider/id` selector for a send's model: already-qualified ids pass
+/// through, a bare id is qualified with the session's channel, anything else
+/// is unusable as a transcript model record.
+fn qualified_model(model: Option<&str>, provider_hint: Option<&str>) -> Option<String> {
+    let model = model.map(str::trim).filter(|m| !m.is_empty())?;
+    if model.contains('/') {
+        return Some(model.to_string());
+    }
+    let provider = provider_hint.map(str::trim).filter(|p| !p.is_empty())?;
+    Some(format!("{provider}/{model}"))
+}
+
+/// The model OMP failed to restore, from its `Could not restore model <id>`
+/// resume error (possibly wrapped as `rpc:<code>:Internal error: ...`).
+fn missing_restore_model(error: &str) -> Option<&str> {
+    const MARKER: &str = "Could not restore model ";
+    let start = error.find(MARKER)? + MARKER.len();
+    let token = error[start..].split_whitespace().next()?;
+    let token = token.trim_end_matches(['.', ',', ')', '"', '\'']);
+    (!token.is_empty()).then_some(token)
+}
+
+/// Append a `model_change` entry (role `default`) chained onto the
+/// transcript's current leaf, the record OMP itself writes on a model switch,
+/// so the next resume restores `model` instead of a deleted one.
+fn append_model_change(path: &Path, model: &str) -> Result<(), String> {
+    use std::io::Write as _;
+    let bytes = std::fs::read(path).map_err(|e| format!("读取 OMP 会话文件失败: {e}"))?;
+    let last_line = bytes
+        .split(|byte| *byte == b'\n')
+        .rev()
+        .map(|line| String::from_utf8_lossy(line))
+        .find(|line| !line.trim().is_empty());
+    let parent_id = match last_line {
+        Some(line) => {
+            let entry: Value = serde_json::from_str(line.trim())
+                .map_err(|e| format!("OMP 会话文件末行无法解析，未切换模型: {e}"))?;
+            if entry.get("type").and_then(Value::as_str) == Some("session") {
+                Value::Null
+            } else {
+                entry
+                    .get("id")
+                    .and_then(Value::as_str)
+                    .map(|id| Value::String(id.to_string()))
+                    .ok_or_else(|| "OMP 会话文件末行缺少 id，未切换模型".to_string())?
+            }
+        }
+        None => return Err("OMP 会话文件为空，未切换模型".to_string()),
+    };
+    let id = uuid::Uuid::new_v4().simple().to_string()[..8].to_owned();
+    let entry = json!({
+        "type": "model_change",
+        "id": id,
+        "parentId": parent_id,
+        "timestamp": chrono::Utc::now().format("%Y-%m-%dT%H:%M:%S%.3fZ").to_string(),
+        "model": model,
+        "role": "default",
+    });
+    let mut line = String::new();
+    if bytes.last().is_some_and(|byte| *byte != b'\n') {
+        line.push('\n');
+    }
+    line.push_str(&entry.to_string());
+    line.push('\n');
+    std::fs::OpenOptions::new()
+        .append(true)
+        .open(path)
+        .and_then(|mut file| file.write_all(line.as_bytes()))
+        .map_err(|e| format!("写入 OMP 会话文件失败: {e}"))
 }
 
 // ==================== ACP elicitation <-> QuestionCard bridge ====================
@@ -2279,6 +2392,61 @@ mod stamp_tests {
         std::fs::write(&path, "providers:\n  a: {}\n  b: {}\n").unwrap();
         assert_ne!(file_stamp(&path), Some(baseline));
 
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn missing_restore_model_extracts_the_selector_from_omp_errors() {
+        assert_eq!(
+            missing_restore_model(
+                "rpc:-32603:Internal error: Could not restore model plugin_x/[aistudio]gemini-4-neon"
+            ),
+            Some("plugin_x/[aistudio]gemini-4-neon")
+        );
+        assert_eq!(
+            missing_restore_model("Could not restore model a/b. Using c/d"),
+            Some("a/b")
+        );
+        assert_eq!(
+            missing_restore_model("rpc:-32603:Internal error: boom"),
+            None
+        );
+    }
+
+    #[test]
+    fn qualified_model_uses_the_session_channel_for_bare_ids() {
+        assert_eq!(qualified_model(Some("p/m"), None).as_deref(), Some("p/m"));
+        assert_eq!(
+            qualified_model(Some("m"), Some("p")).as_deref(),
+            Some("p/m")
+        );
+        assert_eq!(qualified_model(Some("m"), None), None);
+        assert_eq!(qualified_model(None, Some("p")), None);
+    }
+
+    /// A deleted model must be replaced by a `model_change` chained onto the
+    /// transcript's last entry, so OMP's resume restores the new model and the
+    /// conversation tree stays linear.
+    #[test]
+    fn append_model_change_chains_onto_the_last_entry() {
+        let dir = std::env::temp_dir().join(format!("ccgui-omp-mc-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("s.jsonl");
+        std::fs::write(
+            &path,
+            "{\"type\":\"session\",\"id\":\"s1\"}\n{\"type\":\"message\",\"id\":\"abc\",\"parentId\":null}",
+        )
+        .unwrap();
+        append_model_change(&path, "p/new-model").unwrap();
+        let text = std::fs::read_to_string(&path).unwrap();
+        let lines: Vec<&str> = text.lines().collect();
+        assert_eq!(lines.len(), 3, "{text}");
+        let entry: Value = serde_json::from_str(lines[2]).unwrap();
+        assert_eq!(entry["type"], "model_change");
+        assert_eq!(entry["parentId"], "abc");
+        assert_eq!(entry["model"], "p/new-model");
+        assert_eq!(entry["role"], "default");
+        assert!(text.ends_with('\n'));
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
