@@ -280,8 +280,10 @@ impl OmpDaemonState {
             return Ok(client);
         }
 
-        // Retire any mismatched or dead previous daemon before spawning, and
-        // reap drained daemons that already finished their last in-flight turn.
+        // Retire the mismatched or dead previous daemon before spawning: a
+        // daemon still running turns keeps serving them (and their parked
+        // questions) from `draining` and exits when its last turn settles.
+        // Drained daemons that already finished are reaped here.
         let (retired, idle_draining) = {
             let mut holder = lock_unpoisoned(&self.holder);
             let mut idle = Vec::new();
@@ -300,10 +302,59 @@ impl OmpDaemonState {
         for client in idle_draining {
             client.shutdown_sync();
         }
+        if let Some(old) = retired {
+            old.mark_draining();
+            if old.active_turn_count() == 0 {
+                old.shutdown_sync();
+            } else if old.is_alive() {
+                lock_unpoisoned(&self.holder).draining.push(old);
+            }
+        }
 
         let client = OmpDaemonClient::spawn_and_initialize(spec.clone()).await?;
         lock_unpoisoned(&self.holder).current = Some(Arc::clone(&client));
         Ok(client)
+    }
+
+    /// True while the current daemon is alive and running at least one turn.
+    fn current_is_busy(&self) -> bool {
+        let holder = lock_unpoisoned(&self.holder);
+        holder
+            .current
+            .as_ref()
+            .is_some_and(|client| client.is_alive() && client.active_turn_count() > 0)
+    }
+
+    /// Make `owner` the only daemon holding `session_id`: a session loaded in
+    /// two `omp --mode acp` processes forks its transcript (both append to the
+    /// same file). Idle copies elsewhere are closed; a turn still running on
+    /// this session in another (draining) daemon refuses the move instead of
+    /// racing it.
+    pub(crate) async fn release_session_elsewhere(
+        &self,
+        session_id: &str,
+        owner: &Arc<OmpDaemonClient>,
+    ) -> Result<(), String> {
+        let others: Vec<Arc<OmpDaemonClient>> = {
+            let holder = lock_unpoisoned(&self.holder);
+            holder
+                .current
+                .iter()
+                .chain(holder.draining.iter())
+                .filter(|client| !Arc::ptr_eq(client, owner) && client.is_alive())
+                .cloned()
+                .collect()
+        };
+        for client in others {
+            if client.has_active_turn(session_id) {
+                return Err(
+                    "该 OMP 会话的上一轮仍在旧守护进程中运行，请等待本轮结束或先停止后再发送"
+                        .to_string(),
+                );
+            }
+            client.close_idle_session(session_id).await;
+        }
+        Ok(())
     }
 
     fn matching_live_client(&self, spec: &OmpDaemonSpec) -> Option<Arc<OmpDaemonClient>> {
@@ -392,7 +443,15 @@ impl OmpDaemonState {
         session_id: Option<&str>,
         model: Option<&str>,
         effort: Option<&str>,
+        provider_hint: Option<&str>,
     ) -> Result<(), String> {
+        // A background prewarm must never rotate a daemon that is running a
+        // turn (another tab's permission/channel can differ from the busy
+        // one): the user's live turn and its parked questions would move to
+        // `draining` for nothing. The next real send rotates if still needed.
+        if self.matching_live_client(spec).is_none() && self.current_is_busy() {
+            return Ok(());
+        }
         let client = self.ensure_daemon(spec).await?;
         let Some(sid) = session_id.map(str::trim).filter(|s| !s.is_empty()) else {
             return Ok(());
@@ -401,10 +460,13 @@ impl OmpDaemonState {
         if client.has_active_turn(sid) {
             return Ok(());
         }
+        if self.release_session_elsewhere(sid, &client).await.is_err() {
+            return Ok(());
+        }
         let meta = client.ensure_session_resumed(sid, workspace).await?;
         if !client.has_active_turn(sid) {
             let _ = client
-                .apply_session_options(sid, &meta, model, effort)
+                .apply_session_options(sid, &meta, model, effort, provider_hint)
                 .await;
         }
         Ok(())
@@ -729,12 +791,13 @@ impl OmpDaemonClient {
         meta: &LoadedSessionMeta,
         requested_model: Option<&str>,
         requested_effort: Option<&str>,
+        provider_hint: Option<&str>,
     ) -> Result<(Option<String>, Option<String>), String> {
         let mut current_model = meta.current_model.clone();
         let mut current_effort = meta.current_effort.clone();
 
         if let Some(model) = requested_model.map(str::trim).filter(|v| !v.is_empty()) {
-            let resolved = resolve_model_value(model, &meta.available_models);
+            let resolved = resolve_model_value(model, &meta.available_models, provider_hint);
             if current_model.as_deref() != Some(resolved.as_str()) {
                 let res = self
                     .rpc_call(
@@ -1103,6 +1166,12 @@ async fn turn_inner(
 
     let (session_id, meta) = match req.session_id.as_deref() {
         Some(existing) => {
+            // One session, one daemon: after a rotation the draining daemon
+            // may still hold this session; resuming it here as well would let
+            // both processes append to the same transcript.
+            daemon_state
+                .release_session_elsewhere(existing, &client)
+                .await?;
             let meta = race_with_kill(
                 client.ensure_session_resumed(existing, &req.workspace),
                 killed,
@@ -1133,6 +1202,7 @@ async fn turn_inner(
             &meta,
             req.model.as_deref(),
             req.effort.as_deref(),
+            req.provider_id.as_deref(),
         ),
         killed,
     )
@@ -1318,15 +1388,30 @@ fn parse_available_models(result: &Value) -> Vec<String> {
 }
 
 /// Resolve a requested model selector against the ACP session's advertised
-/// `provider/modelId` list: exact match first, then bare `modelId` suffix
-/// match (when user passes a model without provider prefix), else passthrough.
-pub(crate) fn resolve_model_value(requested: &str, available: &[String]) -> String {
+/// `provider/modelId` list: exact match first; a bare `modelId` prefers the
+/// session's own channel (`provider_hint`) because several channels can
+/// expose the same id, and only then falls back to the first suffix match;
+/// anything else passes through unchanged.
+pub(crate) fn resolve_model_value(
+    requested: &str,
+    available: &[String],
+    provider_hint: Option<&str>,
+) -> String {
     if available.iter().any(|candidate| candidate == requested) {
         return requested.to_string();
     }
     if !requested.contains('/') {
+        if let Some(provider) = provider_hint.map(str::trim).filter(|p| !p.is_empty()) {
+            let preferred = format!("{provider}/{requested}");
+            if available.iter().any(|candidate| *candidate == preferred) {
+                return preferred;
+            }
+        }
         let suffix = format!("/{requested}");
-        if let Some(matched) = available.iter().find(|candidate| candidate.ends_with(&suffix)) {
+        if let Some(matched) = available
+            .iter()
+            .find(|candidate| candidate.ends_with(&suffix))
+        {
             return matched.clone();
         }
     }
@@ -1946,16 +2031,35 @@ mod tests {
             "custom-2/claude-4".to_string(),
         ];
         assert_eq!(
-            resolve_model_value("custom-1/gemini-4", &available),
+            resolve_model_value("custom-1/gemini-4", &available, None),
             "custom-1/gemini-4"
         );
         assert_eq!(
-            resolve_model_value("claude-4", &available),
+            resolve_model_value("claude-4", &available, None),
             "custom-2/claude-4"
         );
         assert_eq!(
-            resolve_model_value("other/unknown", &available),
+            resolve_model_value("other/unknown", &available, None),
             "other/unknown"
+        );
+    }
+
+    /// Several channels expose the same bare model id; the session's own
+    /// channel must win, otherwise the first turn lands on a channel that
+    /// rejects the model (404) and the prompt gets re-sent.
+    #[test]
+    fn resolve_model_value_prefers_the_session_channel_for_bare_ids() {
+        let available = vec![
+            "chan-a/gemini-4-neon".to_string(),
+            "chan-b/gemini-4-neon".to_string(),
+        ];
+        assert_eq!(
+            resolve_model_value("gemini-4-neon", &available, Some("chan-b")),
+            "chan-b/gemini-4-neon"
+        );
+        assert_eq!(
+            resolve_model_value("gemini-4-neon", &available, Some("missing")),
+            "chan-a/gemini-4-neon"
         );
     }
 
