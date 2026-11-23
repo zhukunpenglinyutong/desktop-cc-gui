@@ -430,6 +430,56 @@ export interface EngineCatalog {
   remote?: boolean;
 }
 
+/** Retry cause as the host classified the CLI's own wording
+ *  (src-tauri/src/engine/activity.rs `classify_retry`). */
+export type RetryCategory =
+  | "network"
+  | "rate_limit"
+  | "overloaded"
+  | "server"
+  | "auth"
+  | "client"
+  | "unknown";
+
+export interface RunToolActivity {
+  id?: string;
+  name: string;
+  sinceMs: number;
+  detail?: string;
+}
+
+export interface RunRetryActivity {
+  atMs: number;
+  attempt: number;
+  max: number;
+  status?: number;
+  category: RetryCategory;
+  message: string;
+}
+
+export interface RunActivitySnapshot {
+  runId: string;
+  engine: string;
+  pid?: number;
+  startedAtMs: number;
+  lastOutputAtMs?: number;
+  lastEventAtMs?: number;
+  lastEvent?: string;
+  responseSinceMs?: number;
+  responseHasOutput: boolean;
+  block?: "thinking" | "text" | "tool_input" | "other";
+  blockSinceMs?: number;
+  tools: RunToolActivity[];
+  retries: RunRetryActivity[];
+  retrying: boolean;
+  compactingSinceMs?: number;
+  awaitingUser: boolean;
+  backgroundTasks: number;
+  lastWarn?: string;
+  lastWarnAtMs?: number;
+  nowMs: number;
+}
+
 export interface SendResult {
   runId: string;
   sessionId: string | null;
@@ -1581,6 +1631,10 @@ export const ipc = {
   /** Which of these run ids the host still runs: the orphan sweep asks
    *  before settling a run that has gone silent. */
   liveRuns: (runIds: string[]) => invoke<string[]>("live_runs", { runIds }),
+  /** Live activity facts for these runs (run-status panel; polled only while
+   *  the panel is open). Runs the host no longer tracks are absent. */
+  runActivity: (runIds: string[]) =>
+    invoke<RunActivitySnapshot[]>("run_activity", { runIds }),
   // 电脑操控 (computer use)
   /** macOS TCC probe. `osPermissionsRequired` is false on Windows/Linux,
    *  where the driver needs no OS grant. */

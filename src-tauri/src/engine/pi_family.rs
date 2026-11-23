@@ -1868,6 +1868,31 @@ mod tests {
     }
 
     #[test]
+    fn tool_run_after_a_response_reads_as_a_tool_in_run_activity() {
+        // pi / omp mark only the response start; message_end's usage report
+        // has to close it, or a long tool reads as "model writing" and a
+        // silent command trips the run-activity panel's stall warning.
+        let id = "pi-family-tool-run-activity";
+        for line in [
+            r#"{"type":"message_start","message":{"role":"assistant","content":[]}}"#,
+            r#"{"type":"message_update","assistantMessageEvent":{"type":"text_delta","delta":"Running build"}}"#,
+            r#"{"type":"message_end","message":{"role":"assistant","content":[],"usage":{"input":10,"output":5}}}"#,
+            r#"{"type":"tool_execution_start","toolName":"bash","toolCallId":"c1","args":{"command":"sleep 300"}}"#,
+        ] {
+            let mut out = Vec::new();
+            parse_pi_family_line(line, &mut out);
+            for event in &out {
+                super::super::activity::observe(id, "omp", event);
+            }
+        }
+        let snapshot = super::super::activity::snapshot(&[id.to_string()]);
+        super::super::activity::end(id);
+        assert_eq!(snapshot[0].response_since_ms, None, "the response ended at message_end");
+        assert_eq!(snapshot[0].tools.len(), 1);
+        assert_eq!(snapshot[0].tools[0].detail.as_deref(), Some("sleep 300"));
+    }
+
+    #[test]
     fn stream_updates_skip_snapshots_and_preserve_delta_order() {
         let mut out = Vec::new();
         for (kind, text) in [("thinking_delta", "思考\n"), ("text_delta", "答案\"你好\"")] {

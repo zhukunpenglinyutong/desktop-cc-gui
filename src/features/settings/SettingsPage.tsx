@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import {
@@ -20,6 +20,7 @@ import {
   useCliNavOrder,
   writeCliNavOrder,
 } from "@/lib/cli-nav-order";
+import { readStoredJson, writeStored } from "@/lib/storage";
 import { settingsSearchEntries } from "./settings-search";
 // Side-effect import: registers all builtin sections into settingsRegistry
 // (and their page-internal search rows, see ./sections).
@@ -39,6 +40,9 @@ const GROUP_META: Record<string, { labelKey: string; order: number }> = {
   workspace: { labelKey: "settings.groupWorkspace", order: 4 },
   misc: { labelKey: "settings.groupMisc", order: 5 },
 };
+export const PLUGINS_NAV_ORDER_KEY = "ccgui-next.settingsPluginsNavOrder:v1";
+export const PLUGINS_NAV_EXPANDED_KEY = "ccgui-next.settingsPluginsNavExpanded:v1";
+
 const KNOWN_GROUP_COUNT = Object.keys(GROUP_META).length;
 // The rail order lives in @/lib/cli-nav-order, shared with the composer CLI
 // picker so both surfaces follow the same drag order.
@@ -85,6 +89,16 @@ export default function SettingsPage() {
   const [searchParams] = useSearchParams();
   const sections = useRegistry(settingsRegistry);
   const cliNavOrder = useCliNavOrder();
+  const [pluginsNavOrder, setPluginsNavOrder] = useState<string[]>(() =>
+    readStoredJson(PLUGINS_NAV_ORDER_KEY, (value) =>
+      Array.isArray(value) && value.every((key) => typeof key === "string") ? value as string[] : null,
+    ) ?? [],
+  );
+  const [pluginsExpanded, setPluginsExpanded] = useState(() =>
+    readStoredJson(PLUGINS_NAV_EXPANDED_KEY, (value) =>
+      typeof value === "boolean" ? value : null,
+    ) ?? true,
+  );
   /** Engine enable states; the chat store refreshes them on every CLI config
    *  change, so toggling a CLI's enable switch moves its rail row live. An
    *  empty list (probe still running or failed) means "don't split" — never
@@ -145,9 +159,32 @@ export default function SettingsPage() {
       .flatMap(([group, items], index) => {
         const meta = GROUP_META[group];
         const order = meta?.order ?? KNOWN_GROUP_COUNT + index;
+        if (group === "plugins") {
+          return [{
+            id: group,
+            label: t("settings.groupPlugins"),
+            order,
+            items: orderByStoredKeys(items, pluginsNavOrder),
+            collapsible: true,
+            expanded: pluginsExpanded,
+            onExpandedChange: (expanded: boolean) => {
+              setPluginsExpanded(expanded);
+              writeStored(PLUGINS_NAV_EXPANDED_KEY, JSON.stringify(expanded));
+            },
+            onReorderItems: (keys: string[]) => {
+              // 保留已禁用插件的位置，重新启用后恢复顺序。
+              let index = 0;
+              const visible = new Set(keys);
+              const next = pluginsNavOrder.map((key) => visible.has(key) ? keys[index++] : key);
+              next.push(...keys.slice(index));
+              setPluginsNavOrder(next);
+              writeStored(PLUGINS_NAV_ORDER_KEY, JSON.stringify(next));
+            },
+            dragHandleLabel: t("settings.cliDrag"),
+          }];
+        }
         if (group !== "cli") {
-          // Every rail group is a static Codex-style section (muted heading,
-          // always-visible items) — no collapse state to carry.
+          // 其余非 CLI 分组保持静态标题和始终可见的条目。
           return [
             {
               id: group,
@@ -248,7 +285,7 @@ export default function SettingsPage() {
       })
       .sort((a, b) => a.order - b.order);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sections, t, i18n.language, cliNavOrder, orderedCliKeys, engines]);
+  }, [sections, t, i18n.language, cliNavOrder, orderedCliKeys, engines, pluginsNavOrder, pluginsExpanded]);
 
   const titles = useMemo(() => {
     const map: Record<string, string> = {};

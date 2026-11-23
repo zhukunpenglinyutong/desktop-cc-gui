@@ -490,6 +490,7 @@ pub fn run() {
             engine::interrupt_session,
             engine::prewarm_omp_session,
             engine::close_omp_session,
+            engine::run_activity,
             engine::close_idle_codebuddy,
             engine::live_runs,
             engine::answer_question,

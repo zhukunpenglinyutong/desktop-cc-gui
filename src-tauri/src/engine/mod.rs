@@ -1,3 +1,4 @@
+mod activity;
 pub mod agy;
 pub mod claude;
 mod claude_channel;
@@ -56,7 +57,7 @@ pub(crate) use resolve::command_for_binary;
 pub(crate) use events::{
     assistant_message, parse_todo_args, parse_todo_result, parse_tool_args_value, push_session_id, safe_prompt_arg,
     tool_call_message, tool_call_message_with_id, tool_call_patch_with_id,
-    tool_path_arg, tool_result_patch, tool_result_patch_with_id,
+    tool_path_arg, tool_result_patch, tool_result_patch_with_id, tool_settled,
 };
 pub use events::{EngineEvent, TodoItem, TodosPayload};
 pub use plan_review::{PlanApproval, PlanReview, PlanReviewKind};
@@ -1813,6 +1814,14 @@ pub async fn live_runs(
     run_ids: Vec<String>,
 ) -> Result<Vec<String>, String> {
     Ok(state.processes.live_run_ids(&run_ids))
+}
+/// Live activity facts for the given runs (see `engine/activity.rs`): when
+/// the CLI last wrote output, whether a model response is open, which tools
+/// are running and the retry history. The run-status panel polls this only
+/// while it is open; runs the host no longer tracks are simply absent.
+#[tauri::command]
+pub async fn run_activity(run_ids: Vec<String>) -> Result<Vec<activity::RunActivity>, String> {
+    Ok(activity::snapshot(&run_ids))
 }
 /// Answer a pending question card. Multiple transports share this command:
 /// - claude / codebuddy (control protocol): the answers merge into the parked tool input
