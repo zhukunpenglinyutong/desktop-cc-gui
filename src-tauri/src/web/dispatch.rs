@@ -823,6 +823,12 @@ pub(super) async fn dispatch(
             let a: RunIdsArgs = parse_args(&raw)?;
             ser(crate::engine::live_runs(app.state(), a.run_ids).await)
         }
+        // Run-status panel: read-only facts about runs the client already
+        // observes (timestamps, tool names, retry reasons), same as desktop.
+        "run_activity" => {
+            let a: RunIdsArgs = parse_args(&raw)?;
+            ser(crate::engine::run_activity(a.run_ids).await)
+        }
         // The remote UI renders the same AskUserQuestion card as the desktop
         // (events already reach it); without this case its 提交/忽略 buttons
         // failed with `unknown command: answer_question`.

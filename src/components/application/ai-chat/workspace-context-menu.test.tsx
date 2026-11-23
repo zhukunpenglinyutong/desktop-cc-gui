@@ -58,6 +58,20 @@ describe("workspace menu plugin isolation", () => {
     expect(menuItems().some((button) => button.textContent === i18n.t("chat.unpinWorkspace"))).toBe(false);
   });
 
+  it("copies the right-clicked workspace's full path", async () => {
+    useChatStore.setState({ workspaces: [{ id: menu.workspaceId, path: "/Users/me/ws", name: "ws", lastOpenedAt: null, sortOrder: 0, groupId: null }] });
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal("navigator", { ...navigator, clipboard: { writeText } });
+    const onClose = vi.fn();
+    act(() => root.render(<WorkspaceContextMenu menu={menu} onClose={onClose} />));
+    const item = menuItems().find((button) => button.textContent === i18n.t("files.copyPath"));
+    expect(item).toBeDefined();
+    await act(async () => item!.click());
+    expect(writeText).toHaveBeenCalledWith("/Users/me/ws");
+    expect(onClose).toHaveBeenCalled();
+    vi.unstubAllGlobals();
+  });
+
   it("opens the default engine picker for the right-clicked workspace", () => {
     useChatStore.setState({
       workspaces: [{ id: menu.workspaceId, path: "/ws", name: "ws", lastOpenedAt: null, sortOrder: 0, groupId: null }],
@@ -67,8 +81,9 @@ describe("workspace menu plugin isolation", () => {
     act(() => root.render(<WorkspaceContextMenu menu={menu} onClose={() => {}} onSetArchived={() => {}} />));
     const item = menuItems().find((button) => button.textContent === i18n.t("chat.workspaceDefaultEngine"));
     expect(item).toBeDefined();
-    expect(menuItems()[0]).toBe(item);
-    expect(menuItems()[1]?.textContent).toBe(i18n.t("chat.archiveWorkspace"));
+    expect(menuItems()[0]?.textContent).toBe(i18n.t("files.copyPath"));
+    expect(menuItems()[1]).toBe(item);
+    expect(menuItems()[2]?.textContent).toBe(i18n.t("chat.archiveWorkspace"));
     act(() => item!.click());
     expect(document.querySelector('[role="dialog"] button[aria-haspopup="listbox"]')?.textContent).toContain(i18n.t("settings.engines.codex"));
   });

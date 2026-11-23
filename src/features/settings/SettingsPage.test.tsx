@@ -29,7 +29,20 @@ import { settingsRegistry } from "@ccgui/plugin-sdk";
 import i18n from "@/lib/i18n";
 import { useChatStore } from "@/features/chat/store";
 import { usePluginsStore } from "@/features/plugins/manager/usePlugins";
-import SettingsPage from "./SettingsPage";
+import SettingsPage, { PLUGINS_NAV_ORDER_KEY, PLUGINS_NAV_EXPANDED_KEY } from "./SettingsPage";
+import { CLI_NAV_ORDER_KEY } from "@/lib/cli-nav-order";
+
+const sortableProbe = vi.hoisted(() => ({ reorder: null as null | ((keys: string[]) => void) }));
+vi.mock("@/components/application/ai-chat/workspace-sortable-list", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/components/application/ai-chat/workspace-sortable-list")>();
+  return {
+    ...actual,
+    WorkspaceSortableList: (props: Parameters<typeof actual.WorkspaceSortableList>[0]) => {
+      if (props.items.some((item) => item.id?.startsWith("plugin:"))) sortableProbe.reorder = props.onReorder ?? null;
+      return <actual.WorkspaceSortableList {...props} />;
+    },
+  };
+});
 
 // React 18's act() requires this flag to be set by the test environment.
 declare global {
@@ -137,6 +150,8 @@ let container: HTMLDivElement;
 let root: Root;
 
 beforeEach(() => {
+  localStorage.removeItem(PLUGINS_NAV_ORDER_KEY);
+  localStorage.removeItem(PLUGINS_NAV_EXPANDED_KEY);
   pluginReadArtwork.mockClear();
   container = document.createElement("div");
   document.body.appendChild(container);
@@ -344,8 +359,8 @@ describe("SettingsPage CLI rail", () => {
       engine("qoder", false, true),
     ]);
 
-    // Only the three CLI sections fold.
-    expect(document.querySelectorAll("nav button[aria-expanded]").length).toBe(3);
+    // The three CLI sections and plugins fold; other groups stay static.
+    expect(document.querySelectorAll("nav button[aria-expanded]").length).toBe(4);
     const systemHeading = [...document.querySelectorAll("nav span")].find(
       (el) => el.textContent?.trim() === i18n.t("settings.groupSystem"),
     );
@@ -525,6 +540,112 @@ describe("SettingsPage capabilities rail", () => {
       await act(async () => {
         dispose();
       });
+    }
+  });
+});
+
+
+describe("设置页插件导航", () => {
+  it("默认展开、保存折叠态，搜索临时展开并移除拖拽手柄，退出后恢复", async () => {
+    const dispose = settingsRegistry.register({
+      id: "plugin:nav-test:section", key: "plugin:nav-test:section",
+      label: () => "Nav Test Plugin", group: "plugins", order: 1000,
+      component: () => <div>plugin page</div>,
+    });
+    try {
+      await render([]);
+      const toggle = () => groupToggle("settings.groupPlugins");
+      expect(toggle().getAttribute("aria-expanded")).toBe("true");
+      expect(toggle().lastElementChild?.tagName.toLowerCase()).toBe("svg");
+      const block = () => groupBlock("settings.groupPlugins");
+      expect(block().querySelector(`button[title="${i18n.t("settings.cliDrag")}"]`)).not.toBeNull();
+      act(() => toggle().click());
+      expect(localStorage.getItem(PLUGINS_NAV_EXPANDED_KEY)).toBe("false");
+      const input = document.querySelector<HTMLInputElement>('nav input')!;
+      const setQuery = (value: string) => act(() => {
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, value);
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+      });
+      setQuery("Nav Test Plugin");
+      expect(toggle().getAttribute("aria-expanded")).toBe("true");
+      expect(block().querySelector(`button[title="${i18n.t("settings.cliDrag")}"]`)).toBeNull();
+      act(() => toggle().click());
+      expect(localStorage.getItem(PLUGINS_NAV_EXPANDED_KEY)).toBe("false");
+      setQuery("");
+      expect(toggle().getAttribute("aria-expanded")).toBe("false");
+      act(() => root.unmount());
+      root = createRoot(container);
+      await render([]);
+      expect(toggle().getAttribute("aria-expanded")).toBe("false");
+      expect(document.querySelector("button button")).toBeNull();
+    } finally { await act(async () => dispose()); }
+  });
+
+  it("已保存折叠时深链到插件页会展开分组，手动折叠仍生效且不改写保存值", async () => {
+    const dispose = settingsRegistry.register({
+      id: "plugin:nav-test:deep", key: "plugin:nav-test:deep",
+      label: () => "Nav Deep Plugin", group: "plugins", order: 1000,
+      component: () => <div>plugin page</div>,
+    });
+    try {
+      localStorage.setItem(PLUGINS_NAV_EXPANDED_KEY, "false");
+      await render([], "plugin:nav-test:deep");
+      const toggle = () => groupToggle("settings.groupPlugins");
+      const selected = () => groupBlock("settings.groupPlugins")
+        .querySelector('[data-settings-plugin-items] [aria-current="page"]');
+      expect(toggle().getAttribute("aria-expanded")).toBe("true");
+      expect(selected()?.textContent?.trim()).toBe("Nav Deep Plugin");
+      expect(localStorage.getItem(PLUGINS_NAV_EXPANDED_KEY)).toBe("false");
+      act(() => toggle().click());
+      expect(toggle().getAttribute("aria-expanded")).toBe("false");
+      expect(localStorage.getItem(PLUGINS_NAV_EXPANDED_KEY)).toBe("false");
+      act(() => toggle().click());
+      expect(toggle().getAttribute("aria-expanded")).toBe("true");
+      expect(localStorage.getItem(PLUGINS_NAV_EXPANDED_KEY)).toBe("true");
+    } finally { await act(async () => dispose()); }
+  });
+
+  it("恢复独立排序，新条目追加且插件启停不丢失已有顺序", async () => {
+    const key = (id: string) => `plugin:nav-test:${id}`;
+    localStorage.setItem(PLUGINS_NAV_ORDER_KEY, JSON.stringify([key("b"), key("a")]));
+    localStorage.setItem(CLI_NAV_ORDER_KEY, JSON.stringify(["cli:omp", "cli:claude"]));
+    const register = (id: string) => settingsRegistry.register({
+      id: key(id), key: key(id), label: () => `Nav ${id}`, group: "plugins", order: 1000,
+      component: () => <div>plugin page</div>,
+    });
+    const disposers = [register("a"), register("b")];
+    const labels = () => [...groupBlock("settings.groupPlugins").querySelectorAll("[data-settings-plugin-items] button:not([title])")].map((button) => button.textContent?.trim()).filter((label) => label?.startsWith("Nav "));
+    try {
+      await render([]);
+      expect(labels()).toEqual(["Nav b", "Nav a"]);
+      await act(async () => { disposers.push(register("c")); });
+      expect(labels()).toEqual(["Nav b", "Nav a", "Nav c"]);
+      await act(async () => { disposers[1](); });
+      expect(labels()).toEqual(["Nav a", "Nav c"]);
+      act(() => sortableProbe.reorder!([key("c"), key("a")]));
+      expect(localStorage.getItem(PLUGINS_NAV_ORDER_KEY)).toBe(JSON.stringify([key("b"), key("c"), key("a")]));
+      await act(async () => { disposers.push(register("b")); });
+      expect(labels()).toEqual(["Nav b", "Nav c", "Nav a"]);
+      act(() => sortableProbe.reorder!([key("c"), key("a"), key("b")]));
+      expect(labels()).toEqual(["Nav c", "Nav a", "Nav b"]);
+      expect(localStorage.getItem(CLI_NAV_ORDER_KEY)).toBe(JSON.stringify(["cli:omp", "cli:claude"]));
+      expect(localStorage.getItem(PLUGINS_NAV_ORDER_KEY)).toBe(JSON.stringify([key("c"), key("a"), key("b")]));
+      const handle = groupBlock("settings.groupPlugins").querySelector<HTMLButtonElement>('button[title]')!;
+      act(() => {
+        handle.dispatchEvent(new MouseEvent("pointerdown", { bubbles: true, button: 0 }));
+        window.dispatchEvent(new MouseEvent("pointercancel", { bubbles: true }));
+        handle.click();
+      });
+      await act(async () => { await new Promise((resolve) => setTimeout(resolve, 150)); });
+      expect(localStorage.getItem(PLUGINS_NAV_ORDER_KEY)).toBe(JSON.stringify([key("c"), key("a"), key("b")]));
+      expect(groupToggle("settings.groupPlugins").getAttribute("aria-expanded")).toBe("true");
+      act(() => root.unmount());
+      root = createRoot(container);
+      await render([]);
+      expect(labels()).toEqual(["Nav c", "Nav a", "Nav b"]);
+    } finally {
+      await act(async () => disposers.forEach((dispose) => dispose()));
+      localStorage.removeItem(CLI_NAV_ORDER_KEY);
     }
   });
 });
