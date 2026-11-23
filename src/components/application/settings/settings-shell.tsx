@@ -1,5 +1,7 @@
 "use client";
 
+import { SidebarDisclosure } from "@/components/application/ai-chat/repo-tree";
+
 import {
   useCallback,
   useEffect,
@@ -152,6 +154,9 @@ export interface SettingsNavGroup {
   /** Initial state of a collapsible group the user hasn't toggled yet
    *  (default: folded). */
   defaultExpanded?: boolean;
+  /** 可选的受控折叠状态，由调用方负责持久化。 */
+  expanded?: boolean;
+  onExpandedChange?: (expanded: boolean) => void;
   /** When set, the group's items render as a drag-sortable list (the item
    *  icon becomes the grip, md+ vertical rail only) and a drop reports the
    *  new key order. */
@@ -372,6 +377,7 @@ function isRailGroupExpanded(
   expandedGroups: Record<string, boolean>,
 ): boolean {
   if (!group.collapsible || searching) return true;
+  if (group.expanded !== undefined) return group.expanded;
   const explicit = expandedGroups[groupKey];
   if (explicit !== undefined) return explicit;
   if (group.defaultExpanded) return true;
@@ -421,7 +427,11 @@ function RailGroupSection({
           <button
             type="button"
             aria-expanded={expanded}
-            onClick={() => onToggleGroup(groupKey, !expanded)}
+            onClick={() => {
+              if (searching && group.onExpandedChange) return;
+              if (group.onExpandedChange) group.onExpandedChange(!expanded);
+              else onToggleGroup(groupKey, !expanded);
+            }}
             className={cx(
               "hidden w-auto shrink-0 cursor-pointer items-center gap-1.5 rounded-lg p-1.5 text-left md:flex md:w-full",
               "outline-none transition-colors duration-150 ease hover:bg-background-secondary-hover/60 focus-visible:ring-2 focus-visible:ring-border-focus-ring",
@@ -443,7 +453,24 @@ function RailGroupSection({
             {group.label}
           </span>
         ))}
-      {group.onReorderItems && !searching ? (
+      {group.onExpandedChange ? (
+        <>
+          <div className="flex flex-row gap-1 md:hidden">
+            {group.items.map((item) => (
+              <NavButton key={item.key} item={item} selected={item.key === page} onSelect={onSelect} />
+            ))}
+          </div>
+          <div className="hidden md:block" data-settings-plugin-items>
+            <SidebarDisclosure expanded={expanded} keepMounted>
+              {group.onReorderItems && !searching ? (
+                <SortableNavItems group={group} page={page} onSelect={onSelect} />
+              ) : group.items.map((item) => (
+                <NavButton key={item.key} item={item} selected={item.key === page} onSelect={onSelect} />
+              ))}
+            </SidebarDisclosure>
+          </div>
+        </>
+      ) : group.onReorderItems && !searching ? (
         <SortableNavItems
           group={group}
           page={page}
