@@ -390,3 +390,7 @@ them), not a fixed pixel box. No app, no backend, no real config file.
 底部入口悬停或键盘聚焦应显示完整名称与 ID，打开菜单后提示消失。
 390px 窄屏点击引擎行进入模型对话框，长名称不得横向溢出，发送按钮仍可见。
 此页面不读取真实配置，不调用 CLI，不代表原生 WebView 验证。
+
+## 插件设置导航
+
+打开 `/tests/browser/settings-plugin-nav.html`，使用真实设置页和三个示例插件验证图标拖拽、尾随箭头折叠、搜索临时展开以及刷新后的状态恢复。原生 IPC 被替换，不读取用户数据；持久化仅作用于该预览源的 localStorage，不代表原生应用重启验证。

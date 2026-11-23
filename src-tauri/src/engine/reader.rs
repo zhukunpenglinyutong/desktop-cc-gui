@@ -411,6 +411,9 @@ impl TurnCore {
         if (state.saw_done || state.saw_error) && !matches!(event, EngineEvent::SessionId(_)) {
             return;
         }
+        // Side record for the run-activity panel (pulled on demand, never
+        // streamed): when the CLI last spoke and what the run is doing.
+        super::activity::observe(&self.run_id, &self.engine_id, &event);
         // The CLI's follow-up turn (after a background task) streams under a
         // run the UI already settled: tell it to reopen the run first.
         if state.awaiting_followup
@@ -450,6 +453,8 @@ impl TurnCore {
                     Value::String(text),
                 )
             }
+            // Activity-panel markers only (recorded above).
+            EngineEvent::Block { .. } | EngineEvent::ToolSettled { .. } => {}
             EngineEvent::Generation { active } => {
                 // Internal marker: never streamed, only folded into genMs.
                 if active {
@@ -969,6 +974,7 @@ pub(crate) struct RunContext {
 impl Drop for RunContext {
     fn drop(&mut self) {
         // Also runs when the reader is aborted during interrupt or shutdown.
+        super::activity::end(&self.core.run_id);
         cleanup_staged_files(&self.cleanup_files);
         if let Some(restore) = &self.mcp_restore {
             restore.restore();
@@ -1018,6 +1024,7 @@ impl VirtualRunGuard {
 
 impl Drop for VirtualRunGuard {
     fn drop(&mut self) {
+        super::activity::end(&self.run_id);
         self.registry
             .remove_run_if_pid(&self.run_id, self.virtual_pid);
     }
@@ -1190,6 +1197,7 @@ async fn write_codebuddy_prompt(entry: &super::registry::ChildEntry, payload: St
 }
 
 fn begin_process_turn(ctx: &RunContext) -> TurnState {
+    super::activity::begin(&ctx.core.run_id, &ctx.core.engine_id, ctx.pid);
     let mut state = TurnState::new(ctx.preassigned_session_id.clone());
     // The launch selection is one `launch` event, not `model`/`effort`
     // reports: the response check compares it against what the stream later
@@ -1317,6 +1325,7 @@ pub(crate) async fn run_process_reader(
             continue;
         }
         state.saw_any_output = true;
+        super::activity::output(&ctx.core.run_id, &ctx.core.engine_id);
         if serde_json::from_str::<Value>(trimmed).is_err() {
             // Every engine protocol here is NDJSON: a non-JSON line is
             // off-protocol diagnostics (clap usage errors, shell wrapper
@@ -1392,6 +1401,7 @@ pub(crate) async fn run_process_reader(
                     if let Some(complete) = write_codebuddy_prompt(&entry, next.payload).await {
                         if ctx.core.registry.activate_codebuddy(&next.run_id, &next.session_id, &entry) {
                             idle_exit = None;
+                            super::activity::end(&ctx.core.run_id);
                             ctx.core.run_id = next.run_id;
                             ctx.killed = next.killed;
                             ctx.preassigned_session_id = Some(next.session_id);
