@@ -73,11 +73,12 @@ const MAX_PLAN_BYTES: usize = 1024 * 1024;
 /// 恢复请求的受控拒绝理由（build_command 与驱动双重把关共用）。
 pub(crate) const RESUME_REFUSAL: &str = "OMP ACP 计划会话必须从全新会话开始：审批点（planModeState 与 proposal handler）是纯内存状态，session/load 不会重新注册（acp-agent.ts:670-736 vs 1844-1866），恢复的会话没有可核验的人工等待点。请开新会话发起计划请求。";
 
-/// Per-turn projection state: prompt 结果里的 usage、tool_call 名称补丁表、
-/// usage_update 推送的上下文窗口。
+/// Per-turn projection state: prompt 结果里的整轮计费 usage、`usage_update`
+/// 推送的当前上下文真实占用与窗口、以及 tool_call 名称补丁表。
 #[derive(Default)]
 pub(crate) struct TurnView {
     pub(crate) last_usage: Option<Value>,
+    pub(crate) context_usage: Option<Value>,
     pub(crate) tool_names: HashMap<String, String>,
     pub(crate) context_window: Option<i64>,
 }
@@ -305,10 +306,7 @@ async fn handshake_and_prompt(
         )
         .await?
     };
-    if let Some(usage) = prompt_usage(&result, view.context_window) {
-        view.last_usage = Some(usage.clone());
-        core.dispatch_event(state, EngineEvent::Usage(usage));
-    }
+    finalize_turn_usage(core, state, view, &result);
     Ok(())
 }
 
@@ -855,8 +853,9 @@ fn build_review(
 }
 
 /// One `session/update` notification projected to engine events. OMP 的
-/// 增量词汇与 qoder/grok 相同，复用共享映射；usage_update 只取上下文
-/// 窗口（acp-agent.ts:2153-2158），token 总量以 prompt 应答为准。
+/// 增量词汇与 qoder/grok 相同，复用共享映射；`usage_update` 同时记录上下文
+/// 窗口（`size`）与真实占用（`used`），在回合收尾时与 `session/prompt`
+/// 的整轮计费总和分开下发（acp-agent.ts `#emitEndOfTurnUpdates`）。
 pub(crate) fn handle_session_update(
     core: &TurnCore,
     state: &mut TurnState,
@@ -868,13 +867,27 @@ pub(crate) fn handle_session_update(
         .and_then(|update| update.get("sessionUpdate"))
         .and_then(Value::as_str);
     if update_kind == Some("usage_update") {
-        if let Some(size) = params
-            .get("update")
-            .and_then(|update| update.get("size"))
-            .and_then(Value::as_i64)
-            .filter(|size| *size > 0)
-        {
-            view.context_window = Some(size);
+        if let Some(update) = params.get("update") {
+            let size = update
+                .get("size")
+                .and_then(Value::as_i64)
+                .filter(|size| *size > 0);
+            if let Some(size) = size {
+                view.context_window = Some(size);
+            }
+            if let Some(used) = update
+                .get("used")
+                .and_then(Value::as_u64)
+                .filter(|used| *used > 0)
+            {
+                let mut occ = Map::new();
+                occ.insert("input_tokens".to_string(), json!(used));
+                occ.insert("total_tokens".to_string(), json!(used));
+                if let Some(window) = size.or(view.context_window) {
+                    occ.insert("model_context_window".to_string(), json!(window));
+                }
+                view.context_usage = Some(Value::Object(occ));
+            }
         }
         return;
     }
@@ -949,6 +962,39 @@ pub(crate) fn prompt_usage(result: &Value, context_window: Option<i64>) -> Optio
         out.insert("model_context_window".to_string(), json!(window));
     }
     Some(Value::Object(out))
+}
+
+/// 回合收尾用量合并与派发（`omp_acp` 与 `omp_daemon` 共用）：
+/// - 顶层保留 `session/prompt` 返回的整轮计费总和（供助手消息行与插件 `usage://updated` / `usage://done` 读取真实 `outputTokens` 与 `genMs`）；
+/// - 若本轮收到过 `usage_update { used, size }`，将当前上下文真实占用挂在 `context_usage`，
+///   防止多步工具调用的累加总和覆盖底部上下文用量条或误触发自动压缩；
+/// - 若 `result.usage` 缺失/为 0 但收到过 `usage_update`，回退到真实占用本身。
+pub(crate) fn finalize_turn_usage(
+    core: &TurnCore,
+    state: &mut TurnState,
+    view: &mut TurnView,
+    result: &Value,
+) {
+    let occupancy = view.context_usage.clone().map(|mut occ| {
+        if let (Some(window), Some(obj)) = (view.context_window, occ.as_object_mut()) {
+            obj.entry("model_context_window".to_string())
+                .or_insert_with(|| json!(window));
+        }
+        occ
+    });
+    let combined = match prompt_usage(result, view.context_window) {
+        Some(mut billing) => {
+            if let (Some(occ), Some(obj)) = (occupancy, billing.as_object_mut()) {
+                obj.insert("context_usage".to_string(), occ);
+            }
+            Some(billing)
+        }
+        None => occupancy,
+    };
+    if let Some(usage) = combined {
+        view.last_usage = Some(usage.clone());
+        core.dispatch_event(state, EngineEvent::Usage(usage));
+    }
 }
 
 /// Terminal message precedence（同 grok）：rpc error 的 message 部分 →
@@ -1319,5 +1365,84 @@ mod tests {
         let emitted = emitter.0.lock().unwrap().join(" ");
         assert!(emitted.contains("\"error\""), "{emitted}");
         assert!(emitted.contains("全新会话"), "{emitted}");
+    }
+
+    #[test]
+    fn finalize_turn_usage_preserves_occupancy_separate_from_multi_step_billing() {
+        let (core, _registry, emitter) = test_core();
+        let mut state = TurnState::new(Some("s-omp".to_string()));
+        let mut view = TurnView::default();
+
+        // End-of-turn `usage_update` carries true context occupancy & window.
+        handle_session_update(
+            &core,
+            &mut state,
+            &mut view,
+            &json!({
+                "sessionId": "s-omp",
+                "update": {
+                    "sessionUpdate": "usage_update",
+                    "used": 42_000,
+                    "size": 256_000,
+                }
+            }),
+        );
+        // `session/prompt` result carries the multi-step billed sum across tool calls.
+        let prompt_result = json!({
+            "stopReason": "end_turn",
+            "usage": {
+                "inputTokens": 120_000,
+                "outputTokens": 4_500,
+                "cachedReadTokens": 180_000,
+                "cachedWriteTokens": 15_000,
+                "totalTokens": 319_500,
+            }
+        });
+        finalize_turn_usage(&core, &mut state, &mut view, &prompt_result);
+        core.sink.flush();
+
+        let last = view.last_usage.as_ref().expect("combined usage");
+        // Top-level preserves multi-step billing for the assistant message row.
+        assert_eq!(last["totalTokens"], json!(319_500));
+        assert_eq!(last["inputTokens"], json!(120_000));
+        assert_eq!(last["outputTokens"], json!(4_500));
+        assert_eq!(last["cacheRead"], json!(180_000));
+        assert_eq!(last["cacheWrite"], json!(15_000));
+        assert_eq!(last["model_context_window"], json!(256_000));
+        // Dedicated `context_usage` keeps the true occupancy rather than the billed sum.
+        assert_eq!(last["context_usage"]["input_tokens"], json!(42_000));
+        assert_eq!(last["context_usage"]["total_tokens"], json!(42_000));
+        assert_eq!(last["context_usage"]["model_context_window"], json!(256_000));
+
+        let emitted = emitter.0.lock().unwrap().join(" ");
+        assert!(emitted.contains("\"kind\":\"usage\""), "{emitted}");
+        assert!(emitted.contains("\"context_usage\""), "{emitted}");
+    }
+
+    #[test]
+    fn finalize_turn_usage_falls_back_to_occupancy_when_prompt_usage_absent() {
+        let (core, _registry, _emitter) = test_core();
+        let mut state = TurnState::new(Some("s-omp-2".to_string()));
+        let mut view = TurnView::default();
+
+        handle_session_update(
+            &core,
+            &mut state,
+            &mut view,
+            &json!({
+                "sessionId": "s-omp-2",
+                "update": {
+                    "sessionUpdate": "usage_update",
+                    "used": 18_500,
+                    "size": 200_000,
+                }
+            }),
+        );
+        finalize_turn_usage(&core, &mut state, &mut view, &json!({ "stopReason": "end_turn" }));
+
+        let last = view.last_usage.as_ref().expect("occupancy fallback");
+        assert_eq!(last["input_tokens"], json!(18_500));
+        assert_eq!(last["total_tokens"], json!(18_500));
+        assert_eq!(last["model_context_window"], json!(200_000));
     }
 }

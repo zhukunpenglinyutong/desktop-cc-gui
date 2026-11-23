@@ -37,8 +37,8 @@ use tokio::sync::{mpsc, oneshot, Mutex as TokioMutex};
 use tokio::time::timeout;
 
 use crate::engine::pi_family::omp_acp::{
-    elicitation_form_declared, extract_session_id, handle_session_update, omp_initialize_params,
-    prompt_blocks, prompt_usage, session_dir_name, terminal_message, TurnView,
+    elicitation_form_declared, extract_session_id, finalize_turn_usage, handle_session_update,
+    omp_initialize_params, prompt_blocks, session_dir_name, terminal_message, TurnView,
 };
 use crate::engine::pi_family::CONFIRM_YES_LABEL;
 use crate::engine::qoder_session::{
@@ -1366,10 +1366,7 @@ async fn turn_inner(
         }
     }?;
 
-    if let Some(usage) = prompt_usage(&prompt_result, view.context_window) {
-        view.last_usage = Some(usage.clone());
-        core.dispatch_event(state, EngineEvent::Usage(usage));
-    }
+    finalize_turn_usage(core, state, view, &prompt_result);
     Ok(())
 }
 
