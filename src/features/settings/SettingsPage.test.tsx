@@ -581,6 +581,30 @@ describe("设置页插件导航", () => {
     } finally { await act(async () => dispose()); }
   });
 
+  it("已保存折叠时深链到插件页会展开分组，手动折叠仍生效且不改写保存值", async () => {
+    const dispose = settingsRegistry.register({
+      id: "plugin:nav-test:deep", key: "plugin:nav-test:deep",
+      label: () => "Nav Deep Plugin", group: "plugins", order: 1000,
+      component: () => <div>plugin page</div>,
+    });
+    try {
+      localStorage.setItem(PLUGINS_NAV_EXPANDED_KEY, "false");
+      await render([], "plugin:nav-test:deep");
+      const toggle = () => groupToggle("settings.groupPlugins");
+      const selected = () => groupBlock("settings.groupPlugins")
+        .querySelector('[data-settings-plugin-items] [aria-current="page"]');
+      expect(toggle().getAttribute("aria-expanded")).toBe("true");
+      expect(selected()?.textContent?.trim()).toBe("Nav Deep Plugin");
+      expect(localStorage.getItem(PLUGINS_NAV_EXPANDED_KEY)).toBe("false");
+      act(() => toggle().click());
+      expect(toggle().getAttribute("aria-expanded")).toBe("false");
+      expect(localStorage.getItem(PLUGINS_NAV_EXPANDED_KEY)).toBe("false");
+      act(() => toggle().click());
+      expect(toggle().getAttribute("aria-expanded")).toBe("true");
+      expect(localStorage.getItem(PLUGINS_NAV_EXPANDED_KEY)).toBe("true");
+    } finally { await act(async () => dispose()); }
+  });
+
   it("恢复独立排序，新条目追加且插件启停不丢失已有顺序", async () => {
     const key = (id: string) => `plugin:nav-test:${id}`;
     localStorage.setItem(PLUGINS_NAV_ORDER_KEY, JSON.stringify([key("b"), key("a")]));

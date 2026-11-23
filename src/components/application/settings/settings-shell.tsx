@@ -1,7 +1,5 @@
 "use client";
 
-import { SidebarDisclosure } from "@/components/application/ai-chat/repo-tree";
-
 import {
   useCallback,
   useEffect,
@@ -16,6 +14,7 @@ import X from "lucide-react/dist/esm/icons/x";
 import ArrowLeft from "lucide-react/dist/esm/icons/arrow-left";
 import Search from "lucide-react/dist/esm/icons/search";
 import ChevronRight from "lucide-react/dist/esm/icons/chevron-right";
+import { SidebarDisclosure } from "@/components/application/ai-chat/repo-tree";
 import {
   WorkspaceSortableList,
   type RepoDragChrome,
@@ -154,7 +153,8 @@ export interface SettingsNavGroup {
   /** Initial state of a collapsible group the user hasn't toggled yet
    *  (default: folded). */
   defaultExpanded?: boolean;
-  /** 可选的受控折叠状态，由调用方负责持久化。 */
+  /** 可选的受控折叠状态，由调用方负责持久化；当前页在本组时仍会展开，
+   *  直到用户在本次打开期间手动折叠。 */
   expanded?: boolean;
   onExpandedChange?: (expanded: boolean) => void;
   /** When set, the group's items render as a drag-sortable list (the item
@@ -368,7 +368,9 @@ function SortableNavItems({
 
 /** Expanded state for one rail group: explicit user fold state wins, then
  *  the group default, then "the current page lives here" (so a deep link
- *  never lands in a folded group). An active search expands everything. */
+ *  never lands in a folded group). A persisted (controlled) fold yields to
+ *  the current page too, since it outlives the deep-link remount that
+ *  clears `expandedGroups`. An active search expands everything. */
 function isRailGroupExpanded(
   group: SettingsNavGroup,
   groupKey: string,
@@ -377,9 +379,11 @@ function isRailGroupExpanded(
   expandedGroups: Record<string, boolean>,
 ): boolean {
   if (!group.collapsible || searching) return true;
-  if (group.expanded !== undefined) return group.expanded;
   const explicit = expandedGroups[groupKey];
   if (explicit !== undefined) return explicit;
+  if (group.expanded !== undefined) {
+    return group.expanded || group.items.some((item) => item.key === page);
+  }
   if (group.defaultExpanded) return true;
   return group.items.some((item) => item.key === page);
 }
@@ -429,8 +433,8 @@ function RailGroupSection({
             aria-expanded={expanded}
             onClick={() => {
               if (searching && group.onExpandedChange) return;
-              if (group.onExpandedChange) group.onExpandedChange(!expanded);
-              else onToggleGroup(groupKey, !expanded);
+              onToggleGroup(groupKey, !expanded);
+              group.onExpandedChange?.(!expanded);
             }}
             className={cx(
               "hidden w-auto shrink-0 cursor-pointer items-center gap-1.5 rounded-lg p-1.5 text-left md:flex md:w-full",
