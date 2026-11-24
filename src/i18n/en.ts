@@ -1783,6 +1783,9 @@ export const en: Messages = {
     stateFailed: "Failed to load",
     stateIncompatible: "Incompatible",
     hub: {
+      collapseEntries: "Collapse plugin entries",
+      expandEntries: "Expand plugin entries",
+      dragEntry: "Drag to reorder: {{name}}",
       title: "Plugins",
       marketTab: "Marketplace",
       installedTab: "Installed",
