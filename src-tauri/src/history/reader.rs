@@ -3658,6 +3658,135 @@ mod tests {
     }
 
     #[test]
+    fn consecutive_image_edit_turns_stay_referenced_and_bounded() {
+        fn collect_refs(value: &serde_json::Value, out: &mut Vec<String>) {
+            match value {
+                serde_json::Value::String(text)
+                    if crate::history::images::is_ref(text) =>
+                {
+                    out.push(text.clone());
+                }
+                serde_json::Value::Array(items) => {
+                    for item in items {
+                        collect_refs(item, out);
+                    }
+                }
+                serde_json::Value::Object(map) => {
+                    for item in map.values() {
+                        collect_refs(item, out);
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        const TURNS: usize = 6;
+        let dir = scratch_dir("consecutive-images");
+        let file = dir.join("session.jsonl");
+        let mut lines = Vec::new();
+        let mut encoded = Vec::new();
+
+        for turn in 0..TURNS {
+            let mut images = Vec::new();
+            for variant in 0..3 {
+                let seed = (turn * 3 + variant) as u32;
+                let image = image::RgbImage::from_fn(800, 600, |x, y| {
+                    image::Rgb([
+                        ((x + seed * 13) % 256) as u8,
+                        ((y + seed * 31) % 256) as u8,
+                        ((x * y + seed * 7) % 256) as u8,
+                    ])
+                });
+                let mut png = Vec::new();
+                image::DynamicImage::ImageRgb8(image)
+                    .write_to(std::io::Cursor::new(&mut png), image::ImageFormat::Png)
+                    .unwrap();
+                let payload = base64::engine::general_purpose::STANDARD.encode(&png);
+                images.push(payload.clone());
+                encoded.push(payload);
+            }
+
+            let ts = format!("2026-11-24T10:{turn:02}:00.000Z");
+            let tool_id = format!("edit-{turn}");
+            lines.push(serde_json::json!({
+                "type": "user",
+                "timestamp": ts,
+                "message": {"role": "user", "content": [
+                    {"type": "text", "text": format!("继续修改第 {turn} 轮")},
+                    {"type": "image", "source": {
+                        "type": "base64", "media_type": "image/png", "data": images[0]
+                    }}
+                ]}
+            }));
+            lines.push(serde_json::json!({
+                "type": "assistant",
+                "timestamp": ts,
+                "message": {"role": "assistant", "content": [
+                    {"type": "text", "text": format!("应用第 {turn} 轮修改")},
+                    {"type": "tool_use", "id": tool_id, "name": "edit_image", "input": {}},
+                    {"type": "image", "source": {
+                        "type": "base64", "media_type": "image/png", "data": images[1]
+                    }}
+                ]}
+            }));
+            lines.push(serde_json::json!({
+                "type": "user",
+                "timestamp": ts,
+                "message": {"role": "user", "content": [
+                    {"type": "tool_result", "tool_use_id": tool_id, "content": [
+                        {"type": "text", "text": format!("第 {turn} 轮图片已更新")},
+                        {"type": "image", "source": {
+                            "type": "base64", "media_type": "image/png", "data": images[2]
+                        }}
+                    ]}
+                ]}
+            }));
+        }
+
+        std::fs::write(
+            &file,
+            lines
+                .iter()
+                .map(serde_json::Value::to_string)
+                .collect::<Vec<_>>()
+                .join("\n"),
+        )
+        .unwrap();
+
+        let parsed = parse_session_file("claude", &file, &HashSet::new()).unwrap();
+        let fold = subagent_fold(&parsed.messages);
+        let cached = CachedSession {
+            parsed,
+            fold,
+            footprint: 0,
+        };
+        let page = page_from_cached(&cached, Some(100), None);
+        assert_eq!(page.next_before, None);
+        let wire = serde_json::to_string(&page).unwrap();
+        assert!(!wire.contains("data:image"), "inline image leaked: {}", wire.len());
+        for payload in &encoded {
+            assert!(!wire.contains(payload), "raw base64 leaked into page");
+        }
+        assert!(wire.len() < 128 * 1024, "page payload grew to {}", wire.len());
+
+        let value = serde_json::to_value(&page.messages).unwrap();
+        let mut refs = Vec::new();
+        collect_refs(&value, &mut refs);
+        assert_eq!(refs.len(), TURNS * 3);
+        assert_eq!(
+            refs.iter().collect::<HashSet<_>>().len(),
+            TURNS * 3,
+            "each edit should keep its own content address"
+        );
+        for reference in refs {
+            let full = crate::history::images::load(&reference, true).unwrap();
+            assert!(full.starts_with("data:image/png;base64,"));
+        }
+
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
     #[ignore = "manual payload measurement"]
     fn measure_real_session_payload() {
         let path = std::path::PathBuf::from(std::env::var("PAYLOAD_PATH").unwrap());
