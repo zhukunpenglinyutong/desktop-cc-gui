@@ -253,6 +253,12 @@ struct LoadSessionPageArgs {
 }
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
+struct LoadSessionImageArgs {
+    reference: String,
+    full: Option<bool>,
+}
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct LoadRemoteSessionPageArgs {
     workspace_path: String,
     engine: String,
@@ -966,6 +972,10 @@ pub(super) async fn dispatch(
                 a.force_reload,
             )
             .await)
+        }
+        "load_session_image" => {
+            let a: LoadSessionImageArgs = parse_args(&raw)?;
+            ser(crate::history::reader::load_session_image(a.reference, a.full).await)
         }
         "load_remote_session_page" => {
             let a: LoadRemoteSessionPageArgs = parse_args(&raw)?;

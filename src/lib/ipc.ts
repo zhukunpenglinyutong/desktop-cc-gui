@@ -1740,6 +1740,11 @@ export const ipc = {
     beforeSeq?: number | null,
     forceReload?: boolean,
   ) => invoke<SessionPage>("load_session_page", { engine, sessionId, limit, beforeSeq, forceReload }),
+  /** History pages carry `ccgui-image:<sha>.<ext>` references instead of
+   *  base64. `full` returns the original for the lightbox; otherwise a
+   *  bounded thumbnail is generated once and cached by the backend. */
+  loadSessionImage: (reference: string, full?: boolean) =>
+    invoke<string>("load_session_image", { reference, full }),
   /** Full-text search over message bodies (⌘L palette). FTS5 trigram when
    *  every token is ≥3 chars, exact AND-substring LIKE otherwise. */
   searchMessages: (

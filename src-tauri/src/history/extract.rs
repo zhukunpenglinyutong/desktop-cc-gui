@@ -324,7 +324,12 @@ fn fold_rows(rows: Vec<LineRow>) -> ParsedSession {
         // carries toolCallId, else retain the legacy latest-unresolved
         // fallback used by Claude transcripts.
         if row.role == "__tool_result__" {
-            if let Some(res) = row.result {
+            if let Some(mut res) = row.result {
+                // Transcripts store screenshots and generated images inline.
+                // Keep the page payload bounded by swapping them for short
+                // store references before the row is retained (see
+                // `history::images`).
+                super::images::externalize_value(&mut res);
                 let index = match row.tool_call_id.as_deref() {
                     Some(id) => call_rows
                         .get(id)
@@ -365,20 +370,34 @@ fn fold_rows(rows: Vec<LineRow>) -> ParsedSession {
         });
         seq += 1;
         let call_id = row.tool_call_id;
+        let mut images = row.images;
+        for image in &mut images {
+            if let Some(reference) = super::images::externalize(image) {
+                *image = reference;
+            }
+        }
+        let mut args = row.args;
+        if let Some(value) = args.as_mut() {
+            super::images::externalize_value(value);
+        }
+        let mut result = row.result;
+        if let Some(value) = result.as_mut() {
+            super::images::externalize_value(value);
+        }
         messages.push(Message {
             seq,
             role: row.role,
             text: row.text,
             ts: row.ts,
             path: row.path,
-            args: row.args,
-            result: row.result,
+            args,
+            result,
             todos: row.todos,
             usage: row.usage,
             model: row.model,
             effort: row.effort,
             duration_ms,
-            images: row.images,
+            images,
         });
         if let Some(id) = call_id {
             call_rows.insert(id, messages.len() - 1);
@@ -3627,7 +3646,14 @@ mod tests {
 
         let image_turn = &parsed.messages[3];
         assert_eq!(image_turn.text, "再看这张图");
-        assert_eq!(image_turn.images, ["data:image/png;base64,aGk="]);
+        // Attachments leave the page as store references; the bytes stay
+        // reachable through `load_session_image`.
+        assert_eq!(image_turn.images.len(), 1);
+        assert!(crate::history::images::is_ref(&image_turn.images[0]));
+        assert_eq!(
+            crate::history::images::load(&image_turn.images[0], true).unwrap(),
+            "data:image/png;base64,aGk="
+        );
 
         std::fs::remove_dir_all(file.parent().unwrap()).ok();
     }
@@ -4210,5 +4236,87 @@ mod tests {
         assert_eq!(summary.last_ts, Some(1_700_000_001_000));
         assert_eq!(summary.message_count, 4);
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// Regression for oversized history pages: a turn's screenshots must
+    /// leave the parsed messages as short references, whether they arrived as
+    /// a user attachment or inside a tool result. Shipping the base64 here is
+    /// what made a reconnect (IPC / WebSocket) carry the whole transcript.
+    #[test]
+    fn parsed_page_payload_has_no_inline_image_bytes() {
+        let dir = std::env::temp_dir().join(format!(
+            "ccgui-image-payload-{}",
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("sess-1.jsonl");
+        // A 1000x600 PNG is far larger than any reasonable text row; base64
+        // is ~1MB, so a leak is unmistakable.
+        let mut png = Vec::new();
+        let image = image::RgbImage::from_fn(1000, 600, |x, y| {
+            image::Rgb([(x % 255) as u8, (y % 255) as u8, 42])
+        });
+        image::DynamicImage::ImageRgb8(image)
+            .write_to(std::io::Cursor::new(&mut png), image::ImageFormat::Png)
+            .unwrap();
+        let encoded = base64::engine::general_purpose::STANDARD.encode(&png);
+        let attachment = format!("data:image/png;base64,{encoded}");
+        let lines = [
+            serde_json::json!({
+                "type": "user",
+                "timestamp": "2026-11-20T10:00:00.000Z",
+                "message": {"role": "user", "content": [
+                    {"type": "text", "text": "看这张图"},
+                    {"type": "image", "source": {
+                        "type": "base64", "media_type": "image/png", "data": encoded
+                    }}
+                ]}
+            }),
+            serde_json::json!({
+                "type": "assistant",
+                "timestamp": "2026-11-20T10:00:01.000Z",
+                "message": {"role": "assistant", "content": [
+                    {"type": "tool_use", "id": "tool-1", "name": "screenshot", "input": {}},
+                    {"type": "image", "source": {
+                        "type": "base64", "media_type": "image/png", "data": encoded
+                    }}
+                ]}
+            }),
+            serde_json::json!({
+                "type": "user",
+                "timestamp": "2026-11-20T10:00:02.000Z",
+                "message": {"role": "user", "content": [
+                    {"type": "tool_result", "tool_use_id": "tool-1", "content": [
+                        {"type": "text", "text": "screenshot ready"},
+                        {"type": "image", "source": {
+                            "type": "base64", "media_type": "image/png", "data": encoded
+                        }}
+                    ]}
+                ]}
+            }),
+        ];
+        let body: String = lines
+            .iter()
+            .map(|line| format!("{line}\n"))
+            .collect();
+        std::fs::write(&file, body).unwrap();
+
+        let parsed = parse_session_file("claude", &file, &HashSet::new()).unwrap();
+        let wire = serde_json::to_string(&parsed.messages).unwrap();
+        assert!(!wire.contains(&encoded), "raw base64 leaked into the page");
+        assert!(!wire.contains("data:image"), "data URL leaked into the page");
+        assert!(wire.len() < 32 * 1024, "page payload stayed bounded: {}", wire.len());
+
+        let user = parsed.messages.iter().find(|m| m.text == "看这张图").unwrap();
+        assert!(crate::history::images::is_ref(&user.images[0]));
+        assert_eq!(
+            crate::history::images::load(&user.images[0], true).unwrap(),
+            attachment
+        );
+        let tool = parsed.messages.iter().find(|m| m.role == "tool").unwrap();
+        let result = tool.result.as_ref().unwrap().to_string();
+        assert!(result.contains("ccgui-image:"), "{result}");
+        assert!(!result.contains(&encoded));
+        std::fs::remove_dir_all(dir).ok();
     }
 }
