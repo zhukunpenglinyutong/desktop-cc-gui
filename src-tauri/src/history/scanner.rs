@@ -874,7 +874,9 @@ fn scan_inner(
                 rows.push(row);
             }
             Err(error) => {
-                retitle_complete = false;
+                if stale {
+                    retitle_complete = false;
+                }
                 eprintln!("[scanner] {} summary failed: {error}", cand.engine);
             }
             Ok(None) => {

@@ -2078,6 +2078,142 @@ mod tests {
         (scratch, guard, db, path)
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn claude_unreadable_unindexed_transcript_keeps_scan_cache() {
+        use std::io::Write;
+        use std::os::unix::fs::PermissionsExt;
+
+        let (_scratch, _guard, db, path) = claude_index_fixture("unreadable-unindexed");
+        let bad = path.with_file_name("bad.jsonl");
+        std::fs::write(
+            &bad,
+            "{\"type\":\"user\",\"message\":{\"content\":\"bad\"}}\n",
+        )
+        .unwrap();
+        let permissions = std::fs::metadata(&bad).unwrap().permissions();
+        std::fs::set_permissions(&bad, std::fs::Permissions::from_mode(0o000)).unwrap();
+        assert!(std::fs::File::open(&bad).is_err(), "夹具必须确实不可读");
+
+        let reparsed: Vec<_> = (0..3)
+            .map(|_| {
+                super::super::scanner::scan_with(&db, || {})
+                    .unwrap()
+                    .reparsed
+            })
+            .collect();
+        let version: Option<String> =
+            db.0.lock()
+                .query_row(
+                    "SELECT value FROM meta WHERE key='title_version'",
+                    [],
+                    |row| row.get(0),
+                )
+                .optional()
+                .unwrap();
+        let signature: Option<String> =
+            db.0.lock()
+                .query_row(
+                    "SELECT value FROM meta WHERE key='stat_signature'",
+                    [],
+                    |row| row.get(0),
+                )
+                .optional()
+                .unwrap();
+        std::fs::set_permissions(&bad, permissions).unwrap();
+
+        assert_eq!(
+            reparsed,
+            vec![1, 0, 0],
+            "未入库文件失败不能让健康会话反复重解析"
+        );
+        assert_eq!(version.as_deref(), Some("12"));
+        assert!(signature.is_some_and(|value| !value.is_empty()));
+        assert_eq!(list_sessions_from(&db).unwrap().len(), 1);
+        // 文件可读且内容变化后仍能入库，不把跳过状态永久固化。
+        std::fs::OpenOptions::new()
+            .append(true)
+            .open(&bad)
+            .unwrap()
+            .write_all(b"\n")
+            .unwrap();
+        assert_eq!(
+            super::super::scanner::scan_with(&db, || {})
+                .unwrap()
+                .reparsed,
+            1
+        );
+        assert_eq!(list_sessions_from(&db).unwrap().len(), 2);
+        assert_eq!(
+            super::super::scanner::scan_with(&db, || {})
+                .unwrap()
+                .reparsed,
+            0
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn claude_unreadable_stale_transcript_retries_migration() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let (_scratch, _guard, db, path) = claude_index_fixture("unreadable-stale");
+        super::super::scanner::scan_with(&db, || {}).unwrap();
+        db.0.lock()
+            .execute("UPDATE sessions SET custom_title='保留名称'", [])
+            .unwrap();
+        db.0.lock()
+            .execute("UPDATE meta SET value='11' WHERE key='title_version'", [])
+            .unwrap();
+        let permissions = std::fs::metadata(&path).unwrap().permissions();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o000)).unwrap();
+        assert!(std::fs::File::open(&path).is_err(), "夹具必须确实不可读");
+
+        let first = super::super::scanner::scan_with(&db, || {}).unwrap();
+        let second = super::super::scanner::scan_with(&db, || {}).unwrap();
+        let pending: String =
+            db.0.lock()
+                .query_row(
+                    "SELECT value FROM meta WHERE key='title_version'",
+                    [],
+                    |row| row.get(0),
+                )
+                .unwrap();
+        std::fs::set_permissions(&path, permissions).unwrap();
+
+        assert_eq!((first.reparsed, second.reparsed), (0, 0));
+        assert_eq!(pending, "11", "已入库的过期会话读取失败时仍需阻止迁移完成");
+        assert_eq!(
+            list_sessions_from(&db).unwrap()[0].custom_title.as_deref(),
+            Some("保留名称")
+        );
+        assert_eq!(
+            super::super::scanner::scan_with(&db, || {})
+                .unwrap()
+                .reparsed,
+            1
+        );
+        let completed: String =
+            db.0.lock()
+                .query_row(
+                    "SELECT value FROM meta WHERE key='title_version'",
+                    [],
+                    |row| row.get(0),
+                )
+                .unwrap();
+        assert_eq!(completed, "12");
+        assert_eq!(
+            list_sessions_from(&db).unwrap()[0].custom_title.as_deref(),
+            Some("保留名称")
+        );
+        assert_eq!(
+            super::super::scanner::scan_with(&db, || {})
+                .unwrap()
+                .reparsed,
+            0
+        );
+    }
+
     #[test]
     fn claude_old_database_migration_preserves_local_name_until_native_name_changes() {
         let (scratch, _guard, db, path) = claude_index_fixture("migration");
