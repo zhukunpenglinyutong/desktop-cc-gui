@@ -14,6 +14,7 @@ import xiaomimimoIcon from "@lobehub/icons-static-svg/icons/xiaomimimo.svg";
 import zhipuIcon from "@lobehub/icons-static-svg/icons/zhipu-color.svg";
 import requestyIcon from "@/assets/model-icons/requesty.svg";
 import apiRouteIcon from "@/assets/model-icons/api-route.png";
+import teamoRouterIcon from "@/assets/model-icons/teamorouter.svg";
 import type { EngineId } from "./providers";
 
 export interface ProviderPreset {
@@ -184,6 +185,18 @@ export const PRESETS: Partial<Record<EngineId, ProviderPreset[]>> = {
       },
     },
     {
+      name: "TeamoRouter",
+      baseUrl: "https://api.teamorouter.com",
+      model: "claude-sonnet-5-5",
+      iconSrc: teamoRouterIcon,
+      env: {
+        ANTHROPIC_DEFAULT_FABLE_MODEL: "claude-fable-5-2",
+        ANTHROPIC_DEFAULT_HAIKU_MODEL: "claude-haiku-5-5",
+        ANTHROPIC_DEFAULT_SONNET_MODEL: "claude-sonnet-5-5",
+        ANTHROPIC_DEFAULT_OPUS_MODEL: "claude-opus-5-5",
+      },
+    },
+    {
       name: "智谱GLM",
       baseUrl: "https://open.bigmodel.cn/api/anthropic",
       model: "glm-5.2",
@@ -338,6 +351,7 @@ export const PRESETS: Partial<Record<EngineId, ProviderPreset[]>> = {
   grok: [{ name: "xAI Official", baseUrl: "https://api.x.ai/v1", model: "grok-build", iconSrc: xaiIcon, iconClassName: DARK_MONO_ICON_CLASS }],
   codex: [
     { name: "API Route", baseUrl: "https://global.api-route.com/v1", model: "gpt-6.1-sol", iconSrc: apiRouteIcon, wireApi: "responses" },
+    { name: "TeamoRouter", baseUrl: "https://api.teamorouter.com/v1", model: "gpt-6.2-astra", iconSrc: teamoRouterIcon, wireApi: "responses" },
     { name: "Zhipu GLM", baseUrl: "https://open.bigmodel.cn/api/coding/paas/v4", model: "glm-5.2", iconSrc: zhipuIcon, wireApi: "chat" },
     { name: "Kimi", baseUrl: "https://api.moonshot.cn/v1", model: "kimi-k3", iconSrc: kimiIcon, iconClassName: DARK_MONO_ICON_CLASS, wireApi: "chat" },
     { name: "Kimi Coding", baseUrl: "https://api.kimi.com/coding/v1", model: "kimi-k3", iconSrc: kimiIcon, iconClassName: DARK_MONO_ICON_CLASS, wireApi: "chat" },
