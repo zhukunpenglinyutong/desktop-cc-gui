@@ -183,7 +183,11 @@ fn effort_flag<'a>(requested: Option<&'a str>, model: &str) -> Option<&'a str> {
 
 fn model_encodes_effort(model: &str) -> bool {
     let lower = model.to_ascii_lowercase();
-    lower.ends_with("-high") || lower.ends_with("-medium") || lower.ends_with("-low")
+    lower.ends_with("-high")
+        || lower.ends_with("-xhigh")
+        || lower.ends_with("-max")
+        || lower.ends_with("-medium")
+        || lower.ends_with("-low")
 }
 
 fn event_name(value: &Value) -> &str {
@@ -412,6 +416,20 @@ mod tests {
         request.effort = Some("xhigh".into());
         let args = argv(&request);
         assert!(args.windows(2).any(|w| w == ["--effort", "xhigh"]));
+    }
+
+    #[test]
+    fn effort_skipped_for_xhigh_and_max_slugs() {
+        for slug in ["gemini-4-neon-xhigh", "gemini-4-hydrogen-xhigh", "gemini-4-neon-max"] {
+            let mut request = req(Some("auto"));
+            request.model = Some(slug.into());
+            request.effort = Some("high".into());
+            let args = argv(&request);
+            assert!(
+                !args.contains(&"--effort".to_string()),
+                "expected no redundant --effort for {slug}, args={args:?}"
+            );
+        }
     }
 
     #[test]

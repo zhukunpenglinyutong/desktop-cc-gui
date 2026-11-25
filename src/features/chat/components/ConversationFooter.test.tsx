@@ -70,6 +70,7 @@ const WS = "/tmp/ws";
 const TAB_A = { engine: "claude", sessionId: "s-a", workspacePath: WS };
 const TAB_B = { engine: "claude", sessionId: "s-b", workspacePath: WS };
 const KEY_A = sessionKey(TAB_A.engine, TAB_A.sessionId, TAB_A.workspacePath);
+const KEY_B = sessionKey(TAB_B.engine, TAB_B.sessionId, TAB_B.workspacePath);
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -176,6 +177,74 @@ describe("ConversationFooter 自动压缩续接", () => {
     expect(ipc.sendMessage).not.toHaveBeenCalledWith(
       expect.objectContaining({ prompt: i18n.t("chat.autoCompactResume") }),
     );
+  });
+});
+
+describe("ConversationFooter 压缩状态按会话隔离", () => {
+  it("A 压缩进行中切到 B：B 的压缩按钮可用，切回 A 仍显示压缩中", async () => {
+    const deferredA = Promise.withResolvers<void>();
+    const compactSpy = vi.fn((key: string) =>
+      key === KEY_A ? deferredA.promise : Promise.resolve(),
+    );
+    useChatStore.setState({ compactContext: compactSpy as never });
+
+    // Session A crosses its armed threshold on mount; hold that run open.
+    await act(async () => {
+      root.render(<ConversationFooter {...footerProps()} />);
+    });
+    expect(compactSpy).toHaveBeenCalledWith(KEY_A, { trigger: "threshold" });
+    expect(statusBarProps.current?.compacting).toBe(true);
+    expect(statusBarProps.current?.canCompact).toBe(false);
+
+    // Same pane switches to B: the footer is reused, not remounted.
+    await act(async () => {
+      root.render(<ConversationFooter {...footerProps()} active={TAB_B} />);
+    });
+    expect(statusBarProps.current?.compacting).toBe(false);
+    expect(statusBarProps.current?.canCompact).toBe(true);
+
+    await act(async () => {
+      (statusBarProps.current?.onCompactContext as () => void)();
+    });
+    expect(compactSpy).toHaveBeenCalledWith(KEY_B, { trigger: "manual" });
+
+    // Back on A: its run is still in flight.
+    await act(async () => {
+      root.render(<ConversationFooter {...footerProps()} />);
+    });
+    expect(statusBarProps.current?.compacting).toBe(true);
+    expect(statusBarProps.current?.canCompact).toBe(false);
+
+    await act(async () => {
+      deferredA.resolve();
+      await deferredA.promise;
+    });
+    expect(statusBarProps.current?.compacting).toBe(false);
+  });
+
+  it("A 压缩进行中切到 B：B 越过自己的阈值仍会自动压缩", async () => {
+    const deferredA = Promise.withResolvers<void>();
+    const compactSpy = vi.fn((key: string) =>
+      key === KEY_A ? deferredA.promise : Promise.resolve(),
+    );
+    useChatStore.setState({ compactContext: compactSpy as never });
+    setAutoCompactEnabled(KEY_B, true);
+    setAutoCompactThreshold(KEY_B, 50);
+
+    await act(async () => {
+      root.render(<ConversationFooter {...footerProps()} />);
+    });
+    expect(compactSpy).toHaveBeenCalledWith(KEY_A, { trigger: "threshold" });
+
+    await act(async () => {
+      root.render(<ConversationFooter {...footerProps()} active={TAB_B} />);
+    });
+    expect(compactSpy).toHaveBeenCalledWith(KEY_B, { trigger: "threshold" });
+
+    await act(async () => {
+      deferredA.resolve();
+      await deferredA.promise;
+    });
   });
 });
 

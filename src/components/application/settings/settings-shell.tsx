@@ -14,6 +14,7 @@ import X from "lucide-react/dist/esm/icons/x";
 import ArrowLeft from "lucide-react/dist/esm/icons/arrow-left";
 import Search from "lucide-react/dist/esm/icons/search";
 import ChevronRight from "lucide-react/dist/esm/icons/chevron-right";
+import { SidebarDisclosure } from "@/components/application/ai-chat/repo-tree";
 import {
   WorkspaceSortableList,
   type RepoDragChrome,
@@ -152,6 +153,10 @@ export interface SettingsNavGroup {
   /** Initial state of a collapsible group the user hasn't toggled yet
    *  (default: folded). */
   defaultExpanded?: boolean;
+  /** 可选的受控折叠状态，由调用方负责持久化；当前页在本组时仍会展开，
+   *  直到用户在本次打开期间手动折叠。 */
+  expanded?: boolean;
+  onExpandedChange?: (expanded: boolean) => void;
   /** When set, the group's items render as a drag-sortable list (the item
    *  icon becomes the grip, md+ vertical rail only) and a drop reports the
    *  new key order. */
@@ -363,7 +368,9 @@ function SortableNavItems({
 
 /** Expanded state for one rail group: explicit user fold state wins, then
  *  the group default, then "the current page lives here" (so a deep link
- *  never lands in a folded group). An active search expands everything. */
+ *  never lands in a folded group). A persisted (controlled) fold yields to
+ *  the current page too, since it outlives the deep-link remount that
+ *  clears `expandedGroups`. An active search expands everything. */
 function isRailGroupExpanded(
   group: SettingsNavGroup,
   groupKey: string,
@@ -374,6 +381,9 @@ function isRailGroupExpanded(
   if (!group.collapsible || searching) return true;
   const explicit = expandedGroups[groupKey];
   if (explicit !== undefined) return explicit;
+  if (group.expanded !== undefined) {
+    return group.expanded || group.items.some((item) => item.key === page);
+  }
   if (group.defaultExpanded) return true;
   return group.items.some((item) => item.key === page);
 }
@@ -421,7 +431,11 @@ function RailGroupSection({
           <button
             type="button"
             aria-expanded={expanded}
-            onClick={() => onToggleGroup(groupKey, !expanded)}
+            onClick={() => {
+              if (searching && group.onExpandedChange) return;
+              onToggleGroup(groupKey, !expanded);
+              group.onExpandedChange?.(!expanded);
+            }}
             className={cx(
               "hidden w-auto shrink-0 cursor-pointer items-center gap-1.5 rounded-lg p-1.5 text-left md:flex md:w-full",
               "outline-none transition-colors duration-150 ease hover:bg-background-secondary-hover/60 focus-visible:ring-2 focus-visible:ring-border-focus-ring",
@@ -443,7 +457,24 @@ function RailGroupSection({
             {group.label}
           </span>
         ))}
-      {group.onReorderItems && !searching ? (
+      {group.onExpandedChange ? (
+        <>
+          <div className="flex flex-row gap-1 md:hidden">
+            {group.items.map((item) => (
+              <NavButton key={item.key} item={item} selected={item.key === page} onSelect={onSelect} />
+            ))}
+          </div>
+          <div className="hidden md:block" data-settings-plugin-items>
+            <SidebarDisclosure expanded={expanded} keepMounted>
+              {group.onReorderItems && !searching ? (
+                <SortableNavItems group={group} page={page} onSelect={onSelect} />
+              ) : group.items.map((item) => (
+                <NavButton key={item.key} item={item} selected={item.key === page} onSelect={onSelect} />
+              ))}
+            </SidebarDisclosure>
+          </div>
+        </>
+      ) : group.onReorderItems && !searching ? (
         <SortableNavItems
           group={group}
           page={page}
