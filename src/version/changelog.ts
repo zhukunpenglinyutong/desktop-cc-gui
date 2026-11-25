@@ -29,6 +29,30 @@ export function changelogEntryFor(version: string): ChangelogEntry | undefined {
 
 export const CHANGELOG_DATA: ChangelogEntry[] = [
   {
+    version: "1.2.6",
+    date: "2026-11-25",
+    content: {
+      zh: `✨ 新功能
+- **侧边栏工作区右键菜单新增「复制路径」**：在工作区右键菜单里直接把工作区路径复制到剪贴板。
+- **运行状态行可点开「当前进展」**（#1536）：长回复时能看出系统在做什么、有没有卡住。后续修正了在 pi/omp 与 Claude 失败工具下阶段判断错误的问题。
+- **设置页插件导航支持排序与折叠**（#1543）：可拖动调整插件入口顺序、按分组折叠；用深链打开插件页时按已保存的折叠状态展开。
+
+🐛 修复
+- **CodeBuddy 每个会话常驻进程**（#1493，对应 #1491）：不再每轮对话都重新拉起进程。同时修复了配置读取、空闲退出回归，以及排队发送与空闲上限的问题。
+- **压缩状态按会话隔离**（#1529）：一个会话压缩上下文时不再挡住其他会话。
+- **agy 模型标识识别 -xhigh 与 -max 后缀**（#1541）：带 effort 后缀的模型标识可以被正确识别。`,
+      en: `✨ Features
+- **Copy path from the sidebar workspace context menu**: Copy a workspace path straight to the clipboard.
+- **Run status line opens "current progress"** (#1536): Long replies now show what the system is doing and whether it has stalled. A follow-up fixes stage detection for pi/omp and for failed Claude tools.
+- **Reorder and collapse plugin navigation in Settings** (#1543): Drag plugin entries into your preferred order and collapse groups; deep links expand according to the saved collapsed state.
+
+🐛 Fixes
+- **One long-lived process per CodeBuddy session** (#1493, #1491): Sessions no longer relaunch the process on every turn. Also fixes config reads, idle-exit regressions, and queued sends against the idle cap.
+- **Compaction state is isolated per session** (#1529): Compacting one session no longer blocks the others.
+- **agy model slugs recognize -xhigh and -max effort suffixes** (#1541).`,
+    },
+  },
+  {
     version: "1.2.5",
     date: "2026-11-18",
     content: {
