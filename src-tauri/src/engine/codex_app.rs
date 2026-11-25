@@ -38,7 +38,7 @@
 //! the final plan item to prove it is unchanged, and atomically starts one
 //! execution (`mode:"default"`) or follow-up planning turn.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -62,8 +62,9 @@ use super::qoder_session::{
 use super::plan_review::{self, PlanDecision, PlanReview, PlanReviewKind};
 use super::{
     assistant_message, read_line_capped, spawn_stderr_capture, tool_call_message,
-    tool_result_patch, BuiltCommand, ChildEntry, Engine, EngineEvent, LineRead, SendRequest,
-    TurnCore, TurnState, VirtualRunGuard, MAX_LINE_BYTES,
+    tool_call_message_with_id, tool_result_patch, tool_result_patch_with_id, BuiltCommand,
+    ChildEntry, Engine, EngineEvent, LineRead, SendRequest, TurnCore, TurnState, VirtualRunGuard,
+    MAX_LINE_BYTES,
 };
 
 /// Terminal marker for a kill-interrupted turn. The driver swallows it (the
@@ -120,6 +121,9 @@ struct TurnView {
     /// answers. Sub-agents the turn spawns are threads of their own on the
     /// same app-server; see [`is_foreign_thread`].
     thread_id: Option<String>,
+    /// Agent thread ids that already have a sub-agent row this turn, so a
+    /// later status report patches that row instead of opening another.
+    sub_agents: HashSet<String>,
     /// Last `thread/tokenUsage/updated` payload, folded into this turn's Done:
     /// the terminal notification itself carries no usage.
     last_usage: Option<Value>,
@@ -780,11 +784,175 @@ fn handle_item(
                 );
             }
         }
-        // Plans, sub-agent activity, review mode and compaction have no row of
-        // their own in this client's timeline; what they contain is outside
-        // what the app renders, not lost by a missing arm.
+        // A sub-agent runs as a thread of its own (see [`is_foreign_thread`]),
+        // so its state comes from what the parent thread reports about it.
+        // Both frames of one item carry the same report: read it once.
+        "subAgentActivity" => {
+            if completed {
+                sub_agent_activity(core, state, view, item);
+            }
+        }
+        "collabAgentToolCall" => {
+            if completed {
+                collab_agent_call(core, state, view, item);
+            }
+        }
+        // Review mode, compaction and the collab calls themselves (a wait, a
+        // message to an agent) have no row of their own in this client's
+        // timeline; what they contain is outside what the app renders, not
+        // lost by a missing arm.
         _ => {}
     }
+}
+
+/// Row name of a sub-agent: one of the spawn labels the sub-agent panel
+/// recognizes.
+const SUB_AGENT_ROW: &str = "spawn_agent";
+
+/// A `subAgentActivity` report. Measured on 0.170.0: a spawn reports
+/// `started` with the model of the agent, and the end of the sub-agent turn
+/// reports `completed`. The schema lists two more kinds, `interacted` and
+/// `interrupted`, read as the agent running again and stopping.
+fn sub_agent_activity(core: &TurnCore, state: &mut TurnState, view: &mut TurnView, item: &Value) {
+    let Some(agent) = non_blank(item.get("agentThreadId")) else {
+        return;
+    };
+    let status = match item.get("kind").and_then(Value::as_str) {
+        Some("started" | "interacted") => "running",
+        Some("completed") => "completed",
+        Some("interrupted") => "stopped",
+        _ => return,
+    };
+    // `agentPath` places the agent in the spawn tree (`/root/alpha`); its last
+    // segment is the name the parent gave it.
+    let name = item
+        .get("agentPath")
+        .and_then(Value::as_str)
+        .and_then(|path| {
+            path.rsplit('/')
+                .map(str::trim)
+                .find(|part| !part.is_empty())
+        });
+    let task = sub_agent_task(agent, name, non_blank(item.get("model")), None);
+    report_sub_agent(core, state, view, agent, task, status);
+}
+
+/// A completed collab tool call (the `collabAgentToolCall` item, read from
+/// the schema: 0.170.0 spawns through `subAgentActivity`, and its waits carry
+/// no states). A spawn opens rows for the agents it created; any other call
+/// updates the agents it reports a state for. A state alone names no
+/// assignment, so it only updates an agent that already has a row.
+fn collab_agent_call(core: &TurnCore, state: &mut TurnState, view: &mut TurnView, item: &Value) {
+    let states = item.get("agentsStates").and_then(Value::as_object);
+    let reported = |agent: &str| {
+        states
+            .and_then(|states| states.get(agent))
+            .and_then(|entry| entry.get("status"))
+            .and_then(Value::as_str)
+            .and_then(collab_status)
+    };
+    if item.get("tool").and_then(Value::as_str) == Some("spawnAgent") {
+        let failed = item.get("status").and_then(Value::as_str) == Some("failed");
+        let prompt = non_blank(item.get("prompt"));
+        let name: Option<String> = prompt
+            .and_then(|prompt| prompt.lines().map(str::trim).find(|line| !line.is_empty()))
+            .map(|line| line.chars().take(80).collect());
+        let model = non_blank(item.get("model"));
+        let receivers = item.get("receiverThreadIds").and_then(Value::as_array);
+        for agent in receivers
+            .into_iter()
+            .flatten()
+            .filter_map(|id| non_blank(Some(id)))
+        {
+            let status = reported(agent).unwrap_or(if failed { "errored" } else { "running" });
+            let task = sub_agent_task(agent, name.as_deref(), model, prompt);
+            report_sub_agent(core, state, view, agent, task, status);
+        }
+        return;
+    }
+    for (agent, status) in states
+        .into_iter()
+        .flatten()
+        .filter_map(|(agent, _)| Some((agent.as_str(), reported(agent)?)))
+    {
+        if view.sub_agents.contains(agent) {
+            report_sub_agent(core, state, view, agent, Value::Null, status);
+        }
+    }
+}
+
+/// `CollabAgentStatus` as a status word the sub-agent panel reads. `notFound`
+/// says nothing about the state of the agent.
+fn collab_status(status: &str) -> Option<&'static str> {
+    match status {
+        "pendingInit" | "running" => Some("running"),
+        "completed" => Some("completed"),
+        "errored" => Some("errored"),
+        "interrupted" | "shutdown" => Some("stopped"),
+        _ => None,
+    }
+}
+
+/// The `tasks[]` entry a sub-agent row names its agent with. The id is the
+/// agent thread id, which its status reports also carry; the panel shows the
+/// description as the name of the agent.
+fn sub_agent_task(
+    agent: &str,
+    name: Option<&str>,
+    model: Option<&str>,
+    prompt: Option<&str>,
+) -> Value {
+    let mut task = Map::new();
+    task.insert("id".to_string(), json!(agent));
+    if let Some(name) = name {
+        task.insert("description".to_string(), json!(name));
+    }
+    if let Some(model) = model {
+        task.insert("agent".to_string(), json!(model));
+    }
+    if let Some(prompt) = prompt {
+        task.insert("task".to_string(), json!(prompt));
+    }
+    Value::Object(task)
+}
+
+/// Report the state of one sub-agent. The first report opens a `spawn_agent`
+/// row in the dispatch shape the sub-agent panel reads (`tasks[]` names the
+/// agent); every report then replaces the result of that row with the current
+/// state under `details.progress`. Without the row the agent is invisible:
+/// the app-server streams its turn on a thread this run does not project.
+fn report_sub_agent(
+    core: &TurnCore,
+    state: &mut TurnState,
+    view: &mut TurnView,
+    agent: &str,
+    task: Value,
+    status: &str,
+) {
+    let row = format!("subagent-{agent}");
+    if view.sub_agents.insert(agent.to_string()) {
+        core.dispatch_event(
+            state,
+            tool_call_message_with_id(SUB_AGENT_ROW, Some(&json!({ "tasks": [task] })), Some(&row)),
+        );
+    }
+    core.dispatch_event(
+        state,
+        tool_result_patch_with_id(
+            SUB_AGENT_ROW,
+            Some(&json!({
+                "details": { "progress": [{ "index": 0, "id": agent, "status": status }] },
+            })),
+            Some(&row),
+        ),
+    );
+}
+
+fn non_blank(value: Option<&Value>) -> Option<&str> {
+    value
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|text| !text.is_empty())
 }
 
 /// Park a user-input request: publish the card, then remember how to answer it.
@@ -3274,6 +3442,156 @@ require('node:readline').createInterface({input: process.stdin}).on('line', line
             }),
         );
         assert!(matches!(handled, Handled::Ended));
+    }
+
+    /// Tool rows as the frontend receives them: call id, args, result.
+    fn tool_rows(core: &TurnCore, emitter: &Arc<CollectingEmitter>) -> Vec<(Value, Value, Value)> {
+        flushed(core, emitter)
+            .into_iter()
+            .filter(|(kind, data)| kind == "message" && data["role"] == "tool")
+            .map(|(_, data)| {
+                (
+                    data["toolCallId"].clone(),
+                    data["args"].clone(),
+                    data["result"].clone(),
+                )
+            })
+            .collect()
+    }
+
+    fn progress(agent: &str, status: &str) -> Value {
+        json!({ "details": { "progress": [{ "index": 0, "id": agent, "status": status }] } })
+    }
+
+    /// What 0.170.0 sent for one spawned sub-agent: the parent thread reports
+    /// it `started` and later `completed`, each as an item/started +
+    /// item/completed pair. The agent gets one `spawn_agent` row, and the row
+    /// result follows the reports.
+    #[tokio::test]
+    async fn a_sub_agent_gets_one_row_whose_state_follows_its_reports() {
+        let (core, _registry, emitter) = test_core();
+        let mut state = TurnState::new(None);
+        let mut view = TurnView {
+            thread_id: Some("parent".into()),
+            ..TurnView::default()
+        };
+        let report = |id: &str, kind: &str, model: Value| {
+            ["item/started", "item/completed"].map(|method| {
+                json!({
+                    "method": method,
+                    "params": {
+                        "threadId": "parent",
+                        "item": {
+                            "type": "subAgentActivity", "id": id, "kind": kind,
+                            "agentThreadId": "agent-1", "agentPath": "/root/alpha", "model": model,
+                        },
+                    },
+                })
+            })
+        };
+        for frame in report("call_1", "started", json!("gpt-6-luna")) {
+            route(&core, &mut state, &mut view, &frame);
+        }
+        assert_eq!(
+            tool_rows(&core, &emitter),
+            [
+                (
+                    json!("subagent-agent-1"),
+                    json!({ "tasks": [{ "id": "agent-1", "description": "alpha", "agent": "gpt-6-luna" }] }),
+                    Value::Null,
+                ),
+                (
+                    json!("subagent-agent-1"),
+                    Value::Null,
+                    progress("agent-1", "running")
+                ),
+            ]
+        );
+
+        // The completion report has an id of its own; it still lands on the
+        // row the spawn opened, and opens nothing.
+        for frame in report("subagent-completed-turn-1", "completed", Value::Null) {
+            route(&core, &mut state, &mut view, &frame);
+        }
+        let rows = tool_rows(&core, &emitter);
+        assert_eq!(
+            rows[2..],
+            [(
+                json!("subagent-agent-1"),
+                Value::Null,
+                progress("agent-1", "completed")
+            )]
+        );
+    }
+
+    /// The collab item shape, from the schema: a spawn names the agents it
+    /// created and what it asked of them; a later call (a wait) reports the
+    /// states of the agents it targets.
+    #[tokio::test]
+    async fn collab_calls_open_spawned_agents_and_update_known_ones() {
+        let (core, _registry, emitter) = test_core();
+        let mut state = TurnState::new(None);
+        let mut view = TurnView {
+            thread_id: Some("parent".into()),
+            ..TurnView::default()
+        };
+        let collab = |tool: &str, extra: Value| {
+            let mut item = json!({
+                "type": "collabAgentToolCall", "id": format!("call-{tool}"), "tool": tool,
+                "status": "completed", "senderThreadId": "parent",
+            });
+            item.as_object_mut()
+                .unwrap()
+                .extend(extra.as_object().unwrap().clone());
+            json!({ "method": "item/completed", "params": { "threadId": "parent", "item": item } })
+        };
+        route(
+            &core,
+            &mut state,
+            &mut view,
+            &collab(
+                "spawnAgent",
+                json!({
+                    "receiverThreadIds": ["agent-2"],
+                    "prompt": "\n Review the diff\nthen report",
+                    "model": "gpt-5.5",
+                    "agentsStates": { "agent-2": { "status": "pendingInit" } },
+                }),
+            ),
+        );
+        route(
+            &core,
+            &mut state,
+            &mut view,
+            &collab(
+                "wait",
+                json!({
+                    "receiverThreadIds": [],
+                    "agentsStates": {
+                        "agent-2": { "status": "completed" },
+                        "stranger": { "status": "running" },
+                    },
+                }),
+            ),
+        );
+        let row = json!("subagent-agent-2");
+        assert_eq!(
+            tool_rows(&core, &emitter),
+            [
+                (
+                    row.clone(),
+                    json!({ "tasks": [{
+                        "id": "agent-2",
+                        "description": "Review the diff",
+                        "agent": "gpt-5.5",
+                        "task": "Review the diff\nthen report",
+                    }] }),
+                    Value::Null,
+                ),
+                (row.clone(), Value::Null, progress("agent-2", "running")),
+                (row, Value::Null, progress("agent-2", "completed")),
+            ]
+        );
     }
 
     /// The same failure over the real pipe and handshake: the run learns its
