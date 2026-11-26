@@ -1122,3 +1122,134 @@ describe("process run fold timing", () => {
     expect(container.textContent).toContain("第二轮分析");
   });
 });
+
+describe("scroll position preservation and modal dialog cleanup across tab switches", () => {
+  let container: HTMLDivElement;
+  let root: Root;
+
+  beforeEach(() => {
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+  });
+
+  afterEach(() => {
+    act(() => root.unmount());
+    container.remove();
+  });
+
+  const makeMessages = (count: number): Message[] =>
+    Array.from({ length: count }, (_, i) => ({
+      seq: i + 1,
+      role: i % 2 === 0 ? "user" : "assistant",
+      text: `message ${i + 1}`,
+      ts: null,
+    }));
+
+  function configureScrollBox(el: HTMLDivElement, scrollHeight: number, clientHeight = 500) {
+    Object.defineProperty(el, "scrollHeight", { configurable: true, value: scrollHeight });
+    Object.defineProperty(el, "clientHeight", { configurable: true, value: clientHeight });
+  }
+
+  it("preserves a scrolled-up reading position across keep-alive hide/reveal and starts at tail after LRU unmount", async () => {
+    const session: SessionState = { ...EMPTY_SESSION, messages: makeMessages(20) };
+    const renderView = async (visible: boolean, nextSession = session) => {
+      await act(async () => {
+        root.render(
+          <MessageTimeline
+            session={nextSession}
+            streaming={false}
+            onLoadEarlier={() => {}}
+            workspacePath="/ws"
+            visible={visible}
+          />,
+        );
+      });
+    };
+
+    await renderView(true);
+    const scroller = container.querySelector<HTMLDivElement>(".overflow-y-auto")!;
+    configureScrollBox(scroller, 3000, 500);
+
+    // User scrolls up away from the tail to y = 420.
+    await act(async () => {
+      scroller.dispatchEvent(new WheelEvent("wheel", { deltaY: -120, bubbles: true }));
+      scroller.scrollTop = 420;
+    });
+
+    // Hide tab (switch away), simulate an external browser reset to 0 while hidden, then reveal.
+    await renderView(false);
+    scroller.scrollTop = 0;
+    await renderView(true);
+    expect(scroller.scrollTop).toBe(420);
+
+    // Unmount (simulates LRU eviction) and remount: lands at the tail instead of a stale pixel offset.
+    await act(async () => root.render(null));
+    await renderView(true);
+    const remountedScroller = container.querySelector<HTMLDivElement>(".overflow-y-auto")!;
+    configureScrollBox(remountedScroller, 3000, 500);
+    await renderView(false);
+    await renderView(true);
+    expect(remountedScroller.scrollTop).toBe(2500);
+  });
+
+  it("closes an open PlanReviewCard modal dialog when the timeline becomes hidden", async () => {
+    const planMessage: Message = {
+      seq: 1,
+      role: "plan_review",
+      text: "",
+      ts: null,
+      planReview: {
+        planId: "plan-1",
+        engine: "claude",
+        sessionId: "s-1",
+        workspacePath: "/ws",
+        runId: "run-1",
+        revision: 1,
+        title: "Refactor plan",
+        content: "# Refactor\n\nStep 1",
+        contentHash: "abc",
+        complete: true,
+        reviewKind: "native_request",
+        nativePlanId: "native-1",
+        execPermission: "auto",
+        status: "awaiting_review",
+        execution: "not_started",
+        decision: null,
+        decisionIntentAt: null,
+        appliedAt: null,
+        createdAt: 1,
+        updatedAt: 1,
+        supersededBy: null,
+      },
+    };
+    const session: SessionState = { ...EMPTY_SESSION, messages: [planMessage] };
+    const renderView = async (visible: boolean) => {
+      await act(async () => {
+        root.render(
+          <MessageTimeline
+            session={session}
+            streaming={false}
+            onLoadEarlier={() => {}}
+            workspacePath="/ws"
+            visible={visible}
+          />,
+        );
+      });
+    };
+
+    await renderView(true);
+    const viewFullBtn = Array.from(container.querySelectorAll("button")).find((btn) =>
+      btn.textContent?.includes(i18n.t("chat.planReviewViewFull")),
+    );
+    expect(viewFullBtn).toBeDefined();
+    await act(async () => {
+      viewFullBtn!.click();
+    });
+    expect(container.querySelector("dialog")).not.toBeNull();
+
+    // Hiding the timeline must close/unmount the modal dialog so the page never goes inert.
+    await renderView(false);
+    expect(container.querySelector("dialog")).toBeNull();
+  });
+});

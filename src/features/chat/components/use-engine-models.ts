@@ -388,7 +388,7 @@ export function useEngineModels(
         markPending(ws, engine.id, true);
         probes.push(
           ipc
-            .listEngineModels(engine.id, ws || undefined)
+            .listEngineModels(engine.id, ws || undefined, true)
             .then((list) => applyCatalog(engine.id, ws, list))
             .catch(() => {
               // A failed probe keeps the stale catalog rather than blanking the

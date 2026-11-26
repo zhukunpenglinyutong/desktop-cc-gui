@@ -14,6 +14,7 @@ import {
 import { useChatStore } from "../store";
 import { useScopedSessionKey } from "../split/session-scope";
 import Markdown from "./Markdown";
+import { useTimelineVisible } from "./timeline-visibility";
 import { planSummary } from "./plan-review-helpers";
 
 /**
@@ -194,6 +195,10 @@ export function PlanViewFullButton({
 }) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
+  const timelineVisible = useTimelineVisible();
+  useEffect(() => {
+    if (!timelineVisible && open) setOpen(false);
+  }, [timelineVisible, open]);
   return (
     <>
       <button
@@ -203,7 +208,7 @@ export function PlanViewFullButton({
       >
         {t("chat.planReviewViewFull")}
       </button>
-      {open && (
+      {open && timelineVisible && (
         <PlanPreviewOverlay
           record={record}
           workspacePath={workspacePath}

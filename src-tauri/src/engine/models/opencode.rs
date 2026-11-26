@@ -24,14 +24,14 @@ const FALLBACK: &[(&str, &str)] = &[
     ("anthropic/claude-sonnet-5", "Claude Sonnet 5"),
 ];
 
-pub(super) async fn opencode_catalog(bin: &str) -> super::EngineCatalog {
+pub(super) async fn opencode_catalog(bin: &str) -> (super::EngineCatalog, bool) {
     if let Ok(stdout) = run_probe(bin, &["models"], "models").await {
         let models = parse_models_output(&stdout);
         if !models.is_empty() {
-            return super::EngineCatalog::authoritative(models);
+            return (super::EngineCatalog::authoritative(models), true);
         }
     }
-    super::EngineCatalog::authoritative(fallback_models())
+    (super::EngineCatalog::authoritative(fallback_models()), false)
 }
 
 /// `opencode models` prints one `provider/model` id per line (plus ANSI

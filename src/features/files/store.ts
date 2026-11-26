@@ -700,7 +700,10 @@ export const useFilesStore = create<FilesStore>((set, get) => ({
     dismissNonFileSurfaces();
   },
 
-  clearActiveFile: () => set({ activeFilePath: null }),
+  clearActiveFile: () => {
+    if (get().activeFilePath === null) return;
+    set({ activeFilePath: null });
+  },
 
   reloadFile: async (path, encoding) => {
     const entry = get().fileStates[path];
@@ -720,7 +723,9 @@ export const useFilesStore = create<FilesStore>((set, get) => ({
         : null;
       const content: FileContent = document
         ? { kind: "text", text: document.text, dataUrl: null, truncated: false }
-        : await readRemoteAware(path, (p) => ipc.readFile(p, encoding));
+        : await readRemoteAware(path, (p) =>
+            encoding !== undefined ? ipc.readFile(p, encoding) : ipc.readFile(p),
+          );
       set((s) => {
         const st = s.fileStates[path];
         if (!st || (target ? st !== pending : st.session !== target)) return s;

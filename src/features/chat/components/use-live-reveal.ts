@@ -1,17 +1,23 @@
 import { useLayoutEffect, useMemo } from "react";
 import { useReducedMotion } from "motion/react";
+import { useTimelineVisible } from "./timeline-visibility";
 import { StreamReveal } from "./stream-reveal";
 
 /** One reveal controller for a live text surface (assistant markdown, living
  * thinking panel). Stored text is always complete; this only paces what is
- * shown. Settling, a hidden document and reduced motion publish the exact
- * text instead of animating, so completion never leaves text half revealed. */
+ * shown. Settling, a hidden document, a hidden keep-alive timeline, and
+ * reduced motion publish the exact text instead of animating, so completion
+ * never leaves text half revealed and hidden tabs never tick rAF loops. */
 export function useLiveReveal(text: string | { text: string }, live: boolean): StreamReveal {
   const controller = useMemo(() => new StreamReveal(false), []);
   const reducedMotion = useReducedMotion();
+  const timelineVisible = useTimelineVisible();
   useLayoutEffect(() => {
-    controller.update(typeof text === "string" ? text : text.text, live && !reducedMotion && !document.hidden);
-  }, [controller, text, live, reducedMotion]);
+    controller.update(
+      typeof text === "string" ? text : text.text,
+      live && timelineVisible && !reducedMotion && !document.hidden,
+    );
+  }, [controller, text, live, timelineVisible, reducedMotion]);
   useLayoutEffect(() => {
     const onVisibility = () => { if (document.hidden) controller.finish(); };
     document.addEventListener("visibilitychange", onVisibility);

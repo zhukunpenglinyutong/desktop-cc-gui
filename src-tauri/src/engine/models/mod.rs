@@ -151,11 +151,57 @@ impl EngineCatalog {
     }
 }
 
+/// Process-wide cache for local engine model catalogs: switching to another
+/// local workspace triggers a workspace-context probe, and without this cache
+/// every unseen local workspace would respawn every enabled CLI binary at once.
+const LOCAL_CATALOG_TTL: std::time::Duration = std::time::Duration::from_secs(120);
+
+struct CachedLocalCatalog {
+    cache_key: String,
+    catalog: EngineCatalog,
+    cached_at: std::time::Instant,
+}
+
+static LOCAL_CATALOG_CACHE: std::sync::LazyLock<
+    std::sync::Mutex<std::collections::HashMap<String, CachedLocalCatalog>>,
+> = std::sync::LazyLock::new(|| std::sync::Mutex::new(std::collections::HashMap::new()));
+
+fn local_catalog_cache_key(settings: &crate::settings::AppSettings, engine: &str, bin: &str) -> String {
+    if engine == "dsh" {
+        format!("{bin}@{}", crate::dsh_host::configured_origin(settings))
+    } else {
+        bin.to_string()
+    }
+}
+
+fn read_cached_local_catalog(engine: &str, cache_key: &str) -> Option<EngineCatalog> {
+    let guard = LOCAL_CATALOG_CACHE.lock().ok()?;
+    let entry = guard.get(engine)?;
+    if entry.cache_key == cache_key && entry.cached_at.elapsed() < LOCAL_CATALOG_TTL {
+        Some(entry.catalog.clone())
+    } else {
+        None
+    }
+}
+
+fn write_cached_local_catalog(engine: &str, cache_key: String, catalog: &EngineCatalog) {
+    if let Ok(mut guard) = LOCAL_CATALOG_CACHE.lock() {
+        guard.insert(
+            engine.to_string(),
+            CachedLocalCatalog {
+                cache_key,
+                catalog: catalog.clone(),
+                cached_at: std::time::Instant::now(),
+            },
+        );
+    }
+}
 #[tauri::command]
 pub async fn list_engine_models(
     state: tauri::State<'_, crate::AppState>,
     engine: String,
     workspace: Option<String>,
+    force: Option<bool>,
 ) -> Result<EngineCatalog, String> {
     // 停用 (设置 → CLI 管理) gates the catalog too: every branch below either
     // runs the engine's CLI here or asks the distro to (`opencode models`,
@@ -189,34 +235,53 @@ pub async fn list_engine_models(
             }
         }
     }
-    match engine.as_str() {
-        "codex" => Ok(codex_catalog().await),
-        "kimi" => Ok(kimi_catalog().await),
-        "grok" => Ok(grok_catalog()),
-        "claude" => Ok(claude_catalog()),
-        "pi" | "omp" => Ok(pi_family_catalog(&engine).await),
-        "dsh" => dsh_catalog().await,
-        "agy" => Ok(agy_catalog().await),
-        "opencode" => Ok(opencode_catalog().await),
-        "qoder" => qoder_catalog("qoder").await,
-        "qoder-cn" => qoder_catalog("qoder-cn").await,
+    let (bin_key, cache_key) = {
+        let settings = crate::settings::read_settings().unwrap_or_default();
+        let bin = super::engine_bin(&settings, &engine);
+        let key = local_catalog_cache_key(&settings, &engine, &bin);
+        (bin, key)
+    };
+    if !force.unwrap_or(false) {
+        if let Some(cached) = read_cached_local_catalog(&engine, &cache_key) {
+            return Ok(cached);
+        }
+    }
+    let (catalog, cacheable) = match engine.as_str() {
+        "codex" => codex_catalog().await,
+        "kimi" => kimi_catalog().await,
+        "grok" => (grok_catalog(), true),
+        "claude" => (claude_catalog(), true),
+        "pi" | "omp" => pi_family_catalog(&engine).await,
+        "dsh" => (dsh_catalog().await?, true),
+        "agy" => {
+            let catalog = agy_catalog().await;
+            let cacheable = catalog.authoritative;
+            (catalog, cacheable)
+        }
+        "opencode" => opencode_catalog().await,
+        "qoder" => (qoder_catalog("qoder").await?, true),
+        "qoder-cn" => (qoder_catalog("qoder-cn").await?, true),
         // MiniMax's catalog comes from a live `mcode acp` probe (the /model
         // menu only exists on the session handshake), cached last-success;
         // a failed probe falls back to the static stock list.
         "minimax" => {
-            let settings = crate::settings::read_settings().unwrap_or_default();
-            let bin = super::engine_bin(&settings, "minimax");
-            Ok(minimax::minimax_catalog(&bin).await)
+            let catalog = minimax::minimax_catalog(&bin_key).await;
+            let cacheable = catalog.authoritative;
+            (catalog, cacheable)
         }
         "codebuddy" => {
-            let settings = crate::settings::read_settings().unwrap_or_default();
-            let bin = super::engine_bin(&settings, "codebuddy");
-            Ok(codebuddy::codebuddy_catalog(&bin).await)
+            let catalog = codebuddy::codebuddy_catalog(&bin_key).await;
+            let cacheable = catalog.authoritative;
+            (catalog, cacheable)
         }
         // Unknown engine: no CLI-sourced catalog — the frontend fills the
         // picker from the configured provider channels.
-        _ => Ok(EngineCatalog::authoritative(Vec::new())),
+        _ => (EngineCatalog::authoritative(Vec::new()), false),
+    };
+    if cacheable {
+        write_cached_local_catalog(&engine, cache_key, &catalog);
     }
+    Ok(catalog)
 }
 
 /// DSH has no CLI-side catalog: the model list lives on the running host
@@ -230,7 +295,7 @@ async fn agy_catalog() -> EngineCatalog {
     agy::agy_catalog(&bin).await
 }
 
-async fn opencode_catalog() -> EngineCatalog {
+async fn opencode_catalog() -> (EngineCatalog, bool) {
     let settings = crate::settings::read_settings().unwrap_or_default();
     let bin = super::engine_bin(&settings, "opencode");
     opencode::opencode_catalog(&bin).await
@@ -335,7 +400,7 @@ fn flatten_llm_models(
     models
 }
 
-async fn codex_catalog() -> EngineCatalog {
+async fn codex_catalog() -> (EngineCatalog, bool) {
     let settings = crate::settings::read_settings().unwrap_or_default();
     let bin = super::engine_bin(&settings, "codex");
     if let Ok(mut models) = codex::run_codex_debug_models(&bin).await {
@@ -349,13 +414,19 @@ async fn codex_catalog() -> EngineCatalog {
                     model.context_window = Some(window);
                 }
             }
-            return EngineCatalog::authoritative(with_default_first(models, configured));
+            return (
+                EngineCatalog::authoritative(with_default_first(models, configured)),
+                true,
+            );
         }
     }
-    EngineCatalog::authoritative(codex::codex_config_model().into_iter().collect())
+    (
+        EngineCatalog::authoritative(codex::codex_config_model().into_iter().collect()),
+        false,
+    )
 }
 
-async fn kimi_catalog() -> EngineCatalog {
+async fn kimi_catalog() -> (EngineCatalog, bool) {
     // The CLI's own registry is ground truth for `-m` aliases; the
     // config's [models.*] tables are the offline equivalent (same alias
     // semantics), then the CLI's configured default as a single-entry
@@ -364,17 +435,23 @@ async fn kimi_catalog() -> EngineCatalog {
     let bin = super::engine_bin(&settings, "kimi");
     if let Ok(models) = kimi::run_kimi_provider_list(&bin).await {
         if !models.is_empty() {
-            return EngineCatalog::authoritative(with_default_first(
-                models,
-                kimi::kimi_default_model(),
-            ));
+            return (
+                EngineCatalog::authoritative(with_default_first(
+                    models,
+                    kimi::kimi_default_model(),
+                )),
+                true,
+            );
         }
     }
     let local = kimi::kimi_local_models();
     if !local.is_empty() {
-        return EngineCatalog::authoritative(local);
+        return (EngineCatalog::authoritative(local), false);
     }
-    EngineCatalog::authoritative(kimi::kimi_default_model().into_iter().collect())
+    (
+        EngineCatalog::authoritative(kimi::kimi_default_model().into_iter().collect()),
+        false,
+    )
 }
 
 fn grok_catalog() -> EngineCatalog {
@@ -396,28 +473,34 @@ fn claude_catalog() -> EngineCatalog {
     EngineCatalog::authoritative(claude::claude_models(bin_path.as_deref()))
 }
 
-async fn pi_family_catalog(engine: &str) -> EngineCatalog {
+async fn pi_family_catalog(engine: &str) -> (EngineCatalog, bool) {
     let settings = crate::settings::read_settings().unwrap_or_default();
     let bin = super::engine_bin(&settings, engine);
     let configured = pi::configured_models(engine).unwrap_or_default();
     if let Ok(models) = pi::run_models_json(&bin).await {
         if !models.is_empty() {
-            return EngineCatalog::authoritative(pi::merge_configured_models(models, configured));
+            return (
+                EngineCatalog::authoritative(pi::merge_configured_models(models, configured)),
+                true,
+            );
         }
     }
     // Fresh binaries skip extension boot; old ones fall back to a bare run.
     for extra in [&["--no-extensions"][..], &[][..]] {
         if let Ok(models) = pi::run_list_models(&bin, extra).await {
             if !models.is_empty() {
-                return EngineCatalog::authoritative(pi::merge_configured_models(
-                    models, configured,
-                ));
+                return (
+                    EngineCatalog::authoritative(pi::merge_configured_models(
+                        models, configured,
+                    )),
+                    true,
+                );
             }
         }
     }
     // A missing/broken CLI is not an error here: the picker falls back to
     // provider-config models.
-    EngineCatalog::authoritative(configured)
+    (EngineCatalog::authoritative(configured), false)
 }
 
 /// Top-level `key = "…"` only: stop at the first `[table]` header so a
@@ -637,5 +720,34 @@ model = \"must-not-leak\"
             .map(|m| m.id)
             .collect();
         assert_eq!(ids, vec!["a", "b"]);
+    }
+
+    #[test]
+    fn local_catalog_cache_reuses_within_ttl_and_invalidates_on_bin_change() {
+        let engine = "__test_local_cache_engine__";
+        let catalog = EngineCatalog::authoritative(vec![EngineModel {
+            id: "m1".to_string(),
+            name: None,
+            description: None,
+            provider: "p".to_string(),
+            context_window: None,
+        }]);
+        write_cached_local_catalog(engine, "/bin/v1".to_string(), &catalog);
+        let hit = read_cached_local_catalog(engine, "/bin/v1").expect("cache hit");
+        assert_eq!(hit.models.len(), 1);
+        assert_eq!(hit.models[0].id, "m1");
+        assert!(read_cached_local_catalog(engine, "/bin/v2").is_none());
+    }
+
+    #[test]
+    fn dsh_local_catalog_cache_key_tracks_configured_origin() {
+        let mut settings = crate::settings::AppSettings::default();
+        settings.dsh_host = Some("127.0.0.1".to_string());
+        settings.dsh_port = Some(7777);
+        let k1 = local_catalog_cache_key(&settings, "dsh", "dsh");
+        settings.dsh_port = Some(8888);
+        let k2 = local_catalog_cache_key(&settings, "dsh", "dsh");
+        assert_ne!(k1, k2);
+        assert_eq!(local_catalog_cache_key(&settings, "claude", "claude"), "claude");
     }
 }
