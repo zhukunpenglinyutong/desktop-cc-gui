@@ -12,8 +12,8 @@ use super::{parse_json, McpConfigEntry, McpConfigSection, McpSourceError, McpSou
 use serde_json::Value;
 use std::path::{Path, PathBuf};
 
-mod read;
-mod write;
+pub(crate) mod read;
+pub(crate) mod write;
 
 pub(super) use read::{probe_target_from_json, probe_target_from_toml};
 pub(super) use write::write_enabled;
@@ -43,34 +43,34 @@ pub(super) const REASON_NEEDS_WORKSPACE: &str = "needs_workspace";
 pub(super) const REASON_OMP_SERVER_LIST: &str = "omp_server_list";
 
 /// 一个配置来源：条目标识前缀、引擎、作用域与写入能力。
-pub(super) struct SourceSpec {
-    pub id: &'static str,
-    pub engine: &'static str,
-    pub scope: &'static str,
-    pub writable: bool,
+pub(crate) struct SourceSpec {
+    pub(crate) id: &'static str,
+    pub(crate) engine: &'static str,
+    pub(crate) scope: &'static str,
+    pub(crate) writable: bool,
     /// 旧来源的说明文案（保留原样，不翻译）。
-    pub readonly_reason: Option<&'static str>,
+    pub(crate) readonly_reason: Option<&'static str>,
     /// 新来源的原因码（UI 本地化）。
-    pub readonly_reason_code: Option<&'static str>,
+    pub(crate) readonly_reason_code: Option<&'static str>,
 }
 
 /// 服务器表里的字段名（不同 CLI 的写法差异都收在这里；`*_alt` 是同一含义
 /// 的第二个键名，先看 `x` 再看 `x_alt`）。
 #[derive(Clone, Copy)]
-pub(super) struct Fields {
-    pub(super) command: &'static str,
-    pub(super) args: &'static str,
-    pub(super) env: &'static str,
-    pub(super) cwd: &'static str,
-    pub(super) url: &'static str,
-    pub(super) url_alt: &'static str,
-    pub(super) headers: &'static str,
-    pub(super) transport: &'static str,
-    pub(super) transport_alt: &'static str,
+pub(crate) struct Fields {
+    pub(crate) command: &'static str,
+    pub(crate) args: &'static str,
+    pub(crate) env: &'static str,
+    pub(crate) cwd: &'static str,
+    pub(crate) url: &'static str,
+    pub(crate) url_alt: &'static str,
+    pub(crate) headers: &'static str,
+    pub(crate) transport: &'static str,
+    pub(crate) transport_alt: &'static str,
 }
 
 /// Claude 形状：`command` 字符串 + `args` 数组。
-pub(super) const CLAUDE_FIELDS: Fields = Fields {
+pub(crate) const CLAUDE_FIELDS: Fields = Fields {
     command: "command",
     args: "args",
     env: "env",
@@ -80,6 +80,14 @@ pub(super) const CLAUDE_FIELDS: Fields = Fields {
     headers: "headers",
     transport: "type",
     transport_alt: "",
+};
+/// Codex：服务器表没有 `type`（有 `command` 即 stdio，有 `url` 即 streamable
+/// HTTP），静态请求头叫 `http_headers`。`env_http_headers` / `bearer_token_env_var`
+/// 不在表单管理范围内，更新时原样保留。
+pub(crate) const CODEX_FIELDS: Fields = Fields {
+    headers: "http_headers",
+    transport: "",
+    ..CLAUDE_FIELDS
 };
 /// Kimi CLI：传输方式键叫 `transport`（`type` 也兼容）。
 pub(super) const KIMI_FIELDS: Fields = Fields {
@@ -108,24 +116,24 @@ pub(super) const OPENCODE_FIELDS: Fields = Fields {
 
 /// 原生启停语义：`enabled` 缺省 true；`disabled` 缺省 false。
 #[derive(Clone, Copy, PartialEq, Eq)]
-enum Toggle {
+pub(crate) enum Toggle {
     Enabled,
     Disabled,
 }
 
-struct Source {
-    id: &'static str,
-    engine: &'static str,
-    scope: &'static str,
+pub(crate) struct Source {
+    pub(crate) id: &'static str,
+    pub(crate) engine: &'static str,
+    pub(crate) scope: &'static str,
     /// json | toml | yaml
-    format: &'static str,
-    servers_key: &'static str,
-    fields: Fields,
+    pub(crate) format: &'static str,
+    pub(crate) servers_key: &'static str,
+    pub(crate) fields: Fields,
     /// `command` 是数组（opencode local 形式）。
-    command_is_array: bool,
-    toggle: Option<Toggle>,
-    writable: bool,
-    readonly_reason_code: &'static str,
+    pub(crate) command_is_array: bool,
+    pub(crate) toggle: Option<Toggle>,
+    pub(crate) writable: bool,
+    pub(crate) readonly_reason_code: &'static str,
 }
 
 macro_rules! json_source {
@@ -146,7 +154,7 @@ macro_rules! json_source {
 }
 
 /// 新来源表。`paths()` 负责把每个来源解析成候选文件（第一个存在的生效）。
-const SOURCES: &[Source] = &[
+pub(crate) const SOURCES: &[Source] = &[
     Source {
         id: "kimi_user",
         engine: "kimi",
@@ -377,7 +385,7 @@ const SOURCES: &[Source] = &[
 const DSH_MCP_PLUGIN: &str = "@deepseek-ai/dsh-mcp-client";
 
 /// 全部来源（Claude / Codex 的特殊来源 + 声明表）。
-pub(super) fn source_spec(id: &str) -> Option<SourceSpec> {
+pub(crate) fn source_spec(id: &str) -> Option<SourceSpec> {
     match id {
         SOURCE_CLAUDE_USER => Some(SourceSpec {
             id: SOURCE_CLAUDE_USER,
@@ -467,10 +475,13 @@ pub(super) fn engine_source_infos(engine: &str, workspace: Option<&str>) -> Vec<
             // 展示实际生效的候选（第一个存在的），否则第一个预期位置。
             let path = first_existing(candidates.clone())
                 .or_else(|| candidates.into_iter().next())?;
+            let (creatable, reason) = super::crud::source_creatable(source.id);
             Some(McpSourceInfo {
                 source: source.id.to_string(),
                 exists: path.is_file(),
                 path: path.to_string_lossy().into_owned(),
+                creatable,
+                crud_reason_code: reason.map(str::to_string),
             })
         })
         .collect()
@@ -588,6 +599,13 @@ fn candidate_paths(id: &str, workspace: Option<&str>) -> Vec<PathBuf> {
 
 fn first_existing(paths: Vec<PathBuf>) -> Option<PathBuf> {
     paths.into_iter().find(|path| path.is_file())
+}
+
+/// 该来源的「生效文件」：第一个已存在的候选，否则第一个预期位置（create
+/// 用来定位尚未创建的首选文件）。未知来源返回 None。
+pub(crate) fn path_for(source_id: &str, workspace: Option<&str>) -> Option<PathBuf> {
+    let candidates = candidate_paths(source_id, workspace);
+    first_existing(candidates.clone()).or_else(|| candidates.into_iter().next())
 }
 
 // ===== 读取 =====

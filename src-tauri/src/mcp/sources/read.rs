@@ -93,7 +93,7 @@ pub(super) fn strip_jsonc(text: &str) -> Option<String> {
     Some(trimmed)
 }
 
-pub(super) fn read_json_source(source: &Source, path: &Path) -> Result<Vec<McpConfigEntry>, McpError> {
+pub(crate) fn read_json_source(source: &Source, path: &Path) -> Result<Vec<McpConfigEntry>, McpError> {
     let raw = read_text(path)?;
     let version = file_hash(raw.as_bytes());
     let is_jsonc = is_jsonc(path);
@@ -119,7 +119,7 @@ pub(super) fn read_json_source(source: &Source, path: &Path) -> Result<Vec<McpCo
     Ok(entries)
 }
 
-pub(super) fn is_jsonc(path: &Path) -> bool {
+pub(crate) fn is_jsonc(path: &Path) -> bool {
     path.extension()
         .map(|ext| ext.to_string_lossy().eq_ignore_ascii_case("jsonc"))
         .unwrap_or(false)
@@ -171,6 +171,7 @@ pub(super) fn build_entry(
         version: version.to_string(),
         launch_mode: crate::mcp::launch::EAGER.to_string(),
         launch_mode_unsupported: None,
+        ..crate::mcp::crud::entry_crud(source.id, is_jsonc)
     }
 }
 
@@ -237,7 +238,7 @@ fn entry_enabled(source: &Source, spec_object: &Map<String, Value>) -> bool {
 
 /// Grok：`[mcp_servers.<name>]`；用户级的 `disabled_mcp_servers` 列表按名称
 /// 停用（对项目级条目同样生效，所以项目来源也要读用户列表）。
-pub(super) fn read_toml_source(source: &Source, path: &Path) -> Result<Vec<McpConfigEntry>, McpError> {
+pub(crate) fn read_toml_source(source: &Source, path: &Path) -> Result<Vec<McpConfigEntry>, McpError> {
     let raw = read_text(path)?;
     let version = file_hash(raw.as_bytes());
     let document = raw
@@ -331,6 +332,7 @@ pub(super) fn read_toml_source(source: &Source, path: &Path) -> Result<Vec<McpCo
             version: version.clone(),
             launch_mode: crate::mcp::launch::EAGER.to_string(),
             launch_mode_unsupported: None,
+            ..crate::mcp::crud::entry_crud(source.id, false)
         });
     }
     Ok(entries)
@@ -494,6 +496,7 @@ pub(super) fn read_dsh_profile(path: &Path) -> Result<Vec<McpConfigEntry>, McpEr
             version: version.clone(),
             launch_mode: crate::mcp::launch::EAGER.to_string(),
             launch_mode_unsupported: None,
+            ..crate::mcp::crud::entry_crud("dsh_profile", false)
         });
     }
     Ok(entries)

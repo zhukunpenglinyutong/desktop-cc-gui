@@ -512,6 +512,10 @@ pub fn run() {
             mcp::mcp_inventory,
             mcp::mcp_set_enabled,
             mcp::mcp_set_launch_mode,
+            mcp::mcp_get_raw_entry,
+            mcp::mcp_create_entry,
+            mcp::mcp_update_entry,
+            mcp::mcp_delete_entry,
             mcp::probe::mcp_probe,
             mcp::probe::mcp_probe_plan,
             // skills hub (设置 → 能力扩展 → Skills)

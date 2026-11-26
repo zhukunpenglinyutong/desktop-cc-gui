@@ -26,6 +26,11 @@ import { useChatStore } from "@/features/chat/store";
 import { isWeb } from "@/lib/transport";
 import { cx } from "@/utils/cx";
 import { McpDetailDialog } from "./McpDetailDialog";
+import {
+  EntryActionButtons,
+  McpConfigFormDialog,
+  McpDeleteConfirmDialog,
+} from "./McpConfigFormDialog";
 import { EnableToggle, LaunchModeToggle } from "./launch-ui";
 import { ProbeActionButton, ProbeStatusChip } from "./probe-ui";
 import {
@@ -37,11 +42,13 @@ import {
 import { engineIdFromHash, engineLabel } from "./labels";
 import type {
   McpConfigEntry,
+  McpConfigSource,
   McpEngineId,
   McpEngineInventory,
   McpRuntimeEntry,
   McpRuntimeSection,
   McpLaunchMode,
+  McpServerInput,
   McpSourceInfo,
 } from "./types";
 import { useMcpInventory } from "./useMcpInventory";
@@ -60,6 +67,8 @@ function ConfigRow({
   onOpen,
   onToggle,
   onLaunchMode,
+  onEdit,
+  onDelete,
 }: {
   entry: McpConfigEntry;
   pending: boolean;
@@ -68,6 +77,8 @@ function ConfigRow({
   onOpen: () => void;
   onToggle: (enabled: boolean) => void;
   onLaunchMode: (mode: McpLaunchMode) => void;
+  onEdit: () => void;
+  onDelete: () => void;
 }) {
   const { t } = useTranslation();
   const meta = entry.command
@@ -117,6 +128,7 @@ function ConfigRow({
       {probeable(entry) ? (
         <ProbeActionButton entry={entry} workspacePath={workspacePath} />
       ) : null}
+      <EntryActionButtons entry={entry} onEdit={onEdit} onDelete={onDelete} />
       <LaunchModeToggle entry={entry} pending={pending} onChange={onLaunchMode} />
       <EnableToggle entry={entry} pending={pending} onChange={onToggle} />
     </li>
@@ -133,6 +145,8 @@ export function McpConfigList({
   onOpen,
   onToggle,
   onLaunchMode,
+  onEdit,
+  onDelete,
 }: {
   entries: McpConfigEntry[];
   pendingId: string | null;
@@ -141,6 +155,8 @@ export function McpConfigList({
   onOpen: (entry: McpConfigEntry) => void;
   onToggle: (entry: McpConfigEntry, enabled: boolean) => void;
   onLaunchMode: (entry: McpConfigEntry, mode: McpLaunchMode) => void;
+  onEdit?: (entry: McpConfigEntry) => void;
+  onDelete?: (entry: McpConfigEntry) => void;
 }) {
   return (
     <ul className="flex flex-col gap-1">
@@ -154,6 +170,8 @@ export function McpConfigList({
           onOpen={() => onOpen(entry)}
           onToggle={(enabled) => onToggle(entry, enabled)}
           onLaunchMode={(mode) => onLaunchMode(entry, mode)}
+          onEdit={() => onEdit?.(entry)}
+          onDelete={() => onDelete?.(entry)}
         />
       ))}
     </ul>
@@ -547,6 +565,9 @@ function ConfigSection({
   onOpen,
   onToggle,
   onLaunchMode,
+  onCreate,
+  onEdit,
+  onDelete,
 }: {
   engine: McpEngineInventory;
   entries: McpConfigEntry[];
@@ -558,11 +579,24 @@ function ConfigSection({
   onOpen: (entry: McpConfigEntry) => void;
   onToggle: (entry: McpConfigEntry, enabled: boolean) => void;
   onLaunchMode: (entry: McpConfigEntry, mode: McpLaunchMode) => void;
+  onCreate: (source: McpConfigSource) => void;
+  onEdit: (entry: McpConfigEntry) => void;
+  onDelete: (entry: McpConfigEntry) => void;
 }) {
   const { t } = useTranslation();
+  // 可新增的来源：该引擎下所有标记 creatable 的来源（用户级与项目级分开列，
+  // 用户一眼看出会写进哪个文件）。
+  const creatableSources = engine.sources.filter(
+    (source) => source.creatable !== false,
+  );
   return (
     <section className="flex flex-col gap-2">
-      <SectionTitle>{t("mcp.config.title")}</SectionTitle>
+      <div className="flex items-center justify-between gap-2">
+        <SectionTitle>{t("mcp.config.title")}</SectionTitle>
+        {creatableSources.length > 0 ? (
+          <CreateMenu sources={creatableSources} onSelect={onCreate} />
+        ) : null}
+      </div>
       {entries.length === 0 ? (
         <>
           <EmptyState className="py-6">
@@ -579,9 +613,48 @@ function ConfigSection({
           onOpen={onOpen}
           onToggle={onToggle}
           onLaunchMode={onLaunchMode}
+          onEdit={onEdit}
+          onDelete={onDelete}
         />
       )}
     </section>
+  );
+}
+
+/** 「新增服务」菜单：一个来源一项，标签是来源名（用户级 / 项目级见 i18n）。 */
+function CreateMenu({
+  sources,
+  onSelect,
+}: {
+  sources: McpSourceInfo[];
+  onSelect: (source: McpConfigSource) => void;
+}) {
+  const { t } = useTranslation();
+  if (sources.length === 1) {
+    return (
+      <Button variant="secondary" size="small" onClick={() => onSelect(sources[0].source)}>
+        {t("mcp.config.addServer")}
+      </Button>
+    );
+  }
+  return (
+    <select
+      aria-label={t("mcp.config.addServer")}
+      className="rounded-lg border border-border-primary bg-background-primary-default px-2 py-1 text-body-2-regular text-text-primary outline-none focus:border-border-brand"
+      value=""
+      onChange={(event) => {
+        const source = event.target.value as McpConfigSource;
+        if (source) onSelect(source);
+        event.target.value = "";
+      }}
+    >
+      <option value="">{t("mcp.config.addServerTo")}</option>
+      {sources.map((source) => (
+        <option key={source.source} value={source.source}>
+          {t(`mcp.source.${source.source}`)}
+        </option>
+      ))}
+    </select>
   );
 }
 
@@ -595,6 +668,13 @@ export function McpSection() {
   const [query, setQuery] = useState("");
   const [kind, setKind] = useState<KindFilter>("all");
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [formDialog, setFormDialog] = useState<
+    | { kind: "create"; source: McpConfigSource }
+    | { kind: "edit"; entry: McpConfigEntry }
+    | null
+  >(null);
+  const [deleteTarget, setDeleteTarget] = useState<McpConfigEntry | null>(null);
+  const [deleting, setDeleting] = useState(false);
   const refreshAction = useActionFeedback({ spin: true });
   const [toggleError, setToggleError] = useState<string | null>(null);
   const probeAll = useMcpProbeStore((state) => state.probeAll);
@@ -649,6 +729,35 @@ export function McpSection() {
     void store.setLaunchMode(entry, mode).catch((error: unknown) => {
       setToggleError(error instanceof Error ? error.message : String(error));
     });
+  };
+  const handleFormSubmit = (input: McpServerInput): Promise<void> => {
+    setToggleError(null);
+    const promise =
+      formDialog?.kind === "create"
+        ? store.createEntry(formDialog.source, input)
+        : formDialog?.kind === "edit"
+          ? store.updateEntry(formDialog.entry, input)
+          : Promise.resolve();
+    return promise.catch((error: unknown) => {
+      // 表单弹窗内部也展示错误；这里兜底同步到页级提示。
+      setToggleError(error instanceof Error ? error.message : String(error));
+      throw error;
+    });
+  };
+  const handleDelete = () => {
+    if (!deleteTarget) return;
+    setDeleting(true);
+    setToggleError(null);
+    void store
+      .deleteEntry(deleteTarget)
+      .then(() => {
+        setDeleteTarget(null);
+        if (selectedId === deleteTarget.id) setSelectedId(null);
+      })
+      .catch((error: unknown) => {
+        setToggleError(error instanceof Error ? error.message : String(error));
+      })
+      .finally(() => setDeleting(false));
   };
 
   const handleRefresh = () => {
@@ -710,6 +819,9 @@ export function McpSection() {
           onOpen={(entry) => setSelectedId(entry.id)}
           onToggle={handleToggle}
           onLaunchMode={handleLaunchMode}
+          onCreate={(source) => setFormDialog({ kind: "create", source })}
+          onEdit={(entry) => setFormDialog({ kind: "edit", entry })}
+          onDelete={(entry) => setDeleteTarget(entry)}
         />
       ) : null}
       {engine && engine.support !== "none" ? (
@@ -723,6 +835,22 @@ export function McpSection() {
           onToggle={(enabled) => handleToggle(selected, enabled)}
           onLaunchMode={(mode) => handleLaunchMode(selected, mode)}
           onClose={() => setSelectedId(null)}
+        />
+      ) : null}
+      {formDialog ? (
+        <McpConfigFormDialog
+          mode={formDialog}
+          workspacePath={activeWorkspace}
+          onSubmit={handleFormSubmit}
+          onClose={() => setFormDialog(null)}
+        />
+      ) : null}
+      {deleteTarget ? (
+        <McpDeleteConfirmDialog
+          entry={deleteTarget}
+          deleting={deleting}
+          onConfirm={handleDelete}
+          onClose={() => setDeleteTarget(null)}
         />
       ) : null}
     </div>

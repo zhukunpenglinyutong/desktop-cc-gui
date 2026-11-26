@@ -15,6 +15,7 @@
 use super::probe::ProbeTarget;
 use super::sources::{
     probe_target_from_json, probe_target_from_toml, source_spec, SourceSpec, CLAUDE_FIELDS,
+    CODEX_FIELDS,
     SOURCE_CLAUDE_LOCAL, SOURCE_CLAUDE_PROJECT, SOURCE_CLAUDE_USER, SOURCE_CODEX_PROJECT,
     SOURCE_CODEX_USER, REASON_NEEDS_WORKSPACE,
 };
@@ -24,7 +25,7 @@ use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
 use toml_edit::{value as toml_value, DocumentMut};
 
-pub(super) fn file_hash(bytes: &[u8]) -> String {
+pub(crate) fn file_hash(bytes: &[u8]) -> String {
     let mut hasher = Sha256::new();
     hasher.update(bytes);
     format!("{:x}", hasher.finalize())
@@ -34,7 +35,7 @@ fn read_bytes(path: &Path) -> Result<Vec<u8>, McpError> {
     std::fs::read(path).map_err(|error| McpError::from_io(error, path))
 }
 
-pub(super) fn read_text(path: &Path) -> Result<String, McpError> {
+pub(crate) fn read_text(path: &Path) -> Result<String, McpError> {
     let bytes = read_bytes(path)?;
     String::from_utf8(bytes)
         .map_err(|error| McpError::format(format!("{}: invalid UTF-8: {error}", path.display())))
@@ -43,7 +44,7 @@ pub(super) fn read_text(path: &Path) -> Result<String, McpError> {
 /// 用户级 Claude 配置：默认 `~/.claude.json`；设置了 `CLAUDE_CONFIG_DIR`
 /// 且该目录下存在 `.claude.json` 时优先使用自定义目录（两者都是 CLI
 /// 实际会读取的位置，按存在性回退）。
-pub(super) fn claude_user_config_path() -> PathBuf {
+pub(crate) fn claude_user_config_path() -> PathBuf {
     if let Some(dir) = std::env::var_os("CLAUDE_CONFIG_DIR").filter(|value| !value.is_empty()) {
         let candidate = PathBuf::from(dir).join(".claude.json");
         if candidate.is_file() {
@@ -53,17 +54,17 @@ pub(super) fn claude_user_config_path() -> PathBuf {
     crate::paths::home_dir().join(".claude.json")
 }
 
-pub(super) fn codex_user_config_path() -> PathBuf {
+pub(crate) fn codex_user_config_path() -> PathBuf {
     crate::engine::codex_home().join("config.toml")
 }
 
-fn claude_project_config_path(workspace: &Path) -> PathBuf {
+pub(crate) fn claude_project_config_path(workspace: &Path) -> PathBuf {
     workspace.join(".mcp.json")
 }
 fn claude_project_settings_path(workspace: &Path) -> PathBuf {
     workspace.join(".claude").join("settings.local.json")
 }
-fn codex_project_config_path(workspace: &Path) -> PathBuf {
+pub(crate) fn codex_project_config_path(workspace: &Path) -> PathBuf {
     workspace.join(".codex").join("config.toml")
 }
 
@@ -74,10 +75,15 @@ pub(super) fn engine_source_infos(
     engine: &str,
     workspace: Option<&str>,
 ) -> Vec<super::McpSourceInfo> {
-    let info = |source: &str, path: PathBuf| super::McpSourceInfo {
-        source: source.to_string(),
-        exists: path.is_file(),
-        path: path.to_string_lossy().into_owned(),
+    let info = |source: &str, path: PathBuf| {
+        let (creatable, reason) = super::crud::source_creatable(source);
+        super::McpSourceInfo {
+            source: source.to_string(),
+            exists: path.is_file(),
+            path: path.to_string_lossy().into_owned(),
+            creatable,
+            crud_reason_code: reason.map(str::to_string),
+        }
     };
     match engine {
         "claude" => {
@@ -113,6 +119,9 @@ pub(super) fn probe_target(
     source: &str,
     name: &str,
     workspace: Option<&str>,
+    // 探针用：Codex 的 `env_http_headers` / `bearer_token_env_var` 也要带上。表单回显
+    // 与按需启动只要静态定义，不能把环境变量引用当字面值读出来再写回。
+    env_headers: bool,
 ) -> Result<ProbeTarget, McpError> {
     let missing = || McpError::not_found(format!("配置文件中不存在 MCP 服务「{name}」"));
     match source {
@@ -166,13 +175,17 @@ pub(super) fn probe_target(
                 .and_then(|servers| servers.get(name))
                 .and_then(|item| item.as_table_like())
                 .ok_or_else(missing)?;
-            Ok(probe_target_from_toml(table, CLAUDE_FIELDS))
+            let mut target = probe_target_from_toml(table, CODEX_FIELDS);
+            if env_headers {
+                target.headers = codex_http_headers(table);
+            }
+            Ok(target)
         }
         _ => super::sources::probe_target(source, name, workspace),
     }
 }
 
-pub(super) fn read_config_entries(workspace: Option<&str>) -> McpConfigSection {
+pub(crate) fn read_config_entries(workspace: Option<&str>) -> McpConfigSection {
     let mut section = McpConfigSection {
         entries: Vec::new(),
         errors: Vec::new(),
@@ -237,7 +250,7 @@ pub(super) fn read_config_entries(workspace: Option<&str>) -> McpConfigSection {
 /// `~/.claude.json`：顶层 user 服务 + 当前工作区 local 服务。停用状态来自
 /// `projects[<workspace>].disabledMcpServers`（Claude Code TUI 的「停用（本项目）」
 /// 就是写这个键，已用 `claude mcp list` 对拍：列表里显示 ⊘ Disabled）。
-fn read_claude_json(
+pub(crate) fn read_claude_json(
     path: &Path,
     source: &str,
     workspace: Option<&str>,
@@ -297,7 +310,7 @@ fn disabled_names(value: Option<&Value>) -> Vec<String> {
 
 /// 工作区 `.mcp.json`：project 服务，启用状态来自 `.claude/settings.local.json`
 /// 的审批列表与 `.claude.json` 的项目停用列表。
-fn read_claude_project(workspace: &Path) -> Result<Vec<McpConfigEntry>, McpError> {
+pub(crate) fn read_claude_project(workspace: &Path) -> Result<Vec<McpConfigEntry>, McpError> {
     let path = claude_project_config_path(workspace);
     let raw = read_text(&path)?;
     let version = file_hash(raw.as_bytes());
@@ -440,6 +453,7 @@ fn build_entry(
         version: version.to_string(),
         launch_mode: super::launch::EAGER.to_string(),
         launch_mode_unsupported: None,
+        ..super::crud::entry_crud(spec.id, false)
     }
 }
 
@@ -452,7 +466,42 @@ pub(super) fn object_keys(value: Option<&Value>) -> Vec<String> {
     keys
 }
 
-fn read_codex_toml(path: &Path, source: &str) -> Result<Vec<McpConfigEntry>, McpError> {
+/// Codex 的 HTTP 请求头不叫 `headers`：静态值在 `http_headers`，值取自环境变量的
+/// 在 `env_http_headers`（请求头名 -> 变量名），`bearer_token_env_var` 指向装
+/// Bearer 令牌的变量。后两者转成 `${VAR}` 占位，沿用探测里已有的展开规则
+/// （工作区文件里的条目不展开，原样发送占位）。返回按请求头名排序、去重的键值对。
+pub(super) fn codex_http_headers(table: &dyn toml_edit::TableLike) -> Vec<(String, String)> {
+    let strings = |key: &str| -> Vec<(String, String)> {
+        table
+            .get(key)
+            .and_then(|item| item.as_table_like())
+            .map(|map| {
+                map.iter()
+                    .filter_map(|(name, item)| {
+                        item.as_str().map(|value| (name.to_string(), value.to_string()))
+                    })
+                    .collect()
+            })
+            .unwrap_or_default()
+    };
+    let mut headers = strings("http_headers");
+    for (name, var) in strings("env_http_headers") {
+        headers.push((name, format!("${{{var}}}")));
+    }
+    if let Some(var) = table
+        .get("bearer_token_env_var")
+        .and_then(|item| item.as_str())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        headers.push(("Authorization".to_string(), format!("Bearer ${{{var}}}")));
+    }
+    headers.sort_by(|a, b| a.0.to_lowercase().cmp(&b.0.to_lowercase()));
+    headers.dedup_by(|a, b| a.0.eq_ignore_ascii_case(&b.0));
+    headers
+}
+
+pub(crate) fn read_codex_toml(path: &Path, source: &str) -> Result<Vec<McpConfigEntry>, McpError> {
     let spec = source_spec(source).ok_or_else(|| McpError::internal("unknown MCP source"))?;
     let raw = read_text(path)?;
     let version = file_hash(raw.as_bytes());
@@ -521,13 +570,17 @@ fn read_codex_toml(path: &Path, source: &str) -> Result<Vec<McpConfigEntry>, Mcp
             args_count,
             url,
             env_keys,
-            header_keys: Vec::new(),
+            header_keys: codex_http_headers(table)
+                .into_iter()
+                .map(|(key, _)| key)
+                .collect(),
             writable: spec.writable,
             readonly_reason: spec.readonly_reason.map(str::to_string),
             readonly_reason_code: spec.readonly_reason_code.map(str::to_string),
             version: version.clone(),
             launch_mode: super::launch::EAGER.to_string(),
             launch_mode_unsupported: None,
+            ..super::crud::entry_crud(spec.id, false)
         };
         entry.env_keys.sort();
         entries.push(entry);

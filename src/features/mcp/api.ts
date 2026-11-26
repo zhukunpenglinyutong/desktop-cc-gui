@@ -6,11 +6,13 @@
 import { invoke } from "@/lib/transport";
 import type {
   McpConfigEntry,
+  McpConfigSource,
   McpErrorCode,
   McpInventory,
   McpLaunchMode,
   McpProbePlan,
   McpProbeResult,
+  McpServerInput,
 } from "./types";
 
 export class McpHubError extends Error {
@@ -96,6 +98,60 @@ export const mcpApi = {
     try {
       return await invoke<McpProbeResult>("mcp_probe", {
         request: { entryId: entry.id, workspace, planFingerprint },
+      });
+    } catch (error) {
+      throw normalize(error);
+    }
+  },
+  /** 编辑表单回显：读文件里的原始值（env / headers 不脱敏，只在表单里）。 */
+  getRawEntry: async (
+    entry: McpConfigEntry,
+    workspace: string | null,
+  ): Promise<McpServerInput> => {
+    try {
+      return await invoke<McpServerInput>("mcp_get_raw_entry", {
+        request: { entryId: entry.id, workspace },
+      });
+    } catch (error) {
+      throw normalize(error);
+    }
+  },
+  /** 新增一个服务配置。 */
+  createEntry: async (
+    source: McpConfigSource,
+    input: McpServerInput,
+    workspace: string | null,
+  ): Promise<McpConfigEntry> => {
+    try {
+      return await invoke<McpConfigEntry>("mcp_create_entry", {
+        request: { source, entry: input, workspace },
+      });
+    } catch (error) {
+      throw normalize(error);
+    }
+  },
+  /** 编辑一个服务配置：版本比对 → 原子替换。 */
+  updateEntry: async (
+    entry: McpConfigEntry,
+    input: McpServerInput,
+    workspace: string | null,
+  ): Promise<McpConfigEntry> => {
+    try {
+      return await invoke<McpConfigEntry>("mcp_update_entry", {
+        request: { entryId: entry.id, version: entry.version, entry: input, workspace },
+      });
+    } catch (error) {
+      throw normalize(error);
+    }
+  },
+  /** 删除一个服务配置：版本比对 → 原子替换。 */
+  deleteEntry: async (
+    entry: McpConfigEntry,
+    workspace: string | null,
+  ): Promise<void> => {
+    try {
+      await invoke<void>("mcp_delete_entry", {
+        request: { entryId: entry.id, version: entry.version, workspace },
       });
     } catch (error) {
       throw normalize(error);

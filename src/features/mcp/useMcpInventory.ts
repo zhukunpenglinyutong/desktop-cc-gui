@@ -8,7 +8,13 @@
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { mcpApi, McpHubError } from "./api";
-import type { McpConfigEntry, McpInventory, McpLaunchMode } from "./types";
+import type {
+  McpConfigEntry,
+  McpConfigSource,
+  McpInventory,
+  McpLaunchMode,
+  McpServerInput,
+} from "./types";
 
 export interface McpInventoryStore {
   inventory: McpInventory | null;
@@ -20,6 +26,12 @@ export interface McpInventoryStore {
   setEnabled: (entry: McpConfigEntry, enabled: boolean) => Promise<void>;
   /** 切换启动方式；同样写完回读，与启用开关共用 pendingId。 */
   setLaunchMode: (entry: McpConfigEntry, mode: McpLaunchMode) => Promise<void>;
+  /** 新增服务：成功后回读清单。 */
+  createEntry: (source: McpConfigSource, input: McpServerInput) => Promise<void>;
+  /** 编辑服务：版本比对写，成功后回读清单。 */
+  updateEntry: (entry: McpConfigEntry, input: McpServerInput) => Promise<void>;
+  /** 删除服务：版本比对写，成功后回读清单。 */
+  deleteEntry: (entry: McpConfigEntry) => Promise<void>;
   /** Entry id currently being written (only that row is disabled). */
   pendingId: string | null;
 }
@@ -92,6 +104,36 @@ export function useMcpInventory(workspacePath: string | null): McpInventoryStore
       write(entry, () => mcpApi.setLaunchMode(entry, mode, workspacePath)),
     [write, workspacePath],
   );
+  const createEntry = useCallback(
+    (source: McpConfigSource, input: McpServerInput) =>
+      write(
+        // pendingId 用新建目标 source 占位：create 没有既有条目 id。
+        { id: `__create__:${source}` } as McpConfigEntry,
+        () => mcpApi.createEntry(source, input, workspacePath),
+      ),
+    [write, workspacePath],
+  );
+  const updateEntry = useCallback(
+    (entry: McpConfigEntry, input: McpServerInput) =>
+      write(entry, () => mcpApi.updateEntry(entry, input, workspacePath)),
+    [write, workspacePath],
+  );
+  const deleteEntry = useCallback(
+    (entry: McpConfigEntry) =>
+      write(entry, () => mcpApi.deleteEntry(entry, workspacePath)),
+    [write, workspacePath],
+  );
 
-  return { inventory, loading, error, reload, setEnabled, setLaunchMode, pendingId };
+  return {
+    inventory,
+    loading,
+    error,
+    reload,
+    setEnabled,
+    setLaunchMode,
+    createEntry,
+    updateEntry,
+    deleteEntry,
+    pendingId,
+  };
 }

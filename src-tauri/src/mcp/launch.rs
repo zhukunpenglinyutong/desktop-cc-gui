@@ -329,6 +329,9 @@ mod tests {
             version: String::new(),
             launch_mode: EAGER.to_string(),
             launch_mode_unsupported: None,
+            updatable: true,
+            deletable: true,
+            crud_reason_code: None,
         }
     }
 

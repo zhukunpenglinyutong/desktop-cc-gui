@@ -2443,11 +2443,52 @@ export const ko: Messages = {
       project: "프로젝트"
     },
     row: {
-      open: "{{name}} 상세 보기"
+      open: "{{name}} 상세 보기",
+      edit: "{{name}} 편집",
+      delete: "{{name}} 삭제"
     },
     config: {
       title: "설정 목록",
-      empty: "이 엔진에 표시할 MCP 설정이 없습니다."
+      empty: "이 엔진에 표시할 MCP 설정이 없습니다.",
+      addServer: "서버 추가",
+      addServerTo: "다음에 서버 추가…"
+    },
+    form: {
+      titleCreate: "MCP 서버 추가",
+      titleEdit: "{{name}} 편집",
+      loading: "현재 설정을 읽는 중…",
+      name: "이름",
+      nameHint: ": . \" 문자는 사용할 수 없으며, 같은 파일 안에서 고유해야 합니다.",
+      nameLocked: "이름은 항목 식별자라 편집할 수 없습니다. 삭제 후 다시 만드세요.",
+      transportLabel: "전송 방식",
+      transport: {
+        stdio: "명령 (stdio)",
+        http: "HTTP",
+        sse: "SSE"
+      },
+      command: "명령",
+      args: "인수 (한 줄에 하나)",
+      argsPlaceholder: "-y\n@modelcontextprotocol/server-filesystem",
+      cwd: "작업 디렉터리",
+      cwdHint: "비워 두면 세션 디렉터리를 상속합니다.",
+      env: "환경 변수 (한 줄에 KEY=VALUE)",
+      envPlaceholder: "API_KEY=…",
+      url: "서버 주소",
+      headers: "헤더 (한 줄에 KEY=VALUE)",
+      headersPlaceholder: "Authorization=Bearer …",
+      enabledOnCreate: "생성 후 활성화 (일부 엔진은 비활성 목록으로 관리되어 무시됩니다)",
+      editNote: "편집은 활성화 상태를 바꾸지 않습니다. 목록의 스위치를 사용하세요.",
+      errorName: "이름을 입력하세요",
+      errorCommand: "명령을 입력하세요",
+      errorUrl: "주소를 입력하세요",
+      save: "변경 사항 저장",
+      create: "만들기",
+      saving: "쓰는 중…"
+    },
+    delete: {
+      title: "{{name}} 삭제",
+      message: "아래 설정 파일에서 \"{{name}}\" 서버를 제거합니다. 새 세션부터 적용되며 실행 중인 세션에는 영향이 없습니다.",
+      confirm: "삭제"
     },
     runtime: {
       title: "런타임 목록",

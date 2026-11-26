@@ -140,7 +140,7 @@ pub(crate) async fn mcp_probe_plan(
     request: McpProbeRequest,
 ) -> Result<McpProbePlan, McpError> {
     let workspace = super::validate_workspace(request.workspace.as_deref(), &db)?;
-    let target = super::probe_target(&request.entry_id, workspace.as_deref())?;
+    let target = super::probe_target_for_probe(&request.entry_id, workspace.as_deref())?;
     Ok(plan_for(&target))
 }
 
@@ -210,7 +210,7 @@ pub(crate) async fn mcp_probe(
     request: McpProbeRequest,
 ) -> Result<McpProbeResult, McpError> {
     let workspace = super::validate_workspace(request.workspace.as_deref(), &db)?;
-    let target = super::probe_target(&request.entry_id, workspace.as_deref())?;
+    let target = super::probe_target_for_probe(&request.entry_id, workspace.as_deref())?;
     require_confirmed(&target, request.plan_fingerprint.as_deref())?;
     Ok(run_probe(&target).await)
 }
