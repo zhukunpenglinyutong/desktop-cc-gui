@@ -17,6 +17,7 @@ import {
   sessionMenuRegistry,
   fileLinkMenuRegistry,
   settingsRegistry,
+  sidebarNavRegistry,
   statusBarRegistry,
   composerStatusRegistry,
   overlayRegistry,
@@ -397,6 +398,29 @@ describe("createPluginContext", () => {
     backend.agentCatalog.mockRejectedValueOnce(new Error("engine probe failed"));
     await expect(ctx.agent.catalog("/workspace")).rejects.toThrow("engine probe failed");
     await expect(ctx.bridge.invoke("list_engines")).rejects.toThrow(/unknown bridge/);
+  });
+
+  it("侧栏入口需单独授权，多个入口隔离命名且卸载后清除", () => {
+    const def = { key: "main", label: () => "Sidebar", onOpen: vi.fn() };
+    const denied = createPluginContext(manifest(["ui:settings-section"]), fakeStorage(), { appVersion: "1.0.0" });
+    expect(() => denied.ctx.ui.registerSidebarNav(def)).toThrow(/ui:sidebar-entry/);
+    expect(sidebarNavRegistry.get("plugin:test-plugin:main")).toBeUndefined();
+    const handle = createPluginContext(manifest(["ui:sidebar-entry"]), fakeStorage(), { appVersion: "1.0.0" });
+    const dispose = handle.ctx.ui.registerSidebarNav(def);
+    const disposeOther = handle.ctx.ui.registerSidebarNav({ ...def, key: "other" });
+    try {
+      expect(sidebarNavRegistry.get("plugin:test-plugin:main")).toBeDefined();
+      expect(sidebarNavRegistry.get("plugin:test-plugin:other")).toBeDefined();
+      sidebarNavRegistry.get("plugin:test-plugin:main")!.onOpen();
+      expect(def.onOpen).toHaveBeenCalledOnce();
+      dispose();
+      expect(sidebarNavRegistry.get("plugin:test-plugin:main")).toBeUndefined();
+      expect(sidebarNavRegistry.get("plugin:test-plugin:other")).toBeDefined();
+    } finally {
+      dispose();
+      disposeOther();
+    }
+    expect(sidebarNavRegistry.get("plugin:test-plugin:other")).toBeUndefined();
   });
 
   it("registers a settings section under plugin:<id> and the disposer removes it", () => {

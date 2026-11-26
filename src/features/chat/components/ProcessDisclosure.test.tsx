@@ -378,6 +378,52 @@ describe("ProcessDisclosure tool args", () => {
   });
 });
 
+describe("ProcessDisclosure tool-only expansion", () => {
+  it("keeps tools visible while running and folds when the answer starts", async () => {
+    const items = tools(10);
+    await render(items, { turnLive: true });
+    expect(headerExpanded()).toBe(true);
+    items.push(...tools(1));
+    await render([...items], { turnLive: true });
+    expect(headerExpanded()).toBe(true);
+    await render(items, { turnLive: true, answered: true });
+    expect(headerExpanded()).toBe(false);
+    await render(items, { turnLive: false, answered: true });
+    expect(headerExpanded()).toBe(false);
+    await act(async () => container.querySelector<HTMLButtonElement>("button[aria-expanded]")!.click());
+    expect(headerExpanded()).toBe(true);
+  });
+
+  it("folds tools when the turn ends without answer text", async () => {
+    const items = tools(10);
+    await render(items, { turnLive: true });
+    await render(items, { turnLive: false });
+    expect(headerExpanded()).toBe(false);
+  });
+
+  it("keeps tools expanded when automatic collapse is disabled", async () => {
+    const items = tools(10);
+    await render(items, { turnLive: true, thinkingAutoCollapse: false });
+    await render(items, { turnLive: true, answered: true, thinkingAutoCollapse: false });
+    expect(headerExpanded()).toBe(true);
+    await render(items, { turnLive: false, answered: true, thinkingAutoCollapse: false });
+    expect(headerExpanded()).toBe(true);
+  });
+
+  it.each([false, true])("preserves the user's expanded choice: %s", async (expanded) => {
+    const items = tools(10);
+    await render(items, { turnLive: true });
+    await act(async () => container.querySelector<HTMLButtonElement>("button[aria-expanded]")!.click());
+    if (expanded) {
+      await act(async () => container.querySelector<HTMLButtonElement>("button[aria-expanded]")!.click());
+    }
+    await render(items, { turnLive: true, answered: true });
+    expect(headerExpanded()).toBe(expanded);
+    await render(items, { turnLive: false, answered: true });
+    expect(headerExpanded()).toBe(expanded);
+  });
+});
+
 describe("ProcessDisclosure thinking expansion", () => {
   it("keeps a running thinking process expanded until the answer starts", async () => {
     await render([{ type: "thinking", text: "先分析需求", live: true }], { turnLive: true });

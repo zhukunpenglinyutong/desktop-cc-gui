@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useRef, useState, type ComponentType } from "react";
+import { useEffect, useId, useMemo, useRef, useState, type ComponentType } from "react";
 import { useTranslation } from "react-i18next";
+import ChevronRight from "lucide-react/dist/esm/icons/chevron-right";
 import Globe from "lucide-react/dist/esm/icons/globe";
 import LayoutGrid from "lucide-react/dist/esm/icons/layout-grid";
 import MessageSquarePlus from "lucide-react/dist/esm/icons/message-square-plus";
@@ -28,6 +29,18 @@ import { WindowControls } from "@/components/application/window-controls";
 import { useRemoteControl } from "@/hooks/use-remote-control";
 import { compareByOrder, sidebarNavRegistry, useRegistry } from "@ccgui/plugin-sdk";
 
+import { SidebarDisclosure } from "./repo-tree";
+import { WorkspaceSortableList, type RepoDragChrome } from "./workspace-sortable-list";
+import { orderByStoredKeys } from "@/lib/cli-nav-order";
+import { writeStored } from "@/lib/storage";
+import {
+  SIDEBAR_PLUGIN_ORDER_KEY,
+  SIDEBAR_PLUGIN_EXPANDED_KEY,
+  readSidebarPluginOrder,
+  readSidebarPluginsExpanded,
+  mergeSidebarPluginOrder,
+} from "@/lib/sidebar-plugin-nav";
+
 type IconComponent = ComponentType<{
   className?: string;
   "aria-hidden"?: boolean | "true" | "false";
@@ -46,29 +59,61 @@ function NavItem({
   label,
   badge,
   onClick,
+  drag,
+  dragLabel,
 }: {
   icon: IconComponent;
   label: string;
   badge?: string | null;
   onClick?: () => void;
+  drag?: RepoDragChrome | null;
+  dragLabel?: string;
 }) {
-  return (
-    <button
-      type="button"
-      aria-label={badge != null ? `${label} (${badge})` : label}
-      onClick={onClick}
-      className={cx(
-        "flex w-full cursor-pointer items-center gap-2 rounded-2lg p-2 transition-colors duration-150 ease",
-        "hover:bg-background-secondary-hover",
-      )}
-    >
-      <Icon className="size-4 shrink-0 text-foreground-icon-secondary" aria-hidden />
+  const rowClass = cx(
+    "flex w-full cursor-pointer items-center gap-2 rounded-2lg p-2 transition-colors duration-150 ease",
+    "hover:bg-background-secondary-hover",
+  );
+  const labelContent = (
+    <>
       <span className="text-body-2-medium whitespace-nowrap text-text-secondary">{label}</span>
       {badge != null && (
         <span className="ml-auto shrink-0 rounded-full bg-background-tertiary-default px-1.5 py-px text-caption-2-medium text-text-tertiary">
           {badge}
         </span>
       )}
+    </>
+  );
+  if (drag?.dragHandleProps) {
+    return (
+      <div className={rowClass}>
+        <button
+          type="button"
+          aria-label={dragLabel}
+          title={dragLabel}
+          {...drag.dragHandleProps}
+          onClick={(event) => event.stopPropagation()}
+          className="shrink-0 cursor-grab touch-none rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-border-focus-ring"
+        >
+          <Icon className="size-4 text-foreground-icon-secondary" aria-hidden />
+        </button>
+        <button
+          type="button"
+          aria-label={badge != null ? `${label} (${badge})` : label}
+          onClick={onClick}
+          className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 rounded-sm text-left outline-none focus-visible:ring-2 focus-visible:ring-border-focus-ring"
+        >{labelContent}</button>
+      </div>
+    );
+  }
+  return (
+    <button
+      type="button"
+      aria-label={badge != null ? `${label} (${badge})` : label}
+      onClick={onClick}
+      className={rowClass}
+    >
+      <Icon className="size-4 shrink-0 text-foreground-icon-secondary" aria-hidden />
+      {labelContent}
     </button>
   );
 }
@@ -220,8 +265,7 @@ export function SidebarBrandRow({ onOpenSearch }: { onOpenSearch?: () => void })
   );
 }
 
-/** Primary actions: 新建会话/插件/浏览器/任务工作台 (会话搜索在顶栏图标 + ⌘L 弹窗),
- *  其后是插件注册的导航项（SDK 0.3.12 ui:sidebar-entry）。 */
+/** 两个及以上插件入口收进插件中心下方；零个或一个时维持原布局。 */
 export function SidebarPrimaryNav({
   onNewSession,
   onNewBrowser,
@@ -234,26 +278,73 @@ export function SidebarPrimaryNav({
   onOpenMission?: () => void;
 }) {
   const { t } = useTranslation();
-  const pluginEntries = [...useRegistry(sidebarNavRegistry)].sort(compareByOrder);
+  const entries = useRegistry(sidebarNavRegistry);
+  const [pluginOrder, setPluginOrder] = useState(readSidebarPluginOrder);
+  const [pluginsExpanded, setPluginsExpanded] = useState(readSidebarPluginsExpanded);
+  const pluginEntries = useMemo(() => orderByStoredKeys(
+    [...entries].sort(compareByOrder).map((entry) => ({ ...entry, key: entry.id })),
+    pluginOrder,
+  ), [entries, pluginOrder]);
+  const collapsible = pluginEntries.length > 1;
+  const expanded = !collapsible || pluginsExpanded;
+  const listId = useId();
+  // 注册表增减或折叠时终止在途拖拽，不能提交已经失效的预览顺序。
+  const listKey = JSON.stringify([expanded, entries.map((entry) => entry.id).sort()]);
+  const pluginList = (
+      <div id={listId}>
+        <SidebarDisclosure expanded={expanded} keepMounted>
+          <WorkspaceSortableList
+            key={listKey}
+            items={pluginEntries}
+            className="flex flex-col gap-1"
+            onReorder={(keys) => {
+              const next = mergeSidebarPluginOrder(pluginOrder, keys);
+              setPluginOrder(next);
+              writeStored(SIDEBAR_PLUGIN_ORDER_KEY, JSON.stringify(next));
+            }}
+            renderItem={(entry, drag) => (
+              <NavItem
+                icon={(entry.icon ?? LayoutGrid) as IconComponent}
+                label={sidebarNavLabel(entry)}
+                badge={sidebarNavBadge(entry)}
+                onClick={entry.onOpen}
+                drag={drag}
+                dragLabel={t("plugins.hub.dragEntry", { name: sidebarNavLabel(entry) })}
+              />
+            )}
+          />
+        </SidebarDisclosure>
+      </div>
+  );
   return (
     <nav className="flex w-full shrink-0 flex-col gap-1">
       <NavItem icon={MessageSquarePlus} label={t("chat.newSession")} onClick={onNewSession} />
-      <NavItem icon={LayoutGrid} label={t("plugins.hub.title")} onClick={onOpenPlugins} />
+      <div className="flex items-center">
+        <NavItem icon={LayoutGrid} label={t("plugins.hub.title")} onClick={onOpenPlugins} />
+        {collapsible && (
+          <button
+            type="button"
+            aria-label={t(expanded ? "plugins.hub.collapseEntries" : "plugins.hub.expandEntries")}
+            aria-expanded={expanded}
+            aria-controls={listId}
+            onClick={() => {
+              setPluginsExpanded(!expanded);
+              writeStored(SIDEBAR_PLUGIN_EXPANDED_KEY, JSON.stringify(!expanded));
+            }}
+            className="flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-2lg text-foreground-icon-secondary outline-none hover:bg-background-secondary-hover focus-visible:ring-2 focus-visible:ring-border-focus-ring"
+          >
+            <ChevronRight className={cx("size-4 transition-transform duration-150 motion-reduce:transition-none", expanded && "rotate-90")} aria-hidden />
+          </button>
+        )}
+      </div>
+      {collapsible && pluginList}
       {onNewBrowser && (
         <NavItem icon={Globe} label={t("chat.newBrowser")} onClick={onNewBrowser} />
       )}
       {onOpenMission && (
         <NavItem icon={Workflow} label={t("mission.title")} onClick={onOpenMission} />
       )}
-      {pluginEntries.map((entry) => (
-        <NavItem
-          key={entry.id}
-          icon={(entry.icon ?? LayoutGrid) as IconComponent}
-          label={sidebarNavLabel(entry)}
-          badge={sidebarNavBadge(entry)}
-          onClick={entry.onOpen}
-        />
-      ))}
+      {!collapsible && pluginEntries.length > 0 && pluginList}
     </nav>
   );
 }

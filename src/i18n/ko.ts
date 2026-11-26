@@ -1654,6 +1654,9 @@ export const ko: Messages = {
     stateFailed: "로드 실패",
     stateIncompatible: "호환되지 않음",
     hub: {
+      collapseEntries: "플러그인 항목 접기",
+      expandEntries: "플러그인 항목 펼치기",
+      dragEntry: "드래그하여 순서 변경: {{name}}",
       title: "플러그인",
       marketTab: "마켓플레이스",
       installedTab: "설치됨",

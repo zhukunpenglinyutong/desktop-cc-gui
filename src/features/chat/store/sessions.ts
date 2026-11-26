@@ -19,6 +19,7 @@ import {
 } from "@/features/settings/providers";
 import {
   ENGINE_PREF_KEY,
+  persistActiveTab,
   persistTabs,
   readPersistedActive,
   readPersistedTabs,
@@ -1018,54 +1019,89 @@ export function createSessionActions(
 
     selectSession: async (engine, sessionId, workspacePath) => {
       const key = sessionKey(engine, sessionId, workspacePath);
-      // The session remembers the model it ran, and our own record is the
-      // only place that carries the provider ("agentrouter qunyou/x", while
-      // the engine transcript keeps the bare "x"). Without it a session
-      // reopened here — after a restart, or in another window — showed the
-      // engine default and sent that instead.
-      const remembered = get().sessions.find(
-        (x) => x.engine === engine && x.sessionId === sessionId,
-      )?.model;
-      if (remembered && !get().bySession[key]?.activeModel) {
-        patchSession(set, key, { activeModel: remembered });
-      }
-      // Same for the reasoning level: the picker and the next send follow the
-      // session, so an unset level adopts the one this session last ran.
-      const rememberedEffort = get().sessions.find(
-        (x) => x.engine === engine && x.sessionId === sessionId,
-      )?.effort;
-      if (rememberedEffort && !get().bySession[key]?.activeEffort) {
-        patchSession(set, key, { activeEffort: rememberedEffort });
-      }
-      const rememberedProvider = get().sessions.find(
-        (x) => x.engine === engine && x.sessionId === sessionId,
-      )?.provider;
-      if (rememberedProvider && !get().bySession[key]?.activeProvider) {
-        patchSession(set, key, { activeProvider: rememberedProvider });
-      }
       const syncEngine = engine !== get().activeEngine;
       if (syncEngine) writeStored(ENGINE_PREF_KEY, engine);
+      let shouldDispatchRestored = false;
       set((s) => {
-        // Native sessions read effort from SessionState/database. Strip the
-        // legacy per-tab field so an old localStorage value cannot shadow it.
+        // The session remembers the model/effort/provider it ran, and our own
+        // record is the only place that carries the provider ("agentrouter qunyou/x",
+        // while the engine transcript keeps the bare "x"). Fold any missing
+        // remembered fields, tab activation, unseen clearing, and restored
+        // bookkeeping into ONE store commit so tab switches do not fan out
+        // multiple renders.
+        const meta = s.sessions.find(
+          (x) => x.engine === engine && x.sessionId === sessionId,
+        );
+        const curSession = s.bySession[key];
+        let bySession = s.bySession;
+        if (meta) {
+          const needModel = Boolean(meta.model && !curSession?.activeModel);
+          const needEffort = Boolean(meta.effort && !curSession?.activeEffort);
+          const needProvider = Boolean(meta.provider && !curSession?.activeProvider);
+          if (needModel || needEffort || needProvider) {
+            bySession = {
+              ...s.bySession,
+              [key]: {
+                ...(curSession ?? EMPTY_SESSION),
+                ...(needModel ? { activeModel: meta.model } : {}),
+                ...(needEffort ? { activeEffort: meta.effort } : {}),
+                ...(needProvider ? { activeProvider: meta.provider } : {}),
+              },
+            };
+          }
+        }
+        // Native sessions read effort/provider from SessionState/database.
+        // Strip legacy per-tab fields only when actually present; otherwise
+        // preserve the stored tab & openTabs references so the sidebar and
+        // tab-strip memos skip rebuilding on every switch.
         const stored = s.openTabs.find((t) =>
           sameTab(t, engine, sessionId, workspacePath),
         );
+        const stripLegacy =
+          stored !== undefined &&
+          (stored.effort !== undefined || stored.provider !== undefined);
         const tab: ActiveSession = stored
-          ? { ...stored, effort: undefined, provider: undefined }
+          ? stripLegacy
+            ? { ...stored, effort: undefined, provider: undefined }
+            : stored
           : { engine, sessionId, workspacePath };
-        const openTabs = stored
-          ? s.openTabs.map((t) => (t === stored ? tab : t))
-          : [...s.openTabs, tab];
-        persistTabs(openTabs, tab);
+        const openTabs = !stored
+          ? [...s.openTabs, tab]
+          : stripLegacy
+            ? s.openTabs.map((t) => (t === stored ? tab : t))
+            : s.openTabs;
+        if (openTabs !== s.openTabs) persistTabs(openTabs, tab);
+        else if (s.active !== tab) persistActiveTab(tab);
         const unseen = key in s.unseen ? omitKey(s.unseen, key) : s.unseen;
-        return { openTabs, active: tab, unseen, activeEngine: engine };
+        shouldDispatchRestored = !s.restoredSessionKeys[key];
+        const restoredSessionKeys = shouldDispatchRestored
+          ? { ...s.restoredSessionKeys, [key]: true as const }
+          : s.restoredSessionKeys;
+        if (
+          openTabs === s.openTabs &&
+          s.active === tab &&
+          unseen === s.unseen &&
+          s.activeEngine === engine &&
+          bySession === s.bySession &&
+          restoredSessionKeys === s.restoredSessionKeys
+        ) {
+          return {};
+        }
+        return {
+          openTabs,
+          active: tab,
+          unseen,
+          activeEngine: engine,
+          ...(bySession !== s.bySession ? { bySession } : {}),
+          ...(restoredSessionKeys !== s.restoredSessionKeys
+            ? { restoredSessionKeys }
+            : {}),
+        };
       });
       // A selection restores the session whether or not its messages are
       // already cached (e.g. reopened after a tab close): the hook fires once
       // per frontend lifetime, before any load.
-      if (!get().restoredSessionKeys[key]) {
-        set((s) => ({ restoredSessionKeys: { ...s.restoredSessionKeys, [key]: true } }));
+      if (shouldDispatchRestored) {
         dispatchSessionRestored({ ...sessionLifecycleBase(get, { engine, sessionId, workspacePath }), sessionId });
       }
       emitSessionActivated(

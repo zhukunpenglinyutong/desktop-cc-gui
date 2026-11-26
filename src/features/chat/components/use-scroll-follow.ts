@@ -27,6 +27,8 @@ export interface ScrollFollow {
   userPausedRef: MutableRefObject<boolean>;
   isFollowing: () => boolean;
   scrollToBottom: () => void;
+  /** Restore an exact scrollTop programmatically without tripping user intent. */
+  restoreScrollTop: (top: number) => void;
   /** Instant resume + pin (programmatic channel: send, fixtures) — no glide. */
   resumeFollow: () => void;
   /** User-initiated edge jump from the floating control; both legs glide. */
@@ -51,14 +53,13 @@ export function useScrollFollow({
   scrollRef: RefObject<HTMLDivElement | null>;
 }): ScrollFollow {
   // Sampling geometry at content-change time misfires in a virtualized
-  // list: a freshly mounted tool row still has the 72px estimated height,
+  // list: a freshly mounted tool row still has the estimated height,
   // so scrollHeight is stale and a "near bottom" check reads wrong. Track
   // user intent instead: wheel-up pauses following, scrolling back down to
   // the bottom resumes it; programmatic scrolls are tagged and ignored.
   const atBottomRef = useRef(true);
   const userPausedRef = useRef(false);
   const autoScrollingRef = useRef(false);
-  // The floating control's smooth slide to the tail: programmatic pins stand
   // down until it settles, or one stream flush mid-animation would hard-jump
   // the viewport and cut the transition short.
   const smoothPinRef = useRef(false);
@@ -93,6 +94,19 @@ export function useScrollFollow({
       autoScrollingRef.current = false;
     });
   }, [scrollRef]);
+  const restoreScrollTop = useCallback(
+    (top: number) => {
+      const el = scrollRef.current;
+      if (!el) return;
+      cancelSmoothPin();
+      autoScrollingRef.current = true;
+      el.scrollTop = Math.max(0, top);
+      requestAnimationFrame(() => {
+        autoScrollingRef.current = false;
+      });
+    },
+    [cancelSmoothPin, scrollRef],
+  );
   // Explicit instant jump-to-bottom: clears the wheel-up pause so the pin
   // effects keep following afterwards. The user-facing glide lives in
   // scrollToEdge; programmatic callers (send, browser fixtures) want the
@@ -275,7 +289,15 @@ export function useScrollFollow({
     };
   }, [scrollRef, cancelSmoothPin]);
 
-  return { atBottomRef, userPausedRef, isFollowing, scrollToBottom, resumeFollow, scrollToEdge };
+  return {
+    atBottomRef,
+    userPausedRef,
+    isFollowing,
+    scrollToBottom,
+    restoreScrollTop,
+    resumeFollow,
+    scrollToEdge,
+  };
 }
 
 /** Keep the tail pinned while content grows: on append (when following), on
@@ -303,10 +325,11 @@ export function useTailPin({
     if (!scrollRef.current || count === 0) return;
     const grew = count > lastCountRef.current;
     const switched = lastCountRef.current === 0;
-    if (switched || (grew && isFollowing())) scrollToBottom();
+    if (switched || (grew && isFollowing())) {
+      scrollToBottom();
+    }
     lastCountRef.current = count;
   }, [count, isFollowing, scrollToBottom, scrollRef]);
-
   // Keep the tail pinned while stream rows grow, if the user is at bottom.
   // `items` changes identity on every flush, so this tracks both thinking
   // and text growth.

@@ -92,7 +92,10 @@ it("null / 空串 / 抛错都按无徽标处理，不额外产生 DOM", async ()
   for (const label of ["None", "Blank", "Boom", "Plain"]) {
     const row = navRow(label);
     expect(row.querySelector("span.rounded-full")).toBeNull();
-    expect(row.children).toHaveLength(2); // icon + label
+    // 图标移到独立手柄，页面按钮只保留标签，不能生成空徽标。
+    expect(row.children).toHaveLength(1);
+    expect(row.parentElement?.querySelectorAll("svg")).toHaveLength(1);
+    expect(row.parentElement?.querySelectorAll("button")).toHaveLength(2);
     expect(row.getAttribute("aria-label")).toBe(label);
   }
 });

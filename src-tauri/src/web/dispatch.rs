@@ -206,6 +206,8 @@ struct AnswerQuestionArgs {
 struct EngineArgs {
     engine: String,
     workspace: Option<String>,
+    #[serde(default)]
+    force: Option<bool>,
 }
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -875,7 +877,10 @@ pub(super) async fn dispatch(
         "list_engines" => ser(crate::engine::list_engines().await),
         "list_engine_models" => {
             let a: EngineArgs = parse_args(&raw)?;
-            ser(crate::engine::models::list_engine_models(app.state(), a.engine, a.workspace).await)
+            ser(
+                crate::engine::models::list_engine_models(app.state(), a.engine, a.workspace, a.force)
+                    .await,
+            )
         }
         // Plugin model discovery is safe for remote hosts: the desktop that
         // owns the engines performs the authoritative probes and re-checks

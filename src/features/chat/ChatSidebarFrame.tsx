@@ -1,3 +1,4 @@
+import { memo, useCallback } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 import {
@@ -12,7 +13,7 @@ import { sessionKey, type ActiveSession } from "./store";
 /** Left edge: the session sidebar, its full-height resize strip, and the
  * mobile drawer backdrop. Below the md breakpoint the sidebar floats over
  * the chat as a drawer instead of squishing the layout. */
-export function ChatSidebarFrame({
+export const ChatSidebarFrame = memo(function ChatSidebarFrame({
   active,
   collapsed,
   width,
@@ -84,6 +85,7 @@ export function ChatSidebarFrame({
 }) {
   const { t } = useTranslation();
   const navigate = useNavigate();
+  const handleOpenSettings = useCallback(() => navigate("/settings"), [navigate]);
   return (
     <>
       <AiChatSidebar
@@ -123,7 +125,7 @@ export function ChatSidebarFrame({
         onReorderWorkspaces={onReorderWorkspaces}
         onDropWorkspaceToSection={onDropWorkspaceToSection}
         onCreateGroup={onCreateGroup}
-        onOpenSettings={() => navigate("/settings")}
+        onOpenSettings={handleOpenSettings}
         onClose={onClose}
       />
       {/* Sidebar resize strip: full height, straddling the border. */}
@@ -156,4 +158,4 @@ export function ChatSidebarFrame({
       )}
     </>
   );
-}
+});

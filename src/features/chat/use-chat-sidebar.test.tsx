@@ -1,4 +1,4 @@
-import { act } from "react";
+import { act, useMemo } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import i18n from "@/lib/i18n";
@@ -644,5 +644,54 @@ describe("会话右键：复制文件路径 / 打开文件路径", () => {
     await act(async () => handle.handleThreadAction("codex/r-1", "reveal"));
     expect(ipc.revealInFileManager).not.toHaveBeenCalled();
     expect(useChatStore.getState().actionError).toBeTruthy();
+  });
+});
+
+describe("useChatSidebar memo stability on tab switches", () => {
+  it("keeps repos reference stable when opening or switching non-draft session tabs", async () => {
+    const reposSeen: AiChatRepo[][] = [];
+    function StabilityHarness() {
+      const streaming = useChatStore((s) => s.streamingByKey["codex/s-1"] === true);
+      const retrying = useChatStore((s) => s.retryingByKey["codex/s-1"] === true);
+      const threadStreaming = useMemo(() => [streaming], [streaming]);
+      const threadRetrying = useMemo(() => [retrying], [retrying]);
+      const { repos } = useChatSidebar({
+        sessionById: new Map(),
+        threadStreaming,
+        threadRetrying,
+        collapseSidebarOnMobile: () => {},
+        composerInputRef: { current: null },
+        setDialog: () => {},
+      });
+      reposSeen.push(repos);
+      return null;
+    }
+
+    const host = document.createElement("div");
+    document.body.appendChild(host);
+    const r = createRoot(host);
+    useChatStore.setState({
+      workspaces: [WS],
+      sessions: [SESSION],
+      openTabs: [{ engine: "codex", sessionId: "s-1", workspacePath: "/ws/a" }],
+      active: { engine: "codex", sessionId: "s-1", workspacePath: "/ws/a" },
+    });
+    try {
+      await act(async () => r.render(<StabilityHarness />));
+      const initial = reposSeen.at(-1);
+      await act(async () => {
+        useChatStore.setState({
+          openTabs: [
+            { engine: "codex", sessionId: "s-1", workspacePath: "/ws/a" },
+            { engine: "codex", sessionId: "s-2", workspacePath: "/ws/a" },
+          ],
+          active: { engine: "codex", sessionId: "s-2", workspacePath: "/ws/a" },
+        });
+      });
+      expect(reposSeen.at(-1)).toBe(initial);
+    } finally {
+      await act(async () => r.unmount());
+      host.remove();
+    }
   });
 });

@@ -75,8 +75,12 @@ function SortableRow<T extends { id?: string }>({
 }: SortableRowProps<T>) {
   const controls: DragControls = useDragControls();
   const draggingRef = useRef(false);
+  const abortRef = useRef(onAbort);
+  abortRef.current = onAbort;
   const dragEndedRef = useRef(false);
   const suppressClickRef = useRef(false);
+  const releaseTimerRef = useRef<number | undefined>(undefined);
+  const clickTimerRef = useRef<number | undefined>(undefined);
   // Removes the gesture's window listeners when the row unmounts mid-drag.
   const gestureCleanupRef = useRef<(() => void) | null>(null);
   const [dragging, setDragging] = useState(false);
@@ -113,7 +117,7 @@ function SortableRow<T extends { id?: string }>({
       }
       // Swallow the click the browser fires after the gesture so it never
       // doubles as a row toggle.
-      window.setTimeout(() => {
+      clickTimerRef.current = window.setTimeout(() => {
         suppressClickRef.current = false;
       }, 0);
     },
@@ -128,7 +132,14 @@ function SortableRow<T extends { id?: string }>({
   });
   useEffect(
     () => () => {
+      // 列表重建或行卸载后，丢弃旧手势及晚到的 Motion 回调。
+      const wasDragging = draggingRef.current;
+      draggingRef.current = false;
+      dragEndedRef.current = true;
+      if (wasDragging) abortRef.current();
       gestureCleanupRef.current?.();
+      window.clearTimeout(releaseTimerRef.current);
+      window.clearTimeout(clickTimerRef.current);
     },
     [],
   );
@@ -138,6 +149,8 @@ function SortableRow<T extends { id?: string }>({
     return {
       onPointerDown: (event: ReactPointerEvent) => {
         if (event.button !== 0 || draggingRef.current) return;
+        window.clearTimeout(releaseTimerRef.current);
+        window.clearTimeout(clickTimerRef.current);
         draggingRef.current = true;
         dragEndedRef.current = false;
         suppressClickRef.current = true;
@@ -172,10 +185,16 @@ function SortableRow<T extends { id?: string }>({
             }
           : null;
         if (onPointerMove) window.addEventListener("pointermove", onPointerMove);
+        const onPointerCancel = (cancelEvent: PointerEvent) => {
+          if (cancelEvent.pointerId !== pointerId) return;
+          // 取消先回滚；Motion 延后到达的 onDragEnd 不能再次提交。
+          dragEndedRef.current = true;
+          endDragRef.current(false);
+        };
         const onPointerUp = (upEvent: PointerEvent) => {
           if (upEvent.pointerId !== pointerId) return;
           window.removeEventListener("pointerup", onPointerUp);
-          window.removeEventListener("pointercancel", onPointerUp);
+          window.removeEventListener("pointercancel", onPointerCancel);
           if (onPointerMove) window.removeEventListener("pointermove", onPointerMove);
           gestureCleanupRef.current = null;
           if (onGroupDrop) {
@@ -185,15 +204,15 @@ function SortableRow<T extends { id?: string }>({
           // motion fires onDragEnd (post-render) when the drag actually
           // moved; fall back to a plain reset when the handle was pressed
           // but never dragged.
-          window.setTimeout(() => {
+          releaseTimerRef.current = window.setTimeout(() => {
             if (!dragEndedRef.current) endDragRef.current(false);
           }, 120);
         };
         window.addEventListener("pointerup", onPointerUp);
-        window.addEventListener("pointercancel", onPointerUp);
+        window.addEventListener("pointercancel", onPointerCancel);
         gestureCleanupRef.current = () => {
           window.removeEventListener("pointerup", onPointerUp);
-          window.removeEventListener("pointercancel", onPointerUp);
+          window.removeEventListener("pointercancel", onPointerCancel);
           if (onPointerMove) window.removeEventListener("pointermove", onPointerMove);
           clearDropHover();
         };
@@ -264,6 +283,8 @@ export function WorkspaceSortableList<T extends { id?: string }>({
     items.every((item) => item.id) &&
     ((Boolean(onReorder) && items.length >= 2) || Boolean(onDropToSection));
   const baseIds = useMemo(() => items.map((item) => item.id ?? ""), [items]);
+  const baseIdsRef = useRef(baseIds);
+  baseIdsRef.current = baseIds;
   // Preview order committed live by Reorder.Group while dragging.
   const [order, setOrder] = useState(baseIds);
   const orderRef = useRef(order);
@@ -310,9 +331,9 @@ export function WorkspaceSortableList<T extends { id?: string }>({
     onDragActiveChange?.(false);
     // Roll the preview order back (a group drop may have moved over
     // siblings before resolving to a section container).
-    orderRef.current = baseIds;
-    setOrder(baseIds);
-  }, [baseIds, onDragActiveChange]);
+    orderRef.current = baseIdsRef.current;
+    setOrder(baseIdsRef.current);
+  }, [onDragActiveChange]);
 
   return (
     <Reorder.Group

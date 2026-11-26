@@ -263,7 +263,6 @@ function expansionTransition(
   expanded: boolean,
   overridden: boolean,
   thinkingAutoCollapse: boolean,
-  hasThinking: boolean,
 ): { expanded: boolean; overridden: boolean } {
   if (next.auto && !prev.auto) {
     // Became the latest row: open it and hand control back to automation.
@@ -275,7 +274,7 @@ function expansionTransition(
     // already marked the run as finished.
     return { expanded: true, overridden };
   }
-  if (thinkingAutoCollapse && !overridden && hasThinking) {
+  if (thinkingAutoCollapse && !overridden) {
     if (!next.auto && prev.auto) {
       // A newer process run took over: this one is no longer the live tail.
       return { expanded: false, overridden };
@@ -304,7 +303,6 @@ function useProcessExpansion(
   autoExpand: boolean,
   turnLive: boolean,
   hasLiveThinking: boolean,
-  hasThinking: boolean,
   answered: boolean,
   thinkingAutoCollapse: boolean,
   searchRequest?: string,
@@ -328,7 +326,7 @@ function useProcessExpansion(
     setPrev(next);
     const settled = searchRequest !== undefined && searchRequest !== prev.searchRequest
       ? { expanded: true, overridden: true }
-      : expansionTransition(prev, next, expanded, overridden, thinkingAutoCollapse, hasThinking);
+      : expansionTransition(prev, next, expanded, overridden, thinkingAutoCollapse);
     // Setting state to its current value bails out without a re-render, so
     // the no-op transitions are free.
     setOverridden(settled.overridden);
@@ -509,8 +507,8 @@ export const ProcessDisclosure = memo(function ProcessDisclosure({
    *  That — not a thinking-settled edge at a tool boundary — is when the run
    *  may fold. */
   answered?: boolean;
-  /** True (default): fold a thinking run once it is actually over (answer
-   *  text after it, or the turn settled). False (设置 → 通用 → 行为): keep the
+  /** True (default): fold a process run, including tools only, once answer
+   *  text follows it or the turn settles. False (设置 → 通用 → 行为): keep the
    *  run expanded; the user can still fold it by hand. */
   thinkingAutoCollapse?: boolean;
   processId: number;
@@ -523,12 +521,10 @@ export const ProcessDisclosure = memo(function ProcessDisclosure({
   const { t } = useTranslation();
   const fileOpener = useChatFileOpener(workspacePath);
   const hasLiveThinking = items.some((item) => item.type === "thinking" && item.live);
-  const hasThinking = items.some((item) => item.type === "thinking");
   const { expanded, toggleExpanded } = useProcessExpansion(
     autoExpand,
     turnLive,
     hasLiveThinking,
-    hasThinking,
     answered,
     thinkingAutoCollapse,
     searchTarget?.requestKey,

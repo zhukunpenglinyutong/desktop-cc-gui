@@ -417,6 +417,10 @@ export function deriveAgentTaskSteps(
 ): AgentTaskStep[] {
   const turnStart = currentTurnStart(messages);
   const blockingSpawn = engine === "claude";
+  // A Codex sub-agent lives on the app-server of its turn, which the host
+  // tears down when the turn ends: a state still "running" after that is the
+  // last report before the teardown, not a live agent.
+  const turnScopedAgents = engine === "codex";
 
   // Pass 1 — one state per allocated agent. Dispatch progress supplies the
   // identity; later tool and hidden snapshots advance that identity's state.
@@ -641,7 +645,9 @@ export function deriveAgentTaskSteps(
           // A dispatch with no later reply may still be running after its turn
           // settles; only that fallback outranks the settle inference.
           : !hasLaterAssistant && states.get(runtimeId) === "active" ? "active" : undefined;
-      const finalState = reportedState ?? state;
+      const finalState = turnScopedAgents && (!isCurrentTurn || !streaming)
+        ? "complete"
+        : reportedState ?? state;
       const pending = !previousRun && isCurrentTurn && !observed.has(runtimeId);
       steps.push({
         key: `${message.seq}:${runtimeId}`,

@@ -1,6 +1,6 @@
 import { parseTextReferenceLocation } from "@/features/files/text-reference";
 import { joinPath, useFilesStore } from "@/features/files/store";
-import { Fragment, lazy, memo, Suspense, useCallback, useEffect, useMemo, useRef, useState, type MutableRefObject, type RefObject } from "react";
+import { Fragment, lazy, memo, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type MutableRefObject, type RefObject } from "react";
 import { useVirtualizer, type Virtualizer } from "@tanstack/react-virtual";
 import { useTranslation } from "react-i18next";
 import Copy from "lucide-react/dist/esm/icons/copy";
@@ -46,6 +46,7 @@ import { BotAvatarView } from "@/features/bots/bot-avatar";
 import { avatarFromLegacyIcon } from "@/features/bots/bot-avatar-model";
 import { useBotStore } from "@/features/bots/bot-store";
 import { registerShortcutHandler } from "@/features/shortcuts/runtime";
+import { TimelineVisibleContext } from "./timeline-visibility";
 import { FindOnlyPanel } from "@/components/base/find-panel/find-only-panel";
 import {
   clearSearchHighlights,
@@ -982,13 +983,15 @@ export const MessageTimeline = memo(function MessageTimeline({
   streaming,
   onLoadEarlier,
   workspacePath,
+  visible = true,
 }: {
   session: SessionState;
   streaming: boolean;
   onLoadEarlier: () => void;
   workspacePath: string;
+  /** Whether this timeline is the active visible tab inside a keep-alive stack. */
+  visible?: boolean;
 }) {
-
   const { t } = useTranslation();
   const thinkingAutoCollapse = useChatStore((s) => s.thinkingAutoCollapse);
   const wideLayout = useChatStore((s) => s.wideLayout);
@@ -1026,8 +1029,8 @@ export const MessageTimeline = memo(function MessageTimeline({
   // not replay height 0→auto. Do not lock an empty set — loading failure
   // and load-earlier both flip `session.loading`, and an empty new chat
   // must still animate the first live tools.
-  const [seenTools] = useState(() => new Set<string>());
-  const [primed, setPrimed] = useState(false);
+  const [seenTools] = useState(() => new Set<string>(collectToolKeys(rows)));
+  const [primed, setPrimed] = useState(() => rows.length > 0);
   if (!primed && rows.length > 0) {
     for (const key of collectToolKeys(rows)) seenTools.add(key);
     setPrimed(true);
@@ -1089,13 +1092,23 @@ export const MessageTimeline = memo(function MessageTimeline({
   const virtualizer = useVirtualizer({
     count,
     getScrollElement: () => scrollRef.current,
-    estimateSize: () => 72,
-    overscan: 8,
+    estimateSize: () => 160,
+    overscan: 4,
+    // Start near the estimated tail on cold mounts so the first commit avoids
+    // parsing the oldest rows only for useTailPin to discard them.
+    initialOffset: () => (count > 0 ? Math.max(0, count * 160 - 800) : 0),
     getItemKey: (index) =>
       index < rows.length ? rowKey(rows[index]) : "streaming-tail",
   });
 
-  const { atBottomRef, userPausedRef, isFollowing, scrollToBottom, scrollToEdge } = useScrollFollow({ scrollRef });
+  const {
+    atBottomRef,
+    userPausedRef,
+    isFollowing,
+    scrollToBottom,
+    restoreScrollTop,
+    scrollToEdge,
+  } = useScrollFollow({ scrollRef });
   const {
     searchOpen,
     setSearchOpen,
@@ -1123,7 +1136,39 @@ export const MessageTimeline = memo(function MessageTimeline({
     atBottomRef,
     userPausedRef,
   });
-  useTailPin({ scrollRef, count, items, streaming, isFollowing, scrollToBottom });
+  useTailPin({
+    scrollRef,
+    count,
+    items,
+    streaming,
+    isFollowing,
+    scrollToBottom,
+  });
+
+  // Preserve exact scrollTop across keep-alive hide/reveal (the DOM and
+  // virtualizer measurements stay mounted). Tabs evicted past the LRU cap
+  // remount fresh at the tail rather than restoring a stale pixel offset.
+  const hiddenScrollTopRef = useRef<number | null>(null);
+  const prevVisibleRef = useRef(visible);
+
+  useLayoutEffect(() => {
+    const prev = prevVisibleRef.current;
+    prevVisibleRef.current = visible;
+    const el = scrollRef.current;
+    if (!el || prev === visible) return;
+    if (!visible) {
+      hiddenScrollTopRef.current = el.scrollTop;
+      return;
+    }
+    if (isFollowing()) {
+      scrollToBottom();
+    } else if (
+      hiddenScrollTopRef.current !== null &&
+      el.scrollTop !== hiddenScrollTopRef.current
+    ) {
+      restoreScrollTop(hiddenScrollTopRef.current);
+    }
+  }, [visible, isFollowing, scrollToBottom, restoreScrollTop]);
   useLoadEarlier({
     scrollRef,
     virtualizer,
@@ -1174,6 +1219,7 @@ export const MessageTimeline = memo(function MessageTimeline({
   );
 
   return (
+    <TimelineVisibleContext.Provider value={visible}>
     <div className="relative flex min-h-0 flex-1 flex-col">
       {session.historyReloadId !== undefined && (
         <div role="status" className="flex shrink-0 items-center justify-center gap-2 py-2 text-caption-1-regular text-text-tertiary">
@@ -1315,5 +1361,6 @@ export const MessageTimeline = memo(function MessageTimeline({
         </div>
       </div>
     </div>
+    </TimelineVisibleContext.Provider>
   );
 });

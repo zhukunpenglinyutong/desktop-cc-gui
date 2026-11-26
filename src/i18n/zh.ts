@@ -1714,6 +1714,9 @@ export const zh = {
     stateFailed: "加载失败",
     stateIncompatible: "版本不兼容",
     hub: {
+      collapseEntries: "折叠插件入口",
+      expandEntries: "展开插件入口",
+      dragEntry: "拖拽排序：{{name}}",
       title: "插件",
       marketTab: "市场",
       installedTab: "已安装",

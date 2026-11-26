@@ -90,13 +90,17 @@ export function dedupeTabs(tabs: ActiveSession[]): ActiveSession[] {
   return out;
 }
 
+export function persistActiveTab(active: ActiveSession | null) {
+  if (active) writeStored(ACTIVE_SESSION_KEY, JSON.stringify(active));
+  else localStorage.removeItem(ACTIVE_SESSION_KEY);
+}
+
 export function persistTabs(
   openTabs: ActiveSession[],
   active: ActiveSession | null,
 ) {
   writeStored(OPEN_TABS_KEY, JSON.stringify(openTabs));
-  if (active) writeStored(ACTIVE_SESSION_KEY, JSON.stringify(active));
-  else localStorage.removeItem(ACTIVE_SESSION_KEY);
+  persistActiveTab(active);
 }
 
 /** Read a persisted JSON value, migrating the pre-versioned key on first read. */
