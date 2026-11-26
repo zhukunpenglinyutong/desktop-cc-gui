@@ -104,6 +104,16 @@ pub(super) async fn run_probe_detailed(
     args: &[&str],
     probe: &str,
 ) -> Result<String, ProbeError> {
+    run_probe_with_budget(bin, args, probe, PROBE_TIMEOUT).await
+}
+
+async fn run_probe_with_budget(
+    bin: &str,
+    args: &[&str],
+    probe: &str,
+    budget: std::time::Duration,
+) -> Result<String, ProbeError> {
+    use tokio::io::AsyncReadExt;
     let mut cmd = super::command_for_binary(bin);
     for arg in args {
         cmd.arg(arg);
@@ -125,25 +135,30 @@ pub(super) async fn run_probe_detailed(
     let pid = child.id();
     #[cfg(windows)]
     let tree_guard = super::job::assign_kill_on_close(&child);
-    let stdout_pipe = child.stdout.take();
-    let stderr_pipe = child.stderr.take();
-    let stdout_task = tokio::spawn(async move {
-        use tokio::io::AsyncReadExt;
-        let mut buf = Vec::new();
-        if let Some(mut s) = stdout_pipe {
-            let _ = s.read_to_end(&mut buf).await;
-        }
-        buf
-    });
-    let stderr_task = tokio::spawn(async move {
-        use tokio::io::AsyncReadExt;
-        let mut buf = Vec::new();
-        if let Some(mut s) = stderr_pipe {
-            let _ = s.read_to_end(&mut buf).await;
-        }
-        buf
-    });
-    let status = match tokio::time::timeout(PROBE_TIMEOUT, child.wait()).await {
+    let mut stdout_pipe = child.stdout.take();
+    let mut stderr_pipe = child.stderr.take();
+    let mut stdout_bytes = Vec::new();
+    // Exit AND pipe EOF share one budget: a background grandchild that
+    // inherited stdout keeps the pipe open after the CLI exits, and an
+    // unbounded read would park the picker for as long as it lives.
+    let outcome = tokio::time::timeout(budget, async {
+        let read_stdout = async {
+            if let Some(s) = stdout_pipe.as_mut() {
+                let _ = s.read_to_end(&mut stdout_bytes).await;
+            }
+        };
+        // Drain stderr too so a chatty CLI never blocks on a full pipe.
+        let read_stderr = async {
+            if let Some(s) = stderr_pipe.as_mut() {
+                let mut sink = Vec::new();
+                let _ = s.read_to_end(&mut sink).await;
+            }
+        };
+        let (status, (), ()) = tokio::join!(child.wait(), read_stdout, read_stderr);
+        status
+    })
+    .await;
+    let status = match outcome {
         Ok(Ok(status)) => status,
         Ok(Err(e)) => return Err(ProbeError::Failed(format!("failed to run {bin}: {e}"))),
         Err(_) => {
@@ -167,13 +182,9 @@ pub(super) async fn run_probe_detailed(
                 }
             }
             let _ = child.start_kill();
-            stdout_task.abort();
-            stderr_task.abort();
             return Err(ProbeError::Timeout(format!("{bin} {probe} timed out")));
         }
     };
-    let stdout_bytes = stdout_task.await.unwrap_or_default();
-    let _ = stderr_task.await;
     if !status.success() {
         return Err(ProbeError::Failed(format!(
             "{bin} {probe} exited with {status}"
@@ -915,6 +926,34 @@ pub(super) fn with_default_first(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A grandchild that inherited stdout keeps the pipe open after the CLI
+    /// exits: the read must stay inside the probe budget, not hang on EOF.
+    #[tokio::test]
+    async fn probe_budget_covers_pipe_held_by_background_grandchild() {
+        #[cfg(unix)]
+        let (bin, args): (&str, &[&str]) = ("/bin/sh", &["-c", "sleep 30 & echo hi"]);
+        #[cfg(windows)]
+        let (bin, args): (&str, &[&str]) =
+            ("cmd", &["/c", "start /b ping -n 30 127.0.0.1 & echo hi"]);
+        let started = std::time::Instant::now();
+        let result = run_probe_with_budget(
+            bin,
+            args,
+            "probe",
+            std::time::Duration::from_millis(1500),
+        )
+        .await;
+        assert!(
+            matches!(result, Err(ProbeError::Timeout(_))),
+            "held pipe must hit the probe budget, got {result:?}"
+        );
+        assert!(
+            started.elapsed() < std::time::Duration::from_secs(10),
+            "probe ran {:?}, past its budget",
+            started.elapsed()
+        );
+    }
 
     #[test]
     fn top_level_model_stops_at_first_table() {
