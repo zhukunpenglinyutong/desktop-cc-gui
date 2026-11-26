@@ -357,20 +357,33 @@ fn load_from(root: &Path, reference: &str, full: bool) -> Result<String, String>
     ))
 }
 
-/// Read the original bytes of a stored image for prompt delivery. A queued or
-/// history message holds only the short reference after a restart, so resending
-/// it must resolve the reference back into the bytes every engine expects.
-pub(crate) fn load_original(reference: &str) -> Result<(String, String), String> {
+fn resolve_path(reference: &str) -> Result<(PathBuf, &str), String> {
     if reference == UNAVAILABLE {
         return Err("session image is unavailable".to_string());
     }
     let (hash, ext) =
         parse_ref(reference).ok_or_else(|| "invalid session image reference".to_string())?;
     let path = store_root().join(format!("{hash}.{ext}"));
-    let bytes = std::fs::read(&path).map_err(|_| "session image is unavailable".to_string())?;
-    if bytes.is_empty() || bytes.len() > MAX_IMAGE_BYTES {
+    let metadata =
+        std::fs::metadata(&path).map_err(|_| "session image is unavailable".to_string())?;
+    if !metadata.is_file() || metadata.len() == 0 || metadata.len() > MAX_IMAGE_BYTES as u64 {
         return Err("session image is unavailable".to_string());
     }
+    Ok((path, ext))
+}
+
+/// Absolute path of the original image, for engines that accept image files
+/// instead of base64 content blocks.
+pub(crate) fn original_path(reference: &str) -> Result<PathBuf, String> {
+    resolve_path(reference).map(|(path, _)| path)
+}
+
+/// Read the original bytes of a stored image for prompt delivery. A queued or
+/// history message holds only the short reference after a restart, so resending
+/// it must resolve the reference back into the bytes every engine expects.
+pub(crate) fn load_original(reference: &str) -> Result<(String, String), String> {
+    let (path, ext) = resolve_path(reference)?;
+    let bytes = std::fs::read(&path).map_err(|_| "session image is unavailable".to_string())?;
     Ok((
         extension_mime(ext).to_string(),
         base64::engine::general_purpose::STANDARD.encode(bytes),

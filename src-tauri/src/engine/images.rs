@@ -164,6 +164,14 @@ mod tests {
                 .decode(PNG_B64)
                 .unwrap()
         );
+        let path = absolutize_image_path(&reference, Path::new("/workspace"))
+            .expect("path-based engines must receive the stored original");
+        assert_eq!(
+            std::fs::read(path).unwrap(),
+            base64::engine::general_purpose::STANDARD
+                .decode(PNG_B64)
+                .unwrap()
+        );
     }
 
     #[test]
@@ -171,6 +179,11 @@ mod tests {
         let error =
             load_image(crate::history::images::UNAVAILABLE, Path::new("/workspace")).unwrap_err();
         assert!(error.contains("unavailable"), "{error}");
+        assert!(absolutize_image_path(
+            crate::history::images::UNAVAILABLE,
+            Path::new("/workspace")
+        )
+        .is_none());
     }
 
     #[test]
@@ -211,12 +224,16 @@ mod tests {
 }
 
 /// Normalize an image reference to an absolute local path: trims, skips
-/// `data:` URLs and empty refs (no file to reference), strips a `file://`
-/// prefix, and joins relative paths onto the workspace.
+/// `data:` URLs and empty refs (no file to reference), resolves externalized
+/// history images to their stored original, strips a `file://` prefix, and
+/// joins relative paths onto the workspace.
 pub(crate) fn absolutize_image_path(raw: &str, workspace: &Path) -> Option<PathBuf> {
     let trimmed = raw.trim();
     if trimmed.is_empty() || trimmed.starts_with("data:") {
         return None;
+    }
+    if crate::history::images::is_ref(trimmed) {
+        return crate::history::images::original_path(trimmed).ok();
     }
     let path = PathBuf::from(trimmed.trim_start_matches("file://"));
     Some(if path.is_absolute() {
