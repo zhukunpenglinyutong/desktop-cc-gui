@@ -18,7 +18,7 @@ pub mod codebuddy;
 mod codex_app;
 mod codex_provider_env;
 mod codex_read_only;
-mod codex_usage;
+pub(crate) mod codex_usage;
 pub mod dsh;
 mod dsh_images;
 mod dsh_session;
@@ -679,6 +679,14 @@ fn prepare_launch(
         allowed_tools,
         no_tools,
     };
+    // Codex persists every `view_image` result as an inline data URL, and its
+    // token estimate charges a fixed 7 KB per image instead of the megabytes
+    // actually uploaded. Long image-edit sessions therefore hit provider
+    // request-body limits (DeepSeek returns 413) long before Codex considers
+    // compaction. Shrink old tool-result images before the resume reads them.
+    if engine == "codex" {
+        crate::history::codex_image_budget::limit_rollout(req.session_id.as_deref())?;
+    }
     let bin = engine_bin(&settings, engine);
     // Host-transport engines spawn through their driver instead: codex/grok
     // hand back the real app-server / ACP command the driver spawns verbatim
