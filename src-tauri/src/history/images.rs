@@ -6,6 +6,8 @@
 //! image once into a content-addressed store and keeps only a short
 //! `ccgui-image:<sha>.<ext>` reference in the message. The renderer asks for a
 //! thumbnail (or the original on click) through `load_session_image`.
+//! Stored images are content-addressed but not garbage-collected yet: deleting
+//! a session leaves its referenced images in the app home for a later cleanup.
 
 use base64::Engine as _;
 use serde_json::Value;
@@ -44,6 +46,23 @@ fn parse_data_url(raw: &str) -> Option<(&str, &str)> {
         return None;
     }
     Some((mime, payload))
+}
+
+/// Browsers tolerate wrapped and unpadded base64 in a data URL. Mirror that
+/// before persisting history images so a transcript that rendered before this
+/// change does not turn into an unavailable chip.
+fn decode_payload(payload: &str) -> Option<Vec<u8>> {
+    let mut clean: String = payload.chars().filter(|c| !c.is_whitespace()).collect();
+    let remainder = clean.len() % 4;
+    if remainder == 1 {
+        return None;
+    }
+    if remainder != 0 {
+        clean.extend(std::iter::repeat('=').take(4 - remainder));
+    }
+    base64::engine::general_purpose::STANDARD
+        .decode(clean.as_bytes())
+        .ok()
 }
 
 fn mime_extension(mime: &str) -> &'static str {
@@ -151,7 +170,7 @@ fn externalize_bytes(mime: &str, bytes: &[u8]) -> String {
 /// its payload into the history page.
 pub(crate) fn externalize(raw: &str) -> Option<String> {
     let (mime, payload) = parse_data_url(raw)?;
-    let Ok(bytes) = base64::engine::general_purpose::STANDARD.decode(payload.trim()) else {
+    let Some(bytes) = decode_payload(payload) else {
         // A data URL we cannot decode is still an image payload as far as the
         // page is concerned: dropping it (rather than leaving the string
         // untouched) is what keeps malformed megabytes out of the history.
@@ -168,18 +187,21 @@ pub(crate) fn externalize(raw: &str) -> Option<String> {
 fn externalize_embedded(text: &str) -> Option<String> {
     static URL: LazyLock<regex::Regex> = LazyLock::new(|| {
         regex::Regex::new(
-            r"data:image/[A-Za-z0-9.+-]+(?:;[A-Za-z0-9._+-]+=[A-Za-z0-9._+-]+)*;base64,[A-Za-z0-9+/=]+",
+            r"data:image(?:/|\\/)[A-Za-z0-9.+-]+(?:;[A-Za-z0-9._+-]+=[A-Za-z0-9._+-]+)*;base64,(?:[A-Za-z0-9+/=]|\\/)+",
         )
         .unwrap()
     });
-    if !text.contains("data:image/") {
+    if !text.contains("data:image/") && !text.contains("data:image\\/") {
         return None;
     }
     let mut out = String::with_capacity(text.len());
     let mut last = 0;
     let mut changed = false;
     for found in URL.find_iter(text) {
-        let Some(reference) = externalize(found.as_str()) else {
+        // JSON may escape every `/` in the URL as `\/`; decode the copy while
+        // replacing the whole escaped span in the original text.
+        let candidate = found.as_str().replace("\\/", "/");
+        let Some(reference) = externalize(&candidate) else {
             continue;
         };
         out.push_str(&text[last..found.start()]);
@@ -227,9 +249,7 @@ fn structured_image(map: &serde_json::Map<String, Value>) -> Option<String> {
     // A block that claims to be a base64 image but cannot be decoded is still
     // image payload as far as the page is concerned. Replace it with the
     // unavailable marker instead of leaving its bytes inline.
-    let bytes = base64::engine::general_purpose::STANDARD
-        .decode(data.trim())
-        .unwrap_or_default();
+    let bytes = decode_payload(data).unwrap_or_default();
     Some(externalize_bytes(mime, &bytes))
 }
 
@@ -337,6 +357,26 @@ fn load_from(root: &Path, reference: &str, full: bool) -> Result<String, String>
     ))
 }
 
+/// Read the original bytes of a stored image for prompt delivery. A queued or
+/// history message holds only the short reference after a restart, so resending
+/// it must resolve the reference back into the bytes every engine expects.
+pub(crate) fn load_original(reference: &str) -> Result<(String, String), String> {
+    if reference == UNAVAILABLE {
+        return Err("session image is unavailable".to_string());
+    }
+    let (hash, ext) =
+        parse_ref(reference).ok_or_else(|| "invalid session image reference".to_string())?;
+    let path = store_root().join(format!("{hash}.{ext}"));
+    let bytes = std::fs::read(&path).map_err(|_| "session image is unavailable".to_string())?;
+    if bytes.is_empty() || bytes.len() > MAX_IMAGE_BYTES {
+        return Err("session image is unavailable".to_string());
+    }
+    Ok((
+        extension_mime(ext).to_string(),
+        base64::engine::general_purpose::STANDARD.encode(bytes),
+    ))
+}
+
 /// Read a stored image for the UI. `full = false` returns a bounded thumbnail
 /// used by the timeline; the lightbox asks for the original on click.
 pub(crate) fn load(reference: &str, full: bool) -> Result<String, String> {
@@ -434,6 +474,34 @@ mod tests {
             base64::engine::general_purpose::STANDARD.encode(vec![0u8; MAX_IMAGE_BYTES + 1])
         );
         assert_eq!(externalize(&too_large), Some(UNAVAILABLE.to_string()));
+    }
+
+    #[test]
+    fn wrapped_and_unpadded_base64_still_externalizes() {
+        let bytes = png(4, 4);
+        let encoded = base64::engine::general_purpose::STANDARD.encode(&bytes);
+        let unpadded = encoded.trim_end_matches('=');
+        let wrapped = format!("{}\n  {}", &unpadded[..12], &unpadded[12..]);
+        let reference = externalize(&format!("data:image/png;base64,{wrapped}")).unwrap();
+        let (hash, ext) = parse_ref(&reference).expect("stored reference");
+        assert_eq!(ext, "png");
+        assert!(store_root().join(format!("{hash}.{ext}")).exists());
+    }
+
+    #[test]
+    fn embedded_json_escaped_data_urls_are_externalized() {
+        let rewritten =
+            externalize_embedded("before data:image\\/png;base64,\\/\\/\\/\\/ after").unwrap();
+        assert!(rewritten.starts_with("before ccgui-image:"), "{rewritten}");
+        assert!(rewritten.ends_with(" after"), "{rewritten}");
+        assert!(!rewritten.contains("data:image"), "{rewritten}");
+        let reference = rewritten
+            .strip_prefix("before ")
+            .and_then(|rest| rest.strip_suffix(" after"))
+            .unwrap();
+        let (hash, ext) = parse_ref(reference).expect("stored reference");
+        assert_eq!(ext, "png");
+        assert!(store_root().join(format!("{hash}.{ext}")).exists());
     }
 
     #[test]
