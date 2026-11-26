@@ -130,7 +130,7 @@ impl UsageTail {
 /// Rollout file of `thread_id` under a codex home: `sessions/**` first, then
 /// the archived tree (`codex exec resume` keeps the original file where it
 /// was written, whatever day that was).
-fn rollout_path(home: &Path, thread_id: &str) -> Option<PathBuf> {
+pub(crate) fn rollout_path(home: &Path, thread_id: &str) -> Option<PathBuf> {
     let suffix = format!("{thread_id}.jsonl");
     for root in [home.join("sessions"), home.join("archived_sessions")] {
         let mut stack = vec![root];

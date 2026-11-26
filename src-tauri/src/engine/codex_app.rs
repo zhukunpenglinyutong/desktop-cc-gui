@@ -2190,6 +2190,7 @@ pub(crate) async fn run_plan_decision(
         allowed_tools: None,
         no_tools: false,
     };
+    crate::history::codex_image_budget::limit_rollout(req.session_id.as_deref()).await;
     let mut built = super::codex::CodexEngine.host_command(&req, &bin)?;
     built.command.current_dir(&req.workspace);
     for (key, value) in &channel_env {

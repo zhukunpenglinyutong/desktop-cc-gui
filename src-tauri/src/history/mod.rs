@@ -1,4 +1,5 @@
 mod agy;
+pub(crate) mod codex_image_budget;
 mod codex_titles;
 pub(crate) mod claude_sessions;
 pub(crate) mod discovery;

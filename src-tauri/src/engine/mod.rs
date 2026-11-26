@@ -18,7 +18,7 @@ pub mod codebuddy;
 mod codex_app;
 mod codex_provider_env;
 mod codex_read_only;
-mod codex_usage;
+pub(crate) mod codex_usage;
 pub mod dsh;
 mod dsh_images;
 mod dsh_session;
@@ -1194,6 +1194,17 @@ async fn send_reserved(
             } else {
                 db.granted_roots().unwrap_or_default()
             };
+            // Codex persists every `view_image` result as an inline data URL,
+            // and its token estimate charges a fixed 7 KB per image instead of
+            // the megabytes actually uploaded. Long image-edit sessions
+            // therefore hit provider request-body limits long before Codex
+            // considers compaction. This call is already on a blocking worker
+            // and never fails the send when the rollout cannot be rewritten.
+            if engine_for_launch == "codex" {
+                crate::history::codex_image_budget::limit_rollout_blocking(
+                    session_id.as_deref(),
+                );
+            }
             let launch = prepare_launch(
                 &engine_for_launch,
                 &workspace_for_launch,
