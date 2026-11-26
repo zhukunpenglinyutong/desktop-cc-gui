@@ -1286,34 +1286,47 @@ async fn send_reserved(
     no_tools: bool,
 ) -> Result<SendResult, String> {
     // WSL 远程工作区:引擎进程经 ssh 在发行版内执行(见 wsl_transport)。
-    let wsl_tp = wsl_transport::transport_for_workspace(&state.db, &workspace_path);
-    let mut launch = prepare_launch(
-        &engine,
-        &workspace_path,
-        session_id,
-        prompt,
-        prompt_contributions,
-        native_compact,
-        image_paths,
-        model,
-        effort,
-        permission,
-        // Every user-granted directory rides along as a launch argument, so
-        // a grant approved mid-conversation takes effect on the next send
-        // (each send is a fresh process). Tool-less runs have no file tool
-        // to hand them to.
-        if no_tools {
-            Vec::new()
-        } else {
-            state.db.granted_roots().unwrap_or_default()
-        },
-        provider_id,
-        computer_use,
-        memory_bot,
-        allowed_tools,
-        no_tools,
-        wsl_tp.is_some(),
-    )?;
+    // 工作区探测、路径解析、配置读取与临时文件落盘都是同步 I/O(Windows 上
+    // 还有 npm prefix 探测与二进制元数据读取)，放进 blocking 池，避免卡住
+    // Tokio 异步 worker 拖慢其他会话的发送与事件。
+    let db = Arc::clone(&state.db);
+    let engine_for_launch = engine.clone();
+    let workspace_for_launch = workspace_path.clone();
+    let (wsl_tp, mut launch, child_search_path) =
+        tauri::async_runtime::spawn_blocking(move || -> Result<_, String> {
+            let wsl_tp = wsl_transport::transport_for_workspace(&db, &workspace_for_launch);
+            // Every user-granted directory rides along as a launch argument, so
+            // a grant approved mid-conversation takes effect on the next send
+            // (each send is a fresh process). Tool-less runs have no file tool
+            // to hand them to.
+            let additional_dirs = if no_tools {
+                Vec::new()
+            } else {
+                db.granted_roots().unwrap_or_default()
+            };
+            let launch = prepare_launch(
+                &engine_for_launch,
+                &workspace_for_launch,
+                session_id,
+                prompt,
+                prompt_contributions,
+                native_compact,
+                image_paths,
+                model,
+                effort,
+                permission,
+                additional_dirs,
+                provider_id,
+                computer_use,
+                memory_bot,
+                allowed_tools,
+                no_tools,
+                wsl_tp.is_some(),
+            )?;
+            Ok((wsl_tp, launch, resolve::cli_search_path()))
+        })
+        .await
+        .map_err(|e| format!("prepare launch task failed: {e}"))??;
     if wsl_tp.is_none() && matches!(engine.as_str(), "pi" | "omp") {
         // 只向登录 shell 查询当前引擎配置中的变量：PI 用 $VAR，OMP 用裸名字。
         // 只注入这次子进程；WSL 不带本机 env，跳过。
@@ -1331,7 +1344,7 @@ async fn send_reserved(
             launch.bin.clone(),
             &launch.req,
             &launch.built.command,
-            Some(resolve::cli_search_path()),
+            Some(child_search_path),
         )?;
         return send_host_stream(
             state,
@@ -1474,7 +1487,7 @@ async fn send_reserved(
     // find the interpreter. Same dirs find_cli_binary searched; appended
     // after the process PATH, so normal resolution order is unchanged.
     // Harmless for the WSL/ssh-wrapped command (local env doesn't cross).
-    command.env("PATH", resolve::cli_search_path());
+    command.env("PATH", child_search_path);
 
     let signature = (engine == "codebuddy"
         && wsl_tp.is_none()

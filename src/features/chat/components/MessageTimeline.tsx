@@ -1315,6 +1315,7 @@ export const MessageTimeline = memo(function MessageTimeline({
                           variant="wave"
                           label={t("chat.thinking")}
                           className="py-2"
+                          paused={!visible}
                           startedAt={session.turnStartedAt ?? undefined}
                           durationFormatter={(d) => t("chat.metaDuration", { duration: d })}
                           model={activeModelFormatted}

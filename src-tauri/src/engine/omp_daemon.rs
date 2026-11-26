@@ -70,7 +70,8 @@ const PREVIOUS_TURN_SETTLE_TIMEOUT: Duration = Duration::from_secs(15);
 const CANCELLED_PROMPT_WATCH: Duration = Duration::from_secs(120);
 const DAEMON_IDLE_EXIT: Duration = Duration::from_secs(2 * 60 * 60);
 const IDLE_CHECK_INTERVAL: Duration = Duration::from_secs(60);
-
+const EXTERNAL_FILE_MODIFIED_ERR: &str =
+    "该 OMP 会话文件已被外部修改，请稍后重试以重新加载磁盘上的最新会话";
 const PROXY_ENV_KEYS: [&str; 8] = [
     "HTTP_PROXY",
     "HTTPS_PROXY",
@@ -246,8 +247,11 @@ pub struct OmpDaemonState {
     /// Serializes spawn/rotation so concurrent sends or prewarms share one
     /// daemon cold start. Never held while running turns or session RPCs.
     ensure: TokioMutex<()>,
+    /// Sessions whose transcript is open for editing: background prewarm skips
+    /// them so the daemon never re-caches the pre-edit tree underneath the
+    /// editor. Cleared on save, explicit close, or the next real user send.
+    editing_sessions: Mutex<HashSet<String>>,
 }
-
 fn lock_unpoisoned<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
     mutex
         .lock()
@@ -341,6 +345,10 @@ impl OmpDaemonState {
                         .to_string(),
                 );
             }
+            if client.is_session_externally_modified(session_id) {
+                self.kill_idle_daemon_for_external_edit(&client).await?;
+                continue;
+            }
             client.close_idle_session(session_id).await;
         }
         Ok(())
@@ -379,33 +387,143 @@ impl OmpDaemonState {
         target.write_frame(frame).await
     }
 
-    /// Close a loaded session inside the daemon (tab closed or file edited)
-    /// without disturbing the daemon or any active turn.
+    /// Close a loaded session inside the daemon (tab closed) without
+    /// disturbing the daemon or any active turn.
     pub(crate) async fn close_session(&self, session_id: &str) {
         let session_id = session_id.trim();
         if session_id.is_empty() {
             return;
         }
-        let clients = {
-            let holder = lock_unpoisoned(&self.holder);
-            let mut list = Vec::new();
-            if let Some(client) = &holder.current {
-                if client.is_alive() {
-                    list.push(Arc::clone(client));
-                }
+        lock_unpoisoned(&self.editing_sessions).remove(session_id);
+        for client in self.live_clients() {
+            if client.is_session_externally_modified(session_id) {
+                // Never call `session/close` on an already-modified file.
+                let _ = self.kill_idle_daemon_for_external_edit(&client).await;
+                continue;
             }
-            for client in &holder.draining {
-                if client.is_alive() {
-                    list.push(Arc::clone(client));
-                }
-            }
-            list
-        };
-        for client in clients {
             client.close_idle_session(session_id).await;
         }
     }
 
+    /// Release `session_id` BEFORE opening its transcript for editing, and hold
+    /// off background prewarm until editing finishes or the next send runs.
+    ///
+    /// OMP appends a `custom/session_exit` record pointing at its in-memory
+    /// leaf when `session/close` runs. Closing *before* the editor reads the
+    /// file ensures that record (if written) is part of the snapshot the
+    /// editor sees and `expected_version` matches — and crucially that no
+    /// `session/close` ever fires *after* the user writes the edited file,
+    /// which would orphan the leaf if the edit trimmed the tail.
+    pub(crate) async fn release_session_for_edit(&self, session_id: &str) -> Result<(), String> {
+        let session_id = session_id.trim();
+        if session_id.is_empty() {
+            return Ok(());
+        }
+        lock_unpoisoned(&self.editing_sessions).insert(session_id.to_string());
+        for client in self.live_clients() {
+            if client.has_active_turn(session_id) {
+                lock_unpoisoned(&self.editing_sessions).remove(session_id);
+                return Err(
+                    "native session cannot be edited while a turn is running or launching"
+                        .to_string(),
+                );
+            }
+            if client.is_session_externally_modified(session_id) {
+                if let Err(err) = self.kill_idle_daemon_for_external_edit(&client).await {
+                    lock_unpoisoned(&self.editing_sessions).remove(session_id);
+                    return Err(err);
+                }
+                continue;
+            }
+            client.close_idle_session(session_id).await;
+        }
+        Ok(())
+    }
+
+    /// Guard right before writing an edited transcript to disk. Never sends
+    /// `session/close` (which would append `session_exit` and both break
+    /// `expected_version` and orphan the leaf if the edit trims the tail).
+    /// Normally `release_session_for_edit` already unloaded the session on
+    /// read; if a send reloaded it in the meantime, hard-kill the idle daemon
+    /// (or refuse while busy).
+    pub(crate) async fn ensure_session_unloaded_for_write(
+        &self,
+        session_id: &str,
+    ) -> Result<(), String> {
+        let session_id = session_id.trim();
+        if session_id.is_empty() {
+            return Ok(());
+        }
+        lock_unpoisoned(&self.editing_sessions).insert(session_id.to_string());
+        for client in self.live_clients() {
+            if client.has_active_turn(session_id) {
+                return Err(
+                    "native session cannot be edited while a turn is running or launching"
+                        .to_string(),
+                );
+            }
+            if client.has_loaded_session(session_id) {
+                self.kill_idle_daemon_for_external_edit(&client).await?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Clear the edit hold after saving an edited transcript. Never sends
+    /// `session/close` onto the already-edited file.
+    pub(crate) fn finish_session_edit(&self, session_id: &str) {
+        let session_id = session_id.trim();
+        if session_id.is_empty() {
+            return;
+        }
+        lock_unpoisoned(&self.editing_sessions).remove(session_id);
+    }
+
+    fn is_editing(&self, session_id: &str) -> bool {
+        lock_unpoisoned(&self.editing_sessions).contains(session_id)
+    }
+
+    fn live_clients(&self) -> Vec<Arc<OmpDaemonClient>> {
+        let holder = lock_unpoisoned(&self.holder);
+        let mut list = Vec::new();
+        if let Some(client) = &holder.current {
+            if client.is_alive() {
+                list.push(Arc::clone(client));
+            }
+        }
+        for client in &holder.draining {
+            if client.is_alive() {
+                list.push(Arc::clone(client));
+            }
+        }
+        list
+    }
+
+    /// Hard-kill `client` (`SIGKILL` / `taskkill /T /F`, never `session/close`
+    /// or `SIGTERM`) when it is idle so OMP exits without appending a
+    /// `session_exit` record to an externally modified transcript. Returns
+    /// `Err` if the daemon is busy serving another turn.
+    async fn kill_idle_daemon_for_external_edit(
+        &self,
+        client: &Arc<OmpDaemonClient>,
+    ) -> Result<(), String> {
+        let _guard = self.ensure.lock().await;
+        if client.active_turn_count() > 0 || client.has_any_settling() {
+            return Err(
+                "该 OMP 会话文件已被外部修改，但守护进程正在运行其他会话，请等待当前回合结束后重试"
+                    .to_string(),
+            );
+        }
+        {
+            let mut holder = lock_unpoisoned(&self.holder);
+            if holder.current.as_ref().is_some_and(|c| Arc::ptr_eq(c, client)) {
+                holder.current = None;
+            }
+            holder.draining.retain(|c| !Arc::ptr_eq(c, client));
+        }
+        client.shutdown_sync();
+        Ok(())
+    }
     /// Kill every daemon we spawned (app exit).
     pub fn kill_spawned(&self) {
         let clients = {
@@ -444,11 +562,19 @@ impl OmpDaemonState {
         let Some(sid) = session_id.map(str::trim).filter(|s| !s.is_empty()) else {
             return Ok(());
         };
+        if self.is_editing(sid) {
+            return Ok(());
+        }
         // Never race a session that already has an active turn running.
         if client.has_active_turn(sid) {
             return Ok(());
         }
         if self.release_session_elsewhere(sid, &client).await.is_err() {
+            return Ok(());
+        }
+        // If the file changed externally while cached, skip silently here; the
+        // real send will recycle the idle daemon safely without `session/close`.
+        if client.is_session_externally_modified(sid) {
             return Ok(());
         }
         // A session whose recorded model was deleted simply stays unloaded
@@ -649,6 +775,27 @@ impl OmpDaemonClient {
         lock_unpoisoned(&self.settling).contains(session_id)
     }
 
+    fn has_any_settling(&self) -> bool {
+        !lock_unpoisoned(&self.settling).is_empty()
+    }
+
+    fn has_loaded_session(&self, session_id: &str) -> bool {
+        lock_unpoisoned(&self.loaded_sessions).contains_key(session_id)
+    }
+
+    /// True when `session_id` is currently loaded in this daemon and its
+    /// transcript on disk no longer matches the size+mtime recorded when the
+    /// daemon last touched it (e.g. edited externally or resumed from a CLI).
+    fn is_session_externally_modified(&self, session_id: &str) -> bool {
+        let sessions = lock_unpoisoned(&self.loaded_sessions);
+        let Some(meta) = sessions.get(session_id) else {
+            return false;
+        };
+        match (&meta.session_file, &meta.session_file_stamp) {
+            (Some(path), Some(expected)) => session_file_stamp(path).as_ref() != Some(expected),
+            _ => false,
+        }
+    }
     /// Wait for a cancelled prompt on `session_id` that OMP is still ending.
     /// `Ok(false)`: the waiting send was stopped itself.
     async fn wait_prompt_settled(&self, session_id: &str, killed: &AtomicBool) -> Result<bool, String> {
@@ -849,8 +996,15 @@ impl OmpDaemonClient {
             if same_workspace && file_unchanged {
                 return Ok(meta);
             }
-            // Workspace changed or file was modified externally: evict from
-            // OMP's in-memory map before resuming so disk state is reloaded.
+            if !file_unchanged {
+                // Never call `session/close` on an externally modified file:
+                // OMP appends a `custom/session_exit` record pointing at its
+                // stale in-memory leaf, which orphans the leaf (or rewinds it
+                // back to an old branch). Callers recycle an idle daemon with
+                // SIGKILL instead.
+                return Err(EXTERNAL_FILE_MODIFIED_ERR.to_string());
+            }
+            // Workspace changed while file is intact: safe to close and reload.
             let _ = self
                 .rpc_call(
                     "session/close",
@@ -860,7 +1014,6 @@ impl OmpDaemonClient {
                 .await;
             lock_unpoisoned(&self.loaded_sessions).remove(session_id);
         }
-
         let result = match self.resume_rpc(session_id, workspace).await {
             Ok(result) => result,
             Err(error) => {
@@ -1005,11 +1158,16 @@ impl OmpDaemonClient {
 
     fn shutdown_sync(&self) {
         self.alive.store(false, Ordering::SeqCst);
-        if let Ok(mut guard) = self.stdin.try_lock() {
-            *guard = None;
-        }
         if let Some(abort) = lock_unpoisoned(&self.reader_abort).take() {
             abort.abort();
+        }
+        // Terminate the process tree BEFORE closing stdin: stdin EOF can cause
+        // OMP to exit gracefully and append `custom/session_exit` pointing at
+        // a stale in-memory leaf, whereas SIGKILL / Job Object close exits
+        // without writing the transcript.
+        #[cfg(windows)]
+        {
+            *lock_unpoisoned(&self.tree_guard) = None;
         }
         if let Some(mut child) = lock_unpoisoned(&self.child).take() {
             if self.pid > 0 {
@@ -1017,9 +1175,8 @@ impl OmpDaemonClient {
             }
             let _ = child.start_kill();
         }
-        #[cfg(windows)]
-        {
-            *lock_unpoisoned(&self.tree_guard) = None;
+        if let Ok(mut guard) = self.stdin.try_lock() {
+            *guard = None;
         }
         // Wake any remaining waiters so nothing hangs on shutdown.
         let mut pending = lock_unpoisoned(&self.pending_rpcs);
@@ -1289,14 +1446,32 @@ async fn turn_inner(
         return Ok(());
     }
 
-    let (session_id, meta) = match req.session_id.as_deref() {
+    let (client, session_id, meta) = match req.session_id.as_deref() {
         Some(existing) => {
+            // A real user send ends any pending edit hold so future prewarms
+            // work normally once the turn settles.
+            daemon_state.finish_session_edit(existing);
             // A Stop that outlived its settle window leaves OMP ending the
             // cancelled prompt; a new prompt on the same session waits for
             // that instead of colliding with it.
             if !client.wait_prompt_settled(existing, killed).await? {
                 return Ok(());
             }
+            // If this session's transcript was modified externally while cached
+            // in `client`, do NOT send `session/close` (which appends a
+            // `custom/session_exit` record pointing at OMP's stale in-memory
+            // leaf). Hard-kill the daemon when idle so it exits without writing
+            // the file, then spawn a fresh daemon to resume from disk.
+            let client = if client.is_session_externally_modified(existing) {
+                daemon_state
+                    .kill_idle_daemon_for_external_edit(&client)
+                    .await?;
+                let fresh = daemon_state.ensure_daemon(spec).await?;
+                *daemon_out = Some(Arc::clone(&fresh));
+                fresh
+            } else {
+                client
+            };
             // One session, one daemon: after a rotation the draining daemon
             // may still hold this session; resuming it here as well would let
             // both processes append to the same transcript.
@@ -1312,7 +1487,7 @@ async fn turn_inner(
             let Some(meta) = meta else {
                 return Ok(());
             };
-            (existing.to_string(), meta)
+            (client, existing.to_string(), meta)
         }
         None => {
             let created = race_with_kill(client.create_session(&req.workspace), killed).await?;
@@ -1320,7 +1495,7 @@ async fn turn_inner(
                 return Ok(());
             };
             core.dispatch_event(state, EngineEvent::SessionId(sid.clone()));
-            (sid, meta)
+            (client, sid, meta)
         }
     };
 
@@ -1860,6 +2035,7 @@ pub(crate) fn permission_to_question(
     };
     let mut choices = Vec::new();
     let mut option_ids = Map::new();
+    let mut option_kinds = Map::new();
     for option in options {
         let Some(id) = option
             .get("optionId")
@@ -1869,7 +2045,11 @@ pub(crate) fn permission_to_question(
         else {
             continue;
         };
-        let kind = option.get("kind").and_then(Value::as_str).unwrap_or_default();
+        let kind = option
+            .get("kind")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .unwrap_or_default();
         let label = option
             .get("name")
             .and_then(Value::as_str)
@@ -1882,18 +2062,24 @@ pub(crate) fn permission_to_question(
             continue;
         }
         option_ids.insert(label.clone(), json!(id));
-        choices.push(json!({ "label": label, "description": kind }));
+        if !kind.is_empty() {
+            option_kinds.insert(label.clone(), json!(kind));
+        }
+        // Do not leak raw protocol kinds (`allow_once` etc.) into `description`;
+        // the frontend localizes `ompAcpPermission.kinds` into readable hints.
+        choices.push(json!({ "label": label }));
     }
     if choices.is_empty() {
         return Err(permission_cancelled(rpc_id));
     }
     let tool_call = params.get("toolCall");
+    // Empty when OMP omits a title: the frontend fills a localized fallback
+    // via i18n instead of hardcoding one locale in Rust.
     let question = tool_call
         .and_then(|call| call.get("title"))
         .and_then(Value::as_str)
         .map(str::trim)
-        .filter(|title| !title.is_empty())
-        .unwrap_or("OMP 请求执行一个需要确认的操作")
+        .unwrap_or_default()
         .to_string();
     let tool_use_id = tool_call
         .and_then(|call| call.get("toolCallId"))
@@ -1916,6 +2102,7 @@ pub(crate) fn permission_to_question(
             "rpcId": rpc_id,
             "daemonId": daemon_id,
             "options": option_ids,
+            "kinds": option_kinds,
         },
     });
     Ok((request_id, input, tool_use_id))
@@ -2541,8 +2728,19 @@ mod tests {
         assert_eq!(tool_use_id.as_deref(), Some("call-1"));
         assert_eq!(input["questions"][0]["question"], "rm -rf build");
         assert_eq!(input["questions"][0]["options"].as_array().map(Vec::len), Some(3));
+        assert!(input["questions"][0]["options"][0].get("description").is_none());
         let parked = &input["ompAcpPermission"];
         assert_eq!(parked["daemonId"], json!(3));
+        assert_eq!(parked["kinds"]["Allow once"], json!("allow_once"));
+        assert_eq!(parked["kinds"]["Reject"], json!("reject_once"));
+        // Missing title stays empty for frontend i18n fallback.
+        let untitled = json!({
+            "sessionId": "s1",
+            "options": [{ "optionId": "allow_once", "name": "Allow once", "kind": "allow_once" }],
+        });
+        let (_, untitled_input, _) =
+            permission_to_question(&json!(13), &untitled, 3).expect("untitled card");
+        assert_eq!(untitled_input["questions"][0]["question"], "");
         // The host never picks: the reply is exactly the option the user chose.
         let frame =
             permission_answer_frame(parked, Some(&json!({ "rm -rf build": "Reject" }))).unwrap();
@@ -2715,5 +2913,313 @@ mod stamp_tests {
         assert_eq!(entry["role"], "default");
         assert!(text.ends_with('\n'));
         let _ = std::fs::remove_dir_all(&dir);
+    }
+}
+
+#[cfg(test)]
+mod edit_release_tests {
+    use super::*;
+
+    /// Fake ACP daemon that mimics OMP's real transcript behavior:
+    /// - `session/resume` reads the session file and remembers its last entry
+    ///   id as the in-memory leaf.
+    /// - `session/close` (and graceful stdin EOF) appends a `custom` /
+    ///   `session_exit` record whose `parentId` is that in-memory leaf.
+    /// - Hard kill (`SIGKILL` / `TerminateProcess`) exits without writing.
+    const FAKE_ACP_JS: &str = r#"
+const fs = require("fs");
+const readline = require("readline");
+const file = process.env.FAKE_OMP_SESSION_FILE;
+const logFile = process.env.FAKE_OMP_RPC_LOG;
+const leaves = new Map();
+
+function readLeaf() {
+  const lines = fs.readFileSync(file, "utf8").split(/\r?\n/).filter(Boolean);
+  let leaf = null;
+  for (const line of lines) {
+    const obj = JSON.parse(line);
+    if (obj.type !== "session" && obj.id) leaf = obj.id;
+  }
+  return leaf;
+}
+
+function appendExit(sid) {
+  const leaf = leaves.get(sid);
+  if (!leaf) return;
+  leaves.delete(sid);
+  const rec = {
+    type: "custom",
+    customType: "session_exit",
+    id: "exit-" + Date.now() + "-" + Math.random().toString(16).slice(2, 8),
+    parentId: leaf,
+  };
+  fs.appendFileSync(file, JSON.stringify(rec) + "\n");
+}
+
+const rl = readline.createInterface({ input: process.stdin, crlfDelay: Infinity });
+rl.on("line", (line) => {
+  if (!line.trim()) return;
+  const msg = JSON.parse(line);
+  if (logFile && msg.method) fs.appendFileSync(logFile, msg.method + "\n");
+  if (msg.method === "initialize") {
+    process.stdout.write(JSON.stringify({ jsonrpc: "2.0", id: msg.id, result: { protocolVersion: 1 } }) + "\n");
+  } else if (msg.method === "session/resume") {
+    leaves.set(msg.params.sessionId, readLeaf());
+    process.stdout.write(JSON.stringify({ jsonrpc: "2.0", id: msg.id, result: { configOptions: [] } }) + "\n");
+  } else if (msg.method === "session/close") {
+    appendExit(msg.params.sessionId);
+    process.stdout.write(JSON.stringify({ jsonrpc: "2.0", id: msg.id, result: {} }) + "\n");
+  } else if (msg.id !== undefined) {
+    process.stdout.write(JSON.stringify({ jsonrpc: "2.0", id: msg.id, result: {} }) + "\n");
+  }
+});
+rl.on("close", () => {
+  for (const sid of Array.from(leaves.keys())) appendExit(sid);
+});
+"#;
+
+    fn find_node() -> PathBuf {
+        let names: &[&str] = if cfg!(windows) {
+            &["node.exe", "node"]
+        } else {
+            &["node"]
+        };
+        if let Some(paths) = std::env::var_os("PATH") {
+            for dir in std::env::split_paths(&paths) {
+                for name in names {
+                    let cand = dir.join(name);
+                    if cand.is_file() {
+                        return cand;
+                    }
+                }
+            }
+        }
+        panic!("node executable not found on PATH for fake ACP daemon test");
+    }
+
+    fn write_fake_acp_bin(dir: &Path) -> String {
+        let script = dir.join("fake-acp.cjs");
+        std::fs::write(&script, FAKE_ACP_JS).unwrap();
+        let node = find_node();
+        #[cfg(windows)]
+        {
+            let cmd = dir.join("fake-omp.cmd");
+            std::fs::write(
+                &cmd,
+                format!("@echo off\r\n\"{}\" \"{}\" %*\r\n", node.display(), script.display()),
+            )
+            .unwrap();
+            cmd.to_string_lossy().into_owned()
+        }
+        #[cfg(not(windows))]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let sh = dir.join("fake-omp");
+            std::fs::write(
+                &sh,
+                format!("#!/bin/sh\nexec \"{}\" \"{}\" \"$@\"\n", node.display(), script.display()),
+            )
+            .unwrap();
+            std::fs::set_permissions(&sh, std::fs::Permissions::from_mode(0o755)).unwrap();
+            sh.to_string_lossy().into_owned()
+        }
+    }
+
+    fn orphan_parent_ids(path: &Path) -> Vec<String> {
+        let text = std::fs::read_to_string(path).unwrap();
+        let mut ids = HashSet::new();
+        let mut parents = Vec::new();
+        for line in text.lines().filter(|l| !l.trim().is_empty()) {
+            let v: Value = serde_json::from_str(line).unwrap();
+            if v.get("type").and_then(Value::as_str) == Some("session") {
+                continue;
+            }
+            if let Some(id) = v.get("id").and_then(Value::as_str) {
+                ids.insert(id.to_string());
+            }
+            if let Some(pid) = v.get("parentId").and_then(Value::as_str) {
+                parents.push(pid.to_string());
+            }
+        }
+        parents.into_iter().filter(|p| !ids.contains(p)).collect()
+    }
+
+    struct AgentEnvGuard {
+        _lock: parking_lot::MutexGuard<'static, ()>,
+        prev: Option<OsString>,
+    }
+
+    impl AgentEnvGuard {
+        fn set(agent: &Path) -> Self {
+            let lock = crate::paths::HOME_ENV_LOCK.lock();
+            let prev = std::env::var_os("PI_CODING_AGENT_DIR");
+            std::env::set_var("PI_CODING_AGENT_DIR", agent);
+            Self { _lock: lock, prev }
+        }
+    }
+
+    impl Drop for AgentEnvGuard {
+        fn drop(&mut self) {
+            match &self.prev {
+                Some(v) => std::env::set_var("PI_CODING_AGENT_DIR", v),
+                None => std::env::remove_var("PI_CODING_AGENT_DIR"),
+            }
+        }
+    }
+
+    fn fixture_spec(bin: String, session_file: &Path, log_file: &Path) -> OmpDaemonSpec {
+        let mut extra_env = BTreeMap::new();
+        extra_env.insert(
+            "FAKE_OMP_SESSION_FILE".to_string(),
+            session_file.to_string_lossy().into_owned(),
+        );
+        extra_env.insert(
+            "FAKE_OMP_RPC_LOG".to_string(),
+            log_file.to_string_lossy().into_owned(),
+        );
+        OmpDaemonSpec {
+            bin,
+            auto_approve: false,
+            service_tier: None,
+            extra_env,
+            search_path: None,
+            proxy_env: BTreeMap::new(),
+            config_stamps: Vec::new(),
+            omp_on_demand_servers: Vec::new(),
+        }
+    }
+
+    fn initial_transcript(sid: &str) -> String {
+        [
+            json!({"type": "session", "id": sid}),
+            json!({"type": "message", "id": "e1", "parentId": null, "role": "user"}),
+            json!({"type": "message", "id": "e2", "parentId": "e1", "role": "assistant"}),
+            json!({"type": "message", "id": "e3", "parentId": "e2", "role": "user"}),
+        ]
+        .into_iter()
+        .map(|v| v.to_string())
+        .collect::<Vec<_>>()
+        .join("\n")
+            + "\n"
+    }
+
+    #[tokio::test]
+    #[allow(clippy::await_holding_lock)]
+    async fn editing_loaded_session_releases_before_read_and_never_orphans_leaf() {
+        let root = std::env::temp_dir().join(format!("ccgui-omp-edit-{}", uuid::Uuid::new_v4()));
+        let agent = root.join("agent");
+        let workspace = root.join("ws");
+        std::fs::create_dir_all(&workspace).unwrap();
+        let _env = AgentEnvGuard::set(&agent);
+
+        let sid = "sid-edit-1";
+        let sess_dir = agent.join("sessions").join(session_dir_name(&workspace));
+        std::fs::create_dir_all(&sess_dir).unwrap();
+        let session_file = sess_dir.join(format!("2026-11-26T00-00-00Z_{sid}.jsonl"));
+        std::fs::write(&session_file, initial_transcript(sid)).unwrap();
+        let log_file = root.join("rpc.log");
+
+        let bin = write_fake_acp_bin(&root);
+        let spec = fixture_spec(bin, &session_file, &log_file);
+        let daemon = OmpDaemonState::default();
+
+        // 1. Prewarm loads the session into the daemon (in-memory leaf = e3).
+        daemon.prewarm(&spec, &workspace, Some(sid)).await.unwrap();
+        assert!(daemon.live_clients().iter().any(|c| c.has_loaded_session(sid)));
+
+        // 2. Opening the editor releases the session BEFORE reading:
+        //    `session/close` appends `session_exit` (parentId = e3) now.
+        daemon.release_session_for_edit(sid).await.unwrap();
+        assert!(!daemon.live_clients().iter().any(|c| c.has_loaded_session(sid)));
+
+        // 3. Background prewarm while the editor is open must not reload it.
+        daemon.prewarm(&spec, &workspace, Some(sid)).await.unwrap();
+        assert!(!daemon.live_clients().iter().any(|c| c.has_loaded_session(sid)));
+
+        // 4. User trims the tail (drops e2, e3, and the session_exit record)
+        //    and saves. Write path guards unloaded state, then finishes edit.
+        let trimmed = format!(
+            "{}\n{}\n",
+            json!({"type": "session", "id": sid}),
+            json!({"type": "message", "id": "e1", "parentId": null, "role": "user"})
+        );
+        daemon.ensure_session_unloaded_for_write(sid).await.unwrap();
+        std::fs::write(&session_file, &trimmed).unwrap();
+        daemon.finish_session_edit(sid);
+
+        // 5. Next resume reloads from disk (leaf = e1), and a subsequent close
+        //    chains onto e1 — zero orphan parentIds anywhere in the file.
+        daemon.prewarm(&spec, &workspace, Some(sid)).await.unwrap();
+        daemon.close_session(sid).await;
+        assert!(
+            orphan_parent_ids(&session_file).is_empty(),
+            "orphan parents after edit: {}",
+            std::fs::read_to_string(&session_file).unwrap()
+        );
+        let last: Value = serde_json::from_str(
+            std::fs::read_to_string(&session_file)
+                .unwrap()
+                .lines()
+                .last()
+                .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(last["parentId"], "e1");
+
+        daemon.kill_spawned();
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[tokio::test]
+    #[allow(clippy::await_holding_lock)]
+    async fn external_transcript_edit_hard_kills_idle_daemon_without_session_close() {
+        let root = std::env::temp_dir().join(format!("ccgui-omp-ext-{}", uuid::Uuid::new_v4()));
+        let agent = root.join("agent");
+        let workspace = root.join("ws");
+        std::fs::create_dir_all(&workspace).unwrap();
+        let _env = AgentEnvGuard::set(&agent);
+
+        let sid = "sid-ext-1";
+        let sess_dir = agent.join("sessions").join(session_dir_name(&workspace));
+        std::fs::create_dir_all(&sess_dir).unwrap();
+        let session_file = sess_dir.join(format!("2026-11-26T00-00-00Z_{sid}.jsonl"));
+        std::fs::write(&session_file, initial_transcript(sid)).unwrap();
+        let log_file = root.join("rpc.log");
+
+        let bin = write_fake_acp_bin(&root);
+        let spec = fixture_spec(bin, &session_file, &log_file);
+        let daemon = OmpDaemonState::default();
+
+        // Daemon caches session with in-memory leaf = e3.
+        daemon.prewarm(&spec, &workspace, Some(sid)).await.unwrap();
+        assert!(daemon.live_clients().iter().any(|c| c.has_loaded_session(sid)));
+
+        // External editor/CLI trims the tail (e2, e3 removed) behind the daemon's back.
+        let trimmed = format!(
+            "{}\n{}\n",
+            json!({"type": "session", "id": sid}),
+            json!({"type": "message", "id": "e1", "parentId": null, "role": "user"})
+        );
+        std::fs::write(&session_file, &trimmed).unwrap();
+
+        // Direct ensure_session_resumed refuses to send `session/close`.
+        let client = daemon.live_clients().pop().unwrap();
+        assert!(client.ensure_session_resumed(sid, &workspace, None).await.is_err());
+
+        // Closing or releasing detects external change and hard-kills the idle
+        // daemon without `session/close` or EOF `session_exit`.
+        daemon.close_session(sid).await;
+        tokio::time::sleep(Duration::from_millis(150)).await;
+        assert!(daemon.live_clients().is_empty());
+        let rpc_log = std::fs::read_to_string(&log_file).unwrap_or_default();
+        assert!(
+            !rpc_log.lines().any(|m| m == "session/close"),
+            "must never send session/close onto an externally modified file: {rpc_log}"
+        );
+        assert_eq!(std::fs::read_to_string(&session_file).unwrap(), trimmed);
+        assert!(orphan_parent_ids(&session_file).is_empty());
+
+        daemon.kill_spawned();
+        let _ = std::fs::remove_dir_all(&root);
     }
 }

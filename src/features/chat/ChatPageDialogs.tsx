@@ -59,6 +59,8 @@ export function ChatPageDialogs({
         <PromptDialog
           title={t("chat.renameSession")}
           initial={dialog.session.customTitle || dialog.session.title}
+          allowEmpty={dialog.session.engine === "claude" && !dialog.session.remote}
+          hint={dialog.session.engine === "claude" && !dialog.session.remote ? t("chat.renameClaudeSessionHint") : undefined}
           onSubmit={(title) => {
             onClose();
             void renameSession(dialog.session.engine, dialog.session.sessionId, title);
@@ -199,7 +201,7 @@ function DeleteSessionConfirm({
   const deleteSession = useChatStore((s) => s.deleteSession);
   const props = {
     danger: true,
-    message: t("chat.confirmDeleteSession"),
+    message: t(dialog.session.engine === "claude" && !dialog.session.remote ? "chat.confirmDeleteClaudeSession" : "chat.confirmDeleteSession"),
     onConfirm: () => {
       onClose();
       void deleteSession(dialog.session.engine, dialog.session.sessionId);

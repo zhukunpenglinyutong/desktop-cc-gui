@@ -7,6 +7,7 @@ import {
   applyPlanSettled,
 } from "./plan-review";
 import { errorText } from "@/lib/errors";
+import i18n from "@/lib/i18n";
 import { pendingWorkspaceOfKey, dedupeTabs, persistTabs, sessionKey } from "./persistence";
 import {
   notifyTurnComplete,
@@ -1564,6 +1565,30 @@ function sendAskTerminator(loop: AskLoop, key: string, deps: EngineEventDeps) {
     .catch((error) => patchSession(deps.set, key, { error: errorText(error) }));
 }
 
+const OMP_PERMISSION_KIND_I18N: Record<string, string> = {
+  allow_once: "chat.ompPermissionAllowOnce",
+  allow_always: "chat.ompPermissionAllowAlways",
+  reject_once: "chat.ompPermissionRejectOnce",
+  reject_always: "chat.ompPermissionRejectAlways",
+};
+
+function localizeOmpPermissionQuestions(
+  questions: QuestionSpec[],
+  ompAcpPermission?: { kinds?: Record<string, string> },
+): QuestionSpec[] {
+  if (!ompAcpPermission) return questions;
+  const kinds = ompAcpPermission.kinds ?? {};
+  return questions.map((q) => ({
+    ...q,
+    question: q.question.trim() ? q.question : i18n.t("chat.ompPermissionFallbackTitle"),
+    options: (q.options ?? []).map((opt) => {
+      if (opt.description) return opt;
+      const key = OMP_PERMISSION_KIND_I18N[kinds[opt.label] ?? ""];
+      return key ? { ...opt, description: i18n.t(key) } : opt;
+    }),
+  }));
+}
+
 function onQuestion(
   event: ChatEngineEvent,
   key: string,
@@ -1572,11 +1597,16 @@ function onQuestion(
   const data = event.data as {
     requestId?: string;
     toolUseId?: string | null;
-    input?: { questions?: QuestionSpec[]; extui?: { method?: string } };
+    input?: {
+      questions?: QuestionSpec[];
+      extui?: { method?: string };
+      ompAcpPermission?: { kinds?: Record<string, string> };
+    };
   };
   const requestId = data.requestId?.trim();
-  const questions = data.input?.questions;
-  if (!requestId || !Array.isArray(questions) || questions.length === 0) return;
+  const rawQuestions = data.input?.questions;
+  if (!requestId || !Array.isArray(rawQuestions) || rawQuestions.length === 0) return;
+  const questions = localizeOmpPermissionQuestions(rawQuestions, data.input?.ompAcpPermission);
   const method = data.input?.extui?.method;
   // The CLI's free-form editor, opened by a multi-select submit: the picked
   // labels travel as its text, so it must not surface as another card.

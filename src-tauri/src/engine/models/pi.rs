@@ -1,4 +1,4 @@
-use super::{run_probe, EngineModel};
+use super::{run_probe_detailed, EngineModel, ProbeError};
 
 pub(super) fn configured_models(engine: &str) -> Result<Vec<EngineModel>, String> {
     let config = crate::engine::pi_family_auth::pi_family_models_config_read(engine.to_string())?;
@@ -60,8 +60,9 @@ pub(super) fn merge_configured_models(
 }
 
 /// `<bin> models --json` → {"models":[{provider,id,selector,name,contextWindow,…}]}.
-pub(super) async fn run_models_json(bin: &str) -> Result<Vec<EngineModel>, String> {
-    parse_models_json(&run_probe(bin, &["models", "--json"], "models --json").await?)
+pub(super) async fn run_models_json(bin: &str) -> Result<Vec<EngineModel>, ProbeError> {
+    let stdout = run_probe_detailed(bin, &["models", "--json"], "models --json").await?;
+    parse_models_json(&stdout).map_err(ProbeError::Failed)
 }
 
 pub fn parse_models_json(stdout: &str) -> Result<Vec<EngineModel>, String> {
@@ -98,11 +99,14 @@ pub fn parse_models_json(stdout: &str) -> Result<Vec<EngineModel>, String> {
     Ok(models)
 }
 
-pub(super) async fn run_list_models(bin: &str, extra: &[&str]) -> Result<Vec<EngineModel>, String> {
+pub(super) async fn run_list_models(
+    bin: &str,
+    extra: &[&str],
+) -> Result<Vec<EngineModel>, ProbeError> {
     let mut args = vec!["--list-models"];
     args.extend_from_slice(extra);
     Ok(parse_list_models(
-        &run_probe(bin, &args, "--list-models").await?,
+        &run_probe_detailed(bin, &args, "--list-models").await?,
     ))
 }
 

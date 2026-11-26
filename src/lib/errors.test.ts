@@ -39,3 +39,15 @@ it("localizes a rename that did not update any session", async () => {
   await i18n.changeLanguage("en");
   expect(errorText(new Error("CCGUI_SESSION_NOT_FOUND"))).toContain("The name was not saved");
 });
+
+it("explains native session contention and a committed title with a failed index", async () => {
+  await i18n.changeLanguage("zh");
+  expect(errorText("CCGUI_SESSION_NATIVE_BUSY: running")).toContain("停止正在运行的 Claude 会话");
+  expect(errorText("CCGUI_SESSION_NATIVE_UPDATE_FAILED: permission denied")).toContain("原生会话操作失败");
+  expect(errorText("CCGUI_SESSION_NATIVE_UPDATE_FAILED: permission denied")).toContain("permission denied");
+  const partial = errorText("CCGUI_SESSION_TITLE_INDEX_FAILED: database locked");
+  expect(partial).toContain("原生标题已保存");
+  expect(partial).toContain("database locked");
+  await i18n.changeLanguage("en");
+  expect(errorText(new Error("CCGUI_SESSION_NATIVE_BUSY: running"))).toContain("before renaming or deleting");
+});

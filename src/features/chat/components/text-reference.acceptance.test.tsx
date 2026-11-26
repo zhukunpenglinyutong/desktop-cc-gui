@@ -236,7 +236,9 @@ describe("#1521 text reference acceptance", () => {
     } else {
       await act(async () => button(HEADER)!.click());
     }
-    expect(transport.readFile).toHaveBeenCalledExactlyOnceWith(FILE);
+    expect(transport.readFile).toHaveBeenCalledOnce();
+    expect(transport.readFile.mock.calls[0][0]).toBe(FILE);
+    expect(transport.readFile.mock.calls[0][1]).toBeUndefined();
     expect(useFilesStore.getState().activeFilePath).toBe(FILE);
     expect(selectedText()).toBe(scenario === "shortened" ? "only remaining line" : "new two\nnew three");
     expect(container.textContent).toContain(">     unsaved");

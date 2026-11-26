@@ -54,6 +54,8 @@ export interface AgentThinkingProps {
   /** The provider's own reason for the retry ("HTTP 502", "stream
    *  disconnected"), revealed on hover. */
   retryDetail?: string | null;
+  /** Pause visual animations and elapsed timer (e.g. hidden keep-alive tab). */
+  paused?: boolean;
   /** Extra meta-row content rendered right after the effort label. A slot
    *  on purpose: the data and its own hover card belong to feature code. */
   metaExtra?: ReactNode;
@@ -78,22 +80,15 @@ const VARIANT_TONE: Record<AgentThinkingVariant, AgentThinkingTone> = {
 const DOTS_GRID = 3;
 const DOTS_SIZE = 4;
 const DOTS_GAP = 2;
-const DOTS_TICK_MS = 80;
-const DOTS_FADE_MS = 220;
-const DOTS_TRAIL = 0.3;
-const DOTS_MIN_OPACITY = 0.12;
-const DOTS_PHASE_STEP = 1 / 8;
+const DOTS_PERIOD_S = 0.64;
 
-// Static first frame: identical on server and client, and the resting state
-// under prefers-reduced-motion.
+// Static resting frame under retry / paused / prefers-reduced-motion.
 const DOTS_SEED = [0.55, 0.3, 0.15, 0.85, 0.55, 0.3, 1, 0.85, 0.55];
 
 /**
- * How far along the pattern's travel direction each cell sits, in [0, 1),
- * precomputed per variant at module scope: the scalars never change, so the
- * 80ms tick below only runs the phase math, not nine atan2 calls a frame.
- * The wave scalar is compressed below 1 so the phase wrap reads as the front
- * leaving the grid and re-entering; the spin angle is naturally cyclic.
+ * Per-dot normalized phase position in [0, 1), used to compute static negative
+ * CSS animation delays so the 3×3 wave/spin runs purely on the GPU compositor
+ * with zero JS timers or React state commits.
  */
 const DOT_SCALARS: Record<"wave" | "spin", number[]> = {
   wave: Array.from({ length: DOTS_GRID * DOTS_GRID }, (_, i) => {
@@ -106,52 +101,8 @@ const DOT_SCALARS: Record<"wave" | "spin", number[]> = {
   }),
 };
 
-function dotOpacities(variant: "wave" | "spin", phase: number) {
-  return DOT_SCALARS[variant].map((s) => {
-    // Comet: bright head at the phase front, tail fading behind it.
-    const behind = (phase - s + 1) % 1;
-    const lit = Math.max(0, 1 - behind / DOTS_TRAIL) ** 1.5;
-    return DOTS_MIN_OPACITY + (1 - DOTS_MIN_OPACITY) * lit;
-  });
-}
-
 function DotsIndicator({ variant, animated }: { variant: "wave" | "spin"; animated: boolean }) {
-  const [opacities, setOpacities] = useState<number[]>(DOTS_SEED);
-
-  useEffect(() => {
-    if (
-      !animated ||
-      (typeof window !== "undefined" &&
-        window.matchMedia &&
-        window.matchMedia("(prefers-reduced-motion: reduce)").matches)
-    )
-      return;
-    let phase = 0;
-    let id: number | null = null;
-    const start = () => {
-      if (id !== null || document.hidden) return;
-      id = window.setInterval(() => {
-        phase = (phase + DOTS_PHASE_STEP) % 1;
-        setOpacities(dotOpacities(variant, phase));
-      }, DOTS_TICK_MS);
-    };
-    const stop = () => {
-      if (id === null) return;
-      window.clearInterval(id);
-      id = null;
-    };
-    const onVisibility = () => {
-      if (document.hidden) stop();
-      else start();
-    };
-    start();
-    document.addEventListener("visibilitychange", onVisibility);
-    return () => {
-      document.removeEventListener("visibilitychange", onVisibility);
-      stop();
-    };
-  }, [animated, variant]);
-
+  const scalars = DOT_SCALARS[variant];
   return (
     <span
       aria-hidden
@@ -161,16 +112,27 @@ function DotsIndicator({ variant, animated }: { variant: "wave" | "spin"; animat
         gap: DOTS_GAP,
       }}
     >
-      {opacities.map((opacity, i) => (
+      {scalars.map((scalar, i) => (
         <span
           key={i}
-          className="rounded-[1px] bg-current"
-          style={{
-            width: DOTS_SIZE,
-            height: DOTS_SIZE,
-            opacity,
-            transition: animated ? `opacity ${DOTS_FADE_MS}ms ease` : undefined,
-          }}
+          className={cx(
+            "rounded-[1px] bg-current",
+            animated && "bui-agent-thinking-dot",
+          )}
+          style={
+            animated
+              ? {
+                  width: DOTS_SIZE,
+                  height: DOTS_SIZE,
+                  animationDuration: `${DOTS_PERIOD_S}s`,
+                  animationDelay: `${-((1 - scalar) * DOTS_PERIOD_S).toFixed(3)}s`,
+                }
+              : {
+                  width: DOTS_SIZE,
+                  height: DOTS_SIZE,
+                  opacity: DOTS_SEED[i],
+                }
+          }
         />
       ))}
     </span>
@@ -296,9 +258,11 @@ function formatElapsed(seconds: number): string {
 function ElapsedTimer({
   startedAt,
   formatter,
+  paused = false,
 }: {
   startedAt?: number;
   formatter?: (elapsed: string) => string;
+  paused?: boolean;
 }) {
   const [elapsed, setElapsed] = useState(() =>
     startedAt ? Math.max(0, (Date.now() - startedAt) / 1000) : 0,
@@ -306,12 +270,13 @@ function ElapsedTimer({
 
   useEffect(() => {
     // 500ms cadence: visually smooth enough for "12.3s" without waking React 10x/s,
-    // and pauses completely while the window/tab is hidden.
+    // and pauses completely while the window or keep-alive tab is hidden.
     const origin = startedAt ?? performance.now();
     const readElapsed = () =>
       startedAt
         ? Math.max(0, (Date.now() - origin) / 1000)
         : (performance.now() - origin) / 1000;
+    if (paused) return;
     let id: number | null = null;
     const start = () => {
       if (id !== null || document.hidden) return;
@@ -333,7 +298,7 @@ function ElapsedTimer({
       document.removeEventListener("visibilitychange", onVisibility);
       stop();
     };
-  }, [startedAt]);
+  }, [startedAt, paused]);
 
   const raw = formatElapsed(elapsed);
   return (
@@ -375,6 +340,7 @@ type MetaRowProps = Pick<
   | "effort"
   | "retry"
   | "retryDetail"
+  | "paused"
   | "metaExtra"
 >;
 
@@ -387,6 +353,7 @@ function MetaRow({
   effort,
   retry,
   retryDetail,
+  paused,
   metaExtra,
 }: MetaRowProps) {
   if (!(showTimer || model || effort || usage || retry || metaExtra)) {
@@ -398,6 +365,7 @@ function MetaRow({
         <ElapsedTimer
           startedAt={startedAt}
           formatter={durationFormatter}
+          paused={paused}
         />
       )}
       {usage && <MetaItem><span>{usage}</span></MetaItem>}
@@ -432,17 +400,18 @@ export function AgentThinking({
   usage,
   retry,
   retryDetail,
+  paused = false,
   metaExtra,
 }: AgentThinkingProps) {
   const color = TONE_COLORS[tone ?? VARIANT_TONE[variant]];
-  const animated = !retry;
+  const animated = !retry && !paused;
 
   return (
     <div
       role="status"
       className={cx(
         "flex items-center gap-2.5",
-        retry && "bui-agent-thinking-static",
+        !animated && "bui-agent-thinking-static",
         className,
       )}
       style={{ color, "--bui-agent-thinking-tone": color } as CSSProperties}
@@ -463,6 +432,7 @@ export function AgentThinking({
         usage={usage}
         retry={retry}
         retryDetail={retryDetail}
+        paused={paused}
         metaExtra={metaExtra}
       />
     </div>

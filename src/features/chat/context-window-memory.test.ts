@@ -29,8 +29,11 @@ describe("context window memory", () => {
   });
 
   it("treats a broken storage as a cache miss instead of crashing", () => {
+    const owner = Object.prototype.hasOwnProperty.call(localStorage, "setItem")
+      ? localStorage
+      : Storage.prototype;
     const setItem = vi
-      .spyOn(Storage.prototype, "setItem")
+      .spyOn(owner, "setItem")
       .mockImplementation(() => {
         throw new Error("quota exceeded");
       });
@@ -39,6 +42,7 @@ describe("context window memory", () => {
       rememberContextWindow("claude", "default", 1_000_000),
     ).not.toThrow();
 
+    expect(setItem).toHaveBeenCalledOnce();
     setItem.mockRestore();
     expect(recallContextWindow("claude", "default")).toBeUndefined();
   });

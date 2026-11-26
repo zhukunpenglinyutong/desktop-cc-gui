@@ -1124,6 +1124,7 @@ fn registration_writes_the_numbered_branch_title() {
     ]
     .join("\n");
     std::fs::write(&src_path, body + "\n").unwrap();
+    crate::history::claude_sessions::append_title(&src_path, "源会话旧标题").unwrap();
 
     // 源会话行（扫描器或更早的登记留下的）
     {
@@ -1146,6 +1147,11 @@ fn registration_writes_the_numbered_branch_title() {
             .unwrap(),
         "登记必须成功（文件已由 materialize 写好）"
     );
+
+    let summary = crate::history::scan_summary_file(
+        "claude", &dir.join(format!("{target}.jsonl")), &Default::default(),
+    ).unwrap();
+    assert_eq!(summary.native_title.as_deref(), Some(title.as_str()), "重扫不得用复制来的源标题覆盖分支名");
 
     let stored: Option<String> = {
         let conn = db.0.lock();

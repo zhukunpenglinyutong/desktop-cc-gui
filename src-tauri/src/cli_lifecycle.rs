@@ -938,6 +938,15 @@ mod tests {
 
     #[test]
     fn update_kind_matches_distribution_channel() {
+        let root = std::env::temp_dir().join(format!("ccgui-lifecycle-kind-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&root).unwrap();
+        let native = root.join("standalone-cli");
+        std::fs::write(&native, b"fixture").unwrap();
+        // 隔离本机实际安装；包目录路径的断言保持原样。
+        let update_kind = |engine: &str, bin: &str| {
+            let path = if bin.starts_with("/usr/local/bin/") { native.to_str().unwrap() } else { bin };
+            super::update_kind(engine, path)
+        };
         // npm engines always update through npm, regardless of binary path.
         assert_eq!(update_kind("dsh", "/usr/local/bin/dsh"), Some("npm"));
         // grok has no lifecycle action.
@@ -960,5 +969,6 @@ mod tests {
             ),
             Some("npm")
         );
+        std::fs::remove_dir_all(root).unwrap();
     }
 }

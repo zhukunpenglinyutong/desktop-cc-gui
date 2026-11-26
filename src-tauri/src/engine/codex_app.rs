@@ -2637,18 +2637,19 @@ mod tests {
             killed,
             virtual_pid,
         ));
-        timeout(Duration::from_secs(3), async {
-            while !pid_file.exists() {
+        let child_pid = timeout(Duration::from_secs(3), async {
+            loop {
+                if let Some(pid) = std::fs::read_to_string(&pid_file).ok()
+                    .and_then(|text| text.trim().parse::<i32>().ok())
+                    .filter(|pid| *pid > 0)
+                {
+                    break pid;
+                }
                 tokio::time::sleep(Duration::from_millis(10)).await;
             }
         })
         .await
         .unwrap();
-        let child_pid: i32 = std::fs::read_to_string(&pid_file)
-            .unwrap()
-            .trim()
-            .parse()
-            .unwrap();
         assert!(registry.kill(&run_id));
         timeout(Duration::from_secs(3), task)
             .await

@@ -28,6 +28,15 @@ export function errorText(err: unknown): string {
     if (text === "CCGUI_SESSION_NOT_FOUND") {
       return i18n.t("chat.renameSessionMissing") || text;
     }
+    if (text.startsWith("CCGUI_SESSION_NATIVE_BUSY:")) {
+      return i18n.t("chat.nativeSessionBusy") || text;
+    }
+    if (text.startsWith("CCGUI_SESSION_NATIVE_UPDATE_FAILED:")) {
+      return `${i18n.t("chat.nativeSessionUpdateFailed")} (${text.slice("CCGUI_SESSION_NATIVE_UPDATE_FAILED:".length).trim()})`;
+    }
+    if (text.startsWith("CCGUI_SESSION_TITLE_INDEX_FAILED:")) {
+      return `${i18n.t("chat.nativeTitleIndexFailed")} (${text.slice("CCGUI_SESSION_TITLE_INDEX_FAILED:".length).trim()})`;
+    }
     const git = gitErrorText(text);
     if (git !== null) return git;
     const prefix = "CCGUI_PROVIDER_MIGRATION_CONFLICT:";

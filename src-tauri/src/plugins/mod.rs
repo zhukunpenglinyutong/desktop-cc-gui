@@ -291,7 +291,8 @@ pub(crate) mod test_support {
             let dir = std::env::temp_dir()
                 .join(format!("ccgui-next-plugins-test-{}", uuid::Uuid::new_v4()));
             std::fs::create_dir_all(&dir).unwrap();
-            Self(dir)
+            // 正常夹具使用物理路径，链接拒绝由专门用例构造。
+            Self(dunce::canonicalize(&dir).unwrap())
         }
         pub(crate) fn path(&self, name: &str) -> PathBuf {
             self.0.join(name)
