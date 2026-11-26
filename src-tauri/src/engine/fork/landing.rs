@@ -546,6 +546,11 @@ pub(crate) fn register_fork_landing_with_path(
     // 隐藏的 CCGUI 内部帧会重新显示出来——新 id 的记录集为空，等于"从未接受过
     // 任何帧"。分支摘要也要按这套身份算（决定哪些帧该被隐藏），所以先取出来。
     let (frames, _) = db.accepted_internal_frames(engine, source_session_id)?;
+    if engine == "claude" {
+        if let Some(path) = target.as_deref() {
+            crate::history::claude_sessions::append_title(path, &branch_custom_title(title, &source))?;
+        }
+    }
     let row = branch_row(engine, target.as_deref(), &frames, &source, title)?;
     insert_branch_rows(
         db,
@@ -625,6 +630,8 @@ fn branch_row(
         }
         None => (
             crate::history::ScanSummary {
+                native_title: None,
+                native_title_error: None,
                 title: String::new(),
                 preview: String::new(),
                 first_ts: None,
@@ -748,7 +755,7 @@ fn insert_branch_rows(
         ],
     )
     .map_err(|e| format!("登记分支会话失败: {e}"))?;
-    // upsert_rows 不碰 custom_title；分叉要显式设它，否则侧栏会退回
+    // 分叉登记要显式设 custom_title，否则侧栏会退回
     // 从转录本推导的原标题，看不出这是分支。分支编号的唯一来源就是这一列。
     tx.execute(
         "UPDATE sessions SET custom_title=?3 WHERE engine=?1 AND session_id=?2",

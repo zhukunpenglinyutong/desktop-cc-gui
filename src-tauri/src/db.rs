@@ -1097,6 +1097,25 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
         )?;
     }
 
+    // 原生标题的上次观测值与 sidecar 签名单独保存，不混入消息帧身份。
+    let mut added_native_title_columns = false;
+    for (name, definition) in [
+        ("native_title", "TEXT"),
+        ("native_title_signature", "TEXT NOT NULL DEFAULT ''"),
+    ] {
+        let exists = conn.prepare("PRAGMA table_info(sessions)")?
+            .query_map([], |row| row.get::<_, String>(1))?
+            .flatten().any(|column| column == name);
+        if !exists {
+            conn.execute(&format!("ALTER TABLE sessions ADD COLUMN {name} {definition}"), [])?;
+            added_native_title_columns = true;
+        }
+    }
+    if added_native_title_columns {
+        // 新列尚无观测值，不能沿用此前的全局扫描缓存。
+        conn.execute("DELETE FROM meta WHERE key='stat_signature'", [])?;
+    }
+
     // Additive migration: opaque per-workspace metadata from host-capability
     // callers (plugin `workspaces.add`, e.g. { wsl: { hostId, distro } } for
     // remote distro paths that do not exist on this machine).

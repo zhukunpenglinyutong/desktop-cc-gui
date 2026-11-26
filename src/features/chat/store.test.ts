@@ -35,6 +35,7 @@ vi.mock("@/lib/ipc", () => ({
     loadSessionPage: vi.fn(async () => ({ messages: [], nextBefore: null, subagentHistory: [] })),
     loadRemoteSessionPage: vi.fn(async () => ({ messages: [], nextBefore: null, subagentHistory: [] })),
     deleteSession: vi.fn(async () => {}),
+    renameSession: vi.fn(async () => {}),
     deleteRemoteSession: vi.fn(async () => {}),
     // 回显被要求分叉的那个会话（真后端就是这样返回的）。
     forkSession: vi.fn(async (_engine: string, sessionId: string) => ({
@@ -552,6 +553,31 @@ describe("compactContext and refreshSessionUsage", () => {
     await useChatStore.getState().deleteSession("omp", "local-1");
     expect(ipc.deleteSession).toHaveBeenCalledWith("omp", "local-1");
     expect(useChatStore.getState().sessions).toEqual([]);
+  });
+
+  it("preserves the active Claude session when native deletion or rename is refused", async () => {
+    const meta: SessionMeta = {
+      engine: "claude", sessionId: "busy-native", workspacePath: WS,
+      filePath: "/tmp/busy-native.jsonl", fileSize: 1, fileMtimeMs: 1,
+      title: "原名", customTitle: null, preview: "", createdAt: 1, updatedAt: 1,
+      messageCount: 1, pinned: false,
+    };
+    const key = "claude/busy-native";
+    const current = { ...EMPTY_SESSION, streaming: true };
+    const tab = { engine: "claude", sessionId: "busy-native", workspacePath: WS };
+    useChatStore.setState({ sessions: [meta], openTabs: [tab], active: tab,
+      bySession: { [key]: current }, streamingByKey: { [key]: true } });
+    vi.mocked(ipc.deleteSession).mockRejectedValueOnce("CCGUI_SESSION_NATIVE_BUSY: running");
+    await useChatStore.getState().deleteSession("claude", "busy-native");
+    expect(useChatStore.getState().sessions).toEqual([meta]);
+    expect(useChatStore.getState().openTabs).toEqual([tab]);
+    expect(useChatStore.getState().bySession[key]).toBe(current);
+    expect(useChatStore.getState().streamingByKey[key]).toBe(true);
+    expect(useChatStore.getState().actionError).toBeTruthy();
+    vi.mocked(ipc.renameSession).mockRejectedValueOnce("CCGUI_SESSION_NATIVE_BUSY: saving");
+    await useChatStore.getState().renameSession("claude", "busy-native", "新名");
+    expect(useChatStore.getState().sessions[0].title).toBe("原名");
+    expect(useChatStore.getState().actionError).toBeTruthy();
   });
 
   it("archiveSession hides the row, closes its tab, and remembers the key", async () => {

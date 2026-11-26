@@ -390,6 +390,10 @@ static PARSED_CACHE_BYTES: LazyLock<Mutex<usize>> = LazyLock::new(|| Mutex::new(
 /// that began before a save may have read the old source under a stat key the
 /// save did not move, so it is served but never published once this changed.
 static PARSED_CACHE_GENERATION: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+/// 测试专用：全进程共用缓存，别的测试的保存会作废正在发布的解析。依赖"解析已发布"
+/// 的测试持写锁独占，`forget_parsed_session` 持读锁，二者不再交错。
+#[cfg(test)]
+static PARSED_CACHE_TEST_GATE: parking_lot::RwLock<()> = parking_lot::RwLock::new(());
 
 const PARSED_CACHE_CAPACITY: usize = 32;
 const PARSED_CACHE_BUDGET_BYTES: usize = 128 * 1024 * 1024;
@@ -443,6 +447,8 @@ fn parsed_footprint(parsed: &ParsedSession) -> usize {
 /// save need not change the cache key's stat: an OpenCode tree edit can touch
 /// only part files under unchanged session metadata, SQLite writes land in WAL.
 pub(crate) fn forget_parsed_session(path: &Path) {
+    #[cfg(test)]
+    let _gate = PARSED_CACHE_TEST_GATE.read();
     let mut cache = PARSED_CACHE.lock();
     let mut bytes = PARSED_CACHE_BYTES.lock();
     cache.retain(|(cached_path, ..), previous| {
@@ -907,6 +913,9 @@ pub async fn load_remote_session_page(
 fn delete_session_disk(engine: &str, path: &Path) -> Result<(), String> {
     match engine {
         "claude" | "codex" | "pi" | "omp" | "agy" | "qoder" | "qoder-cn" => {
+            if engine == "claude" {
+                return super::claude_sessions::delete(path);
+            }
             match std::fs::remove_file(path) {
                 Ok(()) => Ok(()),
                 Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
@@ -1169,6 +1178,7 @@ pub(super) fn delete_session_blocking(
         path = find_session_file_path(db, engine, session_id)?;
     }
     if let Some(path) = path {
+        check_claude_path_identity(engine, session_id, &path)?;
         delete_session_disk(engine, &path)?;
         delete_session_backups(engine, &path)?;
     }
@@ -1210,8 +1220,9 @@ pub async fn delete_session(
     }
     let db = Arc::clone(&state.db);
     let sink = Arc::clone(&state.sink);
+    let processes = Arc::clone(&state.processes);
     tauri::async_runtime::spawn_blocking(move || {
-        delete_session_blocking(&db, &engine, &session_id)
+        with_native_session_mutation(&processes, &engine, &session_id, || delete_session_blocking(&db, &engine, &session_id))
     })
     .await
     .map_err(|e| e.to_string())??;
@@ -1316,12 +1327,32 @@ pub async fn rename_session(
 ) -> Result<(), String> {
     let db = Arc::clone(&state.db);
     let sink = Arc::clone(&state.sink);
+    let processes = Arc::clone(&state.processes);
     tauri::async_runtime::spawn_blocking(move || {
-        rename_session_in(&db, &engine, &session_id, &title)
+        with_native_session_mutation(&processes, &engine, &session_id, || rename_session_in(&db, &engine, &session_id, &title))
     })
     .await
     .map_err(|e| e.to_string())??;
     sink.emit_sessions_changed();
+    Ok(())
+}
+
+// 原生文件变更与本应用的启动、运行、编辑互斥；不探测外部 CLI 进程。
+fn with_native_session_mutation<T>(processes: &crate::engine::ProcessRegistry, engine: &str, session_id: &str, action: impl FnOnce() -> Result<T, String>) -> Result<T, String> {
+    let _edit = if engine == "claude" {
+        Some(processes.begin_session_edit(session_id).map_err(|error| format!("CCGUI_SESSION_NATIVE_BUSY: {error}"))?)
+    } else { None };
+    action().map_err(|error| {
+        if engine == "claude" && !error.starts_with("CCGUI_") {
+            format!("CCGUI_SESSION_NATIVE_UPDATE_FAILED: {error}")
+        } else { error }
+    })
+}
+
+fn check_claude_path_identity(engine: &str, session_id: &str, path: &Path) -> Result<(), String> {
+    if engine == "claude" && path.file_stem().and_then(|s| s.to_str()) != Some(session_id) {
+        return Err("Claude session file does not match the requested session id".into());
+    }
     Ok(())
 }
 
@@ -1331,6 +1362,13 @@ fn rename_session_in(
     session_id: &str,
     title: &str,
 ) -> Result<(), String> {
+    let _scan_guard = (engine == "claude").then(|| super::scanner::SCAN_LOCK.lock());
+    if engine == "claude" {
+        let path = find_session_file_path(db, engine, session_id)?
+            .ok_or("CCGUI_SESSION_NOT_FOUND")?;
+        check_claude_path_identity(engine, session_id, &path)?;
+        super::claude_sessions::rename(&path, title.trim())?;
+    }
     let value = if title.trim().is_empty() {
         None
     } else {
@@ -1339,12 +1377,12 @@ fn rename_session_in(
     let changed =
         db.0.lock()
             .execute(
-                "UPDATE sessions SET custom_title=?3 WHERE engine=?1 AND session_id=?2",
+                "UPDATE sessions SET custom_title=?3, native_title=CASE WHEN engine='claude' THEN COALESCE(?3, '') ELSE native_title END WHERE engine=?1 AND session_id=?2",
                 rusqlite::params![engine, session_id, value],
             )
-            .map_err(|e| e.to_string())?;
+            .map_err(|e| if engine == "claude" { format!("CCGUI_SESSION_TITLE_INDEX_FAILED: {e}") } else { e.to_string() })?;
     if changed == 0 {
-        return Err("CCGUI_SESSION_NOT_FOUND".to_string());
+        return Err(if engine == "claude" { "CCGUI_SESSION_TITLE_INDEX_FAILED: session vanished after native rename".into() } else { "CCGUI_SESSION_NOT_FOUND".into() });
     }
     Ok(())
 }
@@ -1890,6 +1928,569 @@ mod tests {
         std::fs::remove_dir_all(&home).unwrap();
     }
 
+    #[test]
+    fn claude_rename_scan_and_delete_roundtrip() {
+        let _lock = crate::history::scanner::tests::HOME_LOCK.lock();
+        let home = scratch_dir("claude-roundtrip");
+        let previous = std::env::var_os("CLAUDE_CONFIG_DIR");
+        std::env::set_var("CLAUDE_CONFIG_DIR", &home);
+        let workspace = home.join("ws");
+        std::fs::create_dir_all(&workspace).unwrap();
+        let project = home
+            .join("projects")
+            .join(super::super::claude_encode_project_path(
+                &workspace.to_string_lossy(),
+            ));
+        std::fs::create_dir_all(&project).unwrap();
+        let path = project.join("sid.jsonl");
+        std::fs::write(
+            &path,
+            "{\"type\":\"user\",\"message\":{\"content\":\"first\"}}\n",
+        )
+        .unwrap();
+        let db = crate::db::Db::open_at(&home.join("app.db")).unwrap();
+        db.0.lock()
+            .execute(
+                "INSERT INTO workspaces(id,path,name) VALUES('w',?1,'ws')",
+                [workspace.to_string_lossy().as_ref()],
+            )
+            .unwrap();
+        super::super::scanner::scan_with(&db, || {}).unwrap();
+        let title_path = project.join("sid/custom-title.json");
+        std::fs::create_dir_all(title_path.parent().unwrap()).unwrap();
+        std::fs::write(&title_path, r#"{"customTitle":"sidecar old"}"#).unwrap();
+        super::super::scanner::scan_with(&db, || {}).unwrap();
+        assert_eq!(
+            list_sessions_from(&db).unwrap()[0].custom_title.as_deref(),
+            Some("sidecar old")
+        );
+        std::fs::write(&title_path, r#"{"customTitle":"sidecar changed longer"}"#).unwrap();
+        super::super::scanner::scan_with(&db, || {}).unwrap();
+        assert_eq!(
+            list_sessions_from(&db).unwrap()[0].custom_title.as_deref(),
+            Some("sidecar changed longer")
+        );
+        rename_session_in(&db, "claude", "sid", "GUI标题😀").unwrap();
+        assert_eq!(
+            super::super::claude_sessions::read_title(&path)
+                .unwrap()
+                .as_deref(),
+            Some("GUI标题😀")
+        );
+        // CLI 追加新标题后，扫描必须覆盖先前的 GUI 自定义标题。
+        use std::io::Write;
+        let mut file = std::fs::OpenOptions::new()
+            .append(true)
+            .open(&path)
+            .unwrap();
+        writeln!(
+            file,
+            "{{\"type\":\"custom-title\",\"customTitle\":\"CLI新标题\",\"sessionId\":\"sid\"}}"
+        )
+        .unwrap();
+        super::super::scanner::scan_with(&db, || {}).unwrap();
+        assert_eq!(
+            list_sessions_from(&db).unwrap()[0].custom_title.as_deref(),
+            Some("CLI新标题")
+        );
+        assert_eq!(
+            super::super::scanner::scan_with(&db, || {})
+                .unwrap()
+                .reparsed,
+            0
+        );
+        rename_session_in(&db, "claude", "sid", " ").unwrap();
+        super::super::scanner::scan_with(&db, || {}).unwrap();
+        let sessions = list_sessions_from(&db).unwrap();
+        assert_eq!(sessions[0].custom_title, None);
+        assert_eq!(sessions[0].title, "first");
+        assert_eq!(sessions[0].message_count, 1);
+        drop(file);
+        delete_session_blocking(&db, "claude", "sid").unwrap();
+        assert!(!path.exists());
+        assert!(!project.join("sid").exists());
+        super::super::scanner::scan_with(&db, || {}).unwrap();
+        assert!(list_sessions_from(&db).unwrap().is_empty());
+        match previous {
+            Some(value) => std::env::set_var("CLAUDE_CONFIG_DIR", value),
+            None => std::env::remove_var("CLAUDE_CONFIG_DIR"),
+        }
+        drop(db);
+        std::fs::remove_dir_all(home).unwrap();
+    }
+
+    #[test]
+    fn claude_delete_removes_sidecar_directory_and_keeps_row_on_failure() {
+        let _lock = crate::history::scanner::tests::HOME_LOCK.lock();
+        let home = scratch_dir("claude-delete");
+        let previous = std::env::var_os("CLAUDE_CONFIG_DIR");
+        std::env::set_var("CLAUDE_CONFIG_DIR", &home);
+        let project = home.join("projects/project");
+        std::fs::create_dir_all(&project).unwrap();
+        let path = project.join("sid.jsonl");
+        std::fs::write(&path, "transcript").unwrap();
+        let db = crate::db::Db::open_at(&home.join("app.db")).unwrap();
+        db.0.lock().execute("INSERT INTO sessions(engine,session_id,workspace_path,file_path,file_size,file_mtime_ms) VALUES('claude','sid','/ws',?1,1,1)", [path.to_string_lossy().as_ref()]).unwrap();
+        std::fs::write(project.join("sid"), "invalid directory").unwrap();
+        assert!(delete_session_blocking(&db, "claude", "sid").is_err());
+        assert!(path.exists());
+        assert_eq!(list_sessions_from(&db).unwrap().len(), 1);
+        std::fs::remove_file(project.join("sid")).unwrap();
+        super::super::claude_sessions::rename(&path, "title").unwrap();
+        delete_session_blocking(&db, "claude", "sid").unwrap();
+        assert!(!project.join("sid").exists());
+        assert!(!path.exists());
+        assert!(list_sessions_from(&db).unwrap().is_empty());
+        match previous {
+            Some(value) => std::env::set_var("CLAUDE_CONFIG_DIR", value),
+            None => std::env::remove_var("CLAUDE_CONFIG_DIR"),
+        }
+        drop(db);
+        std::fs::remove_dir_all(home).unwrap();
+    }
+
+    fn claude_index_fixture(
+        tag: &str,
+    ) -> (
+        Scratch,
+        crate::history::scanner::tests::HomeGuard,
+        crate::db::Db,
+        PathBuf,
+    ) {
+        let scratch = Scratch::new();
+        let guard = crate::history::scanner::tests::HomeGuard::set(&scratch.0);
+        let workspace = scratch.0.join(tag);
+        std::fs::create_dir_all(&workspace).unwrap();
+        let path = scratch
+            .0
+            .join(".claude/projects")
+            .join(super::super::claude_encode_project_path(
+                &workspace.to_string_lossy(),
+            ))
+            .join("sid.jsonl");
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(
+            &path,
+            "{\"type\":\"user\",\"message\":{\"content\":\"first\"}}\n",
+        )
+        .unwrap();
+        let db = crate::db::Db::open_at(&scratch.0.join("app.db")).unwrap();
+        db.0.lock()
+            .execute(
+                "INSERT INTO workspaces(id,path,name) VALUES('w',?1,'ws')",
+                [workspace.to_string_lossy().as_ref()],
+            )
+            .unwrap();
+        (scratch, guard, db, path)
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn claude_unreadable_unindexed_transcript_keeps_scan_cache() {
+        use std::io::Write;
+        use std::os::unix::fs::PermissionsExt;
+
+        let (_scratch, _guard, db, path) = claude_index_fixture("unreadable-unindexed");
+        let bad = path.with_file_name("bad.jsonl");
+        std::fs::write(
+            &bad,
+            "{\"type\":\"user\",\"message\":{\"content\":\"bad\"}}\n",
+        )
+        .unwrap();
+        let permissions = std::fs::metadata(&bad).unwrap().permissions();
+        std::fs::set_permissions(&bad, std::fs::Permissions::from_mode(0o000)).unwrap();
+        assert!(std::fs::File::open(&bad).is_err(), "夹具必须确实不可读");
+
+        let reparsed: Vec<_> = (0..3)
+            .map(|_| {
+                super::super::scanner::scan_with(&db, || {})
+                    .unwrap()
+                    .reparsed
+            })
+            .collect();
+        let version: Option<String> =
+            db.0.lock()
+                .query_row(
+                    "SELECT value FROM meta WHERE key='title_version'",
+                    [],
+                    |row| row.get(0),
+                )
+                .optional()
+                .unwrap();
+        let signature: Option<String> =
+            db.0.lock()
+                .query_row(
+                    "SELECT value FROM meta WHERE key='stat_signature'",
+                    [],
+                    |row| row.get(0),
+                )
+                .optional()
+                .unwrap();
+        std::fs::set_permissions(&bad, permissions).unwrap();
+
+        assert_eq!(
+            reparsed,
+            vec![1, 0, 0],
+            "未入库文件失败不能让健康会话反复重解析"
+        );
+        assert_eq!(version.as_deref(), Some("12"));
+        assert!(signature.is_some_and(|value| !value.is_empty()));
+        assert_eq!(list_sessions_from(&db).unwrap().len(), 1);
+        // 文件可读且内容变化后仍能入库，不把跳过状态永久固化。
+        std::fs::OpenOptions::new()
+            .append(true)
+            .open(&bad)
+            .unwrap()
+            .write_all(b"\n")
+            .unwrap();
+        assert_eq!(
+            super::super::scanner::scan_with(&db, || {})
+                .unwrap()
+                .reparsed,
+            1
+        );
+        assert_eq!(list_sessions_from(&db).unwrap().len(), 2);
+        assert_eq!(
+            super::super::scanner::scan_with(&db, || {})
+                .unwrap()
+                .reparsed,
+            0
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn claude_unreadable_stale_transcript_retries_migration() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let (_scratch, _guard, db, path) = claude_index_fixture("unreadable-stale");
+        super::super::scanner::scan_with(&db, || {}).unwrap();
+        db.0.lock()
+            .execute("UPDATE sessions SET custom_title='保留名称'", [])
+            .unwrap();
+        db.0.lock()
+            .execute("UPDATE meta SET value='11' WHERE key='title_version'", [])
+            .unwrap();
+        let permissions = std::fs::metadata(&path).unwrap().permissions();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o000)).unwrap();
+        assert!(std::fs::File::open(&path).is_err(), "夹具必须确实不可读");
+
+        let first = super::super::scanner::scan_with(&db, || {}).unwrap();
+        let second = super::super::scanner::scan_with(&db, || {}).unwrap();
+        let pending: String =
+            db.0.lock()
+                .query_row(
+                    "SELECT value FROM meta WHERE key='title_version'",
+                    [],
+                    |row| row.get(0),
+                )
+                .unwrap();
+        std::fs::set_permissions(&path, permissions).unwrap();
+
+        assert_eq!((first.reparsed, second.reparsed), (0, 0));
+        assert_eq!(pending, "11", "已入库的过期会话读取失败时仍需阻止迁移完成");
+        assert_eq!(
+            list_sessions_from(&db).unwrap()[0].custom_title.as_deref(),
+            Some("保留名称")
+        );
+        assert_eq!(
+            super::super::scanner::scan_with(&db, || {})
+                .unwrap()
+                .reparsed,
+            1
+        );
+        let completed: String =
+            db.0.lock()
+                .query_row(
+                    "SELECT value FROM meta WHERE key='title_version'",
+                    [],
+                    |row| row.get(0),
+                )
+                .unwrap();
+        assert_eq!(completed, "12");
+        assert_eq!(
+            list_sessions_from(&db).unwrap()[0].custom_title.as_deref(),
+            Some("保留名称")
+        );
+        assert_eq!(
+            super::super::scanner::scan_with(&db, || {})
+                .unwrap()
+                .reparsed,
+            0
+        );
+    }
+
+    #[test]
+    fn claude_old_database_migration_preserves_local_name_until_native_name_changes() {
+        let (scratch, _guard, db, path) = claude_index_fixture("migration");
+        super::super::scanner::scan_with(&db, || {}).unwrap();
+        db.0.lock()
+            .execute("UPDATE sessions SET custom_title='legacy GUI title'", [])
+            .unwrap();
+        // 模拟旧数据库，保留已有会话与本地名称；重开必须幂等补列。
+        db.0.lock().execute_batch("ALTER TABLE sessions DROP COLUMN native_title; ALTER TABLE sessions DROP COLUMN native_title_signature;").unwrap();
+        drop(db);
+        super::super::claude_sessions::append_title(&path, "old native title").unwrap();
+        let db = crate::db::Db::open_at(&scratch.0.join("app.db")).unwrap();
+        super::super::scanner::scan_with(&db, || {}).unwrap();
+        assert_eq!(
+            list_sessions_from(&db).unwrap()[0].custom_title.as_deref(),
+            Some("legacy GUI title")
+        );
+        super::super::claude_sessions::append_title(&path, "new CLI title").unwrap();
+        super::super::scanner::scan_with(&db, || {}).unwrap();
+        assert_eq!(
+            list_sessions_from(&db).unwrap()[0].custom_title.as_deref(),
+            Some("new CLI title")
+        );
+        let signature: String =
+            db.0.lock()
+                .query_row("SELECT accepted_frames_signature FROM sessions", [], |r| {
+                    r.get(0)
+                })
+                .unwrap();
+        assert_eq!(signature, "", "原生标题不得污染消息帧身份签名");
+    }
+
+    #[test]
+    fn claude_first_cli_rename_after_observing_no_native_title_replaces_legacy_gui_name() {
+        let (scratch, _guard, db, path) = claude_index_fixture("first-cli-rename");
+        super::super::scanner::scan_with(&db, || {}).unwrap();
+        db.0.lock().execute("UPDATE sessions SET custom_title='legacy GUI title'", []).unwrap();
+        db.0.lock().execute_batch("ALTER TABLE sessions DROP COLUMN native_title; ALTER TABLE sessions DROP COLUMN native_title_signature;").unwrap();
+        drop(db);
+        let db = crate::db::Db::open_at(&scratch.0.join("app.db")).unwrap();
+        // 首次迁移观测到没有原生标题，也应记录为已观测状态。
+        super::super::scanner::scan_with(&db, || {}).unwrap();
+        assert_eq!(list_sessions_from(&db).unwrap()[0].custom_title.as_deref(), Some("legacy GUI title"));
+        super::super::claude_sessions::append_title(&path, "first CLI title").unwrap();
+        super::super::scanner::scan_with(&db, || {}).unwrap();
+        assert_eq!(list_sessions_from(&db).unwrap()[0].custom_title.as_deref(), Some("first CLI title"));
+    }
+
+    #[test]
+    fn claude_sidecar_removal_clears_imported_title_without_changing_messages() {
+        let (_scratch, _guard, db, path) = claude_index_fixture("sidecar-removal");
+        let title_path = path.with_extension("").join("custom-title.json");
+        std::fs::create_dir_all(title_path.parent().unwrap()).unwrap();
+        std::fs::write(&title_path, r#"{"customTitle":"CLI title"}"#).unwrap();
+        super::super::scanner::scan_with(&db, || {}).unwrap();
+        assert_eq!(
+            list_sessions_from(&db).unwrap()[0].custom_title.as_deref(),
+            Some("CLI title")
+        );
+        assert_eq!(super::super::search::index_pending(&db).unwrap(), 1);
+        let hits = super::super::search::search(&db, "first", None, None)
+            .unwrap()
+            .hits;
+        assert_eq!(hits[0].custom_title.as_deref(), Some("CLI title"));
+        std::fs::remove_file(&title_path).unwrap();
+        super::super::scanner::scan_with(&db, || {}).unwrap();
+        let sessions = list_sessions_from(&db).unwrap();
+        assert_eq!(sessions[0].custom_title, None);
+        assert_eq!(sessions[0].message_count, 1);
+        assert_eq!(sessions[0].title, "first");
+        assert_eq!(
+            super::super::scanner::scan_with(&db, || {})
+                .unwrap()
+                .reparsed,
+            0
+        );
+        assert_eq!(
+            super::super::search::index_pending(&db).unwrap(),
+            0,
+            "标题副本变化不重建正文搜索索引"
+        );
+        let hits = super::super::search::search(&db, "first", None, None)
+            .unwrap()
+            .hits;
+        assert_eq!(hits[0].custom_title, None);
+        delete_session_blocking(&db, "claude", "sid").unwrap();
+        assert!(super::super::search::search(&db, "first", None, None)
+            .unwrap()
+            .hits
+            .is_empty());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn claude_failed_title_read_retries_even_when_repaired_stat_is_identical() {
+        let (_scratch, _guard, db, path) = claude_index_fixture("retry");
+        super::super::scanner::scan_with(&db, || {}).unwrap();
+        let title_path = path.with_extension("").join("custom-title.json");
+        std::fs::create_dir_all(&title_path).unwrap();
+        let metadata = std::fs::metadata(&title_path).unwrap();
+        let signature = super::super::claude_sessions::title_signature(&path);
+        assert_eq!(
+            super::super::scanner::scan_with(&db, || {})
+                .unwrap()
+                .reparsed,
+            1
+        );
+        assert_eq!(
+            list_sessions_from(&db).unwrap()[0].message_count,
+            1,
+            "可选标题损坏不能阻断正文索引"
+        );
+        std::fs::remove_dir(&title_path).unwrap();
+        let mut title = r#"{"customTitle":"retry"}"#.to_string();
+        assert!(metadata.len() >= title.len() as u64);
+        title.push_str(&" ".repeat(metadata.len() as usize - title.len()));
+        std::fs::write(&title_path, title).unwrap();
+        std::fs::File::options()
+            .write(true)
+            .open(&title_path)
+            .unwrap()
+            .set_times(std::fs::FileTimes::new().set_modified(metadata.modified().unwrap()))
+            .unwrap();
+        assert_eq!(
+            super::super::claude_sessions::title_signature(&path),
+            signature
+        );
+        assert_eq!(
+            super::super::scanner::scan_with(&db, || {})
+                .unwrap()
+                .reparsed,
+            1
+        );
+        assert_eq!(
+            list_sessions_from(&db).unwrap()[0].custom_title.as_deref(),
+            Some("retry")
+        );
+    }
+
+    #[test]
+    fn claude_corrupt_optional_title_preserves_name_and_updates_messages_without_global_reparse() {
+        let (_scratch, _guard, db, path) = claude_index_fixture("optional-metadata");
+        let title_path = path.with_extension("").join("custom-title.json");
+        std::fs::create_dir_all(title_path.parent().unwrap()).unwrap();
+        std::fs::write(&title_path, r#"{"customTitle":"old title"}"#).unwrap();
+        super::super::scanner::scan_with(&db, || {}).unwrap();
+        std::fs::write(&title_path, "invalid JSON").unwrap();
+        use std::io::Write;
+        writeln!(
+            std::fs::OpenOptions::new()
+                .append(true)
+                .open(&path)
+                .unwrap(),
+            "{{\"type\":\"assistant\",\"message\":{{\"content\":\"new reply\"}}}}"
+        )
+        .unwrap();
+        // 同时模拟升级：可选标题失败不应让其他会话每轮全量重扫。
+        db.0.lock()
+            .execute("DELETE FROM meta WHERE key='title_version'", [])
+            .unwrap();
+        let other = path.with_file_name("other.jsonl");
+        std::fs::write(
+            &other,
+            "{\"type\":\"user\",\"message\":{\"content\":\"other\"}}\n",
+        )
+        .unwrap();
+        assert_eq!(
+            super::super::scanner::scan_with(&db, || {})
+                .unwrap()
+                .reparsed,
+            2
+        );
+        let sessions = list_sessions_from(&db).unwrap();
+        let current = sessions.iter().find(|s| s.session_id == "sid").unwrap();
+        assert_eq!(current.custom_title.as_deref(), Some("old title"));
+        assert_eq!(current.message_count, 2);
+        assert_eq!(
+            super::super::scanner::scan_with(&db, || {})
+                .unwrap()
+                .reparsed,
+            1
+        );
+        std::fs::write(&title_path, r#"{"customTitle":"repaired title"}"#).unwrap();
+        super::super::scanner::scan_with(&db, || {}).unwrap();
+        let sessions = list_sessions_from(&db).unwrap();
+        assert_eq!(
+            sessions
+                .iter()
+                .find(|s| s.session_id == "sid")
+                .unwrap()
+                .custom_title
+                .as_deref(),
+            Some("repaired title")
+        );
+        assert_eq!(
+            super::super::scanner::scan_with(&db, || {})
+                .unwrap()
+                .reparsed,
+            0
+        );
+    }
+
+    #[test]
+    fn claude_wrong_file_identity_is_rejected_and_database_failure_is_explicit() {
+        let (_scratch, _guard, db, path) = claude_index_fixture("identity");
+        super::super::scanner::scan_with(&db, || {}).unwrap();
+        db.0.lock()
+            .execute("UPDATE sessions SET session_id='wrong'", [])
+            .unwrap();
+        assert!(rename_session_in(&db, "claude", "wrong", "new").is_err());
+        assert!(delete_session_blocking(&db, "claude", "wrong").is_err());
+        assert!(path.exists());
+        db.0.lock()
+            .execute("UPDATE sessions SET session_id='sid'", [])
+            .unwrap();
+        rename_session_in(&db, "claude", "sid", "old").unwrap();
+        db.0.lock().execute_batch("CREATE TRIGGER fail_title_update BEFORE UPDATE ON sessions BEGIN SELECT RAISE(ABORT, 'injected database failure'); END;").unwrap();
+        let error = rename_session_in(&db, "claude", "sid", "committed native title").unwrap_err();
+        assert!(error.starts_with("CCGUI_SESSION_TITLE_INDEX_FAILED:"));
+        assert_eq!(
+            super::super::claude_sessions::read_title(&path)
+                .unwrap()
+                .as_deref(),
+            Some("committed native title")
+        );
+        db.0.lock()
+            .execute_batch("DROP TRIGGER fail_title_update;")
+            .unwrap();
+        super::super::scanner::scan_with(&db, || {}).unwrap();
+        assert_eq!(
+            list_sessions_from(&db).unwrap()[0].custom_title.as_deref(),
+            Some("committed native title")
+        );
+    }
+
+    #[test]
+    fn claude_native_mutation_excludes_running_launching_and_other_saves() {
+        let processes = crate::engine::ProcessRegistry::default();
+        let entry = crate::engine::ChildEntry {
+            child: None,
+            pid: 0,
+            run_id: "run".into(),
+            killed: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            reader_abort: Arc::new(std::sync::OnceLock::new()),
+            stdin: None,
+            questions: Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
+            plans: Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
+        };
+        processes.insert("sid".into(), entry);
+        let called = std::cell::Cell::new(false);
+        let result = with_native_session_mutation(&processes, "claude", "sid", || {
+            called.set(true);
+            Ok(())
+        });
+        assert!(result
+            .unwrap_err()
+            .starts_with("CCGUI_SESSION_NATIVE_BUSY:"));
+        assert!(!called.get());
+        assert!(with_native_session_mutation(&processes, "pi", "sid", || Ok(())).is_ok());
+        processes.remove_run_if_pid("run", 0);
+        let edit = processes.begin_session_edit("sid").unwrap();
+        assert!(with_native_session_mutation(&processes, "claude", "sid", || Ok(())).is_err());
+        drop(edit);
+        with_native_session_mutation(&processes, "claude", "sid", || {
+            assert!(processes.ensure_session_not_editing(Some("sid")).is_err());
+            Ok(())
+        })
+        .unwrap();
+        assert!(processes.ensure_session_not_editing(Some("sid")).is_ok());
+    }
+
     fn scratch_dir(tag: &str) -> PathBuf {
         let dir = std::env::temp_dir().join(format!(
             "ccgui-reader-{tag}-{}",
@@ -2045,6 +2646,7 @@ mod tests {
 
     #[test]
     fn force_reload_same_stat_preserves_frames_and_unrelated_cache() {
+        let _gate = PARSED_CACHE_TEST_GATE.write();
         let scratch = Scratch::new();
         let file = scratch.0.join("edited.jsonl");
         let other = scratch.0.join("other.jsonl");
@@ -2090,6 +2692,7 @@ mod tests {
 
     #[test]
     fn force_reload_remote_same_stat_keeps_recorded_frames_hidden() {
+        let _gate = PARSED_CACHE_TEST_GATE.write();
         let scratch = Scratch::new();
         let cache = scratch.0.join("remote.jsonl");
         let recorded = "<CCGUI_INTERNAL_abcdefgh>{\"pluginId\":\"bridge\"}</CCGUI_INTERNAL_abcdefgh>";
@@ -2116,6 +2719,7 @@ mod tests {
 
     #[test]
     fn force_reload_opencode_part_change_replaces_metadata_stat_cache() {
+        let _gate = PARSED_CACHE_TEST_GATE.write();
         let scratch = Scratch::new();
         let storage = scratch.0.join("storage");
         let file = storage.join("session/project/ses_edit.json");
@@ -2145,6 +2749,7 @@ mod tests {
 
     #[test]
     fn force_reload_opencode_wal_preserves_other_session_cache() {
+        let _gate = PARSED_CACHE_TEST_GATE.write();
         let scratch = Scratch::new();
         let file = scratch.0.join("opencode.db");
         let conn = rusqlite::Connection::open(&file).unwrap();
@@ -2186,7 +2791,9 @@ mod tests {
     #[test]
     fn force_reload_agy_prompt_change_replaces_conversation_stat_cache() {
         let scratch = Scratch::new();
+        // 先 HOME 锁再缓存闸门，与持 HOME 锁调用保存的测试同序，避免互锁。
         let _home_lock = crate::paths::HOME_ENV_LOCK.lock();
+        let _gate = PARSED_CACHE_TEST_GATE.write();
         struct RestoreAgyHome(Option<std::ffi::OsString>);
         impl Drop for RestoreAgyHome {
             fn drop(&mut self) {
@@ -3022,9 +3629,10 @@ mod tests {
     #[test]
     fn delete_session_keeps_records_when_disk_removal_fails() {
         let scratch = Scratch::new();
+        let _home = crate::history::scanner::tests::HomeGuard::set(&scratch.0);
         // remove_file on a directory fails on both Unix and Windows.
-        let path = scratch.0.join("not-a-transcript.jsonl");
-        std::fs::create_dir(&path).unwrap();
+        let path = scratch.0.join(".claude/projects/project/failed.jsonl");
+        std::fs::create_dir_all(&path).unwrap();
         let db = crate::db::Db::open_at(&scratch.0.join("app.db")).unwrap();
         for engine in ["claude", "codex"] {
             db.0.lock().execute(

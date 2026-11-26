@@ -23,7 +23,8 @@ pub(super) static SCAN_LOCK: parking_lot::Mutex<()> = parking_lot::Mutex::new(()
 /// slash-prefixed titles). v10: internal frames are hidden only when a live
 /// capture validator recorded their identity, so summaries derived by the
 /// older "any JSON-valid frame" guess are stale.
-const TITLE_VERSION: &str = "10";
+/// v12：原生标题状态独立存储；迁移时保留已有 GUI 自定义名。
+const TITLE_VERSION: &str = "12";
 
 // ==================== Scan ====================
 
@@ -165,6 +166,9 @@ fn stat_all(
             signature_hasher.update(size.to_le_bytes());
             signature_hasher.update(mtime_ms.to_le_bytes());
         }
+        if cand.engine == "claude" {
+            signature_hasher.update(super::claude_sessions::title_signature(&cand.path).as_bytes());
+        }
         stats.push(sig);
     }
     (stats, format!("{:x}", signature_hasher.finalize()))
@@ -220,6 +224,7 @@ struct IndexedFile {
     session_id: String,
     workspace_path: String,
     accepted_signature: String,
+    native_title_signature: String,
 }
 
 /// Prefetch (brief lock) the stored per-file index state and, while a summary
@@ -232,7 +237,7 @@ fn prefetch_stat_keys(
     let mut stmt = conn
         .prepare(
             "SELECT file_path, file_size, file_mtime_ms, engine, session_id,
-                    workspace_path, accepted_frames_signature
+                    workspace_path, accepted_frames_signature, native_title_signature
              FROM sessions",
         )
         .map_err(|e| e.to_string())?;
@@ -247,6 +252,7 @@ fn prefetch_stat_keys(
                     session_id: r.get(4)?,
                     workspace_path: r.get(5)?,
                     accepted_signature: r.get(6)?,
+                    native_title_signature: r.get(7)?,
                 },
             ))
         })
@@ -280,7 +286,12 @@ struct PreparedUpsert {
     /// Signature of the recorded frame identities this summary was derived
     /// from; stored so the next scan can tell a stale summary from a fresh one.
     accepted_signature: String,
+    native_title_signature: String,
     summary: ScanSummary,
+}
+
+fn native_title_signature(cand: &Candidate) -> String {
+    if cand.engine == "claude" { super::claude_sessions::title_signature(&cand.path) } else { String::new() }
 }
 
 fn prepare_candidate(
@@ -290,7 +301,7 @@ fn prepare_candidate(
     stale_paths: &HashSet<String>,
     workspaces: &[String],
     accepted: &crate::db::AcceptedFrameIndex,
-) -> Option<PreparedUpsert> {
+) -> Result<Option<PreparedUpsert>, String> {
     let (size, mtime_ms) = sig;
     let path_str = cand.path.to_string_lossy().to_string();
     // Unchanged on disk, derived from the same recorded frame identities, and
@@ -307,9 +318,10 @@ fn prepare_candidate(
                 .known_workspace
                 .as_ref()
                 .is_none_or(|workspace| workspace == &indexed.workspace_path)
+            && indexed.native_title_signature == native_title_signature(cand)
             && !stale_paths.contains(&path_str)
         {
-            return None;
+            return Ok(None);
         }
     }
     // Identify the session (peek only for head-keyed engines).
@@ -317,14 +329,14 @@ fn prepare_candidate(
         (Some(id), Some(ws)) => (id.clone(), ws.clone()),
         _ => {
             let Some((id, cwd)) = identify_head(cand.engine, &cand.path) else {
-                return None;
+                return Ok(None);
             };
             // Attribute only files belonging to a registered workspace.
             if !workspaces
                 .iter()
                 .any(|w| same_or_child(Path::new(&cwd), Path::new(w)))
             {
-                return None;
+                return Ok(None);
             }
             (id, cwd)
         }
@@ -334,8 +346,8 @@ fn prepare_candidate(
         .get(cand.engine)
         .and_then(|sessions| sessions.get(session_id.as_str()))
         .unwrap_or(&empty);
-    let summary = scan_summary_file(cand.engine, &cand.path, &accepted_set.hashes).ok()?;
-    Some(PreparedUpsert {
+    let summary = scan_summary_file(cand.engine, &cand.path, &accepted_set.hashes)?;
+    Ok(Some(PreparedUpsert {
         engine: cand.engine,
         session_id,
         workspace_path,
@@ -343,8 +355,9 @@ fn prepare_candidate(
         size,
         mtime_ms,
         accepted_signature: accepted_set.signature.clone(),
+        native_title_signature: native_title_signature(cand),
         summary,
-    })
+    }))
 }
 
 /// Drop Codex / DSH subagent sessions that were indexed as top-level chats.
@@ -721,7 +734,8 @@ fn upsert_rows(
     db: &crate::db::Db,
     rows: &[PreparedUpsert],
     tier1: &Tier1,
-    advance_markers: bool,
+    advance_signature: bool,
+    advance_title_version: bool,
 ) -> Result<(), String> {
     let mut conn = db.0.lock();
     let tx = conn.transaction().map_err(|e| e.to_string())?;
@@ -732,8 +746,8 @@ fn upsert_rows(
         let created_at = row.summary.first_ts.or(Some(row.mtime_ms));
         let updated_at = row.summary.last_ts.or(Some(row.mtime_ms));
         tx.execute(
-            "INSERT INTO sessions(engine, session_id, workspace_path, file_path, file_size, file_mtime_ms, title, preview, created_at, updated_at, message_count, accepted_frames_signature)
-             VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12)
+            "INSERT INTO sessions(engine, session_id, workspace_path, file_path, file_size, file_mtime_ms, title, preview, created_at, updated_at, message_count, accepted_frames_signature, custom_title, native_title, native_title_signature)
+             VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,NULLIF(?13, ''),?13,CASE WHEN ?15 THEN '' ELSE ?14 END)
              ON CONFLICT(engine, session_id) DO UPDATE SET
                 workspace_path=excluded.workspace_path,
                 file_path=excluded.file_path,
@@ -744,6 +758,12 @@ fn upsert_rows(
                 created_at=COALESCE(sessions.created_at, excluded.created_at),
                 updated_at=excluded.updated_at,
                 message_count=excluded.message_count,
+                custom_title=CASE
+                    WHEN ?15 OR excluded.engine <> 'claude' OR sessions.native_title IS ?13 THEN sessions.custom_title
+                    WHEN sessions.native_title_signature = '' AND sessions.custom_title IS NOT NULL THEN sessions.custom_title
+                    ELSE NULLIF(?13, '') END,
+                native_title=CASE WHEN ?15 THEN sessions.native_title ELSE excluded.native_title END,
+                native_title_signature=CASE WHEN ?15 THEN sessions.native_title_signature ELSE excluded.native_title_signature END,
                 accepted_frames_signature=excluded.accepted_frames_signature",
             rusqlite::params![
                 row.engine,
@@ -758,17 +778,22 @@ fn upsert_rows(
                 updated_at,
                 row.summary.message_count,
                 row.accepted_signature,
+                row.summary.native_title,
+                row.native_title_signature,
+                row.summary.native_title_error.is_some(),
             ],
         )
         .map_err(|e| e.to_string())?;
     }
-    if advance_markers {
+    if advance_signature {
         tx.execute(
             "INSERT INTO meta(key, value) VALUES('stat_signature', ?1)
              ON CONFLICT(key) DO UPDATE SET value=excluded.value",
             rusqlite::params![tier1.signature],
         )
         .map_err(|e| e.to_string())?;
+    }
+    if advance_title_version {
         tx.execute(
             "INSERT INTO meta(key, value) VALUES('title_version', ?1)
              ON CONFLICT(key) DO UPDATE SET value=excluded.value",
@@ -822,6 +847,7 @@ fn scan_inner(
     let mut rows = Vec::new();
     let mut reused = 0usize;
     let mut retitle_complete = true;
+    let mut native_titles_complete = true;
     for (index, (cand, sig)) in candidates.iter().zip(stats.iter()).enumerate() {
         let processed = index + 1;
         if processed % step == 0 {
@@ -840,8 +866,20 @@ fn scan_inner(
             continue;
         };
         match prepare_candidate(cand, *sig, &stat_keys, &stale_paths, &workspaces, &accepted) {
-            Some(row) => rows.push(row),
-            None => {
+            Ok(Some(row)) => {
+                if let Some(error) = &row.summary.native_title_error {
+                    native_titles_complete = false;
+                    eprintln!("[scanner] {} title metadata failed; message summary retained: {error}", cand.engine);
+                }
+                rows.push(row);
+            }
+            Err(error) => {
+                if stale {
+                    retitle_complete = false;
+                }
+                eprintln!("[scanner] {} summary failed: {error}", cand.engine);
+            }
+            Ok(None) => {
                 if stale {
                     retitle_complete = false;
                 }
@@ -861,7 +899,8 @@ fn scan_inner(
         db,
         &rows,
         &tier1,
-        !tier1.retitle_pending || retitle_complete,
+        retitle_complete && native_titles_complete,
+        retitle_complete,
     )?;
     prune_missing_file_sessions(db, &candidates)?;
     prune_stale_sessions(db)?;

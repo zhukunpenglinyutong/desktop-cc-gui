@@ -747,12 +747,15 @@ mod tests {
             std::ffi::OsStr::new("avatar.model3.json."),
             std::ffi::OsStr::new("avatar\u{1f}.model3.json"),
             std::ffi::OsStr::new("avatar\n.model3.json"),
-            std::ffi::OsStr::from_bytes(b"avatar-\xff.model3.json"),
         ] {
             let selected = scratch.0.join(name);
             fs::write(&selected, b"model").unwrap();
             assert!(grant_file_at(&state_path, "vendor.one", &selected).is_err());
         }
+        // 非 UTF-8 名称必须在探测文件前被拒绝，不假定文件系统允许创建它。
+        let invalid = scratch.0.join(std::ffi::OsStr::from_bytes(b"avatar-\xff.model3.json"));
+        assert!(check_absolute_path(&invalid).unwrap_err().contains("UTF-8"));
+        assert!(grant_file_at(&state_path, "vendor.one", &invalid).unwrap_err().contains("UTF-8"));
         assert!(state::read_state(&state_path).unwrap().asset_directories.is_empty());
     }
 
