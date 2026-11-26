@@ -494,9 +494,21 @@ impl TurnCore {
                     }
                 }
                 if let Some(args) = args {
+                    let mut args = args;
+                    crate::history::images::externalize_value(&mut args);
                     payload["args"] = args;
                 }
                 if let Some(result) = result {
+                    // A live tool result can carry the same inline screenshots
+                    // as the transcript (Claude `tool_result` content, pi
+                    // details). The event crosses the same IPC / WebSocket
+                    // boundary as a history page, so the bytes must not ride
+                    // along here either; `load_session_image` resolves the
+                    // reference. `text` is deliberately untouched: assistant
+                    // Markdown may legitimately contain a data URL and is not
+                    // resolved through the image store.
+                    let mut result = result;
+                    crate::history::images::externalize_value(&mut result);
                     payload["result"] = result;
                 }
                 // The engine's own call id, when it reported one: the
@@ -1966,6 +1978,47 @@ mod terminal_event_tests {
         assert_eq!(usages.len(), 2, "both usage reports carry genMs");
         assert!(usages[0] >= 200, "explicit window ignored the tool row: {usages:?}");
         assert!(usages[1] < 200, "implicit window closed at the tool row: {usages:?}");
+    }
+
+    #[tokio::test]
+    async fn live_tool_result_images_leave_as_store_references() {
+        let collector = Arc::new(Collector::default());
+        let core = TurnCore {
+            sink: event_sink::EventSink::new(collector.clone()),
+            registry: Arc::new(ProcessRegistry::default()),
+            engine_id: "claude".into(),
+            run_id: "image-payload-test".into(),
+            db: None,
+            followup: None,
+        };
+        let mut state = TurnState::new(None);
+        core.dispatch_event(
+            &mut state,
+            EngineEvent::Message {
+                role: "tool".into(),
+                text: "screenshot".into(),
+                path: None,
+                todos: None,
+                args: None,
+                result: Some(serde_json::json!([
+                    {"type": "text", "text": "ready"},
+                    {"type": "image", "source": {
+                        "type": "base64", "media_type": "image/png", "data": "aGk="
+                    }}
+                ])),
+                patch: true,
+                tool_call_id: Some("tool-1".into()),
+            },
+        );
+        core.sink.flush();
+        let events = collector.0.lock().unwrap();
+        let message = events
+            .iter()
+            .find(|event| event["kind"] == "message")
+            .expect("tool event");
+        let rendered = message.to_string();
+        assert!(!rendered.contains("\"data\":\"aGk=\""), "base64 leaked: {rendered}");
+        assert!(rendered.contains("ccgui-image:"), "{rendered}");
     }
 
     #[tokio::test]

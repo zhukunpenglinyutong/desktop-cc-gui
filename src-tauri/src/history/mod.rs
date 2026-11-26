@@ -4,6 +4,7 @@ pub(crate) mod claude_sessions;
 pub(crate) mod discovery;
 pub(crate) mod edit;
 mod extract;
+pub(crate) mod images;
 pub mod reader;
 pub mod scanner;
 pub mod search;
@@ -56,8 +57,11 @@ pub struct Message {
     pub effort: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub duration_ms: Option<i64>,
-    /// Image attachments on user messages: data URLs (claude/pi/omp) or
-    /// absolute paths (kimi/codex). Empty for every other row.
+    /// Image attachments on user messages: a `ccgui-image:<sha>.<ext>` store
+    /// reference (parsed from claude/pi/omp/opencode inline images or tool
+    /// output), `ccgui-image:unavailable`, or an absolute path (kimi/agy).
+    /// Empty for every other row. References are resolved by
+    /// `load_session_image`, so a page never carries pixel bytes inline.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub images: Vec<String>,
 }

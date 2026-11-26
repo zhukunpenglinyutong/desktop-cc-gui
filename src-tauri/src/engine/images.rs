@@ -18,6 +18,21 @@ fn base64_fits_limit(clean_len: usize) -> bool {
     clean_len <= MAX_PASTED_IMAGE_BYTES / 3 * 4 + 8
 }
 
+/// Data URLs from transcripts are not always emitted by the same encoder:
+/// browsers accept whitespace and omitted trailing padding, so accept both and
+/// hand downstream consumers a canonical padded payload.
+fn normalize_base64(payload: &str) -> Option<String> {
+    let mut clean: String = payload.chars().filter(|c| !c.is_whitespace()).collect();
+    let remainder = clean.len() % 4;
+    if remainder == 1 {
+        return None;
+    }
+    if remainder != 0 {
+        clean.extend(std::iter::repeat('=').take(4 - remainder));
+    }
+    Some(clean)
+}
+
 /// Persist validated image bytes under pasted-images with a UUID name.
 fn store_image_bytes(bytes: &[u8], ext: &str) -> Result<String, String> {
     if bytes.is_empty() {
@@ -132,6 +147,66 @@ mod tests {
     }
 
     #[test]
+    fn history_image_reference_is_resolved_for_resend() {
+        let reference =
+            crate::history::images::externalize(&format!("data:image/png;base64,{PNG_B64}"))
+                .unwrap();
+        assert!(crate::history::images::is_ref(&reference));
+
+        let (mime, payload) = load_image(&reference, Path::new("/workspace")).unwrap();
+
+        assert_eq!(mime, "image/png");
+        assert_eq!(
+            base64::engine::general_purpose::STANDARD
+                .decode(payload)
+                .unwrap(),
+            base64::engine::general_purpose::STANDARD
+                .decode(PNG_B64)
+                .unwrap()
+        );
+        let path = absolutize_image_path(&reference, Path::new("/workspace"))
+            .expect("path-based engines must receive the stored original");
+        assert_eq!(
+            std::fs::read(path).unwrap(),
+            base64::engine::general_purpose::STANDARD
+                .decode(PNG_B64)
+                .unwrap()
+        );
+    }
+
+    #[test]
+    fn unavailable_history_image_reports_a_clear_error() {
+        let error =
+            load_image(crate::history::images::UNAVAILABLE, Path::new("/workspace")).unwrap_err();
+        assert!(error.contains("unavailable"), "{error}");
+        assert!(absolutize_image_path(
+            crate::history::images::UNAVAILABLE,
+            Path::new("/workspace")
+        )
+        .is_none());
+    }
+
+    #[test]
+    fn data_url_accepts_wrapped_and_unpadded_base64() {
+        let unpadded = PNG_B64.trim_end_matches('=');
+        let wrapped = format!("{}\n  {}", &unpadded[..16], &unpadded[16..]);
+        let url = format!("data:image/png;base64,{wrapped}");
+
+        let (mime, payload) = load_image(&url, Path::new("/workspace")).unwrap();
+
+        assert_eq!(mime, "image/png");
+        assert_eq!(payload.len() % 4, 0);
+        assert_eq!(
+            base64::engine::general_purpose::STANDARD
+                .decode(payload)
+                .unwrap(),
+            base64::engine::general_purpose::STANDARD
+                .decode(PNG_B64)
+                .unwrap()
+        );
+    }
+
+    #[test]
     fn agy_prompt_with_images_injects_marker_and_paths() {
         let empty = agy_prompt_with_images("plain prompt", &[], Path::new("/workspace"));
         assert_eq!(empty, "plain prompt");
@@ -149,12 +224,16 @@ mod tests {
 }
 
 /// Normalize an image reference to an absolute local path: trims, skips
-/// `data:` URLs and empty refs (no file to reference), strips a `file://`
-/// prefix, and joins relative paths onto the workspace.
+/// `data:` URLs and empty refs (no file to reference), resolves externalized
+/// history images to their stored original, strips a `file://` prefix, and
+/// joins relative paths onto the workspace.
 pub(crate) fn absolutize_image_path(raw: &str, workspace: &Path) -> Option<PathBuf> {
     let trimmed = raw.trim();
     if trimmed.is_empty() || trimmed.starts_with("data:") {
         return None;
+    }
+    if crate::history::images::is_ref(trimmed) {
+        return crate::history::images::original_path(trimmed).ok();
     }
     let path = PathBuf::from(trimmed.trim_start_matches("file://"));
     Some(if path.is_absolute() {
@@ -174,12 +253,16 @@ pub fn load_image(
     if trimmed.is_empty() {
         return Err("empty image reference".to_string());
     }
+    if crate::history::images::is_ref(trimmed) {
+        return crate::history::images::load_original(trimmed);
+    }
     if let Some(rest) = trimmed.strip_prefix("data:") {
         let (meta, payload) = rest
             .split_once(',')
             .ok_or_else(|| "malformed data url".to_string())?;
         let mime = meta.strip_suffix(";base64").unwrap_or("image/png");
-        let clean: String = payload.chars().filter(|c| !c.is_whitespace()).collect();
+        let clean =
+            normalize_base64(payload).ok_or_else(|| "invalid base64 payload".to_string())?;
         if clean.is_empty() {
             return Err("empty data url payload".to_string());
         }

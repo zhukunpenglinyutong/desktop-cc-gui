@@ -381,8 +381,9 @@ struct CachedSession {
 /// changes what the parse must hide while the file's stat key is unchanged.
 /// Explicit reload bypasses this key and replaces only the selected path;
 /// supplemental native files and SQLite WAL writes need not change its stat.
-/// Bounded two ways: 32 entries and a ~128MB byte budget (image data URLs
-/// make entries heavy).
+/// Bounded two ways: 32 entries and a ~128MB byte budget. Parsed images are
+/// store references (see `history::images`), but long text and tool payloads
+/// still make an entry heavy.
 static PARSED_CACHE: LazyLock<Mutex<HashMap<(PathBuf, i64, i64, String), Arc<CachedSession>>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
 static PARSED_CACHE_BYTES: LazyLock<Mutex<usize>> = LazyLock::new(|| Mutex::new(0));
@@ -397,6 +398,14 @@ static PARSED_CACHE_TEST_GATE: parking_lot::RwLock<()> = parking_lot::RwLock::ne
 
 const PARSED_CACHE_CAPACITY: usize = 32;
 const PARSED_CACHE_BUDGET_BYTES: usize = 128 * 1024 * 1024;
+
+/// One page travels as a single IPC reply / WebSocket frame. Images are no
+/// longer inline (see `history::images`), but text and retained tool payloads
+/// can still be large enough on their own, so a count-only slice is not a
+/// bound. This is an estimate of the serialized payload, not a hard frame
+/// limit: one oversized row is still returned by itself so paging cannot
+/// stall, and the next request continues from `next_before`.
+const PAGE_BYTES_BUDGET: usize = 2 * 1024 * 1024;
 
 /// Rough in-memory footprint of one parsed session. Text and images used to
 /// be the whole story, but tool-result-heavy sessions keep most of their
@@ -704,7 +713,7 @@ fn page_from_cached(
     let limit = limit.unwrap_or(100).clamp(1, 500);
     let messages = &cached.parsed.messages;
     let visible = |message: &Message| message.role != "__agent_status__";
-    let (start, end) = match before_seq {
+    let (mut start, end) = match before_seq {
         Some(before) => {
             let end = messages
                 .iter()
@@ -740,6 +749,19 @@ fn page_from_cached(
             (start, messages.len())
         }
     };
+    let mut footprint: usize = messages[start..end].iter().map(message_footprint).sum();
+    let mut visible_rows = messages[start..end]
+        .iter()
+        .filter(|message| visible(message))
+        .count();
+    while footprint > PAGE_BYTES_BUDGET && visible_rows > 1 {
+        let dropped = &messages[start];
+        footprint = footprint.saturating_sub(message_footprint(dropped));
+        if visible(dropped) {
+            visible_rows -= 1;
+        }
+        start += 1;
+    }
     let next_before = if start > 0 {
         messages.get(start).map(|m| m.seq)
     } else {
@@ -804,6 +826,21 @@ pub async fn load_session_page(
     })
     .await
     .map_err(|e| e.to_string())?
+}
+
+/// Resolve an image reference carried by a history page. `full = false`
+/// returns a bounded thumbnail for the timeline; the lightbox asks for the
+/// original only after the user clicks. Work runs off the IPC thread because
+/// generating a thumbnail decodes the image.
+#[tauri::command]
+pub async fn load_session_image(
+    reference: String,
+    full: Option<bool>,
+) -> Result<String, String> {
+    let full = full.unwrap_or(false);
+    tauri::async_runtime::spawn_blocking(move || super::images::load(&reference, full))
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 /// 远程会话路径形状白名单。本地等价物 session_file_path 只认 db 登记的
@@ -3552,6 +3589,220 @@ mod tests {
         let older = page_from_cached(&cached, Some(100), page.next_before);
         assert!(older.subagent_history.is_empty());
         assert!(older.messages.iter().any(|row| row.role == "__agent_status__"));
+    }
+
+    #[test]
+    fn session_page_trips_the_byte_budget_instead_of_the_frame_limit() {
+        let mut messages = Vec::new();
+        for seq in 0..10 {
+            let mut row = plain(seq, "assistant");
+            // Each retained result is ~1MB: a count-only slice of ten rows
+            // would hand a single IPC/WebSocket frame roughly 10MB.
+            row.result = Some(json!({ "log": "x".repeat(1_000_000) }));
+            messages.push(row);
+        }
+        let fold = subagent_fold(&messages);
+        let cached = CachedSession {
+            parsed: ParsedSession {
+                messages: messages.clone(),
+            },
+            fold,
+            footprint: 0,
+        };
+        let page = page_from_cached(&cached, Some(100), None);
+        assert!(page.messages.len() >= 1 && page.messages.len() < 10);
+        let bytes: usize = page.messages.iter().map(message_footprint).sum();
+        assert!(bytes <= PAGE_BYTES_BUDGET + 1_000_100, "page stayed near the budget: {bytes}");
+        // The cut is a real cursor: the next page continues before it.
+        assert_eq!(page.next_before, page.messages.first().map(|row| row.seq));
+        let older = page_from_cached(&cached, Some(100), page.next_before);
+        assert!(!older.messages.is_empty());
+        assert!(older.messages.last().map(|row| row.seq) < page.next_before);
+
+        // One oversized row must still come back alone, or paging stalls
+        // forever on the same cursor.
+        let mut huge = plain(0, "assistant");
+        huge.result = Some(json!({ "log": "y".repeat(5_000_000) }));
+        let cached = CachedSession {
+            parsed: ParsedSession { messages: vec![huge] },
+            fold: Vec::new(),
+            footprint: 0,
+        };
+        let page = page_from_cached(&cached, Some(100), None);
+        assert_eq!(page.messages.len(), 1);
+        assert_eq!(page.next_before, None);
+    }
+
+    #[tokio::test]
+    async fn load_session_image_command_resolves_a_stored_reference() {
+        let mut bytes = Vec::new();
+        image::DynamicImage::ImageRgba8(image::RgbaImage::from_pixel(
+            8,
+            8,
+            image::Rgba([1, 2, 3, 255]),
+        ))
+        .write_to(std::io::Cursor::new(&mut bytes), image::ImageFormat::Png)
+        .unwrap();
+        let data_url = format!(
+            "data:image/png;base64,{}",
+            base64::engine::general_purpose::STANDARD.encode(&bytes)
+        );
+        let reference = super::super::images::externalize(&data_url).unwrap();
+
+        let generated = super::load_session_image(reference.clone(), Some(false))
+            .await
+            .unwrap();
+        assert!(generated.starts_with("data:image/png;base64,"));
+        let full = super::load_session_image(reference, Some(true)).await.unwrap();
+        assert_eq!(full, data_url);
+    }
+
+    #[test]
+    fn consecutive_image_edit_turns_stay_referenced_and_bounded() {
+        fn collect_refs(value: &serde_json::Value, out: &mut Vec<String>) {
+            match value {
+                serde_json::Value::String(text)
+                    if crate::history::images::is_ref(text) =>
+                {
+                    out.push(text.clone());
+                }
+                serde_json::Value::Array(items) => {
+                    for item in items {
+                        collect_refs(item, out);
+                    }
+                }
+                serde_json::Value::Object(map) => {
+                    for item in map.values() {
+                        collect_refs(item, out);
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        const TURNS: usize = 6;
+        let dir = scratch_dir("consecutive-images");
+        let file = dir.join("session.jsonl");
+        let mut lines = Vec::new();
+        let mut encoded = Vec::new();
+
+        for turn in 0..TURNS {
+            let mut images = Vec::new();
+            for variant in 0..3 {
+                let seed = (turn * 3 + variant) as u32;
+                let image = image::RgbImage::from_fn(800, 600, |x, y| {
+                    image::Rgb([
+                        ((x + seed * 13) % 256) as u8,
+                        ((y + seed * 31) % 256) as u8,
+                        ((x * y + seed * 7) % 256) as u8,
+                    ])
+                });
+                let mut png = Vec::new();
+                image::DynamicImage::ImageRgb8(image)
+                    .write_to(std::io::Cursor::new(&mut png), image::ImageFormat::Png)
+                    .unwrap();
+                let payload = base64::engine::general_purpose::STANDARD.encode(&png);
+                images.push(payload.clone());
+                encoded.push(payload);
+            }
+
+            let ts = format!("2026-11-24T10:{turn:02}:00.000Z");
+            let tool_id = format!("edit-{turn}");
+            lines.push(serde_json::json!({
+                "type": "user",
+                "timestamp": ts,
+                "message": {"role": "user", "content": [
+                    {"type": "text", "text": format!("继续修改第 {turn} 轮")},
+                    {"type": "image", "source": {
+                        "type": "base64", "media_type": "image/png", "data": images[0]
+                    }}
+                ]}
+            }));
+            lines.push(serde_json::json!({
+                "type": "assistant",
+                "timestamp": ts,
+                "message": {"role": "assistant", "content": [
+                    {"type": "text", "text": format!("应用第 {turn} 轮修改")},
+                    {"type": "tool_use", "id": tool_id, "name": "edit_image", "input": {}},
+                    {"type": "image", "source": {
+                        "type": "base64", "media_type": "image/png", "data": images[1]
+                    }}
+                ]}
+            }));
+            lines.push(serde_json::json!({
+                "type": "user",
+                "timestamp": ts,
+                "message": {"role": "user", "content": [
+                    {"type": "tool_result", "tool_use_id": tool_id, "content": [
+                        {"type": "text", "text": format!("第 {turn} 轮图片已更新")},
+                        {"type": "image", "source": {
+                            "type": "base64", "media_type": "image/png", "data": images[2]
+                        }}
+                    ]}
+                ]}
+            }));
+        }
+
+        std::fs::write(
+            &file,
+            lines
+                .iter()
+                .map(serde_json::Value::to_string)
+                .collect::<Vec<_>>()
+                .join("\n"),
+        )
+        .unwrap();
+
+        let parsed = parse_session_file("claude", &file, &HashSet::new()).unwrap();
+        let fold = subagent_fold(&parsed.messages);
+        let cached = CachedSession {
+            parsed,
+            fold,
+            footprint: 0,
+        };
+        let page = page_from_cached(&cached, Some(100), None);
+        assert_eq!(page.next_before, None);
+        let wire = serde_json::to_string(&page).unwrap();
+        assert!(!wire.contains("data:image"), "inline image leaked: {}", wire.len());
+        for payload in &encoded {
+            assert!(!wire.contains(payload), "raw base64 leaked into page");
+        }
+        assert!(wire.len() < 128 * 1024, "page payload grew to {}", wire.len());
+
+        let value = serde_json::to_value(&page.messages).unwrap();
+        let mut refs = Vec::new();
+        collect_refs(&value, &mut refs);
+        assert_eq!(refs.len(), TURNS * 3);
+        assert_eq!(
+            refs.iter().collect::<HashSet<_>>().len(),
+            TURNS * 3,
+            "each edit should keep its own content address"
+        );
+        for reference in refs {
+            let full = crate::history::images::load(&reference, true).unwrap();
+            assert!(full.starts_with("data:image/png;base64,"));
+        }
+
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    #[ignore = "manual payload measurement"]
+    fn measure_real_session_payload() {
+        let path = std::path::PathBuf::from(std::env::var("PAYLOAD_PATH").unwrap());
+        let engine = std::env::var("PAYLOAD_ENGINE").unwrap_or_else(|_| "codex".into());
+        let started = std::time::Instant::now();
+        let parsed = super::super::parse_session_file(&engine, &path, &HashSet::new()).unwrap();
+        let parse_ms = started.elapsed().as_millis();
+        let wire = serde_json::to_string(&parsed.messages).unwrap();
+        let images: usize = parsed.messages.iter().map(|m| m.images.len()).sum();
+        println!(
+            "engine={engine} parse_ms={parse_ms} messages={} images={images} refs={} data_urls={} wire_bytes={}",
+            parsed.messages.len(),
+            wire.matches("ccgui-image:").count(),
+            wire.matches("data:image").count(),
+            wire.len(),
+        );
     }
 
     #[test]

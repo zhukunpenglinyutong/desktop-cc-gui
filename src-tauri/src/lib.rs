@@ -523,6 +523,7 @@ pub fn run() {
             history::reader::archive_session,
             history::reader::restore_session,
             history::reader::load_session_page,
+            history::reader::load_session_image,
             history::reader::load_remote_session_page,
             history::edit::read_session_file,
             history::edit::write_session_file,
