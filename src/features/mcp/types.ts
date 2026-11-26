@@ -55,6 +55,10 @@ export interface McpSourceInfo {
   source: McpConfigSource;
   path: string;
   exists: boolean;
+  /** Can this source accept new servers through the app (create)? */
+  creatable?: boolean;
+  /** Localizable reason code (`mcp.crudReason.<code>`) when creatable is false. */
+  crudReasonCode?: string | null;
 }
 
 export interface McpConfigEntry {
@@ -91,6 +95,32 @@ export interface McpConfigEntry {
   launchMode?: McpLaunchMode;
   /** 不能按需启动的原因码（`mcp.launch.unsupported.<code>`）；null = 可选。 */
   launchModeUnsupported?: string | null;
+  /** 能否通过本应用编辑（update）。 */
+  updatable?: boolean;
+  /** 能否通过本应用删除（delete）。 */
+  deletable?: boolean;
+  /** 不能编辑/删除的原因码（`mcp.crudReason.<code>`）。 */
+  crudReasonCode?: string | null;
+}
+
+/** 编辑表单的输入：与后端 `McpServerInput` 同形（camelCase）。 */
+export interface McpServerKeyValue {
+  key: string;
+  value: string;
+}
+
+export interface McpServerInput {
+  name: string;
+  /** stdio | http | sse；空串 = 未声明。 */
+  transport: string;
+  command: string;
+  args: string[];
+  cwd: string;
+  env: McpServerKeyValue[];
+  url: string;
+  headers: McpServerKeyValue[];
+  /** 仅 create 生效；update 忽略（启停走 setEnabled）。 */
+  enabled: boolean;
 }
 
 export type McpLaunchMode = "eager" | "onDemand";

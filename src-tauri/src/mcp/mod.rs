@@ -18,6 +18,7 @@ use serde_json::Value;
 use std::sync::Arc;
 
 mod config;
+mod crud;
 pub mod launch;
 pub(crate) mod lazy;
 pub(crate) mod probe;
@@ -42,10 +43,27 @@ pub(crate) fn source_in_workspace(source: &str) -> bool {
     sources::source_spec(source).map_or(true, |spec| spec.scope == "project")
 }
 
-/// 连接检测的目标解析：条目 id → 真实命令/地址（未脱敏，仅供探针使用）。
+/// 条目 id → 配置里的真实命令/地址（未脱敏）。表单回显与按需启动用这份静态定义。
 pub(crate) fn probe_target(
     entry_id: &str,
     workspace: Option<&str>,
+) -> Result<probe::ProbeTarget, McpError> {
+    resolve_target(entry_id, workspace, false)
+}
+
+/// 连接检测用：在静态定义之上补 Codex 经环境变量取值的请求头
+/// （`env_http_headers`、`bearer_token_env_var`）。
+pub(crate) fn probe_target_for_probe(
+    entry_id: &str,
+    workspace: Option<&str>,
+) -> Result<probe::ProbeTarget, McpError> {
+    resolve_target(entry_id, workspace, true)
+}
+
+fn resolve_target(
+    entry_id: &str,
+    workspace: Option<&str>,
+    env_headers: bool,
 ) -> Result<probe::ProbeTarget, McpError> {
     let (source, name) = entry_id
         .split_once(':')
@@ -54,7 +72,7 @@ pub(crate) fn probe_target(
     if name.is_empty() {
         return Err(McpError::invalid("MCP server name must not be empty"));
     }
-    let mut target = config::probe_target(source, name, workspace)?;
+    let mut target = config::probe_target(source, name, workspace, env_headers)?;
     target.from_workspace = source_in_workspace(source);
     Ok(target)
 }
@@ -142,6 +160,26 @@ pub(crate) struct McpConfigEntry {
     /// 不能按需启动的原因码（engine | transport | workspace_file | workspace_env |
     /// project_trust | name | shadowed）；None = 可选。
     pub(crate) launch_mode_unsupported: Option<String>,
+    /// 该条目能否通过本应用编辑（update）：写语义已验证且来源可安全更新。
+    pub(crate) updatable: bool,
+    /// 该条目能否通过本应用删除（delete）。
+    pub(crate) deletable: bool,
+    /// 不能编辑/删除的原因码（UI 按 `mcp.crudReason.<code>` 本地化）。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) crud_reason_code: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct McpSourceInfo {
+    pub(crate) source: String,
+    pub(crate) path: String,
+    pub(crate) exists: bool,
+    /// 该来源能否通过本应用新增服务（create）。
+    pub(crate) creatable: bool,
+    /// 不能新增的原因码（UI 按 `mcp.crudReason.<code>` 本地化）。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) crud_reason_code: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -150,16 +188,6 @@ pub(crate) struct McpSourceError {
     pub(crate) source: String,
     pub(crate) path: String,
     pub(crate) message: String,
-}
-
-/// 一个被读取的来源文件：即使尚未创建也会列出，让空状态能说明本页看了
-/// 哪些位置。
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub(crate) struct McpSourceInfo {
-    pub(crate) source: String,
-    pub(crate) path: String,
-    pub(crate) exists: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -229,6 +257,82 @@ pub(crate) struct McpSetLaunchModeRequest {
     pub(crate) entry_id: String,
     /// `eager` | `onDemand`
     pub(crate) mode: String,
+    #[serde(default)]
+    pub(crate) workspace: Option<String>,
+}
+
+/// 新增 / 编辑 MCP 服务的表单输入。命令行与参数用字符串数组表示，
+/// 环境变量与请求头用键值对数组表示（保留插入顺序，允许同名键覆盖）。
+/// env / headers 的值是真实的原文；后端按 `is_sensitive_key` 脱敏后
+/// 只在探针/编辑回显里使用，列表/详情仍只带键名。
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct McpServerInput {
+    pub(crate) name: String,
+    /// stdio | http | sse；空字符串视为未声明（兼容历史文件里缺省 stdio 的写法）。
+    #[serde(default)]
+    pub(crate) transport: String,
+    #[serde(default)]
+    pub(crate) command: String,
+    #[serde(default)]
+    pub(crate) args: Vec<String>,
+    #[serde(default)]
+    pub(crate) cwd: String,
+    #[serde(default)]
+    pub(crate) env: Vec<McpServerKeyValue>,
+    #[serde(default)]
+    pub(crate) url: String,
+    #[serde(default)]
+    pub(crate) headers: Vec<McpServerKeyValue>,
+    /// 仅 create 时生效；update 时忽略（启停走 `mcp_set_enabled`）。
+    #[serde(default = "default_true")]
+    pub(crate) enabled: bool,
+}
+
+fn default_true() -> bool {
+    true
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct McpServerKeyValue {
+    pub(crate) key: String,
+    pub(crate) value: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct McpCreateEntryRequest {
+    /// 目标来源（如 `claude_user`、`codex_project`）。不接受任意路径。
+    pub(crate) source: String,
+    pub(crate) entry: McpServerInput,
+    #[serde(default)]
+    pub(crate) workspace: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct McpUpdateEntryRequest {
+    pub(crate) entry_id: String,
+    pub(crate) version: String,
+    pub(crate) entry: McpServerInput,
+    #[serde(default)]
+    pub(crate) workspace: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct McpDeleteEntryRequest {
+    pub(crate) entry_id: String,
+    pub(crate) version: String,
+    #[serde(default)]
+    pub(crate) workspace: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct McpGetRawEntryRequest {
+    pub(crate) entry_id: String,
     #[serde(default)]
     pub(crate) workspace: Option<String>,
 }
@@ -360,6 +464,55 @@ pub(crate) async fn mcp_set_launch_mode(
         .into_iter()
         .find(|entry| entry.id == request.entry_id)
         .ok_or_else(|| McpError::not_found("MCP entry not found"))
+}
+
+/// 读取一个条目的原始配置（编辑表单的回显，含未脱敏的 env / headers 值）。
+#[tauri::command]
+pub(crate) async fn mcp_get_raw_entry(
+    db: tauri::State<'_, Arc<crate::db::Db>>,
+    request: McpGetRawEntryRequest,
+) -> Result<McpServerInput, McpError> {
+    let workspace = validate_workspace(request.workspace.as_deref(), &db)?;
+    crud::read_raw(&request.entry_id, workspace.as_deref())
+}
+
+/// 新增一个 MCP 服务配置。
+#[tauri::command]
+pub(crate) async fn mcp_create_entry(
+    db: tauri::State<'_, Arc<crate::db::Db>>,
+    request: McpCreateEntryRequest,
+) -> Result<McpConfigEntry, McpError> {
+    let workspace = validate_workspace(request.workspace.as_deref(), &db)?;
+    crud::create(&request.source, &request.entry, workspace.as_deref())
+}
+
+/// 编辑一个 MCP 服务配置：版本比对 → 原子替换 → 回读实际状态。
+#[tauri::command]
+pub(crate) async fn mcp_update_entry(
+    db: tauri::State<'_, Arc<crate::db::Db>>,
+    request: McpUpdateEntryRequest,
+) -> Result<McpConfigEntry, McpError> {
+    let workspace = validate_workspace(request.workspace.as_deref(), &db)?;
+    crud::update(
+        &request.entry_id,
+        &request.entry,
+        &request.version,
+        workspace.as_deref(),
+    )
+}
+
+/// 删除一个 MCP 服务配置：版本比对 → 原子替换。
+#[tauri::command]
+pub(crate) async fn mcp_delete_entry(
+    db: tauri::State<'_, Arc<crate::db::Db>>,
+    request: McpDeleteEntryRequest,
+) -> Result<(), McpError> {
+    let workspace = validate_workspace(request.workspace.as_deref(), &db)?;
+    crud::delete(
+        &request.entry_id,
+        &request.version,
+        workspace.as_deref(),
+    )
 }
 
 pub(crate) fn now_ms() -> i64 {

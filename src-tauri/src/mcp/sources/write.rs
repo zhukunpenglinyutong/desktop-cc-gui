@@ -79,7 +79,7 @@ fn reread_entry(source: &Source, path: &Path, name: &str) -> Result<McpConfigEnt
         .ok_or_else(|| McpError::not_found(format!("写入后未找到 MCP 服务「{name}」")))
 }
 
-pub(super) fn verify_version(raw: &str, expected_version: &str) -> Result<(), McpError> {
+pub(crate) fn verify_version(raw: &str, expected_version: &str) -> Result<(), McpError> {
     let current = file_hash(raw.as_bytes());
     if !expected_version.is_empty() && current != expected_version {
         return Err(McpError::conflict("配置文件已被外部修改，请刷新后重试"));
