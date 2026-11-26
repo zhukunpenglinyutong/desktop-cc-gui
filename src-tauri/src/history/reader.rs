@@ -390,6 +390,10 @@ static PARSED_CACHE_BYTES: LazyLock<Mutex<usize>> = LazyLock::new(|| Mutex::new(
 /// that began before a save may have read the old source under a stat key the
 /// save did not move, so it is served but never published once this changed.
 static PARSED_CACHE_GENERATION: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+/// 测试专用：全进程共用缓存，别的测试的保存会作废正在发布的解析。依赖"解析已发布"
+/// 的测试持写锁独占，`forget_parsed_session` 持读锁，二者不再交错。
+#[cfg(test)]
+static PARSED_CACHE_TEST_GATE: parking_lot::RwLock<()> = parking_lot::RwLock::new(());
 
 const PARSED_CACHE_CAPACITY: usize = 32;
 const PARSED_CACHE_BUDGET_BYTES: usize = 128 * 1024 * 1024;
@@ -443,6 +447,8 @@ fn parsed_footprint(parsed: &ParsedSession) -> usize {
 /// save need not change the cache key's stat: an OpenCode tree edit can touch
 /// only part files under unchanged session metadata, SQLite writes land in WAL.
 pub(crate) fn forget_parsed_session(path: &Path) {
+    #[cfg(test)]
+    let _gate = PARSED_CACHE_TEST_GATE.read();
     let mut cache = PARSED_CACHE.lock();
     let mut bytes = PARSED_CACHE_BYTES.lock();
     cache.retain(|(cached_path, ..), previous| {
@@ -2640,6 +2646,7 @@ mod tests {
 
     #[test]
     fn force_reload_same_stat_preserves_frames_and_unrelated_cache() {
+        let _gate = PARSED_CACHE_TEST_GATE.write();
         let scratch = Scratch::new();
         let file = scratch.0.join("edited.jsonl");
         let other = scratch.0.join("other.jsonl");
@@ -2685,6 +2692,7 @@ mod tests {
 
     #[test]
     fn force_reload_remote_same_stat_keeps_recorded_frames_hidden() {
+        let _gate = PARSED_CACHE_TEST_GATE.write();
         let scratch = Scratch::new();
         let cache = scratch.0.join("remote.jsonl");
         let recorded = "<CCGUI_INTERNAL_abcdefgh>{\"pluginId\":\"bridge\"}</CCGUI_INTERNAL_abcdefgh>";
@@ -2711,6 +2719,7 @@ mod tests {
 
     #[test]
     fn force_reload_opencode_part_change_replaces_metadata_stat_cache() {
+        let _gate = PARSED_CACHE_TEST_GATE.write();
         let scratch = Scratch::new();
         let storage = scratch.0.join("storage");
         let file = storage.join("session/project/ses_edit.json");
@@ -2740,6 +2749,7 @@ mod tests {
 
     #[test]
     fn force_reload_opencode_wal_preserves_other_session_cache() {
+        let _gate = PARSED_CACHE_TEST_GATE.write();
         let scratch = Scratch::new();
         let file = scratch.0.join("opencode.db");
         let conn = rusqlite::Connection::open(&file).unwrap();
@@ -2781,7 +2791,9 @@ mod tests {
     #[test]
     fn force_reload_agy_prompt_change_replaces_conversation_stat_cache() {
         let scratch = Scratch::new();
+        // 先 HOME 锁再缓存闸门，与持 HOME 锁调用保存的测试同序，避免互锁。
         let _home_lock = crate::paths::HOME_ENV_LOCK.lock();
+        let _gate = PARSED_CACHE_TEST_GATE.write();
         struct RestoreAgyHome(Option<std::ffi::OsString>);
         impl Drop for RestoreAgyHome {
             fn drop(&mut self) {
