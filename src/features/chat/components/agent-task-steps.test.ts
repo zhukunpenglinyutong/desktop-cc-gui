@@ -626,6 +626,31 @@ describe("subagent counting", () => {
     expect(allDone.every((s) => s.state === "complete")).toBe(true);
   });
 
+  it("reads Codex sub-agent rows live and settles them when the turn ends", () => {
+    // codex_app opens one spawn_agent row per agent and re-patches its state.
+    const agent = (seq: number, id: string, name: string, status: string): Message => ({
+      ...tool(seq, "spawn_agent", { tasks: [{ id, description: name, agent: "gpt-6-luna" }] }, {
+        details: { progress: [{ index: 0, id, status }] },
+      }),
+      toolCallId: `subagent-${id}`,
+    });
+    const user = (seq: number) => ({ seq, role: "user", text: "go", ts: null }) as Message;
+    const rows = [user(1), agent(2, "t-1", "alpha", "completed"), agent(3, "t-2", "beta", "running")];
+
+    expect(deriveAgentTaskSteps(rows, true, "codex").map((s) => [s.label, s.subagentType, s.state])).toEqual([
+      ["alpha", "gpt-6-luna", "complete"],
+      ["beta", "gpt-6-luna", "active"],
+    ]);
+    // The host tears the app-server down with the turn, sub-agents included.
+    expect(deriveAgentTaskSteps(rows, false, "codex").map((s) => s.state)).toEqual(["complete", "complete"]);
+    expect(deriveAgentTaskSteps([...rows, user(4)], true, "codex").map((s) => s.state)).toEqual([
+      "complete",
+      "complete",
+    ]);
+    // An engine whose agents outlive the turn keeps the reported state.
+    expect(deriveAgentTaskSteps(rows, false, "omp").map((s) => s.state)).toEqual(["complete", "active"]);
+  });
+
   it("reads named agents but ignores background-job ids", () => {
     expect(subagentRefsFromArgs({ ids: ["bg_1", "bg_2"] })).toEqual([]);
     expect(subagentRefsFromArgs({ ids: ["CoreInvokeFilterParse"] })).toEqual([
