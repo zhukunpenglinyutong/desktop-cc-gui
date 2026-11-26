@@ -215,7 +215,19 @@ fn civil_to_epoch_ms(year: i64, month: i64, day: i64, hour: i64, minute: i64, se
 }
 
 pub fn same_or_child(candidate: &Path, workspace: &Path) -> bool {
-    candidate == workspace || candidate.starts_with(workspace)
+    if candidate.starts_with(workspace) {
+        return true;
+    }
+    // Windows cwd from a CLI can differ in drive/directory casing or carry
+    // a verbatim prefix. Resolve through the filesystem before rejecting it.
+    #[cfg(windows)]
+    if let (Ok(candidate), Ok(workspace)) = (
+        std::fs::canonicalize(candidate),
+        std::fs::canonicalize(workspace),
+    ) {
+        return candidate.starts_with(workspace);
+    }
+    false
 }
 
 /// Claude encodes a workspace path: all non-alphanumeric except '-' become '-'.
@@ -491,6 +503,22 @@ fn strip_title_noise(text: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(windows)]
+    #[test]
+    fn workspace_matching_resolves_windows_cwd_casing_and_prefixes() {
+        let root = std::env::temp_dir().join(format!("ccgui-cwd-{}", uuid::Uuid::new_v4()));
+        let workspace = root.join("Project");
+        let child = workspace.join("Child");
+        let sibling = root.join("Project-other");
+        std::fs::create_dir_all(&child).unwrap();
+        std::fs::create_dir_all(&sibling).unwrap();
+        let cwd = child.to_string_lossy().to_ascii_lowercase();
+        assert!(same_or_child(Path::new(&cwd), &workspace));
+        assert!(same_or_child(&std::fs::canonicalize(&child).unwrap(), &workspace));
+        assert!(!same_or_child(&sibling, &workspace));
+        std::fs::remove_dir_all(&root).unwrap();
+    }
 
     /// Title derivation = strip noise, then truncate (mirrors ScanAcc::accept).
     fn stripped(text: &str) -> String {

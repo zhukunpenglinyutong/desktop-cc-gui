@@ -128,6 +128,22 @@ describe("useChatSidebar repo mapping", () => {
     expect(captured[0]?.threads.map((t) => t.id)).toEqual(["codex/s-1"]);
   });
 
+  it("shows history when Windows cwd casing and separators differ from the folder picker", async () => {
+    await act(async () => {
+      useChatStore.setState({
+        workspaces: [{ ...WS, path: "E:\\WorkSpace\\项目😀" }],
+        sessions: [{ ...SESSION, workspacePath: "e:/workspace/项目😀/" }],
+        openTabs: [{ engine: "codex", sessionId: null, workspacePath: "e:\\workspace\\项目😀" }],
+      });
+    });
+    expect(captured[0]?.threads.map((thread) => thread.id)).toEqual([
+      "new:codex:e:\\workspace\\项目😀",
+      "codex/s-1",
+    ]);
+    // The original cwd remains the session identity used when it is opened.
+    expect(useChatStore.getState().sessions[0].workspacePath).toBe("e:/workspace/项目😀/");
+  });
+
   it("只在所属分组内把置顶工作区排在普通工作区前", async () => {
     await act(async () => {
       useChatStore.setState({
