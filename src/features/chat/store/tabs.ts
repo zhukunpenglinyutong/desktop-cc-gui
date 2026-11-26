@@ -9,7 +9,17 @@ import {
   sessionKey,
   type ActiveSession,
 } from "./persistence";
-import { moveRetryingFlag, moveStreamingFlag } from "./stream";
+import {
+  moveRetryingFlag,
+  moveStreamingFlag,
+  resolveSessionEffort,
+  resolveSessionModel,
+  resolveSessionProvider,
+} from "./stream";
+import { effectivePermission } from "./permissions";
+import { getSelectedBot } from "@/features/bots/selected-bot";
+import { botById } from "@/features/bots/bot-store";
+import { engineSupportsMemory } from "@/features/bots/memory";
 import { isEmptyAttachments, moveComposerState } from "./attachments";
 import { emitSessionActivated } from "@/features/plugins/runtime/events";
 import { sessionSelection } from "./selection";
@@ -61,6 +71,36 @@ export function createTabActions(
   > {
   const { set, get } = deps;
 
+  /** Warm the shared OMP ACP daemon (and pre-load an existing session via
+   * `session/resume` when sessionId is present) so the next send skips cold
+   * startup. Safe on pending tabs, existing tabs, and engine switches. */
+  function prewarmOmpSession(tab: ActiveSession) {
+    if (tab.engine !== "omp") return;
+    const key = sessionKey(tab.engine, tab.sessionId, tab.workspacePath);
+    const session = get().bySession[key];
+    if (get().streamingByKey[key] || session?.loading) return;
+    const selectedBot = getSelectedBot(tab.workspacePath, tab.sessionId);
+    const pinnedBot = selectedBot ? botById(selectedBot.id) : null;
+    const memoryBot =
+      pinnedBot &&
+      pinnedBot.memory.enabled !== false &&
+      engineSupportsMemory(get().engines, "omp")
+        ? pinnedBot.id
+        : null;
+    void ipc
+      .prewarmOmpSession?.({
+        workspacePath: tab.workspacePath,
+        sessionId: tab.sessionId,
+        model: resolveSessionModel(tab, session, get().models.omp) ?? null,
+        effort: resolveSessionEffort(tab, session, get().efforts.omp) ?? null,
+        permission: effectivePermission(get().engines, "omp", get().permission),
+        providerId:
+          resolveSessionProvider(tab, session, get().providers.omp) ?? null,
+        memoryBot,
+      })
+      ?.catch(() => {});
+  }
+
   /** Activate a tab: existing sessions lazy-load via selectSession, pending chats just set. */
   function activateTab(tab: ActiveSession | null) {
     // 切走一个已建立的会话 = 会话结束：后台复盘若还有没整理的轮次就补一次。
@@ -78,8 +118,10 @@ export function createTabActions(
       emitSessionActivated(null, null);
       return;
     }
-    if (tab.sessionId)
+    if (tab.sessionId) {
+      prewarmOmpSession(tab);
       void get().selectSession(tab.engine, tab.sessionId, tab.workspacePath);
+    }
     else {
       // A pending tab sends with its own engine, so the picker must follow it
       // — otherwise the chip shows one CLI while sends go to another.
@@ -91,6 +133,7 @@ export function createTabActions(
           : { active: tab },
       );
       persistTabs(get().openTabs, tab);
+      prewarmOmpSession(tab);
       emitSessionActivated(
         tab.engine,
         null,
@@ -333,6 +376,7 @@ export function createTabActions(
         (!previous ||
           !sameTab(previous, tab.engine, tab.sessionId, tab.workspacePath))
       ) {
+        prewarmOmpSession(tab);
         emitSessionActivated(
           tab.engine,
           tab.sessionId,
@@ -348,6 +392,9 @@ export function createTabActions(
       );
       if (engine === "codebuddy" && sessionId) {
         void ipc.closeIdleCodeBuddy(sessionId).catch(() => {});
+      }
+      if (engine === "omp" && sessionId) {
+        void ipc.closeOmpSession?.(sessionId)?.catch(() => {});
       }
       clearScopedContributions(set, engine, sessionId, workspacePath);
       removeTab(engine, sessionId, workspacePath);
@@ -487,6 +534,7 @@ export function createTabActions(
       });
       if (retargets) {
         const nextActive = get().active;
+        if (nextActive) prewarmOmpSession(nextActive);
         emitSessionActivated(
           engine,
           null,

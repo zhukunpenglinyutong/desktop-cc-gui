@@ -78,6 +78,48 @@ describe("a settled turn re-reads the live occupancy from session history", () =
     expect(refresh).toHaveBeenCalledWith(KEY);
   });
 
+  it("re-reads the latest usage snapshot once an omp turn settles", () => {
+    const refresh = vi.fn(async () => {});
+    const ompKey = "omp/sess-omp";
+    const ompTab = { engine: "omp", sessionId: "sess-omp", workspacePath: WS };
+    useChatStore.setState({
+      openTabs: [ompTab],
+      active: ompTab,
+      activeEngine: "omp",
+      bySession: { [ompKey]: { ...EMPTY_SESSION } },
+    });
+
+    handleEngineEvents(
+      [
+        {
+          runId: "run-omp-1",
+          sessionId: "sess-omp",
+          engine: "omp",
+          seq: 3,
+          kind: "done",
+          data: {
+            usage: {
+              inputTokens: 120_000,
+              outputTokens: 4_500,
+              totalTokens: 124_500,
+              model_context_window: 256_000,
+              context_usage: {
+                input_tokens: 42_000,
+                total_tokens: 42_000,
+                model_context_window: 256_000,
+              },
+            },
+          },
+        },
+      ],
+      deps(refresh),
+    );
+
+    expect(refresh).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(400);
+    expect(refresh).toHaveBeenCalledWith(ompKey);
+  });
+
   it("does not re-read for other engines' plain turns", () => {
     const refresh = vi.fn(async () => {});
 

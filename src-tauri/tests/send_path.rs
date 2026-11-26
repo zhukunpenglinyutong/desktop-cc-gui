@@ -69,6 +69,9 @@ fn build_app(
         opencode_server: std::sync::Arc::new(
             ccgui_next_lib::engine::opencode_server::OpencodeServerState::default(),
         ),
+        omp_daemon: std::sync::Arc::new(
+            ccgui_next_lib::engine::omp_daemon::OmpDaemonState::default(),
+        ),
         worktree_creations: ccgui_next_lib::git_worktree::CreationRegistry::default(),
     };
     app.manage(state);
@@ -481,6 +484,9 @@ fn ipc_send_message_accepts_camel_case_args() {
         opencode_server: std::sync::Arc::new(
             ccgui_next_lib::engine::opencode_server::OpencodeServerState::default(),
         ),
+        omp_daemon: std::sync::Arc::new(
+            ccgui_next_lib::engine::omp_daemon::OmpDaemonState::default(),
+        ),
         worktree_creations: ccgui_next_lib::git_worktree::CreationRegistry::default(),
     });
     app.manage(ConfigStore::default());
@@ -517,21 +523,61 @@ fn ipc_send_message_accepts_camel_case_args() {
 #[tokio::test]
 #[allow(clippy::await_holding_lock)]
 async fn omp_send_uses_persisted_tier_and_model_without_touching_cli_config() {
+    // On Windows `dirs::home_dir()` ignores `HOME`, so running this integration
+    // test would write into the real user's `~/.ccgui-next/settings.json`.
+    if cfg!(not(unix)) {
+        return;
+    }
     let _env_guard = ENV_LOCK.lock().unwrap();
     let home = temp_home("omp-tier");
     std::fs::create_dir_all(home.join(".ccgui-next")).unwrap();
     let bin_dir = home.join("bin");
+    let log_dir = home.join("log");
     std::fs::create_dir_all(&bin_dir).unwrap();
+    std::fs::create_dir_all(&log_dir).unwrap();
     let script = bin_dir.join("omp");
-    std::fs::write(
-        &script,
-        r#"#!/bin/sh
-printf '%s\n' "$@" > omp-args.txt
-echo '{"type":"message_update","assistantMessageEvent":{"type":"text_delta","delta":"ok"}}'
-echo '{"type":"agent_end"}'
-"#,
-    )
-    .unwrap();
+    // Fake `omp --mode acp` daemon: responds to JSON-RPC handshake, session/new,
+    // session/set_config_option, and session/prompt; records launch args and
+    // applied model under `log_dir` (never relative cwd).
+    let fake_acp = r##"#!/bin/sh
+LOG="__LOG__"
+printf '%s\n' "$@" > "$LOG/args-$$.txt"
+n=0
+while IFS= read -r line; do
+  prefix=${line%%\"params\":*}
+  id=$(printf '%s\n' "$prefix" | sed -n 's/.*"id":\([0-9][0-9]*\).*/\1/p')
+  method=$(printf '%s\n' "$prefix" | sed -n 's/.*"method":"\([^"]*\)".*/\1/p')
+  [ -z "$id" ] && continue
+  case "$method" in
+    initialize)
+      printf '{"jsonrpc":"2.0","id":%s,"result":{"protocolVersion":1}}\n' "$id"
+      ;;
+    session/new)
+      n=$((n + 1))
+      sid="fake-omp-$n"
+      printf '{"jsonrpc":"2.0","id":%s,"result":{"sessionId":"%s","configOptions":[]}}\n' "$id" "$sid"
+      ;;
+    session/set_config_option)
+      model=$(printf '%s\n' "$line" | sed -n 's/.*"configId":"model","value":"\([^"]*\)".*/\1/p')
+      if [ -n "$model" ]; then
+        printf '%s\n' "$model" > "$LOG/last-model.txt"
+      fi
+      printf '{"jsonrpc":"2.0","id":%s,"result":{"configOptions":[]}}\n' "$id"
+      ;;
+    session/prompt)
+      cp "$LOG/args-$$.txt" "$LOG/last-prompt-args.txt"
+      psid=$(printf '%s\n' "$line" | sed -n 's/.*"sessionId":"\([^"]*\)".*/\1/p')
+      printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"%s","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"ok"}}}}\n' "$psid"
+      printf '{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"end_turn"}}\n' "$id"
+      ;;
+    *)
+      printf '{"jsonrpc":"2.0","id":%s,"result":{}}\n' "$id"
+      ;;
+  esac
+done
+"##
+    .replace("__LOG__", &log_dir.display().to_string());
+    std::fs::write(&script, fake_acp).unwrap();
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
@@ -551,6 +597,8 @@ echo '{"type":"agent_end"}'
         ("google/gemini", Some("priority")),
         ("openai-codex/gpt-5.4", Some("priority")),
     ] {
+        let _ = std::fs::remove_file(log_dir.join("last-model.txt"));
+        let _ = std::fs::remove_file(log_dir.join("last-prompt-args.txt"));
         settings.default_models.insert("omp".into(), model.into());
         settings.omp_openai_service_tier = tier.map(str::to_string);
         ccgui_next_lib::settings::update_app_settings(app.handle().clone(), settings.clone())
@@ -583,25 +631,31 @@ echo '{"type":"agent_end"}'
             assert!(std::time::Instant::now() < deadline, "OMP did not complete");
             tokio::time::sleep(std::time::Duration::from_millis(20)).await;
         }
-        let text = std::fs::read_to_string(workspace.join("omp-args.txt")).unwrap();
+        let text = std::fs::read_to_string(log_dir.join("last-prompt-args.txt")).unwrap();
         let args: Vec<_> = text.lines().collect();
-        assert!(args.windows(2).any(|a| a == ["--model", model]));
-        let actual = args
+        assert!(
+            args.windows(2).any(|a| a == ["--mode", "acp"]),
+            "expected ACP daemon launch args: {args:?}"
+        );
+        let actual_tier = args
             .iter()
             .position(|a| *a == "--service-tier")
             .map(|i| args[i + 1]);
-        let expected = if model.starts_with("openai-codex/") {
+        let expected_tier = if model.starts_with("openai-codex/") {
             tier
         } else {
             None
         };
-        assert_eq!(actual, expected, "model {model}");
+        assert_eq!(actual_tier, expected_tier, "model {model}");
+        let applied_model = std::fs::read_to_string(log_dir.join("last-model.txt")).unwrap();
+        assert_eq!(applied_model.trim(), model);
         assert!(events
             .lock()
             .unwrap()
             .iter()
             .any(|e| e["kind"] == "delta" && e["data"] == "ok"));
     }
+    app.state::<AppState>().omp_daemon.kill_spawned();
     assert!(!home.join(".omp/agent/config.yml").exists());
 }
 

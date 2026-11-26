@@ -7,6 +7,7 @@ import {
   applyPlanSettled,
 } from "./plan-review";
 import { errorText } from "@/lib/errors";
+import i18n from "@/lib/i18n";
 import { pendingWorkspaceOfKey, dedupeTabs, persistTabs, sessionKey } from "./persistence";
 import {
   notifyTurnComplete,
@@ -55,7 +56,13 @@ import {
   takeAskEditor,
   type AskLoop,
 } from "./ask-loop";
-import { mergeUsage, parseUsage, reportedContextWindow, type ParsedUsage } from "../usage";
+import {
+  mergeUsage,
+  occupancyUsageOf,
+  parseUsage,
+  reportedContextWindow,
+  type ParsedUsage,
+} from "../usage";
 import type {
   RegisteredInternalMessageCapture,
 } from "@/features/plugins/runtime/hooks";
@@ -1255,12 +1262,15 @@ function onUsage(
 ) {
   const parsed = parseUsage(event.data);
   const totals = parsed ? addTurnUsage(event.runId, parsed) : null;
-  // A compaction report carries only the new occupancy, so the window is
-  // taken from the last snapshot that had one: the gauge must not drop to
-  // the assumed 200k just because this report is narrower (see mergeUsage).
+  // Context meter reads occupancy, not a multi-step billing sum: when an
+  // engine carries both (OMP ACP's `context_usage`), feed only occupancy to
+  // `session.usage` while `turnUsage` keeps the billed total for the message
+  // row. A compaction report carries only the new occupancy, so the window is
+  // taken from the last snapshot that had one (see mergeUsage).
   const prev = deps.get().bySession[key]?.usage;
+  const occupancy = occupancyUsageOf(event.data);
   patchSession(deps.set, key, {
-    usage: mergeUsage(event.data, prev),
+    usage: mergeUsage(occupancy, prev),
     ...(totals ? { turnUsage: usageSnapshot(totals) } : {}),
   });
 }
@@ -1555,6 +1565,30 @@ function sendAskTerminator(loop: AskLoop, key: string, deps: EngineEventDeps) {
     .catch((error) => patchSession(deps.set, key, { error: errorText(error) }));
 }
 
+const OMP_PERMISSION_KIND_I18N: Record<string, string> = {
+  allow_once: "chat.ompPermissionAllowOnce",
+  allow_always: "chat.ompPermissionAllowAlways",
+  reject_once: "chat.ompPermissionRejectOnce",
+  reject_always: "chat.ompPermissionRejectAlways",
+};
+
+function localizeOmpPermissionQuestions(
+  questions: QuestionSpec[],
+  ompAcpPermission?: { kinds?: Record<string, string> },
+): QuestionSpec[] {
+  if (!ompAcpPermission) return questions;
+  const kinds = ompAcpPermission.kinds ?? {};
+  return questions.map((q) => ({
+    ...q,
+    question: q.question.trim() ? q.question : i18n.t("chat.ompPermissionFallbackTitle"),
+    options: (q.options ?? []).map((opt) => {
+      if (opt.description) return opt;
+      const key = OMP_PERMISSION_KIND_I18N[kinds[opt.label] ?? ""];
+      return key ? { ...opt, description: i18n.t(key) } : opt;
+    }),
+  }));
+}
+
 function onQuestion(
   event: ChatEngineEvent,
   key: string,
@@ -1563,11 +1597,16 @@ function onQuestion(
   const data = event.data as {
     requestId?: string;
     toolUseId?: string | null;
-    input?: { questions?: QuestionSpec[]; extui?: { method?: string } };
+    input?: {
+      questions?: QuestionSpec[];
+      extui?: { method?: string };
+      ompAcpPermission?: { kinds?: Record<string, string> };
+    };
   };
   const requestId = data.requestId?.trim();
-  const questions = data.input?.questions;
-  if (!requestId || !Array.isArray(questions) || questions.length === 0) return;
+  const rawQuestions = data.input?.questions;
+  if (!requestId || !Array.isArray(rawQuestions) || rawQuestions.length === 0) return;
+  const questions = localizeOmpPermissionQuestions(rawQuestions, data.input?.ompAcpPermission);
   const method = data.input?.extui?.method;
   // The CLI's free-form editor, opened by a multi-select submit: the picked
   // labels travel as its text, so it must not surface as another card.
@@ -1875,20 +1914,26 @@ function onDone(event: ChatEngineEvent, key: string, deps: EngineEventDeps) {
     );
   }
   // Occupancy for the context meter: the newest single report (claude's one
-  // payload already carries the turn's totals).
+  // payload carries the turn's totals; OMP ACP separates `context_usage` from
+  // the top-level multi-step billing sum).
   const turnTotals = turnUsageTotals.get(event.runId);
-  let settledUsage = mergeUsage(turnTotals ? prev.usage : data.usage, prev.usage);
+  const doneOccupancy = occupancyUsageOf(data.usage);
+  let settledUsage = mergeUsage(turnTotals ? prev.usage : doneOccupancy, prev.usage);
   const finalWindow = reportedContextWindow(data.usage);
   if (finalWindow && settledUsage && typeof settledUsage === "object") {
     settledUsage = { ...settledUsage, model_context_window: finalWindow };
   }
   // The row tells the reader what the reply cost: every report of this run
-  // summed, which for a multi-request reply is more than its last request.
+  // summed (or the top-level billing payload in `done` when no `usage` event
+  // preceded it), which for a multi-request reply is more than its last request.
   turnUsageTotals.delete(event.runId);
   dropStreamDisplayContext(event.runId);
+  const doneBilling = doneOccupancy !== data.usage ? parseUsage(data.usage) : null;
   const finalUsage = turnTotals
     ? mergeUsage(usageSnapshot(turnTotals), settledUsage)
-    : settledUsage;
+    : doneBilling
+      ? mergeUsage(usageSnapshot(doneBilling), settledUsage)
+      : settledUsage;
   // Fold the turn's last unflushed chunks (the final sink batch can arrive
   // in the same frame as done), then settle every live row: the streamed
   // text the user watched arrive *is* the final message.
@@ -1968,13 +2013,15 @@ function onDone(event: ChatEngineEvent, key: string, deps: EngineEventDeps) {
     // have raised its own notice already; notifyTurnComplete skips the second.
     void notifyTurnComplete(key, turnReplyText(finalMessages), turnAwaitsUser(finalMessages));
     deps.drainQueue(key);
-    // Claude's result line reports the turn's summed usage (every request of
-    // the turn added up), not the occupancy the meter shows — so re-read the
-    // latest per-message snapshot from the session file once the engine has
-    // settled it. /compact turns need the same re-read on every engine.
+    // Claude's result line and OMP ACP's prompt result report the turn's
+    // summed usage (every request of the turn added up), and OMP's ACP
+    // `usage_update` only carries total `used`/`size` without the per-bucket
+    // breakdown — so re-read the latest per-message snapshot from the session
+    // file once the engine has settled it (preserving `model_context_window`
+    // via `mergeUsage`). /compact turns need the same re-read on every engine.
     const lastUser = [...prev.messages].reverse().find((m) => m.role === "user");
     const compactTurn = Boolean(lastUser?.text.trim().startsWith("/compact"));
-    if (event.engine === "claude" || compactTurn) {
+    if (event.engine === "claude" || event.engine === "omp" || compactTurn) {
       setTimeout(() => {
         deps.refreshSessionUsage?.(key)?.catch(() => {});
       }, 400);

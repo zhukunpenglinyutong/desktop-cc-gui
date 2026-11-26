@@ -107,4 +107,109 @@ describe("usage accounting", () => {
     expect(useChatStore.getState().openTabs[0].model).toBe("haiku");
   });
 
+  it("keeps OMP ACP context occupancy separate from multi-step billed turn totals", () => {
+    const ompKey = sessionKey("omp", "s-omp", "/tmp/ws");
+    const ompRun = `usage-run-${++runCounter}`;
+    runRouting.set(ompRun, ompKey);
+    useChatStore.setState({
+      bySession: {
+        [ompKey]: {
+          ...EMPTY_SESSION,
+          streaming: true,
+          messages: [{ seq: 2, role: "assistant", text: "done", live: true, ts: null }],
+        },
+      },
+    });
+    const acpUsage = {
+      inputTokens: 120_000,
+      outputTokens: 4_500,
+      cacheRead: 180_000,
+      cacheWrite: 15_000,
+      totalTokens: 319_500,
+      model_context_window: 256_000,
+      context_usage: {
+        input_tokens: 42_000,
+        total_tokens: 42_000,
+        model_context_window: 256_000,
+      },
+    };
+    const ompEvent = (kind: ChatEngineEvent["kind"], seq: number, data: unknown): ChatEngineEvent => ({
+      runId: ompRun,
+      sessionId: "s-omp",
+      engine: "omp",
+      seq,
+      kind,
+      data,
+    });
+
+    handleEngineEvents(
+      [
+        ompEvent("usage", 2, acpUsage),
+        ompEvent("done", 3, { usage: acpUsage }),
+      ],
+      deps(),
+    );
+
+    const settled = useChatStore.getState().bySession[ompKey]!;
+    // Context meter reads real window occupancy (42k / 256k), not the 319.5k multi-step sum.
+    expect(parseUsage(settled.usage)).toMatchObject({
+      total: 42_000,
+      contextWindow: 256_000,
+    });
+    // Assistant message row keeps the multi-step billed breakdown.
+    const assistant = settled.messages.filter((m) => m.role === "assistant").at(-1);
+    expect(parseUsage(assistant?.usage)).toMatchObject({
+      input: 120_000,
+      output: 4_500,
+      cacheRead: 180_000,
+      cacheWrite: 15_000,
+      total: 319_500,
+      contextWindow: 256_000,
+    });
+  });
+
+  it("keeps OMP ACP occupancy separate when only done carries the combined usage", () => {
+    const ompKey = sessionKey("omp", "s-omp-done-only", "/tmp/ws");
+    const ompRun = `usage-run-${++runCounter}`;
+    runRouting.set(ompRun, ompKey);
+    useChatStore.setState({
+      bySession: {
+        [ompKey]: {
+          ...EMPTY_SESSION,
+          streaming: true,
+          messages: [{ seq: 2, role: "assistant", text: "done", live: true, ts: null }],
+        },
+      },
+    });
+    const acpUsage = {
+      inputTokens: 120_000,
+      outputTokens: 4_500,
+      cacheRead: 180_000,
+      cacheWrite: 15_000,
+      totalTokens: 319_500,
+      model_context_window: 256_000,
+      context_usage: {
+        input_tokens: 42_000,
+        total_tokens: 42_000,
+        model_context_window: 256_000,
+      },
+    };
+    handleEngineEvents(
+      [{ runId: ompRun, sessionId: "s-omp-done-only", engine: "omp", seq: 2, kind: "done", data: { usage: acpUsage } }],
+      deps(),
+    );
+
+    const settled = useChatStore.getState().bySession[ompKey]!;
+    expect(parseUsage(settled.usage)).toMatchObject({ total: 42_000, contextWindow: 256_000 });
+    const assistant = settled.messages.filter((m) => m.role === "assistant").at(-1);
+    expect(parseUsage(assistant?.usage)).toMatchObject({
+      input: 120_000,
+      output: 4_500,
+      cacheRead: 180_000,
+      cacheWrite: 15_000,
+      total: 319_500,
+      contextWindow: 256_000,
+    });
+  });
+
 });

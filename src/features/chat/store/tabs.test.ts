@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createStore } from "zustand/vanilla";
-import type { Message } from "@/lib/ipc";
+import { ipc, type Message } from "@/lib/ipc";
 import type { ActiveSession } from "./persistence";
 import { EMPTY_SESSION, type SessionState } from "./stream";
 import { createTabActions } from "./tabs";
@@ -99,5 +99,33 @@ describe("closedTabCache eviction", () => {
     expect(store.getState().bySession["omp/s1"]).toBeDefined();
     expect(store.getState().bySession["omp/s2"]).toBeUndefined();
     expect(store.getState().bySession["omp/s3"]).toBeDefined();
+  });
+});
+
+describe("OMP ACP daemon prewarm and close lifecycle", () => {
+  beforeEach(() => {
+    localStorage.clear();
+    vi.restoreAllMocks();
+  });
+
+  it("prewarms on new OMP chat, session switch, and closes session on tab close", () => {
+    const prewarm = vi.spyOn(ipc, "prewarmOmpSession").mockResolvedValue(undefined);
+    const closeOmp = vi.spyOn(ipc, "closeOmpSession").mockResolvedValue(undefined);
+    const tabs = [makeTab("s1"), makeTab("s2")];
+    const { actions } = setup(tabs, {});
+
+    actions.focusTab("omp", "s2", "/ws");
+    expect(prewarm).toHaveBeenCalledWith(
+      expect.objectContaining({ workspacePath: "/ws", sessionId: "s2" }),
+    );
+
+    prewarm.mockClear();
+    actions.startNewChat("/ws", "omp");
+    expect(prewarm).toHaveBeenCalledWith(
+      expect.objectContaining({ workspacePath: "/ws", sessionId: null }),
+    );
+
+    actions.closeTab("omp", "s1", "/ws");
+    expect(closeOmp).toHaveBeenCalledWith("s1");
   });
 });

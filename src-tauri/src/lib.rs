@@ -72,6 +72,7 @@ pub struct AppState {
     pub relay: relay::RelayState,
     pub dsh_host: std::sync::Arc<dsh_host::DshHostState>,
     pub opencode_server: std::sync::Arc<engine::opencode_server::OpencodeServerState>,
+    pub omp_daemon: std::sync::Arc<engine::omp_daemon::OmpDaemonState>,
     /// In-flight worktree creations (git_worktree_create) by creationId —
     /// the cancel command signals through this registry.
     pub worktree_creations: git_worktree::CreationRegistry,
@@ -203,6 +204,9 @@ pub fn run() {
                 dsh_host: std::sync::Arc::new(dsh_host::DshHostState::default()),
                 opencode_server: std::sync::Arc::new(
                     engine::opencode_server::OpencodeServerState::default(),
+                ),
+                omp_daemon: std::sync::Arc::new(
+                    engine::omp_daemon::OmpDaemonState::default(),
                 ),
                 worktree_creations: git_worktree::CreationRegistry::default(),
             };
@@ -376,6 +380,7 @@ pub fn run() {
                     state.processes.kill_all();
                     state.dsh_host.kill_spawned();
                     state.opencode_server.kill_spawned();
+                    state.omp_daemon.kill_spawned();
                     plugin_caps::kill_all_tracked_children();
                     tauri::async_runtime::block_on(terminal::kill_all(&state.terminals));
                     computer_use::disarm_esc(&window.app_handle());
@@ -483,6 +488,8 @@ pub fn run() {
             // engine
             engine::send_message,
             engine::interrupt_session,
+            engine::prewarm_omp_session,
+            engine::close_omp_session,
             engine::run_activity,
             engine::close_idle_codebuddy,
             engine::live_runs,

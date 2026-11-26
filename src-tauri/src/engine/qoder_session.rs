@@ -309,14 +309,21 @@ fn extract_tool_call_id(update: &Value) -> Option<String> {
 }
 
 fn extract_tool_name(update: &Value) -> Option<String> {
-    update
+    // Prefer a vendor-provided concrete tool id over `title`: OMP's ACP
+    // `tool_call` carries `name` (e.g. "bash") and a human `title` (often the
+    // command or file it touches). Using the title as the row name leaked the
+    // tool's actual content into the collapsed process chip.
+    let meta_name = update
         .get("_meta")
-        .and_then(|meta| meta.get("qoder"))
-        .and_then(|qoder| qoder.get("toolName"))
-        .and_then(Value::as_str)
+        .and_then(Value::as_object)
+        .and_then(|meta| {
+            meta.values()
+                .find_map(|vendor| vendor.get("toolName").and_then(Value::as_str))
+        });
+    meta_name
+        .or_else(|| update.get("name").and_then(Value::as_str))
         .or_else(|| update.get("title").and_then(Value::as_str))
         .or_else(|| update.get("kind").and_then(Value::as_str))
-        .or_else(|| update.get("name").and_then(Value::as_str))
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .map(str::to_string)
@@ -1179,8 +1186,11 @@ fn handle_session_update(
             tool_name,
             input,
         } => {
-            view.tool_names.insert(tool_id, tool_name.clone());
-            core.dispatch_event(state, super::tool_call_message(tool_name, input.as_ref()));
+            view.tool_names.insert(tool_id.clone(), tool_name.clone());
+            core.dispatch_event(
+                state,
+                super::tool_call_message_with_id(tool_name, input.as_ref(), Some(&tool_id)),
+            );
         }
         QoderSessionUpdate::ToolCompleted {
             tool_id,
@@ -1196,7 +1206,10 @@ fn handle_session_update(
                 (None, Some(error)) => json!({ "text": error, "isError": true }),
                 (None, None) => Value::Null,
             };
-            core.dispatch_event(state, super::tool_result_patch(name, Some(&result)));
+            core.dispatch_event(
+                state,
+                super::tool_result_patch_with_id(name, Some(&result), Some(&tool_id)),
+            );
         }
         QoderSessionUpdate::Ignore => {}
     }
@@ -1428,6 +1441,19 @@ mod tests {
                 error: Some("boom".to_string()),
             }
         );
+        // Concrete tool ids win over the human title: `_meta.<vendor>.toolName`
+        // first (any vendor), then ACP `name`, then `title`, then `kind`.
+        // Shared by every ACP driver (omp, grok, kimi, minimax, qoder).
+        let named = json!({"sessionUpdate":"tool_call","toolCallId":"c3","name":"bash","title":"ls -la /secret","kind":"execute","status":"pending"});
+        assert_eq!(extract_tool_name(&named).as_deref(), Some("bash"));
+        let vendor = json!({"toolCallId":"c4","name":"bash","title":"ls","_meta":{"qoder":{"toolName":"Bash"}}});
+        assert_eq!(extract_tool_name(&vendor).as_deref(), Some("Bash"));
+        let other_vendor = json!({"toolCallId":"c5","title":"ls","_meta":{"acme":{"toolName":"shell"}}});
+        assert_eq!(extract_tool_name(&other_vendor).as_deref(), Some("shell"));
+        let titled = json!({"toolCallId":"c6","title":"read","kind":"read"});
+        assert_eq!(extract_tool_name(&titled).as_deref(), Some("read"));
+        let kind_only = json!({"toolCallId":"c7","kind":"edit"});
+        assert_eq!(extract_tool_name(&kind_only).as_deref(), Some("edit"));
         // Updates without a usable id or text are ignored.
         assert_eq!(
             map_session_update(&json!({"sessionUpdate":"tool_call","status":"pending"})),

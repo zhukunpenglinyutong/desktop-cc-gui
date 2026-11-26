@@ -105,6 +105,21 @@ export function parseUsage(usage: unknown): ParsedUsage | null {
   };
 }
 
+/** Extract the dedicated context-occupancy payload when an engine reports
+ *  both the turn's billed total and the current window occupancy in one event
+ *  (OMP ACP attaches `usage_update { used, size }` as `context_usage` beside
+ *  the top-level multi-step billing sum). Returns the original payload for
+ *  every other engine so callers stay engine-agnostic. */
+export function occupancyUsageOf(usage: unknown): unknown {
+  const raw = asRecord(usage);
+  const nested = asRecord(raw?.context_usage);
+  if (!nested) return usage;
+  const window = reportedContextWindow(nested) ?? reportedContextWindow(raw);
+  return window && !reportedContextWindow(nested)
+    ? { ...nested, model_context_window: window }
+    : nested;
+}
+
 /** Keep a previously reported context window when a later snapshot omits it. */
 export function mergeUsage(next: unknown, prev: unknown): unknown {
   if (!next) return prev ?? null;

@@ -915,6 +915,15 @@ pub async fn read_session_file(state: tauri::State<'_, crate::AppState>, engine:
             version,
         });
     }
+    if engine == "omp" {
+        // Release the session from the resident OMP ACP daemon BEFORE reading
+        // the transcript: `session/close` appends a `custom/session_exit` line,
+        // so closing first keeps `expected_version` aligned and stops prewarm
+        // from reloading the pre-edit tree while the editor is open.
+        // Best-effort here so read-only viewing still works during an active
+        // turn; saving is guarded strictly below.
+        let _ = state.omp_daemon.release_session_for_edit(&session_id).await;
+    }
     let db = Arc::clone(&state.db);
     tauri::async_runtime::spawn_blocking(move || read_local(&db, &engine, &session_id))
         .await.map_err(|e| e.to_string())?
@@ -934,6 +943,9 @@ fn external_text_source(db: &crate::db::Db, engine: &str, session_id: &str) -> R
 #[tauri::command]
 pub async fn open_session_file_in_default_editor(state: tauri::State<'_, crate::AppState>,
     engine: String, session_id: String) -> Result<(), String> {
+    if engine == "omp" {
+        state.omp_daemon.release_session_for_edit(&session_id).await?;
+    }
     let db = Arc::clone(&state.db);
     let processes = Arc::clone(&state.processes);
     tauri::async_runtime::spawn_blocking(move || {
@@ -974,16 +986,29 @@ pub async fn write_session_file(state: tauri::State<'_, crate::AppState>, engine
         drop(_edit);
         return Ok(document);
     }
+    if engine == "omp" {
+        // Ensure no daemon still holds an in-memory copy of this session before
+        // writing. Never call `session/close` here: OMP appends `session_exit`
+        // pointing at its stale in-memory leaf, which would both break
+        // `expected_version` and orphan the leaf if the edit trimmed the tail.
+        state.omp_daemon.ensure_session_unloaded_for_write(&session_id).await?;
+    }
     let db = Arc::clone(&state.db);
     let processes = Arc::clone(&state.processes);
-    tauri::async_runtime::spawn_blocking(move || {
-        let _edit = processes.begin_session_edit(&session_id)?;
+    let engine_for_write = engine.clone();
+    let session_for_write = session_id.clone();
+    let document = tauri::async_runtime::spawn_blocking(move || {
+        let _edit = processes.begin_session_edit(&session_for_write)?;
         // The per-session lease excludes starts without holding the global
         // process registry mutex during file I/O or database transactions.
-        let result = write_local_document(&db, &engine, &session_id, content, &expected_version);
+        let result = write_local_document(&db, &engine_for_write, &session_for_write, content, &expected_version);
         drop(_edit);
         result
-    }).await.map_err(|e| e.to_string())?
+    }).await.map_err(|e| e.to_string())??;
+    if engine == "omp" {
+        state.omp_daemon.finish_session_edit(&session_id);
+    }
+    Ok(document)
 }
 
 #[cfg(test)]

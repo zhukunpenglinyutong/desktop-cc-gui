@@ -1611,6 +1611,19 @@ export const ipc = {
      *  开启了记忆、引擎支持挂载时传）。 */
     memoryBot?: string | null;
   }) => invoke<SendResult>("send_message", args),
+  /** 预热常驻 OMP ACP 守护进程（若带 sessionId 则同步预加载会话，不产生用户回合）。 */
+  prewarmOmpSession: (args: {
+    workspacePath: string;
+    sessionId: string | null;
+    model: string | null;
+    effort: string | null;
+    permission: string | null;
+    providerId: string | null;
+    memoryBot: string | null;
+  }) => invoke<void>("prewarm_omp_session", args),
+  /** 关闭常驻 OMP ACP 守护进程中的空闲会话句柄（释放内存，不影响守护进程与其他会话）。 */
+  closeOmpSession: (sessionId: string) =>
+    invoke<void>("close_omp_session", { sessionId }),
   closeIdleCodeBuddy: (sessionId: string) =>
     invoke<void>("close_idle_codebuddy", { sessionId }),
   interruptSession: (sessionId: string) =>

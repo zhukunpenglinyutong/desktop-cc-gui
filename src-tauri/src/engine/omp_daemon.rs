@@ -1,0 +1,3225 @@
+//! Single-instance long-lived `omp --mode acp` daemon manager and turn driver.
+//!
+//! Instead of spawning a fresh `omp.exe` per send (paying a 5-20s native
+//! addon + CLI + model registry + MCP cold start each time) or parking a
+//! single-session `rpc-ui` process that breaks on every new chat, session
+//! switch, or model switch, one host-owned `omp --mode acp` process serves
+//! concurrent sessions across all local workspaces:
+//! - `initialize` runs once per daemon lifetime (~1.4s on idle host).
+//! - `session/new` / `session/resume` creates or attaches a session inside the
+//!   running daemon (`resume` skips history replay; already-loaded sessions
+//!   return immediately).
+//! - `session/set_config_option` switches `model` and `thinking` in-place
+//!   (~60-350ms) without respawning.
+//! - `session/prompt` runs turns concurrently across distinct sessions; Stop
+//!   sends `session/cancel` for only that session without tearing down the
+//!   daemon or sibling turns.
+//! - `session/close` releases per-session memory when a tab closes or before
+//!   reloading an externally edited session file.
+//! - Config/env drift (`models.yml`, `config.yml`, `settings.json`, `mcp.json`,
+//!   `--auto-approve`, `--service-tier`, proxy or resolved env) rotates the
+//!   daemon gracefully: the old instance enters draining state and exits once
+//!   its in-flight turns settle; new sends immediately use a fresh daemon.
+//! - `session/request_permission` asks become question cards unless the
+//!   daemon runs with `--auto-approve` (bypass): the host never picks for the
+//!   user.
+//! - A daemon with no turn for [`DAEMON_IDLE_EXIT`] exits; the next send or
+//!   prewarm starts a fresh one.
+
+use std::collections::{BTreeMap, HashMap, HashSet};
+use std::ffi::OsString;
+use std::path::{Path, PathBuf};
+use std::process::Stdio;
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, SystemTime};
+
+use serde_json::{json, Map, Value};
+use sha2::Digest as _;
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+use tokio::process::{Child, ChildStdin, ChildStdout};
+use tokio::sync::{mpsc, oneshot, Mutex as TokioMutex};
+use tokio::time::timeout;
+
+use crate::engine::pi_family::omp_acp::{
+    elicitation_form_declared, extract_session_id, finalize_turn_usage, handle_session_update,
+    omp_initialize_params, prompt_blocks, session_dir_name, terminal_message, TurnView,
+};
+use crate::engine::pi_family::CONFIRM_YES_LABEL;
+use crate::engine::qoder_session::{
+    answer_agent_request, encode_ndjson, jsonrpc_error_response, jsonrpc_id_key,
+    jsonrpc_notification, jsonrpc_request, jsonrpc_result_response, parse_acp_line, AcpLine,
+    AcpRpcError, JSONRPC_INTERNAL_ERROR, KILL_POLL, SESSION_NEW_TIMEOUT,
+};
+use crate::engine::{
+    command_for_binary, kill_process_group, spawn_stderr_capture, EngineEvent, SendRequest,
+    TurnCore, TurnState, VirtualRunGuard,
+};
+
+const DAEMON_INIT_TIMEOUT: Duration = Duration::from_secs(45);
+const SESSION_RESUME_TIMEOUT: Duration = Duration::from_secs(45);
+const CONFIG_OPTION_TIMEOUT: Duration = Duration::from_secs(20);
+const SESSION_CLOSE_TIMEOUT: Duration = Duration::from_secs(5);
+const CANCEL_SETTLE_TIMEOUT: Duration = Duration::from_secs(2);
+const ELICITATION_METHOD: &str = "elicitation/create";
+const PERMISSION_METHOD: &str = "session/request_permission";
+/// How long a send waits for the same session's cancelled prompt to end
+/// before refusing with an explicit error.
+const PREVIOUS_TURN_SETTLE_TIMEOUT: Duration = Duration::from_secs(15);
+/// Upper bound on watching a prompt whose cancel OMP has not confirmed.
+const CANCELLED_PROMPT_WATCH: Duration = Duration::from_secs(120);
+const DAEMON_IDLE_EXIT: Duration = Duration::from_secs(2 * 60 * 60);
+const IDLE_CHECK_INTERVAL: Duration = Duration::from_secs(60);
+const EXTERNAL_FILE_MODIFIED_ERR: &str =
+    "该 OMP 会话文件已被外部修改，请稍后重试以重新加载磁盘上的最新会话";
+const PROXY_ENV_KEYS: [&str; 8] = [
+    "HTTP_PROXY",
+    "HTTPS_PROXY",
+    "ALL_PROXY",
+    "NO_PROXY",
+    "http_proxy",
+    "https_proxy",
+    "all_proxy",
+    "no_proxy",
+];
+
+const CONFIG_STAMP_FILES: [&str; 4] = ["models.yml", "config.yml", "settings.json", "mcp.json"];
+
+/// Content digest of a config file, ignoring trailing ASCII whitespace.
+///
+/// OMP rewrites `models.yml` from its model registry and appends a trailing
+/// blank line each time. A size+mtime fingerprint therefore changes on every
+/// run, which rotated the daemon on every send (a self-sustaining cold-start
+/// loop). Hashing the trimmed content keeps real user edits detectable while
+/// identical rewrites stay stable.
+type FileStamp = [u8; 32];
+
+/// Size + mtime for a session transcript: cheap, and transcripts can be far
+/// too large to hash on every send.
+type SessionFileStamp = (u64, Option<SystemTime>);
+
+/// Eligibility gate: normal local OMP sends run on the shared ACP daemon.
+/// Plan approval (`omp_acp`), WSL, computer-use, memory-bot, and tool-constrained
+/// runs keep their isolated single-run transports.
+///
+/// Note: on-demand MCP (`mcp_launch_modes`) is handled directly inside the ACP
+/// daemon by wrapping stdio `mcpServers` with `--mcp-lazy --`, so it does NOT
+/// inject workspace `.omp/mcp.json` or disqualify the daemon.
+pub(crate) fn should_use_daemon(engine: &str, req: &SendRequest, wsl: bool) -> bool {
+    engine == "omp"
+        && !wsl
+        && !super::pi_family::acp_plan_requested(req)
+        && req.computer_use != Some(true)
+        && req.memory_bot.is_none()
+        && req.allowed_tools.is_none()
+        && !req.no_tools
+}
+/// Launch specification & fingerprint for an `omp --mode acp` daemon instance.
+/// Any change here triggers graceful rotation (draining old daemon, spawning
+/// a fresh one for new sends).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct OmpDaemonSpec {
+    pub(crate) bin: String,
+    pub(crate) auto_approve: bool,
+    pub(crate) service_tier: Option<String>,
+    pub(crate) extra_env: BTreeMap<String, String>,
+    pub(crate) search_path: Option<OsString>,
+    pub(crate) proxy_env: BTreeMap<String, String>,
+    pub(crate) config_stamps: Vec<Option<FileStamp>>,
+    pub(crate) omp_on_demand_servers: Vec<String>,
+}
+
+impl OmpDaemonSpec {
+    pub(crate) fn from_launch(
+        bin: String,
+        req: &SendRequest,
+        command: &tokio::process::Command,
+        search_path: Option<OsString>,
+    ) -> Result<Self, String> {
+        let auto_approve = req.permission.as_deref() == Some("bypass");
+        let service_tier = if req.model.as_deref().is_some_and(|m| {
+            m.strip_prefix("openai-codex/")
+                .is_some_and(|id| !id.is_empty())
+        }) {
+            match req.service_tier.as_deref() {
+                Some(tier @ ("default" | "priority")) => Some(tier.to_string()),
+                Some(_) => return Err("Invalid OMP OpenAI service tier".to_string()),
+                None => None,
+            }
+        } else {
+            None
+        };
+        let mut extra_env = BTreeMap::new();
+        for (key, value) in command.as_std().get_envs() {
+            let Some(key_str) = key.to_str() else {
+                continue;
+            };
+            if key_str == "CCGUI_SERVED_MODEL_FILE" {
+                continue;
+            }
+            if let Some(val) = value.and_then(|v| v.to_str()) {
+                extra_env.insert(key_str.to_string(), val.to_string());
+            }
+        }
+        Ok(Self {
+            bin,
+            auto_approve,
+            service_tier,
+            extra_env,
+            search_path,
+            proxy_env: current_proxy_env(),
+            config_stamps: omp_config_stamps(),
+            omp_on_demand_servers: omp_user_on_demand_names(),
+        })
+    }
+}
+
+fn omp_user_on_demand_names() -> Vec<String> {
+    let modes = match crate::settings::read_settings() {
+        Ok(settings) if !settings.mcp_launch_modes.is_empty() => settings.mcp_launch_modes,
+        _ => return Vec::new(),
+    };
+    let mut names: Vec<String> = modes
+        .into_iter()
+        .filter(|(k, v)| k.starts_with("omp_user:") && v == crate::mcp::launch::ON_DEMAND)
+        .filter_map(|(k, _)| k.strip_prefix("omp_user:").map(str::to_string))
+        .collect();
+    names.sort();
+    names
+}
+
+fn current_proxy_env() -> BTreeMap<String, String> {
+    let mut map = BTreeMap::new();
+    for key in PROXY_ENV_KEYS {
+        if let Ok(value) = std::env::var(key) {
+            if !value.is_empty() {
+                map.insert(key.to_string(), value);
+            }
+        }
+    }
+    map
+}
+
+fn omp_config_stamps() -> Vec<Option<FileStamp>> {
+    let Ok(dir) = super::pi_family_auth::agent_dir("omp") else {
+        return vec![None; CONFIG_STAMP_FILES.len()];
+    };
+    CONFIG_STAMP_FILES
+        .iter()
+        .map(|name| file_stamp(&dir.join(name)))
+        .collect()
+}
+
+fn file_stamp(path: &Path) -> Option<FileStamp> {
+    const MAX_STAMP_BYTES: u64 = 4 * 1024 * 1024;
+    let meta = std::fs::metadata(path).ok()?;
+    if !meta.is_file() || meta.len() > MAX_STAMP_BYTES {
+        return None;
+    }
+    let bytes = std::fs::read(path).ok()?;
+    let end = bytes
+        .iter()
+        .rposition(|byte| !byte.is_ascii_whitespace())
+        .map(|index| index + 1)
+        .unwrap_or(0);
+    let mut hasher = sha2::Sha256::new();
+    hasher.update(&bytes[..end]);
+    Some(hasher.finalize().into())
+}
+
+fn session_file_stamp(path: &Path) -> Option<SessionFileStamp> {
+    let meta = std::fs::metadata(path).ok()?;
+    Some((meta.len(), meta.modified().ok()))
+}
+
+// ==================== Daemon state & lifecycle ====================
+
+#[derive(Default)]
+struct DaemonHolder {
+    current: Option<Arc<OmpDaemonClient>>,
+    draining: Vec<Arc<OmpDaemonClient>>,
+}
+
+/// Host-wide state for the managed single-instance `omp --mode acp` daemon.
+#[derive(Default)]
+pub struct OmpDaemonState {
+    holder: Mutex<DaemonHolder>,
+    /// Serializes spawn/rotation so concurrent sends or prewarms share one
+    /// daemon cold start. Never held while running turns or session RPCs.
+    ensure: TokioMutex<()>,
+    /// Sessions whose transcript is open for editing: background prewarm skips
+    /// them so the daemon never re-caches the pre-edit tree underneath the
+    /// editor. Cleared on save, explicit close, or the next real user send.
+    editing_sessions: Mutex<HashSet<String>>,
+}
+fn lock_unpoisoned<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
+    mutex
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
+impl OmpDaemonState {
+    /// Return the live daemon matching `spec`, spawning or gracefully rotating
+    /// when none is alive or the launch fingerprint drifted.
+    pub(crate) async fn ensure_daemon(
+        &self,
+        spec: &OmpDaemonSpec,
+    ) -> Result<Arc<OmpDaemonClient>, String> {
+        if let Some(client) = self.matching_live_client(spec) {
+            return Ok(client);
+        }
+        let _guard = self.ensure.lock().await;
+        if let Some(client) = self.matching_live_client(spec) {
+            return Ok(client);
+        }
+
+        // Retire the mismatched or dead previous daemon before spawning: a
+        // daemon still running turns keeps serving them (and their parked
+        // questions) from `draining` and exits when its last turn settles.
+        // Drained daemons that already finished are reaped here.
+        let (retired, idle_draining) = {
+            let mut holder = lock_unpoisoned(&self.holder);
+            let mut idle = Vec::new();
+            holder.draining.retain(|client| {
+                if !client.is_alive() {
+                    return false;
+                }
+                if client.active_turn_count() == 0 {
+                    idle.push(Arc::clone(client));
+                    return false;
+                }
+                true
+            });
+            (holder.current.take(), idle)
+        };
+        for client in idle_draining {
+            client.shutdown_sync();
+        }
+        if let Some(old) = retired {
+            old.mark_draining();
+            if old.active_turn_count() == 0 {
+                old.shutdown_sync();
+            } else if old.is_alive() {
+                lock_unpoisoned(&self.holder).draining.push(old);
+            }
+        }
+
+        let client = OmpDaemonClient::spawn_and_initialize(spec.clone()).await?;
+        lock_unpoisoned(&self.holder).current = Some(Arc::clone(&client));
+        Ok(client)
+    }
+
+    /// True while the current daemon is alive and running at least one turn.
+    fn current_is_busy(&self) -> bool {
+        let holder = lock_unpoisoned(&self.holder);
+        holder
+            .current
+            .as_ref()
+            .is_some_and(|client| client.is_alive() && client.active_turn_count() > 0)
+    }
+
+    /// Make `owner` the only daemon holding `session_id`: a session loaded in
+    /// two `omp --mode acp` processes forks its transcript (both append to the
+    /// same file). Idle copies elsewhere are closed; a turn still running on
+    /// this session in another (draining) daemon refuses the move instead of
+    /// racing it.
+    pub(crate) async fn release_session_elsewhere(
+        &self,
+        session_id: &str,
+        owner: &Arc<OmpDaemonClient>,
+    ) -> Result<(), String> {
+        let others: Vec<Arc<OmpDaemonClient>> = {
+            let holder = lock_unpoisoned(&self.holder);
+            holder
+                .current
+                .iter()
+                .chain(holder.draining.iter())
+                .filter(|client| !Arc::ptr_eq(client, owner) && client.is_alive())
+                .cloned()
+                .collect()
+        };
+        for client in others {
+            if client.has_active_turn(session_id) {
+                return Err(
+                    "该 OMP 会话的上一轮仍在旧守护进程中运行，请等待本轮结束或先停止后再发送"
+                        .to_string(),
+                );
+            }
+            if client.is_session_externally_modified(session_id) {
+                self.kill_idle_daemon_for_external_edit(&client).await?;
+                continue;
+            }
+            client.close_idle_session(session_id).await;
+        }
+        Ok(())
+    }
+
+    fn matching_live_client(&self, spec: &OmpDaemonSpec) -> Option<Arc<OmpDaemonClient>> {
+        let holder = lock_unpoisoned(&self.holder);
+        let client = holder.current.as_ref()?;
+        (client.spec == *spec && client.claim()).then(|| Arc::clone(client))
+    }
+
+    /// Write a JSON-RPC reply for a parked elicitation or permission ask to
+    /// the exact daemon instance that issued it (even if that daemon is
+    /// currently draining after a config rotation). We intentionally never
+    /// attach the shared daemon stdin to `ProcessRegistry::set_stdin`, because
+    /// `TurnCore::dispatch(Done)` calls `close_stdin` on turn completion.
+    pub(crate) async fn write_parked_reply(
+        &self,
+        parked: &Value,
+        frame: &Value,
+    ) -> Result<(), String> {
+        let daemon_id = parked
+            .get("daemonId")
+            .and_then(Value::as_u64)
+            .ok_or_else(|| "OMP ACP question context missing daemonId".to_string())?;
+        let target = {
+            let holder = lock_unpoisoned(&self.holder);
+            holder
+                .current
+                .iter()
+                .chain(holder.draining.iter())
+                .find(|client| client.daemon_id == daemon_id && client.is_alive())
+                .cloned()
+        }
+        .ok_or_else(|| "OMP ACP daemon for this question is no longer running".to_string())?;
+        target.write_frame(frame).await
+    }
+
+    /// Close a loaded session inside the daemon (tab closed) without
+    /// disturbing the daemon or any active turn.
+    pub(crate) async fn close_session(&self, session_id: &str) {
+        let session_id = session_id.trim();
+        if session_id.is_empty() {
+            return;
+        }
+        lock_unpoisoned(&self.editing_sessions).remove(session_id);
+        for client in self.live_clients() {
+            if client.is_session_externally_modified(session_id) {
+                // Never call `session/close` on an already-modified file.
+                let _ = self.kill_idle_daemon_for_external_edit(&client).await;
+                continue;
+            }
+            client.close_idle_session(session_id).await;
+        }
+    }
+
+    /// Release `session_id` BEFORE opening its transcript for editing, and hold
+    /// off background prewarm until editing finishes or the next send runs.
+    ///
+    /// OMP appends a `custom/session_exit` record pointing at its in-memory
+    /// leaf when `session/close` runs. Closing *before* the editor reads the
+    /// file ensures that record (if written) is part of the snapshot the
+    /// editor sees and `expected_version` matches — and crucially that no
+    /// `session/close` ever fires *after* the user writes the edited file,
+    /// which would orphan the leaf if the edit trimmed the tail.
+    pub(crate) async fn release_session_for_edit(&self, session_id: &str) -> Result<(), String> {
+        let session_id = session_id.trim();
+        if session_id.is_empty() {
+            return Ok(());
+        }
+        lock_unpoisoned(&self.editing_sessions).insert(session_id.to_string());
+        for client in self.live_clients() {
+            if client.has_active_turn(session_id) {
+                lock_unpoisoned(&self.editing_sessions).remove(session_id);
+                return Err(
+                    "native session cannot be edited while a turn is running or launching"
+                        .to_string(),
+                );
+            }
+            if client.is_session_externally_modified(session_id) {
+                if let Err(err) = self.kill_idle_daemon_for_external_edit(&client).await {
+                    lock_unpoisoned(&self.editing_sessions).remove(session_id);
+                    return Err(err);
+                }
+                continue;
+            }
+            client.close_idle_session(session_id).await;
+        }
+        Ok(())
+    }
+
+    /// Guard right before writing an edited transcript to disk. Never sends
+    /// `session/close` (which would append `session_exit` and both break
+    /// `expected_version` and orphan the leaf if the edit trims the tail).
+    /// Normally `release_session_for_edit` already unloaded the session on
+    /// read; if a send reloaded it in the meantime, hard-kill the idle daemon
+    /// (or refuse while busy).
+    pub(crate) async fn ensure_session_unloaded_for_write(
+        &self,
+        session_id: &str,
+    ) -> Result<(), String> {
+        let session_id = session_id.trim();
+        if session_id.is_empty() {
+            return Ok(());
+        }
+        lock_unpoisoned(&self.editing_sessions).insert(session_id.to_string());
+        for client in self.live_clients() {
+            if client.has_active_turn(session_id) {
+                return Err(
+                    "native session cannot be edited while a turn is running or launching"
+                        .to_string(),
+                );
+            }
+            if client.has_loaded_session(session_id) {
+                self.kill_idle_daemon_for_external_edit(&client).await?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Clear the edit hold after saving an edited transcript. Never sends
+    /// `session/close` onto the already-edited file.
+    pub(crate) fn finish_session_edit(&self, session_id: &str) {
+        let session_id = session_id.trim();
+        if session_id.is_empty() {
+            return;
+        }
+        lock_unpoisoned(&self.editing_sessions).remove(session_id);
+    }
+
+    fn is_editing(&self, session_id: &str) -> bool {
+        lock_unpoisoned(&self.editing_sessions).contains(session_id)
+    }
+
+    fn live_clients(&self) -> Vec<Arc<OmpDaemonClient>> {
+        let holder = lock_unpoisoned(&self.holder);
+        let mut list = Vec::new();
+        if let Some(client) = &holder.current {
+            if client.is_alive() {
+                list.push(Arc::clone(client));
+            }
+        }
+        for client in &holder.draining {
+            if client.is_alive() {
+                list.push(Arc::clone(client));
+            }
+        }
+        list
+    }
+
+    /// Hard-kill `client` (`SIGKILL` / `taskkill /T /F`, never `session/close`
+    /// or `SIGTERM`) when it is idle so OMP exits without appending a
+    /// `session_exit` record to an externally modified transcript. Returns
+    /// `Err` if the daemon is busy serving another turn.
+    async fn kill_idle_daemon_for_external_edit(
+        &self,
+        client: &Arc<OmpDaemonClient>,
+    ) -> Result<(), String> {
+        let _guard = self.ensure.lock().await;
+        if client.active_turn_count() > 0 || client.has_any_settling() {
+            return Err(
+                "该 OMP 会话文件已被外部修改，但守护进程正在运行其他会话，请等待当前回合结束后重试"
+                    .to_string(),
+            );
+        }
+        {
+            let mut holder = lock_unpoisoned(&self.holder);
+            if holder.current.as_ref().is_some_and(|c| Arc::ptr_eq(c, client)) {
+                holder.current = None;
+            }
+            holder.draining.retain(|c| !Arc::ptr_eq(c, client));
+        }
+        client.shutdown_sync();
+        Ok(())
+    }
+    /// Kill every daemon we spawned (app exit).
+    pub fn kill_spawned(&self) {
+        let clients = {
+            let mut holder = lock_unpoisoned(&self.holder);
+            let mut list = Vec::new();
+            if let Some(client) = holder.current.take() {
+                list.push(client);
+            }
+            list.extend(holder.draining.drain(..));
+            list
+        };
+        for client in clients {
+            client.shutdown_sync();
+        }
+    }
+
+    /// Background prewarm: ensures the daemon is running and, when an existing
+    /// `session_id` is supplied, pre-loads it via `session/resume` so the next
+    /// user send starts immediately. Model and effort are left to that send:
+    /// `session/set_config_option` can make OMP record a `model_change` in the
+    /// transcript, and a background prewarm must never rewrite it.
+    pub(crate) async fn prewarm(
+        &self,
+        spec: &OmpDaemonSpec,
+        workspace: &Path,
+        session_id: Option<&str>,
+    ) -> Result<(), String> {
+        // A background prewarm must never rotate a daemon that is running a
+        // turn (another tab's permission/channel can differ from the busy
+        // one): the user's live turn and its parked questions would move to
+        // `draining` for nothing. The next real send rotates if still needed.
+        if self.matching_live_client(spec).is_none() && self.current_is_busy() {
+            return Ok(());
+        }
+        let client = self.ensure_daemon(spec).await?;
+        let Some(sid) = session_id.map(str::trim).filter(|s| !s.is_empty()) else {
+            return Ok(());
+        };
+        if self.is_editing(sid) {
+            return Ok(());
+        }
+        // Never race a session that already has an active turn running.
+        if client.has_active_turn(sid) {
+            return Ok(());
+        }
+        if self.release_session_elsewhere(sid, &client).await.is_err() {
+            return Ok(());
+        }
+        // If the file changed externally while cached, skip silently here; the
+        // real send will recycle the idle daemon safely without `session/close`.
+        if client.is_session_externally_modified(sid) {
+            return Ok(());
+        }
+        // A session whose recorded model was deleted simply stays unloaded
+        // until a real send (no fallback model, so no transcript append).
+        client.ensure_session_resumed(sid, workspace, None).await?;
+        Ok(())
+    }
+}
+
+// ==================== Multiplexed ACP daemon client ====================
+
+enum DaemonSessionEvent {
+    Update(Value),
+    AgentRequest {
+        id: Value,
+        method: String,
+        params: Value,
+    },
+}
+
+#[derive(Clone, Debug)]
+struct LoadedSessionMeta {
+    workspace: PathBuf,
+    current_model: Option<String>,
+    current_effort: Option<String>,
+    available_models: Vec<String>,
+    session_file: Option<PathBuf>,
+    session_file_stamp: Option<SessionFileStamp>,
+}
+
+static NEXT_DAEMON_ID: AtomicU64 = AtomicU64::new(1);
+
+pub(crate) struct OmpDaemonClient {
+    daemon_id: u64,
+    spec: OmpDaemonSpec,
+    stdin: Arc<TokioMutex<Option<ChildStdin>>>,
+    child: Mutex<Option<Child>>,
+    pid: u32,
+    #[cfg(windows)]
+    tree_guard: Mutex<Option<Arc<crate::engine::job::KillOnCloseJob>>>,
+    stderr_buf: Arc<Mutex<String>>,
+    next_id: AtomicU64,
+    pending_rpcs: Arc<Mutex<HashMap<String, oneshot::Sender<Result<Value, AcpRpcError>>>>>,
+    active_turns: Arc<Mutex<HashMap<String, mpsc::UnboundedSender<DaemonSessionEvent>>>>,
+    loaded_sessions: Mutex<HashMap<String, LoadedSessionMeta>>,
+    /// Per-session setup lock so concurrent prewarm + send on the same session
+    /// share one `session/resume` instead of duplicating it.
+    setup_locks: Mutex<HashMap<String, Arc<TokioMutex<()>>>>,
+    active_turn_count: AtomicUsize,
+    draining: AtomicBool,
+    alive: Arc<AtomicBool>,
+    reader_abort: Mutex<Option<tokio::task::AbortHandle>>,
+    /// Sessions whose cancelled prompt OMP has not confirmed yet; they count
+    /// as busy until it lands (see `watch_cancelled_prompt`).
+    settling: Mutex<HashSet<String>>,
+    /// Last time a caller used this daemon; drives the idle exit.
+    last_activity: Mutex<std::time::Instant>,
+}
+
+impl OmpDaemonClient {
+    async fn spawn_and_initialize(spec: OmpDaemonSpec) -> Result<Arc<Self>, String> {
+        let mut command = command_for_binary(&spec.bin);
+        command.args(["--mode", "acp"]);
+        if spec.auto_approve {
+            command.arg("--auto-approve");
+        }
+        if let Some(tier) = spec.service_tier.as_deref() {
+            command.args(["--service-tier", tier]);
+        }
+        if let Some(path) = spec.search_path.as_deref() {
+            command.env("PATH", path);
+        }
+        for (key, value) in &spec.extra_env {
+            command.env(key, value);
+        }
+        command
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .kill_on_drop(true);
+        #[cfg(unix)]
+        command.process_group(0);
+        #[cfg(windows)]
+        crate::engine::hide_console(&mut command);
+
+        let mut child = command
+            .spawn()
+            .map_err(|error| format!("failed to spawn OMP ACP daemon ({}): {error}", spec.bin))?;
+        let pid = child.id().unwrap_or(0);
+        #[cfg(windows)]
+        let tree_guard = crate::engine::job::assign_kill_on_close(&child);
+
+        let (stdin, stdout, stderr) =
+            match (child.stdin.take(), child.stdout.take(), child.stderr.take()) {
+                (Some(stdin), Some(stdout), Some(stderr)) => (stdin, stdout, stderr),
+                _ => {
+                    let _ = child.start_kill();
+                    return Err("OMP ACP daemon missing stdio pipe after spawn".to_string());
+                }
+            };
+
+        let stdin = Arc::new(TokioMutex::new(Some(stdin)));
+        let stderr_buf = spawn_stderr_capture(stderr);
+        let pending_rpcs: Arc<
+            Mutex<HashMap<String, oneshot::Sender<Result<Value, AcpRpcError>>>>,
+        > = Arc::new(Mutex::new(HashMap::new()));
+        let active_turns: Arc<
+            Mutex<HashMap<String, mpsc::UnboundedSender<DaemonSessionEvent>>>,
+        > = Arc::new(Mutex::new(HashMap::new()));
+        let alive = Arc::new(AtomicBool::new(true));
+
+        let client = Arc::new(Self {
+            daemon_id: NEXT_DAEMON_ID.fetch_add(1, Ordering::Relaxed),
+            spec,
+            stdin: Arc::clone(&stdin),
+            child: Mutex::new(Some(child)),
+            pid,
+            #[cfg(windows)]
+            tree_guard: Mutex::new(tree_guard),
+            stderr_buf: Arc::clone(&stderr_buf),
+            next_id: AtomicU64::new(1),
+            pending_rpcs: Arc::clone(&pending_rpcs),
+            active_turns: Arc::clone(&active_turns),
+            loaded_sessions: Mutex::new(HashMap::new()),
+            setup_locks: Mutex::new(HashMap::new()),
+            active_turn_count: AtomicUsize::new(0),
+            draining: AtomicBool::new(false),
+            alive: Arc::clone(&alive),
+            reader_abort: Mutex::new(None),
+            settling: Mutex::new(HashSet::new()),
+            last_activity: Mutex::new(std::time::Instant::now()),
+        });
+
+        let reader_handle = tokio::spawn(run_daemon_reader(
+            stdout,
+            stdin,
+            pending_rpcs,
+            active_turns,
+            alive,
+            stderr_buf,
+        ));
+        *lock_unpoisoned(&client.reader_abort) = Some(reader_handle.abort_handle());
+
+        // Initialize handshake once per daemon lifetime.
+        let init = omp_initialize_params();
+        if !elicitation_form_declared(&init) {
+            client.shutdown_sync();
+            return Err(
+                "OMP ACP 守护进程握手缺少 clientCapabilities.elicitation.form 声明".to_string(),
+            );
+        }
+        if let Err(error) = client.rpc_call("initialize", init, Some(DAEMON_INIT_TIMEOUT)).await {
+            let message = terminal_message(error, &client.stderr_buf);
+            client.shutdown_sync();
+            return Err(format!("OMP ACP 守护进程初始化失败: {message}"));
+        }
+        Self::spawn_idle_reaper(&client);
+        Ok(client)
+    }
+
+    pub(crate) fn is_alive(&self) -> bool {
+        self.alive.load(Ordering::SeqCst)
+    }
+
+    fn mark_draining(&self) {
+        self.draining.store(true, Ordering::SeqCst);
+    }
+
+    fn is_draining(&self) -> bool {
+        self.draining.load(Ordering::SeqCst)
+    }
+
+    fn active_turn_count(&self) -> usize {
+        self.active_turn_count.load(Ordering::SeqCst)
+    }
+
+    fn has_active_turn(&self, session_id: &str) -> bool {
+        lock_unpoisoned(&self.active_turns).contains_key(session_id) || self.is_settling(session_id)
+    }
+
+    /// Hand this daemon to a caller and refresh its idle clock; false once the
+    /// idle reaper retired it. Both sides hold `last_activity`, so a daemon a
+    /// caller just obtained is never reaped underneath it.
+    fn claim(&self) -> bool {
+        let mut last = lock_unpoisoned(&self.last_activity);
+        if !self.is_alive() {
+            return false;
+        }
+        *last = std::time::Instant::now();
+        true
+    }
+
+    fn touch(&self) {
+        *lock_unpoisoned(&self.last_activity) = std::time::Instant::now();
+    }
+
+    fn is_settling(&self, session_id: &str) -> bool {
+        lock_unpoisoned(&self.settling).contains(session_id)
+    }
+
+    fn has_any_settling(&self) -> bool {
+        !lock_unpoisoned(&self.settling).is_empty()
+    }
+
+    fn has_loaded_session(&self, session_id: &str) -> bool {
+        lock_unpoisoned(&self.loaded_sessions).contains_key(session_id)
+    }
+
+    /// True when `session_id` is currently loaded in this daemon and its
+    /// transcript on disk no longer matches the size+mtime recorded when the
+    /// daemon last touched it (e.g. edited externally or resumed from a CLI).
+    fn is_session_externally_modified(&self, session_id: &str) -> bool {
+        let sessions = lock_unpoisoned(&self.loaded_sessions);
+        let Some(meta) = sessions.get(session_id) else {
+            return false;
+        };
+        match (&meta.session_file, &meta.session_file_stamp) {
+            (Some(path), Some(expected)) => session_file_stamp(path).as_ref() != Some(expected),
+            _ => false,
+        }
+    }
+    /// Wait for a cancelled prompt on `session_id` that OMP is still ending.
+    /// `Ok(false)`: the waiting send was stopped itself.
+    async fn wait_prompt_settled(&self, session_id: &str, killed: &AtomicBool) -> Result<bool, String> {
+        let deadline = tokio::time::Instant::now() + PREVIOUS_TURN_SETTLE_TIMEOUT;
+        while self.is_settling(session_id) {
+            if killed.load(Ordering::SeqCst) {
+                return Ok(false);
+            }
+            if tokio::time::Instant::now() >= deadline {
+                return Err("该 OMP 会话的上一轮仍在停止中，请稍后再发送".to_string());
+            }
+            tokio::time::sleep(KILL_POLL).await;
+        }
+        Ok(true)
+    }
+
+    /// Keep listening for a prompt whose cancel OMP has not confirmed: the
+    /// session stays busy (`has_active_turn`) until the response lands, the
+    /// daemon exits, or [`CANCELLED_PROMPT_WATCH`] passes.
+    fn watch_cancelled_prompt(
+        self: &Arc<Self>,
+        session_id: &str,
+        rpc_key: String,
+        prompt_rx: oneshot::Receiver<Result<Value, AcpRpcError>>,
+    ) {
+        lock_unpoisoned(&self.settling).insert(session_id.to_string());
+        let client = Arc::clone(self);
+        let session_id = session_id.to_string();
+        tokio::spawn(async move {
+            if timeout(CANCELLED_PROMPT_WATCH, prompt_rx).await.is_err() {
+                client.cancel_pending_rpc(&rpc_key);
+            }
+            lock_unpoisoned(&client.settling).remove(&session_id);
+            client.touch();
+        });
+    }
+
+    /// Exit after [`DAEMON_IDLE_EXIT`] without turns, so closing every OMP tab
+    /// does not leave the process resident.
+    fn spawn_idle_reaper(client: &Arc<Self>) {
+        let weak = Arc::downgrade(client);
+        tokio::spawn(async move {
+            loop {
+                tokio::time::sleep(IDLE_CHECK_INTERVAL).await;
+                let Some(client) = weak.upgrade() else {
+                    break;
+                };
+                if !client.is_alive() {
+                    break;
+                }
+                let idle = {
+                    let last = lock_unpoisoned(&client.last_activity);
+                    let idle = client.active_turn_count() == 0
+                        && lock_unpoisoned(&client.settling).is_empty()
+                        && last.elapsed() >= DAEMON_IDLE_EXIT;
+                    if idle {
+                        client.alive.store(false, Ordering::SeqCst);
+                    }
+                    idle
+                };
+                if idle {
+                    client.shutdown_sync();
+                    break;
+                }
+            }
+        });
+    }
+
+    fn session_setup_lock(&self, session_id: &str) -> Arc<TokioMutex<()>> {
+        let mut locks = lock_unpoisoned(&self.setup_locks);
+        Arc::clone(
+            locks
+                .entry(session_id.to_string())
+                .or_insert_with(|| Arc::new(TokioMutex::new(()))),
+        )
+    }
+
+    async fn write_frame(&self, value: &Value) -> Result<(), String> {
+        let bytes = encode_ndjson(value)?;
+        let mut guard = self.stdin.lock().await;
+        let handle = guard
+            .as_mut()
+            .ok_or_else(|| "OMP ACP daemon stdin is closed".to_string())?;
+        handle
+            .write_all(&bytes)
+            .await
+            .map_err(|error| format!("failed to write OMP ACP daemon request: {error}"))?;
+        handle
+            .flush()
+            .await
+            .map_err(|error| format!("failed to flush OMP ACP daemon request: {error}"))?;
+        Ok(())
+    }
+
+    /// Send a JSON-RPC request and register a oneshot receiver for its reply.
+    async fn start_rpc(
+        &self,
+        method: &str,
+        params: Value,
+    ) -> Result<(String, oneshot::Receiver<Result<Value, AcpRpcError>>), String> {
+        if !self.is_alive() {
+            return Err(terminal_message(
+                "OMP ACP daemon is not running".to_string(),
+                &self.stderr_buf,
+            ));
+        }
+        self.touch();
+        let id = self.next_id.fetch_add(1, Ordering::Relaxed);
+        let id_key = id.to_string();
+        let (tx, rx) = oneshot::channel();
+        lock_unpoisoned(&self.pending_rpcs).insert(id_key.clone(), tx);
+        let frame = jsonrpc_request(id, method, params);
+        if let Err(error) = self.write_frame(&frame).await {
+            lock_unpoisoned(&self.pending_rpcs).remove(&id_key);
+            return Err(error);
+        }
+        Ok((id_key, rx))
+    }
+
+    fn cancel_pending_rpc(&self, id_key: &str) {
+        lock_unpoisoned(&self.pending_rpcs).remove(id_key);
+    }
+
+    async fn rpc_call(
+        &self,
+        method: &str,
+        params: Value,
+        deadline: Option<Duration>,
+    ) -> Result<Value, String> {
+        let (id_key, rx) = self.start_rpc(method, params).await?;
+        let response = match deadline {
+            Some(dur) => match timeout(dur, rx).await {
+                Ok(res) => res,
+                Err(_) => {
+                    self.cancel_pending_rpc(&id_key);
+                    return Err(format!("OMP ACP {method} timed out after {}s", dur.as_secs()));
+                }
+            },
+            None => rx.await,
+        };
+        match response {
+            Ok(Ok(value)) => Ok(value),
+            Ok(Err(rpc_err)) => Err(format!("rpc:{}:{}", rpc_err.code, rpc_err.message)),
+            Err(_) => Err(terminal_message(
+                format!("OMP ACP daemon closed during {method}"),
+                &self.stderr_buf,
+            )),
+        }
+    }
+
+    async fn send_cancel(&self, session_id: &str) {
+        let frame = jsonrpc_notification("session/cancel", json!({ "sessionId": session_id }));
+        let _ = self.write_frame(&frame).await;
+    }
+
+    async fn create_session(&self, workspace: &Path) -> Result<(String, LoadedSessionMeta), String> {
+        let cwd = workspace.to_string_lossy().to_string();
+        let mcp_servers = load_user_omp_mcp_servers();
+        let result = self
+            .rpc_call(
+                "session/new",
+                json!({ "cwd": cwd, "mcpServers": mcp_servers }),
+                Some(SESSION_NEW_TIMEOUT),
+            )
+            .await?;
+        let session_id = extract_session_id(&result)
+            .ok_or_else(|| "OMP session/new 未返回 sessionId".to_string())?;
+        let meta = build_loaded_meta(workspace, &session_id, &result);
+        lock_unpoisoned(&self.loaded_sessions).insert(session_id.clone(), meta.clone());
+        Ok((session_id, meta))
+    }
+
+    /// Load `session_id` into this daemon. OMP's ACP resume refuses a session
+    /// whose last recorded model no longer exists ("Could not restore model",
+    /// ACP runs without OMP's interactive fallback) and offers no way to pass
+    /// a model with the resume. When the send names a usable `fallback_model`,
+    /// a `model_change` entry is appended to the transcript (the same record
+    /// OMP writes on a model switch) and the resume is retried; otherwise the
+    /// user gets an actionable error instead of OMP's internal one.
+    async fn ensure_session_resumed(
+        &self,
+        session_id: &str,
+        workspace: &Path,
+        fallback_model: Option<&str>,
+    ) -> Result<LoadedSessionMeta, String> {
+        let lock = self.session_setup_lock(session_id);
+        let _guard = lock.lock().await;
+
+        let cached = lock_unpoisoned(&self.loaded_sessions).get(session_id).cloned();
+        if let Some(meta) = cached {
+            let same_workspace = meta.workspace == workspace;
+            let file_unchanged = match (&meta.session_file, &meta.session_file_stamp) {
+                (Some(path), Some(expected)) => {
+                    session_file_stamp(path).as_ref() == Some(expected)
+                }
+                _ => true,
+            };
+            if same_workspace && file_unchanged {
+                return Ok(meta);
+            }
+            if !file_unchanged {
+                // Never call `session/close` on an externally modified file:
+                // OMP appends a `custom/session_exit` record pointing at its
+                // stale in-memory leaf, which orphans the leaf (or rewinds it
+                // back to an old branch). Callers recycle an idle daemon with
+                // SIGKILL instead.
+                return Err(EXTERNAL_FILE_MODIFIED_ERR.to_string());
+            }
+            // Workspace changed while file is intact: safe to close and reload.
+            let _ = self
+                .rpc_call(
+                    "session/close",
+                    json!({ "sessionId": session_id }),
+                    Some(SESSION_CLOSE_TIMEOUT),
+                )
+                .await;
+            lock_unpoisoned(&self.loaded_sessions).remove(session_id);
+        }
+        let result = match self.resume_rpc(session_id, workspace).await {
+            Ok(result) => result,
+            Err(error) => {
+                let Some(missing) = missing_restore_model(&error).map(str::to_string) else {
+                    return Err(error);
+                };
+                let replacement = fallback_model
+                    .filter(|model| *model != missing)
+                    .ok_or_else(|| {
+                        format!(
+                            "该 OMP 会话上次使用的模型 {missing} 已不可用（可能已被删除），请在模型选择器中改选一个可用模型后重新发送"
+                        )
+                    })?;
+                let path = locate_session_file(workspace, session_id).ok_or_else(|| {
+                    format!(
+                        "该 OMP 会话上次使用的模型 {missing} 已不可用，且找不到会话文件，无法切换到 {replacement}"
+                    )
+                })?;
+                append_model_change(&path, replacement)?;
+                self.resume_rpc(session_id, workspace)
+                    .await
+                    .map_err(|retry| match missing_restore_model(&retry) {
+                        Some(still) => format!(
+                            "该 OMP 会话的模型 {still} 已不可用，请在模型选择器中改选一个可用模型后重新发送"
+                        ),
+                        None => retry,
+                    })?
+            }
+        };
+        let meta = build_loaded_meta(workspace, session_id, &result);
+        lock_unpoisoned(&self.loaded_sessions).insert(session_id.to_string(), meta.clone());
+        Ok(meta)
+    }
+
+    async fn resume_rpc(&self, session_id: &str, workspace: &Path) -> Result<Value, String> {
+        let cwd = workspace.to_string_lossy().to_string();
+        let mcp_servers = load_user_omp_mcp_servers();
+        self.rpc_call(
+            "session/resume",
+            json!({ "sessionId": session_id, "cwd": cwd, "mcpServers": mcp_servers }),
+            Some(SESSION_RESUME_TIMEOUT),
+        )
+        .await
+    }
+
+    async fn apply_session_options(
+        &self,
+        session_id: &str,
+        meta: &LoadedSessionMeta,
+        requested_model: Option<&str>,
+        requested_effort: Option<&str>,
+        provider_hint: Option<&str>,
+    ) -> Result<(Option<String>, Option<String>), String> {
+        let mut current_model = meta.current_model.clone();
+        let mut current_effort = meta.current_effort.clone();
+
+        if let Some(model) = requested_model.map(str::trim).filter(|v| !v.is_empty()) {
+            let resolved = resolve_model_value(model, &meta.available_models, provider_hint);
+            if current_model.as_deref() != Some(resolved.as_str()) {
+                let res = self
+                    .rpc_call(
+                        "session/set_config_option",
+                        json!({
+                            "sessionId": session_id,
+                            "configId": "model",
+                            "value": resolved,
+                        }),
+                        Some(CONFIG_OPTION_TIMEOUT),
+                    )
+                    .await
+                    .map_err(|error| format!("OMP 应用选定模型 `{model}` 失败: {error}"))?;
+                current_model = parse_config_current(&res, "model").or(Some(resolved));
+                if let Some(entry) = lock_unpoisoned(&self.loaded_sessions).get_mut(session_id) {
+                    entry.current_model = current_model.clone();
+                    let refreshed = parse_available_models(&res);
+                    if !refreshed.is_empty() {
+                        entry.available_models = refreshed;
+                    }
+                }
+            }
+        }
+
+        if let Some(effort) = requested_effort.map(str::trim).filter(|v| !v.is_empty()) {
+            if current_effort.as_deref() != Some(effort) {
+                let res = self
+                    .rpc_call(
+                        "session/set_config_option",
+                        json!({
+                            "sessionId": session_id,
+                            "configId": "thinking",
+                            "value": effort,
+                        }),
+                        Some(CONFIG_OPTION_TIMEOUT),
+                    )
+                    .await
+                    .map_err(|error| format!("OMP 应用推理强度 `{effort}` 失败: {error}"))?;
+                current_effort =
+                    parse_config_current(&res, "thinking").or_else(|| Some(effort.to_string()));
+                if let Some(entry) = lock_unpoisoned(&self.loaded_sessions).get_mut(session_id) {
+                    entry.current_effort = current_effort.clone();
+                }
+            }
+        }
+
+        Ok((current_model, current_effort))
+    }
+
+    fn refresh_session_file_stamp(&self, session_id: &str, workspace: &Path) {
+        let mut sessions = lock_unpoisoned(&self.loaded_sessions);
+        let Some(entry) = sessions.get_mut(session_id) else {
+            return;
+        };
+        if entry.session_file.is_none() {
+            entry.session_file = locate_session_file(workspace, session_id);
+        }
+        entry.session_file_stamp = entry.session_file.as_deref().and_then(session_file_stamp);
+    }
+
+    async fn close_idle_session(&self, session_id: &str) {
+        if self.has_active_turn(session_id) {
+            return;
+        }
+        let lock = self.session_setup_lock(session_id);
+        let _guard = lock.lock().await;
+        if self.has_active_turn(session_id) {
+            return;
+        }
+        let had = lock_unpoisoned(&self.loaded_sessions)
+            .remove(session_id)
+            .is_some();
+        if had && self.is_alive() {
+            let _ = self
+                .rpc_call(
+                    "session/close",
+                    json!({ "sessionId": session_id }),
+                    Some(SESSION_CLOSE_TIMEOUT),
+                )
+                .await;
+        }
+        lock_unpoisoned(&self.setup_locks).remove(session_id);
+    }
+
+    fn shutdown_sync(&self) {
+        self.alive.store(false, Ordering::SeqCst);
+        if let Some(abort) = lock_unpoisoned(&self.reader_abort).take() {
+            abort.abort();
+        }
+        // Terminate the process tree BEFORE closing stdin: stdin EOF can cause
+        // OMP to exit gracefully and append `custom/session_exit` pointing at
+        // a stale in-memory leaf, whereas SIGKILL / Job Object close exits
+        // without writing the transcript.
+        #[cfg(windows)]
+        {
+            *lock_unpoisoned(&self.tree_guard) = None;
+        }
+        if let Some(mut child) = lock_unpoisoned(&self.child).take() {
+            if self.pid > 0 {
+                kill_process_group(self.pid);
+            }
+            let _ = child.start_kill();
+        }
+        if let Ok(mut guard) = self.stdin.try_lock() {
+            *guard = None;
+        }
+        // Wake any remaining waiters so nothing hangs on shutdown.
+        let mut pending = lock_unpoisoned(&self.pending_rpcs);
+        for (_, tx) in pending.drain() {
+            let _ = tx.send(Err(AcpRpcError {
+                code: JSONRPC_INTERNAL_ERROR,
+                message: "OMP ACP daemon stopped".to_string(),
+            }));
+        }
+        lock_unpoisoned(&self.active_turns).clear();
+    }
+}
+
+impl Drop for OmpDaemonClient {
+    fn drop(&mut self) {
+        self.shutdown_sync();
+    }
+}
+
+/// RAII guard for one active turn on an [`OmpDaemonClient`]: always clears its
+/// `active_turns` route, decrements `active_turn_count`, and shuts down a
+/// draining daemon as soon as its last turn finishes.
+struct ActiveTurnGuard {
+    client: Arc<OmpDaemonClient>,
+    session_id: String,
+}
+
+impl Drop for ActiveTurnGuard {
+    fn drop(&mut self) {
+        self.client.touch();
+        lock_unpoisoned(&self.client.active_turns).remove(&self.session_id);
+        let remaining = self
+            .client
+            .active_turn_count
+            .fetch_sub(1, Ordering::SeqCst)
+            .saturating_sub(1);
+        if remaining == 0 && self.client.is_draining() {
+            self.client.shutdown_sync();
+        }
+    }
+}
+
+/// Single stdout multiplexer loop for one `omp --mode acp` daemon process.
+async fn run_daemon_reader(
+    stdout: ChildStdout,
+    stdin: Arc<TokioMutex<Option<ChildStdin>>>,
+    pending_rpcs: Arc<Mutex<HashMap<String, oneshot::Sender<Result<Value, AcpRpcError>>>>>,
+    active_turns: Arc<Mutex<HashMap<String, mpsc::UnboundedSender<DaemonSessionEvent>>>>,
+    alive: Arc<AtomicBool>,
+    stderr_buf: Arc<Mutex<String>>,
+) {
+    let mut reader = BufReader::new(stdout);
+    let mut line_buf = Vec::new();
+    loop {
+        line_buf.clear();
+        match reader.read_until(b'\n', &mut line_buf).await {
+            Ok(0) => break,
+            Ok(_) => {}
+            Err(_) => break,
+        }
+        let line = String::from_utf8_lossy(&line_buf);
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        let Ok(value) = serde_json::from_str::<Value>(trimmed) else {
+            continue;
+        };
+        match parse_acp_line(&value) {
+            AcpLine::Response { id, result, error } => {
+                if let Some(key) = jsonrpc_id_key(&id) {
+                    if let Some(tx) = lock_unpoisoned(&pending_rpcs).remove(&key) {
+                        let outcome = match error {
+                            Some(err) => Err(err),
+                            None => Ok(result.unwrap_or(Value::Null)),
+                        };
+                        let _ = tx.send(outcome);
+                    }
+                }
+            }
+            AcpLine::Notification { method, params } if method == "session/update" => {
+                if let Some(sid) = params.get("sessionId").and_then(Value::as_str) {
+                    let sender = lock_unpoisoned(&active_turns).get(sid).cloned();
+                    if let Some(tx) = sender {
+                        let _ = tx.send(DaemonSessionEvent::Update(params));
+                    }
+                }
+            }
+            AcpLine::AgentRequest { id, method, params } => {
+                let sid = params.get("sessionId").and_then(Value::as_str);
+                let routed = sid
+                    .and_then(|s| lock_unpoisoned(&active_turns).get(s).cloned())
+                    .is_some_and(|tx| {
+                        tx.send(DaemonSessionEvent::AgentRequest {
+                            id: id.clone(),
+                            method: method.clone(),
+                            params: params.clone(),
+                        })
+                        .is_ok()
+                    });
+                if !routed {
+                    // Orphaned request (session already cancelled/closed):
+                    // reply immediately so the daemon never wedges.
+                    let reply = if method == ELICITATION_METHOD {
+                        jsonrpc_result_response(&id, json!({ "action": "cancel" }))
+                    } else if method == PERMISSION_METHOD {
+                        permission_cancelled(&id)
+                    } else {
+                        jsonrpc_error_response(
+                            &id,
+                            JSONRPC_INTERNAL_ERROR,
+                            "no active turn owns this session request",
+                        )
+                    };
+                    if let Ok(bytes) = encode_ndjson(&reply) {
+                        let mut guard = stdin.lock().await;
+                        if let Some(handle) = guard.as_mut() {
+                            let _ = handle.write_all(&bytes).await;
+                            let _ = handle.flush().await;
+                        }
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    // Daemon exited: mark dead, fail every pending RPC, and drop all active
+    // session channels so every running turn settles promptly.
+    alive.store(false, Ordering::SeqCst);
+    let reason = terminal_message(
+        "OMP ACP daemon exited unexpectedly".to_string(),
+        &stderr_buf,
+    );
+    let mut pending = lock_unpoisoned(&pending_rpcs);
+    for (_, tx) in pending.drain() {
+        let _ = tx.send(Err(AcpRpcError {
+            code: JSONRPC_INTERNAL_ERROR,
+            message: reason.clone(),
+        }));
+    }
+    lock_unpoisoned(&active_turns).clear();
+}
+
+// ==================== Turn execution ====================
+
+/// Drive one normal OMP send on the shared [`OmpDaemonState`].
+pub(crate) async fn run_daemon_turn(
+    core: TurnCore,
+    req: SendRequest,
+    spec: OmpDaemonSpec,
+    daemon_state: Arc<OmpDaemonState>,
+    killed: Arc<AtomicBool>,
+    virtual_pid: u32,
+) {
+    let mut state = TurnState::new(req.session_id.clone());
+    let mut view = TurnView::default();
+    let _registry_guard =
+        VirtualRunGuard::new(Arc::clone(&core.registry), core.run_id.clone(), virtual_pid);
+
+    // Parked question cards still open in OMP: request id + the reply that
+    // releases OMP if the turn ends before the user answers.
+    let mut open_requests: Vec<(String, Value)> = Vec::new();
+    let mut daemon_client: Option<Arc<OmpDaemonClient>> = None;
+
+    let result = turn_inner(
+        &core,
+        &mut state,
+        &mut view,
+        &req,
+        &spec,
+        &daemon_state,
+        &killed,
+        &mut daemon_client,
+        &mut open_requests,
+    )
+    .await;
+
+    // Settle parked questions & plans; release any still-open CLI asks so the
+    // long-lived OMP session never stays blocked after Stop or error.
+    let mut still_pending_ids = std::collections::HashSet::new();
+    for key in [state.native_session_id.clone(), Some(core.run_id.clone())]
+        .into_iter()
+        .flatten()
+    {
+        for request_id in core.registry.take_questions(&key) {
+            still_pending_ids.insert(request_id.clone());
+            core.dispatch_event(&mut state, EngineEvent::QuestionSettled { request_id });
+        }
+        crate::engine::reader::expire_parked_plans(&core, &mut state, &key);
+    }
+    if let Some(client) = &daemon_client {
+        for (req_id, release) in open_requests {
+            if still_pending_ids.contains(&req_id) {
+                let _ = client.write_frame(&release).await;
+            }
+        }
+        if let Some(sid) = state.native_session_id.as_deref() {
+            client.refresh_session_file_stamp(sid, &req.workspace);
+        }
+    }
+
+    if let Err(error) = result {
+        if !killed.load(Ordering::SeqCst) {
+            let message = match &daemon_client {
+                Some(client) => terminal_message(error, &client.stderr_buf),
+                None => error,
+            };
+            core.dispatch_event(&mut state, EngineEvent::Error(message));
+        }
+    }
+    if !state.saw_done && !state.saw_error {
+        let usage = if killed.load(Ordering::SeqCst) {
+            None
+        } else {
+            view.last_usage.clone()
+        };
+        let session_id = state.native_session_id.clone();
+        core.dispatch_event(&mut state, EngineEvent::Done { session_id, usage });
+    }
+    core.registry.remove_if_pid(&core.run_id, virtual_pid);
+    if let Some(session_id) = state.native_session_id.clone() {
+        core.registry.remove_if_pid(&session_id, virtual_pid);
+    }
+    core.sink.flush();
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn turn_inner(
+    core: &TurnCore,
+    state: &mut TurnState,
+    view: &mut TurnView,
+    req: &SendRequest,
+    spec: &OmpDaemonSpec,
+    daemon_state: &Arc<OmpDaemonState>,
+    killed: &Arc<AtomicBool>,
+    daemon_out: &mut Option<Arc<OmpDaemonClient>>,
+    open_requests: &mut Vec<(String, Value)>,
+) -> Result<(), String> {
+    if killed.load(Ordering::SeqCst) {
+        return Ok(());
+    }
+    // Spawn daemon startup detached so Stop settles immediately while the
+    // daemon finishes initializing in the background for the next send.
+    let state_for_spawn = Arc::clone(daemon_state);
+    let spec_for_spawn = spec.clone();
+    let mut ensure_task =
+        tokio::spawn(async move { state_for_spawn.ensure_daemon(&spec_for_spawn).await });
+    let mut startup_tick = tokio::time::interval(KILL_POLL);
+    startup_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+    let client = loop {
+        tokio::select! {
+            biased;
+            res = &mut ensure_task => {
+                break res.map_err(|e| format!("OMP ACP daemon startup task failed: {e}"))??;
+            }
+            _ = startup_tick.tick() => {
+                if killed.load(Ordering::SeqCst) {
+                    return Ok(());
+                }
+            }
+        }
+    };
+    *daemon_out = Some(Arc::clone(&client));
+
+    if killed.load(Ordering::SeqCst) {
+        return Ok(());
+    }
+
+    let (client, session_id, meta) = match req.session_id.as_deref() {
+        Some(existing) => {
+            // A real user send ends any pending edit hold so future prewarms
+            // work normally once the turn settles.
+            daemon_state.finish_session_edit(existing);
+            // A Stop that outlived its settle window leaves OMP ending the
+            // cancelled prompt; a new prompt on the same session waits for
+            // that instead of colliding with it.
+            if !client.wait_prompt_settled(existing, killed).await? {
+                return Ok(());
+            }
+            // If this session's transcript was modified externally while cached
+            // in `client`, do NOT send `session/close` (which appends a
+            // `custom/session_exit` record pointing at OMP's stale in-memory
+            // leaf). Hard-kill the daemon when idle so it exits without writing
+            // the file, then spawn a fresh daemon to resume from disk.
+            let client = if client.is_session_externally_modified(existing) {
+                daemon_state
+                    .kill_idle_daemon_for_external_edit(&client)
+                    .await?;
+                let fresh = daemon_state.ensure_daemon(spec).await?;
+                *daemon_out = Some(Arc::clone(&fresh));
+                fresh
+            } else {
+                client
+            };
+            // One session, one daemon: after a rotation the draining daemon
+            // may still hold this session; resuming it here as well would let
+            // both processes append to the same transcript.
+            daemon_state
+                .release_session_elsewhere(existing, &client)
+                .await?;
+            let fallback = qualified_model(req.model.as_deref(), req.provider_id.as_deref());
+            let meta = race_with_kill(
+                client.ensure_session_resumed(existing, &req.workspace, fallback.as_deref()),
+                killed,
+            )
+            .await?;
+            let Some(meta) = meta else {
+                return Ok(());
+            };
+            (client, existing.to_string(), meta)
+        }
+        None => {
+            let created = race_with_kill(client.create_session(&req.workspace), killed).await?;
+            let Some((sid, meta)) = created else {
+                return Ok(());
+            };
+            core.dispatch_event(state, EngineEvent::SessionId(sid.clone()));
+            (client, sid, meta)
+        }
+    };
+
+    if killed.load(Ordering::SeqCst) {
+        return Ok(());
+    }
+
+    let options = race_with_kill(
+        client.apply_session_options(
+            &session_id,
+            &meta,
+            req.model.as_deref(),
+            req.effort.as_deref(),
+            req.provider_id.as_deref(),
+        ),
+        killed,
+    )
+    .await?;
+    let Some((effective_model, effective_effort)) = options else {
+        return Ok(());
+    };
+    if req.model.is_some() || req.effort.is_some() {
+        core.dispatch_event(
+            state,
+            EngineEvent::Launch {
+                comparison_model: None,
+                model: req.model.clone(),
+                effort: req.effort.clone(),
+                reports_served: false,
+            },
+        );
+    }
+    if let Some(model) = effective_model {
+        core.dispatch_event(state, EngineEvent::Model(model));
+    }
+    if let Some(effort) = effective_effort {
+        core.dispatch_event(state, EngineEvent::Effort(effort));
+    }
+
+    let prompt_text = if req.native_compact && req.images.is_empty() {
+        "/compact"
+    } else {
+        req.prompt.as_str()
+    };
+    let blocks = prompt_blocks(prompt_text, &req.images, &req.workspace)?;
+
+    let (event_tx, mut event_rx) = mpsc::unbounded_channel();
+    client.active_turn_count.fetch_add(1, Ordering::SeqCst);
+    lock_unpoisoned(&client.active_turns).insert(session_id.clone(), event_tx);
+    let _turn_guard = ActiveTurnGuard {
+        client: Arc::clone(&client),
+        session_id: session_id.clone(),
+    };
+
+    let (rpc_key, mut prompt_rx) = client
+        .start_rpc(
+            "session/prompt",
+            json!({ "sessionId": session_id, "prompt": blocks }),
+        )
+        .await?;
+
+    let mut cancel_sent = false;
+    let mut cancel_deadline: Option<tokio::time::Instant> = None;
+    let mut abandoned = false;
+    let mut kill_tick = tokio::time::interval(KILL_POLL);
+    kill_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+
+    let prompt_result = loop {
+        tokio::select! {
+            biased;
+            res = &mut prompt_rx => {
+                // Drain any session/update notifications already queued before
+                // the prompt response settled.
+                while let Ok(ev) = event_rx.try_recv() {
+                    if let DaemonSessionEvent::Update(params) = ev {
+                        handle_session_update(core, state, view, &params);
+                    }
+                }
+                break match res {
+                    Ok(Ok(value)) => Ok(value),
+                    Ok(Err(rpc_err)) => Err(format!("rpc:{}:{}", rpc_err.code, rpc_err.message)),
+                    Err(_) => Err("OMP ACP daemon exited before turn finished".to_string()),
+                };
+            }
+            maybe_ev = event_rx.recv() => {
+                let Some(ev) = maybe_ev else {
+                    client.cancel_pending_rpc(&rpc_key);
+                    break Err("OMP ACP daemon stream closed mid-turn".to_string());
+                };
+                match ev {
+                    DaemonSessionEvent::Update(params) => {
+                        handle_session_update(core, state, view, &params);
+                    }
+                    DaemonSessionEvent::AgentRequest { id, method, params } => {
+                        if method == ELICITATION_METHOD {
+                            if let Some((request_id, mut input)) =
+                                elicitation_to_question(&id, &params)
+                            {
+                                if let Some(ctx) = input
+                                    .get_mut("ompAcpElicitation")
+                                    .and_then(Value::as_object_mut)
+                                {
+                                    ctx.insert("daemonId".to_string(), json!(client.daemon_id));
+                                }
+                                open_requests.push((
+                                    request_id.clone(),
+                                    jsonrpc_result_response(&id, json!({ "action": "cancel" })),
+                                ));
+                                core.dispatch_event(state, EngineEvent::Question {
+                                    request_id,
+                                    tool_use_id: None,
+                                    input,
+                                });
+                            } else {
+                                let cancel = jsonrpc_result_response(&id, json!({ "action": "cancel" }));
+                                let _ = client.write_frame(&cancel).await;
+                            }
+                        } else if method == PERMISSION_METHOD && !client.spec.auto_approve {
+                            // Outside bypass the user decides: OMP asks only
+                            // for tools its own config wants confirmed.
+                            match permission_to_question(&id, &params, client.daemon_id) {
+                                Ok((request_id, input, tool_use_id)) => {
+                                    open_requests.push((request_id.clone(), permission_cancelled(&id)));
+                                    core.dispatch_event(state, EngineEvent::Question {
+                                        request_id,
+                                        tool_use_id,
+                                        input,
+                                    });
+                                }
+                                Err(release) => {
+                                    let _ = client.write_frame(&release).await;
+                                }
+                            }
+                        } else {
+                            let reply = answer_agent_request(&req.workspace, &id, &method, &params);
+                            let _ = client.write_frame(&reply).await;
+                        }
+                    }
+                }
+            }
+            _ = kill_tick.tick() => {
+                if killed.load(Ordering::SeqCst) {
+                    if !cancel_sent {
+                        cancel_sent = true;
+                        cancel_deadline = Some(tokio::time::Instant::now() + CANCEL_SETTLE_TIMEOUT);
+                        client.send_cancel(&session_id).await;
+                    } else if cancel_deadline.is_some_and(|d| tokio::time::Instant::now() >= d) {
+                        // OMP has not confirmed the cancel yet: settle the UI
+                        // now, but keep watching the prompt so the next send
+                        // on this session waits for it to end.
+                        abandoned = true;
+                        break Ok(Value::Null);
+                    }
+                }
+            }
+        }
+    };
+    if abandoned {
+        client.watch_cancelled_prompt(&session_id, rpc_key, prompt_rx);
+    }
+    let prompt_result = prompt_result?;
+
+    finalize_turn_usage(core, state, view, &prompt_result);
+    Ok(())
+}
+
+/// Poll `killed` while awaiting a setup RPC so Stop settles immediately even
+/// if `session/new` or `session/resume` takes several seconds.
+async fn race_with_kill<F, T>(fut: F, killed: &AtomicBool) -> Result<Option<T>, String>
+where
+    F: std::future::Future<Output = Result<T, String>>,
+{
+    tokio::pin!(fut);
+    let mut tick = tokio::time::interval(KILL_POLL);
+    tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+    loop {
+        tokio::select! {
+            biased;
+            res = &mut fut => return res.map(Some),
+            _ = tick.tick() => {
+                if killed.load(Ordering::SeqCst) {
+                    return Ok(None);
+                }
+            }
+        }
+    }
+}
+
+// ==================== Model & configOption helpers ====================
+
+fn parse_config_current(result: &Value, config_id: &str) -> Option<String> {
+    result
+        .get("configOptions")
+        .and_then(Value::as_array)?
+        .iter()
+        .find(|opt| opt.get("id").and_then(Value::as_str) == Some(config_id))
+        .and_then(|opt| opt.get("currentValue"))
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+}
+
+fn parse_available_models(result: &Value) -> Vec<String> {
+    result
+        .get("configOptions")
+        .and_then(Value::as_array)
+        .and_then(|opts| {
+            opts.iter()
+                .find(|opt| opt.get("id").and_then(Value::as_str) == Some("model"))
+        })
+        .and_then(|opt| opt.get("options"))
+        .and_then(Value::as_array)
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(|item| item.get("value").and_then(Value::as_str).map(str::to_string))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// Resolve a requested model selector against the ACP session's advertised
+/// `provider/modelId` list: exact match first; a bare `modelId` prefers the
+/// session's own channel (`provider_hint`) because several channels can
+/// expose the same id, and only then falls back to the first suffix match;
+/// anything else passes through unchanged.
+pub(crate) fn resolve_model_value(
+    requested: &str,
+    available: &[String],
+    provider_hint: Option<&str>,
+) -> String {
+    if available.iter().any(|candidate| candidate == requested) {
+        return requested.to_string();
+    }
+    if !requested.contains('/') {
+        if let Some(provider) = provider_hint.map(str::trim).filter(|p| !p.is_empty()) {
+            let preferred = format!("{provider}/{requested}");
+            if available.iter().any(|candidate| *candidate == preferred) {
+                return preferred;
+            }
+        }
+        let suffix = format!("/{requested}");
+        if let Some(matched) = available
+            .iter()
+            .find(|candidate| candidate.ends_with(&suffix))
+        {
+            return matched.clone();
+        }
+    }
+    requested.to_string()
+}
+
+fn build_loaded_meta(workspace: &Path, session_id: &str, result: &Value) -> LoadedSessionMeta {
+    let session_file = locate_session_file(workspace, session_id);
+    let session_file_stamp = session_file.as_deref().and_then(session_file_stamp);
+    LoadedSessionMeta {
+        workspace: workspace.to_path_buf(),
+        current_model: parse_config_current(result, "model"),
+        current_effort: parse_config_current(result, "thinking"),
+        available_models: parse_available_models(result),
+        session_file,
+        session_file_stamp,
+    }
+}
+
+/// Read user-level `~/.omp/agent/mcp.json` and translate enabled servers into
+/// ACP `mcpServers` entries (`session/new` and `session/resume`). OMP's ACP
+/// mode hardcodes `enableMCP: false` internally and relies on the client to
+/// supply MCP servers per session. Intentionally reads ONLY the user's own
+/// config — never workspace `.omp/mcp.json` (untrusted repository content).
+/// Servers marked `onDemand` under `omp_user:<name>` are wrapped through
+/// `ccgui-next --mcp-lazy --` directly, without writing workspace `.omp/mcp.json`.
+fn load_user_omp_mcp_servers() -> Vec<Value> {
+    let Ok(dir) = super::pi_family_auth::agent_dir("omp") else {
+        return Vec::new();
+    };
+    let Ok(raw) = std::fs::read_to_string(dir.join("mcp.json")) else {
+        return Vec::new();
+    };
+    let Ok(root) = serde_json::from_str::<Value>(&raw) else {
+        return Vec::new();
+    };
+    let on_demand: std::collections::HashSet<String> =
+        omp_user_on_demand_names().into_iter().collect();
+    parse_omp_mcp_servers_with_lazy(&root, &on_demand, crate::mcp::lazy::wrap)
+}
+
+/// Convert an OMP `mcp.json` document into ACP `mcpServers` JSON entries
+/// matching OMP's `#We` transport adapter (`stdio`, `http`, `sse`).
+#[cfg(test)]
+pub(crate) fn parse_omp_mcp_servers(root: &Value) -> Vec<Value> {
+    let empty = std::collections::HashSet::new();
+    parse_omp_mcp_servers_with_lazy(root, &empty, |cmd, args| Ok((cmd.to_string(), args.to_vec())))
+}
+
+fn parse_omp_mcp_servers_with_lazy<F>(
+    root: &Value,
+    on_demand: &std::collections::HashSet<String>,
+    wrap_lazy: F,
+) -> Vec<Value>
+where
+    F: Fn(&str, &[String]) -> Result<(String, Vec<String>), String>,
+{
+    let Some(servers) = root.get("mcpServers").and_then(Value::as_object) else {
+        return Vec::new();
+    };
+    let disabled: std::collections::HashSet<&str> = root
+        .get("disabledServers")
+        .and_then(Value::as_array)
+        .map(|arr| arr.iter().filter_map(Value::as_str).collect())
+        .unwrap_or_default();
+    let enabled_only: Option<std::collections::HashSet<&str>> = root
+        .get("enabledServers")
+        .and_then(Value::as_array)
+        .filter(|arr| !arr.is_empty())
+        .map(|arr| arr.iter().filter_map(Value::as_str).collect());
+
+    let mut out = Vec::new();
+    for (name, raw_spec) in servers {
+        let name = name.trim();
+        if name.is_empty() {
+            continue;
+        }
+        let Some(spec) = raw_spec.as_object() else {
+            continue;
+        };
+        if disabled.contains(name) {
+            continue;
+        }
+        if let Some(allow) = &enabled_only {
+            if !allow.contains(name) {
+                continue;
+            }
+        }
+        if spec.get("enabled").and_then(Value::as_bool) == Some(false) {
+            continue;
+        }
+        if spec.get("disabled").and_then(Value::as_bool) == Some(true) {
+            continue;
+        }
+        let explicit_type = spec
+            .get("type")
+            .or_else(|| spec.get("transport"))
+            .and_then(Value::as_str)
+            .map(|s| s.trim().to_ascii_lowercase());
+        if let Some(command) = spec
+            .get("command")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+        {
+            let raw_args: Vec<String> = spec
+                .get("args")
+                .and_then(Value::as_array)
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(Value::as_str)
+                        .map(str::to_string)
+                        .collect()
+                })
+                .unwrap_or_default();
+            let (final_cmd, final_args) = if on_demand.contains(name) {
+                wrap_lazy(command, &raw_args)
+                    .unwrap_or_else(|_| (command.to_string(), raw_args))
+            } else {
+                (command.to_string(), raw_args)
+            };
+            let args: Vec<Value> = final_args.into_iter().map(Value::String).collect();
+            let env = kv_pairs_from_object(spec.get("env"));
+            out.push(json!({
+                "name": name,
+                "command": final_cmd,
+                "args": args,
+                "env": env,
+            }));
+            continue;
+        }
+        let Some(url) = spec
+            .get("url")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+        else {
+            continue;
+        };
+        let transport = match explicit_type.as_deref() {
+            Some("sse") => "sse",
+            Some("http" | "streamable-http" | "streamablehttp") | None => "http",
+            _ => continue,
+        };
+        let headers = kv_pairs_from_object(spec.get("headers"));
+        out.push(json!({
+            "name": name,
+            "type": transport,
+            "url": url,
+            "headers": headers,
+        }));
+    }
+    out
+}
+
+fn kv_pairs_from_object(value: Option<&Value>) -> Vec<Value> {
+    let Some(map) = value.and_then(Value::as_object) else {
+        return Vec::new();
+    };
+    map.iter()
+        .filter_map(|(k, v)| {
+            let val = match v {
+                Value::String(s) => s.clone(),
+                Value::Number(n) => n.to_string(),
+                Value::Bool(b) => b.to_string(),
+                _ => return None,
+            };
+            Some(json!({ "name": k, "value": val }))
+        })
+        .collect()
+}
+
+/// Best-effort lookup of `<agent_dir>/sessions/<encoded_cwd>/*_<session_id>.jsonl`
+/// so external edits to a session file can invalidate the daemon's cached handle.
+fn locate_session_file(workspace: &Path, session_id: &str) -> Option<PathBuf> {
+    let agent_dir = super::pi_family_auth::agent_dir("omp").ok()?;
+    let sessions_dir = agent_dir.join("sessions");
+    let suffix = format!("_{session_id}.jsonl");
+    let primary = session_dir_name(workspace);
+    let canonical = std::fs::canonicalize(workspace).unwrap_or_else(|_| workspace.to_path_buf());
+    let text = canonical.to_string_lossy();
+    let stripped = text
+        .strip_prefix(r"\\?\")
+        .unwrap_or(&text)
+        .trim_start_matches(['/', '\\']);
+    let legacy = format!("--{}--", stripped.replace(['/', '\\', ':'], "-"));
+    for dir_name in [primary, legacy] {
+        let Ok(entries) = std::fs::read_dir(sessions_dir.join(&dir_name)) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let name = entry.file_name();
+            if name.to_str().is_some_and(|n| n.ends_with(&suffix)) {
+                return Some(entry.path());
+            }
+        }
+    }
+    None
+}
+
+/// `provider/id` selector for a send's model: already-qualified ids pass
+/// through, a bare id is qualified with the session's channel, anything else
+/// is unusable as a transcript model record.
+fn qualified_model(model: Option<&str>, provider_hint: Option<&str>) -> Option<String> {
+    let model = model.map(str::trim).filter(|m| !m.is_empty())?;
+    if model.contains('/') {
+        return Some(model.to_string());
+    }
+    let provider = provider_hint.map(str::trim).filter(|p| !p.is_empty())?;
+    Some(format!("{provider}/{model}"))
+}
+
+/// The model OMP failed to restore, from its `Could not restore model <id>`
+/// resume error (possibly wrapped as `rpc:<code>:Internal error: ...`).
+fn missing_restore_model(error: &str) -> Option<&str> {
+    const MARKER: &str = "Could not restore model ";
+    let start = error.find(MARKER)? + MARKER.len();
+    let token = error[start..].split_whitespace().next()?;
+    let token = token.trim_end_matches(['.', ',', ')', '"', '\'']);
+    (!token.is_empty()).then_some(token)
+}
+
+/// Append a `model_change` entry (role `default`) chained onto the
+/// transcript's current leaf, the record OMP itself writes on a model switch,
+/// so the next resume restores `model` instead of a deleted one.
+fn append_model_change(path: &Path, model: &str) -> Result<(), String> {
+    use std::io::Write as _;
+    let bytes = std::fs::read(path).map_err(|e| format!("读取 OMP 会话文件失败: {e}"))?;
+    let last_line = bytes
+        .split(|byte| *byte == b'\n')
+        .rev()
+        .map(|line| String::from_utf8_lossy(line))
+        .find(|line| !line.trim().is_empty());
+    let parent_id = match last_line {
+        Some(line) => {
+            let entry: Value = serde_json::from_str(line.trim())
+                .map_err(|e| format!("OMP 会话文件末行无法解析，未切换模型: {e}"))?;
+            if entry.get("type").and_then(Value::as_str) == Some("session") {
+                Value::Null
+            } else {
+                entry
+                    .get("id")
+                    .and_then(Value::as_str)
+                    .map(|id| Value::String(id.to_string()))
+                    .ok_or_else(|| "OMP 会话文件末行缺少 id，未切换模型".to_string())?
+            }
+        }
+        None => return Err("OMP 会话文件为空，未切换模型".to_string()),
+    };
+    let id = uuid::Uuid::new_v4().simple().to_string()[..8].to_owned();
+    let entry = json!({
+        "type": "model_change",
+        "id": id,
+        "parentId": parent_id,
+        "timestamp": chrono::Utc::now().format("%Y-%m-%dT%H:%M:%S%.3fZ").to_string(),
+        "model": model,
+        "role": "default",
+    });
+    let mut line = String::new();
+    if bytes.last().is_some_and(|byte| *byte != b'\n') {
+        line.push('\n');
+    }
+    line.push_str(&entry.to_string());
+    line.push('\n');
+    std::fs::OpenOptions::new()
+        .append(true)
+        .open(path)
+        .and_then(|mut file| file.write_all(line.as_bytes()))
+        .map_err(|e| format!("写入 OMP 会话文件失败: {e}"))
+}
+
+// ==================== ACP permission ask <-> QuestionCard bridge ====================
+
+fn permission_cancelled(rpc_id: &Value) -> Value {
+    jsonrpc_result_response(rpc_id, json!({ "outcome": { "outcome": "cancelled" } }))
+}
+
+/// Project an ACP `session/request_permission` ask into a question card.
+/// Without `--auto-approve`, OMP raises this ask for tools its config wants
+/// confirmed (`allow_once / allow_always / reject_once / reject_always`), and
+/// the choice is the user's. `Err` carries the frame that releases an ask
+/// with nothing to choose, which no card could ever answer.
+pub(crate) fn permission_to_question(
+    rpc_id: &Value,
+    params: &Value,
+    daemon_id: u64,
+) -> Result<(String, Value, Option<String>), Value> {
+    let Some(options) = params.get("options").and_then(Value::as_array) else {
+        return Err(permission_cancelled(rpc_id));
+    };
+    let mut choices = Vec::new();
+    let mut option_ids = Map::new();
+    let mut option_kinds = Map::new();
+    for option in options {
+        let Some(id) = option
+            .get("optionId")
+            .or_else(|| option.get("option_id"))
+            .or_else(|| option.get("id"))
+            .and_then(Value::as_str)
+        else {
+            continue;
+        };
+        let kind = option
+            .get("kind")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .unwrap_or_default();
+        let label = option
+            .get("name")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|name| !name.is_empty())
+            .or(Some(kind).filter(|kind| !kind.is_empty()))
+            .unwrap_or(id)
+            .to_string();
+        if option_ids.contains_key(&label) {
+            continue;
+        }
+        option_ids.insert(label.clone(), json!(id));
+        if !kind.is_empty() {
+            option_kinds.insert(label.clone(), json!(kind));
+        }
+        // Do not leak raw protocol kinds (`allow_once` etc.) into `description`;
+        // the frontend localizes `ompAcpPermission.kinds` into readable hints.
+        choices.push(json!({ "label": label }));
+    }
+    if choices.is_empty() {
+        return Err(permission_cancelled(rpc_id));
+    }
+    let tool_call = params.get("toolCall");
+    // Empty when OMP omits a title: the frontend fills a localized fallback
+    // via i18n instead of hardcoding one locale in Rust.
+    let question = tool_call
+        .and_then(|call| call.get("title"))
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .unwrap_or_default()
+        .to_string();
+    let tool_use_id = tool_call
+        .and_then(|call| call.get("toolCallId"))
+        .and_then(Value::as_str)
+        .map(str::to_string);
+    // Daemon id in the key: a draining and a current daemon number their
+    // JSON-RPC requests independently.
+    let request_id = format!(
+        "omp-acp-perm-{daemon_id}-{}",
+        jsonrpc_id_key(rpc_id).unwrap_or_else(|| uuid::Uuid::new_v4().to_string())
+    );
+    let input = json!({
+        "questions": [{
+            "question": question,
+            "header": "OMP",
+            "multiSelect": false,
+            "options": choices,
+        }],
+        "ompAcpPermission": {
+            "rpcId": rpc_id,
+            "daemonId": daemon_id,
+            "options": option_ids,
+            "kinds": option_kinds,
+        },
+    });
+    Ok((request_id, input, tool_use_id))
+}
+
+/// Reply frame for one parked permission ask: the option the user picked
+/// (answers map question text → option label); dismissing the card cancels,
+/// which OMP treats as "don't run it".
+pub(crate) fn permission_answer_frame(parked: &Value, answers: Option<&Value>) -> Result<Value, String> {
+    let id = parked
+        .get("rpcId")
+        .filter(|id| !id.is_null())
+        .ok_or_else(|| "OMP permission context is missing rpcId".to_string())?;
+    let Some(answers) = answers else {
+        return Ok(permission_cancelled(id));
+    };
+    let map = answers
+        .as_object()
+        .ok_or_else(|| "OMP permission answers must be an object".to_string())?;
+    let option_ids = parked
+        .get("options")
+        .and_then(Value::as_object)
+        .ok_or_else(|| "OMP permission context is missing its option map".to_string())?;
+    let label = map
+        .values()
+        .filter_map(Value::as_str)
+        .next()
+        .ok_or_else(|| "OMP permission answer must carry the chosen option label".to_string())?;
+    let option_id = option_ids
+        .get(label)
+        .and_then(Value::as_str)
+        .ok_or_else(|| format!("OMP only accepts the declared options for this ask (unknown `{label}`)"))?;
+    Ok(jsonrpc_result_response(
+        id,
+        json!({ "outcome": { "outcome": "selected", "optionId": option_id } }),
+    ))
+}
+
+// ==================== ACP elicitation <-> QuestionCard bridge ====================
+
+const OTHER_SUFFIX: &str = "__other";
+
+/// Project an OMP ACP `elicitation/create` (`mode: "form"`) request into a
+/// CCGUI `EngineEvent::Question` payload + `ompAcpElicitation` answer context.
+/// Covers OMP's `askDialog` (multi-question, single/multi-select + `__other`),
+/// `select`, `confirm`, `input`/`editor`, and generic `formDialog`.
+pub(crate) fn elicitation_to_question(rpc_id: &Value, params: &Value) -> Option<(String, Value)> {
+    if params.get("mode").and_then(Value::as_str) != Some("form") {
+        return None;
+    }
+    let props = params
+        .get("requestedSchema")
+        .and_then(|s| s.get("properties"))
+        .and_then(Value::as_object)?;
+    if props.is_empty() {
+        return None;
+    }
+    let message = params
+        .get("message")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .unwrap_or("");
+
+    let mut primary_keys: Vec<String> = props
+        .keys()
+        .filter(|k| {
+            if let Some(base) = k.strip_suffix(OTHER_SUFFIX) {
+                !props.contains_key(base)
+            } else {
+                true
+            }
+        })
+        .cloned()
+        .collect();
+    primary_keys.sort_by(|a, b| sort_field_key(a).cmp(&sort_field_key(b)));
+
+    let mut questions = Vec::new();
+    let mut fields = Vec::new();
+
+    for key in primary_keys {
+        let Some(prop) = props.get(&key) else {
+            continue;
+        };
+        let other_key = {
+            let candidate = format!("{key}{OTHER_SUFFIX}");
+            props.contains_key(&candidate).then_some(candidate)
+        };
+        let prop_type = prop.get("type").and_then(Value::as_str).unwrap_or("string");
+        let title = prop
+            .get("title")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|s| !s.is_empty());
+        let description = prop
+            .get("description")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|s| !s.is_empty());
+
+        let question_text = if key == "value" && !message.is_empty() {
+            message.to_string()
+        } else if let Some(t) = title {
+            t.to_string()
+        } else if !message.is_empty() {
+            message.to_string()
+        } else {
+            key.clone()
+        };
+        let header = if key == "value" {
+            "提问".to_string()
+        } else {
+            description.unwrap_or("提问").to_string()
+        };
+
+        if prop_type == "boolean" {
+            questions.push(json!({
+                "question": question_text,
+                "header": header,
+                "multiSelect": false,
+                "options": [
+                    { "label": CONFIRM_YES_LABEL },
+                    { "label": "取消" },
+                ],
+            }));
+            fields.push(json!({
+                "key": key,
+                "question": question_text,
+                "kind": "boolean",
+            }));
+            continue;
+        }
+
+        if prop_type == "array" {
+            let choices = extract_schema_choices(prop.get("items").unwrap_or(prop));
+            let options = choices_to_options(&choices);
+            questions.push(json!({
+                "question": question_text,
+                "header": header,
+                "multiSelect": true,
+                "options": options,
+            }));
+            fields.push(json!({
+                "key": key,
+                "otherKey": other_key,
+                "question": question_text,
+                "kind": "multi",
+                "choices": choices,
+            }));
+            continue;
+        }
+
+        let choices = extract_schema_choices(prop);
+        if !choices.is_empty() {
+            let options = choices_to_options(&choices);
+            questions.push(json!({
+                "question": question_text,
+                "header": header,
+                "multiSelect": false,
+                "options": options,
+            }));
+            fields.push(json!({
+                "key": key,
+                "otherKey": other_key,
+                "question": question_text,
+                "kind": "single",
+                "choices": choices,
+            }));
+            continue;
+        }
+
+        let kind = if prop_type == "number" || prop_type == "integer" {
+            "number"
+        } else {
+            "string"
+        };
+        questions.push(json!({
+            "question": question_text,
+            "header": header,
+            "multiSelect": false,
+            "options": [],
+        }));
+        fields.push(json!({
+            "key": key,
+            "otherKey": other_key,
+            "question": question_text,
+            "kind": kind,
+        }));
+    }
+
+    if questions.is_empty() {
+        return None;
+    }
+
+    let request_id = format!(
+        "omp-acp-elicit-{}",
+        jsonrpc_id_key(rpc_id).unwrap_or_else(|| uuid::Uuid::new_v4().to_string())
+    );
+    let input = json!({
+        "questions": questions,
+        "ompAcpElicitation": {
+            "rpcId": rpc_id,
+            "fields": fields,
+        }
+    });
+    Some((request_id, input))
+}
+
+fn sort_field_key(key: &str) -> (u8, usize, String) {
+    if let Some(rest) = key.strip_prefix('q') {
+        let base = rest.strip_suffix(OTHER_SUFFIX).unwrap_or(rest);
+        if let Ok(index) = base.parse::<usize>() {
+            return (0, index, key.to_string());
+        }
+    }
+    (1, 0, key.to_string())
+}
+
+fn extract_schema_choices(schema: &Value) -> Vec<Value> {
+    if let Some(items) = schema
+        .get("oneOf")
+        .or_else(|| schema.get("anyOf"))
+        .and_then(Value::as_array)
+    {
+        return items
+            .iter()
+            .filter_map(|item| {
+                let value = item.get("const").and_then(Value::as_str)?;
+                let label = item
+                    .get("title")
+                    .and_then(Value::as_str)
+                    .filter(|s| !s.trim().is_empty())
+                    .unwrap_or(value);
+                let description = item
+                    .get("description")
+                    .and_then(Value::as_str)
+                    .filter(|s| !s.trim().is_empty());
+                Some(json!({
+                    "value": value,
+                    "label": label,
+                    "description": description,
+                }))
+            })
+            .collect();
+    }
+    if let Some(items) = schema.get("enum").and_then(Value::as_array) {
+        return items
+            .iter()
+            .filter_map(|item| {
+                let value = item.as_str()?;
+                Some(json!({ "value": value, "label": value }))
+            })
+            .collect();
+    }
+    Vec::new()
+}
+
+fn choices_to_options(choices: &[Value]) -> Vec<Value> {
+    choices
+        .iter()
+        .filter_map(|choice| {
+            let label = choice.get("label").and_then(Value::as_str)?;
+            match choice.get("description").and_then(Value::as_str) {
+                Some(desc) => Some(json!({ "label": label, "description": desc })),
+                None => Some(json!({ "label": label })),
+            }
+        })
+        .collect()
+}
+
+/// Build the JSON-RPC `CreateElicitationResponse` frame for a parked
+/// `ompAcpElicitation` question card.
+pub(crate) fn answer_frame(parked: &Value, answers: Option<&Value>) -> Result<Value, String> {
+    let rpc_id = parked
+        .get("rpcId")
+        .filter(|id| !id.is_null())
+        .ok_or_else(|| "OMP ACP elicitation context missing rpcId".to_string())?;
+    let Some(answers) = answers else {
+        return Ok(jsonrpc_result_response(rpc_id, json!({ "action": "cancel" })));
+    };
+    let answer_map = answers
+        .as_object()
+        .ok_or_else(|| "OMP ACP elicitation answers must be an object".to_string())?;
+    let fields = parked
+        .get("fields")
+        .and_then(Value::as_array)
+        .ok_or_else(|| "OMP ACP elicitation context missing fields".to_string())?;
+
+    let mut content = Map::new();
+    let single_field = fields.len() == 1;
+    for field in fields {
+        let key = field
+            .get("key")
+            .and_then(Value::as_str)
+            .ok_or_else(|| "elicitation field missing key".to_string())?;
+        let question = field
+            .get("question")
+            .and_then(Value::as_str)
+            .unwrap_or(key);
+        let kind = field
+            .get("kind")
+            .and_then(Value::as_str)
+            .unwrap_or("string");
+        let other_key = field.get("otherKey").and_then(Value::as_str);
+        let choices = field
+            .get("choices")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default();
+
+        let raw_answer = answer_map
+            .get(question)
+            .or_else(|| single_field.then(|| answer_map.values().next()).flatten());
+        let Some(raw_answer) = raw_answer else {
+            continue;
+        };
+
+        match kind {
+            "boolean" => {
+                let text = answer_as_text(raw_answer);
+                content.insert(key.to_string(), Value::Bool(text == CONFIRM_YES_LABEL));
+            }
+            "number" => {
+                let text = answer_as_text(raw_answer);
+                if let Ok(n) = text.trim().parse::<i64>() {
+                    content.insert(key.to_string(), json!(n));
+                } else if let Ok(n) = text.trim().parse::<f64>() {
+                    content.insert(key.to_string(), json!(n));
+                } else {
+                    content.insert(key.to_string(), Value::String(text));
+                }
+            }
+            "single" => {
+                let text = answer_as_text(raw_answer);
+                if let Some(matched) = match_choice(&choices, &text) {
+                    content.insert(key.to_string(), Value::String(matched));
+                } else if let Some(other) = other_key {
+                    content.insert(other.to_string(), Value::String(text));
+                } else {
+                    content.insert(key.to_string(), Value::String(text));
+                }
+            }
+            "multi" => {
+                let items = match raw_answer {
+                    Value::Array(arr) => arr
+                        .iter()
+                        .filter_map(Value::as_str)
+                        .map(str::to_string)
+                        .collect::<Vec<_>>(),
+                    Value::String(s) if !s.trim().is_empty() => vec![s.clone()],
+                    _ => Vec::new(),
+                };
+                let mut selected = Vec::new();
+                let mut custom = Vec::new();
+                for item in items {
+                    if let Some(matched) = match_choice(&choices, &item) {
+                        selected.push(Value::String(matched));
+                    } else if !item.trim().is_empty() {
+                        custom.push(item);
+                    }
+                }
+                content.insert(key.to_string(), Value::Array(selected));
+                if !custom.is_empty() {
+                    if let Some(other) = other_key {
+                        content.insert(other.to_string(), Value::String(custom.join(", ")));
+                    }
+                }
+            }
+            _ => {
+                content.insert(key.to_string(), Value::String(answer_as_text(raw_answer)));
+            }
+        }
+    }
+
+    Ok(jsonrpc_result_response(
+        rpc_id,
+        json!({ "action": "accept", "content": content }),
+    ))
+}
+
+fn answer_as_text(value: &Value) -> String {
+    match value {
+        Value::String(s) => s.clone(),
+        Value::Array(items) => items
+            .iter()
+            .filter_map(Value::as_str)
+            .collect::<Vec<_>>()
+            .join(", "),
+        other => other.to_string(),
+    }
+}
+
+fn match_choice(choices: &[Value], text: &str) -> Option<String> {
+    choices.iter().find_map(|choice| {
+        let value = choice.get("value").and_then(Value::as_str)?;
+        let label = choice.get("label").and_then(Value::as_str).unwrap_or(value);
+        (text == label || text == value).then(|| value.to_string())
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn sample_req() -> SendRequest {
+        SendRequest {
+            session_id: None,
+            workspace: PathBuf::from("/tmp/ws"),
+            prompt: "hello".into(),
+            prompt_contributions: Vec::new(),
+            native_compact: false,
+            images: Vec::new(),
+            model: Some("prov/model-a".into()),
+            effort: Some("high".into()),
+            service_tier: None,
+            permission: Some("auto".into()),
+            additional_dirs: Vec::new(),
+            provider_id: None,
+            computer_use: None,
+            memory_bot: None,
+            allowed_tools: None,
+            no_tools: false,
+        }
+    }
+
+    #[test]
+    fn should_use_daemon_gates_only_eligible_local_omp_sends() {
+        assert!(should_use_daemon("omp", &sample_req(), false));
+
+        // Bypass and compact both run on the daemon.
+        let mut bypass = sample_req();
+        bypass.permission = Some("bypass".into());
+        bypass.native_compact = true;
+        assert!(should_use_daemon("omp", &bypass, false));
+
+        // Plan, WSL, computer_use, memory_bot, non-omp all stay off the daemon.
+        assert!(!should_use_daemon("pi", &sample_req(), false));
+        assert!(!should_use_daemon("omp", &sample_req(), true));
+
+        let mut plan = sample_req();
+        plan.permission = Some("plan".into());
+        assert!(!should_use_daemon("omp", &plan, false));
+
+        let mut cu = sample_req();
+        cu.computer_use = Some(true);
+        assert!(!should_use_daemon("omp", &cu, false));
+
+        let mut mem = sample_req();
+        mem.memory_bot = Some("bot-1".into());
+        assert!(!should_use_daemon("omp", &mem, false));
+    }
+    #[test]
+    fn resolve_model_value_handles_exact_and_bare_ids() {
+        let available = vec![
+            "custom-1/gemini-4".to_string(),
+            "custom-2/claude-4".to_string(),
+        ];
+        assert_eq!(
+            resolve_model_value("custom-1/gemini-4", &available, None),
+            "custom-1/gemini-4"
+        );
+        assert_eq!(
+            resolve_model_value("claude-4", &available, None),
+            "custom-2/claude-4"
+        );
+        assert_eq!(
+            resolve_model_value("other/unknown", &available, None),
+            "other/unknown"
+        );
+    }
+
+    /// Several channels expose the same bare model id; the session's own
+    /// channel must win, otherwise the first turn lands on a channel that
+    /// rejects the model (404) and the prompt gets re-sent.
+    #[test]
+    fn resolve_model_value_prefers_the_session_channel_for_bare_ids() {
+        let available = vec![
+            "chan-a/gemini-4-neon".to_string(),
+            "chan-b/gemini-4-neon".to_string(),
+        ];
+        assert_eq!(
+            resolve_model_value("gemini-4-neon", &available, Some("chan-b")),
+            "chan-b/gemini-4-neon"
+        );
+        assert_eq!(
+            resolve_model_value("gemini-4-neon", &available, Some("missing")),
+            "chan-a/gemini-4-neon"
+        );
+    }
+
+    #[test]
+    fn ask_dialog_elicitation_round_trips_single_multi_and_custom_other() {
+        let params = json!({
+            "mode": "form",
+            "sessionId": "s-1",
+            "message": "Answer 2 questions",
+            "requestedSchema": {
+                "type": "object",
+                "properties": {
+                    "q0": {
+                        "type": "string",
+                        "title": "选择数据库",
+                        "description": "存储",
+                        "oneOf": [
+                            { "const": "SQLite", "title": "SQLite", "description": "单文件" },
+                            { "const": "Postgres", "title": "Postgres" }
+                        ]
+                    },
+                    "q0__other": { "type": "string", "title": "Other (type your own)" },
+                    "q1": {
+                        "type": "array",
+                        "title": "启用的特性",
+                        "items": {
+                            "anyOf": [
+                                { "const": "Cache", "title": "Cache" },
+                                { "const": "Metrics", "title": "Metrics" }
+                            ]
+                        }
+                    },
+                    "q1__other": { "type": "string", "title": "Other (type your own)" }
+                }
+            }
+        });
+        let (req_id, input) = elicitation_to_question(&json!(42), &params).expect("question");
+        assert_eq!(req_id, "omp-acp-elicit-42");
+        assert_eq!(input["questions"].as_array().unwrap().len(), 2);
+        assert_eq!(input["questions"][0]["question"], "选择数据库");
+        assert_eq!(input["questions"][0]["multiSelect"], false);
+        assert_eq!(input["questions"][1]["multiSelect"], true);
+
+        let parked = &input["ompAcpElicitation"];
+        // Custom answer for q0 routes to q0__other; mixed known + custom for q1 splits cleanly.
+        let frame = answer_frame(
+            parked,
+            Some(&json!({
+                "选择数据库": "DuckDB",
+                "启用的特性": ["Cache", "Tracing"]
+            })),
+        )
+        .unwrap();
+        assert_eq!(frame["id"], json!(42));
+        assert_eq!(frame["result"]["action"], json!("accept"));
+        assert_eq!(frame["result"]["content"]["q0__other"], json!("DuckDB"));
+        assert!(frame["result"]["content"].get("q0").is_none());
+        assert_eq!(frame["result"]["content"]["q1"], json!(["Cache"]));
+        assert_eq!(frame["result"]["content"]["q1__other"], json!("Tracing"));
+
+        // Dismiss -> cancel.
+        let dismissed = answer_frame(parked, None).unwrap();
+        assert_eq!(dismissed["result"]["action"], json!("cancel"));
+    }
+
+    #[test]
+    fn confirm_select_and_input_elicitations_map_to_value_field() {
+        let confirm = json!({
+            "mode": "form",
+            "message": "继续执行吗？",
+            "requestedSchema": {
+                "type": "object",
+                "properties": { "value": { "type": "boolean" } },
+                "required": ["value"]
+            }
+        });
+        let (_, input) = elicitation_to_question(&json!("c1"), &confirm).unwrap();
+        let yes = answer_frame(
+            &input["ompAcpElicitation"],
+            Some(&json!({ "继续执行吗？": CONFIRM_YES_LABEL })),
+        )
+        .unwrap();
+        assert_eq!(yes["result"]["content"]["value"], json!(true));
+        let no = answer_frame(
+            &input["ompAcpElicitation"],
+            Some(&json!({ "继续执行吗？": "取消" })),
+        )
+        .unwrap();
+        assert_eq!(no["result"]["content"]["value"], json!(false));
+
+        let select = json!({
+            "mode": "form",
+            "message": "选一个",
+            "requestedSchema": {
+                "type": "object",
+                "properties": { "value": { "type": "string", "enum": ["A", "B"] } },
+                "required": ["value"]
+            }
+        });
+        let (_, input) = elicitation_to_question(&json!(7), &select).unwrap();
+        let picked = answer_frame(&input["ompAcpElicitation"], Some(&json!({ "选一个": "B" }))).unwrap();
+        assert_eq!(picked["result"]["content"]["value"], json!("B"));
+    }
+
+    #[test]
+    fn daemon_spec_captures_auto_approve_and_extra_env() {
+        let mut req = sample_req();
+        let mut cmd = command_for_binary("omp");
+        cmd.env("CUSTOM_API_KEY", "secret");
+        cmd.env("CCGUI_SERVED_MODEL_FILE", "/tmp/ignored.tsv");
+
+        let spec_a = OmpDaemonSpec::from_launch("omp".into(), &req, &cmd, None).unwrap();
+        assert!(!spec_a.auto_approve);
+        assert_eq!(spec_a.extra_env.get("CUSTOM_API_KEY").map(String::as_str), Some("secret"));
+        assert!(!spec_a.extra_env.contains_key("CCGUI_SERVED_MODEL_FILE"));
+
+        req.permission = Some("bypass".into());
+        let spec_b = OmpDaemonSpec::from_launch("omp".into(), &req, &cmd, None).unwrap();
+        assert!(spec_b.auto_approve);
+        assert_ne!(spec_a, spec_b);
+    }
+
+    #[test]
+    fn permission_ask_becomes_a_card_the_user_answers() {
+        let params = json!({
+            "sessionId": "s1",
+            "toolCall": { "toolCallId": "call-1", "title": "rm -rf build" },
+            "options": [
+                { "optionId": "allow_once", "name": "Allow once", "kind": "allow_once" },
+                { "optionId": "allow_always", "name": "Always allow", "kind": "allow_always" },
+                { "optionId": "reject_once", "name": "Reject", "kind": "reject_once" },
+            ],
+        });
+        let (request_id, input, tool_use_id) =
+            permission_to_question(&json!(11), &params, 3).expect("card");
+        assert_eq!(request_id, "omp-acp-perm-3-11");
+        assert_eq!(tool_use_id.as_deref(), Some("call-1"));
+        assert_eq!(input["questions"][0]["question"], "rm -rf build");
+        assert_eq!(input["questions"][0]["options"].as_array().map(Vec::len), Some(3));
+        assert!(input["questions"][0]["options"][0].get("description").is_none());
+        let parked = &input["ompAcpPermission"];
+        assert_eq!(parked["daemonId"], json!(3));
+        assert_eq!(parked["kinds"]["Allow once"], json!("allow_once"));
+        assert_eq!(parked["kinds"]["Reject"], json!("reject_once"));
+        // Missing title stays empty for frontend i18n fallback.
+        let untitled = json!({
+            "sessionId": "s1",
+            "options": [{ "optionId": "allow_once", "name": "Allow once", "kind": "allow_once" }],
+        });
+        let (_, untitled_input, _) =
+            permission_to_question(&json!(13), &untitled, 3).expect("untitled card");
+        assert_eq!(untitled_input["questions"][0]["question"], "");
+        // The host never picks: the reply is exactly the option the user chose.
+        let frame =
+            permission_answer_frame(parked, Some(&json!({ "rm -rf build": "Reject" }))).unwrap();
+        assert_eq!(frame["id"], json!(11));
+        assert_eq!(
+            frame["result"],
+            json!({ "outcome": { "outcome": "selected", "optionId": "reject_once" } })
+        );
+        // Dismissing the card cancels; an unknown label keeps it answerable.
+        assert_eq!(
+            permission_answer_frame(parked, None).unwrap()["result"],
+            json!({ "outcome": { "outcome": "cancelled" } })
+        );
+        assert!(permission_answer_frame(parked, Some(&json!({ "rm -rf build": "nuke" }))).is_err());
+        // An ask with nothing to choose releases OMP inline instead of parking.
+        let inline = permission_to_question(&json!(12), &json!({ "options": [] }), 3).unwrap_err();
+        assert_eq!(inline["result"], json!({ "outcome": { "outcome": "cancelled" } }));
+    }
+
+    #[test]
+    fn parse_omp_mcp_servers_translates_stdio_http_sse_and_skips_disabled() {
+        let doc = json!({
+            "disabledServers": ["blocked"],
+            "mcpServers": {
+                "codegraph": {
+                    "type": "stdio",
+                    "command": "node",
+                    "args": ["serve", "--mcp"],
+                    "env": { "LOG": "info" }
+                },
+                "remote": {
+                    "type": "http",
+                    "url": "https://example.test/mcp",
+                    "headers": { "Authorization": "Bearer x" }
+                },
+                "stream": {
+                    "type": "sse",
+                    "url": "https://example.test/sse"
+                },
+                "off_flag": {
+                    "command": "node",
+                    "enabled": false
+                },
+                "blocked": {
+                    "command": "node"
+                }
+            }
+        });
+        let servers = parse_omp_mcp_servers(&doc);
+        assert_eq!(servers.len(), 3);
+        let cg = servers.iter().find(|s| s["name"] == "codegraph").unwrap();
+        assert_eq!(cg["command"], "node");
+        assert_eq!(cg["args"], json!(["serve", "--mcp"]));
+        assert_eq!(cg["env"], json!([{ "name": "LOG", "value": "info" }]));
+        let remote = servers.iter().find(|s| s["name"] == "remote").unwrap();
+        assert_eq!(remote["type"], "http");
+        assert_eq!(remote["url"], "https://example.test/mcp");
+        assert_eq!(remote["headers"], json!([{ "name": "Authorization", "value": "Bearer x" }]));
+        let stream = servers.iter().find(|s| s["name"] == "stream").unwrap();
+        assert_eq!(stream["type"], "sse");
+    }
+
+    #[test]
+    fn parse_omp_mcp_servers_wraps_on_demand_stdio_entries_through_lazy_proxy() {
+        let doc = json!({
+            "mcpServers": {
+                "codegraph": {
+                    "type": "stdio",
+                    "command": "node",
+                    "args": ["serve", "--mcp"]
+                },
+                "eager": {
+                    "type": "stdio",
+                    "command": "python",
+                    "args": ["srv.py"]
+                }
+            }
+        });
+        let on_demand: std::collections::HashSet<String> = ["codegraph".to_string()].into();
+        let servers = parse_omp_mcp_servers_with_lazy(&doc, &on_demand, |cmd, args| {
+            let mut wrapped = vec!["--mcp-lazy".to_string(), "--".to_string(), cmd.to_string()];
+            wrapped.extend(args.iter().cloned());
+            Ok(("ccgui-next".to_string(), wrapped))
+        });
+        let cg = servers.iter().find(|s| s["name"] == "codegraph").unwrap();
+        assert_eq!(cg["command"], "ccgui-next");
+        assert_eq!(cg["args"], json!(["--mcp-lazy", "--", "node", "serve", "--mcp"]));
+        let eager = servers.iter().find(|s| s["name"] == "eager").unwrap();
+        assert_eq!(eager["command"], "python");
+        assert_eq!(eager["args"], json!(["srv.py"]));
+    }
+}
+
+#[cfg(test)]
+mod stamp_tests {
+    use super::*;
+
+    #[test]
+    fn file_stamp_ignores_trailing_blank_lines_but_tracks_real_edits() {
+        let dir = std::env::temp_dir().join(format!(
+            "ccgui-omp-stamp-{}",
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("models.yml");
+        std::fs::write(&path, "providers:\n  a: {}\n").unwrap();
+        let baseline = file_stamp(&path).unwrap();
+
+        // OMP's YAML writer appends blank lines on every registry rewrite.
+        std::fs::write(&path, "providers:\n  a: {}\n\n\n\n").unwrap();
+        assert_eq!(file_stamp(&path), Some(baseline));
+
+        // A real user edit must still invalidate the fingerprint.
+        std::fs::write(&path, "providers:\n  a: {}\n  b: {}\n").unwrap();
+        assert_ne!(file_stamp(&path), Some(baseline));
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn missing_restore_model_extracts_the_selector_from_omp_errors() {
+        assert_eq!(
+            missing_restore_model(
+                "rpc:-32603:Internal error: Could not restore model plugin_x/[aistudio]gemini-4-neon"
+            ),
+            Some("plugin_x/[aistudio]gemini-4-neon")
+        );
+        assert_eq!(
+            missing_restore_model("Could not restore model a/b. Using c/d"),
+            Some("a/b")
+        );
+        assert_eq!(
+            missing_restore_model("rpc:-32603:Internal error: boom"),
+            None
+        );
+    }
+
+    #[test]
+    fn qualified_model_uses_the_session_channel_for_bare_ids() {
+        assert_eq!(qualified_model(Some("p/m"), None).as_deref(), Some("p/m"));
+        assert_eq!(
+            qualified_model(Some("m"), Some("p")).as_deref(),
+            Some("p/m")
+        );
+        assert_eq!(qualified_model(Some("m"), None), None);
+        assert_eq!(qualified_model(None, Some("p")), None);
+    }
+
+    /// A deleted model must be replaced by a `model_change` chained onto the
+    /// transcript's last entry, so OMP's resume restores the new model and the
+    /// conversation tree stays linear.
+    #[test]
+    fn append_model_change_chains_onto_the_last_entry() {
+        let dir = std::env::temp_dir().join(format!("ccgui-omp-mc-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("s.jsonl");
+        std::fs::write(
+            &path,
+            "{\"type\":\"session\",\"id\":\"s1\"}\n{\"type\":\"message\",\"id\":\"abc\",\"parentId\":null}",
+        )
+        .unwrap();
+        append_model_change(&path, "p/new-model").unwrap();
+        let text = std::fs::read_to_string(&path).unwrap();
+        let lines: Vec<&str> = text.lines().collect();
+        assert_eq!(lines.len(), 3, "{text}");
+        let entry: Value = serde_json::from_str(lines[2]).unwrap();
+        assert_eq!(entry["type"], "model_change");
+        assert_eq!(entry["parentId"], "abc");
+        assert_eq!(entry["model"], "p/new-model");
+        assert_eq!(entry["role"], "default");
+        assert!(text.ends_with('\n'));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+}
+
+#[cfg(test)]
+mod edit_release_tests {
+    use super::*;
+
+    /// Fake ACP daemon that mimics OMP's real transcript behavior:
+    /// - `session/resume` reads the session file and remembers its last entry
+    ///   id as the in-memory leaf.
+    /// - `session/close` (and graceful stdin EOF) appends a `custom` /
+    ///   `session_exit` record whose `parentId` is that in-memory leaf.
+    /// - Hard kill (`SIGKILL` / `TerminateProcess`) exits without writing.
+    const FAKE_ACP_JS: &str = r#"
+const fs = require("fs");
+const readline = require("readline");
+const file = process.env.FAKE_OMP_SESSION_FILE;
+const logFile = process.env.FAKE_OMP_RPC_LOG;
+const leaves = new Map();
+
+function readLeaf() {
+  const lines = fs.readFileSync(file, "utf8").split(/\r?\n/).filter(Boolean);
+  let leaf = null;
+  for (const line of lines) {
+    const obj = JSON.parse(line);
+    if (obj.type !== "session" && obj.id) leaf = obj.id;
+  }
+  return leaf;
+}
+
+function appendExit(sid) {
+  const leaf = leaves.get(sid);
+  if (!leaf) return;
+  leaves.delete(sid);
+  const rec = {
+    type: "custom",
+    customType: "session_exit",
+    id: "exit-" + Date.now() + "-" + Math.random().toString(16).slice(2, 8),
+    parentId: leaf,
+  };
+  fs.appendFileSync(file, JSON.stringify(rec) + "\n");
+}
+
+const rl = readline.createInterface({ input: process.stdin, crlfDelay: Infinity });
+rl.on("line", (line) => {
+  if (!line.trim()) return;
+  const msg = JSON.parse(line);
+  if (logFile && msg.method) fs.appendFileSync(logFile, msg.method + "\n");
+  if (msg.method === "initialize") {
+    process.stdout.write(JSON.stringify({ jsonrpc: "2.0", id: msg.id, result: { protocolVersion: 1 } }) + "\n");
+  } else if (msg.method === "session/resume") {
+    leaves.set(msg.params.sessionId, readLeaf());
+    process.stdout.write(JSON.stringify({ jsonrpc: "2.0", id: msg.id, result: { configOptions: [] } }) + "\n");
+  } else if (msg.method === "session/close") {
+    appendExit(msg.params.sessionId);
+    process.stdout.write(JSON.stringify({ jsonrpc: "2.0", id: msg.id, result: {} }) + "\n");
+  } else if (msg.id !== undefined) {
+    process.stdout.write(JSON.stringify({ jsonrpc: "2.0", id: msg.id, result: {} }) + "\n");
+  }
+});
+rl.on("close", () => {
+  for (const sid of Array.from(leaves.keys())) appendExit(sid);
+});
+"#;
+
+    fn find_node() -> PathBuf {
+        let names: &[&str] = if cfg!(windows) {
+            &["node.exe", "node"]
+        } else {
+            &["node"]
+        };
+        if let Some(paths) = std::env::var_os("PATH") {
+            for dir in std::env::split_paths(&paths) {
+                for name in names {
+                    let cand = dir.join(name);
+                    if cand.is_file() {
+                        return cand;
+                    }
+                }
+            }
+        }
+        panic!("node executable not found on PATH for fake ACP daemon test");
+    }
+
+    fn write_fake_acp_bin(dir: &Path) -> String {
+        let script = dir.join("fake-acp.cjs");
+        std::fs::write(&script, FAKE_ACP_JS).unwrap();
+        let node = find_node();
+        #[cfg(windows)]
+        {
+            let cmd = dir.join("fake-omp.cmd");
+            std::fs::write(
+                &cmd,
+                format!("@echo off\r\n\"{}\" \"{}\" %*\r\n", node.display(), script.display()),
+            )
+            .unwrap();
+            cmd.to_string_lossy().into_owned()
+        }
+        #[cfg(not(windows))]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let sh = dir.join("fake-omp");
+            std::fs::write(
+                &sh,
+                format!("#!/bin/sh\nexec \"{}\" \"{}\" \"$@\"\n", node.display(), script.display()),
+            )
+            .unwrap();
+            std::fs::set_permissions(&sh, std::fs::Permissions::from_mode(0o755)).unwrap();
+            sh.to_string_lossy().into_owned()
+        }
+    }
+
+    fn orphan_parent_ids(path: &Path) -> Vec<String> {
+        let text = std::fs::read_to_string(path).unwrap();
+        let mut ids = HashSet::new();
+        let mut parents = Vec::new();
+        for line in text.lines().filter(|l| !l.trim().is_empty()) {
+            let v: Value = serde_json::from_str(line).unwrap();
+            if v.get("type").and_then(Value::as_str) == Some("session") {
+                continue;
+            }
+            if let Some(id) = v.get("id").and_then(Value::as_str) {
+                ids.insert(id.to_string());
+            }
+            if let Some(pid) = v.get("parentId").and_then(Value::as_str) {
+                parents.push(pid.to_string());
+            }
+        }
+        parents.into_iter().filter(|p| !ids.contains(p)).collect()
+    }
+
+    struct AgentEnvGuard {
+        _lock: parking_lot::MutexGuard<'static, ()>,
+        prev: Option<OsString>,
+    }
+
+    impl AgentEnvGuard {
+        fn set(agent: &Path) -> Self {
+            let lock = crate::paths::HOME_ENV_LOCK.lock();
+            let prev = std::env::var_os("PI_CODING_AGENT_DIR");
+            std::env::set_var("PI_CODING_AGENT_DIR", agent);
+            Self { _lock: lock, prev }
+        }
+    }
+
+    impl Drop for AgentEnvGuard {
+        fn drop(&mut self) {
+            match &self.prev {
+                Some(v) => std::env::set_var("PI_CODING_AGENT_DIR", v),
+                None => std::env::remove_var("PI_CODING_AGENT_DIR"),
+            }
+        }
+    }
+
+    fn fixture_spec(bin: String, session_file: &Path, log_file: &Path) -> OmpDaemonSpec {
+        let mut extra_env = BTreeMap::new();
+        extra_env.insert(
+            "FAKE_OMP_SESSION_FILE".to_string(),
+            session_file.to_string_lossy().into_owned(),
+        );
+        extra_env.insert(
+            "FAKE_OMP_RPC_LOG".to_string(),
+            log_file.to_string_lossy().into_owned(),
+        );
+        OmpDaemonSpec {
+            bin,
+            auto_approve: false,
+            service_tier: None,
+            extra_env,
+            search_path: None,
+            proxy_env: BTreeMap::new(),
+            config_stamps: Vec::new(),
+            omp_on_demand_servers: Vec::new(),
+        }
+    }
+
+    fn initial_transcript(sid: &str) -> String {
+        [
+            json!({"type": "session", "id": sid}),
+            json!({"type": "message", "id": "e1", "parentId": null, "role": "user"}),
+            json!({"type": "message", "id": "e2", "parentId": "e1", "role": "assistant"}),
+            json!({"type": "message", "id": "e3", "parentId": "e2", "role": "user"}),
+        ]
+        .into_iter()
+        .map(|v| v.to_string())
+        .collect::<Vec<_>>()
+        .join("\n")
+            + "\n"
+    }
+
+    #[tokio::test]
+    #[allow(clippy::await_holding_lock)]
+    async fn editing_loaded_session_releases_before_read_and_never_orphans_leaf() {
+        let root = std::env::temp_dir().join(format!("ccgui-omp-edit-{}", uuid::Uuid::new_v4()));
+        let agent = root.join("agent");
+        let workspace = root.join("ws");
+        std::fs::create_dir_all(&workspace).unwrap();
+        let _env = AgentEnvGuard::set(&agent);
+
+        let sid = "sid-edit-1";
+        let sess_dir = agent.join("sessions").join(session_dir_name(&workspace));
+        std::fs::create_dir_all(&sess_dir).unwrap();
+        let session_file = sess_dir.join(format!("2026-11-26T00-00-00Z_{sid}.jsonl"));
+        std::fs::write(&session_file, initial_transcript(sid)).unwrap();
+        let log_file = root.join("rpc.log");
+
+        let bin = write_fake_acp_bin(&root);
+        let spec = fixture_spec(bin, &session_file, &log_file);
+        let daemon = OmpDaemonState::default();
+
+        // 1. Prewarm loads the session into the daemon (in-memory leaf = e3).
+        daemon.prewarm(&spec, &workspace, Some(sid)).await.unwrap();
+        assert!(daemon.live_clients().iter().any(|c| c.has_loaded_session(sid)));
+
+        // 2. Opening the editor releases the session BEFORE reading:
+        //    `session/close` appends `session_exit` (parentId = e3) now.
+        daemon.release_session_for_edit(sid).await.unwrap();
+        assert!(!daemon.live_clients().iter().any(|c| c.has_loaded_session(sid)));
+
+        // 3. Background prewarm while the editor is open must not reload it.
+        daemon.prewarm(&spec, &workspace, Some(sid)).await.unwrap();
+        assert!(!daemon.live_clients().iter().any(|c| c.has_loaded_session(sid)));
+
+        // 4. User trims the tail (drops e2, e3, and the session_exit record)
+        //    and saves. Write path guards unloaded state, then finishes edit.
+        let trimmed = format!(
+            "{}\n{}\n",
+            json!({"type": "session", "id": sid}),
+            json!({"type": "message", "id": "e1", "parentId": null, "role": "user"})
+        );
+        daemon.ensure_session_unloaded_for_write(sid).await.unwrap();
+        std::fs::write(&session_file, &trimmed).unwrap();
+        daemon.finish_session_edit(sid);
+
+        // 5. Next resume reloads from disk (leaf = e1), and a subsequent close
+        //    chains onto e1 — zero orphan parentIds anywhere in the file.
+        daemon.prewarm(&spec, &workspace, Some(sid)).await.unwrap();
+        daemon.close_session(sid).await;
+        assert!(
+            orphan_parent_ids(&session_file).is_empty(),
+            "orphan parents after edit: {}",
+            std::fs::read_to_string(&session_file).unwrap()
+        );
+        let last: Value = serde_json::from_str(
+            std::fs::read_to_string(&session_file)
+                .unwrap()
+                .lines()
+                .last()
+                .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(last["parentId"], "e1");
+
+        daemon.kill_spawned();
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[tokio::test]
+    #[allow(clippy::await_holding_lock)]
+    async fn external_transcript_edit_hard_kills_idle_daemon_without_session_close() {
+        let root = std::env::temp_dir().join(format!("ccgui-omp-ext-{}", uuid::Uuid::new_v4()));
+        let agent = root.join("agent");
+        let workspace = root.join("ws");
+        std::fs::create_dir_all(&workspace).unwrap();
+        let _env = AgentEnvGuard::set(&agent);
+
+        let sid = "sid-ext-1";
+        let sess_dir = agent.join("sessions").join(session_dir_name(&workspace));
+        std::fs::create_dir_all(&sess_dir).unwrap();
+        let session_file = sess_dir.join(format!("2026-11-26T00-00-00Z_{sid}.jsonl"));
+        std::fs::write(&session_file, initial_transcript(sid)).unwrap();
+        let log_file = root.join("rpc.log");
+
+        let bin = write_fake_acp_bin(&root);
+        let spec = fixture_spec(bin, &session_file, &log_file);
+        let daemon = OmpDaemonState::default();
+
+        // Daemon caches session with in-memory leaf = e3.
+        daemon.prewarm(&spec, &workspace, Some(sid)).await.unwrap();
+        assert!(daemon.live_clients().iter().any(|c| c.has_loaded_session(sid)));
+
+        // External editor/CLI trims the tail (e2, e3 removed) behind the daemon's back.
+        let trimmed = format!(
+            "{}\n{}\n",
+            json!({"type": "session", "id": sid}),
+            json!({"type": "message", "id": "e1", "parentId": null, "role": "user"})
+        );
+        std::fs::write(&session_file, &trimmed).unwrap();
+
+        // Direct ensure_session_resumed refuses to send `session/close`.
+        let client = daemon.live_clients().pop().unwrap();
+        assert!(client.ensure_session_resumed(sid, &workspace, None).await.is_err());
+
+        // Closing or releasing detects external change and hard-kills the idle
+        // daemon without `session/close` or EOF `session_exit`.
+        daemon.close_session(sid).await;
+        tokio::time::sleep(Duration::from_millis(150)).await;
+        assert!(daemon.live_clients().is_empty());
+        let rpc_log = std::fs::read_to_string(&log_file).unwrap_or_default();
+        assert!(
+            !rpc_log.lines().any(|m| m == "session/close"),
+            "must never send session/close onto an externally modified file: {rpc_log}"
+        );
+        assert_eq!(std::fs::read_to_string(&session_file).unwrap(), trimmed);
+        assert!(orphan_parent_ids(&session_file).is_empty());
+
+        daemon.kill_spawned();
+        let _ = std::fs::remove_dir_all(&root);
+    }
+}
