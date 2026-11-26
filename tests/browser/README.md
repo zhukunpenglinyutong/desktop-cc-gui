@@ -394,3 +394,7 @@ them), not a fixed pixel box. No app, no backend, no real config file.
 ## 插件设置导航
 
 打开 `/tests/browser/settings-plugin-nav.html`，使用真实设置页和三个示例插件验证图标拖拽、尾随箭头折叠、搜索临时展开以及刷新后的状态恢复。原生 IPC 被替换，不读取用户数据；持久化仅作用于该预览源的 localStorage，不代表原生应用重启验证。
+
+## 侧栏插件导航
+
+打开 `/tests/browser/sidebar-plugin-nav.html`，使用真实 `SidebarPrimaryNav` 验证图标拖拽、尾随箭头折叠及刷新恢复。增减入口检查 0/1/多入口边界，点击插件中心、条目和手柄检查右侧反馈是否误触；拖动后发送取消事件检查预览回滚且存储不变。示例替换原生 IPC，只在预览源保存 localStorage，不读写真实插件或用户数据。
