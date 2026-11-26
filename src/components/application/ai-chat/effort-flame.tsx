@@ -174,11 +174,23 @@ function Starfield() {
           ctx.fillRect(shooting.x, shooting.y - 0.6, len, 1.2);
         }
       }
-
-      raf = requestAnimationFrame(draw);
+      if (!document.hidden) raf = requestAnimationFrame(draw);
+      else raf = 0;
     };
-    raf = requestAnimationFrame(draw);
-    return () => cancelAnimationFrame(raf);
+    const sync = () => {
+      if (document.hidden) {
+        if (raf) { cancelAnimationFrame(raf); raf = 0; }
+      } else if (!raf) {
+        last = performance.now();
+        raf = requestAnimationFrame(draw);
+      }
+    };
+    sync();
+    document.addEventListener("visibilitychange", sync);
+    return () => {
+      document.removeEventListener("visibilitychange", sync);
+      if (raf) cancelAnimationFrame(raf);
+    };
   }, []);
 
   return <canvas ref={canvasRef} aria-hidden className="absolute inset-0 size-full" />;
@@ -237,10 +249,22 @@ function PixelationOverlay() {
           }
         }
       }
-      raf = requestAnimationFrame(draw);
+      if (!document.hidden) raf = requestAnimationFrame(draw);
+      else raf = 0;
     };
-    raf = requestAnimationFrame(draw);
-    return () => cancelAnimationFrame(raf);
+    const sync = () => {
+      if (document.hidden) {
+        if (raf) { cancelAnimationFrame(raf); raf = 0; }
+      } else if (!raf) {
+        raf = requestAnimationFrame(draw);
+      }
+    };
+    sync();
+    document.addEventListener("visibilitychange", sync);
+    return () => {
+      document.removeEventListener("visibilitychange", sync);
+      if (raf) cancelAnimationFrame(raf);
+    };
   }, []);
 
   return (
@@ -336,13 +360,25 @@ export function FlameOverlay() {
       gl.clearColor(0, 0, 0, 0);
       gl.clear(gl.COLOR_BUFFER_BIT);
       gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
-      raf = requestAnimationFrame(draw);
+      if (!document.hidden) raf = requestAnimationFrame(draw);
+      else raf = 0;
     };
-    raf = requestAnimationFrame(draw);
+    const sync = () => {
+      if (document.hidden) {
+        if (raf) { cancelAnimationFrame(raf); raf = 0; }
+      } else if (!raf) {
+        raf = requestAnimationFrame(draw);
+      }
+    };
+    sync();
+    document.addEventListener("visibilitychange", sync);
     // No loseContext() here: React strict-mode re-runs the effect on the same
     // canvas, and a deliberately-lost context would poison the second run.
     // The context is reclaimed with the canvas when the overlay unmounts.
-    return () => cancelAnimationFrame(raf);
+    return () => {
+      document.removeEventListener("visibilitychange", sync);
+      if (raf) cancelAnimationFrame(raf);
+    };
   }, []);
 
   if (webglFailed) return <PixelationOverlay />;
