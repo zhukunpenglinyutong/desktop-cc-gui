@@ -14,8 +14,11 @@
 
 use base64::Engine as _;
 use serde_json::Value;
+use std::collections::HashMap;
 use std::io::Cursor;
 use std::path::Path;
+use std::sync::{LazyLock, Mutex};
+use std::time::SystemTime;
 
 const MAX_REQUEST_IMAGE_CHARS: usize = 20 * 1024 * 1024;
 const RETAINED_IMAGE_CHARS: usize = 8 * 1024 * 1024;
@@ -23,6 +26,36 @@ const RETAINED_IMAGE_COUNT: usize = 6;
 const STALE_MAX_EDGE: u32 = 896;
 const STALE_JPEG_QUALITY: u8 = 80;
 const STALE_JPEG_TARGET_BYTES: usize = 256 * 1024;
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+struct ScanStamp {
+    len: u64,
+    modified: Option<SystemTime>,
+}
+
+static SCANNED: LazyLock<Mutex<HashMap<std::path::PathBuf, ScanStamp>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
+
+fn scan_stamp(metadata: &std::fs::Metadata) -> ScanStamp {
+    ScanStamp {
+        len: metadata.len(),
+        modified: metadata.modified().ok(),
+    }
+}
+
+fn already_scanned(path: &Path, stamp: ScanStamp) -> bool {
+    SCANNED
+        .lock()
+        .ok()
+        .and_then(|scanned| scanned.get(path).copied())
+        == Some(stamp)
+}
+
+fn remember_scan(path: &Path, metadata: &std::fs::Metadata) {
+    if let Ok(mut scanned) = SCANNED.lock() {
+        scanned.insert(path.to_path_buf(), scan_stamp(metadata));
+    }
+}
 
 #[derive(Clone, Copy)]
 struct ImageBudget {
@@ -42,8 +75,30 @@ const DEFAULT_BUDGET: ImageBudget = ImageBudget {
 };
 
 /// Shrink the rollout for one Codex thread when its inline tool images exceed
-/// the request budget. A missing/under-budget rollout is left untouched.
-pub(crate) fn limit_rollout(session_id: Option<&str>) -> Result<(), String> {
+/// the request budget. This is an optimization before a resume, never a
+/// prerequisite: a rollout we cannot rewrite must still be sent, because the
+/// provider may be fine with it and failing here would block the session.
+pub(crate) async fn limit_rollout(session_id: Option<&str>) {
+    let Some(session_id) = session_id.filter(|id| !id.trim().is_empty()) else {
+        return;
+    };
+    let session_id = session_id.to_string();
+    match tauri::async_runtime::spawn_blocking(move || limit_rollout_blocking(Some(&session_id)))
+        .await
+    {
+        Ok(()) => {}
+        Err(error) => eprintln!("[codex-image-budget] background task failed: {error}"),
+    }
+}
+
+/// Best-effort variant for callers already running inside a blocking worker.
+pub(crate) fn limit_rollout_blocking(session_id: Option<&str>) {
+    if let Err(error) = try_limit_rollout(session_id) {
+        eprintln!("[codex-image-budget] skipped: {error}");
+    }
+}
+
+fn try_limit_rollout(session_id: Option<&str>) -> Result<(), String> {
     let Some(session_id) = session_id.filter(|id| !id.trim().is_empty()) else {
         return Ok(());
     };
@@ -51,7 +106,16 @@ pub(crate) fn limit_rollout(session_id: Option<&str>) -> Result<(), String> {
     let Some(path) = crate::engine::codex_usage::rollout_path(&home, session_id) else {
         return Ok(());
     };
+    let before = std::fs::metadata(&path)
+        .ok()
+        .map(|metadata| scan_stamp(&metadata));
+    if before.is_some_and(|stamp| already_scanned(&path, stamp)) {
+        return Ok(());
+    }
     shrink_file(&path, DEFAULT_BUDGET)?;
+    if let Ok(metadata) = std::fs::metadata(&path) {
+        remember_scan(&path, &metadata);
+    }
     Ok(())
 }
 
@@ -164,6 +228,14 @@ fn compress_data_url(raw: &str, budget: ImageBudget) -> Option<String> {
         .decode(payload.trim())
         .ok()?;
     let image = image::load_from_memory(&decoded).ok()?;
+    // Already one of our bounded JPEGs: re-encoding it can only lose quality
+    // and may even grow the file. Leave it byte-for-byte alone.
+    if mime.eq_ignore_ascii_case("image/jpeg")
+        && image.width() <= budget.max_edge
+        && image.height() <= budget.max_edge
+    {
+        return None;
+    }
     let mut best = encode_jpeg(&image, budget.max_edge, budget.quality)?;
     if best.len() > STALE_JPEG_TARGET_BYTES {
         best = encode_jpeg(&image, 640, 72).filter(|next| next.len() < best.len())?;
@@ -171,7 +243,7 @@ fn compress_data_url(raw: &str, budget: ImageBudget) -> Option<String> {
     if best.len() > STALE_JPEG_TARGET_BYTES {
         best = encode_jpeg(&image, 512, 68).filter(|next| next.len() < best.len())?;
     }
-    if best.len() >= payload.trim().len() {
+    if best.len() >= decoded.len() {
         return None;
     }
     Some(format!(
@@ -281,6 +353,16 @@ fn rewrite(text: &str, budget: ImageBudget) -> Result<Option<(String, ShrinkRepo
 }
 
 fn shrink_file(path: &Path, budget: ImageBudget) -> Result<(), String> {
+    let metadata = std::fs::metadata(path)
+        .map_err(|error| format!("stat Codex rollout {}: {error}", path.display()))?;
+    if metadata.len() > super::edit::MAX_SESSION_DOCUMENT_BYTES {
+        eprintln!(
+            "[codex-image-budget] skip {}: rollout is {:.1} MiB, above the 64 MiB rewrite limit",
+            path.display(),
+            metadata.len() as f64 / (1024.0 * 1024.0),
+        );
+        return Ok(());
+    }
     let original = std::fs::read(path)
         .map_err(|error| format!("read Codex rollout {}: {error}", path.display()))?;
     let text = std::str::from_utf8(&original)
@@ -288,7 +370,13 @@ fn shrink_file(path: &Path, budget: ImageBudget) -> Result<(), String> {
     let Some((rewritten, report)) = rewrite(text, budget)? else {
         return Ok(());
     };
-    super::edit::preserve_backup(path, &original, super::edit::BackupName::Beside)?;
+    // preserve_backup keeps only the immediately previous version. A second
+    // trigger must not replace the first backup: that is the user's original,
+    // uncompressed transcript.
+    let backup = super::edit::backup_path(path, super::edit::BackupName::Beside)?;
+    if !backup.exists() {
+        super::edit::preserve_backup(path, &original, super::edit::BackupName::Beside)?;
+    }
     super::edit::atomic_write_existing(path, rewritten.as_bytes())?;
     eprintln!(
         "[codex-image-budget] {}: {} tool images, {:.1} MiB -> {:.1} MiB ({} downscaled)",
@@ -446,6 +534,24 @@ mod tests {
     }
 
     #[test]
+    fn unchanged_rollouts_are_skipped_until_their_metadata_changes() {
+        let dir = scratch("scan-cache");
+        let path = dir.join("sessions/2026/11/24/rollout-2026-11-24T13-21-15-cache.jsonl");
+        std::fs::write(&path, b"one").unwrap();
+        let metadata = std::fs::metadata(&path).unwrap();
+        let stamp = scan_stamp(&metadata);
+        assert!(!already_scanned(&path, stamp));
+
+        remember_scan(&path, &metadata);
+        assert!(already_scanned(&path, stamp));
+
+        std::fs::write(&path, b"two-longer").unwrap();
+        let changed = std::fs::metadata(&path).unwrap();
+        assert!(!already_scanned(&path, scan_stamp(&changed)));
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
     fn malformed_lines_are_preserved_without_blocking_the_shrink() {
         let dir = scratch("broken-line");
         let path = dir.join("sessions/2026/11/24/rollout-2026-11-24T13-21-15-broken.jsonl");
@@ -505,6 +611,80 @@ mod tests {
                 .sum::<usize>()
                 <= budget.max_chars
         );
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn second_pass_keeps_the_first_backup_and_does_not_reencode() {
+        let dir = scratch("idempotent");
+        let path = dir.join("sessions/2026/11/24/rollout-2026-11-24T13-21-15-idempotent.jsonl");
+        let images = (0..4)
+            .map(|seed| noise_png(seed, 640, 480))
+            .collect::<Vec<_>>();
+        let original = rollout(&images);
+        std::fs::write(&path, &original).unwrap();
+        let budget = ImageBudget {
+            max_chars: 1,
+            retained_chars: 8 * 1024 * 1024,
+            retained_count: 2,
+            max_edge: 640,
+            quality: 78,
+        };
+
+        shrink_file(&path, budget).unwrap();
+        let first = std::fs::read(&path).unwrap();
+        let backup =
+            super::super::edit::backup_path(&path, super::super::edit::BackupName::Beside).unwrap();
+        assert_eq!(std::fs::read(&backup).unwrap(), original.as_bytes());
+        assert_ne!(first, original.as_bytes());
+
+        shrink_file(&path, budget).unwrap();
+        assert_eq!(std::fs::read(&path).unwrap(), first);
+        assert_eq!(std::fs::read(&backup).unwrap(), original.as_bytes());
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn an_existing_backup_is_never_replaced() {
+        let dir = scratch("keep-backup");
+        let path = dir.join("sessions/2026/11/24/rollout-2026-11-24T13-21-15-keep-backup.jsonl");
+        let images = (0..4)
+            .map(|seed| noise_png(seed, 640, 480))
+            .collect::<Vec<_>>();
+        std::fs::write(&path, rollout(&images)).unwrap();
+        let backup =
+            super::super::edit::backup_path(&path, super::super::edit::BackupName::Beside).unwrap();
+        std::fs::write(&backup, b"earliest original").unwrap();
+        let budget = ImageBudget {
+            max_chars: 1,
+            retained_count: 2,
+            ..DEFAULT_BUDGET
+        };
+
+        shrink_file(&path, budget).unwrap();
+
+        assert_eq!(std::fs::read(&backup).unwrap(), b"earliest original");
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn rollouts_above_the_edit_limit_are_left_alone() {
+        let dir = scratch("oversize");
+        let path = dir.join("sessions/2026/11/24/rollout-2026-11-24T13-21-15-oversize.jsonl");
+        let file = std::fs::File::create(&path).unwrap();
+        file.set_len(super::super::edit::MAX_SESSION_DOCUMENT_BYTES + 1)
+            .unwrap();
+        drop(file);
+
+        shrink_file(&path, DEFAULT_BUDGET).unwrap();
+
+        assert_eq!(
+            std::fs::metadata(&path).unwrap().len(),
+            super::super::edit::MAX_SESSION_DOCUMENT_BYTES + 1
+        );
+        let backup =
+            super::super::edit::backup_path(&path, super::super::edit::BackupName::Beside).unwrap();
+        assert!(!backup.exists());
         std::fs::remove_dir_all(dir).ok();
     }
 

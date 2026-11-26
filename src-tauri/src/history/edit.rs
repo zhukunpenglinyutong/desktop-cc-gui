@@ -12,7 +12,7 @@ use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-const MAX_SESSION_DOCUMENT_BYTES: u64 = 64 * 1024 * 1024;
+pub(super) const MAX_SESSION_DOCUMENT_BYTES: u64 = 64 * 1024 * 1024;
 pub(super) const SESSION_EDIT_CONFLICT: &str = "SESSION_EDIT_CONFLICT";
 
 pub(super) fn document_version(bytes: &[u8]) -> String {
