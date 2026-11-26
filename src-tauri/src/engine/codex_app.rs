@@ -116,6 +116,10 @@ struct TurnView {
     streamed_reasoning: Option<String>,
     /// Turn id from the `turn/start` reply — the handle `turn/interrupt` needs.
     turn_id: Option<String>,
+    /// The thread this run drives, set once `thread/start`/`thread/resume`
+    /// answers. Sub-agents the turn spawns are threads of their own on the
+    /// same app-server; see [`is_foreign_thread`].
+    thread_id: Option<String>,
     /// Last `thread/tokenUsage/updated` payload, folded into this turn's Done:
     /// the terminal notification itself carries no usage.
     last_usage: Option<Value>,
@@ -376,6 +380,30 @@ fn handle_server_request(
     }
 }
 
+/// A notification scoped to a thread other than the one this run drives.
+///
+/// A `spawn_agent` sub-agent runs as its own thread on this app-server, and
+/// its items, usage and `turn/completed` stream through this same pump.
+/// Measured on 0.170.0: the sub-agent's `turn/completed` arrives while the
+/// parent turn is still working. Read as this run's terminal frame, it tore
+/// the tree down mid-tool-call: the parent turn died without a completion or
+/// abort record, and every process it had started died with the job. The
+/// parent learns the sub-agent's result through its own items, so foreign
+/// frames are not projected at all.
+///
+/// Frames that name no thread (account, MCP startup) and frames that arrive
+/// before the run's thread is known are not foreign.
+fn is_foreign_thread(view: &TurnView, params: &Value) -> bool {
+    let Some(own) = view.thread_id.as_deref() else {
+        return false;
+    };
+    params
+        .get("threadId")
+        .or_else(|| params.pointer("/thread/id"))
+        .and_then(Value::as_str)
+        .is_some_and(|thread_id| thread_id != own)
+}
+
 /// A notification: no reply is expected, so anything unknown is ignorable.
 fn handle_notification(
     core: &TurnCore,
@@ -384,6 +412,9 @@ fn handle_notification(
     method: &str,
     params: &Value,
 ) -> Handled {
+    if is_foreign_thread(view, params) {
+        return Handled::Ignore;
+    }
     match method {
         "item/agentMessage/delta" => {
             if let Some(delta) = params.get("delta").and_then(Value::as_str) {
@@ -1716,6 +1747,7 @@ async fn handshake_and_start(
         .map(str::to_string)
         .or_else(|| req.session_id.clone())
         .ok_or_else(|| format!("{method} returned no thread id"))?;
+    view.thread_id = Some(thread_id.clone());
     core.dispatch_event(state, EngineEvent::SessionId(thread_id.clone()));
     // The request side of the response check: what this client asked for,
     // before the thread's own settings are known.
@@ -3176,6 +3208,148 @@ require('node:readline').createInterface({input: process.stdin}).on('line', line
         // The driver settles the turn itself; a mid-turn error here would make
         // a perfectly good run look failed.
         assert!(flushed(&core, &emitter).is_empty());
+    }
+
+    /// The field failure: a sub-agent's `turn/completed` (its own threadId,
+    /// same pipe) ended the parent's pump, and the teardown killed the parent
+    /// turn mid-tool-call. Nothing the sub-agent's thread streams belongs to
+    /// this run; only the run's own completion ends it.
+    #[tokio::test]
+    async fn a_sub_agent_thread_neither_ends_nor_feeds_the_run() {
+        let (core, _registry, emitter) = test_core();
+        let mut state = TurnState::new(None);
+        let mut view = TurnView {
+            thread_id: Some("parent".into()),
+            ..TurnView::default()
+        };
+        for frame in [
+            json!({ "method": "thread/started", "params": { "thread": { "id": "sub" } } }),
+            json!({
+                "method": "turn/started",
+                "params": { "threadId": "sub", "turn": { "id": "sub-turn", "status": "inProgress" } },
+            }),
+            json!({
+                "method": "item/agentMessage/delta",
+                "params": { "threadId": "sub", "itemId": "s1", "delta": "PONG" },
+            }),
+            json!({
+                "method": "item/completed",
+                "params": { "threadId": "sub", "item": { "id": "s1", "type": "agentMessage", "text": "PONG" } },
+            }),
+            json!({
+                "method": "item/started",
+                "params": { "threadId": "sub", "item": { "id": "s2", "type": "commandExecution", "command": "echo sub" } },
+            }),
+            json!({
+                "method": "thread/tokenUsage/updated",
+                "params": { "threadId": "sub", "tokenUsage": { "last": { "totalTokens": 7 } } },
+            }),
+            json!({
+                "method": "error",
+                "params": { "threadId": "sub", "error": { "message": "sub retry" }, "willRetry": true },
+            }),
+            json!({
+                "method": "turn/completed",
+                "params": {
+                    "threadId": "sub",
+                    "turn": { "id": "sub-turn", "status": "failed", "error": { "message": "sub failed" } },
+                },
+            }),
+        ] {
+            assert!(
+                matches!(route(&core, &mut state, &mut view, &frame), Handled::Ignore),
+                "{frame}"
+            );
+        }
+        assert!(flushed(&core, &emitter).is_empty());
+        assert_eq!(view.last_usage, None);
+        assert_eq!(state.native_session_id, None);
+        let handled = route(
+            &core,
+            &mut state,
+            &mut view,
+            &json!({
+                "method": "turn/completed",
+                "params": { "threadId": "parent", "turn": { "id": "parent-turn", "status": "completed" } },
+            }),
+        );
+        assert!(matches!(handled, Handled::Ended));
+    }
+
+    /// The same failure over the real pipe and handshake: the run learns its
+    /// thread from `thread/start`, then the peer streams a sub-agent's whole
+    /// turn, completion included, ahead of the parent's. The pump must read
+    /// on to the parent's own completion.
+    #[tokio::test]
+    async fn the_turn_pump_reads_past_a_sub_agents_completion() {
+        let peer = r#"
+const send = value => process.stdout.write(JSON.stringify(value) + '\n');
+require('node:readline').createInterface({input: process.stdin}).on('line', line => {
+  const {id, method} = JSON.parse(line);
+  if (method === 'initialize') return send({jsonrpc: '2.0', id, result: {}});
+  if (method === 'thread/start') return send({jsonrpc: '2.0', id, result: {thread: {id: 'parent'}}});
+  if (method !== 'turn/start') return;
+  send({jsonrpc: '2.0', id, result: {turn: {id: 'parent-turn'}}});
+  send({method: 'turn/started', params: {threadId: 'sub', turn: {id: 'sub-turn', status: 'inProgress'}}});
+  send({method: 'item/completed', params: {threadId: 'sub', item: {id: 's1', type: 'agentMessage', text: 'PONG'}}});
+  send({method: 'turn/completed', params: {threadId: 'sub', turn: {id: 'sub-turn', status: 'completed'}}});
+  send({method: 'item/completed', params: {threadId: 'parent', item: {id: 'p1', type: 'agentMessage', text: 'parent done'}}});
+  send({method: 'turn/completed', params: {threadId: 'parent', turn: {id: 'parent-turn', status: 'completed'}}});
+});
+"#;
+        let mut child = Command::new("node")
+            .args(["-e", peer])
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .kill_on_drop(true)
+            .spawn()
+            .expect("protocol test requires the project's Node runtime");
+        let stdin = Arc::new(TokioMutex::new(child.stdin.take()));
+        let mut server = AppServer::new(stdin, child.stdout.take().unwrap());
+        let req = SendRequest {
+            session_id: None,
+            workspace: std::env::temp_dir(),
+            prompt: "Delegate to a sub-agent".into(),
+            prompt_contributions: Vec::new(),
+            native_compact: false,
+            images: Vec::new(),
+            model: None,
+            effort: None,
+            service_tier: None,
+            permission: Some("auto".into()),
+            additional_dirs: Vec::new(),
+            provider_id: None,
+            computer_use: None,
+            memory_bot: None,
+            allowed_tools: None,
+            no_tools: false,
+        };
+        let (core, _registry, emitter) = test_core();
+        let mut state = TurnState::new(None);
+        let mut view = TurnView::default();
+        let result = timeout(
+            Duration::from_secs(10),
+            handshake_and_turn(
+                &mut server,
+                &core,
+                &mut state,
+                &mut view,
+                &req,
+                &Arc::new(AtomicBool::new(false)),
+                None,
+            ),
+        )
+        .await
+        .expect("the parent's own completion must end the pump");
+        let _ = child.kill().await;
+        result.unwrap();
+        let messages: Vec<Value> = flushed(&core, &emitter)
+            .into_iter()
+            .filter(|(kind, _)| kind == "message")
+            .map(|(_, data)| data["text"].clone())
+            .collect();
+        assert_eq!(messages, [json!("parent done")]);
+        assert_eq!(state.native_session_id.as_deref(), Some("parent"));
     }
 
     // ==================== plan approval (next_turn) ====================
