@@ -1904,6 +1904,7 @@ function onDone(event: ChatEngineEvent, key: string, deps: EngineEventDeps) {
     : doneBilling
       ? mergeUsage(usageSnapshot(doneBilling), settledUsage)
       : settledUsage;
+  // Fold the turn's last unflushed chunks (the final sink batch can arrive
   // in the same frame as done), then settle every live row: the streamed
   // text the user watched arrive *is* the final message.
   const pending = drainPending(key);

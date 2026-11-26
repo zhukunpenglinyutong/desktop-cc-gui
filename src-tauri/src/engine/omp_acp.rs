@@ -1367,8 +1367,8 @@ mod tests {
         assert!(emitted.contains("全新会话"), "{emitted}");
     }
 
-    #[test]
-    fn finalize_turn_usage_preserves_occupancy_separate_from_multi_step_billing() {
+    #[tokio::test]
+    async fn finalize_turn_usage_preserves_occupancy_separate_from_multi_step_billing() {
         let (core, _registry, emitter) = test_core();
         let mut state = TurnState::new(Some("s-omp".to_string()));
         let mut view = TurnView::default();
@@ -1419,8 +1419,8 @@ mod tests {
         assert!(emitted.contains("\"context_usage\""), "{emitted}");
     }
 
-    #[test]
-    fn finalize_turn_usage_falls_back_to_occupancy_when_prompt_usage_absent() {
+    #[tokio::test]
+    async fn finalize_turn_usage_falls_back_to_occupancy_when_prompt_usage_absent() {
         let (core, _registry, _emitter) = test_core();
         let mut state = TurnState::new(Some("s-omp-2".to_string()));
         let mut view = TurnView::default();

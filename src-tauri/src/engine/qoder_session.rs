@@ -1441,6 +1441,19 @@ mod tests {
                 error: Some("boom".to_string()),
             }
         );
+        // Concrete tool ids win over the human title: `_meta.<vendor>.toolName`
+        // first (any vendor), then ACP `name`, then `title`, then `kind`.
+        // Shared by every ACP driver (omp, grok, kimi, minimax, qoder).
+        let named = json!({"sessionUpdate":"tool_call","toolCallId":"c3","name":"bash","title":"ls -la /secret","kind":"execute","status":"pending"});
+        assert_eq!(extract_tool_name(&named).as_deref(), Some("bash"));
+        let vendor = json!({"toolCallId":"c4","name":"bash","title":"ls","_meta":{"qoder":{"toolName":"Bash"}}});
+        assert_eq!(extract_tool_name(&vendor).as_deref(), Some("Bash"));
+        let other_vendor = json!({"toolCallId":"c5","title":"ls","_meta":{"acme":{"toolName":"shell"}}});
+        assert_eq!(extract_tool_name(&other_vendor).as_deref(), Some("shell"));
+        let titled = json!({"toolCallId":"c6","title":"read","kind":"read"});
+        assert_eq!(extract_tool_name(&titled).as_deref(), Some("read"));
+        let kind_only = json!({"toolCallId":"c7","kind":"edit"});
+        assert_eq!(extract_tool_name(&kind_only).as_deref(), Some("edit"));
         // Updates without a usable id or text are ignored.
         assert_eq!(
             map_session_update(&json!({"sessionUpdate":"tool_call","status":"pending"})),

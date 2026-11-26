@@ -20,8 +20,13 @@
 //!   `--auto-approve`, `--service-tier`, proxy or resolved env) rotates the
 //!   daemon gracefully: the old instance enters draining state and exits once
 //!   its in-flight turns settle; new sends immediately use a fresh daemon.
+//! - `session/request_permission` asks become question cards unless the
+//!   daemon runs with `--auto-approve` (bypass): the host never picks for the
+//!   user.
+//! - A daemon with no turn for [`DAEMON_IDLE_EXIT`] exits; the next send or
+//!   prewarm starts a fresh one.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
@@ -57,6 +62,14 @@ const CONFIG_OPTION_TIMEOUT: Duration = Duration::from_secs(20);
 const SESSION_CLOSE_TIMEOUT: Duration = Duration::from_secs(5);
 const CANCEL_SETTLE_TIMEOUT: Duration = Duration::from_secs(2);
 const ELICITATION_METHOD: &str = "elicitation/create";
+const PERMISSION_METHOD: &str = "session/request_permission";
+/// How long a send waits for the same session's cancelled prompt to end
+/// before refusing with an explicit error.
+const PREVIOUS_TURN_SETTLE_TIMEOUT: Duration = Duration::from_secs(15);
+/// Upper bound on watching a prompt whose cancel OMP has not confirmed.
+const CANCELLED_PROMPT_WATCH: Duration = Duration::from_secs(120);
+const DAEMON_IDLE_EXIT: Duration = Duration::from_secs(2 * 60 * 60);
+const IDLE_CHECK_INTERVAL: Duration = Duration::from_secs(60);
 
 const PROXY_ENV_KEYS: [&str; 8] = [
     "HTTP_PROXY",
@@ -112,7 +125,6 @@ pub(crate) struct OmpDaemonSpec {
     pub(crate) search_path: Option<OsString>,
     pub(crate) proxy_env: BTreeMap<String, String>,
     pub(crate) config_stamps: Vec<Option<FileStamp>>,
-    pub(crate) auth_revision: Option<i64>,
     pub(crate) omp_on_demand_servers: Vec<String>,
 }
 
@@ -156,7 +168,6 @@ impl OmpDaemonSpec {
             search_path,
             proxy_env: current_proxy_env(),
             config_stamps: omp_config_stamps(),
-            auth_revision: omp_auth_revision_stamp(),
             omp_on_demand_servers: omp_user_on_demand_names(),
         })
     }
@@ -196,28 +207,6 @@ fn omp_config_stamps() -> Vec<Option<FileStamp>> {
         .iter()
         .map(|name| file_stamp(&dir.join(name)))
         .collect()
-}
-
-/// Read OMP's `auth_change_revision` counter from `<agent>/agent.db` (if it
-/// exists) so credential / OAuth login changes rotate the warm daemon without
-/// reading any secret values.
-fn omp_auth_revision_stamp() -> Option<i64> {
-    let path = super::pi_family_auth::agent_dir("omp").ok()?.join("agent.db");
-    if !path.exists() {
-        return None;
-    }
-    let conn = rusqlite::Connection::open_with_flags(
-        &path,
-        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
-    )
-    .ok()?;
-    let _ = conn.busy_timeout(Duration::from_millis(200));
-    conn.query_row(
-        "SELECT revision FROM auth_change_revision WHERE id = 1",
-        [],
-        |row| row.get::<_, i64>(0),
-    )
-    .ok()
 }
 
 fn file_stamp(path: &Path) -> Option<FileStamp> {
@@ -360,15 +349,15 @@ impl OmpDaemonState {
     fn matching_live_client(&self, spec: &OmpDaemonSpec) -> Option<Arc<OmpDaemonClient>> {
         let holder = lock_unpoisoned(&self.holder);
         let client = holder.current.as_ref()?;
-        (client.is_alive() && client.spec == *spec).then(|| Arc::clone(client))
+        (client.spec == *spec && client.claim()).then(|| Arc::clone(client))
     }
 
-    /// Write a JSON-RPC elicitation reply to the exact daemon instance that
-    /// issued the question (even if that daemon is currently draining after a
-    /// config rotation). We intentionally never attach the shared daemon stdin
-    /// to `ProcessRegistry::set_stdin`, because `TurnCore::dispatch(Done)` calls
-    /// `close_stdin` on turn completion.
-    pub(crate) async fn write_elicitation_reply(
+    /// Write a JSON-RPC reply for a parked elicitation or permission ask to
+    /// the exact daemon instance that issued it (even if that daemon is
+    /// currently draining after a config rotation). We intentionally never
+    /// attach the shared daemon stdin to `ProcessRegistry::set_stdin`, because
+    /// `TurnCore::dispatch(Done)` calls `close_stdin` on turn completion.
+    pub(crate) async fn write_parked_reply(
         &self,
         parked: &Value,
         frame: &Value,
@@ -376,7 +365,7 @@ impl OmpDaemonState {
         let daemon_id = parked
             .get("daemonId")
             .and_then(Value::as_u64)
-            .ok_or_else(|| "OMP ACP elicitation context missing daemonId".to_string())?;
+            .ok_or_else(|| "OMP ACP question context missing daemonId".to_string())?;
         let target = {
             let holder = lock_unpoisoned(&self.holder);
             holder
@@ -435,15 +424,14 @@ impl OmpDaemonState {
 
     /// Background prewarm: ensures the daemon is running and, when an existing
     /// `session_id` is supplied, pre-loads it via `session/resume` so the next
-    /// user send starts immediately.
+    /// user send starts immediately. Model and effort are left to that send:
+    /// `session/set_config_option` can make OMP record a `model_change` in the
+    /// transcript, and a background prewarm must never rewrite it.
     pub(crate) async fn prewarm(
         &self,
         spec: &OmpDaemonSpec,
         workspace: &Path,
         session_id: Option<&str>,
-        model: Option<&str>,
-        effort: Option<&str>,
-        provider_hint: Option<&str>,
     ) -> Result<(), String> {
         // A background prewarm must never rotate a daemon that is running a
         // turn (another tab's permission/channel can differ from the busy
@@ -463,14 +451,9 @@ impl OmpDaemonState {
         if self.release_session_elsewhere(sid, &client).await.is_err() {
             return Ok(());
         }
-        // A background prewarm never rewrites the transcript: a session whose
-        // recorded model was deleted simply stays unloaded until a real send.
-        let meta = client.ensure_session_resumed(sid, workspace, None).await?;
-        if !client.has_active_turn(sid) {
-            let _ = client
-                .apply_session_options(sid, &meta, model, effort, provider_hint)
-                .await;
-        }
+        // A session whose recorded model was deleted simply stays unloaded
+        // until a real send (no fallback model, so no transcript append).
+        client.ensure_session_resumed(sid, workspace, None).await?;
         Ok(())
     }
 }
@@ -518,6 +501,11 @@ pub(crate) struct OmpDaemonClient {
     draining: AtomicBool,
     alive: Arc<AtomicBool>,
     reader_abort: Mutex<Option<tokio::task::AbortHandle>>,
+    /// Sessions whose cancelled prompt OMP has not confirmed yet; they count
+    /// as busy until it lands (see `watch_cancelled_prompt`).
+    settling: Mutex<HashSet<String>>,
+    /// Last time a caller used this daemon; drives the idle exit.
+    last_activity: Mutex<std::time::Instant>,
 }
 
 impl OmpDaemonClient {
@@ -590,6 +578,8 @@ impl OmpDaemonClient {
             draining: AtomicBool::new(false),
             alive: Arc::clone(&alive),
             reader_abort: Mutex::new(None),
+            settling: Mutex::new(HashSet::new()),
+            last_activity: Mutex::new(std::time::Instant::now()),
         });
 
         let reader_handle = tokio::spawn(run_daemon_reader(
@@ -615,6 +605,7 @@ impl OmpDaemonClient {
             client.shutdown_sync();
             return Err(format!("OMP ACP 守护进程初始化失败: {message}"));
         }
+        Self::spawn_idle_reaper(&client);
         Ok(client)
     }
 
@@ -635,7 +626,95 @@ impl OmpDaemonClient {
     }
 
     fn has_active_turn(&self, session_id: &str) -> bool {
-        lock_unpoisoned(&self.active_turns).contains_key(session_id)
+        lock_unpoisoned(&self.active_turns).contains_key(session_id) || self.is_settling(session_id)
+    }
+
+    /// Hand this daemon to a caller and refresh its idle clock; false once the
+    /// idle reaper retired it. Both sides hold `last_activity`, so a daemon a
+    /// caller just obtained is never reaped underneath it.
+    fn claim(&self) -> bool {
+        let mut last = lock_unpoisoned(&self.last_activity);
+        if !self.is_alive() {
+            return false;
+        }
+        *last = std::time::Instant::now();
+        true
+    }
+
+    fn touch(&self) {
+        *lock_unpoisoned(&self.last_activity) = std::time::Instant::now();
+    }
+
+    fn is_settling(&self, session_id: &str) -> bool {
+        lock_unpoisoned(&self.settling).contains(session_id)
+    }
+
+    /// Wait for a cancelled prompt on `session_id` that OMP is still ending.
+    /// `Ok(false)`: the waiting send was stopped itself.
+    async fn wait_prompt_settled(&self, session_id: &str, killed: &AtomicBool) -> Result<bool, String> {
+        let deadline = tokio::time::Instant::now() + PREVIOUS_TURN_SETTLE_TIMEOUT;
+        while self.is_settling(session_id) {
+            if killed.load(Ordering::SeqCst) {
+                return Ok(false);
+            }
+            if tokio::time::Instant::now() >= deadline {
+                return Err("该 OMP 会话的上一轮仍在停止中，请稍后再发送".to_string());
+            }
+            tokio::time::sleep(KILL_POLL).await;
+        }
+        Ok(true)
+    }
+
+    /// Keep listening for a prompt whose cancel OMP has not confirmed: the
+    /// session stays busy (`has_active_turn`) until the response lands, the
+    /// daemon exits, or [`CANCELLED_PROMPT_WATCH`] passes.
+    fn watch_cancelled_prompt(
+        self: &Arc<Self>,
+        session_id: &str,
+        rpc_key: String,
+        prompt_rx: oneshot::Receiver<Result<Value, AcpRpcError>>,
+    ) {
+        lock_unpoisoned(&self.settling).insert(session_id.to_string());
+        let client = Arc::clone(self);
+        let session_id = session_id.to_string();
+        tokio::spawn(async move {
+            if timeout(CANCELLED_PROMPT_WATCH, prompt_rx).await.is_err() {
+                client.cancel_pending_rpc(&rpc_key);
+            }
+            lock_unpoisoned(&client.settling).remove(&session_id);
+            client.touch();
+        });
+    }
+
+    /// Exit after [`DAEMON_IDLE_EXIT`] without turns, so closing every OMP tab
+    /// does not leave the process resident.
+    fn spawn_idle_reaper(client: &Arc<Self>) {
+        let weak = Arc::downgrade(client);
+        tokio::spawn(async move {
+            loop {
+                tokio::time::sleep(IDLE_CHECK_INTERVAL).await;
+                let Some(client) = weak.upgrade() else {
+                    break;
+                };
+                if !client.is_alive() {
+                    break;
+                }
+                let idle = {
+                    let last = lock_unpoisoned(&client.last_activity);
+                    let idle = client.active_turn_count() == 0
+                        && lock_unpoisoned(&client.settling).is_empty()
+                        && last.elapsed() >= DAEMON_IDLE_EXIT;
+                    if idle {
+                        client.alive.store(false, Ordering::SeqCst);
+                    }
+                    idle
+                };
+                if idle {
+                    client.shutdown_sync();
+                    break;
+                }
+            }
+        });
     }
 
     fn session_setup_lock(&self, session_id: &str) -> Arc<TokioMutex<()>> {
@@ -676,6 +755,7 @@ impl OmpDaemonClient {
                 &self.stderr_buf,
             ));
         }
+        self.touch();
         let id = self.next_id.fetch_add(1, Ordering::Relaxed);
         let id_key = id.to_string();
         let (tx, rx) = oneshot::channel();
@@ -969,6 +1049,7 @@ struct ActiveTurnGuard {
 
 impl Drop for ActiveTurnGuard {
     fn drop(&mut self) {
+        self.client.touch();
         lock_unpoisoned(&self.client.active_turns).remove(&self.session_id);
         let remaining = self
             .client
@@ -1044,6 +1125,8 @@ async fn run_daemon_reader(
                     // reply immediately so the daemon never wedges.
                     let reply = if method == ELICITATION_METHOD {
                         jsonrpc_result_response(&id, json!({ "action": "cancel" }))
+                    } else if method == PERMISSION_METHOD {
+                        permission_cancelled(&id)
                     } else {
                         jsonrpc_error_response(
                             &id,
@@ -1097,7 +1180,9 @@ pub(crate) async fn run_daemon_turn(
     let _registry_guard =
         VirtualRunGuard::new(Arc::clone(&core.registry), core.run_id.clone(), virtual_pid);
 
-    let mut open_elicitations: Vec<(String, Value)> = Vec::new();
+    // Parked question cards still open in OMP: request id + the reply that
+    // releases OMP if the turn ends before the user answers.
+    let mut open_requests: Vec<(String, Value)> = Vec::new();
     let mut daemon_client: Option<Arc<OmpDaemonClient>> = None;
 
     let result = turn_inner(
@@ -1109,12 +1194,12 @@ pub(crate) async fn run_daemon_turn(
         &daemon_state,
         &killed,
         &mut daemon_client,
-        &mut open_elicitations,
+        &mut open_requests,
     )
     .await;
 
-    // Settle parked questions & plans; cancel any still-open CLI elicitations
-    // so the long-lived OMP session never stays blocked after Stop or error.
+    // Settle parked questions & plans; release any still-open CLI asks so the
+    // long-lived OMP session never stays blocked after Stop or error.
     let mut still_pending_ids = std::collections::HashSet::new();
     for key in [state.native_session_id.clone(), Some(core.run_id.clone())]
         .into_iter()
@@ -1127,10 +1212,9 @@ pub(crate) async fn run_daemon_turn(
         crate::engine::reader::expire_parked_plans(&core, &mut state, &key);
     }
     if let Some(client) = &daemon_client {
-        for (req_id, rpc_id) in open_elicitations {
+        for (req_id, release) in open_requests {
             if still_pending_ids.contains(&req_id) {
-                let cancel = jsonrpc_result_response(&rpc_id, json!({ "action": "cancel" }));
-                let _ = client.write_frame(&cancel).await;
+                let _ = client.write_frame(&release).await;
             }
         }
         if let Some(sid) = state.native_session_id.as_deref() {
@@ -1173,7 +1257,7 @@ async fn turn_inner(
     daemon_state: &Arc<OmpDaemonState>,
     killed: &Arc<AtomicBool>,
     daemon_out: &mut Option<Arc<OmpDaemonClient>>,
-    open_elicitations: &mut Vec<(String, Value)>,
+    open_requests: &mut Vec<(String, Value)>,
 ) -> Result<(), String> {
     if killed.load(Ordering::SeqCst) {
         return Ok(());
@@ -1207,6 +1291,12 @@ async fn turn_inner(
 
     let (session_id, meta) = match req.session_id.as_deref() {
         Some(existing) => {
+            // A Stop that outlived its settle window leaves OMP ending the
+            // cancelled prompt; a new prompt on the same session waits for
+            // that instead of colliding with it.
+            if !client.wait_prompt_settled(existing, killed).await? {
+                return Ok(());
+            }
             // One session, one daemon: after a rotation the draining daemon
             // may still hold this session; resuming it here as well would let
             // both processes append to the same transcript.
@@ -1294,6 +1384,7 @@ async fn turn_inner(
 
     let mut cancel_sent = false;
     let mut cancel_deadline: Option<tokio::time::Instant> = None;
+    let mut abandoned = false;
     let mut kill_tick = tokio::time::interval(KILL_POLL);
     kill_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
@@ -1334,7 +1425,10 @@ async fn turn_inner(
                                 {
                                     ctx.insert("daemonId".to_string(), json!(client.daemon_id));
                                 }
-                                open_elicitations.push((request_id.clone(), id));
+                                open_requests.push((
+                                    request_id.clone(),
+                                    jsonrpc_result_response(&id, json!({ "action": "cancel" })),
+                                ));
                                 core.dispatch_event(state, EngineEvent::Question {
                                     request_id,
                                     tool_use_id: None,
@@ -1343,6 +1437,22 @@ async fn turn_inner(
                             } else {
                                 let cancel = jsonrpc_result_response(&id, json!({ "action": "cancel" }));
                                 let _ = client.write_frame(&cancel).await;
+                            }
+                        } else if method == PERMISSION_METHOD && !client.spec.auto_approve {
+                            // Outside bypass the user decides: OMP asks only
+                            // for tools its own config wants confirmed.
+                            match permission_to_question(&id, &params, client.daemon_id) {
+                                Ok((request_id, input, tool_use_id)) => {
+                                    open_requests.push((request_id.clone(), permission_cancelled(&id)));
+                                    core.dispatch_event(state, EngineEvent::Question {
+                                        request_id,
+                                        tool_use_id,
+                                        input,
+                                    });
+                                }
+                                Err(release) => {
+                                    let _ = client.write_frame(&release).await;
+                                }
                             }
                         } else {
                             let reply = answer_agent_request(&req.workspace, &id, &method, &params);
@@ -1358,13 +1468,20 @@ async fn turn_inner(
                         cancel_deadline = Some(tokio::time::Instant::now() + CANCEL_SETTLE_TIMEOUT);
                         client.send_cancel(&session_id).await;
                     } else if cancel_deadline.is_some_and(|d| tokio::time::Instant::now() >= d) {
-                        client.cancel_pending_rpc(&rpc_key);
+                        // OMP has not confirmed the cancel yet: settle the UI
+                        // now, but keep watching the prompt so the next send
+                        // on this session waits for it to end.
+                        abandoned = true;
                         break Ok(Value::Null);
                     }
                 }
             }
         }
-    }?;
+    };
+    if abandoned {
+        client.watch_cancelled_prompt(&session_id, rpc_key, prompt_rx);
+    }
+    let prompt_result = prompt_result?;
 
     finalize_turn_usage(core, state, view, &prompt_result);
     Ok(())
@@ -1720,6 +1837,121 @@ fn append_model_change(path: &Path, model: &str) -> Result<(), String> {
         .open(path)
         .and_then(|mut file| file.write_all(line.as_bytes()))
         .map_err(|e| format!("写入 OMP 会话文件失败: {e}"))
+}
+
+// ==================== ACP permission ask <-> QuestionCard bridge ====================
+
+fn permission_cancelled(rpc_id: &Value) -> Value {
+    jsonrpc_result_response(rpc_id, json!({ "outcome": { "outcome": "cancelled" } }))
+}
+
+/// Project an ACP `session/request_permission` ask into a question card.
+/// Without `--auto-approve`, OMP raises this ask for tools its config wants
+/// confirmed (`allow_once / allow_always / reject_once / reject_always`), and
+/// the choice is the user's. `Err` carries the frame that releases an ask
+/// with nothing to choose, which no card could ever answer.
+pub(crate) fn permission_to_question(
+    rpc_id: &Value,
+    params: &Value,
+    daemon_id: u64,
+) -> Result<(String, Value, Option<String>), Value> {
+    let Some(options) = params.get("options").and_then(Value::as_array) else {
+        return Err(permission_cancelled(rpc_id));
+    };
+    let mut choices = Vec::new();
+    let mut option_ids = Map::new();
+    for option in options {
+        let Some(id) = option
+            .get("optionId")
+            .or_else(|| option.get("option_id"))
+            .or_else(|| option.get("id"))
+            .and_then(Value::as_str)
+        else {
+            continue;
+        };
+        let kind = option.get("kind").and_then(Value::as_str).unwrap_or_default();
+        let label = option
+            .get("name")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|name| !name.is_empty())
+            .or(Some(kind).filter(|kind| !kind.is_empty()))
+            .unwrap_or(id)
+            .to_string();
+        if option_ids.contains_key(&label) {
+            continue;
+        }
+        option_ids.insert(label.clone(), json!(id));
+        choices.push(json!({ "label": label, "description": kind }));
+    }
+    if choices.is_empty() {
+        return Err(permission_cancelled(rpc_id));
+    }
+    let tool_call = params.get("toolCall");
+    let question = tool_call
+        .and_then(|call| call.get("title"))
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|title| !title.is_empty())
+        .unwrap_or("OMP 请求执行一个需要确认的操作")
+        .to_string();
+    let tool_use_id = tool_call
+        .and_then(|call| call.get("toolCallId"))
+        .and_then(Value::as_str)
+        .map(str::to_string);
+    // Daemon id in the key: a draining and a current daemon number their
+    // JSON-RPC requests independently.
+    let request_id = format!(
+        "omp-acp-perm-{daemon_id}-{}",
+        jsonrpc_id_key(rpc_id).unwrap_or_else(|| uuid::Uuid::new_v4().to_string())
+    );
+    let input = json!({
+        "questions": [{
+            "question": question,
+            "header": "OMP",
+            "multiSelect": false,
+            "options": choices,
+        }],
+        "ompAcpPermission": {
+            "rpcId": rpc_id,
+            "daemonId": daemon_id,
+            "options": option_ids,
+        },
+    });
+    Ok((request_id, input, tool_use_id))
+}
+
+/// Reply frame for one parked permission ask: the option the user picked
+/// (answers map question text → option label); dismissing the card cancels,
+/// which OMP treats as "don't run it".
+pub(crate) fn permission_answer_frame(parked: &Value, answers: Option<&Value>) -> Result<Value, String> {
+    let id = parked
+        .get("rpcId")
+        .filter(|id| !id.is_null())
+        .ok_or_else(|| "OMP permission context is missing rpcId".to_string())?;
+    let Some(answers) = answers else {
+        return Ok(permission_cancelled(id));
+    };
+    let map = answers
+        .as_object()
+        .ok_or_else(|| "OMP permission answers must be an object".to_string())?;
+    let option_ids = parked
+        .get("options")
+        .and_then(Value::as_object)
+        .ok_or_else(|| "OMP permission context is missing its option map".to_string())?;
+    let label = map
+        .values()
+        .filter_map(Value::as_str)
+        .next()
+        .ok_or_else(|| "OMP permission answer must carry the chosen option label".to_string())?;
+    let option_id = option_ids
+        .get(label)
+        .and_then(Value::as_str)
+        .ok_or_else(|| format!("OMP only accepts the declared options for this ask (unknown `{label}`)"))?;
+    Ok(jsonrpc_result_response(
+        id,
+        json!({ "outcome": { "outcome": "selected", "optionId": option_id } }),
+    ))
 }
 
 // ==================== ACP elicitation <-> QuestionCard bridge ====================
@@ -2290,6 +2522,44 @@ mod tests {
         let spec_b = OmpDaemonSpec::from_launch("omp".into(), &req, &cmd, None).unwrap();
         assert!(spec_b.auto_approve);
         assert_ne!(spec_a, spec_b);
+    }
+
+    #[test]
+    fn permission_ask_becomes_a_card_the_user_answers() {
+        let params = json!({
+            "sessionId": "s1",
+            "toolCall": { "toolCallId": "call-1", "title": "rm -rf build" },
+            "options": [
+                { "optionId": "allow_once", "name": "Allow once", "kind": "allow_once" },
+                { "optionId": "allow_always", "name": "Always allow", "kind": "allow_always" },
+                { "optionId": "reject_once", "name": "Reject", "kind": "reject_once" },
+            ],
+        });
+        let (request_id, input, tool_use_id) =
+            permission_to_question(&json!(11), &params, 3).expect("card");
+        assert_eq!(request_id, "omp-acp-perm-3-11");
+        assert_eq!(tool_use_id.as_deref(), Some("call-1"));
+        assert_eq!(input["questions"][0]["question"], "rm -rf build");
+        assert_eq!(input["questions"][0]["options"].as_array().map(Vec::len), Some(3));
+        let parked = &input["ompAcpPermission"];
+        assert_eq!(parked["daemonId"], json!(3));
+        // The host never picks: the reply is exactly the option the user chose.
+        let frame =
+            permission_answer_frame(parked, Some(&json!({ "rm -rf build": "Reject" }))).unwrap();
+        assert_eq!(frame["id"], json!(11));
+        assert_eq!(
+            frame["result"],
+            json!({ "outcome": { "outcome": "selected", "optionId": "reject_once" } })
+        );
+        // Dismissing the card cancels; an unknown label keeps it answerable.
+        assert_eq!(
+            permission_answer_frame(parked, None).unwrap()["result"],
+            json!({ "outcome": { "outcome": "cancelled" } })
+        );
+        assert!(permission_answer_frame(parked, Some(&json!({ "rm -rf build": "nuke" }))).is_err());
+        // An ask with nothing to choose releases OMP inline instead of parking.
+        let inline = permission_to_question(&json!(12), &json!({ "options": [] }), 3).unwrap_err();
+        assert_eq!(inline["result"], json!({ "outcome": { "outcome": "cancelled" } }));
     }
 
     #[test]

@@ -1209,14 +1209,7 @@ pub async fn prewarm_omp_session(
     )?;
     state
         .omp_daemon
-        .prewarm(
-            &spec,
-            &launch.req.workspace,
-            launch.req.session_id.as_deref(),
-            launch.req.model.as_deref(),
-            launch.req.effort.as_deref(),
-            launch.req.provider_id.as_deref(),
-        )
+        .prewarm(&spec, &launch.req.workspace, launch.req.session_id.as_deref())
         .await
 }
 
@@ -1338,7 +1331,7 @@ async fn send_reserved(
             launch.bin.clone(),
             &launch.req,
             &launch.built.command,
-            Some(child_search_path),
+            Some(resolve::cli_search_path()),
         )?;
         return send_host_stream(
             state,
@@ -1860,12 +1853,18 @@ pub async fn answer_question(
         .get(&request_id)
         .cloned()
         .ok_or_else(|| "question is no longer pending".to_string())?;
-    if let Some(context) = input.get("ompAcpElicitation") {
-        let frame = omp_daemon::answer_frame(context, answers.as_ref())?;
-        state
-            .omp_daemon
-            .write_elicitation_reply(context, &frame)
-            .await?;
+    // OMP's shared ACP daemon parks elicitations and permission asks: the
+    // reply goes to the daemon instance that issued it, never the registry
+    // stdin (the daemon outlives every run).
+    let omp_parked = if let Some(context) = input.get("ompAcpElicitation") {
+        Some((context, omp_daemon::answer_frame(context, answers.as_ref())?))
+    } else if let Some(context) = input.get("ompAcpPermission") {
+        Some((context, omp_daemon::permission_answer_frame(context, answers.as_ref())?))
+    } else {
+        None
+    };
+    if let Some((context, frame)) = omp_parked {
+        state.omp_daemon.write_parked_reply(context, &frame).await?;
         if let Ok(mut questions) = entry.questions.lock() {
             questions.remove(&request_id);
         }
