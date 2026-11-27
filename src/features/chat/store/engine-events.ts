@@ -474,7 +474,13 @@ function dispatchNormalized(event: ChatEngineEvent, terminal?: EngineTerminalFac
     occurredAt: new Date().toISOString(),
     ...(terminal ? { terminal } : {}),
   });
-  if (normalized) dispatchRuntimeEvent(normalized);
+  if (normalized) {
+    // 一次工具调用可能改多个文件（hashline / apply_patch），normalizer 以
+    // 数组返回多条 file-changed；其余事件仍是单个对象。
+    for (const item of Array.isArray(normalized) ? normalized : [normalized]) {
+      dispatchRuntimeEvent(item);
+    }
+  }
 }
 
 /**

@@ -59,12 +59,24 @@ const PATH_ARGS = ["path", "file_path", "filePath"] as const;
 /** Arg keys an engine uses to carry the shell command text. */
 const COMMAND_ARGS = ["command"] as const;
 
+/** 展示用改动预览的上限：file-changed 会广播给所有插件，不能把整份
+ *  大文件塞进事件（工具结果本身另有 64KB 上限）。 */
+const MAX_FILE_CHANGE_PREVIEW_CHARS = 8 * 1024;
+/** 参数与结果分两条消息到达时，按 toolCallId 暂存的预览条数上限。 */
+const MAX_PENDING_FILE_CHANGES = 256;
+
 interface PendingCommand {
   runId: string;
   command: string;
   cwd: string;
   startedAt: string;
   ambiguous: boolean;
+}
+
+interface PendingFileChange {
+  runId: string;
+  paths: string[];
+  preview: string | null;
 }
 
 interface NormalizedBase {
@@ -80,6 +92,7 @@ interface NormalizedBase {
 
 const MAX_PENDING_COMMANDS = 1_024;
 const pendingCommands = new Map<string, PendingCommand>();
+const pendingFileChanges = new Map<string, PendingFileChange>();
 
 /**
  * Conservatively projects an engine event into the public plugin event model.
@@ -88,9 +101,10 @@ const pendingCommands = new Map<string, PendingCommand>();
 export function normalizeEngineEvent(
   event: EngineEventPayload,
   context: RuntimeEventNormalizationContext,
-): NormalizedRuntimeEvent | null {
+): NormalizedRuntimeEvent | NormalizedRuntimeEvent[] | null {
   if (event.kind === "done" || event.kind === "error") {
     clearPendingCommands(event.runId);
+    clearPendingFileChanges(event.runId);
   }
   const base = normalizedBase(event, context);
   if (!base) return null;
@@ -122,20 +136,55 @@ export function normalizeEngineEvent(
     const args = data.args;
     const toolName = toolNameFromLabel(label).toLowerCase();
 
+    // 参数与结果常分两条 message 到达（先 call，后 result）。结果行往往
+    // 只有 toolCallId，路径与预览都要在 call 行按 id 暂存（OMP 的 hashline
+    // edit 把路径写在 `input` 的 `[path#tag]` 头里）。
+    if (Object.hasOwn(MUTATING_TOOLS, toolName) && !data.hasResult && data.toolCallId !== null) {
+      const paths = collectFileChangePaths(args, null);
+      const preview = fileChangePreview(args);
+      if (paths.length > 0 || preview !== null) {
+        rememberPendingFileChange(event.runId, data.toolCallId, paths, preview);
+      }
+    }
+
     // A mutating tool call may report its path in the call args, while OMP's
     // edit tool reports the authoritative path only in result.details.path.
     // Either shape is structured host data; neither asserts write success.
     if (Object.hasOwn(MUTATING_TOOLS, toolName) && data.hasResult) {
-      const path =
-        (args ? firstString(args, PATH_ARGS) : null) ??
-        resultDetailsPath(data.result);
-      if (path !== null) {
-        return {
+      const pending =
+        data.toolCallId !== null ? takePendingFileChange(event.runId, data.toolCallId) : null;
+      const paths = collectFileChangePaths(args, data.result);
+      if (paths.length === 0 && pending !== null) paths.push(...pending.paths);
+      const preview =
+        resultDetailsDiff(data.result) ??
+        (args ? fileChangePreview(args) : null) ??
+        pending?.preview ??
+        null;
+      if (paths.length > 0) {
+        const change = {
           ...base,
-          kind: "file-changed",
-          path: workspaceRelative(path, context.workspacePath),
-          change: "touched",
+          kind: "file-changed" as const,
+          change: "touched" as const,
+          ...(preview === null ? {} : { preview }),
         };
+        // 参数里的相对路径与结果里的绝对路径可能指向同一文件，按归一化
+        // 后的工作区相对路径去重。
+        const relativePaths: string[] = [];
+        for (const path of paths) {
+          const relative = workspaceRelative(path, context.workspacePath);
+          if (!relativePaths.includes(relative)) relativePaths.push(relative);
+        }
+        if (relativePaths.length === 1) {
+          return { ...change, path: relativePaths[0] };
+        }
+        // 一次调用可改多个文件（hashline 的多 `[path#tag]` 段、apply_patch
+        // 的多文件 patch）：每个路径一条事件，eventId 加稳定后缀避免被
+        // 消费方当重复事件丢掉。
+        return relativePaths.map((path, index) => ({
+          ...change,
+          eventId: `${base.eventId}:file:${index}`,
+          path,
+        }));
       }
     }
 
@@ -286,10 +335,19 @@ function asRecord(value: unknown): Record<string, unknown> | null {
     : null;
 }
 
-/** OMP edit results report the authoritative target at result.details.path. */
+/** OMP edit results report the authoritative target at result.details.path
+ *  (`resolvedPath` for write); Claude-style results may carry neither. */
 function resultDetailsPath(result: unknown): string | null {
   const details = asRecord(asRecord(result)?.details);
-  return details ? firstString(details, PATH_ARGS) : null;
+  return details ? firstString(details, [...PATH_ARGS, "resolvedPath"]) : null;
+}
+
+/** Engine-reported post-edit diff (OMP edit `details.diff`), when it is a
+ *  displayable string; structured patch objects stay out of the event. */
+function resultDetailsDiff(result: unknown): string | null {
+  const details = asRecord(asRecord(result)?.details);
+  const diff = details ? stringArg(details, ["diff", "patch"]) : null;
+  return diff !== null && diff.trim() ? boundedPreview(diff) : null;
 }
 
 /** First arg whose value is a non-blank string, in declared priority order. */
@@ -371,6 +429,171 @@ function clearPendingCommands(runId: string): void {
   for (const [key, pending] of pendingCommands) {
     if (pending.runId === runId) pendingCommands.delete(key);
   }
+}
+
+/** 参数行携带的展示预览按 toolCallId 暂存到结果行；界面上一次工具调用
+ *  只产生一条 file-changed，暂存项在匹配或用完时删除。 */
+function fileChangeIdentity(runId: string, toolCallId: string): string {
+  return `${runId}\u0000${toolCallId}`;
+}
+
+function rememberPendingFileChange(
+  runId: string,
+  toolCallId: string,
+  paths: string[],
+  preview: string | null,
+): void {
+  pendingFileChanges.set(fileChangeIdentity(runId, toolCallId), { runId, paths, preview });
+  while (pendingFileChanges.size > MAX_PENDING_FILE_CHANGES) {
+    const oldest = pendingFileChanges.keys().next().value as string | undefined;
+    if (oldest === undefined) break;
+    pendingFileChanges.delete(oldest);
+  }
+}
+
+function takePendingFileChange(runId: string, toolCallId: string): PendingFileChange | null {
+  const key = fileChangeIdentity(runId, toolCallId);
+  const pending = pendingFileChanges.get(key) ?? null;
+  pendingFileChanges.delete(key);
+  return pending;
+}
+
+function clearPendingFileChanges(runId: string): void {
+  for (const [key, pending] of pendingFileChanges) {
+    if (pending.runId === runId) pendingFileChanges.delete(key);
+  }
+}
+
+/** First arg whose value is a string (empty string counts: deleting a file's
+ *  content is a real edit and still has a displayable payload). */
+function stringArg(args: Record<string, unknown>, keys: readonly string[]): string | null {
+  for (const key of keys) {
+    const value = args[key];
+    if (typeof value === "string") return value;
+  }
+  return null;
+}
+
+function prefixLines(text: string, prefix: string): string {
+  return text
+    .split("\n")
+    .map((line) => `${prefix}${line}`)
+    .join("\n");
+}
+
+function pairPreview(oldString: string | null, newString: string | null): string {
+  const lines: string[] = [];
+  if (oldString !== null) {
+    for (const line of oldString.split("\n")) lines.push(`-${line}`);
+  }
+  if (newString !== null) {
+    for (const line of newString.split("\n")) lines.push(`+${line}`);
+  }
+  return lines.join("\n");
+}
+
+/** Clamp by code point so a surrogate pair is never split at the cut. */
+function boundedPreview(text: string): string {
+  if (text.length <= MAX_FILE_CHANGE_PREVIEW_CHARS) return text;
+  let end = MAX_FILE_CHANGE_PREVIEW_CHARS;
+  if (/[\uD800-\uDBFF]/.test(text[end - 1])) end -= 1;
+  return `${text.slice(0, end)}\n…（预览已截断）`;
+}
+
+/** Strip one pair of wrapping quotes from patch headers (`"my file.txt"`). */
+function unquotePath(value: string): string {
+  const trimmed = value.trim();
+  if (
+    trimmed.length >= 2 &&
+    ((trimmed.startsWith('"') && trimmed.endsWith('"')) ||
+      (trimmed.startsWith("'") && trimmed.endsWith("'")))
+  ) {
+    return trimmed.slice(1, -1).trim();
+  }
+  return trimmed;
+}
+
+/**
+ * Paths carried by OMP-style `input` patch strings: hashline sections
+ * (`[path#TAG]`) and apply_patch / sloppy file headers. Structured `path`
+ * args still win; this is the fallback for tools whose only path lives in
+ * the patch text.
+ */
+function inputFilePaths(args: Record<string, unknown> | null): string[] {
+  if (!args) return [];
+  const input = stringArg(args, ["input"]);
+  if (input === null) return [];
+  const paths: string[] = [];
+  for (const match of input.matchAll(/(?:^|\n)[ \t]*\[([^\]\n#]+)#[^\]\n]*\]/g)) {
+    paths.push(match[1]);
+  }
+  for (const match of input.matchAll(/^[ \t]*\*\*\* (?:Add|Update|Delete|Edit) File:[ \t]*(.+)$/gm)) {
+    paths.push(match[1]);
+  }
+  for (const match of input.matchAll(/^[ \t]*\*\*\* Move to:[ \t]*(.+)$/gm)) {
+    paths.push(match[1]);
+  }
+  return paths;
+}
+
+/** Structured path arg → result.details.path → paths inside an `input` patch. */
+function collectFileChangePaths(
+  args: Record<string, unknown> | null,
+  result: unknown,
+): string[] {
+  const paths: string[] = [];
+  const seen = new Set<string>();
+  const add = (value: string | null | undefined) => {
+    if (typeof value !== "string") return;
+    const trimmed = unquotePath(value);
+    if (!trimmed) return;
+    const key = trimmed.replace(/\\/g, "/");
+    if (seen.has(key)) return;
+    seen.add(key);
+    paths.push(trimmed);
+  };
+  add(args ? firstString(args, PATH_ARGS) : null);
+  add(resultDetailsPath(result));
+  for (const path of inputFilePaths(args)) add(path);
+  return paths;
+}
+
+/**
+ * 展示用改动预览（不保证是合法 patch）：优先引擎给的 patch/diff，其次
+ * patch 原文（apply_patch / OMP hashline 的 `input`），再次整份新内容，
+ * 最后 old→new 片段；MultiEdit 的 edits 依次拼接。
+ */
+function fileChangePreview(args: Record<string, unknown> | null): string | null {
+  if (!args) return null;
+  const patch = stringArg(args, ["patch", "diff"]);
+  if (patch !== null && patch.trim()) return boundedPreview(patch);
+
+  const rawInput = stringArg(args, ["input"]);
+  if (rawInput !== null && rawInput.trim()) return boundedPreview(rawInput);
+
+  const content = stringArg(args, ["content"]);
+  if (content !== null) return boundedPreview(prefixLines(content, "+"));
+
+  const oldString = stringArg(args, ["old_string", "oldString"]);
+  const newString = stringArg(args, ["new_string", "newString"]);
+  if (oldString !== null || newString !== null) {
+    return boundedPreview(pairPreview(oldString, newString));
+  }
+
+  const edits = Array.isArray(args.edits) ? args.edits : null;
+  if (edits !== null) {
+    const chunks: string[] = [];
+    for (const edit of edits) {
+      const record = asRecord(edit);
+      if (!record) continue;
+      const oldEdit = stringArg(record, ["old_string", "oldString"]);
+      const newEdit = stringArg(record, ["new_string", "newString"]);
+      if (oldEdit === null && newEdit === null) continue;
+      chunks.push(pairPreview(oldEdit, newEdit));
+    }
+    if (chunks.length > 0) return boundedPreview(chunks.join("\n@@\n"));
+  }
+  return null;
 }
 
 /** Path relative to the workspace root when it sits strictly under it (drive
