@@ -336,6 +336,8 @@ SDK 0.4.2 起，`RuntimeSwitchEvent` 包含必填 `switchId`，同一次启动�
 
 `TurnHooks.onRuntimeEvent` 接收宿主可确定的 `NormalizedRuntimeEvent`：`file-changed`、`command-started`、`command-finished`、`tool-finished`、`permission-requested`、`assistant-completed`、`turn-cancelled`、`turn-failed`、`runtime-exited`。公共字段包括 `eventId/runId/turnId/engine/sessionId/workspaceId/workspacePath/occurredAt/kind`；只有 adapter 确定知道的命令、退出码、文件变化和状态才会出现，宿主不会从模型正文推断事实。
 
+`file-changed` 自 SDK 0.3.27 起可选携带 `preview`（权限仍为 `runtime.events.read`）：编辑类工具参数里的 `patch` / `diff`、`input`（apply_patch / OMP hashline 的 patch 原文）、`content`、`old_string` + `new_string` 或 `edits[]` 会整理成展示文本（新内容按 `+` 行、old→new 按 `-`/`+` 行），上限 8 KB，不是可直接应用的 patch；引擎没给出可展示参数、或参数与结果无法按 `toolCallId` 关联时省略该字段。OMP hashline / apply_patch 的路径从 `input` 的 `[path#TAG]`、`*** Add/Update/Delete/Edit File:`、`*** Move to:` 头解析；一次调用改多个文件时按文件各发一条 `file-changed`（`eventId` 带 `:file:<index>` 后缀）。终端命令间接改的文件依然不会产生 `file-changed`。
+
 `beforeSwitch` / `beforeTurn` 准备期间被用户 Stop 的发送，不再触发 `onTurnStarted` 或启动后端回合。发送已经启动但响应迟到时，取消只清理该次发送的 `runId`；同一会话中后续启动的替代回合不受影响。
 
 `permission-requested` 来自引擎结构化 `permission_denied`，只携带 `tool: string | null` 与 `path: string | null`，不携带给用户展示的 message。缺失、空白或非字符串字段为 `null`，非对象载荷不发布事件。它表示宿主可以展示授权卡片，**不保证引擎仍在运行或正在暂停等待**；插件仍须用回合终态收敛状态。
