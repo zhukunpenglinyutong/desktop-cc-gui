@@ -115,9 +115,10 @@ export interface FileChangedEvent extends NormalizedRuntimeEventBase {
   /** `touched`（适配器可确定的最弱事实）：引擎报告了针对该路径的修改类
    *  工具调用；不断言是创建、修改还是删除。 */
   change: "created" | "modified" | "deleted" | "touched";
-  /** 可选的展示用改动预览：引擎在该工具调用的参数里给出的 patch /
-   *  patch 原文（apply_patch / OMP hashline 的 `input`）/ 新内容 / old→new
-   *  文本，按固定上限截断（不是可直接应用的 patch）。
+  /** 可选的展示用改动预览：优先引擎结果里的 `details.diff`，否则取该
+   *  工具调用参数里的 patch / patch 原文（apply_patch / OMP hashline 的
+   *  `input`）/ 新内容 / old→new 文本，按固定上限截断（不是可直接应用的
+   *  patch）。
    *  缺失 = 引擎没有提供可展示的调用参数（例如只回报了结果里的路径）。
    *  同一工具调用的参数与结果分两条消息到达时，由宿主按 toolCallId 关联。 */
   preview?: string;

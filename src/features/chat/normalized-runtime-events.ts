@@ -155,7 +155,11 @@ export function normalizeEngineEvent(
         data.toolCallId !== null ? takePendingFileChange(event.runId, data.toolCallId) : null;
       const paths = collectFileChangePaths(args, data.result);
       if (paths.length === 0 && pending !== null) paths.push(...pending.paths);
-      const preview = (args ? fileChangePreview(args) : null) ?? pending?.preview ?? null;
+      const preview =
+        resultDetailsDiff(data.result) ??
+        (args ? fileChangePreview(args) : null) ??
+        pending?.preview ??
+        null;
       if (paths.length > 0) {
         const change = {
           ...base,
@@ -163,19 +167,23 @@ export function normalizeEngineEvent(
           change: "touched" as const,
           ...(preview === null ? {} : { preview }),
         };
-        if (paths.length === 1) {
-          return {
-            ...change,
-            path: workspaceRelative(paths[0], context.workspacePath),
-          };
+        // 参数里的相对路径与结果里的绝对路径可能指向同一文件，按归一化
+        // 后的工作区相对路径去重。
+        const relativePaths: string[] = [];
+        for (const path of paths) {
+          const relative = workspaceRelative(path, context.workspacePath);
+          if (!relativePaths.includes(relative)) relativePaths.push(relative);
+        }
+        if (relativePaths.length === 1) {
+          return { ...change, path: relativePaths[0] };
         }
         // 一次调用可改多个文件（hashline 的多 `[path#tag]` 段、apply_patch
         // 的多文件 patch）：每个路径一条事件，eventId 加稳定后缀避免被
         // 消费方当重复事件丢掉。
-        return paths.map((path, index) => ({
+        return relativePaths.map((path, index) => ({
           ...change,
           eventId: `${base.eventId}:file:${index}`,
-          path: workspaceRelative(path, context.workspacePath),
+          path,
         }));
       }
     }
@@ -327,10 +335,19 @@ function asRecord(value: unknown): Record<string, unknown> | null {
     : null;
 }
 
-/** OMP edit results report the authoritative target at result.details.path. */
+/** OMP edit results report the authoritative target at result.details.path
+ *  (`resolvedPath` for write); Claude-style results may carry neither. */
 function resultDetailsPath(result: unknown): string | null {
   const details = asRecord(asRecord(result)?.details);
-  return details ? firstString(details, PATH_ARGS) : null;
+  return details ? firstString(details, [...PATH_ARGS, "resolvedPath"]) : null;
+}
+
+/** Engine-reported post-edit diff (OMP edit `details.diff`), when it is a
+ *  displayable string; structured patch objects stay out of the event. */
+function resultDetailsDiff(result: unknown): string | null {
+  const details = asRecord(asRecord(result)?.details);
+  const diff = details ? stringArg(details, ["diff", "patch"]) : null;
+  return diff !== null && diff.trim() ? boundedPreview(diff) : null;
 }
 
 /** First arg whose value is a non-blank string, in declared priority order. */

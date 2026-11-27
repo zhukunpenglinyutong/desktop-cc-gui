@@ -2,9 +2,9 @@
 
 ## 0.3.27 — 2026-11-27
 
-- `FileChangedEvent` 新增可选 `preview`：编辑类工具（Edit / Write / MultiEdit / apply_patch / OMP hashline edit 等）的调用参数里若带 `patch` / `diff`、`input`（patch 原文）、`content`、`old_string` + `new_string` 或 `edits[]`，宿主会生成一段面向展示的改动预览（新内容按 `+` 行、old→new 按 `-`/`+` 行；不是可直接应用的 patch）。上限 8 KB，超出部分以「预览已截断」收尾。
+- `FileChangedEvent` 新增可选 `preview`：优先用引擎结果里的 `details.diff`；否则取编辑类工具（Edit / Write / MultiEdit / apply_patch / OMP hashline edit 等）调用参数里的 `patch` / `diff`、`input`（patch 原文）、`content`、`old_string` + `new_string` 或 `edits[]`，生成一段面向展示的改动预览（新内容按 `+` 行、old→new 按 `-`/`+` 行；不是可直接应用的 patch）。上限 8 KB，超出部分以「预览已截断」收尾。
 - 参数与结果分两条 `message` 到达的引擎按 `toolCallId` 关联：调用行先暂存预览，结果行合并成同一条 `file-changed`；没有可展示参数的调用保持无 `preview` 字段。
-- OMP hashline / apply_patch 的路径从 `input` 的 `[path#TAG]` 或 `*** … File:` 头解析；一次调用改多个文件时按文件各发一条 `file-changed`（`eventId` 带 `:file:<index>` 后缀），单文件调用形状不变。
+- OMP hashline / apply_patch 的路径从 `input` 的 `[path#TAG]` 或 `*** … File:` 头解析；结果里的 `details.path` / `details.resolvedPath` 同样识别。一次调用改多个文件时按工作区相对路径去重后各发一条 `file-changed`（`eventId` 带 `:file:<index>` 后缀），单文件调用形状不变。
 - 该字段走既有 `runtime.events.read` 权限；依赖它的插件声明 `sdkVersion: ">=0.3.27"`，旧宿主不会提供该字段。
 
 ## 0.3.26 — 2026-11-05

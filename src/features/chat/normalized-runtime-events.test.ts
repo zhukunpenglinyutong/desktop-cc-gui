@@ -220,6 +220,58 @@ describe("normalizeEngineEvent file-change preview", () => {
     expect((normalized as { preview?: string }).preview).toContain("*** Update File: src/x.ts");
   });
 
+  it("recognizes OMP write results that only report details.resolvedPath", () => {
+    expect(
+      normalizeEngineEvent(
+        toolMessage({
+          text: "write",
+          args: {
+            path: "privateDoc/jar/start-all-apps.sh",
+            content: "#!/bin/bash\necho ok",
+          },
+          toolCallId: "call-write-omp",
+        }),
+        context,
+      ),
+    ).toBeNull();
+
+    const settled = normalizeEngineEvent(
+      toolMessage({
+        text: "write",
+        result: {
+          details: { resolvedPath: "S:/work/project/privateDoc/jar/start-all-apps.sh" },
+        },
+        toolCallId: "call-write-omp",
+      }),
+      context,
+    );
+    expect(settled).toMatchObject({
+      kind: "file-changed",
+      path: "privateDoc/jar/start-all-apps.sh",
+      preview: "+#!/bin/bash\n+echo ok",
+    });
+  });
+
+  it("prefers the engine post-edit diff and dedupes relative/absolute paths", () => {
+    const normalized = normalizeEngineEvent(
+      toolMessage({
+        text: "edit",
+        args: { input: "[src/a.ts#1A2B]\nPUT 1.=1:\n+x" },
+        result: {
+          details: {
+            path: "S:/work/project/src/a.ts",
+            diff: " 1| keep\n-2| old\n+2| new",
+          },
+        },
+        toolCallId: "call-edit-diff",
+      }),
+      context,
+    );
+    expect(Array.isArray(normalized)).toBe(false);
+    expect(normalized).toMatchObject({ kind: "file-changed", path: "src/a.ts" });
+    expect((normalized as { preview?: string }).preview).toContain("-2| old\n+2| new");
+  });
+
   it("does not attach previews to non-mutating tools", () => {
     const normalized = normalizeEngineEvent(
       toolMessage({
