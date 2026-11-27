@@ -141,6 +141,10 @@ impl EventSink {
         })
     }
 
+    pub(crate) fn is_chat(&self) -> bool {
+        self.name == ENGINE_EVENT_NAME
+    }
+
     pub fn push(self: &Arc<Self>, event: Value) {
         let Ok(json) = serde_json::to_string(&event) else {
             return;

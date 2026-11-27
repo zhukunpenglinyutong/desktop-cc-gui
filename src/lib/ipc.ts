@@ -154,6 +154,7 @@ export interface Message {
     runId: string;
     toolUseId?: string | null;
     questions: QuestionSpec[];
+    permission?: { toolName: string; input?: Record<string, unknown> };
     status: "pending" | "answered" | "dismissed" | "cancelled";
     answers?: Record<string, string | string[]>;
   };

@@ -316,7 +316,53 @@ function QuestionOptions({
   );
 }
 
+function ToolPermissionCard({ message }: { message: Message }) {
+  const { t } = useTranslation();
+  const key = useScopedSessionKey();
+  const respond = useChatStore((s) => s.respondToQuestion);
+  const [submitting, setSubmitting] = useState(false);
+  const permission = message.question?.permission;
+  if (!permission) return null;
+
+  const decide = async (allow: boolean) => {
+    if (!key || submitting) return;
+    setSubmitting(true);
+    try {
+      await respond(key, message.seq, allow ? { decision: "allow" } : null);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="flex flex-col gap-2.5 text-left">
+      <div className="text-caption-1-medium text-text-primary">
+        {t("chat.grantTitleAction")} · <bdi>{permission.toolName}</bdi>
+      </div>
+      <pre dir="ltr" className="max-h-48 overflow-auto whitespace-pre-wrap break-all rounded-md bg-background-tertiary-default p-2 text-caption-1-regular text-text-primary">
+        {JSON.stringify(permission.input, null, 2)}
+      </pre>
+      <div className="flex justify-end gap-2">
+        <button type="button" disabled={submitting} onClick={() => void decide(false)}
+          className="rounded-md bg-background-tertiary-default px-2.5 py-1 text-caption-1-medium text-text-secondary disabled:opacity-50">
+          {t("chat.toolPermissionDeny")}
+        </button>
+        <button type="button" disabled={submitting} onClick={() => void decide(true)}
+          className="rounded-md bg-background-tertiary-default px-2.5 py-1 text-caption-1-medium text-text-primary disabled:opacity-50">
+          {t("chat.toolPermissionAllowOnce")}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export function QuestionCard({ message }: { message: Message }) {
+  return message.question?.permission
+    ? <ToolPermissionCard key={message.question.requestId} message={message} />
+    : <AskQuestionCard message={message} />;
+}
+
+function AskQuestionCard({ message }: { message: Message }) {
   const { t } = useTranslation();
   const rootRef = useRef<HTMLDivElement>(null);
   const question = message.question;
@@ -424,7 +470,20 @@ export function QuestionRecord({ message }: { message: Message }) {
   const { t } = useTranslation();
   const question = message.question;
   if (!question) return null;
-  const { status, questions } = question;
+  const { status, questions, permission } = question;
+  if (permission) {
+    const label = {
+      pending: "chat.questionWaiting",
+      answered: "chat.toolPermissionAllowed",
+      dismissed: "chat.toolPermissionDenied",
+      cancelled: "chat.questionCancelled",
+    } as const;
+    return (
+      <div className="rounded-xl border border-border-secondary bg-background-secondary-default px-3.5 py-2.5 text-caption-1-regular text-text-secondary">
+        {t("chat.grantTitleAction")} · <bdi>{permission.toolName}</bdi> · {t(label[status])}
+      </div>
+    );
+  }
   return (
     <div className="flex max-w-[85%] flex-col gap-1 rounded-xl border border-border-secondary bg-background-secondary-default px-3.5 py-2.5 text-left">
       <div className="flex items-center gap-1.5 text-caption-1-medium text-text-secondary">

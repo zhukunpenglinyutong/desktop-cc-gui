@@ -133,12 +133,12 @@ pub enum EngineEvent {
     /// rpc 长驻进程没有 EOF)。语义等价 EOF 收尾:有未恢复的尝试错误按
     /// Error 落定,否则 Done —— 由 dispatch 侧读 TurnState 决定。
     AgentSettled,
-    /// A control-protocol permission ask for any other tool. This client has
-    /// no approval UI, so the runner denies it in place — the same net
-    /// behavior as before the control protocol (headless cannot prompt).
-    ControlPermissionDeny {
+    /// A control-protocol permission request for a specific tool invocation.
+    ControlPermission {
         request_id: String,
         tool_name: String,
+        tool_use_id: Option<String>,
+        input: Value,
     },
     /// An MCP `elicitation` control_request (the MCP server asked the user
     /// for form input or a confirmation). This client has no elicitation

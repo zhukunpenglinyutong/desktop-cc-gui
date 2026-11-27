@@ -85,7 +85,14 @@ pub struct ProcessRegistry(
     Mutex<HashSet<String>>,
     /// CodeBuddy children between turns, excluded from active-run accounting.
     pub(crate) Mutex<HashMap<String, super::codebuddy::IdleProcess>>,
+    pub(crate) Mutex<HashMap<String, tokio::sync::mpsc::Sender<ToolPermissionDecision>>>,
 );
+
+pub(crate) struct ToolPermissionDecision {
+    pub(crate) request_id: String,
+    pub(crate) allow: bool,
+    pub(crate) reply: oneshot::Sender<Result<(), String>>,
+}
 
 pub(crate) struct SessionEditGuard<'a> {
     registry: &'a ProcessRegistry,
@@ -244,6 +251,27 @@ impl ProcessRegistry {
             .filter(|run_id| live.contains(run_id.as_str()))
             .cloned()
             .collect()
+    }
+
+    pub(crate) async fn answer_tool_permission(
+        &self,
+        run_id: &str,
+        request_id: String,
+        answer: Option<&Value>,
+    ) -> Result<(), String> {
+        let allow = match answer {
+            None => false,
+            Some(value) if *value == serde_json::json!({ "decision": "allow" }) => true,
+            Some(_) => return Err("invalid tool permission decision".into()),
+        };
+        let sender = self.5.lock()
+            .map_err(|_| "tool permission state is poisoned".to_string())?
+            .get(run_id).cloned()
+            .ok_or_else(|| "tool permission request has ended".to_string())?;
+        let (reply, response) = oneshot::channel();
+        sender.send(ToolPermissionDecision { request_id, allow, reply }).await
+            .map_err(|_| "tool permission request has ended".to_string())?;
+        response.await.map_err(|_| "tool permission request has ended".to_string())?
     }
 
     /// Write one NDJSON control line to a live run's interactive stdin.

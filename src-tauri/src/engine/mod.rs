@@ -1699,6 +1699,11 @@ pub async fn answer_question(
         .get(&request_id)
         .cloned()
         .ok_or_else(|| "question is no longer pending".to_string())?;
+    if input.get("claudePermission").is_some() {
+        return state.processes
+            .answer_tool_permission(&entry.run_id, request_id, answers.as_ref())
+            .await;
+    }
     if let Some(context) = input.get("kimiAcp") {
         let frame = kimi_acp::answer_frame(context, answers.as_ref())?;
         state
@@ -1897,6 +1902,7 @@ pub async fn answer_question(
         }
         return Ok(());
     }
+    let input = input.get("claudeQuestion").cloned().unwrap_or(input);
     let mut updated = match input {
         Value::Object(map) => map,
         // Defensive: a non-object input cannot merge answers; rebuild the

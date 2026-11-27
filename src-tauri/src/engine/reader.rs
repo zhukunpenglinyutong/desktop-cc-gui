@@ -12,6 +12,7 @@ use super::registry::{kill_process_group, FollowupPrefs, ProcessRegistry};
 use super::Engine;
 use crate::event_sink;
 use serde_json::Value;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
@@ -38,6 +39,7 @@ pub(crate) const POST_EXIT_DRAIN: std::time::Duration = std::time::Duration::fro
 /// `BufReader::lines` has no limit, so a runaway engine writing without
 /// newlines would buffer the line whole and OOM the host.
 pub(crate) const MAX_LINE_BYTES: usize = 16 * 1024 * 1024;
+const TOOL_PERMISSION_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(300);
 /// Stdin payload writer: engines consuming stream-json stdin get the payload,
 /// then EOF (drop closes the pipe) — unless `keep_open`, where the handle is
 /// returned instead so control responses can follow on the same pipe.
@@ -193,6 +195,8 @@ pub(crate) struct TurnState {
     pub(crate) saw_done: bool,
     pub(crate) saw_error: bool,
     attempt_error: Option<String>,
+    permission_deadlines: HashMap<String, tokio::time::Instant>,
+    resolved_denials: HashSet<String>,
     // NOTE: TurnState lives for the whole process (one run_reader per
     // spawn), so once saw_error is set every later event in this process
     // is suppressed. That is correct for the current one-process-per-turn
@@ -223,6 +227,8 @@ impl TurnState {
             saw_done: false,
             saw_error: false,
             attempt_error: None,
+            permission_deadlines: HashMap::new(),
+            resolved_denials: HashSet::new(),
             saw_any_output: false,
             pending_terminal: None,
             exit_confirmed: false,
@@ -398,6 +404,53 @@ impl TurnCore {
         }
     }
 
+    async fn resolve_tool_permission(
+        &self,
+        state: &mut TurnState,
+        request_id: &str,
+        decision: Option<bool>,
+    ) -> Result<(), String> {
+        let entry = self.registry.get(&self.run_id)
+            .ok_or_else(|| "tool permission request has ended".to_string())?;
+        let pending = entry.questions.lock()
+            .map_err(|_| "question state is poisoned".to_string())?
+            .get(request_id).cloned()
+            .ok_or_else(|| "tool permission request is no longer pending".to_string())?;
+        let input = pending.get("claudePermission")
+            .ok_or_else(|| "request is not a tool permission".to_string())?;
+        let line = super::claude::tool_permission_response(
+            request_id,
+            (decision == Some(true)).then_some(input),
+        );
+        self.registry.write_line(&self.run_id, line.to_string()).await?;
+        if let Ok(mut questions) = entry.questions.lock() {
+            questions.remove(request_id);
+        }
+        state.permission_deadlines.remove(request_id);
+        if decision == Some(false) {
+            if let Some(id) = pending["toolUseId"].as_str().filter(|id| !id.trim().is_empty()) {
+                state.resolved_denials.insert(id.to_string());
+            }
+        }
+        if let Some(allow) = decision {
+            state.push(
+                &self.sink,
+                &self.run_id,
+                &self.engine_id,
+                "question_settled",
+                serde_json::json!({
+                    "requestId": request_id,
+                    "decision": if allow { "allow" } else { "deny" },
+                }),
+            );
+        } else {
+            self.dispatch_event(state, EngineEvent::QuestionSettled {
+                request_id: request_id.to_string(),
+            });
+        }
+        Ok(())
+    }
+
     pub(crate) fn dispatch_event(&self, state: &mut TurnState, event: EngineEvent) {
         self.dispatch(state, event, false);
     }
@@ -410,6 +463,24 @@ impl TurnCore {
         // the conversation strands under its provisional key.
         if (state.saw_done || state.saw_error) && !matches!(event, EngineEvent::SessionId(_)) {
             return;
+        }
+        if matches!(event, EngineEvent::Done { .. } | EngineEvent::Error(_)) {
+            state.resolved_denials.clear();
+        }
+        if matches!(event, EngineEvent::Done { .. } | EngineEvent::Error(_))
+            && !state.permission_deadlines.is_empty()
+        {
+            let expired = self.registry.get(&self.run_id).map_or_else(Vec::new, |entry| {
+                let Ok(mut questions) = entry.questions.lock() else {
+                    return Vec::new();
+                };
+                state.permission_deadlines.drain()
+                    .filter_map(|(id, _)| questions.remove(&id).map(|_| id))
+                    .collect()
+            });
+            for request_id in expired {
+                self.dispatch_event(state, EngineEvent::QuestionSettled { request_id });
+            }
         }
         // Side record for the run-activity panel (pulled on demand, never
         // streamed): when the CLI last spoke and what the run is doing.
@@ -605,6 +676,9 @@ impl TurnCore {
                 message,
                 tool_use_id,
             } => {
+                if tool_use_id.as_ref().is_some_and(|id| state.resolved_denials.contains(id)) {
+                    return;
+                }
                 // Not terminal either: the CLI works around the denial and
                 // the turn continues — the UI offers the grant alongside.
                 state.gen_end();
@@ -636,6 +710,8 @@ impl TurnCore {
                             serde_json::json!({
                                 "codebuddyQuestion": { "input": input, "toolUseId": tool_use_id },
                             })
+                        } else if self.engine_id == "claude" {
+                            serde_json::json!({ "claudeQuestion": input })
                         } else {
                             input.clone()
                         };
@@ -759,6 +835,7 @@ impl TurnCore {
                 self.dispatch_event(state, event);
             }
             EngineEvent::QuestionSettled { request_id } => {
+                state.permission_deadlines.remove(&request_id);
                 if let Some(entry) = self.registry.get(&self.run_id) {
                     if let Ok(mut questions) = entry.questions.lock() {
                         questions.remove(&request_id);
@@ -772,31 +849,53 @@ impl TurnCore {
                     serde_json::json!({ "requestId": request_id }),
                 );
             }
-            EngineEvent::ControlPermissionDeny {
+            EngineEvent::ControlPermission {
                 request_id,
                 tool_name,
+                tool_use_id,
+                input,
             } => {
-                // No approval UI in this client: deny in place so the CLI is
-                // not left parked until its deadline. Net behavior matches
-                // the pre-control-protocol headless run (ask -> denial, the
-                // model works around it). Best effort: if the pipe is gone
-                // the CLI is already dead and its own deadline settles.
+                if self.engine_id == "claude"
+                    && self.sink.is_chat()
+                    && !tool_name.trim().is_empty()
+                    && input.is_object()
+                {
+                    if let Some(entry) = self.registry.get(&self.run_id) {
+                        if let Ok(mut questions) = entry.questions.lock() {
+                            if questions.contains_key(&request_id) {
+                                return;
+                            }
+                            questions.insert(
+                                request_id.clone(),
+                                serde_json::json!({
+                                    "claudePermission": input,
+                                    "toolUseId": tool_use_id,
+                                }),
+                            );
+                            drop(questions);
+                            state.permission_deadlines.insert(
+                                request_id.clone(),
+                                tokio::time::Instant::now() + TOOL_PERMISSION_TIMEOUT,
+                            );
+                            state.gen_end();
+                            state.push(
+                                &self.sink,
+                                &self.run_id,
+                                &self.engine_id,
+                                "question",
+                                serde_json::json!({
+                                    "requestId": request_id,
+                                    "toolUseId": tool_use_id,
+                                    "permission": { "toolName": tool_name, "input": input },
+                                }),
+                            );
+                            return;
+                        }
+                    }
+                }
                 let registry = Arc::clone(&self.registry);
                 let run_id = self.run_id.clone();
-                let line = serde_json::json!({
-                    "type": "control_response",
-                    "response": {
-                        "subtype": "success",
-                        "request_id": request_id,
-                        "response": {
-                            "behavior": "deny",
-                            "message": format!(
-                                "This client cannot show tool-permission prompts; the {tool_name} call was denied. Work around it, or tell the user what you would have run so they can approve it another way."
-                            ),
-                        },
-                    },
-                })
-                .to_string();
+                let line = super::claude::tool_permission_response(&request_id, None).to_string();
                 tokio::spawn(async move {
                     let _ = registry.write_line(&run_id, line).await;
                 });
@@ -975,6 +1074,11 @@ impl Drop for RunContext {
     fn drop(&mut self) {
         // Also runs when the reader is aborted during interrupt or shutdown.
         super::activity::end(&self.core.run_id);
+        if self.core.engine_id == "claude" && self.core.sink.is_chat() {
+            if let Ok(mut senders) = self.core.registry.5.lock() {
+                senders.remove(&self.core.run_id);
+            }
+        }
         cleanup_staged_files(&self.cleanup_files);
         if let Some(restore) = &self.mcp_restore {
             restore.restore();
@@ -1273,9 +1377,39 @@ pub(crate) async fn run_process_reader(
     let mut child_exited = false;
     let mut idle_exit = None;
     let mut state = begin_process_turn(&ctx);
+    let mut decisions = if ctx.core.engine_id == "claude" && ctx.core.sink.is_chat() {
+        let (sender, receiver) = tokio::sync::mpsc::channel(8);
+        if let Ok(mut senders) = ctx.core.registry.5.lock() {
+            senders.insert(ctx.core.run_id.clone(), sender);
+        }
+        Some(receiver)
+    } else {
+        None
+    };
     'read: loop {
+        let deadline = state.permission_deadlines.iter()
+            .min_by_key(|(_, deadline)| **deadline)
+            .map(|(id, deadline)| (id.clone(), *deadline));
         let read = tokio::select! {
             line = read_line_capped(&mut reader, &mut line_buf) => line,
+            Some(decision) = async { decisions.as_mut()?.recv().await }, if !child_exited => {
+                let result = ctx.core.resolve_tool_permission(
+                    &mut state, &decision.request_id, Some(decision.allow),
+                ).await;
+                let _ = decision.reply.send(result);
+                continue;
+            }
+            Some(request_id) = async {
+                let (id, deadline) = deadline?;
+                tokio::time::sleep_until(deadline).await;
+                Some(id)
+            }, if !child_exited => {
+                if let Err(error) = ctx.core.resolve_tool_permission(&mut state, &request_id, None).await {
+                    ctx.dispatch_event(&mut state, EngineEvent::Error(error));
+                    break;
+                }
+                continue;
+            },
             _ = &mut exit_rx, if !child_exited => {
                 child_exited = true;
                 continue;

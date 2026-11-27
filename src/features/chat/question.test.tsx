@@ -3,7 +3,9 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import i18n from "@/lib/i18n";
 import { ipc, type Message } from "@/lib/ipc";
-import { QuestionCard } from "./components/QuestionCard";
+import * as notifications from "@/lib/notifications";
+import { QuestionDock } from "./components/QuestionDock";
+import { QuestionCard, QuestionRecord } from "./components/QuestionCard";
 import { useChatStore } from "./store";
 import { handleEngineEvents, type EngineEventDeps } from "./store/engine-events";
 import { sessionKey } from "./store/persistence";
@@ -360,6 +362,65 @@ describe("QuestionCard free-form Other", () => {
   afterEach(() => {
     act(() => root.unmount());
     container.remove();
+  });
+
+  it.each([
+    ["仅允许本次", { decision: "allow" }, "answered"],
+    ["拒绝", null, "dismissed"],
+  ] as const)("tool approval sends the explicit decision for %s", async (label, decision, status) => {
+    const notify = vi.spyOn(notifications, "notifyQuestion").mockResolvedValue();
+    const event = {
+      ...questionEvent(),
+      data: {
+        requestId: "approval-1",
+        permission: { toolName: "Bash", input: { command: "pwd" } },
+      },
+    };
+    handleEngineEvents([event], deps());
+    expect(notify).toHaveBeenCalledExactlyOnceWith(KEY, "Bash");
+    notify.mockRestore();
+    const message = cardRows().at(-1)!;
+    act(() => root.render(<QuestionCard message={message} />));
+    expect(container.textContent).toContain("Bash");
+    expect(container.textContent).toContain("pwd");
+    expect(container.querySelectorAll("button")).toHaveLength(2);
+    await act(async () => buttonByText(label)?.click());
+    expect(ipc.answerQuestion).toHaveBeenCalledExactlyOnceWith("run-1", "approval-1", decision);
+    expect(cardRows().at(-1)?.question?.status).toBe("pending");
+    const observer = useChatStore.getState().bySession;
+    const settled = {
+      ...settledEvent("approval-1"),
+      data: { requestId: "approval-1", decision: decision?.decision ?? "deny" },
+    };
+    for (const client of [useChatStore.getState().bySession, observer]) {
+      useChatStore.setState({ bySession: client });
+      handleEngineEvents([settled], deps());
+      expect(cardRows().at(-1)?.question?.status).toBe(status);
+      expect(cardRows().at(-1)?.question?.permission).toEqual({ toolName: "Bash" });
+    }
+    act(() => root.render(<QuestionRecord message={cardRows().at(-1)!} />));
+    expect(container.textContent).toContain("Bash");
+    expect(container.textContent).not.toContain("pwd");
+  });
+
+  it("queues same-turn approvals in arrival order and scrubs expired details", () => {
+    const permissionEvent = (requestId: string, command: string) => ({
+      ...questionEvent(),
+      data: { requestId, permission: { toolName: "Bash", input: { command } } },
+    });
+    act(() => {
+      handleEngineEvents([permissionEvent("first", "first command"),
+        permissionEvent("second", "second command")], deps());
+      root.render(<QuestionDock />);
+    });
+    expect(container.textContent).toContain("待审批 2 项");
+    expect(container.textContent).toContain("first command");
+    expect(container.textContent).not.toContain("second command");
+    act(() => handleEngineEvents([settledEvent("first")], deps()));
+    expect(container.textContent).toContain("待审批 1 项");
+    expect(container.textContent).toContain("second command");
+    expect(cardRows().find((m) => m.question?.requestId === "first")?.question?.permission)
+      .toEqual({ toolName: "Bash" });
   });
 
   it("a single-select question offers the free-form input; a multi-select one does not", () => {
