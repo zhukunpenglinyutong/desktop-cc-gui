@@ -1,4 +1,5 @@
 import { useMemo } from "react";
+import { useTranslation } from "react-i18next";
 import { useChatStore } from "../store";
 import { centerColumnClass } from "../chat-column";
 import { useScopedSessionKey } from "../split/session-scope";
@@ -10,16 +11,32 @@ import { memoizeMessageHistory } from "./memoize-message-history";
  * the composer while a question is pending, so both the footer (to hide the
  * composer) and the dock itself resolve it through this hook.
  */
-export function usePendingQuestion() {
+function usePendingQuestionQueue() {
   const key = useScopedSessionKey();
   const pendingQuestion = useMemo(() => memoizeMessageHistory((messages) => {
     for (let i = messages.length - 1; i >= 0; i--) {
       const m = messages[i];
-      if (m.role === "question" && m.question?.status === "pending") return m;
+      if (m.role !== "question" || m.question?.status !== "pending") continue;
+      if (!m.question.permission) return { message: m, count: 0 };
+      let message = m;
+      let count = 1;
+      for (let j = i - 1; j >= 0; j--) {
+        const candidate = messages[j];
+        if (candidate.question?.permission && candidate.question.status === "pending" &&
+          candidate.question.runId === m.question.runId) {
+          message = candidate;
+          count++;
+        }
+      }
+      return { message, count };
     }
     return null;
   }), []);
   return useChatStore((s) => key ? pendingQuestion(s.bySession[key]?.messages) : null);
+}
+
+export function usePendingQuestion() {
+  return usePendingQuestionQueue()?.message ?? null;
 }
 
 /**
@@ -28,13 +45,19 @@ export function usePendingQuestion() {
  * around, and the only exits are answering, the free-form input, or ignore.
  */
 export function QuestionDock() {
-  const pending = usePendingQuestion();
+  const pending = usePendingQuestionQueue();
+  const { t } = useTranslation();
   const wide = useChatStore((s) => s.wideLayout);
   if (!pending) return null;
   return (
     <div className={centerColumnClass(wide)}>
       <div className="rounded-xl border border-border-secondary bg-background-secondary-default px-3.5 py-3 shadow-lg">
-        <QuestionCard message={pending} />
+        {pending.count > 0 && (
+          <div className="mb-2 text-caption-1-regular text-text-secondary" role="status">
+            {t("chat.toolPermissionPending", { count: pending.count })}
+          </div>
+        )}
+        <QuestionCard message={pending.message} />
       </div>
     </div>
   );

@@ -456,10 +456,10 @@ export function flushInternalFrameDelta(runId: string): string {
 }
 
 function dispatchNormalized(event: ChatEngineEvent, terminal?: EngineTerminalFact): void {
-  // Plan-review kinds ride the same run envelope but have no runtime-event
-  // projection; skip them so the transport normalizer only sees kinds from
-  // its own union (normalizeEngineEvent returns null for them anyway).
+  // Live tool permission details belong to the approval card. Plan-review
+  // events have no runtime-event projection.
   if (
+    (event.kind === "question" && (event.data as { permission?: unknown } | null)?.permission) ||
     event.kind === "plan_draft" ||
     event.kind === "plan_review" ||
     event.kind === "plan_review_settled"
@@ -1555,6 +1555,38 @@ function sendAskTerminator(loop: AskLoop, key: string, deps: EngineEventDeps) {
     .catch((error) => patchSession(deps.set, key, { error: errorText(error) }));
 }
 
+function onToolPermission(
+  event: ChatEngineEvent,
+  key: string,
+  deps: EngineEventDeps,
+  requestId: string,
+  permission: NonNullable<NonNullable<Message["question"]>["permission"]>,
+  toolUseId?: string | null,
+) {
+  if (event.engine !== "claude" || !permission.toolName || !permission.input) return;
+  let added = false;
+  updateLiveMessages(deps, key, event, (messages) => {
+    if (messages.some((m) => m.question?.permission &&
+      m.question.runId === event.runId && m.question.requestId === requestId)) return messages;
+    added = true;
+    return [...messages, {
+      seq: (messages.at(-1)?.seq ?? 0) + 1,
+      role: "question",
+      text: permission.toolName,
+      ts: new Date().toISOString(),
+      question: {
+        runId: event.runId,
+        requestId,
+        toolUseId,
+        permission,
+        questions: [],
+        status: "pending",
+      },
+    }];
+  });
+  if (added) void notifyQuestion(key, permission.toolName);
+}
+
 function onQuestion(
   event: ChatEngineEvent,
   key: string,
@@ -1564,10 +1596,17 @@ function onQuestion(
     requestId?: string;
     toolUseId?: string | null;
     input?: { questions?: QuestionSpec[]; extui?: { method?: string } };
+    permission?: NonNullable<Message["question"]>["permission"];
   };
   const requestId = data.requestId?.trim();
+  const permission = data.permission;
+  if (!requestId) return;
+  if (permission) {
+    onToolPermission(event, key, deps, requestId, permission, data.toolUseId);
+    return;
+  }
   const questions = data.input?.questions;
-  if (!requestId || !Array.isArray(questions) || questions.length === 0) return;
+  if (!Array.isArray(questions) || questions.length === 0) return;
   const method = data.input?.extui?.method;
   // The CLI's free-form editor, opened by a multi-select submit: the picked
   // labels travel as its text, so it must not surface as another card.
@@ -1671,10 +1710,8 @@ function onQuestion(
   }
 }
 
-/** Fold unflushed stream chunks into settled rows, then run a plan-card
- *  transform, so a plan card lands after the text streamed before it (the
- *  same fold the question/grant cards do). */
-function updatePlanMessages(
+/** Fold unflushed chunks before applying a live card update. */
+function updateLiveMessages(
   deps: EngineEventDeps,
   key: string,
   event: ChatEngineEvent,
@@ -1717,7 +1754,7 @@ function onPlanDraft(event: ChatEngineEvent, key: string, deps: EngineEventDeps)
   const planId = typeof data.planId === "string" ? data.planId.trim() : "";
   const text = typeof data.text === "string" ? data.text : "";
   if (!planId) return;
-  updatePlanMessages(deps, key, event, (messages) =>
+  updateLiveMessages(deps, key, event, (messages) =>
     applyPlanDraft(messages, {
       planId,
       text,
@@ -1746,7 +1783,7 @@ function onPlanReview(event: ChatEngineEvent, key: string, deps: EngineEventDeps
   const statusOf = () =>
     planRevisionStatus(deps.get().bySession[key]?.messages ?? [], record.planId, record.revision);
   const before = statusOf();
-  updatePlanMessages(deps, key, event, (messages) =>
+  updateLiveMessages(deps, key, event, (messages) =>
     applyPlanReview(messages, record),
   );
   // Notify a revision once, when it first enters review (new, or upgraded
@@ -1772,7 +1809,7 @@ function onPlanReviewSettled(
   const revision = typeof data.revision === "number" ? data.revision : -1;
   const status = data.status as PlanReviewStatus;
   if (!planId || revision < 0 || !PLAN_STATUSES.includes(status)) return;
-  updatePlanMessages(deps, key, event, (messages) =>
+  updateLiveMessages(deps, key, event, (messages) =>
     applyPlanSettled(messages, planId, revision, status),
   );
 }
@@ -1782,11 +1819,22 @@ function onQuestionSettled(
   key: string,
   deps: EngineEventDeps,
 ) {
-  const requestId = (event.data as { requestId?: string })?.requestId?.trim();
+  const data = event.data as { requestId?: string; decision?: "allow" | "deny" } | null;
+  const requestId = data?.requestId?.trim();
   if (!requestId) return;
-  patchQuestionByRequestId(deps.set, key, requestId, (question) =>
-    question.status === "pending" ? { ...question, status: "cancelled" as const } : question,
-  );
+  patchQuestionByRequestId(deps.set, key, requestId, (question) => {
+    if (question.status !== "pending") return question;
+    if (question.permission) {
+      if (question.runId !== event.runId) return question;
+      return {
+        ...question,
+        status: data?.decision === "allow" ? "answered" :
+          data?.decision === "deny" ? "dismissed" : "cancelled",
+        permission: { toolName: question.permission.toolName },
+      };
+    }
+    return data?.decision ? question : { ...question, status: "cancelled" };
+  });
   // A settled frame ends its round: whatever the CLI was waiting on is gone.
   if (askLoops.get(key)?.requestId === requestId) askLoops.delete(key);
 }
@@ -2093,6 +2141,8 @@ export function handleEngineEvents(
       event.kind === "plan_draft" ||
       event.kind === "plan_review" ||
       event.kind === "plan_review_settled";
+    const isToolPermissionDecision = event.kind === "question_settled" &&
+      Boolean((event.data as { decision?: string } | null)?.decision);
     // EOF stderr/failure can follow Done, and the turn's final usage report
     // can trail either terminal event. Keep those, but never adopt the run
     // again or drain its queue a second time.
@@ -2101,6 +2151,7 @@ export function handleEngineEvents(
       !(
         event.kind === "usage" ||
         event.kind === "plan_review_settled" ||
+        isToolPermissionDecision ||
         (settled === "done" &&
           (event.kind === "warn" ||
             event.kind === "error" ||
@@ -2166,7 +2217,7 @@ export function handleEngineEvents(
       // is per computer-use send (messaging.ts); the call is idempotent.
       void ipc.computerUseSetActive?.(false)?.catch(() => {});
     }
-    if (!isPlanEvent &&
+    if (!isPlanEvent && !isToolPermissionDecision &&
       state.bySession[key]?.settledRunIds?.includes(event.runId)) {
       // A usage report trailing the terminal event carries the turn's final
       // occupancy. Re-read it from the transcript instead of patching the

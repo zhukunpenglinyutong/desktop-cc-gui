@@ -35,6 +35,18 @@ struct PendingTool {
     tool_call_id: Option<String>,
 }
 
+/// Reply using the exact input parked by the host. A dismissal denies the call.
+pub(crate) fn tool_permission_response(request_id: &str, input: Option<&Value>) -> Value {
+    let response = match input {
+        Some(input) => serde_json::json!({ "behavior": "allow", "updatedInput": input }),
+        None => serde_json::json!({ "behavior": "deny", "message": "Tool permission was not granted." }),
+    };
+    serde_json::json!({
+        "type": "control_response",
+        "response": { "subtype": "success", "request_id": request_id, "response": response },
+    })
+}
+
 impl ClaudeEngine {
     pub fn new() -> Self {
         Self {
@@ -552,10 +564,8 @@ impl Engine for ClaudeEngine {
             }
             "control_request" => {
                 // SDK control protocol asks. AskUserQuestion surfaces to the
-                // UI; every other ask is answered in place (deny for tool
-                // permissions, decline for MCP elicitation, error for
-                // anything unrecognized) — every request must get exactly
-                // one response or the CLI parks on it forever.
+                // UI; tool approvals are dispatched separately. MCP elicitation
+                // and unknown subtypes receive an immediate response.
                 let request = value.get("request");
                 let subtype = request
                     .and_then(|r| r.get("subtype"))
@@ -587,9 +597,17 @@ impl Engine for ClaudeEngine {
                                 .unwrap_or(Value::Null),
                         });
                     } else {
-                        out.push(EngineEvent::ControlPermissionDeny {
+                        out.push(EngineEvent::ControlPermission {
                             request_id: request_id.to_string(),
                             tool_name,
+                            tool_use_id: request
+                                .and_then(|r| r.get("tool_use_id"))
+                                .and_then(Value::as_str)
+                                .map(str::to_string),
+                            input: request
+                                .and_then(|r| r.get("input"))
+                                .cloned()
+                                .unwrap_or(Value::Null),
                         });
                     }
                 } else if subtype == "elicitation" {
@@ -1189,24 +1207,41 @@ mod tests {
     }
 
     #[test]
-    fn other_control_asks_are_denied_in_place() {
+    fn tool_permission_response_is_scoped_to_one_request() {
+        let input = serde_json::json!({ "command": "pwd", "description": "Show working directory" });
+        let allow = super::tool_permission_response("approval-1", Some(&input));
+        assert_eq!(allow["response"]["request_id"], "approval-1");
+        assert_eq!(
+            allow["response"]["response"],
+            serde_json::json!({ "behavior": "allow", "updatedInput": input })
+        );
+        let deny = super::tool_permission_response("approval-1", None);
+        assert_eq!(deny["response"]["response"]["behavior"], "deny");
+        assert!(deny["response"]["response"].get("updatedInput").is_none());
+    }
+
+    #[test]
+    fn tool_permission_request_preserves_input_for_approval() {
         let line = serde_json::json!({
             "type": "control_request",
             "request_id": "req-2",
-            "request": { "subtype": "can_use_tool", "tool_name": "Bash", "input": {} }
+            "request": { "subtype": "can_use_tool", "tool_name": "Bash", "input": { "command": "pwd" } }
         })
         .to_string();
         let mut out = Vec::new();
         ClaudeEngine::new().parse_line(&line, &mut out);
         match &out[..] {
-            [EngineEvent::ControlPermissionDeny {
+            [EngineEvent::ControlPermission {
                 request_id,
                 tool_name,
+                input,
+                ..
             }] => {
                 assert_eq!(request_id, "req-2");
                 assert_eq!(tool_name, "Bash");
+                assert_eq!(input, &serde_json::json!({ "command": "pwd" }));
             }
-            other => panic!("expected control deny event, got {other:?}"),
+            other => panic!("expected tool permission request, got {other:?}"),
         }
     }
 

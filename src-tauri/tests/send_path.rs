@@ -717,6 +717,111 @@ async fn codebuddy_question_round(
     (captured, [frame(1), frame(2), frame(3)])
 }
 
+#[cfg(unix)]
+#[tokio::test]
+#[allow(clippy::await_holding_lock)]
+async fn claude_tool_permission_round_trips_through_stdin() {
+    let _env_guard = ENV_LOCK.lock().unwrap();
+    let home = temp_home("claude-approval");
+    let bin_dir = home.join("bin");
+    let workspace = home.join("ws");
+    std::fs::create_dir_all(&bin_dir).unwrap();
+    std::fs::create_dir_all(&workspace).unwrap();
+    let bin = bin_dir.join("claude");
+    std::fs::write(&bin, r#"#!/bin/sh
+read -r prompt
+echo '{"type":"system","subtype":"init","session_id":"fake-approval"}'
+echo '{"type":"control_request","request_id":"approve","request":{"subtype":"can_use_tool","tool_name":"Bash","input":{"command":"pwd"}}}'
+echo '{"type":"control_request","request_id":"deny","request":{"subtype":"can_use_tool","tool_name":"Glob","tool_use_id":"glob-request","input":{"pattern":"*.txt"}}}'
+read -r allow
+printf '%s
+' "$allow" > allow.json
+read -r deny
+printf '%s
+' "$deny" > deny.json
+echo '{"type":"control_request","request_id":"cancel","request":{"subtype":"can_use_tool","tool_name":"Read","input":{"file_path":"/tmp/example"}}}'
+echo '{"type":"control_cancel_request","request_id":"cancel"}'
+echo '{"type":"control_request","request_id":"expire","request":{"subtype":"can_use_tool","tool_name":"Bash","input":{"command":"pwd"}}}'
+read -r expire
+printf '%s\n' "$expire" > expire.json
+echo '{"type":"control_request","request_id":"unfinished","request":{"subtype":"can_use_tool","tool_name":"Bash","input":{"command":"pwd"}}}'
+echo '{"type":"result","subtype":"success","session_id":"fake-approval","permission_denials":[{"tool_name":"Glob","tool_use_id":"glob-request","tool_input":{"path":"/tmp/request"}},{"tool_name":"Read","tool_use_id":"independent","tool_input":{"file_path":"/tmp/other"}},{"tool_name":"Glob","tool_input":{"path":"/tmp/no-id"}}],"usage":{"input_tokens":1,"output_tokens":1}}'
+"#).unwrap();
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o755)).unwrap();
+    std::env::set_var("PATH", format!("{}:/usr/bin:/bin", bin_dir.display()));
+    let (app, events) = build_app(&home);
+    let result = engine::send_message(
+        app.state(), "claude".into(), workspace.to_string_lossy().into(),
+        None, "check permissions".into(), Vec::new(), None, None, None, None,
+        Some("auto".into()), None, None, None, None,
+    ).await.unwrap();
+    let wait_for = |kind: &'static str, id: Option<&'static str>| {
+        let events = Arc::clone(&events);
+        async move {
+            let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(5);
+            loop {
+                if let Some(event) = events.lock().unwrap().iter().find(|event| {
+                    event["kind"] == kind && id.is_none_or(|id| event["data"]["requestId"] == id)
+                }).cloned() {
+                    return event;
+                }
+                assert!(tokio::time::Instant::now() < deadline, "missing {kind} {id:?}");
+                tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+            }
+        }
+    };
+    let ask = wait_for("question", Some("approve")).await;
+    assert_eq!(ask["data"]["permission"], serde_json::json!({
+        "toolName": "Bash", "input": { "command": "pwd" },
+    }));
+    let denied_ask = wait_for("question", Some("deny")).await;
+    assert_eq!(denied_ask["data"]["toolUseId"], "glob-request");
+    let run = result.run_id;
+    assert!(engine::answer_question(app.state(), run.clone(), "approve".into(),
+        Some(serde_json::json!({ "decision": "allow", "updatedInput": {} })),
+    ).await.is_err());
+    let (first, second) = tokio::join!(
+        engine::answer_question(app.state(), run.clone(), "approve".into(),
+            Some(serde_json::json!({ "decision": "allow" }))),
+        engine::answer_question(app.state(), run.clone(), "approve".into(),
+            Some(serde_json::json!({ "decision": "allow" }))),
+    );
+    assert_ne!(first.is_ok(), second.is_ok());
+    let allowed = wait_for("question_settled", Some("approve")).await;
+    assert_eq!(allowed["data"], serde_json::json!({ "requestId": "approve", "decision": "allow" }));
+    engine::answer_question(app.state(), run.clone(), "deny".into(), None).await.unwrap();
+    wait_for("question_settled", Some("cancel")).await;
+    assert!(engine::answer_question(app.state(), run.clone(), "cancel".into(),
+        Some(serde_json::json!({ "decision": "allow" })),
+    ).await.is_err());
+    wait_for("question", Some("expire")).await;
+    tokio::time::pause();
+    tokio::time::advance(std::time::Duration::from_secs(301)).await;
+    tokio::time::resume();
+    let expired = wait_for("question_settled", Some("expire")).await;
+    assert_eq!(expired["data"], serde_json::json!({ "requestId": "expire" }));
+    wait_for("question_settled", Some("unfinished")).await;
+    wait_for("done", None).await;
+    let frame = |file| -> Value {
+        serde_json::from_str(&std::fs::read_to_string(workspace.join(file)).unwrap()).unwrap()
+    };
+    assert_eq!(frame("allow.json")["response"]["response"], serde_json::json!({
+        "behavior": "allow", "updatedInput": { "command": "pwd" },
+    }));
+    assert_eq!(frame("deny.json")["response"]["response"]["behavior"], "deny");
+    assert_eq!(frame("expire.json")["response"]["response"]["behavior"], "deny");
+    let events = events.lock().unwrap();
+    let denials: Vec<_> = events.iter()
+        .filter(|event| event["kind"] == "permission_denied")
+        .map(|event| &event["data"]["toolUseId"])
+        .collect();
+    assert_eq!(denials, vec![&serde_json::json!("independent"), &Value::Null]);
+    assert_eq!(events.iter().filter(|event| {
+        event["kind"] == "question_settled" && event["data"]["requestId"] == "approve"
+    }).count(), 1);
+}
+
 /// CodeBuddy only offers AskUserQuestion to a stream-json host that declared
 /// the capability in `initialize`, and reads replies as `{allowed,
 /// updatedInput}` with string answers. A skip is its native `_action:

@@ -916,21 +916,34 @@ export function createMessagingActions(
       ) {
         return;
       }
+      if (question.permission) {
+        try {
+          await ipc.answerQuestion(question.runId, question.requestId, answers);
+        } catch (error) {
+          const current = get().bySession[key]?.messages.find((m) => m.seq === seq)?.question;
+          if (current?.status === "pending") patchSession(set, key, { error: errorText(error) });
+        }
+        return;
+      }
       // A multi-select round is answered through the CLI's free-form row, whose
       // editor then carries the picked labels: replying to the select frame with
       // a label only toggles the CLI's own set and re-asks the same question.
-      const loop = answers ? beginAskSubmit(key, seq, answerText(answers)) : undefined;
+      const loop = answers
+        ? beginAskSubmit(key, seq, answerText(answers))
+        : undefined;
       try {
         await ipc.answerQuestion(
           question.runId,
           question.requestId,
           loop ? { [loop.base]: ASK_OTHER_OPTION } : answers,
         );
-        patchQuestionByRequestId(set, key, question.requestId, (cur) => ({
-          ...cur,
-          status: answers ? ("answered" as const) : ("dismissed" as const),
-          ...(answers ? { answers } : {}),
-        }));
+        patchQuestionByRequestId(set, key, question.requestId, (cur) =>
+          cur.status !== "pending" ? cur : {
+            ...cur,
+            status: answers ? ("answered" as const) : ("dismissed" as const),
+            ...(answers ? { answers } : {}),
+          },
+        );
         // Skipping abandons the round: the CLI settles it as cancelled.
         if (!answers) askLoops.delete(key);
       } catch (error) {
